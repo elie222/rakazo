@@ -245,11 +245,12 @@ export const workTools: ConnectorTool[] = [
   },
   {
     name: "board_tickets",
-    description: "List tickets. Continue with nextCursor when returned.",
+    description: "List board tickets. Continue with nextCursor when returned.",
     inputSchema: {
       type: "object",
       properties: {
         status: { type: "string", enum: TICKET_STATUSES, description: "Filter by status." },
+        archived: { type: "boolean", description: "List archived tickets instead." },
         ownerBotId: { type: "string", description: "Filter by owner bot id." },
         cursor: {
           type: "string",
@@ -302,7 +303,7 @@ export const workTools: ConnectorTool[] = [
   },
   {
     name: "ticket_update",
-    description: "Update a ticket, including status and owner.",
+    description: "Update, archive, or restore a ticket.",
     inputSchema: {
       type: "object",
       properties: {
@@ -311,6 +312,10 @@ export const workTools: ConnectorTool[] = [
         description: { type: "string", maxLength: TICKET_DESCRIPTION_MAX_LENGTH },
         priority: { type: "string", enum: TICKET_PRIORITIES },
         status: { type: "string", enum: TICKET_STATUSES },
+        archived: {
+          type: "boolean",
+          description: "True to archive, false to restore. Keeps the ticket status and history.",
+        },
         ownerBotId: { type: "string" },
       },
       required: ["id"],

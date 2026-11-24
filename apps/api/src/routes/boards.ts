@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { commentTicket, createTicket, updateTicket } from "@rakazo/adapters";
-import { parseTicketRef } from "@rakazo/contracts";
+import { parseTicketRef, TICKET_COMPLETED_STATUSES } from "@rakazo/contracts";
 import { escapeSearchWildcards } from "@rakazo/core";
 import type { Board as BoardRow, Prisma, PrismaClient } from "@rakazo/db";
 import {
@@ -113,6 +113,10 @@ export function boardsRoutes(ctx: RouterContext) {
         const where: Prisma.TicketWhereInput = {
           spaceId: context.actor.spaceId,
           boardId: board.id,
+          archivedAt: input.scope === "archived" ? { not: null } : null,
+          ...(input.scope === "open"
+            ? { NOT: { status: { in: [...TICKET_COMPLETED_STATUSES] } } }
+            : {}),
           ...(input.status ? { status: input.status } : {}),
           ...(input.assigneeBotId ? { assigneeBotId: input.assigneeBotId } : {}),
           ...(q

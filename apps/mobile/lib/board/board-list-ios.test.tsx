@@ -57,6 +57,7 @@ function renderBoard(error: string, refreshFailures = 0) {
         error={error}
         refreshFailures={refreshFailures}
         onMove={vi.fn()}
+        onArchive={vi.fn()}
         onRefresh={vi.fn()}
       />,
     ),

@@ -17,7 +17,12 @@ export async function wakeTicketAssignee(
 ): Promise<void> {
   const run = await deps.prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.findFirst({
-      where: { id: input.ticketId, spaceId: input.spaceId, assigneeBotId: input.botId },
+      where: {
+        id: input.ticketId,
+        spaceId: input.spaceId,
+        assigneeBotId: input.botId,
+        archivedAt: null,
+      },
       include: { board: { select: { ticketPrefix: true } } },
     });
     if (!ticket) return null;

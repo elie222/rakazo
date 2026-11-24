@@ -242,6 +242,7 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     createdAt: IsoDate,
     updatedAt: IsoDate,
     completedAt: IsoDate.nullable(),
+    archivedAt: IsoDate.nullable().optional(),
   }),
   z.object({
     type: z.literal("ticket_comment"),

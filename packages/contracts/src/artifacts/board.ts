@@ -5,9 +5,14 @@ export const TICKET_STATUSES = ["todo", "doing", "review", "blocked", "done", "c
 export const TicketStatusSchema = z.enum(TICKET_STATUSES);
 export type TicketStatus = z.infer<typeof TicketStatusSchema>;
 
+export const TICKET_COMPLETED_STATUSES = ["done", "closed"] as const;
+export const TICKET_LIST_SCOPES = ["board", "open", "archived"] as const;
+const TicketListScopeSchema = z.enum(TICKET_LIST_SCOPES);
+export type TicketListScope = z.infer<typeof TicketListScopeSchema>;
+
 /** `done` is finished-but-open for review; `closed` is terminal, so both stamp completion. */
 export function isTicketCompletedStatus(status: TicketStatus): boolean {
-  return status === "done" || status === "closed";
+  return TICKET_COMPLETED_STATUSES.some((completed) => completed === status);
 }
 
 export const TICKET_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
@@ -99,11 +104,18 @@ export const TicketSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   completedAt: z.string().nullable(),
+  archivedAt: z.string().nullable(),
 });
 export type Ticket = z.infer<typeof TicketSchema>;
 
+export function ticketInScope(ticket: Ticket, scope: TicketListScope): boolean {
+  if (ticket.archivedAt) return scope === "archived";
+  return scope === "board" || (scope === "open" && !isTicketCompletedStatus(ticket.status));
+}
+
 export const ListTicketsInput = z.object({
   boardId: Id.optional(),
+  scope: TicketListScopeSchema.optional(),
   status: TicketStatusSchema.optional(),
   assigneeBotId: Id.optional(),
   q: z.string().trim().max(200).optional(),
@@ -138,6 +150,7 @@ export const UpdateTicketInput = z.object({
   description: z.string().max(TICKET_DESCRIPTION_MAX_LENGTH).nullable().optional(),
   priority: TicketPrioritySchema.nullable().optional(),
   status: TicketStatusSchema.optional(),
+  archived: z.boolean().optional(),
   assigneeBotId: Id.optional(),
 });
 export type UpdateTicketInput = z.infer<typeof UpdateTicketInput>;

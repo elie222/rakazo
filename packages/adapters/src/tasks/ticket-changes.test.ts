@@ -36,6 +36,7 @@ function setup(ownerLabs: string[], status = "todo") {
     prisma: { $transaction: transaction } as unknown as PrismaClient,
     jobs: { enqueue } as never,
     boardEvents: { notify } as never,
+    events: {},
   });
   return { changes, notify, enqueue, createRun, createTask, transaction };
 }

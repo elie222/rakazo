@@ -23,6 +23,8 @@ vi.mock("../api/api", () => ({
   }),
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("../api/roster-signals", () => ({ useSpaceChanges: () => {} }));
+vi.mock("../navigation/screen-header", () => ({ useScreenHeader: () => {} }));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => state.foreground }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: EffectCallback) => useEffect(effect, [effect]),

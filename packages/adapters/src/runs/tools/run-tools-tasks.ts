@@ -153,6 +153,7 @@ export const taskTools: ToolHandlers = {
       await listBoardTickets(deps, {
         spaceId: run.spaceId,
         status: args.status !== undefined ? String(args.status) : undefined,
+        archived: args.archived === true,
         assigneeBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
         cursor: args.cursor !== undefined ? String(args.cursor) : undefined,
       }),
@@ -196,6 +197,7 @@ export const taskTools: ToolHandlers = {
         description: args.description !== undefined ? String(args.description) : undefined,
         priority: args.priority !== undefined ? String(args.priority) : undefined,
         status: args.status !== undefined ? String(args.status) : undefined,
+        archived: typeof args.archived === "boolean" ? args.archived : undefined,
         ownerBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
       }),
     );

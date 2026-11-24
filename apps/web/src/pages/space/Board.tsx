@@ -1,15 +1,15 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
-import type { Bot, Ticket, TicketPriority, TicketStatus } from "@rakazo/contracts";
+import type { Bot, Ticket, TicketListScope, TicketPriority, TicketStatus } from "@rakazo/contracts";
 import {
   TICKET_COMMENT_MAX_LENGTH,
   TICKET_DESCRIPTION_MAX_LENGTH,
   TICKET_PRIORITIES,
   TICKET_STATUSES,
   TICKET_TITLE_MAX_LENGTH,
+  ticketInScope,
 } from "@rakazo/contracts";
-import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
-import { fetchFresh, writeSaved } from "@rakazo/core/query";
+import { writeSaved } from "@rakazo/core/query";
 import {
   Button,
   buttonVariants,
@@ -26,7 +26,7 @@ import {
   Textarea,
   toast,
 } from "@rakazo/ui-web";
-import { isCancelledError, skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, MessageCircle } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -34,8 +34,9 @@ import { IconTooltip } from "../../components/IconTooltip";
 import { WindowChrome } from "../../components/WindowChrome";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { desktopBridge } from "../../lib/platform/desktop";
+import { followStream } from "../../lib/query/follow-stream";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
-import { rpc } from "../../lib/query/rpc";
+import { spaceChanged } from "../../lib/query/space-changes";
 import { errorText } from "../../lib/query/user-error";
 import { useAppRail } from "../shell/app-rail";
 import { BoardColumns, TicketTable } from "./board-views";
@@ -43,7 +44,7 @@ import { useTicketPriorityLabels } from "./ticket-priority";
 import { useTicketStatusLabels } from "./ticket-status";
 
 type TicketChange = Pick<Ticket, "id"> &
-  Partial<Pick<Ticket, "priority" | "status">> & { assigneeBotId?: string };
+  Partial<Pick<Ticket, "priority" | "status">> & { assigneeBotId?: string; archived?: boolean };
 
 export function BoardPage() {
   const { t } = useLingui();
@@ -51,84 +52,37 @@ export function BoardPage() {
   const rail = useAppRail();
   const [params, setParams] = useSearchParams();
   const view = params.get("view") === "table" ? "table" : "kanban";
+  const filter = params.get("tickets");
+  const scope = filter === "open" || filter === "archived" ? filter : "board";
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
-  const ticketsOptions = queries.tickets.list.queryOptions({ input: {} });
-  const ticketsQuery = useQuery(ticketsOptions);
+  const ticketsOptions = queries.tickets.list.queryOptions({
+    input: scope === "board" ? {} : { scope },
+  });
+  const ticketsQuery = useQuery({ ...ticketsOptions, refetchOnWindowFocus: "always" });
   const botsQuery = useQuery(queries.bots.list.queryOptions());
   const tickets = ticketsQuery.data?.tickets ?? [];
   const bots = botsQuery.data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const creating = selectedId === "new";
-  const change = useTicketChange();
+  const change = useTicketChange(scope);
   const pending = change.pending ? change.input : undefined;
   const shownTickets = pending
     ? tickets.map((ticket) => (ticket.id === pending.id ? { ...ticket, ...pending } : ticket))
     : tickets;
   const selected = shownTickets.find((ticket) => ticket.id === selectedId);
-  const [streamError, setError] = useState("");
   const loadFailed = ticketsQuery.error ?? botsQuery.error;
-  const error = streamError || (loadFailed ? errorText(loadFailed) : "");
-
-  useEffect(() => {
-    let currentController: AbortController | undefined;
-    let active = true;
-    // Live events refresh the board and any open ticket's comments.
-    const refreshComments = (ticketId?: string) =>
-      void queryClient.invalidateQueries({
-        queryKey: ticketId
-          ? queries.tickets.comments.queryKey({ input: { ticketId } })
-          : queries.tickets.comments.key(),
-      });
-    async function refreshTickets() {
-      try {
-        await fetchFresh(queryClient, ticketsOptions);
-      } catch (error) {
-        // A save can replace this read with its own. Keep listening for the next change.
-        if (!isCancelledError(error)) throw error;
-      }
-    }
-    const stopped = new AbortController();
-    void (async () => {
-      while (active) {
-        const controller = new AbortController();
-        currentController = controller;
-        let failure: unknown;
-        let opened = false;
-        try {
-          const stream = await rpc.boards.subscribe(undefined, {
-            signal: controller.signal,
-          });
-          if (!active) return;
-          await refreshTickets();
-          if (!active) return;
-          refreshComments();
-          setError("");
-          opened = true;
-          for await (const event of stream) {
-            if (!active) return;
-            refreshComments(event.ticketId);
-            await refreshTickets();
-          }
-        } catch (cause) {
-          failure = cause;
-          if (active) setError(errorText(cause));
-        } finally {
-          controller.abort();
-        }
-        if (!active || !isRetryableError(failure)) return;
-        await abortableDelay(
-          opened ? reconnectDelayMs(failure) : retryDelayMs(failure, 1_000),
-          stopped.signal,
-        );
-      }
-    })();
-    return () => {
-      active = false;
-      currentController?.abort();
-      stopped.abort();
-    };
-  }, [queries]);
+  const error = loadFailed ? errorText(loadFailed) : "";
+  useEffect(
+    () =>
+      followStream(
+        (signal) => queries.notifications.subscribe.call(undefined, { signal }),
+        (frame) => {
+          if (frame.type === "board") void spaceChanged("board", queryClient);
+        },
+      ),
+    [queryClient, queries],
+  );
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
@@ -153,28 +107,49 @@ export function BoardPage() {
             <Trans>Board</Trans>
           </h1>
         </div>
-        <OptionSelect
-          aria-label={t`Board view`}
+        <OptionSelect<TicketListScope>
+          aria-label={t`Filter tickets`}
           className="app-no-drag w-auto max-w-full"
-          value={view}
+          value={scope}
           onValueChange={(value) => {
             const next = new URLSearchParams(params);
-            if (value === "table") next.set("view", "table");
-            else next.delete("view");
+            if (value === "board") next.delete("tickets");
+            else next.set("tickets", value);
+            setSelectedId(null);
             setParams(next, { replace: true });
           }}
           options={[
-            { value: "kanban", label: t`Kanban` },
-            { value: "table", label: t`Table` },
+            { value: "board", label: t`All on board` },
+            { value: "open", label: t`Open tickets` },
+            { value: "archived", label: t`Archived` },
           ]}
         />
-        <Button
-          className="app-no-drag max-w-full whitespace-normal"
-          onClick={() => setSelectedId("new")}
-          disabled={bots.length === 0}
-        >
-          <Trans>New ticket</Trans>
-        </Button>
+        {scope !== "archived" ? (
+          <>
+            <OptionSelect
+              aria-label={t`Board view`}
+              className="app-no-drag w-auto max-w-full"
+              value={view}
+              onValueChange={(value) => {
+                const next = new URLSearchParams(params);
+                if (value === "table") next.set("view", "table");
+                else next.delete("view");
+                setParams(next, { replace: true });
+              }}
+              options={[
+                { value: "kanban", label: t`Kanban` },
+                { value: "table", label: t`Table` },
+              ]}
+            />
+            <Button
+              className="app-no-drag max-w-full whitespace-normal"
+              onClick={() => setSelectedId("new")}
+              disabled={bots.length === 0}
+            >
+              <Trans>New ticket</Trans>
+            </Button>
+          </>
+        ) : null}
       </header>
       {error ? (
         <p role="alert" className="px-4 py-2 text-body text-destructive">
@@ -182,20 +157,34 @@ export function BoardPage() {
         </p>
       ) : null}
       <main className="relative min-h-0 min-w-0 flex-1 overflow-auto p-4">
-        {view === "table" ? (
-          <TicketTable tickets={shownTickets} bots={bots} onOpen={setSelectedId} />
+        {view === "table" || scope === "archived" ? (
+          <TicketTable
+            tickets={shownTickets}
+            bots={bots}
+            onOpen={setSelectedId}
+            changing={change.pending}
+            onArchive={(id, archived) => change.run({ id, archived })}
+          />
         ) : (
           <BoardColumns
             tickets={shownTickets}
             bots={bots}
             onOpen={setSelectedId}
-            moving={change.pending}
+            openOnly={scope === "open"}
+            changing={change.pending}
+            onArchive={(id, archived) => change.run({ id, archived })}
             onMove={(id, status) => change.run({ id, status })}
           />
         )}
         {!error && (ticketsQuery.isPending || (ticketsQuery.isSuccess && tickets.length === 0)) ? (
           <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-body text-muted-foreground">
-            {ticketsQuery.isPending ? <Spinner /> : <Trans>No tickets yet</Trans>}
+            {ticketsQuery.isPending ? (
+              <Spinner />
+            ) : scope === "board" ? (
+              <Trans>No tickets yet</Trans>
+            ) : (
+              <Trans>No matching tickets</Trans>
+            )}
           </p>
         ) : null}
       </main>
@@ -213,10 +202,10 @@ export function BoardPage() {
   );
 }
 
-function useTicketChange() {
+function useTicketChange(scope: TicketListScope) {
   const queries = useSpaceQueries();
   const client = useQueryClient();
-  const list = queries.tickets.list.queryOptions({ input: {} });
+  const list = queries.tickets.list.queryOptions({ input: scope === "board" ? {} : { scope } });
   return useSave({
     save: async (input: TicketChange, rpc) => {
       const before = client
@@ -225,13 +214,17 @@ function useTicketChange() {
       const saved = await rpc.tickets.update(input);
       // Publish the response only if the cached ticket still matches the one we edited.
       // A live read may have delivered a newer revision with the same timestamp.
-      if (!before) return;
+      if (!before || !saved) return;
       client.setQueryData(list.queryKey, (current) => {
         if (!current?.tickets.includes(before)) return undefined;
-        return { tickets: current.tickets.map((ticket) => (ticket === before ? saved : ticket)) };
+        return {
+          tickets: current.tickets.flatMap((ticket) =>
+            ticket === before ? (ticketInScope(saved, scope) ? [saved] : []) : [ticket],
+          ),
+        };
       });
     },
-    stale: [list.queryKey],
+    stale: [queries.tickets.list.key()],
     onFailed: (error) => toast.error(errorText(error)),
   });
 }
@@ -278,7 +271,7 @@ function TicketDialog({
   const commentsOptions = queries.tickets.comments.queryOptions({
     input: ticket ? { ticketId: ticket.id } : skipToken,
   });
-  const commentsQuery = useQuery(commentsOptions);
+  const commentsQuery = useQuery({ ...commentsOptions, refetchOnWindowFocus: "always" });
   const comments = commentsQuery.data ?? [];
   const [body, setBody] = useState("");
   const saving = useSave({

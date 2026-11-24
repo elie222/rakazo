@@ -123,4 +123,40 @@ test("board creates, edits, and moves a ticket across its views", async ({ page 
   await expect(row).toContainText("High");
   await row.getByRole("button", { name: new RegExp(title) }).click();
   await expect(detail.getByLabel("Description")).toHaveValue(description);
+  await page.keyboard.press("Escape");
+
+  const filter = page.getByRole("combobox", { name: "Filter tickets" });
+  const layout = page.getByRole("combobox", { name: "Board view" });
+  await layout.click();
+  await page.getByRole("option", { name: "Kanban", exact: true }).click();
+  await filter.click();
+  await page.getByRole("option", { name: "Open tickets", exact: true }).click();
+  await expect(done).toHaveCount(0);
+  await expect(board.getByRole("region", { name: "Won't do", exact: true })).toHaveCount(0);
+  await expect(card).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "board-open-tickets");
+
+  await filter.click();
+  await page.getByRole("option", { name: "All on board", exact: true }).click();
+  await expect(card).toBeVisible();
+  const ref = "RAK-1";
+  await expect(card).toContainText(ref);
+  const actions = { name: `Actions for ${ref}` };
+  await done.getByRole("button", actions).click();
+  await captureScreenshot(page, testInfo, "board-archive-action");
+  await page.getByRole("menuitem", { name: "Archive ticket", exact: true }).click();
+  await expect(card).toHaveCount(0);
+
+  await filter.click();
+  await page.getByRole("option", { name: "Archived", exact: true }).click();
+  await expect(row).toContainText("Done");
+  await row.getByRole("button", actions).click();
+  await captureScreenshot(page, testInfo, "board-archived-tickets");
+  await page.getByRole("menuitem", { name: "Restore ticket", exact: true }).click();
+  await expect(row).toHaveCount(0);
+
+  await filter.click();
+  await page.getByRole("option", { name: "All on board", exact: true }).click();
+  await expect(done.locator("[data-testid^='board-card-']")).toContainText(title);
+  await expect(card).toContainText(ref);
 });

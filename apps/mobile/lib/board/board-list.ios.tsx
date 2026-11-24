@@ -27,6 +27,7 @@ export function BoardList({
   refreshFailures,
   moving = false,
   onMove,
+  onArchive,
   onRefresh,
 }: BoardListProps) {
   const { t } = useLingui();
@@ -100,15 +101,21 @@ export function BoardList({
                 </VStack>
               }
             >
-              <Section title={t`Move to`}>
-                {TICKET_STATUSES.filter((status) => status !== ticket.status).map((status) => (
-                  <Button
-                    key={status}
-                    label={ticketStatusLabel(status)}
-                    onPress={() => onMove(ticket, status)}
-                  />
-                ))}
-              </Section>
+              {!ticket.archivedAt ? (
+                <Section title={t`Move to`}>
+                  {TICKET_STATUSES.filter((status) => status !== ticket.status).map((status) => (
+                    <Button
+                      key={status}
+                      label={ticketStatusLabel(status)}
+                      onPress={() => onMove(ticket, status)}
+                    />
+                  ))}
+                </Section>
+              ) : null}
+              <Button
+                label={ticket.archivedAt ? t`Restore ticket` : t`Archive ticket`}
+                onPress={() => onArchive(ticket)}
+              />
             </Menu>
           ))}
         </Section>

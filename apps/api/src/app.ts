@@ -322,6 +322,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   foundation.useJobs(jobs);
   const ticketChanges = createTicketChangeNotifier({
     boardEvents,
+    events,
     jobs,
     prisma,
     deploymentLabs: env.deploymentLabs,
