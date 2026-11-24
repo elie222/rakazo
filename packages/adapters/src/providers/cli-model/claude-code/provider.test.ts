@@ -1,8 +1,8 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import type * as FsPromises from "node:fs/promises";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   Api,
@@ -106,6 +106,7 @@ function fakeClaude(scenario: string) {
         cwdMode: number;
         system: string;
         frames: unknown[];
+        frameLines: string[];
         tools: { init?: { protocolVersion?: string }; tools: unknown[]; call?: unknown };
       },
     /** Whether the fake was still running well after the reply ended. */
@@ -281,16 +282,84 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     expect(cwdMode).toBe(0o700);
   });
 
-  it("uses a fresh empty directory for each turn and removes it afterward", async () => {
+  it("keeps CLI inputs stable across a tool loop and removes each turn's request files", async () => {
+    vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "1");
+    try {
+      const cli = fakeClaude("tool");
+      const context = {
+        ...hello,
+        messages: [...hello.messages],
+        tools: [...tools, { ...tools[0]!, name: "summarize" }],
+      };
+      const records: ReturnType<typeof cli.read>[] = [];
+      const requestDirectories = new Set<string>();
+      for (let turn = 0; turn < 3; turn++) {
+        const { message } = await run(context);
+        const tool = message.content.find((block) => block.type === "toolCall");
+        if (!tool) throw new Error("Expected a tool call");
+        context.messages.push(message, {
+          role: "toolResult",
+          toolCallId: tool.id,
+          toolName: tool.name,
+          content: [{ type: "text", text: `Fake weather result ${turn}` }],
+          isError: false,
+          timestamp: turn + 2,
+        });
+
+        const record = cli.read();
+        records.push(record);
+        const requestDir = dirname(record.args[record.args.indexOf("--system-prompt-file") + 1]!);
+        requestDirectories.add(requestDir);
+        await vi.waitFor(() => expect(existsSync(requestDir)).toBe(false));
+        expect(record.cwdEntries).toEqual([]);
+        expect(record.cwdMode).toBe(0o700);
+      }
+      expect(requestDirectories.size).toBe(3);
+
+      const stableArgs = (args: string[]) =>
+        args.filter(
+          (_, index) => !["--system-prompt-file", "--mcp-config"].includes(args[index - 1]!),
+        );
+      const [first, ...later] = records;
+      for (const record of later) {
+        expect(record.cwd).toBe(first!.cwd);
+        expect(record.env).toEqual(first!.env);
+        expect(stableArgs(record.args)).toEqual(stableArgs(first!.args));
+        expect(record.system).toBe(first!.system);
+        expect(record.tools).toEqual(first!.tools);
+      }
+      for (const [index, next] of later.entries()) {
+        const previous = records[index]!.frameLines;
+        // The previous query becomes a history frame. Only its routing flag may change.
+        const last = JSON.parse(previous.at(-1)!);
+        expect(next.frameLines.slice(0, previous.length)).toEqual([
+          ...previous.slice(0, -1),
+          JSON.stringify({ ...last, shouldQuery: false }),
+        ]);
+      }
+    } finally {
+      vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "");
+    }
+  });
+
+  it("replaces the working directory if it disappears", async () => {
     const cli = fakeClaude("reply");
     await run(hello);
     const first = cli.read().cwd;
-    await vi.waitFor(() => expect(existsSync(first)).toBe(false));
+    rmdirSync(first);
     await run(hello);
-    const second = cli.read().cwd;
-    expect(second).not.toBe(first);
+    expect(cli.read().cwd).not.toBe(first);
     expect(cli.read().cwdEntries).toEqual([]);
-    await vi.waitFor(() => expect(existsSync(second)).toBe(false));
+  });
+
+  it("replaces the working directory if it is no longer empty", async () => {
+    const cli = fakeClaude("reply");
+    await run(hello);
+    const first = cli.read().cwd;
+    writeFileSync(join(first, "CLAUDE.md"), "Fake project instructions");
+    await run(hello);
+    expect(cli.read().cwd).not.toBe(first);
+    expect(cli.read().cwdEntries).toEqual([]);
   });
 
   it("does not launch the model after cancellation during file setup", async () => {
@@ -350,10 +419,27 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "1");
       await run(hello);
       const { env } = cli.read();
-      expect(env.CLAUDE_CONFIG_DIR).toMatch(/rakazo-claude-code-request-[^/\\]+[/\\]config$/);
+      const config = env.CLAUDE_CONFIG_DIR!;
+      expect(config).toMatch(/rakazo-claude-code-config-[^/\\]+$/);
+      expect(statSync(config).mode & 0o777).toBe(0o700);
     } finally {
       vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "");
       vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
+    }
+  });
+
+  it("starts a separate setup config when the token changes", async () => {
+    vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "1");
+    try {
+      const cli = fakeClaude("reply");
+      await run(hello);
+      const first = cli.read().env.CLAUDE_CONFIG_DIR;
+
+      vi.stubEnv("CLAUDE_CODE_OAUTH_TOKEN", "fake-replacement-token");
+      await run(hello);
+      expect(cli.read().env.CLAUDE_CONFIG_DIR).not.toBe(first);
+    } finally {
+      vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "");
     }
   });
 

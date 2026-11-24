@@ -73,9 +73,11 @@ async function chat() {
   }
 
   const frames = [];
+  const frameLines = [];
   for await (const line of createInterface({ input: process.stdin })) {
     const frame = JSON.parse(line);
     frames.push(frame);
+    frameLines.push(line);
     if (frame.type === "user" && frame.shouldQuery === false) {
       out({
         type: "result",
@@ -96,6 +98,7 @@ async function chat() {
       cwdMode: statSync(process.cwd()).mode & 0o777,
       system,
       frames,
+      frameLines,
       tools,
     }),
   );
@@ -182,7 +185,7 @@ async function chat() {
         index: 0,
         content_block: {
           type: "tool_use",
-          id: "toolu_1",
+          id: `toolu_${frames.length}`,
           name:
             {
               "unoffered-tool": "mcp__rakazo__feedback",

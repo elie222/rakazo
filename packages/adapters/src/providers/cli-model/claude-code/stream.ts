@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -35,6 +35,7 @@ import {
   CLAUDE_CODE_SIGNED_OUT_ERROR,
   checkClaudeCode,
   claudeCodeEnv,
+  claudeCodeWorkingDirectory,
   startClaudeCode,
 } from "./cli.js";
 
@@ -382,9 +383,7 @@ export function streamClaudeCode(
       const offeredCallNames = new Set(tools.map((tool) => tool.name));
       const frames = claudeCodeFrames(context, model);
       files = await mkdtemp(join(tmpdir(), "rakazo-claude-code-request-"));
-      const cwd = join(files, "cwd");
-      await mkdir(cwd, { mode: 0o700 });
-      await checkClaudeCode(cwd, options.signal);
+      await checkClaudeCode(claudeCodeWorkingDirectory(), options.signal);
       const systemFile = join(files, "system.md");
       await writeFile(systemFile, system, { mode: 0o600 });
       const args = [
@@ -442,15 +441,13 @@ export function streamClaudeCode(
       }
       if (model.reasoning && options.reasoning) args.push("--effort", EFFORT[options.reasoning]);
       const maxTokens = options.maxTokens ?? model.maxTokens;
-      const config = join(files, "config");
-      await mkdir(config, { mode: 0o700 });
       options.signal?.throwIfAborted();
       child = startClaudeCode(args, {
-        cwd,
+        cwd: claudeCodeWorkingDirectory(),
         env: claudeCodeEnv(
           process.env,
           maxTokens ? { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxTokens) } : {},
-          config,
+          { isolateSetupConfig: true },
         ),
       });
       const idleMs = modelStreamIdleTimeoutMs();

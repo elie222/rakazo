@@ -1,5 +1,9 @@
 import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { lstatSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 /**
@@ -68,7 +72,7 @@ const PASSTHROUGH_ENV = new Set([
 ]);
 
 /**
- * The CLI's own headless sign-in. Passed through, unread, only when the operator sets
+ * The CLI's own headless sign-in. Passed through only when the operator sets
  * RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1 for a server whose CLI cannot sign in interactively.
  */
 const OPT_IN_TOKEN_NAME = "CLAUDE_CODE_OAUTH_TOKEN";
@@ -86,6 +90,58 @@ const BRIDGE_ENV = {
   ENABLE_TOOL_SEARCH: "false",
 } as const;
 
+const privateDirectories = new Set<string>();
+
+function privateDirectory(kind: "cwd" | "config"): string {
+  const directory = mkdtempSync(join(tmpdir(), `rakazo-claude-code-${kind}-`));
+  if (!privateDirectories.size) {
+    process.once("exit", () => {
+      for (const path of privateDirectories) {
+        try {
+          rmSync(path, { recursive: true, force: true });
+        } catch {
+          // The temporary directory may already have been cleaned up.
+        }
+      }
+    });
+  }
+  privateDirectories.add(directory);
+  return directory;
+}
+
+function isPrivateDirectory(path: string): boolean {
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  return !!stat?.isDirectory() && (process.platform === "win32" || (stat.mode & 0o777) === 0o700);
+}
+
+let workingDirectory: string | undefined;
+
+/** The CLI includes this path in the prompt. Reuse it while it is still private and empty. */
+export function claudeCodeWorkingDirectory(): string {
+  if (workingDirectory) {
+    try {
+      if (isPrivateDirectory(workingDirectory) && readdirSync(workingDirectory).length === 0) {
+        return workingDirectory;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  workingDirectory = privateDirectory("cwd");
+  return workingDirectory;
+}
+
+let setupConfig: { identity: string; directory: string } | undefined;
+
+function setupConfigDirectory(token: string): string {
+  // Keep the CLI's generated installation ID stable without sharing files after a token change.
+  const identity = createHash("sha256").update(token).digest("hex");
+  if (setupConfig?.identity !== identity || !isPrivateDirectory(setupConfig.directory)) {
+    setupConfig = { identity, directory: privateDirectory("config") };
+  }
+  return setupConfig.directory;
+}
+
 /**
  * The child's whole environment, built from an allowlist. API keys, OAuth tokens and every other
  * server secret stay out, so the CLI can only use the sign-in its operator made (with the opt-in,
@@ -94,7 +150,7 @@ const BRIDGE_ENV = {
 export function claudeCodeEnv(
   source: NodeJS.ProcessEnv = process.env,
   extra: Record<string, string> = {},
-  emptyConfigDir?: string,
+  options: { isolateSetupConfig?: boolean } = {},
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(source)) {
@@ -105,9 +161,9 @@ export function claudeCodeEnv(
   const token =
     source.RAKAZO_CLAUDE_CODE_SETUP_TOKEN === "1" ? source[OPT_IN_TOKEN_NAME] : undefined;
   if (!token) return { ...env, ...BRIDGE_ENV, ...extra };
-  // The token needs no stored profile, and the CLI tells the model the profile's email.
-  const config: Record<string, string> = emptyConfigDir
-    ? { CLAUDE_CONFIG_DIR: emptyConfigDir }
+  // Start the token with no operator profile, since the CLI tells the model the profile email.
+  const config: Record<string, string> = options.isolateSetupConfig
+    ? { CLAUDE_CONFIG_DIR: setupConfigDirectory(token) }
     : {};
   return { ...env, [OPT_IN_TOKEN_NAME]: token, ...config, ...BRIDGE_ENV, ...extra };
 }
