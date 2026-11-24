@@ -1798,6 +1798,7 @@ describe("answerRunInput", () => {
       opener: { trigger: string; clientNonce?: string } = { trigger: "created" },
     ) => {
       const tx = {
+        externalEffect: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
         $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
         message: {
           findFirst: vi.fn().mockResolvedValue({
@@ -1857,8 +1858,7 @@ describe("answerRunInput", () => {
       return tx;
     };
 
-    // The executor gives a "user" run the thread and every tool; the answer is its prompt,
-    // which the restored ask_user call receives as its result.
+    // The executor gives a "user" run the thread and every tool; the answer is its prompt.
     const chosen = await answerIntro("choice-2");
     expect(chosen.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
