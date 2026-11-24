@@ -1,7 +1,6 @@
-import type { UsageOperationKind } from "@rakazo/adapter-kit";
 import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from "@rakazo/adapters";
-import type { ExportManifest } from "@rakazo/contracts";
-import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
+import type { ExportManifest, UsageRecord } from "@rakazo/contracts";
+import { attachmentMaxBytes, MediaModelRoleSchema, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   ClientError,
@@ -31,8 +30,13 @@ const EXPORT_MESSAGE_PAGE_SIZE = 500;
 const usageTimezoneAliases = new Map([
   ["america/indianapolis", "America/Indiana/Indianapolis"],
   ["asia/calcutta", "Asia/Kolkata"],
+  ["asia/rangoon", "Asia/Yangon"],
   ["asia/saigon", "Asia/Ho_Chi_Minh"],
 ]);
+
+/** Images and videos made on a member's own key. They count no tokens, so token totals skip them. */
+const MEDIA_OPERATION_KINDS = [...MediaModelRoleSchema.options];
+const isMedia = Prisma.sql`u."operationKind" IN (${Prisma.join(MEDIA_OPERATION_KINDS)})`;
 
 export function contentRoutes(ctx: RouterContext) {
   const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
@@ -145,7 +149,7 @@ export function contentRoutes(ctx: RouterContext) {
           usageSource: row.usageSource,
           callId: row.callId,
           operationId: row.operationId,
-          operationKind: row.operationKind as UsageOperationKind,
+          operationKind: row.operationKind as UsageRecord["operationKind"],
           parentRunId: row.parentRunId,
           agentId: row.agentId,
           createdAt: row.createdAt.toISOString(),
@@ -173,7 +177,7 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: true,
         } as const;
         const counts = { _all: true, ...sums } as const;
-        const [result, modelGroups, runGroups] = await Promise.all([
+        const [result, modelGroups, runGroups, mediaGroups] = await Promise.all([
           deps.prisma.usageRecord.aggregate({ where, _sum: sums, _count: counts }),
           deps.prisma.usageRecord.groupBy({
             by: ["provider", "model"],
@@ -182,16 +186,32 @@ export function contentRoutes(ctx: RouterContext) {
             _count: counts,
           }),
           deps.prisma.usageRecord.groupBy({ by: ["runId", "parentRunId"], where }),
+          deps.prisma.usageRecord.groupBy({
+            by: ["provider", "model"],
+            where: { ...where, operationKind: { in: MEDIA_OPERATION_KINDS } },
+            _count: { _all: true },
+          }),
         ]);
+        const mediaCalls = (group?: { provider: string; model: string }) =>
+          mediaGroups
+            .filter(
+              (row) => !group || (row.provider === group.provider && row.model === group.model),
+            )
+            .reduce((total, row) => total + row._count._all, 0);
         const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
           .size;
         // A total that skips rows without a count would understate spend, so it reads as unknown.
-        const completeSums = (group: {
-          _sum: Record<keyof typeof sums, number | null>;
-          _count: Record<keyof typeof counts, number>;
-        }) => {
+        const completeSums = (
+          group: {
+            _sum: Record<keyof typeof sums, number | null>;
+            _count: Record<keyof typeof counts, number>;
+          },
+          media: number,
+        ) => {
           const complete = (field: keyof typeof sums) =>
-            group._count[field] === group._count._all ? (group._sum[field] ?? 0) : null;
+            group._count[field] + (field === "costUsd" ? 0 : media) === group._count._all
+              ? (group._sum[field] ?? 0)
+              : null;
           return {
             inputTokens: complete("inputTokens"),
             outputTokens: complete("outputTokens"),
@@ -201,13 +221,13 @@ export function contentRoutes(ctx: RouterContext) {
           };
         };
         return {
-          ...completeSums(result),
+          ...completeSums(result, mediaCalls()),
           runs,
           models: modelGroups
             .map((group) => ({
               provider: group.provider,
               model: group.model,
-              ...completeSums(group),
+              ...completeSums(group, mediaCalls(group)),
             }))
             .sort(
               (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
@@ -290,11 +310,11 @@ export function contentRoutes(ctx: RouterContext) {
           COUNT(*)::bigint AS "modelCalls",
           COUNT(DISTINCT COALESCE(u."parentRunId", u."runId")) FILTER (WHERE COALESCE(u."parentRunId", u."runId") IS NOT NULL)::bigint AS runs,
           SUM(u."inputTokens")::double precision AS "inputTokens",
-          BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",
+          BOOL_AND(u."inputTokens" IS NOT NULL OR ${isMedia}) AS "inputComplete",
           SUM(u."outputTokens")::double precision AS "outputTokens",
-          BOOL_AND(u."outputTokens" IS NOT NULL) AS "outputComplete",
+          BOOL_AND(u."outputTokens" IS NOT NULL OR ${isMedia}) AS "outputComplete",
           SUM(u."totalTokens")::double precision AS "totalTokens",
-          BOOL_AND(u."totalTokens" IS NOT NULL) AS "totalComplete",
+          BOOL_AND(u."totalTokens" IS NOT NULL OR ${isMedia}) AS "totalComplete",
           SUM(u."costUsd")::double precision AS "costUsd",
           BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
         `;
@@ -314,7 +334,7 @@ export function contentRoutes(ctx: RouterContext) {
                 tx.$queryRaw<ModelRow[]>(Prisma.sql`
             SELECT u.provider, u.model, ${totalsSelect},
               SUM(u."cacheReadTokens")::double precision AS "cachedTokens",
-              BOOL_AND(COALESCE(u."cacheReadTokens" > 0 OR (u."cacheReadTokens" = 0 AND u."totalTokens" IS NOT NULL), false)) AS "cachedComplete"
+              BOOL_AND(COALESCE(u."cacheReadTokens" > 0 OR (u."cacheReadTokens" = 0 AND u."totalTokens" IS NOT NULL), false) OR ${isMedia}) AS "cachedComplete"
             FROM usage_records u
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
@@ -325,11 +345,11 @@ export function contentRoutes(ctx: RouterContext) {
             SELECT to_char(u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}, 'YYYY-MM-DD') AS bucket,
               COUNT(*)::bigint AS "modelCalls",
               SUM(u."inputTokens")::double precision AS "inputTokens",
-              BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",
+              BOOL_AND(u."inputTokens" IS NOT NULL OR ${isMedia}) AS "inputComplete",
               SUM(u."outputTokens")::double precision AS "outputTokens",
-              BOOL_AND(u."outputTokens" IS NOT NULL) AS "outputComplete",
+              BOOL_AND(u."outputTokens" IS NOT NULL OR ${isMedia}) AS "outputComplete",
               SUM(u."totalTokens")::double precision AS "totalTokens",
-              BOOL_AND(u."totalTokens" IS NOT NULL) AS "totalComplete",
+              BOOL_AND(u."totalTokens" IS NOT NULL OR ${isMedia}) AS "totalComplete",
               SUM(u."costUsd")::double precision AS "costUsd",
               BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
             FROM usage_records u

@@ -194,34 +194,23 @@ describe("deployment speech default", () => {
       ),
     ).toThrow("Invalid DEPLOYMENT_VOICE");
   });
-  it.each(["synthesize", "transcribe"] as const)(
-    "rejects pricing units that disagree with the adapter's %s usage",
-    (operation) => {
-      for (const allowUnmeteredUsage of [false, true]) {
-        expect(() =>
-          deploymentVoiceFromEnv(
-            JSON.stringify({
-              ...config,
-              provider: "xai",
-              allowUnmeteredUsage,
-              pricing: {
-                synthesize: {
-                  ...price,
-                  model: "tts",
-                  unit: operation === "synthesize" ? "seconds" : "characters",
-                },
-                transcribe: {
-                  ...price,
-                  model: "grok-voice-transcribe-2.0",
-                  unit: operation === "transcribe" ? "characters" : "seconds",
-                },
-              },
-            }),
-          ),
-        ).toThrow("Invalid DEPLOYMENT_VOICE");
-      }
-    },
-  );
+  it("rejects transcription pricing units that disagree with the adapter's usage", () => {
+    for (const allowUnmeteredUsage of [false, true]) {
+      expect(() =>
+        deploymentVoiceFromEnv(
+          JSON.stringify({
+            ...config,
+            provider: "xai",
+            allowUnmeteredUsage,
+            pricing: {
+              synthesize: { ...price, model: "tts" },
+              transcribe: { ...price, model: "grok-voice-transcribe-2.0", unit: "characters" },
+            },
+          }),
+        ),
+      ).toThrow("Invalid DEPLOYMENT_VOICE");
+    }
+  });
   it("requires explicit acceptance of manual reconciliation for unmetered models", () => {
     const unmetered = {
       ...config,
@@ -236,7 +225,7 @@ describe("deployment speech default", () => {
       deploymentVoiceFromEnv(JSON.stringify({ ...unmetered, allowUnmeteredUsage: true })),
     ).toBeDefined();
   });
-  it("accepts automatically priced models and rejects unknown models without opt-in", () => {
+  it("meters character-priced speech and known transcription models, and needs opt-in otherwise", () => {
     const metered = {
       ...config,
       provider: "openai",
@@ -247,14 +236,14 @@ describe("deployment speech default", () => {
       },
     };
     expect(deploymentVoiceFromEnv(JSON.stringify(metered))).toBeDefined();
-    expect(() =>
-      deploymentVoiceFromEnv(
-        JSON.stringify({
-          ...metered,
-          pricing: { ...metered.pricing, synthesize: { ...price, model: "unknown-speech" } },
-        }),
-      ),
-    ).toThrow("Invalid DEPLOYMENT_VOICE");
+    for (const pricing of [
+      { ...metered.pricing, synthesize: { ...price, model: "tts-1", unit: "tokens" } },
+      { ...metered.pricing, transcribe: { ...price, model: "unknown-stt", unit: "seconds" } },
+    ]) {
+      expect(() => deploymentVoiceFromEnv(JSON.stringify({ ...metered, pricing }))).toThrow(
+        "Invalid DEPLOYMENT_VOICE",
+      );
+    }
   });
   it("does not advertise or choose included speech once the plan's allowance is spent", async () => {
     for (const remaining of [0n, -5n]) {
@@ -346,7 +335,7 @@ describe("deployment speech default", () => {
   });
 });
 
-it("returns completed audio when settlement storage fails", async () => {
+it("settles the characters it sent and returns completed audio when settlement storage fails", async () => {
   const log = vi.spyOn(getLogger(), "error");
   const usage = {
     model: "speech-model",
@@ -368,7 +357,7 @@ it("returns completed audio when settlement storage fails", async () => {
   expect(settleSpeech).toHaveBeenCalledWith(
     expect.anything(),
     "speech-call",
-    usage,
+    { ...usage, units: "Synthetic speech sample".length },
     "fake-provider-request",
   );
   expect(log).toHaveBeenCalledWith("Operator speech settlement requires reconciliation", {

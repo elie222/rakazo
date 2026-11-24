@@ -7,7 +7,10 @@ web app may load.
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.
 
-The app accepts plain `http://` only for a private IP, `localhost`, or a `.local` name, but Docker Compose publishes the web port on loopback by default. For LAN access, follow [Connecting a phone on the same network](#connecting-a-phone-on-the-same-network). A hostname reached over a VPN such as WireGuard or Tailscale needs HTTPS with a certificate the phone trusts, for example a real domain with a Let's Encrypt certificate issued through a DNS challenge.
+The app accepts plain `http://` only for a private IP, `localhost`, or a `.local` name, but Docker Compose publishes the web port on loopback by default. For LAN access, follow [Connecting a phone on the same network](#connecting-a-phone-on-the-same-network). A hostname reached over a VPN such as WireGuard or Tailscale needs HTTPS with a certificate the phone trusts: see [Connecting a phone over Tailscale](#connecting-a-phone-over-tailscale), or use a real domain with a Let's Encrypt certificate issued through a DNS challenge.
+
+The desktop app's **This computer** server can't be reached from a phone. See
+[Desktop "This computer" servers](#desktop-this-computer-servers).
 
 If a domain login gate redirects the server probe to a browser sign-in page, use the
 app's **Server → Headers** with a dedicated access-proxy credential. See
@@ -31,6 +34,43 @@ then enter `http://<LAN-IP>:5173` in the app's **Use a custom server** field.
 
 This exposes plain-HTTP sign-in to everyone on the local network. Tailscale or an HTTPS
 reverse proxy is the safer option.
+
+## Connecting a phone over Tailscale
+
+Tailscale can put the published-images or Compose stack behind HTTPS with a certificate phones
+trust, without opening any port. Turn on MagicDNS and HTTPS certificates for your tailnet in the
+Tailscale admin console, then on the server run:
+
+```bash
+tailscale serve --bg 5173
+```
+
+This serves `https://<machine>.<tailnet>.ts.net` to tailnet devices and proxies it to the web port
+on loopback, so leave `RAKAZO_WEB_BIND` at `127.0.0.1`. Use your `RAKAZO_WEB_PORT` instead of
+`5173` if you changed it. In `.env`, set `WEB_ORIGIN`, `BETTER_AUTH_URL` and `API_URL` to
+`https://<machine>.<tailnet>.ts.net`, and set `RAKAZO_HOST` to `<machine>.<tailnet>.ts.net` (or add
+it to `RAKAZO_ALLOWED_HOSTS` if `RAKAZO_HOST` is already another name). Recreate the services with
+`docker compose up -d`, using the same Compose file and env-file options as your install.
+
+On the phone, turn on Tailscale, tap **Use a custom server** and enter
+`https://<machine>.<tailnet>.ts.net`, with no port or path.
+
+To terminate TLS in your own reverse proxy instead, `tailscale cert <machine>.<tailnet>.ts.net`
+writes a certificate and key for that name. If browsers or the desktop app also use another
+address for the same install, list it in
+[`RAKAZO_EXTRA_AUTH_ORIGINS`](./self-host-configuration.md#reaching-rakazo-from-a-second-address).
+
+## Desktop "This computer" servers
+
+The server the desktop app runs under **This computer** is for that computer only. It listens on
+loopback (`http://127.0.0.1:45173` by default, or another loopback port if that one is taken), and
+the app sets its origins to that address each time it starts. It also accepts a single account and
+relaxes some network settings because nothing else can reach it. Exposing it to other devices is
+not supported, so a phone can't connect to it over the LAN or Tailscale.
+
+To use the mobile app, run Rakazo with the [published images](./self-host.md#published-images-no-checkout)
+on a server, or on the same computer, and connect the phone as described above. Point the desktop
+app at that server with **Existing instance**.
 
 ## Mobile push notifications
 

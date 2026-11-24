@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import type { ModelRoleSettings } from "@rakazo/contracts";
+import type { MediaModelsView, ModelRoleSettings } from "@rakazo/contracts";
 import {
   captureScreenshot,
   chooseOption,
@@ -315,7 +315,10 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByRole("menuitem", { name: "Manage model", exact: true }).click();
     const modelSettings = page.getByTestId("model-settings-page");
     await expect(modelSettings).toContainText(LOCAL_MODEL_ID);
-    await modelSettings.getByRole("checkbox", { name: "Supports thinking" }).check();
+    await chooseOption(
+      modelSettings.getByRole("combobox", { name: "Thinking", exact: true }),
+      "Max",
+    );
     await modelSettings.getByLabel("Context limit").fill("200000");
     await modelSettings.getByRole("button", { name: "Save", exact: true }).click();
     await expect(modelSettings.getByText("Saved.", { exact: true })).toBeVisible();
@@ -369,7 +372,10 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );
-    await chooseOption(settings.getByRole("combobox", { name: "Thinking", exact: true }), "High");
+    // A bot that picks no level runs at the one the model's settings chose.
+    const thinking = settings.getByRole("combobox", { name: "Thinking", exact: true });
+    await expect(thinking).toHaveText("Default (Max)");
+    await chooseOption(thinking, "High");
     await botSaved;
 
     if (process.env.AGENT_RUNTIME === "pi") {
@@ -561,6 +567,84 @@ test("model funding connections", async ({ page }, testInfo) => {
     modelId: model.id,
     credentialId: "personal-example",
   });
+});
+
+test("image and video models are chosen from the connections that make them", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `media-models-${stamp}@rakazo.test`, "password12", "Media Models");
+  await completeOnboarding(page);
+  // A media-capable key connection, without a real key or the provider's live catalog.
+  await page.route("**/rpc/models/credentials", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: unknown[] };
+    await route.fulfill({
+      response,
+      json: {
+        json: [
+          ...body.json,
+          {
+            id: "media-key",
+            provider: "openrouter",
+            label: "OpenRouter",
+            hasKey: true,
+            isDefault: false,
+          },
+        ],
+      },
+    });
+  });
+  const option = (modelId: string, label: string) => ({
+    credentialId: "media-key",
+    modelId,
+    label,
+    provider: "openrouter",
+    connectionLabel: "OpenRouter",
+  });
+  let view: MediaModelsView = {
+    image: {
+      options: [
+        option("openai/gpt-image-2", "OpenAI: GPT Image 2"),
+        option("google/gemini-2.5-flash-image", "Google: Gemini 2.5 Flash Image"),
+      ],
+      selected: { credentialId: "media-key", modelId: "openai/gpt-image-2" },
+    },
+    video: {
+      options: [option("openai/sora-2", "OpenAI: Sora 2")],
+      selected: { credentialId: "media-key", modelId: "openai/sora-2" },
+    },
+  };
+  await page.route("**/rpc/models/media", (route) => route.fulfill({ json: { json: view } }));
+  await page.route("**/rpc/models/setMedia", async (route) => {
+    const { json } = route.request().postDataJSON() as {
+      json: { role: "image" | "video"; credentialId: string; modelId: string };
+    };
+    view = {
+      ...view,
+      [json.role]: {
+        ...view[json.role],
+        selected: { credentialId: json.credentialId, modelId: json.modelId },
+      },
+    };
+    await route.fulfill({ json: { json: view } });
+  });
+  await page.reload();
+  await openUserSettings(page, "models");
+  const image = page.getByRole("button", { name: "Change Image model" });
+  await expect(image).toHaveText("OpenAI: GPT Image 2OpenRouter");
+  await expect(page.getByRole("button", { name: "Change Video model" })).toHaveText(
+    "OpenAI: Sora 2OpenRouter",
+  );
+  await image.click();
+  await page.getByRole("option", { name: "Google: Gemini 2.5 Flash Image" }).click();
+  await expect(image).toHaveText("Google: Gemini 2.5 Flash ImageOpenRouter");
+  expect(view.image.selected).toEqual({
+    credentialId: "media-key",
+    modelId: "google/gemini-2.5-flash-image",
+  });
+  await page.getByTestId("model-role-video").scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "model-settings-media-models");
 });
 
 test("an approval default the deployment pays for reads as included", async ({

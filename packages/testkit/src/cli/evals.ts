@@ -6,9 +6,11 @@ import { parseArgs } from "node:util";
 import type { AgentContextStrategy, AgentRunRequest } from "@rakazo/adapter-kit";
 import { ModelConnectInputSchema, ReplyModeSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { z } from "zod";
 import type { EvalCase } from "../evals/cases.js";
 import {
   EVAL_CASES,
+  EVAL_INBOUND_EMAIL,
   HISTORY_EVAL_CASES,
   HISTORY_JUDGE_CALIBRATION,
   PRODUCT_JUDGE_CALIBRATION,
@@ -20,6 +22,7 @@ import {
   caseKey,
   codeRevision,
   firstRequestFetch,
+  requestBodyFetch,
   runFingerprint,
   workingDiffHash,
 } from "../evals/fingerprint.js";
@@ -128,9 +131,11 @@ async function main() {
       model: { type: "string" },
       "api-key-env": { type: "string" },
       "base-url": { type: "string" },
+      /** JSON object merged into every eval model request body, such as a gateway's routing. */
+      "request-body": { type: "string" },
       "context-window": { type: "string" },
       "max-output-tokens": { type: "string" },
-      trials: { type: "string", default: "3" },
+      trials: { type: "string", default: "1" },
       case: { type: "string", multiple: true },
       "cases-file": { type: "string" },
       "timeout-ms": { type: "string", default: "180000" },
@@ -338,7 +343,7 @@ async function main() {
       model: string;
       provider: string;
       rubricVersion: string;
-      pricing: EvalPricing;
+      pricing: EvalPricing | null;
       settings: ReturnType<typeof judgeSettings>;
       calibration: Array<{ expected: boolean; pass: boolean; reason: string }>;
       modelCalls: number;
@@ -372,7 +377,7 @@ async function main() {
     report.fingerprint.run = runFingerprint(report.fingerprint.cases);
     report.summary = summarize(report.trials);
     if (report.judge) {
-      const measured = measureCalls([...judgeCalls.values()], report.judge.pricing);
+      const measured = measureCalls([...judgeCalls.values()], report.judge.pricing ?? undefined);
       report.judge.modelCalls = measured.modelCalls;
       report.judge.costUsd = measured.costUsd;
     }
@@ -429,25 +434,54 @@ async function main() {
         maxTokens: values["max-output-tokens"] ? Number(values["max-output-tokens"]) : undefined,
         label: "Eval model",
       };
-  const parsedConnection = ModelConnectInputSchema.safeParse(rawConnection);
-  if (!parsedConnection.success || !parsedConnection.data.modelId?.trim())
+  const { personalCliRuntime } = await import("@rakazo/adapters/personal-cli-runtime");
+  /**
+   * A connection, and for a model the person runs through their own signed-in CLI, how to route
+   * calls to it. That model needs no key. Every account in this run's disposable database is a
+   * fixture of the one person running it and the app never bills, so the sign-in serves only them.
+   */
+  const readModel = (raw: unknown) => {
+    // The connection's own fields, without the key it does not need.
+    const named = z.object(ModelConnectInputSchema.shape).safeParse(raw);
+    const onPlan =
+      named.success &&
+      named.data.modelId?.trim() &&
+      personalCliRuntime(named.data.provider, named.data.modelId, async () => undefined);
+    if (onPlan) return { connection: named.data, onPlan };
+    const parsed = ModelConnectInputSchema.safeParse(raw);
+    return parsed.success && parsed.data.modelId?.trim()
+      ? { connection: parsed.data, onPlan: undefined }
+      : undefined;
+  };
+  const subject = readModel(rawConnection);
+  if (!subject)
     return notRun(
       "A valid model connection is required: --connection with models/connect JSON, or --provider --model --api-key-env (and --base-url for compatible servers). All trials remain not-run.",
     );
-  let pricing: EvalPricing;
-  try {
-    pricing = validatePricing(
-      values.pricing ? JSON.parse(readFileSync(values.pricing, "utf8")) : null,
+  const subjectOnPlan = subject.onPlan;
+  if (subjectOnPlan && (subject.connection.contextWindow || subject.connection.maxTokens))
+    return notRun(
+      "A model on your own plan runs with its own context and output limits; drop them. All trials remain not-run.",
     );
+  // Usage on the person's own plan has no per-token price: its cost stays unknown, never $0.
+  let pricing: EvalPricing | undefined;
+  try {
+    if (!subjectOnPlan)
+      pricing = validatePricing(
+        values.pricing ? JSON.parse(readFileSync(values.pricing, "utf8")) : null,
+      );
   } catch {
     return notRun(
       "Live execution requires --pricing with explicit source, version and USD per million rates. All trials remain not-run.",
     );
   }
-  report.pricing = pricing;
+  report.pricing = pricing ?? null;
   budget = new SpendBudget(report.spendCapUsd, pricing);
   const liveBudget = budget;
-  const connection = parsedConnection.data;
+  const connection = subject.connection;
+  const requestBody = values["request-body"]
+    ? z.record(z.string(), z.unknown()).parse(JSON.parse(values["request-body"]))
+    : undefined;
   report.model = connection.modelId!;
   report.provider = connection.provider;
   Object.assign(report, { cacheCapabilities: connection.cacheCapabilities ?? null });
@@ -462,7 +496,18 @@ async function main() {
   const judgePricingFile = values["judge-pricing"];
   if (judged.size && !values["cache-probe"] && !suiteJudge)
     return notRun("This suite has no judge rubric; no inference was scheduled");
-  if (judged.size && !values["cache-probe"] && (!judgeConnectionFile || !judgePricingFile)) {
+  const judgeFileOnPlan = () => {
+    try {
+      return Boolean(readModel(readConnection(judgeConnectionFile!))?.onPlan);
+    } catch {
+      return false;
+    }
+  };
+  if (
+    judged.size &&
+    !values["cache-probe"] &&
+    (!judgeConnectionFile || (!judgePricingFile && !judgeFileOnPlan()))
+  ) {
     const reason =
       "Not run: graded by meaning, which needs --judge-connection and --judge-pricing; unqualified, not a pass";
     if (judged.size === selected.length) return notRun(reason);
@@ -478,13 +523,13 @@ async function main() {
     } catch {
       return notRun("A valid judge model connection file is required; no inference was scheduled");
     }
-    const parsedJudge = ModelConnectInputSchema.safeParse(rawJudgeConnection);
-    if (!parsedJudge.success || !parsedJudge.data.modelId?.trim())
-      return notRun("A valid judge model connection is required");
-    const judgeConnection = parsedJudge.data;
-    let judgePricing: EvalPricing;
+    const judgeModelRead = readModel(rawJudgeConnection);
+    if (!judgeModelRead) return notRun("A valid judge model connection is required");
+    const { connection: judgeConnection, onPlan: judgeOnPlan } = judgeModelRead;
+    let judgePricing: EvalPricing | undefined;
     try {
-      judgePricing = validatePricing(JSON.parse(readFileSync(judgePricingFile!, "utf8")));
+      if (!judgeOnPlan)
+        judgePricing = validatePricing(JSON.parse(readFileSync(judgePricingFile!, "utf8")));
     } catch {
       return notRun(
         "A valid judge pricing file with explicit rates is required; no inference was scheduled",
@@ -501,7 +546,7 @@ async function main() {
       model: judgeConnection.modelId!,
       provider: judgeConnection.provider,
       rubricVersion: suiteJudge.version,
-      pricing: judgePricing,
+      pricing: judgePricing ?? null,
       settings: judgeSettings(judgeModel),
       calibration: [],
       modelCalls: 0,
@@ -516,6 +561,7 @@ async function main() {
             call.modelId !== judgeConnection.modelId
           )
             throw new Error("Judge model has no configured pricing");
+          if (!judgePricing) return liveBudget.reserveCostBound(0);
           return liveBudget.reserve(
             call.inputTokensEstimate,
             call.maxOutputTokens,
@@ -529,7 +575,11 @@ async function main() {
     const collect: NonNullable<AgentRunRequest["onUsage"]> = (usage) => {
       if (usage.callId) judgeCalls.set(usage.callId, { id: usage.callId, ...usage });
     };
-    const rawJudge = createEvalJudge(runtime, judgeModel, collect);
+    const rawJudge = createEvalJudge(
+      judgeOnPlan ? judgeOnPlan(runtime) : runtime,
+      judgeModel,
+      collect,
+    );
     const judgeSecrets = [judgeConnection.apiKey ?? "", judgeConnection.baseUrl ?? ""];
     judge = async (input, signal) => {
       try {
@@ -563,6 +613,7 @@ async function main() {
   }
   save();
   if (values["cache-probe"]) {
+    if (!pricing) return notRun("The cache probe prices each call, so it needs --pricing");
     const { PiAgentRuntime } = await import("../../../adapters/src/runtime/pi/pi-runtime.ts");
     const { runCachePrefixProbe } = await import("../evals/cache-probe.js");
     const decisions: CacheDecisionMeasurement[] = [];
@@ -681,6 +732,12 @@ async function main() {
       CURSOR_API_KEY: "",
       CLOUD_AGENT_PROVIDER: "",
       MODEL_API_KEY: "",
+      // Configured the way a self-hosted server runs its model through the CLI.
+      ...(subjectOnPlan && {
+        PI_DEFAULT_PROVIDER: connection.provider,
+        PI_DEFAULT_MODEL: connection.modelId,
+        PI_DEFAULT_CREDENTIALS: "host",
+      }),
       // A developer .env with Stripe keys would put the disposable app behind billing.
       STRIPE_SECRET_KEY: "",
       STRIPE_WEBHOOK_SECRET: "",
@@ -749,7 +806,7 @@ async function main() {
         known && known.kind !== "run" && known.trials.some((t) => t.trial === planned.trial)
           ? { plan: known }
           : {};
-      const modelFetch = firstRequestFetch(
+      const fingerprintedFetch = firstRequestFetch(
         observeWire
           ? diagnosticWireFetch(dispatcherFetch, connection.modelId!, wireDiagnostics)
           : dispatcherFetch,
@@ -787,15 +844,19 @@ async function main() {
         },
         scenario,
       );
+      const modelFetch = requestBody
+        ? requestBodyFetch(fingerprintedFetch, connection.modelId!, requestBody)
+        : fingerprintedFetch;
       if (!stored.plan) {
         const ran = {
           ...(await runTrial(scenario, planned.trial, {
             ...controls,
             replyMode: replyMode.data,
             connection,
+            deploymentModel: Boolean(subjectOnPlan),
             pricing,
             judge,
-            createApp: async (composio, messaging, witnesses) => {
+            createApp: async (composio, messaging, witnesses, site) => {
               const sandbox = new EvalSandboxProvider(scenario.computer);
               let acceptingCalls = true;
               const cacheDecisions: CacheDecisionMeasurement[] = [];
@@ -828,11 +889,13 @@ async function main() {
                     if (!acceptingCalls || stored.plan)
                       throw new Error("Eval trial stopped scheduling inference");
                     if (provider === connection.provider && modelId === connection.modelId)
-                      return liveBudget.reserve(
-                        inputTokensEstimate,
-                        maxOutputTokens,
-                        cacheWriteRetention,
-                      );
+                      return pricing
+                        ? liveBudget.reserve(
+                            inputTokensEstimate,
+                            maxOutputTokens,
+                            cacheWriteRetention,
+                          )
+                        : liveBudget.reserveCostBound(0);
                     if (typeof maxCostUsd !== "number")
                       throw new Error("Other model has no configured pricing");
                     return liveBudget.reserveCostBound(maxCostUsd);
@@ -843,7 +906,7 @@ async function main() {
               const historyDiagnostics: HistoryDiagnostic[] = [];
               const toolLoopDiagnostics: DiagnosticToolObservation[] = [];
               const observedRuntime = observeSyntheticHistory(
-                runtime,
+                subjectOnPlan ? subjectOnPlan(runtime) : runtime,
                 historyDiagnostics,
                 [connection.apiKey ?? "", connection.baseUrl ?? ""],
                 toolLoopDiagnostics,
@@ -863,6 +926,8 @@ async function main() {
                 composio,
                 messaging,
                 web: composio.web,
+                ...(site ? { browser: site } : {}),
+                ...(scenario.botEmail ? { inboundEmail: EVAL_INBOUND_EMAIL } : {}),
                 ...(wakesRoutines(scenario) ? witnesses : {}),
                 messagingOpenSignup: false,
                 defaultProvider: connection.provider,

@@ -428,7 +428,9 @@ export const MessageView = memo(function MessageView({
               </div>
             );
           }
-          if (block.kind === "routine_event") return <RoutineEventRow key={i} block={block} />;
+          if (block.kind === "routine_event") {
+            return <RoutineEventRow key={i} block={block} botId={message.botId} rpc={rpc} />;
+          }
           if (block.kind === "meta") {
             return (
               <div

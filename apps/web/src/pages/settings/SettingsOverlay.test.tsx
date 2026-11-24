@@ -71,6 +71,12 @@ vi.mock("./MemorySettingsOverlay", () => ({
     return null;
   },
 }));
+vi.mock("../../components/spaces/SpaceMembersSettings", () => ({
+  SpaceMembersSettings: ({ space }: { space: { id: string } }) => (
+    <div data-testid="space-members">{space.id}</div>
+  ),
+}));
+vi.mock("./SpaceSettingOverrides", () => ({ SpaceSettingOverrides: () => null }));
 vi.mock("./SpaceSettingsPanel", () => ({
   SpaceSettingsPanel: ({
     space,
@@ -194,32 +200,41 @@ function button(container: HTMLElement, label: string) {
   return match;
 }
 
-it("lists the spaces under General and opens the one picked", async () => {
+it("lists the spaces under Spaces and opens the one picked", async () => {
   const onOpenSpace = vi.fn();
-  const { container, cleanup } = await render({ spaces, onOpenSpace });
+  const { container, cleanup } = await render({ spaces, onOpenSpace, section: "spaces" });
   try {
     const list = container.querySelector('[data-testid="settings-spaces"]');
     expect(list?.textContent).toContain("Acme");
     expect(list?.textContent).toContain("Beta");
     await act(async () => button(container, "Manage Beta").click());
     expect(onOpenSpace).toHaveBeenCalledWith("space-b");
-    // Spaces live under General, not in the nav.
-    expect(container.querySelector('[data-testid="settings-nav-space"]')).toBeNull();
   } finally {
     await cleanup();
   }
 });
 
-it("lists no spaces when there is only one", async () => {
-  const { container, cleanup } = await render({ spaces: [acme], onOpenSpace: vi.fn() });
+it("lists a lone space by name and opens its own page", async () => {
+  const onOpenSpace = vi.fn();
+  const { container, cleanup } = await render({
+    space: acme,
+    spaces: [acme],
+    onOpenSpace,
+    section: "spaces",
+  });
   try {
-    expect(container.querySelector('[data-testid="settings-spaces"]')).toBeNull();
+    expect(container.querySelector('[data-testid="settings-spaces"]')?.textContent).toContain(
+      "Acme",
+    );
+    expect(container.querySelector('[data-testid="space-members"]')).toBeNull();
+    await act(async () => button(container, "Manage Acme").click());
+    expect(onOpenSpace).toHaveBeenCalledWith("space-a");
   } finally {
     await cleanup();
   }
 });
 
-it("titles a space's page with its name and leads back to General", async () => {
+it("titles a space's page with its name and leads back to Spaces", async () => {
   const onDeleteSpace = vi.fn(async () => undefined);
   const onSectionChange = vi.fn();
   const { container, cleanup } = await render({
@@ -232,13 +247,13 @@ it("titles a space's page with its name and leads back to General", async () => 
   try {
     expect(container.querySelector("h2")?.textContent).toBe("Acme");
     expect(
-      container.querySelector('[data-testid="settings-nav-general"]')?.getAttribute("aria-current"),
+      container.querySelector('[data-testid="settings-nav-spaces"]')?.getAttribute("aria-current"),
     ).toBe("page");
     const panel = container.querySelector<HTMLButtonElement>('[data-testid="space-settings"]');
     await act(async () => panel?.click());
     expect(onDeleteSpace).toHaveBeenCalledWith("space-a");
     await act(async () => button(container, "Back").click());
-    expect(onSectionChange).toHaveBeenCalledWith("general");
+    expect(onSectionChange).toHaveBeenCalledWith("spaces");
   } finally {
     await cleanup();
   }

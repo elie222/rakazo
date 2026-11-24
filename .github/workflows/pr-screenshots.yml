@@ -171,10 +171,12 @@ jobs:
         if: steps.current.outputs.current == 'true' && env.SCREENSHOT_AGENT == 'codex'
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          # The pull request ref also holds commits from forks.
+          # The pull request ref also holds commits from forks. The agent only reads these files: nothing
+          # here installs or runs them, and the copy it reads has no Git metadata or credentials.
           ref: refs/pull/${{ inputs.pull_request }}/head
           path: pr-checkout
           persist-credentials: false
+          allow-unsafe-pr-checkout: true
       - name: Prepare an isolated browser
         id: browser
         if: steps.current.outputs.current == 'true'

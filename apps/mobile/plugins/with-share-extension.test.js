@@ -18,6 +18,13 @@ const plist = requireExpoPlugin("@expo/plist").default;
 // The pinned expo-sharing prebuild code, so a change to its templates fails here.
 const sharing = (file) => require(`expo-sharing/plugin/build/ios/${file}`);
 
+it("clears iOS share metadata without clearing staged attachments", () => {
+  const module = readFileSync(require.resolve("expo-sharing/ios/SharingModule.swift"), "utf8");
+  const clearPayloads = /Function\("clearSharedPayloads"\) \{([^}]+)\}/.exec(module)?.[1];
+  expect(clearPayloads).toContain("removeObject(forKey: SHARE_INTO_DEFAULTS_KEY)");
+  expect(clearPayloads).not.toContain("ShareIntoFileStore");
+});
+
 function withTemplateProject(run) {
   const directory = mkdtempSync(join(tmpdir(), "rakazo-share-extension-"));
   try {

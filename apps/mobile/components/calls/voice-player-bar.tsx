@@ -81,6 +81,8 @@ function VoiceControlButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      // A 44-point tap target around the 34-point circle.
+      hitSlop={5}
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,

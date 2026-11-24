@@ -1275,8 +1275,9 @@ describe("docker exec stream demux", () => {
 
 describe("computer command identity", () => {
   it("gives commands the workspace user's home, PATH and package prefixes on the screen's display", () => {
-    expect(computerCommandEnv({ display: ":2" })).toEqual([
+    expect(computerCommandEnv({ display: ":2", debugPort: 9223 })).toEqual([
       "DISPLAY=:2",
+      "RAKAZO_CDP_PORT=9223",
       "HOME=/home/rakazo",
       "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",

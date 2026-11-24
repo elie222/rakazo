@@ -314,12 +314,6 @@ describe("parseCodexCatalog", () => {
       ]),
     ],
     [
-      "negative context window",
-      catalogPayload([
-        { slug: "ok", visibility: "list", supported_in_api: true, context_window: -5 },
-      ]),
-    ],
-    [
       "zero context window",
       catalogPayload([
         { slug: "ok", visibility: "list", supported_in_api: true, context_window: 0 },

@@ -505,11 +505,11 @@ export async function applyTeachingDesktopInput(
   await deps.sandbox.sendInput(ref, input, lease, context);
 }
 
-function protectedInputMissesRecording(
+function inputMissesRecording(
   mapped: TeachComputerInput,
   activeSkillId: string | undefined,
 ): boolean {
-  return mapped.sensitive === true && Boolean(mapped.skillId) && activeSkillId !== mapped.skillId;
+  return Boolean(mapped.skillId) && activeSkillId !== mapped.skillId;
 }
 
 export async function recordTeachingInputEvent(
@@ -519,8 +519,8 @@ export async function recordTeachingInputEvent(
   mapped: TeachComputerInput,
 ): Promise<"recorded" | "idle" | "stale"> {
   const skill = await getActiveTeachingSession(deps.prisma, actor.spaceId, botId, actor.userId);
-  // Protected input names the recording it was queued for, so a later one cannot receive it.
-  if (protectedInputMissesRecording(mapped, skill?.id)) return "stale";
+  // Input names the recording it was queued for, so a later one cannot receive it.
+  if (inputMissesRecording(mapped, skill?.id)) return "stale";
   if (!skill) return "idle";
   if (skill.expiresAt && skill.expiresAt.getTime() <= Date.now()) {
     await expireTaughtSkillTeaching(deps, skill.id);
@@ -568,8 +568,9 @@ export async function recordTeachingInputEvent(
   }
   if (prepared.kind === "stale") return "stale";
   if (prepared.computer?.providerRef) {
-    // The row lock above does not cover sandbox IO. Only protected input is
-    // bound to a recording, so ordinary events skip this extra read.
+    // The row lock above does not cover sandbox IO, so protected input checks its recording
+    // again before it is typed. Ordinary events skip this extra read: one that races a new
+    // recording is still kept out of it by the write below.
     if (mapped.sensitive === true && mapped.skillId) {
       const active = await getActiveTeachingSession(
         deps.prisma,
@@ -577,7 +578,7 @@ export async function recordTeachingInputEvent(
         botId,
         actor.userId,
       );
-      if (protectedInputMissesRecording(mapped, active?.id)) return "stale";
+      if (inputMissesRecording(mapped, active?.id)) return "stale";
     }
     await applyTeachingDesktopInput(
       deps,

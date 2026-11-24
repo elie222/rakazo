@@ -25,6 +25,7 @@ import {
 } from "../../composer/pick-attachments";
 import { attachmentCountSkipReason } from "../../composer/pick-attachments-filter";
 import { useFileDrop } from "../../composer/use-file-drop";
+import { reportMobileError } from "../../platform/monitoring";
 
 export type PendingAttachment = PickedAttachment & { threadKey: string };
 
@@ -242,16 +243,18 @@ export function useThreadAttachments({
   };
 }
 
-/** Takes an incoming share into this chat once its upload limits are known. */
+/** Takes an incoming share when the chosen chat is visible and its upload limits are known. */
 export function useIncomingShareImport({
   attachments,
   composerRef,
+  focused,
   readOnly,
   threadKey,
   uploadConfig,
 }: {
   attachments: ReturnType<typeof useThreadAttachments>;
   composerRef: RefObject<ThreadComposerHandle | null>;
+  focused: boolean;
   readOnly: boolean;
   threadKey: string | undefined;
   uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
@@ -263,9 +266,6 @@ export function useIncomingShareImport({
     setPendingAttachments,
     setAttachmentNotice,
   } = attachments;
-  // The share a settings refresh interrupted. It is retried on its own, so a
-  // share that arrived in the meantime is left for the picker, not taken here.
-  const interruptedShare = useRef<{ generation: number } | null>(null);
   const [retryTick, setRetryTick] = useState(0);
   // A warm link to another chat commits before this effect's cleanup runs; a read that settles
   // in between must not land in the state the new chat is about to replace. Set at commit, so a
@@ -275,15 +275,9 @@ export function useIncomingShareImport({
     committedThread.current = threadKey;
   }, [threadKey]);
   useEffect(() => {
-    if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
-    const interrupted = interruptedShare.current;
-    interruptedShare.current = null;
-    const share = takeIncomingShare();
+    if (!focused || !threadKey || readOnly || !uploadConfig || importingShare.current) return;
+    const share = takeIncomingShare(threadKey);
     if (!share) return;
-    if (interrupted && share.generation !== interrupted.generation) {
-      retryIncomingShare(share);
-      return;
-    }
     let active = true;
     importingShare.current = true;
     setShareImporting(true);
@@ -299,8 +293,12 @@ export function useIncomingShareImport({
           retryIncomingShare(share);
           return;
         }
-        if (result.failedFiles.length)
+        if (result.failedFiles.length) {
+          reportMobileError(new Error("Shared files could not be read"), "mobile.share", {
+            action: "import",
+          });
           retryIncomingShare({ ...share, text: "", files: result.failedFiles });
+        }
         // A drop or a picker opened before the import can add files while it reads, so the
         // room left is settled against the draft as it is now, as in addAttachments.
         const maxCount = attachmentMaxCount(uploadConfig);
@@ -345,7 +343,6 @@ export function useIncomingShareImport({
         // Only a pass that settings cancelled is tried again; a file the reader
         // rejected is reported once instead of looping until the share expires.
         if (!active && isIncomingShareCurrent(share)) {
-          interruptedShare.current = share;
           retryIncomingShare(share);
           setRetryTick((tick) => tick + 1);
         }
@@ -354,5 +351,5 @@ export function useIncomingShareImport({
     return () => {
       active = false;
     };
-  }, [threadKey, readOnly, uploadConfig, retryTick]);
+  }, [focused, threadKey, readOnly, uploadConfig, retryTick]);
 }

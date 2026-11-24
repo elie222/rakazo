@@ -1,7 +1,8 @@
 import type { ConnectorProvider, JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
-import type { RoutineWatch } from "@rakazo/contracts";
+import type { ChatPreferencesPatch, RoutineWatch } from "@rakazo/contracts";
 import {
+  ROUTINE_NAME_MAX_LENGTH,
   ROUTINE_WATCH_MIN_MINUTES,
   RoutineEmailSendersSchema,
   RoutineWatchSchema,
@@ -9,7 +10,6 @@ import {
 } from "@rakazo/contracts";
 import {
   cronFromPreset,
-  formatCron,
   isOneShotRoutineCron,
   isOneShotRoutineCrons,
   nextCronDate,
@@ -22,6 +22,14 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import {
+  newRoutineEnd,
+  routineEndError,
+  routineEnded,
+  routineEndFromText,
+  routineEndInZone,
+  runBeforeEnd,
+} from "../routines/routine-end.js";
 import { postRoutineNotice, routineEditChange, routineEdited } from "../routines/routine-notice.js";
 import type { RoutineEvents } from "../routines/routine-triggers.js";
 import {
@@ -45,6 +53,7 @@ import {
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
 import type { ScheduleUnit } from "./schedule-intervals.js";
 import { intervalRangeError } from "./schedule-intervals.js";
+import { describeRoutineTiming, routineChanges } from "./schedule-update-view.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
@@ -273,19 +282,17 @@ function nowIn(timezone: string): string {
   return `It is now ${localDateTime(now, timezone) ?? now.toISOString()} in ${timezone}.`;
 }
 
-/** The stored timing as the bot should report it: in the routine's timezone, with the next run. */
-export function describeRoutineTiming(row: {
-  crons: string[];
-  timezone: string;
-  nextRunAt: Date | null;
-}) {
-  return {
-    timezone: row.timezone,
-    ...(row.crons.length ? { schedule: row.crons.map((cron) => formatCron(cron)).join("; ") } : {}),
-    nextRun: row.nextRunAt
-      ? (localDateTime(row.nextRunAt, row.timezone) ?? row.nextRunAt.toISOString())
-      : null,
-  };
+function withNow(error: string, timezone: string): string {
+  return `${error} ${nowIn(timezone)}`;
+}
+
+function toolRoutineEnd(
+  value: string | undefined,
+  timezone: string,
+  timing: Parameters<typeof newRoutineEnd>[2],
+): { endsAt: Date | null } | { error: string } {
+  const end = newRoutineEnd(value, timezone, timing);
+  return "error" in end ? { error: withNow(end.error, timezone) } : end;
 }
 
 function validateRepeatingCron(cron: string): string | null {
@@ -337,17 +344,31 @@ async function routineEventsFor(
   return resolveRoutineEvents(deps, bot, input.userId, parsed.on);
 }
 
+/**
+ * The store the bot's webhook key is made in for events that need one: none when they need none,
+ * or why there is none. Read only, so a preview answers the same as the save.
+ */
+function webhookKeyStore(
+  deps: Pick<ScheduleToolDeps, "secretStore">,
+  events: RoutineEvents,
+): { store?: Pick<SecretStore, "put"> } | { error: string } {
+  if (!events.webhookEnabled && !events.githubEnabled) return {};
+  if (!deps.secretStore) return { error: "Webhook keys are not available on this server." };
+  return { store: deps.secretStore };
+}
+
 /** Make the bot's webhook key if a webhook or Git event needs one and it has none yet. */
 async function ensureWebhookKey(
   deps: Pick<ScheduleToolDeps, "prisma" | "secretStore">,
   input: { spaceId: string; botId: string; userId: string },
   events: RoutineEvents,
 ): Promise<string | undefined> {
-  if (!events.webhookEnabled && !events.githubEnabled) return undefined;
-  if (!deps.secretStore) return "Webhook keys are not available on this server.";
+  const key = webhookKeyStore(deps, events);
+  if ("error" in key) return key.error;
+  if (!key.store) return undefined;
   // The result is the key; dropped here, so it never reaches the run, its result or a log.
   await storeBotWebhookKey(
-    { prisma: deps.prisma, secretStore: deps.secretStore },
+    { prisma: deps.prisma, secretStore: key.store },
     { id: input.botId, spaceId: input.spaceId, userId: input.userId },
     {
       operationId: "schedule.webhookKey",
@@ -414,7 +435,7 @@ export async function changeUserTimezone(
   },
   userId: string,
   timezone: string | null,
-  other?: {
+  other?: ChatPreferencesPatch & {
     locale?: string;
     botAvatarSet?: string;
     labs?: string[];
@@ -452,6 +473,7 @@ export async function changeUserTimezone(
           nextRunAt: true,
           active: true,
           watch: true,
+          endsAt: true,
         },
       });
       for (const routine of routines) movedSpaces.add(routine.spaceId);
@@ -460,7 +482,11 @@ export async function changeUserTimezone(
       const relabeled: string[] = [];
       for (const routine of routines) {
         const nextRunAt = nextRunAtAfterTimezoneMove(routine, timezone);
-        if (nextRunAt?.getTime() === routine.nextRunAt?.getTime()) {
+        const endsAt = routineEndInZone(routine.endsAt, routine.timezone, timezone);
+        if (
+          nextRunAt?.getTime() === routine.nextRunAt?.getTime() &&
+          endsAt?.getTime() === routine.endsAt?.getTime()
+        ) {
           relabeled.push(routine.id);
           continue;
         }
@@ -473,7 +499,7 @@ export async function changeUserTimezone(
             timezone: user.timezone,
             nextRunAt: routine.nextRunAt,
           },
-          data: { timezone, nextRunAt },
+          data: { timezone, nextRunAt, endsAt },
         });
         if (count === 1 && routine.active && nextRunAt) {
           woken.push({ id: routine.id, nextRunAt });
@@ -513,11 +539,13 @@ function nextRunAtAfterTimezoneMove(
     nextRunAt: Date | null;
     active: boolean;
     watch: unknown;
+    endsAt: Date | null;
   },
   timezone: string,
 ): Date | null {
   if (
     !routine.active ||
+    routineEnded(routine) ||
     routine.watch != null ||
     isOneShotRoutineCrons(routine.crons) ||
     routine.crons.length === 0
@@ -598,6 +626,7 @@ export async function createScheduleFromTool(
     schedule: Record<string, unknown>;
     /** The tool's `on`: events that start the routine besides its timing, or instead of it. */
     on?: unknown;
+    endAt?: string;
   },
 ) {
   const routineBotId = input.target?.botId ?? input.botId;
@@ -640,12 +669,17 @@ export async function createScheduleFromTool(
   }
   // The timing is checked again at the insert, in the zone it is saved in; checking it here
   // first means a routine that cannot be saved makes no key.
-  if (!eventsOnly && (events.webhookEnabled || events.githubEnabled)) {
-    const timing = resolveScheduleTiming(
-      input.schedule,
-      input.timezone ?? (await userTimeZone(deps.prisma, input.userId)),
-    );
-    if (!timing.ok) return { error: timing.error };
+  if ((events.webhookEnabled || events.githubEnabled) && (!eventsOnly || input.endAt)) {
+    const zone = input.timezone ?? (await userTimeZone(deps.prisma, input.userId));
+    const timing = eventsOnly ? null : resolveScheduleTiming(input.schedule, zone);
+    if (timing && !timing.ok) return { error: timing.error };
+    const end = toolRoutineEnd(input.endAt, zone, {
+      crons: timing?.ok ? [timing.cron] : [],
+      watch: null,
+      nextRunAt: timing?.ok ? timing.nextRunAt : null,
+      events: true,
+    });
+    if ("error" in end) return end;
   }
   const keyError = await ensureWebhookKey(
     deps,
@@ -661,6 +695,13 @@ export async function createScheduleFromTool(
       ? { ok: true, cron: "", nextRunAt: new Date(0), oneShot: false }
       : resolveScheduleTiming(input.schedule, timezone);
     if (!resolved.ok) return { error: resolved.error } as const;
+    const end = toolRoutineEnd(input.endAt, timezone, {
+      crons: eventsOnly ? [] : [resolved.cron],
+      watch: null,
+      nextRunAt: eventsOnly ? null : resolved.nextRunAt,
+      events: hasRoutineEvents(events),
+    });
+    if ("error" in end) return { error: end.error } as const;
     wakeAt = eventsOnly ? undefined : resolved.nextRunAt;
     return client.routine.create({
       data: {
@@ -677,6 +718,7 @@ export async function createScheduleFromTool(
         active: true,
         ...events,
         nextRunAt: eventsOnly ? null : resolved.nextRunAt,
+        endsAt: end.endsAt,
       },
     });
   };
@@ -722,6 +764,7 @@ export async function createScheduleFromTool(
     botId: routineBotId,
     change: "created",
     name: row.name,
+    routine: { webhookEnabled: row.webhookEnabled, active: row.active },
   });
 
   return {
@@ -745,6 +788,7 @@ export function scheduleCreateFields(args: Record<string, unknown>) {
     timezone: args.timezone ? String(args.timezone) : undefined,
     schedule: compactScheduleInput({ ...scheduleTimingArgs(args), watch: args.watch }),
     on: isScheduleValueProvided(args.on) ? args.on : undefined,
+    endAt: isScheduleValueProvided(args.endAt) ? String(args.endAt) : undefined,
   };
 }
 
@@ -776,20 +820,29 @@ export async function scheduleCreateError(
     oneShot: ONE_SHOT_FIELDS.some((field) => isScheduleValueProvided(input.schedule[field])),
   });
   if ("error" in events) return events.error;
+  const timezone = async () => input.timezone ?? (await userTimeZone(prisma, input.userId));
+  const endError = async (timing: { crons: string[]; watch: unknown; nextRunAt: Date | null }) => {
+    if (input.endAt === undefined) return undefined;
+    const zone = await timezone();
+    const end = toolRoutineEnd(input.endAt, zone, {
+      ...timing,
+      events: hasRoutineEvents(events.events),
+    });
+    return "error" in end ? end.error : undefined;
+  };
   if (input.schedule.watch !== undefined) {
     const parsed = scheduleWatch(input.schedule);
-    return parsed.success ? undefined : parsed.error;
+    if (!parsed.success) return parsed.error;
+    return endError({ crons: [], watch: parsed.data, nextRunAt: firstWatchCheck() });
   }
   if (hasRoutineEvents(events.events) && !hasScheduleTiming(input.schedule)) {
     return isScheduleValueProvided(input.schedule.startAt)
       ? "startAt is only for repeating schedules."
-      : undefined;
+      : endError({ crons: [], watch: null, nextRunAt: null });
   }
-  const resolved = resolveScheduleTiming(
-    input.schedule,
-    input.timezone ?? (await userTimeZone(prisma, input.userId)),
-  );
-  return resolved.ok ? undefined : resolved.error;
+  const resolved = resolveScheduleTiming(input.schedule, await timezone());
+  if (!resolved.ok) return resolved.error;
+  return endError({ crons: [resolved.cron], watch: null, nextRunAt: resolved.nextRunAt });
 }
 
 /** The watch of a `schedule_create` call, which takes no other timing. */
@@ -837,6 +890,7 @@ async function createWatchFromTool(
     timezone?: string;
     schedule: Record<string, unknown>;
     events: RoutineEvents;
+    endAt?: string;
   },
 ) {
   const parsed = scheduleWatch(input.schedule);
@@ -852,13 +906,30 @@ async function createWatchFromTool(
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Invalid change trigger." };
   }
+  const nextRunAt = firstWatchCheck();
+  if ((input.events.webhookEnabled || input.events.githubEnabled) && input.endAt) {
+    const zone = input.timezone ?? (await userTimeZone(deps.prisma, input.userId));
+    const end = toolRoutineEnd(input.endAt, zone, {
+      crons: [],
+      watch: parsed.data,
+      nextRunAt,
+      events: true,
+    });
+    if ("error" in end) return end;
+  }
   const keyError = await ensureWebhookKey(deps, input, input.events);
   if (keyError) return { error: keyError };
-  const nextRunAt = firstWatchCheck();
   // As with a timed routine, a defaulted zone is read under a share lock in the same
   // transaction as the insert, so a zone change cannot cross the creation.
-  const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) =>
-    client.routine.create({
+  const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) => {
+    const end = toolRoutineEnd(input.endAt, timezone, {
+      crons: [],
+      watch: parsed.data,
+      nextRunAt,
+      events: hasRoutineEvents(input.events),
+    });
+    if ("error" in end) return { error: end.error } as const;
+    return client.routine.create({
       data: {
         spaceId: input.spaceId,
         botId: input.botId,
@@ -873,8 +944,10 @@ async function createWatchFromTool(
         watch: parsed.data as Prisma.InputJsonValue,
         ...input.events,
         nextRunAt,
+        endsAt: end.endsAt,
       },
     });
+  };
   const row =
     input.timezone !== undefined
       ? await insertWatch(deps.prisma, input.timezone)
@@ -882,6 +955,7 @@ async function createWatchFromTool(
           const timezone = await sharedAccountZone(tx, input.userId);
           return insertWatch(tx, timezone);
         });
+  if ("error" in row) return { error: row.error };
   try {
     await deps.jobs.enqueue(routineWakeupJob(row.id, nextRunAt));
   } catch {
@@ -908,12 +982,14 @@ async function createWatchFromTool(
     botId: input.botId,
     change: "created",
     name: row.name,
+    routine: { webhookEnabled: row.webhookEnabled, active: row.active },
   });
   return {
     ok: true as const,
     routineId: row.id,
     name: row.name,
     watch: parsed.data,
+    ...(row.endsAt ? { endAt: describeRoutineTiming(row).endAt } : {}),
     note: `Takes a first reading now, then checks every ${parsed.data.everyMinutes} minutes and runs only when it changes.`,
     ...eventsResult(input.events),
   };
@@ -1021,13 +1097,24 @@ export async function updateScheduleFromTool(
     everyMinutes?: unknown;
     /** Replaces the routine's events; an empty object removes them. */
     on?: unknown;
+    endAt?: string;
+    /**
+     * The name and prompt an approval was shown against, each only when the call edits that
+     * field. A row that moved since then conflicts instead of being overwritten, like an
+     * instruction change.
+     */
+    expected?: { name?: string; prompt?: string };
   },
+  /** A preview answers what the save would change, or its error, and writes nothing. */
+  options: { preview?: boolean } = {},
 ) {
   const routineId = input.routineId.trim();
   if (!routineId) return { error: "routineId is required." };
   const name = input.name?.trim();
   const prompt = input.prompt?.trim();
   if (input.name !== undefined && !name) return { error: "name cannot be empty." };
+  if (name && name.length > ROUTINE_NAME_MAX_LENGTH)
+    return { error: `name must be at most ${ROUTINE_NAME_MAX_LENGTH} characters.` };
   if (input.prompt !== undefined && !prompt) return { error: "prompt cannot be empty." };
 
   const scope = {
@@ -1048,6 +1135,15 @@ export async function updateScheduleFromTool(
         })
       : { error: "Schedule not found." };
   }
+  // An approval saw the row as it reads here; a field this call writes that moved since
+  // conflicts rather than being overwritten, so the saved change is never different from the
+  // one that was shown.
+  if (input.expected?.name !== undefined && input.expected.name !== existing.name) {
+    return { error: "The schedule changed while saving. Call schedule_list and try again." };
+  }
+  if (input.expected?.prompt !== undefined && input.expected.prompt !== existing.prompt) {
+    return { error: "The schedule changed while saving. Call schedule_list and try again." };
+  }
   // A routine runs with its owner's accounts, so only they change what it does; anyone may pause
   // or resume it, which keeps it theirs.
   if (
@@ -1057,6 +1153,7 @@ export async function updateScheduleFromTool(
       input.inChat !== undefined ||
       input.timezone !== undefined ||
       input.on !== undefined ||
+      input.endAt !== undefined ||
       input.everyMinutes !== undefined ||
       Object.values(input.schedule).some(isScheduleValueProvided))
   ) {
@@ -1074,6 +1171,13 @@ export async function updateScheduleFromTool(
     }
     timezone = parsed.data;
   }
+  const end = routineEndFromText(input.endAt, timezone);
+  if ("error" in end) return end;
+  const endsAt =
+    end.endsAt === undefined
+      ? routineEndInZone(existing.endsAt, existing.timezone, timezone)
+      : end.endsAt;
+  const endChanged = endsAt?.getTime() !== existing.endsAt?.getTime();
   const hasTiming = SCHEDULE_TIMING_FIELDS.some((field) =>
     isScheduleValueProvided(input.schedule[field]),
   );
@@ -1095,7 +1199,8 @@ export async function updateScheduleFromTool(
     prompt === undefined &&
     inChat === undefined &&
     input.active === undefined &&
-    input.on === undefined
+    input.on === undefined &&
+    input.endAt === undefined
   ) {
     return { error: "Nothing to update." };
   }
@@ -1135,16 +1240,24 @@ export async function updateScheduleFromTool(
     if (!resolved.ok) return { error: resolved.error };
     crons = [resolved.cron];
     nextRunAt = carried ?? resolved.nextRunAt;
+    if (routineEnded(existing)) nextRunAt = runBeforeEnd(nextRunAt, endsAt);
   } else if (active && watchChanged) {
     nextRunAt = firstWatchCheck();
-  } else if (active && !(existing.active && existing.nextRunAt)) {
+  } else if (
+    active &&
+    !(existing.active && existing.nextRunAt) &&
+    (!routineEnded(existing) || endChanged)
+  ) {
     // Resuming: a watch checks right away, a repeat picks its next occurrence from now.
     if (existing.watch != null) nextRunAt = firstWatchCheck();
     else if (oneShot) {
       if (!existing.nextRunAt || existing.nextRunAt.getTime() <= Date.now()) {
         return { error: "This one-time schedule has no time left; give a new runAt." };
       }
-    } else nextRunAt = nextCronDateAcross(crons, new Date(), timezone);
+    } else {
+      const next = nextCronDateAcross(crons, new Date(), timezone);
+      nextRunAt = routineEnded(existing) ? runBeforeEnd(next, endsAt) : next;
+    }
   }
   if (!active) nextRunAt = null;
 
@@ -1170,93 +1283,18 @@ export async function updateScheduleFromTool(
   if (crons.length === 0 && existing.watch == null && !hasRoutineEvents(events)) {
     return { error: "A routine needs a schedule or an event. Cancel it instead." };
   }
+  const endError = routineEndError(
+    { endsAt, crons, watch: existing.watch, nextRunAt, events: hasRoutineEvents(events) },
+    {
+      end: end.endsAt !== undefined && endChanged,
+      nextRun: endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),
+    },
+  );
+  if (endError) return { error: withNow(endError, timezone) };
   const eventsChanged =
     JSON.stringify(routineEventsView(events)) !== JSON.stringify(routineEventsView(existing));
-  // Events the bot sends were checked against the bot's creator, so their key is made even when
-  // they match what is saved: a routine saved elsewhere may have none.
-  if (input.on !== undefined) {
-    const keyError = await ensureWebhookKey(
-      deps,
-      { spaceId: input.spaceId, botId: input.botId, userId: input.userId },
-      events,
-    );
-    if (keyError) return { error: keyError };
-  }
-  const timingChanged =
-    retime ||
-    watchChanged ||
-    active !== existing.active ||
-    nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
-
-  // The owner is part of the write, so a routine that changed hands since the read is left alone.
-  // A name or prompt edit writes only those fields, so a run claimed meanwhile keeps its advance;
-  // a timing edit applies only if no run advanced the routine since the read.
-  const { count } = await deps.prisma.routine.updateMany({
-    where: {
-      ...scope,
-      userId: existing.userId,
-      id: existing.id,
-      bot: { archivedAt: null },
-      ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
-      // A watch added since the read keeps its routine alongside the chat; a new interval applies
-      // only to the watch it was read with.
-      ...(inChat ? { watch: { equals: Prisma.DbNull } } : {}),
-      ...(watchChanged ? { watch: { equals: existing.watch as Prisma.InputJsonValue } } : {}),
-    },
-    data: {
-      ...(name === undefined ? {} : { name }),
-      ...(prompt === undefined ? {} : { prompt }),
-      ...(inChat === undefined ? {} : { inChat }),
-      ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
-      ...(watchChanged && watch ? { watch: watch as Prisma.InputJsonValue } : {}),
-      ...(eventsChanged ? events : {}),
-    },
-  });
-  if (count === 0) {
-    return {
-      error: timingChanged
-        ? "The schedule changed while saving. Call schedule_list and try again."
-        : "Schedule not found.",
-    };
-  }
-  await deps.events.publishSpaceChange?.(input.spaceId, "routines");
-
-  if (timingChanged) {
-    if (active && nextRunAt) await deps.jobs.enqueue(routineWakeupJob(existing.id, nextRunAt));
-    else if (existing.active) await deps.jobs.cancel(routineJobKey(existing.id));
-  }
-  try {
-    await deps.events.append({
-      spaceId: input.spaceId,
-      threadId: existing.threadId ?? input.threadId,
-      botId: input.botId,
-      type: "routine.updated",
-      payload: { routineId: existing.id, active },
-    });
-  } catch {
-    // The change is saved even if the thread signal fails.
-  }
-  const saved = {
-    ...existing,
-    ...(name === undefined ? {} : { name }),
-    ...(prompt === undefined ? {} : { prompt }),
-    ...(inChat === undefined ? {} : { inChat }),
-    ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
-    ...(watchChanged ? { watch } : {}),
-    ...(eventsChanged ? events : {}),
-  };
-  if (routineEdited(existing, saved)) {
-    await postRoutineNotice(deps, {
-      spaceId: input.spaceId,
-      threadId: existing.threadId,
-      botId: input.botId,
-      change: routineEditChange(existing, saved),
-      name: saved.name,
-    });
-  }
-
-  const timing = describeRoutineTiming({ crons, timezone, nextRunAt });
-  return {
+  const timing = describeRoutineTiming({ crons, timezone, nextRunAt, endsAt });
+  const result = {
     ok: true as const,
     routineId: existing.id,
     name: name ?? existing.name,
@@ -1289,39 +1327,105 @@ export async function updateScheduleFromTool(
       },
     ),
   };
-}
-
-type RoutineView = {
-  name: string;
-  prompt: string;
-  inChat: boolean;
-  active: boolean;
-  timezone: string;
-  schedule?: string;
-  nextRun: string | null;
-  everyMinutes?: number;
-  on: ReturnType<typeof routineEventsView>;
-};
-
-/** Before and after for each field an update changed; a field that kept its value is left out. */
-function routineChanges(before: RoutineView, after: RoutineView) {
-  const changes: Record<string, { before: unknown; after: unknown }> = {};
-  for (const key of [
-    "name",
-    "prompt",
-    "inChat",
-    "active",
-    "timezone",
-    "schedule",
-    "nextRun",
-    "everyMinutes",
-    "on",
-  ] as const) {
-    if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
-      changes[key] = { before: before[key] ?? null, after: after[key] ?? null };
-    }
+  // Everything above is a check or a read, so a preview stops here, short of each write, with
+  // the answer the save would give: a card built from it can only show a change the save makes.
+  if (options.preview) {
+    // The save makes the bot's webhook key for the events a call sets, and answers when it cannot.
+    if (input.on === undefined) return result;
+    const key = webhookKeyStore(deps, events);
+    return "error" in key ? { error: key.error } : result;
   }
-  return changes;
+  // Events the bot sends were checked against the bot's creator, so their key is made even when
+  // they match what is saved: a routine saved elsewhere may have none.
+  if (input.on !== undefined) {
+    const keyError = await ensureWebhookKey(
+      deps,
+      { spaceId: input.spaceId, botId: input.botId, userId: input.userId },
+      events,
+    );
+    if (keyError) return { error: keyError };
+  }
+  const timingChanged =
+    retime ||
+    watchChanged ||
+    endChanged ||
+    active !== existing.active ||
+    nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
+
+  // The owner is part of the write, so a routine that changed hands since the read is left alone.
+  // A name or prompt edit writes only those fields, so a run claimed meanwhile keeps its advance;
+  // a timing edit applies only if no run advanced the routine since the read.
+  const { count } = await deps.prisma.routine.updateMany({
+    where: {
+      ...scope,
+      userId: existing.userId,
+      id: existing.id,
+      bot: { archivedAt: null },
+      ...(timingChanged ? { active: existing.active, nextRunAt: existing.nextRunAt } : {}),
+      // A watch added since the read keeps its routine alongside the chat; a new interval applies
+      // only to the watch it was read with.
+      ...(inChat ? { watch: { equals: Prisma.DbNull } } : {}),
+      ...(watchChanged ? { watch: { equals: existing.watch as Prisma.InputJsonValue } } : {}),
+      ...(input.expected?.name !== undefined ? { name: input.expected.name } : {}),
+      ...(input.expected?.prompt !== undefined ? { prompt: input.expected.prompt } : {}),
+    },
+    data: {
+      ...(name === undefined ? {} : { name }),
+      ...(prompt === undefined ? {} : { prompt }),
+      ...(inChat === undefined ? {} : { inChat }),
+      ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
+      ...(watchChanged && watch ? { watch: watch as Prisma.InputJsonValue } : {}),
+      ...(eventsChanged ? events : {}),
+      ...(endChanged ? { endsAt } : {}),
+    },
+  });
+  if (count === 0) {
+    return {
+      error:
+        timingChanged || input.expected
+          ? "The schedule changed while saving. Call schedule_list and try again."
+          : "Schedule not found.",
+    };
+  }
+  await deps.events.publishSpaceChange?.(input.spaceId, "routines");
+
+  if (timingChanged) {
+    if (active && nextRunAt) await deps.jobs.enqueue(routineWakeupJob(existing.id, nextRunAt));
+    else if (existing.active) await deps.jobs.cancel(routineJobKey(existing.id));
+  }
+  try {
+    await deps.events.append({
+      spaceId: input.spaceId,
+      threadId: existing.threadId ?? input.threadId,
+      botId: input.botId,
+      type: "routine.updated",
+      payload: { routineId: existing.id, active },
+    });
+  } catch {
+    // The change is saved even if the thread signal fails.
+  }
+  const saved = {
+    ...existing,
+    ...(name === undefined ? {} : { name }),
+    ...(prompt === undefined ? {} : { prompt }),
+    ...(inChat === undefined ? {} : { inChat }),
+    ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
+    ...(watchChanged ? { watch } : {}),
+    ...(eventsChanged ? events : {}),
+    endsAt,
+  };
+  if (routineEdited(existing, saved)) {
+    await postRoutineNotice(deps, {
+      spaceId: input.spaceId,
+      threadId: existing.threadId,
+      botId: input.botId,
+      change: routineEditChange(existing, saved),
+      name: saved.name,
+      routine: { webhookEnabled: saved.webhookEnabled, active: saved.active },
+    });
+  }
+
+  return result;
 }
 
 /** Cancel a bot routine, optionally restricted to the current group thread. */

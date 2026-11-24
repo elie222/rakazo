@@ -1,4 +1,5 @@
 import { InfisicalSecretStore } from "@rakazo/adapters";
+import { logSinkHealth } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { infisicalFake } from "../../../../packages/adapters/src/secrets/secret-store-fake.js";
 import { DATABASE_CHECK_TIMEOUT_MS, healthRoutes } from "./health.js";
@@ -84,7 +85,8 @@ describe("health routes", () => {
       runtime: "pi",
       sandbox: "docker",
       revision: "abc123",
-      telemetry: { failures: 0, lastFailureAt: null, degraded: false, droppedLines: 0 },
+      // Log sink health is process-wide, so other suites in this worker may have moved it.
+      telemetry: logSinkHealth(),
     });
   });
 

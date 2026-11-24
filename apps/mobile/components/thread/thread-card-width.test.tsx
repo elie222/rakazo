@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type { MessageBlock } from "@rakazo/contracts";
 import { separateAskAnswers } from "@rakazo/core";
 import type { ComponentProps, ReactNode, Ref } from "react";
@@ -138,6 +139,7 @@ vi.mock("../native/native-action-button", () => ({
 // Cards this file doesn't exercise; each has its own tests.
 vi.mock("./ask-block", () => ({ AskBlock: () => null }));
 vi.mock("../cards/AppConnectCard", () => ({ AppConnectCard: () => null }));
+vi.mock("./routine-event-row", () => ({ RoutineEventRows: () => null }));
 vi.mock("../media/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../cards/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../cards/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
@@ -582,6 +584,31 @@ describe("thread cards", () => {
       expect(style.fontSize).toBe(fontSize);
     },
   );
+
+  it("opens the previous instructions on a routine approval", () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    const card = renderAsk(
+      {
+        approvalEffectId: "effect-1",
+        routineUpdate: {
+          changes: [{ field: "prompt", before: "Order ten", after: "Order five" }],
+        },
+        actions: [
+          { id: "allow", label: "Allow once" },
+          { id: "deny", label: "Deny" },
+        ],
+      },
+      true,
+    );
+    const previous = [...card!.querySelectorAll("button")].find(
+      (button) => button.textContent === "Previous instructions",
+    );
+    expect(card?.textContent).toContain("Order five");
+    expect(card?.textContent).not.toContain("Order ten");
+    act(() => previous!.click());
+    expect(card?.textContent).toContain("Order ten");
+  });
 
   it("bounds the MCP approval card the same way", () => {
     act(() =>

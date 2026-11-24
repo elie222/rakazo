@@ -104,7 +104,8 @@ import {
   subscribeRemoteImages,
 } from "../lib/preferences/remote-images-preference";
 import { loadResponseStreamingPreference } from "../lib/preferences/response-streaming";
-import { clearQueries, resetRpcQueries } from "../lib/query/query";
+import { clearQueries, queryClient, resetRpcQueries } from "../lib/query/query";
+import { clearSavedReads, keepSavedReads } from "../lib/query/saved-reads";
 import {
   loadTrustedLinkSites,
   trustLinkSite,
@@ -118,6 +119,8 @@ capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
 registerSessionDiskCache(clearQueries);
+keepSavedReads(queryClient);
+registerSessionDiskCache(clearSavedReads);
 subscribeAiConsentGranted(() => void resetRpcQueries("aiConsent/status"));
 registerSessionDiskCache((sameAccount) => {
   if (!sameAccount) return clearLastBot();
@@ -321,8 +324,10 @@ function LayoutContent() {
     if (!ready) return;
     return startIncomingCalls();
   }, [ready, callSession]);
-  const screen = analyticsScreen(usePathname());
-  useEffect(() => setMobileMonitoringScreen(screen), [screen]);
+  const pathname = usePathname();
+  const screen = analyticsScreen(pathname);
+  const monitoringScreen = pathname === "/share" ? "share" : screen;
+  useEffect(() => setMobileMonitoringScreen(monitoringScreen), [monitoringScreen]);
   useEffect(() => {
     const surface = Platform.OS;
     if (!ready || !screen || (surface !== "ios" && surface !== "android")) return;

@@ -1,12 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { LoginFieldInput } from "@rakazo/contracts";
-import {
-  commandVariableName,
-  loginCardFields,
-  normalizeOneTimeCode,
-  vaultKind,
-} from "@rakazo/contracts";
+import { loginCardFields, normalizeOneTimeCode, vaultKind } from "@rakazo/contracts";
 import { siteHost } from "@rakazo/core";
 import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { Button, Input } from "@rakazo/ui-web";
@@ -15,6 +10,7 @@ import { useState } from "react";
 import { useEventListener } from "../../lib/use-event-listener";
 import { BuiCard } from "../ai/primitives";
 import { VaultTile } from "../vault/kinds";
+import { passwordManagerIgnore } from "../vault/password-manager-ignore";
 import { useVaultContacts } from "../vault/use-vault-contacts";
 import type { VaultEditorResult } from "../vault/VaultItemEditor";
 import { VaultItemEditor } from "../vault/VaultItemEditor";
@@ -134,19 +130,13 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
     : shownRemembered === false || codeInput
       ? t`Sent`
       : t`Saved`;
-  const destination =
-    block.credential?.auth.type === "command" ? (
-      <span className="flex flex-wrap gap-x-2">
-        <span>{t`Command variable`}</span>
-        <span className="font-mono">${commandVariableName(block.credential.name)}</span>
-      </span>
-    ) : codeHost ? (
-      t`Only enter a code ${codeHost} sent you.`
-    ) : form === "login" && block.credential ? (
-      siteHost(block.credential.origin)
-    ) : form ? null : (
-      block.credential?.origin
-    );
+  const destination = codeHost
+    ? t`Only enter a code ${codeHost} sent you.`
+    : form === "login" && block.credential
+      ? siteHost(block.credential.origin)
+      : form || commandInput
+        ? null
+        : block.credential?.origin;
   const editorProps = form
     ? {
         open: editorOpen,
@@ -171,12 +161,15 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
 
   return (
     <BuiCard data-testid="secret-ask-card" className="w-full min-w-0 max-w-xl px-4 py-3">
-      <div className="flex items-center gap-3">
-        <VaultTile
-          kind={block.credential ? vaultKind(block.credential.auth.type) : null}
-          title={form === "login" && block.credential ? siteHost(block.credential.origin) : ""}
-          origin={form === "login" ? block.credential?.origin : undefined}
-        />
+      <div className={form ? "flex items-start gap-2.5" : "flex items-center gap-3"}>
+        {commandInput ? null : (
+          <VaultTile
+            kind={block.credential ? vaultKind(block.credential.auth.type) : null}
+            title={form === "login" && block.credential ? siteHost(block.credential.origin) : ""}
+            origin={form === "login" ? block.credential?.origin : undefined}
+            className={form ? "size-8" : undefined}
+          />
+        )}
         <div className="min-w-0 flex-1">
           <div className="text-body-lg font-medium leading-[1.4] text-foreground">
             <ChatMarkdown>{block.text}</ChatMarkdown>
@@ -184,8 +177,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
           {destination ? (
             <div
               data-testid="secret-ask-destination"
-              // A code's line is a sentence, so it wraps between words; an address breaks anywhere.
-              className={`${codeHost ? "wrap-anywhere" : "break-all"} text-body-sm text-muted-foreground`}
+              className="wrap-anywhere text-body-sm text-muted-foreground"
             >
               {destination}
             </div>
@@ -201,15 +193,15 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
             </div>
           ) : null}
         </div>
-        {answered ? (
-          <div className="flex shrink-0 items-center gap-1.5 text-body font-medium text-muted-foreground">
-            {shownDismissed ? null : <Check aria-hidden className="size-4" />}
-            {status}
-          </div>
-        ) : form && canAnswer && !ownerOnly ? (
+      </div>
+      {answered ? (
+        <div className="mt-2 flex items-center justify-end gap-1.5 text-body font-medium text-muted-foreground">
+          {shownDismissed ? null : <Check aria-hidden className="size-4" />}
+          {status}
+        </div>
+      ) : form && canAnswer && !ownerOnly ? (
+        <div className="mt-2 flex justify-end">
           <Button
-            variant="secondary"
-            className="shrink-0 rounded-full"
             data-testid="secret-ask-add"
             disabled={submitting}
             onClick={() => {
@@ -219,8 +211,8 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
           >
             <Trans>Continue</Trans>
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
       {codeInput && block.detail ? (
         <div className="mt-2 break-words text-body-sm text-muted-foreground">{block.detail}</div>
       ) : null}
@@ -243,6 +235,7 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
             aria-label={fieldLabel}
             type="password"
             autoComplete={codeInput ? "one-time-code" : "off"}
+            {...passwordManagerIgnore}
             spellCheck={false}
             disabled={submitting}
             readOnly={pastedLines}
@@ -265,7 +258,17 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
               <Trans>Clear</Trans>
             </Button>
           ) : null}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            {canDismiss ? (
+              <Button
+                type="button"
+                variant="text"
+                disabled={submitting}
+                onClick={() => void dismiss().catch(() => undefined)}
+              >
+                <Trans>Dismiss</Trans>
+              </Button>
+            ) : null}
             <Button
               type="submit"
               disabled={
@@ -284,16 +287,6 @@ export function SecretAskCard({ block, canAnswer, canDismiss, onAnswer, onDismis
                 <Trans>Save</Trans>
               )}
             </Button>
-            {canDismiss ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={submitting}
-                onClick={() => void dismiss().catch(() => undefined)}
-              >
-                <Trans>Dismiss</Trans>
-              </Button>
-            ) : null}
           </div>
         </form>
       ) : null}

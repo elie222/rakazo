@@ -3,7 +3,7 @@ import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapt
 import { isSandboxProviderOutage, SandboxFileTooLargeError } from "@rakazo/adapter-kit";
 import type { ComputerMode } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { inferAttachmentMimeType, redactSecrets } from "@rakazo/core";
 import { PLOT_TOOL_GUIDE, searchChartCatalog } from "@rakazo/core/plot-catalog";
 import { getLogger } from "@rakazo/logging";
 import { JSDOM } from "jsdom";
@@ -12,6 +12,7 @@ import {
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
 } from "../computers/screens/computer-support.js";
+import { imageToolResult, isToolImage, TOOL_IMAGE_MAX_BYTES } from "../media/tool-result-image.js";
 import { publishMessage } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../runtime/pi/pi-runtime-limits.js";
@@ -103,8 +104,9 @@ function readFileRangeResult(
   };
   // The full range with no continuation note can be shorter than one line less, so check it
   // apart; below `wanted` the note is always present and the length grows with every line.
-  if (JSON.stringify(rangeResult(wanted)).length <= TOOL_RESULT_TEXT_LIMIT) {
-    return rangeResult(wanted);
+  const requestedRange = rangeResult(wanted);
+  if (JSON.stringify(requestedRange).length <= TOOL_RESULT_TEXT_LIMIT) {
+    return requestedRange;
   }
   let lo = 0;
   let hi = wanted - 1;
@@ -195,28 +197,39 @@ export async function listFilesFromTool(
   };
 }
 
+/** A picture comes back as image input when the run's model can see, and as a short note when not. */
 export async function readFileFromTool(
   sandbox: SandboxProvider,
   workspace: RunWorkspace,
   args: Record<string, unknown>,
   readStoppedFile?: (storedPath: string, maxBytes: number) => Promise<Uint8Array | undefined>,
+  modelSeesImages = false,
 ) {
   const { botId, computerMode, computer, context, runSecrets } = workspace;
   const filePath = String(args.path ?? "");
   const storedPath = resolveBotWorkspacePath(computerMode, botId, filePath);
+  // Read up to the picture limit whatever the name: the bytes decide, and text keeps its limit below.
+  const namedImage = inferAttachmentMimeType(filePath)?.startsWith("image/") === true;
+  const maxBytes = TOOL_IMAGE_MAX_BYTES;
+  const tooLarge = () =>
+    namedImage
+      ? `image is over ${TOOL_IMAGE_MAX_BYTES / 1024 / 1024} MB`
+      : fileTooLarge(computerMode, botId, storedPath);
   let bytes: Uint8Array;
   try {
     bytes =
-      (await readStoppedFile?.(storedPath, READ_FILE_MAX_BYTES)) ??
-      (await sandbox.readFile(await computer(), storedPath, context, {
-        maxBytes: READ_FILE_MAX_BYTES,
-      }));
+      (await readStoppedFile?.(storedPath, maxBytes)) ??
+      (await sandbox.readFile(await computer(), storedPath, context, { maxBytes }));
   } catch (error) {
     if (error instanceof SandboxFileTooLargeError) {
-      return { error: fileTooLarge(computerMode, botId, storedPath), path: filePath };
+      return { error: tooLarge(), path: filePath };
     }
     throw error;
   }
+  if (bytes.byteLength > maxBytes) {
+    return { error: tooLarge(), path: filePath, size: bytes.byteLength };
+  }
+  if (isToolImage(bytes)) return imageToolResult(bytes, { path: filePath }, modelSeesImages);
   if (bytes.byteLength > READ_FILE_MAX_BYTES) {
     return {
       error: fileTooLarge(computerMode, botId, storedPath),

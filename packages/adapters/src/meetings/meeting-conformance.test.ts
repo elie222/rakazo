@@ -1,4 +1,5 @@
 import type { MeetingJoinRequest, MeetingProvider } from "@rakazo/adapter-kit";
+import { serializeError } from "@rakazo/logging";
 import { describe, expect, it } from "vitest";
 import { MeetingEmulator } from "../providers/meeting/emulator/meeting-emulator.js";
 import { RecallMeetingProvider } from "../providers/meeting/recall/recall-meeting.js";
@@ -23,7 +24,10 @@ const input: MeetingJoinRequest = {
 };
 const signal = new AbortController().signal;
 
-function real(emulator = new RecallMeetingEmulator(), prefix: "webhook" | "svix" = "webhook") {
+function real(
+  emulator: Pick<RecallMeetingEmulator, "fetch"> = new RecallMeetingEmulator(),
+  prefix: "webhook" | "svix" = "webhook",
+) {
   return new RecallMeetingProvider({
     origin: "https://us-east-1.recall.ai",
     apiKey: "fake-key",
@@ -181,6 +185,54 @@ describe("Recall transcripts and delivery over the wire emulator", () => {
       retryAfterMs: 30_000,
     });
   });
+});
+
+describe("Recall leave refusals", () => {
+  function providerWithLeaveRefusal(code?: string) {
+    const calls: string[] = [];
+    const provider = real({
+      fetch: async (url, init) => {
+        calls.push(`${init?.method} ${new URL(String(url)).pathname}`);
+        if (init?.method === "POST") {
+          return code
+            ? Response.json({ code, detail: "fake-provider-detail" }, { status: 400 })
+            : new Response(null, { status: 400 });
+        }
+        return Response.json({
+          id: BOT_ID,
+          status_changes: [{ code: "in_call_recording", created_at: "2026-11-19T19:30:00.000Z" }],
+        });
+      },
+    });
+    return { provider, calls };
+  }
+
+  it("accepts a completed-bot refusal before the bot lookup reflects the shutdown", async () => {
+    const { provider, calls } = providerWithLeaveRefusal("cannot_command_completed_bot");
+    await expect(provider.leave(BOT_ID, signal)).resolves.toBeUndefined();
+    expect(calls).toEqual([`POST /api/v1/bot/${BOT_ID}/leave_call/`, `GET /api/v1/bot/${BOT_ID}/`]);
+  });
+
+  it.each([
+    ["cannot_command_unstarted_bot", "unstarted_bot"],
+    ["fake-provider-code", "other_code"],
+    [undefined, "unreadable_invalid_or_missing"],
+  ])(
+    "reports only the safe classification and rechecked status for a leave refusal (%s)",
+    async (code, classification) => {
+      const { provider } = providerWithLeaveRefusal(code);
+      await expect(provider.leave(BOT_ID, signal).catch(serializeError)).resolves.toEqual({
+        name: "Error",
+        message: "Meeting provider could not remove participant (HTTP 400)",
+        stack: expect.any(String),
+        cause: {
+          name: "Error",
+          message: `Meeting leave refusal: ${classification} (follow-up status: joined)`,
+          stack: expect.any(String),
+        },
+      });
+    },
+  );
 });
 
 it("validates common links and preserves Zoom's opaque passcode", () => {

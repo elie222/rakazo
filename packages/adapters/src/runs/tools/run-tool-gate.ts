@@ -74,6 +74,7 @@ import { notifyRun } from "../lifecycle/run-notifications.js";
 import { refusal } from "../turn/tool-refusal.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolRequest } from "./run-tool-request.js";
+import { prepareScheduleUpdateApproval } from "./run-tool-request.js";
 import { reviewToolCall } from "./run-tool-review.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
@@ -425,6 +426,13 @@ export async function gateToolCall(
   // Auto Review passing one URL clears that call only; it does not give the run the whole site.
   let passedByReview = false;
   const needsApprovalEarly = plan === "ask" || plan === "judge";
+  // The save validates an allowed edit directly. A call that can produce a card
+  // needs the same validation and its before-values before the effect is stored.
+  if (name === "schedule_update" && needsApprovalEarly && nextApprovedTool !== name) {
+    const refused = await prepareScheduleUpdateApproval(ctx, request);
+    if (refused) return { result: refused };
+    effectRequest = request.effectRequest;
+  }
   // A resumed approval keeps its key even if "Always allow" changed the policy.
   const usesApprovalKey =
     nextApprovedTool || name === "request_secret" || needsApprovalEarly || gated;

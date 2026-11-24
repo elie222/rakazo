@@ -1113,6 +1113,23 @@ describe("BoatSandboxProvider", () => {
     }
   });
 
+  it("resends a command Boat refused while the sandbox restores its disk", async () => {
+    const run = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    run.mockRejectedValueOnce(
+      boatError(502, "sandbox_direct_failed", "sandbox_restoring", { retryable: true }),
+    );
+    const events = [];
+    for await (const event of provider.execute(computer, { argv: ["echo", "awake"] }, context)) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: "stdout", data: "awake\n" },
+      { type: "exit", code: 0 },
+    ]);
+  });
+
   it("retries a Boat server error once for reads but never resends a command", async () => {
     const lookup = FakeBoatApi.prototype.get;
     const get = vi.spyOn(FakeBoatApi.prototype, "get");

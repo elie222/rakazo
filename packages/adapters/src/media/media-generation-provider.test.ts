@@ -95,6 +95,15 @@ describe("media generation connection", () => {
       "credentials",
     );
   });
+  it("selects OpenRouter for images, video or both", () => {
+    expect(
+      createMediaGenerationProvider({
+        MEDIA_GENERATION_PROVIDER: "openrouter",
+        MEDIA_GENERATION_API_KEY: "fake-key",
+        MEDIA_GENERATION_VIDEO_MODEL: "video/model",
+      })?.capabilities,
+    ).toEqual({ images: false, video: true, offline: false });
+  });
   it("has an offline image and async video implementation", async () => {
     const provider = new FakeMediaGenerationProvider();
     expect((await provider.generateImage({ prompt: "draw" }, context)).mimeType).toBe("image/png");

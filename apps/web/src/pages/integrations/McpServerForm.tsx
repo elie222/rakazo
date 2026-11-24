@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, McpServer, McpTransport } from "@rakazo/contracts";
-import { deriveMcpSlug } from "@rakazo/core";
+import {
+  deriveMcpSlug,
+  mcpHeaderEditValid,
+  mcpOAuthClientInput,
+  mcpServerHeaders,
+} from "@rakazo/core";
 import {
   Button,
   Checkbox,
@@ -128,23 +133,20 @@ export function duplicateEnvNames(envRows: EnvRow[]): Set<string> {
   );
 }
 
-/** The server config a draft saves; an edit sends blank values for stored headers to keep them. */
+/** The server config a draft saves, with the header and OAuth client rules mobile shares. */
 export function mcpServerConfig(draft: McpServerDraft, editing: McpServer | null) {
   const slug = deriveMcpSlug(draft.name);
-  const headers = {
-    ...Object.fromEntries((editing?.headerKeys ?? []).map((key) => [key, ""])),
-    ...(draft.headerValue.trim()
-      ? { [draft.headerName.trim() || "Authorization"]: draft.headerValue.trim() }
-      : {}),
-  };
-  const oauthBase = draft.oauthClientId.trim()
-    ? {
-        clientId: draft.oauthClientId.trim(),
-        clientSecret: draft.oauthClientSecret || undefined,
-        scope: draft.oauthScope.trim() || undefined,
-        authorizationParams: draft.oauthParams.trim() || undefined,
-      }
-    : undefined;
+  const headers = mcpServerHeaders({
+    storedKeys: editing?.headerKeys ?? [],
+    name: draft.headerName,
+    value: draft.headerValue,
+  });
+  const oauthBase = mcpOAuthClientInput({
+    clientId: draft.oauthClientId,
+    clientSecret: draft.oauthClientSecret,
+    scope: draft.oauthScope,
+    params: draft.oauthParams,
+  });
   const envEntries = (file: boolean) =>
     Object.fromEntries(
       draft.envRows
@@ -548,7 +550,12 @@ export function McpServerForm({
       <Button
         type="button"
         className="w-full"
-        disabled={saving || (draft.transport === "stdio" && duplicateNames.size > 0)}
+        disabled={
+          saving ||
+          (draft.transport === "stdio" && duplicateNames.size > 0) ||
+          (editing !== null &&
+            !mcpHeaderEditValid(editing.headerKeys, draft.headerName, draft.headerValue))
+        }
         onClick={onSave}
       >
         {editing ? (

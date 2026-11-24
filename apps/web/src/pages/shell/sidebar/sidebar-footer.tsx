@@ -125,13 +125,13 @@ export function SidebarFooter({
   return (
     <div
       data-testid="sidebar-footer"
-      className={`flex shrink-0 items-center gap-2 bg-transparent ${mini ? "flex-col px-1 py-2" : "px-2.5 py-3"}`}
+      className={`flex shrink-0 items-center bg-transparent ${mini ? "flex-col gap-2 px-1 py-2" : "gap-3 ps-5 pe-2.5 py-3"}`}
     >
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger
           data-testid="user-menu-trigger"
           aria-label={t`Account menu for ${name}`}
-          className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-body font-semibold text-secondary-foreground outline-none hover:ring-2 hover:ring-foreground/15 focus-visible:ring-2 focus-visible:ring-ring"
+          className="grid size-9.5 shrink-0 place-items-center overflow-hidden rounded-full bg-secondary text-body font-semibold text-secondary-foreground outline-none hover:ring-2 hover:ring-foreground/15 focus-visible:ring-2 focus-visible:ring-ring"
         >
           {image && failedImage !== image ? (
             <img
