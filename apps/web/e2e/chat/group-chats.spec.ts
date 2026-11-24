@@ -230,7 +230,7 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const answeredQuestion = page
     .getByTestId("question-card")
     .filter({ hasText: "Which city should I use?" });
-  await expect(answeredQuestion).toHaveClass(/opacity-50/);
+  await expect(answeredQuestion).not.toHaveClass(/opacity/);
   await expect(answeredQuestion).not.toContainText("Paris");
   await captureScreenshot(page, testInfo, "answered-question-composer-reply");
 

@@ -147,7 +147,7 @@ test("renders tappable choice buttons and submits the offered action id", async 
   await expect(
     page.getByTestId("message-user-bubble").filter({ hasText: /^Somewhere else$/ }),
   ).toBeVisible();
-  await expect(customQuestion).toHaveClass(/opacity-50/);
+  await expect(customQuestion).not.toHaveClass(/opacity/);
   await expect(customQuestion).not.toContainText("Somewhere else");
   for (const name of ["Berlin", "Seoul", "Toronto", "Lisbon"]) {
     await expect(customQuestion.getByRole("button", { name, exact: true })).toBeDisabled();

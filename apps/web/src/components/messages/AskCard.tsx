@@ -11,7 +11,7 @@ import {
   resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
-import { Button, cn, Textarea } from "@rakazo/ui-web";
+import { Button, Textarea } from "@rakazo/ui-web";
 import { Check } from "lucide-react";
 import { useState } from "react";
 import type { RpcClient } from "../../lib/query/rpc";
@@ -160,7 +160,6 @@ function PromptAskCard({
   const [error, setError] = useState<string | null>(null);
   const submitting = pendingAction !== null;
   const answered = block.status === "answered" || acceptedAnswer !== undefined;
-  const answeredQuestion = answered && isQuestionAskBlock(block);
   const displayedAnswer = block.status === "answered" ? block.answer : acceptedAnswer;
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
   // The import option opens the importer instead of answering, so it has no place once answered.
@@ -262,10 +261,7 @@ function PromptAskCard({
             ? "question-card"
             : undefined
       }
-      className={cn(
-        "w-full min-w-0 max-w-xl px-5 py-4",
-        answeredQuestion && "opacity-50 [&_button:disabled]:opacity-100",
-      )}
+      className="w-full min-w-0 max-w-xl px-5 py-4"
     >
       <div className="text-body-lg leading-[1.5] text-foreground">
         {block.instructionUpdate ? (

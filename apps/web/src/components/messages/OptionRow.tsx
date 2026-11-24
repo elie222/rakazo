@@ -24,7 +24,10 @@ export function OptionRow({
       onClick={onClick}
       className={cn(
         "-mx-2 h-auto w-[calc(100%+1rem)] min-w-0 justify-start gap-3 whitespace-normal px-2 py-2 text-start text-body-lg font-normal",
-        selected && "bg-accent disabled:opacity-100",
+        // Once answered nothing fades: the chosen row is filled, the rest read in the muted colour.
+        selected !== undefined && "disabled:opacity-100",
+        selected && "bg-accent",
+        selected === false && "text-muted-foreground",
       )}
     >
       <span

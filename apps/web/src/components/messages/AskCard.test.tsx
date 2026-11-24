@@ -1145,7 +1145,7 @@ it("draws a payment's order as a receipt in place of the text detail", async () 
   expect(container.textContent).toContain("Read from the page, not checked");
 });
 
-it("leaves plain questions to the composer and dims the question after answering", async () => {
+it("leaves plain questions to the composer and keeps the question readable after answering", async () => {
   const block: AskBlock = { kind: "ask", text: "Which city?", status: "pending" };
   await render(block);
   expect(container.querySelectorAll("button")).toHaveLength(0);
@@ -1154,8 +1154,29 @@ it("leaves plain questions to the composer and dims the question after answering
     container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
   ).toBe(false);
   await render({ ...block, status: "answered", answer: "Paris" }, undefined, undefined, true);
-  expect(
-    container.querySelector('[data-testid="question-card"]')?.classList.contains("opacity-50"),
-  ).toBe(true);
+  expect(container.querySelector('[data-testid="question-card"]')?.className).not.toMatch(
+    /opacity/,
+  );
   expect(container.textContent).not.toContain("Paris");
+});
+
+it("keeps an answered question readable instead of fading the card", async () => {
+  await render({
+    kind: "ask",
+    text: "Which city?",
+    status: "answered",
+    answer: "london",
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: "london", label: "London" },
+    ],
+  });
+  const card = container.querySelector("[data-testid=question-card]")!;
+  expect(card.className).not.toMatch(/opacity/);
+  const chosen = button("BLondon")!;
+  const other = button("AParis")!;
+  expect(other.className).toContain("text-muted-foreground");
+  expect(other.className).toContain("disabled:opacity-100");
+  expect(chosen.className).toContain("disabled:opacity-100");
+  expect(chosen.className).not.toContain("text-muted-foreground");
 });
