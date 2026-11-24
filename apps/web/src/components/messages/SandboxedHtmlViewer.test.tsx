@@ -13,13 +13,15 @@ const shell = readFileSync(
   "utf8",
 );
 
-async function render(html: string) {
+async function render(html: string, previewScrollTop?: number) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<SandboxedHtmlViewer title="Notes" html={html} />);
+    root.render(
+      <SandboxedHtmlViewer title="Notes" html={html} previewScrollTop={previewScrollTop} />,
+    );
   });
   const iframe = container.querySelector("iframe");
   if (!iframe?.contentWindow) throw new Error("viewer frame missing");
@@ -32,9 +34,9 @@ async function render(html: string) {
         iframe.dispatchEvent(new Event("load"));
       });
     },
-    async rerender(next: string) {
+    async rerender(next: string, scrollTop?: number) {
       await act(async () => {
-        root.render(<SandboxedHtmlViewer title="Notes" html={next} />);
+        root.render(<SandboxedHtmlViewer title="Notes" html={next} previewScrollTop={scrollTop} />);
       });
     },
     async cleanup() {
@@ -69,12 +71,38 @@ it("posts the guarded preview once the shell loads, and again on change or reloa
   );
   expect(document).toContain('<meta name="referrer" content="no-referrer">');
   expect(document).toContain("https://example.invalid/pixel.png");
+  expect(document).not.toContain("rakazo-page:scroll-preview");
 
   await view.rerender("<p>Next</p>");
   expect(view.postMessage.mock.lastCall?.[0]).toContain("<p>Next</p>");
   await view.load();
   expect(view.postMessage).toHaveBeenCalledTimes(3);
 
+  await view.cleanup();
+});
+
+it("scrolls a Page card without replacing its sandboxed document", async () => {
+  const html = "<p>Long Page</p>";
+  const view = await render(html, 0);
+  await view.load();
+  expect(view.postMessage.mock.lastCall?.[0]).toContain("rakazo-page:scroll-preview");
+  view.postMessage.mockClear();
+
+  await view.rerender(html, 120);
+  const scroll = { type: "rakazo-page:scroll-preview", top: 120 };
+  expect(view.postMessage.mock.calls).toEqual([[scroll, "*"]]);
+
+  const height = { type: "rakazo-page:height", height: 400 };
+  await act(async () => {
+    window.dispatchEvent(new MessageEvent("message", { source: window, data: height }));
+    window.dispatchEvent(
+      new MessageEvent("message", { source: view.iframe.contentWindow, data: height }),
+    );
+  });
+  expect(view.postMessage.mock.calls).toEqual([
+    [scroll, "*"],
+    [scroll, "*"],
+  ]);
   await view.cleanup();
 });
 
@@ -102,7 +130,7 @@ it("renders only string messages from the embedding app", () => {
   const script = shell.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   if (!script) throw new Error("shell script missing");
   const run = (embedded: boolean) => {
-    const preview = { srcdoc: "" };
+    const preview = { srcdoc: "", contentWindow: { postMessage: vi.fn() } };
     const self = {};
     const parent = embedded ? {} : self;
     let listener: ((event: { source: unknown; data: unknown }) => void) | undefined;
@@ -130,6 +158,15 @@ it("renders only string messages from the embedding app", () => {
   expect(shellFrame.preview.srcdoc).toMatch(
     /^<script>[^<]*rakazo-page:gesture[^<]*<\/script><p>Hello<\/p>$/,
   );
+
+  const scroll = { type: "rakazo-page:scroll-preview", top: 120 };
+  shellFrame.send({}, scroll);
+  shellFrame.send(shellFrame.preview.contentWindow, scroll);
+  shellFrame.send(shellFrame.parent, { ...scroll, top: -1 });
+  shellFrame.send(shellFrame.parent, { ...scroll, top: Infinity });
+  expect(shellFrame.preview.contentWindow.postMessage).not.toHaveBeenCalled();
+  shellFrame.send(shellFrame.parent, scroll);
+  expect(shellFrame.preview.contentWindow.postMessage.mock.calls).toEqual([[scroll, "*"]]);
 
   const topLevel = run(false);
   topLevel.send(topLevel.parent, "<p>Opened directly</p>");

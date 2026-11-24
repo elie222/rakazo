@@ -24,7 +24,7 @@ export function useThreadState(streamResponses: boolean) {
   const bootstrappedThread = useRef<ThreadSnapshot | null>(null);
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
-  const messageScroll = useRef<HTMLDivElement>(null);
+  const messageScroll = useRef<HTMLElement>(null);
   const pinnedAroundRef = useRef<PinnedAround | null>(null);
 
   function commitSnapshot(next: ThreadSnapshot | null) {

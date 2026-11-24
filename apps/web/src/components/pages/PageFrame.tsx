@@ -20,6 +20,7 @@ export function PageFrame({
   title,
   interactive = false,
   onHeight,
+  previewScrollTop,
   onReply,
   onSections,
 }: {
@@ -27,6 +28,8 @@ export function PageFrame({
   title: string;
   interactive?: boolean;
   onHeight?: (height: number) => void;
+  /** The card's scroll position in the preview document's unscaled pixels. */
+  previewScrollTop?: number;
   /** Where a page's reply button puts its text; without it the page offers no replies. */
   onReply?: (text: unknown) => void;
   onSections?: (sections: PageSectionAnchor[]) => void;
@@ -82,6 +85,7 @@ export function PageFrame({
           html={document}
           title={title}
           className="bg-transparent"
+          previewScrollTop={previewScrollTop}
           onFrameMessage={receive}
         />
       </div>

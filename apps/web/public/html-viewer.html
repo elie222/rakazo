@@ -60,6 +60,10 @@ addEventListener("message", (event) => {
     preview.contentWindow.postMessage({ type: event.data.type, id: String(event.data.id), ok: event.data.ok === true }, "*");
     return;
   }
+  if (event.data?.type === "rakazo-page:scroll-preview" && Number.isFinite(event.data.top) && event.data.top >= 0) {
+    preview.contentWindow.postMessage({ type: event.data.type, top: event.data.top }, "*");
+    return;
+  }
   if (typeof event.data !== "string") return;
   gesture = 0;
   preview.srcdoc = guard() + event.data;

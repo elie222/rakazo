@@ -75,6 +75,7 @@ export function bubbleFrameWidth(role: ThreadMessage["role"]) {
 
 /** Rows drawn in the frame a chat opens; the rest mount right after without blocking input. */
 const FIRST_FRAME_ROWS = 20;
+const PAGE_PREVIEW_SCROLL = "[data-page-preview-scroll]";
 
 export const Transcript = memo(function Transcript({
   scrollRef,
@@ -121,7 +122,7 @@ export const Transcript = memo(function Transcript({
   onOpenAgentImport,
   rpc,
 }: {
-  scrollRef: RefObject<HTMLDivElement | null>;
+  scrollRef: RefObject<HTMLElement | null>;
   scrollRequest: { messageId: string; nonce: number } | null;
   onScrollRequestHandled: () => void;
   /** Changes when you send: the view moves to the end and follows the reply. */
@@ -191,6 +192,7 @@ export const Transcript = memo(function Transcript({
   const jumpScrolling = useRef(false);
   const autoScrolling = useRef(false);
   const lastScrollTop = useRef<number | null>(null);
+  const previewWheelStart = useRef<number | null>(null);
   // The fallback that ends a smooth jump to the latest message when no scroll reaches the end.
   const [autoScrollFallback, setAutoScrollFallback] = useState<{ ms: number } | null>(null);
   const jumpButtonRef = useRef<HTMLButtonElement>(null);
@@ -455,6 +457,7 @@ export const Transcript = memo(function Transcript({
   const snapToEnd = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
+    previewWheelStart.current = null;
     following.current = true;
     autoScrolling.current = false;
     setAtEnd(true);
@@ -465,6 +468,7 @@ export const Transcript = memo(function Transcript({
     const element = scrollRef.current;
     if (!element) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    previewWheelStart.current = null;
     following.current = true;
     messagesBeforeReply.current = null;
     heldAt.current = null;
@@ -506,6 +510,7 @@ export const Transcript = memo(function Transcript({
     );
     if (!element || !row) return;
     scrolledJump.current = scrollRequest.nonce;
+    previewWheelStart.current = null;
     following.current = false;
     messagesBeforeReply.current = null;
     autoScrolling.current = false;
@@ -593,45 +598,68 @@ export const Transcript = memo(function Transcript({
     });
   }, [onLoadOlder, scrollRef]);
 
+  function pauseFollowing(scrollTop: number) {
+    previewWheelStart.current = null;
+    lastScrollTop.current = scrollTop;
+    autoScrolling.current = false;
+    following.current = false;
+    messagesBeforeReply.current = null;
+    heldAt.current = null;
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1">
       <ImageGalleryProvider images={galleryImages}>
-        <div
+        <section
           ref={scrollRef}
           data-testid="transcript"
+          aria-label={t`Chat`}
+          tabIndex={-1}
           onPointerDown={(event) => {
-            lastScrollTop.current = event.currentTarget.scrollTop;
-            autoScrolling.current = false;
-            following.current = false;
-            messagesBeforeReply.current = null;
-            heldAt.current = null;
+            // A native scrollbar drag targets the preview scrollport itself.
+            if (event.target instanceof Element && event.target.matches(PAGE_PREVIEW_SCROLL))
+              return;
+            pauseFollowing(event.currentTarget.scrollTop);
           }}
           onTouchStart={(event) => {
-            lastScrollTop.current = event.currentTarget.scrollTop;
-            autoScrolling.current = false;
-            following.current = false;
-            messagesBeforeReply.current = null;
-            heldAt.current = null;
+            pauseFollowing(event.currentTarget.scrollTop);
           }}
           onScrollEnd={() => {
+            previewWheelStart.current = null;
             followIfNearEnd();
             if (jumpScrolling.current) endJumpScroll();
           }}
           onWheel={(event) => {
-            if (event.deltaY < 0) {
-              lastScrollTop.current = event.currentTarget.scrollTop;
-              autoScrolling.current = false;
-              following.current = false;
-              messagesBeforeReply.current = null;
-              heldAt.current = null;
+            previewWheelStart.current = null;
+            if (event.deltaY >= 0) return;
+            const top = event.currentTarget.scrollTop;
+            if (event.target instanceof Element && event.target.closest(PAGE_PREVIEW_SCROLL)) {
+              // A passive wheel event can arrive after the browser has updated scrollTop.
+              // Wait for the transcript itself to move before disabling follow.
+              previewWheelStart.current = lastScrollTop.current ?? top;
+              return;
+            }
+            pauseFollowing(top);
+          }}
+          onScrollCapture={(event) => {
+            if (
+              previewWheelStart.current !== null &&
+              event.currentTarget.scrollTop >= previewWheelStart.current &&
+              event.target instanceof Element &&
+              event.target.matches(PAGE_PREVIEW_SCROLL)
+            ) {
+              previewWheelStart.current = null;
             }
           }}
           onScroll={(event) => {
-            const scrolledDown = transcriptMovedDown(
-              lastScrollTop.current,
-              event.currentTarget.scrollTop,
-            );
-            lastScrollTop.current = event.currentTarget.scrollTop;
+            const top = event.currentTarget.scrollTop;
+            const scrolledDown = transcriptMovedDown(lastScrollTop.current, top);
+            if (previewWheelStart.current !== null && top < previewWheelStart.current) {
+              pauseFollowing(top);
+            } else {
+              lastScrollTop.current = top;
+              previewWheelStart.current = null;
+            }
             const nearEnd = transcriptIsNearEnd(event.currentTarget);
             const held = isHeld(event.currentTarget, heldAt.current);
             setAtEnd(nearEnd && !held);
@@ -648,7 +676,7 @@ export const Transcript = memo(function Transcript({
               following.current = false;
             }
           }}
-          className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-(--chat-top-clearance) scroll-pb-7 pt-(--chat-top-clearance) pb-12 md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
+          className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-(--chat-top-clearance) scroll-pb-7 pt-(--chat-top-clearance) pb-12 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
           style={
             userBubble
               ? ({
@@ -822,7 +850,7 @@ export const Transcript = memo(function Transcript({
           ) ? (
             <ActiveBotGlyph bots={workingBots} label={workingLabel} />
           ) : null}
-        </div>
+        </section>
       </ImageGalleryProvider>
       <span role="status" data-testid="reply-announcement" className="sr-only">
         {announcement}
