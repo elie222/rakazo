@@ -64,6 +64,7 @@ import {
   PipedreamConnector,
   pipedreamConfigFromEnv,
 } from "../../providers/integration/pipedream/pipedream-connector.js";
+import { deleteStrandedEndedRoutines } from "../../routines/routine-end.js";
 import { createStrategicInitiativeReconciler } from "../../routines/strategic-initiative.js";
 import { localModelsApiKey } from "../../runtime/pi/models/pi-local-provider-id.js";
 import type { SecretCleanupDeps } from "../../secrets/secret-cleanup.js";
@@ -446,5 +447,6 @@ export function createRunReconciler(
       { intervalMs: 60_000 },
     ),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
+    reconcileEndedRoutines: () => deleteStrandedEndedRoutines({ prisma, events: deps.events }),
   });
 }

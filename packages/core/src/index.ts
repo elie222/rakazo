@@ -130,9 +130,11 @@ export * from "./primitives/retry-policy.js";
 export * from "./primitives/search.js";
 export {
   formatShortHistoryDate,
+  isEndOfZonedDay,
   validTimezoneOrUtc,
   wallClock,
   zonedDateTime,
+  zonedEndDateTime,
 } from "./primitives/time.js";
 export * from "./primitives/user-error.js";
 export * from "./primitives/utf8.js";

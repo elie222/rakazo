@@ -49,6 +49,7 @@ A routine runs either in its chat, as a turn with the whole conversation that wa
 The bot chooses when it creates the routine: alongside for reports, digests, reminders and alerts whose prompt can say everything they need; in the chat for follow-ups that continue work the conversation is doing, such as updating a draft or fixing a deploy started there.
 A routine running alongside reads the chat's latest messages and its own earlier results, so it can say what changed instead of repeating itself, and searches the rest of the chat when it needs more.
 A routine in the chat that is still waiting after five minutes is handed to the running turn, so a run that goes on for hours does not hold it back; one that watches for changes always runs alongside, because what it read is not the user's words.
+A repeating routine or watch can end on a date: its last run before then is told it is the last, and the routine deletes itself once that run is done and says so in its chat, so a limited stretch such as "every day until Friday" is one routine rather than one per run.
 
 ## Computers
 
