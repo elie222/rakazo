@@ -4,6 +4,7 @@ import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
 import { AGENT_IMPORT_ASK_ACTION_ID, BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  askOptionLetter,
   isApprovalAskBlock,
   isQuestionAskBlock,
   isSecretAskBlock,
@@ -27,7 +28,7 @@ import type { RpcClient } from "../../lib/query/rpc";
 import { rpc as selectedSpaceRpc } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
 import { BuiCard } from "../ai/primitives";
-import { OptionRow, optionLetter } from "./OptionRow";
+import { OptionRow } from "./OptionRow";
 import { RoutineApprovalDetail } from "./RoutineApprovalDetail";
 import { SecretAskCard } from "./SecretAskCard";
 
@@ -339,7 +340,7 @@ function PromptAskCard({
           {askActions?.map((action, index) => (
             <OptionRow
               key={action.id}
-              letter={optionLetter(index)}
+              letter={askOptionLetter(index)}
               // Only an answered card says which option was chosen; before that they are plain actions.
               selected={answered ? chosenOption?.id === action.id : undefined}
               disabled={answered || !canAnswer || submitting}
