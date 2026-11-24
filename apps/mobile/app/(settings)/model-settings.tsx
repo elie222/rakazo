@@ -183,7 +183,8 @@ function ModelSettingsForm(route: ModelRoute) {
   const dirty = (Object.keys(fields) as (keyof ModelSettingsFields)[]).some(
     (key) => fields[key] !== saved[key],
   );
-  const defaults = modelSettingsDefaults(provider, entry);
+  const runs = credential.modelDefaults?.[modelId];
+  const defaults = modelSettingsDefaults(provider, entry, runs);
   const capabilities = modelCapabilitiesConfigurable(provider, entry);
 
   function update(patch: Partial<ModelSettingsFields>) {
@@ -201,6 +202,7 @@ function ModelSettingsForm(route: ModelRoute) {
       fields,
       provider,
       entry,
+      runs,
       followedThinkingLevel: own.thinkingLevel ? undefined : saved.thinkingLevel,
     });
     if (request.status === "invalid") {

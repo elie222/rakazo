@@ -24,11 +24,6 @@ import type { MediaSource, ResolvedMediaSource } from "../../media/media-sources
 import { mediaVideoProviderForSource, readMediaJobSource } from "../../media/media-sources.js";
 import { hostedMediaPrice } from "../../media/media-usage.js";
 import { mediaDelivery, scheduleMediaPoll } from "../../media/media-video-poll.js";
-import {
-  desktopGuardApplies,
-  desktopProtectionGuardMessage,
-} from "../../providers/computer/desktop/desktop-command-guard.js";
-import { protectedActivateScriptWriteRefusal } from "../../providers/computer/desktop/desktop-guard-words.js";
 import { attachWorkspaceFileToThread } from "../../storage/thread-artifacts.js";
 import type { RunWorkspace } from "../../tools/workspace-file-tools.js";
 import {
@@ -196,12 +191,6 @@ export const fileTools: ToolHandlers = {
     const { deps, bot, context } = ctx;
     const { name, args } = call;
     const filePath = String(args.path ?? "notes/result.txt");
-    if (desktopGuardApplies(ctx.computer)) {
-      const activateRefusal = protectedActivateScriptWriteRefusal(filePath);
-      if (activateRefusal) {
-        return call.finish({ error: desktopProtectionGuardMessage(activateRefusal, filePath) });
-      }
-    }
     const content = new TextEncoder().encode(textContentArg(args.content, ""));
     ctx.computer.checkpoint.markDirty();
     try {

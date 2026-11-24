@@ -49,7 +49,7 @@ import {
 } from "../../payments/purchase-service.js";
 import {
   desktopGuardApplies,
-  desktopProtectionGuardMessage,
+  desktopGuardRefusalMessage,
   protectedComputerLifecycleRefusal,
 } from "../../providers/computer/desktop/desktop-command-guard.js";
 import {
@@ -543,7 +543,7 @@ export const computerTools: ToolHandlers = {
     const command = String(args.command ?? args.cmd ?? "");
     const refusal = protectedComputerLifecycleRefusal(command);
     if (desktopGuardApplies(ctx.computer) && refusal) {
-      return call.finish({ error: desktopProtectionGuardMessage(refusal, command) });
+      return call.finish({ error: desktopGuardRefusalMessage() });
     }
     const cwd = resolveBotWorkspaceCwd(
       ctx.computer.mode,

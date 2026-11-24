@@ -32,7 +32,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  Alert,
   Keyboard,
   Linking,
   ScrollView,
@@ -60,6 +59,7 @@ import {
   MODEL_CONNECT_TIMEOUT_MS,
   modelConnectionRequest,
 } from "../../lib/models/model-connection-request";
+import { useConfirmModelDisconnect } from "../../lib/models/model-disconnect";
 import { analyticsClient } from "../../lib/native/analytics-surface";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
@@ -84,6 +84,7 @@ export default function ModelConnection() {
   // A new connection is managed by its id once it is saved, so later saves update it.
   const [credentialId, setCredentialId] = useState(request?.credentialId ?? null);
   const credentialIdRef = useRef(credentialId);
+  const confirmModelDisconnect = useConfirmModelDisconnect();
   credentialIdRef.current = credentialId;
   const { t } = useLingui();
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
@@ -801,17 +802,10 @@ export default function ModelConnection() {
         fill={false}
         label={pending === "disconnect" ? t`Disconnecting…` : t`Disconnect`}
         onPress={() => {
-          Alert.alert(
-            t`Disconnect ${ph({ name: selectedProviderLabel })}?`,
-            t`This removes the connection from every space.`,
-            [
-              { text: t`Cancel`, style: "cancel" },
-              {
-                text: t`Disconnect`,
-                style: "destructive",
-                onPress: () => void disconnectCredential(),
-              },
-            ],
+          void confirmModelDisconnect(
+            selectedProviderLabel,
+            credential,
+            () => void disconnectCredential(),
           );
         }}
         prominence="destructive"

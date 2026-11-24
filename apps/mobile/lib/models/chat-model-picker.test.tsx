@@ -49,6 +49,12 @@ const mocks = vi.hoisted(() => ({
   submitOAuthCode: vi.fn(),
   pasteBackSignIn: false,
   rpc: vi.fn(),
+  disconnectPreview: {
+    mainModel: false,
+    otherChoice: false,
+    usedBy: [] as string[],
+    usedByTotal: 0,
+  },
   dismissKeyboard: vi.fn(),
   listProps: {} as Record<string, unknown>,
   params: {} as Record<string, string | undefined>,
@@ -180,6 +186,7 @@ vi.mock("../api/api", () => ({
         expiresInSeconds: 600,
       };
     if (procedure === "models/completeOAuth") return mocks.completeOAuth(options?.signal);
+    if (procedure === "models/disconnectPreview") return mocks.disconnectPreview;
     if (procedure === "bots/update") return mocks.update(input);
     if (procedure === "models/role") {
       const main = (input as { role: string }).role === "main";
@@ -660,6 +667,7 @@ beforeEach(() => {
   mocks.secondConnection = false;
   mocks.backups = [];
   mocks.primary = null;
+  mocks.disconnectPreview = { mainModel: false, otherChoice: false, usedBy: [], usedByTotal: 0 };
   mocks.rpc.mockReset();
   mocks.menus.clear();
   mocks.rowAccessibilityActions.clear();
@@ -1870,8 +1878,9 @@ describe("several connections for one provider", () => {
     await act(async () =>
       mocks.menus.get("OpenRouter (Work)")!.onPressAction({ nativeEvent: { event: "disconnect" } }),
     );
-    const [title, , choices] = mocks.alert.mock.lastCall!;
+    const [title, message, choices] = mocks.alert.mock.lastCall!;
     expect(title).toBe("Disconnect OpenRouter (Work)?");
+    expect(message).toBe("This removes the connection from every space.");
     await act(async () => choices[1].onPress());
     expect(mocks.rpc).toHaveBeenCalledWith("models/disconnect", {
       provider: "openrouter",
@@ -1944,8 +1953,18 @@ describe("connection screen targets", () => {
     mocks.connected = true;
     mocks.subscriptionSignIn = false;
     await renderConnection();
-    act(() => buttonWithText("Disconnect")!.click());
-    const [, , choices] = mocks.alert.mock.lastCall!;
+    // The question opens once it knows what goes with the connection, and says so.
+    mocks.disconnectPreview = {
+      mainModel: true,
+      otherChoice: false,
+      usedBy: ["Inbox"],
+      usedByTotal: 1,
+    };
+    await act(async () => buttonWithText("Disconnect")!.click());
+    const [, message, choices] = mocks.alert.mock.lastCall!;
+    expect(message).toBe(
+      "This removes the connection from every space.\n\nReconnecting will not restore the main model choice that uses this connection. Inbox may stop until you reconnect.",
+    );
     await act(async () => choices[1].onPress());
     expect(mocks.rpc).toHaveBeenCalledWith("models/disconnect", {
       provider: "openrouter",

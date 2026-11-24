@@ -24,6 +24,7 @@ vi.mock("../api/api", () => ({
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => state.foreground }));
+vi.mock("../settings/back-to-settings", () => ({ useBackToSettings: () => undefined }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: EffectCallback) => useEffect(effect, [effect]),
 }));

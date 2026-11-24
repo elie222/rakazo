@@ -34,7 +34,7 @@ import { GrowingTextInput } from "../components/ui/growing-text-input";
 import { MenuPickerMenu } from "../components/ui/menu-picker";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
-import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
+import { useDateLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
@@ -174,7 +174,7 @@ function RoutineView({
 }) {
   const tokens = useMobileTokens();
   const { t } = useLingui();
-  const locale = useUiLocale();
+  const dateLocale = useDateLocale();
   const router = useRouter();
   const testRun = useSave({
     save: (_, send) => send("routines/testRun", { routineId: routine.id }),
@@ -186,7 +186,7 @@ function RoutineView({
       ? null
       : routine.scheduleDelayed
         ? t`Schedule delayed`
-        : new Date(routine.nextRunAt).toLocaleString(dateLocaleForUi(locale), {
+        : new Date(routine.nextRunAt).toLocaleString(dateLocale, {
             weekday: "short",
             month: "short",
             day: "numeric",
@@ -273,7 +273,7 @@ function RoutineView({
           <SettingsRow
             key="ends"
             title={t`Ends`}
-            value={formatRoutineEnd(routine.endsAt, routine.timezone, dateLocaleForUi(locale))}
+            value={formatRoutineEnd(routine.endsAt, routine.timezone, dateLocale)}
           />
         ) : null}
       </SettingsGroup>

@@ -283,6 +283,18 @@ export function withLiveStreamingProgress<
 
 const RUN_FAILURE_ERROR_MAX = 300;
 
+/** Active readers re-read the snapshot after lifecycle signals that can change the chat. */
+export function needsThreadSnapshotAfterEvent(event: {
+  type: string;
+  payload?: Record<string, unknown>;
+}): boolean {
+  return (
+    isRunTerminalEvent(event) ||
+    event.type === "run.waiting_input" ||
+    (event.type === "thread.meta" && event.payload?.retryQueued === true)
+  );
+}
+
 /** Reason a run failed, clamped for display, or null when there is no usable error to show. */
 export function runFailureError(event: {
   type: string;

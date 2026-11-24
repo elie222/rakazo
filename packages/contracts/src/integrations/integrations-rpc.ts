@@ -7,6 +7,7 @@ import {
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
   ApprovalModeSchema,
+  EffectiveApprovalTargetSchema,
 } from "./approvals.js";
 import {
   CATALOG_SEARCH_QUERY_MAX_LENGTH,
@@ -57,6 +58,11 @@ const McpOAuthBeginSchema = z.discriminatedUnion("status", [
 const McpServerAccessInput = z.object({
   allBots: z.boolean(),
   botIds: z.array(Id).max(500).default([]),
+});
+
+const approvalRuleWriteInput = settingsScopeInput.extend({
+  /** When supplied, edit only if this copy still applies in the same Space. */
+  expectedTarget: EffectiveApprovalTargetSchema.optional(),
 });
 
 export const integrationsRpc = {
@@ -239,6 +245,9 @@ export const integrationsRpc = {
         z.object({
           name: z.string(),
           description: z.string(),
+          /** The provider's own read-only hint; the name decides when it is absent. */
+          readOnly: z.boolean().optional(),
+          approvalKey: z.string().optional(),
         }),
       ),
     ),
@@ -291,9 +300,16 @@ export const integrationsRpc = {
   },
   approvalRules: {
     list: oc.input(settingsScopeInput.optional()).output(z.array(ActionApprovalRuleSchema)),
+    effective: oc.input(z.object({})).output(
+      z.object({
+        target: EffectiveApprovalTargetSchema,
+        rules: z.array(ActionApprovalRuleSchema),
+        mode: ApprovalModeSchema,
+      }),
+    ),
     set: oc
       .input(
-        settingsScopeInput.extend({
+        approvalRuleWriteInput.extend({
           effect: z.enum(["always_allow", "require_approval", "deny"]),
           matchKind: z.enum(["tool", "connector", "site"]),
           matchValue: z.string().trim().min(1),
@@ -301,7 +317,7 @@ export const integrationsRpc = {
       )
       .output(ActionApprovalRuleSchema),
     remove: oc
-      .input(settingsScopeInput.extend({ id: Id }))
+      .input(approvalRuleWriteInput.extend({ id: Id }))
       .output(z.object({ ok: z.literal(true) })),
   },
   /**
