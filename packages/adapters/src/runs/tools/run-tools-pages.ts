@@ -1,7 +1,13 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH, PageTitleSchema } from "@rakazo/contracts";
 import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
-import { isUniqueViolation, signalPage, signalPageUsers } from "@rakazo/db";
+import {
+  isUniqueViolation,
+  readPageState,
+  runAsSystem,
+  signalPage,
+  signalPageUsers,
+} from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
@@ -232,13 +238,18 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   if (page && !hasSource && !hasEdits && !title) {
     // The stored source may hold outside text an earlier run put in the page, so reading it
     // taints this run like any other outside content; saves only confirm this run's own write.
+    const readerState = await runAsSystem("read the user's saved page values", () =>
+      readPageState(deps.prisma, page.id, ctx.run.userId),
+    );
     await markReadOutsideContent(ctx, current);
+    if (Object.keys(readerState).length) await markReadOutsideContent(ctx, readerState);
     return {
       pageId: page.id,
       version: page.currentVersion,
       title: page.title,
       ...pageSharingHint(page.visibility),
       source: current,
+      ...(Object.keys(readerState).length ? { readerState } : {}),
     };
   }
   if (!page && hasEdits) return { error: "edits need the pageId of the page to change." };

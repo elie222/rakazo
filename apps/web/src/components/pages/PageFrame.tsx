@@ -1,8 +1,15 @@
 import { useExternalLinkOpener } from "@rakazo/chat-ui/web";
-import type { PageSectionAnchor } from "@rakazo/contracts";
-import { pageCopyRequest, pageCopyResult, pageLinkRequest, pageReviewSections } from "@rakazo/core";
+import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
+import {
+  pageCopyRequest,
+  pageCopyResult,
+  pageLinkRequest,
+  pageReviewSections,
+  pageStateRequest,
+  pageStateUpdate,
+} from "@rakazo/core";
 import type { CSSProperties } from "react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { writeClipboard } from "../../lib/copy-text";
 import { pageFrameHeight } from "../../lib/pages/page-cards";
 import { SandboxedHtmlViewer } from "../messages/SandboxedHtmlViewer";
@@ -22,6 +29,8 @@ export function PageFrame({
   onHeight,
   onReply,
   onSections,
+  savedState,
+  onSaveState,
 }: {
   document: string;
   title: string;
@@ -30,14 +39,21 @@ export function PageFrame({
   /** Where a page's reply button puts its text; without it the page offers no replies. */
   onReply?: (text: unknown) => void;
   onSections?: (sections: PageSectionAnchor[]) => void;
+  savedState?: PageState;
+  onSaveState?: (values: PageState) => void;
 }) {
   const { open, dialog } = useExternalLinkOpener();
   const box = useRef<HTMLDivElement>(null);
   const [drawnAt, setDrawnAt] = useState<CSSProperties | undefined>(undefined);
   const usedGesture = useRef<string | null>(null);
+  const answerFrame = useRef<((message: object) => void) | null>(null);
+  useEffect(() => {
+    if (savedState) answerFrame.current?.(pageStateUpdate(savedState));
+  }, [savedState]);
   const receive = useCallback(
     (data: unknown, answer: (message: object) => void, focused: boolean) => {
       if (!data || typeof data !== "object") return;
+      answerFrame.current = answer;
       const message = data as {
         type?: unknown;
         height?: unknown;
@@ -57,6 +73,11 @@ export function PageFrame({
       }
       const sections = onSections && pageReviewSections(data);
       if (sections) onSections(sections);
+      const values = interactive && onSaveState ? pageStateRequest(data) : null;
+      if (values) {
+        onSaveState?.(values);
+        return;
+      }
       const { gesture } = message;
       if (!interactive || !focused || typeof gesture !== "string") return;
       if (gesture === usedGesture.current) return;
@@ -69,7 +90,7 @@ export function PageFrame({
       else if (url) open(url);
       else if (reply) reply(message.text);
     },
-    [interactive, onHeight, onReply, onSections, open],
+    [interactive, onHeight, onReply, onSaveState, onSections, open],
   );
   return (
     <>

@@ -44,6 +44,7 @@ const REACT_HOOKS: ReadonlySet<string> = new Set([
   "useInsertionEffect",
   "useLayoutEffect",
   "useMemo",
+  "usePageState",
   "useReducer",
   "useRef",
   "useSource",

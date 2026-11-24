@@ -10,6 +10,7 @@ import {
   IsolationError,
   isRecordNotFound,
   lockPage,
+  readPageState,
   runAsSystem,
   signalPage,
   signalPageUsers,
@@ -174,7 +175,8 @@ export async function getPage(
 ): Promise<PageDetail> {
   const row = await requirePage(deps.prisma, actor, input.pageId);
   const version = input.version ?? row.currentVersion;
-  const [stored, owner] = await Promise.all([
+  const latest = version === row.currentVersion;
+  const [stored, owner, readerState] = await Promise.all([
     deps.prisma.pageVersion.findUnique({
       where: { pageId_version: { pageId: row.id, version } },
       select: { code: true },
@@ -183,6 +185,11 @@ export async function getPage(
       where: { id: actor.userId },
       select: { name: true, image: true },
     }),
+    latest
+      ? runAsSystem("read the owner's saved page values", () =>
+          readPageState(deps.prisma, row.id, actor.userId),
+        )
+      : undefined,
   ]);
   if (!stored) throw new IsolationError();
   return {
@@ -197,6 +204,7 @@ export async function getPage(
           return null;
         })
       : null,
+    ...(readerState ? { readerState } : {}),
   };
 }
 

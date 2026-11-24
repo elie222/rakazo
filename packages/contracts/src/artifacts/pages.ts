@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { Id, IsoDate } from "../ids.js";
+import { PageStateSchema } from "./page-reader-state.js";
 
 export const PAGE_TITLE_MAX_LENGTH = 200;
 export const PAGE_LIST_MAX_LIMIT = 60;
@@ -54,6 +55,7 @@ export const PageDetailSchema = z.strictObject({
   owner: z.strictObject({ name: z.string(), image: z.string().nullable() }),
   /** Set while anyone with the link can open the page. */
   shareUrl: z.string().nullable(),
+  readerState: PageStateSchema.optional(),
 });
 export type PageDetail = z.infer<typeof PageDetailSchema>;
 

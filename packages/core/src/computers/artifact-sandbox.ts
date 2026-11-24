@@ -1,5 +1,5 @@
-import type { PageSectionAnchor } from "@rakazo/contracts";
-import { PageSectionOccurrence } from "@rakazo/contracts";
+import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
+import { PageSectionOccurrence, PageStateSchema } from "@rakazo/contracts";
 
 // Same policy as the web preview: nothing loads from the network, so a script
 // cannot send what it reads to a remote image or font URL.
@@ -51,6 +51,7 @@ export function pageViewerDocument(input: {
   bottomInset?: number;
   /** The reader's app language, for the kit's own words when the page does not set `lang`. */
   lang?: string;
+  state?: PageState;
 }): string {
   const boot = JSON.stringify({
     code: input.code,
@@ -60,6 +61,7 @@ export function pageViewerDocument(input: {
     review: input.review || undefined,
     reviewAnchor: input.review ? input.reviewAnchor : undefined,
     reviewAnchorOccurrence: input.review ? input.reviewAnchorOccurrence : undefined,
+    state: input.state,
   }).replace(/</g, "\\u003c");
   const inset =
     input.bottomInset !== undefined && Number.isFinite(input.bottomInset) && input.bottomInset > 0
@@ -112,6 +114,20 @@ export function pageLinkRequest(data: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+const PAGE_STATE_MESSAGE = "rakazo-page:state";
+
+export function pageStateRequest(data: unknown): PageState | null {
+  if (!data || typeof data !== "object") return null;
+  const { type, values } = data as { type?: unknown; values?: unknown };
+  if (type !== PAGE_STATE_MESSAGE) return null;
+  const parsed = PageStateSchema.safeParse(values);
+  return parsed.success && Object.keys(parsed.data).length > 0 ? parsed.data : null;
+}
+
+export function pageStateUpdate(values: PageState) {
+  return { type: PAGE_STATE_MESSAGE, values };
 }
 
 /** The answer a page's copy button waits for. */

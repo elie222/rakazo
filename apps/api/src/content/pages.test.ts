@@ -59,6 +59,7 @@ function fakeDeps(hooks: { onUpdate?: (attempt: number) => void } = {}) {
     page: { findFirst: async () => (page ? summary(page) : null) },
     pageVersion: { findUnique: async () => ({ code: "compiled" }) },
     user: { findUnique: async () => ({ name: "Owner", image: null }) },
+    pageReaderState: { findUnique: async () => null },
     secret: tx.secret,
     $transaction: async (work: (client: typeof tx) => Promise<unknown>) => {
       const saved = { page, secrets: new Map(secrets) };

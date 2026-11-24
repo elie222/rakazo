@@ -22,6 +22,7 @@ interface TableSpec {
     | "botEmailMessage"
     | "meetingSession"
     | "nativeCalendarRequest"
+    | "pageReaderState"
     | "task";
   /** Scans return them in this order as `values`. */
   columns: string[];
@@ -53,6 +54,17 @@ const TABLES: TableSpec[] = [
     writePlaintext: (id, row) => Prisma.sql`
       UPDATE native_calendar_requests SET operation = ${row.operation == null ? null : JSON.stringify(row.operation)}::jsonb,
         result = ${row.result == null ? null : JSON.stringify(row.result)}::jsonb WHERE id = ${id}`,
+  },
+  {
+    model: "PageReaderState",
+    delegate: "pageReaderState",
+    columns: ["values"],
+    json: true,
+    scan: (cursor, limit) => Prisma.sql`
+      SELECT id, jsonb_build_array("values") AS values, "spaceId", "userId" AS owner
+      FROM page_reader_states WHERE id > ${cursor} ORDER BY id LIMIT ${limit}`,
+    writePlaintext: (id, row) => Prisma.sql`
+      UPDATE page_reader_states SET "values" = ${JSON.stringify(row.values)}::jsonb WHERE id = ${id}`,
   },
   {
     model: "MeetingSession",
@@ -415,6 +427,9 @@ export async function contentEncryptionStatus(
     SELECT 'native_calendar_requests', count(*) FILTER (WHERE operation IS NOT NULL OR result IS NOT NULL),
       count(*) FILTER (WHERE NOT jsonb_exists(operation, '$sealed') OR NOT jsonb_exists(result, '$sealed'))
       FROM native_calendar_requests
+    UNION ALL
+    SELECT 'page_reader_states', count(*), count(*) FILTER (WHERE NOT jsonb_exists("values", '$sealed'))
+      FROM page_reader_states
   `;
     },
     { timeout: 60 * 60_000 },

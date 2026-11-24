@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { usePageStateSaver } from "../../lib/pages/page-state";
 import type { PageSession } from "../../lib/pages/pages";
 import { PAGE_PARAM, useMedia, usePageDocument, usePageSession } from "../../lib/pages/pages";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
@@ -65,6 +66,9 @@ function OpenPage({
     sheet ? "background" : "card",
     true,
     DOCK_CLEARANCE,
+    false,
+    undefined,
+    page.data?.readerState,
   );
   const [shareOpen, setShareOpen] = useState(false);
   const link = useQuery({
@@ -100,6 +104,9 @@ function OpenPage({
     stale: reads,
     onFailed: reconcile,
   });
+  const readerState = usePageStateSaver(shownId, [
+    queries.pages.get.queryKey({ input: { pageId: shownId } }),
+  ]);
   const visibility = useSave({
     save: (visibility: PageVisibility, rpc) =>
       rpc.pages.setVisibility({ pageId: shownId, visibility }),
@@ -156,7 +163,13 @@ function OpenPage({
           />
         ) : null
       }
-      renameError={rename.error ? t`Could not rename this page. Try again.` : null}
+      titleError={
+        rename.error
+          ? t`Could not rename this page. Try again.`
+          : readerState.failed
+            ? t`Could not save your changes. Try again.`
+            : null
+      }
       onRename={
         rename.pending || !data
           ? undefined
@@ -166,6 +179,8 @@ function OpenPage({
       }
       composer={<div ref={setDockNode} />}
       onReply={session.offerReply}
+      savedState={data?.readerState}
+      onSaveState={data?.readerState ? readerState.save : undefined}
       share={
         data ? (
           <>

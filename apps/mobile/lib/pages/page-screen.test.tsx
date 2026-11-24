@@ -93,6 +93,7 @@ vi.mock("../../components/media/sandboxed-html-preview", () => ({
 }));
 vi.mock("../api/api", () => ({
   currentApiBase: () => "https://app.example",
+  selectedSpaceId: () => "space-1",
   captureApiRequestContext: async () => ({
     apiBase: "https://app.example",
     sessionGeneration: 0,
@@ -129,6 +130,7 @@ vi.mock("../navigation/screen-header", () => ({
   },
 }));
 vi.mock("./page-review-reads", () => ({ usePageReviewSignals: () => {} }));
+vi.mock("../api/roster-signals", () => ({ useSpaceChanges: () => {} }));
 vi.mock("../../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children: ReactNode }) => children,
   SettingsRow: ({ title, onPress }: { title: string; onPress: () => void }) =>

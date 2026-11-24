@@ -34,6 +34,7 @@ function context(
           : null,
       ),
     },
+    pageReaderState: { findUnique: vi.fn(async () => null) },
     $transaction: vi.fn(async (work: (client: unknown) => unknown) => work(tx)),
   };
   return {

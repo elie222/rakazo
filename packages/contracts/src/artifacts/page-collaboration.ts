@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { Id, IsoDate } from "../ids.js";
+import { PageStateSchema } from "./page-reader-state.js";
 
 export const PageVersionNumber = z.number().int().positive();
 export const PageSection = z.string().trim().min(1).max(200);
@@ -16,6 +17,7 @@ export const PageReviewSchema = z.strictObject({
   version: PageVersionNumber,
   owner: z.boolean(),
   canRequestRevision: z.boolean(),
+  readerState: PageStateSchema.optional(),
 });
 
 export const PageGrantSchema = z.strictObject({ id: Id, email: z.string() });

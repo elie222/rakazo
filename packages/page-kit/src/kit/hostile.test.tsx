@@ -26,7 +26,7 @@ const SHAPED: { [K in PageKitComponentName]?: { [P in keyof Props<K>]?: readonly
   Properties: { items: ["label", "value"] },
   Rows: { rows: ["title", "lead", "detail", "meta", "status"] },
   Steps: { steps: ["title", "detail"] },
-  Checklist: { items: ["text", "done", "meta"] },
+  Checklist: { items: ["text", "done", "meta", "id"] },
   Table: { columns: [], rows: [], align: [] },
   Segmented: { options: ["value", "label", "count"] },
   LineChart: {

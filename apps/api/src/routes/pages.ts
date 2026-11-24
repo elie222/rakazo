@@ -10,6 +10,7 @@ import {
   pageComments,
   resolvePageComment,
   revokePage,
+  savePageReaderState,
 } from "../content/page-collaboration.js";
 import { askPageRevision, getPageDraft, publishPageDraft } from "../content/page-revisions.js";
 import {
@@ -69,6 +70,9 @@ export function pagesRoutes(ctx: RouterContext) {
       ),
       publish: authed.pageReviews.publish.handler(({ context, input }) =>
         publishPageDraft(deps, context.actor, input),
+      ),
+      saveState: authed.pageReviews.saveState.handler(({ context, input }) =>
+        savePageReaderState(deps, context.actor, input.pageId, input.values),
       ),
     },
     pages: {

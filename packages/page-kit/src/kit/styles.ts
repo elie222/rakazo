@@ -106,6 +106,13 @@ body{font-size:1rem}
 .rk-check[data-done="true"] .rk-check-mark circle{fill:var(--rk-success);stroke:var(--rk-success)}
 .rk-check[data-done="true"] .rk-check-mark path{stroke:var(--background);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .rk-check[data-done="true"] .rk-check-text{color:var(--rk-secondary)}
+.rk-checklist[data-tickable] .rk-check{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.rk-checklist[data-tickable] .rk-check-mark circle{transition:fill .14s,stroke .14s}
+.rk-checklist[data-tickable] .rk-check-mark{border-radius:9999px;transition:transform .1s}
+.rk-checklist[data-tickable] .rk-check:hover .rk-check-mark{stroke:var(--rk-secondary)}
+.rk-checklist[data-tickable] .rk-check:active .rk-check-mark{transform:scale(.9)}
+.rk-check input:focus-visible+.rk-check-mark{outline:2px solid var(--ring);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.rk-checklist[data-tickable] .rk-check-mark,.rk-checklist[data-tickable] .rk-check-mark circle{transition:none}}
 .rk-check-meta{margin:.1rem 0 0;margin-inline-start:1.75rem;font-size:.8125rem;line-height:1.4;color:var(--rk-secondary)}
 .rk-table-wrap{display:flex;flex-direction:column;gap:.5rem;min-width:0}
 .rk-table-filter{align-self:flex-start;width:min(16rem,100%);height:1.75rem;padding:0 .625rem;border:1px solid var(--rk-line);border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:.8125rem}

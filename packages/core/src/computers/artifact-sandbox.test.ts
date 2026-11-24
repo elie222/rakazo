@@ -4,6 +4,7 @@ import {
   pageCopyRequest,
   pageLinkRequest,
   pageReplyText,
+  pageStateRequest,
   pageViewerDocument,
   SANDBOXED_ARTIFACT_CSP,
   withSandboxedArtifactCsp,
@@ -56,6 +57,17 @@ describe("withSandboxedArtifactCsp", () => {
     const wrapped = withSandboxedArtifactCsp(html);
     expect(wrapped.startsWith("<!DOCTYPE html><meta")).toBe(true);
     expect(wrapped.endsWith(html)).toBe(true);
+  });
+});
+
+describe("pageStateRequest", () => {
+  it("passes on values a page can save and nothing else", () => {
+    expect(pageStateRequest({ type: "rakazo-page:state", values: { note: "Charger" } })).toEqual({
+      note: "Charger",
+    });
+    expect(pageStateRequest({ type: "rakazo-page:state", values: {} })).toBeNull();
+    expect(pageStateRequest({ type: "rakazo-page:state", values: { "bad key": 1 } })).toBeNull();
+    expect(pageStateRequest({ type: "rakazo-page:copy", values: { note: "x" } })).toBeNull();
   });
 });
 

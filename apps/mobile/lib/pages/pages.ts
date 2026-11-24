@@ -1,4 +1,4 @@
-import type { PageDetail } from "@rakazo/contracts";
+import type { PageDetail, PageState } from "@rakazo/contracts";
 import { isServerUnreachable, pageViewerDocument } from "@rakazo/core";
 import { rpc } from "../api/api";
 import { registerSessionDiskCache } from "../api/session";
@@ -171,6 +171,7 @@ export async function pageDocument(
     review?: boolean;
     reviewAnchor?: string;
     reviewAnchorOccurrence?: number;
+    state?: PageState;
   } = {},
 ): Promise<string> {
   const runtime = await loadPageRuntime(apiBase);

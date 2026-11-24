@@ -32,6 +32,7 @@ import {
   PageSectionOccurrence,
   PageVersionNumber,
 } from "./page-collaboration.js";
+import { PageStateSchema } from "./page-reader-state.js";
 import {
   PAGE_LIST_MAX_LIMIT,
   PageDetailSchema,
@@ -139,6 +140,9 @@ export const artifactsRpc = {
     publish: oc
       .input(PageAccessInput.extend({ requestId: Id }))
       .output(z.object({ version: PageVersionNumber })),
+    saveState: oc
+      .input(PageAccessInput.extend({ values: PageStateSchema }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   /** Pages bots built for the caller in this Space. */
   pages: {

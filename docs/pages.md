@@ -10,6 +10,10 @@ The page appears as a card in the chat. Open it to see it full screen, with the 
 can ask for changes. The bot edits the same page rather than making a new one, so a
 [routine](./routines.md) can keep it up to date.
 
+Ticks and notes you add on a page stay there for you, on every device. Each person a page is
+shared with keeps their own, and the bot can read yours when you ask about them. On a page opened
+from a link, they last until it reloads.
+
 ## Find your pages
 
 On web and desktop, select the bot or group name at the top of the chat to open its panel.

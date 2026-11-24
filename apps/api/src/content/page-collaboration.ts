@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Actor, PageComment, PageReview } from "@rakazo/contracts";
+import type { Actor, PageComment, PageReview, PageState } from "@rakazo/contracts";
 import { PageRevisionStatus } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -11,7 +11,9 @@ import {
   pageOwnerWhere,
   pageRevisionBotSelect,
   pageRevisionPendingCutoff,
+  readPageState,
   runAsSystem,
+  savePageState,
   signalPage,
   signalPageUsers,
   verifiedPageAccount,
@@ -122,16 +124,31 @@ export function getPageReview(
       select: { title: true, code: true },
     });
     if (!stored) throw new IsolationError();
+    const latest = reviewed === page.currentVersion;
     return {
       id: pageId,
-      title: reviewed === page.currentVersion ? page.title : stored.title,
+      title: latest ? page.title : stored.title,
       code: stored.code,
       currentVersion: page.currentVersion,
       version: reviewed,
       owner,
       canRequestRevision: await canPageRequestRevision(tx, page),
+      ...(latest ? { readerState: await readPageState(tx, pageId, actor.userId) } : {}),
     };
   });
+}
+
+export async function savePageReaderState(
+  { prisma, events }: Dependencies,
+  actor: Actor,
+  pageId: string,
+  values: PageState,
+) {
+  const changed = await writePageReview(prisma, actor, pageId, (tx, { page }) =>
+    savePageState(tx, page, actor.userId, values),
+  );
+  if (changed) await signalPageUsers(events, [actor.userId]);
+  return { ok: true as const };
 }
 
 export function getPageGrants(prisma: PrismaClient, actor: Actor, pageId: string) {

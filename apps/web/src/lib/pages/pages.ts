@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { MessageBlock, PageSectionAnchor } from "@rakazo/contracts";
+import type { MessageBlock, PageSectionAnchor, PageState } from "@rakazo/contracts";
 import { PAGE_RUNTIME_PATH, pageReply, pageReplyText, pageViewerDocument } from "@rakazo/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +7,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -72,6 +73,7 @@ export function usePageDocument(
   bottomInset = 0,
   review = false,
   reviewAnchor?: PageSectionAnchor,
+  state?: PageState,
 ): { document: string | null; failed: boolean; retry: () => void } {
   const { t, i18n } = useLingui();
   const theme = useAppTheme();
@@ -81,6 +83,8 @@ export function usePageDocument(
   // Fetched again on every mount; the browser revalidates the server's no-cache runtime.
   const runtime = useQuery({ queryKey: ["page-runtime"], queryFn: fetchPageRuntime });
   const errorTitle = t`This page couldn't be shown.`;
+  const savedState = useRef(state);
+  savedState.current = state;
   const viewerDocument = useMemo(
     () =>
       runtime.data === undefined || code === undefined
@@ -98,6 +102,7 @@ export function usePageDocument(
             reviewAnchor: reviewAnchor?.section,
             reviewAnchorOccurrence: reviewAnchor?.sectionOccurrence,
             lang: i18n.locale,
+            state: savedState.current,
           }),
     [
       runtime.data,

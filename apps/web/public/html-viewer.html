@@ -17,7 +17,7 @@ function guard() {
 }
 addEventListener("message", (event) => {
   const preview = document.getElementById("preview");
-  // A page asks the app to open a link, offer a reply, copy text or make room for its height; only those pass up.
+  // A page asks the app to open a link, offer a reply, copy text, save what the reader set or make room for its height; only those pass up.
   if (event.source === preview.contentWindow && parent !== window) {
     const data = event.data;
     // A click or key in the page also activates this shell, which the page cannot fake; the guard
@@ -37,6 +37,8 @@ addEventListener("message", (event) => {
       parent.postMessage({ type: data.type, text: data.text.slice(0, 300), gesture: fresh }, "*");
     } else if (data && data.type === "rakazo-page:copy" && typeof data.id === "string" && typeof data.text === "string") {
       parent.postMessage({ type: data.type, id: data.id, text: data.text, gesture: fresh }, "*");
+    } else if (data && data.type === "rakazo-page:state" && data.values && typeof data.values === "object") {
+      parent.postMessage({ type: data.type, values: data.values }, "*");
     } else if (data && data.type === "rakazo-page:height" && Number.isFinite(data.height)) {
       parent.postMessage({ type: data.type, height: data.height }, "*");
     } else if (data && data.type === "rakazo-page:sections" && Array.isArray(data.sections)) {
@@ -58,6 +60,10 @@ addEventListener("message", (event) => {
   // The app's answer to a copy: only whether it worked comes back down, never clipboard contents.
   if (event.data && event.data.type === "rakazo-page:copied") {
     preview.contentWindow.postMessage({ type: event.data.type, id: String(event.data.id), ok: event.data.ok === true }, "*");
+    return;
+  }
+  if (event.data && event.data.type === "rakazo-page:state" && event.data.values && typeof event.data.values === "object") {
+    preview.contentWindow.postMessage({ type: event.data.type, values: event.data.values }, "*");
     return;
   }
   if (typeof event.data !== "string") return;

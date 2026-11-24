@@ -1,0 +1,123 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Checklist } from "./data.js";
+import { startPageState, usePageState } from "./page-state.js";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+let host: HTMLDivElement;
+let posted: unknown[];
+beforeEach(() => {
+  vi.useFakeTimers();
+  host = document.body.appendChild(document.createElement("div"));
+  posted = [];
+  vi.spyOn(window, "postMessage").mockImplementation((message: unknown) => {
+    posted.push(message);
+  });
+});
+afterEach(() => {
+  host.remove();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
+
+const setters = new Map<string, (value: unknown) => void>();
+function Field({ name, initial }: { name: string; initial: unknown }) {
+  const [value, setValue] = usePageState(name, initial);
+  setters.set(name, setValue as (value: unknown) => void);
+  return <output data-key={name}>{JSON.stringify(value)}</output>;
+}
+function render(fields: Array<[string, unknown]>) {
+  const root = createRoot(host);
+  act(() =>
+    root.render(
+      fields.map(([name, initial]) => <Field key={name} name={name} initial={initial} />),
+    ),
+  );
+}
+const shown = (name: string) => host.querySelector(`[data-key="${name}"]`)?.textContent;
+const set = (name: string, value: unknown) => act(() => setters.get(name)?.(value));
+const fromHost = (values: Record<string, unknown>) =>
+  act(() => {
+    window.dispatchEvent(
+      new MessageEvent("message", { data: { type: "rakazo-page:state", values } }),
+    );
+  });
+
+describe("usePageState", () => {
+  it("keeps a value in memory and sends nothing where the host does not save", () => {
+    render([["unsaved", "start"]]);
+    set("unsaved", "typed");
+    vi.advanceTimersByTime(1000);
+    expect(shown("unsaved")).toBe('"typed"');
+    expect(posted).toEqual([]);
+  });
+
+  it("starts from saved values that keep the page's shape, and the page's own otherwise", () => {
+    startPageState({ note: "Charger", count: "three" });
+    render([
+      ["note", ""],
+      ["count", 0],
+    ]);
+    expect(shown("note")).toBe('"Charger"');
+    expect(shown("count")).toBe("0");
+  });
+
+  it("sends a burst of changes as one save and keeps unsavable keys in memory", () => {
+    render([
+      ["note", ""],
+      ["ticks", {}],
+      ["bad key", false],
+    ]);
+    set("note", "Adapter");
+    set("ticks", { passport: true });
+    set("bad key", true);
+    expect(posted).toEqual([]);
+    vi.advanceTimersByTime(400);
+    expect(posted).toEqual([
+      { type: "rakazo-page:state", values: { note: "Adapter", ticks: { passport: true } } },
+    ]);
+    expect(shown("bad key")).toBe("true");
+  });
+
+  it("lets the reader tick a saved Checklist, starting each item where the page put it", () => {
+    act(() =>
+      createRoot(host).render(
+        <Checklist
+          saveAs="packing"
+          items={[
+            { text: "Passport", done: true },
+            { text: "Charger", id: "charger" },
+          ]}
+        />,
+      ),
+    );
+    const boxes = host.querySelectorAll<HTMLInputElement>("input");
+    expect([...boxes].map((box) => [box.checked, box.disabled])).toEqual([
+      [true, false],
+      [false, false],
+    ]);
+    act(() => boxes[1]!.click());
+    act(() => boxes[0]!.click());
+    vi.advanceTimersByTime(400);
+    expect(posted).toEqual([
+      { type: "rakazo-page:state", values: { packing: { charger: true, Passport: false } } },
+    ]);
+  });
+
+  it("takes another copy's values, but not over a change this copy just made", () => {
+    render([
+      ["note", ""],
+      ["other", ""],
+    ]);
+    set("note", "Mine");
+    fromHost({ note: "Older read", other: "From my phone" });
+    expect(shown("note")).toBe('"Mine"');
+    expect(shown("other")).toBe('"From my phone"');
+    vi.advanceTimersByTime(5000);
+    fromHost({ note: "From my phone" });
+    expect(shown("note")).toBe('"From my phone"');
+  });
+});
