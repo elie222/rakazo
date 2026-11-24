@@ -15,8 +15,8 @@ export function usePageStateSaver(
     target: options.target,
     save: (input: PageStateSave, send) => send("pageReviews/saveState", input),
     stale: options.stale,
-    onSaved: (_saved, input) => queue.saved(input),
-    onFailed: (_error, input) => queue.failed(input),
+    onSaved: () => queue.saved(),
+    onFailed: (error, input) => queue.failed(input, error),
   });
   const foreground = useAppForeground();
   const wasForeground = useRef(foreground);

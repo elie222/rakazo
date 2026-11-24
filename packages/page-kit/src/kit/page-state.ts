@@ -60,7 +60,18 @@ function apply(incoming: Iterable<[string, unknown]>) {
 function receive(event: MessageEvent) {
   const data = event.data as { type?: unknown; values?: unknown } | null;
   if (data?.type !== STATE_MESSAGE || !data.values || typeof data.values !== "object") return;
-  apply(Object.entries(data.values));
+  const kept = data.values as Record<string, unknown>;
+  const now = Date.now();
+  let dropped = false;
+  for (const key of [...values.keys()]) {
+    if (Object.hasOwn(kept, key) || !SAVED_KEY.test(key) || unsent.has(key)) continue;
+    if (now - (changedAt.get(key) ?? Number.NEGATIVE_INFINITY) < OWN_CHANGE_MS) continue;
+    values.delete(key);
+    held.delete(key);
+    dropped = true;
+  }
+  if (dropped) notify();
+  apply(Object.entries(kept));
 }
 
 export function startPageState(saved: unknown) {

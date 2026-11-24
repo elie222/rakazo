@@ -130,5 +130,7 @@ describe("usePageState", () => {
     expect(shown("note")).toBe('"Mine again"');
     act(() => vi.advanceTimersByTime(5000));
     expect(shown("note")).toBe('"From my laptop"');
+    fromHost({ other: "From my phone" });
+    expect(shown("note")).toBe('""');
   });
 });

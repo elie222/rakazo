@@ -9,8 +9,8 @@ export function usePageStateSaver(pageId: string, stale: readonly QueryKey[]) {
   const saver = useSave({
     save: (input: PageStateSave, rpc) => rpc.pageReviews.saveState(input),
     stale,
-    onSaved: (_saved, input) => queue.saved(input),
-    onFailed: (_error, input) => queue.failed(input),
+    onSaved: () => queue.saved(),
+    onFailed: (error, input) => queue.failed(input, error),
   });
   const failed = saver.error !== null && !saver.pending;
   useEventListener(failed ? window : null, "focus", queue.retry);
