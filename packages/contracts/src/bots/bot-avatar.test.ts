@@ -34,6 +34,12 @@ describe("bot avatar values", () => {
     expect(isBotAvatarValue("https://evil.example/track.png")).toBe(false);
   });
 
+  it("recognizes the server's avatar file URL only for display", () => {
+    const file = `/api/v1/bot-avatars/space-1/bot-1/${"a".repeat(32)}`;
+    expect(parseBotAvatarValue(file)).toEqual({ kind: "image", imageUrl: file });
+    expect(BotAvatarValueSchema.safeParse(file).success).toBe(false);
+  });
+
   it("accepts persisted writes and rejects oversized or remote values", () => {
     expect(isBotAvatarValue("#3EC5A8")).toBe(true);
     expect(isBotAvatarValue("#8B5CF6::shape_0")).toBe(true);

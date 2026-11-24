@@ -1,4 +1,4 @@
-import { BotAvatarValueSchema, parseBotAvatarValue } from "@rakazo/contracts";
+import { BotAvatarValueSchema, isBotAvatarFileUrl, parseBotAvatarValue } from "@rakazo/contracts";
 import { lightTokens } from "@rakazo/ui-tokens";
 import type { AvatarEyes } from "./avatar-shape.js";
 import {
@@ -30,6 +30,7 @@ export function notificationAvatarSource(bot: {
   color: string;
   avatarSet?: string | null;
 }): string {
+  if (isBotAvatarFileUrl(bot.color)) return bot.color;
   const parsed = BotAvatarValueSchema.safeParse(bot.color).success
     ? parseBotAvatarValue(bot.color)
     : null;

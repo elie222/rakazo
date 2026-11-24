@@ -20,7 +20,9 @@ import {
   recordAuditEvent,
   runAsTenant,
 } from "@rakazo/db";
+import { Hono } from "hono";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { mountBotAvatarFiles, rosterAvatarFile } from "../bots/bot-avatar-file.js";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
 import { handleRpcError } from "../rpc-errors.js";
@@ -154,6 +156,28 @@ describePostgres("shared spaces: invites and membership (PostgreSQL)", () => {
     await system.user.deleteMany({ where: { id: { in: users } } });
     await prisma.$disconnect();
     await db.pool.end();
+  });
+
+  it("serves a cached bot avatar only while the requester still belongs to its Space", async () => {
+    const owner = await person("avatar-owner");
+    const spaceId = await sharedSpace(owner, "Avatar Space");
+    const color = "data:image/png;base64,iVBORw0KGgo=";
+    const bot = await system.bot.create({
+      data: { userId: owner.id, spaceId, name: "Portrait", color },
+    });
+    const url = rosterAvatarFile(spaceId, bot.id, color);
+    const app = new Hono();
+    mountBotAvatarFiles(app, prisma, async () => owner.id);
+    const image = await app.request(url);
+    expect(image.status).toBe(200);
+    expect(image.headers.get("content-type")).toBe("image/png");
+    expect(image.headers.get("cache-control")).toBe("private, no-cache");
+    expect(Buffer.from(await image.arrayBuffer()).toString("base64")).toBe("iVBORw0KGgo=");
+
+    const cached = { headers: { "if-none-match": image.headers.get("etag")! } };
+    expect((await app.request(url, cached)).status).toBe(304);
+    await system.spaceMember.deleteMany({ where: { spaceId, userId: owner.id } });
+    expect((await app.request(url, cached)).status).toBe(404);
   });
 
   it("joins a shared space through a single-use link", async () => {
