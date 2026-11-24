@@ -218,6 +218,21 @@ export const MAX_ENABLED_MODEL_IDS = 500;
 /** An existing connection's id, null for a new one, or omitted for the provider's newest. */
 export const ModelConnectionTargetSchema = Id.nullable().optional();
 
+/** Maximum number of affected bots and routines shown in a disconnect confirmation. */
+export const MAX_MODEL_DISCONNECT_NAMES = 3;
+/** What disconnecting one connection takes with it. */
+export const ModelDisconnectPreviewSchema = z.object({
+  /** It runs the main model, in the account's models or a Space's own. */
+  mainModel: z.boolean(),
+  /** It serves another choice: a backup, or another purpose's model. */
+  otherChoice: z.boolean(),
+  /** Names of the member's bots and active routines pinned to the provider, only on its last connection. */
+  usedBy: z.array(z.string()).max(MAX_MODEL_DISCONNECT_NAMES),
+  /** Total number of those provider pins, whether or not the preview can name them. */
+  usedByTotal: z.number().int().nonnegative(),
+});
+export type ModelDisconnectPreview = z.infer<typeof ModelDisconnectPreviewSchema>;
+
 export const MAX_MODEL_CONNECTION_LABEL = 80;
 export const ModelConnectionLabelSchema = z.string().trim().min(1).max(MAX_MODEL_CONNECTION_LABEL);
 

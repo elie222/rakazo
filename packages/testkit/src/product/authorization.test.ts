@@ -268,6 +268,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/probeCatalog"],
       ["models/rename"],
       ["models/saveModelSettings"],
+      ["models/disconnectPreview"],
       ["models/disconnect"],
       ["models/deployment/get"],
       ["models/deployment/update", { provider: null }],
