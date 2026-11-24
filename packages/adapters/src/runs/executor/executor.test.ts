@@ -2326,6 +2326,7 @@ describe("createRunExecutor", () => {
           task: { create: taskCreate },
           run: {
             create: runCreate,
+            findFirst: vi.fn(async () => null),
             findMany: vi.fn(async () => []),
             findUnique: vi.fn(async () => null),
           },
