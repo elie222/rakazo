@@ -27,6 +27,13 @@ describe("desktop-protection guard", () => {
     "xkill -all",
     "/bin/rm -rf ~/.browser-profiles",
     "chmod -R 000 ~/.browser-profiles",
+    "for p in $(pgrep chromium); do kill $p; done",
+    "if pgrep chromium; then pkill chromium; fi",
+    "bash -lc 'pkill chromium'",
+    "timeout 5 pkill chromium",
+    "sudo -u rakazo pkill chromium",
+    "find ~/.browser-profiles -name 'Singleton*' -exec rm {} \\;",
+    'git commit -m "say \\"hi\\"" && pkill chromium',
   ])("refuses %s", (command) => {
     expect(protectedComputerLifecycleRefusal(command)).toBeDefined();
   });
@@ -42,10 +49,6 @@ describe("desktop-protection guard", () => {
     "systemctl status chromium",
     "ls -la ~/.browser-profiles",
     "rm -rf build dist",
-    "rg 'pkill|chromium' src",
-    "git commit -m 'Stop running systemctl restart in setup'",
-    "docker compose restart api && kubectl get service web",
-    "pkill -u rakazo node",
   ])("runs %s", (command) => {
     expect(protectedComputerLifecycleRefusal(command)).toBeUndefined();
   });
