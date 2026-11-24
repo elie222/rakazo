@@ -1,6 +1,6 @@
 import type { PageState } from "@rakazo/contracts";
 import { errorCode } from "@rakazo/core";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 export type PageStateSave = { pageId: string; values: PageState };
 
@@ -30,6 +30,8 @@ export function usePageStateQueue(pageId: string, run: (save: PageStateSave) => 
     sending.current = true;
     send.current(save);
   }, []);
+  // Coming back to a page sends what was waiting behind a save another page finished.
+  useEffect(() => next(), [pageId, next]);
   return {
     save(values: PageState) {
       const earlier = queued.current?.pageId === pageId ? queued.current.values : {};

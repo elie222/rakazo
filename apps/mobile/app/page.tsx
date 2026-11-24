@@ -92,7 +92,9 @@ export default function PageScreen() {
   const tapStart = useRef<ReturnType<typeof pageTapStart>>(null);
   const tappedAt = useRef<number | null>(null);
   const stateSaver = usePageStateSaver(pageId);
-  const saving = loaded.status === "ready" && loaded.page.readerState !== undefined;
+  // A page still on screen while another loads saves nothing under the new page.
+  const saving =
+    loaded.status === "ready" && loaded.page.id === pageId && loaded.page.readerState !== undefined;
   const receive = useCallback(
     (data: string, answer: (message: object) => void) => {
       const values = saving ? pageStateRequest(pageMessage(data)) : null;
