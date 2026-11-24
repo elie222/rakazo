@@ -63,8 +63,9 @@ describe("built-in tool bridge", () => {
     // routine can start on, saying a Git event needs no connected app; schedule_list reaches a
     // managed bot's routines; update_bot carries the settings its owner can change;
     // update_preferences includes the chat model picker and reply streaming; remember takes a
-    // list of operations so one call can make room and add, each with an optional end.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(36_885);
+    // list of operations so one call can make room and add, each with an optional end; find_tool
+    // names the deferred write_draft.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(36_898);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );
