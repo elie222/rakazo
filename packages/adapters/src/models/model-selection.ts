@@ -713,7 +713,10 @@ export async function hasReadyModelCredential(
   actor: Pick<Actor, "userId" | "spaceId">,
   provider: string,
   modelId: string,
-  resolution: ConnectedModelResolution & { allowPrivateEndpoint?: boolean } = {},
+  resolution: ConnectedModelResolution & {
+    allowPrivateEndpoint?: boolean;
+    allowHttpEndpoint?: boolean;
+  } = {},
 ): Promise<boolean> {
   const reads = resolution.reads ?? new Map();
   const lookup = { ...resolution, reads };
@@ -743,6 +746,7 @@ export async function hasReadyModelCredential(
         url,
         secret.apiKey,
         Boolean(secret.headers && Object.keys(secret.headers).length),
+        { allowHttp: resolution.allowHttpEndpoint === true },
       );
     } catch (error) {
       if (!(error instanceof ConnectionSetupError)) throw error;

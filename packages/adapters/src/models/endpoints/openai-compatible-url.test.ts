@@ -238,15 +238,26 @@ describe("assertHttpsForKeyedOpenAiCompatibleUrl", () => {
     expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, undefined)).not.toThrow();
     expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "  ")).not.toThrow();
   });
+
+  it("allows keyed public http when the deployment permits HTTP endpoints", () => {
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    const url = assertAllowedOpenAiCompatibleUrl("http://gateway.example.com/v1");
+    expect(() =>
+      assertHttpsForKeyedOpenAiCompatibleUrl(url, "secret-key", false, { allowHttp: true }),
+    ).not.toThrow();
+    expect(() =>
+      assertHttpsForKeyedOpenAiCompatibleUrl(url, undefined, true, { allowHttp: true }),
+    ).not.toThrow();
+  });
 });
 
 it("keeps API-key-only HTTPS copy separate from header-aware copy", () => {
   const url = new URL("http://models.example/v1");
   expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, "key")).toThrow(
-    "OpenAI-compatible endpoints that send an API key must use HTTPS.",
+    "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, omit the API key on a private HTTP endpoint, or have an admin allow HTTP model endpoints in Settings.",
   );
   expect(() => assertHttpsForKeyedOpenAiCompatibleUrl(url, undefined, true)).toThrow(
-    "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS.",
+    "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS. Use an https:// URL, omit the API key and custom headers on a private HTTP endpoint, or have an admin allow HTTP model endpoints in Settings.",
   );
 });
 

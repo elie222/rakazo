@@ -269,6 +269,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/rename"],
       ["models/saveModelSettings"],
       ["models/disconnect"],
+      ["models/httpEndpointsAllowed"],
+      ["models/setHttpEndpointsAllowed", { allowed: true }],
       ["models/deployment/get"],
       ["models/deployment/update", { provider: null }],
       ["spaces/list"],

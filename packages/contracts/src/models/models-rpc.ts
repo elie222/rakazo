@@ -92,6 +92,11 @@ export const modelsRpc = {
         ),
       )
       .output(ModelCredentialSchema),
+    /** Deployment-wide switch for plain-HTTP model endpoints; reads and edits are admin-only. */
+    httpEndpointsAllowed: oc.output(z.object({ allowed: z.boolean() })),
+    setHttpEndpointsAllowed: oc
+      .input(z.object({ allowed: z.boolean() }))
+      .output(z.object({ allowed: z.boolean() })),
     probeOpenAiCompatible: oc
       .input(
         z.object({

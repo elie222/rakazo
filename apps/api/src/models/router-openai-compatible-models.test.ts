@@ -36,6 +36,7 @@ describe("OpenAI-compatible model probes", () => {
       secretUserId?: string;
       actor?: Actor;
       mcpAllowPrivateEndpoint?: boolean;
+      httpModelEndpointsAllowed?: boolean;
     } = {},
   ) {
     const credential = {
@@ -81,6 +82,13 @@ describe("OpenAI-compatible model probes", () => {
         userModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
         userModelCredential: { findFirst: findCredential, findMany: findCredentials },
         secret: { findMany: findSecret },
+        deploymentSettings: {
+          findUnique: vi
+            .fn()
+            .mockResolvedValue(
+              options.httpModelEndpointsAllowed ? { httpModelEndpointsAllowed: true } : null,
+            ),
+        },
       },
       secrets: { load },
       modelConnectionFetch: vi.fn(() => {
@@ -470,6 +478,23 @@ describe("OpenAI-compatible model probes", () => {
       );
       await expect(client.models.probeOpenAiCompatible({ baseUrl })).rejects.toThrow(/HTTPS/);
       expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("accepts keys on public HTTP endpoints once the deployment allows them", async () => {
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
+    try {
+      const { client, fetch, load } = fixture({ httpModelEndpointsAllowed: true });
+      const baseUrl = "http://example.invalid/v1";
+      load.mockResolvedValue(
+        JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "fake-saved-key" }),
+      );
+      await expect(client.models.probeOpenAiCompatible({ baseUrl })).resolves.toEqual({
+        models: ["test-model"],
+      });
+      expect(fetch).toHaveBeenCalled();
     } finally {
       vi.unstubAllEnvs();
     }

@@ -504,6 +504,7 @@ export async function runAutoReviewJudge(
             baseUrl: input.baseUrl,
             headers: input.headers,
             allowPrivateEndpoint: input.allowPrivateEndpoint,
+            allowHttpEndpoint: input.allowHttpEndpoint,
             cacheCapabilities: input.cacheCapabilities,
             contextWindow: input.contextWindow,
             maxTokens: input.maxTokens,
@@ -594,6 +595,7 @@ export type LlmAutoReviewOptions = {
   baseUrl?: string;
   headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;
+  allowHttpEndpoint?: boolean;
   cacheCapabilities?: CacheCapabilities;
   contextWindow?: number;
   maxTokens?: number;

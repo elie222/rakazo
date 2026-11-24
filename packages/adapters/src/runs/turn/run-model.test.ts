@@ -35,6 +35,7 @@ it("runs a model at its own level, else at the one its connection keeps for that
       billingEnabled: false,
       prisma: {
         secret: { findFirst: async () => ({ id: credential.secretId, ciphertext: "sealed" }) },
+        deploymentSettings: { findUnique: async () => null },
       },
       secretStore: { load: async () => secret },
     } as unknown as ExecutorDeps;

@@ -27,6 +27,8 @@ const models = vi.hoisted(() => ({
   saveModelSettings: vi.fn(),
   setDefault: vi.fn(),
   probeOpenAiCompatible: vi.fn(),
+  httpEndpointsAllowed: vi.fn(async () => ({ allowed: false })),
+  setHttpEndpointsAllowed: vi.fn(async () => ({ allowed: false })),
   beginOAuth: vi.fn(),
   cancelOAuth: vi.fn(),
   completeOAuth: vi.fn(),

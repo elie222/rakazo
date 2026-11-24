@@ -10,6 +10,7 @@ import {
   dataRetentionForConnect,
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
+  httpModelEndpointsAllowed,
   keptModelSettings,
   listPiCatalog,
   liveCatalogEntry,
@@ -505,9 +506,16 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
           }
         }
       }
+      // Only the compatible branch below consults the switch, so every other provider connects
+      // without an extra deployment-settings read.
+      const allowHttpModelEndpoints =
+        input.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+          ? await httpModelEndpointsAllowed(deps.prisma)
+          : false;
       plaintext = buildModelConnectPlaintext(input, previousPlaintext, {
         omitVisionModelIds,
         allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
+        allowHttpEndpoint: allowHttpModelEndpoints,
       });
       if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
         const saved = parseModelSecret(plaintext);

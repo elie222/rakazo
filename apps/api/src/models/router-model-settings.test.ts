@@ -336,6 +336,7 @@ describe("model settings", () => {
         prisma: {
           userModelCredential: { findFirst: vi.fn(async () => connection()) },
           secret: { findFirst: readSecret },
+          deploymentSettings: { findUnique: vi.fn(async () => null) },
           $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
         },
         secrets: {

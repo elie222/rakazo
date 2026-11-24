@@ -14,6 +14,7 @@ import {
   loadAdminDeploymentModelKey,
   matchingAdminDeploymentModel,
 } from "../../models/deployment-model.js";
+import { httpModelEndpointsAllowed } from "../../models/http-model-endpoints.js";
 import {
   persistRefreshedModelCredential,
   refreshStoredModelCredential,
@@ -383,6 +384,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           baseUrl: parsed.baseUrl,
           headers: parsed.headers,
           allowPrivateEndpoint: this.deps.allowPrivateEndpoint === true,
+          allowHttpEndpoint: await httpModelEndpointsAllowed(this.deps.prisma),
 
           ...limit,
           ...context,

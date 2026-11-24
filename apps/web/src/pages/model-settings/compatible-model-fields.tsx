@@ -12,6 +12,7 @@ import {
 } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { ModelHeadersEditor } from "../../components/models/ModelHeadersEditor";
+import { HttpEndpointsSwitch } from "./http-endpoints-switch";
 
 import type { ModelSettingsState } from "./use-model-settings";
 
@@ -249,6 +250,7 @@ export function CompatibleModelFields({
               setNotice(null);
             }}
           />
+          <HttpEndpointsSwitch />
         </Disclosure>
       ) : null}
     </div>

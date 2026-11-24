@@ -113,7 +113,15 @@ function isBlockedHostname(hostname: string): boolean {
  * Who may reach which model endpoints. `allowPrivate` comes from
  * operator configuration; absent means deny.
  */
-export type OpenAiCompatibleUrlPolicy = { allowPublic?: boolean; allowPrivate?: boolean };
+export type OpenAiCompatibleUrlPolicy = {
+  allowPublic?: boolean;
+  allowPrivate?: boolean;
+  /**
+   * Deployments that enable HTTP model endpoints (Settings) also send keys and custom headers
+   * without TLS; absent means keyed traffic must use https:// unless the host is private.
+   */
+  allowHttp?: boolean;
+};
 
 export const PRIVATE_MODEL_ENDPOINT_MESSAGE =
   "Private model endpoints need MCP_ALLOW_PRIVATE_ENDPOINT=true on the API and worker.";
@@ -135,15 +143,17 @@ export function assertHttpsForKeyedOpenAiCompatibleUrl(
   url: URL,
   apiKey: string | undefined | null,
   hasHeaders = false,
+  policy?: { allowHttp?: boolean },
 ): void {
   if (!apiKey?.trim() && !hasHeaders) return;
   if (url.protocol === "https:") return;
+  if (policy?.allowHttp === true) return;
   const hostname = normalizeHost(url.hostname);
   if (isPrivateOpenAiCompatibleHostname(hostname)) return;
   throw new ConnectionSetupError(
     hasHeaders
-      ? "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS. Use an https:// URL, or omit the API key and custom headers on a private HTTP endpoint."
-      : "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, or omit the API key on a private HTTP endpoint.",
+      ? "OpenAI-compatible endpoints that send an API key or custom headers must use HTTPS. Use an https:// URL, omit the API key and custom headers on a private HTTP endpoint, or have an admin allow HTTP model endpoints in Settings."
+      : "OpenAI-compatible endpoints that send an API key must use HTTPS. Use an https:// URL, omit the API key on a private HTTP endpoint, or have an admin allow HTTP model endpoints in Settings.",
   );
 }
 

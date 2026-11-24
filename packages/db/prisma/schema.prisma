@@ -857,6 +857,9 @@ model DeploymentSettings {
   computerProvider                String?
   /// That provider's encrypted connection settings, owned by the deployment rather than a user.
   computerProviderCipher          String?
+  /// Admins allow members to save and use plain-HTTP model endpoints (intranet gateways),
+  /// including sending API keys without TLS. Checked on save and re-checked on every run.
+  httpModelEndpointsAllowed       Boolean  @default(false)
   createdAt                       DateTime @default(now())
   updatedAt                       DateTime @updatedAt
 

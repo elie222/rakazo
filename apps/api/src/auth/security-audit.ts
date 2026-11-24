@@ -67,6 +67,10 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   // Starting a sign-in replaces any wallet already connected.
   "paymentWallet.connect": { type: "credential.changed", kind: "payment_wallet" },
   "paymentWallet.disconnect": { type: "credential.deleted", kind: "payment_wallet" },
+  "models.setHttpEndpointsAllowed": {
+    type: "deployment.settings.changed",
+    fields: ["allowed"],
+  },
   "deployment.update": {
     type: "deployment.settings.changed",
     fields: ["signupsEnabled", "computerHost"],

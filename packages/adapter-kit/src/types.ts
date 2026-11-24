@@ -653,6 +653,8 @@ export interface AgentRunModel {
   headers?: Record<string, string>;
   /** The connection owner may reach a private or loopback `baseUrl`; absent means deny. */
   allowPrivateEndpoint?: boolean;
+  /** The deployment allows this `baseUrl` exchange over plain http, key included. */
+  allowHttpEndpoint?: boolean;
   /** Whether this custom connection accepts standard reasoning_effort. */
   reasoning?: boolean;
   /** Whether this custom connection accepts image input. */

@@ -43,6 +43,8 @@ export type BuildModelConnectOptions = {
   omitVisionModelIds?: boolean;
   /** Private and loopback endpoints require explicit operator configuration. */
   allowPrivateEndpoint?: boolean;
+  /** The deployment allows saving plain-HTTP endpoints, key included. */
+  allowHttpEndpoint?: boolean;
 };
 
 /** Reuse saved probe headers only for the endpoint they were saved for. */
@@ -89,7 +91,10 @@ export function buildModelConnectPlaintext(
   const retention = dataRetentionForConnect(input, inherited?.zeroDataRetention);
   const zdr = retention ? { zeroDataRetention: retention } : {};
   if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-    const policy = { allowPrivate: options?.allowPrivateEndpoint };
+    const policy = {
+      allowPrivate: options?.allowPrivateEndpoint,
+      allowHttp: options?.allowHttpEndpoint,
+    };
     const prepared = prepareOpenAiCompatibleConnect(input, policy);
     assertHeaderSafeApiKey(prepared.apiKey);
     const sameEndpoint =

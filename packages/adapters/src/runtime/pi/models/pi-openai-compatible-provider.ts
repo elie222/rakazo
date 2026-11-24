@@ -159,7 +159,7 @@ function anthropicMessagesBaseUrl(baseUrl: string): string {
 
 function openAiCompatibleProvider(
   models: Model<"openai-completions" | "openai-responses" | "anthropic-messages">[],
-  policy: { allowPrivate?: boolean; headers?: Record<string, string> } = {},
+  policy: { allowPrivate?: boolean; allowHttp?: boolean; headers?: Record<string, string> } = {},
 ): Provider {
   const api = (protocol: string) =>
     protocol === "openai-responses"
@@ -294,6 +294,7 @@ export function createOpenAiCompatibleFetch(
         url,
         requestCarriesAuthorization(input, init) ? "present" : undefined,
         Object.keys(customHeaders ?? {}).length > 0,
+        opts,
       );
     }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
@@ -444,6 +445,8 @@ export function registerOpenAiCompatibleRuntime(
     contextWindow?: number;
     /** Explicit operator authorization for private endpoints. */
     allowPrivate?: boolean;
+    /** Deployment setting: key and custom headers may travel to this endpoint without TLS. */
+    allowHttp?: boolean;
   },
 ): MutableModels {
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(opts.baseUrl);
@@ -462,7 +465,7 @@ export function registerOpenAiCompatibleRuntime(
           opts.apiProtocol,
         ),
       ],
-      { allowPrivate: opts.allowPrivate, headers: opts.headers },
+      { allowPrivate: opts.allowPrivate, allowHttp: opts.allowHttp, headers: opts.headers },
     ),
   );
   return guardToolCallNames(models, OPENAI_COMPATIBLE_PROVIDER_ID);
@@ -478,7 +481,7 @@ export type OpenAiCompatibleConnectInput = {
 
 export function prepareOpenAiCompatibleConnect(
   input: OpenAiCompatibleConnectInput,
-  policy?: { allowPrivate?: boolean },
+  policy?: { allowPrivate?: boolean; allowHttp?: boolean },
 ): {
   baseUrl: string;
   modelId: string;
@@ -494,6 +497,7 @@ export function prepareOpenAiCompatibleConnect(
     allowed,
     apiKey,
     Object.keys(input.headers ?? {}).length > 0,
+    policy,
   );
   const normalized = allowed.href;
   return apiKey ? { baseUrl: normalized, modelId, apiKey } : { baseUrl: normalized, modelId };
@@ -670,6 +674,7 @@ export async function probeOpenAiCompatibleModels(
     baseUrl,
     input.apiKey,
     Object.keys(input.headers ?? {}).length > 0,
+    opts,
   );
   await verifyOpenAiCompatibleApiKey(input, fetchImpl, signal);
   const controller = new AbortController();

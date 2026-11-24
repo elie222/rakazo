@@ -137,6 +137,7 @@ export * from "./models/deployment-model.js";
 export { dataRetentionForConnect } from "./models/endpoints/data-retention.js";
 export * from "./models/endpoints/openai-compatible-url.js";
 export * from "./models/endpoints/openrouter-usage.js";
+export * from "./models/http-model-endpoints.js";
 export * from "./models/model-connect.js";
 export * from "./models/model-connect-check.js";
 export * from "./models/model-credential-list.js";

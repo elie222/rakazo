@@ -17,6 +17,11 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 
+// The admin-only deployment switch owns its queries and is covered by the overlay tests.
+vi.mock("./http-endpoints-switch", () => ({
+  HttpEndpointsSwitch: () => null,
+}));
+
 const rows = (count: number) => Array.from({ length: count }, (_, index) => `model-${index + 1}`);
 
 beforeEach(() => {
