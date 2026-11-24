@@ -38,6 +38,7 @@ import { appendOutsideText } from "../../approvals/review-target-sources.js";
 import type { ComputerExecutionLease } from "../../computers/computer-lifecycle.js";
 import type { UnchangedVisualStreak } from "../../computers/screens/computer-tools.js";
 import type { selectRunConnections } from "../../integrations/connection-context.js";
+import type { RunMediaSources } from "../../media/media-sources.js";
 import type { loadBotMessageContext } from "../../messaging/bot-messages.js";
 import { namedAgentTools } from "../../runtime/pi/tools/pi-runtime-tools.js";
 import type { inferScript } from "../../runtime/scripted-runtime.js";
@@ -235,6 +236,8 @@ export interface RunState {
    * attempt refuses own instruction writes rather than guessing.
    */
   ownInstructionsBaseline: string | undefined;
+  /** Set once this run archives its own bot: it may only finish its reply. */
+  selfArchived?: true;
   earlierAttempt: Promise<boolean> | undefined;
   /**
    * Hosts of the sites this run typed an approved wallet purchase into (fill_card, fill_pay_token):
@@ -312,6 +315,8 @@ export type RunTrust = ReturnType<typeof createRunTrustLoaders> & {
 export interface RunProviders {
   web: WebProvider;
   mediaGeneration: MediaGenerationProvider | undefined;
+  /** Where this run's images and videos come from. */
+  media: RunMediaSources;
   paidServices: PaidServiceProvider | undefined;
   browser: BrowserProvider;
   cloudAgent: ExecutorDeps["cloudAgent"];
@@ -485,6 +490,23 @@ export const OWN_INSTRUCTIONS_CHANGED_ERROR =
 /** An older checkpoint predates the baseline; a resumed attempt must not guess. */
 export const OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR =
   "This resumed run cannot safely change its own instructions. Ask the user to send their request again so a new run starts from the current instructions.";
+
+/** Give the new task its own occurrences while keeping retries anchored to the intro. */
+export function seedIntroEffectOccurrences(
+  effects: Pick<RunContext["state"]["effects"], "counts" | "consumedIds">,
+  runId: string,
+  receipts: readonly { id: string; kind: string; idempotencyKey: string }[],
+): void {
+  for (const { id, kind, idempotencyKey } of receipts) {
+    effects.consumedIds.add(id);
+    if (!isToolEffectIdempotencyKey(idempotencyKey, runId, kind)) continue;
+    const prefix = `${runId}:${kind}:`;
+    const [digest, suffix] = idempotencyKey.slice(prefix.length).split(":");
+    const fingerprint = prefix + digest;
+    const occurrence = Number(suffix ?? 0);
+    effects.counts.set(fingerprint, Math.max(effects.counts.get(fingerprint) ?? 0, occurrence + 1));
+  }
+}
 
 export function nextMutatingEffectOccurrence(
   ctx: RunContext,

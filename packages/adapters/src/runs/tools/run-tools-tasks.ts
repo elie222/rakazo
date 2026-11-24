@@ -1,3 +1,6 @@
+import { redactSecrets } from "@rakazo/core";
+import type { FleetCardSummary } from "../../approvals/approval-ask.js";
+import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../../approvals/approval-ask.js";
 import {
   desktopGuardApplies,
   desktopProtectionGuardMessage,
@@ -19,6 +22,8 @@ import {
   listBoardTickets,
   updateTicket,
 } from "../../tasks/ticket-tools.js";
+import { cardName } from "../../tools/fleet-tools.js";
+import type { ScheduleToolDeps } from "../../tools/schedule-tools.js";
 import {
   cancelScheduleFromTool,
   commandWatchFromTool,
@@ -31,6 +36,7 @@ import {
   scheduleTimingArgs,
   updateScheduleFromTool,
 } from "../../tools/schedule-tools.js";
+import { routineApprovalChanges, routineApprovalLines } from "../../tools/schedule-update-view.js";
 import {
   skillCreateFromTool,
   skillDeleteFromTool,
@@ -222,27 +228,10 @@ export const taskTools: ToolHandlers = {
     return call.finish(created);
   },
   async schedule_update(ctx, call) {
-    const { deps, run } = ctx;
-    const { args } = call;
-    const target = await routinesTarget(ctx, call.name, args);
-    if ("error" in target) return call.finish(target);
     return call.finish(
-      await updateScheduleFromTool(deps, {
-        spaceId: run.spaceId,
-        botId: target.botId,
-        userId: run.userId,
-        threadId: target.threadId,
-        ...(target.groupThreadId ? { scopeThreadId: target.groupThreadId } : {}),
-        routineId: String(args.routineId ?? ""),
-        name: isScheduleValueProvided(args.name) ? String(args.name) : undefined,
-        prompt: isScheduleValueProvided(args.prompt) ? String(args.prompt) : undefined,
-        inChat: typeof args.inChat === "boolean" ? args.inChat : undefined,
-        active: typeof args.active === "boolean" ? args.active : undefined,
-        timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,
-        schedule: compactScheduleInput(scheduleTimingArgs(args)),
-        everyMinutes: isScheduleValueProvided(args.everyMinutes) ? args.everyMinutes : undefined,
-        on: isScheduleValueProvided(args.on) ? args.on : undefined,
-      }),
+      await onScheduleUpdateCall(ctx, call.args, (deps, input) =>
+        updateScheduleFromTool(deps, input),
+      ),
     );
   },
   async schedule_list(ctx, call) {
@@ -348,4 +337,134 @@ export const taskTools: ToolHandlers = {
 function routinesTarget(ctx: RunContext, name: string, args: Record<string, unknown>) {
   const { deps, fleetRun, bot, thread } = ctx;
   return findRoutinesTarget({ prisma: deps.prisma, fleetRun, botId: bot.id, thread }, name, args);
+}
+
+/** A schedule_update call's fields, as its save and its preview both take them. */
+function scheduleUpdateInput(args: Record<string, unknown>) {
+  const expected = args.expected as { name?: unknown; prompt?: unknown } | undefined;
+  const expectedName = typeof expected?.name === "string" ? expected.name : undefined;
+  const expectedPrompt = typeof expected?.prompt === "string" ? expected.prompt : undefined;
+  return {
+    routineId: String(args.routineId ?? ""),
+    name: isScheduleValueProvided(args.name) ? String(args.name) : undefined,
+    prompt: isScheduleValueProvided(args.prompt) ? String(args.prompt) : undefined,
+    inChat: typeof args.inChat === "boolean" ? args.inChat : undefined,
+    active: typeof args.active === "boolean" ? args.active : undefined,
+    timezone: isScheduleValueProvided(args.timezone) ? String(args.timezone) : undefined,
+    schedule: compactScheduleInput(scheduleTimingArgs(args)),
+    everyMinutes: isScheduleValueProvided(args.everyMinutes) ? args.everyMinutes : undefined,
+    on: isScheduleValueProvided(args.on) ? args.on : undefined,
+    endAt: isScheduleValueProvided(args.endAt) ? String(args.endAt) : undefined,
+    // The pinned before-values an approval was shown against, for the fields it writes.
+    ...(expectedName !== undefined || expectedPrompt !== undefined
+      ? {
+          expected: {
+            ...(expectedName !== undefined ? { name: expectedName } : {}),
+            ...(expectedPrompt !== undefined ? { prompt: expectedPrompt } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Runs `apply` on a schedule_update call's target and fields, or answers why the call has no
+ * target. The save and the card shown before it both go through here, so they read one call.
+ */
+async function onScheduleUpdateCall<T>(
+  ctx: RunContext,
+  args: Record<string, unknown>,
+  apply: (
+    deps: ScheduleToolDeps,
+    input: Parameters<typeof updateScheduleFromTool>[1],
+  ) => Promise<T>,
+): Promise<T | { error: string }> {
+  const { deps, run } = ctx;
+  const target = await routinesTarget(ctx, "schedule_update", args);
+  if ("error" in target) return target;
+  return apply(deps, {
+    spaceId: run.spaceId,
+    botId: target.botId,
+    userId: run.userId,
+    threadId: target.threadId,
+    ...(target.groupThreadId ? { scopeThreadId: target.groupThreadId } : {}),
+    ...scheduleUpdateInput(args),
+  });
+}
+
+/** Arguments the comparison cannot represent faithfully keep the generic approval card. */
+const PLAIN_CARD_FIELDS = ["delayMinutes", "delaySeconds", "on", "everyMinutes", "endAt"];
+
+/** The stored name and prompt an approval of a routine edit pins, each for a field the call writes. */
+type RoutineBaseline = { name?: string; prompt?: string };
+
+/**
+ * The changes a card can show as they will be saved. The save takes the next run from its own
+ * clock, as a resumed routine's and a repeating schedule's first occurrence are, unless the call
+ * fixes it: an absolute time, a first start, or a pause that clears it.
+ */
+function cardChanges(
+  changes: Record<string, { before: unknown; after: unknown }>,
+  args: Record<string, unknown>,
+) {
+  const { nextRun, ...shown } = changes;
+  // A pause is already shown as a status change.
+  if (changes.active?.after === false && nextRun?.after === null) return shown;
+  const fixed =
+    nextRun?.after == null ||
+    isScheduleValueProvided(args.runAt) ||
+    isScheduleValueProvided(args.startAt);
+  return fixed ? changes : shown;
+}
+
+/**
+ * A schedule_update before the approval gate, answered by the save's own checks: the error that
+ * ends the call with no card, or the baseline the approved call replays with and the card to show
+ * beside the call's own arguments. The baseline is the routine's name and prompt as the preview
+ * read them, for the fields the call writes, whatever the card: an edit that rewrites one is
+ * answered, not saved over a newer one. The card shows a change as the save will make it. A
+ * call it cannot show whole keeps the plain card: a delay is counted from the clock when the
+ * approved call runs, events and a watch's interval are each one whole argument, and a change too
+ * long for the card once redacted would lose its tail.
+ */
+export async function scheduleUpdatePreview(
+  ctx: RunContext,
+  args: Record<string, unknown>,
+): Promise<{ error: string } | { summary?: FleetCardSummary; pinned?: RoutineBaseline }> {
+  const planned = await onScheduleUpdateCall(ctx, args, (deps, input) =>
+    updateScheduleFromTool(deps, input, { preview: true }),
+  );
+  if ("error" in planned) return planned;
+  // The routine as the preview read it. A field the call rewrites is in `changes` with its stored
+  // value; one it writes unchanged is not, and then holds what the call sent.
+  const { changes } = planned;
+  const storedName = typeof changes.name?.before === "string" ? changes.name.before : planned.name;
+  const pinned: RoutineBaseline = {
+    ...(isScheduleValueProvided(args.name) ? { name: storedName } : {}),
+    ...(isScheduleValueProvided(args.prompt)
+      ? {
+          prompt:
+            typeof changes.prompt?.before === "string"
+              ? changes.prompt.before
+              : String(args.prompt).trim(),
+        }
+      : {}),
+  };
+  const plain = Object.keys(pinned).length ? { pinned } : {};
+  if (PLAIN_CARD_FIELDS.some((field) => isScheduleValueProvided(args[field]))) return plain;
+  const { secrets } = ctx;
+  const review = routineApprovalChanges(cardChanges(changes, args), secrets);
+  if (review.length === 0) return plain;
+  const lines = routineApprovalLines(review);
+  // With room for a review reason of the longest allowed length leading the detail.
+  const room = approvalDetailLength("schedule_update") - MAX_APPROVAL_SUMMARY_LENGTH - 2;
+  if (lines.join("\n").length > room) return plain;
+  return {
+    ...plain,
+    summary: {
+      title: `Update “${cardName(redactSecrets(storedName, secrets))}”?`,
+      lines,
+      routineUpdate: { changes: review },
+    },
+  };
 }

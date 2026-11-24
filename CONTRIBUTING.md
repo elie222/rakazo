@@ -125,7 +125,7 @@ capability config, fixtures, logs, or snapshots; use the encrypted secret store 
 
 - Keep PRs small and easy to review.
 - Target the `main` branch.
-- Describe why the change is needed, what changed, and **how you tested** (e.g. `pnpm test`, manual steps).
+- Title and describe it as [AGENTS.md](AGENTS.md) says: a plain-sentence title, then What, Why, Changes and Tested (the PR template has the headings).
 - Link related issues when applicable.
 
 ## Contact

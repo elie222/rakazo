@@ -2,7 +2,15 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, Routine, ThinkingLevel, ThreadSnapshot } from "@rakazo/contracts";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
-import { cronFromPreset, localTimezone, routineComputerUpdate, routineCopy } from "@rakazo/core";
+import {
+  cronFromPreset,
+  localTimezone,
+  routineCanEnd,
+  routineComputerUpdate,
+  routineCopy,
+  routineDraftEndsAt,
+  routineEndUpdate,
+} from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
@@ -154,7 +162,7 @@ export function useRoutineEditor({
         draft: routineDraft,
         onChange: setRoutineDraft,
         editing: editingRoutine,
-        timezone: editingRoutine?.timezone ?? timezone ?? localTimezone(),
+        timezone: routineDraft.timezone ?? timezone ?? localTimezone(),
         webhook: {
           path: appBotInboundUrl(inboundOrigin, active.id, "webhook"),
           secret: routineWebhookSecret,
@@ -244,6 +252,11 @@ export function useRoutineEditor({
               });
             }
             const crons = routineDraft.schedules.map(cronFromPreset);
+            const repeats = routineCanEnd(
+              crons,
+              watch !== null,
+              routineDraftEventTriggered(routineDraft),
+            );
             const model = routineDraft.modelKey ? parseModelOptionKey(routineDraft.modelKey) : null;
             const routineModel = {
               modelProvider: model?.provider ?? null,
@@ -301,14 +314,16 @@ export function useRoutineEditor({
                   ? routineModel
                   : {}),
                 ...(runAt ? { runAt } : {}),
+                ...routineEndUpdate(targetRoutine, routineDraft.endsOn, repeats),
               });
             } else {
+              const createTimezone = routineDraft.timezone ?? timezone ?? localTimezone();
               saved = await rpc.routines.create({
                 botId: targetBotId,
                 name: routineDraft.name || t`Routine`,
                 prompt: routineDraft.prompt || t`Check in.`,
                 crons,
-                timezone: timezone ?? localTimezone(),
+                timezone: createTimezone,
                 active: routineDraft.active,
                 notify: true,
                 webhookEnabled: routineDraft.webhookEnabled,
@@ -317,6 +332,7 @@ export function useRoutineEditor({
                 emailSenders: routineDraft.emailSenders,
                 watch,
                 inChat: routineDraft.inChat,
+                endsAt: routineDraftEndsAt(routineDraft.endsOn, repeats, createTimezone),
                 ...routineModel,
               });
             }

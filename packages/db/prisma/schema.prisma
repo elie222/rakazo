@@ -491,6 +491,7 @@ model Organization {
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
   computerAllowanceGrants ComputerAllowanceGrant[]
+  mediaCharges MediaCharge[]
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
@@ -597,6 +598,22 @@ model ComputerAllowanceGrant {
 
   @@index([organizationId, createdAt])
   @@map("computer_allowance_grants")
+}
+
+/// Hosted image and video generation an organization spent its monthly media balance on. Kept
+/// apart from the run that spent it, so deleting a bot or Space does not give the balance back.
+model MediaCharge {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// The generation charged, as `media:<external effect id>`; unique so a retry charges once.
+  source         String       @unique
+  kind           String
+  amountMicros   Int
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("media_charges")
 }
 
 model PluginSubmission {
@@ -1632,6 +1649,7 @@ model Routine {
   watchState     Json?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
+  endsAt         DateTime?
   /// Runs in a row the model provider refused for the account; each one spaces out the schedule.
   accountFailures Int      @default(0)
   /// When failing runs last paused it; only runs after this count toward the next pause.
@@ -1644,6 +1662,7 @@ model Routine {
 
   @@index([active, nextRunAt])
   @@index([spaceId, botId])
+  // routines_ends_at_idx (routines with an end) is raw SQL: Prisma cannot express partial indexes.
   @@map("routines")
 }
 

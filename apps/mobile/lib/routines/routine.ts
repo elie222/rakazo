@@ -1,8 +1,8 @@
 import { ph, t } from "@lingui/core/macro";
 import type { Routine } from "@rakazo/contracts";
-import { formatCron } from "@rakazo/core";
+import { formatCron, formatRoutineEnd } from "@rakazo/core";
 import { cronLabels } from "@rakazo/i18n/cron";
-import { getActiveUiLocale } from "../i18n/i18n";
+import { dateLocaleForUi, getActiveUiLocale } from "../i18n/i18n";
 
 /** Triggers set up on web. Mobile lists them and can remove them, but not add or edit them. */
 export type RoutineWebTrigger = "webhookEnabled" | "githubEnabled" | "messageProvider" | "watch";
@@ -39,9 +39,13 @@ export function routineTriggerNames(routine: Routine): string[] {
 
 function routineTriggers(routine: Routine): string {
   const labels = cronLabels(getActiveUiLocale());
+  const end = routine.endsAt
+    ? formatRoutineEnd(routine.endsAt, routine.timezone, dateLocaleForUi())
+    : null;
   return [
     ...routine.crons.map((cron) => formatCron(cron, labels)),
     ...routineTriggerNames(routine),
+    ...(end ? [t`until ${end}`] : []),
   ].join(", ");
 }
 

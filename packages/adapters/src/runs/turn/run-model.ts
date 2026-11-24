@@ -11,7 +11,7 @@ import {
   creditOfferingFromConnectionId,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
-import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
+import { MISSING_MODEL_RUN_ERROR, savedThinkingLevel } from "@rakazo/core";
 import {
   approvedModelCreditOffering,
   modelCreditOfferings,
@@ -251,6 +251,7 @@ async function resolveModelKeyMaterial(
     secretId: string;
     provider: string;
     defaultModel?: string | null;
+    thinkingLevel?: string | null;
     supportsImages?: boolean;
   } | null,
   provider: string,
@@ -281,6 +282,8 @@ async function resolveModelKeyMaterial(
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
   contextWindow?: number;
   reasoning?: boolean;
+  /** The level for runs that pick none: the model's own, else its connection's for that model. */
+  thinkingLevel?: string | null;
   maxTokens?: number;
   acceptsImages?: boolean;
   maxImagesPerPrompt?: number;
@@ -407,6 +410,11 @@ async function resolveModelKeyMaterial(
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
         contextWindow: settings.contextWindow ?? liveCodex?.contextWindow,
         reasoning: liveCodex?.reasoningEfforts.length ? true : settings.reasoning,
+        thinkingLevel: savedThinkingLevel(
+          settings.thinkingLevel,
+          { modelId: credential.defaultModel, thinkingLevel: credential.thinkingLevel },
+          modelId,
+        ),
         maxTokens: settings.maxTokens,
         acceptsImages,
         maxImagesPerPrompt: settings.maxImagesPerPrompt,
@@ -465,10 +473,14 @@ async function resolveModelKeyMaterial(
   };
 }
 
-/** Translate resolved credentials and capabilities consistently for every run path. */
+/**
+ * Translate resolved credentials and capabilities consistently for every run path. A run that
+ * chose no thinking level runs at the model's own, else its connection's for that model.
+ */
 export function resolvedModelRunFields(
   resolved: Awaited<ReturnType<typeof resolveModelKey>>,
-): Omit<AgentRunRequest["model"], "provider" | "id" | "thinkingLevel"> {
+  thinkingLevel?: string | null,
+): Omit<AgentRunRequest["model"], "provider" | "id"> {
   return {
     connectionId: resolved.connectionId,
     billing: resolved.billing,
@@ -489,6 +501,9 @@ export function resolvedModelRunFields(
     maxTokens: resolved.maxTokens,
     acceptsImages: resolved.acceptsImages,
     maxImagesPerPrompt: resolved.maxImagesPerPrompt,
+    thinkingLevel: (thinkingLevel ??
+      resolved.thinkingLevel ??
+      null) as AgentRunRequest["model"]["thinkingLevel"],
     oauth: resolved.oauth
       ? {
           credential: resolved.oauth,
@@ -597,7 +612,7 @@ export async function resolveConnectedRunModel(
   /** The connection a role row is pinned to. */
   credentialId?: string,
 ): Promise<AgentRunRequest["model"]> {
-  const { credential, resolved } = await resolveConnectedModelKey(
+  const { resolved } = await resolveConnectedModelKey(
     deps,
     scope,
     provider,
@@ -610,13 +625,7 @@ export async function resolveConnectedRunModel(
     provider,
     id: modelId,
     ...(credentialId ? { connectionId: credentialId } : {}),
-    ...resolvedModelRunFields(resolved),
-    thinkingLevel:
-      ((thinkingLevel !== undefined
-        ? thinkingLevel
-        : credential?.defaultModel === modelId
-          ? credential?.thinkingLevel
-          : null) as AgentRunRequest["model"]["thinkingLevel"]) ?? null,
+    ...resolvedModelRunFields(resolved, thinkingLevel),
   };
 }
 
@@ -691,7 +700,6 @@ export async function resolveRunModel(
   return {
     provider,
     id,
-    ...resolvedModelRunFields(resolved),
-    thinkingLevel: thinkingLevel ?? null,
+    ...resolvedModelRunFields(resolved, thinkingLevel),
   };
 }

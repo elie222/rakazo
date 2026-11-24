@@ -677,6 +677,75 @@ describe("shared Linux desktop lifecycle", () => {
     );
   });
 
+  it.skipIf(process.platform !== "linux")(
+    "restarts a screen's browser that stops answering, but not again within ten minutes",
+    () => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-hung-browser-"));
+      roots.push(root);
+      const bin = path.join(root, "bin");
+      mkdirSync(bin);
+      const fake = path.join(root, "fake-browser.py");
+      writeFileSync(
+        fake,
+        [
+          "import socket, sys",
+          'port = int(next(a for a in sys.argv if a.startswith("--remote-debugging-port=")).split("=")[1])',
+          "server = socket.socket()",
+          "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
+          'server.bind(("127.0.0.1", port))',
+          "server.listen(64)",
+          "while True:",
+          "    client, _ = server.accept()",
+          "    client.recv(4096)",
+          '    client.sendall(b"HTTP/1.1 200 OK\\r\\nContent-Length: 2\\r\\n\\r\\n{}")',
+          "    client.close()",
+        ].join("\n"),
+      );
+      writeFileSync(path.join(bin, "websockify"), "#!/bin/sh\n", { mode: 0o755 });
+      writeFileSync(
+        path.join(bin, "rakazo-browser"),
+        `#!/bin/sh\nexec python3 ${fake} "$@" --remote-debugging-port=${screenPorts(0, env).debugPort}\n`,
+        { mode: 0o755 },
+      );
+      const script = ensureScreenCommand(0, "bot", "token", env)
+        .replaceAll("/tmp/rakazo", root)
+        .replaceAll("/usr/share/novnc", root)
+        .replaceAll(env.homeDir, path.join(root, "home"));
+      // Stop once the browser is ready; the viewer after it is covered elsewhere.
+      const browserReady = script.slice(0, script.indexOf(`\nmkdir -p ${root}/desktop-targets `));
+      const ensure = () =>
+        spawnSync("bash", ["-c", `xdpyinfo() { return 0; }\n${browserReady}`], {
+          encoding: "utf8",
+          timeout: 60_000,
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+        });
+      const browserPid = () => {
+        const file = readdirSync(root).find(
+          (name) => name.startsWith("browser-pid-") && !name.endsWith("-restarted"),
+        );
+        if (!file) throw new Error("no browser was started");
+        return Number(readFileSync(path.join(root, file), "utf8"));
+      };
+      try {
+        const started = ensure();
+        expect(started.status, started.stderr).toBe(0);
+        // A stopped process keeps its port open and never answers, as a hung browser does.
+        process.kill(browserPid(), "SIGSTOP");
+        const restarted = ensure();
+        expect(restarted.status, restarted.stderr).toBe(0);
+        expect(restarted.stdout).toContain("RAKAZO_BROWSER_RESTARTED=unresponsive");
+
+        process.kill(browserPid(), "SIGSTOP");
+        const again = ensure();
+        expect(again.status).toBe(77);
+        expect(again.stdout).not.toContain("RAKAZO_BROWSER_RESTARTED");
+        expect(again.stderr).toContain("computer browser CDP not ready");
+      } finally {
+        spawnSync("pkill", ["-KILL", "-f", fake]);
+      }
+    },
+  );
+
   it.skipIf(process.platform !== "linux").each([false, true])(
     "repairs an empty control route or fails if publication fails (failPublish=%s)",
     async (failPublish) => {
@@ -1076,6 +1145,7 @@ describe("shared Linux desktop lifecycle", () => {
         preservePrimaryDisplay: true,
       };
       const { debugPort } = screenPorts(0, screenEnv);
+      writeFileSync(path.join(bin, "websockify"), "#!/bin/sh\n", { mode: 0o755 });
       writeFileSync(
         path.join(bin, "rakazo-browser"),
         [
@@ -1365,8 +1435,14 @@ describe("shared Linux desktop lifecycle", () => {
         "        request = connection.recv(1024)",
         "    except socket.timeout:",
         "        request = b''",
-        "    connection.close()",
+        // The screen check asks for the version; Browser.close asks for it and then connects.
         "    if b'GET /json/version' in request:",
+        '        body = b\'{"webSocketDebuggerUrl": "ws://127.0.0.1:%d/devtools/browser/fake"}\' % port',
+        "        connection.sendall(b'HTTP/1.1 200 OK\\r\\nContent-Length: %d\\r\\n\\r\\n' % len(body) + body)",
+        "        connection.close()",
+        "        continue",
+        "    connection.close()",
+        "    if b'GET /devtools/' in request:",
         "        break",
         "",
       ].join("\n"),

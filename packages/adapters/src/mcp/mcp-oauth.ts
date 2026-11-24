@@ -40,7 +40,12 @@ import type { SecretCleanup, SecretCleanupDeps } from "../secrets/secret-cleanup
 import { attemptSecretCleanup, cleanUpUnsavedSecret } from "../secrets/secret-cleanup.js";
 import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
-import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
+import type { FailedOAuthRequest } from "./mcp-server-health.js";
+import {
+  MCP_DYNAMIC_REGISTRATION_UNSUPPORTED,
+  needsMcpOAuthClient,
+  refusedRegistration,
+} from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,
   secureFetch,
@@ -926,6 +931,8 @@ function oauthFetch(
   publicError: (error: unknown, message: string) => Error;
   /** The last answer received was a refusal of the redirect address (RFC 7591). */
   refusedRedirect: () => boolean;
+  /** The last request, when its answer was a failure. */
+  failedRequest: () => FailedOAuthRequest | undefined;
 } {
   const url = new URL(endpoint);
   const localHttp = url.protocol === "http:" && isLocalhostOrLoopbackIp(url.hostname);
@@ -960,12 +967,20 @@ function oauthFetch(
   let lastAnswerFailed = false;
   // The most recent answer's own rejection, so an earlier one cannot explain a later failure.
   let lastRejection: OAuthRejection | undefined;
+  let lastFailedRequest: FailedOAuthRequest | undefined;
   const recordingFetch: typeof fetch = async (input, init) => {
+    lastFailedRequest = undefined;
     try {
       const response = await fallbackFetch(input, init);
       lastAnswerFailed = !response.ok;
       lastRejection = undefined;
       if (!response.ok) {
+        const request = input instanceof Request ? input : undefined;
+        lastFailedRequest = {
+          href: request ? request.url : new URL(String(input)).href,
+          method: (init?.method ?? request?.method ?? "GET").toUpperCase(),
+          status: response.status,
+        };
         const next = await readOAuthRejection(response);
         if (next) rejection = next;
         lastRejection = next;
@@ -982,6 +997,7 @@ function oauthFetch(
     fetch: recordingFetch,
     close: () => safeFetch.close(),
     refusedRedirect: () => lastRejection?.code === "invalid_redirect_uri",
+    failedRequest: () => lastFailedRequest,
     publicError: (error, message) => {
       if (error instanceof McpOAuthStoreError) return error;
       const secrets = oauthMaterialSecrets(material);
@@ -1230,6 +1246,7 @@ export type McpOAuthSummary = {
   clientId: string | null;
   /** Whether the stored material holds a credential; a lone generation marker holds none. */
   credential: boolean;
+  hasBearerToken: boolean;
 };
 
 /** Whether the material holds anything beyond OAuth bookkeeping. */
@@ -1251,6 +1268,7 @@ function summarize(material: OAuthMaterial): McpOAuthSummary {
     status,
     clientId: material.oauthClient?.client_id ?? null,
     credential: hasCredential(material),
+    hasBearerToken: Boolean(material.secret),
   };
 }
 
@@ -1374,7 +1392,13 @@ export class McpOAuthBroker {
       }
     } catch (error) {
       if (error instanceof McpOAuthServerMismatchError) throw error;
-      if (needsMcpOAuthClient(error)) throw new McpOAuthClientRequiredError(server.revision);
+      if (
+        needsMcpOAuthClient(error) ||
+        (!loaded.material.oauthClient &&
+          !networkFetch.refusedRedirect() &&
+          refusedRegistration(networkFetch.failedRequest(), provider.discoveryState()))
+      )
+        throw new McpOAuthClientRequiredError(server.revision);
       // A client entered by hand was registered with its own redirect; only a registration
       // this attempt made can be made again with another one.
       retryOnLoopback =

@@ -25,6 +25,8 @@ export const TRIAL_SANDBOX_ALLOWANCE_CENTS = 300;
 export const CREDITS_SANDBOX_ALLOWANCE_PERCENT = 20;
 /** The share of a plan's monthly price an organization may spend on included speech. */
 export const SPEECH_ALLOWANCE_PERCENT = 20;
+/** What a paid plan may spend each month on hosted image and video generation, in cents. */
+export const MEDIA_ALLOWANCE_CENTS = 100;
 
 /** Computer hours an allowance in cents buys. */
 export function sandboxAllowanceHours(
@@ -196,6 +198,13 @@ export const BillingStatusSchema = z.object({
   standardComputerHours: z.literal(true).optional(),
   /** Next allowance renewal, distinct from a yearly subscription payment. */
   computerHoursResetAt: z.string().nullable().optional(),
+  /**
+   * This period's balance for hosted image and video generation, apart from computer hours;
+   * absent where hosted media is not metered or the plan includes none.
+   */
+  media: z
+    .object({ leftCents: z.number().int().nonnegative(), limitCents: z.number().int().positive() })
+    .optional(),
   /** Present once the organization has subscribed: its invite link and free months earned. */
   referral: z
     .object({ url: z.string().url(), rewards: z.number().int().nonnegative() })

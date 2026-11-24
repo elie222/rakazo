@@ -3,7 +3,7 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import type { ModelSettings, ThinkingLevel } from "@rakazo/contracts";
-import { canonicalPiProviderId } from "@rakazo/contracts";
+import { canonicalPiProviderId, MediaModelRoleSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { parseModelSecret } from "../../../models/model-secret.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
@@ -336,13 +336,18 @@ export async function savedCatalogSelections(
     }),
     prisma.bot.findMany({ where: { userId }, select: { modelProvider: true, modelId: true } }),
     prisma.routine.findMany({ where: { userId }, select: { modelProvider: true, modelId: true } }),
+    // Image and video choices are not chat models.
     prisma.userModelRoleChoice.findMany({
-      where: { userId },
+      where: { userId, role: { notIn: MediaModelRoleSchema.options } },
       select: { provider: true, modelId: true },
     }),
     // A Space's own models count only while it overrides the account's.
     prisma.spaceModelRoleChoice.findMany({
-      where: { userId, spaceMember: { settingOverrides: { some: { setting: "models" } } } },
+      where: {
+        userId,
+        role: { notIn: MediaModelRoleSchema.options },
+        spaceMember: { settingOverrides: { some: { setting: "models" } } },
+      },
       select: { provider: true, modelId: true },
     }),
     prisma.deploymentSettings.findFirst({

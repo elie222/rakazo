@@ -5,7 +5,7 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Auth, AuthEnv } from "./index.js";
 import { createAuth } from "./index.js";
-import { isCurrentOidcAccount, oidcAccountSubject } from "./oidc.js";
+import { isCurrentOidcAccount, oidcAccountSubject, oidcEmailVerified } from "./oidc.js";
 import { encryptStoredOAuthTokens, openIdToken, sealIdToken } from "./token-storage.js";
 
 const state = vi.hoisted(() => ({ db: {} as Record<string, Record<string, unknown>[]> }));
@@ -361,6 +361,23 @@ it("refuses implicit Google linking even when a third-party mailbox claim is ver
   expect(rows("session")).toHaveLength(0);
 });
 
+describe("oidcEmailVerified", () => {
+  it.each([true, "true", "TRUE"])("accepts email_verified %j", (claim) => {
+    expect(oidcEmailVerified({ email_verified: claim })).toBe(true);
+  });
+  it.each([false, "false", undefined, "yes", 1, " true"])("refuses email_verified %j", (claim) => {
+    expect(oidcEmailVerified({ email_verified: claim })).toBe(false);
+  });
+  it("reads the configured claim only when email_verified is absent", () => {
+    expect(oidcEmailVerified({ domain_verified: true })).toBe(false);
+    expect(oidcEmailVerified({ domain_verified: "true" }, "domain_verified")).toBe(true);
+    expect(oidcEmailVerified({ domain_verified: false }, "domain_verified")).toBe(false);
+    expect(
+      oidcEmailVerified({ email_verified: false, domain_verified: true }, "domain_verified"),
+    ).toBe(false);
+  });
+});
+
 describe("OIDC callbacks", () => {
   it.each(["ios", "android"])(
     "keeps the originating %s platform through the browser callback",
@@ -382,6 +399,39 @@ describe("OIDC callbacks", () => {
       expect(new URL(returned.headers.get("location")!).protocol).toBe("rakazo:");
       expect(rows("user")[0]).toMatchObject({ signupSurface: surface });
       expect(rows("user")[0]?.signupUtmSource).toBeUndefined();
+    },
+  );
+  it.each([
+    [{ email_verified: "true" }, undefined],
+    [{ domain_verified: true }, "domain_verified"],
+  ] as const)(
+    "links a password account when the provider proves the email %j",
+    async (claims, emailVerifiedClaim) => {
+      setup({
+        oidc: {
+          issuer,
+          clientId: "test-client",
+          clientSecret: "test-client-secret",
+          name: "SSO",
+          scopes: ["openid", "email", "profile"],
+          allowSignupBypass: false,
+          emailVerifiedClaim,
+        },
+      });
+      await request("/sign-up/email", {
+        email: "sso@example.test",
+        password: "test-password-123",
+        name: "Local",
+      });
+      rows("user")[0]!.emailVerified = true;
+      const response = await request(
+        await start(
+          { sub: "subject-1", email: "sso@example.test", name: "SSO user", ...claims },
+          true,
+        ),
+      );
+      expect(response.headers.get("location")).toBe(`${origin}/app`);
+      expect(rows("account").some((account) => account.providerId === "oidc")).toBe(true);
     },
   );
   it.each([true, false, undefined])(
@@ -1384,6 +1434,35 @@ describe("SSO-only account deletion", () => {
       expect(rows("session")).toHaveLength(1);
     },
   );
+
+  it("sends configured authorization parameters on sign-in and reauthentication", async () => {
+    setup({
+      oidc: {
+        issuer,
+        clientId: "test-client",
+        clientSecret: "test-client-secret",
+        name: "SSO",
+        scopes: ["openid", "email", "profile"],
+        allowSignupBypass: false,
+        authorizationParams: { domain_hint: "example.test" },
+      },
+    });
+    await signIn();
+    const [ordinary, reauthentication] = await Promise.all(
+      [false, true].map(async (reauthenticate) => {
+        const response = await request("/sign-in/social", {
+          provider: "oidc",
+          callbackURL: `${origin}/app`,
+          disableRedirect: true,
+          additionalData: { reauthenticate },
+        });
+        return new URL(((await response.json()) as { url: string }).url);
+      }),
+    );
+    expect(ordinary!.searchParams.get("domain_hint")).toBe("example.test");
+    expect(reauthentication!.searchParams.get("domain_hint")).toBe("example.test");
+    expect(reauthentication!.searchParams.get("prompt")).toBe("login");
+  });
 
   it("keeps ordinary and explicit sign-in policy separate in concurrent requests", async () => {
     setup();
