@@ -231,6 +231,49 @@ detail: ${detail}---
     }
   });
 
+  it("accepts leading blank lines, leading spaces, and a BOM before the opening fence", () => {
+    for (const lead of ["\n", "\n\n", "  ", " \t\r\n", "\uFEFF\n", "\uFEFF\r\n  \n"]) {
+      const parsed = parseSkillMd(`${lead}---\nname: A\ndescription: B\n---\nbody`);
+      expect(parsed, JSON.stringify(lead)).toMatchObject({
+        name: "A",
+        description: "B",
+        body: "body",
+      });
+    }
+  });
+
+  it("accepts trailing spaces or tabs after the opening fence", () => {
+    const parsed = parseSkillMd("--- \nname: A\ndescription: B\n---\nbody");
+    expect(parsed).toMatchObject({ name: "A", description: "B", body: "body" });
+    expect(parseSkillMd("---\t\nname: A\ndescription: B\n---\nbody")).toMatchObject({
+      body: "body",
+    });
+  });
+
+  it("does not treat a longer dash line as the closing fence", () => {
+    expect(parseSkillMd("---\nname: A\ndescription: B\n----\nbody")).toMatchObject({
+      error: expect.any(String),
+    });
+  });
+
+  it("gives a clean body when the closing fence has trailing spaces", () => {
+    for (const closing of ["---  \n", "---\t\n"]) {
+      const parsed = parseSkillMd(`---\nname: A\ndescription: B\n${closing}body\nmore`);
+      expect(parsed, JSON.stringify(closing)).toMatchObject({ body: "body\nmore" });
+    }
+    expect(parseSkillMd("---\r\nname: A\r\ndescription: B\r\n---  \r\nbody")).toMatchObject({
+      body: "body",
+    });
+  });
+
+  it("stays fast on long whitespace around the fences", () => {
+    expectLinearTime(() => parseSkillMd(`${" ".repeat(200_000)}x`));
+    expectLinearTime(() => parseSkillMd(`---${" ".repeat(200_000)}x`));
+    expectLinearTime(() =>
+      parseSkillMd(`---\nname: A\n${"---\n".repeat(50_000)}${" ".repeat(100_000)}x`),
+    );
+  });
+
   it("requires name and description", () => {
     expect(parseSkillMd("---\nname: x\n---\nbody")).toEqual({
       error: "SKILL.md frontmatter requires description.",
@@ -622,6 +665,28 @@ describe("skill prompt helpers", () => {
     expect(twice).not.toMatch(/@Daily standup/i);
     expect(twice.split(SAMPLE.trim()).length - 1).toBe(1);
     expect(expandSkillReferencesInPrompt(twice, skills)).toBe(twice);
+  });
+
+  it("preserves indentation and spacing outside routine skill seams", () => {
+    const skills = [
+      {
+        name: "Daily report",
+        description: "Daily report",
+        source: "user" as const,
+        readOnly: false,
+        content: "Report instructions.",
+      },
+    ];
+    const body = 'Use this  YAML:\r\n\r\ntarget:\r\n  settings:\r\n    status: "ready  to go"\r\n';
+    const expanded = expandSkillReferencesInPrompt(
+      `Run  @Daily report @Daily report then ${body}`,
+      skills,
+    );
+    expect(expanded).toBe(`Use skill: Daily report\n\nReport instructions.\n\nRun then ${body}`);
+    expect(expandSkillReferencesInPrompt(expanded, skills)).toBe(expanded);
+    expect(expandSkillReferencesInPrompt("  @Daily report keep this\n    nested", skills)).toBe(
+      "Use skill: Daily report\n\nReport instructions.\n\n  keep this\n    nested",
+    );
   });
 
   it("builds catalog instructions for auto-use", () => {

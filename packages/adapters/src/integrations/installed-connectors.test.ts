@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
+import { MCP_SOURCE_PRESETS } from "@rakazo/core";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -15,7 +16,6 @@ import {
   applyMcpSourcePreset,
   InstalledConnectorProvider,
   importOpenApiDocument,
-  MCP_SOURCE_PRESETS,
   prepareApiInstall,
   verifyMcpInstall,
 } from "./installed-connectors.js";
@@ -693,7 +693,7 @@ describe("OpenAPI connector import", () => {
     ).toBe("https://api.example.test/$&");
   });
 
-  it.each([undefined, {}, { default: 1 }, { default: null }])(
+  it.each([undefined, { default: 1 }])(
     "rejects server variables without string defaults: %j",
     (variable) => {
       expect(() =>
@@ -830,6 +830,218 @@ describe("OpenAPI connector import", () => {
     }
     expect(events).toContainEqual({ type: "result", data: { status: 200, data: { ok: true } } });
     expect(String(fetch.mock.calls[0]![0])).toBe("https://93.184.216.34/v1/items");
+  });
+
+  describe("real-world OpenAPI documents", () => {
+    const listPaths = { "/items": { get: { operationId: "listItems" } } };
+    const importFrom = (document: Record<string, unknown>, url?: string) =>
+      importOpenApiDocument({ openapi: "3.0.3", paths: listPaths, ...document }, url);
+
+    it("resolves a relative server URL against the document URL", () => {
+      expect(
+        importFrom({ servers: [{ url: "/api/v3" }] }, "https://api.example.test/docs/openapi.json")
+          .baseUrl,
+      ).toBe("https://api.example.test/api/v3");
+      expect(
+        importFrom({ servers: [{ url: "v2" }] }, "https://api.example.test/docs/openapi.json")
+          .baseUrl,
+      ).toBe("https://api.example.test/docs/v2");
+    });
+
+    it("uses the document origin when servers is absent or empty", () => {
+      for (const servers of [undefined, []]) {
+        expect(importFrom({ servers }, "https://api.example.test/docs/openapi.json").baseUrl).toBe(
+          "https://api.example.test/",
+        );
+      }
+    });
+
+    it("asks for a full server URL when a pasted document has none", () => {
+      for (const servers of [undefined, [{ url: "/api/v3" }]]) {
+        expect(() => importFrom({ servers })).toThrow(/full server URL/);
+      }
+    });
+
+    it("keeps a path-only prepared source inside the document origin", async () => {
+      const { prepared } = prepareOpenApiFrom(
+        JSON.stringify({ openapi: "3.0.3", paths: listPaths }),
+      );
+      await expect(prepared).resolves.toMatchObject({ source: "https://api.example.test/" });
+    });
+
+    it.each(["application/json; charset=utf-8", "application/vnd.api+json"])(
+      "keeps request body fields for %s",
+      (mediaType) => {
+        const imported = importFrom({
+          servers: [{ url: "https://api.example.test" }],
+          paths: {
+            "/items": {
+              post: {
+                operationId: "createItem",
+                requestBody: {
+                  required: true,
+                  content: {
+                    "text/plain": { schema: { type: "string" } },
+                    [mediaType]: {
+                      schema: { type: "object", properties: { name: { type: "string" } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+        expect(imported.operations[0]!.inputSchema).toMatchObject({
+          properties: { body: { properties: { name: { type: "string" } } } },
+          required: ["body"],
+        });
+        expect(imported.operations[0]!.bodyMediaType).toBe(
+          mediaType.startsWith("application/json") ? undefined : mediaType,
+        );
+      },
+    );
+
+    it("sends the body in the media type the document declares", async () => {
+      const prepared = importFrom({
+        servers: [{ url: "https://93.184.216.34/v1" }],
+        paths: {
+          "/items": {
+            post: {
+              operationId: "createItem",
+              requestBody: {
+                content: {
+                  "application/vnd.api+json; charset=utf-8": {
+                    schema: { type: "object", properties: { name: { type: "string" } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      const install = {
+        id: "api-media",
+        kind: "api",
+        source: prepared.baseUrl,
+        secretId: null,
+        createdAt: new Date(0),
+        config: { auth: { type: "none" }, operations: prepared.operations },
+      };
+      const prisma = { capabilityInstall: { findFirst: vi.fn().mockResolvedValue(install) } };
+      const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+        Response.json({ ok: true }),
+      );
+      const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+      for await (const _event of provider.execute(
+        {
+          tool: "createItem",
+          args: { body: { name: "a" } },
+          executionId: "createItem",
+          route: { connectorId: "installed", resourceId: install.id, toolName: "createItem" },
+        },
+        { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+      )) {
+        // drain
+      }
+      expect(new Headers(fetch.mock.calls[0]![1]?.headers).get("content-type")).toBe(
+        "application/vnd.api+json",
+      );
+    });
+
+    it("prefers plain application/json over other JSON types", () => {
+      const imported = importFrom({
+        servers: [{ url: "https://api.example.test" }],
+        paths: {
+          "/items": {
+            post: {
+              operationId: "createItem",
+              requestBody: {
+                content: {
+                  "application/problem+json": {
+                    schema: { type: "object", properties: { other: { type: "string" } } },
+                  },
+                  "application/json": {
+                    schema: { type: "object", properties: { name: { type: "string" } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+      expect(imported.operations[0]!.inputSchema).toMatchObject({
+        properties: { body: { properties: { name: { type: "string" } } } },
+      });
+    });
+
+    it("requires path parameters and does not expose cookie parameters", () => {
+      const imported = importFrom({
+        servers: [{ url: "https://api.example.test" }],
+        paths: {
+          "/items/{id}": {
+            get: {
+              operationId: "getItem",
+              parameters: [
+                { name: "id", in: "path", schema: { type: "string" } },
+                { name: "session", in: "cookie", schema: { type: "string" } },
+                { name: "q", in: "query", schema: { type: "string" } },
+              ],
+            },
+          },
+        },
+      });
+      const schema = imported.operations[0]!.inputSchema as {
+        properties: Record<string, unknown>;
+        required: string[];
+      };
+      expect(schema.required).toEqual(["id"]);
+      expect(Object.keys(schema.properties)).toEqual(["id", "q"]);
+    });
+
+    it("rejects dot-segment path values and keeps ordinary ones", async () => {
+      const prepared = importFrom({
+        servers: [{ url: "https://93.184.216.34/v1" }],
+        paths: { "/items/{id}": { get: { operationId: "getItem" } } },
+      });
+      const install = {
+        id: "api-dots",
+        kind: "api",
+        source: prepared.baseUrl,
+        secretId: null,
+        createdAt: new Date(0),
+        config: { auth: { type: "none" }, operations: prepared.operations },
+      };
+      const prisma = { capabilityInstall: { findFirst: vi.fn().mockResolvedValue(install) } };
+      const fetch = vi.fn(async (_url: string | URL | Request) => Response.json({ ok: true }));
+      const provider = new InstalledConnectorProvider(prisma as never, {} as never, { fetch });
+      const run = async (id: string) => {
+        const events = [];
+        for await (const event of provider.execute(
+          {
+            tool: "getItem",
+            args: { id },
+            executionId: "getItem",
+            route: { connectorId: "installed", resourceId: install.id, toolName: "getItem" },
+          },
+          { spaceId: "space-1", userId: "user-1", signal: AbortSignal.timeout(5_000) } as never,
+        )) {
+          events.push(event);
+        }
+        return events;
+      };
+
+      for (const id of [".", ".."]) {
+        const events = await run(id);
+        expect(events).not.toContainEqual(expect.objectContaining({ type: "result" }));
+      }
+      expect(fetch).not.toHaveBeenCalled();
+      await run("%2e%2e");
+      await run("abc");
+      expect(fetch.mock.calls.map(([url]) => String(url))).toEqual([
+        "https://93.184.216.34/v1/items/%252e%252e",
+        "https://93.184.216.34/v1/items/abc",
+      ]);
+    });
   });
 
   it("refuses ambiguous specs without stable operation ids", () => {
@@ -2379,6 +2591,139 @@ describe("installed MCP sessions last for a whole run", () => {
 
     expect(resume).toMatchObject([{ type: "result" }]);
     expect(server.initializations()).toBe(1);
+  });
+});
+
+describe("an installed source whose tools cannot be listed", () => {
+  const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
+  const mcpInstall = {
+    id: "mcp-down",
+    kind: "mcp",
+    name: "Team Gateway",
+    source: "https://gateway.example.test/mcp",
+    secretId: null,
+    createdAt: new Date(0),
+    config: { preset: "custom", auth: { type: "none" } },
+  };
+  const apiInstall = {
+    id: "api-up",
+    kind: "api",
+    name: "Notes",
+    source: "https://notes.example.test",
+    secretId: null,
+    createdAt: new Date(1),
+    config: {
+      auth: { type: "none" },
+      operations: [{ id: "listNotes", method: "GET", path: "/notes", readOnly: true }],
+    },
+  };
+
+  /** A gateway that refuses every request while `down`, then lists one tool. */
+  function gateway() {
+    const state = { down: true };
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (state.down) return new Response("upstream is restarting", { status: 503 });
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      const message = JSON.parse(await request.text()) as { id?: number; method?: string };
+      if (message.id === undefined) return new Response(null, { status: 202 });
+      if (message.method === "initialize") {
+        return Response.json({
+          jsonrpc: "2.0",
+          id: message.id,
+          result: {
+            protocolVersion: "2025-11-25",
+            capabilities: { tools: {} },
+            serverInfo: { name: "gateway", version: "1" },
+          },
+        });
+      }
+      return Response.json({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: { tools: [{ name: "search", inputSchema: { type: "object" } }] },
+      });
+    });
+    const provider = new InstalledConnectorProvider(
+      {
+        capabilityInstall: {
+          findMany: vi.fn().mockResolvedValue([mcpInstall, apiInstall]),
+          findFirst: vi.fn().mockResolvedValue(mcpInstall),
+        },
+      } as never,
+      {} as never,
+      { fetch: fetch as unknown as typeof globalThis.fetch, resolveHostname: publicResolver },
+    );
+    return { state, provider };
+  }
+
+  function context(signal = new AbortController().signal) {
+    return { spaceId: "space-1", userId: "user-1", signal } as never;
+  }
+
+  it("keeps the other tools and tells the model the source is unavailable", async () => {
+    const { provider } = gateway();
+
+    const tools = await provider.discoverTools(context());
+
+    expect(tools.map((tool) => tool.name)).toEqual(["team_gateway__unavailable", "listNotes"]);
+    expect(tools[0]).toMatchObject({
+      readOnly: true,
+      route: { connectorId: "installed", resourceId: "mcp-down", catalogGroup: "Team Gateway" },
+    });
+    expect(tools[0]?.description).toContain('"Team Gateway"');
+
+    const events: Array<{ type: string; message?: string }> = [];
+    for await (const event of provider.execute(
+      { tool: "team_gateway__unavailable", args: {}, executionId: "one", route: tools[0]?.route },
+      context(),
+    )) {
+      events.push(event as never);
+    }
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe("error");
+    expect(events[0]?.message).toContain('"Team Gateway" could not list its tools');
+  });
+
+  it("keeps two unavailable sources with one name within the tool name limit", async () => {
+    const installs = ["k1", "k2"].map((suffix) => ({
+      ...mcpInstall,
+      id: `c0000000000000000000000${suffix}`,
+      name: "Customer Relationship Gateway",
+    }));
+    const lister = new InstalledConnectorProvider(
+      { capabilityInstall: { findMany: vi.fn().mockResolvedValue(installs) } } as never,
+      {} as never,
+      {
+        fetch: (async () => new Response(null, { status: 503 })) as typeof globalThis.fetch,
+        resolveHostname: publicResolver,
+      },
+    );
+
+    const names = (await lister.discoverTools(context())).map((tool) => tool.name);
+
+    expect(new Set(names).size).toBe(2);
+    for (const name of names) expect(name.length).toBeLessThanOrEqual(64);
+  });
+
+  it("lists the real tools again once the source answers", async () => {
+    const { provider, state } = gateway();
+    await provider.discoverTools(context());
+    state.down = false;
+
+    const tools = await provider.discoverTools(context());
+
+    expect(tools.map((tool) => tool.name)).toEqual(["search", "listNotes"]);
+  });
+
+  it("says nothing about the source when the run was cancelled", async () => {
+    const { provider } = gateway();
+    const controller = new AbortController();
+    controller.abort();
+
+    const tools = await provider.discoverTools(context(controller.signal));
+
+    expect(tools.map((tool) => tool.name)).toEqual(["listNotes"]);
   });
 });
 

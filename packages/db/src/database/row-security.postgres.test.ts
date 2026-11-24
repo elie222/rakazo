@@ -344,6 +344,30 @@ describePostgres("row-level security (PostgreSQL)", () => {
     );
   });
 
+  it("keeps operator computer allowance grants out of tenant reach", async () => {
+    const id = `rls-allowance-grant-${suffix}`;
+    await runAsSystem("row-level security test", () =>
+      db.computerAllowanceGrant.create({ data: { id, organizationId, amountCents: 500 } }),
+    );
+    await expect(
+      runAsTenant(a, () =>
+        db.computerAllowanceGrant.create({ data: { organizationId, amountCents: 500 } }),
+      ),
+    ).rejects.toThrow(/row-level security/);
+    await runAsTenant(a, async () => {
+      expect(await db.computerAllowanceGrant.count({ where: { id } })).toBe(0);
+      expect(
+        await db.$executeRaw`UPDATE computer_allowance_grants SET "amountCents" = 1 WHERE id = ${id}`,
+      ).toBe(0);
+      expect(await db.$executeRaw`DELETE FROM computer_allowance_grants WHERE id = ${id}`).toBe(0);
+    });
+    expect(
+      await runAsSystem("row-level security test", () =>
+        db.computerAllowanceGrant.delete({ where: { id }, select: { amountCents: true } }),
+      ),
+    ).toEqual({ amountCents: 500 });
+  });
+
   it("applies the same rules to the remaining Space-owned tables", async () => {
     const created = new Map<string, Record<string, string[]>>();
     const seed = async (t: (typeof tenants)[0]) => {

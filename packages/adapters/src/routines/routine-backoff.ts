@@ -131,6 +131,34 @@ export async function clearRoutineBackoff(
 }
 
 /**
+ * The owner saved a model connection, a new key or a fresh sign-in, which is what their held
+ * routines were waiting for. Each returns to its schedule now instead of sitting out a gap of
+ * up to a day: a timer routine takes its next occurrence and a change trigger checks right
+ * away. One whose account is still refused backs off again from the first gap.
+ */
+export async function releaseRoutineBackoffs(
+  deps: RoutineBackoffDeps,
+  userId: string,
+  now = new Date(),
+): Promise<void> {
+  const held = await deps.prisma.routine.findMany({
+    where: { userId, accountFailures: { gt: 0 } },
+    select: { id: true },
+  });
+  for (const { id } of held) {
+    await updateSchedule(deps, { routineId: id, userId }, "routine.backoff_release", (routine) => {
+      if (routine.accountFailures === 0) return null;
+      if (!routine.active || !routine.nextRunAt) return { accountFailures: 0 };
+      const nextRunAt =
+        routine.watch == null ? nextCronDateAcross(routine.crons, now, routine.timezone) : now;
+      return nextRunAt && nextRunAt < routine.nextRunAt
+        ? { accountFailures: 0, nextRunAt }
+        : { accountFailures: 0 };
+    });
+  }
+}
+
+/**
  * Reads and writes the routine under its row lock, so a success and a failure of overlapping
  * runs cannot interleave and undo each other's schedule.
  */

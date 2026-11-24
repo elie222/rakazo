@@ -1,4 +1,5 @@
 import type { OAuthCredential } from "@earendil-works/pi-ai";
+import type { ModelBilling } from "@rakazo/adapter-kit";
 import type {
   ModelApiProtocol,
   ModelContextLimits,
@@ -67,6 +68,7 @@ export type StoredModelSecret =
       gatewayId?: string;
       projectId?: string;
       region?: string;
+      zeroDataRetention?: true;
     } & StoredModelLimits &
       StoredModelSettings)
   | ({ kind: "oauth"; reconnectRequired: true; maxTokens?: number } & StoredModelSettings)
@@ -197,6 +199,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
     return {
       kind: "api_key",
       key: parsed.key,
+      ...(parsed.zeroDataRetention === true ? { zeroDataRetention: true as const } : {}),
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...(accountId ? { accountId } : {}),
       ...(gatewayId ? { gatewayId } : {}),
@@ -282,6 +285,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
     secret.gatewayId === undefined &&
     secret.projectId === undefined &&
     secret.region === undefined &&
+    secret.zeroDataRetention === undefined &&
     secret.contextWindow === undefined &&
     secret.cacheCapabilities === undefined &&
     !models.models
@@ -296,6 +300,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
     ...(secret.gatewayId ? { gatewayId: secret.gatewayId } : {}),
     ...(secret.projectId ? { projectId: secret.projectId } : {}),
     ...(secret.region ? { region: secret.region } : {}),
+    ...(secret.zeroDataRetention === true ? { zeroDataRetention: true } : {}),
     ...modelLimits(secret as unknown as Record<string, unknown>),
     ...models,
   });
@@ -314,4 +319,19 @@ export function secretValuesToRedact(secret: StoredModelSecret): string[] {
     ].filter((value): value is string => Boolean(value));
   if (secret.reconnectRequired) return [];
   return [secret.credential.access, secret.credential.refresh].filter(Boolean);
+}
+
+const STORED_MODEL_SECRET_BILLING = {
+  oauth: "subscription",
+  api_key: "api_key",
+  openai_compatible: "custom_endpoint",
+} as const satisfies Record<StoredModelSecret["kind"], ModelBilling>;
+
+/** Who pays for a call: credits when metered, else the user's stored connection, else the deployment. */
+export function modelBilling(funding: {
+  credits?: boolean;
+  secret?: Pick<StoredModelSecret, "kind">;
+}): ModelBilling {
+  if (funding.credits) return "credits";
+  return funding.secret ? STORED_MODEL_SECRET_BILLING[funding.secret.kind] : "deployment";
 }

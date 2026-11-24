@@ -1,6 +1,4 @@
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ComputerStatus } from "@rakazo/contracts";
 
 export function DesktopKindEmptyState({ className }: { className?: string }) {
   return (
@@ -10,8 +8,4 @@ export function DesktopKindEmptyState({ className }: { className?: string }) {
       </Trans>
     </div>
   );
-}
-
-export function computerLabel(mode: ComputerStatus["mode"] | undefined, botName: string) {
-  return mode === "dedicated" ? t`${botName}’s computer` : t`Team Computer`;
 }

@@ -185,7 +185,11 @@ describe("paused turn context", () => {
                 name: "ask_user",
                 arguments: { question: "Which fixture?", options: ["One", "Two"] },
               },
-              { id: "tail", name: "remember", arguments: { content: "Fixture fact" } },
+              {
+                id: "tail",
+                name: "remember",
+                arguments: { operations: [{ action: "add", content: "Fixture fact" }] },
+              },
             ],
           },
         },
@@ -206,9 +210,17 @@ describe("paused turn context", () => {
       },
       executeTool: executed,
     };
+    const claimSteering = vi.fn(async () =>
+      claimSteering.mock.calls.length > 1
+        ? [{ id: "queued", messageId: "m1", text: "Wait until resume.", origin: "user" as const }]
+        : [],
+    );
     try {
-      await collect(new PiAgentRuntime().run(request));
+      const paused = await collect(new PiAgentRuntime().run({ ...request, claimSteering }));
       expect(executed).not.toHaveBeenCalled();
+      expect(paused.filter((event) => event.type === "progress" && event.text)).toHaveLength(1);
+      expect(claimSteering).toHaveBeenCalledTimes(1);
+      expect(paused).not.toContainEqual(expect.objectContaining({ type: "steered" }));
       const saved = capture!();
       expect(JSON.parse(saved).executionMode).toBe("sequential");
       await collect(
@@ -221,6 +233,75 @@ describe("paused turn context", () => {
       expect(executed).toHaveBeenCalledOnce();
       model.assertComplete();
     } finally {
+      await model.close();
+    }
+  });
+  it("preserves a parallel sibling failure that settles after a pause before checkpoint persistence", async () => {
+    const failRead = deferred();
+    let capture: (() => string) | undefined;
+    const model = await startModelEmulator({
+      steps: [
+        {
+          expect() {},
+          response: {
+            type: "tools",
+            calls: [
+              { id: "failing-read", name: "read_file", arguments: { path: "missing.txt" } },
+              {
+                id: "question",
+                name: "ask_user",
+                arguments: { question: "Which fixture?", options: ["One", "Two"] },
+              },
+            ],
+          },
+        },
+        {
+          expect(request) {
+            const failed = request.messages.find(
+              (message) => message.role === "tool" && message.tool_call_id === "failing-read",
+            );
+            expect(failed?.content).toContain("missing fixture file");
+            expect(failed?.content).not.toContain("outcome is unknown");
+          },
+          response: { type: "text", text: "Done." },
+        },
+      ],
+    });
+    const request: AgentRunRequest = {
+      runId: "fixture-parallel-failure-after-pause",
+      botId: "fixture-bot",
+      threadId: "fixture-thread",
+      instructions: "Complete fixtures.",
+      prompt: "Read and ask.",
+      history: [],
+      model: model.model,
+      tools: builtinAgentTools.filter((tool) => ["read_file", "ask_user"].includes(tool.name)),
+      onCheckpoint: async (snapshot) => {
+        capture = snapshot;
+      },
+      executeTool: async (name) => {
+        if (name === "read_file") {
+          await failRead.promise;
+          throw new Error("missing fixture file");
+        }
+        return { ok: true };
+      },
+    };
+    try {
+      for await (const event of new PiAgentRuntime().run(request)) {
+        if (event.type === "ask") failRead.resolve();
+      }
+      const saved = capture!();
+      await collect(
+        new PiAgentRuntime().run({
+          ...request,
+          turnCheckpoint: saved,
+          resumeToolResult: { content: [{ type: "text", text: "Two" }] },
+        }),
+      );
+      model.assertComplete();
+    } finally {
+      failRead.resolve();
       await model.close();
     }
   });

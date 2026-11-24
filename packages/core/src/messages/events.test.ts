@@ -191,6 +191,31 @@ describe("reduceLiveMessageBlocks", () => {
       { kind: "progress", text: "They match." },
     ]);
   });
+
+  it("keeps the shown mark through deltas and a waiting tool, and drops it for activity", () => {
+    let blocks = reduceLiveMessageBlocks([], {
+      type: "progress",
+      payload: { text: "Checking", streaming: true, shown: true },
+    });
+    blocks = reduceLiveMessageBlocks(blocks, {
+      type: "progress",
+      payload: { delta: " the totals", streaming: true, shown: true },
+    });
+    expect(blocks).toEqual([{ kind: "progress", text: "Checking the totals", shown: true }]);
+    blocks = reduceLiveMessageBlocks(blocks, { type: "tool", name: "shell" });
+    expect(blocks).toEqual([
+      { kind: "progress", text: "Checking the totals", shown: true, pendingToolNames: ["shell"] },
+    ]);
+    expect(
+      reduceLiveMessageBlocks(blocks, {
+        type: "progress",
+        payload: { reset: true, text: "Checking the totals", activity: true },
+      }),
+    ).toEqual([
+      { kind: "steps", steps: [{ label: "Shell", count: 1 }] },
+      { kind: "progress", text: "Checking the totals", activity: true },
+    ]);
+  });
 });
 
 describe("runFailureError", () => {
@@ -1262,5 +1287,16 @@ describe("a reply's kept tool calls", () => {
       { kind: "steps", steps: [{ label: "Shell", count: 1, ...kept }] },
     ]);
     expect(splitToolHistory(shown).toolHistory).toBeUndefined();
+  });
+});
+
+describe("runFailureError emoji limit", () => {
+  it("does not cut an emoji in half before the ellipsis", () => {
+    const error = runFailureError({
+      type: "run.failed",
+      payload: { error: `${"a".repeat(299)}😀 tail` },
+    });
+    expect(error).toBe(`${"a".repeat(299)}…`);
+    expect(() => encodeURIComponent(error ?? "")).not.toThrow();
   });
 });

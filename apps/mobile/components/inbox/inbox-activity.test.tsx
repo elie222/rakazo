@@ -20,10 +20,10 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../../lib/native/native", () => ({ useThemedStyles: () => ({}) }));
-vi.mock("../../lib/inbox/activity", () => ({
+vi.mock("../../lib/inbox/activity", () => ({ formatActivityRelativeTime: () => "" }));
+vi.mock("@rakazo/i18n/activity", () => ({
   activityPreview: () => "",
-  activityStatusLabel: (status: string) => status,
-  formatActivityRelativeTime: () => "",
+  runStatusLabel: (status: string) => status,
 }));
 vi.mock("./inbox-styles", () => ({ createInboxStyles: () => ({}) }));
 vi.mock("../bots/bot-avatar", () => ({ BotAvatar: () => <i /> }));

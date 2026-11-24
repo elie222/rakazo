@@ -6,6 +6,7 @@ import {
   HostedModelCreditsRequiredError,
   ModelCreditAccountUnavailableError,
 } from "../models/credits/model-credit-observer.js";
+import { DataRetentionRefusedError } from "../models/endpoints/data-retention.js";
 import {
   ModelConnectionGoneError,
   UnavailableModelForAuthError,
@@ -171,6 +172,7 @@ describe("reviewer failure reasons", () => {
     ["connection_unavailable", () => new CheckerConnectionUnavailableError()],
     ["connection_unavailable", () => new ModelConnectionGoneError("fake detail")],
     ["model_unavailable", () => new UnavailableModelForAuthError("fake detail")],
+    ["model_unavailable", () => new DataRetentionRefusedError("fake detail")],
     ["decision_auth", () => new DecisionProviderError("authentication")],
     ["provider_construction", () => new AutoReviewSetupError("fake detail")],
     ["decrypt", decryptFailure],

@@ -34,6 +34,15 @@ describe("parseNavLinks", () => {
     "/novnc/",
     "/health",
     "/ext/../api/me",
+    // Proxies match these prefixes case-insensitively and after decoding.
+    "/API/me",
+    "/Api/me",
+    "/%61pi/me",
+    "/api%2Fme",
+    "/ext/..%2fapi/me",
+    "/api/%2f..",
+    "/API/%2F..%2Fext",
+    "/ext/%E0%A4%A",
   ])("rejects the path %s", (path) => {
     expect(() => parseNavLinks(JSON.stringify([{ id: "x", label: "X", path }]))).toThrow(
       "RAKAZO_NAV_LINKS",
@@ -59,6 +68,12 @@ describe("parseNavLinks", () => {
 });
 
 describe("navLinkSandbox", () => {
+  it("keeps encoded paths outside the app's own routes", () => {
+    for (const path of ["/ext/caf%C3%A9/", "/Ext/Clients/", "/apiary/"]) {
+      expect(parseNavLinks(JSON.stringify([{ id: "x", label: "X", path }]))[0]?.path).toBe(path);
+    }
+  });
+
   it("grants the page its origin only when trusted", () => {
     expect(navLinkSandbox({ trusted: false })).not.toContain("allow-same-origin");
     expect(navLinkSandbox({ trusted: true })).toContain("allow-same-origin");

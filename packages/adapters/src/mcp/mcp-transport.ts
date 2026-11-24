@@ -1,6 +1,6 @@
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { SSEClientTransport, SseError } from "@modelcontextprotocol/sdk/client/sse.js";
 import type { StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -429,7 +429,6 @@ export class McpSession {
     const originFetch = withEndpointOriginFallback(url.origin, safeFetch);
     const fetch = options.authProvider?.wrapFetch?.(originFetch) ?? originFetch;
     const signal = combineSignals(options.signal, AbortSignal.timeout(options.timeoutMs ?? 15_000));
-    let usedFallback = false;
     const connect = async (kind: McpRemoteTransport): Promise<void> => {
       const requestInit: RequestInit = { headers: options.headerPolicy?.headers };
       const transport =
@@ -449,18 +448,26 @@ export class McpSession {
       await this.client.connect(transport, { signal, timeout: options.timeoutMs ?? 15_000 });
       this.connected = true;
     };
+    const requested = options.transport ?? "streamable-http";
+    let used = requested;
     this.connecting = (async () => {
       try {
-        await connect(options.transport ?? "streamable-http");
+        await connect(requested);
       } catch (error) {
-        const canFallback =
-          (options.fallbackToSse ?? true) &&
-          options.allowLegacySse &&
-          (options.transport ?? "streamable-http") === "streamable-http";
+        const alternate =
+          requested === "streamable-http"
+            ? (options.fallbackToSse ?? true) && options.allowLegacySse
+              ? "sse"
+              : undefined
+            : // A Streamable HTTP server refuses the legacy SSE GET with 405, so an endpoint
+              // saved as SSE that has since moved to Streamable HTTP still connects.
+              error instanceof SseError && error.code === 405
+              ? "streamable-http"
+              : undefined;
         await closeMcpResource(() => this.client.close());
         this.connected = false;
         this.transport = undefined;
-        if (!canFallback) {
+        if (!alternate) {
           if (this.remoteFetch) {
             const remoteFetch = this.remoteFetch;
             await closeMcpResource(() => remoteFetch.close());
@@ -468,12 +475,12 @@ export class McpSession {
           this.remoteFetch = undefined;
           throw error;
         }
-        usedFallback = true;
+        used = alternate;
         // The SDK's documented fallback uses a fresh Client after a failed
-        // Streamable HTTP handshake; a Client cannot be reconnected safely.
+        // handshake; a Client cannot be reconnected safely.
         this.client = this.newClient();
         try {
-          await connect("sse");
+          await connect(alternate);
         } catch (fallbackError) {
           await this.close();
           throw fallbackError;
@@ -483,10 +490,7 @@ export class McpSession {
       }
     })();
     await this.connecting;
-    return {
-      transport: usedFallback ? "sse" : (options.transport ?? "streamable-http"),
-      usedFallback,
-    };
+    return { transport: used, usedFallback: used !== requested };
   }
 
   async connectStdio(options: McpStdioOptions): Promise<void> {

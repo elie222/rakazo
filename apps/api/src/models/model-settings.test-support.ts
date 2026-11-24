@@ -29,6 +29,9 @@ export function setupModelSettings(
     overrides?: Array<{ userId: string; spaceId: string }>;
   } = {},
 ) {
+  const userPreferences = options.compatible
+    ? [{ modelId: options.compatible.defaultModel, thinkingLevel: null, updatedAt: new Date(0) }]
+    : [];
   const credential = {
     id: "credential-one",
     userId: owner.userId,
@@ -38,6 +41,7 @@ export function setupModelSettings(
     secretId: "secret-one",
     createdAt: new Date(0),
     updatedAt: new Date(0),
+    userPreferences,
   };
   // `existing` describes the main model's fallbacks, positioned after its primary. A row
   // with a spaceId is that Space's own copy; one without is the account's.
@@ -131,18 +135,7 @@ export function setupModelSettings(
       ),
     },
     userModelPreference: {
-      findMany: vi.fn().mockResolvedValue(
-        options.compatible
-          ? [
-              {
-                modelId: options.compatible.defaultModel,
-                thinkingLevel: null,
-                updatedAt: new Date(0),
-                credential,
-              },
-            ]
-          : [],
-      ),
+      findMany: vi.fn().mockResolvedValue(userPreferences.map((row) => ({ ...row, credential }))),
       findFirst: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(),
       updateMany: vi.fn(),

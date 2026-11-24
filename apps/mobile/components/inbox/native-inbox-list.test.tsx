@@ -5,12 +5,15 @@ import { act, useContext } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NativeListRowContext } from "../native/native-list-row";
+import type { OpenSwipe } from "./inbox-swipe-context";
+import { InboxSwipeContext } from "./inbox-swipe-context";
 import { NativeInboxList } from "./native-inbox-list.ios";
 
 type Modifier = { name: string; value: unknown };
 
 const swift = vi.hoisted(() => ({
   geometry: [] as Array<(frame: { width: number }) => void>,
+  openSwipe: null as { current: OpenSwipe | null } | null,
   scrolls: [] as Array<[number | null, number]>,
   overlay: null as null | {
     pills: { above?: { index: number }; below?: { index: number } };
@@ -59,6 +62,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
       "onAppear",
       "onDisappear",
       "onGeometryChange",
+      "onScrollPhaseChange",
       "refreshable",
       "scrollContentBackground",
     ].map((name) => [name, modifier(name)]),
@@ -103,6 +107,7 @@ type Item = { key: string; swipe: boolean };
 /** A chat row as the native list sees it: it reads the row context the list gives it. */
 function Row({ item }: { item: Item }) {
   const row = useContext(NativeListRowContext);
+  swift.openSwipe = useContext(InboxSwipeContext);
   return (
     <span
       data-row={item.key}
@@ -227,7 +232,7 @@ it("shows the empty state only while there are no rows", () => {
   act(() => again.unmount());
 });
 
-it("jumps to an unread row out of view by its row in the native list", () => {
+it("dismisses the open swipe before jumping to an unread row", () => {
   swift.scrolls = [];
   const read = { unread: 0, attention: 0 };
   const root = render(
@@ -245,7 +250,12 @@ it("jumps to an unread row out of view by its row in the native list", () => {
   );
   const below = swift.overlay?.pills.below;
   expect(below?.index).toBe(2);
+  const close = vi.fn(() => {
+    expect(swift.scrolls).toEqual([]);
+  });
+  swift.openSwipe!.current = { id: "swiped", close };
   act(() => swift.overlay?.onJump("below", below!));
+  expect(close).toHaveBeenCalledOnce();
   // The header row comes first in the list, so the third chat is its fourth row.
   expect(swift.scrolls).toEqual([[1, 3]]);
   act(() => root.unmount());

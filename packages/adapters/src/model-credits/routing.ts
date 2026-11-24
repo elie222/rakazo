@@ -167,6 +167,7 @@ export async function approvedModelCreditMaterial(
     contextWindow: settings.contextWindow,
     maxTokens: settings.maxTokens,
     reasoning: settings.reasoning,
+    thinkingLevel: settings.thinkingLevel,
     acceptsImages: settings.images,
     maxImagesPerPrompt: settings.maxImagesPerPrompt,
     cacheCapabilities: secret.cacheCapabilities,
@@ -174,6 +175,7 @@ export async function approvedModelCreditMaterial(
     gatewayId: secret.gatewayId,
     projectId: secret.projectId,
     region: secret.region,
+    zeroDataRetention: secret.zeroDataRetention,
     redact: secretValuesToRedact(secret),
   };
 }

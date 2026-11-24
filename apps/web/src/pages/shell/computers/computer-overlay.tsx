@@ -2,9 +2,11 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Bot, ComputerReleaseReason, ComputerStatus, TaughtSkill } from "@rakazo/contracts";
 import { computerPreviewPlaceholder } from "@rakazo/i18n/computer-preview";
+import { computerLabel } from "@rakazo/i18n/computer-usage";
 import { BotAvatar, Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
+import { SaveScreenshotButton } from "../../../components/computers/SaveScreenshotButton";
 import { TeachCaptureOverlay } from "../../../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../../../components/teach/TeachComputerOverlay";
 import {
@@ -19,7 +21,7 @@ import {
   windowChromeKind,
 } from "../../../lib/platform/desktop";
 import { ComputerReleaseActions } from "./computer-release-actions";
-import { computerLabel, DesktopKindEmptyState } from "./computer-view";
+import { DesktopKindEmptyState } from "./computer-view";
 
 type ComputerOverlayProps = {
   bot: Bot;
@@ -73,6 +75,9 @@ export function ComputerOverlay({
   onRefreshTeaching,
   onClose,
 }: ComputerOverlayProps) {
+  // The picture is taken on the server from the running computer, so it does not wait for the frame
+  // to connect; a user's own machine has no screen here to take.
+  const canSaveScreenshot = !runsOnUserMachine(computer) && computer?.state === "running";
   return (
     <div className="fixed inset-0 z-30 bg-background">
       <div
@@ -163,10 +168,14 @@ export function ComputerOverlay({
                 onRefresh={onRefreshTeaching}
               />
             ) : null}
+            {canSaveScreenshot ? (
+              <SaveScreenshotButton key={`screenshot-${bot.id}`} botId={bot.id} />
+            ) : null}
             <Button
               variant="ghost"
               size="icon-sm"
               className="text-muted-foreground"
+              data-computer-close=""
               aria-label={t`Close computer`}
               onClick={() => onClose()}
             >

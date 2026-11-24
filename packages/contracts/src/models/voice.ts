@@ -1,11 +1,15 @@
 import * as z from "zod";
 import { Id } from "../ids.js";
 
+export const MAX_TRANSCRIPTION_VOCABULARY_LENGTH = 500;
+
 export const VoiceCatalogEntrySchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
   transcribe: z.boolean(),
+  /** The connection accepts vocabulary hints for transcription. */
+  transcriptionVocabulary: z.boolean().optional(),
   keyless: z.boolean().optional(),
   /** The connection takes an optional speech model id that overrides the provider default. */
   speechModel: z.boolean().optional(),
@@ -16,6 +20,10 @@ export const VoiceCatalogEntrySchema = z.object({
   modelConnection: z.boolean().optional(),
   /** The provider can list its voices for one language, so the picker may offer a filter. */
   languages: z.boolean().optional(),
+  /** The provider lists its speech models, so the model field can suggest them. */
+  speechModels: z.boolean().optional(),
+  /** A voice id can be typed, because a model's voices may be missing from its listing. */
+  freeformVoice: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 
@@ -25,6 +33,12 @@ export const VoiceInfoSchema = z.object({
   description: z.string().optional(),
 });
 export type VoiceInfo = z.infer<typeof VoiceInfoSchema>;
+
+export const VoiceModelInfoSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+});
+export type VoiceModelInfo = z.infer<typeof VoiceModelInfoSchema>;
 
 export const VoiceCredentialSchema = z.object({
   id: Id,
@@ -42,6 +56,7 @@ export const VoiceCredentialSchema = z.object({
   sttEndpoint: z.string().default(""),
   ttsModel: z.string().default(""),
   sttModel: z.string().default(""),
+  transcriptionVocabulary: z.string().optional(),
 });
 export type VoiceCredential = z.infer<typeof VoiceCredentialSchema>;
 

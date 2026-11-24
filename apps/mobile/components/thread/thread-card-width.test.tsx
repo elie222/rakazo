@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type { MessageBlock } from "@rakazo/contracts";
 import { separateAskAnswers } from "@rakazo/core";
 import type { ComponentProps, ReactNode, Ref } from "react";
@@ -97,10 +98,13 @@ vi.mock("../../lib/native/native", () => ({
   useResolvedAppearance: () => "light",
 }));
 
+const linkConfirm = vi.hoisted(() => vi.fn());
+
 vi.mock("@rakazo/chat-ui/native", () => ({
   MarkdownLongPressContext: createContext(undefined),
   ChatMarkdown: ({ children }: { children: string }) => <p>{children}</p>,
   withBlockMentions: <T,>(blocks: T) => blocks,
+  useNativeLinkConfirm: () => linkConfirm,
 }));
 
 vi.mock("../messages/message-caption", () => ({
@@ -135,6 +139,7 @@ vi.mock("../native/native-action-button", () => ({
 // Cards this file doesn't exercise; each has its own tests.
 vi.mock("./ask-block", () => ({ AskBlock: () => null }));
 vi.mock("../cards/AppConnectCard", () => ({ AppConnectCard: () => null }));
+vi.mock("./routine-event-row", () => ({ RoutineEventRows: () => null }));
 vi.mock("../media/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../cards/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../cards/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
@@ -397,7 +402,8 @@ describe("thread cards", () => {
     const link = container.querySelector('[role="link"]');
     expect(link?.getAttribute("aria-label")).toBe("Remote task: finished");
     act(() => (link as HTMLElement).click());
-    expect(Linking.openURL).toHaveBeenCalledWith("https://example.test/task");
+    expect(linkConfirm).toHaveBeenCalledWith("https://example.test/task");
+    expect(Linking.openURL).not.toHaveBeenCalled();
     act(() => link!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })));
     expect(onLongPress).toHaveBeenCalledTimes(1);
   });
@@ -578,6 +584,31 @@ describe("thread cards", () => {
       expect(style.fontSize).toBe(fontSize);
     },
   );
+
+  it("opens the previous instructions on a routine approval", () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    const card = renderAsk(
+      {
+        approvalEffectId: "effect-1",
+        routineUpdate: {
+          changes: [{ field: "prompt", before: "Order ten", after: "Order five" }],
+        },
+        actions: [
+          { id: "allow", label: "Allow once" },
+          { id: "deny", label: "Deny" },
+        ],
+      },
+      true,
+    );
+    const previous = [...card!.querySelectorAll("button")].find(
+      (button) => button.textContent === "Previous instructions",
+    );
+    expect(card?.textContent).toContain("Order five");
+    expect(card?.textContent).not.toContain("Order ten");
+    act(() => previous!.click());
+    expect(card?.textContent).toContain("Order ten");
+  });
 
   it("bounds the MCP approval card the same way", () => {
     act(() =>

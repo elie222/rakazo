@@ -10,6 +10,7 @@ import {
   parseTcpPort,
   percentageDelta,
   renderBudgetTable,
+  roundedSummary,
   roundMetric,
   summarize,
 } from "./performance-report.js";
@@ -148,6 +149,22 @@ describe("performance budgets", () => {
     { key: "typingMs", title: "Typing", unit: "ms", budget: 16 },
     { key: "idlePercent", title: "Idle", unit: "%", budget: 2 },
   ];
+
+  it.each([
+    { samples: [16, 16.01, 16.04], median: 16.01, p95: 16.04, over: true },
+    { samples: [15.98, 16, 16.04], median: 16, p95: 16.04, over: false },
+    { samples: [15.98, 15.99, 16.02], median: 15.99, p95: 16.02, over: false },
+  ])(
+    "shows a $median ms median and its p95 without changing the budget result",
+    ({ samples, median, p95, over }) => {
+      const rows = checkBudgets({ typingMs: roundedSummary(samples) }, budgets);
+
+      expect(rows[1]).toMatchObject({ median, p95, budget: 16, over });
+      expect(renderBudgetTable(rows)).toContain(
+        `| Typing | ${median} ms | ${p95} ms | 16 ms | ${over ? "over" : "ok"} |`,
+      );
+    },
+  );
 
   it("flags a median past its line and a metric that stopped reporting", () => {
     const rows = checkBudgets(

@@ -247,17 +247,37 @@ export function removeComposerMention(
   return result;
 }
 
+function removeSendMention(text: string, { start, end }: ComposerMentionRange): string {
+  // Consume at most one separator introduced around a removed chip. Other spaces, tabs
+  // and line endings can be meaningful in code, Markdown, and quoted text.
+  if (text[end] === " " && (text[start - 1] === " " || start === 0 || text[start - 1] === "\n")) {
+    end += 1;
+  } else if (text[start - 1] === " " && (end === text.length || /[\r\n]/.test(text[end] ?? ""))) {
+    start -= 1;
+  }
+  return text.slice(0, start) + text.slice(end);
+}
+
+function stripSendMentionName(
+  text: string,
+  mentionName: string,
+  knownMentions: readonly MentionName[],
+): string {
+  const normalized = mentionName.trim().toLowerCase();
+  if (!normalized) return text;
+  const spans = composerMentionSpans(text, [...knownMentions, { name: normalized }]);
+  for (const span of spans.reverse()) {
+    if (span.name === normalized) text = removeSendMention(text, span);
+  }
+  return text;
+}
+
 export function stripMentionToken(
   text: string,
   mentionName: string,
   knownMentions: readonly MentionName[] = [],
 ): string {
-  const normalized = mentionName.trim();
-  if (!normalized) return text.trim();
-  return removeComposerMention(text, { name: normalized }, knownMentions)
-    .replace(/[^\S\n]+/g, " ")
-    .replace(/[^\S\n]*\n/g, "\n")
-    .trim();
+  return stripSendMentionName(text, mentionName, knownMentions).trim();
 }
 
 export function stripMentionKinds(
@@ -282,15 +302,14 @@ export function stripMentionKinds(
   let previousStart = text.length;
   for (const range of ranges) {
     if (range.end > previousStart) continue;
-    result = result.slice(0, range.start) + result.slice(range.end);
+    result = removeSendMention(result, range);
     previousStart = range.start;
   }
   for (const mention of mentions) {
     if (kinds.includes(mention.kind) && mention.ranges === undefined) {
-      result = stripMentionToken(result, mention.name, mentions);
+      result = stripSendMentionName(result, mention.name, mentions);
     }
   }
-  if (ranges.length) result = result.replace(/[^\S\n]+/g, " ").replace(/[^\S\n]*\n/g, "\n");
   return result.trim();
 }
 

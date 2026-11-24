@@ -11,7 +11,6 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
 import { runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 
@@ -143,10 +142,7 @@ export async function postToGroup(
   }
   if ("error" in committed) return committed;
   if (committed.eventSeq !== undefined) {
-    await bestEffort(
-      "group post realtime notification",
-      deps.events.notify(committed.threadId, committed.eventSeq),
-    );
+    await deps.events.notify(committed.threadId, committed.eventSeq);
   }
   return posted(committed.messageId);
 }

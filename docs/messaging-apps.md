@@ -18,7 +18,7 @@ set them up using the [messaging setup guide](./self-host-integrations.md#messag
 ## Link a bot to a chat app
 
 1. Open **Settings → Messaging**.
-2. Pick the bot, then choose the app under **Connect a chat app**.
+2. Choose **Connect** next to the app. With more than one bot, pick the bot it should talk to.
 3. Send the code shown from that app within 10 minutes.
 
 From then on, messages you send there go to that bot's chat, and its replies come back to you there.
@@ -28,7 +28,11 @@ In direct messages, a voice note the chat app delivers as an audio file (Telegra
 is transcribed when a voice provider that supports transcription is connected in **Voice**
 settings; without one, the bot receives the audio file.
 
-To stop, choose **Unlink**.
+Large files may take a moment to reach the bot.
+
+To move the app to another bot, choose **Change bot** and send the new code from the same
+account; its group chats keep working. A bot answers one chat app at a time. To stop, choose
+**Unlink**.
 
 ## Microsoft Teams
 
@@ -37,7 +41,7 @@ that owns the bot registration, then open its personal chat. Your Microsoft 365 
 may need to upload and allow the app in that tenant's app catalog. A public Teams Store listing
 is not required for this installation. Cross-company distribution is not yet verified.
 
-In **Settings → Messaging**, pick your bot and choose `teams` under **Connect a chat app**. Send
+In **Settings → Messaging**, choose **Connect** next to Microsoft Teams and pick your bot. Send
 the code to the Rakazo app in a Teams direct message within 10 minutes. Until you link it, an
 unlinked personal chat does not answer ordinary messages by default.
 

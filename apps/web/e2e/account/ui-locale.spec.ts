@@ -32,6 +32,32 @@ test("Polish can be selected, survives reload, and switches back to English", as
   await expect(page.getByRole("heading", { name: "General", exact: true })).toBeVisible();
 });
 
+test("Thai can be selected, survives reload, and switches back to English", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `ui-locale-th-${Date.now()}@rakazo.test`, "password12", "Locale QA");
+  await completeOnboarding(page, testInfo);
+  const settings = await openUserSettings(page);
+  const picker = settings.getByTestId("ui-locale-select");
+  await picker.click();
+  await page.getByRole("option", { name: "ไทย", exact: true }).click();
+  await expect(settings.getByRole("heading", { name: "ทั่วไป", exact: true })).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "บัญชี", exact: true })).toBeVisible();
+  await expect(settings.getByText("ภาษา", { exact: true })).toBeVisible();
+  await expect(picker).toHaveText("ไทย");
+  await expect(page.locator("html")).toHaveAttribute("lang", "th");
+  await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+  await captureScreenshot(page, testInfo, "ui-locale-settings-th");
+
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "th");
+  await expect(page.getByTestId("ui-locale-select")).toHaveText("ไทย");
+  await page.getByTestId("ui-locale-select").click();
+  await page.getByRole("option", { name: "English", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByRole("heading", { name: "General", exact: true })).toBeVisible();
+});
+
 test("account settings language picker includes Hebrew and mirrors the UI right-to-left", async ({
   page,
 }, testInfo) => {

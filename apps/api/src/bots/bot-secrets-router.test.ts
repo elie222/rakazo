@@ -2,7 +2,12 @@ import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor, BotSecretMetadata } from "@rakazo/contracts";
-import { encodeLoginSecret, newVaultImportRows, parseVaultCsv } from "@rakazo/contracts";
+import {
+  encodeLoginSecret,
+  newVaultImportRows,
+  parseVaultCsv,
+  VAULT_ITEM_LIMIT,
+} from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
@@ -714,7 +719,7 @@ describe("vault router", () => {
     // Past the vault's limit a new login is counted as not fitting, and one already saved as
     // already saved, as a retry after a lost reply sends it. Once one doesn't fit, the rest are
     // counted without reading the vault again.
-    for (let index = rows.length; index < 99; index++)
+    for (let index = rows.length; index < VAULT_ITEM_LIMIT - 1; index++)
       rows.push({ ...rows[0], id: `filler-${index}`, name: `filler-${index}` });
     prisma.vaultCredential.findMany.mockClear();
     const full = await call("vault/import", {
@@ -762,7 +767,7 @@ describe("vault router", () => {
 
   it("saves a good login after rows it would refuse, with one place left in the Vault", async () => {
     const { rows, call } = botSecretDeps();
-    for (let index = 0; index < 99; index++)
+    for (let index = 0; index < VAULT_ITEM_LIMIT - 1; index++)
       rows.push({
         id: `filler-${index}`,
         userId: "user-1",
@@ -778,7 +783,7 @@ describe("vault router", () => {
       ].join("\n"),
     );
     if (!("rows" in parsed)) throw new Error("not parsed");
-    // The app's list of those 99 items.
+    // The app's list of those items.
     const listed = rows.map(
       ({ name }) => ({ name, origin: "", auth: { type: "command" } }) as BotSecretMetadata,
     );

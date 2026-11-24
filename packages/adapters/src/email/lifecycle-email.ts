@@ -26,6 +26,7 @@ const STILL_WANTED: Record<
   (prisma: PrismaClient, target: Target) => Promise<boolean>
 > = {
   "model-connection": needsModelConnection,
+  "agent-import": hasImportedNothing,
 };
 
 /**
@@ -53,6 +54,20 @@ async function needsModelConnection(prisma: PrismaClient, target: Target): Promi
   // An own-key organization runs on its own model whatever balance it kept.
   if (credits?.mode === "byok") return true;
   return credits?.mode !== "credits" && (credits?.balanceMicros ?? 0n) <= 0n;
+}
+
+/** A plan that is still running whose owner has imported no agent yet. */
+async function hasImportedNothing(prisma: PrismaClient, target: Target): Promise<boolean> {
+  const [organization, imported] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id: target.organizationId },
+      select: { billing: { select: { status: true } } },
+    }),
+    prisma.agentImport.findFirst({ where: { userId: target.userId }, select: { id: true } }),
+  ]);
+  return (
+    Boolean(organization?.billing && hasBillingAccess(organization.billing.status)) && !imported
+  );
 }
 
 /** The owner to write to, or null when they left, opted out, or the organization is going. */
@@ -85,6 +100,8 @@ async function recipient(prisma: PrismaClient, target: Target) {
  * so a person's mails form one sequence in the order they come due.
  */
 export function createLifecycleEmailSender(deps: {
+  /** The kinds whose copy the deployment supplies; a job for another kind is dropped. */
+  kinds: readonly LifecycleEmailKind[];
   prisma: PrismaClient;
   email: TransactionalEmailProvider;
   jobs: Pick<JobPublisher, "enqueue">;
@@ -93,6 +110,7 @@ export function createLifecycleEmailSender(deps: {
   const { prisma } = deps;
   return async (job) => {
     const { kind, userId } = job;
+    if (!deps.kinds.includes(kind)) return;
     const user = await recipient(prisma, job);
     if (!user || !(await STILL_WANTED[kind](prisma, job))) return;
     const claim = await claimProductEmail(prisma, { userId, kind }, LIFECYCLE_EMAIL_GAP_MS);

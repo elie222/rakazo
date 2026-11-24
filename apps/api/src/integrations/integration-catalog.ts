@@ -1,5 +1,5 @@
 import type { IntegrationCatalogResult, IntegrationCatalogSurface } from "@rakazo/contracts";
-import { ClientError, cancelResponseBody } from "@rakazo/core";
+import { ClientError, cancelResponseBody, isRecord } from "@rakazo/core";
 
 const RESPONSE_LIMIT = 1_000_000;
 const SEARCH_LIMIT = 8;
@@ -178,8 +178,4 @@ function httpUrl(value: unknown): string | null {
   } catch {
     return null;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

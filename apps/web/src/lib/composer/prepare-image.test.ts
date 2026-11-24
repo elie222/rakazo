@@ -87,6 +87,30 @@ describe("prepareImage", () => {
     expect([canvas.width, canvas.height]).toEqual([1200, 800]);
   });
 
+  it.each([
+    { width: 1600, height: 1200, encodedMiB: 5, keepsOriginal: false },
+    { width: 1600, height: 1200, encodedMiB: 6, keepsOriginal: true },
+    { width: 1600, height: 1200, encodedMiB: 7, keepsOriginal: true },
+    { width: 3200, height: 2400, encodedMiB: 7, keepsOriginal: false },
+  ])(
+    "chooses the upload for $width × $height PNG encoded to $encodedMiB MiB",
+    async ({ width, height, encodedMiB, keepsOriginal }) => {
+      const mebibyte = 1024 * 1024;
+      const bytes = new Uint8Array(6 * mebibyte);
+      bytes.set(png(false));
+      const file = new File([bytes], "photo.png", { type: "image/png" });
+      const encoded = new Blob([new Uint8Array(encodedMiB * mebibyte)], { type: file.type });
+      bitmap.mockResolvedValue({ width, height, close });
+      toBlob.mockImplementationOnce((callback) => callback(encoded));
+
+      const result = await prepareImage(file);
+
+      expect(result.size).toBe(keepsOriginal ? file.size : encoded.size);
+      expect(result === file).toBe(keepsOriginal);
+      expect([canvas.width, canvas.height]).toEqual([1600, 1200]);
+    },
+  );
+
   it.each(["image/gif", "image/webp", "image/svg+xml", "application/pdf"])(
     "leaves %s alone",
     async (type) => {

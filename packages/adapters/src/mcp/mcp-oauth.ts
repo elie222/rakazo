@@ -40,7 +40,12 @@ import type { SecretCleanup, SecretCleanupDeps } from "../secrets/secret-cleanup
 import { attemptSecretCleanup, cleanUpUnsavedSecret } from "../secrets/secret-cleanup.js";
 import { persistPreparedSecret } from "../secrets/secret-persistence.js";
 import { holdSecretNotifications } from "../secrets/secret-store-factory.js";
-import { MCP_DYNAMIC_REGISTRATION_UNSUPPORTED, needsMcpOAuthClient } from "./mcp-server-health.js";
+import type { FailedOAuthRequest } from "./mcp-server-health.js";
+import {
+  MCP_DYNAMIC_REGISTRATION_UNSUPPORTED,
+  needsMcpOAuthClient,
+  refusedRegistration,
+} from "./mcp-server-health.js";
 import {
   MAX_AUTHORIZATION_URL_LENGTH,
   secureFetch,
@@ -624,6 +629,18 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     }
   }
 
+  /**
+   * Whether a held access token is still lapsed only because renewing it failed for now: a
+   * refused refresh drops the grant, so a refresh token still held here can be tried again.
+   */
+  get renewalPending(): boolean {
+    return Boolean(
+      this.options.refresh &&
+        this.material.oauth?.tokens?.refresh_token &&
+        accessTokenExpired(this.material.oauth),
+    );
+  }
+
   get redirectUrl(): string | undefined {
     return this.options.redirectUri ?? this.material.oauth?.redirectUri;
   }
@@ -892,6 +909,13 @@ type Pending = {
 const PENDING_TTL_MS = 10 * 60_000;
 const MAX_PENDING_SESSIONS = 100;
 
+/**
+ * Where a sign-in is sent back when the authorization server registers only loopback
+ * redirects. Nothing listens there: the desktop app reads the code from the navigation
+ * itself, and RFC 8252 has servers accept any port on a loopback redirect.
+ */
+export const MCP_LOOPBACK_REDIRECT_URI = "http://127.0.0.1:53682/callback";
+
 /** OAuth traffic runs through the same URL policy as runtime MCP requests
  * (HTTPS enforced, redirects rejected), with the endpoint-origin fallback
  * layered on top for providers like Brex. */
@@ -905,6 +929,10 @@ function oauthFetch(
   close: () => Promise<void>;
   headers: Record<string, string>;
   publicError: (error: unknown, message: string) => Error;
+  /** The last answer received was a refusal of the redirect address (RFC 7591). */
+  refusedRedirect: () => boolean;
+  /** The last request, when its answer was a failure. */
+  failedRequest: () => FailedOAuthRequest | undefined;
 } {
   const url = new URL(endpoint);
   const localHttp = url.protocol === "http:" && isLocalhostOrLoopbackIp(url.hostname);
@@ -937,16 +965,29 @@ function oauthFetch(
   const networkErrors = new WeakSet<Error>();
   let rejection: OAuthRejection | undefined;
   let lastAnswerFailed = false;
+  // The most recent answer's own rejection, so an earlier one cannot explain a later failure.
+  let lastRejection: OAuthRejection | undefined;
+  let lastFailedRequest: FailedOAuthRequest | undefined;
   const recordingFetch: typeof fetch = async (input, init) => {
+    lastFailedRequest = undefined;
     try {
       const response = await fallbackFetch(input, init);
       lastAnswerFailed = !response.ok;
+      lastRejection = undefined;
       if (!response.ok) {
+        const request = input instanceof Request ? input : undefined;
+        lastFailedRequest = {
+          href: request ? request.url : new URL(String(input)).href,
+          method: (init?.method ?? request?.method ?? "GET").toUpperCase(),
+          status: response.status,
+        };
         const next = await readOAuthRejection(response);
         if (next) rejection = next;
+        lastRejection = next;
       }
       return response;
     } catch (error) {
+      lastRejection = undefined;
       if (error instanceof Error) networkErrors.add(error);
       throw error;
     }
@@ -955,6 +996,8 @@ function oauthFetch(
     headers,
     fetch: recordingFetch,
     close: () => safeFetch.close(),
+    refusedRedirect: () => lastRejection?.code === "invalid_redirect_uri",
+    failedRequest: () => lastFailedRequest,
     publicError: (error, message) => {
       if (error instanceof McpOAuthStoreError) return error;
       const secrets = oauthMaterialSecrets(material);
@@ -1203,6 +1246,7 @@ export type McpOAuthSummary = {
   clientId: string | null;
   /** Whether the stored material holds a credential; a lone generation marker holds none. */
   credential: boolean;
+  hasBearerToken: boolean;
 };
 
 /** Whether the material holds anything beyond OAuth bookkeeping. */
@@ -1224,6 +1268,7 @@ function summarize(material: OAuthMaterial): McpOAuthSummary {
     status,
     clientId: material.oauthClient?.client_id ?? null,
     credential: hasCredential(material),
+    hasBearerToken: Boolean(material.secret),
   };
 }
 
@@ -1273,6 +1318,9 @@ export class McpOAuthBroker {
     redirectUri: string;
     client?: McpOAuthClientKind;
     botId?: string;
+    /** The client can take the code from a loopback redirect, so a server that registers
+     * only loopback redirects (RFC 8252) is tried again on one when it refuses ours. */
+    capturesLoopback?: boolean;
   }): Promise<
     | { status: "authorization_required"; sessionId: string; authorizationUrl: string }
     | { status: "already_connected" | "authorization_not_requested" }
@@ -1324,6 +1372,7 @@ export class McpOAuthBroker {
       server.endpoint ? loaded.material : withoutRequestCredentials(loaded.material),
       this.allowPrivateEndpoint,
     );
+    let retryOnLoopback = false;
     try {
       if (server.endpoint)
         await startRemoteAuthorization(
@@ -1343,11 +1392,27 @@ export class McpOAuthBroker {
       }
     } catch (error) {
       if (error instanceof McpOAuthServerMismatchError) throw error;
-      if (needsMcpOAuthClient(error)) throw new McpOAuthClientRequiredError(server.revision);
-      if (!authorizationUrl) throw networkFetch.publicError(error, "Could not start MCP OAuth");
+      if (
+        needsMcpOAuthClient(error) ||
+        (!loaded.material.oauthClient &&
+          !networkFetch.refusedRedirect() &&
+          refusedRegistration(networkFetch.failedRequest(), provider.discoveryState()))
+      )
+        throw new McpOAuthClientRequiredError(server.revision);
+      // A client entered by hand was registered with its own redirect; only a registration
+      // this attempt made can be made again with another one.
+      retryOnLoopback =
+        !authorizationUrl &&
+        input.capturesLoopback === true &&
+        input.redirectUri !== MCP_LOOPBACK_REDIRECT_URI &&
+        !loaded.material.oauthClient &&
+        networkFetch.refusedRedirect();
+      if (!authorizationUrl && !retryOnLoopback)
+        throw networkFetch.publicError(error, "Could not start MCP OAuth");
     } finally {
       await networkFetch.close().catch(() => undefined);
     }
+    if (retryOnLoopback) return this.begin({ ...input, redirectUri: MCP_LOOPBACK_REDIRECT_URI });
     if (!authorizationUrl) {
       if (await provider.tokens()) {
         return { status: "already_connected" };
@@ -1442,6 +1507,18 @@ export class McpOAuthBroker {
         material: await this.read(session.oauthCiphertext, session.id),
         ...(server.secretId ? { secretId: server.secretId } : {}),
       };
+      // A stdio sign-in began at its authorization server; one that began anywhere else began
+      // at a remote URL the server has since left for stdio.
+      const issuer =
+        loaded.material.oauthClient?.authorization_server ??
+        loaded.material.oauth?.discoveryState?.authorizationServerUrl;
+      const startedAtIssuer = Boolean(
+        issuer &&
+          URL.canParse(issuer) &&
+          URL.canParse(session.endpoint) &&
+          new URL(issuer).href === new URL(session.endpoint).href,
+      );
+      if (!server.endpoint && !startedAtIssuer) throw new McpOAuthRefusedError(SESSION_INVALID);
       pending = {
         serverId: server.id,
         spaceId: input.spaceId,
@@ -1449,10 +1526,14 @@ export class McpOAuthBroker {
         endpoint: session.endpoint,
         stdio: !server.endpoint,
         generation: loaded.material.oauthGeneration ?? 0,
-        provider: this.createProvider(server, context, loaded, {
-          redirectUri: session.redirectUri,
-          state: session.id,
-        }),
+        // Its writes are held to the endpoint this sign-in began at, so a server moved since
+        // never stores the old endpoint's grant.
+        provider: this.createProvider(
+          server.endpoint === null ? server : { ...server, endpoint: session.endpoint },
+          context,
+          loaded,
+          { redirectUri: session.redirectUri, state: session.id },
+        ),
         botId: session.botId,
         createdAt: session.createdAt.getTime(),
         expiry: undefined,

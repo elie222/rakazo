@@ -1,6 +1,7 @@
 import { trimEndChars } from "@rakazo/contracts";
 import JSON5 from "json5";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { isRecord } from "../primitives/records.js";
 
 /** Settings files read from the root of an OpenClaw or Hermes home. */
 export const AGENT_IMPORT_CONFIG_FILES = new Set([
@@ -21,9 +22,6 @@ export function isAgentImportSecretFile(path: string): boolean {
 
 type Json = Record<string, unknown>;
 
-const isObject = (value: unknown): value is Json =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
 /**
  * `openclaw.json` and job lists are JSON5, `config.yaml` is YAML (aliases capped, core
  * schema only). Null unless a plain object without prototype keys or deep nesting.
@@ -34,7 +32,7 @@ export function readAgentImportConfig(path: string, content: string): Json | nul
       path === "config.yaml"
         ? parseYaml(content, { maxAliasCount: 20, schema: "core", customTags: [] })
         : (JSON5.parse(content) as unknown);
-    return isObject(value) && safeTree(value, 0) ? value : null;
+    return isRecord(value) && safeTree(value, 0) ? value : null;
   } catch {
     return null;
   }
@@ -46,7 +44,7 @@ const MAX_DEPTH = 32;
 function safeTree(value: unknown, depth: number): boolean {
   if (depth > MAX_DEPTH) return false;
   if (Array.isArray(value)) return value.every((item) => safeTree(item, depth + 1));
-  if (!isObject(value)) return true;
+  if (!isRecord(value)) return true;
   return Object.keys(value).every(
     (key) => !UNSAFE_KEYS.has(key) && safeTree(value[key], depth + 1),
   );
@@ -211,19 +209,19 @@ function projectConfig(
     return Object.keys(kept).length ? kept : null;
   };
   if (path === "config.yaml") {
-    const model = isObject(config.model) ? config.model : {};
+    const model = isRecord(config.model) ? config.model : {};
     const keepModelKey = secrets && keyed(String(model.provider ?? ""));
-    const providers = Object.entries(isObject(config.providers) ? config.providers : {}).flatMap(
+    const providers = Object.entries(isRecord(config.providers) ? config.providers : {}).flatMap(
       ([name, entry]) => {
         const kept =
-          secrets && keyed(name) && isObject(entry) ? keyEntry(entry, "api_key", "base_url") : null;
+          secrets && keyed(name) && isRecord(entry) ? keyEntry(entry, "api_key", "base_url") : null;
         return kept ? [[name, kept]] : [];
       },
     );
     const custom = (Array.isArray(config.custom_providers) ? config.custom_providers : []).flatMap(
       (entry) => {
         const kept =
-          secrets && isObject(entry) && keyed(String(entry.name ?? ""))
+          secrets && isRecord(entry) && keyed(String(entry.name ?? ""))
             ? keyEntry(entry, "api_key", "base_url")
             : null;
         return kept ? [{ name: String(entry.name), ...kept }] : [];
@@ -239,22 +237,22 @@ function projectConfig(
       mcp_servers: mcpServers(config.mcp_servers),
     });
   }
-  const agents = isObject(config.agents) ? config.agents : {};
-  const defaults = isObject(agents.defaults) ? agents.defaults : {};
+  const agents = isRecord(config.agents) ? config.agents : {};
+  const defaults = isRecord(agents.defaults) ? agents.defaults : {};
   const agent = (value: unknown) => {
-    const entry = isObject(value) ? value : {};
+    const entry = isRecord(value) ? value : {};
     return {
       ...strings(entry, ["id"]),
       ...modelName(entry.model),
       ...(typeof entry.workspace === "string" ? { workspace: folderName(entry.workspace) } : {}),
     };
   };
-  const mcp = isObject(config.mcp) ? config.mcp : {};
+  const mcp = isRecord(config.mcp) ? config.mcp : {};
   const projected: Json = {
     agents: {
       defaults: modelName(defaults.model),
       entries: Object.fromEntries(
-        Object.entries(isObject(agents.entries) ? agents.entries : {}).map(([id, entry]) => [
+        Object.entries(isRecord(agents.entries) ? agents.entries : {}).map(([id, entry]) => [
           id,
           agent(entry),
         ]),
@@ -264,17 +262,17 @@ function projectConfig(
     mcp: { servers: mcpServers(mcp.servers) },
   };
   if (secrets) {
-    const models = isObject(config.models) ? config.models : {};
-    const providers = Object.entries(isObject(models.providers) ? models.providers : {}).flatMap(
+    const models = isRecord(config.models) ? config.models : {};
+    const providers = Object.entries(isRecord(models.providers) ? models.providers : {}).flatMap(
       ([id, entry]) => {
-        const kept = keyed(id) && isObject(entry) ? keyEntry(entry, "apiKey", "baseUrl") : null;
+        const kept = keyed(id) && isRecord(entry) ? keyEntry(entry, "apiKey", "baseUrl") : null;
         return kept ? [[id, kept]] : [];
       },
     );
-    const env = isObject(config.env) ? config.env : {};
+    const env = isRecord(config.env) ? config.env : {};
     const vars = {
       ...env,
-      ...(isObject(env.vars) ? env.vars : {}),
+      ...(isRecord(env.vars) ? env.vars : {}),
     };
     const allowed = providerKeyVars(vars).filter(([, value]) => typeof value === "string");
     if (providers.length) projected.models = { providers: Object.fromEntries(providers) };
@@ -288,7 +286,7 @@ function projectConfig(
  * `{ source: "env", id }` is copied.
  */
 function noteReferences(value: unknown, referenced: Set<string>): unknown {
-  if (isObject(value)) {
+  if (isRecord(value)) {
     if (value.source !== "env" || typeof value.id !== "string") return undefined;
     referenced.add(value.id);
     return { source: "env", id: value.id };
@@ -301,11 +299,11 @@ function noteReferences(value: unknown, referenced: Set<string>): unknown {
 /** Hermes `auth.json`: only API keys the user entered by hand, for allowlisted providers. */
 function manualKeys(content: string): Json {
   const auth = readAgentImportConfig("auth.json", content) ?? {};
-  const pool = isObject(auth.credential_pool) ? auth.credential_pool : {};
+  const pool = isRecord(auth.credential_pool) ? auth.credential_pool : {};
   const kept = Object.entries(pool).flatMap(([provider, entries]) => {
     if (!KEY_PROVIDERS.has(normalizeImportProvider(provider))) return [];
     const manual = (Array.isArray(entries) ? entries : []).filter(
-      (entry) => isObject(entry) && entry.auth_type === "api_key" && entry.source === "manual",
+      (entry) => isRecord(entry) && entry.auth_type === "api_key" && entry.source === "manual",
     );
     return manual.length
       ? [
@@ -326,23 +324,23 @@ export function hasAgentImportSecrets(path: string, content: string): boolean {
   if (!config) return false;
   const keyed = (name: unknown) => KEY_PROVIDERS.has(normalizeImportProvider(String(name ?? "")));
   if (path === "config.yaml") {
-    const model = isObject(config.model) ? config.model : {};
+    const model = isRecord(config.model) ? config.model : {};
     return (
       (keyed(model.provider) && Boolean(model.api_key)) ||
-      Object.entries(isObject(config.providers) ? config.providers : {}).some(
-        ([name, entry]) => keyed(name) && isObject(entry) && Boolean(entry.api_key),
+      Object.entries(isRecord(config.providers) ? config.providers : {}).some(
+        ([name, entry]) => keyed(name) && isRecord(entry) && Boolean(entry.api_key),
       ) ||
       (Array.isArray(config.custom_providers) ? config.custom_providers : []).some(
-        (entry) => isObject(entry) && keyed(entry.name) && Boolean(entry.api_key),
+        (entry) => isRecord(entry) && keyed(entry.name) && Boolean(entry.api_key),
       )
     );
   }
-  const models = isObject(config.models) ? config.models : {};
-  const env = isObject(config.env) ? config.env : {};
-  const vars = { ...env, ...(isObject(env.vars) ? env.vars : {}) };
+  const models = isRecord(config.models) ? config.models : {};
+  const env = isRecord(config.env) ? config.env : {};
+  const vars = { ...env, ...(isRecord(env.vars) ? env.vars : {}) };
   return (
-    Object.entries(isObject(models.providers) ? models.providers : {}).some(
-      ([id, entry]) => keyed(id) && isObject(entry) && entry.apiKey !== undefined,
+    Object.entries(isRecord(models.providers) ? models.providers : {}).some(
+      ([id, entry]) => keyed(id) && isRecord(entry) && entry.apiKey !== undefined,
     ) || Object.keys(vars).some((name) => name in AGENT_IMPORT_PROVIDER_KEYS)
   );
 }
@@ -362,7 +360,7 @@ const VARIABLE_NAME = /^[A-Za-z_][\w-]*$/;
 export function mcpServerImportable(entry: Record<string, unknown>): boolean {
   const names = (record: unknown) =>
     record === undefined ||
-    (isObject(record) && Object.keys(record).every((name) => VARIABLE_NAME.test(name)));
+    (isRecord(record) && Object.keys(record).every((name) => VARIABLE_NAME.test(name)));
   if (!names(entry.headers) || !names(entry.env)) return false;
   if (typeof entry.url === "string" && entry.url) {
     if (/[?#@]/.test(entry.url)) return false;
@@ -386,15 +384,15 @@ export function mcpServerImportable(entry: Record<string, unknown>): boolean {
 
 /** Named fields only; header and env by name only. */
 function mcpServers(value: unknown): Json {
-  if (!isObject(value)) return {};
+  if (!isRecord(value)) return {};
   return Object.fromEntries(
     Object.entries(value).map(([name, server]) => {
-      const entry = isObject(server) ? server : {};
+      const entry = isRecord(server) ? server : {};
       if (!mcpServerImportable(entry)) return [name, { skipped: true }];
       const names = (record: unknown) =>
-        isObject(record) ? Object.fromEntries(Object.keys(record).map((key) => [key, ""])) : {};
+        isRecord(record) ? Object.fromEntries(Object.keys(record).map((key) => [key, ""])) : {};
       const filter = (record: unknown) => {
-        if (!isObject(record)) return undefined;
+        if (!isRecord(record)) return undefined;
         const list = (items: unknown) =>
           Array.isArray(items) ? items.filter((item) => typeof item === "string") : [];
         return { include: list(record.include), exclude: list(record.exclude) };
@@ -433,7 +431,7 @@ function strings(source: Json, keys: readonly string[]): Json {
 /** A model name as OpenClaw writes it: a string, or `{ primary }`. */
 function modelName(value: unknown): Json {
   if (typeof value === "string") return { model: value };
-  if (isObject(value) && typeof value.primary === "string")
+  if (isRecord(value) && typeof value.primary === "string")
     return { model: { primary: value.primary } };
   return {};
 }

@@ -21,6 +21,17 @@ export function mcpOAuthRedirectUri(): string {
   return `${window.location.origin}${MCP_OAUTH_CALLBACK_PATH}`;
 }
 
+/**
+ * The desktop shell's sign-in window reads the code from a loopback redirect itself, so the
+ * server may fall back to one for a provider that refuses the web callback. A browser popup
+ * would only land on an address nothing answers.
+ */
+function capturesLoopback(): true | undefined {
+  const desktop = desktopBridge();
+  // An older desktop app has no loopback capture to report the code with.
+  return desktop?.mcpBrowser && desktop.oauth ? true : undefined;
+}
+
 /** Run the browser OAuth popup flow for an MCP server: request an
  * authorization URL, open the popup, and wait until the callback page
  * broadcasts completion or the popup is closed without finishing.
@@ -30,7 +41,11 @@ export function mcpOAuthRedirectUri(): string {
  * gives each server its own browser session, so its popup never reaches the
  * callback page; the main process captures the code and reports it instead. */
 export async function connectMcpOauth(serverId: string): Promise<McpOauthResult> {
-  const started = await rpc.mcp.oauth.begin({ serverId, redirectUri: mcpOAuthRedirectUri() });
+  const started = await rpc.mcp.oauth.begin({
+    serverId,
+    redirectUri: mcpOAuthRedirectUri(),
+    capturesLoopback: capturesLoopback(),
+  });
   if (started.status !== "authorization_required") return started.status;
   return await signInInPopup(serverId, started);
 }
@@ -45,6 +60,7 @@ export async function connectMcpEndpoint(input: {
   const { server, signIn } = await rpc.mcp.servers.connect({
     ...input,
     redirectUri: mcpOAuthRedirectUri(),
+    capturesLoopback: capturesLoopback(),
   });
   if (signIn.status !== "authorization_required") return signIn.status;
   // The popup opens only now: on desktop its name carries the server id.
@@ -117,15 +133,14 @@ async function signInInPopup(
       if (type !== "mcp-oauth-complete") return;
       finish("connected");
     };
-    unsubscribe = browser?.onOAuthCallback((callback) => {
-      if (callback.serverId !== serverId || callback.state !== started.sessionId) return;
+    const complete = (code: string | null) => {
       // A sign-in session completes only once; ignore a repeated report.
       if (captured) return;
       captured = true;
       window.clearTimeout(timeoutTimer);
-      if (callback.code === null) return finish("cancelled");
+      if (code === null) return finish("cancelled");
       void rpc.mcp.oauth
-        .complete({ sessionId: callback.state, code: callback.code, state: callback.state })
+        .complete({ sessionId: started.sessionId, code, state: started.sessionId })
         .then(
           () => {
             // Other open views refresh on the same signal the callback page sends.
@@ -134,6 +149,21 @@ async function signInInPopup(
           },
           (error: unknown) => finish(error instanceof Error ? error : new Error(String(error))),
         );
+    };
+    const releaseCallback = browser?.onOAuthCallback((callback) => {
+      if (callback.serverId !== serverId || callback.state !== started.sessionId) return;
+      complete(callback.code);
     });
+    // A provider sent back to a loopback address is captured as any loopback sign-in is; the
+    // state says it is this one.
+    const releaseLoopback = browser
+      ? desktopBridge()?.oauth?.onCallback((callback) => {
+          if (callback.state === started.sessionId) complete(callback.code);
+        })
+      : undefined;
+    unsubscribe = () => {
+      releaseCallback?.();
+      releaseLoopback?.();
+    };
   });
 }

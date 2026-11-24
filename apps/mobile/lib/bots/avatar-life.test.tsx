@@ -3,6 +3,7 @@
 import {
   AVATAR_CLIP_POOLS,
   AVATAR_POKES,
+  AVATAR_SHARED_WINDOW_SECONDS,
   AVATAR_STILL_MAX_SIZE,
   avatarClip,
   avatarClipPose,
@@ -296,6 +297,16 @@ describe("avatar motion on mobile", () => {
     expect(motion.cancelled).toBe(cancelled);
     wait(1400);
     expect(motion.cancelled).toBeGreaterThan(cancelled);
+  });
+
+  it("starts its clock again from the shared clock each stretch, so it never runs out", () => {
+    render(<BotAvatar color={SHAPE} identity="bot-1" size={62} status="running" motion="lazy" />);
+    const runs = () => motion.timings.filter(([, duration]) => duration === CLOCK_MS);
+    const before = runs().length;
+    wait(AVATAR_SHARED_WINDOW_SECONDS * 1000 + 1);
+    const latest = runs().at(-1)![0] as number;
+    expect(runs().length).toBeGreaterThan(before);
+    expect(latest).toBeCloseTo(Date.now() / 1000 + CLOCK_MS / 1000, 1);
   });
 
   it("freezes a list row's avatar while it is scrolled out of view", () => {

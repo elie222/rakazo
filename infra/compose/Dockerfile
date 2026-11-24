@@ -64,8 +64,9 @@ RUN find . -name node_modules -type d -prune -exec rm -rf {} + \
 FROM node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54
 COPY infra/sandboxes/computer/apt-security.sh /tmp/apt-security.sh
 RUN /tmp/apt-security.sh
-# Prisma's migration engine detects and links against OpenSSL.
-RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends openssl \
+# Prisma's migration engine detects and links against OpenSSL. A stdio MCP server that runs on
+# another machine is launched over ssh, which the slim base image does not ship.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends openssl openssh-client \
   && rm -rf /var/lib/apt/lists/*
 # Managed stdio package installs need npm; the Node image bundles an older copy.
 RUN npm install --global --ignore-scripts npm@11.21.2 && npm cache clean --force
@@ -76,11 +77,12 @@ WORKDIR /app
 # --link keeps each layer independent of the ones below, so an unchanged one is reused as is.
 COPY --link --from=deps /app /app
 COPY --link --from=build /app /app
-RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp /app/apps/web/asset-archive
+RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp /app/apps/web/asset-archive /run/ingress
 # Last root step, so a cached earlier layer cannot be the filesystem that ships.
 RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 ARG GIT_SHA
 ENV NODE_ENV=production
+ENV EMAIL_COPY_DIR=/app/email-copy
 ENV GIT_SHA=$GIT_SHA
 EXPOSE 3100 5173 7091
 # The signal on which a replaced API lets its chat turns end before it exits (apps/api/src/http/drain.ts).

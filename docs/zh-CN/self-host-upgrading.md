@@ -126,6 +126,20 @@ WHERE membership."id" IS NULL;
 停止旧的 API 和 worker，应用迁移后同时启动新版本。迁移的锁等待有上限：
 遇到竞争时会让迁移失败，而不是让应用流量无限排队。
 
+## 2026 年 10 月 30 日前连接的集成
+
+2026 年 10 月 30 日前通过 Pipedream 连接的集成只保存了应用名称，没有保存登录的是哪个账号。
+此后的版本只使用注明了账号的连接，因此这些应用不会为机器人提供工具；机器人首次尝试使用时，会请用户重新连接。
+如需提前找出它们，请运行：
+
+```sql
+SELECT "id", "spaceId", "provider" FROM "connections"
+WHERE "connectorId" = 'pipedream' AND "status" = 'connected' AND "providerRef" = "provider";
+```
+
+在各自空间的 Integrations 页面重新连接列出的每个应用。系统不会自动回填，
+因为一个空间可能为同一应用连接了多个账号。
+
 ## 已发布镜像与标签
 
 `.github/workflows/publish-server-image.yml` 将镜像发布到 `ghcr.io/<owner>/<repo>/…`，由 `${{ github.repository }}` 推导，
@@ -175,16 +189,16 @@ docker compose --env-file .env -f infra/compose/docker-compose.prod.yml \
 使用 `RAKAZO_UPDATER_TOKEN` 认证。上述命令行升级不需要 sidecar；它用于通过私有 HTTP API 自动应用/回滚。
 仅部署工具应调用这些接口；应用账号没有更新端点，应用 API 也不会收到更新器令牌。
 
-API 无法自行更新——其镜像内没有 `.git`，容器内也没有机制重启自身——因此工作在独立的 `updater` 容器中完成：
+API 无法自行更新：其镜像内没有 `.git`，容器内也没有机制重启自身。因此工作在独立的 `updater` 容器中完成：
 
 - _官方仓库：_ 用 `git ls-remote --tags` 解析最新稳定发布及其源码提交，在 `.env` 中固定完整 `sha-<提交号>`
   镜像标签，将旧标签保存在 `RAKAZO_IMAGE_TAG_PREVIOUS`，显式拉取新镜像后执行 `up -d --wait --pull never`；服务器上不构建。
 - _Fork（高级）：_ fork 没有已发布镜像，sidecar 在 `RAKAZO_DEPLOY_DIR` 中快进检出并执行 `up -d --build`，
-  需数分钟。仅指向你控制且已审查的 fork——sidecar 通过 root 等价的 Docker 套接字运行该 Compose 文件。
+  需数分钟。仅指向你控制且已审查的 fork，因为 sidecar 通过 root 等价的 Docker 套接字运行该 Compose 文件。
 
 更新与回滚串行执行。拉取失败不影响正在运行的服务；重建失败会恢复先前的环境固定值并尝试部署缓存中的旧镜像。
 Fork 构建失败也会恢复更新前的分支与提交。数据库迁移不会逆向执行。sidecar 从不重建自身，不触碰 Postgres 或 Caddy，
-也不运行迁移——该顺序由 API 对 `migrate` 的依赖保证。仅接受 `https://` 与 `ssh://` 远端；合并仅快进；
+也不运行迁移，该顺序由 API 对 `migrate` 的依赖保证。仅接受 `https://` 与 `ssh://` 远端；合并仅快进；
 工作树脏或未跟踪会在执行前拒绝继续。
 
 ## 定时稳定版更新 {#scheduled-stable-updates}

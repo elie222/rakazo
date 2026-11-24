@@ -4,7 +4,9 @@ import path from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import type { EvalCase } from "./cases.js";
 import { caseKey } from "./fingerprint.js";
-import { regradable } from "./grading.js";
+import { gradedAsStored, regradable } from "./grading.js";
+import type { RecordedJudge } from "./judge-identity.js";
+import { judgeDifferences } from "./judge-identity.js";
 import type { TrialResult } from "./report.js";
 
 /** The parts of an eval report the store reads; the rest is kept as written. */
@@ -16,12 +18,7 @@ export type StoredReport = {
   fixtureVersion: string | null;
   caseFixtureVersions?: Record<string, string>;
   codeRevision: string | null;
-  judge: {
-    model: string;
-    provider?: string;
-    rubricVersion: string;
-    costUsd?: number | null;
-  } | null;
+  judge: (RecordedJudge & { costUsd?: number | null }) | null;
   fingerprint?: { run: string | null; cases: Record<string, string | null> };
   workflowTotals?: { costUsd: number | null };
   trials: TrialResult[];
@@ -67,10 +64,6 @@ const usable = (trial: TrialResult) =>
   !trial.cleanupFailed &&
   (trial.status === "passed" ||
     (trial.status === "failed" && (trial.category === "agent" || trial.category === "product")));
-
-/** The judge's provider, model and rubric version; a change to any of them regrades. */
-export const judgeIdentity = (judge: StoredReport["judge"]) =>
-  judge ? `${judge.provider ?? ""}/${judge.model}@${judge.rubricVersion}` : null;
 
 /**
  * Finished eval runs kept by fingerprint: `index.jsonl` with one line per run, and each report
@@ -168,7 +161,11 @@ export class RunStore {
       },
       costUsd: {
         // The bot's new calls and the judge's, which a regrade alone still pays for.
-        new: sumNullable(report.workflowTotals?.costUsd ?? null, report.judge?.costUsd ?? 0),
+        // A judge on the person's own plan records its cost as unknown, which leaves the total unknown.
+        new: sumNullable(
+          report.workflowTotals?.costUsd ?? null,
+          report.judge?.costUsd === null ? null : (report.judge?.costUsd ?? 0),
+        ),
         trials: sumCosts(attempted),
       },
       cases: Object.fromEntries(
@@ -186,8 +183,8 @@ export class RunStore {
 
   /**
    * How to get a case's trials: from a stored run with the same fingerprint (as they are under the
-   * same judge, regraded under another), or by running it. Prefers a run with enough trials, then
-   * one under the current judge, then the newest. Trials keep their numbers; a planned trial with no
+   * same judge and checks, regraded under another), or by running it. Prefers a run with enough
+   * trials, then one that needs no regrade, then the newest. Trials keep their numbers; a planned trial with no
    * usable stored trial of that number still runs.
    */
   plan(input: {
@@ -196,7 +193,7 @@ export class RunStore {
     /** Trials the run wants; more stored than that does not make a run a better source. */
     trials: number;
     fingerprint: string;
-    judge: string | null;
+    judge: RecordedJudge | null;
   }): CasePlan {
     const key = caseKey(input.scenario.id, input.strategy);
     const graded = !!(input.scenario.judge || input.scenario.observe);
@@ -213,19 +210,23 @@ export class RunStore {
               regradable(input.scenario, t),
           )
           .sort((a, b) => a.trial - b.trial);
-        const sameJudge = !graded || judgeIdentity(this.read(entry).judge) === input.judge;
-        return { entry, trials, sameJudge };
+        // Stored verdicts stand only while the judge and the case's own checks give them again.
+        // A judge whose settings went unrecorded may have graded differently, so it regrades.
+        const current =
+          (!graded || judgeDifferences(this.read(entry).judge, input.judge).length === 0) &&
+          trials.every((t) => gradedAsStored(input.scenario, t));
+        return { entry, trials, current };
       })
       .filter((candidate) => candidate.trials.length > 0)
       .sort(
         (a, b) =>
           Math.min(b.trials.length, input.trials) - Math.min(a.trials.length, input.trials) ||
-          Number(b.sameJudge) - Number(a.sameJudge) ||
+          Number(b.current) - Number(a.current) ||
           b.entry.startedAt.localeCompare(a.entry.startedAt),
       );
     const best = candidates[0];
     if (!best) return { kind: "run" };
-    return { kind: best.sameJudge ? "reuse" : "regrade", from: best.entry, trials: best.trials };
+    return { kind: best.current ? "reuse" : "regrade", from: best.entry, trials: best.trials };
   }
 }
 

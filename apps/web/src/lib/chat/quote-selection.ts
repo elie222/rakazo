@@ -1,5 +1,6 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { truncateReplyQuote } from "@rakazo/contracts";
+import { isPendingSendMessage } from "../composer/pending-send";
 
 /**
  * Resolves a text selection to the message it quotes. A quote stays scoped to
@@ -21,7 +22,8 @@ export function quoteDraftForSelection(
       ? messageById.get(startContent.dataset.quoteMessageId ?? "")
       : undefined;
   const text = truncateReplyQuote(selection.text.trim());
-  if (!message || !text) return null;
+  // A send not stored yet has no message a reply can point at.
+  if (!message || !text || isPendingSendMessage(message)) return null;
   return { message, text };
 }
 

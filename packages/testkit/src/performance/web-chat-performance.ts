@@ -826,7 +826,7 @@ async function readReport(file: string): Promise<WebChatReport> {
 
 function formatValue(value: number | undefined, unit: string) {
   if (value === undefined) return "n/a";
-  return unit === "count" ? String(Math.round(value)) : `${roundMetric(value, 1)} ${unit}`;
+  return unit === "count" ? String(Math.round(value)) : `${roundMetric(value)} ${unit}`;
 }
 
 /**

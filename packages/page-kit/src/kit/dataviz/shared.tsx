@@ -162,20 +162,29 @@ export function formatValue(
       // A broken formatter falls back to the plain figure rather than losing the chart.
     }
   }
-  const text = words.number(
-    value,
-    Math.abs(value) >= 100_000
-      ? { notation: "compact", maximumFractionDigits: 1 }
-      : { maximumFractionDigits: 2 },
-  );
+  const magnitude = Math.abs(value);
+  let options: Intl.NumberFormatOptions = { maximumFractionDigits: 2 };
+  if (magnitude >= 100_000) {
+    options = { notation: "compact", maximumFractionDigits: 1 };
+  } else if (magnitude > 0 && magnitude < 0.01) {
+    // Keep tiny values distinct from zero without letting their leading zeros fill the axis.
+    options = {
+      notation: magnitude < 0.000001 ? "scientific" : "standard",
+      maximumSignificantDigits: 3,
+    };
+  }
+  const text = words.number(value, options);
   return unit ? withUnit(text, unit) : text;
 }
 
 // Currency symbols lead the figure, short scale and percent marks follow it closely, and words
-// ("ms", "users") follow after a space: $12, 40%, 80K, 120 ms.
+// ("ms", "users") follow after a space: $12, 40%, 80K, 120 ms. A currency goes after any sign
+// the locale puts first, including bidi marks and a true minus: -$12, \u200E-$12 (he), \u2212$12 (sv).
 function withUnit(text: string, unit: string): string {
-  if (/^\p{Sc}$/u.test(unit))
-    return text.startsWith("-") ? `-${unit}${text.slice(1)}` : `${unit}${text}`;
+  if (/^\p{Sc}$/u.test(unit)) {
+    const sign = /^[\u200E\u200F\u061C]*[-\u2212]/.exec(text)?.[0];
+    return sign ? `${sign}${unit}${text.slice(sign.length)}` : `${unit}${text}`;
+  }
   if (/^(?:%|‰|[kKMBT]|bn)$/.test(unit)) return `${text}${unit}`;
   return `${text} ${unit}`;
 }

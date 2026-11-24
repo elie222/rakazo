@@ -19,6 +19,20 @@ import { BOT, FixtureTranscript } from "./thread-fixture";
 
 const SCOUT = { botId: "bot-2", name: "Scout", color: botColor("green") };
 const LEDGER = { botId: "bot-3", name: "Ledger", color: botColor("red") };
+const INSTRUCTIONS_BEFORE = [
+  "Reply in English.",
+  "Sign off as the team, never by name.",
+  "Draft replies; ask before sending.",
+  "Flag invoices over 500.",
+  "Summarize long threads in bullets.",
+  "Skip newsletters.",
+  "Archive receipts after filing them.",
+  "Never share calendar details.",
+].join("\n");
+const INSTRUCTIONS_AFTER = INSTRUCTIONS_BEFORE.replace(
+  "Summarize long threads in bullets.",
+  "Keep summaries to one paragraph.",
+);
 
 function botColor(id: string) {
   return BOT_COLOR_LIST.find((color) => color.id === id)!.hex;
@@ -330,19 +344,39 @@ const approvals: Scenario = {
         status: "pending",
         instructionUpdate: {
           botId: BOT.botId,
-          before: "Reply in English.",
-          after: "Reply in English. Keep summaries to one paragraph.",
+          before: INSTRUCTIONS_BEFORE,
+          after: INSTRUCTIONS_AFTER,
           reason: "You asked for shorter summaries.",
         },
-        detail: instructionUpdateDiff(
-          "Reply in English.",
-          "Reply in English. Keep summaries to one paragraph.",
-        ),
+        detail: instructionUpdateDiff(INSTRUCTIONS_BEFORE, INSTRUCTIONS_AFTER),
         detailFormat: "code",
         actions: [
           { id: "allow", label: "Apply" },
           { id: "deny", label: "Dismiss" },
         ],
+      },
+    ]),
+    bot([
+      {
+        kind: "ask",
+        approvalEffectId: "effect-6",
+        text: "Update “Groceries”?",
+        routineUpdate: {
+          changes: [
+            {
+              field: "schedule",
+              before: "Every Monday at 10:00 AM",
+              after: "Every Monday at 11:00 AM",
+            },
+            {
+              field: "prompt",
+              before: "Order the usual groceries",
+              after: "Order the usual groceries\nSkip cheddar when it is out of stock",
+            },
+          ],
+        },
+        status: "pending",
+        actions: approvalActions,
       },
     ]),
     bot([
@@ -405,10 +439,10 @@ const secrets: Scenario = {
     bot([
       {
         kind: "ask",
-        text: "I need an API key for the analytics service.",
+        text: "Repository access token for example/project (needs permission to read issues, edit files, and open pull requests)",
         input: "secret",
         purpose: "api_key",
-        credential: { name: "ANALYTICS_KEY", origin: "", auth: { type: "command" } },
+        credential: { name: "repo-token", origin: "", auth: { type: "command" } },
         status: "pending",
       },
     ]),
@@ -570,6 +604,26 @@ const team: Scenario = {
     ]),
     bot([{ kind: "child_bot", botId: SCOUT.botId, name: SCOUT.name, status: "created" }]),
     bot([{ kind: "child_bot", botId: LEDGER.botId, name: LEDGER.name, status: "archived" }]),
+  ],
+};
+
+const routine = (
+  change: "created" | "updated" | "enabled" | "disabled" | "deleted",
+  name: string,
+) => message("system", [{ kind: "routine_event", change, name }]);
+const routines: Scenario = {
+  id: "routines",
+  label: "Routine changes",
+  messages: [
+    user("Remind me to stretch every morning."),
+    routine("created", "Morning stretch"),
+    say("Done. I'll remind you at 8:00 every day."),
+    routine("updated", "Morning stretch"),
+    routine("updated", "Morning stretch"),
+    routine("disabled", "Morning stretch"),
+    routine("enabled", "Morning stretch"),
+    say("Back on."),
+    routine("deleted", "Morning stretch"),
   ],
 };
 
@@ -747,6 +801,7 @@ const SCENARIOS: Scenario[] = [
   secrets,
   working,
   team,
+  routines,
   rich,
   calls,
 ];

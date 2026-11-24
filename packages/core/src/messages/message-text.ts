@@ -25,3 +25,10 @@ export function selectableMessageText(message: { blocks: readonly MessageBlock[]
 export function copyableMessageText(message: { blocks: readonly MessageBlock[] }): string {
   return selectableMessageText(message).trim();
 }
+
+/** Several messages for one clipboard copy, in the order given, a blank line between them. */
+export function copyableMessagesText(
+  messages: readonly { blocks: readonly MessageBlock[] }[],
+): string {
+  return messages.map(copyableMessageText).filter(Boolean).join("\n\n");
+}

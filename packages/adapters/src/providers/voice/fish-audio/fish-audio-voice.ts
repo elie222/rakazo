@@ -9,7 +9,6 @@ import type {
   VoiceTranscribeRequest,
   VoiceVerifyResult,
 } from "@rakazo/adapter-kit";
-import { VoiceAccountError } from "@rakazo/adapter-kit";
 import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -308,8 +307,8 @@ function rejectFish(
     what,
     typeof body === "string" || !detail ? null : { message: detail },
   );
-  // Spent credit or a rejected key is the user's account to fix, not a server fault.
-  getLogger()[error instanceof VoiceAccountError ? "warn" : "error"]("Fish Audio request failed", {
+  // Detail for whoever looks into it; the request that failed decides whether it is reported.
+  getLogger().warn("Fish Audio request failed", {
     provider: "fish-audio",
     operation: what,
     "http.status": status,

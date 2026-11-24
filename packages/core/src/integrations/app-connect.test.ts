@@ -1,8 +1,10 @@
 import type { ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
+import { ConnectionLabelSchema } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   appConnectCard,
   appConnectedInput,
+  appConnectLabel,
   connectedAppBlock,
   matchAppCatalog,
 } from "./app-connect.js";
@@ -44,5 +46,16 @@ describe("inline app cards", () => {
       connectorId: "catalog",
       provider: "googlecalendar",
     });
+  });
+});
+
+describe("appConnectLabel", () => {
+  it("sends a name the connection label schema accepts", () => {
+    const card = appConnectCard(entry);
+    expect(appConnectLabel(card)).toBe(card.name);
+    expect(
+      ConnectionLabelSchema.safeParse(appConnectLabel({ ...card, name: "B".repeat(200) })).success,
+    ).toBe(true);
+    expect(appConnectLabel({ ...card, name: " " })).toBe(card.provider);
   });
 });

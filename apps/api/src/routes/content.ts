@@ -1,7 +1,6 @@
-import type { UsageOperationKind } from "@rakazo/adapter-kit";
 import { planLimitsReader, readMemberPlanLimits, resolveBotWorkspacePath } from "@rakazo/adapters";
-import type { ExportManifest } from "@rakazo/contracts";
-import { attachmentMaxBytes, resolveBotAvatarSet } from "@rakazo/contracts";
+import type { ExportManifest, UsageRecord } from "@rakazo/contracts";
+import { attachmentMaxBytes, MediaModelRoleSchema, resolveBotAvatarSet } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   ClientError,
@@ -26,6 +25,18 @@ import { loadAllMessages } from "../threads/thread-message-pages.js";
 import type { RouterContext } from "./context.js";
 
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
+
+// ICU accepts these legacy names even when PostgreSQL ships only their IANA targets.
+const usageTimezoneAliases = new Map([
+  ["america/indianapolis", "America/Indiana/Indianapolis"],
+  ["asia/calcutta", "Asia/Kolkata"],
+  ["asia/rangoon", "Asia/Yangon"],
+  ["asia/saigon", "Asia/Ho_Chi_Minh"],
+]);
+
+/** Images and videos made on a member's own key. They count no tokens, so token totals skip them. */
+const MEDIA_OPERATION_KINDS = [...MediaModelRoleSchema.options];
+const isMedia = Prisma.sql`u."operationKind" IN (${Prisma.join(MEDIA_OPERATION_KINDS)})`;
 
 export function contentRoutes(ctx: RouterContext) {
   const { deps, repos, favicons, groupRepos, authed, refreshExpiredCredential } = ctx;
@@ -138,7 +149,7 @@ export function contentRoutes(ctx: RouterContext) {
           usageSource: row.usageSource,
           callId: row.callId,
           operationId: row.operationId,
-          operationKind: row.operationKind as UsageOperationKind,
+          operationKind: row.operationKind as UsageRecord["operationKind"],
           parentRunId: row.parentRunId,
           agentId: row.agentId,
           createdAt: row.createdAt.toISOString(),
@@ -166,7 +177,7 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: true,
         } as const;
         const counts = { _all: true, ...sums } as const;
-        const [result, modelGroups, runGroups] = await Promise.all([
+        const [result, modelGroups, runGroups, mediaGroups] = await Promise.all([
           deps.prisma.usageRecord.aggregate({ where, _sum: sums, _count: counts }),
           deps.prisma.usageRecord.groupBy({
             by: ["provider", "model"],
@@ -175,16 +186,32 @@ export function contentRoutes(ctx: RouterContext) {
             _count: counts,
           }),
           deps.prisma.usageRecord.groupBy({ by: ["runId", "parentRunId"], where }),
+          deps.prisma.usageRecord.groupBy({
+            by: ["provider", "model"],
+            where: { ...where, operationKind: { in: MEDIA_OPERATION_KINDS } },
+            _count: { _all: true },
+          }),
         ]);
+        const mediaCalls = (group?: { provider: string; model: string }) =>
+          mediaGroups
+            .filter(
+              (row) => !group || (row.provider === group.provider && row.model === group.model),
+            )
+            .reduce((total, row) => total + row._count._all, 0);
         const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
           .size;
         // A total that skips rows without a count would understate spend, so it reads as unknown.
-        const completeSums = (group: {
-          _sum: Record<keyof typeof sums, number | null>;
-          _count: Record<keyof typeof counts, number>;
-        }) => {
+        const completeSums = (
+          group: {
+            _sum: Record<keyof typeof sums, number | null>;
+            _count: Record<keyof typeof counts, number>;
+          },
+          media: number,
+        ) => {
           const complete = (field: keyof typeof sums) =>
-            group._count[field] === group._count._all ? (group._sum[field] ?? 0) : null;
+            group._count[field] + (field === "costUsd" ? 0 : media) === group._count._all
+              ? (group._sum[field] ?? 0)
+              : null;
           return {
             inputTokens: complete("inputTokens"),
             outputTokens: complete("outputTokens"),
@@ -194,13 +221,13 @@ export function contentRoutes(ctx: RouterContext) {
           };
         };
         return {
-          ...completeSums(result),
+          ...completeSums(result, mediaCalls()),
           runs,
           models: modelGroups
             .map((group) => ({
               provider: group.provider,
               model: group.model,
-              ...completeSums(group),
+              ...completeSums(group, mediaCalls(group)),
             }))
             .sort(
               (a, b) => (b.totalTokens ?? 0) - (a.totalTokens ?? 0) || b.modelCalls - a.modelCalls,
@@ -217,7 +244,10 @@ export function contentRoutes(ctx: RouterContext) {
           where: { id: context.actor.userId },
           select: { timezone: true },
         });
-        const timezone = validTimezoneOrUtc(member?.timezone ?? "UTC");
+        const savedTimezone = member?.timezone ?? "UTC";
+        const timezone = validTimezoneOrUtc(
+          usageTimezoneAliases.get(savedTimezone.toLowerCase()) ?? savedTimezone,
+        );
         const localDay = (at: Date) => wallClock(at, timezone).slice(0, 10);
         const days = input.range === "today" ? 1 : input.range === "7d" ? 7 : 30;
         const firstDate = new Date(`${localDay(now)}T00:00:00Z`);
@@ -252,7 +282,12 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: number | null;
           costComplete: boolean;
         };
-        type ModelRow = TotalsRow & { provider: string; model: string };
+        type ModelRow = TotalsRow & {
+          provider: string;
+          model: string;
+          cachedTokens: number | bigint | null;
+          cachedComplete: boolean;
+        };
         type TimeRow = Omit<TotalsRow, "runs"> & { bucket: string };
         type BotRow = TotalsRow & { botId: string; name: string | null; deleted: boolean };
         type RoutineRow = TotalsRow & {
@@ -276,18 +311,20 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: toNullableFloat(row.costUsd, Boolean(row.costComplete)),
         });
 
-        const totalsSelect = Prisma.sql`
-          COUNT(*)::bigint AS "modelCalls",
-          COUNT(DISTINCT COALESCE(u."parentRunId", u."runId")) FILTER (WHERE COALESCE(u."parentRunId", u."runId") IS NOT NULL)::bigint AS runs,
+        const usageRunId = Prisma.sql`COALESCE(u."parentRunId", u."runId")`;
+        const usageMeasures = Prisma.sql`
+          COUNT(*) AS "modelCalls",
           SUM(u."inputTokens")::double precision AS "inputTokens",
-          BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",
+          BOOL_AND(u."inputTokens" IS NOT NULL OR ${isMedia}) AS "inputComplete",
           SUM(u."outputTokens")::double precision AS "outputTokens",
-          BOOL_AND(u."outputTokens" IS NOT NULL) AS "outputComplete",
+          BOOL_AND(u."outputTokens" IS NOT NULL OR ${isMedia}) AS "outputComplete",
           SUM(u."totalTokens")::double precision AS "totalTokens",
-          BOOL_AND(u."totalTokens" IS NOT NULL) AS "totalComplete",
+          BOOL_AND(u."totalTokens" IS NOT NULL OR ${isMedia}) AS "totalComplete",
           SUM(u."costUsd")::double precision AS "costUsd",
           BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
         `;
+
+        const totalsSelect = Prisma.sql`COUNT(DISTINCT ${usageRunId}) AS runs, ${usageMeasures}`;
 
         const [totalsRows, modelRows, timeRows, botRows, modelOptionRows, routineRows] =
           await deps.prisma.$transaction(
@@ -299,8 +336,12 @@ export function contentRoutes(ctx: RouterContext) {
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
           `),
+                // Rows from before cache reads were measured hold a zero and no total, so a zero
+                // counts as measured only where the row's total is; any other count was measured.
                 tx.$queryRaw<ModelRow[]>(Prisma.sql`
-            SELECT u.provider, u.model, ${totalsSelect}
+            SELECT u.provider, u.model, ${totalsSelect},
+              SUM(u."cacheReadTokens")::double precision AS "cachedTokens",
+              BOOL_AND(COALESCE(u."cacheReadTokens" > 0 OR (u."cacheReadTokens" = 0 AND u."totalTokens" IS NOT NULL), false) OR ${isMedia}) AS "cachedComplete"
             FROM usage_records u
             WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
               ${rangeFilter} ${modelFilter} ${botFilter}
@@ -311,11 +352,11 @@ export function contentRoutes(ctx: RouterContext) {
             SELECT to_char(u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${timezone}, 'YYYY-MM-DD') AS bucket,
               COUNT(*)::bigint AS "modelCalls",
               SUM(u."inputTokens")::double precision AS "inputTokens",
-              BOOL_AND(u."inputTokens" IS NOT NULL) AS "inputComplete",
+              BOOL_AND(u."inputTokens" IS NOT NULL OR ${isMedia}) AS "inputComplete",
               SUM(u."outputTokens")::double precision AS "outputTokens",
-              BOOL_AND(u."outputTokens" IS NOT NULL) AS "outputComplete",
+              BOOL_AND(u."outputTokens" IS NOT NULL OR ${isMedia}) AS "outputComplete",
               SUM(u."totalTokens")::double precision AS "totalTokens",
-              BOOL_AND(u."totalTokens" IS NOT NULL) AS "totalComplete",
+              BOOL_AND(u."totalTokens" IS NOT NULL OR ${isMedia}) AS "totalComplete",
               SUM(u."costUsd")::double precision AS "costUsd",
               BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
             FROM usage_records u
@@ -347,41 +388,41 @@ export function contentRoutes(ctx: RouterContext) {
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
           `),
-                // Work a routine's run handed on (a helper, a message to another bot) is a run of
-                // its own that names the run it came from, so each run is followed back to the
-                // nearest one a routine started.
+                // Aggregate selected calls once per run before walking its delegation chain.
                 tx.$queryRaw<RoutineRow[]>(Prisma.sql`
-            WITH RECURSIVE used AS (
-              SELECT DISTINCT COALESCE(u."parentRunId", u."runId") AS id
+            WITH RECURSIVE usage_by_run AS (
+              SELECT ${usageRunId} AS "runId", ${usageMeasures}
               FROM usage_records u
               WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
                 ${rangeFilter} ${modelFilter} ${botFilter}
-            ),
-            chain AS (
-              SELECT used.id AS "runId", r."routineId", r."delegatedFromRunId", 0 AS depth
-              FROM used
-              JOIN runs r ON r.id = used.id AND r."spaceId" = ${where.spaceId}
+              GROUP BY 1
+            ), chain AS (
+              SELECT u."runId", r."routineId", r."delegatedFromRunId", 0 AS depth
+              FROM usage_by_run u
+              JOIN runs r ON r.id = u."runId" AND r."spaceId" = ${where.spaceId} AND r."userId" = ${where.userId}
               UNION ALL
               SELECT chain."runId", r."routineId", r."delegatedFromRunId", chain.depth + 1
               FROM chain
-              JOIN runs r ON r.id = chain."delegatedFromRunId" AND r."spaceId" = ${where.spaceId}
+              JOIN runs r ON r.id = chain."delegatedFromRunId" AND r."spaceId" = ${where.spaceId} AND r."userId" = ${where.userId}
               WHERE chain."routineId" IS NULL AND chain.depth < 16
-            ),
-            origin AS (
-              SELECT DISTINCT ON ("runId") "runId", "routineId"
-              FROM chain
-              WHERE "routineId" IS NOT NULL
-              ORDER BY "runId", depth
             )
-            SELECT ro.id AS "routineId", ro.name AS name, b.name AS "botName", ${totalsSelect}
-            FROM usage_records u
-            LEFT JOIN origin o ON o."runId" = COALESCE(u."parentRunId", u."runId")
-            LEFT JOIN routines ro ON ro.id = o."routineId"
-            LEFT JOIN bots b ON b.id = ro."botId"
-            WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
-              ${rangeFilter} ${modelFilter} ${botFilter}
+            SELECT ro.id AS "routineId", ro.name, b.name AS "botName",
+              COUNT(u."runId") AS runs,
+              SUM(u."modelCalls")::bigint AS "modelCalls",
+              SUM(u."inputTokens") AS "inputTokens",
+              BOOL_AND(u."inputComplete") AS "inputComplete",
+              SUM(u."outputTokens") AS "outputTokens",
+              BOOL_AND(u."outputComplete") AS "outputComplete",
+              SUM(u."totalTokens") AS "totalTokens",
+              BOOL_AND(u."totalComplete") AS "totalComplete",
+              SUM(u."costUsd") AS "costUsd",
+              BOOL_AND(u."costComplete") AS "costComplete"
+            FROM usage_by_run u
+            LEFT JOIN chain c ON c."runId" = u."runId" AND c."routineId" IS NOT NULL
+            LEFT JOIN routines ro ON ro.id = c."routineId" AND ro."spaceId" = ${where.spaceId}
+            LEFT JOIN bots b ON b.id = ro."botId" AND b."spaceId" = ${where.spaceId}
             GROUP BY ro.id, ro.name, b.name
-            ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
+            ORDER BY ro.id IS NULL, COALESCE(SUM(u."totalTokens"), 0) DESC, SUM(u."modelCalls") DESC, ro.id
           `),
               ]),
             { isolationLevel: "RepeatableRead" },
@@ -412,13 +453,18 @@ export function contentRoutes(ctx: RouterContext) {
               costUsd: 0,
             };
           }
-          return totalsOf({
-            ...rawTotals,
-            inputComplete: Boolean(rawTotals.inputComplete),
-            outputComplete: Boolean(rawTotals.outputComplete),
-            totalComplete: Boolean(rawTotals.totalComplete),
-            costComplete: Boolean(rawTotals.costComplete),
-          });
+          // A few calls without a count (an interrupted one) must not blank the whole total.
+          const tokensPartial = !rawTotals.totalComplete && rawTotals.totalTokens !== null;
+          return {
+            ...totalsOf({
+              ...rawTotals,
+              inputComplete: Boolean(rawTotals.inputComplete),
+              outputComplete: Boolean(rawTotals.outputComplete),
+              totalComplete: Boolean(rawTotals.totalComplete) || tokensPartial,
+              costComplete: Boolean(rawTotals.costComplete),
+            }),
+            tokensPartial,
+          };
         })();
 
         const nextDay = (day: string) =>
@@ -493,6 +539,7 @@ export function contentRoutes(ctx: RouterContext) {
               model: row.model,
               modelCalls: t.modelCalls,
               inputTokens: t.inputTokens,
+              cachedTokens: toNullableInt(row.cachedTokens, Boolean(row.cachedComplete)),
               outputTokens: t.outputTokens,
               totalTokens: t.totalTokens,
               costUsd: t.costUsd,
@@ -585,7 +632,7 @@ export function contentRoutes(ctx: RouterContext) {
     },
     runs: {
       list: authed.runs.list.handler(async ({ context, input }) => ({
-        runs: await listSpaceRuns(deps.prisma, context.actor, input.filter),
+        runs: await listSpaceRuns(deps.prisma, context.actor, input.filter, input.status),
       })),
     },
   };

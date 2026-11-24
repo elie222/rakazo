@@ -10,8 +10,8 @@ import {
 } from "./approvals.js";
 import {
   CATALOG_SEARCH_QUERY_MAX_LENGTH,
-  CONNECTION_LABEL_MAX_LENGTH,
   ConnectionCatalogItemSchema,
+  ConnectionLabelSchema,
   ConnectionSchema,
   IntegrationCatalogResultSchema,
 } from "./connections.js";
@@ -26,7 +26,7 @@ import {
   McpServerSchema,
   McpSourcePresetSchema,
 } from "./mcp.js";
-import { McpOAuthClientKindSchema } from "./mcp-oauth-return.js";
+import { McpCapturesLoopbackSchema, McpOAuthClientKindSchema } from "./mcp-oauth-return.js";
 import {
   MessagingAgentConnectionSchema,
   MessagingChannelMembershipSchema,
@@ -52,6 +52,12 @@ const McpOAuthBeginSchema = z.discriminatedUnion("status", [
   }),
   z.object({ status: z.enum(["already_connected", "authorization_not_requested"]) }),
 ]);
+
+/** Which agents can use an MCP server: all of them, or only `botIds`. */
+const McpServerAccessInput = z.object({
+  allBots: z.boolean(),
+  botIds: z.array(Id).max(500).default([]),
+});
 
 export const integrationsRpc = {
   marketplace: {
@@ -114,6 +120,13 @@ export const integrationsRpc = {
     servers: {
       list: oc.output(z.array(McpServerSchema)),
       create: oc.input(McpServerConfigInput).output(McpServerSchema),
+      /** `create` for only the chosen agents, so a server too old to know them rejects it
+       * instead of adding a server every agent can use. */
+      createForBots: oc
+        .input(
+          z.object({ config: McpServerConfigInput, botIds: McpServerAccessInput.shape.botIds }),
+        )
+        .output(McpServerSchema),
       /** Adds a remote server by URL, or reuses the one already added, and starts its sign-in.
        * The bot gets the server once the sign-in finishes, or at once when none is needed. */
       connect: oc
@@ -124,6 +137,7 @@ export const integrationsRpc = {
             botId: Id.optional(),
             redirectUri: z.string().url().optional(),
             client: McpOAuthClientKindSchema,
+            capturesLoopback: McpCapturesLoopbackSchema,
           }),
         )
         .output(z.object({ server: McpServerSchema, signIn: McpOAuthBeginSchema })),
@@ -135,12 +149,16 @@ export const integrationsRpc = {
           ]),
         )
         .output(McpServerSchema),
+      /** `update` with which agents can use the server, saved in one transaction. */
+      save: oc
+        .input(z.object({ id: Id, config: McpServerConfigInput, access: McpServerAccessInput }))
+        .output(McpServerSchema),
       remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
       /** Launch the server once (installing a stdio package if needed), list its tools, close it. */
       test: oc.input(z.object({ id: Id })).output(McpServerSchema),
       /** Which agents can use the server: all of them, or only `botIds`. */
       agents: oc
-        .input(z.object({ id: Id, allBots: z.boolean(), botIds: z.array(Id).max(500).default([]) }))
+        .input(z.object({ id: Id }).merge(McpServerAccessInput))
         .output(z.object({ server: McpServerSchema, assignments: z.array(BotMcpServerSchema) })),
     },
     assignments: {
@@ -174,6 +192,7 @@ export const integrationsRpc = {
             serverId: Id,
             redirectUri: z.string().url().optional(),
             client: McpOAuthClientKindSchema,
+            capturesLoopback: McpCapturesLoopbackSchema,
           }),
         )
         .output(McpOAuthBeginSchema),
@@ -198,7 +217,7 @@ export const integrationsRpc = {
           /** Omitted for the server's default connector. */
           connectorId: z.string().optional(),
           provider: z.string(),
-          displayName: z.string(),
+          displayName: ConnectionLabelSchema,
         }),
       )
       .output(z.object({ connectionId: Id, authorizationUrl: z.string().nullable() })),
@@ -209,7 +228,7 @@ export const integrationsRpc = {
       .input(
         z.object({
           connectionId: Id,
-          displayName: z.string().trim().min(1).max(CONNECTION_LABEL_MAX_LENGTH),
+          displayName: ConnectionLabelSchema,
         }),
       )
       .output(ConnectionSchema),

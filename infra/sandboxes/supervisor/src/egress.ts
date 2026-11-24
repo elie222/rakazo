@@ -1,7 +1,13 @@
 import { getLogger } from "@rakazo/logging";
 import type { ComputerEgressMode } from "./computer-spec.js";
 import { COMPUTER_IMAGE } from "./computer-spec.js";
-import { computerDns, computerEgressSetting, docker, screenNetworkMode } from "./context.js";
+import {
+  computerDns,
+  computerEgressSetting,
+  docker,
+  ensureComputerImage,
+  screenNetworkMode,
+} from "./context.js";
 import { EgressNotEnforced, verifyRestrictedEgress } from "./egress-probe.js";
 
 // `auto` starts open and becomes restricted once the probe shows the host rules are in place.
@@ -15,34 +21,64 @@ export let computerEgressMode: ComputerEgressMode =
 // that could not finish decides nothing: the provision fails and the next one probes again.
 // In both modes, once the rules are in place, a configured SANDBOX_COMPUTER_DNS that no server
 // answers fails the provision the same way, so the next one probes again.
-let restrictedEgressVerified: Promise<void> | undefined;
-let autoEgressSettled: Promise<void> | undefined;
-export async function ensureRestrictedEgressEnforced() {
-  if (screenNetworkMode === "internal") return;
-  if (computerEgressSetting === "auto") {
-    autoEgressSettled ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).then(
+let egressAttempt: Promise<void> | undefined;
+let egressCheck: "pending" | "verified" | "missing" | "failed" = "pending";
+
+export async function ensureComputerEgress() {
+  const needsCheck = screenNetworkMode !== "internal" && computerEgressSetting !== "open";
+  try {
+    await ensureComputerImage();
+  } catch (error) {
+    if (needsCheck && !egressAttempt) egressCheck = "failed";
+    throw error;
+  }
+  if (!needsCheck) return;
+
+  if (!egressAttempt) {
+    egressCheck = "pending";
+    egressAttempt = verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).then(
       () => {
         computerEgressMode = "restricted";
+        egressCheck = "verified";
         getLogger().info("restricted computer egress verified");
       },
       (error) => {
-        if (!(error instanceof EgressNotEnforced)) {
-          autoEgressSettled = undefined;
-          throw error;
+        const missing = error instanceof EgressNotEnforced;
+        egressCheck = missing ? "missing" : "failed";
+        if (missing && computerEgressSetting === "auto") {
+          getLogger().warn("computer egress is open: the host firewall rules are not installed", {
+            error: error.message,
+          });
+          return;
         }
-        getLogger().warn("computer egress is open: the host firewall rules are not installed", {
-          error: error.message,
-        });
+        egressAttempt = undefined;
+        throw error;
       },
     );
-    return autoEgressSettled;
   }
-  if (computerEgressMode !== "restricted") return;
-  restrictedEgressVerified ??= verifyRestrictedEgress(docker, COMPUTER_IMAGE, computerDns).catch(
-    (error) => {
-      restrictedEgressVerified = undefined;
-      throw error;
-    },
-  );
-  await restrictedEgressVerified;
+  await egressAttempt;
+}
+
+export function computerEgressReport() {
+  const setting = `SANDBOX_COMPUTER_EGRESS=${computerEgressSetting}\n`;
+  const rules = "Run infra/compose/restrict-computer-egress.sh on a supported Docker host.";
+  if (screenNetworkMode === "internal") {
+    return `${setting}Computers use a shared network. Per-computer egress is not verified.\n`;
+  }
+  if (computerEgressSetting === "open") {
+    return `${setting}Open egress. Computers may reach the host, LAN and cloud metadata.\n`;
+  }
+  switch (egressCheck) {
+    case "pending":
+      return `${setting}Waiting for the host firewall check.\n`;
+    case "verified":
+      return `${setting}Restricted egress. The supervisor verified the host firewall rules.\n`;
+    case "missing":
+      if (computerEgressSetting === "auto") {
+        return `${setting}Open egress fallback. Computers may reach the host, LAN and cloud metadata.\n${rules} Set SANDBOX_COMPUTER_EGRESS=restricted and recreate the supervisor to require the rules.\n`;
+      }
+      return `${setting}Computer starts are blocked because the host firewall rules could not be verified.\n${rules}\n`;
+    case "failed":
+      return `${setting}Egress check failed. See the supervisor logs for details.\n`;
+  }
 }

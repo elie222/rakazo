@@ -56,22 +56,23 @@ export function AddTriggerMenu({
     onChange({ ...draft, schedules: [...draft.schedules, next] });
   }
 
+  // A bot that outside events start never gets the owner's computer, nor does a watch's run.
   async function addWebhook() {
-    onChange({ ...draft, webhookEnabled: true });
+    onChange({ ...draft, webhookEnabled: true, useComputer: false });
     if (!webhookConfigured) {
       await onEnsureWebhook();
     }
   }
 
   async function addGithub() {
-    onChange({ ...draft, githubEnabled: true });
+    onChange({ ...draft, githubEnabled: true, useComputer: false });
     if (!webhookConfigured) {
       await onEnsureWebhook();
     }
   }
 
   function addMessageProvider(provider: string) {
-    onChange({ ...draft, messageProvider: provider });
+    onChange({ ...draft, messageProvider: provider, useComputer: false });
   }
 
   return (
@@ -113,7 +114,7 @@ export function AddTriggerMenu({
 
         <DropdownMenuItem
           disabled={Boolean(draft.watch) || draft.schedules.length > 0}
-          onClick={() => onChange({ ...draft, watch: emptyWatchDraft() })}
+          onClick={() => onChange({ ...draft, watch: emptyWatchDraft(), useComputer: false })}
         >
           <Eye />
           <Trans>When something changes</Trans>
@@ -122,7 +123,7 @@ export function AddTriggerMenu({
         {emailAvailable ? (
           <DropdownMenuItem
             disabled={Boolean(draft.emailSenders)}
-            onClick={() => onChange({ ...draft, emailSenders: "owner" })}
+            onClick={() => onChange({ ...draft, emailSenders: "owner", useComputer: false })}
           >
             <Mail />
             {t({ message: "Email", context: "routine trigger" })}

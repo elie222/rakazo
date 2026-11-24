@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Deletes previews: the one for PR when it is set (the pull request closed), otherwise every
-# preview whose pull request is no longer open, to catch a missed close.
+# preview whose pull request is no longer open, to catch a missed close, and the retired main
+# preview if it still exists in the preview organization.
 #
 # Env: FLY_API_TOKEN, FLY_ORG, GH_TOKEN, REPO, optional PR, APP_PREFIX (default rakazo-pr).
 set -euo pipefail
@@ -28,6 +29,10 @@ fi
 
 flyctl apps list --org "$FLY_ORG" --json | jq -r '.[] | (.Name // .name)' |
   while read -r app; do
+    if [[ $app == "$prefix-main" ]]; then
+      flyctl apps destroy "$app" --yes
+      continue
+    fi
     [[ $app =~ ^$prefix-([0-9]+)$ ]] || continue
     number=${BASH_REMATCH[1]}
     # Only a confirmed close deletes; a failed lookup keeps the preview for the next sweep.

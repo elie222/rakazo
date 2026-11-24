@@ -92,15 +92,34 @@ describe("userComputerOwner", () => {
     messagingChannelRun: false,
     runUserId: "user-1",
     botUserId: "user-1",
+    ownerComputerRoutine: false,
+  };
+  const ownRoutine = {
+    ...own,
+    trigger: "routine",
+    sourceRole: undefined,
+    ownerComputerRoutine: true,
   };
 
-  it("is the bot owner when their own message started the run", () => {
+  it("is the bot owner when their own message or a routine they let use it started the run", () => {
     expect(userComputerOwner(own)).toBe("user-1");
     expect(userComputerOwner({ ...own, trigger: "follow_up" })).toBe("user-1");
+    expect(userComputerOwner(ownRoutine)).toBe("user-1");
+  });
+
+  it.each([
+    { ownerComputerRoutine: false },
+    { runUserId: "user-2" },
+    { botUserId: "user-2" },
+    { messagingChannelRun: true },
+  ])("is nobody for a routine run with %o", (change) => {
+    expect(userComputerOwner({ ...ownRoutine, ...change })).toBeUndefined();
   });
 
   it.each([
     { trigger: "routine" },
+    // Only a routine run counts, never an event run that claims the routine's permission.
+    { trigger: "webhook", ownerComputerRoutine: true },
     { trigger: "webhook" },
     { trigger: "messaging" },
     { trigger: "call_end" },

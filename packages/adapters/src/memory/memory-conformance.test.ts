@@ -17,8 +17,8 @@ interface MemoryConformanceFixture {
   /** Settings and credentials as prepare saves them, for a server on a public address. */
   settings: Record<string, string>;
   credentials: Record<string, string>;
-  /** The settings for a server the operator runs at this address. */
-  selfHosted(server: string): Record<string, string>;
+  /** The settings for a server the operator runs at this address. Absent for a hosted-only service. */
+  selfHosted?(server: string): Record<string, string>;
   /** From a self-hosted connection, another value for every field that scopes the credentials. */
   elsewhere: Record<string, string>;
 }
@@ -63,6 +63,11 @@ const fixtures: Record<MemoryProviderId, MemoryConformanceFixture> = {
     selfHosted: (baseUrl) => ({ mode: "local", baseUrl }),
     elsewhere: { mode: "cloud", baseUrl: OTHER_SERVER, recallBanks: "other-bank" },
   },
+  mnemoverse: {
+    settings: {},
+    credentials: key,
+    elsewhere: {},
+  },
 };
 
 /** DNS answers for the suite: the rebound name is private, every other name public. */
@@ -90,6 +95,7 @@ const ids = Object.keys(fixtures) as MemoryProviderId[];
 describe.each(ids)("%s memory conformance", (id) => {
   const definition = memoryProviders[id];
   const fixture = fixtures[id];
+  const selfHosted = fixture.selfHosted;
 
   it("accepts its saved settings and names the connection", () => {
     expect(() => assertMemoryProviderSettings(id, fixture.settings)).not.toThrow();
@@ -113,44 +119,60 @@ describe.each(ids)("%s memory conformance", (id) => {
     }
   });
 
-  it("needs the operator's consent only for a server on a private address", () => {
+  it("needs no consent for its hosted service", () => {
     expect(definition.requiresPrivateEndpoint(fixture.settings)).toBe(false);
-    expect(definition.requiresPrivateEndpoint(fixture.selfHosted(LAN_SERVER))).toBe(true);
-    expect(definition.requiresPrivateEndpoint(fixture.selfHosted(CLOSED_SERVER))).toBe(true);
-  });
-
-  it("decides consent by the address a self-hosted server resolves to", async () => {
-    const fetch = blockNetwork();
-    const needsConsent = async (server: string) =>
-      definition.requiresPrivateEndpoint(
-        (await definition.classifySettings?.(fixture.selfHosted(server))) ??
-          fixture.selfHosted(server),
-      );
-    expect(await needsConsent(PUBLIC_SERVER)).toBe(false);
-    expect(await needsConsent(LAN_SERVER)).toBe(true);
-    expect(await needsConsent(CLOSED_SERVER)).toBe(true);
-    expect(await needsConsent(REBOUND_SERVER)).toBe(true);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it("refuses a private server without consent before sending anything", async () => {
-    const fetch = blockNetwork();
-    for (const server of [LAN_SERVER, REBOUND_SERVER]) {
-      await expect(
-        definition.prepare(fixture.selfHosted(server), fixture.credentials, {
-          allowPrivateEndpoint: false,
-        }),
-      ).rejects.toThrow();
+    // A fixture without a self-hosted form is only valid for a service with no address to set.
+    if (!selfHosted) {
+      expect(definition.settings.fields.filter((field) => field.kind === "url")).toEqual([]);
+      expect(definition.classifySettings).toBeUndefined();
     }
-    expect(fetch).not.toHaveBeenCalled();
   });
+
+  it.runIf(selfHosted)(
+    "needs the operator's consent only for a server on a private address",
+    () => {
+      expect(definition.requiresPrivateEndpoint(selfHosted!(LAN_SERVER))).toBe(true);
+      expect(definition.requiresPrivateEndpoint(selfHosted!(CLOSED_SERVER))).toBe(true);
+    },
+  );
+
+  it.runIf(selfHosted)(
+    "decides consent by the address a self-hosted server resolves to",
+    async () => {
+      const fetch = blockNetwork();
+      const needsConsent = async (server: string) =>
+        definition.requiresPrivateEndpoint(
+          (await definition.classifySettings?.(selfHosted!(server))) ?? selfHosted!(server),
+        );
+      expect(await needsConsent(PUBLIC_SERVER)).toBe(false);
+      expect(await needsConsent(LAN_SERVER)).toBe(true);
+      expect(await needsConsent(CLOSED_SERVER)).toBe(true);
+      expect(await needsConsent(REBOUND_SERVER)).toBe(true);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.runIf(selfHosted)(
+    "refuses a private server without consent before sending anything",
+    async () => {
+      const fetch = blockNetwork();
+      for (const server of [LAN_SERVER, REBOUND_SERVER]) {
+        await expect(
+          definition.prepare(selfHosted!(server), fixture.credentials, {
+            allowPrivateEndpoint: false,
+          }),
+        ).rejects.toThrow();
+      }
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it("moves the credential target when any field that scopes the credentials changes", () => {
     const scoping = definition.settings.fields
       .filter((field) => field.scopesSecrets)
       .map((field) => field.key);
     expect(Object.keys(fixture.elsewhere).sort()).toEqual(scoping.sort());
-    const settings = fixture.selfHosted(PUBLIC_SERVER);
+    const settings = selfHosted ? selfHosted(PUBLIC_SERVER) : fixture.settings;
     const target = definition.credentialTarget(settings);
     expect(definition.credentialTarget({ ...settings })).toBe(target);
     for (const [key, value] of Object.entries(fixture.elsewhere)) {
@@ -161,7 +183,7 @@ describe.each(ids)("%s memory conformance", (id) => {
   it("answers with a failure, not an exception, when its server cannot be reached", async () => {
     blockNetwork();
     const provider = definition.create(
-      fixture.selfHosted(CLOSED_SERVER),
+      selfHosted ? selfHosted(CLOSED_SERVER) : fixture.settings,
       fixture.credentials,
       "version-1",
     );
