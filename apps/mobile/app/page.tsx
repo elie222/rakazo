@@ -1,15 +1,13 @@
 import { useLingui } from "@lingui/react/macro";
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
-import type { PageDetail, PageState } from "@rakazo/contracts";
+import type { PageDetail } from "@rakazo/contracts";
 import {
   pageCopyRequest,
   pageCopyResult,
   pageLinkRequest,
   pageReplyText,
   pageStateRequest,
-  pageStateUpdate,
 } from "@rakazo/core";
-import { bestEffort } from "@rakazo/logging/best-effort";
 import { webTokensForAppearance } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
@@ -19,7 +17,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { currentApiBase } from "../lib/api/api";
-import { useRosterSignals, useSpaceChanges } from "../lib/api/roster-signals";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { HEADER_CONTROL_SIZE } from "../lib/native/native-controls";
 import { PageLoadFailure } from "../lib/pages/page-load-failure";
@@ -32,7 +29,6 @@ import {
   pageDocument,
   pageMessage,
   pageTapStart,
-  readPageState,
 } from "../lib/pages/pages";
 
 type Loaded =
@@ -69,8 +65,6 @@ export default function PageScreen() {
     let active = true;
     // A tap on the page before it reloads is not one on the new page.
     tappedAt.current = null;
-    answerPage.current = null;
-    latestState.current = null;
     setLoaded({ status: "loading" });
     void getLatestPage(pageId, { refresh: true })
       .then(async (page) => {
@@ -98,33 +92,9 @@ export default function PageScreen() {
   const tapStart = useRef<ReturnType<typeof pageTapStart>>(null);
   const tappedAt = useRef<number | null>(null);
   const stateSaver = usePageStateSaver(pageId);
-  const answerPage = useRef<((message: object) => void) | null>(null);
-  const latestState = useRef<{ pageId: string; values: PageState } | null>(null);
-  const shownPageId = useRef(pageId);
-  shownPageId.current = pageId;
   const saving = loaded.status === "ready" && loaded.page.readerState !== undefined;
-  const reads = useRef(0);
-  const readStateAgain = () => {
-    const reading = pageId;
-    const read = ++reads.current;
-    return bestEffort(
-      "read saved page values again",
-      readPageState(reading).then((values) => {
-        if (reading !== shownPageId.current || read !== reads.current) return;
-        latestState.current = { pageId: reading, values };
-        answerPage.current?.(pageStateUpdate(values));
-      }),
-    );
-  };
-  useSpaceChanges("pageState", readStateAgain, saving);
-  useRosterSignals(readStateAgain, saving);
   const receive = useCallback(
     (data: string, answer: (message: object) => void) => {
-      const latest = latestState.current;
-      if (!answerPage.current && latest?.pageId === shownPageId.current) {
-        answer(pageStateUpdate(latest.values));
-      }
-      answerPage.current = answer;
       const values = saving ? pageStateRequest(pageMessage(data)) : null;
       if (values) {
         stateSaver.save(values);

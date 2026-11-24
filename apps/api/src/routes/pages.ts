@@ -4,7 +4,6 @@ import { aiConsentStatus } from "../account/ai-consent.js";
 import {
   addPageComment,
   getPageGrants,
-  getPageReaderState,
   getPageReview,
   grantPage,
   listPageReviews,
@@ -72,11 +71,8 @@ export function pagesRoutes(ctx: RouterContext) {
       publish: authed.pageReviews.publish.handler(({ context, input }) =>
         publishPageDraft(deps, context.actor, input),
       ),
-      state: authed.pageReviews.state.handler(({ context, input }) =>
-        getPageReaderState(deps.prisma, context.actor, input.pageId),
-      ),
       saveState: authed.pageReviews.saveState.handler(({ context, input }) =>
-        savePageReaderState(deps, context.actor, input.pageId, input.values),
+        savePageReaderState(deps.prisma, context.actor, input.pageId, input.values),
       ),
     },
     pages: {

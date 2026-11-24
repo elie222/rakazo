@@ -12,15 +12,11 @@ export function pageRevisionPendingCutoff() {
   return new Date(Date.now() - 30 * 60_000);
 }
 
-export async function signalPageUsers(
-  events: ThreadEvents,
-  userIds: readonly (string | null)[],
-  kind: "pages" | "pageState" = "pages",
-) {
+export async function signalPageUsers(events: ThreadEvents, userIds: readonly (string | null)[]) {
   await Promise.all(
     [...new Set(userIds)]
       .filter((id) => id !== null)
-      .map((id) => events.publishSpaceChange?.(pageChangesScope(id), kind)),
+      .map((id) => events.publishSpaceChange?.(pageChangesScope(id), "pages")),
   );
 }
 

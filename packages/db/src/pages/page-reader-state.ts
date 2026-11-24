@@ -67,16 +67,14 @@ export async function savePageState(
   page: { id: string; spaceId: string },
   userId: string,
   values: PageState,
-): Promise<boolean> {
+): Promise<void> {
   const row = await db.pageReaderState.findUnique({
     where: { pageId_userId: { pageId: page.id, userId } },
     select: { id: true, values: true },
   });
   const saved = row ? storedEntries(row, "reject") : [];
   const merged = fitPageState(saved, values);
-  if (row && isDeepStrictEqual(Object.fromEntries(merged), Object.fromEntries(saved))) {
-    return false;
-  }
+  if (row && isDeepStrictEqual(Object.fromEntries(merged), Object.fromEntries(saved))) return;
   const checked = PageStateSchema.safeParse(Object.fromEntries(merged));
   if (!checked.success) {
     throw new PageStateLimitError(checked.error.issues[0]?.message ?? "Too much to save");
@@ -96,5 +94,4 @@ export async function savePageState(
       },
     });
   }
-  return true;
 }

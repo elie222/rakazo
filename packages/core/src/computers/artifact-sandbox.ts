@@ -130,10 +130,6 @@ export function pageStateRequest(data: unknown): PageState | null {
   return valid.length > 0 ? Object.fromEntries(valid) : null;
 }
 
-export function pageStateUpdate(values: PageState) {
-  return { type: PAGE_STATE_MESSAGE, values };
-}
-
 /** The answer a page's copy button waits for. */
 export function pageCopyResult(id: string, ok: boolean) {
   return { type: "rakazo-page:copied", id, ok };

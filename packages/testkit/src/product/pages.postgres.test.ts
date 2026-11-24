@@ -764,7 +764,6 @@ describePages("pages", () => {
     expect((await rpc<PageReview>(app, owner, "pageReviews/get", input)).readerState).toEqual(
       saved,
     );
-    expect(await rpc(app, reader, "pageReviews/state", input)).toEqual({ note: "Mine" });
     expect(
       (await raw(app, outsider, "pageReviews/saveState", { ...input, values: { note: "x" } }))
         .status,

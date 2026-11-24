@@ -2,15 +2,10 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { PageSectionAnchor } from "@rakazo/contracts";
 import type { PageReviewSections } from "@rakazo/core";
-import {
-  pageReviewContent,
-  pageReviewSections,
-  pageStateRequest,
-  pageStateUpdate,
-} from "@rakazo/core";
+import { pageReviewContent, pageReviewSections, pageStateRequest } from "@rakazo/core";
 import { queryOptions } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
 import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
@@ -54,19 +49,12 @@ function Review({ pageId }: { pageId: string }) {
     draftCode: draft.isError ? undefined : draft.data?.code,
     reported: anchors,
   });
-  const stateRead = targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/state", { pageId });
-  const savesState = !draftId && page?.readerState !== undefined;
-  const latestState = useScreenQuery(stateRead, { enabled: savesState });
-  const readerState = savesState ? (latestState.data ?? page?.readerState) : undefined;
+  const readerState = draftId ? undefined : page?.readerState;
   const savedState = useRef(readerState);
   savedState.current = readerState;
-  const answerPage = useRef<((message: object) => void) | null>(null);
-  useEffect(() => {
-    if (readerState) answerPage.current?.(pageStateUpdate(readerState));
-  }, [readerState]);
   const stateSaver = usePageStateSaver(pageId, {
     target: ACCOUNT_SETTINGS,
-    stale: [stateRead.queryKey],
+    stale: [read.queryKey],
   });
   const apiBase = currentApiBase();
   const runtimeError = t`This page couldn't be shown.`;
@@ -201,11 +189,7 @@ function Review({ pageId }: { pageId: string }) {
             onMessage={
               draftId
                 ? undefined
-                : (raw, answer) => {
-                    if (!answerPage.current && savedState.current) {
-                      answer(pageStateUpdate(savedState.current));
-                    }
-                    answerPage.current = answer;
+                : (raw) => {
                     const message = pageMessage(raw);
                     const values = readerState ? pageStateRequest(message) : null;
                     if (values) stateSaver.save(values);

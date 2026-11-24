@@ -130,7 +130,6 @@ vi.mock("../navigation/screen-header", () => ({
   },
 }));
 vi.mock("./page-review-reads", () => ({ usePageReviewSignals: () => {} }));
-vi.mock("../api/roster-signals", () => ({ useSpaceChanges: () => {}, useRosterSignals: () => {} }));
 vi.mock("../../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children: ReactNode }) => children,
   SettingsRow: ({ title, onPress }: { title: string; onPress: () => void }) =>

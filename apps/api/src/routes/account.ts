@@ -454,11 +454,10 @@ export function accountRoutes(ctx: RouterContext) {
             for await (const spaceChange of followSpaceChanges(scope, signal)) {
               if (
                 special
-                  ? spaceChange === special || (special === "pages" && spaceChange === "pageState")
+                  ? spaceChange === special
                   : spaceChange !== "meetingCalendar" &&
                     spaceChange !== "nativeCalendar" &&
                     spaceChange !== "pages" &&
-                    spaceChange !== "pageState" &&
                     spaceChange !== "deploymentModel" &&
                     spaceChange !== "preferences"
               )

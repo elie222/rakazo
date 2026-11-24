@@ -147,7 +147,6 @@ export const SpaceChangeKind = z.enum([
   "artifacts",
   "meetingCalendar",
   "pages",
-  "pageState",
   "nativeCalendar",
   "preferences",
 ]);

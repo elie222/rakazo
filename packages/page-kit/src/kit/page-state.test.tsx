@@ -40,12 +40,6 @@ function render(fields: Array<[string, unknown]>) {
 }
 const shown = (name: string) => host.querySelector(`[data-key="${name}"]`)?.textContent;
 const set = (name: string, value: unknown) => act(() => setters.get(name)?.(value));
-const fromHost = (values: Record<string, unknown>) =>
-  act(() => {
-    window.dispatchEvent(
-      new MessageEvent("message", { data: { type: "rakazo-page:state", values } }),
-    );
-  });
 
 describe("usePageState", () => {
   it("keeps a value in memory and sends nothing where the host does not save", () => {
@@ -124,27 +118,5 @@ describe("usePageState", () => {
       type: "rakazo-page:state",
       values: { packing: { charger: true, Passport: false } },
     });
-  });
-
-  it("takes another copy's values, holding the latest one over a fresh change until it settles", () => {
-    render([
-      ["note", ""],
-      ["other", ""],
-    ]);
-    set("note", "Mine");
-    fromHost({ note: "Older read", other: "From my phone" });
-    expect(shown("note")).toBe('"Mine"');
-    expect(shown("other")).toBe('"From my phone"');
-    fromHost({ note: "Mine" });
-    act(() => vi.advanceTimersByTime(5000));
-    expect(shown("note")).toBe('"Mine"');
-    set("note", "Mine again");
-    fromHost({ note: "From my laptop" });
-    expect(shown("note")).toBe('"Mine again"');
-    act(() => vi.advanceTimersByTime(5000));
-    expect(shown("note")).toBe('"From my laptop"');
-    fromHost({});
-    expect(shown("note")).toBe('"From my laptop"');
-    expect(shown("other")).toBe('""');
   });
 });

@@ -3,8 +3,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { PageStateSave } from "./hooks";
-import { pageStateRetryable, useNow, usePageStateQueue, useTimeout } from "./hooks";
+import { useNow, useTimeout } from "./hooks";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -99,28 +98,4 @@ it("stops ticking after unmount", () => {
   act(() => vi.advanceTimersByTime(1_000));
   expect(seen).toHaveLength(renders);
   root = createRoot(container);
-});
-
-it("saves a page's changes one request at a time, retrying a failure and dropping a refusal", () => {
-  const sent: PageStateSave[] = [];
-  let queue!: ReturnType<typeof usePageStateQueue>;
-  function Queue() {
-    queue = usePageStateQueue("page-1", (save) => sent.push(save));
-    return null;
-  }
-  act(() => root.render(<Queue />));
-  queue.save({ a: 1 });
-  queue.save({ b: 2 });
-  expect(sent).toEqual([{ pageId: "page-1", values: { a: 1 } }]);
-  queue.failed(sent[0]!, new Error("offline"));
-  queue.save({ c: 3 });
-  expect(sent[1]).toEqual({ pageId: "page-1", values: { a: 1, b: 2, c: 3 } });
-  queue.save({ d: 4 });
-  queue.failed(sent[1]!, Object.assign(new Error("too much"), { code: "PAGE_STATE_LIMIT" }));
-  expect(sent[2]).toEqual({ pageId: "page-1", values: { d: 4 } });
-  queue.saved();
-  queue.retry();
-  expect(sent).toHaveLength(3);
-  expect(pageStateRetryable(new Error("offline"))).toBe(true);
-  expect(pageStateRetryable({ code: "PAGE_STATE_LIMIT" })).toBe(false);
 });

@@ -35,7 +35,6 @@ export function PageView({
   composer,
   onReply,
   onSections,
-  savedState,
   onSaveState,
   returnFocus,
   compact = false,
@@ -53,7 +52,6 @@ export function PageView({
   /** Takes a page's reply text into the docked composer. */
   onReply?: (text: unknown) => void;
   onSections?: (sections: PageSectionAnchor[]) => void;
-  savedState?: PageState;
   onSaveState?: (values: PageState) => void;
   /** Puts focus back on close; false tells the dialog it is done. */
   returnFocus?: () => boolean;
@@ -204,7 +202,6 @@ export function PageView({
                       interactive
                       onReply={onReply}
                       onSections={onSections}
-                      savedState={savedState}
                       onSaveState={onSaveState}
                       onHeight={onDrawn}
                     />

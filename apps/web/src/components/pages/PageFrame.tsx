@@ -6,10 +6,9 @@ import {
   pageLinkRequest,
   pageReviewSections,
   pageStateRequest,
-  pageStateUpdate,
 } from "@rakazo/core";
 import type { CSSProperties } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { writeClipboard } from "../../lib/copy-text";
 import { pageFrameHeight } from "../../lib/pages/page-cards";
 import { SandboxedHtmlViewer } from "../messages/SandboxedHtmlViewer";
@@ -30,7 +29,6 @@ export function PageFrame({
   previewScrollTop,
   onReply,
   onSections,
-  savedState,
   onSaveState,
 }: {
   document: string;
@@ -42,32 +40,16 @@ export function PageFrame({
   /** Where a page's reply button puts its text; without it the page offers no replies. */
   onReply?: (text: unknown) => void;
   onSections?: (sections: PageSectionAnchor[]) => void;
-  savedState?: PageState;
   onSaveState?: (values: PageState) => void;
 }) {
   const { open, dialog } = useExternalLinkOpener();
   const box = useRef<HTMLDivElement>(null);
   const [drawnAt, setDrawnAt] = useState<CSSProperties | undefined>(undefined);
   const usedGesture = useRef<string | null>(null);
-  const answerFrame = useRef<((message: object) => void) | null>(null);
-  const latestState = useRef(savedState);
-  const shownDocument = useRef(document);
-  if (shownDocument.current !== document) {
-    shownDocument.current = document;
-    answerFrame.current = null;
-  }
-  latestState.current = savedState;
-  useEffect(() => {
-    if (savedState) answerFrame.current?.(pageStateUpdate(savedState));
-  }, [savedState]);
   const scrollablePreview = previewScrollTop !== undefined;
   const receive = useCallback(
     (data: unknown, answer: (message: object) => void, focused: boolean) => {
       if (!data || typeof data !== "object") return;
-      if (!answerFrame.current && latestState.current) {
-        answer(pageStateUpdate(latestState.current));
-      }
-      answerFrame.current = answer;
       const message = data as {
         type?: unknown;
         height?: unknown;
