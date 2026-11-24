@@ -64,6 +64,7 @@ async function follow(signal: AbortSignal) {
           if (kind === "preferences") {
             void refreshRpcQueries("me");
             void refreshRpcQueries("approvalRules/list");
+            void refreshRpcQueries("approvalRules/effective");
             void refreshRpcQueries("autoReview/get");
             void refreshRpcQueries("spaceSettings/overrides");
           }

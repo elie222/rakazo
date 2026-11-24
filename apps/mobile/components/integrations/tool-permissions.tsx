@@ -1,11 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
+import { APPROVAL_RULES_CHANGED } from "@rakazo/contracts";
 import type { AppPermissionTool, AppToolPermissionChange } from "@rakazo/core";
 import {
   appToolLabel,
   appToolPermissionChoices,
-  appToolPermissionReadsReady,
   appToolPermissionRequest,
   appToolRules,
+  errorCode,
   groupAppPermissionTools,
 } from "@rakazo/core";
 import { useState } from "react";
@@ -22,21 +23,25 @@ export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; s
   const { t } = useLingui();
   const styles = useThemedStyles(createIntegrationsStyles);
   const [open, setOpen] = useState({ reads: false, other: false });
-  const rulesRead = rpcQuery("approvalRules/list", {});
-  const rulesQuery = useScreenQuery(rulesRead);
-  const modeQuery = useScreenQuery(rpcQuery("autoReview/get", {}));
-  const rules = appToolRules(rulesQuery.data ?? []);
+  const permissionsRead = rpcQuery("approvalRules/effective", {});
+  const permissions = useScreenQuery(permissionsRead);
+  const snapshot = permissions.data;
+  const rules = appToolRules(snapshot?.rules ?? []);
   const change = useSave({
     save: async (selection: AppToolPermissionChange, send) => {
-      const request = appToolPermissionRequest(selection, rules);
+      if (!snapshot) return;
+      const request = appToolPermissionRequest(selection, rules, snapshot.target);
       if (request?.kind === "remove") await send("approvalRules/remove", request.input);
       if (request?.kind === "set") await send("approvalRules/set", request.input);
     },
-    stale: [rulesRead.queryKey],
+    stale: [permissionsRead.queryKey, rpcQuery("approvalRules/list", {}).queryKey],
+    onFailed: (error) => {
+      if (errorCode(error) === APPROVAL_RULES_CHANGED) return permissions.refetch();
+    },
   });
-  const loadError = rulesQuery.error ?? modeQuery.error;
-  const disabled = !appToolPermissionReadsReady(rulesQuery, modeQuery) || change.pending;
-  const mode = modeQuery.data?.mode;
+  const loadError = permissions.error;
+  const disabled = !snapshot || permissions.isFetching || Boolean(loadError) || change.pending;
+  const mode = snapshot?.mode;
   const labels = {
     default: t`Default`,
     always_allow: t`Allow`,

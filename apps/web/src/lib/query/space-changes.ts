@@ -14,6 +14,7 @@ const READS: Record<ReadChangeKind, readonly Procedure[]> = {
   deploymentModel: [],
   preferences: [
     ["approvalRules", "list"],
+    ["approvalRules", "effective"],
     ["autoReview", "get"],
     ["spaceSettings", "overrides"],
   ],

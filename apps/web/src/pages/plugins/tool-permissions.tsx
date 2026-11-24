@@ -1,9 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { APPROVAL_RULES_CHANGED } from "@rakazo/contracts";
 import type { AppPermissionTool, AppToolPermissionChange } from "@rakazo/core";
 import {
   appToolLabel,
   appToolPermissionChoices,
-  appToolPermissionReadsReady,
   appToolPermissionRequest,
   appToolRules,
   groupAppPermissionTools,
@@ -11,25 +11,29 @@ import {
 import { Disclosure, OptionSelect, SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
-import { errorText } from "../../lib/query/user-error";
+import { errorCode, errorText } from "../../lib/query/user-error";
 
 export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; slug: string }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
-  const rulesQuery = useQuery(queries.approvalRules.list.queryOptions({ input: {} }));
-  const modeQuery = useQuery(queries.autoReview.get.queryOptions({ input: {} }));
-  const rules = appToolRules(rulesQuery.data ?? []);
+  const permissions = useQuery(queries.approvalRules.effective.queryOptions({ input: {} }));
+  const snapshot = permissions.data;
+  const rules = appToolRules(snapshot?.rules ?? []);
   const change = useSave({
     save: async (selection: AppToolPermissionChange, rpc) => {
-      const request = appToolPermissionRequest(selection, rules);
+      if (!snapshot) return;
+      const request = appToolPermissionRequest(selection, rules, snapshot.target);
       if (request?.kind === "remove") await rpc.approvalRules.remove(request.input);
       if (request?.kind === "set") await rpc.approvalRules.set(request.input);
     },
-    stale: [queries.approvalRules.list.key()],
+    stale: [queries.approvalRules.effective.key(), queries.approvalRules.list.key()],
+    onFailed: (error) => {
+      if (errorCode(error) === APPROVAL_RULES_CHANGED) return permissions.refetch();
+    },
   });
-  const loadError = rulesQuery.error ?? modeQuery.error;
-  const disabled = !appToolPermissionReadsReady(rulesQuery, modeQuery) || change.pending;
-  const mode = modeQuery.data?.mode;
+  const loadError = permissions.error;
+  const disabled = !snapshot || permissions.isFetching || Boolean(loadError) || change.pending;
+  const mode = snapshot?.mode;
   const labels = {
     default: t`Default`,
     always_allow: t`Allow`,

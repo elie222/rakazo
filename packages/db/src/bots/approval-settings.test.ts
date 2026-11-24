@@ -1,3 +1,4 @@
+import { APPROVAL_RULES_CHANGED } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import {
@@ -107,6 +108,18 @@ describe("approval rules", () => {
     expect(client.spaceSettingOverride.findUnique).not.toHaveBeenCalled();
     expect(client.userActionApprovalRule.findMany).toHaveBeenCalled();
     expect(client.actionApprovalRule.findMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects resetting a displayed rule that no longer exists", async () => {
+    const client = confirmationsClient({ overridden: true });
+    client.actionApprovalRule.deleteMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(
+      removeApprovalRule(client.prisma, scope, "rule-1", undefined, {
+        scope: "space",
+        spaceId: scope.spaceId,
+      }),
+    ).rejects.toMatchObject({ kind: "CONFLICT", code: APPROVAL_RULES_CHANGED });
   });
 });
 

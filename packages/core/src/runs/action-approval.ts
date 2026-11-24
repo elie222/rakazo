@@ -1,4 +1,5 @@
 import type {
+  EffectiveApprovalTarget,
   RpcInput,
   RpcOutput,
   ActionApprovalRule as StoredActionApprovalRule,
@@ -888,12 +889,6 @@ export function appToolPermissionChoices(mode: ApprovalMode | null | undefined) 
   ] satisfies { permission: AppToolPermission; disabled: boolean }[];
 }
 
-type PermissionRead = { isPending: boolean; isFetching: boolean; error: unknown };
-
-export function appToolPermissionReadsReady(...reads: PermissionRead[]) {
-  return reads.every((read) => !read.isPending && !read.isFetching && !read.error);
-}
-
 export function groupAppPermissionTools(tools: readonly AppPermissionTool[]) {
   const reads: AppPermissionTool[] = [];
   const other: AppPermissionTool[] = [];
@@ -919,12 +914,16 @@ type AppToolPermissionRequest =
 export function appToolPermissionRequest(
   { key, permission }: AppToolPermissionChange,
   rules: ReturnType<typeof appToolRules>,
+  expectedTarget: EffectiveApprovalTarget,
 ): AppToolPermissionRequest | undefined {
   if (permission === "default") {
     const rule = rules.get(key.toLowerCase());
-    return rule ? { kind: "remove", input: { id: rule.id } } : undefined;
+    return rule ? { kind: "remove", input: { id: rule.id, expectedTarget } } : undefined;
   }
-  return { kind: "set", input: { effect: permission, matchKind: "tool", matchValue: key } };
+  return {
+    kind: "set",
+    input: { effect: permission, matchKind: "tool", matchValue: key, expectedTarget },
+  };
 }
 
 const APP_TOOL_RULE_PREFIX = "app-tool/";
