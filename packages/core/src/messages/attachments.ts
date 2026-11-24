@@ -7,6 +7,7 @@ import {
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
+import { askOptionLetter, isQuestionAskBlock } from "../asks/ask-kind.js";
 import { sliceWellFormed } from "../primitives/utf8.js";
 import { isApprovalAskBlock, isSecretAskBlock } from "../runs/action-approval.js";
 
@@ -290,9 +291,14 @@ function blockHistoryText(block: MessageBlock): string {
       block.detail && !isApprovalAskBlock(block) && !isSecretAskBlock(block)
         ? `\n<draft>\n${block.detail.replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
         : "";
-    if (block.status !== "answered" || !block.answer) return `${block.text}${detail}`;
+    // The card shows its options lettered, and a typed reply like "A and C" refers to them.
+    const options = isQuestionAskBlock(block)
+      ? (block.actions ?? []).map((action, index) => `\n${askOptionLetter(index)}. ${action.label}`)
+      : [];
+    const question = `${block.text}${options.join("")}${detail}`;
+    if (block.status !== "answered" || !block.answer) return question;
     const choice = block.actions?.find((action) => action.id === block.answer);
-    return `${block.text}${detail}\nAnswer: ${choice?.label ?? block.answer}`;
+    return `${question}\nAnswer: ${choice?.label ?? block.answer}`;
   }
   // The bot needs the outcome of its own call: a missed call is its cue to follow up.
   if (block.kind === "call_request") {
