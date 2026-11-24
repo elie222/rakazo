@@ -67,6 +67,7 @@ import { AvatarScreenFocus } from "../lib/bots/avatar-life";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { useCallActive } from "../lib/calls/call-session";
 import { startIncomingCalls } from "../lib/calls/incoming-calls";
+import { loadComposerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-preference";
 import { loadComposerModelPickerPreference } from "../lib/composer/composer-model-picker-preference";
 import { bootstrapI18n, refreshDeviceDateFormat } from "../lib/i18n/i18n";
 import { clearLastBot } from "../lib/inbox/last-bot";
@@ -412,6 +413,7 @@ function LayoutContent() {
         ),
         trackMobileStartup("streaming", loadResponseStreamingPreference()),
         trackMobileStartup("images", loadRemoteImagesPreference()),
+        trackMobileStartup("enterToSend", loadComposerEnterToSendPreference()),
         trackMobileStartup("modelPicker", loadComposerModelPickerPreference()),
         trackMobileStartup("inbox", loadInboxWidth()),
       ]).catch(() => undefined),

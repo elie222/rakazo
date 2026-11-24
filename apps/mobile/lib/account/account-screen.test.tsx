@@ -72,6 +72,9 @@ vi.mock("../thread/send/thread-feedback", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadFeedback>()),
   hasUnsentSends: vi.fn(() => false),
 }));
+vi.mock("../../components/composer/composer-keyboard", () => ({
+  supportsComposerHardwareEnter: false,
+}));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
 }));
