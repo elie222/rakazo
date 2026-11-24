@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   clampMentionHighlightIndex,
+  isHardwareTypingKey,
   resolveMentionPickerKey,
   wrapMentionHighlightIndex,
 } from "./composer-mention-picker.js";
@@ -184,3 +185,23 @@ it.each(["ctrlKey", "metaKey"] as const)(
     ).toEqual({ type: "send" });
   },
 );
+
+describe("isHardwareTypingKey", () => {
+  it("recognizes an unmodified printable key", () => {
+    expect(isHardwareTypingKey({ key: "a" })).toBe(true);
+  });
+
+  it.each(["Enter", "ArrowUp", "Unidentified", "Dead", "\t", ""])(
+    "does not infer a hardware keyboard from %j",
+    (key) => {
+      expect(isHardwareTypingKey({ key })).toBe(false);
+    },
+  );
+
+  it.each(["ctrlKey", "metaKey", "altKey", "isComposing"] as const)(
+    "ignores a printable key with %s",
+    (flag) => {
+      expect(isHardwareTypingKey({ key: "x", [flag]: true })).toBe(false);
+    },
+  );
+});

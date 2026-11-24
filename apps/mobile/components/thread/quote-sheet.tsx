@@ -53,7 +53,7 @@ export function QuoteSheet({
             />
           }
         />
-        <ScrollView style={{ flex: 1, paddingHorizontal: 20 }}>
+        <ScrollView keyboardShouldPersistTaps="handled" style={{ flex: 1, paddingHorizontal: 20 }}>
           {segments.map((text, index) => (
             <TextInput
               key={`${index}:${revision}`}

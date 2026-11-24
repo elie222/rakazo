@@ -97,6 +97,7 @@ export function useThreadAttachments({
 }) {
   const { t } = useLingui();
   const threadKey = groupId ?? botId;
+  const dropTargetKey = draftScope ? retainedScopeKey(draftScope) : threadKey;
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>(() =>
     draftScope ? (retainedDraftAttachments.get(retainedScopeKey(draftScope)) ?? []) : [],
   );
@@ -215,7 +216,7 @@ export function useThreadAttachments({
   }
 
   useFileDrop(
-    threadKey ?? null,
+    dropTargetKey ?? null,
     ({ files, skipped }) => {
       void addAttachments((count, maxBytes, maxCount) =>
         readDroppedFiles(files, count, maxBytes, skipped, maxCount),
@@ -229,6 +230,7 @@ export function useThreadAttachments({
   );
 
   return {
+    dropTargetKey: readOnly ? undefined : dropTargetKey,
     pendingAttachments,
     pendingAttachmentsRef,
     setPendingAttachments,

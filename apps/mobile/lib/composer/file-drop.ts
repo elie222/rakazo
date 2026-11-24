@@ -16,11 +16,14 @@ export type DropLimits = { enabled: boolean; maxBytes: number; maxFiles: number 
 type FileDropModule = {
   setDropTarget(enabled: boolean, maxBytes: number, maxFiles: number): void;
   release(uri: string): Promise<void>;
-  addListener(event: "onFilesDropped", listener: (event: DropPayload) => void): { remove(): void };
+  addListener(
+    event: "onFilesDropped",
+    listener: (event: DropPayload & { targetKey?: string }) => void,
+  ): { remove(): void };
   addListener(event: "onDropStarted", listener: () => void): { remove(): void };
 };
 
-// Android drops and iOS image pastes. Absent on web and in binaries built before the module existed.
+// Android and iOS drops, plus iOS image pastes. Absent on web and in binaries built before the module existed.
 function nativeFileDrop(): FileDropModule | null {
   return requireOptionalNativeModule<FileDropModule>("RakazoFileDrop");
 }
@@ -54,8 +57,9 @@ function attach(): void {
       const target = targets.at(-1);
       pending.push(target?.limits.enabled ? target.key : null);
     }),
-    native.addListener("onFilesDropped", (payload) => {
-      const key = pending.shift();
+    native.addListener("onFilesDropped", ({ targetKey, ...payload }) => {
+      const startedKey = pending.shift();
+      const key = targetKey ?? startedKey;
       const owner = key == null ? undefined : targets.findLast((target) => target.key === key);
       // A drop whose chat is gone is discarded rather than handed to another chat.
       if (!owner?.limits.enabled) {

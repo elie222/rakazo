@@ -67,6 +67,7 @@ import { AvatarScreenFocus } from "../lib/bots/avatar-life";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { useCallActive } from "../lib/calls/call-session";
 import { startIncomingCalls } from "../lib/calls/incoming-calls";
+import { loadComposerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-preference";
 import { loadComposerModelPickerPreference } from "../lib/composer/composer-model-picker-preference";
 import { bootstrapI18n } from "../lib/i18n/i18n";
 import { clearLastBot } from "../lib/inbox/last-bot";
@@ -83,6 +84,7 @@ import { loadLinkFavicon } from "../lib/messages/link-favicons";
 import { OpenPageContext } from "../lib/messages/message-mentions";
 import { loadHapticsPreference } from "../lib/native/haptics";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native/native";
+import { useHardwareEscape, useHardwareShortcuts } from "../lib/navigation/hardware-shortcuts";
 import { useNavigatorMounted } from "../lib/navigation/navigator-mounted";
 import { clearAppBadge } from "../lib/notifications/app-badge";
 import {
@@ -281,6 +283,11 @@ function ChatContentProviders({
 
 export const unstable_settings = { anchor: "index" };
 
+function ModalHardwareEscape({ dismiss }: { dismiss: () => void }) {
+  useHardwareEscape("modal", dismiss);
+  return null;
+}
+
 function LayoutContent() {
   const call = useCallActive();
   const { t } = useLingui();
@@ -320,11 +327,12 @@ function LayoutContent() {
     subscribeSessionGeneration,
     currentReadySessionGeneration,
   );
+  const pathname = usePathname();
+  useHardwareShortcuts(ready, callSession, pathname === "/paywall");
   useEffect(() => {
     if (!ready) return;
     return startIncomingCalls();
   }, [ready, callSession]);
-  const pathname = usePathname();
   const screen = analyticsScreen(pathname);
   const monitoringScreen = pathname === "/share" ? "share" : screen;
   useEffect(() => setMobileMonitoringScreen(monitoringScreen), [monitoringScreen]);
@@ -403,6 +411,7 @@ function LayoutContent() {
         ),
         trackMobileStartup("streaming", loadResponseStreamingPreference()),
         trackMobileStartup("images", loadRemoteImagesPreference()),
+        trackMobileStartup("enterToSend", loadComposerEnterToSendPreference()),
         trackMobileStartup("modelPicker", loadComposerModelPickerPreference()),
         trackMobileStartup("inbox", loadInboxWidth()),
       ]).catch(() => undefined),
@@ -440,6 +449,9 @@ function LayoutContent() {
                               <CallKeyboardContext.Provider
                                 value={Platform.OS === "ios" ? false : call}
                               >
+                                {options.gestureEnabled !== false ? (
+                                  <ModalHardwareEscape dismiss={() => navigation.goBack()} />
+                                ) : null}
                                 {children}
                               </CallKeyboardContext.Provider>
                             </InboxBesideContext.Provider>

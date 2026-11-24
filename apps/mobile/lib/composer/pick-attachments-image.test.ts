@@ -32,6 +32,7 @@ const state = vi.hoisted(() => ({
   base64: vi.fn(),
   optionalNativeModule: vi.fn(),
   loadManipulator: vi.fn(),
+  release: vi.fn(async (_uri: string) => {}),
   deleted: [] as string[],
 }));
 
@@ -61,7 +62,7 @@ vi.mock("expo-image-picker", () => ({
   launchCameraAsync: vi.fn(async () => ({ canceled: false, assets: [state.asset] })),
   requestCameraPermissionsAsync: vi.fn(async () => ({ granted: true })),
 }));
-vi.mock("./file-drop", () => ({ releaseDroppedFile: async () => {} }));
+vi.mock("./file-drop", () => ({ releaseDroppedFile: state.release }));
 vi.mock("expo-modules-core", () => ({
   requireOptionalNativeModule: state.optionalNativeModule,
 }));
@@ -395,6 +396,16 @@ it("uses the configured photo count before reading or preparing extra photos", a
   expect(result.attachments).toHaveLength(8);
   expect(result.skipped).toEqual([{ name: "8.jpg", reason: "max 8 attachments" }]);
   expect(state.base64).toHaveBeenCalledTimes(8);
+});
+
+it("attaches a dropped PDF and releases its native copy", async () => {
+  const uri = "file:///cache/dropped/document";
+  const result = await readDroppedFiles([
+    { uri, name: "notes.pdf", mimeType: "application/pdf", size: 20 },
+  ]);
+
+  expect(result.attachments).toMatchObject([{ name: "notes.pdf", mimeType: "application/pdf" }]);
+  expect(state.release).toHaveBeenCalledWith(uri);
 });
 
 it("shrinks a large pasted photo before checking its size", async () => {

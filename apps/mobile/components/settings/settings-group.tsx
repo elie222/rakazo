@@ -1,6 +1,6 @@
 import { typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
-import { Children, Fragment, isValidElement } from "react";
+import { Children, Fragment, isValidElement, useState } from "react";
 import type { PressableProps, TextInputProps } from "react-native";
 import {
   Platform,
@@ -103,6 +103,7 @@ type SettingsRowProps = Omit<PressableProps, "children" | "style"> & {
   destructive?: boolean;
   tinted?: boolean;
   dimmed?: boolean;
+  highlightOnHover?: boolean;
   leading?: ReactNode;
   trailing?: ReactNode;
 };
@@ -116,12 +117,14 @@ export function SettingsRow({
   destructive,
   tinted,
   dimmed,
+  highlightOnHover,
   leading,
   trailing,
   ...props
 }: SettingsRowProps) {
   const styles = useThemedStyles(createSettingsStyles);
   const stacked = useStackedSettings();
+  const [hovered, setHovered] = useState(false);
   const end = (
     <>
       {value ? (
@@ -183,10 +186,27 @@ export function SettingsRow({
       accessibilityRole={
         props.accessibilityRole ?? (props.role === undefined ? "button" : undefined)
       }
+      onHoverIn={
+        highlightOnHover
+          ? (event) => {
+              setHovered(true);
+              props.onHoverIn?.(event);
+            }
+          : props.onHoverIn
+      }
+      onHoverOut={
+        highlightOnHover
+          ? (event) => {
+              setHovered(false);
+              props.onHoverOut?.(event);
+            }
+          : props.onHoverOut
+      }
       android_ripple={androidRipple()}
       style={({ pressed }) => [
         styles.row,
         stacked && styles.compactRow,
+        highlightOnHover && hovered && styles.hovered,
         pressed && Platform.OS !== "android" && styles.pressed,
         dimmed && styles.dimmed,
       ]}
@@ -286,6 +306,7 @@ function createSettingsStyles() {
     value: { flexShrink: 1, color: native.secondaryLabel, fontSize: 17 },
     // A long value truncates instead of pushing the title out of the row.
     inlineValue: { maxWidth: "60%" },
+    hovered: { backgroundColor: tokens.accent },
     pressed: { backgroundColor: native.fillPressed },
     dimmed: { opacity: 0.45 },
   });

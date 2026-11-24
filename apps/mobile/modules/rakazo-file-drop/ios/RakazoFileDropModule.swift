@@ -3,6 +3,11 @@ import ObjectiveC
 import UIKit
 import UniformTypeIdentifiers
 
+@MainActor
+public protocol RakazoDocumentDropTarget: AnyObject {
+  var dropTargetKey: String? { get }
+}
+
 /// Images pasted into a chat's text field arrive as dropped files, the same payload
 /// Android sends for a drop, so the chat attaches them like any other file. Text
 /// pasted with them still goes into the field.
@@ -26,6 +31,7 @@ public class RakazoFileDropModule: Module {
   // Formats attachments accept as they are; anything else is re-encoded as JPEG.
   private static let keptTypes: [UTType] = [.png, .jpeg, .gif, .webP]
   private let worker = DispatchQueue(label: "rakazo.file-drop")
+  private let initialSweep = DispatchGroup()
 
   public func definition() -> ModuleDefinition {
     Name("RakazoFileDrop")
@@ -53,12 +59,53 @@ public class RakazoFileDropModule: Module {
     }
     OnCreate {
       // Queue the sweep before any copies so it cannot delete a new paste.
-      self.worker.async { try? FileManager.default.removeItem(at: Self.root) }
+      self.worker.async(group: self.initialSweep) {
+        try? FileManager.default.removeItem(at: Self.root)
+      }
       Self.current = self
       _ = Self.installPaste
     }
     OnDestroy {
       DispatchQueue.main.async { Self.limits = Limits() }
+    }
+  }
+
+  @MainActor
+  private static let dropDelegate = ComposerDropDelegate()
+
+  @MainActor
+  public static func installDropTarget(on view: UIView) {
+    view.addInteraction(UIDropInteraction(delegate: dropDelegate))
+  }
+
+  private final class ComposerDropDelegate: NSObject, UIDropInteractionDelegate {
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+      let limits = RakazoFileDropModule.limits
+      return (interaction.view as? RakazoDocumentDropTarget)?.dropTargetKey != nil
+        && limits.enabled && limits.maxFiles > 0 && session.localDragSession == nil
+        && session.items.contains { RakazoDroppedDocument.accepts($0.itemProvider) }
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession)
+      -> UIDropProposal
+    {
+      UIDropProposal(operation: dropInteraction(interaction, canHandle: session) ? .copy : .forbidden)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+      guard dropInteraction(interaction, canHandle: session),
+        let key = (interaction.view as? RakazoDocumentDropTarget)?.dropTargetKey
+      else { return }
+      let providers = session.items.map(\.itemProvider).filter(RakazoDroppedDocument.accepts)
+      RakazoFileDropModule.current?.attachDocuments(providers, limits: RakazoFileDropModule.limits, targetKey: key)
+    }
+  }
+
+  private func attachDocuments(_ providers: [NSItemProvider], limits: Limits, targetKey: String) {
+    sendAttachments(providers, limits: limits, targetKey: targetKey) { provider, _ in
+      RakazoDroppedDocument.startCopy(
+        provider, into: Self.root, maxBytes: limits.maxBytes, resizeHeadroom: Self.resizeHeadroom,
+        after: self.initialSweep)
     }
   }
 
@@ -112,19 +159,35 @@ public class RakazoFileDropModule: Module {
 
   private func attach(_ providers: [NSItemProvider], limits: Limits) {
     let images = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }
-    guard !images.isEmpty else { return }
-    let kept = Array(images.prefix(limits.maxFiles))
     let maxBytes = limits.maxBytes * Self.resizeHeadroom
+    sendAttachments(images, limits: limits, skippedName: { _ in "image" }) { provider, directory in
+      { self.copy(provider, into: directory, maxBytes: maxBytes) }
+    }
+  }
+
+  private func sendAttachments(
+    _ providers: [NSItemProvider], limits: Limits,
+    targetKey: String? = nil,
+    skippedName: (NSItemProvider) -> String = { $0.suggestedName ?? "file" },
+    start: (NSItemProvider, URL) -> () -> [String: Any]
+  ) {
+    guard !providers.isEmpty else { return }
+    let kept = Array(providers.prefix(limits.maxFiles))
     // Bound the names included in the notice, as Android does.
-    let skipped = Array(repeating: "image", count: min(images.count - kept.count, 6))
+    let skipped = providers.dropFirst(kept.count).prefix(6).map(skippedName)
     sendEvent("onDropStarted", [:])
+    let directory = Self.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    // UIKit requires drop providers to start loading inside performDrop. Publish the results
+    // in the same order as onDropStarted, even if later drops finish copying first.
+    let copies = kept.map { start($0, directory) }
     worker.async {
-      let directory = Self.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
-      let files = kept.map { self.copy($0, into: directory, maxBytes: maxBytes) }
+      let files = copies.map { $0() }
       if !files.contains(where: { $0["uri"] != nil }) {
         try? FileManager.default.removeItem(at: directory)
       }
-      self.sendEvent("onFilesDropped", ["files": files, "skipped": skipped])
+      var payload: [String: Any] = ["files": files, "skipped": skipped]
+      if let targetKey { payload["targetKey"] = targetKey }
+      self.sendEvent("onFilesDropped", payload)
     }
   }
 
