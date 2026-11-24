@@ -87,7 +87,7 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
   });
 
   /** A typed message whose reply failed. */
-  const failedReply = async (trigger = "user") => {
+  const failedReply = async ({ trigger = "user", retryable = true } = {}) => {
     const message = await createThreadMessage(system, {
       threadId,
       role: "user",
@@ -112,12 +112,26 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
       },
     });
     await system.message.update({ where: { id: message.id }, data: { runId: run.id } });
+    await createThreadEvents(system).append({
+      ...work,
+      runId: run.id,
+      type: "run.failed",
+      payload: { error: "terminated", ...(retryable ? { retryable: true } : {}) },
+    });
     return { message, run };
   };
   const retry = async (runId: string) => {
     const response = await call("retry", { botId, runId });
     return { status: response.status, body: (await response.json()) as { json: unknown } };
   };
+
+  it("includes retry eligibility when the chat is opened after the failure", async () => {
+    const { run } = await failedReply();
+    const response = await call("get", { botId });
+    expect(await response.json()).toMatchObject({
+      json: { run: { id: run.id, retryable: true } },
+    });
+  });
 
   it("queues the failed reply again from its message, once", async () => {
     const { message, run } = await failedReply();
@@ -154,28 +168,41 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     expect(enqueue).toHaveBeenCalledTimes(2);
     expect(enqueue.mock.calls[1]).toEqual(enqueue.mock.calls[0]);
 
-    // Once a newer message cancels the retry, the original failure is no longer retried.
+    // A retry that has already ended is still the same receipt and cannot be woken again.
     await system.run.update({ where: { id: runId }, data: { status: "cancelled" } });
-    expect((await retry(run.id)).status).toBe(409);
+    expect(await retry(run.id)).toEqual(first);
     expect(enqueue).toHaveBeenCalledTimes(2);
   });
 
-  it("retries a reply the sender followed up on while it ran, more than once", async () => {
+  it("returns the same retry to concurrent requests", async () => {
     const { run } = await failedReply();
-    const followUp = await createThreadMessage(system, {
-      threadId,
-      role: "user",
-      authorUserId: actor.userId,
-      blocks: [{ kind: "text", text: "Only the urgent ones." }],
+    const pending: Promise<Awaited<ReturnType<typeof retry>>>[] = [];
+    // Both requests must reach the thread lock before either can create the retry.
+    await system.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
+      pending.push(retry(run.id), retry(run.id));
+      await vi.waitFor(
+        async () => {
+          const [waiting] = await system.$queryRaw<Array<{ count: number }>>`
+          SELECT count(*)::int AS count
+          FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'
+            AND query LIKE 'SELECT id FROM threads WHERE id = % FOR UPDATE'
+        `;
+          expect(waiting?.count).toBe(2);
+        },
+        { timeout: 5_000 },
+      );
     });
-    await system.message.update({ where: { id: followUp.id }, data: { runId: run.id } });
-    const first = await retry(run.id);
-    expect(first.status).toBe(200);
+    const results = await Promise.all(pending);
+    expect(results.map((result) => result.status)).toEqual([200, 200]);
+    expect(results[0]?.body).toEqual(results[1]?.body);
+  });
 
-    // The retry fails too; the follow-up still belongs to this reply.
-    const { runId } = first.body.json as { runId: string };
-    await system.run.update({ where: { id: runId }, data: { status: "failed", error: "again" } });
-    expect((await retry(runId)).status).toBe(200);
+  it("refuses a failure the worker did not mark as safe to retry", async () => {
+    const { run } = await failedReply({ retryable: false });
+    expect((await retry(run.id)).status).toBe(409);
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it("refuses once the conversation moved on or the run was not a typed message", async () => {
@@ -188,7 +215,7 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     });
     expect((await retry(run.id)).status).toBe(409);
 
-    const routine = await failedReply("routine");
+    const routine = await failedReply({ trigger: "routine" });
     expect((await retry(routine.run.id)).status).toBe(409);
     expect(enqueue).not.toHaveBeenCalled();
   });

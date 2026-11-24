@@ -193,6 +193,7 @@ export type FinalizeRunInput = FinalizeRunBase &
     | {
         outcome: "failed";
         error: string;
+        retryable?: boolean;
         /** Reply text the user saw streaming before the failure, kept as a bot message. */
         partialReply?: MessageBlock[];
       }
@@ -940,7 +941,10 @@ async function finalizeRunOnce(
       botId: input.botId,
       type: input.outcome === "completed" ? "run.completed" : "run.failed",
       runId: input.runId,
-      payload: input.outcome === "completed" ? {} : { error: input.error },
+      payload:
+        input.outcome === "completed"
+          ? {}
+          : { error: input.error, ...(input.retryable ? { retryable: true } : {}) },
     });
     await tx.event.deleteMany({
       where: { runId: input.runId, ...transientRunEventsWhere() },

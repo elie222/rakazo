@@ -27,6 +27,7 @@ import {
   newClientId,
   resolveComposerSendPlan,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../../../lib/chat/run-error-storage";
@@ -46,7 +47,7 @@ import {
 import { canPrepareImage, prepareImage } from "../../../lib/composer/prepare-image";
 import type { PageSession } from "../../../lib/pages/pages";
 import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
-import { useSave } from "../../../lib/query/query";
+import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { clearActiveThreadRuns, threadRunError } from "../../../lib/query/thread-events";
 import { errorText } from "../../../lib/query/user-error";
@@ -55,12 +56,14 @@ import type { useShellNavigation } from "../use-shell-navigation";
 
 type ThreadRefresh = RefObject<(id: string) => Promise<ThreadSnapshot>>;
 
+type RetryTarget = ({ botId: string; groupId?: never } | { groupId: string; botId?: never }) & {
+  runId: string;
+};
+
 /**
  * What the composer sends and the chat actions beside it: attachments, replies, send, stop,
  * answers, reactions, and the errors they leave.
  */
-type RetryTarget = { botId?: string; groupId?: string; runId: string };
-
 export function useComposerActions({
   rpc,
   pageSession,
@@ -189,22 +192,26 @@ export function useComposerActions({
   const displayedRunErrorIdRef = useRef(displayedRunErrorId);
   displayedRunErrorIdRef.current = displayedRunErrorId;
   const isActiveTarget = (target: RetryTarget) =>
-    target.groupId
+    target.groupId !== undefined
       ? activeGroupId.current === target.groupId
       : activeBotId.current === target.botId;
+  const queries = useSpaceQueries();
   const retrySave = useSave({
-    save: (target: RetryTarget, client) =>
-      client.threads.retry({
-        ...(target.groupId ? { groupId: target.groupId } : { botId: target.botId! }),
-        runId: target.runId,
+    save: (target: RetryTarget, client) => client.threads.retry(target),
+    stale: (target) => [
+      queries.threads.get.queryKey({
+        input: target.groupId !== undefined ? { groupId: target.groupId } : { botId: target.botId },
       }),
+    ],
     onSaved: async (_, target) => {
       // A group keeps its failure on screen until dismissed, even once the retry starts.
       setDismissedRunErrorIds((current) => new Set(current).add(target.runId));
       if (!isActiveTarget(target)) return;
-      if (target.groupId)
-        await refreshGroupThreadRef.current(target.groupId).catch(() => undefined);
-      else if (target.botId) await refreshThreadRef.current(target.botId).catch(() => undefined);
+      const refresh =
+        target.groupId !== undefined
+          ? refreshGroupThreadRef.current(target.groupId)
+          : refreshThreadRef.current(target.botId);
+      await bestEffort("refresh after retry", refresh);
     },
     onFailed: (error, target) => {
       if (isActiveTarget(target) && displayedRunErrorIdRef.current === target.runId) {
@@ -712,8 +719,9 @@ export function useComposerActions({
     const runId = displayedRunErrorId;
     const botId = activeBotId.current;
     const groupId = activeGroupId.current;
-    if (runId && (botId || groupId) && !sendingRef.current)
-      retrySave.run({ botId, groupId, runId });
+    if (!runId || sendingRef.current) return;
+    if (groupId) retrySave.run({ groupId, runId });
+    else if (botId) retrySave.run({ botId, runId });
   }
 
   return {

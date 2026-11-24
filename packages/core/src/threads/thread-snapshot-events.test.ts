@@ -2383,6 +2383,18 @@ describe("thread event reduction from sparse live events", () => {
     expect(next?.messages).toEqual([]);
   });
 
+  it("keeps retry eligibility when the failure arrives live", () => {
+    const run = { id: "run-a", status: "running" };
+    const initial = { ...liveSnapshot([]), run };
+    const next = reduceThreadSnapshot(initial, {
+      type: "run.failed",
+      seq: 11,
+      runId: run.id,
+      payload: { error: "Model timed out", retryable: true },
+    });
+    expect(next?.run).toMatchObject({ id: run.id, status: "failed", retryable: true });
+  });
+
   it("updates a cloud agent card from thread.cloud_agent", () => {
     const initial = liveSnapshot([
       liveMessage("msg-ca", [

@@ -1,8 +1,9 @@
 import { computerHoursOut } from "@rakazo/contracts";
 import { canRetryRun } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { MobileSnapshot } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
@@ -30,6 +31,8 @@ export function useThreadRunError(
   const runError = run?.status === "failed" && retriedRunId !== run.id ? (run.error ?? null) : null;
   const classified = useRunError(runError, false);
   const failedRunId = runError ? run?.id : null;
+  const failedRunIdRef = useRef(failedRunId);
+  failedRunIdRef.current = failedRunId;
   useEffect(() => setDetailsOpen(false), [failedRunId]);
   const needsPlan = classified?.recovery === "plan";
   const asksBilling = needsPlan && Boolean(failedRunId);
@@ -76,10 +79,15 @@ export function useThreadRunError(
     onSaved: async (_, input) => {
       setRetriedRunId(input.runId);
       if (thread.isCurrentTarget(input.botId, input.groupId))
-        await thread.refresh().catch(() => undefined);
+        await bestEffort("refresh after retry", thread.refresh());
     },
     onFailed: (error, input) => {
-      if (thread.isCurrentTarget(input.botId, input.groupId)) Alert.alert(errorText(error));
+      if (
+        thread.isCurrentTarget(input.botId, input.groupId) &&
+        failedRunIdRef.current === input.runId
+      ) {
+        Alert.alert(errorText(error));
+      }
     },
   });
   const { groupId } = thread;

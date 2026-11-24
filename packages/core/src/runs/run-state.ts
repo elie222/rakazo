@@ -104,11 +104,18 @@ export function isTerminal(status: string): boolean {
 
 /** A failed reply to a typed message, which its sender can run again. */
 export function canRetryRun(
-  run: { status: string; trigger?: string | null; userId?: string | null } | null | undefined,
+  run:
+    | { status: string; trigger?: string | null; userId?: string | null; retryable?: boolean }
+    | null
+    | undefined,
   userId: string | null | undefined,
 ): boolean {
   return (
-    run?.status === "failed" && run.trigger === "user" && Boolean(userId) && run.userId === userId
+    run?.status === "failed" &&
+    run.trigger === "user" &&
+    run.retryable === true &&
+    Boolean(userId) &&
+    run.userId === userId
   );
 }
 

@@ -280,7 +280,12 @@ function reduce(prev: LiveThreadSnapshot, event: ThreadSnapshotEvent): LiveThrea
       // why it stopped, matching what threads.get returns on the next load.
       run:
         endedRun && failure
-          ? { ...endedRun, status: "failed", error: failure }
+          ? {
+              ...endedRun,
+              status: "failed",
+              error: failure,
+              ...(payload.retryable === true ? { retryable: true } : {}),
+            }
           : primaryEnded
             ? (activeRuns?.[0] ?? null)
             : prev.run,

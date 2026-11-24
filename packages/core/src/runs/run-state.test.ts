@@ -159,7 +159,7 @@ describe("run state machine", () => {
 });
 
 describe("canRetryRun", () => {
-  const failed = { status: "failed", trigger: "user", userId: "u1" };
+  const failed = { status: "failed", trigger: "user", userId: "u1", retryable: true };
 
   it("lets the sender retry a failed reply to a typed message", () => {
     expect(canRetryRun(failed, "u1")).toBe(true);

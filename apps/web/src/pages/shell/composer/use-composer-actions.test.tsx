@@ -33,6 +33,7 @@ type Rpc = {
   routines: { testRun: ReturnType<typeof vi.fn> };
   artifacts: { create: ReturnType<typeof vi.fn> };
   threads: {
+    get: ReturnType<typeof vi.fn>;
     send: ReturnType<typeof vi.fn>;
     sendWithRoutines: ReturnType<typeof vi.fn>;
     retry: ReturnType<typeof vi.fn>;
@@ -122,7 +123,7 @@ beforeEach(() => {
   rpc = {
     routines: { testRun: vi.fn() },
     artifacts: { create: vi.fn() },
-    threads: { send: vi.fn(), sendWithRoutines: vi.fn(), retry: vi.fn() },
+    threads: { get: vi.fn(), send: vi.fn(), sendWithRoutines: vi.fn(), retry: vi.fn() },
   };
   root = createQueryRoot(document.createElement("div"));
   act(() => root.render(<Harness />));
@@ -582,7 +583,14 @@ it("clears a quoted reply re-picked as a fresh object after a thread refresh", a
 
 function failedReply(runId: string): ThreadSnapshot {
   return {
-    run: { id: runId, status: "failed", trigger: "user", userId: "user-1", error: "terminated" },
+    run: {
+      id: runId,
+      status: "failed",
+      trigger: "user",
+      userId: "user-1",
+      error: "terminated",
+      retryable: true,
+    },
   } as ThreadSnapshot;
 }
 
