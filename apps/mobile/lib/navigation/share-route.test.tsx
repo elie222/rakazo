@@ -241,6 +241,23 @@ describe("share route", () => {
     await act(async () => click(0));
     expect(routeNames()).toEqual(["index"]);
   });
+  it("keeps the choice when navigation succeeded and the picker is still mounted", async () => {
+    vi.useFakeTimers();
+    await render();
+    await act(async () => click(1));
+    expect(routeNames()).toEqual(["index", "thread"]);
+    await act(async () => vi.runOnlyPendingTimersAsync());
+    expect(state.releaseChoice).not.toHaveBeenCalled();
+    expect(state.report).not.toHaveBeenCalled();
+  });
+  it("returns to the existing chat when the picker is above the selected chat", async () => {
+    shareOnStack("index", "thread");
+    stack.routes[1] = { name: "thread", key: "thread", params: { botId: "example" } };
+    await render();
+    await act(async () => click(1));
+    expect(routeNames()).toEqual(["index", "thread"]);
+    expect(stack.routes[1]?.key).toBe("thread");
+  });
   it("ignores a second selection before leaving the picker", async () => {
     await render();
     await act(async () => {

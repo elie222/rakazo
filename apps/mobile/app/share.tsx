@@ -60,17 +60,17 @@ export default function ShareRoute() {
   }, [attempt]);
   useTimeout(
     () => {
-      if (!attempt) return;
+      // The picker can still be mounted when the destination already owns focus.
+      if (!attempt || !navigation.isFocused()) return;
       attempt.releaseChoice?.();
       leaving.current = false;
       setAttempt(null);
-      if (navigation.isFocused())
-        reportMobileError(new Error("Share picker navigation did not complete"), "mobile.share", {
-          screen: "share",
-          action: attempt.action,
-        });
+      reportMobileError(new Error("Share picker navigation did not complete"), "mobile.share", {
+        screen: "share",
+        action: attempt.action,
+      });
     },
-    attempt ? TRANSITION_TIMEOUT_MS : null,
+    attempt && focused ? TRANSITION_TIMEOUT_MS : null,
     attempt,
   );
   const close = () => {
@@ -103,10 +103,13 @@ export default function ShareRoute() {
       navigate: () => {
         const stack = navigation.getState();
         if (!stack) return;
-        navigation.dispatch({
-          ...StackActions.replace("thread", { botId: bot.id, name: bot.name }),
-          target: stack.key,
-        });
+        const previous = stack.routes[stack.index - 1];
+        const params = previous?.params;
+        const action =
+          previous?.name === "thread" && params && "botId" in params && params.botId === bot.id
+            ? StackActions.pop()
+            : StackActions.replace("thread", { botId: bot.id, name: bot.name });
+        navigation.dispatch({ ...action, target: stack.key });
       },
     });
   };

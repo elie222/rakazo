@@ -78,9 +78,11 @@ const twoAttachments = { maxAttachmentsPerMessage: 2 };
 
 function ImportProbe({
   botId,
+  focused = true,
   uploadConfig = defaultUploadConfig,
 }: {
   botId: string;
+  focused?: boolean;
   uploadConfig?: { maxAttachmentsPerMessage?: number };
 }) {
   attachments = useThreadAttachments({
@@ -92,6 +94,7 @@ function ImportProbe({
   useIncomingShareImport({
     attachments,
     composerRef: { current: null },
+    focused,
     readOnly: false,
     threadKey: botId,
     uploadConfig,
@@ -305,6 +308,13 @@ function slowShare() {
   );
   return { files, settle: () => settle() };
 }
+
+it("checks for a share when the already mounted chat regains focus", () => {
+  mount(<ImportProbe botId="bot-share-focus" focused={false} />);
+  expect(takeIncomingShare).not.toHaveBeenCalled();
+  act(() => root.render(<ImportProbe botId="bot-share-focus" />));
+  expect(takeIncomingShare).toHaveBeenCalledExactlyOnceWith("bot-share-focus");
+});
 
 it("holds a share import to the attachment limit when a picker opened before it settles first", async () => {
   const settlePicker = deferred<Read>();

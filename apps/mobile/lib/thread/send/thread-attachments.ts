@@ -243,16 +243,18 @@ export function useThreadAttachments({
   };
 }
 
-/** Takes an incoming share into this chat once its upload limits are known. */
+/** Takes an incoming share when the chosen chat is visible and its upload limits are known. */
 export function useIncomingShareImport({
   attachments,
   composerRef,
+  focused,
   readOnly,
   threadKey,
   uploadConfig,
 }: {
   attachments: ReturnType<typeof useThreadAttachments>;
   composerRef: RefObject<ThreadComposerHandle | null>;
+  focused: boolean;
   readOnly: boolean;
   threadKey: string | undefined;
   uploadConfig?: { maxUploadSizeBytes?: number; maxAttachmentsPerMessage?: number };
@@ -273,7 +275,7 @@ export function useIncomingShareImport({
     committedThread.current = threadKey;
   }, [threadKey]);
   useEffect(() => {
-    if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
+    if (!focused || !threadKey || readOnly || !uploadConfig || importingShare.current) return;
     const share = takeIncomingShare(threadKey);
     if (!share) return;
     let active = true;
@@ -349,5 +351,5 @@ export function useIncomingShareImport({
     return () => {
       active = false;
     };
-  }, [threadKey, readOnly, uploadConfig, retryTick]);
+  }, [focused, threadKey, readOnly, uploadConfig, retryTick]);
 }
