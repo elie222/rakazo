@@ -31,7 +31,8 @@ Find it in **Settings → Memory**, on the web, desktop and mobile apps.
 Optionally, connect a memory service so bots can also recall facts by meaning, not just by reading
 their notes. In **Settings → Memory**, choose **Connect memory provider**:
 
-- **Supermemory**: its cloud service, or your own instance.
+- **Supermemory**: its cloud service, or your own instance. Bots can forget a memory by id, but
+  only one they can recall: their own, or the Space's shared memory with the Shared scope.
 - **Serenity**: choose **Recall and write**, or **Recall only** to keep it read-only.
 - **Honcho**: saves and recalls facts using Rakazo’s own peers. Optionally, enter a workspace
   and **User peer** to also recall what Honcho already knows about you. That existing peer stays

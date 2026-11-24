@@ -24,7 +24,7 @@ import {
   workspaceSaveLimits,
 } from "@rakazo/adapters";
 import type { OidcConfig, SocialAuthConfig } from "@rakazo/auth";
-import { socialAuthFromFields } from "@rakazo/auth";
+import { oidcAuthorizationParams, socialAuthFromFields } from "@rakazo/auth";
 import type { LabFeature, MinimumClientBuilds, NavLink } from "@rakazo/contracts";
 import { isPrivateNetworkHost, parseMinimumClientBuilds, parseNavLinks } from "@rakazo/contracts";
 import { parseCrispWebsiteId } from "@rakazo/contracts/content-security-policy";
@@ -254,6 +254,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
             .filter(Boolean),
           allowSignupBypass: source.OIDC_ALLOW_SIGNUP_BYPASS === "true",
           emailVerifiedClaim: optional(source.OIDC_EMAIL_VERIFIED_CLAIM),
+          authorizationParams: oidcAuthorizationParams(source.OIDC_AUTHORIZATION_PARAMS),
         }
       : undefined;
   const social = socialAuthFromFields({

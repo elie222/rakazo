@@ -84,13 +84,6 @@ function builtinParameters(tool: ConnectorTool) {
       }),
     });
   }
-  if (tool.name === "remember") {
-    return Type.Object({
-      content: Type.String(),
-      old_text: Type.Optional(Type.String()),
-      path: Type.Optional(Type.String()),
-    });
-  }
   if (tool.name === "shell" || tool.name === "user_computer_shell") {
     return Type.Object({
       command: Type.String(),
@@ -500,7 +493,8 @@ function enumUnion(values: readonly unknown[], options: FieldOptions = {}) {
 }
 
 export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
-  const definition = spec && typeof spec === "object" ? (spec as Record<string, unknown>) : {};
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) return Type.String();
+  const definition = spec as Record<string, unknown>;
   const options = fieldOptions(definition);
   // Nested intersections need the same preservation as root schemas; otherwise an
   // allOf-only field falls back to string and loses its sibling constraints.
@@ -550,6 +544,11 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
       definition.type.map((type) => jsonField({ ...member, type })),
       options,
     ) as never;
+  }
+  // An annotation-only field accepts any JSON value. Other unrecognized schemas,
+  // including references that could not be inlined, keep the string fallback.
+  if (Object.keys(definition).every((key) => key === "description" || key === "title")) {
+    return Type.Unknown({ ...definition }) as never;
   }
   const type = "type" in definition ? String(definition.type) : "string";
   if (type === "null") return Type.Null(options) as never;

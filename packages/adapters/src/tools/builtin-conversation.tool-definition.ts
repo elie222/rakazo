@@ -13,6 +13,28 @@ import { z } from "zod";
 import { messageUserMaxLength } from "../runs/lifecycle/user-progress.js";
 import { allowPrivateHttpSecretOrigins } from "../secrets/bot-secrets.js";
 
+export const RememberInputSchema = z.object({
+  operations: z
+    .array(
+      z.object({
+        action: z.enum(["add", "replace", "remove"]),
+        content: z.string().optional(),
+        old_text: z.string().optional(),
+        until: z
+          .string()
+          .optional()
+          .describe(
+            "For an instruction or state the user set for a period: the last date it holds (YYYY-MM-DD) or the event that ends it. Omit for lasting facts.",
+          ),
+      }),
+    )
+    .min(1),
+  path: z
+    .string()
+    .optional()
+    .describe(`Another of your memory documents to edit. Defaults to ${MEMORY_INDEX_PATH}.`),
+});
+
 // The owner flag can land in process.env after static imports run (loadRootEnv
 // parses .env once the entry module is already executing), so the model-facing
 // surface is built lazily on first tool access instead of at module scope.
@@ -279,19 +301,8 @@ export const conversationTools: ConnectorTool[] = [
   },
   {
     name: "remember",
-    description: `Save one short new fact to your memory, one call per fact. To change or drop a fact, pass old_text from its entry with new or empty content. Holds ${BOT_MEMORY_MAX_BYTES / 1024} KB.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        content: { type: "string" },
-        old_text: { type: "string" },
-        path: {
-          type: "string",
-          description: `Another of your memory documents to edit. Defaults to ${MEMORY_INDEX_PATH}.`,
-        },
-      },
-      required: ["content"],
-    },
+    description: `Edit your memory. Each entry is one short declarative fact, not an instruction to yourself; task progress, one-off details and promises do not belong. Operations apply all or none, and the ${BOT_MEMORY_MAX_BYTES / 1024} KB limit counts only the result, so one call can make room and add.`,
+    inputSchema: z.toJSONSchema(RememberInputSchema, { io: "input" }),
   },
   {
     name: "save_shared_memory",

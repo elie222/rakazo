@@ -233,7 +233,7 @@ const report = (
     fingerprint?: string | null;
     rubric?: string;
     startedAt?: string;
-    judge?: RecordedJudge;
+    judge?: RecordedJudge & { costUsd?: number | null };
   } = {},
 ): StoredReport => ({
   suite: "recall",
@@ -291,6 +291,11 @@ describe("run store", () => {
     expect(s.entries()).toHaveLength(3);
     expect(s.read(third).trials).toHaveLength(1);
     expect(s.read(first).trials).toHaveLength(2);
+  });
+
+  it("leaves new spend unknown when the judge's cost is unknown", () => {
+    const run = report([trial(1)], { judge: { ...judgeOf(), costUsd: null } });
+    expect(store().save(run).costUsd.new).toBeNull();
   });
 
   it("reuses under the same judge, regrades under another, and runs on a new fingerprint", () => {
