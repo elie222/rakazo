@@ -19,7 +19,7 @@ export function SelectTextSheet({ text, onClose }: { text: string | null; onClos
       onRequestClose={onClose}
     >
       <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
-        <SheetBar trailing={<SheetBarClose label={t`Done`} onPress={onClose} />} />
+        <SheetBar leading={<SheetBarClose label={t`Done`} onPress={onClose} />} />
         <ScrollView contentContainerStyle={styles.content}>
           {Platform.OS === "ios" ? (
             // iOS selectable Text only copies the whole message; a read-only text
