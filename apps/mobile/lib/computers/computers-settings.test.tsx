@@ -12,6 +12,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import AppPermissionsSettings from "../../app/(settings)/app-permissions";
 import DevicesSettings from "../../app/(settings)/computers";
 import { listUserDevices, removeUserDevice } from "../account/user-devices";
+import { useSpaceChanges } from "../api/roster-signals";
 import { queryClient } from "../query/query";
 
 const mocks = vi.hoisted(() => ({
@@ -373,6 +374,43 @@ it("lists signed-in phones alongside computers and opens permissions for this ph
   await act(async () => button("App permissions")?.click());
   expect(mocks.push).toHaveBeenCalledWith("/app-permissions");
   expect(removeUserDevice).not.toHaveBeenCalled();
+});
+
+it("re-reads signed-in phones when a sign-out signal arrives during an older read", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  const beforeSignOut = [
+    {
+      deviceId: "phone-1",
+      platform: "android",
+      name: null,
+      connected: true,
+      onlineUntil: new Date(Date.now() + 60_000).toISOString(),
+    },
+  ];
+  mocks.phones.mockResolvedValue(beforeSignOut);
+  await render();
+  expect(container.querySelector('[data-label="Android phone, Online"]')).not.toBeNull();
+
+  const olderRead = deferred<typeof beforeSignOut>();
+  const callsBeforeRefresh = mocks.phones.mock.calls.length;
+  mocks.phones.mockReturnValueOnce(olderRead.promise);
+  await act(async () => button("Refresh")?.click());
+  await settle();
+  expect(mocks.phones).toHaveBeenCalledTimes(callsBeforeRefresh + 1);
+
+  mocks.phones.mockResolvedValue([]);
+  const subscription = vi.mocked(useSpaceChanges).mock.lastCall;
+  expect(subscription?.[0]).toBe("mobileDevices");
+  await act(async () => {
+    void subscription?.[1]();
+  });
+  await settle();
+  await act(async () => olderRead.resolve(beforeSignOut));
+  await settle();
+
+  expect(mocks.phones).toHaveBeenCalledTimes(callsBeforeRefresh + 2);
+  expect(container.querySelector('[data-label="Android phone, Online"]')).toBeNull();
+  expect(container.textContent).toContain("No connected devices");
 });
 
 it("hides a computer while its removal is pending and shows it again when it fails", async () => {

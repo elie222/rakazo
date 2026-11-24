@@ -7,6 +7,7 @@ import {
   ComputerSizeSchema,
   computerSizeChoice,
 } from "@rakazo/contracts";
+import { refreshQueriesAfterSignal } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import { computerName, computerSizeLabel } from "@rakazo/i18n/computer-usage";
 import { useIsFocused, useRouter } from "expo-router";
@@ -52,7 +53,11 @@ export default function DevicesSettings() {
   const phonesRead = targetRpcQuery(ACCOUNT_SETTINGS, "mobileDevices/list");
   const phonesQuery = useScreenQuery(phonesRead);
   const phones = phonesQuery.data;
-  useSpaceChanges("mobileDevices", () => phonesQuery.refetch({ cancelRefetch: false }), focused);
+  useSpaceChanges(
+    "mobileDevices",
+    () => refreshQueriesAfterSignal(queryClient, { queryKey: phonesRead.queryKey, exact: true }),
+    focused,
+  );
   const now = useNow(focused && phones?.some((phone) => phone.connected) ? 1_000 : null);
   const cloudRead = rpcQuery("cloudComputers/list");
   const cloudQuery = useScreenQuery(cloudRead);
