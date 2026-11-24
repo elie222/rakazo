@@ -78,10 +78,10 @@ const HOOKS: Record<(typeof PAGE_HOOKS)[number], unknown> = {
   useReducer,
 };
 
-/** Viewers use the page's scrollable extent for scrolling and printing. */
+/** Report content height for printing and the viewport's scrollable extent for previews. */
 function reportHeight(host: HTMLElement) {
   const body = document.body;
-  let previous: { height: number; width: number } | undefined;
+  let previous: { height: number; scrollHeight: number; width: number } | undefined;
   let scheduled = false;
   const schedule = () => {
     if (scheduled) return;
@@ -89,11 +89,19 @@ function reportHeight(host: HTMLElement) {
     requestAnimationFrame(() => {
       scheduled = false;
       const height = body.scrollHeight;
+      // An absolutely positioned descendant can overflow the document without overflowing body.
+      const scrollHeight = document.scrollingElement?.scrollHeight ?? height;
       const width = window.innerWidth;
       // Interactive viewers also use the report to keep their print width current.
-      if (previous && height === previous.height && width === previous.width) return;
-      previous = { height, width };
-      window.parent?.postMessage({ type: "rakazo-page:height", height }, "*");
+      if (
+        previous &&
+        height === previous.height &&
+        scrollHeight === previous.scrollHeight &&
+        width === previous.width
+      )
+        return;
+      previous = { height, scrollHeight, width };
+      window.parent?.postMessage({ type: "rakazo-page:height", height, scrollHeight }, "*");
     });
   };
   if (typeof ResizeObserver !== "undefined") new ResizeObserver(schedule).observe(body);

@@ -38,7 +38,11 @@ addEventListener("message", (event) => {
     } else if (data && data.type === "rakazo-page:copy" && typeof data.id === "string" && typeof data.text === "string") {
       parent.postMessage({ type: data.type, id: data.id, text: data.text, gesture: fresh }, "*");
     } else if (data && data.type === "rakazo-page:height" && Number.isFinite(data.height)) {
-      parent.postMessage({ type: data.type, height: data.height }, "*");
+      const dimensions = { type: data.type, height: data.height };
+      if (Number.isFinite(data.scrollHeight) && data.scrollHeight >= 0) {
+        dimensions.scrollHeight = data.scrollHeight;
+      }
+      parent.postMessage(dimensions, "*");
     } else if (data && data.type === "rakazo-page:sections" && Array.isArray(data.sections)) {
       const sections = data.sections.slice(0, 80)
         .filter((section) => typeof section === "string")

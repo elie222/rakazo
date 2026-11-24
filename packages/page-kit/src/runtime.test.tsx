@@ -9,6 +9,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  Reflect.deleteProperty(document, "scrollingElement");
 });
 
 function runInlineScripts() {
@@ -62,7 +63,10 @@ it("reports overflow changes even when the body box stays the same size", async 
   vi.spyOn(window, "requestAnimationFrame").mockImplementation((report) => frames.push(report));
   const posted = vi.spyOn(window.parent, "postMessage").mockImplementation(() => {});
   document.body.replaceChildren();
-  // jsdom has no layout. Model a body whose overflow changes independently of its box size.
+  // jsdom has no layout. The body and the viewport can have different scroll ranges.
+  const viewport = document.documentElement;
+  Object.defineProperty(document, "scrollingElement", { configurable: true, value: viewport });
+  const readScrollHeight = vi.spyOn(viewport, "scrollHeight", "get").mockReturnValue(400);
   const readHeight = vi.spyOn(document.body, "scrollHeight", "get").mockReturnValue(121);
   await import("./runtime.js");
   runInlineScripts();
@@ -81,20 +85,24 @@ it("reports overflow changes even when the body box stays the same size", async 
     await flush();
   });
   for (const report of frames.splice(0)) report(0);
-  expect(posted).toHaveBeenCalledWith({ type: "rakazo-page:height", height: 121 }, "*");
+  expect(posted).toHaveBeenCalledWith(
+    { type: "rakazo-page:height", height: 121, scrollHeight: 400 },
+    "*",
+  );
   readHeight.mockClear();
   posted.mockClear();
 
   const lastLine = document.querySelector("span")!;
   lastLine.style.top = "880px";
-  readHeight.mockReturnValue(903);
+  readScrollHeight.mockReturnValue(903);
   await flush();
   lastLine.style.color = "red";
   await flush();
   expect(frames).toHaveLength(1);
   frames.shift()!(0);
   expect(readHeight).toHaveBeenCalledTimes(1);
-  expect(posted).toHaveBeenCalledExactlyOnceWith({ type: "rakazo-page:height", height: 903 }, "*");
+  const dimensions = { type: "rakazo-page:height", height: 121, scrollHeight: 903 };
+  expect(posted).toHaveBeenCalledExactlyOnceWith(dimensions, "*");
 
   lastLine.style.color = "blue";
   await flush();
@@ -107,7 +115,7 @@ it("reports overflow changes even when the body box stays the same size", async 
   observers[0]!();
   frames.shift()!(0);
   expect(posted).toHaveBeenCalledTimes(2);
-  expect(posted).toHaveBeenLastCalledWith({ type: "rakazo-page:height", height: 903 }, "*");
+  expect(posted).toHaveBeenLastCalledWith(dimensions, "*");
 });
 
 it("runs a saved page that declares its own component under a kit component's name", async () => {

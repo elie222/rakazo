@@ -278,7 +278,7 @@ test("a long Page scrolls in its chat card and opens from the preview", async ({
     .toBe(true);
 });
 
-test("a Page preview can grow when an absolute item moves below it", async ({ page }) => {
+test("a Page preview grows when an absolute item overflows the document body", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 860 });
   await signup(page, `pages-overflow-${Date.now()}@rakazo.test`, "password12", "Page Reader");
   await completeOnboarding(page);
@@ -287,7 +287,7 @@ test("a Page preview can grow when an absolute item moves below it", async ({ pa
   const source = `export default function PlantingNotes() {
     const [expanded, setExpanded] = useState(false);
     return <Page title="Planting notes">
-      <div style={{ position: "relative", height: 100 }}>
+      <div style={{ height: 100 }}>
         <button type="button" onClick={() => setExpanded(true)}>Move notes</button>
         <div style={{ position: "absolute", top: expanded ? 1050 : 36 }}>
           <Text>Leave room for the beans to climb.</Text>
@@ -302,6 +302,8 @@ test("a Page preview can grow when an absolute item moves below it", async ({ pa
   const frame = pageFrame(page, title);
   const note = frame.getByText("Leave room for the beans to climb.");
   await expect(note).toBeInViewport({ ratio: 0.95, timeout: 30_000 });
+  const bodyHeight = () => note.evaluate(() => document.body.scrollHeight);
+  const initialBodyHeight = await bodyHeight();
   const overflow = () => preview.evaluate((element) => element.scrollHeight - element.clientHeight);
   expect(await overflow()).toBeLessThanOrEqual(1);
 
@@ -320,6 +322,7 @@ test("a Page preview can grow when an absolute item moves below it", async ({ pa
   // Trigger the page component's own update inside the otherwise inert preview.
   await frame.locator("button").filter({ hasText: "Move notes" }).dispatchEvent("click");
   await expect(note).not.toBeInViewport();
+  expect(await bodyHeight()).toBe(initialBodyHeight);
   await expect.poll(overflow).toBeGreaterThan(500);
   await preview.hover();
   await page.mouse.wheel(0, 2_000);

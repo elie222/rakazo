@@ -203,7 +203,10 @@ it("vouches for one click or key the guard saw, never a forged, stale or inactiv
   gesture();
   copy("first");
   copy("same click");
-  page({ type: "rakazo-page:height", height: 300 });
+  const dimensions = { type: "rakazo-page:height", height: 300, scrollHeight: 900 };
+  listener?.({ source: {}, data: dimensions });
+  page({ ...dimensions, stray: "ignored" });
+  page({ ...dimensions, height: 400, scrollHeight: Infinity });
   gesture();
   copy("next click");
   now.mockReturnValue(1_001_001);
@@ -223,11 +226,16 @@ it("vouches for one click or key the guard saw, never a forged, stale or inactiv
     `${key}:1`,
     `${key}:1`,
     undefined,
+    undefined,
     `${key}:2`,
     null,
     null,
     null,
     `${key}:3`,
+  ]);
+  expect(posted.filter(({ type }) => type === "rakazo-page:height")).toEqual([
+    dimensions,
+    { type: "rakazo-page:height", height: 400 },
   ]);
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
