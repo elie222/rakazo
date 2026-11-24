@@ -415,8 +415,6 @@ export async function prepareToolRequest(
   const { deps, run, bot } = ctx;
   const { name, executionId, nextApprovedTool } = request;
   let { args } = request;
-  /** What the approved call replays with, when that is more than its card lists. */
-  let replayArgs: Record<string, unknown> | undefined;
   // A bot that archived itself only finishes its reply; retrying its own archive still reconciles.
   if ((ctx.state.selfArchived || bot.archivedAt) && !archivesItself(bot, name, args))
     return refusal("bot_archived", "You are archived, so no more tools can run. Send your reply.");
@@ -537,21 +535,10 @@ export async function prepareToolRequest(
       args = target.id === bot.id ? rest : { ...rest, bot_id: target.id, bot_name: target.name };
     }
   }
-  // Before the gate, so a routine edit that cannot save answers its error and shows no approval
-  // card, and one that can shows the change as diff lines. The model's own `expected` is dropped
-  // first: the baseline the save conflicts against is only ever the row the preview read, never
-  // what the call typed. A preview that cannot run fails the call as the save would. An approved
-  // replay goes on to the handler, which checks again.
+  // Only a persisted approval may supply the before-values the save checks against.
   if (name === "schedule_update" && nextApprovedTool !== name) {
     const { expected: _modelExpected, ...given } = args;
     args = given;
-    request.args = given;
-    const prepared = await scheduleUpdatePreview(ctx, args);
-    if ("error" in prepared) return refusal("schedule_update_refused", prepared.error);
-    if (prepared.summary) request.fleetSummary = prepared.summary;
-    // The card lists what the model sent. The approved call replays with the baseline the preview
-    // pinned, which the save conflicts against.
-    if (prepared.pinned) replayArgs = { ...args, expected: prepared.pinned };
   }
   if (name === "update_bot" && argumentGiven(args.bot_id)) {
     // An approved replay runs the stored request, whose settings were checked before the card.
@@ -735,8 +722,16 @@ export async function prepareToolRequest(
     name === "schedule_update" ||
     isFleetApprovalTool(name)
   )
-    request.effectRequest = replayArgs ?? args;
+    request.effectRequest = args;
   return undefined;
+}
+
+/** Prepare the review and persist its before-values only in the request replayed after approval. */
+export async function prepareScheduleUpdateApproval(ctx: RunContext, request: ToolRequest) {
+  const prepared = await scheduleUpdatePreview(ctx, request.args);
+  if ("error" in prepared) return refusal("schedule_update_refused", prepared.error);
+  request.fleetSummary = prepared.summary;
+  if (prepared.pinned) request.effectRequest = { ...request.args, expected: prepared.pinned };
 }
 
 /** What the model is told when a press could not be checked for a payment, so nothing was pressed. */

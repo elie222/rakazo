@@ -21,7 +21,6 @@ import {
   scheduleCreateFields,
   updateScheduleFromTool,
 } from "./schedule-tools.js";
-import { routineChangesDiffLines } from "./schedule-update-view.js";
 
 const noRoutines = async () => [];
 const impossibleOffsetDates = ["2030-02-30T10:00Z", "2030-04-31T10:00+05:30"];
@@ -1343,21 +1342,6 @@ describe("updateScheduleFromTool", () => {
     ).resolves.toEqual({
       error: "The schedule changed while saving. Call schedule_list and try again.",
     });
-  });
-
-  it("splits a multi-line prompt into one diff line per row", () => {
-    const lines = routineChangesDiffLines({
-      prompt: {
-        before: "Order the usual groceries",
-        after: "Order the usual groceries\nSkip cheddar when it is out of stock",
-      },
-    });
-    expect(lines).toEqual([
-      "prompt:",
-      "- Order the usual groceries",
-      "+ Order the usual groceries",
-      "+ Skip cheddar when it is out of stock",
-    ]);
   });
 
   it("moves the first run of the current repeat with startAt alone", async () => {

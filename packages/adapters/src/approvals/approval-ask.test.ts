@@ -3,7 +3,6 @@ import {
   approvalActionName,
   approvalDetailLength,
   buildApprovalAskBlock,
-  MAX_APPROVAL_DETAIL_LENGTH,
   readableToolName,
   truncate,
 } from "./approval-ask.js";
@@ -316,63 +315,25 @@ describe("bot management approval cards", () => {
     expect(block.detail).toBe("Socks: $9.00");
   });
 
-  it("leads a resolved summary with the reason the call was held", () => {
-    const block = buildApprovalAskBlock("effect-1", "schedule_update", {}, [], {
-      summary: {
-        title: "Update routine “Groceries”?",
-        lines: ["prompt:", "- Order the usual groceries", "+ Order less"],
-      },
-      reviewReason: "Outside content entered this run",
-    });
-    if (block.kind !== "ask") throw new Error("expected ask block");
-    expect(block.detail).toBe(
-      "Outside content entered this run\nprompt:\n- Order the usual groceries\n+ Order less",
-    );
-  });
-
-  it("bounds and redacts a held-for-review reason like every other card text", () => {
-    const secret = "sk-live-abcdefghij";
+  it("shows a redacted review reason in both versions of the routine card", () => {
+    const secret = "fake-review-token";
+    const changes = [{ field: "active", before: true, after: false }] as const;
     const block = buildApprovalAskBlock("effect-1", "schedule_update", {}, [secret], {
-      summary: { title: "Update routine “Groceries”?", lines: ["active:", "- true", "+ false"] },
-      reviewReason: `The reviewer quoted ${secret} and went on ${"y".repeat(5_000)}`,
+      summary: {
+        title: "Update “Groceries”?",
+        lines: ["Status: Paused", "Previously: Active"],
+        routineUpdate: { changes: [...changes] },
+      },
+      reviewReason: `Outside content included ${secret}`,
     });
     if (block.kind !== "ask") throw new Error("expected ask block");
-    // No reason, however long or leaky, can push the detail past the card's limit or show a secret.
-    expect(block.detail?.length).toBeLessThanOrEqual(MAX_APPROVAL_DETAIL_LENGTH);
-    expect(block.detail).not.toContain(secret);
-    expect(block.detail?.startsWith("The reviewer quoted [redacted]")).toBe(true);
-    expect(block.detail).toContain("+ false");
-  });
-
-  it("never lets a review reason read as a removed or added value", () => {
-    const block = buildApprovalAskBlock("effect-1", "schedule_update", {}, [], {
-      summary: { title: "Update routine “Groceries”?", lines: ["active:", "- true", "+ false"] },
-      reviewReason: "- the site is new to this run",
+    expect(block.routineUpdate).toEqual({
+      changes,
+      reason: "Outside content included [redacted]",
     });
-    if (block.kind !== "ask") throw new Error("expected ask block");
-    // The reason line keeps no sign prefix, so diff-toned rendering leaves it uncolored.
-    expect(block.detail?.split("\n")[0]).toBe("the site is new to this run");
-  });
-
-  it("draws a held-for-review reason on the summary's own length budget", () => {
-    const reason = "Outside content entered this run";
-    // A summary that alone exactly fills the card, so a reason on top would push its tail off.
-    const lines = Array.from({ length: 40 }, () => "x".repeat(99));
-    lines[0] = `${lines[0]}x`;
-    const block = buildApprovalAskBlock("effect-1", "schedule_update", {}, [], {
-      summary: { title: "Update routine “Groceries”?", lines },
-      reviewReason: reason,
-    });
-    if (block.kind !== "ask") throw new Error("expected ask block");
-    // The reason plus the lines stays within the limit: the lines lose exactly the reason's
-    // length, not their tail to a cut that ignores what the reason already spent.
-    expect(block.detail?.length).toBeLessThanOrEqual(MAX_APPROVAL_DETAIL_LENGTH);
-    expect(block.detail?.startsWith(reason)).toBe(true);
-    expect(block.detail?.endsWith("…")).toBe(true);
-    const withoutReason = buildApprovalAskBlock("effect-1", "schedule_update", {}, [], {
-      summary: { title: "Update routine “Groceries”?", lines },
-    });
-    expect((withoutReason as { detail?: string }).detail?.length).toBe(MAX_APPROVAL_DETAIL_LENGTH);
+    expect(block.detail).toBe(
+      "Outside content included [redacted]\nStatus: Paused\nPreviously: Active",
+    );
   });
 
   it("never offers always allow on a tool that needs explicit approval", () => {

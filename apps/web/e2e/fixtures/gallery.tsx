@@ -360,21 +360,21 @@ const approvals: Scenario = {
       {
         kind: "ask",
         approvalEffectId: "effect-6",
-        // The card a gated schedule_update shows: only what the change moves, as diff lines.
-        text: "Update routine “Groceries”?",
-        detail: [
-          "prompt:",
-          "- Order the usual groceries",
-          "+ Order the usual groceries",
-          "+ Skip cheddar when it is out of stock",
-          "schedule:",
-          "- Every Monday at 10:00 AM",
-          "+ Every Monday at 11:00 AM",
-          "nextRun:",
-          "- Monday, 2026-10-26 10:00 (UTC+01:00)",
-          "+ Monday, 2026-11-02 11:00 (UTC+01:00)",
-        ].join("\n"),
-        detailFormat: "text",
+        text: "Update “Groceries”?",
+        routineUpdate: {
+          changes: [
+            {
+              field: "schedule",
+              before: "Every Monday at 10:00 AM",
+              after: "Every Monday at 11:00 AM",
+            },
+            {
+              field: "prompt",
+              before: "Order the usual groceries",
+              after: "Order the usual groceries\nSkip cheddar when it is out of stock",
+            },
+          ],
+        },
         status: "pending",
         actions: approvalActions,
       },

@@ -36,7 +36,7 @@ import {
   scheduleTimingArgs,
   updateScheduleFromTool,
 } from "../../tools/schedule-tools.js";
-import { routineChangesDiffLines } from "../../tools/schedule-update-view.js";
+import { routineApprovalChanges, routineApprovalLines } from "../../tools/schedule-update-view.js";
 import {
   skillCreateFromTool,
   skillDeleteFromTool,
@@ -391,10 +391,7 @@ async function onScheduleUpdateCall<T>(
   });
 }
 
-/** How much of a replaced prompt's old text a card shows before clipping it. */
-const CARD_BEFORE_PROMPT_MAX = 800;
-
-/** Arguments a diff card cannot show as they will be saved, so their call keeps the plain card. */
+/** Arguments the comparison cannot represent faithfully keep the generic approval card. */
 const PLAIN_CARD_FIELDS = ["delayMinutes", "delaySeconds", "on", "everyMinutes"];
 
 /** The stored name and prompt an approval of a routine edit pins, each for a field the call writes. */
@@ -409,31 +406,14 @@ function cardChanges(
   changes: Record<string, { before: unknown; after: unknown }>,
   args: Record<string, unknown>,
 ) {
+  const { nextRun, ...shown } = changes;
+  // A pause is already shown as a status change.
+  if (changes.active?.after === false && nextRun?.after === null) return shown;
   const fixed =
-    changes.nextRun?.after == null ||
+    nextRun?.after == null ||
     isScheduleValueProvided(args.runAt) ||
     isScheduleValueProvided(args.startAt);
-  if (fixed) return changes;
-  const { nextRun: _resolvedAtSave, ...shown } = changes;
-  return shown;
-}
-
-/**
- * The changes with each text redacted whole. The diff splits a value into lines and prefixes
- * each, after which a secret that spans short or spaced lines is no longer one value to find.
- */
-function redactedChanges(
-  changes: Record<string, { before: unknown; after: unknown }>,
-  secrets: readonly string[],
-) {
-  const whole = (value: unknown) =>
-    typeof value === "string" ? redactSecrets(value, secrets) : value;
-  return Object.fromEntries(
-    Object.entries(changes).map(([field, { before, after }]) => [
-      field,
-      { before: whole(before), after: whole(after) },
-    ]),
-  );
+  return fixed ? changes : shown;
 }
 
 /**
@@ -441,7 +421,7 @@ function redactedChanges(
  * ends the call with no card, or the baseline the approved call replays with and the card to show
  * beside the call's own arguments. The baseline is the routine's name and prompt as the preview
  * read them, for the fields the call writes, whatever the card: an edit that rewrites one is
- * answered, not saved over a newer one. The diff card shows a change as the save will make it. A
+ * answered, not saved over a newer one. The card shows a change as the save will make it. A
  * call it cannot show whole keeps the plain card: a delay is counted from the clock when the
  * approved call runs, events and a watch's interval are each one whole argument, and a change too
  * long for the card once redacted would lose its tail.
@@ -472,30 +452,18 @@ export async function scheduleUpdatePreview(
   const plain = Object.keys(pinned).length ? { pinned } : {};
   if (PLAIN_CARD_FIELDS.some((field) => isScheduleValueProvided(args[field]))) return plain;
   const { secrets } = ctx;
-  // Redacted while the name and each value are still whole: an escaped, clipped or split secret
-  // is no longer one the card's own redaction can find.
-  const shown = redactedChanges(cardChanges(changes, args), secrets);
-  if (Object.keys(shown).length === 0) return plain;
-  const promptBefore = shown.prompt?.before;
-  const lines = routineChangesDiffLines(
-    typeof promptBefore === "string" && promptBefore.length > CARD_BEFORE_PROMPT_MAX
-      ? {
-          ...shown,
-          prompt: {
-            before: `${promptBefore.slice(0, CARD_BEFORE_PROMPT_MAX)}…`,
-            after: shown.prompt?.after,
-          },
-        }
-      : shown,
-  );
+  const review = routineApprovalChanges(cardChanges(changes, args), secrets);
+  if (review.length === 0) return plain;
+  const lines = routineApprovalLines(review);
   // With room for a review reason of the longest allowed length leading the detail.
   const room = approvalDetailLength("schedule_update") - MAX_APPROVAL_SUMMARY_LENGTH - 2;
   if (lines.join("\n").length > room) return plain;
   return {
     ...plain,
     summary: {
-      title: `Update routine “${cardName(redactSecrets(storedName, secrets))}”?`,
+      title: `Update “${cardName(redactSecrets(storedName, secrets))}”?`,
       lines,
+      routineUpdate: { changes: review },
     },
   };
 }

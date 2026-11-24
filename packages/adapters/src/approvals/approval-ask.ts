@@ -1,5 +1,5 @@
 import type { ConnectorTool, ToolBatch } from "@rakazo/adapter-kit";
-import type { AskReceipt, MessageBlock } from "@rakazo/contracts";
+import type { AskReceipt, MessageBlock, RoutineUpdateApproval } from "@rakazo/contracts";
 import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   draftBatchEntry,
@@ -36,6 +36,8 @@ export type FleetCardSummary = {
   lines: string[];
   onceOnly?: boolean;
   receipt?: AskReceipt;
+  /** The routine preview's values, with secrets already redacted. */
+  routineUpdate?: RoutineUpdateApproval;
 };
 
 /**
@@ -71,15 +73,6 @@ export type ApprovalCardOptions = {
   allowOutgoingDraft?: boolean;
 };
 
-/** A review reason as one card line: dashes normalized, and no leading sign that a diff-toned
- *  detail could color as a removed or added value. */
-function reviewReasonLine(text: string): string {
-  return text
-    .trim()
-    .replace(/\u2014|\u2013/g, "-")
-    .replace(/^[-+]\s+/, "");
-}
-
 export function buildApprovalAskBlock(
   effectId: string,
   toolName: string,
@@ -92,7 +85,7 @@ export function buildApprovalAskBlock(
     ? outgoingDraftForApproval(options, args, secrets)
     : undefined;
   if (draft) {
-    const reviewReason = options?.reviewReason ? reviewReasonLine(options.reviewReason) : undefined;
+    const reviewReason = options?.reviewReason?.trim();
     return {
       kind: "ask",
       approvalEffectId: effectId,
@@ -114,12 +107,11 @@ export function buildApprovalAskBlock(
     // like every other card text, bounded like the title, and draws on the same length budget
     // as the lines: a reason on top of a near-limit summary cuts the lines' tail only as far as
     // the reason is long, never more, and no reason can push the detail past the limit.
-    const reason = options.reviewReason
-      ? truncate(
-          redactSecrets(reviewReasonLine(options.reviewReason), secrets),
-          MAX_APPROVAL_SUMMARY_LENGTH,
-        )
-      : undefined;
+    const { routineUpdate } = options.summary;
+    const reason =
+      routineUpdate && options.reviewReason?.trim()
+        ? truncate(redactSecrets(options.reviewReason.trim(), secrets), MAX_APPROVAL_SUMMARY_LENGTH)
+        : undefined;
     const lines = truncate(
       redactSecrets(options.summary.lines.join("\n"), secrets),
       reason
@@ -132,6 +124,9 @@ export function buildApprovalAskBlock(
       text: truncate(redactSecrets(options.summary.title, secrets), MAX_APPROVAL_SUMMARY_LENGTH),
       detail: reason ? `${reason}\n${lines}` : lines,
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
+      ...(routineUpdate
+        ? { routineUpdate: { changes: routineUpdate.changes, ...(reason ? { reason } : {}) } }
+        : {}),
       ...(options.summary.receipt
         ? { receipt: redactReceipt(options.summary.receipt, secrets) }
         : {}),
@@ -350,7 +345,7 @@ function formatApprovalDetail(
 ): string | undefined {
   const lines: string[] = [];
   if (reviewReason?.trim()) {
-    lines.push(reviewReasonLine(reviewReason));
+    lines.push(reviewReason.trim().replace(/\u2014|\u2013/g, "-"));
   }
   if (toolName === "create_space") {
     lines.push(

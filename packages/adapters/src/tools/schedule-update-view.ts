@@ -1,9 +1,7 @@
+import type { RoutineApprovalChange } from "@rakazo/contracts";
+import { RoutineApprovalField } from "@rakazo/contracts";
+import { redactSecrets, sliceWellFormed } from "@rakazo/core";
 import type { routineEventsView } from "../routines/routine-triggers.js";
-
-/**
- * How a routine edit reads: what a routine holds as its change report compares it, the fields an
- * edit changed with their before and after, and those as the diff lines an approval card shows.
- */
 
 /** How a routine reads in a change report: the fields the schedule tools compare. */
 export type RoutineView = {
@@ -39,24 +37,58 @@ export function routineChanges(before: RoutineView, after: RoutineView) {
   return changes;
 }
 
-/**
- * The changes as diff lines: a field's heading, then its old value's lines removed and its new
- * value's lines added. The approval card shows the same change the saved result reports.
- */
-export function routineChangesDiffLines(
+const CARD_BEFORE_PROMPT_MAX = 800;
+
+export function routineApprovalChanges(
   changes: Record<string, { before: unknown; after: unknown }>,
-): string[] {
-  // A structured value, such as a routine's events, reads as it does in the tool's result.
-  const text = (value: unknown) =>
-    value == null ? "none" : typeof value === "object" ? JSON.stringify(value) : String(value);
-  // A prompt goes last, so a long one can only be cut itself, never the short fields after it.
-  const last = (field: string) => Number(field === "prompt");
-  const fields = Object.entries(changes).sort(([a], [b]) => last(a) - last(b));
-  const lines: string[] = [];
-  for (const [field, change] of fields) {
-    lines.push(`${field}:`);
-    for (const before of text(change.before).split("\n")) lines.push(`- ${before}`);
-    for (const after of text(change.after).split("\n")) lines.push(`+ ${after}`);
-  }
-  return lines;
+  secrets: readonly string[],
+): RoutineApprovalChange[] {
+  const clean = (value: unknown) =>
+    typeof value === "string"
+      ? redactSecrets(value, secrets)
+      : typeof value === "boolean"
+        ? value
+        : null;
+  return RoutineApprovalField.options.flatMap((field) => {
+    const change = changes[field];
+    if (!change) return [];
+    const before = clean(change.before);
+    return [
+      {
+        field,
+        // Redact the whole value before clipping it, so a secret crossing the boundary stays hidden.
+        before:
+          field === "prompt" && typeof before === "string" && before.length > CARD_BEFORE_PROMPT_MAX
+            ? `${sliceWellFormed(before, CARD_BEFORE_PROMPT_MAX)}…`
+            : before,
+        after: clean(change.after),
+      },
+    ];
+  });
+}
+
+/** A readable fallback for clients that only render an approval's text detail. */
+export function routineApprovalLines(changes: RoutineApprovalChange[]): string[] {
+  const labels: Record<RoutineApprovalChange["field"], string> = {
+    active: "Status",
+    name: "Name",
+    schedule: "Schedule",
+    timezone: "Time zone",
+    nextRun: "Next run",
+    inChat: "Where it runs",
+    prompt: "Instructions",
+  };
+  return changes.flatMap(({ field, before, after }) => {
+    const text = (value: RoutineApprovalChange["after"]) => {
+      if (typeof value !== "boolean") return value ?? "None";
+      return field === "inChat"
+        ? value
+          ? "In this chat"
+          : "Separately from this chat"
+        : value
+          ? "Active"
+          : "Paused";
+    };
+    return [`${labels[field]}: ${text(after)}`, `Previously: ${text(before)}`];
+  });
 }

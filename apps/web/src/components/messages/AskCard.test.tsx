@@ -625,47 +625,6 @@ it("shows a question's detail as plain text above its options", async () => {
   expect(button("ASend it")).toBeDefined();
 });
 
-it("tones a diff's removed and added detail lines", async () => {
-  await render({
-    kind: "ask",
-    approvalEffectId: "effect-1",
-    text: "Update routine “Groceries”?",
-    detail: "prompt:\n- Order the usual groceries\n+ Order less",
-    detailFormat: "text",
-    status: "pending",
-    actions: [
-      { id: "allow", label: "Allow once" },
-      { id: "deny", label: "Deny" },
-    ],
-  });
-  const detail = container.querySelector('[data-testid="ask-detail"]')!;
-  expect(detail.textContent).toBe("prompt:\n- Order the usual groceries\n+ Order less");
-  const lines = [...detail.querySelectorAll("span")];
-  // The field heading carries no tone; only a line's sign prefix marks it.
-  expect(lines[0]?.className).toBe("");
-  expect(lines[1]?.classList.contains("text-destructive")).toBe(true);
-  expect(lines[2]?.classList.contains("text-success")).toBe(true);
-});
-
-it("leaves a value's own bullet list untoned", async () => {
-  await render({
-    kind: "ask",
-    approvalEffectId: "effect-1",
-    text: "Send this message?",
-    detail: "The plan:\n- buy milk\n- walk the dog",
-    detailFormat: "text",
-    status: "pending",
-    actions: [
-      { id: "allow", label: "Allow once" },
-      { id: "deny", label: "Deny" },
-    ],
-  });
-  const detail = container.querySelector('[data-testid="ask-detail"]')!;
-  const lines = [...detail.querySelectorAll("span")];
-  // No added line, so no diff: the bullets are a list, not removals.
-  expect(lines.every((line) => line.className === "")).toBe(true);
-});
-
 it("shows what a sign-in approval types besides the login, above its two answers", async () => {
   // The card as the server builds it for a login that asks first and types its code.
   await render({

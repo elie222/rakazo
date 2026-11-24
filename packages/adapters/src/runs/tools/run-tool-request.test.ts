@@ -7,7 +7,7 @@ import { fakeDatabase } from "../../secrets/bot-secrets.test-support.js";
 import { EncryptedSecretStore } from "../../secrets/secrets.js";
 import { LOGIN_CODE_FIELD, vaultLoginUseOf } from "../../secrets/vault/vault-card-use.js";
 import type { ToolRequest } from "./run-tool-request.js";
-import { prepareToolRequest } from "./run-tool-request.js";
+import { prepareScheduleUpdateApproval, prepareToolRequest } from "./run-tool-request.js";
 import { taskTools } from "./run-tools-tasks.js";
 
 // RFC 6238's test key, written in pieces so it never reads as a saved secret.
@@ -163,36 +163,13 @@ describe("private task tools after shared-channel messages", () => {
           ctx as never,
           { name, args: {}, executionId: "call-1" } as ToolRequest,
         );
-        // A schedule_update with no routine is answered by its own check before any card.
-        expect(prepared).toEqual(
-          name === "schedule_update" ? { error: "routineId is required." } : undefined,
-        );
+        expect(prepared).toBeUndefined();
       }
     },
   );
 });
 
 describe("schedule tools on another bot's routines", () => {
-  const managedRoutine = {
-    id: "r",
-    spaceId: "space-1",
-    botId: "child",
-    threadId: "thread-1",
-    userId: "user-1",
-    name: "R",
-    prompt: "p",
-    crons: ["0 9 * * *"],
-    timezone: "UTC",
-    active: true,
-    inChat: false,
-    watch: null,
-    nextRunAt: new Date("2100-01-01T09:00:00Z"),
-    webhookEnabled: false,
-    githubEnabled: false,
-    messageProvider: null,
-    emailSenders: null,
-  };
-
   function managedRoutineCall(input: {
     fleetManagement?: boolean;
     ownerStartedRun?: boolean;
@@ -211,8 +188,6 @@ describe("schedule tools on another bot's routines", () => {
                 { id: "bot-1", name: "Me" },
               ].filter((row) => (where.id ? row.id === where.id : row.name === where.name)),
           },
-          // The routine a schedule_update changes, read before its card.
-          routine: { findFirst: async () => managedRoutine },
         },
       },
       run: { trigger: input.trigger ?? "user", spaceId: "space-1", userId: "user-1" },
@@ -820,7 +795,7 @@ describe("the user's computer after a routine or webhook joined the run", () => 
   });
 });
 
-describe("a schedule_update before its approval gate", () => {
+describe("a schedule_update that needs an approval preview", () => {
   beforeEach(() => {
     vi.useFakeTimers({ now: new Date("2026-10-20T00:00:00.000Z") });
   });
@@ -888,6 +863,7 @@ describe("a schedule_update before its approval gate", () => {
     const request = {
       name: "schedule_update",
       args,
+      effectRequest: args,
       executionId: "call-1",
       nextApprovedTool: undefined,
     } as ToolRequest;
@@ -895,12 +871,15 @@ describe("a schedule_update before its approval gate", () => {
     return { ctx, request, updateMany };
   }
 
-  it("shows a prompt edit as diff lines and pins the old prompt", async () => {
+  it("shows both versions of an edited prompt and pins the old prompt", async () => {
     const { ctx, request } = updateCall({ routineId: "routine-1", prompt: "Order less" });
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
     expect(request.fleetSummary).toEqual({
-      title: "Update routine “Groceries”?",
-      lines: ["prompt:", "- Order the usual groceries", "+ Order less"],
+      title: "Update “Groceries”?",
+      lines: ["Instructions: Order less", "Previously: Order the usual groceries"],
+      routineUpdate: {
+        changes: [{ field: "prompt", before: "Order the usual groceries", after: "Order less" }],
+      },
     });
     // The card lists what the model sent; the approved call replays with the baseline beside it.
     expect(request.args).toEqual({ routineId: "routine-1", prompt: "Order less" });
@@ -911,16 +890,11 @@ describe("a schedule_update before its approval gate", () => {
     });
   });
 
-  it("shows a pause as the active change and the cleared next run", async () => {
+  it("shows a pause as a status change", async () => {
     const { ctx, request } = updateCall({ routineId: "routine-1", active: false });
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
-    expect(request.fleetSummary?.lines).toEqual([
-      "active:",
-      "- true",
-      "+ false",
-      "nextRun:",
-      "- Monday, 2026-10-26 10:00 (UTC+01:00)",
-      "+ none",
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.fleetSummary?.routineUpdate?.changes).toEqual([
+      { field: "active", before: true, after: false },
     ]);
   });
 
@@ -929,8 +903,10 @@ describe("a schedule_update before its approval gate", () => {
       { routineId: "routine-1", active: true },
       { ...weekly, active: false, nextRunAt: null },
     );
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
-    expect(request.fleetSummary?.lines).toEqual(["active:", "- false", "+ true"]);
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.fleetSummary?.routineUpdate?.changes).toEqual([
+      { field: "active", before: false, after: true },
+    ]);
     expect(request.args).not.toHaveProperty("expected");
   });
 
@@ -940,47 +916,45 @@ describe("a schedule_update before its approval gate", () => {
       cron: "0 9 * * 1",
       startAt: "2026-11-02",
     });
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
     expect(request.fleetSummary?.lines).toEqual([
-      "schedule:",
-      "- Every Monday at 10:00 AM",
-      "+ Every Monday at 9:00 AM",
-      "nextRun:",
-      "- Monday, 2026-10-26 10:00 (UTC+01:00)",
-      "+ Monday, 2026-11-02 09:00 (UTC+01:00)",
+      "Schedule: Every Monday at 9:00 AM",
+      "Previously: Every Monday at 10:00 AM",
+      "Next run: Monday, 2026-11-02 09:00 (UTC+01:00)",
+      "Previously: Monday, 2026-10-26 10:00 (UTC+01:00)",
     ]);
   });
 
   it("shows a moved first run as the next run it moves to", async () => {
     const { ctx, request } = updateCall({ routineId: "routine-1", startAt: "2026-11-02" });
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
     expect(request.fleetSummary?.lines).toEqual([
-      "nextRun:",
-      "- Monday, 2026-10-26 10:00 (UTC+01:00)",
-      "+ Monday, 2026-11-02 10:00 (UTC+01:00)",
+      "Next run: Monday, 2026-11-02 10:00 (UTC+01:00)",
+      "Previously: Monday, 2026-10-26 10:00 (UTC+01:00)",
     ]);
   });
 
   it("shows a retime without a start as the schedule alone, since the save picks its first run then", async () => {
     const { ctx, request } = updateCall({ routineId: "routine-1", cron: "0 9 * * 1" });
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
     expect(request.fleetSummary?.lines).toEqual([
-      "schedule:",
-      "- Every Monday at 10:00 AM",
-      "+ Every Monday at 9:00 AM",
+      "Schedule: Every Monday at 9:00 AM",
+      "Previously: Every Monday at 10:00 AM",
     ]);
   });
 
   it("keeps the plain card for an events edit and for a watch interval edit", async () => {
     // Each is one whole argument of the call, which the plain card lists as it was sent.
     const events = updateCall({ routineId: "routine-1", on: { webhook: true } });
-    await expect(prepareToolRequest(events.ctx as never, events.request)).resolves.toBeUndefined();
+    await expect(
+      prepareScheduleUpdateApproval(events.ctx as never, events.request),
+    ).resolves.toBeUndefined();
     expect(events.request.fleetSummary).toBeUndefined();
     expect(events.request.args).toEqual({ routineId: "routine-1", on: { webhook: true } });
 
     const interval = updateCall({ routineId: "routine-1", everyMinutes: 30 }, watching);
     await expect(
-      prepareToolRequest(interval.ctx as never, interval.request),
+      prepareScheduleUpdateApproval(interval.ctx as never, interval.request),
     ).resolves.toBeUndefined();
     expect(interval.request.fleetSummary).toBeUndefined();
     expect(interval.request.args).toEqual({ routineId: "routine-1", everyMinutes: 30 });
@@ -989,7 +963,7 @@ describe("a schedule_update before its approval gate", () => {
   it("refuses an events edit this server cannot make a webhook key for", async () => {
     const { ctx, request } = updateCall({ routineId: "routine-1", on: { webhook: true } });
     const noKeyStore = { ...ctx, deps: { ...ctx.deps, secretStore: undefined } };
-    await expect(prepareToolRequest(noKeyStore as never, request)).resolves.toEqual({
+    await expect(prepareScheduleUpdateApproval(noKeyStore as never, request)).resolves.toEqual({
       error: "Webhook keys are not available on this server.",
     });
     expect(ctx.deps.events.append).not.toHaveBeenCalled();
@@ -1001,25 +975,18 @@ describe("a schedule_update before its approval gate", () => {
       prompt: "x".repeat(2_600),
       active: false,
     });
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
-    const lines = request.fleetSummary?.lines ?? [];
-    expect(lines.slice(0, 7)).toEqual([
-      "active:",
-      "- true",
-      "+ false",
-      "nextRun:",
-      "- Monday, 2026-10-26 10:00 (UTC+01:00)",
-      "+ none",
-      "prompt:",
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.fleetSummary?.routineUpdate?.changes).toEqual([
+      { field: "active", before: true, after: false },
+      { field: "prompt", before: "Order the usual groceries", after: "x".repeat(2_600) },
     ]);
-    expect(lines.at(-1)).toBe(`+ ${"x".repeat(2_600)}`);
   });
 
-  it("keeps the plain card for a change too long for the diff, so the whole new prompt stays on it", async () => {
+  it("keeps the plain card for a change too long for the comparison, so the whole new prompt stays on it", async () => {
     const prompt = "x".repeat(3_600);
     const { ctx, request } = updateCall({ routineId: "routine-1", prompt });
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
-    // The diff would cut the new prompt at its end; the plain card gives it the whole length.
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    // The comparison would cut the new prompt at its end; the plain card gives it the whole length.
     expect(request.fleetSummary).toBeUndefined();
     expect(request.args).toEqual({ routineId: "routine-1", prompt });
     expect(request.effectRequest).toMatchObject({
@@ -1028,22 +995,25 @@ describe("a schedule_update before its approval gate", () => {
     });
   });
 
-  it("keeps the plain card for a diff that redaction would lengthen past the card", async () => {
+  it("keeps the plain card for a comparison that redaction would lengthen past the card", async () => {
     // A one-character secret grows into a ten-character marker each time it appears.
     const args = { routineId: "routine-1", prompt: "k".repeat(3_400) };
     const plain = updateCall(args, weekly, ["k"]);
-    await expect(prepareToolRequest(plain.ctx as never, plain.request)).resolves.toBeUndefined();
+    await expect(
+      prepareScheduleUpdateApproval(plain.ctx as never, plain.request),
+    ).resolves.toBeUndefined();
     expect(plain.request.fleetSummary).toBeUndefined();
     expect(plain.request.effectRequest).toMatchObject({
       expected: { prompt: "Order the usual groceries" },
     });
-    // The same prompt leaves room for the diff when nothing in it is a secret.
-    const diff = updateCall(args);
-    await expect(prepareToolRequest(diff.ctx as never, diff.request)).resolves.toBeUndefined();
-    expect(diff.request.fleetSummary?.lines.slice(0, 2)).toEqual([
-      "prompt:",
-      "- Order the usual groceries",
-    ]);
+    // The same prompt leaves room for the comparison when nothing in it is a secret.
+    const comparison = updateCall(args);
+    await expect(
+      prepareScheduleUpdateApproval(comparison.ctx as never, comparison.request),
+    ).resolves.toBeUndefined();
+    expect(comparison.request.fleetSummary?.routineUpdate?.changes[0]?.before).toBe(
+      "Order the usual groceries",
+    );
   });
 
   it.each([
@@ -1061,7 +1031,7 @@ describe("a schedule_update before its approval gate", () => {
     "keeps the plain card for %s, and still pins what it writes",
     async (_label, args, expected) => {
       const { ctx, request } = updateCall(args);
-      await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+      await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
       expect(request.fleetSummary).toBeUndefined();
       expect(request.args).toEqual(args);
       expect(request.effectRequest).toEqual({ ...args, expected });
@@ -1073,7 +1043,7 @@ describe("a schedule_update before its approval gate", () => {
     ctx.deps.prisma.routine.findFirst = vi.fn(async () => {
       throw new Error("The database is away.");
     });
-    await expect(prepareToolRequest(ctx as never, request)).rejects.toThrow(
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).rejects.toThrow(
       "The database is away.",
     );
   });
@@ -1084,7 +1054,7 @@ describe("a schedule_update before its approval gate", () => {
       prompt: "Order less",
       on: { webhook: true },
     });
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
     const { deps } = ctx;
     expect(deps.prisma.routine.updateMany).not.toHaveBeenCalled();
     expect(deps.secretStore?.put).not.toHaveBeenCalled();
@@ -1138,7 +1108,7 @@ describe("a schedule_update before its approval gate", () => {
     ],
   ])("refuses %s before any card, as the save would", async (_label, routine, args, error) => {
     const { ctx, request } = updateCall(args, routine());
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toEqual({ error });
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toEqual({ error });
     expect(request.fleetSummary).toBeUndefined();
     expect(request.args).not.toHaveProperty("expected");
   });
@@ -1148,18 +1118,13 @@ describe("a schedule_update before its approval gate", () => {
       { routineId: "routine-1", active: false },
       { ...weekly, userId: "user-2" },
     );
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
-    expect(request.fleetSummary?.lines).toEqual([
-      "active:",
-      "- true",
-      "+ false",
-      "nextRun:",
-      "- Monday, 2026-10-26 10:00 (UTC+01:00)",
-      "+ none",
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.fleetSummary?.routineUpdate?.changes).toEqual([
+      { field: "active", before: true, after: false },
     ]);
   });
 
-  it("redacts a secret that spans short lines before the diff splits a value into lines", async () => {
+  it("redacts a secret that spans lines in both versions of the instructions", async () => {
     // Each line of this secret is short and spaced, so only the whole value is protected.
     const secret = "user: alice\npass: s3cret";
     const { ctx, request } = updateCall(
@@ -1167,13 +1132,13 @@ describe("a schedule_update before its approval gate", () => {
       { ...weekly, prompt: `${secret}\nSummarize weekly.` },
       [secret],
     );
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
-    expect(request.fleetSummary?.lines).toEqual([
-      "prompt:",
-      `- ${REDACTED_MARKER}`,
-      "- Summarize weekly.",
-      `+ ${REDACTED_MARKER}`,
-      "+ Summarize daily.",
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.fleetSummary?.routineUpdate?.changes).toEqual([
+      {
+        field: "prompt",
+        before: `${REDACTED_MARKER}\nSummarize weekly.`,
+        after: `${REDACTED_MARKER}\nSummarize daily.`,
+      },
     ]);
     expect(JSON.stringify(request.fleetSummary)).not.toMatch(/s3cret|alice/);
   });
@@ -1186,8 +1151,10 @@ describe("a schedule_update before its approval gate", () => {
       { ...weekly, prompt: `${"x".repeat(790)}${secret}${"y".repeat(50)}` },
       [secret],
     );
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
-    expect(request.fleetSummary?.lines[1]).toBe(`- ${"x".repeat(790)}${REDACTED_MARKER}…`);
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.fleetSummary?.routineUpdate?.changes[0]?.before).toBe(
+      `${"x".repeat(790)}${REDACTED_MARKER}…`,
+    );
     expect(JSON.stringify(request.fleetSummary)).not.toContain("s3cr3t");
   });
 
@@ -1198,7 +1165,7 @@ describe("a schedule_update before its approval gate", () => {
       { ...weekly, name: "Weekly *token* check" },
       ["*token*"],
     );
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
     expect(request.fleetSummary?.title).toContain("redacted");
     expect(request.fleetSummary?.title).not.toContain("*token*");
   });
@@ -1210,6 +1177,8 @@ describe("a schedule_update before its approval gate", () => {
       expected: { prompt: "Forged" },
     });
     await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    expect(ctx.deps.prisma.routine.findFirst).not.toHaveBeenCalled();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
     expect(request.args).toEqual({ routineId: "routine-1", prompt: "Order less" });
     expect(request.effectRequest).toMatchObject({
       expected: { prompt: "Order the usual groceries" },
@@ -1221,7 +1190,7 @@ describe("a schedule_update before its approval gate", () => {
       // Sent with surrounding spaces, which the save trims: the pin must be what is stored.
       { routineId: "routine-1", prompt: "  Order the usual groceries ", active: false },
     );
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
     expect(request.effectRequest).toMatchObject({
       expected: { prompt: "Order the usual groceries" },
     });
@@ -1242,7 +1211,7 @@ describe("a schedule_update before its approval gate", () => {
       { routineId: "routine-1", delayMinutes: 30, prompt: "Order less" },
       () => ({ ...weekly, prompt }),
     );
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
     expect(request.fleetSummary).toBeUndefined();
     prompt = "Edited elsewhere";
     const replay = {
@@ -1262,7 +1231,7 @@ describe("a schedule_update before its approval gate", () => {
       { routineId: "routine-1", prompt: "Order less" },
       () => ({ ...weekly, prompt }),
     );
-    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
     // The routine is edited elsewhere while its card waits.
     prompt = "Edited elsewhere";
     const replay = {
