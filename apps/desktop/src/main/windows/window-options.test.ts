@@ -129,8 +129,16 @@ describe("development icon", () => {
 describe("window background", () => {
   it("matches the web background token for the system appearance so the app does not flash", async () => {
     const { webDarkTokens, webLightTokens } = await import("@rakazo/ui-tokens");
-    expect(appWindowBackground(true)).toBe(webDarkTokens.background);
-    expect(appWindowBackground(false)).toBe(webLightTokens.background);
+    expect(appWindowBackground(null, true)).toBe(webDarkTokens.background);
+    expect(appWindowBackground(null, false)).toBe(webLightTokens.background);
+  });
+
+  it("opens in the background the page last painted, whatever the system appearance", () => {
+    expect(appWindowBackground("#0A0A0A", false)).toBe("#0A0A0A");
+  });
+
+  it("ignores a saved value that is not a color", () => {
+    expect(appWindowBackground("oklch(0.2 0 0)", true)).toBe(appWindowBackground(null, true));
   });
 
   it("keeps the always-dark setup page on the dark background", async () => {

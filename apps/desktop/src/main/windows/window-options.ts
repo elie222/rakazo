@@ -25,12 +25,25 @@ function trafficLightPosition(darwinRelease: string) {
 const DARK_BACKGROUND = "#0A0A0A";
 const LIGHT_BACKGROUND = "#FFFFFF";
 
-/**
- * What the window shows before its page paints. The app follows the system appearance unless
- * someone picks one in settings, so the system's is the best guess before the page has loaded.
- */
-export function appWindowBackground(systemUsesDarkColors: boolean) {
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+/** What a window shows before its page paints, when nothing better is known: the system appearance. */
+export function systemWindowBackground(systemUsesDarkColors: boolean) {
   return systemUsesDarkColors ? DARK_BACKGROUND : LIGHT_BACKGROUND;
+}
+
+/** A page's reported theme color, when it is one a window can use as its background. */
+export function paintedBackground(color: string | null | undefined) {
+  return color && HEX_COLOR.test(color) ? color : null;
+}
+
+/**
+ * The app window opens in the background its page last painted, so an appearance picked in
+ * settings does not flash the system's. Until a page has painted, it follows the system, as
+ * the page does by default.
+ */
+export function appWindowBackground(lastPainted: string | null, systemUsesDarkColors: boolean) {
+  return paintedBackground(lastPainted) ?? systemWindowBackground(systemUsesDarkColors);
 }
 
 function windowChrome(platform: NodeJS.Platform, release: string) {

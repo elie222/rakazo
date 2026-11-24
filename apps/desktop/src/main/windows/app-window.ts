@@ -1,6 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { bestEffort } from "@rakazo/logging";
 import type { Session } from "electron";
 import { app, BrowserWindow, Menu, nativeTheme, net, screen, session, shell } from "electron";
 import {
@@ -39,6 +40,8 @@ import {
   appWindowBackground,
   browserWindowOptions,
   developmentIconFile,
+  paintedBackground,
+  systemWindowBackground,
   warmWindowTtlMs,
 } from "./window-options.js";
 
@@ -153,12 +156,26 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
     desktop.liveProbeWindows--;
   }
 }
+/** Saves run in order, so the last color the page reported is the one kept. */
+let savedBackground = Promise.resolve();
+function windowBackgroundFile() {
+  return path.join(app.getPath("userData"), "window-background");
+}
+function lastPaintedBackground() {
+  try {
+    return readFileSync(windowBackgroundFile(), "utf8").trim();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      reportDesktopError(error, "desktop.startup");
+    return null;
+  }
+}
 export function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
   const icon = developmentIcon();
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
-    backgroundColor: appWindowBackground(nativeTheme.shouldUseDarkColors),
+    backgroundColor: appWindowBackground(lastPaintedBackground(), nativeTheme.shouldUseDarkColors),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
@@ -167,6 +184,16 @@ export function createWindow(url: string, partition: string | null) {
       sandbox: true,
       ...(partition === null ? {} : { partition }),
     },
+  });
+  // The page names its background in its theme-color meta tag, including an appearance picked
+  // in settings; the window keeps it for resizes and opens in it next time.
+  win.webContents.on("did-change-theme-color", (_event, color) => {
+    const background = paintedBackground(color);
+    if (background === null) return;
+    win.setBackgroundColor(background);
+    savedBackground = savedBackground.then(() =>
+      bestEffort("save the window background", writeFile(windowBackgroundFile(), background)),
+    );
   });
   win.on("unresponsive", () =>
     reportDesktopError(new Error("Renderer unresponsive"), "desktop.unresponsive"),
@@ -477,7 +504,7 @@ function oauthPopupWindowOptions(partition: string | null) {
     frame: true,
     titleBarStyle: "default" as const,
     autoHideMenuBar: true,
-    backgroundColor: appWindowBackground(nativeTheme.shouldUseDarkColors),
+    backgroundColor: systemWindowBackground(nativeTheme.shouldUseDarkColors),
     webPreferences: oauthPopupSessionPreferences(partition),
   };
 }
