@@ -63,6 +63,7 @@ function pendingTimerFixture(reuse = true) {
       })),
     },
     run: {
+      findFirst: vi.fn(async (): Promise<{ id: string } | null> => null),
       findMany: vi.fn(async () => (reuse ? [pending] : [])),
       updateMany: vi.fn(async () => ({ count: 1 })),
       findUnique: vi.fn(async (): Promise<{ id: string } | null> => null),
@@ -92,6 +93,28 @@ function pendingTimerFixture(reuse = true) {
 }
 
 describe("recurring routine catch-up", () => {
+  it("skips a scheduled tick while an earlier scheduled run awaits input", async () => {
+    const { executor, tx, enqueue, append, scheduledAt } = pendingTimerFixture(false);
+    tx.run.findFirst.mockResolvedValueOnce({ id: "waiting-1" });
+
+    await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
+
+    expect(tx.run.findFirst).toHaveBeenCalledWith({
+      where: {
+        routineId: "routine-1",
+        userId: "user-1",
+        trigger: "routine",
+        status: "waiting_input",
+        clientNonce: { startsWith: "routine-timer:routine-1:" },
+      },
+      select: { id: true },
+    });
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(append).not.toHaveBeenCalled();
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ name: "routine.wakeup" }),
+    );
+  });
   it("keeps one pending run and advances the next tick without a duplicate firing event", async () => {
     const { executor, tx, enqueue, append, scheduledAt } = pendingTimerFixture();
     await executor.wakeRoutine("routine-1", scheduledAt.toISOString());

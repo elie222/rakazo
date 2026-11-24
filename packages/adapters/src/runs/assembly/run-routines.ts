@@ -269,6 +269,17 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     const timerTick = routine.watch == null && !isOneShotRoutineCrons(routine.crons);
     const timerNonce = timerTick ? routineTimerNonce(routine.id, scheduledFor) : undefined;
     if (timerNonce) {
+      const waiting = await tx.run.findFirst({
+        where: {
+          routineId: routine.id,
+          userId: routine.userId,
+          trigger: "routine",
+          status: "waiting_input",
+          clientNonce: { startsWith: routineTimerNonce(routine.id, "") },
+        },
+        select: { id: true },
+      });
+      if (waiting) return "waiting_input" as const;
       const pending = await findPendingRoutineTick(tx, {
         routineId: routine.id,
         spaceId: routine.spaceId,
@@ -313,7 +324,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     return { ...run, coalesced: false };
   });
   if (!claimed) return;
-  if (claimed === "fired") {
+  if (claimed === "fired" || claimed === "waiting_input") {
     if (nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
     return;
   }
