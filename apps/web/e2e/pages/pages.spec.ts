@@ -147,6 +147,53 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   await captureScreenshot(page, testInfo, "page-calendar-two-columns");
 });
 
+test("a day calendar fits a phone-width page while a week calendar scrolls", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `pages-day-${Date.now()}@rakazo.test`, "password12", "Calendar Reader");
+  await completeOnboarding(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const title = "Calendar on a phone";
+  const source = `function CalendarPage() {
+    const events = [{ start: 9.25, end: 10.25, title: "Design review" }];
+    return <Page title="Calendar on a phone">
+      <Section heading="Day"><DayView start={9} end={11} events={events} /></Section>
+      <Section heading="Day (RTL)"><div dir="rtl"><DayView start={9} end={11} events={events} /></div></Section>
+      <Section heading="Week"><WeekView week="2026-11-09" start={9} end={11} events={[
+        { date: "2026-11-15", start: 9, end: 10, title: "Sunday review" }
+      ]} /></Section>
+    </Page>;
+  }
+  export default CalendarPage;`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const frame = pageFrame(page, title);
+  await expect(frame.locator(".rk-cal-timed")).toHaveCount(3);
+  const layout = await frame.locator(".rk-page").evaluate((root) => {
+    const inside = (outer: Element, inner: Element) => {
+      const a = outer.getBoundingClientRect();
+      const b = inner.getBoundingClientRect();
+      return b.left >= a.left && b.right <= a.right;
+    };
+    const days = [...root.querySelectorAll(".rk-cal-timed:not(.rk-cal-week)")].map((day) => ({
+      overflow: day.scrollWidth - day.clientWidth,
+      axisVisible: inside(day, day.querySelector(".rk-cal-hours span")!),
+      eventVisible: inside(day, day.querySelector(".rk-cal-event")!),
+    }));
+    const week = root.querySelector(".rk-cal-week")!;
+    return { days, weekOverflow: week.scrollWidth - week.clientWidth };
+  });
+  expect(layout.days).toHaveLength(2);
+  for (const day of layout.days) {
+    expect(day).toMatchObject({ axisVisible: true, eventVisible: true });
+    expect(day.overflow).toBeLessThanOrEqual(1);
+  }
+  expect(layout.weekOverflow).toBeGreaterThan(0);
+  await captureScreenshot(page, testInfo, "page-day-calendar-phone");
+});
+
 test("shared page contents jump below the header and copy fallback", async ({
   page,
   browser,

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
+import { judgeDifferences } from "./judge-identity.js";
 
 const positiveInteger = z.number().int().positive();
 const TrialSchema = z.object({
@@ -38,6 +39,15 @@ const ReportSchema = z.looseObject({
       model: z.string(),
       rubricVersion: z.string(),
       pricing: z.unknown(),
+      // Reports from before these were recorded leave them unknown.
+      settings: z
+        .object({
+          endpoint: z.string().nullable(),
+          maxOutputTokens: positiveInteger.nullable(),
+          reasoning: z.boolean().nullable(),
+          thinkingLevel: z.string().nullable(),
+        })
+        .optional(),
     })
     .nullish()
     .transform((judge) => judge ?? null),
@@ -65,7 +75,6 @@ const COMPARED_SETTINGS = [
   "assistedRetries",
   "spendCapUsd",
   "pricing",
-  "judge",
 ] as const;
 
 async function main(args: string[]) {
@@ -82,6 +91,21 @@ async function main(args: string[]) {
   const differences: string[] = COMPARED_SETTINGS.filter(
     (key) => !isDeepStrictEqual(baseline.report[key], candidate.report[key]),
   );
+  const judges = { baseline: baseline.report.judge, candidate: candidate.report.judge };
+  // Older reports lack judge settings: noted below rather than refused.
+  differences.push(
+    ...judgeDifferences(judges.baseline, judges.candidate).filter((d) => d !== "judge.settings"),
+  );
+  if (
+    judges.baseline &&
+    judges.candidate &&
+    !isDeepStrictEqual(judges.baseline.pricing, judges.candidate.pricing)
+  ) {
+    differences.push("judge.pricing");
+  }
+  const unrecordedJudgeSettings = Object.entries(judges)
+    .filter(([, judge]) => judge && !judge.settings)
+    .map(([label]) => label);
   for (const key of ["trials", "timeoutMs", "maxToolCalls"] as const) {
     if (baseline.report.controls[key] !== candidate.report.controls[key]) {
       differences.push(`controls.${key}`);
@@ -108,6 +132,11 @@ async function main(args: string[]) {
     regressions.push(formatTrial(trial) + (provenance.length ? ` [${provenance.join(", ")}]` : ""));
   }
 
+  if (unrecordedJudgeSettings.length) {
+    console.log(
+      `Judge endpoint, output limit and reasoning settings: unknown in ${unrecordedJudgeSettings.join(" and ")}`,
+    );
+  }
   const baselineNotRun = notRun(baseline.trials);
   printTrials("Regressions (passed -> failed):", regressions);
   printTrials("Not run in candidate:", notRun(candidate.trials));

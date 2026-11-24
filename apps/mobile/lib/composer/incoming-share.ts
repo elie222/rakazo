@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import type { Directory } from "expo-file-system";
 import { File, Paths } from "expo-file-system";
 import type { SharePayload } from "expo-sharing";
@@ -15,17 +16,27 @@ const MAX_AGE_MS = 5 * 60 * 1000;
 let generation = 0;
 let copyId = 0;
 let pending: IncomingShare | null = null;
+// The chat the picker opened for a share. A newer share or a cancel changes the generation.
+let chosen: { generation: number; threadKey: string } | null = null;
 let expiry: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
 
-/** The app group in app.json where the iOS share extension copies shared files. */
-export const IOS_SHARE_APP_GROUP = "group.com.rakazo.app";
+const DEFAULT_IOS_SHARE_APP_GROUP = "group.com.rakazo.app";
+
+/** The app group where the iOS share extension copies shared files: app.json's, or the
+ * self-signed build's own (app.config.ts sets extra.iosAppGroup for RAKAZO_IOS_BUNDLE_ID). */
+function iosShareAppGroup(): string {
+  const configured = Constants.expoConfig?.extra?.iosAppGroup;
+  return typeof configured === "string" && configured.trim()
+    ? configured.trim()
+    : DEFAULT_IOS_SHARE_APP_GROUP;
+}
 
 /** Only iOS builds that include the share extension have its container. */
 function iosShareContainer(): Directory | null {
   if (Platform.OS !== "ios") return null;
   try {
-    return Paths.appleSharedContainers[IOS_SHARE_APP_GROUP] ?? null;
+    return Paths.appleSharedContainers[iosShareAppGroup()] ?? null;
   } catch {
     return null;
   }
@@ -141,13 +152,21 @@ export function receiveIncomingShare(isShare: boolean, initial: boolean) {
   if (initial) sweepIosShareContainer(share.files);
 }
 
+/** Binds the pending share to the chat the picker opens, so no other chat can take it. */
+export function chooseIncomingShareThread(threadKey: string): boolean {
+  if (!pending) return false;
+  chosen = { generation: pending.generation, threadKey };
+  return true;
+}
+
 /** Claim synchronously: a second chat/effect cannot take the same share. */
-export function takeIncomingShare(): IncomingShare | null {
+export function takeIncomingShare(threadKey: string): IncomingShare | null {
   if (!supported()) return null;
   const share = pending;
+  if (!share || chosen?.generation !== share.generation || chosen.threadKey !== threadKey)
+    return null;
   clearSharedPayloads();
   publish(null);
-  if (!share) return null;
   if (Date.now() - share.arrivedAt < MAX_AGE_MS) return share;
   releaseIncomingShareFiles(share.files);
   return null;

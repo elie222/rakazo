@@ -9,7 +9,12 @@ import type {
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { BillingEmulator, ObjectAgentHomeStore, PrismaAgentHomeRecords } from "@rakazo/adapters";
+import {
+  BillingEmulator,
+  ObjectAgentHomeStore,
+  PrismaAgentHomeRecords,
+  PrismaPushTokenStore,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient, SpaceKeyRecord, SpaceKeyStore } from "@rakazo/db";
@@ -19,7 +24,9 @@ import {
   bootstrapUserSpace,
   ContentKeyRing,
   claimOrganizationForDeletion,
+  clearAccountIdentity,
   createDb,
+  createThreadEvents,
   deleteClaimedSpace,
   extendByokFreePeriod,
   IsolationError,
@@ -38,6 +45,7 @@ import {
   deleteOrganization,
   finishStalledOrganizationDeletions,
 } from "../account/account-deletion.js";
+import { accountDeletionHooks } from "../auth/session-hooks.js";
 import { createBillingService } from "../billing/billing.js";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
@@ -510,7 +518,7 @@ describePostgres("organizations (PostgreSQL)", () => {
         {
           ...deps(),
           billing: {
-            cancelForDeletedOrganization: async () => {
+            cancelOrganizationSubscriptions: async () => {
               called.resolve();
               await held.promise;
             },
@@ -665,7 +673,7 @@ describePostgres("organizations (PostgreSQL)", () => {
         {
           ...deps(),
           billing: {
-            cancelForDeletedOrganization: async () => {
+            cancelOrganizationSubscriptions: async () => {
               called.resolve();
               await held.promise;
             },
@@ -691,7 +699,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     const work = await client(ada).organizations.create({ name: "Work" });
     const ref = `sb-held-rpc-${suffix}`;
     await botWithComputer(work.id, ada.userId, ref);
-    const cancel = vi.spyOn(billing, "cancelForDeletedOrganization");
+    const cancel = vi.spyOn(billing, "cancelOrganizationSubscriptions");
     const release = sandbox.hold(ref);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
@@ -720,7 +728,7 @@ describePostgres("organizations (PostgreSQL)", () => {
     const ref = `sb-held-sweep-${suffix}`;
     await botWithComputer(work.id, ada.userId, ref);
     await failRemoval(ada, work.id, ref);
-    const cancel = vi.spyOn(billing, "cancelForDeletedOrganization");
+    const cancel = vi.spyOn(billing, "cancelOrganizationSubscriptions");
     const release = sandbox.hold(ref);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
@@ -839,7 +847,7 @@ describePostgres("organizations (PostgreSQL)", () => {
           ...deps(),
           prisma: recordingQueries(prisma, () => billingReturned, queriesAfterBilling),
           billing: {
-            cancelForDeletedOrganization: async () => {
+            cancelOrganizationSubscriptions: async () => {
               called.resolve();
               await held.promise;
             },
@@ -886,7 +894,7 @@ describePostgres("organizations (PostgreSQL)", () => {
           {
             ...deps(),
             billing: {
-              cancelForDeletedOrganization: async () => {
+              cancelOrganizationSubscriptions: async () => {
                 called.resolve();
                 await held.promise;
               },
@@ -1091,7 +1099,7 @@ describePostgres("organizations (PostgreSQL)", () => {
         {
           ...deps(),
           billing: {
-            cancelForDeletedOrganization: async () => {
+            cancelOrganizationSubscriptions: async () => {
               placed.resolve();
               await stalled.promise;
               throw new Error("billing unavailable");
@@ -1319,6 +1327,47 @@ describePostgres("organizations (PostgreSQL)", () => {
       system.space.count({ where: { id: { in: [ada.spaceId, work.id] } } }),
     ).resolves.toBe(0);
     expect(sandbox.destroyed).toEqual([`sb-account-${suffix}`]);
+  });
+
+  it("recounts the seats of a surviving co-owned organization when an owner is deleted", async () => {
+    const ada = await signup();
+    const grace = await signup();
+    const work = await client(grace).organizations.create({ name: "Work" });
+    await system.member.create({
+      data: {
+        id: randomUUID(),
+        organizationId: work.id,
+        userId: ada.userId,
+        role: "owner",
+        createdAt: new Date(),
+      },
+    });
+    const customerId = await subscribe(asUser(grace, work.id));
+    await expect(emulator.getCustomerSubscription(customerId)).resolves.toMatchObject({
+      status: "active",
+      seats: 2,
+    });
+
+    const hooks = accountDeletionHooks({
+      spaceDeletion: deps() as Parameters<typeof accountDeletionHooks>[0]["spaceDeletion"],
+      events: createThreadEvents(system),
+      billing,
+      pushTokens: new PrismaPushTokenStore(system, "fixture-encryption-key-for-push-token-store"),
+      workActivities: undefined,
+    });
+    await runAsSystem("delete a co-owner account", async () => {
+      await hooks.beforeDeleteUser(ada.userId);
+      await system.$transaction(async (tx) => {
+        await clearAccountIdentity(tx, ada.userId);
+        await tx.user.delete({ where: { id: ada.userId } });
+      });
+      await hooks.afterDeleteUser(ada.userId);
+    });
+
+    await expect(emulator.getCustomerSubscription(customerId)).resolves.toMatchObject({
+      status: "active",
+      seats: 1,
+    });
   });
 });
 

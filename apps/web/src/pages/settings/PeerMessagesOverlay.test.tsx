@@ -6,7 +6,8 @@ import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ messages: vi.fn() }));
 vi.mock("../../lib/query/rpc", () => {
@@ -62,8 +63,12 @@ vi.mock("../../components/pages/PageBlockCard", () => ({
 
 import { PeerMessagesOverlay } from "./PeerMessagesOverlay";
 
-const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get");
-const clientHeight = vi.spyOn(HTMLElement.prototype, "clientHeight", "get");
+let scrollHeight: MockInstance<() => number>;
+let clientHeight: MockInstance<() => number>;
+beforeEach(() => {
+  scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get");
+  clientHeight = vi.spyOn(HTMLElement.prototype, "clientHeight", "get");
+});
 
 let root: Root | undefined;
 let queryClient: QueryClient | undefined;

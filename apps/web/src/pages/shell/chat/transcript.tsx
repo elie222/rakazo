@@ -60,6 +60,8 @@ import { useEventListener } from "../../../lib/use-event-listener";
 import type { ImportSetupTarget } from "../bots/import-setup-card";
 import { isEditableTarget } from "../shell-shortcuts";
 import { TimeSeparator, UnreadDivider } from "./chat-context";
+import type { GalleryImage } from "./image-gallery";
+import { galleryImageKey, ImageGalleryProvider } from "./image-gallery";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
 import { useReplyAnnouncement } from "./use-reply-announcement";
@@ -116,6 +118,7 @@ export const Transcript = memo(function Transcript({
   onOpenComputer,
   onReleaseComputer,
   onOpenImportSetup,
+  onOpenAgentImport,
   rpc,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -175,6 +178,7 @@ export const Transcript = memo(function Transcript({
     reason: ComputerReleaseReason,
   ) => Promise<void>;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  onOpenAgentImport?: () => void;
   rpc: ReturnType<typeof createSpaceRpc>;
 }) {
   const { t } = useLingui();
@@ -215,6 +219,22 @@ export const Transcript = memo(function Transcript({
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
+  // One entry per picture, in message order, so the lightbox can walk the chat's images.
+  const galleryImages = useMemo(() => {
+    const seen = new Set<string>();
+    const images: GalleryImage[] = [];
+    for (const message of messages) {
+      for (const block of message.blocks) {
+        if (block.kind !== "image") continue;
+        const image = { artifactId: block.artifactId, name: block.name, target: artifactTarget };
+        const key = galleryImageKey(image);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        images.push(image);
+      }
+    }
+    return images;
+  }, [messages, artifactTarget]);
   const committedMentions = useRef(new Map<string, ChildBotBlock[]>());
   const mentionView = useMemo(() => {
     const view = projectBotMentions(messages);
@@ -289,7 +309,7 @@ export const Transcript = memo(function Transcript({
   const shownItems = showTail ? items.slice(-FIRST_FRAME_ROWS) : items;
   const continuedSenderIds = continuedSenderMessageIds(shownItems, separatorIds, unreadDividerId);
   const workingLabel =
-    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
+    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Thinking…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;
@@ -575,232 +595,235 @@ export const Transcript = memo(function Transcript({
 
   return (
     <div className="relative flex min-h-0 flex-1">
-      <div
-        ref={scrollRef}
-        data-testid="transcript"
-        onPointerDown={(event) => {
-          lastScrollTop.current = event.currentTarget.scrollTop;
-          autoScrolling.current = false;
-          following.current = false;
-          messagesBeforeReply.current = null;
-          heldAt.current = null;
-        }}
-        onTouchStart={(event) => {
-          lastScrollTop.current = event.currentTarget.scrollTop;
-          autoScrolling.current = false;
-          following.current = false;
-          messagesBeforeReply.current = null;
-          heldAt.current = null;
-        }}
-        onScrollEnd={() => {
-          followIfNearEnd();
-          if (jumpScrolling.current) endJumpScroll();
-        }}
-        onWheel={(event) => {
-          if (event.deltaY < 0) {
+      <ImageGalleryProvider images={galleryImages}>
+        <div
+          ref={scrollRef}
+          data-testid="transcript"
+          onPointerDown={(event) => {
             lastScrollTop.current = event.currentTarget.scrollTop;
             autoScrolling.current = false;
             following.current = false;
             messagesBeforeReply.current = null;
             heldAt.current = null;
-          }
-        }}
-        onScroll={(event) => {
-          const scrolledDown = transcriptMovedDown(
-            lastScrollTop.current,
-            event.currentTarget.scrollTop,
-          );
-          lastScrollTop.current = event.currentTarget.scrollTop;
-          const nearEnd = transcriptIsNearEnd(event.currentTarget);
-          const held = isHeld(event.currentTarget, heldAt.current);
-          setAtEnd(nearEnd && !held);
-          // A jump scroll owns the viewport until its animation settles; its
-          // own near-end crossings must not re-arm tail-following.
-          if (jumpScrolling.current || held) return;
-          if (nearEnd) {
-            if (scrolledDown) following.current = true;
-            if (autoScrolling.current) {
-              autoScrolling.current = false;
-              setAutoScrollFallback(null);
-            }
-          } else if (!autoScrolling.current) {
+          }}
+          onTouchStart={(event) => {
+            lastScrollTop.current = event.currentTarget.scrollTop;
+            autoScrolling.current = false;
             following.current = false;
-          }
-        }}
-        className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-16 scroll-pb-7 pt-20 pb-12 md:pt-[84px] md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
-        style={
-          userBubble
-            ? ({
-                "--chat-user": userBubble.background,
-                "--chat-user-foreground": userBubble.foreground,
-              } as CSSProperties)
-            : undefined
-        }
-      >
-        {olderCursor != null && !showTail ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={loadingOlder}
-            onClick={() => void loadOlder()}
-            aria-label={t`Load earlier messages`}
-            className="self-center text-muted-foreground"
-          >
-            {loadingOlder ? <Spinner aria-label={t`Loading…`} /> : null}
-            {t`Load earlier messages`}
-          </Button>
-        ) : null}
-        {shownItems.map((item) => {
-          if (item.kind === "voiceChat") {
-            return (
-              <div key={item.key}>
-                {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
-                  <TimeSeparator
-                    createdAt={item.messages[0].createdAt}
-                    locale={i18n.locale || "en"}
-                  />
-                ) : null}
-                {voiceChatHoldsMessage(item, unreadDividerId) ? (
-                  <UnreadDivider
-                    afterSeparator={Boolean(
-                      item.messages[0] && separatorIds.has(item.messages[0].id),
-                    )}
-                  />
-                ) : null}
-                <VoiceChatCard
-                  group={item}
-                  revealMessageId={scrollRequest?.messageId}
-                  onCallBack={onCallBack}
-                />
-              </div>
+            messagesBeforeReply.current = null;
+            heldAt.current = null;
+          }}
+          onScrollEnd={() => {
+            followIfNearEnd();
+            if (jumpScrolling.current) endJumpScroll();
+          }}
+          onWheel={(event) => {
+            if (event.deltaY < 0) {
+              lastScrollTop.current = event.currentTarget.scrollTop;
+              autoScrolling.current = false;
+              following.current = false;
+              messagesBeforeReply.current = null;
+              heldAt.current = null;
+            }
+          }}
+          onScroll={(event) => {
+            const scrolledDown = transcriptMovedDown(
+              lastScrollTop.current,
+              event.currentTarget.scrollTop,
             );
+            lastScrollTop.current = event.currentTarget.scrollTop;
+            const nearEnd = transcriptIsNearEnd(event.currentTarget);
+            const held = isHeld(event.currentTarget, heldAt.current);
+            setAtEnd(nearEnd && !held);
+            // A jump scroll owns the viewport until its animation settles; its
+            // own near-end crossings must not re-arm tail-following.
+            if (jumpScrolling.current || held) return;
+            if (nearEnd) {
+              if (scrolledDown) following.current = true;
+              if (autoScrolling.current) {
+                autoScrolling.current = false;
+                setAutoScrollFallback(null);
+              }
+            } else if (!autoScrolling.current) {
+              following.current = false;
+            }
+          }}
+          className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-(--chat-top-clearance) scroll-pb-7 pt-(--chat-top-clearance) pb-12 md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
+          style={
+            userBubble
+              ? ({
+                  "--chat-user": userBubble.background,
+                  "--chat-user-foreground": userBubble.foreground,
+                } as CSSProperties)
+              : undefined
           }
-          const message = item.message;
-          const peerReceipt = isPeerReceiptBlocks(message.blocks);
-          const messageReactions = reactionView.reactions.get(message.id);
-          return (
-            <Fragment key={message.id}>
-              {separatorIds.has(message.id) ? (
-                <TimeSeparator createdAt={message.createdAt} locale={i18n.locale || "en"} />
-              ) : null}
-              {message.id === unreadDividerId ? (
-                <UnreadDivider afterSeparator={separatorIds.has(message.id)} />
-              ) : null}
-              <div
-                data-message-id={message.id}
-                className={peerReceipt ? "relative" : "group/message relative hover:z-[1]"}
-              >
+        >
+          {olderCursor != null && !showTail ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={loadingOlder}
+              onClick={() => void loadOlder()}
+              aria-label={t`Load earlier messages`}
+              className="self-center text-muted-foreground"
+            >
+              {loadingOlder ? <Spinner aria-label={t`Loading…`} /> : null}
+              {t`Load earlier messages`}
+            </Button>
+          ) : null}
+          {shownItems.map((item) => {
+            if (item.kind === "voiceChat") {
+              return (
+                <div key={item.key}>
+                  {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
+                    <TimeSeparator
+                      createdAt={item.messages[0].createdAt}
+                      locale={i18n.locale || "en"}
+                    />
+                  ) : null}
+                  {voiceChatHoldsMessage(item, unreadDividerId) ? (
+                    <UnreadDivider
+                      afterSeparator={Boolean(
+                        item.messages[0] && separatorIds.has(item.messages[0].id),
+                      )}
+                    />
+                  ) : null}
+                  <VoiceChatCard
+                    group={item}
+                    revealMessageId={scrollRequest?.messageId}
+                    onCallBack={onCallBack}
+                  />
+                </div>
+              );
+            }
+            const message = item.message;
+            const peerReceipt = isPeerReceiptBlocks(message.blocks);
+            const messageReactions = reactionView.reactions.get(message.id);
+            return (
+              <Fragment key={message.id}>
+                {separatorIds.has(message.id) ? (
+                  <TimeSeparator createdAt={message.createdAt} locale={i18n.locale || "en"} />
+                ) : null}
+                {message.id === unreadDividerId ? (
+                  <UnreadDivider afterSeparator={separatorIds.has(message.id)} />
+                ) : null}
                 <div
-                  className={
-                    peerReceipt
-                      ? undefined
-                      : `relative flex ${message.role === "user" ? "justify-end" : "justify-start"}`
-                  }
+                  data-message-id={message.id}
+                  className={peerReceipt ? "relative" : "group/message relative hover:z-[1]"}
                 >
                   <div
-                    data-testid={peerReceipt ? undefined : "message-bubble-frame"}
                     className={
                       peerReceipt
                         ? undefined
-                        : message.blocks.some(
-                              (block) =>
-                                block.kind === "ask" ||
-                                block.kind === "mcp_approval" ||
-                                block.kind === "tool_question",
-                            )
-                          ? "relative w-full min-w-0 max-w-[min(calc(100%_-_8rem),36rem)] [@media(hover:none)]:max-w-xl"
-                          : `relative ${
-                              message.blocks.some(
-                                (block) =>
-                                  block.kind === "app_connect" ||
-                                  block.kind === "page" ||
-                                  block.kind === "computer" ||
-                                  block.kind === "routine_event",
-                              ) || pageView.pages.has(message.id)
-                                ? "w-full"
-                                : "w-fit"
-                            } min-w-0 ${bubbleFrameWidth(message.role)}`
+                        : `relative flex ${message.role === "user" ? "justify-end" : "justify-start"}`
                     }
                   >
-                    <MessageView
-                      artifactTarget={artifactTarget}
-                      message={message}
-                      separateAnswers={separateAnswers.get(message.id)}
-                      meId={meId}
-                      markedUnread={message.id === markedUnreadMessageId}
-                      mentions={mentionView.mentions.get(message.id)}
-                      pages={pageView.pages.get(message.id)}
-                      isPageSuperseded={pageView.isSuperseded}
-                      canAnswer={answerableAskIds.has(message.id)}
-                      canDismiss={dismissableAskIds.has(message.id)}
-                      onOpenBot={onOpenBot}
-                      onOpenPeerMessages={onOpenPeerMessages}
-                      peerExchange={exchanges.lines.get(message.id)}
-                      hideSenderLabel={continuedSenderIds.has(message.id)}
-                      onAnswer={onAnswer}
-                      speakerName={
+                    <div
+                      data-testid={peerReceipt ? undefined : "message-bubble-frame"}
+                      className={
                         peerReceipt
                           ? undefined
-                          : message.role === "bot"
-                            ? memberName?.(message.botId)
+                          : message.blocks.some(
+                                (block) =>
+                                  block.kind === "ask" ||
+                                  block.kind === "mcp_approval" ||
+                                  block.kind === "tool_question",
+                              )
+                            ? "relative w-full min-w-0 max-w-[min(calc(100%_-_8rem),36rem)] [@media(hover:none)]:max-w-xl"
+                            : `relative ${
+                                message.blocks.some(
+                                  (block) =>
+                                    block.kind === "app_connect" ||
+                                    block.kind === "page" ||
+                                    block.kind === "computer" ||
+                                    block.kind === "routine_event",
+                                ) || pageView.pages.has(message.id)
+                                  ? "w-full"
+                                  : "w-fit"
+                              } min-w-0 ${bubbleFrameWidth(message.role)}`
+                      }
+                    >
+                      <MessageView
+                        artifactTarget={artifactTarget}
+                        message={message}
+                        separateAnswers={separateAnswers.get(message.id)}
+                        meId={meId}
+                        markedUnread={message.id === markedUnreadMessageId}
+                        mentions={mentionView.mentions.get(message.id)}
+                        pages={pageView.pages.get(message.id)}
+                        isPageSuperseded={pageView.isSuperseded}
+                        canAnswer={answerableAskIds.has(message.id)}
+                        canDismiss={dismissableAskIds.has(message.id)}
+                        onOpenBot={onOpenBot}
+                        onOpenPeerMessages={onOpenPeerMessages}
+                        peerExchange={exchanges.lines.get(message.id)}
+                        hideSenderLabel={continuedSenderIds.has(message.id)}
+                        onAnswer={onAnswer}
+                        speakerName={
+                          peerReceipt
+                            ? undefined
+                            : message.role === "bot"
+                              ? memberName?.(message.botId)
+                              : undefined
+                        }
+                        memberName={memberName}
+                        peerBot={peerBot}
+                        replyParent={
+                          message.replyToMessageId
+                            ? messageById.get(message.replyToMessageId)
                             : undefined
-                      }
-                      memberName={memberName}
-                      peerBot={peerBot}
-                      replyParent={
-                        message.replyToMessageId
-                          ? messageById.get(message.replyToMessageId)
-                          : undefined
-                      }
-                      onJumpToMessage={jumpToMessage}
-                      onRefresh={onRefresh}
-                      onBotChanged={onBotChanged}
-                      onAddRoutine={onAddRoutine}
-                      voiceReady={voiceReady}
-                      speaking={speakingMessageId === message.id}
-                      callHoldsSpeaker={callHoldsSpeaker}
-                      onSpeak={onSpeak}
-                      onOpenComputer={onOpenComputer}
-                      onReleaseComputer={onReleaseComputer}
-                      onOpenImportSetup={onOpenImportSetup}
-                      rpc={rpc}
-                      showToolActivity={showToolActivity}
-                      onReply={onReply}
-                      onMarkUnread={onMarkUnread}
-                      onReact={onReact}
-                    />
+                        }
+                        onJumpToMessage={jumpToMessage}
+                        onRefresh={onRefresh}
+                        onBotChanged={onBotChanged}
+                        onAddRoutine={onAddRoutine}
+                        voiceReady={voiceReady}
+                        speaking={speakingMessageId === message.id}
+                        callHoldsSpeaker={callHoldsSpeaker}
+                        onSpeak={onSpeak}
+                        onOpenComputer={onOpenComputer}
+                        onReleaseComputer={onReleaseComputer}
+                        onOpenImportSetup={onOpenImportSetup}
+                        onOpenAgentImport={onOpenAgentImport}
+                        rpc={rpc}
+                        showToolActivity={showToolActivity}
+                        onReply={onReply}
+                        onMarkUnread={onMarkUnread}
+                        onReact={onReact}
+                      />
+                    </div>
                   </div>
+                  {!peerReceipt && messageReactions ? (
+                    <div
+                      data-testid="message-reactions"
+                      className={cn(
+                        "mt-1 flex flex-wrap gap-1",
+                        message.role === "user" && "justify-end",
+                      )}
+                    >
+                      {[...messageReactions].map(([emoji, count]) => (
+                        <span
+                          key={emoji}
+                          className="rounded-full border border-border bg-muted px-2 py-0.5 text-label"
+                        >
+                          {emoji}
+                          {count > 1 ? ` ${count}` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-                {!peerReceipt && messageReactions ? (
-                  <div
-                    data-testid="message-reactions"
-                    className={cn(
-                      "mt-1 flex flex-wrap gap-1",
-                      message.role === "user" && "justify-end",
-                    )}
-                  >
-                    {[...messageReactions].map(([emoji, count]) => (
-                      <span
-                        key={emoji}
-                        className="rounded-full border border-border bg-muted px-2 py-0.5 text-label"
-                      >
-                        {emoji}
-                        {count > 1 ? ` ${count}` : ""}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </Fragment>
-          );
-        })}
-        {running &&
-        !messages.some(
-          (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
-        ) ? (
-          <ActiveBotGlyph bots={workingBots} label={workingLabel} />
-        ) : null}
-      </div>
+              </Fragment>
+            );
+          })}
+          {running &&
+          !messages.some(
+            (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
+          ) ? (
+            <ActiveBotGlyph bots={workingBots} label={workingLabel} />
+          ) : null}
+        </div>
+      </ImageGalleryProvider>
       <span role="status" data-testid="reply-announcement" className="sr-only">
         {announcement}
       </span>

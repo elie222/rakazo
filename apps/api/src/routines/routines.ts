@@ -1,9 +1,14 @@
 import { ORPCError } from "@orpc/server";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
+import type { OwnerComputerRefusal } from "@rakazo/adapters";
 import {
+  botEventRoutines,
   firstWatchCheck,
+  listAgentSkillRecords,
+  ownerComputerRefusal,
   parseRoutineWatch,
   parseRoutineWatchState,
+  routineComputerFingerprint,
   routineGroupThreadId,
   routineRunModelPin,
 } from "@rakazo/adapters";
@@ -136,18 +141,81 @@ export function mapRoutine(row: {
   };
 }
 
-type RoutineRow = Parameters<typeof mapRoutine>[0] & { userId: string };
+type RoutineRow = Parameters<typeof mapRoutine>[0] & {
+  userId: string;
+  threadId: string | null;
+  computerPromptHash: string | null;
+};
+
+type RoutineViewDeps = Pick<RouterDeps, "prisma" | "userDevices">;
+
+/** Refusals the owner can't undo in the routine's editor, so the switch is left out. */
+const SWITCH_HIDDEN: ReadonlySet<OwnerComputerRefusal> = new Set([
+  "other_owner",
+  "group",
+  "event_routines",
+]);
+
+/**
+ * "Use my computer" for each routine the viewer may switch it on for, while they have a computer
+ * paired (see ownerComputerRefusal). It shows on only while a run would still get the computer.
+ */
+async function computerSwitches(
+  deps: RoutineViewDeps,
+  actor: Actor,
+  rows: RoutineRow[],
+): Promise<Map<string, boolean>> {
+  const own = rows.filter((row) => row.userId === actor.userId);
+  if (own.length === 0 || !deps.userDevices) return new Map();
+  const botIds = [...new Set(own.map((row) => row.botId))];
+  const threadIds = [...new Set(own.flatMap((row) => (row.threadId ? [row.threadId] : [])))];
+  const [bots, eventRoutines, groupThreads, pairedSince] = await Promise.all([
+    deps.prisma.bot.findMany({ where: { id: { in: botIds } }, select: { id: true, userId: true } }),
+    deps.prisma.routine.findMany({ where: botEventRoutines(botIds), select: { botId: true } }),
+    deps.prisma.thread.findMany({
+      where: { id: { in: threadIds }, groupId: { not: null } },
+      select: { id: true },
+    }),
+    deps.userDevices.pairedSince(actor.userId),
+  ]);
+  if (!pairedSince) return new Map();
+  const botOwners = new Map(bots.map((bot) => [bot.id, bot.userId]));
+  const eventBots = new Set(eventRoutines.map((routine) => routine.botId));
+  const groups = new Set(groupThreads.map((thread) => thread.id));
+  const skills = own.some((row) => row.computerPromptHash)
+    ? await listAgentSkillRecords(deps.prisma, actor)
+    : [];
+  const switches = new Map<string, boolean>();
+  for (const row of own) {
+    const refused = ownerComputerRefusal({
+      ownerId: actor.userId,
+      userId: row.userId,
+      botUserId: botOwners.get(row.botId) ?? "",
+      inChat: row.inChat,
+      watch: row.watch,
+      groupThread: row.threadId !== null && groups.has(row.threadId),
+      botEventRoutines: eventBots.has(row.botId),
+      approved: row.computerPromptHash,
+      current: routineComputerFingerprint(row.prompt, skills),
+    });
+    if (refused && SWITCH_HIDDEN.has(refused)) continue;
+    switches.set(row.id, Boolean(row.computerPromptHash) && refused === null);
+  }
+  return switches;
+}
 
 /**
  * The routines as a member of the Space sees them, each with whose accounts it runs with: the
  * owner's display name and whether that is the viewer, never their id or email.
  */
 export async function routineViews(
-  prisma: PrismaClient,
+  deps: RoutineViewDeps,
   actor: Actor,
   rows: RoutineRow[],
 ): Promise<Routine[]> {
   if (rows.length === 0) return [];
+  const { prisma } = deps;
+  const computer = await computerSwitches(deps, actor, rows);
   const owners = await prisma.spaceMember.findMany({
     where: { spaceId: actor.spaceId, userId: { in: [...new Set(rows.map((row) => row.userId))] } },
     select: {
@@ -171,17 +239,18 @@ export async function routineViews(
         name === undefined
           ? null
           : { name: displayName(name, "Member"), isViewer: row.userId === actor.userId },
+      ...(computer.has(row.id) ? { useComputer: computer.get(row.id) } : {}),
     };
   });
 }
 
 /** One routine as `routineViews` shows it, for the one a member just created or changed. */
 export async function routineView(
-  prisma: PrismaClient,
+  deps: RoutineViewDeps,
   actor: Actor,
   row: RoutineRow,
 ): Promise<Routine> {
-  const [view] = await routineViews(prisma, actor, [row]);
+  const [view] = await routineViews(deps, actor, [row]);
   if (!view) throw new IsolationError();
   return view;
 }
@@ -191,7 +260,7 @@ export async function listRoutinesDto(deps: RouterDeps, actor: Actor, botId: str
   const rows = await deps.prisma.routine.findMany({
     where: { botId, spaceId: actor.spaceId },
   });
-  return routineViews(deps.prisma, actor, rows);
+  return routineViews(deps, actor, rows);
 }
 
 export function createRoutineAnnouncer(deps: RouterDeps) {

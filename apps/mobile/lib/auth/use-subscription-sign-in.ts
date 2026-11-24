@@ -19,7 +19,7 @@ import {
   finishModelOAuthAttempt,
   waitForModelOAuth,
 } from "../models/model-auth";
-import { analyticsSurface } from "../native/analytics-surface";
+import { analyticsClient } from "../native/analytics-surface";
 import type { SettingsTarget } from "../query/settings-target";
 
 type SubscriptionSignInOptions = {
@@ -64,8 +64,7 @@ export function useSubscriptionSignIn({
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
-  const [codeCopied, setCodeCopied] = useState(false);
-  const codeCopiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openingLoginIdRef = useRef<string | null>(null);
 
   const reportedStepsRef = useRef(new Set<string>());
 
@@ -81,29 +80,32 @@ export function useSubscriptionSignIn({
     [rpc],
   );
 
-  const openSignInPage = useCallback(
-    async (url: string) => {
-      const loginId = oauthLoginIdRef.current;
-      await Linking.openURL(url);
+  async function openSignInPage(login: ModelOAuthBegin) {
+    const { loginId } = login;
+    if (oauthLoginIdRef.current !== loginId || openingLoginIdRef.current === loginId) return;
+    openingLoginIdRef.current = loginId;
+    clearFeedback();
+    let error = t`Could not copy the code. Try again.`;
+    try {
+      // Finish copying while Rakazo is still in the foreground, before switching apps.
+      if (login.mode === "device-code") {
+        const copied = await Clipboard.setStringAsync(login.userCode);
+        if (oauthLoginIdRef.current !== loginId) return;
+        if (!copied) {
+          publishFeedback("connection", { error });
+          return;
+        }
+        reportSignInStep("code_copied", loginId);
+      }
+      error = t`Could not open the sign-in page. Try again.`;
+      await Linking.openURL(login.verificationUri);
       reportSignInStep("page_opened", loginId);
-    },
-    [reportSignInStep],
-  );
-
-  const copyOAuthCode = useCallback(
-    (code: string) => {
-      const loginId = oauthLoginIdRef.current;
-      void Clipboard.setStringAsync(code)
-        .then(() => {
-          reportSignInStep("code_copied", loginId);
-          setCodeCopied(true);
-          if (codeCopiedTimerRef.current) clearTimeout(codeCopiedTimerRef.current);
-          codeCopiedTimerRef.current = setTimeout(() => setCodeCopied(false), 1600);
-        })
-        .catch(() => undefined);
-    },
-    [reportSignInStep],
-  );
+    } catch {
+      if (oauthLoginIdRef.current === loginId) publishFeedback("connection", { error });
+    } finally {
+      if (openingLoginIdRef.current === loginId) openingLoginIdRef.current = null;
+    }
+  }
 
   /** Stops the sign-in in progress; `reason` says why for measurement only. */
   const cancelOAuth = useCallback(
@@ -120,10 +122,9 @@ export function useSubscriptionSignIn({
     [rpc],
   );
 
-  /** Stops a sign-in the person left and the pending reset of the Copied label. */
+  /** Stops a sign-in the person left. */
   const leaveSignIn = useCallback(() => {
     cancelOAuth("left");
-    if (codeCopiedTimerRef.current) clearTimeout(codeCopiedTimerRef.current);
   }, [cancelOAuth]);
 
   async function finishSubscriptionSignIn(login: ModelOAuthBegin, controller: AbortController) {
@@ -140,10 +141,12 @@ export function useSubscriptionSignIn({
     setCredentialId(saved.id);
     onSaved?.(saved);
     setOauth(null);
-    if (await finishConnecting(selected?.id ?? modelId, saved.id)) return;
-    await load({ modelId });
+    // A new subscription can save a stronger model than the one the form showed.
+    const savedModelId = saved.modelId ?? selected?.id ?? modelId;
+    if (await finishConnecting(savedModelId, saved.id)) return;
+    await load({ modelId: savedModelId });
     if (controller.signal.aborted) return;
-    publishFeedback("connection", { notice: t`Saved.` });
+    publishFeedback("connection", { notice: t`Subscription connected.` });
   }
 
   async function startSubscriptionSignIn() {
@@ -168,7 +171,7 @@ export function useSubscriptionSignIn({
           label: selected.providerName ?? selected.provider,
           credentialId: credentialIdRef.current,
           codePage: true,
-          surface: analyticsSurface(),
+          ...analyticsClient(),
         },
         { signal: controller.signal },
       );
@@ -177,9 +180,9 @@ export function useSubscriptionSignIn({
       setPasteCode("");
       setOauth(started);
       // A device code must be read before its page opens, so the person opens that page.
-      if (started.mode === "auth-url") await openSignInPage(started.verificationUri);
       waitingForCode = started.mode === "auth-url";
-      if (!waitingForCode) await finishSubscriptionSignIn(started, controller);
+      if (waitingForCode) await openSignInPage(started);
+      else await finishSubscriptionSignIn(started, controller);
     } catch (err) {
       if (controller.signal.aborted) return;
       const loginId = oauthLoginIdRef.current;
@@ -259,8 +262,6 @@ export function useSubscriptionSignIn({
     pasteCode,
     setPasteCode,
     oauthPending,
-    codeCopied,
-    copyOAuthCode,
     cancelOAuth,
     leaveSignIn,
     openSignInPage,

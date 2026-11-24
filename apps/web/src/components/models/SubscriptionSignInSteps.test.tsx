@@ -33,7 +33,11 @@ const pasteBack: ModelOAuthBegin = {
   verificationUri: "https://example.test/oauth/authorize?state=abc",
   expiresInSeconds: 900,
 };
-const setup = { label: "Turn on device sign-in", url: "https://example.test/settings" };
+const setup = {
+  label: "Turn on device sign-in",
+  url: "https://example.test/settings",
+  note: "An admin turns this on for workspaces.",
+};
 let root: Root;
 let host: HTMLDivElement;
 const onStart = vi.fn();
@@ -93,6 +97,7 @@ it("puts the provider's setup before starting, and marks it done once a code arr
   render(null, { setup });
   expect(steps().map((step) => step.dataset.status)).toEqual(["current", "upcoming"]);
   expect(link("Open settings")?.getAttribute("href")).toBe(setup.url);
+  expect(steps()[0]?.textContent).toContain(setup.note);
   render(deviceCode, { setup });
   expect(steps().map((step) => step.dataset.status)).toEqual(["complete", "current", "upcoming"]);
 });

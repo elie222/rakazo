@@ -32,6 +32,7 @@ import {
   startNextWaitingRun,
 } from "./run-lifecycle.js";
 import { notifyRun } from "./run-notifications.js";
+import { RunOriginUnauthorizedError } from "./run-origin.js";
 
 vi.mock("./run-notifications.js", () => ({ notifyRun: vi.fn(async () => undefined) }));
 vi.mock("../../tasks/background-helpers.js", () => ({
@@ -241,6 +242,16 @@ describe("retrying a run whose setup failed", () => {
     const failed = await retry(error());
 
     expect(failed.failedWith).toBe(message);
+    expect(failed.requeueRun).not.toHaveBeenCalled();
+    expect(failed.priorAttempts).not.toHaveBeenCalled();
+    expect(failed.logged).toEqual([expect.objectContaining({ level: "warn" })]);
+  });
+
+  it("ends a delegated run immediately when its conversation no longer authorizes it", async () => {
+    const error = new RunOriginUnauthorizedError();
+    const failed = await retry(error);
+
+    expect(failed.ended).toMatchObject({ outcome: "failed", error: error.message });
     expect(failed.requeueRun).not.toHaveBeenCalled();
     expect(failed.priorAttempts).not.toHaveBeenCalled();
     expect(failed.logged).toEqual([expect.objectContaining({ level: "warn" })]);

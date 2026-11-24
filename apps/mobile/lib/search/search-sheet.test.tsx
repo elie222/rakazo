@@ -10,7 +10,6 @@ import SearchSheet from "../../app/search";
 import { selectSpace } from "../api/api-server";
 import type { InboxSpace } from "../inbox/inbox-spaces";
 import type * as Search from "./search";
-import { searchKindLabel } from "./search-sheet";
 
 const state = vi.hoisted(() => ({
   search: vi.fn(),
@@ -407,16 +406,6 @@ it("says the search failed instead of no results, ignoring superseded and cleare
   expect(container.textContent).not.toContain("Search is unavailable right now");
   expect(state.search).toHaveBeenCalledTimes(6);
 });
-it.each([
-  ["conversation", "Bot"],
-  ["message", "Message"],
-  ["file", "File"],
-  ["link", "Link"],
-  ["routine", "Routine"],
-] as const)("labels %s hits", (kind, label) => {
-  expect(searchKindLabel({ ...message, kind })).toBe(label);
-});
-
 it("retries focus after the sheet attaches and keeps the native search keyboard options", () => {
   const field = container.querySelector("input")!;
   const focus = vi.spyOn(field, "focus");

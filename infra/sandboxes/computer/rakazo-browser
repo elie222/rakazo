@@ -444,11 +444,17 @@ language="${LANGUAGE:-}"
 language="$(printf '%s' "${language%%:*}" | tr _ -)"
 case "$language" in
   ''|-*|*[!A-Za-z0-9-]*) ;;
+  [Ee][Nn])
+    LANGUAGE_FLAGS="--accept-lang=en-US,en"
+    ;;
   *)
     base="${language%%-*}"
     languages="$language"
     [ "$base" = "$language" ] || languages="$languages,$base"
-    [ "$base" = en ] || languages="$languages,en-US,en"
+    case "$base" in
+      [Ee][Nn]) ;;
+      *) languages="$languages,en-US,en" ;;
+    esac
     LANGUAGE_FLAGS="--accept-lang=$languages"
     ;;
 esac

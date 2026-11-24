@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import { modelCatalogSearchText, newestModelsFirst } from "@rakazo/core";
 import {
@@ -17,7 +18,6 @@ import {
 import type { ReactElement } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
-import { useListSearch } from "../../lib/use-list-search";
 
 /** `baseUrl` presets an OpenAI-compatible server, such as a hosted preset. */
 export type ConnectableProvider = { id: string; name: string; baseUrl?: string };
@@ -27,6 +27,19 @@ export type RoleModelOption = ModelCatalogEntry & {
   credentialId?: string;
   creditOfferingId?: string;
 };
+
+/** The row that opens a role's picker: the model's name, and what runs it beside. */
+export function rolePickerTrigger(label: string, sub?: string) {
+  return (
+    <button
+      type="button"
+      className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md py-1 text-start outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+    >
+      <span className="truncate text-body-lg text-foreground">{label}</span>
+      {sub ? <span className="truncate text-body-sm text-muted-foreground">{sub}</span> : null}
+    </button>
+  );
+}
 
 const optionValue = (option: RoleModelOption) =>
   `${option.provider}:${option.id}:${option.creditOfferingId ? `credits:${option.creditOfferingId}` : (option.credentialId ?? "")}`;

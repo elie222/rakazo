@@ -1,4 +1,4 @@
-"""Configure the Codex adapter with the same browser allowlist as the Claude adapter."""
+"""Configure the Codex agent: the browser allowlist, read-only shell, and the credential proxy as its model provider."""
 
 import json
 import sys
@@ -9,15 +9,15 @@ TOOLS = CONTRACT["tools"]
 SCHEMA = CONTRACT["schema"]
 
 
-def configure(mcp_path: Path, home: Path):
+def configure(mcp_path: Path, home: Path, proxy_port: int):
     server = json.loads(mcp_path.read_text())["mcpServers"]["playwright"]
     # JSON strings/arrays are valid TOML values here. Only trusted workflow configuration
     # reaches this file; none of the PR or browser content becomes configuration.
     config = f'''approval_policy = "never"
-model_provider = "openai"
-forced_login_method = "chatgpt"
-cli_auth_credentials_store = "file"
+model_provider = "credential-proxy"
 web_search = "disabled"
+# The working directory is empty, but never load instruction files from the pull request.
+project_doc_max_bytes = 0
 default_permissions = "screenshots"
 
 [permissions.screenshots]
@@ -26,8 +26,15 @@ extends = ":read-only"
 [permissions.screenshots.filesystem]
 {json.dumps(str(home))} = "deny"
 
+# The login stays with codex-credential-proxy.py, so this home holds no token to find.
+[model_providers.credential-proxy]
+name = "credential-proxy"
+base_url = "http://127.0.0.1:{proxy_port}/backend-api/codex"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+
 [features]
-shell_tool = false
 view_image = false
 multi_agent = false
 image_generation = false
@@ -44,4 +51,4 @@ default_tools_approval_mode = "approve"
 
 
 if __name__ == "__main__":
-    configure(Path(sys.argv[1]), Path(sys.argv[2]))
+    configure(Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3]))

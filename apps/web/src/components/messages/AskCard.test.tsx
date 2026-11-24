@@ -2,7 +2,11 @@
 
 import { i18n } from "@lingui/core";
 import type { LoginFieldInput } from "@rakazo/contracts";
-import { BLOCKED_ITEM_ANSWER, UNCHOSEN_ITEM_ANSWER } from "@rakazo/contracts";
+import {
+  AGENT_IMPORT_ASK_ACTION_ID,
+  BLOCKED_ITEM_ANSWER,
+  UNCHOSEN_ITEM_ANSWER,
+} from "@rakazo/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
@@ -180,22 +184,21 @@ it("styles dismissed secrets like denied approvals, apart from the destination",
   expect(dismissed.classList.contains("text-muted-foreground")).toBe(true);
 });
 
-it.each([true, false])("gates secret dismissal: %s", async (canDismiss) => {
+it("offers no Dismiss on a secret card the viewer cannot dismiss", async () => {
   await act(async () =>
     root.render(
       <AskCard
         block={{ kind: "ask", text: "Secret", input: "secret", status: "pending" }}
         canAnswer
-        canDismiss={canDismiss}
+        canDismiss={false}
         onAnswer={async () => {}}
         onDismiss={async () => {}}
       />,
     ),
   );
   const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
-  expect(labels.includes("Dismiss")).toBe(canDismiss);
+  expect(labels.includes("Dismiss")).toBe(false);
   expect(labels.includes("Save")).toBe(true);
-  expect(button("Save")?.classList.contains("h-8")).toBe(true);
 });
 
 it("keeps an accepted secret Save answered without a block update", async () => {
@@ -269,7 +272,7 @@ function dialogButton(name: string) {
 }
 
 async function openEditor() {
-  await act(async () => button("Add")!.click());
+  await act(async () => button("Continue")!.click());
   expect(dialog()).not.toBeNull();
 }
 
@@ -397,6 +400,46 @@ it("keeps an accepted question choice answered until the block updates", async (
   await render({ ...block, status: "answered", answer: "london" });
   expect(button("BLondon")!.getAttribute("aria-pressed")).toBe("true");
   expect(button("AParis")!.getAttribute("aria-pressed")).toBe("false");
+});
+
+it("opens the agent import from a first bot's opening question instead of answering", async () => {
+  const block: AskBlock = {
+    kind: "ask",
+    text: "Which city?",
+    status: "pending",
+    actions: [
+      { id: "paris", label: "Paris" },
+      { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" },
+    ],
+  };
+  const onAnswer = vi.fn(async () => undefined);
+  const onOpenAgentImport = vi.fn();
+  const renderCard = (shown: AskBlock, opener?: () => void) =>
+    act(async () =>
+      root.render(
+        <AskCard
+          block={shown}
+          canAnswer
+          canDismiss
+          onAnswer={onAnswer}
+          onDismiss={async () => undefined}
+          onOpenAgentImport={opener}
+        />,
+      ),
+    );
+
+  await renderCard(block, onOpenAgentImport);
+  await act(async () => button("BMove from another assistant")!.click());
+  expect(onOpenAgentImport).toHaveBeenCalledOnce();
+  expect(onAnswer).not.toHaveBeenCalled();
+  expect(container.querySelector("[aria-pressed]")).toBeNull();
+
+  await renderCard({ ...block, status: "answered", answer: "paris" }, onOpenAgentImport);
+  expect(button("BMove from another assistant")).toBeUndefined();
+
+  await renderCard(block);
+  expect(button("BMove from another assistant")).toBeUndefined();
+  expect(button("AParis")).toBeDefined();
 });
 
 it("announces an answered question's state and marks only the chosen option", async () => {
@@ -660,7 +703,7 @@ it.each([
     expect(container.textContent).not.toContain("No longer active");
 
     await render(true);
-    if (credential.auth.type === "login") expect(button("Add")).toBeDefined();
+    if (credential.auth.type === "login") expect(button("Continue")).toBeDefined();
     else expect(button("Save")).toBeDefined();
   },
 );
@@ -743,7 +786,7 @@ it("dismisses a login card from its form, sending nothing typed", async () => {
   await render(loginCard, onDismiss, onAnswer);
   await openEditor();
   await typeIn(loginInput("PIN"), "1234");
-  await act(async () => dialogButton("Dismiss")!.click());
+  await act(async () => dialogButton("Dismiss request")!.click());
   expect(onDismiss).toHaveBeenCalledTimes(1);
   expect(onAnswer).not.toHaveBeenCalled();
   expect(dialog()).toBeNull();

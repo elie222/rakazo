@@ -17,6 +17,7 @@ import {
 import { Check, Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
 import { useState } from "react";
 import { MessageHoverMetadata } from "../../../components/messages/MessageHoverMetadata";
+import { isPendingSendMessage } from "../../../lib/composer/pending-send";
 
 export function MessageHoverActions({
   message,
@@ -46,12 +47,17 @@ export function MessageHoverActions({
 
   // Streaming progress bubbles keep hover free for selection / stop clicks.
   if (message.id.startsWith("progress:")) return null;
+  // A send the server has not confirmed has no stored message to act on yet.
+  if (isPendingSendMessage(message)) return null;
 
   const when = formatTimeSeparator(message.createdAt, i18n.locale || "en", {
     today: t`Today`,
     yesterday: t`Yesterday`,
   });
-  const groupLabel = t`Message actions, ${[speakerName, when].filter(Boolean).join(" ")}`;
+  let groupLabel = t`Message actions`;
+  if (speakerName && when) groupLabel = t`Message actions, ${speakerName}, ${when}`;
+  else if (speakerName) groupLabel = t`Message actions, ${speakerName}`;
+  else if (when) groupLabel = t`Message actions, ${when}`;
   const copied = copiedNow && copiedText === copyableMessageText(message);
 
   function copyMessage() {

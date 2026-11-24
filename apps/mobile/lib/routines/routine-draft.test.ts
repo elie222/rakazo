@@ -28,6 +28,60 @@ const routine: Routine = {
 };
 
 describe("routineSaveRequest", () => {
+  it("sends Use my computer only when the owner flips it, and never to a copy", () => {
+    const own = { ...routine, useComputer: false };
+    const draft = draftFromRoutine(own);
+    expect(routineSaveRequest({ ...draft, name: "Mail" }, own, "bot-1", "UTC")).toEqual({
+      update: { routineId: own.id, name: "Mail" },
+    });
+    // Turning it on approves the prompt shown, so it goes with it.
+    expect(routineSaveRequest({ ...draft, useComputer: true }, own, "bot-1", "UTC")).toEqual({
+      update: { routineId: own.id, useComputer: true, prompt: own.prompt },
+    });
+    expect(
+      routineSaveRequest(
+        { ...draft, useComputer: false },
+        { ...own, useComputer: true },
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ update: { routineId: own.id, useComputer: false } });
+    // A routine the server doesn't offer it for never sends it.
+    expect(
+      routineSaveRequest(
+        { ...draftFromRoutine(routine), useComputer: true },
+        routine,
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ unchanged: true });
+    // Nor with an email trigger, which the server refuses it for.
+    expect(
+      routineSaveRequest(
+        { ...draft, emailSenders: "owner", useComputer: true },
+        own,
+        "bot-1",
+        "UTC",
+      ),
+    ).toEqual({ update: { routineId: own.id, emailSenders: "owner" } });
+    const copy = routineSaveRequest({ ...draft, useComputer: true }, null, "bot-1", "UTC", {
+      ...own,
+      useComputer: true,
+    });
+    expect("create" in copy && copy.create).not.toHaveProperty("useComputer");
+  });
+
+  it("approves again the prompt shown when a save edits it while Use my computer is on", () => {
+    const own = { ...routine, useComputer: true };
+    const draft = draftFromRoutine(own);
+    expect(routineSaveRequest({ ...draft, prompt: " Twice " }, own, "bot-1", "UTC")).toEqual({
+      update: { routineId: own.id, prompt: "Twice", useComputer: true },
+    });
+    expect(routineSaveRequest({ ...draft, active: !own.active }, own, "bot-1", "UTC")).toEqual({
+      update: { routineId: own.id, active: !own.active },
+    });
+  });
+
   it("creates a paused copy that keeps the triggers it can't show, but not the model", () => {
     const hooked = {
       ...routine,
@@ -57,6 +111,13 @@ describe("routineSaveRequest", () => {
     expect(routineSaveRequest(unhooked, null, "bot-1", "UTC", copy)).toEqual({ error: "trigger" });
     // A one-time routine is only set up from chat, so it has no copy.
     expect(routineCopy({ ...routine, crons: ["@once"] }, "Once (copy)")).toBeNull();
+  });
+
+  it("creates a copy in the zone of the routine it copies, not the device's", () => {
+    const copy = routineCopy({ ...routine, timezone: "America/New_York" }, "Inbox (copy)")!;
+    expect(
+      routineSaveRequest(draftFromRoutine(copy), null, "bot-1", "Australia/Sydney", copy),
+    ).toEqual({ create: expect.objectContaining({ timezone: "America/New_York" }) });
   });
 
   it("creates a routine with the device zone and its schedules", () => {

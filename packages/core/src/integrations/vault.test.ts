@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import type { VaultBots } from "./vault.js";
 import {
   secretAnswerRefusal,
+  siteHost,
   vaultAccessControls,
   vaultBotChoices,
   vaultBotsChoosable,
@@ -295,5 +296,14 @@ describe("vaultBotsChoosable", () => {
     ["a server that lists none", [{}, {}], false],
   ])("for %s: %s", (_, items, choosable) => {
     expect(vaultBotsChoosable(items)).toBe(choosable);
+  });
+});
+
+describe("siteHost", () => {
+  it("shows a site's host without www, or the text itself when it has no host", () => {
+    expect(siteHost("https://www.example.com")).toBe("example.com");
+    expect(siteHost("https://login.example.test:8443")).toBe("login.example.test:8443");
+    expect(siteHost("mailto:someone@example.com")).toBe("mailto:someone@example.com");
+    expect(siteHost("not a url")).toBe("not a url");
   });
 });

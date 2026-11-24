@@ -171,10 +171,12 @@ function RoutineShot() {
     messageProvider: null,
     emailSenders: null,
     active: true,
+    timezone: null,
     runAtLocal: "",
     modelKey: "",
     thinkingLevel: "",
     inChat: false,
+    useComputer: false,
     watch: null,
   });
   return (

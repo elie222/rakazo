@@ -1,8 +1,8 @@
 import type { Bot, BotSection, Group } from "@rakazo/contracts";
 import { chatSnoozed } from "@rakazo/core";
 import { ContextMenu } from "@rakazo/ui-web";
-import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { Suspense, useEffect } from "react";
+import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { lazyOverlay } from "../../../components/ErrorBoundary";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import type { ShellDialogsState } from "../shell-dialogs";
@@ -25,6 +25,34 @@ export type ChatMenuState = {
   /** Whether the menu can act on this chat. */
   has: (target: ChatMenuTarget) => boolean;
 };
+
+/** The shared chat menu's state, and the menu for whichever roster chat it is open on. */
+export function useChatMenu({
+  bots,
+  groups,
+  ...menuProps
+}: { bots: Bot[]; groups: Group[] } & Omit<
+  ComponentProps<typeof ChatContextMenu>,
+  "bot" | "group" | "onClose"
+>): ChatMenuState {
+  const [menu, setMenu] = useState<ChatMenuTarget | null>(null);
+  const close = useCallback(() => setMenu(null), []);
+  const bot = menu?.kind === "bot" ? bots.find((item) => item.id === menu.id) : undefined;
+  const group = menu?.kind === "group" ? groups.find((item) => item.id === menu.id) : undefined;
+  return {
+    menu,
+    setMenu,
+    content:
+      bot || group ? (
+        <ChatContextMenu {...menuProps} bot={bot} group={group} onClose={close} />
+      ) : null,
+    // Search can list a chat the roster doesn't hold; it has no menu to show.
+    has: (target) =>
+      target.kind === "bot"
+        ? bots.some((item) => item.id === target.id)
+        : groups.some((item) => item.id === target.id),
+  };
+}
 
 /** Opens the shared chat menu when its trigger child is right-clicked. */
 export function ChatMenu({

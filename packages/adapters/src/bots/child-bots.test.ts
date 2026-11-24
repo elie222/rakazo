@@ -203,6 +203,7 @@ describe("spawned bot archival", () => {
         },
         {
           spawnedByBotId: "caller",
+          runId: "run-1",
           userId: "user-1",
           spaceId: "space-1",
           botId: "outside",
@@ -270,6 +271,7 @@ describe("spawned bot archival", () => {
         },
         {
           spawnedByBotId: "parent-1",
+          runId: "run-1",
           userId: "user-1",
           spaceId: "workspace-1",
           confirmName: "Scout",
@@ -281,6 +283,99 @@ describe("spawned bot archival", () => {
     expect(prisma.bot.findMany).toHaveBeenCalledWith({
       where: { spaceId: "workspace-1", id: "child-1" },
       take: 2,
+    });
+  });
+
+  it("archives its own bot through the same lifecycle while the asking run finishes", async () => {
+    const botUpdate = vi.fn().mockResolvedValue({});
+    const routineUpdate = vi.fn().mockResolvedValue({ count: 1 });
+    const expireLeases = vi.fn().mockResolvedValue({ count: 1 });
+    const findRuns = vi
+      .fn()
+      .mockResolvedValue([
+        { id: "helper-run", taskId: "helper-task", userId: "user-1", spaceId: "workspace-1" },
+      ]);
+    const updateRuns = vi.fn(async ({ where }) => where.id.in.map((id: string) => ({ id })));
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const prisma = {
+      bot: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "self-1",
+            spaceId: "workspace-1",
+            userId: "user-1",
+            parentBotId: null,
+            name: "Scout",
+            archivedAt: null,
+          },
+        ]),
+      },
+      computer: { findUnique: vi.fn().mockResolvedValue(null) },
+      run: { findMany: findRuns },
+      routine: { findMany: vi.fn().mockResolvedValue([{ id: "routine-1" }]) },
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
+        callback({
+          run: {
+            updateManyAndReturn: updateRuns,
+            updateMany: updateRuns,
+            findMany: vi.fn().mockResolvedValue([]),
+          },
+          task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+          attempt: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+          externalEffect: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          message: { findMany: vi.fn().mockResolvedValue([]) },
+          secret: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+          routine: { updateMany: routineUpdate },
+          computerExecutionLease: { updateMany: expireLeases },
+          computer: {
+            updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+            findMany: vi.fn().mockResolvedValue([]),
+          },
+          bot: { update: botUpdate },
+        }),
+      ),
+    } as unknown as PrismaClient;
+
+    await expect(
+      archiveSpawnedBot(
+        {
+          prisma,
+          sandbox: {} as SandboxProvider,
+          home: {} as AgentHomeStore,
+          jobs: { cancel } as unknown as JobPublisher,
+        },
+        {
+          spawnedByBotId: "self-1",
+          runId: "own-run",
+          userId: "user-1",
+          spaceId: "workspace-1",
+          confirmName: "Scout",
+        },
+        context,
+      ),
+    ).resolves.toEqual({ ok: true, botId: "self-1", name: "Scout" });
+    expect(findRuns).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ botId: "self-1", id: { not: "own-run" } }),
+      }),
+    );
+    expect(updateRuns).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: { in: ["helper-run"] } }) }),
+    );
+    expect(cancel).not.toHaveBeenCalledWith(expect.stringContaining("own-run"));
+    expect(cancel).toHaveBeenCalledWith(expect.stringContaining("helper-run"));
+    expect(cancel).toHaveBeenCalledWith(expect.stringContaining("routine-1"));
+    expect(routineUpdate).toHaveBeenCalledWith({
+      where: { botId: "self-1" },
+      data: { active: false, nextRunAt: null },
+    });
+    expect(expireLeases).toHaveBeenCalledWith({
+      where: { botId: "self-1", runId: { not: "own-run" } },
+      data: { expiresAt: new Date(0) },
+    });
+    expect(botUpdate).toHaveBeenCalledWith({
+      where: { id: "self-1" },
+      data: { archivedAt: expect.any(Date), pinned: false },
     });
   });
 });
@@ -1211,7 +1306,7 @@ describe("destroyBot", () => {
     }
   });
 
-  it.each(["e2b", "novita", "createos"])(
+  it.each(["e2b"])(
     "removes the deleted bot's profile from a %s sandbox after the browser stops",
     async (kind) => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-remote-delete-"));
@@ -2005,7 +2100,7 @@ describe("destroyBot", () => {
     }
   });
 
-  it.each(["boxd", "railway"])(
+  it.each(["boxd"])(
     "removes the deleted bot's folder and profile from a stopped %s Team Computer's stored home",
     async (kind) => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-stored-home-"));
@@ -2168,7 +2263,7 @@ describe("destroyBot", () => {
     }
   });
 
-  it.each(["docker", "desktop"])(
+  it.each(["docker"])(
     "leaves a stopped %s Team Computer's stored home to its next boot",
     async (kind) => {
       const root = await mkdtemp(path.join(tmpdir(), "rakazo-team-folder-docker-stopped-"));

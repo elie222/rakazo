@@ -15,17 +15,46 @@ SIGNUP_ALLOWLIST=you@example.com,@company.com
 Server configuration belongs in the operator's environment. App accounts cannot change signup policy,
 server integration credentials, or deployment updates, and cannot read deployment security logs.
 
-There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
+The first account to sign up gets no special rights. Two kinds of admin exist, and neither can
+change server configuration:
 
-`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions, add stdio
-MCP servers ([integrations](self-host-integrations.md)), and, on deployments that sell model
-credits, give free access at `/admin/access`. An account counts only once its email is verified.
-It grants nothing else.
+- **Server admins** are the accounts named in `RAKAZO_ADMIN_EMAILS`, comma-separated, once their
+  email is verified. They review plugin submissions, add stdio MCP servers
+  ([integrations](self-host-integrations.md)), choose the model for everyone
+  ([models](self-host-models.md#default-for-everyone)), and, on deployments that sell model
+  credits, give free access at `/admin/access`. Nothing else.
+- **Organization admins** manage the members of their own organization
+  ([Set up a team](#set-up-a-team)). They have no rights over the server or other organizations.
 
 A free-access grant names an email and gives up to $1,000 of model credits, up to 12 free own-key
 months, or both. Whoever owns an organization with that verified email receives it the next time they
 open the app, whether they signed up before or after the grant. A grant can be revoked until it is
 received.
+
+## Set up a team
+
+A team shares one organization. Everyone in it gets their own private space, and shares the spaces
+they choose.
+
+1. **Let teammates sign up.** An invitation does not bypass signup policy. Keep
+   `SIGNUPS_ENABLED=true` and list the team's addresses or domain in `SIGNUP_ALLOWLIST`, or provision
+   them through [SSO](#openid-connect-sso) or [SCIM](#directory-provisioning-scim).
+2. **Give everyone a model.** Teammates without a model of their own use the
+   [deployment model](./self-host-models.md#deployment-model), billed to the operator's key. Each
+   person can still connect their own.
+3. **Invite them to the organization.** In **Settings → Organization → Members**, enter an email
+   and choose **Invite**. The invitee signs in with that address and chooses **Join**. Without
+   [email](#verification-and-password-recovery-email), nothing is sent: choose **Copy invite link**
+   on the pending invitation and send it yourself. Invitations expire after 7 days.
+4. **Share spaces.** In a space's **Settings**, **Invite** lists organization members to add
+   directly. See [Share a space](./spaces.md#share-a-space).
+
+The owner and admins invite people, change roles and remove members; the owner can't be removed. A
+removed member's spaces that nobody else uses pass to whoever removed them.
+
+SSO and SCIM create accounts but don't add anyone to an organization: invite them after their first
+sign-in. A self-hosted server has no seats or billing unless you
+[set it up](./self-host-billing.md).
 
 ## Email verification and sign-in codes
 
@@ -111,13 +140,33 @@ loopback host. In `NODE_ENV=development`, captured messages are available from
 `http://127.0.0.1:3100/api/dev/emails` with cache disabled; the API logs only delivery
 metadata, never reset tokens. The inbox route is not registered in test, staging, or production.
 
-Set `WELCOME_EMAIL_ENABLED=true` to send each new account one welcome email, with an unsubscribe
-link, after it first signs in. It needs one of the providers above.
+Rakazo can also send product emails, each with an unsubscribe link: a welcome email after a new
+account first signs in, a referral email when billing referrals are on, and, with billing
+configured, reminders after a plan starts (connect a model, import an agent). This repository
+holds no wording for them, so each one goes out only when you supply its copy, and only with one
+of the providers above.
 
-With billing configured, the same switch also sends an organization's owner one reminder a day
-after their plan starts if they have not connected a model yet. That reminder is queued and
-sent by the worker, so give the worker the same mail settings as the API, including this switch
-(the Compose files already do); a worker without them drops the reminder.
+Copy is a folder with one `<email>.json` file per email (`welcome`, `referral`,
+`model-connection`, `agent-import`). Each file maps an app language (`en`, `de`, `pt-BR`, ...) to
+that email's strings by key:
+
+```json
+{
+  "en": { "subject": "...", "body": "... {weeks} ..." },
+  "de": { "subject": "...", "body": "... {weeks} ..." }
+}
+```
+
+Every key must be present, and a string must use exactly the `{placeholders}` its key lists in
+`packages/auth/src/email-copy/email-keys.ts`. An email is sent only when its file's English has a
+valid string for every key; a missing or invalid string in another language falls back to that
+English. At startup the API and worker log each email that is off and why.
+
+The app reads the folder from `EMAIL_COPY_DIR` (`/app/email-copy` in the image), so mount yours
+there for both the `api` and `worker` services, or point `EMAIL_COPY_DIR` at it. The worker sends
+the reminders, so give it the same mail settings as the API (the Compose files already do).
+`node packages/auth/scripts/check-email-copy.ts <dir>` checks a folder and fails on anything that
+would leave an email unsent or falling back.
 
 ## Password policy
 
@@ -145,6 +194,8 @@ OIDC_NAME=SSO
 OIDC_SCOPES=openid email profile
 AUTH_PASSWORD_ENABLED=true
 OIDC_ALLOW_SIGNUP_BYPASS=false
+OIDC_EMAIL_VERIFIED_CLAIM=
+OIDC_AUTHORIZATION_PARAMS=
 ```
 
 The issuer must be HTTPS and exactly match the discovery document's issuer. Rakazo loads
@@ -168,9 +219,15 @@ and a native auth browser session. The `rakazo` app scheme is trusted by the aut
 never register a client secret in the mobile app. Mobile stores the resulting session with
 SecureStore, like password sign-in. Native builds need the Expo WebBrowser module.
 
-Provider emails are verified only when `email_verified` is the boolean `true`. False or missing
-claims stay unverified, including on subsequent sign-ins, and an unverified claim never changes
-the account's email. Sign-in never links accounts by email, except to claim an account
+Provider emails are verified when `email_verified` is the boolean `true` or the string `true`
+in any capitalization. Any other value, including `false` and a missing claim, stays unverified
+on every sign-in, and an unverified claim never changes the account's email. If your provider
+omits `email_verified` and proves the email in a claim of its own, name that claim in
+`OIDC_EMAIL_VERIFIED_CLAIM`; it is read the same way, only when `email_verified` is absent. For
+Microsoft Entra ID, add the optional ID token claims `email` and `xms_edov` under **Token
+configuration** and set `OIDC_EMAIL_VERIFIED_CLAIM=xms_edov`.
+
+Sign-in never links accounts by email, except to claim an account
 [directory provisioning](#directory-provisioning-scim) created.
 If an email belongs to another account, sign in to that existing account and choose **Link SSO**
 in account settings. Linking requires an authenticated session, a verified provider email and
@@ -208,6 +265,32 @@ start while discovery is temporarily unavailable: the provider remains registere
 returns a temporary error, and background retries recover without restarting. Discovery is lazy
 on first use, refreshed in the background, and failures back off up to one minute. Availability
 reflects discovery, not a guarantee that the provider's token endpoint is currently reachable.
+
+### Sign-in hints
+
+`OIDC_AUTHORIZATION_PARAMS` adds default parameters to every request that sends someone to the
+provider, written as `name=value` pairs joined with `&`. Values are form-encoded: write `&`, `=`
+and `+` as `%26`, `%3D` and `%2B`, since a bare `+` is read as a space. Use it for the hints a
+provider offers to skip its account or organization picker:
+
+| Provider           | Setting                      | Effect                                                                                                         |
+| ------------------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Microsoft Entra ID | `domain_hint=example.com`    | Goes straight to your organization's sign-in, including a federated identity provider if your domain uses one. |
+| Google Workspace   | `hd=example.com`             | Offers only accounts in that domain.                                                                           |
+| Keycloak           | `kc_idp_hint=<alias>`        | Skips the Keycloak login page for the linked identity provider with that alias.                                |
+| Okta               | `idp=<identity provider id>` | Sends people to that identity provider.                                                                        |
+| Any                | `prompt=select_account`      | Asks which account to use, even when only one is signed in.                                                    |
+
+Several can be combined, for example `domain_hint=example.com&prompt=select_account`; a name
+may appear only once. The provider decides whether to honor a hint (an Entra tenant can be set to
+ignore `domain_hint`, for example), so check the sign-in once after setting one. A sign-in request
+that sends its own value for a parameter overrides the default here. The parameters apply to web, desktop and mobile sign-in and to linking, because the API builds the
+request. The API refuses to start if they name a parameter the sign-in flow sets itself
+(`client_id`, `redirect_uri`, `response_type`, `response_mode`, `scope`, `state`, `nonce`,
+`code_challenge`, `code_challenge_method`, `request` or `request_uri`). The explicit
+reauthentication above still sends `prompt=login` and `max_age=0`, whatever is set here. Hints only
+shorten the provider's screens: who may sign in is still decided by the provider and this
+deployment's signup rules.
 
 Account deletion keeps the existing password confirmation for password users. Users without a
 password may delete after explicit organization SSO reauthentication within five minutes; **Sign in again** starts a fresh

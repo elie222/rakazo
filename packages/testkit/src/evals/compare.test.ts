@@ -157,7 +157,57 @@ it("rejects a comparison when the recorded judge rubric differs", () => {
   );
   expect(status).toBe(1);
   expect(stdout).toBe("");
-  expect(stderr).toContain("Reports cannot be directly compared. Differences: judge.");
+  expect(stderr).toContain(
+    "Reports cannot be directly compared. Differences: judge.rubricVersion.",
+  );
+});
+
+const judge = {
+  model: "synthetic-judge",
+  provider: baseline.provider,
+  rubricVersion: "rubric-v1",
+  pricing: baseline.pricing,
+  settings: {
+    endpoint: "0123456789ab",
+    maxOutputTokens: 2048,
+    reasoning: null,
+    thinkingLevel: null,
+  },
+};
+
+it.each([
+  { field: "judge.endpoint", settings: { endpoint: null } },
+  { field: "judge.maxOutputTokens", settings: { maxOutputTokens: 4096 } },
+  { field: "judge.thinkingLevel", settings: { thinkingLevel: "high" } },
+])("rejects a comparison when $field differs", ({ field, settings }) => {
+  const { stdout, stderr, status } = compareReports(
+    { ...candidate, judge: { ...judge, settings: { ...judge.settings, ...settings } } },
+    { ...baseline, judge },
+  );
+  expect(status).toBe(1);
+  expect(stdout).toBe("");
+  expect(stderr).toContain(`Reports cannot be directly compared. Differences: ${field}.`);
+});
+
+it("compares reports with the same judge settings without a note", () => {
+  const { stdout, stderr, status } = compareReports(
+    { ...candidate, judge },
+    { ...baseline, judge },
+  );
+  expect(status, stderr).toBe(0);
+  expect(stdout).not.toContain("unknown in");
+});
+
+it("names the report whose judge settings were not recorded", () => {
+  const { settings: _, ...legacyJudge } = judge;
+  const { stdout, stderr, status } = compareReports(
+    { ...candidate, judge },
+    { ...baseline, judge: legacyJudge },
+  );
+  expect(status, stderr).toBe(0);
+  expect(stdout).toContain(
+    "Judge endpoint, output limit and reasoning settings: unknown in baseline",
+  );
 });
 
 it("compares legacy reports that both omit suite", () => {

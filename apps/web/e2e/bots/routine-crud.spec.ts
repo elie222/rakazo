@@ -196,6 +196,9 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
   });
   await page.getByRole("button", { name: /Model check/ }).click();
   await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  // The owner of the routine and its bot, with a computer paired, may let its runs use it.
+  await page.getByRole("switch", { name: "Use my computer" }).click();
+  await captureScreenshot(page, testInfo, "routine-use-my-computer");
   await modelSelect.click();
   // The option reads "llama-3.3-70b (<connection name>)".
   await page.getByRole("option", { name: /^llama-3\.3-70b\b/ }).click();
@@ -204,6 +207,7 @@ test("routine editing updates in place, preserves timezone, deletion persists, a
     modelProvider: "openai-compatible",
     modelId: "llama-3.3-70b",
     thinkingLevel: null,
+    useComputer: true,
   });
   await expect(page.getByRole("button", { name: /Model check/ })).toContainText("llama-3.3-70b");
 

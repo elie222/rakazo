@@ -9,19 +9,22 @@ import {
   CommandList,
   CommandSeparator,
 } from "@rakazo/ui-web";
-import { Info, Lock, Plus, Users } from "lucide-react";
+import { Import, Info, Lock, Plus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { IconTooltip } from "../../../components/IconTooltip";
 
 export function BotCreatePicker({
   bots,
   onCreateBot,
+  onImportAgent,
   onOpenBot,
   onCreateGroup,
   onCreateSpace,
 }: {
   bots: Bot[];
   onCreateBot: () => void;
+  /** The other way to get a bot: bring one over from another assistant. */
+  onImportAgent: () => void;
   onOpenBot: (botId: string) => void;
   onCreateGroup: () => void;
   onCreateSpace: () => void;
@@ -34,10 +37,16 @@ export function BotCreatePicker({
     return bots.filter((bot) => bot.name.toLowerCase().includes(needle));
   }, [bots, needle]);
   const createLabel = t`New bot`;
+  const importLabel = t`Import an agent`;
   const terms = needle.split(/\s+/);
   const showCreate =
     !needle ||
     [createLabel.toLowerCase(), "new bot"].some((label) =>
+      terms.every((part) => label.includes(part)),
+    );
+  const showImport =
+    !needle ||
+    [importLabel.toLowerCase(), "import an agent"].some((label) =>
       terms.every((part) => label.includes(part)),
     );
 
@@ -75,6 +84,19 @@ export function BotCreatePicker({
                   <Plus size={16} strokeWidth={1.8} aria-hidden="true" />
                 </span>
                 {createLabel}
+              </CommandItem>
+            ) : null}
+            {showImport ? (
+              <CommandItem
+                value="import-agent"
+                data-testid="create-import-agent"
+                onSelect={() => onImportAgent()}
+                className="gap-2"
+              >
+                <span className="flex size-[22px] shrink-0 items-center justify-center">
+                  <Import size={16} strokeWidth={1.8} aria-hidden="true" />
+                </span>
+                {importLabel}
               </CommandItem>
             ) : null}
             <CommandItem

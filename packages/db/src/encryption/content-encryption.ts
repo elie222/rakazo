@@ -1,3 +1,4 @@
+import { isRecord } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { createRowId } from "../database/row-id.js";
 import type { PrismaClient } from "../generated/prisma/client.js";
@@ -104,6 +105,13 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     space: { column: "spaceId" },
     ownerRelation: "user",
   },
+  /** The text that starts a run: often the person's own words, answers to a bot's questions included. */
+  Task: {
+    table: "tasks",
+    fields: { prompt: {} },
+    space: { column: "spaceId" },
+    ownerRelation: "thread",
+  },
   /** A bot's inbox. Recipients and file names stay plaintext; `key` and `messageId` are lookups. */
   BotEmailMessage: {
     table: "bot_email_messages",
@@ -125,10 +133,6 @@ type RecordValue = Record<string, unknown>;
 type RuntimeDataModel = {
   models: Record<string, { fields: Array<{ name: string; kind: string; type: string }> }>;
 };
-
-function isRecord(value: unknown): value is RecordValue {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 /** Nulls (SQL or JSON) are stored as nulls: there is nothing to encrypt. */
 function writable(value: unknown): boolean {

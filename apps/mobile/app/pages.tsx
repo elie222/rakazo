@@ -136,11 +136,12 @@ export default function PagesScreen() {
   };
   const pinned = listed.items.filter((page) => page.pinned);
   const rest = listed.items.filter((page) => !page.pinned);
+  const displayedProblem = problem ?? (listed.paginationFailed ? t`Could not load pages.` : null);
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic">
-      {problem ? (
+      {displayedProblem ? (
         <Text accessibilityRole="alert" style={[styles.problem, { color: tokens.destructive }]}>
-          {problem}
+          {displayedProblem}
         </Text>
       ) : null}
       {pinned.length ? <SettingsGroup label={t`Pinned`}>{pinned.map(row)}</SettingsGroup> : null}
@@ -152,7 +153,7 @@ export default function PagesScreen() {
             key="more"
             accessibilityRole="button"
             title={t`Show more`}
-            onPress={() => void showMore().catch(() => setProblem(t`Could not load pages.`))}
+            onPress={() => void showMore()}
           />
         </SettingsGroup>
       ) : null}

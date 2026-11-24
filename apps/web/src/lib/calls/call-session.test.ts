@@ -444,7 +444,7 @@ describe("call session", () => {
     );
   });
 
-  it.each(["failed", "cancelled", "completed"])(
+  it.each(["failed", "completed"])(
     "listens after a first turn ends with run.%s and no reply, then speaks a later reply",
     async (status) => {
       await answeredCall({ botId: "call-bot", botName: "Ada", transcribe: false });

@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { AskReceipt, LoginFieldInput, ThreadMessage } from "@rakazo/contracts";
-import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID, BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import {
   isApprovalAskBlock,
   isQuestionAskBlock,
@@ -130,6 +130,8 @@ export type AskCardProps = {
   onDismiss: () => Promise<void>;
   /** The chat's space; Undo goes there even if another tab selects a different space. */
   rpc?: RpcClient;
+  /** Opens the agent import, for the option a first bot's opening question offers. */
+  onOpenAgentImport?: () => void;
 };
 
 /** A question, approval or protected-input request from the bot. */
@@ -147,6 +149,7 @@ function PromptAskCard({
   answerIsSeparate,
   onAnswer,
   rpc = selectedSpaceRpc,
+  onOpenAgentImport,
 }: AskCardProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
@@ -160,7 +163,12 @@ function PromptAskCard({
   const answeredQuestion = answered && isQuestionAskBlock(block);
   const displayedAnswer = block.status === "answered" ? block.answer : acceptedAnswer;
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
-  const askActions = block.actions;
+  // The import option opens the importer instead of answering, so it has no place once answered.
+  const askActions = block.actions?.filter(
+    (action) =>
+      action.id !== AGENT_IMPORT_ASK_ACTION_ID ||
+      (onOpenAgentImport && block.status !== "answered"),
+  );
   const displayActions = block.instructionUpdate
     ? askActions?.flatMap((action) =>
         action.id === "allow" ? [action, { id: "edit", label: t`Edit` }] : [action],
@@ -311,9 +319,19 @@ function PromptAskCard({
               // Only an answered card says which option was chosen; before that they are plain actions.
               selected={answered ? chosenOption?.id === action.id : undefined}
               disabled={answered || !canAnswer || submitting}
-              onClick={() => void submitAnswer(action.id)}
+              onClick={() =>
+                action.id === AGENT_IMPORT_ASK_ACTION_ID
+                  ? onOpenAgentImport?.()
+                  : void submitAnswer(action.id)
+              }
             >
-              {pendingAction === action.id ? <Trans>Sending…</Trans> : action.label}
+              {pendingAction === action.id ? (
+                <Trans>Sending…</Trans>
+              ) : action.id === AGENT_IMPORT_ASK_ACTION_ID ? (
+                <Trans>Move from another assistant</Trans>
+              ) : (
+                action.label
+              )}
             </OptionRow>
           ))}
           {answered ? (

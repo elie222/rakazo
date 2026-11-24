@@ -57,6 +57,7 @@ it("matches the French New bot label without losing English aliases or bot searc
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const bots = [{ id: "research", name: "Research helper", color: "blue" }] as Bot[];
   const onCreateBot = vi.fn();
+  const onImportAgent = vi.fn();
   const onOpenBot = vi.fn();
   const container = document.createElement("div");
   document.body.append(container);
@@ -68,6 +69,7 @@ it("matches the French New bot label without losing English aliases or bot searc
         <BotCreatePicker
           bots={bots}
           onCreateBot={onCreateBot}
+          onImportAgent={onImportAgent}
           onOpenBot={onOpenBot}
           onCreateGroup={vi.fn()}
           onCreateSpace={vi.fn()}
@@ -95,8 +97,14 @@ it("matches the French New bot label without losing English aliases or bot searc
     await act(async () => row("create-new-bot")!.click());
     expect(onCreateBot).toHaveBeenCalledOnce();
 
+    await search("import");
+    expect(row("create-new-bot")).toBeNull();
+    await act(async () => row("create-import-agent")!.click());
+    expect(onImportAgent).toHaveBeenCalledOnce();
+
     await search("research");
     expect(row("create-new-bot")).toBeNull();
+    expect(row("create-import-agent")).toBeNull();
     expect(row("picker-bot-research")?.textContent).toBe("Research helper");
     await act(async () => row("picker-bot-research")!.click());
     expect(onOpenBot).toHaveBeenCalledWith("research");

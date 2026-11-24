@@ -12,6 +12,7 @@ import { useThemedStyles } from "../../lib/native/native";
 import { useSecretSheetClose } from "../../lib/vault/secret-sheet-close";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSwitch } from "../native/native-switch";
+import { SheetCloseButton } from "../native/sheet-close-button";
 import type { LoginFieldRow } from "../vault/login-fields-editor";
 import { LoginFieldsEditor } from "../vault/login-fields-editor";
 
@@ -27,6 +28,7 @@ export function SecretAskSheet({
   pending,
   onClose,
   onSave,
+  onDismiss,
 }: {
   title: string;
   destination: string;
@@ -39,6 +41,8 @@ export function SecretAskSheet({
   onClose: () => void;
   /** `remember` is false when "Save to Vault" was turned off: the login is for this run only. */
   onSave: (fields: LoginFieldInput[], remember: boolean) => Promise<void>;
+  /** Turns the request down without a value; absent when this viewer can't. */
+  onDismiss?: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
@@ -58,6 +62,10 @@ export function SecretAskSheet({
   }
 
   const { close, closing, endEditing } = useSecretSheetClose(inputs, clear, onClose);
+  // A save or dismissal in flight keeps the sheet open, so its failure is still shown here.
+  const cancel = () => {
+    if (!submitting) close();
+  };
 
   useEffect(() => {
     if (!pending) close();
@@ -78,19 +86,33 @@ export function SecretAskSheet({
     }
   }
 
+  async function dismiss() {
+    if (submitting || !onDismiss) return;
+    clear();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onDismiss();
+    } catch (err) {
+      setError(secretAnswerErrorText(err, t`Could not send answer`));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <Modal
       visible
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={close}
+      onRequestClose={cancel}
       // Focus once the sheet is up: a field focused while the sheet is still being laid out
       // clips its placeholder at large text sizes.
       onShow={() => inputs.current[0]?.focus()}
     >
       <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
         <View style={styles.header}>
-          <NativeActionButton label={t`Cancel`} onPress={close} prominence="plain" />
+          <SheetCloseButton onPress={cancel} />
           <NativeActionButton
             disabled={incomplete}
             busy={submitting}
@@ -98,6 +120,8 @@ export function SecretAskSheet({
             label={remember ? t`Save` : t`Continue`}
             onPress={() => void save()}
             prominence={incomplete ? "plain" : "primary"}
+            // The button pins itself to the top of a row; this one centers with the close button.
+            style={styles.headerAction}
           />
         </View>
         <ScrollView
@@ -106,7 +130,7 @@ export function SecretAskSheet({
           // A long title and site at large text sizes can leave the fields under the keyboard.
           automaticallyAdjustKeyboardInsets
         >
-          <Text style={styles.title} numberOfLines={2}>
+          <Text accessibilityRole="header" numberOfLines={2} style={styles.title}>
             {title}
           </Text>
           <Text style={styles.destination}>{destination}</Text>
@@ -117,6 +141,9 @@ export function SecretAskSheet({
           ) : null}
           <LoginFieldsEditor
             fields={fields}
+            // Username and Password are always right; fields the bot names may need switching, as
+            // a hidden value is typed only into a password field.
+            hiddenFixed={!loginFields}
             onChange={setFields}
             labels={labels}
             editable={!submitting && !closing}
@@ -138,6 +165,15 @@ export function SecretAskSheet({
               {error}
             </Text>
           ) : null}
+          {onDismiss ? (
+            <NativeActionButton
+              label={t`Dismiss request`}
+              disabled={submitting || closing}
+              fill={false}
+              prominence="plain"
+              onPress={() => void dismiss()}
+            />
+          ) : null}
         </ScrollView>
       </View>
     </Modal>
@@ -152,12 +188,14 @@ function createStyles() {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
+      minHeight: 44,
       paddingHorizontal: 20,
       paddingBottom: 12,
     },
+    headerAction: { alignSelf: "center" },
     content: { paddingHorizontal: 20, paddingBottom: 40, gap: 12 },
     title: { color: tokens.foreground, fontSize: 20, fontWeight: "600" },
-    destination: { color: tokens.foreground, fontSize: 15, marginBottom: 8 },
+    destination: { color: tokens.mutedForeground, fontSize: 15, marginTop: -4, marginBottom: 8 },
     replaced: { color: tokens.mutedForeground, fontSize: 13, marginTop: -8, marginBottom: 8 },
     group: { backgroundColor: tokens.muted, borderRadius: 13, overflow: "hidden" },
     row: { flexDirection: "row", alignItems: "center", minHeight: 52, paddingHorizontal: 16 },

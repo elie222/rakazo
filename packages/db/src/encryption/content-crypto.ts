@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } from "node:crypto";
+import { isRecord } from "@rakazo/core";
 
 /**
  * Versioned content ciphertext: `rkz1:<space key id>:<base64url(iv | ciphertext | tag)>`.
@@ -83,10 +84,6 @@ export function decryptText(key: DataKey, location: ContentLocation, value: stri
 }
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 function isSealedJson(value: unknown): value is { [SEALED_FIELD]: string } {
   return isRecord(value) && isCiphertext(value[SEALED_FIELD]);

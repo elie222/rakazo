@@ -79,7 +79,7 @@ describe("messagingPlatformsFromEnv", () => {
       telegramBotToken: "fake-token",
       telegramWebhookSecret: "fake-secret",
       telegramBots: [{ name: "support", botToken: "fake-support", webhookSecret: "fake-secret" }],
-      apiUrl,
+      inboundOrigin: apiUrl,
     };
     const modes = (pollInboundMessages: boolean) =>
       messagingPlatformsFromEnv(credentials, { pollInboundMessages }).map(
@@ -749,7 +749,7 @@ describe("sendblue client", () => {
     const surface = new ChatSdkMessagingSurface(
       messagingPlatformsFromEnv(
         {
-          apiUrl,
+          inboundOrigin: apiUrl,
           sendblueApiKeyId: fullEnv.sendblueApiKeyId,
           sendblueApiSecret: fullEnv.sendblueApiSecret,
           sendblueSigningSecret: fullEnv.sendblueSigningSecret,

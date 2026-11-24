@@ -9,11 +9,22 @@ const state = vi.hoisted(() => ({
   remove: vi.fn(),
   // The iOS app group container; null on Android and on iOS builds without the extension.
   container: null as { uri: string; files: string[] } | null,
+  containerGroup: "group.com.rakazo.app",
+  iosAppGroup: undefined as string | undefined,
 }));
 vi.mock("react-native", () => ({
   Platform: {
     get OS() {
       return state.os;
+    },
+  },
+}));
+vi.mock("expo-constants", () => ({
+  default: {
+    get expoConfig() {
+      return {
+        extra: state.iosAppGroup === undefined ? {} : { iosAppGroup: state.iosAppGroup },
+      };
     },
   },
 }));
@@ -53,7 +64,7 @@ vi.mock("expo-file-system", () => {
         const container = state.container;
         if (!container) return {};
         return {
-          "group.com.rakazo.app": {
+          [state.containerGroup]: {
             uri: container.uri,
             list: () => container.files.map((name) => new File(`${container.uri}${name}`)),
           },
@@ -63,6 +74,7 @@ vi.mock("expo-file-system", () => {
   };
 });
 const {
+  chooseIncomingShareThread,
   isIncomingShareCurrent,
   receiveIncomingShare,
   takeIncomingShare,
@@ -77,6 +89,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   state.os = "android";
   state.container = null;
+  state.containerGroup = "group.com.rakazo.app";
+  state.iosAppGroup = undefined;
   cancelIncomingShare();
   state.payloads = [];
   vi.clearAllMocks();
@@ -89,39 +103,57 @@ afterEach(() => {
 function receive() {
   state.payloads = [{ value: " https://example.com/a ", shareType: "url" }];
   receiveIncomingShare(true, false);
+  chooseIncomingShareThread("bot");
 }
+const take = () => takeIncomingShare("bot");
 describe("incoming share", () => {
   it("takes text once without copying files", () => {
     receive();
-    expect(takeIncomingShare()?.text).toBe("https://example.com/a");
-    expect(takeIncomingShare()).toBeNull();
+    expect(take()?.text).toBe("https://example.com/a");
+    expect(take()).toBeNull();
     expect(state.copy).not.toHaveBeenCalled();
+  });
+  it("leaves a share to the chat the picker chose for it", () => {
+    state.payloads = [{ value: "https://example.com/a", shareType: "url" }];
+    receiveIncomingShare(true, false);
+    expect(take()).toBeNull();
+    chooseIncomingShareThread("other");
+    expect(take()).toBeNull();
+    expect(hasIncomingShare()).toBe(true);
+    expect(takeIncomingShare("other")?.text).toBe("https://example.com/a");
+  });
+  it("does not carry a choice over to a newer share", () => {
+    receive();
+    state.payloads = [{ value: "https://example.com/b", shareType: "url" }];
+    receiveIncomingShare(true, false);
+    expect(take()).toBeNull();
+    expect(hasIncomingShare()).toBe(true);
   });
   it("cancel clears and prevents a failed in-flight import reviving it", () => {
     receive();
-    const share = takeIncomingShare()!;
+    const share = take()!;
     cancelIncomingShare();
     retryIncomingShare(share);
     expect(isIncomingShareCurrent(share)).toBe(false);
     expect(hasIncomingShare()).toBe(false);
-    expect(takeIncomingShare()).toBeNull();
+    expect(take()).toBeNull();
     expect(state.payloads).toEqual([]);
   });
   it("expires after five minutes", () => {
     receive();
     vi.advanceTimersByTime(5 * 60 * 1000);
     expect(hasIncomingShare()).toBe(false);
-    expect(takeIncomingShare()).toBeNull();
+    expect(take()).toBeNull();
   });
   it("checks age on take even if the expiry timer was suspended", () => {
     receive();
     vi.setSystemTime(Date.now() + 5 * 60 * 1000);
-    expect(takeIncomingShare()).toBeNull();
+    expect(take()).toBeNull();
   });
   it("cold starting without a share clears old native state", () => {
     receive();
     receiveIncomingShare(false, true);
-    expect(takeIncomingShare()).toBeNull();
+    expect(take()).toBeNull();
     expect(state.payloads).toEqual([]);
   });
   it("keeps a share on ordinary navigation", () => {
@@ -132,17 +164,17 @@ describe("incoming share", () => {
   it("does nothing on iOS builds without the share extension", () => {
     state.os = "ios";
     receive();
-    expect(takeIncomingShare()).toBeNull();
+    expect(take()).toBeNull();
     expect(state.clear).not.toHaveBeenCalled();
   });
   it("retries failures without replacing a newer share", () => {
     receive();
-    const share = takeIncomingShare()!;
+    const share = take()!;
     retryIncomingShare(share);
-    expect(takeIncomingShare()).toBe(share);
+    expect(take()).toBe(share);
     receive();
     retryIncomingShare(share);
-    expect(takeIncomingShare()).not.toBe(share);
+    expect(take()).not.toBe(share);
   });
   it("deletes only its cache copy after consumption", async () => {
     await readIncomingShareFile("content://media/1", 1024, async (file) => {
@@ -186,6 +218,7 @@ const GROUP = "file:///group/";
 function receiveIos(names: string[], initial = false) {
   state.payloads = names.map((name) => ({ value: `${GROUP}${name}`, shareType: "image" }));
   receiveIncomingShare(true, initial);
+  chooseIncomingShareThread("bot");
 }
 describe("incoming share on iOS", () => {
   beforeEach(() => {
@@ -194,8 +227,8 @@ describe("incoming share on iOS", () => {
   });
   it("receives files the extension copied and hands them off once", () => {
     receiveIos(["a.png", "b.pdf"]);
-    expect(takeIncomingShare()?.files.map((file) => file.name)).toEqual(["a.png", "b.pdf"]);
-    expect(takeIncomingShare()).toBeNull();
+    expect(take()?.files.map((file) => file.name)).toEqual(["a.png", "b.pdf"]);
+    expect(take()).toBeNull();
     expect(state.clear).toHaveBeenCalled();
   });
   it("deletes the extension's copies when the share is cancelled or expires", () => {
@@ -210,12 +243,12 @@ describe("incoming share on iOS", () => {
   it("deletes an expired share's copies when it is taken late", () => {
     receiveIos(["a.png"]);
     vi.setSystemTime(Date.now() + 5 * 60 * 1000);
-    expect(takeIncomingShare()).toBeNull();
+    expect(take()).toBeNull();
     expect(state.remove).toHaveBeenCalledWith(`${GROUP}a.png`);
   });
   it("keeps files put back for retry and those a newer share reuses", () => {
     receiveIos(["a.png", "b.png"]);
-    const share = takeIncomingShare()!;
+    const share = take()!;
     retryIncomingShare({ ...share, files: share.files.slice(1) });
     releaseIncomingShareFiles(share.files);
     expect(state.remove.mock.calls).toEqual([[`${GROUP}a.png`]]);
@@ -249,5 +282,13 @@ describe("incoming share on iOS", () => {
     state.container!.files = ["in-flight.png"];
     receiveIos(["new.png"]);
     expect(state.remove).not.toHaveBeenCalled();
+  });
+  it("uses the build's configured app group when extra.iosAppGroup is set", () => {
+    state.iosAppGroup = "group.com.example.rakazo";
+    state.containerGroup = "group.com.example.rakazo";
+    state.container!.files = ["old.png", "new.png"];
+    receiveIos(["new.png"], true);
+    expect(state.remove.mock.calls).toEqual([[`${GROUP}old.png`]]);
+    expect(take()?.files.map((file) => file.name)).toEqual(["new.png"]);
   });
 });

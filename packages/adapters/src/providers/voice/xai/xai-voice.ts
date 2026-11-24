@@ -99,11 +99,6 @@ export class XaiVoiceProvider implements VoiceProvider {
       providerRequestId: res.headers.get("x-request-id") ?? undefined,
       bytes: await readVoiceAudio(res, signal),
       mimeType: "audio/mpeg",
-      usage: {
-        model: "tts",
-        unit: "characters",
-        units: Array.from(request.text).length,
-      },
     };
   }
 
@@ -163,7 +158,7 @@ function xaiRequestError(status: number, what: string, body: unknown): Error {
 }
 
 export const xaiVoice: VoiceProviderDefinition = {
-  deploymentUsageUnit: (operation) => (operation === "synthesize" ? "characters" : "seconds"),
+  transcriptionUsageUnit: () => "seconds",
   synthesisModel: "tts",
   transcriptionModel: TRANSCRIPTION_MODEL,
   catalog: {

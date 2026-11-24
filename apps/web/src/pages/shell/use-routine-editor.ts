@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, Routine, ThinkingLevel, ThreadSnapshot } from "@rakazo/contracts";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
-import { cronFromPreset, localTimezone, routineCopy } from "@rakazo/core";
+import { cronFromPreset, localTimezone, routineComputerUpdate, routineCopy } from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
@@ -10,10 +10,12 @@ import { parseModelOptionKey } from "../../lib/models/model-catalog";
 import type { createSpaceRpc } from "../../lib/query/rpc";
 import { sharedInflight } from "../../lib/query/shared-inflight";
 import { errorCode, errorText } from "../../lib/query/user-error";
+import { appBotInboundUrl } from "../../lib/routines/inbound-url";
 import type { RoutineDraftState } from "../../lib/routines/routine-draft";
 import {
   draftStateFromRoutine,
   emptyRoutineDraftState,
+  routineDraftEventTriggered,
   routineNeedsOneShotArm,
   watchFromDraft,
 } from "../../lib/routines/routine-draft";
@@ -25,6 +27,7 @@ export function useRoutineEditor({
   active,
   activeBotId,
   timezone,
+  inboundOrigin,
   setBots,
   refreshThread,
   openGroup,
@@ -35,6 +38,8 @@ export function useRoutineEditor({
   active: Bot | undefined;
   activeBotId: RefObject<string | undefined>;
   timezone: string | null | undefined;
+  /** The deployment's published inbound origin; unset means the app's own. */
+  inboundOrigin?: string;
   messageProviders: string[];
   setBots: Dispatch<SetStateAction<Bot[]>>;
   refreshThread: (botId: string) => Promise<ThreadSnapshot>;
@@ -149,19 +154,13 @@ export function useRoutineEditor({
         draft: routineDraft,
         onChange: setRoutineDraft,
         editing: editingRoutine,
-        timezone: editingRoutine?.timezone ?? timezone ?? localTimezone(),
+        timezone: routineDraft.timezone ?? timezone ?? localTimezone(),
         webhook: {
-          path:
-            typeof window !== "undefined"
-              ? `${window.location.origin}/api/v1/bots/${active.id}/webhook`
-              : `/api/v1/bots/${active.id}/webhook`,
+          path: appBotInboundUrl(inboundOrigin, active.id, "webhook"),
           secret: routineWebhookSecret,
           configured: active.webhookConfigured || Boolean(routineWebhookSecret),
         },
-        githubPath:
-          typeof window !== "undefined"
-            ? `${window.location.origin}/api/v1/bots/${active.id}/github`
-            : `/api/v1/bots/${active.id}/github`,
+        githubPath: appBotInboundUrl(inboundOrigin, active.id, "github"),
         messageProviders,
         saving: savingRoutine,
         running: runningRoutine,
@@ -269,10 +268,12 @@ export function useRoutineEditor({
                 }
                 runAt = parsed.toISOString();
               }
+              const name = routineDraft.name || t`Routine`;
+              const prompt = routineDraft.prompt || t`Check in.`;
               saved = await rpc.routines.update({
                 routineId: targetRoutine.id,
-                name: routineDraft.name || t`Routine`,
-                prompt: routineDraft.prompt || t`Check in.`,
+                name,
+                prompt,
                 crons,
                 // Send on/off only when this save changes it, so a stale draft cannot undo a
                 // disable made elsewhere since the editor opened.
@@ -287,6 +288,13 @@ export function useRoutineEditor({
                 ...(routineDraft.inChat !== targetRoutine.inChat
                   ? { inChat: routineDraft.inChat }
                   : {}),
+                ...routineComputerUpdate(targetRoutine, {
+                  // The fallback prompt is not text the owner saw, so it is never approved.
+                  useComputer: routineDraft.useComputer && Boolean(routineDraft.prompt),
+                  name,
+                  prompt,
+                  eventTriggered: routineDraftEventTriggered(routineDraft),
+                }),
                 ...(routineModel.modelProvider !== targetRoutine.modelProvider ||
                 routineModel.modelId !== targetRoutine.modelId ||
                 routineModel.thinkingLevel !== targetRoutine.thinkingLevel
@@ -300,7 +308,7 @@ export function useRoutineEditor({
                 name: routineDraft.name || t`Routine`,
                 prompt: routineDraft.prompt || t`Check in.`,
                 crons,
-                timezone: timezone ?? localTimezone(),
+                timezone: routineDraft.timezone ?? timezone ?? localTimezone(),
                 active: routineDraft.active,
                 notify: true,
                 webhookEnabled: routineDraft.webhookEnabled,

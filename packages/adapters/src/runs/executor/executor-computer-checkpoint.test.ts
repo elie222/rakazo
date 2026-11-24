@@ -315,7 +315,7 @@ function fixture(runId = "run-1") {
           : [],
       ),
     },
-    userModelCredential: { findFirst: vi.fn(async () => null) },
+    userModelCredential: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",

@@ -226,10 +226,7 @@ async function replayExistingSend(
     select: { seq: true },
   });
   if (latestEvent) {
-    await deps.events.notify(threadId, latestEvent.seq).catch((error) => {
-      // Subscribers catch up from the durable event cursor after a missed realtime wake.
-      getLogger().error("thread send realtime notification", error);
-    });
+    await deps.events.notify(threadId, latestEvent.seq);
   }
   return sendResult(message, runs);
 }
@@ -1138,10 +1135,7 @@ export async function sendThreadMessage(
     await finishThreadStop(deps, actor, target, committed.stop);
     return sendResult(committed.message, committed.runs);
   }
-  await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
-    // Subscribers catch up from the durable event cursor after a missed realtime wake.
-    getLogger().error("thread send realtime notification", error);
-  });
+  await deps.events.notify(target.threadId, committed.eventSeq);
   if (committed.runs.length > 0 || committed.routineRuns.length > 0)
     await deps.events.publishSpaceChange?.(actor.spaceId, "runs");
   if (

@@ -126,8 +126,8 @@ describe("ComposerModelPicker", () => {
       return button;
     });
     expect(trigger.textContent).toContain("Fast");
-    // The Space default's model offers thinking levels, so its default level shows too.
-    expect(trigger.textContent).toContain("Medium");
+    // The Space default's model thinks, so its default level shows too, as one it offers.
+    expect(trigger.textContent).toContain("High");
 
     act(() => trigger.click());
     const smart = await vi.waitFor(() => {
@@ -316,7 +316,7 @@ describe("ComposerModelPicker", () => {
     });
     expect(
       [...document.querySelectorAll('[role="option"]')].some(
-        (row) => row.textContent === "Default (Medium)",
+        (row) => row.textContent === "Default (High)",
       ),
     ).toBe(true);
     act(() => high.click());

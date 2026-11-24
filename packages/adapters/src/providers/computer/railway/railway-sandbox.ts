@@ -2,16 +2,11 @@ import path from "node:path";
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerActionRequest,
   ComputerFileEntry,
-  ComputerInput,
   ComputerRef,
-  ControlLeaseRef,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
-  ScreenRequest,
-  TerminalRequest,
   UnreferencedMachine,
   UnreferencedMachineRecords,
   WorkspaceExportLimits,
@@ -29,7 +24,7 @@ import type { ConnectOptions, Sandbox, SandboxStatus } from "railway";
 import WebSocket from "ws";
 import { z } from "zod";
 import { computerIdleSleepEnabled, sandboxIdleMs } from "../../../computers/computer-idle.js";
-import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import { batchesOf, writePortableFilesInBatches } from "../../../computers/computer-workspace.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
@@ -49,6 +44,7 @@ import {
 import {
   INSTALL_LINUX_BROWSER,
   LinuxDesktop,
+  LinuxDesktopSandbox,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
 } from "../../../computers/screens/linux-desktop.js";
@@ -77,12 +73,12 @@ export interface RailwaySandboxOptions {
   unreferencedMachines?: UnreferencedMachineRecords;
 }
 
-export class RailwaySandboxProvider implements SandboxProvider {
+export class RailwaySandboxProvider extends LinuxDesktopSandbox implements SandboxProvider {
   billsWhileRunning(): boolean {
     return true;
   }
 
-  private readonly desktops = new LinuxDesktop({
+  protected readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: WORKSPACE,
       workspaceDir: WORKSPACE,
@@ -120,6 +116,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     unreferencedMachines,
     ...options
   }: RailwaySandboxOptions) {
+    super();
     this.machines = unreferencedMachines;
     this.maxWorkspaceFileBytes = z.coerce
       .number()
@@ -298,44 +295,6 @@ export class RailwaySandboxProvider implements SandboxProvider {
     }
   }
 
-  async connectScreen(computer: ComputerRef, request: ScreenRequest, context: AdapterContext) {
-    return this.desktops.connectScreen(computer, request, context);
-  }
-
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
-    return this.desktops.connectTerminal(computer, request, context);
-  }
-
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ) {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
-  }
-
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ) {
-    return this.desktops.sendInput(computer, input, context);
-  }
-
-  async observe(computer: ComputerRef, context: AdapterContext) {
-    return this.desktops.observe(computer, context);
-  }
-
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext) {
-    return this.desktops.releaseScreen(computer, context);
-  }
-
   async listFiles(
     computer: ComputerRef,
     directory: string,
@@ -401,9 +360,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
     const sandbox = await this.connect(computer, context);
     const { SandboxFileNotFoundError } = await loadRailway();
     type ExportFile = { path: string; executable: boolean; size: number };
-    const batches: ExportFile[][] = [];
-    const batcher = new PortableFileBatcher<ExportFile>(4, (file) => file.size);
-    let listedFiles = 0;
+    const listed: ExportFile[] = [];
     let listedBytes = 0;
     for (let index = 0; index + 2 < entries.length; index += 3) {
       const filePath = entries[index];
@@ -414,21 +371,13 @@ export class RailwaySandboxProvider implements SandboxProvider {
         throw new Error("Railway workspace file has an invalid size");
       // The listing sizes every file, so the save's limits are checked before any file is read.
       if (size > this.maxWorkspaceFileBytes) throw new WorkspaceTooLargeError("bytes");
-      listedFiles += 1;
+      listed.push({ path: filePath, size, executable: (Number.parseInt(mode, 8) & 0o111) !== 0 });
       listedBytes += size;
-      if (limits && listedFiles > limits.maxFiles) throw new WorkspaceTooLargeError("files");
+      if (limits && listed.length > limits.maxFiles) throw new WorkspaceTooLargeError("files");
       if (limits && listedBytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
-      const full = batcher.add({
-        path: filePath,
-        size,
-        executable: (Number.parseInt(mode, 8) & 0o111) !== 0,
-      });
-      if (full?.length) batches.push(full);
     }
-    const last = batcher.take();
-    if (last.length) batches.push(last);
     const growing: Array<{ path: string; executable: boolean }> = [];
-    for (const files of batches) {
+    for (const files of batchesOf(listed, 4, (file) => file.size)) {
       context.signal.throwIfAborted();
       const batch = await Promise.all(
         files.map(async (file) => {
@@ -483,27 +432,25 @@ export class RailwaySandboxProvider implements SandboxProvider {
     });
     if (privacy.exitCode !== 0 || privacy.timedOut)
       throw new Error("could not protect Railway workspace permissions");
-    const batcher = new PortableFileBatcher<PortableFile>(4, (file) => file.content.byteLength);
     const permissions = new Map<number, string[]>([
       [0o600, []],
       [0o700, []],
     ]);
-    const flush = async (batch: PortableFile[]) => {
-      context.signal.throwIfAborted();
-      // Passing mode makes the SDK open an exec connection for every file.
-      await Promise.all(
-        batch.map((file) => sandbox.files.write(workspacePath(WORKSPACE, file.path), file.content)),
-      );
-    };
-    for await (const file of files) {
-      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      context.signal.throwIfAborted();
-      const full = batcher.add(file);
-      if (full) await flush(full);
-      const target = workspacePath(WORKSPACE, file.path);
-      permissions.get(file.executable ? 0o700 : 0o600)?.push(target);
-    }
-    await flush(batcher.take());
+    await writePortableFilesInBatches(
+      files,
+      4,
+      async (batch) => {
+        // Passing mode makes the SDK open an exec connection for every file.
+        await Promise.all(
+          batch.map((file) => {
+            const target = workspacePath(WORKSPACE, file.path);
+            permissions.get(file.executable ? 0o700 : 0o600)?.push(target);
+            return sandbox.files.write(target, file.content);
+          }),
+        );
+      },
+      context.signal,
+    );
     for (const [mode, paths] of permissions) {
       for (let offset = 0; offset < paths.length; offset += 64) {
         const result = await sandbox.exec(
@@ -517,11 +464,6 @@ export class RailwaySandboxProvider implements SandboxProvider {
           throw new Error("could not restore Railway workspace permissions");
       }
     }
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
   }
 
   async keepAlive(computer: ComputerRef) {

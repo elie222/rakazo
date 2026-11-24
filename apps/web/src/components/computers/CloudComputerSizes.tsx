@@ -1,9 +1,14 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { CloudComputers, ComputerSize } from "@rakazo/contracts";
-import { ComputerSizeSchema, computerSizeChoice } from "@rakazo/contracts";
+import {
+  applySavedCloudComputerSize,
+  ComputerSizeSchema,
+  computerSizeChoice,
+} from "@rakazo/contracts";
+import { writeSaved } from "@rakazo/core/query";
 import { computerName, computerSizeLabel } from "@rakazo/i18n/computer-usage";
 import { Button, OptionSelect } from "@rakazo/ui-web";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { SettingsGroup, SettingsRow } from "../settings/SettingsRows";
@@ -67,13 +72,20 @@ function CloudComputerRow({
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
+  const queryClient = useQueryClient();
+  const cloudKey = queries.cloudComputers.list.queryKey();
   // A size above the plan is chosen only to see that it needs an upgrade; nothing is saved.
   const [beyondPlan, setBeyondPlan] = useState<ComputerSize | null>(null);
   const [changed, setChanged] = useState(false);
   const change = useSave({
     stale: [queries.cloudComputers.list.key()],
-    save: (size: ComputerSize, rpc) =>
-      rpc.cloudComputers.setSize({ computerId: computer.id, size }),
+    save: async (size: ComputerSize, rpc) => {
+      const saved = await rpc.cloudComputers.setSize({ computerId: computer.id, size });
+      await writeSaved(queryClient, cloudKey, (listed) =>
+        applySavedCloudComputerSize(listed, computer.id, size),
+      );
+      return saved;
+    },
     onSaved: () => setChanged(true),
   });
   const name = computerName(computer);

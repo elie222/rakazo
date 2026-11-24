@@ -318,12 +318,19 @@ function cellText(cell: TableCell): string {
 }
 
 /** "$1,200", "-4.5%" and "12k" sort as the numbers they show. */
-function sortKey(cell: TableCell): number | string {
+function sortKey(cell: TableCell, usesDecimalComma: boolean): number | string {
   if (typeof cell === "number") return cell;
   const raw = cellText(cell).trim();
   if (FIGURE.test(raw)) {
     const scale = /k$/i.test(raw) ? 1e3 : /M$/.test(raw) ? 1e6 : /B$/.test(raw) ? 1e9 : 1;
-    const number = Number.parseFloat(raw.replace(/[^\d.\-\u2212]/g, "").replace("\u2212", "-"));
+    const literal = raw.replace(/[^\d,.\-\u2212]/g, "").replace("\u2212", "-");
+    // Keep a lone three-digit group such as "1,234" as thousands; only flip clear decimals.
+    const decimalComma =
+      usesDecimalComma && /^-?(?:\d+,\d{1,2}|\d{1,3}(?:\.\d{3})+,\d+)$/.test(literal);
+    const normalized = decimalComma
+      ? literal.replaceAll(".", "").replace(",", ".")
+      : literal.replaceAll(",", "");
+    const number = Number.parseFloat(normalized);
     if (Number.isFinite(number)) return number * scale;
   }
   return raw.toLowerCase();
@@ -431,9 +438,12 @@ export function Table({
   const activeSort = sortable && sort && hasColumnHeader(heads[sort.column]) ? sort : null;
   if (activeSort) {
     const direction = activeSort.descending ? -1 : 1;
+    const usesDecimalComma = new Intl.NumberFormat(words.intl)
+      .formatToParts(1.5)
+      .some(({ type, value }) => type === "decimal" && value === ",");
     shown = [...shown].sort((a, b) => {
-      const x = sortKey(a.row[activeSort.column]);
-      const y = sortKey(b.row[activeSort.column]);
+      const x = sortKey(a.row[activeSort.column], usesDecimalComma);
+      const y = sortKey(b.row[activeSort.column], usesDecimalComma);
       if (typeof x === "number" && typeof y === "number") return (x - y) * direction;
       // Figures come before words, and after them when the order is reversed.
       if (typeof x === "number") return -direction;

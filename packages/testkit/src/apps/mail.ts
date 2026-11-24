@@ -104,6 +104,23 @@ export class MailEmulator extends AppEmulator {
     for (const thread of seed.threads) this.addSeedThread(thread);
   }
 
+  /** Mail that arrives during the trial, as a new unread inbox thread. */
+  receive(message: { from: string; subject: string; body: string }) {
+    this.addSeedThread({
+      key: `received-${this.threads.size}`,
+      subject: message.subject,
+      messages: [
+        {
+          from: message.from,
+          to: [`${this.account.name} <${this.account.email}>`],
+          date: new Date().toISOString(),
+          body: message.body,
+          unread: true,
+        },
+      ],
+    });
+  }
+
   private addSeedThread(seed: MailThreadSeed) {
     const id = mailThreadId(seed.key);
     const labels = new Set(seed.labels ?? []);

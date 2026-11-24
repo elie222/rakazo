@@ -386,7 +386,7 @@ test("keeps a website login password on one line", { tag: "@nightly" }, async ({
 }) => {
   const { card, loginAnswers } = await openSecretCard(page, "login", "show a login card");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await card.getByRole("button", { name: "Add", exact: true }).click();
+  await card.getByRole("button", { name: "Continue", exact: true }).click();
   const form = page.getByTestId("vault-editor");
   await form.getByLabel("Username", { exact: true }).fill("someone");
   await page.evaluate(() => navigator.clipboard.writeText("pass-one\npass-two"));
@@ -432,7 +432,7 @@ test("uses a login for this run only when Save to Vault is turned off on its car
     await expect(page.getByPlaceholder(/Message/)).toBeVisible({ timeout: 15_000 });
   }
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await card.getByRole("button", { name: "Add", exact: true }).click();
+  await card.getByRole("button", { name: "Continue", exact: true }).click();
   const form = page.getByTestId("vault-editor");
   const saveToVault = form.getByRole("switch", { name: "Save to Vault" });
   await expect(saveToVault).toBeChecked();

@@ -42,6 +42,7 @@ let root: Root;
 let editor: ReturnType<typeof useRoutineEditor>;
 let finishUpdate: Deferred<Routine>;
 const update = vi.fn();
+const create = vi.fn();
 const rotateWebhookSecret = vi.fn();
 const testRun = vi.fn();
 const openGroup = vi.fn();
@@ -51,9 +52,10 @@ const activeBotId = { current: "" };
 
 function Harness() {
   editor = useRoutineEditor({
-    rpc: { routines: { update, testRun }, bots: { rotateWebhookSecret } } as unknown as ReturnType<
-      typeof createSpaceRpc
-    >,
+    rpc: {
+      routines: { update, create, testRun },
+      bots: { rotateWebhookSecret },
+    } as unknown as ReturnType<typeof createSpaceRpc>,
     active: activeBot,
     activeBotId,
     timezone: "UTC",
@@ -105,6 +107,20 @@ it("keeps edits made while a save is in flight", async () => {
   expect(editor.editorProps!.draft.prompt).toBe("Check in.");
 });
 
+it("saves a copy in the zone of the routine it copies", async () => {
+  const newYork = { ...routine, timezone: "America/New_York" };
+  create.mockResolvedValue({ ...newYork, id: "routine-2", active: false });
+  act(() => editor.editRoutine(newYork));
+  act(() => editor.editorProps!.onCopy());
+  expect(editor.editorProps!.timezone).toBe("America/New_York");
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(create).toHaveBeenCalledWith(
+    expect.objectContaining({ timezone: "America/New_York", active: false }),
+  );
+});
+
 it("sends on/off only when the save changes it", async () => {
   update.mockResolvedValue(routine);
   act(() => editor.editRoutine(routine));
@@ -119,6 +135,51 @@ it("sends on/off only when the save changes it", async () => {
     await editor.editorProps!.onSave();
   });
   expect(update.mock.calls[1]![0]).toMatchObject({ active: false });
+});
+
+it("sends Use my computer only when the owner flips it", async () => {
+  const own = { ...routine, prompt: "Check the backups", useComputer: false };
+  update.mockResolvedValue(own);
+  act(() => editor.editRoutine(own));
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, name: "Renamed" }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[0]![0]).not.toHaveProperty("useComputer");
+
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, useComputer: true }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[1]![0]).toMatchObject({ useComputer: true });
+});
+
+it("approves again the prompt shown when a save edits it while Use my computer is on", async () => {
+  const own = { ...routine, prompt: "Check the backups", useComputer: true };
+  update.mockResolvedValue(own);
+  act(() => editor.editRoutine(own));
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, active: !own.active }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[0]![0]).not.toHaveProperty("useComputer");
+
+  act(() => editor.editRoutine(own));
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, prompt: "Twice" }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[1]![0]).toMatchObject({ useComputer: true, prompt: "Twice" });
+});
+
+it("never sends Use my computer for a routine that doesn't offer it", async () => {
+  update.mockResolvedValue(routine);
+  act(() => editor.editRoutine(routine));
+  act(() => editor.editorProps!.onChange({ ...editor.editorProps!.draft, useComputer: true }));
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(update.mock.calls[0]![0]).not.toHaveProperty("useComputer");
 });
 
 it("shows a revealed webhook secret only for the bot it belongs to", async () => {
