@@ -285,7 +285,8 @@ export function VaultItemEditor({
           leading={<SheetBarClose label={t`Cancel`} disabled={submitting} onPress={cancel} />}
           trailing={
             <SheetBarConfirm
-              disabled={!save || submitting}
+              disabled={!save}
+              busy={submitting}
               label={t`Save`}
               onPress={() => void submit()}
             />

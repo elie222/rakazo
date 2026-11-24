@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { GlassIconButton } from "./glass-icon-button";
 import { GlassSurface } from "./glass-surface";
@@ -73,10 +73,13 @@ export function SheetBarConfirm({
   label,
   onPress,
   disabled,
+  busy,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  /** Shows progress in place of the label, keeping the button's width. */
+  busy?: boolean;
 }) {
   const tokens = mobileTokens();
   return (
@@ -88,8 +91,8 @@ export function SheetBarConfirm({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
-        accessibilityState={disabled ? { disabled: true } : undefined}
-        disabled={disabled}
+        accessibilityState={disabled || busy ? { disabled: true, busy } : undefined}
+        disabled={disabled || busy}
         onPress={onPress}
         style={({ pressed }) => ({
           height: 44,
@@ -103,10 +106,17 @@ export function SheetBarConfirm({
             fontSize: 17,
             fontWeight: "600",
             color: disabled ? tokens.mutedForeground : tokens.primaryForeground,
+            opacity: busy ? 0 : 1,
           }}
         >
           {label}
         </Text>
+        {busy ? (
+          <ActivityIndicator
+            color={tokens.primaryForeground}
+            style={{ position: "absolute", start: 0, end: 0 }}
+          />
+        ) : null}
       </Pressable>
     </GlassSurface>
   );
