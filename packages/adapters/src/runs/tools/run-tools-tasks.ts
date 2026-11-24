@@ -50,9 +50,7 @@ import type { ToolHandlers } from "./run-tool-gate.js";
 function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undefined {
   const command = commandWatchFromTool(watch);
   const refusal = command === undefined ? undefined : protectedComputerLifecycleRefusal(command);
-  return desktopGuardApplies(ctx.computer) && refusal
-    ? desktopGuardRefusalMessage(refusal)
-    : undefined;
+  return desktopGuardApplies(ctx.computer) && refusal ? desktopGuardRefusalMessage() : undefined;
 }
 
 /**
