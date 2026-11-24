@@ -1032,46 +1032,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
-  updater:
-    profiles:
-      - updater
-    image: ${RAKAZO_UPDATER_IMAGE:-ghcr.io/elie222/rakazo/updater}:${RAKAZO_UPDATER_IMAGE_TAG:-latest}
-    restart: unless-stopped
-    stop_grace_period: 4h
-    init: true
-    user: root
-    security_opt:
-      - no-new-privileges:true
-    pids_limit: 256
-    mem_limit: 1g
-    environment:
-      NODE_ENV: production
-      RAKAZO_UPDATER_TOKEN: ${RAKAZO_UPDATER_TOKEN:-}
-      RAKAZO_UPDATER_HOST: 0.0.0.0
-      RAKAZO_UPDATER_PORT: "7092"
-      RAKAZO_IMAGE: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}
-      RAKAZO_COMPUTER_IMAGE: ${RAKAZO_COMPUTER_IMAGE:-ghcr.io/elie222/rakazo/computer}
-      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-rakazo}
-      RAKAZO_DEPLOY_DIR: ${RAKAZO_DEPLOY_DIR:-/srv/rakazo}
-      RAKAZO_COMPOSE_FILE: ${RAKAZO_COMPOSE_FILE:-docker-compose.images.yml}
-      RAKAZO_UPDATE_SERVICES: ${RAKAZO_UPDATE_SERVICES:-supervisor,computer}
-      COMPOSE_PATH_SEPARATOR: ${COMPOSE_PATH_SEPARATOR:-}
-      RAKAZO_AUTO_UPDATE_INTERVAL_HOURS: ${RAKAZO_AUTO_UPDATE_INTERVAL_HOURS:-0}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${RAKAZO_DEPLOY_DIR:-/srv/rakazo}:${RAKAZO_DEPLOY_DIR:-/srv/rakazo}
-    networks:
-      - control
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - fetch('http://127.0.0.1:7092/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
-      interval: 15s
-      timeout: 5s
-      retries: 10
   secrets:
     image: ${BUSYBOX_IMAGE:-busybox:1}
     command:
@@ -1156,7 +1116,6 @@ volumes:
   secrets-web:
   secrets-supervisor:
 networks:
-  control:
   app:
   data:
     internal: true

@@ -45,7 +45,8 @@ export function buildStandalone() {
   const base = read("docker-compose.images.yml");
   const overlay = read("docker-compose.standalone.overlay.yml");
 
-  const services = { ...base.services };
+  // The updater rewrites an installer's deploy folder and .env, which a panel install has neither of.
+  const { updater: _updater, ...services } = base.services;
   for (const [name, service] of Object.entries(overlay.services)) {
     services[name] = services[name] ? mergeService(name, services[name], service) : service;
   }
@@ -55,6 +56,8 @@ export function buildStandalone() {
     merged[key] = value;
   }
   merged.services = services;
+  const { control: _control, ...networks } = base.networks;
+  merged.networks = networks;
   merged.volumes = { ...base.volumes, ...overlay.volumes };
 
   return (
