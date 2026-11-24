@@ -167,7 +167,7 @@ function OpenPage({
         rename.error
           ? t`Could not rename this page. Try again.`
           : readerState.failed
-            ? t`Could not save your changes. Try again.`
+            ? t`Your changes aren't saved. Check your connection.`
             : null
       }
       onRename={

@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
-import type { PageDetail } from "@rakazo/contracts";
+import type { PageDetail, PageState } from "@rakazo/contracts";
 import {
   pageCopyRequest,
   pageCopyResult,
@@ -68,6 +68,8 @@ export default function PageScreen() {
     let active = true;
     // A tap on the page before it reloads is not one on the new page.
     tappedAt.current = null;
+    answerPage.current = null;
+    latestState.current = null;
     setLoaded({ status: "loading" });
     void getLatestPage(pageId, { refresh: true })
       .then(async (page) => {
@@ -96,6 +98,9 @@ export default function PageScreen() {
   const tappedAt = useRef<number | null>(null);
   const stateSaver = usePageStateSaver(pageId);
   const answerPage = useRef<((message: object) => void) | null>(null);
+  const latestState = useRef<{ pageId: string; values: PageState } | null>(null);
+  const shownPageId = useRef(pageId);
+  shownPageId.current = pageId;
   const saving = loaded.status === "ready" && loaded.page.readerState !== undefined;
   useSpaceChanges(
     "pages",
@@ -103,13 +108,19 @@ export default function PageScreen() {
       bestEffort(
         "read saved page values again",
         getLatestPage(pageId, { refresh: true }).then((page) => {
-          if (page.readerState) answerPage.current?.(pageStateUpdate(page.readerState));
+          if (!page.readerState || page.id !== shownPageId.current) return;
+          latestState.current = { pageId: page.id, values: page.readerState };
+          answerPage.current?.(pageStateUpdate(page.readerState));
         }),
       ),
     saving,
   );
   const receive = useCallback(
     (data: string, answer: (message: object) => void) => {
+      const latest = latestState.current;
+      if (!answerPage.current && latest?.pageId === shownPageId.current) {
+        answer(pageStateUpdate(latest.values));
+      }
       answerPage.current = answer;
       const values = saving ? pageStateRequest(pageMessage(data)) : null;
       if (values) {
@@ -201,7 +212,7 @@ export default function PageScreen() {
             },
           ]}
         >
-          {t`Could not save your changes. Try again.`}
+          {t`Your changes aren't saved. Check your connection.`}
         </Text>
       ) : null}
       <View pointerEvents="box-none" style={[styles.controls, { top: insets.top + 6 }]}>

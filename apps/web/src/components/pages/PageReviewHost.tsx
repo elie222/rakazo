@@ -169,7 +169,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
         draftId && publish.input === draftId && publish.error
           ? errorText(publish.error)
           : stateSaver.failed && readerState
-            ? t`Could not save your changes. Try again.`
+            ? t`Your changes aren't saved. Check your connection.`
             : null
       }
     />

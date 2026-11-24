@@ -183,7 +183,7 @@ function Review({ pageId }: { pageId: string }) {
         ) : null}
         {!problem && stateSaver.failed && readerState ? (
           <Text accessibilityRole="alert" style={[styles.banner, { color: tokens.destructive }]}>
-            {t`Could not save your changes. Try again.`}
+            {t`Your changes aren't saved. Check your connection.`}
           </Text>
         ) : null}
         {page.version !== page.currentVersion && !draftId ? (
@@ -199,6 +199,9 @@ function Review({ pageId }: { pageId: string }) {
               draftId
                 ? undefined
                 : (raw, answer) => {
+                    if (!answerPage.current && savedState.current) {
+                      answer(pageStateUpdate(savedState.current));
+                    }
                     answerPage.current = answer;
                     const message = pageMessage(raw);
                     const values = readerState ? pageStateRequest(message) : null;

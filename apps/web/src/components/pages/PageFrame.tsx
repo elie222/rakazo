@@ -47,12 +47,17 @@ export function PageFrame({
   const [drawnAt, setDrawnAt] = useState<CSSProperties | undefined>(undefined);
   const usedGesture = useRef<string | null>(null);
   const answerFrame = useRef<((message: object) => void) | null>(null);
+  const latestState = useRef(savedState);
+  latestState.current = savedState;
   useEffect(() => {
     if (savedState) answerFrame.current?.(pageStateUpdate(savedState));
   }, [savedState]);
   const receive = useCallback(
     (data: unknown, answer: (message: object) => void, focused: boolean) => {
       if (!data || typeof data !== "object") return;
+      if (!answerFrame.current && latestState.current) {
+        answer(pageStateUpdate(latestState.current));
+      }
       answerFrame.current = answer;
       const message = data as {
         type?: unknown;

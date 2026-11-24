@@ -1,7 +1,7 @@
 import { useCallback, useRef, useSyncExternalStore } from "react";
 
 const STATE_MESSAGE = "rakazo-page:state";
-const SAVED_KEY = /^[A-Za-z0-9_.:-]{1,64}$/;
+const SAVED_KEY = /^(?!__proto__$)[A-Za-z0-9_.:-]{1,64}$/;
 const SEND_DELAY_MS = 400;
 const OWN_CHANGE_MS = 5000;
 
@@ -9,7 +9,7 @@ const values = new Map<string, unknown>();
 const changedAt = new Map<string, number>();
 const listeners = new Set<() => void>();
 let saving = false;
-let unsent: Record<string, unknown> = {};
+const unsent = new Map<string, unknown>();
 let timer: ReturnType<typeof setTimeout> | undefined;
 
 function notify() {
@@ -17,12 +17,16 @@ function notify() {
 }
 
 function send() {
+  if (unsent.size === 0) return;
+  window.parent?.postMessage({ type: STATE_MESSAGE, values: Object.fromEntries(unsent) }, "*");
+  unsent.clear();
+}
+
+function cooled() {
   timer = undefined;
-  const batch = unsent;
-  unsent = {};
-  if (Object.keys(batch).length > 0) {
-    window.parent?.postMessage({ type: STATE_MESSAGE, values: batch }, "*");
-  }
+  if (unsent.size === 0) return;
+  send();
+  timer = setTimeout(cooled, SEND_DELAY_MS);
 }
 
 function receive(event: MessageEvent) {
@@ -44,6 +48,10 @@ export function startPageState(saved: unknown) {
   saving = true;
   for (const [key, value] of Object.entries(saved)) values.set(key, value);
   addEventListener("message", receive);
+  addEventListener("pagehide", send);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") send();
+  });
 }
 
 function asJson(value: unknown): unknown {
@@ -62,8 +70,10 @@ function setValue(key: string, value: unknown) {
   const saved = asJson(value);
   if (saved === undefined) return;
   changedAt.set(key, Date.now());
-  unsent[key] = saved;
-  if (timer === undefined) timer = setTimeout(send, SEND_DELAY_MS);
+  unsent.set(key, saved);
+  if (timer !== undefined) return;
+  send();
+  timer = setTimeout(cooled, SEND_DELAY_MS);
 }
 
 function sameShape(saved: unknown, initial: unknown): boolean {

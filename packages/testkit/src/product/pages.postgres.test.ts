@@ -769,19 +769,23 @@ describePages("pages", () => {
         .status,
     ).toBe(404);
 
-    const tooMuch = Object.fromEntries(
-      Array.from({ length: 40 }, (_, index) => [`n${index}`, "x".repeat(1600)]),
-    );
-    await rpc(app, owner, "pageReviews/saveState", { ...input, values: tooMuch });
-    const more = Object.fromEntries(
-      Array.from({ length: 40 }, (_, index) => [`m${index}`, "x".repeat(1600)]),
-    );
+    const filler = (prefix: string) =>
+      Object.fromEntries(
+        Array.from({ length: 40 }, (_, index) => [`${prefix}${index}`, "x".repeat(1600)]),
+      );
+    await rpc(app, owner, "pageReviews/saveState", { ...input, values: filler("n") });
+    await rpc(app, owner, "pageReviews/saveState", { ...input, values: filler("m") });
+    const kept = (await rpc<PageDetail>(app, owner, "pages/get", input)).readerState!;
+    expect(kept).toMatchObject(filler("m"));
+    expect(kept).not.toHaveProperty("note");
     expect(
-      (await raw(app, owner, "pageReviews/saveState", { ...input, values: more })).status,
+      (
+        await raw(app, owner, "pageReviews/saveState", {
+          ...input,
+          values: { note: "x".repeat(70_000) },
+        })
+      ).status,
     ).toBe(400);
-    expect((await rpc<PageDetail>(app, owner, "pages/get", input)).readerState).toMatchObject(
-      saved,
-    );
   });
 
   it("saves, edits and guards pages through the bot's save_page", async () => {

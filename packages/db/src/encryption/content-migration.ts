@@ -428,7 +428,8 @@ export async function contentEncryptionStatus(
       count(*) FILTER (WHERE NOT jsonb_exists(operation, '$sealed') OR NOT jsonb_exists(result, '$sealed'))
       FROM native_calendar_requests
     UNION ALL
-    SELECT 'page_reader_states', count(*), count(*) FILTER (WHERE NOT jsonb_exists("values", '$sealed'))
+    SELECT 'page_reader_states', count(*), count(*) FILTER (WHERE jsonb_array_length("values") > 0
+      AND NOT jsonb_exists("values"->0, '$sealed'))
       FROM page_reader_states
   `;
     },

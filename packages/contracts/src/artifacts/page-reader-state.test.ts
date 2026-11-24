@@ -7,6 +7,8 @@ describe("PageStateSchema", () => {
   it("takes plain JSON under keys a page can name", () => {
     expect(valid({ "packed.passport": true, note: "Charger", answers: [1, "b", null] })).toBe(true);
     expect(valid({ "has space": true })).toBe(false);
+    const parsed = PageStateSchema.safeParse(JSON.parse('{"__proto__": true, "kept": 1}'));
+    expect(parsed.success && Object.keys(parsed.data)).toEqual(["kept"]);
     expect(valid({ ["k".repeat(65)]: true })).toBe(false);
   });
 

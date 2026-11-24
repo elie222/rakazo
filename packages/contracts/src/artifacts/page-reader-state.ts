@@ -3,7 +3,7 @@ import * as z from "zod";
 export const PAGE_STATE_MAX_BYTES = 64 * 1024;
 export const PAGE_STATE_MAX_KEYS = 100;
 const PAGE_STATE_MAX_DEPTH = 6;
-export const PAGE_STATE_KEY = /^[A-Za-z0-9_.:-]{1,64}$/;
+export const PAGE_STATE_KEY = /^(?!__proto__$)[A-Za-z0-9_.:-]{1,64}$/;
 
 function pageStateValue(value: unknown, depth = 1): boolean {
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;

@@ -18,6 +18,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  vi.runAllTimers();
   host.remove();
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -65,20 +66,23 @@ describe("usePageState", () => {
     expect(shown("count")).toBe("0");
   });
 
-  it("sends a burst of changes as one save and keeps unsavable keys in memory", () => {
+  it("sends a change at once, the burst after it as one save, and keeps unsavable keys in memory", () => {
     render([
       ["note", ""],
       ["ticks", {}],
       ["bad key", false],
     ]);
     set("note", "Adapter");
+    expect(posted).toEqual([{ type: "rakazo-page:state", values: { note: "Adapter" } }]);
+    set("note", "Adapter for EU");
     set("ticks", { passport: true });
     set("bad key", true);
-    expect(posted).toEqual([]);
+    expect(posted).toHaveLength(1);
     vi.advanceTimersByTime(400);
-    expect(posted).toEqual([
-      { type: "rakazo-page:state", values: { note: "Adapter", ticks: { passport: true } } },
-    ]);
+    expect(posted[1]).toEqual({
+      type: "rakazo-page:state",
+      values: { note: "Adapter for EU", ticks: { passport: true } },
+    });
     expect(shown("bad key")).toBe("true");
   });
 
@@ -100,11 +104,13 @@ describe("usePageState", () => {
       [false, false],
     ]);
     act(() => boxes[1]!.click());
+    expect(posted).toEqual([{ type: "rakazo-page:state", values: { packing: { charger: true } } }]);
     act(() => boxes[0]!.click());
-    vi.advanceTimersByTime(400);
-    expect(posted).toEqual([
-      { type: "rakazo-page:state", values: { packing: { charger: true, Passport: false } } },
-    ]);
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    expect(posted[1]).toEqual({
+      type: "rakazo-page:state",
+      values: { packing: { charger: true, Passport: false } },
+    });
   });
 
   it("takes another copy's values, but not over a change this copy just made", () => {

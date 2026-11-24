@@ -1,7 +1,14 @@
 import { isDeepStrictEqual } from "node:util";
 import type { PageState } from "@rakazo/contracts";
-import { PageStateSchema } from "@rakazo/contracts";
+import {
+  PAGE_STATE_KEY,
+  PAGE_STATE_MAX_BYTES,
+  PAGE_STATE_MAX_KEYS,
+  PageStateSchema,
+  pageStateBytes,
+} from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
+import * as z from "zod";
 import { readJsonColumn } from "../database/json-column.js";
 import type { Prisma } from "../generated/prisma/client.js";
 
@@ -16,12 +23,33 @@ export class PageStateLimitError extends ClientError {
 
 const column = (id: string) => ({ table: "page_reader_states", column: "values", id });
 
+const StoredPageState = z
+  .array(z.tuple([z.string().regex(PAGE_STATE_KEY), z.unknown()]))
+  .transform((entries) => Object.fromEntries(entries))
+  .pipe(PageStateSchema);
+
 export async function readPageState(db: Db, pageId: string, userId: string): Promise<PageState> {
   const row = await db.pageReaderState.findUnique({
     where: { pageId_userId: { pageId, userId } },
     select: { id: true, values: true },
   });
-  return row ? readJsonColumn(PageStateSchema, row.values, column(row.id), { fallback: {} }) : {};
+  return row ? readJsonColumn(StoredPageState, row.values, column(row.id), { fallback: {} }) : {};
+}
+
+export function fitPageState(saved: PageState, values: PageState): PageState {
+  const changed = Object.keys(values);
+  let kept = [...Object.keys(saved).filter((key) => !Object.hasOwn(values, key)), ...changed];
+  const pick = (keys: string[]) =>
+    Object.fromEntries(
+      keys.map((key) => [key, Object.hasOwn(values, key) ? values[key] : saved[key]]),
+    );
+  while (
+    kept.length > changed.length &&
+    (kept.length > PAGE_STATE_MAX_KEYS || pageStateBytes(pick(kept)) > PAGE_STATE_MAX_BYTES)
+  ) {
+    kept = kept.slice(1);
+  }
+  return pick(kept);
 }
 
 export async function savePageState(
@@ -34,8 +62,8 @@ export async function savePageState(
     where: { pageId_userId: { pageId: page.id, userId } },
     select: { id: true, values: true },
   });
-  const saved = row ? readJsonColumn(PageStateSchema, row.values, column(row.id), "reject") : {};
-  const merged = { ...saved, ...values };
+  const saved = row ? readJsonColumn(StoredPageState, row.values, column(row.id), "reject") : {};
+  const merged = fitPageState(saved, values);
   if (row && isDeepStrictEqual(merged, saved)) return false;
   const checked = PageStateSchema.safeParse(merged);
   if (!checked.success) {
@@ -44,7 +72,7 @@ export async function savePageState(
   if (row) {
     await db.pageReaderState.update({
       where: { id: row.id },
-      data: { values: merged as Prisma.InputJsonObject },
+      data: { values: Object.entries(merged) as Prisma.InputJsonArray },
     });
   } else {
     await db.pageReaderState.create({
@@ -52,7 +80,7 @@ export async function savePageState(
         pageId: page.id,
         userId,
         spaceId: page.spaceId,
-        values: merged as Prisma.InputJsonObject,
+        values: Object.entries(merged) as Prisma.InputJsonArray,
       },
     });
   }
