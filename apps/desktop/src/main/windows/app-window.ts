@@ -1,8 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Session } from "electron";
-import { app, BrowserWindow, Menu, net, screen, session, shell } from "electron";
+import { app, BrowserWindow, Menu, nativeTheme, net, screen, session, shell } from "electron";
 import {
   mcpLoopbackRefusalFrom,
   mcpOAuthCallbackFrom,
@@ -36,7 +36,16 @@ import {
   oauthPopupSessionPreferences,
   shouldOpenInAppPopup,
 } from "./window-open.js";
-import { browserWindowOptions, developmentIconFile, warmWindowTtlMs } from "./window-options.js";
+import type { SavedBackground } from "./window-options.js";
+import {
+  appWindowBackground,
+  browserWindowOptions,
+  developmentIconFile,
+  paintedBackground,
+  parseSavedBackground,
+  systemWindowBackground,
+  warmWindowTtlMs,
+} from "./window-options.js";
 
 export const PROBE_TIMEOUT_MS = 8_000;
 /** The server or the network refused the page; the setup window says so and the server logs its side. */
@@ -149,11 +158,32 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
     desktop.liveProbeWindows--;
   }
 }
+function windowBackgroundFile() {
+  return path.join(app.getPath("userData"), "window-background");
+}
+function lastPaintedBackground() {
+  try {
+    return parseSavedBackground(readFileSync(windowBackgroundFile(), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      reportDesktopError(error, "desktop.startup");
+    return null;
+  }
+}
+/** Written at once: a few bytes, only when the page's colors change, and a quit cannot drop it. */
+function saveBackground(saved: SavedBackground) {
+  try {
+    writeFileSync(windowBackgroundFile(), JSON.stringify(saved));
+  } catch (error) {
+    reportDesktopError(error, "desktop.startup");
+  }
+}
 export function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
   const icon = developmentIcon();
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
+    backgroundColor: appWindowBackground(lastPaintedBackground(), nativeTheme.shouldUseDarkColors),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
@@ -165,6 +195,14 @@ export function createWindow(url: string, partition: string | null) {
       v8CacheOptions: "bypassHeatCheck",
       ...(partition === null ? {} : { partition }),
     },
+  });
+  // The page names its background in its theme-color meta tag, including an appearance picked
+  // in settings; the window keeps it for resizes and opens in it next time.
+  win.webContents.on("did-change-theme-color", (_event, color) => {
+    const background = paintedBackground(color);
+    if (background === null) return;
+    win.setBackgroundColor(background);
+    saveBackground({ color: background, systemUsesDarkColors: nativeTheme.shouldUseDarkColors });
   });
   win.on("unresponsive", () =>
     reportDesktopError(new Error("Renderer unresponsive"), "desktop.unresponsive"),
@@ -491,7 +529,7 @@ function oauthPopupWindowOptions(partition: string | null) {
     frame: true,
     titleBarStyle: "default" as const,
     autoHideMenuBar: true,
-    backgroundColor: "#0A0A0A",
+    backgroundColor: systemWindowBackground(nativeTheme.shouldUseDarkColors),
     webPreferences: oauthPopupSessionPreferences(partition),
   };
 }

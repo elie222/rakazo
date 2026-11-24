@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   APP_WINDOW_MIN_HEIGHT,
   APP_WINDOW_MIN_WIDTH,
+  appWindowBackground,
   browserWindowOptions,
   DEFAULT_WARM_WINDOW_TTL_MS,
   developmentIconFile,
+  parseSavedBackground,
   setupWindowOptions,
   warmWindowTtlMs,
 } from "./window-options.js";
@@ -80,7 +82,6 @@ describe("setup window chrome", () => {
       const app = browserWindowOptions(platform, laptop);
       expect(setup.frame).toBe(app.frame);
       expect(setup.titleBarStyle).toBe(app.titleBarStyle);
-      expect(setup.backgroundColor).toBe(app.backgroundColor);
     }
   });
 
@@ -120,10 +121,43 @@ describe("development icon", () => {
 });
 
 describe("window background", () => {
-  it("matches the web dark background token so startup chrome does not flash", async () => {
+  it("matches the web background token for the system appearance so the app does not flash", async () => {
+    const { webDarkTokens, webLightTokens } = await import("@rakazo/ui-tokens");
+    expect(appWindowBackground(null, true)).toBe(webDarkTokens.background);
+    expect(appWindowBackground(null, false)).toBe(webLightTokens.background);
+  });
+
+  it("opens in the background the page last painted while the system appearance is unchanged", () => {
+    const saved = parseSavedBackground(
+      JSON.stringify({ color: "#0A0A0A", systemUsesDarkColors: false }),
+    );
+    expect(appWindowBackground(saved, false)).toBe("#0A0A0A");
+  });
+
+  it("follows the system once it switches, when the page was following it", () => {
+    const saved = parseSavedBackground(
+      JSON.stringify({ color: "#0A0A0A", systemUsesDarkColors: true }),
+    );
+    expect(appWindowBackground(saved, false)).toBe(appWindowBackground(null, false));
+  });
+
+  it("keeps an appearance picked in settings after the system switches", () => {
+    const saved = parseSavedBackground(
+      JSON.stringify({ color: "#0A0A0A", systemUsesDarkColors: false }),
+    );
+    expect(appWindowBackground(saved, true)).toBe("#0A0A0A");
+  });
+
+  it("ignores a saved background that is not a color", () => {
+    expect(
+      parseSavedBackground(JSON.stringify({ color: "oklch(0.2 0 0)", systemUsesDarkColors: true })),
+    ).toBeNull();
+    expect(parseSavedBackground("#0A0A0A")).toBeNull();
+  });
+
+  it("keeps the always-dark setup page on the dark background", async () => {
     const { webDarkTokens } = await import("@rakazo/ui-tokens");
     for (const platform of ["darwin", "win32", "linux"] as const) {
-      expect(browserWindowOptions(platform, laptop).backgroundColor).toBe(webDarkTokens.background);
       expect(setupWindowOptions(platform, laptop).backgroundColor).toBe(webDarkTokens.background);
     }
   });
