@@ -11,6 +11,7 @@ import { bestEffort } from "@rakazo/logging";
 import { loadBotGroupDirectory } from "../../bots/group-handoff.js";
 import { parsePlaybook } from "../../bots/teaching-session.js";
 import type { RunMediaSources } from "../../media/media-sources.js";
+import { routineEnded } from "../../routines/routine-end.js";
 import { lateRoutineRunInstruction } from "../../routines/routine-lateness.prompt.js";
 import { routineRunInstruction } from "../../routines/routine-run.prompt.js";
 import { formatCompactedSummary } from "../../runtime/context/history-compaction.prompt.js";
@@ -372,13 +373,22 @@ export async function buildTurnPrompt(
       "load the routine for its run's prompt",
       deps.prisma.routine.findUnique({
         where: { id: run.routineId },
-        select: { name: true, timezone: true },
+        select: {
+          name: true,
+          timezone: true,
+          crons: true,
+          watch: true,
+          endsAt: true,
+          active: true,
+          nextRunAt: true,
+        },
       }),
     );
     // The name is not part of what the owner approved, and any of their runs can rename it.
     routineNote = routineRunInstruction(
       ownerComputerRoutine ? undefined : routine?.name,
       parts.records.historyReach === "recent",
+      routine ? routineEnded(routine) : false,
     );
     if (routine && lateSince)
       lateRoutineNote = lateRoutineRunInstruction(lateSince, executionStartedAt, routine.timezone);

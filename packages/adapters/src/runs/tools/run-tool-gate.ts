@@ -324,8 +324,9 @@ export async function gateToolCall(
   const asksEveryTime =
     (unattendedWatch || scheduleNamesNewSite || routineAddsEvents || ignoresAllowRules) &&
     !toolRequiresApproval(name, viaConnector);
-  // Never ask runs everything else: only another owner's connection could have been steered into it.
-  const guardedInNeverAsk = name === "respond_agent_connection";
+  // Outside requests for a live screen or an agent connection require an approval mode that can review them.
+  const outsideScreenshot =
+    name === "attach_file" && args.screenshot === true && request.heldForApproval;
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
@@ -386,9 +387,10 @@ export async function gateToolCall(
         mode,
         mandatory: mandatoryInAnyRun,
         steerable:
-          guardedInNeverAsk && mode === "never"
-            ? !ctx.source.ownerStartedRun || (await isRunTainted(ctx))
-            : undefined,
+          mode === "never" &&
+          (outsideScreenshot ||
+            (name === "respond_agent_connection" &&
+              (!ctx.source.ownerStartedRun || (await isRunTainted(ctx))))),
         consequential: requiresApprovalByDefault,
         reviewOnly,
         checkerConfigured,

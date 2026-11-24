@@ -46,6 +46,8 @@ request in a routine. The bot takes a fresh screenshot when it calls `attach_fil
 `screenshot: true`. The image appears as an ordinary attachment on web, desktop, and mobile,
 subject to the same access, approvals, and size limits. Anyone who can access the attachment can
 see everything visible in the screenshot, including sensitive information on the screen.
+If a run starts from an outside request or an outside message steers it, sharing a screenshot
+goes through approval and is blocked in Never ask mode.
 
 To have a bot react to files changing, use a [routine](./routines.md) that watches a folder.
 

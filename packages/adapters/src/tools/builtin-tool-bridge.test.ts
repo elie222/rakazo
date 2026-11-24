@@ -64,8 +64,9 @@ describe("built-in tool bridge", () => {
     // managed bot's routines; update_bot carries the settings its owner can change;
     // update_preferences includes the chat model picker and reply streaming; remember takes a
     // list of operations so one call can make room and add, each with an optional end; shell
-    // says to open the bot's screen when a graphical program finds no display.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(37_046);
+    // says to open the bot's screen when a graphical program finds no display; schedule_create
+    // takes an end date for a repeat or watch, so a limited stretch is one routine.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(37_791);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

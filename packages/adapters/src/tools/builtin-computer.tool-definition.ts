@@ -35,6 +35,18 @@ export const attachFileWithScreenshot: ConnectorTool = {
   },
 };
 
+const SHELL_DESCRIPTION =
+  "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer. Output can arrive while the command is still running; tell the user any one-time code or sign-in URL in that output. A command is stopped after a few minutes, so on Linux or macOS start longer work, such as a coding agent CLI, as its own statement `nohup <command> < /dev/null > <log> 2>&1 &`, never after `&&`, and read the log to follow it.";
+
+/** The shell description, naming the offered tool that opens this bot's screen, if any. */
+export function shellDescription(screenTool: "computer_observe" | "browser_snapshot" | undefined) {
+  if (screenTool === "computer_observe")
+    return `${SHELL_DESCRIPTION} Graphical programs use this bot's own screen: if one can't open a display, call computer_observe to open it, then run the command again without setting DISPLAY.`;
+  if (screenTool === "browser_snapshot")
+    return `${SHELL_DESCRIPTION} Graphical programs use this bot's own screen, which opens with its browser: if one can't open a display, call browser_snapshot, then run the command again without setting DISPLAY.`;
+  return SHELL_DESCRIPTION;
+}
+
 /** Media, computer, browser, file and desktop app tools. */
 export const computerTools: ConnectorTool[] = [
   {
@@ -238,8 +250,7 @@ export const computerTools: ConnectorTool[] = [
   attachFileTool,
   {
     name: "shell",
-    description:
-      "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer. Output can arrive while the command is still running; tell the user any one-time code or sign-in URL in that output. A command is stopped after a few minutes, so on Linux or macOS start longer work, such as a coding agent CLI, as its own statement `nohup <command> < /dev/null > <log> 2>&1 &`, never after `&&`, and read the log to follow it. Graphical programs use this bot's own screen: if one can't open a display, call computer_observe to open it, then run the command again without setting DISPLAY.",
+    description: shellDescription("computer_observe"),
     inputSchema: {
       type: "object",
       properties: {

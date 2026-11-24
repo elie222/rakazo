@@ -1010,6 +1010,16 @@ describe("a schedule_update that needs an approval preview", () => {
     expect(interval.request.args).toEqual({ routineId: "routine-1", everyMinutes: 30 });
   });
 
+  it("keeps the plain card for an end date edit, which the comparison has no line for", async () => {
+    const args = { routineId: "routine-1", name: "Weekly shop", endAt: "2026-11-30" };
+    const { ctx, request } = updateCall(args);
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    // The comparison would show the new name alone, without the end the call sets beside it.
+    expect(request.fleetSummary).toBeUndefined();
+    expect(request.args).toEqual(args);
+    expect(request.effectRequest).toEqual({ ...args, expected: { name: "Groceries" } });
+  });
+
   it("refuses an events edit this server cannot make a webhook key for", async () => {
     const { ctx, request } = updateCall({ routineId: "routine-1", on: { webhook: true } });
     const noKeyStore = { ...ctx, deps: { ...ctx.deps, secretStore: undefined } };

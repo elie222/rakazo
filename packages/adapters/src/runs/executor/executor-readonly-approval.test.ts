@@ -1,5 +1,6 @@
 import type {
   AgentRunRequest,
+  ArtifactStore,
   AutoReviewProvider,
   BrowserProvider,
   ConnectorCall,
@@ -16,12 +17,14 @@ import { createPendingSteeringRun, sendUserMessage } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "../../approvals/approval-effect.js";
 import { fakeSpendingPrisma } from "../../billing/fake-spending.js";
+import { FakeBrowserProvider } from "../../browser/fake-browser.js";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
 import type { HostComputerRequest } from "../../computers/host/host-computer-protocol.js";
 import type { UserDeviceGateway } from "../../computers/host/user-device-protocol.js";
 import { FakeWebProvider } from "../../providers/web/fake/fake-web.js";
 import { routineComputerFingerprint } from "../../routines/routine-owner-computer.js";
 import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
+import { LocalArtifactStore } from "../../storage/artifacts.js";
 import { MAX_SHARED_MEMORY_CHARS } from "../../tools/builtin.tool-definition.js";
 import type * as FleetToolsModule from "../../tools/fleet-tools.js";
 import {
@@ -118,6 +121,7 @@ function fixture({
   routineRow,
   batch,
   browser,
+  artifacts,
   spendingLimit = null,
   memoryProvider,
   deploymentLabs,
@@ -131,6 +135,7 @@ function fixture({
   memoryProvider?: Record<string, unknown>;
   /** A page browser on a graphical computer, so browser_act and computer_act are offered. */
   browser?: BrowserProvider;
+  artifacts?: ArtifactStore;
   /** The user's spending limit for payments. */
   spendingLimit?: SpendingLimit | null;
 
@@ -683,6 +688,7 @@ function fixture({
     },
     sandbox: { describe: () => ({ capabilities: { graphical: Boolean(browser) } }) },
     browser,
+    artifacts,
     memory: {
       read: async (request: { scope: string; path?: string }) => {
         const documents =
@@ -5845,6 +5851,21 @@ describe("a click that completes a purchase on a website", () => {
     await f.run();
     expect(f.spending.payments).toEqual([expect.objectContaining({ amount: 11_300 })]);
   });
+});
+
+it("refuses a screenshot requested by another bot in Never ask mode", async () => {
+  const f = fixture({
+    name: "attach_file",
+    builtin: true,
+    trigger: "bot_message",
+    skipApprovals: true,
+    browser: new FakeBrowserProvider(),
+    artifacts: new LocalArtifactStore("unused"),
+  });
+  f.setCalls([{ args: { screenshot: true }, executionId: "call-1" }]);
+  await f.run();
+  expect(f.results).toEqual([{ error: expect.stringContaining("needs the owner's approval") }]);
+  expect(f.pauseRunForInput).not.toHaveBeenCalled();
 });
 
 it("does not blame the webhook on cards every run shows", async () => {

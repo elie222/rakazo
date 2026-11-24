@@ -8,7 +8,7 @@ import {
 import { bestEffort } from "@rakazo/logging";
 import { stableStringify } from "./routine-watch.js";
 
-export type RoutineNoticeDeps = { prisma: PrismaClient; events: ThreadEvents };
+export type RoutineNoticeDeps = { prisma: PrismaClient; events: Pick<ThreadEvents, "notify"> };
 
 export type RoutineNoticeInput = {
   spaceId: string;
@@ -48,6 +48,7 @@ const EDITABLE_FIELDS = [
   "thinkingLevel",
   "watch",
   "nextRunAt",
+  "endsAt",
 ] as const;
 
 const comparable = (value: unknown) =>
