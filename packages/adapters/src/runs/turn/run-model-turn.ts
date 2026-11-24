@@ -17,6 +17,7 @@ import {
 } from "../assembly/run-instructions.prompt.js";
 import {
   GROUP_UNADDRESSED_REPLY_GUIDANCE,
+  runNarratesLiveFor,
   runReplyGuidance,
 } from "../assembly/run-replies.prompt.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
@@ -233,7 +234,9 @@ function modelTurnRequest(
       pluginLine,
       agentSkillsLine,
       taughtSkillsLine,
-      replyGuidance: runReplyGuidance(run.trigger, replyMode),
+      replyGuidance: runReplyGuidance(run.trigger, replyMode, {
+        mayStaySilent: groupReplyOptional || allowSilentEmptyRun,
+      }),
       // These runs get a narrow tool set, so guidance names only the tools they have.
       disabledBuiltinTools:
         isStrategicInitiativeRun(run) || run.trigger === BACKGROUND_HELPER_TRIGGER
@@ -334,6 +337,12 @@ function modelTurnRequest(
     },
     script,
     allowSilentEmpty: allowSilentEmptyRun,
+    // The same runs the reply guidance tells to narrate live.
+    narratesLive: runNarratesLiveFor({
+      trigger: run.trigger,
+      replyMode,
+      maySayNothing: groupReplyOptional || allowSilentEmptyRun,
+    }),
     emptyResponseText,
     executeTool: scripted
       ? undefined

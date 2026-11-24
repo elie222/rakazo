@@ -4,7 +4,7 @@ import type { ModelCatalogEntry } from "./model-connections.js";
 import { ModelBackupChoiceSchema, modelChoiceListSchema } from "./model-connections.js";
 
 /** Add purposes here; connections, persistence, pickers and backups stay shared. */
-export const ModelRoleSchema = z.enum(["main", "approval", "computer"]);
+export const ModelRoleSchema = z.enum(["main", "approval", "computer", "status"]);
 export type ModelRole = z.infer<typeof ModelRoleSchema>;
 export const ModelRoleChoiceSchema = ModelBackupChoiceSchema.extend({
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),

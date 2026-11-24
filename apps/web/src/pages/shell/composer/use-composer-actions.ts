@@ -53,6 +53,9 @@ import type { useShellNavigation } from "../use-shell-navigation";
 
 type ThreadRefresh = RefObject<(id: string) => Promise<ThreadSnapshot>>;
 
+/** How many recent sends the transcript can match to arriving messages. */
+const RECENT_SENDS = 20;
+
 /**
  * What the composer sends and the chat actions beside it: attachments, replies, send, stop,
  * answers, reactions, and the errors they leave.
@@ -125,6 +128,12 @@ export function useComposerActions({
     return shown === messages ? null : foldPeerReplies(shown, { includePeerReceipts: true });
   }, [activeSnapshot, activeThreadKey, meId, pendingSends]);
   const [sentCount, setSentCount] = useState(0);
+  // Sends that produced no message of yours: a routine-only submission or a failed send.
+  const [unsentCount, setUnsentCount] = useState(0);
+  // The texts of recent sends, newest last, so each message enters with its own send, and the
+  // texts of sends that produced no message, so their entrances are dropped.
+  const [sentTexts, setSentTexts] = useState<readonly string[]>([]);
+  const [unsentTexts, setUnsentTexts] = useState<readonly string[]>([]);
   useEffect(() => {
     setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
     return () => setComposerUnsavedWork({ sending: false, attachments: false });
@@ -408,6 +417,7 @@ export function useComposerActions({
       setSending(true);
       setSendError(null);
       clearReadBoundary();
+      setSentTexts((texts) => [...texts.slice(-(RECENT_SENDS - 1)), trimmed]);
       setSentCount((count) => count + 1);
       // Plain text shows in the chat at once; the stored message replaces it when it arrives.
       if (
@@ -447,8 +457,13 @@ export function useComposerActions({
       };
       // Keep the draft cleared once the submission is confirmed accepted.
       let accepted = false;
+      // Counted once, whether the send makes no message by design or fails.
+      let unsentCounted = false;
       try {
         if (!plan.shouldSend) {
+          unsentCounted = true;
+          setUnsentTexts((texts) => [...texts.slice(-(RECENT_SENDS - 1)), trimmed]);
+          setUnsentCount((count) => count + 1);
           if (plan.shouldRunRoutines) {
             await rpc.threads.sendWithRoutines({
               ...(groupTarget ? { groupId: groupTarget } : { botId: botTarget! }),
@@ -572,6 +587,10 @@ export function useComposerActions({
         else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
         return true;
       } catch (error) {
+        if (!accepted && !unsentCounted) {
+          setUnsentTexts((texts) => [...texts.slice(-(RECENT_SENDS - 1)), trimmed]);
+          setUnsentCount((count) => count + 1);
+        }
         settlePendingSend();
         const isConfirmation = isImageInputConfirmation(error);
         // Offer the file resend only for the unchanged draft this send carried.
@@ -691,9 +710,15 @@ export function useComposerActions({
     sending,
     pendingSends,
     sentCount,
-    /** Laid over the transcript's own props: scroll on send, and the sends not stored yet. */
+    /**
+     * Laid over the transcript's own props: scroll on send, the sends not stored yet, and the
+     * sends this tab made, so each animates in as it arrives.
+     */
     transcriptProps: {
       followRequest: sentCount,
+      sentTexts,
+      unsentRequests: unsentCount,
+      unsentTexts,
       ...(pendingTranscript ? { transcript: pendingTranscript } : {}),
     },
     sendMessage,

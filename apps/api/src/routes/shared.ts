@@ -7,6 +7,7 @@ import {
   hasHostedModelCredits,
   hostCredentialSource,
   mcpStdioAvailable,
+  openingAcknowledgementEnabled,
   resolveMemberMainModel,
   sandboxKindCapabilities,
   selectConfiguredModel,
@@ -75,6 +76,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     isDeploymentOwner: false,
     isAdmin: admin,
     needsModel: setup.needsModel,
+    liveStatusLines: openingAcknowledgementEnabled(),
     defaultProvider: canonicalPiProviderId(setup.model?.provider ?? deps.env.defaultProvider),
     defaultModel: setup.model?.modelId ?? deps.env.defaultModel,
     // Set only while the active default is the deployment's own, running on host credentials.

@@ -1,4 +1,9 @@
-import { humanizeToolName, isBackgroundRunTrigger } from "@rakazo/core";
+import {
+  humanizeToolName,
+  isBackgroundRunTrigger,
+  noteLastToolStep,
+  redactSecrets,
+} from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "../../approvals/approval-effect.js";
 import { returnBotMessageOutcome } from "../../messaging/bot-messages.js";
@@ -6,6 +11,7 @@ import { clearRoutineBackoff } from "../../routines/routine-backoff.js";
 import { connectorStepNames } from "../../runtime/pi/tools/pi-runtime-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { publishMessage, redactBlocks } from "../assembly/run-messages.js";
+import { runPromotesMidTurnNarration } from "../assembly/run-replies.prompt.js";
 import {
   conversationRetentionMessages,
   enqueueConversationRetention,
@@ -86,6 +92,14 @@ export async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">)
   // A step without a note of its own replaces the earlier one in the live view, so its status
   // lines show again.
   if (!heldNote) reply.narrationStatusShowing = false;
+  // The status the model gave the call names the step in the finished reply too, over any text
+  // held before it. Redacted now: a handoff between steps saves the note in the reply
+  // checkpoint as it is.
+  const status = event.status && redactSecrets(event.status, ctx.secrets);
+  if (status && runPromotesMidTurnNarration(run.trigger) && !ctx.allowSilentEmptyRun) {
+    flushPendingTools(reply);
+    reply.messageSegments = noteLastToolStep(reply.messageSegments, status);
+  }
   reply.textSinceLastStep = "";
   reply.assistantTurnBreakPending = true;
   await deps.events.append({
@@ -96,7 +110,8 @@ export async function onToolCalled(ctx: RunContext, event: RuntimeEvent<"tool">)
     runId,
     payload: { name: event.name, executionId: event.executionId },
   });
-  await showNarrationStatus(ctx, heldNote);
+  // A step that came with the model's own status keeps it on the line.
+  await showNarrationStatus(ctx, heldNote, { keepLine: Boolean(event.status) });
   tryFlushPendingTools(reply);
   // A call can finish before or after its own event is handled, so its result is read here.
   const { toolCallStreak: streak, toolResults } = ctx.state;

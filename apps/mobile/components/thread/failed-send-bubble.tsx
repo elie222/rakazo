@@ -1,14 +1,42 @@
 import { useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import { isModelRequiredSendError } from "@rakazo/core";
-import { typeScale } from "@rakazo/ui-tokens";
+import { sendEntrance, typeScale } from "@rakazo/ui-tokens";
+import { useState } from "react";
 import { Alert, Image, Platform, Pressable, Text, View } from "react-native";
+import type { EntryExitAnimationFunction } from "react-native-reanimated";
+import Animated, { Easing, FadeIn, useReducedMotion, withTiming } from "react-native-reanimated";
 import type { UserBubble } from "../../lib/messages/user-bubble";
 import { withUserBubble } from "../../lib/messages/user-bubble";
 import { openModelSettings } from "../../lib/models/model-settings";
 import { showIOSActionSheet } from "../../lib/native/ios-action-sheet";
 import { useMobileTokens } from "../../lib/native/native";
 import type { SendAttempt } from "../../lib/thread/send/thread-feedback";
+import { isFreshSend } from "../../lib/thread/send/thread-feedback";
 import { NativeSymbol } from "../native/native-symbol";
+
+/**
+ * A message just sent rises into place above the composer: it starts this far below and this
+ * faint, and eases out over this long, with no bounce.
+ */
+export const SEND_ENTER = sendEntrance;
+/** "Sending…" shows only once a send takes this long; a quick send never shows it. */
+export const SLOW_SEND_MS = 1500;
+const CAPTION_FADE_MS = 200;
+
+// The list is inverted, but its header cell is flipped back upright, so a positive
+// translateY here is down on screen.
+const sendEntering: EntryExitAnimationFunction = () => {
+  "worklet";
+  const timing = { duration: SEND_ENTER.ms, easing: Easing.out(Easing.cubic) };
+  return {
+    initialValues: { opacity: SEND_ENTER.opacity, transform: [{ translateY: SEND_ENTER.offset }] },
+    animations: {
+      opacity: withTiming(1, timing),
+      transform: [{ translateY: withTiming(0, timing) }],
+    },
+  };
+};
 
 export function FailedSendBubble({
   attempt,
@@ -26,8 +54,17 @@ export function FailedSendBubble({
 }) {
   const { t } = useLingui();
   const tokens = withUserBubble(useMobileTokens(), userBubble);
+  const reducedMotion = useReducedMotion();
+  // Decided once, on mount: a later render, a restored send or a retry never slides in.
+  const [entering] = useState(() => isFreshSend(attempt));
   const { payload, state } = attempt;
   const sending = state === "pending";
+  // The bubble is the message, so a quick send shows no caption: the hand-off to the saved
+  // message then neither moves nor flashes. Only a slow send says it is still sending.
+  const [slow, setSlow] = useState(false);
+  // A send that settled forgets it was slow, so a retry waits again before saying so.
+  if (!sending && slow) setSlow(false);
+  useTimeout(() => setSlow(true), sending ? SLOW_SEND_MS : null);
   const retryable = state === "failed" || state === "queued";
   // Once a model is connected, the saved missing-model error is stale and retrying can work.
   const modelRequired = isModelRequiredSendError(attempt.error) && needsModel !== false;
@@ -97,74 +134,88 @@ export function FailedSendBubble({
   }
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={messageLabel ? `${messageLabel}. ${caption}` : caption}
-      accessibilityHint={sending ? undefined : t`Long press to delete`}
-      accessibilityState={{ disabled: sending }}
-      disabled={sending}
-      onPress={
-        attempt.imageConfirmation ? () => showActions(false) : retryable ? onRetry : undefined
-      }
-      onLongPress={() => showActions()}
-      style={{ alignSelf: "flex-end", maxWidth: "90%", marginTop: 12, gap: 4 }}
+    <Animated.View
+      entering={entering && !reducedMotion ? sendEntering : undefined}
+      style={{ alignSelf: "flex-end", maxWidth: "90%", marginTop: 12 }}
     >
-      <View
-        style={{
-          borderRadius: 20,
-          backgroundColor: tokens.chatUser,
-          paddingHorizontal: 14,
-          paddingVertical: 12,
-          gap: 8,
-          opacity: 0.8,
-        }}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={messageLabel ? `${messageLabel}. ${caption}` : caption}
+        accessibilityHint={sending ? undefined : t`Long press to delete`}
+        accessibilityState={{ disabled: sending }}
+        disabled={sending}
+        onPress={
+          attempt.imageConfirmation ? () => showActions(false) : retryable ? onRetry : undefined
+        }
+        onLongPress={() => showActions()}
+        style={{ gap: 4 }}
       >
-        {payload.replyPreview ? (
-          <Text
-            numberOfLines={3}
+        <View
+          style={{
+            borderRadius: 20,
+            backgroundColor: tokens.chatUser,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            gap: 8,
+            // A message on its way looks sent; one that failed fades back.
+            opacity: sending ? 1 : 0.8,
+          }}
+        >
+          {payload.replyPreview ? (
+            <Text
+              numberOfLines={3}
+              style={{
+                color: tokens.chatUserForeground,
+                fontSize: 13,
+                borderLeftWidth: 2,
+                borderLeftColor: tokens.border,
+                paddingLeft: 8,
+              }}
+            >
+              {payload.replyPreview}
+            </Text>
+          ) : null}
+          {payload.displayText ? (
+            <Text style={{ color: tokens.chatUserForeground, ...typeScale.body }}>
+              {payload.displayText}
+            </Text>
+          ) : null}
+          {payload.attachments.map((attachment) => (
+            <View key={attachment.id} style={{ gap: 4 }}>
+              {attachment.previewUri ? (
+                <Image
+                  source={{ uri: attachment.previewUri }}
+                  style={{ width: 180, height: 120, borderRadius: 12 }}
+                />
+              ) : null}
+              <Text style={{ color: tokens.chatUserForeground, fontSize: 13 }}>
+                {attachment.name}
+              </Text>
+            </View>
+          ))}
+        </View>
+        {!sending || slow ? (
+          <Animated.View
+            entering={sending && !reducedMotion ? FadeIn.duration(CAPTION_FADE_MS) : undefined}
             style={{
-              color: tokens.chatUserForeground,
-              fontSize: 13,
-              borderLeftWidth: 2,
-              borderLeftColor: tokens.border,
-              paddingLeft: 8,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: 4,
             }}
           >
-            {payload.replyPreview}
-          </Text>
-        ) : null}
-        {payload.displayText ? (
-          <Text style={{ color: tokens.chatUserForeground, ...typeScale.body }}>
-            {payload.displayText}
-          </Text>
-        ) : null}
-        {payload.attachments.map((attachment) => (
-          <View key={attachment.id} style={{ gap: 4 }}>
-            {attachment.previewUri ? (
-              <Image
-                source={{ uri: attachment.previewUri }}
-                style={{ width: 180, height: 120, borderRadius: 12 }}
+            {!sending ? (
+              <NativeSymbol
+                ios="exclamationmark.circle.fill"
+                android="alert-circle"
+                size={13}
+                color={color}
               />
             ) : null}
-            <Text style={{ color: tokens.chatUserForeground, fontSize: 13 }}>
-              {attachment.name}
-            </Text>
-          </View>
-        ))}
-      </View>
-      <View
-        style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4 }}
-      >
-        {!sending ? (
-          <NativeSymbol
-            ios="exclamationmark.circle.fill"
-            android="alert-circle"
-            size={13}
-            color={color}
-          />
+            <Text style={{ color, fontSize: 13 }}>{caption}</Text>
+          </Animated.View>
         ) : null}
-        <Text style={{ color, fontSize: 13 }}>{caption}</Text>
-      </View>
-    </Pressable>
+      </Pressable>
+    </Animated.View>
   );
 }

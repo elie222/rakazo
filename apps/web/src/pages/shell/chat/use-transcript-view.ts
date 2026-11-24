@@ -9,8 +9,10 @@ import {
   workingRoutineName,
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
+import { useSpaceQueries } from "../../../lib/query/query";
 import { FALLBACK_BOT_COLOR } from "./chat-shared";
 import { resolveTranscriptMemberName as groupTranscriptMemberName } from "./transcript-member-name";
 
@@ -42,6 +44,7 @@ export function useTranscriptView({
       ? snapshot
       : null;
   const currentRuns = activeThreadRuns(activeSnapshot);
+  const me = useQuery(useSpaceQueries().me.queryOptions()).data;
   const answerableAskIds = useMemo(
     () => answerableAskMessageIds(activeSnapshot, meId),
     [activeSnapshot, meId],
@@ -103,6 +106,8 @@ export function useTranscriptView({
       answerableAskIds,
       dismissableAskIds,
       running: workingRuns.length > 0,
+      workingRunIds: workingRuns.map((run) => run.id),
+      holdsActivityLine: me?.liveStatusLines === true,
       workingBots,
       workingRoutine: workingRoutineName(workingRuns),
       memberName: resolveMemberName,

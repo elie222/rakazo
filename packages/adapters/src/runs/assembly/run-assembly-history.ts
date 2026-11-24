@@ -1,4 +1,6 @@
-import { botMessageAllowsSilence, userTurnMessageForRun } from "@rakazo/core";
+import type { MessageBlock } from "@rakazo/contracts";
+import { disabledBuiltinToolSet } from "@rakazo/contracts";
+import { botMessageAllowsSilence, messageBlocksText, userTurnMessageForRun } from "@rakazo/core";
 import { isPartialReplyClientNonce, storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { loadAgentMemoryContext } from "../../memory/memory-context.js";
@@ -21,11 +23,18 @@ import {
 import { loadAgentScratchpadContext } from "../../runtime/context/scratchpad-context.js";
 import { loadAgentTicketContext } from "../../tasks/ticket-context.js";
 import type { RunHold } from "../lifecycle/run-attempt.js";
+import { startStatusLines } from "../lifecycle/run-status-lines.js";
+import { createStatusLineWriter } from "../lifecycle/status-lines.js";
 import { loadCurrentTurnImages } from "../turn/run-turn-images.js";
 import { messageToAgentHistorySegments, messageToAgentHistoryText } from "./reply-context.js";
-import type { ConnectedRun, RunRecords } from "./run-assembly-records.js";
+import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
 import { threadContextForRun } from "./run-instructions.prompt.js";
-import { DELEGATED_EMPTY_NOTICE, runAllowsSilentEmpty } from "./run-replies.prompt.js";
+import {
+  DELEGATED_EMPTY_NOTICE,
+  runAllowsSilentEmpty,
+  runNarratesLiveFor,
+  runReplyMode,
+} from "./run-replies.prompt.js";
 
 export async function readThreadHistory(hold: RunHold, parts: { records: RunRecords }) {
   const { deps, run } = hold;
@@ -111,7 +120,7 @@ export type ThreadHistory = Awaited<ReturnType<typeof readThreadHistory>>;
 
 export async function loadTurnContext(
   hold: RunHold,
-  parts: { records: RunRecords; connected: ConnectedRun; thread: ThreadHistory },
+  parts: { saved: SavedTurn; records: RunRecords; connected: ConnectedRun; thread: ThreadHistory },
 ) {
   const { deps, run, runId } = hold;
   const {
@@ -195,6 +204,14 @@ export async function loadTurnContext(
     messagingChannelRun ||
     runAllowsSilentEmpty(run.trigger) ||
     (Boolean(parts.records.conversationThread.groupId) && run.trigger === "follow_up");
+  startRunStatusLines(hold, {
+    // Earlier attempts reached a step when they saved a checkpoint before it.
+    resumesEarlierWork: parts.saved.storedTurnCheckpoint || Boolean(hold.takeover.resumeCheckpoint),
+    records: parts.records,
+    connected: parts.connected,
+    turnBlocks,
+    maySayNothing: groupReplyOptional || allowSilentEmptyRun,
+  });
   const emptyResponseText = peerMessage
     ? peerMessage.intent === "result" ||
       peerMessage.intent === "status" ||
@@ -291,3 +308,60 @@ export async function loadTurnContext(
 }
 
 export type TurnContext = Awaited<ReturnType<typeof loadTurnContext>>;
+
+/**
+ * A status model, when the member chose one, writes the working line's statuses. It starts
+ * now, so its opening status is ready while the rest of the run sets up.
+ */
+function startRunStatusLines(
+  hold: RunHold,
+  parts: {
+    resumesEarlierWork: boolean;
+    records: RunRecords;
+    connected: ConnectedRun;
+    turnBlocks: readonly MessageBlock[] | undefined;
+    maySayNothing: boolean;
+  },
+) {
+  const { deps, run, runId, secrets } = hold;
+  const { bot, thread } = parts.records;
+  // A group member a message named nobody may stay silent, so it shows nothing early.
+  // Messages mode keeps a bot's working private, so it shows no statuses either. A bot set to
+  // messages mode that cannot message the person replies in chat, and narrates like one.
+  const replyMode = runReplyMode(
+    run.trigger,
+    bot.replyMode,
+    disabledBuiltinToolSet(bot.disabledBuiltinTools),
+  );
+  if (!runNarratesLiveFor({ trigger: run.trigger, replyMode, maySayNothing: parts.maySayNothing }))
+    return;
+  // Set up in the background: the run never waits on the status model. Its statuses
+  // show as soon as they are ready, not once the run has finished setting up.
+  const writer = createStatusLineWriter(
+    deps,
+    { runId, spaceId: run.spaceId, userId: run.userId, botId: bot.id, threadId: thread.id },
+    secrets,
+  );
+  // The status model hears nothing before the main model's key is registered for redaction.
+  let markSecretsReady = () => {};
+  const ready = new Promise<void>((resolve) => {
+    markSecretsReady = resolve;
+  });
+  hold.statusLines.secretsReady = markSecretsReady;
+  hold.statusLines.live = startStatusLines({
+    writer,
+    request: parts.turnBlocks ? messageBlocksText(parts.turnBlocks).trim() : "",
+    ready,
+    opening: !parts.resumesEarlierWork,
+    signal: parts.connected.runAbortController.signal,
+    show: (text) =>
+      deps.events.append({
+        spaceId: run.spaceId,
+        threadId: thread.id,
+        botId: bot.id,
+        type: "thread.progress",
+        runId,
+        payload: { text, activity: true },
+      }),
+  });
+}

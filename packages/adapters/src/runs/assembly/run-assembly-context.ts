@@ -128,7 +128,10 @@ export async function createRunContext(
     trustLoaders,
   } = parts.tools;
   const { hostEnvironment } = parts.computerInstructions;
-  const reply = await createReplyState(deps, run, runSecrets);
+  const reply = await createReplyState(deps, run, runSecrets, {
+    // Earlier attempts reached a step when they saved a checkpoint before it.
+    resumesEarlierWork: storedTurnCheckpoint || Boolean(hold.takeover.resumeCheckpoint),
+  });
   const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
   const state: RunState = {
     lease,
@@ -174,6 +177,7 @@ export async function createRunContext(
   };
 
   const ctx: RunContext = {
+    statusLive: hold.statusLines.live,
     deps,
     providers: { web, mediaGeneration, media: parts.media, paidServices, browser, cloudAgent },
     run,

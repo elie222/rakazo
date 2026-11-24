@@ -9,7 +9,7 @@ import {
   partialReplyClientNonce,
   RunHistoryWriteError,
 } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
 import { PARTIAL_REPLY_NOTE } from "../../messaging/automated-messages.prompt.js";
 import { loadBotMessageContext, returnBotMessageOutcome } from "../../messaging/bot-messages.js";
@@ -2392,6 +2392,144 @@ describe("completion pushes", () => {
     vi.mocked(notifyRun).mockClear();
     await runTurn("Done.", false, "I will check.", [], "fyi", { trigger: "user" });
     expect(completionPushes()).toHaveLength(1);
+  });
+});
+
+describe("live narration (RAKAZO_OPENING_ACKNOWLEDGEMENT=1)", () => {
+  beforeEach(() => {
+    vi.stubEnv("RAKAZO_OPENING_ACKNOWLEDGEMENT", "1");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  const finalText = (finalizeRun: Awaited<ReturnType<typeof runTurn>>["finalizeRun"]) =>
+    finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("");
+  const sentTexts = (messages: Awaited<ReturnType<typeof runTurn>>["messages"]) =>
+    messages.map((message) =>
+      message.blocks.map((block) => ("text" in block ? block.text : "")).join(""),
+    );
+  const statuses = (append: Awaited<ReturnType<typeof runTurn>>["append"]) =>
+    append.mock.calls
+      .map(([event]) => event)
+      .filter(
+        (event) => event.type === "thread.progress" && (event.payload as { reset?: boolean }).reset,
+      )
+      .map((event) => (event.payload as { text: string }).text);
+
+  it("posts only a single opening sentence at once", async () => {
+    const { messages } = await runTurn("Done.", false, "I'll check. Give me a moment.");
+    expect(sentTexts(messages)).toEqual([]);
+  });
+
+  it("shows a message_user update it can't post yet as the working line", async () => {
+    const { append, messages } = await runTurn("", false, undefined, [], "fyi", {
+      runtime: async function* (request) {
+        await request.executeTool!("message_user", { message: "On it, checking now." }, "call-1");
+        yield { type: "text", text: "Done." };
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual([]);
+    expect(statuses(append)).toContain("On it, checking now.");
+  });
+
+  it("still lets a browser task send its heads-up after the opening sentence", async () => {
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      graphical: true,
+      runtime: async function* (request) {
+        yield { type: "text", text: "I'll look it up." };
+        yield { type: "tool", name: "browser_snapshot", args: {}, executionId: "call-0" };
+        await request.executeTool!("browser_snapshot", {}, "call-0").catch(() => undefined);
+        await request.executeTool!(
+          "message_user",
+          { message: "This will take a few minutes." },
+          "call-1",
+        );
+        yield { type: "text", text: "Done." };
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual(["I'll look it up.", "This will take a few minutes."]);
+  });
+
+  it("posts the opening sentence at once on a fresh turn", async () => {
+    const { finalizeRun, messages } = await runTurn("Checked: all clear.", false);
+    expect(sentTexts(messages)).toEqual(["I will check that."]);
+    expect(finalText(finalizeRun)).toBe("Checked: all clear.");
+  });
+
+  it("keeps text written between steps off the working line, as notes on its steps", async () => {
+    const { finalizeRun, messages, append } = await runTurn("Done.", false, [
+      "I'll check whether a date was announced.",
+      "Checking availability",
+      "Looking for updates",
+    ]);
+    expect(sentTexts(messages)).toEqual(["I'll check whether a date was announced."]);
+    // The streamed text is cleared and the line keeps its last status.
+    expect(statuses(append)).toEqual(["", ""]);
+    expect(stepNotes(finalizeRun)).toEqual(["Checking availability", "Looking for updates"]);
+    expect(finalText(finalizeRun)).toBe("Done.");
+  });
+
+  it("keeps a long opening for the long-turn budget instead of posting it at once", async () => {
+    const paragraph = `${"I checked the first source and it says something long. ".repeat(5)}`;
+    const { messages } = await runTurn("Done.", false, paragraph.trim());
+    expect(sentTexts(messages)).toEqual([]);
+  });
+
+  it("posts the opening sentence even when it reads like a status", async () => {
+    const { messages } = await runTurn("Done.", false, "Checking availability");
+    expect(sentTexts(messages)).toEqual(["Checking availability"]);
+  });
+
+  it("keeps a later full sentence off the working line and on the long-turn budget", async () => {
+    const { messages, append, finalizeRun } = await runTurn("Done.", false, [
+      "I'll look it up.",
+      "Found two sources, comparing them now.",
+    ]);
+    expect(sentTexts(messages)).toEqual(["I'll look it up."]);
+    // The streamed sentence is cleared, and the line keeps its last status.
+    expect(statuses(append)).toEqual([""]);
+    expect(stepNotes(finalizeRun)).toEqual(["Found two sources, comparing them now."]);
+  });
+
+  it.each(["routine", "webhook", "bot_message"])(
+    "does not post an opening sentence on %s runs",
+    async (trigger) => {
+      const { messages } = await runTurn("Done.", true, "I will check that.", [], "fyi", {
+        trigger,
+      });
+      expect(sentTexts(messages)).toEqual([]);
+    },
+  );
+
+  it("still shows notes between steps on a run that was not told to narrate live", async () => {
+    const { append } = await runTurn(
+      "Done.",
+      false,
+      ["I'll look it up.", "Found two sources, comparing them now."],
+      [],
+      "fyi",
+      { group: { optional: true } },
+    );
+    expect(statuses(append).filter(Boolean).length).toBeGreaterThan(0);
+  });
+
+  it("does not post an opening sentence on a group follow-up, which may end saying nothing", async () => {
+    const { messages } = await runTurn("Done.", false, "I will check that.", [], "request", {
+      trigger: "follow_up",
+      group: { optional: false },
+    });
+    expect(sentTexts(messages)).toEqual([]);
+  });
+
+  it("does not post an opening sentence for a group message that named nobody", async () => {
+    const { messages } = await runTurn("Done.", false, "I will check that.", [], "fyi", {
+      group: { optional: true },
+    });
+    expect(sentTexts(messages)).toEqual([]);
   });
 });
 

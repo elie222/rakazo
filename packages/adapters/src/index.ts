@@ -223,6 +223,7 @@ export * from "./runs/executor/executor.js";
 export * from "./runs/labs-env.js";
 export { notifyMemberMessage } from "./runs/lifecycle/run-notifications.js";
 export { loadRunOrigin } from "./runs/lifecycle/run-origin.js";
+export { openingAcknowledgementEnabled } from "./runs/lifecycle/user-progress.js";
 export * from "./runs/lifecycle/work-activity.js";
 export * from "./runs/wakeups/background-job-handlers.js";
 export * from "./runs/wakeups/job-reconciler.js";

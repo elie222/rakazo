@@ -124,6 +124,7 @@ import {
   toolCallBudgetExceededMessage,
   toolCallBudgetFor,
 } from "./tools/pi-runtime-tools.js";
+import { rememberStepStatus } from "./tools/step-status.js";
 import { withPiTelemetry } from "./usage/pi-telemetry.js";
 import { observedPiStream } from "./usage/pi-usage.js";
 
@@ -883,9 +884,15 @@ export class PiAgentRuntime implements AgentRuntime {
             const shown = [...runningToolSteps.keys()].at(-1) === event.toolCallId;
             runningToolSteps.delete(event.toolCallId);
             if (shown && toolActivityShowing) {
-              const next = [...runningToolSteps.values()].at(-1) ?? "";
+              const [nextId, next = ""] = [...runningToolSteps.entries()].at(-1) ?? [];
               toolActivityShowing = Boolean(next);
-              queue.push({ type: "progress", text: next, activity: true });
+              queue.push({
+                type: "progress",
+                text: next,
+                activity: true,
+                // A step the model gave its own status keeps it, not reworded by a status model.
+                ...(nextId && host.stepStatuses?.has(nextId) ? { modelStatus: true as const } : {}),
+              });
             }
           }
           if (event.type === "message_end") {
@@ -902,15 +909,24 @@ export class PiAgentRuntime implements AgentRuntime {
             // "Operation aborted"; skip activity and counting for calls that will not execute.
             if (turnSignal?.aborted || host.toolCallBudget.exceeded) return;
             toolCalls += 1;
-            const step = describeToolActivity(event.toolName, event.args, (name) =>
-              toolsByAgentName.get(name),
+            const step = describeToolActivity(
+              event.toolName,
+              event.args,
+              (name) => toolsByAgentName.get(name),
+              host.narratedTools,
             );
             runningToolSteps.delete(event.toolCallId);
             runningToolSteps.set(event.toolCallId, step);
             // Live activity feedback: without this the thread shows a bare
             // "working…" for the whole tool call with nothing actionable.
             toolActivityShowing = true;
-            queue.push({ type: "progress", text: step, activity: true });
+            const status = rememberStepStatus(host, event.toolCallId, event.toolName, event.args);
+            queue.push({
+              type: "progress",
+              text: step,
+              activity: true,
+              ...(status ? { modelStatus: true as const } : {}),
+            });
           }
           if (event.type === "message_start" && event.message.role === "assistant") {
             host.modelResponses = (host.modelResponses ?? 0) + 1;
@@ -1101,6 +1117,8 @@ export class PiAgentRuntime implements AgentRuntime {
                 let result: AgentToolResult<JsonValue | undefined>;
                 try {
                   signal.throwIfAborted();
+                  // A replayed call keeps the status the model gave it.
+                  rememberStepStatus(host, call.id, call.name, call.arguments);
                   const args = validateToolArguments(tool, {
                     ...call,
                     arguments: (tool.prepareArguments?.(call.arguments) ??
@@ -1358,9 +1376,12 @@ export class PiAgentRuntime implements AgentRuntime {
         signal.removeEventListener("abort", stopThinking);
         queue.close();
         if (trackedBudget) {
+          // A run that made no tool call has nothing to carry over: a resumed one starts the
+          // same fresh budget. Aborted one-shot calls, such as status lines, leave no entry.
           const keepForResume =
             (signal.aborted || Boolean(resumeHost?.pausePending) || yielded) &&
-            !trackedBudget.exceeded;
+            !trackedBudget.exceeded &&
+            trackedBudget.count > 0;
           releaseToolCallBudget(request.runId, keepForResume);
         }
       }

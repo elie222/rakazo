@@ -70,7 +70,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderHeader({ inGroup = false } = {}) {
+function renderHeader({ inGroup = false, working = false } = {}) {
   act(() =>
     root.render(
       <ChatHeader
@@ -84,6 +84,7 @@ function renderHeader({ inGroup = false } = {}) {
         voiceReady={false}
         inCall={false}
         panelOpen={false}
+        working={working}
         onOpenNavigation={() => undefined}
         onTogglePanel={() => undefined}
         onCall={() => undefined}
@@ -107,6 +108,16 @@ it("clears the macOS traffic lights beside Open navigation on a narrow desktop w
   delete window.rakazoDesktop;
   renderHeader();
   expect(container.querySelector(".app-drag")).toBeNull();
+});
+
+it("shows the green working dot only while a bot works on this chat", () => {
+  const dot = () => container.querySelector<HTMLElement>('[data-testid="chat-working-dot"]');
+  renderHeader();
+  expect(dot()?.hasAttribute("data-working")).toBe(false);
+  expect(dot()?.className).toContain("opacity-0");
+  renderHeader({ working: true });
+  expect(dot()?.hasAttribute("data-working")).toBe(true);
+  expect(dot()?.className).toContain("opacity-100");
 });
 
 it("shows no gift when the account cannot invite", () => {

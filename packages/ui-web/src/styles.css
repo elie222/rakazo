@@ -83,6 +83,7 @@
   --color-warning: var(--warning);
   --color-status-working: var(--status-working);
   --color-unread: var(--unread);
+  --color-working-dot: var(--working-dot);
   --color-overlay: var(--overlay);
   --color-scrollbar: var(--scrollbar);
   --color-scrollbar-hover: var(--scrollbar-hover);

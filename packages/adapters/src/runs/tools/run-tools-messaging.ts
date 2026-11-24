@@ -312,7 +312,8 @@ export const messagingTools: ToolHandlers = {
     ) {
       reply.workingNotes.length = 0;
       reply.lastDiscardedMidTurnNarration = text;
-      await showNarrationStatus(ctx, text);
+      // The bot asked for this to reach the person, so it shows even on a live-narrated run.
+      await showNarrationStatus(ctx, text, { asWritten: true });
       return call.finish(result);
     }
     if (!repeat) await publishInterimMessage(ctx, text, true);

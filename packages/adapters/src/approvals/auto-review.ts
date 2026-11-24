@@ -19,6 +19,7 @@ import { parseModelJson } from "../models/model-json.js";
 import { secretValuesToRedact } from "../models/model-secret.js";
 import { LOCAL_PROVIDER_ID } from "../runtime/pi/models/pi-local-provider.js";
 import { localModelIds } from "../runtime/pi/models/pi-local-provider-id.js";
+import { isRuntimeFailureText } from "../runtime/runtime-failure-text.js";
 import {
   autoReviewInstructions,
   buildAutoReviewPrompt,
@@ -523,15 +524,12 @@ export async function runAutoReviewJudge(
         },
       )) {
         if (event.type === "usage" && !event.accounted) await input.onUsage?.(event);
-        if (
-          event.type === "text" &&
-          /^(?:I hit a problem:|Unknown model )/i.test(event.text.trim())
-        ) {
+        if (event.type === "text" && isRuntimeFailureText(event.text)) {
           failed = true;
         }
         if (event.type === "done" && event.text) {
           const body = event.text.trim();
-          if (/^(?:I hit a problem:|Unknown model )/i.test(body)) failed = true;
+          if (isRuntimeFailureText(body)) failed = true;
           else text = body;
         }
       }

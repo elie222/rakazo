@@ -47,6 +47,7 @@ import type { RuntimeModelTarget } from "../pi-runtime-models.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "../usage/pi-telemetry.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import { parametersFor, prepareFleetArguments } from "./pi-runtime-tool-parameters.js";
+import { stepStatusOf, withStepStatus } from "./step-status.js";
 
 export interface ToolCallBudget {
   count: number;
@@ -235,10 +236,13 @@ export function describeToolActivity(
   toolName: string,
   args: unknown,
   findTool?: (name: string) => ConnectorTool | undefined,
+  narrated?: ReadonlySet<string>,
 ): string {
+  const status = stepStatusOf(toolName, args, narrated);
+  if (status) return status;
   const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
   if (toolName === USE_TOOL)
-    return describeToolActivity(String(record.name), record.arguments, findTool);
+    return describeToolActivity(String(record.name), record.arguments, findTool, narrated);
   const tool = findTool?.(toolName);
   const actions = batchStepActions(tool, args);
   if (actions.length > 0) return `Using ${actions.join(", ")}`;
@@ -382,6 +386,15 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
 }
 
 function toAgentTool(
+  tool: ConnectorTool,
+  host: ToolHost,
+  exposedName: string,
+  options: { deferred?: ConnectorTool[]; viaUseTool?: boolean } = {},
+): AgentTool {
+  return withStepStatus(buildAgentTool(tool, host, exposedName, options), host, tool.name);
+}
+
+function buildAgentTool(
   tool: ConnectorTool,
   host: ToolHost,
   exposedName: string,
@@ -557,6 +570,10 @@ function toAgentTool(
             executionId,
             response: host.modelResponses,
             ...(viaUseTool ? { viaUseTool } : {}),
+            // Remembered under the id the model gave, which may be empty: not the fallback id.
+            ...(host.stepStatuses?.has(toolCallId ?? "")
+              ? { status: host.stepStatuses.get(toolCallId ?? "") }
+              : {}),
           });
           const startedAt = Date.now();
           let result: unknown;
@@ -816,6 +833,10 @@ export interface EventQueue {
 }
 
 export interface ToolHost {
+  /** Tools offered the added `live_status` field, by the name the model calls them. */
+  narratedTools?: Set<string>;
+  /** The status the model gave each call, by Pi tool call id, read from its raw arguments. */
+  stepStatuses?: Map<string, string>;
   context?: Partial<AdapterContext>;
   modelFetch?: typeof globalThis.fetch;
   onContextDecision?: PiAgentRuntimeOptions["onContextDecision"];

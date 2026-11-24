@@ -51,6 +51,7 @@ import type { ExecutorDeps } from "../executor/executor-deps.js";
 import type { createRunWorkspaceCheckpoint } from "../lifecycle/run-lifecycle.js";
 import { PausedTurnToolsUnavailableError } from "../lifecycle/run-lifecycle.js";
 import { subagentMarksUnread } from "../lifecycle/run-notifications.js";
+import type { LiveStatusLines } from "../lifecycle/run-status-lines.js";
 import type { ScreenTurn } from "../turn/screen-turn.js";
 import { providerToolCallId, runToolCallIds } from "../turn/tool-call-ids.js";
 import type { LoopGuardStreak } from "../turn/tool-loop.js";
@@ -134,6 +135,12 @@ export interface ReplyState {
   textSinceLastStep: string;
   /** The working line shows a note; tool status lines wait until the bot writes again. */
   narrationStatusShowing: boolean;
+  /** This attempt resumes work an earlier one began, so the run's first step is behind it. */
+  resumesEarlierWork: boolean;
+  /** The opening sentence was posted as a message, before the run's first step. */
+  openingPosted: boolean;
+  /** The latest step's own status line, kept to restore it when held text is cleared. */
+  lastActivityLine?: string;
   /**
    * Tool calls that land mid-sentence wait here until the narration catches up to a
    * sentence boundary, so the step chips never render in the middle of a clause.
@@ -328,6 +335,8 @@ export interface RunProviders {
  * the turn loop instead of closing over dozens of locals.
  */
 export interface RunContext {
+  /** The status model's live statuses for this run, when the member chose a status model. */
+  statusLive?: LiveStatusLines;
   deps: ExecutorDeps;
   providers: RunProviders;
   run: Run;

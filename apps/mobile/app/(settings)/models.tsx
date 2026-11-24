@@ -341,6 +341,15 @@ export default function Models() {
                 defaultLabel={t`Same as main model`}
               />
             )}
+            {/* Only where bots narrate live does a status model change anything. */}
+            {firstConnection || !me.liveStatusLines ? null : (
+              <ModelRoleSettings
+                {...shared}
+                modelRole="status"
+                title={t`Status line model`}
+                defaultLabel={t`Same as main model`}
+              />
+            )}
             {media && !firstConnection ? (
               <MediaModelSettings
                 view={media}

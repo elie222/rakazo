@@ -40,6 +40,15 @@ export function midTurnProgressBudgetAllows(publishedCount: number, turnAgeMs: n
 }
 
 /**
+ * `RAKAZO_OPENING_ACKNOWLEDGEMENT=1` turns on live narration in chat mode: the bot opens a
+ * tool-using turn with one sentence on what it is about to do, posted at once, and labels each
+ * later step with a short status shown only as the working line.
+ */
+export function openingAcknowledgementEnabled(): boolean {
+  return process.env.RAKAZO_OPENING_ACKNOWLEDGEMENT?.trim() === "1";
+}
+
+/**
  * The message_user cap: `RAKAZO_MESSAGE_USER_MAX_CHARS` when it is a positive integer,
  * else USER_PROGRESS_MESSAGE_MAX_LENGTH.
  */
@@ -87,10 +96,28 @@ export function assistantTurnSeparator(previous: string, next: string): string {
 /** clientNonce prefix for mid-turn progress messages (reconciler uses this). */
 export const USER_PROGRESS_CLIENT_NONCE_PREFIX = "user-progress:";
 
-export function userProgressClientNonce(runId: string, index = 0): string {
+/** The index an opening bubble's nonce carries, so a resumed attempt knows it was the opening. */
+const OPENING_PROGRESS_INDEX = "opening";
+
+export function userProgressClientNonce(
+  runId: string,
+  index: number | typeof OPENING_PROGRESS_INDEX = 0,
+): string {
   // Include entropy so a resumed executor turn cannot reuse an earlier nonce
   // (threadId + clientNonce is unique).
   return `${USER_PROGRESS_CLIENT_NONCE_PREFIX}${runId}:${index}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** The nonce of a run's opening bubble. */
+export function openingProgressClientNonce(runId: string): string {
+  return userProgressClientNonce(runId, OPENING_PROGRESS_INDEX);
+}
+
+export function isOpeningProgressClientNonce(clientNonce: string | null | undefined): boolean {
+  return Boolean(
+    clientNonce?.startsWith(USER_PROGRESS_CLIENT_NONCE_PREFIX) &&
+      clientNonce.split(":")[2] === OPENING_PROGRESS_INDEX,
+  );
 }
 
 export function isUserProgressClientNonce(clientNonce: string | null | undefined): boolean {

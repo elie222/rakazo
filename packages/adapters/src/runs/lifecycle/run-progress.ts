@@ -7,6 +7,7 @@ import {
   endsSentence,
   isBackgroundRunTrigger,
   isConversationalRun,
+  messageBlocksText,
   noteLastToolStep,
   redactSecrets,
   redactSecretsAfter,
@@ -19,8 +20,8 @@ import { IMAGE_RETURNING_COMPUTER_TOOLS } from "../../models/model-vision.js";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
 import {
-  messageBlocksText,
   runAllowsSilentEmpty,
+  runNarratesLiveFor,
   runPromotesMidTurnNarration,
 } from "../assembly/run-replies.prompt.js";
 import {
@@ -33,9 +34,12 @@ import { PAGE_BROWSER_TOOL_NAMES } from "../tools/run-tool-selection.js";
 import {
   clampUserProgressMessage,
   extractNarrationText,
+  isOpeningProgressClientNonce,
   isUserProgressClientNonce,
   midTurnProgressBudgetAllows,
   narrationStatusLine,
+  openingAcknowledgementEnabled,
+  openingProgressClientNonce,
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
 } from "./user-progress.js";
@@ -45,6 +49,7 @@ export async function createReplyState(
   deps: ExecutorDeps,
   run: Run,
   secrets: string[],
+  { resumesEarlierWork = false }: { resumesEarlierWork?: boolean } = {},
 ): Promise<ReplyState> {
   const reply: ReplyState = {
     assembled: "",
@@ -58,6 +63,7 @@ export async function createReplyState(
     assistantTurnText: "",
     midTurnUserTexts: [],
     midTurnProgressCount: 0,
+    openingPosted: false,
     turnStartedAtMs: run.startedAt?.getTime() ?? Date.now(),
     progressBudgetStart: 0,
     steeringReplyPending: false,
@@ -68,6 +74,7 @@ export async function createReplyState(
     textSinceLastStep: "",
     narrationSoFar: "",
     narrationStatusShowing: false,
+    resumesEarlierWork,
     pendingToolNames: [],
     toolCalls: [],
     toolOutcomes: new Map(),
@@ -91,6 +98,8 @@ export async function createReplyState(
     reply.midTurnUserTexts.push(text);
     reply.publishedMidTurnUserMessage = true;
     reply.midTurnProgressCount += 1;
+    // An earlier attempt's opening still leaves room for the browser heads-up.
+    if (isOpeningProgressClientNonce(message.clientNonce)) reply.openingPosted = true;
   }
   return reply;
 }
@@ -125,7 +134,8 @@ export function canPostLongTaskHeadsUp(ctx: RunContext) {
   const { reply } = ctx.state;
   return (
     reply.computerTaskStarted &&
-    reply.midTurnProgressCount === 0 &&
+    // The opening sentence only says the bot is on it; the heads-up still has its place.
+    reply.midTurnProgressCount - (reply.openingPosted ? 1 : 0) === 0 &&
     isConversationalRun(ctx.run.trigger) &&
     !runAllowsSilentEmpty(ctx.run.trigger)
   );
@@ -136,17 +146,25 @@ function progressSinceBudgetStart(reply: ReplyState) {
 }
 
 /** The next interim message's nonce; it uses up the allowance for answering the person. */
-function nextProgressNonce(ctx: RunContext) {
+function nextProgressNonce(ctx: RunContext, { opening = false } = {}) {
   const { reply } = ctx.state;
   reply.steeringReplyPending = false;
-  return userProgressClientNonce(ctx.run.id, reply.midTurnProgressCount++);
+  const index = reply.midTurnProgressCount++;
+  return opening
+    ? openingProgressClientNonce(ctx.run.id)
+    : userProgressClientNonce(ctx.run.id, index);
 }
 
 /**
  * Posts an interim message. A chat app gets a run's messages when the run ends, so a 1:1 run it
  * started sends this one on at once. A group run posts once, when it ends.
  */
-export async function publishInterimMessage(ctx: RunContext, text: string, markUnread?: boolean) {
+export async function publishInterimMessage(
+  ctx: RunContext,
+  text: string,
+  markUnread?: boolean,
+  { opening = false }: { opening?: boolean } = {},
+) {
   const { deps, run } = ctx;
   const { reply } = ctx.state;
   await publishMessage(
@@ -155,8 +173,9 @@ export async function publishInterimMessage(ctx: RunContext, text: string, markU
     "bot",
     [{ kind: "text", text }],
     markUnread,
-    nextProgressNonce(ctx),
+    nextProgressNonce(ctx, { opening }),
   );
+  if (opening) reply.openingPosted = true;
   reply.midTurnUserTexts.push(text);
   reply.publishedMidTurnUserMessage = true;
   // Text held back earlier is older than what the person now has, so it is no reply.
@@ -280,6 +299,39 @@ export async function flushProgress(ctx: RunContext) {
   reply.lastProgressAt = Date.now();
 }
 
+/** An opening is one short line; anything longer waits for the long-turn budget like any note. */
+export const OPENING_ACKNOWLEDGEMENT_MAX_LENGTH = 200;
+
+/**
+ * The bot's first words in a conversational turn, written before its first step, say what it
+ * is about to do. They are posted at once, without waiting for the turn to grow long, so the
+ * person knows the bot is on it.
+ */
+export function isOpeningAcknowledgement(ctx: RunContext, openingText: boolean, text: string) {
+  const { reply } = ctx.state;
+  const firstStep = reply.toolCalls.at(-1)?.executionId;
+  return (
+    openingText &&
+    text.length <= OPENING_ACKNOWLEDGEMENT_MAX_LENGTH &&
+    !text.includes("\n") &&
+    // One sentence: anything more waits for the interim-message rules like other narration.
+    !/[.!?。！？]\s+\S/u.test(text.trim()) &&
+    openingAcknowledgementEnabled() &&
+    narrationBecomesMessages(ctx) &&
+    isConversationalRun(ctx.run.trigger) &&
+    !runAllowsSilentEmpty(ctx.run.trigger) &&
+    !ctx.groupReplyOptional &&
+    // A run whose turn may end saying nothing posts nothing early either.
+    !ctx.allowSilentEmptyRun &&
+    reply.midTurnProgressCount === 0 &&
+    // A resumed attempt's first step is not the run's: the opening moment has passed.
+    !reply.resumesEarlierWork &&
+    // Only text written right before the run's first step, not a reply cut short by a message.
+    firstStep !== undefined &&
+    reply.toolCalls.every((call) => call.executionId === firstStep)
+  );
+}
+
 /**
  * Text the bot wrote before a step. It is posted as an interim message when the budget allows
  * and it fits; otherwise it is a note on that step, kept out of the reply. Returns the note so
@@ -292,6 +344,7 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   reply.messageSegments = extracted.remaining;
   reply.currentTextSegment = "";
   const text = redactSecretsAfter(reply.narrationSoFar, extracted.text, ctx.secrets).trim();
+  const openingText = !reply.narrationSoFar.trim();
   reply.narrationSoFar += extracted.text;
   if (!text) return undefined;
   reply.assembled = "";
@@ -302,11 +355,14 @@ export async function publishMidTurnNarration(ctx: RunContext, beforeConnectCard
   const promotes = runPromotesMidTurnNarration(run.trigger);
   if (
     text.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH &&
-    (canPublishDurableNarration(ctx) || (beforeConnectCard && narrationBecomesMessages(ctx)))
+    (canPublishDurableNarration(ctx) ||
+      isOpeningAcknowledgement(ctx, openingText, text) ||
+      (beforeConnectCard && narrationBecomesMessages(ctx)))
   ) {
+    const opening = isOpeningAcknowledgement(ctx, openingText, text);
     reply.workingNotes.length = 0;
     reply.narrationStatusShowing = false;
-    await publishInterimMessage(ctx, text);
+    await publishInterimMessage(ctx, text, undefined, { opening });
     return undefined;
   }
   reply.discardedMidTurnNarration = true;
@@ -352,7 +408,18 @@ export async function publishNarrationBeforeAsk(ctx: RunContext) {
  * Replaces the text streamed so far with the note as the working line. Runs that hold their
  * narration back (routines, peers, background work) keep their live view.
  */
-export async function showNarrationStatus(ctx: RunContext, note: string | undefined) {
+export async function showNarrationStatus(
+  ctx: RunContext,
+  note: string | undefined,
+  {
+    keepLine = false,
+    asWritten = false,
+  }: {
+    keepLine?: boolean;
+    /** An update the bot sent to the person, which shows as written even when it narrates live. */
+    asWritten?: boolean;
+  } = {},
+) {
   const { deps, run, runId, bot, thread } = ctx;
   if (
     !note ||
@@ -361,13 +428,34 @@ export async function showNarrationStatus(ctx: RunContext, note: string | undefi
     isBackgroundRunTrigger(run.trigger)
   )
     return;
-  ctx.state.reply.narrationStatusShowing = true;
+  // With live narration the bot's statuses come with its tool calls, so text it writes between
+  // steps never shows as written. The reset below clears it from the live message either way.
+  // Only a run whose model was told to narrate live leaves its notes off the line; any other
+  // run was asked for notes between steps, so they still show.
+  const live = runNarratesLiveFor({
+    trigger: run.trigger,
+    replyMode: ctx.replyMode,
+    maySayNothing: ctx.groupReplyOptional || ctx.allowSilentEmptyRun,
+  });
+  // A status still being worded must not land over the bot's own update.
+  if (asWritten) await ctx.statusLive?.supersede();
+  let shown: string;
+  if (!live || asWritten) shown = narrationStatusLine(note);
+  // The step brought the model's own status: it stays the line.
+  else if (keepLine) shown = ctx.state.reply.lastActivityLine ?? "";
+  // A status model is already wording this step; the raw line never shows and its request stays.
+  else if (ctx.statusLive?.active()) shown = "";
+  // Otherwise the step's own line comes back until a status replaces it.
+  else shown = ctx.state.reply.lastActivityLine ?? "";
+  ctx.state.reply.narrationStatusShowing = (!live || asWritten) && Boolean(shown);
   await deps.events.append({
     spaceId: run.spaceId,
     threadId: thread.id,
     botId: bot.id,
     type: "thread.progress",
     runId,
-    payload: { reset: true, text: narrationStatusLine(note), activity: true },
+    payload: { reset: true, text: shown, activity: true },
   });
+  // A status that landed while this note was handled was just cleared with it; it comes back.
+  if (live && !shown) ctx.statusLive?.restore();
 }

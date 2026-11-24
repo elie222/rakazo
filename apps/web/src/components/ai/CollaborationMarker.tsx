@@ -41,10 +41,16 @@ export function CollaborationMarker({
   );
 }
 
-/** The working bot with what it is doing right now, such as its current tool call. */
+/**
+ * The working bot with what it is doing right now, such as its current tool call. The line
+ * fades in a beat after it appears, and each new label fades in over the last.
+ */
 export function ActiveBotGlyph({ bots, label }: { bots: GroupAvatarMember[]; label: string }) {
   return (
-    <div role="status" className="flex min-h-10 min-w-0 items-center gap-2.5 px-1">
+    <div
+      role="status"
+      className="flex min-h-10 min-w-0 items-center gap-2.5 px-1 motion-safe:animate-[rk-fade-in_300ms_ease-out_150ms_both]"
+    >
       <GroupAvatar members={bots} size={28} />
       <span
         key={label}

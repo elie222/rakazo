@@ -39,6 +39,8 @@ export function deploymentModelRole(
   }
   // No computer model means the main model works the screen itself.
   if (role === "computer") return { primary: null, backups: [] };
+  // No status model means the main model writes its own status lines.
+  if (role === "status") return { primary: null, backups: [] };
   const admin = adminDeploymentModel(defaults.settings, defaults.env);
   const provider =
     admin?.provider ?? defaults.settings?.defaultModelProvider ?? defaults.deployment?.provider;
