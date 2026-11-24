@@ -1,5 +1,6 @@
 import SwiftUI
 import WatchConnectivity
+import WidgetKit
 
 @main
 struct RakazoWatch: App {
@@ -62,6 +63,7 @@ private final class WatchConnection: NSObject, WCSessionDelegate {
         switch request.action {
         case .send: error = .sendUnconfirmed
         case .answer: error = .answerUnconfirmed
+        case .transcribe: error = .voiceFailed
         case .chats, .thread, .wait: error = .unavailable
         }
         continuation.resume(throwing: error)
@@ -70,6 +72,23 @@ private final class WatchConnection: NSObject, WCSessionDelegate {
     let reply = try JSONDecoder().decode(WatchReply.self, from: received)
     if let error = reply.error { throw error }
     return reply
+  }
+
+  /// Sends a recording in parts that each fit one message, and answers its words.
+  func transcribe(_ audio: Data, scope: UUID, chat: WatchChat) async throws -> String {
+    let id = UUID()
+    let size = 40_000
+    let parts = (audio.count + size - 1) / size
+    var reply = WatchReply()
+    for part in 0..<parts {
+      let start = audio.startIndex + part * size
+      try Task.checkCancellation()
+      reply = try await request(
+        WatchRequest(
+          action: .transcribe, scope: scope, chat: chat, nonce: id,
+          audio: audio[start..<min(start + size, audio.endIndex)], part: part, parts: parts))
+    }
+    return reply.text ?? ""
   }
 }
 
@@ -82,6 +101,10 @@ private struct WatchChats: View {
   @State private var failure: WatchFailure?
   @State private var loading = false
   @State private var needsReload = false
+  @State private var canTranscribe: Bool?
+  /// The chat a complication opened, waiting for the list that has it.
+  @State private var voiceTarget: WatchChat?
+  @State private var listen = false
 
   var body: some View {
     NavigationStack(path: $path) {
@@ -107,7 +130,10 @@ private struct WatchChats: View {
       }
       .navigationDestination(for: WatchChatRow.ID.self) { id in
         if let scope, let row = chats.first(where: { $0.id == id }) {
-          WatchConversation(connection: connection, row: row, scope: scope) {
+          WatchConversation(
+            connection: connection, row: row, scope: scope, canTranscribe: canTranscribe != false,
+            listen: $listen
+          ) {
             path = []
             await load()
           }
@@ -126,6 +152,14 @@ private struct WatchChats: View {
       clearChats()
       needsReload = true
     }
+    .onOpenURL { url in
+      guard let target = WatchShelf.voiceTarget(url), let kind = WatchChat.Kind(rawValue: target.kind)
+      else { return }
+      let name = WatchShelf.load().first { $0.id == target.id }?.name ?? ""
+      voiceTarget = WatchChat(kind: kind, id: target.id, name: name)
+      openVoiceTarget()
+      if voiceTarget != nil { Task { await load() } }
+    }
     .onChange(of: needsReload && !loading && path.isEmpty && phase == .active) { _, ready in
       guard ready else { return }
       needsReload = false
@@ -136,7 +170,28 @@ private struct WatchChats: View {
     }
   }
 
+  private func openVoiceTarget() {
+    guard scope != nil, let target = voiceTarget,
+      let row = chats.first(where: { $0.chat.kind == target.kind && $0.id == target.id })
+    else { return }
+    voiceTarget = nil
+    path = [row.id]
+    listen = true
+  }
+
+  private func saveShelf(_ bots: [WatchBot], rows: [WatchChatRow]) {
+    let saved = bots.map { bot in
+      WatchShelfChat(
+        kind: WatchChat.Kind.bot.rawValue, id: bot.id, name: bot.name, color: bot.color,
+        avatar: rows.first { $0.chat.kind == .bot && $0.id == bot.id }?.avatar)
+    }
+    guard WatchShelf.save(saved) else { return }
+    WidgetCenter.shared.invalidateConfigurationRecommendations()
+    WidgetCenter.shared.reloadTimelines(ofKind: WatchShelf.complicationKind)
+  }
+
   private func clearChats() {
+    voiceTarget = nil
     path = []
     chats = []
     scope = nil
@@ -146,20 +201,31 @@ private struct WatchChats: View {
   private func load() async {
     guard !loading else { return }
     let identity = connection.identityRevision
+    let requested = voiceTarget
     loading = true
     defer { loading = false }
     do {
-      let reply = try await connection.request(WatchRequest(action: .chats))
+      // The relay keeps the chat a complication opened in the list, however old it is.
+      let reply = try await connection.request(WatchRequest(action: .chats, chat: voiceTarget))
       guard phase == .active, !Task.isCancelled, identity == connection.identityRevision
       else { return }
       scope = reply.scope
       chats = reply.chats ?? []
+      canTranscribe = reply.transcribe
       failure = nil
+      saveShelf(reply.bots ?? [], rows: chats)
+      openVoiceTarget()
+      // A tap during a load that asked for another bot or none asks again. A bot that is gone
+      // opens nothing, and a later load must not start listening by itself.
+      if voiceTarget != nil && voiceTarget != requested { Task { await load() } }
+      else { voiceTarget = nil }
     } catch {
       guard !Task.isCancelled, identity == connection.identityRevision else { return }
       chats = []
       scope = nil
       failure = error as? WatchFailure ?? .unavailable
+      // Signed out: the face stops offering the account's bots. Each load replaces them otherwise.
+      if failure == .signIn { saveShelf([], rows: []) }
     }
   }
 }
@@ -218,6 +284,9 @@ private struct WatchConversation: View {
   let connection: WatchConnection
   let row: WatchChatRow
   let scope: UUID
+  let canTranscribe: Bool
+  /// Set when a complication opened the chat to speak a message.
+  @Binding var listen: Bool
   let reloadChats: () async -> Void
 
   @Environment(\.scenePhase) private var phase
@@ -229,6 +298,9 @@ private struct WatchConversation: View {
   @State private var sendNonce = UUID()
   @State private var sendingText: String?
   @State private var needsRefresh = false
+  @State private var recording = false
+  @State private var sendAfterWork = false
+  @FocusState private var typing: Bool
   @State private var waits = 0
 
   private var chat: WatchChat { row.chat }
@@ -262,6 +334,7 @@ private struct WatchConversation: View {
           TextField("Message", text: $draft)
             .onSubmit { startSend() }
             .disabled(working || failure == .signIn || failure == .unlockPhone)
+            .focused($typing)
             .id(Self.composer)
         }
         .padding(.horizontal, 4)
@@ -278,6 +351,31 @@ private struct WatchConversation: View {
       guard ready, phase == .active else { return }
       needsRefresh = false
       Task { await refresh() }
+    }
+    .onChange(of: working) {
+      guard !working, sendAfterWork else { return }
+      sendAfterWork = false
+      startSend()
+    }
+    .onChange(of: listen, initial: true) {
+      guard listen else { return }
+      listen = false
+      if canTranscribe { recording = true } else { typing = true }
+    }
+    .sheet(isPresented: $recording) {
+      WatchVoiceSheet { audio in
+        try await connection.transcribe(audio, scope: scope, chat: chat)
+      } finish: { result in
+        recording = false
+        switch result {
+        case .text(let text):
+          // The words wait in the composer while they send, so the wrist shows what went out.
+          draft = text
+          if working { sendAfterWork = true } else { startSend() }
+        case .typeInstead:
+          typing = true
+        }
+      }
     }
     .navigationTitle(chat.name)
     .toolbar {
@@ -344,18 +442,20 @@ private struct WatchConversation: View {
 
   private func send() async {
     defer { working = false }
-    if draft != sendingText {
-      sendingText = draft
+    let text = draft
+    if text != sendingText {
+      sendingText = text
       sendNonce = UUID()
     }
     do {
       _ = try await connection.request(
-        WatchRequest(action: .send, scope: scope, chat: chat, text: draft, nonce: sendNonce))
+        WatchRequest(action: .send, scope: scope, chat: chat, text: text, nonce: sendNonce))
     } catch {
       failure = error as? WatchFailure ?? .sendUnconfirmed
       return
     }
-    draft = ""
+    // Words spoken while this sent wait to go next.
+    if draft == text { draft = "" }
     sendingText = nil
     await read()
   }
@@ -500,13 +600,6 @@ private enum WatchDate {
 }
 
 private extension Color {
-  init?(hex: String) {
-    guard hex.count == 7, let value = UInt32(hex.dropFirst(), radix: 16) else { return nil }
-    self.init(
-      red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
-      blue: Double(value & 0xFF) / 255)
-  }
-
   static func isLight(hex: String) -> Bool {
     guard let value = UInt32(hex.dropFirst(), radix: 16) else { return false }
     let components = [16, 8, 0].map { Double((value >> $0) & 0xFF) / 255 }
@@ -560,7 +653,7 @@ private struct WatchReview: View {
   }
 }
 
-private extension WatchFailure {
+extension WatchFailure {
   var label: LocalizedStringKey {
     switch self {
     case .unlockPhone: "Unlock your iPhone, then refresh."
@@ -572,6 +665,9 @@ private extension WatchFailure {
     case .sendRejected: "Couldn’t send this message."
     case .sendUnconfirmed: "Send unconfirmed. Refresh before trying again."
     case .answerUnconfirmed: "Answer unconfirmed. Go back and refresh."
+    case .noVoice: "Voice messages aren’t set up."
+    case .voiceFailed: "Couldn’t transcribe. Try again."
+    case .voiceAccount: "Check Voice settings on your iPhone."
     }
   }
 }
