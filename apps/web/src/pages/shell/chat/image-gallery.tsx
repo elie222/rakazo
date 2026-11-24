@@ -1,9 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
+import { downloadStoredArtifact } from "../../../lib/pages/artifact-open";
 import { useArtifactImage } from "../../../lib/pages/use-artifact-image";
 import { useEventListener } from "../../../lib/use-event-listener";
 import { isEditableTarget } from "../shell-shortcuts";
@@ -159,6 +160,17 @@ export function ImageLightbox({
         <DialogTitle className="sr-only">{current.name}</DialogTitle>
         <div className="relative flex min-h-0 flex-1 items-center justify-center">
           <LightboxPicture key={selectedKey} image={current} />
+          <Button
+            variant="floating"
+            size="icon-sm"
+            aria-label={t`Download ${current.name}`}
+            onClick={() =>
+              void downloadStoredArtifact(current.target, current.artifactId, current.name)
+            }
+            className="absolute end-12 top-2"
+          >
+            <Download strokeWidth={1.8} />
+          </Button>
           <DialogClose
             ref={close}
             render={
