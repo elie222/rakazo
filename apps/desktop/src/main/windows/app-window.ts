@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { bestEffort } from "@rakazo/logging";
 import type { Session } from "electron";
 import { app, BrowserWindow, Menu, net, screen, session, shell } from "electron";
 import {
@@ -177,6 +176,14 @@ function savedWindowBounds() {
 function currentWindowBounds(win: BrowserWindow): SavedWindowBounds {
   return { ...win.getNormalBounds(), maximized: win.isMaximized(), fullScreen: win.isFullScreen() };
 }
+/** Synchronous, so a later save can never land before an earlier one and quitting cannot lose it. */
+function saveWindowBounds(win: BrowserWindow) {
+  try {
+    writeFileSync(windowBoundsFile(), JSON.stringify(currentWindowBounds(win)), "utf8");
+  } catch (error) {
+    reportDesktopError(error, "desktop.startup");
+  }
+}
 /** Remembers where the app window is so the next one opens there; a replaced window stops counting. */
 function rememberWindowBounds(win: BrowserWindow) {
   let timer: NodeJS.Timeout | undefined;
@@ -184,9 +191,7 @@ function rememberWindowBounds(win: BrowserWindow) {
   const saveSoon = () => {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      if (!current()) return;
-      const text = JSON.stringify(currentWindowBounds(win));
-      void bestEffort("save the window bounds", writeFile(windowBoundsFile(), text, "utf8"));
+      if (current()) saveWindowBounds(win);
     }, SAVE_BOUNDS_DELAY_MS);
   };
   win.on("move", saveSoon);
@@ -195,15 +200,9 @@ function rememberWindowBounds(win: BrowserWindow) {
   win.on("unmaximize", saveSoon);
   win.on("enter-full-screen", saveSoon);
   win.on("leave-full-screen", saveSoon);
-  // Synchronous so quitting cannot exit before the write lands.
   win.on("close", () => {
     clearTimeout(timer);
-    if (!current()) return;
-    try {
-      writeFileSync(windowBoundsFile(), JSON.stringify(currentWindowBounds(win)), "utf8");
-    } catch (error) {
-      reportDesktopError(error, "desktop.startup");
-    }
+    if (current()) saveWindowBounds(win);
   });
   win.once("closed", () => clearTimeout(timer));
 }
