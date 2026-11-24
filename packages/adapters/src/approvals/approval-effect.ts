@@ -436,6 +436,20 @@ function isExpiredResult(result: unknown): boolean {
   );
 }
 
+function policyRefusalResult(result: unknown, toolName: string): { error: string } | undefined {
+  if (!result || typeof result !== "object" || !("refused" in result)) return undefined;
+  const refused = (result as { refused?: unknown }).refused;
+  if (refused !== "rule" && refused !== "never_asks") return undefined;
+  const error = (result as { error?: unknown }).error;
+  if (typeof error === "string" && error.trim()) return { error };
+  return {
+    error:
+      refused === "rule"
+        ? `${toolName} is blocked in this space. Don't try it another way; tell the user it's blocked.`
+        : `${toolName} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
+  };
+}
+
 export function resolveDuplicateEffectGate(
   effect: { status: string; result?: unknown },
   toolName: string,
@@ -446,10 +460,10 @@ export function resolveDuplicateEffectGate(
   if (effect.status === "denied") {
     return {
       action: "return",
-      // An expired card says nobody answered rather than that someone said no.
+      // An expired card or policy refusal reports why it stopped rather than that the user said no.
       result: isExpiredResult(effect.result)
         ? APPROVAL_EXPIRED_RESULT
-        : { error: DENIED_ACTION_ERROR },
+        : (policyRefusalResult(effect.result, toolName) ?? { error: DENIED_ACTION_ERROR }),
     };
   }
   if (effect.status === "executing") {

@@ -5,7 +5,13 @@ import {
   stableJsonValue,
 } from "@rakazo/core/node/approval-effect-key";
 import type { Prisma } from "@rakazo/db";
-import { assertRunCanWriteHistory, RUN_TURN_CHECKPOINT_KIND } from "@rakazo/db";
+import {
+  assertRunCanWriteHistory,
+  RUN_TURN_CHECKPOINT_KIND,
+  runCodeKind,
+  runLoginKind,
+  runSecretKind,
+} from "@rakazo/db";
 import {
   boundDirectApprovalDetails,
   catalogApprovalConnectorId,
@@ -18,6 +24,7 @@ import {
   completeExternalEffect,
   parseCatalogApprovalTarget,
 } from "../../approvals/approval-effect.js";
+import { resolveRequestSecretDestination } from "../../secrets/bot-secrets.js";
 import { USE_TOOL } from "../../tools/builtin.tool-definition.js";
 import { uniquifyInstalledToolName } from "../../tools/lazy-tool-catalog.js";
 import { APPROVAL_CONTINUATION_LEAD } from "../assembly/approval-continuation.prompt.js";
@@ -335,4 +342,98 @@ export function uncertainEffectError(toolName: string): Error {
   return new Error(
     `tool ${toolName} has an earlier execution with an uncertain outcome; it may already have completed, so verify the destination before retrying`,
   );
+}
+
+/** Look up an already recorded effect by idempotency key without creating a row. */
+export async function findRecordedEffect(
+  deps: ExecutorDeps,
+  idempotencyKey: string,
+): Promise<{ status: string; request: unknown } | null> {
+  if (!deps.prisma.externalEffect?.findUnique) return null;
+  return deps.prisma.externalEffect.findUnique({
+    where: { idempotencyKey },
+    select: { status: true, request: true },
+  });
+}
+
+function savedLoginSecretName(result: unknown): string | undefined {
+  if (!result || typeof result !== "object" || !("credentialSaved" in result)) return undefined;
+  const saved = (result as { credentialSaved?: unknown }).credentialSaved;
+  if (!saved || typeof saved !== "object") return undefined;
+  const { name, auth } = saved as { name?: unknown; auth?: unknown };
+  if (
+    typeof name !== "string" ||
+    !name ||
+    !auth ||
+    typeof auth !== "object" ||
+    (auth as { type?: unknown }).type !== "login"
+  ) {
+    return undefined;
+  }
+  return name;
+}
+
+function pendingRequestSecretKind(
+  runId: string,
+  request: unknown,
+  result: unknown,
+): string | undefined {
+  if (!request || typeof request !== "object") return runSecretKind(runId);
+  const resolved = resolveRequestSecretDestination(request as Record<string, unknown>);
+  if (resolved.oneTimeCodeOrigin) return runCodeKind(runId);
+  if (resolved.destination) {
+    const loginName = savedLoginSecretName(result);
+    return loginName ? runLoginKind(runId, loginName) : undefined;
+  }
+  return runSecretKind(runId);
+}
+
+/**
+ * Close an approved effect refused by the gate before its handler runs (e.g. a deny rule or
+ * Never ask enabled after approval), so a later attempt does not reload it into approvedReplays.
+ * For request_secret, also drop any pending answer stored for that card in the same transaction.
+ */
+export async function denyApprovedEffect(
+  deps: ExecutorDeps,
+  run: { id: string; spaceId: string; userId: string },
+  idempotencyKey: string,
+  refused: string,
+  error?: string,
+) {
+  await underRunLease(deps, run.id, async (tx) => {
+    if (!tx.externalEffect?.findUnique) return;
+    const existing = await tx.externalEffect.findUnique({
+      where: { idempotencyKey },
+      select: {
+        id: true,
+        runId: true,
+        kind: true,
+        request: true,
+        result: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+    if (!existing || existing.runId !== run.id || existing.status !== "approved") return;
+    const secretKind =
+      existing.kind === "request_secret"
+        ? pendingRequestSecretKind(run.id, existing.request, existing.result)
+        : undefined;
+    const createdAt = existing.createdAt;
+    const updated = await tx.externalEffect.updateMany({
+      where: { id: existing.id, status: "approved" },
+      data: { status: "denied", result: error ? { refused, error } : { refused } },
+    });
+    if (updated && updated.count !== 1) return;
+    if (secretKind && tx.secret?.deleteMany) {
+      await tx.secret.deleteMany({
+        where: {
+          userId: run.userId,
+          spaceId: run.spaceId,
+          kind: secretKind,
+          ...(createdAt instanceof Date ? { createdAt: { gte: createdAt } } : {}),
+        },
+      });
+    }
+  });
 }

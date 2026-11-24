@@ -67,6 +67,8 @@ import {
   CATALOG_APPROVAL_TOOL,
   claimEffect,
   completeEffect,
+  denyApprovedEffect,
+  findRecordedEffect,
   recordEffect,
   uncertainEffectError,
 } from "../lifecycle/run-effects.js";
@@ -397,16 +399,15 @@ export async function gateToolCall(
         purchase: paying,
       });
   if (plan === "deny") {
-    await auditToolCall(ctx, name, "denied", {
-      reason: approvalResolved.decision === "deny" ? "rule" : "never_asks",
-    });
+    const reason = approvalResolved.decision === "deny" ? "rule" : "never_asks";
+    const message =
+      approvalResolved.decision === "deny"
+        ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
+        : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`;
+    if (approvedEffectKey) await denyApprovedEffect(deps, run, approvedEffectKey, reason, message);
+    await auditToolCall(ctx, name, "denied", { reason });
     return {
-      result: refusal(
-        "approval_denied",
-        approvalResolved.decision === "deny"
-          ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
-          : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
-      ),
+      result: refusal("approval_denied", message),
     };
   }
   // A pay click counts against the user's spending limit, unless it pays with a wallet purchase,
@@ -465,12 +466,14 @@ export async function gateToolCall(
       : toolEffectIdempotencyKey(runId, replayEffectToolName, args, occurrence));
   // Connector read-only hints must not bypass approval, review, or replay decisions.
   // A fetch to a new site is gated like any action, so it needs an effect to approve.
+  // A read-only tool with a saved denied effect still reconciles its refusal even if the rule is removed.
   const applied =
     READ_ONLY_AGENT_TOOLS.has(name) &&
     plan === "allow" &&
     siteGate !== "new" &&
     nextApprovedTool !== name &&
-    !approvedEffectKey
+    !approvedEffectKey &&
+    (await findRecordedEffect(deps, effectKey))?.status !== "denied"
       ? undefined
       : await recordEffect(
           deps,
@@ -548,7 +551,15 @@ export async function gateToolCall(
     passedByReview = judged.decision === "allow";
   };
 
-  if (applied && plan === "judge" && (injectedReview || checker)) {
+  const duplicateGate = applied?.duplicate
+    ? resolveDuplicateEffectGate(applied.effect, name)
+    : undefined;
+  if (
+    applied &&
+    (!duplicateGate || duplicateGate.action === "paused") &&
+    plan === "judge" &&
+    (injectedReview || checker)
+  ) {
     if (!applied.duplicate) {
       await runAutoReview();
     } else {
@@ -566,7 +577,10 @@ export async function gateToolCall(
         await runAutoReview();
       }
     }
-  } else if (applied?.duplicate && plan === "ask") {
+  } else if (
+    applied?.duplicate &&
+    (plan === "ask" || (plan === "judge" && duplicateGate?.action === "execute"))
+  ) {
     gateDecision = "ask";
   }
   if (context.signal.aborted) return { result: pauseForApproval(ctx) };
@@ -597,9 +611,8 @@ export async function gateToolCall(
       !ctx.thread.groupId,
   };
 
-  if (applied?.duplicate) {
-    const gate = resolveDuplicateEffectGate(applied.effect, name);
-    if (gate.action === "return") {
+  if (applied?.duplicate && duplicateGate) {
+    if (duplicateGate.action === "return") {
       if (name === "request_secret") {
         const replacementSecret = await deps.prisma.secret.findFirst({
           where: {
@@ -609,7 +622,7 @@ export async function gateToolCall(
           },
           select: { id: true, createdAt: true },
         });
-        if (!replacementSecret) return { result: gate.result, replayed: true };
+        if (!replacementSecret) return { result: duplicateGate.result, replayed: true };
         // Crash between persist and delete leaves the same OTP row. Do not
         // resubmit it to the connector; only newer rows are replacements.
         const effectUpdatedAt = applied.effect.updatedAt;
@@ -623,13 +636,13 @@ export async function gateToolCall(
           await deps.prisma.secret.delete({
             where: { id: replacementSecret.id },
           });
-          return { result: gate.result, replayed: true };
+          return { result: duplicateGate.result, replayed: true };
         }
       } else {
-        return { result: gate.result, replayed: true };
+        return { result: duplicateGate.result, replayed: true };
       }
     }
-    if (gate.action === "paused") {
+    if (duplicateGate.action === "paused") {
       if (name === "request_secret") {
         const current = await deps.prisma.run.findUnique({
           where: { id: runId },
@@ -653,12 +666,12 @@ export async function gateToolCall(
         }
         return { result: await requestApproval(ctx, call, card) };
       }
-    } else if (gate.action === "uncertain") {
+    } else if (duplicateGate.action === "uncertain") {
       return {
-        result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName),
+        result: await settleToolUncertainty(ctx, call, applied.effect.id, duplicateGate.toolName),
         replayed: true,
       };
-    } else if (gate.action === "execute") {
+    } else if (duplicateGate.action === "execute") {
       const early = await call.claimOrReturn("approved");
       if (early !== undefined) return { result: early, replayed: true };
     }
