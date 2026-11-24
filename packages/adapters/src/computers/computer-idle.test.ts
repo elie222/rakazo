@@ -1083,6 +1083,57 @@ describe("sandbox idle", () => {
   );
 });
 
+describe("idle bot screens", () => {
+  it("releases a bot's warm screen nothing has used past the idle window", async () => {
+    vi.stubEnv("SANDBOX_SCREEN_IDLE_MS", "60000");
+    const harness = idleHarness({ backgroundWorkProbeCode: 0 });
+    harness.prisma.bot.findMany.mockResolvedValue([{ id: "bot-idle" }]);
+    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+      where.computerUseStartedAt
+        ? { id: "screen-run", updatedAt: new Date(Date.now() - 120_000) }
+        : null,
+    );
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.releaseScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ providerRef: "computer" }),
+      expect.objectContaining({ botId: "bot-idle" }),
+    );
+  });
+
+  it("keeps a screen while a live execution lease, a pending run, or recent use holds it", async () => {
+    vi.stubEnv("SANDBOX_SCREEN_IDLE_MS", "60000");
+    for (const held of [
+      { lease: { runId: "run" }, run: null, screenRun: null },
+      { lease: null, run: { id: "run" }, screenRun: null },
+      { lease: null, run: null, screenRun: { id: "screen-run", updatedAt: new Date() } },
+    ]) {
+      const harness = idleHarness({ backgroundWorkProbeCode: 0 });
+      harness.prisma.bot.findMany.mockResolvedValue([{ id: "bot-idle" }]);
+      harness.prisma.computerExecutionLease.findFirst.mockResolvedValue(held.lease);
+      harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+        where.computerUseStartedAt ? held.screenRun : held.run,
+      );
+
+      await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+      expect(harness.sandbox.releaseScreen).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps every screen warm when the idle window is 0", async () => {
+    vi.stubEnv("SANDBOX_SCREEN_IDLE_MS", "0");
+    const harness = idleHarness({ backgroundWorkProbeCode: 0 });
+    harness.prisma.bot.findMany.mockResolvedValue([{ id: "bot-idle" }]);
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.releaseScreen).not.toHaveBeenCalled();
+    expect(harness.prisma.bot.findMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("maximum active lifetime", () => {
   const now = new Date("2026-01-01T12:00:00.000Z").getTime();
   const longAgo = new Date(now - DEFAULT_COMPUTER_MAX_ACTIVE_MS - 1);
@@ -2130,7 +2181,10 @@ function idleHarness(
           : null;
       }),
     },
-    computerExecutionLease: { findMany: vi.fn().mockResolvedValue([]) },
+    computerExecutionLease: {
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
     agentHome: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     computerRun: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     $executeRaw: vi.fn().mockResolvedValue(1),
@@ -2165,6 +2219,7 @@ function idleHarness(
       yield { type: "exit", code } as const;
     }),
     keepAlive: vi.fn().mockResolvedValue(undefined),
+    releaseScreen: vi.fn().mockResolvedValue(undefined),
     exportWorkspace: vi.fn(async function* () {
       if (options.exportError) throw options.exportError;
       yield { path: "notes/result.txt", content: new TextEncoder().encode("durable") };

@@ -350,6 +350,19 @@ export function sandboxIdleMs(): number {
   return Number.isFinite(raw) && raw >= 30_000 ? raw : DEFAULT_SANDBOX_IDLE_MS;
 }
 
+/**
+ * How long a bot's warm screen may sit unused on a computer that stays up before
+ * its browser is closed to free the memory, in milliseconds. The profile on disk
+ * keeps its cookies and sessions, so the next run relaunches signed in.
+ * SANDBOX_SCREEN_IDLE_MS configures it; 0 keeps screens warm forever.
+ */
+export const DEFAULT_SANDBOX_SCREEN_IDLE_MS = 30 * 60 * 1000;
+
+export function sandboxScreenIdleMs(): number {
+  const raw = Number(process.env.SANDBOX_SCREEN_IDLE_MS ?? DEFAULT_SANDBOX_SCREEN_IDLE_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_SANDBOX_SCREEN_IDLE_MS;
+}
+
 export function computerMaxActiveMs(): number {
   const raw = Number(process.env.COMPUTER_MAX_ACTIVE_MS?.trim() || DEFAULT_COMPUTER_MAX_ACTIVE_MS);
   return Number.isFinite(raw) && (raw === 0 || raw >= 60_000)
@@ -525,6 +538,7 @@ export async function sleepComputerIfIdle(
   }
   const hold = holdingRun ?? (takeoverHeldUntil ? "takeover" : await backgroundHold());
   if (hold) {
+    await closeIdleBotScreens(deps, computer, ref);
     logHold(hold, "before_checkpoint");
     // Recheck when the takeover grace ends so the computer sleeps on time.
     scheduleComputerSleep(deps.jobs, computerId, takeoverHeldUntil ?? undefined);
@@ -1078,6 +1092,80 @@ function liveComputerExecutionLeases(prisma: PrismaClient, computerId: string, n
     where: { computerId, expiresAt: { gt: now } },
     select: { runId: true, fence: true },
   });
+}
+
+/**
+ * A run that finishes can leave its bot's browser alive on the warm screen, and each
+ * warm Chromium keeps hundreds of megabytes of the sandbox's memory. While the
+ * computer stays up, release the screens nothing can still be using: the bot has no
+ * non-terminal run, no live execution lease, and is not under a person's control,
+ * and its screen has not been touched inside SANDBOX_SCREEN_IDLE_MS. Release is a
+ * no-op for a bot that never had a screen, and the slot's lease fence refuses the
+ * release when a run claimed the screen since this check.
+ */
+async function closeIdleBotScreens(
+  deps: { prisma: PrismaClient; sandbox: SandboxProvider },
+  computer: NonNullable<Awaited<ReturnType<typeof loadComputer>>>,
+  ref: ComputerRef,
+): Promise<void> {
+  const releaseScreen = deps.sandbox.releaseScreen?.bind(deps.sandbox);
+  const idleMs = sandboxScreenIdleMs();
+  if (!releaseScreen || idleMs <= 0) return;
+  const now = Date.now();
+  const cutoff = new Date(now - idleMs);
+  const bots = await deps.prisma.bot.findMany({
+    where: { computerId: computer.id },
+    select: { id: true },
+  });
+  for (const bot of bots) {
+    try {
+      const [liveLease, pendingRun, latestScreenRun] = await Promise.all([
+        deps.prisma.computerExecutionLease.findFirst({
+          where: { botId: bot.id, expiresAt: { gt: new Date(now) } },
+          select: { runId: true },
+        }),
+        deps.prisma.run.findFirst({
+          where: { botId: bot.id, status: { notIn: ["completed", "failed", "cancelled"] } },
+          select: { id: true },
+        }),
+        deps.prisma.run.findFirst({
+          where: { botId: bot.id, computerUseStartedAt: { not: null } },
+          orderBy: { updatedAt: "desc" },
+          select: { updatedAt: true },
+        }),
+      ]);
+      if (liveLease || pendingRun) continue;
+      const controlled =
+        computer.controlBotId === bot.id &&
+        computer.controlLeaseExpiresAt != null &&
+        computer.controlLeaseExpiresAt.getTime() > now;
+      if (controlled) continue;
+      const lastScreenUse = [
+        latestScreenRun?.updatedAt,
+        computer.controlBotId === bot.id ? computer.controlLeaseExpiresAt : null,
+      ]
+        .filter((at): at is Date => at != null)
+        .reduce<Date | undefined>(
+          (latest, at) => (latest == null || at > latest ? at : latest),
+          undefined,
+        );
+      if (lastScreenUse == null || lastScreenUse > cutoff) continue;
+      await releaseScreen(ref, {
+        operationId: "computer.screen_idle",
+        traceId: "computer.screen_idle",
+        spaceId: computer.spaceId,
+        userId: computer.userId,
+        botId: bot.id,
+        signal: new AbortController().signal,
+      });
+    } catch (error) {
+      getLogger().warn("computer.screen_idle_release_failed", {
+        "computer.id": computer.id,
+        "bot.id": bot.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
 
 /**
