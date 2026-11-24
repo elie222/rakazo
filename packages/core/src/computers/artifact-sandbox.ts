@@ -1,5 +1,11 @@
 import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
-import { PAGE_STATE_MAX_KEYS, PageSectionOccurrence, PageStateSchema } from "@rakazo/contracts";
+import {
+  PAGE_STATE_MAX_BYTES,
+  PAGE_STATE_MAX_KEYS,
+  PageSectionOccurrence,
+  PageStateSchema,
+  pageStateBytes,
+} from "@rakazo/contracts";
 
 // Same policy as the web preview: nothing loads from the network, so a script
 // cannot send what it reads to a remote image or font URL.
@@ -127,7 +133,9 @@ export function pageStateRequest(data: unknown): PageState | null {
   const valid = entries.filter(
     ([key, value]) => PageStateSchema.safeParse(Object.fromEntries([[key, value]])).success,
   );
-  return valid.length > 0 ? Object.fromEntries(valid) : null;
+  const kept = Object.fromEntries(valid);
+  // More than one save can hold is refused by the server anyway, so it is not sent.
+  return valid.length > 0 && pageStateBytes(kept) <= PAGE_STATE_MAX_BYTES ? kept : null;
 }
 
 /** The answer a page's copy button waits for. */

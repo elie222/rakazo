@@ -73,6 +73,8 @@ describe("pageStateRequest", () => {
         values: { note: "kept", huge: "x".repeat(70_000), deep: [[[[[[[1]]]]]]] },
       }),
     ).toEqual({ note: "kept" });
+    const halves = { a: "x".repeat(40_000), b: "y".repeat(40_000) };
+    expect(pageStateRequest({ type: "rakazo-page:state", values: halves })).toBeNull();
     expect(pageStateRequest({ type: "rakazo-page:copy", values: { note: "x" } })).toBeNull();
   });
 });
