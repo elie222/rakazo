@@ -3,6 +3,7 @@ import type { ImperativeRouter, NativeStackNavigationOptions } from "expo-router
 import { Pressable, View } from "react-native";
 import { iosAtLeast } from "../../../lib/native/native-controls";
 import { NativeSymbol } from "../../native/native-symbol";
+import { trailingHeaderOptions } from "../../native/sheet-header";
 
 export function openInvite(router: ImperativeRouter) {
   router.push("/invite");
@@ -16,6 +17,7 @@ export function threadHeaderRight({
   onGroupSettings,
   onInvite,
   onShowPins,
+  restore,
 }: {
   inGroup: boolean;
   readOnly: boolean;
@@ -23,22 +25,17 @@ export function threadHeaderRight({
   onGroupSettings: () => void;
   onInvite?: () => void;
   onShowPins?: () => void;
+  restore?: { onPress: () => void; pending?: boolean };
 }): NativeStackNavigationOptions {
-  const chatAction = inGroup
+  const onChatAction = readOnly ? undefined : inGroup ? onGroupSettings : onInvite;
+  const chatAction = onChatAction
     ? ({
-        title: t`Group settings`,
-        ios: "gearshape",
-        android: "settings-outline",
-        onPress: onGroupSettings,
+        title: inGroup ? t`Group settings` : t`Invite a friend`,
+        ios: inGroup ? "gearshape" : "gift",
+        android: inGroup ? "settings-outline" : "gift-outline",
+        onPress: onChatAction,
       } as const)
-    : onInvite
-      ? ({
-          title: t`Invite a friend`,
-          ios: "gift",
-          android: "gift-outline",
-          onPress: onInvite,
-        } as const)
-      : null;
+    : null;
   const pinsAction = onShowPins
     ? ({
         title: t`Pinned messages`,
@@ -48,19 +45,27 @@ export function threadHeaderRight({
       } as const)
     : null;
   const actions = [chatAction, pinsAction].filter((action) => action !== null);
-  if (readOnly || !actions.length) {
-    return { headerRight: undefined, unstable_headerRightItems: undefined };
+  const restoreOptions = restore
+    ? trailingHeaderOptions(t`Restore`, restore.onPress, restore.pending)
+    : undefined;
+  if (!actions.length) {
+    return restoreOptions ?? { headerRight: undefined, unstable_headerRightItems: undefined };
   }
   return {
     unstable_headerRightItems: iosAtLeast(26)
-      ? () =>
-          actions.map(({ title, ios, onPress }) => ({
-            type: "button",
-            label: title,
-            accessibilityLabel: title,
-            icon: { type: "sfSymbol", name: ios },
-            onPress,
-          }))
+      ? () => [
+          ...(restoreOptions?.unstable_headerRightItems?.() ?? []),
+          ...actions.map(
+            ({ title, ios, onPress }) =>
+              ({
+                type: "button",
+                label: title,
+                accessibilityLabel: title,
+                icon: { type: "sfSymbol", name: ios },
+                onPress,
+              }) as const,
+          ),
+        ]
       : undefined,
     headerRight: () => (
       <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
@@ -75,6 +80,7 @@ export function threadHeaderRight({
             <NativeSymbol ios={ios} android={android} size={21} color={color} />
           </Pressable>
         ))}
+        {restoreOptions?.headerRight?.()}
       </View>
     ),
   };

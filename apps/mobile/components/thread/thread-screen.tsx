@@ -457,12 +457,13 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     },
     [applyMessageJump, botId, groupId, reactionView.foldedInto],
   );
-  const pins = useThreadPins(
-    groupId ? { groupId } : { botId },
-    Boolean((botId || groupId) && !readOnly),
+  const pins = useThreadPins({
+    target: groupId ? { groupId } : { botId },
+    enabled: Boolean(botId || groupId),
     focused,
+    readOnly,
     jump,
-  );
+  });
 
   useThreadHeader({
     botId,

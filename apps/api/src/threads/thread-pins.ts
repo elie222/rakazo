@@ -37,15 +37,22 @@ function pinPreview(row: PinRow): PinnedMessage | null {
   };
 }
 
-export async function listMessagePins(prisma: PrismaClient, threadId: string) {
-  const rows = await prisma.message.findMany({
+function readPinRows(prisma: Prisma.TransactionClient, threadId: string) {
+  return prisma.message.findMany({
     where: { threadId, pinnedAt: { not: null } },
     orderBy: [{ pinnedAt: "desc" }, { seq: "desc" }],
     take: maxPins,
     select: pinSelection,
   });
+}
+
+async function visiblePins(prisma: Prisma.TransactionClient, rows: PinRow[]) {
   const visible = await withoutPeerRunMessages(prisma, rows);
   return visible.flatMap((row) => pinPreview(row) ?? []);
+}
+
+export async function listMessagePins(prisma: PrismaClient, threadId: string) {
+  return visiblePins(prisma, await readPinRows(prisma, threadId));
 }
 
 export async function setMessagePin(
@@ -66,9 +73,20 @@ export async function setMessagePin(
     if (!row || !pinPreview(row) || (await withoutPeerRunMessages(tx, [row])).length === 0)
       throw new ClientError("NOT_FOUND", "Message not found.");
     if (row.pinnedAt) return;
-    const count = await tx.message.count({ where: { threadId, pinnedAt: { not: null } } });
-    if (count >= maxPins) {
-      throw new ClientError("CONFLICT", "Unpin a message before adding another.");
+    const pins = await readPinRows(tx, threadId);
+    if (pins.length === maxPins) {
+      const visible = await visiblePins(tx, pins);
+      if (visible.length === maxPins) {
+        throw new ClientError("CONFLICT", "Unpin a message before adding another.");
+      }
+      const visibleIds = new Set(visible.map((pin) => pin.messageId));
+      await tx.message.updateMany({
+        where: {
+          threadId,
+          id: { in: pins.filter((pin) => !visibleIds.has(pin.id)).map((pin) => pin.id) },
+        },
+        data: { pinnedAt: null },
+      });
     }
     const result = await tx.message.updateMany({ where, data: { pinnedAt: new Date() } });
     if (result.count === 0) throw new ClientError("NOT_FOUND", "Message not found.");

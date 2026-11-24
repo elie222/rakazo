@@ -8,12 +8,19 @@ import { useResolvedAppearance } from "../../lib/native/native";
 import { refreshRpcQueries, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 
-export function useThreadPins(
-  target: { botId?: string; groupId?: string },
-  enabled: boolean,
-  focused: boolean,
-  jump: (messageId: string) => void,
-) {
+export function useThreadPins({
+  target,
+  enabled,
+  focused,
+  readOnly,
+  jump,
+}: {
+  target: { botId?: string; groupId?: string };
+  enabled: boolean;
+  focused: boolean;
+  readOnly: boolean;
+  jump: (messageId: string) => void;
+}) {
   const { t } = useLingui();
   const colorScheme = useResolvedAppearance();
   const read = rpcQuery("threads/pins", target);
@@ -39,7 +46,7 @@ export function useThreadPins(
     });
   }, [colorScheme, data, jump, t]);
   return {
-    ids: enabled && !save.pending ? ids : undefined,
+    ids: enabled && !readOnly && !save.pending ? ids : undefined,
     set: save.run,
     show: enabled && data?.length ? show : undefined,
   };

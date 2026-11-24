@@ -12,7 +12,6 @@ import { useResolvedAppearance } from "../../lib/native/native";
 import { chatTitleRoute } from "../../lib/navigation/chat-settings-route";
 import { onConversationCleared } from "../../lib/thread/conversation-cleared";
 import { threadEdgeOptions } from "../../lib/thread/scroll/thread-edges";
-import { trailingHeaderOptions } from "../native/sheet-header";
 import type { ChatTitle } from "./header/chat-header-title";
 import { publishChatTitle } from "./header/chat-header-title";
 import { openInvite, threadHeaderRight } from "./header/thread-header-right";
@@ -114,10 +113,10 @@ export function useThreadHeader({
           router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
         onInvite: canInvite && botId ? () => openInvite(router) : undefined,
         onShowPins: hasPins ? () => showPins.current?.() : undefined,
+        restore: readOnly
+          ? { onPress: () => void restoreConversation(), pending: restoring }
+          : undefined,
       }),
-      ...(readOnly
-        ? trailingHeaderOptions(t`Restore`, () => void restoreConversation(), restoring)
-        : {}),
     });
   }, [
     readOnly,
