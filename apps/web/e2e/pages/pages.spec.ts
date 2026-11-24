@@ -309,7 +309,10 @@ test("a Page preview grows when an absolute item overflows the document body", a
 
   const openButton = card.getByRole("button", { name: `Open ${title}` });
   const view = page.getByTestId("page-view");
-  await preview.click();
+  // The short card's open button covers the preview. Click inside that visible area.
+  await preview.scrollIntoViewIfNeeded();
+  const previewBox = (await preview.boundingBox())!;
+  await page.mouse.click(previewBox.x + previewBox.width / 2, previewBox.y + previewBox.height / 2);
   await expect(view).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(view).toBeHidden();
