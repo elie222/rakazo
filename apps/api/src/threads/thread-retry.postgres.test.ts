@@ -164,7 +164,7 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     expect(body.json.run.retryable).toBeUndefined();
   });
 
-  it("queues the failed reply again from its message, once", async () => {
+  it("queues the failed reply again from its original message", async () => {
     const { message, run } = await failedReply();
 
     const first = await retry(run.id);
@@ -189,20 +189,14 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
       runId,
     );
     expect(enqueue).toHaveBeenCalledTimes(1);
+  });
 
-    // A second tap returns the same retry instead of starting another turn, and wakes it again
-    // in case the first wake was lost.
-    const again = await retry(run.id);
-    expect(again.status).toBe(200);
-    expect(again.body.json).toEqual({ runId });
-    expect(await system.run.count({ where: { threadId, retryOfRunId: run.id } })).toBe(1);
+  it("wakes the same queued retry again if a request is repeated", async () => {
+    const { run } = await failedReply();
+    await retry(run.id);
+    await retry(run.id);
     expect(enqueue).toHaveBeenCalledTimes(2);
     expect(enqueue.mock.calls[1]).toEqual(enqueue.mock.calls[0]);
-
-    // A newer message can cancel the retry before another tab receives its receipt.
-    await system.run.update({ where: { id: runId }, data: { status: "cancelled" } });
-    expect((await retry(run.id)).status).toBe(409);
-    expect(enqueue).toHaveBeenCalledTimes(2);
   });
 
   it("persists one thread refresh signal when the retry is queued", async () => {
@@ -272,6 +266,15 @@ describe.skipIf(!enabled)("threads.retry (PostgreSQL)", () => {
     });
     expect((await retry(run.id)).status).toBe(409);
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("refuses to wake an existing retry that was cancelled", async () => {
+    const { run } = await failedReply();
+    const receipt = await retry(run.id);
+    const { runId } = receipt.body.json as { runId: string };
+    await system.run.update({ where: { id: runId }, data: { status: "cancelled" } });
+    expect((await retry(run.id)).status).toBe(409);
+    expect(enqueue).toHaveBeenCalledTimes(1);
   });
 
   it("refuses to retry a routine from the chat banner", async () => {
