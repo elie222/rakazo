@@ -4,7 +4,7 @@ import { useCallback, useRef } from "react";
 
 export type PageStateSave = { pageId: string; values: PageState };
 
-const REFUSED = new Set(["BAD_REQUEST", "PAGE_STATE_LIMIT"]);
+const REFUSED = new Set(["BAD_REQUEST", "PAGE_STATE_LIMIT", "NOT_FOUND", "FORBIDDEN"]);
 
 /** Whether saving again could help: the server refuses the same values every time. */
 export function pageStateRetryable(error: unknown): boolean {
