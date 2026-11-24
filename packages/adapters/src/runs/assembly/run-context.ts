@@ -491,6 +491,23 @@ export const OWN_INSTRUCTIONS_CHANGED_ERROR =
 export const OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR =
   "This resumed run cannot safely change its own instructions. Ask the user to send their request again so a new run starts from the current instructions.";
 
+/** Give the new task its own occurrences while keeping retries anchored to the intro. */
+export function seedIntroEffectOccurrences(
+  effects: Pick<RunContext["state"]["effects"], "counts" | "consumedIds">,
+  runId: string,
+  receipts: readonly { id: string; kind: string; idempotencyKey: string }[],
+): void {
+  for (const { id, kind, idempotencyKey } of receipts) {
+    effects.consumedIds.add(id);
+    if (!isToolEffectIdempotencyKey(idempotencyKey, runId, kind)) continue;
+    const prefix = `${runId}:${kind}:`;
+    const [digest, suffix] = idempotencyKey.slice(prefix.length).split(":");
+    const fingerprint = prefix + digest;
+    const occurrence = Number(suffix ?? 0);
+    effects.counts.set(fingerprint, Math.max(effects.counts.get(fingerprint) ?? 0, occurrence + 1));
+  }
+}
+
 export function nextMutatingEffectOccurrence(
   ctx: RunContext,
   toolName: string,

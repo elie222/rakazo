@@ -35,7 +35,10 @@ import { JsonObject, readJsonColumn } from "../database/json-column.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "../database/transaction-retry.js";
 import { contentEncryptionOf } from "../encryption/content-encryption.js";
 import { deleteRunSecretsInTransaction } from "../runs/run-secrets.js";
-import { clearRunTurnCheckpoints, RUN_TURN_CHECKPOINT_KIND } from "../runs/run-turn-checkpoint.js";
+import {
+  RUN_TURN_CHECKPOINT_KIND,
+  retireIntroTurnCheckpoint,
+} from "../runs/run-turn-checkpoint.js";
 import { publishSpaceChange } from "../spaces/space-changes.js";
 import { notifyCommittedEvent, notifyRealtime } from "./event-stream.js";
 import type { FinalizeRunResult } from "./events.js";
@@ -386,7 +389,7 @@ async function commitAnswerRunInput(
   // The answer starts the user's task. Replaying the intro would keep its hidden
   // instruction to greet the user and ask what they want as the model's request.
   if (run.trigger === "created" && resumedTrigger === "user") {
-    await clearRunTurnCheckpoints(tx, [input.runId]);
+    await retireIntroTurnCheckpoint(tx, { id: input.runId, spaceId: input.spaceId });
   }
 
   const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);

@@ -1798,7 +1798,10 @@ describe("answerRunInput", () => {
       opener: { trigger: string; clientNonce?: string } = { trigger: "created" },
     ) => {
       const tx = {
-        externalEffect: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        externalEffect: {
+          findMany: vi.fn().mockResolvedValue([]),
+          deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
         $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
         message: {
           findFirst: vi.fn().mockResolvedValue({
