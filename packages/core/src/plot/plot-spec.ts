@@ -421,9 +421,15 @@ function buildMark(
 
 /** csvParse builds row objects with `new Function`, which the web app's CSP blocks. */
 function delimitedRows([columns = [], ...rows]: string[][]): unknown[] {
-  return rows.map((row) =>
-    autoType(Object.fromEntries(columns.map((column, index) => [column, row[index] ?? ""]))),
-  );
+  // A blank line parses as one empty (or whitespace-only) field. With several
+  // columns it cannot be a real row, so skip it. A single-column file is left
+  // alone: there a blank line may be an empty cell.
+  const dropBlankLines = columns.length > 1;
+  return rows
+    .filter((row) => !(dropBlankLines && row.length === 1 && row[0]?.trim() === ""))
+    .map((row) =>
+      autoType(Object.fromEntries(columns.map((column, index) => [column, row[index] ?? ""]))),
+    );
 }
 
 export function parsePlotData(name: string, content: string): unknown[] {

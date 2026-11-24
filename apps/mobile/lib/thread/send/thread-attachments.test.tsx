@@ -43,6 +43,7 @@ vi.mock("../../composer/incoming-share", () => ({
   takeIncomingShare: vi.fn(),
 }));
 vi.mock("../../api/user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+vi.mock("../../platform/monitoring", () => ({ reportMobileError: vi.fn() }));
 
 let root: Root;
 let attachments: ReturnType<typeof useThreadAttachments>;
@@ -77,9 +78,11 @@ const twoAttachments = { maxAttachmentsPerMessage: 2 };
 
 function ImportProbe({
   botId,
+  focused = true,
   uploadConfig = defaultUploadConfig,
 }: {
   botId: string;
+  focused?: boolean;
   uploadConfig?: { maxAttachmentsPerMessage?: number };
 }) {
   attachments = useThreadAttachments({
@@ -91,6 +94,7 @@ function ImportProbe({
   useIncomingShareImport({
     attachments,
     composerRef: { current: null },
+    focused,
     readOnly: false,
     threadKey: botId,
     uploadConfig,
@@ -305,6 +309,13 @@ function slowShare() {
   return { files, settle: () => settle() };
 }
 
+it("checks for a share when the already mounted chat regains focus", () => {
+  mount(<ImportProbe botId="bot-share-focus" focused={false} />);
+  expect(takeIncomingShare).not.toHaveBeenCalled();
+  act(() => root.render(<ImportProbe botId="bot-share-focus" />));
+  expect(takeIncomingShare).toHaveBeenCalledExactlyOnceWith("bot-share-focus");
+});
+
 it("holds a share import to the attachment limit when a picker opened before it settles first", async () => {
   const settlePicker = deferred<Read>();
   vi.mocked(pickDocuments).mockReturnValueOnce(settlePicker.promise);
@@ -432,7 +443,8 @@ it("keeps a share whose read settles between a warm link's commit and its effect
       <SettleOnCommit botId="bot-warm-b" />
     </>,
   );
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // Wait for the requeue itself: the passive effects run on the scheduler's clock, not a fixed delay.
+  await vi.waitFor(() => expect(retryIncomingShare).toHaveBeenCalledWith(share));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
   // The share goes back to the queue, as when the read settles after the switch; it is not dropped.

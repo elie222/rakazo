@@ -4,6 +4,11 @@ import { hostScreenMethods } from "../screens/host-screen.js";
 
 export const HOST_COMPUTER_MAX_BYTES = 12 * 1024 * 1024;
 export const HOST_COMPUTER_MAX_FILE_BYTES = 8 * 1024 * 1024;
+/** Largest file that fits both the per-file cap and the base64 content cap of one frame. */
+export const HOST_COMPUTER_TRANSFER_MAX_FILE_BYTES = Math.min(
+  HOST_COMPUTER_MAX_FILE_BYTES,
+  Math.floor(HOST_COMPUTER_MAX_BYTES / 4) * 3,
+);
 const file = z.object({
   path: z.string().max(4096),
   content: z.string().max(HOST_COMPUTER_MAX_BYTES),

@@ -1,11 +1,50 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { AgentRunModel, AgentRunRequest, AgentRuntime } from "@rakazo/adapter-kit";
 import { parseModelJson } from "@rakazo/adapters/model-json";
 import { z } from "zod";
+import type { JudgeSettings } from "./judge-identity.js";
 
 export type JudgeInput = { rubric: string; evidence: unknown };
 export type Judgment = { pass: boolean; reason: string };
 export type EvalJudge = (input: JudgeInput, signal: AbortSignal) => Promise<Judgment>;
+
+/**
+ * The judge connection settings that can change a verdict, safe to save in a shared report:
+ * the endpoint is a short hash of where calls go, never the URL or routing ids themselves.
+ */
+export function judgeSettings(model: AgentRunModel): JudgeSettings {
+  const routing = [
+    model.apiProtocol,
+    model.accountId,
+    model.gatewayId,
+    model.projectId,
+    model.region,
+  ].map((value) => value?.trim() || null);
+  // It can send calls to other servers behind the same URL.
+  if (model.zeroDataRetention) routing.push("zero-data-retention");
+  const baseUrl = model.baseUrl?.trim() ? normalizeUrl(model.baseUrl.trim()) : null;
+  return {
+    endpoint:
+      baseUrl || routing.some(Boolean)
+        ? createHash("sha256")
+            .update(JSON.stringify([baseUrl, ...routing]))
+            .digest("hex")
+            .slice(0, 12)
+        : null,
+    maxOutputTokens: model.maxTokens ?? null,
+    reasoning: model.reasoning ?? null,
+    thinkingLevel: model.thinkingLevel ?? null,
+  };
+}
+
+function normalizeUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}${url.search}`;
+  } catch {
+    return value;
+  }
+}
 
 const Verdict = z.object({ pass: z.boolean(), reason: z.string().trim().min(1) });
 

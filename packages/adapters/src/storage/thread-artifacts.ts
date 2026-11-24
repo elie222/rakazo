@@ -19,17 +19,18 @@ import {
 } from "@rakazo/contracts";
 import {
   attachmentComputerPath,
+  attachmentStoredName,
   inferAttachmentMimeType,
   messageBlockForArtifact,
   validateAttachmentMimeType,
 } from "@rakazo/core";
-import type { Artifact, Prisma, PrismaClient } from "@rakazo/db";
+import type { Artifact, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withResolvedArtifactVersion,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "../computers/screens/computer-support.js";
 
 export type MaterializedThreadFile = {
@@ -44,6 +45,8 @@ export async function attachWorkspaceFileToThread(
     prisma: PrismaClient;
     artifacts: ArtifactStore;
     maxUploadSizeBytes?: number;
+    /** Signals the Space's artifacts once the file is attached, so open lists show it. */
+    events?: Pick<ThreadEvents, "publishSpaceChange">;
   },
   input: {
     spaceId: string;
@@ -65,7 +68,11 @@ export async function attachWorkspaceFileToThread(
   if (!mimeType) {
     throw new Error(`Unsupported attachment type for ${fileName}`);
   }
-  const name = (input.name?.trim() || fileName).slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  // An Office file keeps its type's own extension (attachmentStoredName).
+  const name = attachmentStoredName(
+    (input.name?.trim() || fileName).slice(0, ARTIFACT_NAME_MAX_LENGTH),
+    mimeType,
+  );
   validateAttachmentMimeType(mimeType);
   if (input.bytes.byteLength > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)) {
     throw new Error(
@@ -124,6 +131,10 @@ export async function attachWorkspaceFileToThread(
     await deps.artifacts.remove(stored.id, context).catch(() => undefined);
     throw error;
   });
+  await bestEffort(
+    "artifacts space change signal",
+    deps.events?.publishSpaceChange?.(input.spaceId, "artifacts"),
+  );
   return { artifactId: row.id, block: messageBlockForArtifact(row) };
 }
 

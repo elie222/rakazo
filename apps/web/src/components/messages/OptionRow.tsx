@@ -20,7 +20,7 @@ export function OptionRow({
     <Button
       variant="ghost"
       disabled={disabled}
-      aria-pressed={selected || undefined}
+      aria-pressed={selected}
       onClick={onClick}
       className={cn(
         "-mx-2 h-auto w-[calc(100%+1rem)] min-w-0 justify-start gap-3 whitespace-normal px-2 py-2 text-start text-body-lg font-normal",
@@ -37,8 +37,4 @@ export function OptionRow({
       {selected ? <Check aria-hidden className="text-muted-foreground" /> : null}
     </Button>
   );
-}
-
-export function optionLetter(index: number): string {
-  return String.fromCharCode(65 + index);
 }

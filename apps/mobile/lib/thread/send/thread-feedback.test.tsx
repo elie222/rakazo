@@ -769,7 +769,8 @@ describe("scoped mobile outbox", () => {
       plan: resolveComposerSendPlan({ text, mentions, hasAttachments: true }),
     };
     const attempt = feedback.sendAttempt(sendPayload);
-    const deliver = () => deliverSend(sendPayload, attempt, request as unknown as typeof rpc);
+    const deliver = () =>
+      deliverSend(sendPayload, attempt, request as unknown as typeof rpc, () => "phone-proof");
     request.mockRejectedValueOnce(new Error("Upload failed"));
     await expect(deliver()).rejects.toThrow("Upload failed");
     expect(request.mock.calls.map(([proc]) => proc)).toEqual(["artifacts/create"]);
@@ -794,6 +795,7 @@ describe("scoped mobile outbox", () => {
       text: "Hello",
       artifactIds: ["artifact-a"],
       routineIds: ["routine-1", "routine-2"],
+      nativeCalendarDeviceKey: "phone-proof",
     });
     expect(retried).toEqual(first);
   });

@@ -18,6 +18,10 @@ import { checkConnectorSource } from "./connector-source.js";
 const MAX_GRAPHQL_SELECTION_CHARS = 6_000;
 const MAX_GRAPHQL_RESULT_BYTES = 1_000_000;
 const MAX_GRAPHQL_VALIDATION_BYTES = 2_000_000;
+const MAX_GRAPHQL_ERRORS = 20;
+const MAX_GRAPHQL_ERROR_MESSAGE_CHARS = 500;
+const MAX_GRAPHQL_ERROR_PATH_PARTS = 20;
+const MAX_GRAPHQL_ERROR_PATH_CHARS = 200;
 
 export const GraphqlOperationSchema = z.object({
   id: z.string().min(1).max(160),
@@ -331,7 +335,7 @@ export async function executeGraphqlOperation(
       throw new Error("GraphQL response contained invalid errors");
     }
     const graphqlErrors = Array.isArray(record.errors) ? record.errors : [];
-    if (graphqlErrors.length > 0) {
+    if (graphqlErrors.length > 0 && !asRecord(record.data)) {
       const first = asRecord(graphqlErrors[0]);
       const message =
         typeof first?.message === "string" && first.message
@@ -342,13 +346,16 @@ export async function executeGraphqlOperation(
     if (!asRecord(record.data)) {
       throw new Error("GraphQL response contained no valid data");
     }
+    const errors =
+      graphqlErrors.length > 0 ? { errors: summarizeGraphqlErrors(graphqlErrors) } : {};
     const bounded = boundUtf8Text(text, MAX_GRAPHQL_RESULT_BYTES);
     if (bounded.truncated) {
-      return { status: response.status, data: bounded.text, truncated: true };
+      return { status: response.status, data: bounded.text, truncated: true, ...errors };
     }
     return {
       status: response.status,
       data: record.data,
+      ...errors,
     };
   } finally {
     await safeFetch.close().catch(() => undefined);
@@ -568,6 +575,25 @@ function sanitizeOperationName(value: string): string {
 
 function stringName(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined;
+}
+
+function summarizeGraphqlErrors(errors: unknown[]): { message: string; path?: unknown[] }[] {
+  return errors.slice(0, MAX_GRAPHQL_ERRORS).map((error) => {
+    const entry = asRecord(error);
+    const message =
+      typeof entry?.message === "string" && entry.message
+        ? entry.message.slice(0, MAX_GRAPHQL_ERROR_MESSAGE_CHARS)
+        : "GraphQL operation failed";
+    const path = Array.isArray(entry?.path)
+      ? entry.path
+          .filter((part) => typeof part === "string" || typeof part === "number")
+          .slice(0, MAX_GRAPHQL_ERROR_PATH_PARTS)
+          .map((part) =>
+            typeof part === "string" ? part.slice(0, MAX_GRAPHQL_ERROR_PATH_CHARS) : part,
+          )
+      : undefined;
+    return path?.length ? { message, path } : { message };
+  });
 }
 
 function boundUtf8Text(value: string, maximumBytes: number): { text: string; truncated: boolean } {

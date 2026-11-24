@@ -8,7 +8,9 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
+  compatibleEndpointPresets,
   ModelHeaderRowsSchema,
+  matchCompatibleEndpointPreset,
   modelHeadersInput,
   modelRoutingInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -19,7 +21,13 @@ import { clampCatalogThinkingLevel, pickCatalogModelId } from "./model-providers
 
 type CatalogModel = Pick<
   ModelCatalogEntry,
-  "provider" | "id" | "recommended" | "thinkingLevels" | "routingFields" | "dataRetentionControl"
+  | "provider"
+  | "id"
+  | "recommended"
+  | "thinkingLevels"
+  | "routingFields"
+  | "dataRetentionControl"
+  | "endpointPresets"
 >;
 type DefaultModel = { defaultProvider: string | null; defaultModel: string | null };
 
@@ -91,7 +99,13 @@ export function connectionFormFields(input: {
   return {
     enabledModelIds: credential?.enabledModelIds ?? [],
     baseUrl: compatible ? (credential?.baseUrl ?? presetBaseUrl ?? "") : "",
-    apiProtocol: credential?.apiProtocol ?? "chat-completions",
+    apiProtocol:
+      credential?.apiProtocol ??
+      (compatible
+        ? matchCompatibleEndpointPreset(compatibleEndpointPresets(catalog), presetBaseUrl)
+            ?.apiProtocol
+        : undefined) ??
+      "chat-completions",
     // An OpenAI-compatible model's effort is chosen where its model is used.
     thinkingLevel: compatible
       ? null

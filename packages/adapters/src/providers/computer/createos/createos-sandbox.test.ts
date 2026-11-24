@@ -5,6 +5,7 @@ import path from "node:path";
 import type * as TimersPromises from "node:timers/promises";
 import { promisify } from "node:util";
 import type { ComputerRef, PortableFile, ProcessEvent } from "@rakazo/adapter-kit";
+import { SandboxUnavailableError } from "@rakazo/adapter-kit";
 import {
   browserProfilePathForScreen,
   DEFAULT_DESKTOP_ENV,
@@ -270,6 +271,86 @@ function createosBotProfile(botId: string) {
 }
 
 describe("CreateOSSandboxProvider", () => {
+  describe.each(["transitional status", "transient error"] as const)(
+    "when settling exhausts its polls with %s",
+    (failure) => {
+      function stalledProvider(initialStatus?: SandboxStatus) {
+        let polls = 0;
+        const calls: string[] = [];
+        const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+          const route = `${init?.method ?? "GET"} ${new URL(String(input)).pathname}`;
+          calls.push(route);
+          if (route === "POST /v1/sandboxes") {
+            return jsonResponse({ id: "sbx-1", status: "creating" });
+          }
+          if (route === "POST /v1/sandboxes/sbx-1/pause") {
+            return failResponse(409, "invalid_state", "sandbox is not running");
+          }
+          if (route === "GET /v1/sandboxes/sbx-1") {
+            polls += 1;
+            if (polls === 1 && initialStatus) {
+              return jsonResponse({ id: "sbx-1", status: initialStatus });
+            }
+            return failure === "transient error"
+              ? errorResponse(503, "temporarily unavailable")
+              : jsonResponse({ id: "sbx-1", status: "creating" });
+          }
+          return jsonResponse({});
+        }) as typeof fetch;
+        return {
+          worker: new CreateOSSandboxProvider({ apiKey: "test-key", fetch: fetchImpl }),
+          calls,
+          polls: () => polls,
+        };
+      }
+
+      function expectUnavailable(error: unknown) {
+        expect(error).toBeInstanceOf(SandboxUnavailableError);
+        expect(error).toHaveProperty("cause", new Error("CreateOS sandbox did not settle"));
+        expect(isSandboxGoneError(error)).toBe(false);
+      }
+
+      it("reports unavailable and abandons a newly created sandbox", async () => {
+        const stalled = stalledProvider();
+        const error = await rejection(
+          stalled.worker.provision({ botId: "bot-a", homePath: "/unused" }, context),
+        );
+
+        expectUnavailable(error);
+        expect(stalled.polls()).toBe(120);
+        expect(stalled.calls).toContain("DELETE /v1/sandboxes/sbx-1");
+        expect(stalled.calls.filter((call) => call === "POST /v1/sandboxes")).toHaveLength(1);
+      });
+
+      it("reports unavailable without replacing a sandbox whose resume stalls", async () => {
+        const stalled = stalledProvider("paused");
+        const error = await rejection(
+          stalled.worker.provision(
+            { botId: "bot-a", homePath: "/unused", providerRef: "sbx-1", providerKind: "createos" },
+            context,
+          ),
+        );
+
+        expectUnavailable(error);
+        expect(stalled.polls()).toBe(121);
+        expect(stalled.calls).toContain("POST /v1/sandboxes/sbx-1/resume");
+        expect(stalled.calls).not.toContain("DELETE /v1/sandboxes/sbx-1");
+        expect(stalled.calls).not.toContain("POST /v1/sandboxes");
+      });
+
+      it("reports unavailable when a pause conflict never settles", async () => {
+        const stalled = stalledProvider();
+        const error = await rejection(stalled.worker.stop(computer, context));
+
+        expectUnavailable(error);
+        expect(stalled.polls()).toBe(120);
+        expect(stalled.calls[0]).toBe("POST /v1/sandboxes/sbx-1/pause");
+        expect(stalled.calls).not.toContain("DELETE /v1/sandboxes/sbx-1");
+        expect(stalled.calls).not.toContain("POST /v1/sandboxes/sbx-1/resume");
+      });
+    },
+  );
+
   it("creates a sandbox and waits until it runs", async () => {
     const fixture = createosFixture({ statuses: ["creating", "running"] });
     const ref = await provider(fixture).provision({ botId: "bot-a", homePath: "/unused" }, context);

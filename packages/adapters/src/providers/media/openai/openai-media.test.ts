@@ -1,5 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { ATTACHMENT_MAX_BASE64_LENGTH } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BASE64_LENGTH, ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { OpenAIMediaGenerationProvider } from "./openai-media.js";
 
@@ -27,6 +27,10 @@ function setup(...responses: Response[]) {
       imageModel: "image-model",
       baseUrl: "https://images.example.test/v1/",
       fetch,
+      resolveHostname: async (host) =>
+        host === "internal.example.test"
+          ? [{ address: "10.0.0.5", family: 4 }]
+          : [{ address: "93.184.216.34", family: 4 }],
     }),
   };
 }
@@ -49,6 +53,35 @@ describe("images API media generation", () => {
       prompt: "draw",
       n: 1,
     });
+  });
+  it("prices a known model's image from the tokens it used", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(
+        json({ ...image(PNG), usage: { input_tokens: 20, output_tokens: 1_000 } }),
+      );
+    const provider = new OpenAIMediaGenerationProvider({
+      apiKey: "fake-key",
+      imageModel: "gpt-image-2",
+      fetch,
+    });
+    // 20 text tokens at $5 and 1,000 image tokens at $30 per million.
+    expect(await provider.generateImage({ prompt: "draw" }, context)).toMatchObject({
+      costMicros: 30_100,
+    });
+  });
+  it("leaves an image with no input count to its saved price", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(json({ ...image(PNG), usage: { output_tokens: 1_000 } }));
+    const provider = new OpenAIMediaGenerationProvider({
+      apiKey: "fake-key",
+      imageModel: "gpt-image-2",
+      fetch,
+    });
+    expect(await provider.generateImage({ prompt: "draw" }, context)).not.toHaveProperty(
+      "costMicros",
+    );
   });
   it("defaults to the vendor endpoint", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(json(image(PNG)));
@@ -79,9 +112,91 @@ describe("images API media generation", () => {
     ],
     ["truncated base64", { data: [{ b64_json: b64(PNG).slice(0, -1) }] }],
     ["no images", { data: [] }],
-    ["a link instead of inline data", { data: [{ url: "https://cdn.example.test/image.png" }] }],
+    ["neither inline data nor a link", { data: [{ revised_prompt: "draw" }] }],
   ])("rejects a response with %s", async (_case, body) => {
     const { provider } = setup(json(body));
+    await expect(provider.generateImage({ prompt: "draw" }, context)).rejects.toMatchObject({
+      code: "provider_failure",
+    });
+  });
+  it("accepts base64 that the server wraps into lines", async () => {
+    const { provider } = setup(
+      json({ data: [{ b64_json: `${b64(PNG).replace(/(.{8})/g, "$1\n")}\r\n` }] }),
+    );
+    expect(await provider.generateImage({ prompt: "draw" }, context)).toEqual({
+      mimeType: "image/png",
+      bytes: new Uint8Array(PNG),
+    });
+  });
+  it("accepts a near-limit image wrapped with CRLF every 76 characters", async () => {
+    const bytes = Buffer.alloc(ATTACHMENT_MAX_BYTES);
+    Buffer.from(PNG).copy(bytes);
+    const wrapped = bytes.toString("base64").replace(/(.{76})/g, "$1\r\n");
+    const { provider } = setup(json({ data: [{ b64_json: wrapped }] }));
+    const result = await provider.generateImage({ prompt: "draw" }, context);
+    expect(result.mimeType).toBe("image/png");
+    expect(result.bytes.length).toBe(ATTACHMENT_MAX_BYTES);
+  });
+  it("keeps a linked image download within the generation deadline", async () => {
+    const deadline = new AbortController();
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
+      ms === 180_000 ? deadline.signal : realTimeout(ms),
+    );
+    try {
+      const { provider, fetch } = setup(
+        json({ data: [{ url: "https://cdn.example.test/image.png" }] }),
+        new Response(new Uint8Array(PNG)),
+      );
+      await provider.generateImage({ prompt: "draw" }, context);
+      const downloadSignal = fetch.mock.calls[1]![1]!.signal!;
+      expect(downloadSignal.aborted).toBe(false);
+      deadline.abort(new Error("deadline"));
+      expect(downloadSignal.aborted).toBe(true);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+  it("downloads a linked image without sending the API key", async () => {
+    const { provider, fetch } = setup(
+      json({ data: [{ url: "https://cdn.example.test/image.png" }] }),
+      new Response(new Uint8Array(PNG), {
+        headers: { "content-type": "application/octet-stream" },
+      }),
+    );
+    expect(await provider.generateImage({ prompt: "draw" }, context)).toEqual({
+      mimeType: "image/png",
+      bytes: new Uint8Array(PNG),
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [url, init] = fetch.mock.calls[1]!;
+    expect(String(url)).toBe("https://cdn.example.test/image.png");
+    expect(new Headers(init?.headers).get("authorization")).toBeNull();
+  });
+  it.each([
+    ["a private host", "https://internal.example.test/image.png"],
+    ["a loopback address", "http://127.0.0.1/image.png"],
+  ])("refuses a link to %s", async (_case, url) => {
+    const { provider, fetch } = setup(json({ data: [{ url }] }));
+    await expect(provider.generateImage({ prompt: "draw" }, context)).rejects.toMatchObject({
+      code: "provider_failure",
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("refuses a link that redirects", async () => {
+    const { provider } = setup(
+      json({ data: [{ url: "https://cdn.example.test/image.png" }] }),
+      new Response(null, { status: 302, headers: { location: "http://127.0.0.1/private" } }),
+    );
+    await expect(provider.generateImage({ prompt: "draw" }, context)).rejects.toMatchObject({
+      code: "provider_failure",
+    });
+  });
+  it("rejects a linked file that is not an image", async () => {
+    const { provider } = setup(
+      json({ data: [{ url: "https://cdn.example.test/image.png" }] }),
+      new Response("<html>nope</html>", { headers: { "content-type": "image/png" } }),
+    );
     await expect(provider.generateImage({ prompt: "draw" }, context)).rejects.toMatchObject({
       code: "provider_failure",
     });

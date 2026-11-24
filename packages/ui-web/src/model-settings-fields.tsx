@@ -3,9 +3,11 @@ import { useId } from "react";
 import { Checkbox } from "./components/ui/checkbox.js";
 import { Field, FieldLabel } from "./components/ui/field.js";
 import { Input } from "./components/ui/input.js";
+import type { SelectOption } from "./components/ui/option-select.js";
+import { OptionSelect } from "./components/ui/option-select.js";
 
-/** One model's limits and, where the catalog cannot tell, what it reads and whether it thinks. */
-export function ModelSettingsFields({
+/** One model's limits and, where the catalog cannot tell, what it reads and how hard it thinks. */
+export function ModelSettingsFields<Level extends string>({
   disabled,
   contextWindow,
   onContextWindowChange,
@@ -22,9 +24,10 @@ export function ModelSettingsFields({
   maxImagesPerPrompt,
   onMaxImagesPerPromptChange,
   maxImagesLabel,
-  reasoning = false,
-  onReasoningChange,
-  reasoningLabel,
+  thinkingLevel,
+  thinkingLevels = [],
+  onThinkingLevelChange,
+  thinkingLabel,
 }: {
   disabled?: boolean;
   contextWindow: string;
@@ -43,15 +46,16 @@ export function ModelSettingsFields({
   maxImagesPerPrompt?: string;
   onMaxImagesPerPromptChange?: (maxImagesPerPrompt: string) => void;
   maxImagesLabel?: string;
-  reasoning?: boolean;
-  onReasoningChange?: (reasoning: boolean) => void;
-  reasoningLabel?: string;
+  thinkingLevel?: Level;
+  thinkingLevels?: readonly SelectOption<Level>[];
+  onThinkingLevelChange?: (thinkingLevel: Level) => void;
+  thinkingLabel?: string;
 }) {
   const contextWindowId = useId();
   const maxTokensId = useId();
   const imagesId = useId();
   const maxImagesId = useId();
-  const reasoningId = useId();
+  const thinkingId = useId();
   return (
     <div className="text-body text-muted-foreground">
       <Field orientation="horizontal">
@@ -114,16 +118,18 @@ export function ModelSettingsFields({
           />
         </Field>
       ) : null}
-      {capabilities && onReasoningChange ? (
-        <label htmlFor={reasoningId} className="mt-3 flex items-center gap-2">
-          <Checkbox
-            id={reasoningId}
-            checked={reasoning}
-            onCheckedChange={(checked) => onReasoningChange(checked === true)}
+      {capabilities && onThinkingLevelChange && thinkingLevel !== undefined ? (
+        <Field orientation="horizontal" className="mt-3">
+          <FieldLabel htmlFor={thinkingId}>{thinkingLabel}</FieldLabel>
+          <OptionSelect
+            id={thinkingId}
+            value={thinkingLevel}
+            options={thinkingLevels}
+            onValueChange={onThinkingLevelChange}
             disabled={disabled}
+            className="w-28 text-foreground"
           />
-          {reasoningLabel}
-        </label>
+        </Field>
       ) : null}
     </div>
   );

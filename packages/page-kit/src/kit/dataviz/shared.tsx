@@ -162,12 +162,18 @@ export function formatValue(
       // A broken formatter falls back to the plain figure rather than losing the chart.
     }
   }
-  const text = words.number(
-    value,
-    Math.abs(value) >= 100_000
-      ? { notation: "compact", maximumFractionDigits: 1 }
-      : { maximumFractionDigits: 2 },
-  );
+  const magnitude = Math.abs(value);
+  let options: Intl.NumberFormatOptions = { maximumFractionDigits: 2 };
+  if (magnitude >= 100_000) {
+    options = { notation: "compact", maximumFractionDigits: 1 };
+  } else if (magnitude > 0 && magnitude < 0.01) {
+    // Keep tiny values distinct from zero without letting their leading zeros fill the axis.
+    options = {
+      notation: magnitude < 0.000001 ? "scientific" : "standard",
+      maximumSignificantDigits: 3,
+    };
+  }
+  const text = words.number(value, options);
   return unit ? withUnit(text, unit) : text;
 }
 

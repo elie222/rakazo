@@ -1,8 +1,8 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { billingDateLabel, formatBillingPrice } from "@rakazo/i18n/billing";
 import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ModelCreditsSettings } from "../../components/billing/ModelCredits";
-import { billingDateLabel, formatBillingPrice } from "../../lib/billing/billing";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 
@@ -51,7 +51,6 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
             queryKey: queries.billing.computerUsage.queryKey(),
           });
         }}
-        client={client}
       />
     );
 

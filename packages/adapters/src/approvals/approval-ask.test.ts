@@ -266,7 +266,7 @@ describe("bot management approval cards", () => {
       actions:
         toolName === "set_child_instructions"
           ? [
-              { id: "allow", label: "Allow once" },
+              { id: "allow", label: "Apply now" },
               { id: "deny", label: "Deny" },
             ]
           : [
@@ -313,6 +313,27 @@ describe("bot management approval cards", () => {
       amountSource: "page",
     });
     expect(block.detail).toBe("Socks: $9.00");
+  });
+
+  it("shows a redacted review reason in both versions of the routine card", () => {
+    const secret = "fake-review-token";
+    const changes = [{ field: "active", before: true, after: false }] as const;
+    const block = buildApprovalAskBlock("effect-1", "schedule_update", {}, [secret], {
+      summary: {
+        title: "Update “Groceries”?",
+        lines: ["Status: Paused", "Previously: Active"],
+        routineUpdate: { changes: [...changes] },
+      },
+      reviewReason: `Outside content included ${secret}`,
+    });
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.routineUpdate).toEqual({
+      changes,
+      reason: "Outside content included [redacted]",
+    });
+    expect(block.detail).toBe(
+      "Outside content included [redacted]\nStatus: Paused\nPreviously: Active",
+    );
   });
 
   it("never offers always allow on a tool that needs explicit approval", () => {

@@ -1,0 +1,11 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Rakazo는 봇에게 보내는 메시지에 사진을 첨부할 수 있도록 카메라를 사용합니다.",
+    "NSPhotoLibraryUsageDescription": "Rakazo는 봇에게 보내는 메시지에 이미지를 첨부할 수 있도록 사진 보관함을 사용합니다.",
+    "NSPhotoLibraryAddUsageDescription": "Rakazo는 아티팩트에서 다운로드한 사진과 동영상을 사진 보관함에 저장합니다.",
+    "NSLocalNetworkUsageDescription": "Rakazo는 로컬 네트워크에 있는 자체 호스팅 Rakazo 서버에 연결합니다.",
+    "NSMicrophoneUsageDescription": "Rakazo는 봇과의 음성 통화에 마이크를 사용합니다.",
+    "NSSpeechRecognitionUsageDescription": "Rakazo는 음성 통화 중에 말씀하신 내용을 메시지로 변환합니다.",
+    "NSFaceIDUsageDescription": "Rakazo가 Face ID를 사용하도록 허용합니다."
+  }
+}

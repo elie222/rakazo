@@ -5,6 +5,7 @@ import { createRepos } from "../bots/bot-repository.js";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import { isUniqueViolation } from "../database/prisma-errors.js";
+import { DEFAULT_MESSAGING_BOT_INSTRUCTIONS } from "./messaging-bot.prompt.js";
 
 export interface MessagingIdentityRequest {
   /** Messaging platform hosting the conversation (sendblue, slack, …). */
@@ -119,10 +120,7 @@ export async function provisionMessagingIdentity(
       {
         name: "Assistant",
         description: `Personal agent for ${address} (${provider}), auto-created on first message.`,
-        instructions:
-          "You are the owner's personal agent. The owner reaches you over chat; " +
-          "keep replies concise and conversational. Your first reply doubles as onboarding: " +
-          "briefly introduce yourself and what you can help with.",
+        instructions: DEFAULT_MESSAGING_BOT_INSTRUCTIONS,
         notifyOnFinish: true,
       },
     );

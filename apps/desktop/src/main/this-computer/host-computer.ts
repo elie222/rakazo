@@ -4,9 +4,14 @@ import path from "node:path";
 import { startHostComputerServer } from "@rakazo/adapters/host-computer-server";
 import type { HostScreen } from "@rakazo/adapters/host-screen";
 import { readPrivateFile, writePrivateFile } from "../setup/setup-store.js";
+import type { StackChoice } from "./docker-move.js";
 
 /** App-private credentials and consent, never sent to a renderer or a connected remote server. */
-export async function prepareHostComputer(userDataDir: string, screen?: HostScreen) {
+export async function prepareHostComputer(
+  userDataDir: string,
+  stack: StackChoice,
+  screen?: HostScreen,
+) {
   const configFile = path.join(userDataDir, "host-computer.json");
   const consentFile = path.join(userDataDir, "host-computer-consent");
   const raw = await readPrivateFile(configFile, 1024);
@@ -21,7 +26,8 @@ export async function prepareHostComputer(userDataDir: string, screen?: HostScre
     /* Invalid local configuration is replaced. */
   }
   let server: Awaited<ReturnType<typeof startHostComputerServer>>;
-  const options = { root: path.join(userDataDir, "computers"), token, screen };
+  const hostname = stack === "native" ? "127.0.0.1" : "0.0.0.0";
+  const options = { root: path.join(userDataDir, "computers"), token, screen, hostname };
   try {
     server = await startHostComputerServer({ ...options, port });
   } catch (error) {
@@ -55,7 +61,10 @@ export async function prepareHostComputer(userDataDir: string, screen?: HostScre
     return write;
   }
   return {
-    connection: { url: `http://host.docker.internal:${server.port}`, token },
+    connection: {
+      url: `http://${stack === "native" ? hostname : "host.docker.internal"}:${server.port}`,
+      token,
+    },
     isEnabled: server.isEnabled,
     activate(value: boolean) {
       active = value;

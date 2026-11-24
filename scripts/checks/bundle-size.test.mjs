@@ -39,6 +39,7 @@ function fakeBuild(t, sizes = {}) {
   write("apps/web/dist/assets/vendor-d4e5f6.js", randomBytes(vendor));
   write("apps/web/dist/assets/index-g7h8i9.css", randomBytes(styles));
   write("apps/web/dist/assets/SettingsPage-j0k1l2.js", randomBytes(lazy));
+  write("apps/desktop/dist/launch.js", randomBytes(0));
   write("apps/desktop/dist/main.js", randomBytes(main));
   write("apps/desktop/dist/main.js.map", randomBytes(100_000));
   write("apps/desktop/dist/preload.cjs", randomBytes(200));
@@ -96,7 +97,7 @@ test("missing build output says to run the build", (t) => {
     passed: [],
     failures: [
       "Cannot measure web-startup: apps/web/dist/index.html is missing. Run the build first: pnpm --filter @rakazo/web build",
-      "Cannot measure desktop-main: apps/desktop/dist/main.js is missing. Run the build first: pnpm --filter @rakazo/desktop build",
+      "Cannot measure desktop-main: apps/desktop/dist/launch.js is missing. Run the build first: pnpm --filter @rakazo/desktop build",
     ],
   });
 

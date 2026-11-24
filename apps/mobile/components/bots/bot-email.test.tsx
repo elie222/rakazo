@@ -39,14 +39,16 @@ vi.mock("../settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children?: ReactNode }) => <section>{children}</section>,
   SettingsRow: ({
     title,
+    accessibilityLabel,
     onPress,
     trailing,
   }: {
     title: string;
+    accessibilityLabel?: string;
     onPress?: () => void;
     trailing?: ReactNode;
   }) => (
-    <button type="button" onClick={onPress}>
+    <button type="button" aria-label={accessibilityLabel} onClick={onPress}>
       {title}
       {trailing}
     </button>
@@ -146,11 +148,32 @@ it("says why a name is refused, before sending it or after", async () => {
 });
 
 const showsCopied = (text: string) => Boolean(button(text)?.querySelector("[data-icon=checkmark]"));
+const labelOf = (text: string) => button(text)?.getAttribute("aria-label");
 const advance = async (ms: number) => {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
   });
 };
+
+it("names the settings row Copied while its checkmark shows, then restores the copy name", async () => {
+  vi.useFakeTimers();
+  rpc.mockImplementation(async (procedure: string) => {
+    if (procedure === "bots/emailAddress")
+      return { domain: "mail.test", address: "scout@mail.test" };
+    if (procedure === "me") return { email: "owner@example.test" };
+    throw new Error(`unexpected ${procedure}`);
+  });
+  await act(async () => root.render(<Rows />));
+  expect(labelOf("scout@mail.test")).toBe("Copy scout@mail.test");
+  await act(async () => button("scout@mail.test")!.click());
+  expect(showsCopied("scout@mail.test")).toBe(true);
+  expect(labelOf("scout@mail.test")).toBe("Copied");
+  await advance(1499);
+  expect(labelOf("scout@mail.test")).toBe("Copied");
+  await advance(1);
+  expect(showsCopied("scout@mail.test")).toBe(false);
+  expect(labelOf("scout@mail.test")).toBe("Copy scout@mail.test");
+});
 
 it("keeps the settings checkmark for a full interval after copying the same address again", async () => {
   vi.useFakeTimers();
@@ -191,6 +214,28 @@ it("moves the list checkmark and waits a full interval after copying a second ad
   expect(showsCopied("Chief")).toBe(true);
   await advance(1);
   expect(showsCopied("Chief")).toBe(false);
+});
+
+it("names only the copied list row Copied while its checkmark shows", async () => {
+  vi.useFakeTimers();
+  rpc.mockResolvedValueOnce({
+    addresses: [
+      { botId: "bot-1", botName: "Scout", address: "scout@mail.test" },
+      { botId: "bot-2", botName: "Chief", address: "chief@mail.test" },
+    ],
+  });
+  await act(async () => root.render(<BotEmailAddressesGroup />));
+  expect(labelOf("Scout")).toBe("Copy scout@mail.test");
+  expect(labelOf("Chief")).toBe("Copy chief@mail.test");
+  await act(async () => button("Scout")!.click());
+  expect(labelOf("Scout")).toBe("Copied");
+  expect(labelOf("Chief")).toBe("Copy chief@mail.test");
+  await advance(1400);
+  await act(async () => button("Chief")!.click());
+  expect(labelOf("Scout")).toBe("Copy scout@mail.test");
+  expect(labelOf("Chief")).toBe("Copied");
+  await advance(1500);
+  expect(labelOf("Chief")).toBe("Copy chief@mail.test");
 });
 
 it("hides the bots' addresses when they cannot be read", async () => {

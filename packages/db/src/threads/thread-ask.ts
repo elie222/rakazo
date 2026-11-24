@@ -35,7 +35,10 @@ import { JsonObject, readJsonColumn } from "../database/json-column.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "../database/transaction-retry.js";
 import { contentEncryptionOf } from "../encryption/content-encryption.js";
 import { deleteRunSecretsInTransaction } from "../runs/run-secrets.js";
-import { RUN_TURN_CHECKPOINT_KIND } from "../runs/run-turn-checkpoint.js";
+import {
+  RUN_TURN_CHECKPOINT_KIND,
+  retireIntroTurnCheckpoint,
+} from "../runs/run-turn-checkpoint.js";
 import { publishSpaceChange } from "../spaces/space-changes.js";
 import { notifyCommittedEvent, notifyRealtime } from "./event-stream.js";
 import type { FinalizeRunResult } from "./events.js";
@@ -242,6 +245,7 @@ async function commitAnswerRunInput(
       checkpoint: true,
       trigger: true,
       clientNonce: true,
+      taskId: true,
       task: { select: { prompt: true } },
     },
   });
@@ -350,8 +354,8 @@ async function commitAnswerRunInput(
     }
   }
 
-  // Answering the creation intro's or a daily check-in's question resumes as the user's
-  // turn: with the conversation and every tool, to get going on that answer.
+  // A composer reply to the creation intro or a daily check-in starts the user's turn.
+  // Preserve its source so the resumed run can prove who started it.
   const answersOpener =
     run.trigger === "created" ||
     (run.trigger === "routine" &&
@@ -372,11 +376,21 @@ async function commitAnswerRunInput(
     },
     data: {
       status: "queued",
-      ...(resumedTrigger !== run.trigger ? { trigger: resumedTrigger } : {}),
+      ...(resumedTrigger !== run.trigger
+        ? {
+            trigger: resumedTrigger,
+            ...(input.answerMessageId ? { sourceMessageId: input.answerMessageId } : {}),
+          }
+        : {}),
       ...(choiceAsk ? { checkpoint: null } : {}),
     },
   });
   if (queued.count !== 1) return null;
+  // The answer starts the user's task. Replaying the intro would keep its hidden
+  // instruction to greet the user and ask what they want as the model's request.
+  if (run.trigger === "created" && resumedTrigger === "user") {
+    await retireIntroTurnCheckpoint(tx, { id: input.runId, spaceId: input.spaceId });
+  }
 
   const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);
   const callId = callIdFromClientNonce(input.clientNonce);
@@ -462,11 +476,11 @@ async function commitAnswerRunInput(
       where: secretRequest,
       data: { status: "completed", result: DISMISSED_SECRET_RESULT },
     });
-    const task = await tx.task.updateMany({
-      where: { runs: { some: { id: input.runId } } },
+    await tx.task.update({
+      where: { id: run.taskId },
       data: { prompt: resumePrompt(run, pendingAsk.text, DISMISSED_SECRET_PROMPT) },
+      select: { id: true },
     });
-    if (task.count !== 1) throw new Error("Run task was not available to answer");
   } else if (secretAsk) {
     await runSecretWriter!.store({
       botId: run.botId,
@@ -495,8 +509,8 @@ async function commitAnswerRunInput(
     const resumeLabel = selectedChoice
       ? resumeChoiceLabel(selectedChoice, run.checkpoint)
       : undefined;
-    const task = await tx.task.updateMany({
-      where: { runs: { some: { id: input.runId } } },
+    await tx.task.update({
+      where: { id: run.taskId },
       data: {
         prompt: resumePrompt(
           { ...run, trigger: resumedTrigger },
@@ -504,8 +518,8 @@ async function commitAnswerRunInput(
           selectedChoice ? `Selected choice ${selectedChoice.id}: ${resumeLabel}` : input.answer,
         ),
       },
+      select: { id: true },
     });
-    if (task.count !== 1) throw new Error("Run task was not available to answer");
   }
 
   // Only the answered block is replaced: entries a read drops, or that a later release stored,

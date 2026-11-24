@@ -6,6 +6,7 @@ import type { ElectronAutoUpdater, UpdaterEvent } from "./auto-update.js";
 import {
   classifyUpdaterFailure,
   DesktopUpdateController,
+  INSTALL_BEFORE_QUIT_TIMEOUT_MS,
   initialUpdateState,
   MIN_CHECK_INTERVAL_MS,
   reduceUpdateState,
@@ -32,6 +33,7 @@ function fakeUpdater(overrides: Partial<ElectronAutoUpdater> = {}) {
   const updater: ElectronAutoUpdater = {
     autoDownload: true,
     autoInstallOnAppQuit: false,
+    autoRunAppAfterInstall: true,
     allowDowngrade: true,
     allowPrerelease: true,
     disableWebInstaller: false,
@@ -519,6 +521,54 @@ describe("DesktopUpdateController", () => {
     },
   );
 
+  it.each([
+    ["manual", true, "Could not reach the update server."],
+    ["background", false, null],
+  ] as const)(
+    "handles a %s offline check only once when the updater both emits and rejects",
+    async (_name, userInitiated, message) => {
+      let now = 1_000;
+      let attempts = 0;
+      const error = new Error("net::ERR_INTERNET_DISCONNECTED");
+      const fake = fakeUpdater({
+        checkForUpdates: vi.fn(async () => {
+          fake.emit("checking-for-update");
+          if (attempts++ === 0) fake.emit("error", error);
+          throw error;
+        }),
+      });
+      const controller = new DesktopUpdateController(packaged, async () => fake.updater, {
+        now: () => now,
+        iso: () => NOW,
+      });
+      const changes: Array<[string, string | null]> = [];
+      controller.subscribe((state) => changes.push([state.phase, state.message]));
+
+      expect(await controller.check(userInitiated)).toMatchObject({
+        phase: "idle",
+        message,
+        checkedAt: NOW,
+      });
+      expect(changes).toEqual([
+        ["checking", null],
+        ["idle", message],
+      ]);
+
+      // Even if the updater reuses the Error object, a later rejection is a different check.
+      changes.length = 0;
+      now += MIN_CHECK_INTERVAL_MS;
+      expect(await controller.check(true)).toMatchObject({
+        phase: "idle",
+        message: "Could not reach the update server.",
+      });
+      expect(changes).toEqual([
+        ["checking", null],
+        ["idle", "Could not reach the update server."],
+      ]);
+      expect(fake.updater.checkForUpdates).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it.each(["loading", "checking"] as const)(
     "reports offline failures when a manual check joins a background check during %s",
     async (joinDuring) => {
@@ -862,6 +912,73 @@ describe("DesktopUpdateController", () => {
       expect(fake.updater.autoInstallOnAppQuit).toBe(true);
       controller.installOnQuit();
       expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("when the app reads its installed version", () => {
+    function readyUpdater() {
+      let fake: ReturnType<typeof fakeUpdater>;
+      fake = fakeUpdater({
+        checkForUpdates: vi.fn(async () => {
+          fake.emit("checking-for-update");
+          fake.emit("update-available", { version: "0.2.0" });
+        }),
+        downloadUpdate: vi.fn(async () => {
+          fake.emit("update-downloaded", { version: "0.2.0" });
+        }),
+      });
+      return fake;
+    }
+
+    async function readyController(installed: string | null) {
+      const fake = readyUpdater();
+      const env = { ...packaged, installedVersion: () => installed };
+      const controller = new DesktopUpdateController(env, async () => fake.updater, clock);
+      await controller.check(false);
+      await vi.waitFor(() => expect(controller.state().phase).toBe("ready"));
+      return { fake, controller };
+    }
+
+    it("stages the update itself before quitting, without relaunching", async () => {
+      const { fake, controller } = await readyController("0.1.0");
+      expect(fake.updater.autoInstallOnAppQuit).toBe(false);
+      expect(controller.installBeforeQuit()).toBeInstanceOf(Promise);
+      expect(controller.installBeforeQuit()).toBeNull();
+      expect(fake.updater.autoRunAppAfterInstall).toBe(false);
+      expect(fake.updater.quitAndInstall).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips a download once another install replaced the app on disk", async () => {
+      const { fake, controller } = await readyController("0.3.0");
+      expect(controller.installedElsewhere()).toBe(true);
+      expect(controller.installBeforeQuit()).toBeNull();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+    });
+
+    it("skips a download while the app on disk is being replaced", async () => {
+      const { fake, controller } = await readyController(null);
+      expect(controller.installBeforeQuit()).toBeNull();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+    });
+
+    it("lets the app quit when staging fails", async () => {
+      const { fake, controller } = await readyController("0.1.0");
+      const installing = controller.installBeforeQuit();
+      fake.emit("error", new Error("Squirrel could not stage the update"));
+      await expect(installing).resolves.toBeUndefined();
+      expect(controller.installBeforeQuit()).toBeNull();
+    });
+
+    it("lets the app quit when staging never finishes", async () => {
+      const { controller } = await readyController("0.1.0");
+      vi.useFakeTimers();
+      try {
+        const installing = controller.installBeforeQuit();
+        vi.advanceTimersByTime(INSTALL_BEFORE_QUIT_TIMEOUT_MS);
+        await expect(installing).resolves.toBeUndefined();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

@@ -91,6 +91,7 @@ it("lets the Android ticket button open its menu without moving until a status i
         <BoardList
           sections={[{ status: "todo", tickets: [first, second] }]}
           error=""
+          refreshFailures={0}
           onMove={onMove}
           onRefresh={onRefresh}
         />,

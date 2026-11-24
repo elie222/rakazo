@@ -8,19 +8,21 @@ import type { CatalogReads, PiOAuthPersist } from "@rakazo/adapters";
 import {
   assertModelProviderAllowed,
   compatibleEndpointPreset,
+  listModelCredentials,
   listPiCatalog,
   ModelSignInError,
-  modelCredentialDto,
+  mediaModelsView,
   oauthCredentialEmail,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
   probeOpenAiCompatibleModels,
   providerCatalogCache,
-  resolveMemberMainModel,
   selectDefaultCredentialId,
   serializeModelSecret,
+  setMediaModel,
   storedOpenAiCompatibleProbeHeaders,
   storedOpenAiCompatibleProbeKey,
+  subscriptionSignInChoice,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
 } from "@rakazo/adapters";
 import type { Actor, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
@@ -35,14 +37,13 @@ import { ClientError, clampCatalogThinkingLevel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import {
   appliedModelRole,
-  comparePreferenceOrder,
   defaultModelCredentialCandidates,
   deleteUnreferencedCredentialSecret,
+  deploymentModelChangesScope,
   findModelCredential,
   getModelRole,
   modelCredentialProviderFilter,
   modelRoleTarget,
-  newestModelCredentialOrder,
   Prisma,
   runAsSystemInTransaction,
   saveModelPreference,
@@ -54,6 +55,10 @@ import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
+import {
+  getDeploymentModelSettings,
+  updateDeploymentModelSettings,
+} from "../models/deployment-model-settings.js";
 import {
   recordSignInStep,
   signInDurationMs,
@@ -113,6 +118,9 @@ export function modelsRoutes(ctx: RouterContext) {
         const record = signInRecorder(deps.analytics, actor.userId, login.measure);
         const target = await modelConnectionTarget(deps, actor, login.provider, login.credentialId);
         const retained = await prepareModelReconnectSettings(deps, actor, target);
+        const choice = target
+          ? { modelId: login.modelId, thinkingLevel: login.thinkingLevel }
+          : subscriptionSignInChoice(login.provider, login.modelId, login.thinkingLevel);
         const saved = await persistModelCredential(
           deps,
           actor,
@@ -130,8 +138,8 @@ export function modelsRoutes(ctx: RouterContext) {
               oauthCredentialEmail(login.credential) ??
               login.label ??
               listPiCatalog().find((entry) => entry.provider === login.provider)?.providerName,
-            modelId: login.modelId,
-            thinkingLevel: login.thinkingLevel,
+            modelId: choice.modelId,
+            thinkingLevel: choice.thinkingLevel,
             makeDefault: login.makeDefault,
             scope: login.settingsScope,
             signal: login.signal,
@@ -156,79 +164,15 @@ export function modelsRoutes(ctx: RouterContext) {
         withServingConnections(context.actor, await chatCatalog(context.actor)),
       ),
       credentials: authed.models.credentials.handler(async ({ context }) => {
-        const [rows, main] = await Promise.all([
-          deps.prisma.userModelCredential.findMany({
-            where: { userId: context.actor.userId },
-            include: { userPreferences: { where: { userId: context.actor.userId } } },
-            orderBy: newestModelCredentialOrder,
-          }),
-          resolveMemberMainModel({ prisma: deps.prisma, secretStore: deps.secrets }, context.actor),
-        ]);
-        const secrets = rows.length
-          ? await deps.prisma.secret.findMany({
-              where: {
-                id: { in: rows.map((row) => row.secretId) },
-                userId: context.actor.userId,
-                spaceId: null,
-              },
-              select: { id: true, ciphertext: true },
-            })
-          : [];
-        const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
-        const preferenceRanks = new Map(
-          rows
-            .flatMap((row) => row.userPreferences)
-            .sort(comparePreferenceOrder)
-            .map((preference, index) => [preference.credentialId, index]),
-        );
-        return Promise.all(
-          rows.map(async ({ userPreferences, ...row }) => {
-            const preference = userPreferences[0];
-            const own = {
-              ...row,
-              defaultModel: preference?.modelId ?? null,
-              thinkingLevel: preference?.thinkingLevel ?? null,
-            };
-            const runsMain = main?.credential && main.credential.id === row.id;
-            const dto = (plaintext?: string) => {
-              const listed = modelCredentialDto(own, plaintext);
-              // The connection running the main model shows that model, as apps read it,
-              // while its own model stays enabled.
-              const shown = runsMain
-                ? modelCredentialDto(
-                    {
-                      ...row,
-                      isDefault: true,
-                      defaultModel: main.modelId,
-                      thinkingLevel: main.thinkingLevel ?? null,
-                    },
-                    plaintext,
-                  )
-                : listed;
-              return {
-                ...shown,
-                ...(shown.enabledModelIds
-                  ? {
-                      enabledModelIds: [
-                        ...new Set([...shown.enabledModelIds, ...(listed.enabledModelIds ?? [])]),
-                      ],
-                    }
-                  : {}),
-                ...(preference
-                  ? { preferenceRank: preferenceRanks.get(preference.credentialId) }
-                  : {}),
-              };
-            };
-            const ciphertext = ciphertextById.get(row.secretId);
-            if (!ciphertext) return dto();
-            try {
-              return dto(await deps.secrets.load(ciphertext, row.secretId));
-            } catch (error) {
-              if (error instanceof SecretStoreUnavailableError) throw secretStoreOutage(error);
-              return dto();
-            }
-          }),
-        );
+        try {
+          return await listModelCredentials(
+            { prisma: deps.prisma, secretStore: deps.secrets },
+            context.actor,
+            { showMainModel: true },
+          );
+        } catch (error) {
+          throw secretStoreOutage(error);
+        }
       }),
       forRole: authed.models.forRole.handler(async ({ context, input }) =>
         modelRoleCatalog(context.actor, input.role),
@@ -266,6 +210,25 @@ export function modelsRoutes(ctx: RouterContext) {
         );
         return withImageInput(context.actor, role, { ...settings, ...deployment }, reads);
       }),
+      media: authed.models.media.handler(async ({ context, input }) => {
+        if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
+          throw new ORPCError("FORBIDDEN");
+        const target = await modelRoleTarget(deps.prisma, context.actor, input.scope);
+        return mediaModelsView(deps.prisma, target);
+      }),
+      setMedia: authed.models.setMedia.handler(async ({ context, input }) => {
+        if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
+          throw new ORPCError("FORBIDDEN");
+        const { actor } = context;
+        const { role, credentialId, modelId, scope } = input;
+        await setMediaModel(
+          deps.prisma,
+          { userId: actor.userId, spaceId: actor.spaceId, scope },
+          role,
+          { credentialId, modelId },
+        );
+        return mediaModelsView(deps.prisma, await modelRoleTarget(deps.prisma, actor, scope));
+      }),
       backups: authed.models.backups.handler(async ({ context }) =>
         (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
           ({ provider, modelId, credentialId, creditOfferingId }) => ({
@@ -302,13 +265,10 @@ export function modelsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
-        const { record } = await startModelConnect(
-          deps,
-          context.actor,
-          "api_key",
-          input.provider,
-          input.surface,
-        );
+        const { record } = await startModelConnect(deps, context.actor, "api_key", input.provider, {
+          surface: input.surface,
+          appVersion: input.appVersion,
+        });
         try {
           const saved = await connectModelCredential(context.actor, input, context.signal);
           record(input.provider, { name: "model_connected" });
@@ -378,7 +338,7 @@ export function modelsRoutes(ctx: RouterContext) {
               { ...input, apiKey, headers },
               preset ? deps.modelConnectionFetch : undefined,
               context.signal,
-              { allowPrivate: mayUsePrivateEndpoint(deps) },
+              { allowPrivate: mayUsePrivateEndpoint(deps), catalogProbe: preset !== undefined },
             );
             return { models };
           } catch (error) {
@@ -414,7 +374,7 @@ export function modelsRoutes(ctx: RouterContext) {
           context.actor,
           "oauth",
           input.provider,
-          input.surface,
+          { surface: input.surface, appVersion: input.appVersion },
         );
         const startedAt = new Date();
         return deps.oauthLogins
@@ -473,11 +433,8 @@ export function modelsRoutes(ctx: RouterContext) {
       }),
       completeOAuth: authed.models.completeOAuth.handler(async ({ context, input }) => {
         const result = await deps.oauthLogins.complete(input.loginId, context.actor);
-        if (result.status === "error") {
-          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
-          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
-          return { status: "error" as const, error: result.error };
-        }
+        // The sign-in already reported how it ended, as model_connect_ended.
+        if (result.status === "error") return { status: "error" as const, error: result.error };
         return result.status === "connected" ? { status: "ready" as const } : result;
       }),
       finishOAuth: authed.models.finishOAuth.handler(async ({ context, input }) => {
@@ -486,16 +443,12 @@ export function modelsRoutes(ctx: RouterContext) {
         if (result.status === "pending") {
           throw new ORPCError("CONFLICT", { message: "Sign-in has not finished yet." });
         }
-        if (result.status === "error") {
-          const record = signInRecorder(deps.analytics, context.actor.userId, result.measure);
-          record(result.provider, { name: "model_connect_failed", error: new Error(result.error) });
-          throw new ORPCError("NOT_FOUND", { message: result.error });
-        }
+        if (result.status === "error") throw new ORPCError("NOT_FOUND", { message: result.error });
         // The save already counted the connection.
         return result.value;
       }),
       cancelOAuth: authed.models.cancelOAuth.handler(async ({ context, input }) => {
-        await deps.oauthLogins.cancel(input.loginId, context.actor);
+        await deps.oauthLogins.cancel(input.loginId, context.actor, input.reason);
         return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
@@ -759,6 +712,21 @@ export function modelsRoutes(ctx: RouterContext) {
         );
         return { ok: true as const };
       }),
+      deployment: {
+        get: authed.models.deployment.get.handler(({ context }) =>
+          getDeploymentModelSettings(deps, context.actor),
+        ),
+        update: authed.models.deployment.update.handler(async ({ context, input }) => {
+          const saved = await updateDeploymentModelSettings(
+            deps,
+            context.actor,
+            input,
+            context.signal,
+          );
+          void deps.events?.publishSpaceChange?.(deploymentModelChangesScope, "deploymentModel");
+          return saved;
+        }),
+      },
     },
   };
 }

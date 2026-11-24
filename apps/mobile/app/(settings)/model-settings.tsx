@@ -1,6 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { ModelSettings } from "@rakazo/contracts";
+import type { ModelSettings, ThinkingLevel } from "@rakazo/contracts";
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import type { ModelSettingsFields } from "@rakazo/core";
 import {
@@ -8,11 +8,14 @@ import {
   connectionServesModel,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
+  modelDefaultThinkingLevel,
   modelHasOwnSettings,
   modelSettingsDefaults,
   modelSettingsFields,
   modelSettingsRequest,
+  modelSettingsThinkingLevels,
 } from "@rakazo/core";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import type { DataTag, QueryFunction, QueryKey } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
@@ -29,6 +32,7 @@ import { LimitField } from "../../components/models/model-connection-fields";
 import { createModelsStyles } from "../../components/models/model-connection-styles";
 import { NativeActionButton } from "../../components/native/native-action-button";
 import { NativeSwitch } from "../../components/native/native-switch";
+import { MenuPicker } from "../../components/ui/menu-picker";
 import type { MobileModel, MobileModelCredential } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { native, useThemedStyles } from "../../lib/native/native";
@@ -169,7 +173,12 @@ function ModelSettingsForm(route: ModelRoute) {
   const shown = loaded;
   const { credential } = shown;
   const provider = credential.provider;
-  const saved = modelSettingsFields(credentialModelSettings(credential, modelId), entry);
+  const thinkingLevels = modelSettingsThinkingLevels(credential, entry);
+  const own = credentialModelSettings(credential, modelId);
+  const saved = modelSettingsFields(own, entry, {
+    level: modelDefaultThinkingLevel(credential, modelId),
+    levels: thinkingLevels,
+  });
   const fields = draft?.on === shown ? draft.fields : saved;
   const dirty = (Object.keys(fields) as (keyof ModelSettingsFields)[]).some(
     (key) => fields[key] !== saved[key],
@@ -188,7 +197,12 @@ function ModelSettingsForm(route: ModelRoute) {
 
   function save() {
     Keyboard.dismiss();
-    const request = modelSettingsRequest({ fields, provider, entry });
+    const request = modelSettingsRequest({
+      fields,
+      provider,
+      entry,
+      followedThinkingLevel: own.thinkingLevel ? undefined : saved.thinkingLevel,
+    });
     if (request.status === "invalid") {
       announce({
         error:
@@ -240,15 +254,18 @@ function ModelSettingsForm(route: ModelRoute) {
                 disabled={pending}
               />
             </View>
-            <View style={[styles.modelRow, styles.singleRow]}>
-              <Text style={styles.modelLabel}>{t`Supports thinking`}</Text>
-              <NativeSwitch
-                accessibilityLabel={t`Supports thinking`}
-                value={fields.reasoning}
-                onValueChange={(reasoning) => update({ reasoning })}
-                disabled={pending}
-              />
-            </View>
+            <MenuPicker
+              label={t`Thinking`}
+              choices={thinkingLevels.map((level) => ({
+                key: level,
+                label: thinkingLevelLabel(level),
+              }))}
+              value={fields.thinkingLevel}
+              onChange={(thinkingLevel) =>
+                update({ thinkingLevel: thinkingLevel as ThinkingLevel })
+              }
+              disabled={pending}
+            />
           </View>
         ) : null}
         {fields.images ? (

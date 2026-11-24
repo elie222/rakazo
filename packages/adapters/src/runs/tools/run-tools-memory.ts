@@ -2,13 +2,16 @@ import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   HistoryReadInputSchema,
   HistorySearchInputSchema,
+  isDeletableMemoryDocument,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
 import { readHistory, searchHistory } from "@rakazo/db";
 import { redactConnectorPayload } from "../../integrations/connector-safety.js";
+import { stampMemoryEntry, userMemoryDate } from "../../memory/memory-expiry.js";
 import { editMemory } from "../../memory/memory-tools.js";
 import { MAX_RECALLED_MEMORIES } from "../../runtime/context/history-compaction.prompt.js";
 import { sharedMemorySaveError } from "../../tools/builtin.tool-definition.js";
+import { RememberInputSchema } from "../../tools/builtin-conversation.tool-definition.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent } from "../assembly/run-context.js";
 import { argsError } from "../turn/tool-args.js";
@@ -99,19 +102,29 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
 /** Memory documents, semantic memory and thread history. */
 export const memoryTools: ToolHandlers = {
   async remember(ctx, call) {
-    const { deps, runId, bot, thread, context } = ctx;
+    const { deps, runId, bot, thread, context, run } = ctx;
     const { args } = call;
-    // One document per bot keeps the size cap meaningful.
-    const path = MEMORY_INDEX_PATH;
+    const parsed = RememberInputSchema.safeParse(args);
+    if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    const today = await userMemoryDate(deps.prisma, run.userId, deps.now?.() ?? new Date());
+    const operations = parsed.data.operations.map((operation) =>
+      operation.action !== "remove" && operation.content?.trim()
+        ? { ...operation, content: stampMemoryEntry(operation.content, today, operation.until) }
+        : operation,
+    );
+    // A save may edit any document the bot already has, such as an imported one. A path it
+    // does not have means the index: a save never creates a document, so models cannot
+    // invent file names to get past the size cap.
+    const requested = String(args.path ?? "").trim() || MEMORY_INDEX_PATH;
+    const read = (path: string) => deps.memory.read({ scope: "bot", botId: bot.id, path }, context);
     // A concurrent save changes the revision, so re-read and apply the edit again.
     for (let attempt = 1; ; attempt += 1) {
-      const snapshot = await deps.memory.read({ scope: "bot", botId: bot.id, path }, context);
+      let snapshot = await read(requested);
+      if (!snapshot.documents[0] && requested !== MEMORY_INDEX_PATH)
+        snapshot = await read(MEMORY_INDEX_PATH);
       const existing = snapshot.documents[0];
-      const edit = editMemory(
-        existing?.content ?? "",
-        String(args.content ?? ""),
-        String(args.old_text ?? ""),
-      );
+      const path = existing?.path ?? MEMORY_INDEX_PATH;
+      const edit = editMemory(existing?.content ?? "", operations);
       if ("error" in edit) return call.finish(edit);
       const { content } = edit;
       if (content === (existing?.content ?? "")) return call.finish({ ok: true });
@@ -162,6 +175,23 @@ export const memoryTools: ToolHandlers = {
         return call.finish({ error: error.message });
       throw error;
     }
+  },
+  async delete_shared_memory(ctx, call) {
+    const { deps, context } = ctx;
+    const path = String(call.args.path ?? "").trim();
+    if (!path) return call.finish({ error: "path is required" });
+    if (!isDeletableMemoryDocument(path)) {
+      return call.finish({ error: `${path} cannot be deleted; edit its content instead.` });
+    }
+    const doc = (await deps.memory.read({ scope: "user", path }, context)).documents[0];
+    if (!doc) return call.finish({ error: `No shared memory document named ${path}.` });
+    // The id pins the document just read, so a newer one saved at the same path stays.
+    const { removed } = await deps.memory.remove(
+      { id: doc.id, scope: "user", path: doc.path },
+      context,
+    );
+    if (!removed) return call.finish({ error: `${path} was already deleted.` });
+    return call.finish({ ok: true, path: doc.path });
   },
   async recall_memory(ctx, call) {
     const { bot, thread, context } = ctx;

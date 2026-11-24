@@ -42,8 +42,10 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
 }
 
 // Larger sizes are full overlays: a fixed-size panel whose children lay out and scroll
-// their own panes.
-const largeDialog = "flex max-h-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0";
+// their own panes. The width cap holds at every breakpoint, so a narrow or zoomed window
+// never pushes the panel (and its close button) off-screen.
+const largeDialog =
+  "flex max-h-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[calc(100%-2rem)]";
 
 const dialogContentVariants = cva(
   "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-dialog p-6 text-body text-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
@@ -51,10 +53,10 @@ const dialogContentVariants = cva(
     variants: {
       size: {
         default: "",
-        md: `${largeDialog} w-[600px] sm:max-w-[600px]`,
-        lg: `${largeDialog} h-[680px] w-[760px] sm:max-w-[760px]`,
-        xl: `${largeDialog} h-[680px] w-[920px] sm:max-w-[920px]`,
-        "2xl": `${largeDialog} h-[760px] w-[1080px] sm:max-w-[1080px]`,
+        md: `${largeDialog} w-[600px]`,
+        lg: `${largeDialog} h-[680px] w-[760px]`,
+        xl: `${largeDialog} h-[680px] w-[920px]`,
+        "2xl": `${largeDialog} h-[760px] w-[1080px]`,
       },
     },
     defaultVariants: { size: "default" },

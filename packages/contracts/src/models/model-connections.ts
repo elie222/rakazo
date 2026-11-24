@@ -79,6 +79,7 @@ export function modelOutputLeavesInputRoom(
 /**
  * One model's own settings on a connection. Omitted fields follow the model card. Image input
  * and thinking apply only where the catalog cannot tell, since its answer is authoritative.
+ * `thinkingLevel` is the effort a thinking model runs at when no chat, bot or role picks one.
  */
 export const ModelSettingsSchema = z
   .object({
@@ -87,6 +88,7 @@ export const ModelSettingsSchema = z
     images: z.boolean().optional(),
     maxImagesPerPrompt: z.number().int().min(1).max(1000).optional(),
     reasoning: z.boolean().optional(),
+    thinkingLevel: ThinkingLevelSchema.optional(),
   })
   .refine((value) => modelOutputLeavesInputRoom(value.maxTokens, value.contextWindow), {
     message: "Maximum output tokens must leave room for input",
@@ -113,6 +115,7 @@ export const ModelApiProtocolSchema = z.enum([
 export type ModelApiProtocol = z.infer<typeof ModelApiProtocolSchema>;
 
 export const ModelCredentialSchema = z.object({
+  preserveModelOrder: z.boolean().optional(),
   /** Computed space preference order; credentials themselves remain newest first. */
   preferenceRank: z.number().int().nonnegative().optional(),
   ...ModelContextLimitsSchema.shape,
@@ -400,6 +403,8 @@ export const CompatibleEndpointPresetSchema = z.object({
   baseUrl: z.string(),
   /** The model list can be loaded before the connection has a key. */
   publicModels: z.boolean().optional(),
+  /** The protocol a new connection to this service starts on. */
+  apiProtocol: ModelApiProtocolSchema.optional(),
 });
 export type CompatibleEndpointPreset = z.infer<typeof CompatibleEndpointPresetSchema>;
 
@@ -415,6 +420,9 @@ export const ModelCatalogEntrySchema = z.object({
   creditOfferingId: Id.optional(),
   provider: z.string(),
   providerName: z.string().optional(),
+  /** What a signed-in connection is called, by the plan people pay for. */
+  subscriptionName: z.string().optional(),
+  subscriptionNameId: z.string().optional(),
   id: z.string(),
   label: z.string(),
   billing: z.string(),
@@ -423,6 +431,10 @@ export const ModelCatalogEntrySchema = z.object({
   authHint: z.string().optional(),
   subscription: z.boolean().optional(),
   signIn: ModelOAuthSignInModeSchema.optional(),
+  /** A setting the provider makes the user turn on before its sign-in can work; shown before the sign-in starts. */
+  signInSetup: z
+    .object({ label: z.string(), url: z.string().url(), note: z.string().optional() })
+    .optional(),
   reasoning: z.boolean().optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
   /** Uncustomized capabilities for forms on other connections of the same provider. */

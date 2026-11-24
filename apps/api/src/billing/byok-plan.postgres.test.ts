@@ -1,4 +1,4 @@
-import type { SandboxProvider } from "@rakazo/adapter-kit";
+import type { MediaGenerationProvider, SandboxProvider } from "@rakazo/adapter-kit";
 import type * as Adapters from "@rakazo/adapters";
 import { BillingEmulator, sandboxAllowance } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -7,6 +7,7 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
   billingAccountForOrganization,
+  chargeMedia,
   createDb,
   planComputerSize,
   spaceHasModelAccess,
@@ -221,6 +222,13 @@ dbTests("own-key plan", () => {
         { tier: "standard", monthlyPriceCents: 1500, computerSize: "standard", computerHours: 25 },
         { tier: "pro", monthlyPriceCents: 4900, computerSize: "large", computerHours: 100 },
         { tier: "max", monthlyPriceCents: 9900, computerSize: "xlarge", computerHours: 200 },
+        {
+          tier: "ultra",
+          monthlyPriceCents: 19900,
+          annualPriceCents: 190800,
+          computerSize: "xlarge",
+          computerHours: 600,
+        },
       ],
     });
     await service.checkout(actor, undefined, "year", "pro");
@@ -279,6 +287,12 @@ dbTests("own-key plan", () => {
     expect(await planComputerSize(prisma, computer.id)).toBe("large");
     await sized.setComputerSize(actor, computer.id, "xlarge");
     expect(await planComputerSize(prisma, computer.id)).toBe("xlarge");
+    await service.changeTier(actor, "ultra");
+    await expect(service.status(actor)).resolves.toMatchObject({
+      byokTier: "ultra",
+      byokPriceCents: 190800,
+      byokInterval: "year",
+    });
     await service.changeTier(actor, "pro");
     await expect(service.status(actor)).resolves.toMatchObject({
       byokTier: "pro",
@@ -335,5 +349,43 @@ dbTests("own-key plan", () => {
     await metered.changeTier(actor, "pro");
     await expect(metered.status(actor)).resolves.toMatchObject({ byokTier: "pro" });
     vi.mocked(sandboxAllowance).mockResolvedValue(null);
+  });
+
+  it("reports the paid plan's media balance apart from computer hours", async () => {
+    const withMedia = createBillingService({
+      prisma,
+      provider,
+      mediaGeneration: {
+        capabilities: { images: true, video: false, offline: false },
+        prices: { imageMicros: 40_000, videoMicros: 0 },
+      } as MediaGenerationProvider,
+      webOrigin: "https://example.test",
+    });
+    await prisma.$transaction((tx) =>
+      chargeMedia(tx, {
+        organizationId,
+        source: `media:${organizationId}`,
+        kind: "image",
+        amountMicros: 380_000,
+      }),
+    );
+    const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
+    await prisma.deploymentSettings.upsert({
+      where: { id: "default" },
+      create: { id: "default", modelCreditsEnabled: true },
+      update: { modelCreditsEnabled: true },
+    });
+    try {
+      await expect(withMedia.status(actor)).resolves.toMatchObject({
+        media: { leftCents: 62, limitCents: 100 },
+      });
+    } finally {
+      if (settings)
+        await prisma.deploymentSettings.update({
+          where: { id: "default" },
+          data: { modelCreditsEnabled: settings.modelCreditsEnabled },
+        });
+      else await prisma.deploymentSettings.delete({ where: { id: "default" } });
+    }
   });
 });

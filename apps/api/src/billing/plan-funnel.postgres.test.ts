@@ -5,10 +5,8 @@ import { BYOK_TIERS } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { asSystem, billingAccountForOrganization, createDb } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createExperiments } from "../telemetry/experiments.js";
 import { createBillingService, TRIAL_DAYS } from "./billing.js";
 
-const experiments = createExperiments("plan-layout");
 const dbTests = process.env.VERIFY_DATABASE && process.env.DATABASE_URL ? describe : describe.skip;
 dbTests("plan choice funnel", () => {
   const stamp = `${process.pid}-${Date.now()}`;
@@ -54,7 +52,6 @@ dbTests("plan choice funnel", () => {
     service = createBillingService({
       prisma,
       provider,
-      experiments,
       webOrigin: "https://example.test",
       analytics,
     });
@@ -64,12 +61,6 @@ dbTests("plan choice funnel", () => {
     await prisma.user.delete({ where: { id: userId } });
     await db.prisma.$disconnect();
     await db.pool.end();
-  });
-
-  it("lays out the plan choice the same way on every read", async () => {
-    const first = await service.status(actor);
-    expect(first.planLayout).toBe(experiments.variant("plan-layout", organizationId));
-    await expect(service.status(actor)).resolves.toMatchObject({ planLayout: first.planLayout });
   });
 
   it("reports the chosen tier from checkout through the end of its trial, once each", async () => {
@@ -108,8 +99,6 @@ dbTests("plan choice funnel", () => {
     ]);
     // The analytics provider deduplicates lifecycle events that concurrent syncs both report.
     expect(identities).toEqual([undefined, undefined, subscriptionId, subscriptionId]);
-    // A returning subscriber is not part of the layout comparison.
-    expect((await service.status(actor)).planLayout).toBeUndefined();
   });
 
   it("reports credits as connected when the purchase that funds them lands, once", async () => {

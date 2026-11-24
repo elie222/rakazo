@@ -9,7 +9,7 @@ import { DockerSandboxProvider } from "../../providers/computer/docker/docker-sa
 import { FakeSandboxProvider } from "../../providers/computer/fake/fake-sandbox.js";
 import { HostComputerSandbox } from "../host/host-computer-sandbox.js";
 import { ComputerBrowserProvider } from "../screens/computer-browser.js";
-import { createRunSandbox, HostAwareSandbox, sandboxKindForBot } from "./host-aware-sandbox.js";
+import { createRunSandbox, HostAwareSandbox } from "./host-aware-sandbox.js";
 
 const ctx = {
   operationId: "1",
@@ -222,13 +222,6 @@ describe("host-aware sandbox", () => {
     } finally {
       vi.unstubAllEnvs();
     }
-  });
-
-  it("only switches docker deployments onto this Mac", () => {
-    expect(sandboxKindForBot("docker", "this-mac")).toBe("desktop");
-    expect(sandboxKindForBot("docker", "docker")).toBe("docker");
-    expect(sandboxKindForBot("e2b", "this-mac")).toBe("e2b");
-    expect(sandboxKindForBot("fake", "this-mac")).toBe("fake");
   });
 
   it("forwards pageBrowser to the routed provider", async () => {

@@ -7,7 +7,8 @@ import { formatForcedSkillPrompt } from "./agent-skill.prompt.js";
  * Distinct from taught skills (demo/record playbooks on a single bot).
  */
 
-const FRONTMATTER_FENCE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+// A fence is exactly `---` plus optional spaces or tabs on its own line, so `----` is not one.
+const FRONTMATTER_FENCE = /^\s*---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 const MAX_FRONTMATTER_DEPTH = 32;
 
 export type SkillSource = "user" | "builtin" | "plugin";

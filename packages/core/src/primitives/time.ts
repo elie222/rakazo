@@ -1,5 +1,14 @@
 import { CronDate } from "croner";
 
+/** A localized month and day, with the year when it differs in the viewer's time zone. */
+export function formatShortHistoryDate(date: Date, now: Date, locale: string): string {
+  return date.toLocaleDateString(locale, {
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+}
+
 const ISO_DATE_TIME =
   /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-]\d{2}(?::?\d{2})?)?)?$/i;
 
@@ -44,6 +53,17 @@ export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
   local.ms = 0;
   // Keep any fraction so a time just after an occurrence does not include it.
   return new Date(local.getDate().getTime() + ms);
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function zonedEndDateTime(value: string, timezone = "UTC"): Date | null {
+  const text = value.trim();
+  return zonedDateTime(ISO_DATE.test(text) ? `${text}T23:59:59.999` : text, timezone);
+}
+
+export function isEndOfZonedDay(instant: Date, timezone = "UTC"): boolean {
+  return wallClock(instant, timezone).endsWith("T23:59:59");
 }
 
 /** The local date and time of `instant` in `timezone`, as zonedDateTime reads it back. */

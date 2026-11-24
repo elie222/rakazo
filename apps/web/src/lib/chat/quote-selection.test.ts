@@ -10,6 +10,7 @@ const unquotableContent = () => ({ dataset: {} });
 const messageById = new Map([
   ["message-1", message("message-1")],
   ["progress:run-1", message("progress:run-1")],
+  ["pending:nonce-1", message("pending:nonce-1")],
 ]);
 
 describe("quoteDraftForSelection", () => {
@@ -21,6 +22,16 @@ describe("quoteDraftForSelection", () => {
         messageById,
       ),
     ).toEqual({ message: message("message-1"), text: "some span" });
+  });
+
+  it("offers no quote of a send that is not stored yet", () => {
+    const region = content("pending:nonce-1");
+    expect(
+      quoteDraftForSelection(
+        { startContent: region, endContent: region, text: "span" },
+        messageById,
+      ),
+    ).toBeNull();
   });
 
   it("rejects selections spanning two text regions", () => {

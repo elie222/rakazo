@@ -1,7 +1,7 @@
 import type { PrismaClient } from "@rakazo/db";
 import { requireMembership } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { actorFromMembership } from "../app.js";
+import { actorFromMembership } from "./request-session.js";
 
 const actor = {
   userId: "user-1",
