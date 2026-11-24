@@ -1,13 +1,12 @@
+import { isBotChatRouteId, isReservedAppSegment } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import type { BrowserWindow } from "electron";
 
 export const DEEP_LINK_SCHEME = "rakazo";
 
-const BOT_LINK = /^rakazo:\/\/app\/([A-Za-z0-9_-]{1,200})(?:[?#].*)?$/i;
+const BOT_LINK = /^rakazo:\/\/app\/([^/?#]+)(?:[?#].*)?$/i;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: reject raw controls before URL normalization.
 const CONTROL_OR_WHITESPACE = /[\u0000-\u0020\u007f\s]/u;
-// Non-bot routes mounted under /app/* in the web router.
-const RESERVED_APP_SEGMENTS = new Set(["artifacts", "board", "g", "x"]);
 
 export type ParsedDeepLink = {
   botId: string;
@@ -19,7 +18,8 @@ export type ParsedDeepLink = {
 export function parseDeepLink(raw: string): ParsedDeepLink | null {
   if (CONTROL_OR_WHITESPACE.test(raw)) return null;
   const botId = BOT_LINK.exec(raw)?.[1];
-  if (botId === undefined || RESERVED_APP_SEGMENTS.has(botId.toLowerCase())) return null;
+  if (botId === undefined || !isBotChatRouteId(botId) || isReservedAppSegment(botId.toLowerCase()))
+    return null;
   const { search, hash } = new URL(raw);
   return { botId, search, hash };
 }
