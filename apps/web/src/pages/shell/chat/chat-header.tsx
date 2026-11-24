@@ -111,13 +111,7 @@ export function ChatHeader({
         <div />
       )}
       <div className="flex items-center justify-self-end gap-2">
-        <div
-          className={
-            grouped
-              ? "glass flex items-center rounded-full border border-foreground/8 p-0.5"
-              : "contents"
-          }
-        >
+        <div className={grouped ? "glass flex items-center rounded-full p-0.5" : "contents"}>
           {showCall ? (
             <IconTooltip label={inCall ? t`Open call` : t`Call`}>
               <Button

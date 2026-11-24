@@ -119,24 +119,29 @@
   }
 }
 
-/* Glass: a frosted surface for controls that float over content. Light catches its top edge and
-   it casts a soft shadow, in the same way on every platform. A pressed or open state tints it
+/* Glass: a frosted surface for controls that float over content, a step above the page in dark.
+   A hairline inside the fill outlines it, light catches its top edge and it casts a short shadow, in the same way on every platform. A pressed or open state tints it
    without losing the frost. */
 :root,
 [data-theme="dark"] {
+  --glass-tint: var(--card);
+  --glass-edge: rgb(255 255 255 / 0.08);
   --glass-shine: rgb(255 255 255 / 0.1);
   --glass-drop: rgb(0 0 0 / 0.4);
 }
 
 [data-theme="light"] {
+  --glass-tint: var(--background);
+  --glass-edge: rgb(0 0 0 / 0.07);
   --glass-shine: rgb(255 255 255 / 0.7);
   --glass-drop: rgb(0 0 0 / 0.1);
 }
 
 @utility glass {
-  background-color: color-mix(in srgb, var(--background) 62%, transparent);
+  background-color: color-mix(in srgb, var(--glass-tint) 72%, transparent);
   backdrop-filter: blur(14px) saturate(180%);
   box-shadow:
+    inset 0 0 0 1px var(--glass-edge),
     inset 0 1px 0 var(--glass-shine),
     0 1px 3px var(--glass-drop);
   &:where(:hover, [data-active], [aria-pressed="true"], [aria-expanded="true"]) {

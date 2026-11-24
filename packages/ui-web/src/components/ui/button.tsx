@@ -21,7 +21,7 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         text: "text-muted-foreground hover:text-foreground aria-expanded:text-foreground",
         // Floats over scrolling content, so it carries its own glass surface.
-        floating: "glass border-foreground/8 text-foreground/80 hover:text-foreground",
+        floating: "glass bg-clip-border text-foreground/80 hover:text-foreground",
       },
       size: {
         default: `${controlHeight.default} gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2`,
