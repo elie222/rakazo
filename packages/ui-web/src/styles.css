@@ -124,15 +124,13 @@
    without losing the frost. */
 :root,
 [data-theme="dark"] {
-  --glass-shine: rgb(255 255 255 / 0.14);
-  --glass-shade: rgb(0 0 0 / 0.4);
-  --glass-drop: rgb(0 0 0 / 0.5);
+  --glass-shine: rgb(255 255 255 / 0.1);
+  --glass-drop: rgb(0 0 0 / 0.4);
 }
 
 [data-theme="light"] {
-  --glass-shine: rgb(255 255 255 / 0.85);
-  --glass-shade: rgb(0 0 0 / 0.05);
-  --glass-drop: rgb(0 0 0 / 0.08);
+  --glass-shine: rgb(255 255 255 / 0.7);
+  --glass-drop: rgb(0 0 0 / 0.1);
 }
 
 @utility glass {
@@ -140,9 +138,7 @@
   backdrop-filter: blur(14px) saturate(180%);
   box-shadow:
     inset 0 1px 0 var(--glass-shine),
-    inset 0 -1px 0 var(--glass-shade),
-    0 1px 2px var(--glass-drop),
-    0 6px 16px -6px var(--glass-drop);
+    0 1px 3px var(--glass-drop);
   &:where(:hover, [data-active], [aria-pressed="true"], [aria-expanded="true"]) {
     background-image: linear-gradient(var(--accent), var(--accent));
   }
