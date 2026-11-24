@@ -23,33 +23,43 @@ export class PageStateLimitError extends ClientError {
 
 const column = (id: string) => ({ table: "page_reader_states", column: "values", id });
 
+type PageStateEntries = [string, unknown][];
+
 const StoredPageState = z
   .array(z.tuple([z.string().regex(PAGE_STATE_KEY), z.unknown()]))
-  .transform((entries) => Object.fromEntries(entries))
-  .pipe(PageStateSchema);
+  .refine((entries) => PageStateSchema.safeParse(Object.fromEntries(entries)).success);
+
+function storedEntries(row: { id: string; values: unknown }, onMismatch: "reject" | "fallback") {
+  return readJsonColumn(
+    StoredPageState,
+    row.values,
+    column(row.id),
+    onMismatch === "reject" ? "reject" : { fallback: [] },
+  );
+}
 
 export async function readPageState(db: Db, pageId: string, userId: string): Promise<PageState> {
   const row = await db.pageReaderState.findUnique({
     where: { pageId_userId: { pageId, userId } },
     select: { id: true, values: true },
   });
-  return row ? readJsonColumn(StoredPageState, row.values, column(row.id), { fallback: {} }) : {};
+  return row ? Object.fromEntries(storedEntries(row, "fallback")) : {};
 }
 
-export function fitPageState(saved: PageState, values: PageState): PageState {
-  const changed = Object.keys(values);
-  let kept = [...Object.keys(saved).filter((key) => !Object.hasOwn(values, key)), ...changed];
-  const pick = (keys: string[]) =>
-    Object.fromEntries(
-      keys.map((key) => [key, Object.hasOwn(values, key) ? values[key] : saved[key]]),
-    );
+export function fitPageState(saved: PageStateEntries, values: PageState): PageStateEntries {
+  let kept: PageStateEntries = [
+    ...saved.filter(([key]) => !Object.hasOwn(values, key)),
+    ...Object.entries(values),
+  ];
+  const changed = Object.keys(values).length;
   while (
-    kept.length > changed.length &&
-    (kept.length > PAGE_STATE_MAX_KEYS || pageStateBytes(pick(kept)) > PAGE_STATE_MAX_BYTES)
+    kept.length > changed &&
+    (kept.length > PAGE_STATE_MAX_KEYS ||
+      pageStateBytes(Object.fromEntries(kept)) > PAGE_STATE_MAX_BYTES)
   ) {
     kept = kept.slice(1);
   }
-  return pick(kept);
+  return kept;
 }
 
 export async function savePageState(
@@ -62,17 +72,19 @@ export async function savePageState(
     where: { pageId_userId: { pageId: page.id, userId } },
     select: { id: true, values: true },
   });
-  const saved = row ? readJsonColumn(StoredPageState, row.values, column(row.id), "reject") : {};
+  const saved = row ? storedEntries(row, "reject") : [];
   const merged = fitPageState(saved, values);
-  if (row && isDeepStrictEqual(merged, saved)) return false;
-  const checked = PageStateSchema.safeParse(merged);
+  if (row && isDeepStrictEqual(Object.fromEntries(merged), Object.fromEntries(saved))) {
+    return false;
+  }
+  const checked = PageStateSchema.safeParse(Object.fromEntries(merged));
   if (!checked.success) {
     throw new PageStateLimitError(checked.error.issues[0]?.message ?? "Too much to save");
   }
   if (row) {
     await db.pageReaderState.update({
       where: { id: row.id },
-      data: { values: Object.entries(merged) as Prisma.InputJsonArray },
+      data: { values: merged as Prisma.InputJsonArray },
     });
   } else {
     await db.pageReaderState.create({
@@ -80,7 +92,7 @@ export async function savePageState(
         pageId: page.id,
         userId,
         spaceId: page.spaceId,
-        values: Object.entries(merged) as Prisma.InputJsonArray,
+        values: merged as Prisma.InputJsonArray,
       },
     });
   }

@@ -86,6 +86,17 @@ describe("usePageState", () => {
     expect(shown("bad key")).toBe("true");
   });
 
+  it("sends a burst of more values than one save takes in several saves", () => {
+    const names = Array.from({ length: 150 }, (_, index) => `many${index}`);
+    render(names.map((name) => [name, 0] as [string, unknown]));
+    for (const name of names) set(name, 1);
+    vi.advanceTimersByTime(400);
+    const sent = posted.map(
+      (message) => Object.keys((message as { values: object }).values).length,
+    );
+    expect(sent).toEqual([1, 100, 49]);
+  });
+
   it("lets the reader tick a saved Checklist, starting each item where the page put it", () => {
     act(() =>
       createRoot(host).render(

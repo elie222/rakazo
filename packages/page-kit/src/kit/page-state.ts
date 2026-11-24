@@ -3,6 +3,7 @@ import { useCallback, useRef, useSyncExternalStore } from "react";
 const STATE_MESSAGE = "rakazo-page:state";
 const SAVED_KEY = /^(?!__proto__$)[A-Za-z0-9_.:-]{1,64}$/;
 const SEND_DELAY_MS = 400;
+const SEND_MAX_KEYS = 100;
 const OWN_CHANGE_MS = 5000;
 
 const values = new Map<string, unknown>();
@@ -17,9 +18,12 @@ function notify() {
 }
 
 function send() {
-  if (unsent.size === 0) return;
-  window.parent?.postMessage({ type: STATE_MESSAGE, values: Object.fromEntries(unsent) }, "*");
+  const entries = [...unsent];
   unsent.clear();
+  for (let start = 0; start < entries.length; start += SEND_MAX_KEYS) {
+    const values = Object.fromEntries(entries.slice(start, start + SEND_MAX_KEYS));
+    window.parent?.postMessage({ type: STATE_MESSAGE, values }, "*");
+  }
 }
 
 function cooled() {

@@ -122,10 +122,12 @@ export function pageStateRequest(data: unknown): PageState | null {
   if (!data || typeof data !== "object") return null;
   const { type, values } = data as { type?: unknown; values?: unknown };
   if (type !== PAGE_STATE_MESSAGE || !values || typeof values !== "object") return null;
-  const valid = Object.entries(values).filter(
+  const entries = Object.entries(values);
+  if (entries.length > PAGE_STATE_MAX_KEYS) return null;
+  const valid = entries.filter(
     ([key, value]) => PageStateSchema.safeParse(Object.fromEntries([[key, value]])).success,
   );
-  return valid.length > 0 && valid.length <= PAGE_STATE_MAX_KEYS ? Object.fromEntries(valid) : null;
+  return valid.length > 0 ? Object.fromEntries(valid) : null;
 }
 
 export function pageStateUpdate(values: PageState) {
