@@ -1,7 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { bestEffort } from "@rakazo/logging";
 import type { Session } from "electron";
 import { app, BrowserWindow, Menu, nativeTheme, net, screen, session, shell } from "electron";
 import {
@@ -158,8 +157,6 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
     desktop.liveProbeWindows--;
   }
 }
-/** Saves run in order, so the last color the page reported is the one kept. */
-let savedBackground = Promise.resolve();
 function windowBackgroundFile() {
   return path.join(app.getPath("userData"), "window-background");
 }
@@ -170,6 +167,14 @@ function lastPaintedBackground() {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT")
       reportDesktopError(error, "desktop.startup");
     return null;
+  }
+}
+/** Written at once: a few bytes, only when the page's colors change, and a quit cannot drop it. */
+function saveBackground(saved: SavedBackground) {
+  try {
+    writeFileSync(windowBackgroundFile(), JSON.stringify(saved));
+  } catch (error) {
+    reportDesktopError(error, "desktop.startup");
   }
 }
 export function createWindow(url: string, partition: string | null) {
@@ -193,18 +198,7 @@ export function createWindow(url: string, partition: string | null) {
     const background = paintedBackground(color);
     if (background === null) return;
     win.setBackgroundColor(background);
-    savedBackground = savedBackground.then(() =>
-      bestEffort(
-        "save the window background",
-        writeFile(
-          windowBackgroundFile(),
-          JSON.stringify({
-            color: background,
-            systemUsesDarkColors: nativeTheme.shouldUseDarkColors,
-          } satisfies SavedBackground),
-        ),
-      ),
-    );
+    saveBackground({ color: background, systemUsesDarkColors: nativeTheme.shouldUseDarkColors });
   });
   win.on("unresponsive", () =>
     reportDesktopError(new Error("Renderer unresponsive"), "desktop.unresponsive"),

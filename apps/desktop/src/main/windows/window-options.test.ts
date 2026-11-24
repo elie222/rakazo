@@ -141,11 +141,18 @@ describe("window background", () => {
     expect(appWindowBackground(saved, false)).toBe("#0A0A0A");
   });
 
-  it("follows the system once its appearance has changed since the page painted", () => {
+  it("follows the system once it switches, when the page was following it", () => {
     const saved = parseSavedBackground(
       JSON.stringify({ color: "#0A0A0A", systemUsesDarkColors: true }),
     );
     expect(appWindowBackground(saved, false)).toBe(appWindowBackground(null, false));
+  });
+
+  it("keeps an appearance picked in settings after the system switches", () => {
+    const saved = parseSavedBackground(
+      JSON.stringify({ color: "#0A0A0A", systemUsesDarkColors: false }),
+    );
+    expect(appWindowBackground(saved, true)).toBe("#0A0A0A");
   });
 
   it("ignores a saved background that is not a color", () => {

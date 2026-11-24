@@ -55,15 +55,25 @@ export function parseSavedBackground(text: string | null): SavedBackground | nul
   }
 }
 
+function isDark(color: string) {
+  const [red, green, blue] = [1, 3, 5].map((start) =>
+    Number.parseInt(color.slice(start, start + 2), 16),
+  ) as [number, number, number];
+  return (red * 299 + green * 587 + blue * 114) / 1000 < 128;
+}
+
 /**
  * The app window opens in the background its page last painted, so an appearance picked in
- * settings does not flash the system's. A system that has switched appearance since then
- * (automatic light and dark, say) means the page most likely follows it, so the window does too.
+ * settings does not flash the system's. A page that matched the system then most likely follows
+ * it, so once the system has switched appearance (automatic light and dark, say), so does the
+ * window. One that did not match was set in settings and stays.
  */
 export function appWindowBackground(saved: SavedBackground | null, systemUsesDarkColors: boolean) {
-  return saved !== null && saved.systemUsesDarkColors === systemUsesDarkColors
-    ? saved.color
-    : systemWindowBackground(systemUsesDarkColors);
+  if (saved === null) return systemWindowBackground(systemUsesDarkColors);
+  const followedSystem = isDark(saved.color) === saved.systemUsesDarkColors;
+  return followedSystem && saved.systemUsesDarkColors !== systemUsesDarkColors
+    ? systemWindowBackground(systemUsesDarkColors)
+    : saved.color;
 }
 
 function windowChrome(platform: NodeJS.Platform, release: string) {
