@@ -12,7 +12,16 @@ export interface UpdaterEnvironment {
   packaged: boolean;
   version: string;
   disabled?: boolean;
+  /**
+   * Reads the version of the app on disk, which another install (another account, a manual
+   * download) can replace while this one runs. When set, the app installs updates just before
+   * it quits instead of leaving that to the native updater, so it can skip a stale download.
+   */
+  installedVersion?: () => string | null;
 }
+
+/** Long enough for Squirrel.Mac to stage a local download, short enough that quitting never hangs. */
+export const INSTALL_BEFORE_QUIT_TIMEOUT_MS = 30_000;
 
 export function updaterSupport(env: UpdaterEnvironment): { supported: boolean; reason: string } {
   if (env.disabled === true) {
@@ -257,6 +266,7 @@ export function shouldCheck(
 export interface ElectronAutoUpdater {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
+  autoRunAppAfterInstall: boolean;
   allowDowngrade: boolean;
   allowPrerelease: boolean;
   disableWebInstaller: boolean;
@@ -322,6 +332,7 @@ export class DesktopUpdateController {
   private downloadPromise: Promise<DesktopUpdateState> | null = null;
   private checkWasRequested = false;
   private installStarted = false;
+  private quitInstallSettled: (() => void) | null = null;
   private readonly listeners = new Set<(state: DesktopUpdateState) => void>();
 
   constructor(
@@ -379,8 +390,10 @@ export class DesktopUpdateController {
     const loading = this.loadUpdater()
       .then((updater) => {
         updater.autoDownload = false;
-        // The updater would install on quit before an async verifier could finish.
-        updater.autoInstallOnAppQuit = this.verifyDownload === undefined;
+        // The updater would install on quit before an async verifier could finish, and
+        // without first checking whether the app on disk was replaced.
+        updater.autoInstallOnAppQuit =
+          this.verifyDownload === undefined && this.environment.installedVersion === undefined;
         updater.allowPrerelease = false;
         updater.allowDowngrade = false;
         updater.disableWebInstaller = true;
@@ -547,6 +560,13 @@ export class DesktopUpdateController {
       installFailed,
     });
     if (installFailed) this.onInstallFailure?.();
+    this.quitInstallSettled?.();
+  }
+
+  /** True when the app on disk is no longer the version running, so a download would downgrade or clobber it. */
+  installedElsewhere() {
+    const installed = this.environment.installedVersion?.();
+    return installed != null && installed !== this.environment.version;
   }
 
   async install() {
@@ -563,6 +583,37 @@ export class DesktopUpdateController {
       this.fail(error);
     }
     return this.current;
+  }
+
+  /**
+   * Stands in for the native install-on-quit where the app reads its installed version.
+   * Returns a promise to hold the quit on while the update is staged; the updater quits the
+   * app itself once it is, and the promise settles if staging fails or takes too long.
+   */
+  installBeforeQuit(): Promise<void> | null {
+    const updater = this.loadedUpdater;
+    if (this.environment.installedVersion === undefined || updater === null) return null;
+    // One attempt per quit: a failed staging lets the app quit instead of trying again.
+    if (this.quitInstallSettled !== null) return null;
+    if (this.installStarted || this.current.phase !== "ready") return null;
+    this.installStarted = true;
+    if (this.installedElsewhere()) return null;
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(settle, INSTALL_BEFORE_QUIT_TIMEOUT_MS);
+      function settle() {
+        clearTimeout(timer);
+        resolve();
+      }
+      this.quitInstallSettled = settle;
+      try {
+        // Quitting, not restarting: the user chose to quit.
+        updater.autoRunAppAfterInstall = false;
+        updater.quitAndInstall();
+      } catch (error) {
+        reportDesktopError(error, "desktop.update", { "update.failure": "install-on-quit" });
+        settle();
+      }
+    });
   }
 
   /** Stands in for the updater's own install-on-quit once a verifier has passed the download. */
