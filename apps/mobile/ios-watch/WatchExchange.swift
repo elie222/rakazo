@@ -30,7 +30,9 @@ struct WatchBot: Codable {
 }
 
 struct WatchRequest: Codable {
-  enum Action: String, Codable { case chats, thread, send, answer, transcribe }
+  /// `wait` answers once the chat may have changed, so the watch hears replies while the
+  /// iPhone app is suspended and cannot publish a revision.
+  enum Action: String, Codable { case chats, thread, wait, send, answer, transcribe }
   let action: Action
   var scope: UUID?
   var chat: WatchChat?
@@ -54,6 +56,8 @@ struct WatchReply: Codable {
   /// Whether the server can turn a recording into text; nil when it could not say.
   var transcribe: Bool?
   var text: String?
+  /// For `wait`: the chat may have changed. Absent when the wait ran out first.
+  var changed: Bool?
   var error: WatchFailure?
 }
 

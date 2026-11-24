@@ -440,13 +440,31 @@ struct RakazoSession {
   }
 
   /// Uses the same replayable SSE feed as the mobile chat, including a reply that finished
-  /// before this subscription opened. The resource deadline also bounds an idle stream.
+  /// before this subscription opened.
   func waitForReply(runId: String, botId: String, spaceId: String?) async throws -> Bool {
-    var request = try request(
-      "threads/subscribe", ["botId": botId, "cursor": 0], spaceId: spaceId, timeout: 28)
+    do {
+      return try await waitForThreadEvent(["botId": botId], after: 0, spaceId: spaceId, timeout: 28) {
+        $0.runId == runId && ["run.completed", "run.failed", "run.cancelled", "run.waiting_input",
+          "computer.takeover.requested"].contains($0.type)
+      }
+    } catch let error as URLError where error.code != .cancelled {
+      // The message was sent; a dropped stream leaves its reply in the app.
+      return false
+    }
+  }
+
+  /// Follows a chat's events after `cursor` until one matches. False when the deadline, which
+  /// also bounds an idle stream, passes first; a stream that drops before it throws.
+  func waitForThreadEvent(
+    _ target: [String: String], after cursor: Int, spaceId: String?, timeout: TimeInterval,
+    matching matches: (ThreadEventSummary) -> Bool
+  ) async throws -> Bool {
+    var input: [String: Any] = target
+    input["cursor"] = cursor
+    var request = try request("threads/subscribe", input, spaceId: spaceId, timeout: timeout)
     request.setValue("text/event-stream", forHTTPHeaderField: "accept")
     let config = URLSessionConfiguration.ephemeral
-    config.timeoutIntervalForResource = 28
+    config.timeoutIntervalForResource = timeout
     let stream = URLSession(configuration: config, delegate: RejectRedirects(), delegateQueue: nil)
     defer { stream.invalidateAndCancel() }
     do {
@@ -470,11 +488,9 @@ struct RakazoSession {
             .joined(separator: "\n")
           frame.removeAll(keepingCapacity: true)
           guard let data = payload.data(using: .utf8),
-            let event = try? JSONDecoder().decode(Envelope<ReplyEvent>.self, from: data).json,
-            event.runId == runId
+            let event = try? JSONDecoder().decode(Envelope<ThreadEventSummary>.self, from: data).json
           else { continue }
-          if ["run.completed", "run.failed", "run.cancelled", "run.waiting_input",
-              "computer.takeover.requested"].contains(event.type) { return true }
+          if matches(event) { return true }
         } else {
           previousLf = byte == 10
           guard !discardingFrame else { continue }
@@ -485,11 +501,11 @@ struct RakazoSession {
           }
         }
       }
-    } catch let error as URLError {
-      if error.code == .cancelled { throw error }
-      // The message was sent; a timeout or dropped stream leaves its reply in the app.
+    } catch let error as URLError where error.code == .timedOut {
+      return false
     }
-    return false
+    try Task.checkCancellation()
+    throw URLError(.networkConnectionLost)
   }
 
   private func request(
@@ -613,7 +629,7 @@ private struct BotRoutines: Decodable {
   }
   let routines: [Routine]
 }
-private struct ReplyEvent: Decodable {
+struct ThreadEventSummary: Decodable {
   let runId: String?
   let type: String
 }

@@ -20,6 +20,9 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   private var chats: [WatchChat] = []
   /// The recording the watch is sending in parts.
   private var upload: (id: UUID, next: Int, audio: Data)?
+  /// Where each chat's last read left off, so a wait hears only what came after it.
+  private var cursors: [String: Int] = [:]
+  private var waiting: Task<Bool, Error>?
 
   private enum Change: String { case chat, roster, space, sessionUnavailable, sessionReady }
 
@@ -97,6 +100,8 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     spaceId = nil
     chats = []
     upload = nil
+    cursors = [:]
+    waiting?.cancel()
   }
 
   private func publishRevision() {
@@ -129,6 +134,11 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     replyHandler: @escaping (Data) -> Void
   ) {
     Task { @MainActor in
+      // A watch message wakes the app in the background; finish the answer before it suspends.
+      let background = UIApplication.shared.beginBackgroundTask(withName: "WatchRequest") {
+        self.waiting?.cancel()
+      }
+      defer { UIApplication.shared.endBackgroundTask(background) }
       var response: WatchReply
       do {
         guard data.count <= 65_536 else { throw WatchFailure.rejected }
@@ -251,6 +261,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     if request.action == .thread {
       let thread = try await readThread(target, session: session, spaceId: spaceId)
       try verify(session, revision: revision)
+      cursors[chat.id] = thread.cursor
       return WatchReply(
         messages: thread.watchMessages(for: userId),
         botWorking: thread.activeRuns?.contains {
@@ -265,6 +276,23 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       let text = try await transcribe(audio, session: session, spaceId: spaceId)
       try verify(session, revision: revision)
       return WatchReply(text: text)
+    }
+
+    if request.action == .wait {
+      // Without a read to start from, the watch reads first.
+      guard let cursor = cursors[chat.id] else { return WatchReply(changed: true) }
+      // The watch shows one chat at a time, so a new wait replaces the last.
+      waiting?.cancel()
+      let wait = Task {
+        // Under the time a watch message and a background wake allow.
+        try await session.waitForThreadEvent(
+          target, after: cursor, spaceId: spaceId, timeout: 20
+        ) { Self.changes.contains($0.type) }
+      }
+      waiting = wait
+      let changed = try await wait.value
+      try verify(session, revision: revision)
+      return WatchReply(changed: changed ? true : nil)
     }
 
     guard let text = request.text?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -292,11 +320,17 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       input["messageId"] = message.id
       input["answer"] = text
       try await write("threads/answer", input, session: session, spaceId: spaceId, failure: .answerUnconfirmed)
-    case .chats, .thread, .transcribe:
+    case .chats, .thread, .wait, .transcribe:
       throw WatchFailure.rejected
     }
     return WatchReply()
   }
+
+  /// Events after which the watch's copy of a chat is out of date.
+  private static let changes: Set<String> = [
+    "thread.message.created", "thread.message.updated", "thread.cleared", "thread.ask", "run.waiting_input",
+    "run.completed", "run.failed", "run.cancelled", "computer.takeover.requested",
+  ]
 
   private func readThread(
     _ target: [String: String], session: RakazoSession, spaceId: String
