@@ -3,6 +3,7 @@ import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import type { RakazoDesktop } from "@rakazo/contracts";
 import { flush } from "@rakazo/core/test-async";
+import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -19,7 +20,8 @@ vi.mock("@lingui/react/macro", () => ({
   }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("@rakazo/ui-web", () => ({
+vi.mock("@rakazo/ui-web", async (importOriginal) => ({
+  ...(await importOriginal<typeof UiWeb>()),
   Button: ({
     variant: _variant,
     size: _size,
@@ -48,7 +50,7 @@ vi.mock("../../lib/auth/user-devices", () => ({
   removeUserDevice: vi.fn(),
 }));
 vi.mock("../../lib/query/rpc", () => {
-  const rpc = { me: vi.fn() };
+  const rpc = { me: vi.fn(), mobileDevices: { list: vi.fn() } };
   return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
 });
 
@@ -68,6 +70,7 @@ beforeEach(() => {
   i18n.load("en", {});
   i18n.activate("en");
   vi.clearAllMocks();
+  vi.mocked(rpc.mobileDevices.list).mockResolvedValue([]);
   host = document.createElement("div");
   document.body.append(host);
   // A failed read settles at once instead of retrying on the library's backoff.
@@ -84,6 +87,12 @@ afterEach(async () => {
 
 const laptop = { deviceId: "d1", name: "Laptop", connected: true };
 const desk = { deviceId: "d2", name: "Desk PC", connected: false };
+
+async function manage(name: string) {
+  const button = host.querySelector<HTMLButtonElement>(`[aria-label="Manage ${name}"]`);
+  expect(button).not.toBeNull();
+  await act(async () => button?.click());
+}
 
 function desktopWith(device: NonNullable<RakazoDesktop["device"]>) {
   window.rakazoDesktop = { platform: "darwin", device } as RakazoDesktop;
@@ -119,7 +128,7 @@ it("says the devices could not be read and reads them again on Retry", async () 
     [...host.querySelectorAll("button")].find((button) => button.textContent === "Retry")?.click(),
   );
   await act(flush);
-  await vi.waitFor(() => expect(host.textContent).toContain("LaptopConnected"));
+  await vi.waitFor(() => expect(host.textContent).toContain("LaptopOnline"));
   expect(host.textContent).not.toContain("Could not load");
 });
 
@@ -127,10 +136,11 @@ it("lists computers with their status and removes one", async () => {
   vi.mocked(listUserDevices).mockResolvedValueOnce([laptop, desk]).mockResolvedValueOnce([laptop]);
   vi.mocked(removeUserDevice).mockResolvedValue();
   await renderSettings();
-  expect(host.textContent).toContain("LaptopConnected");
+  expect(host.textContent).toContain("LaptopOnline");
   expect(host.textContent).toContain("Desk PCOffline");
   expect(host.querySelector("input")).toBeNull();
 
+  await manage("Desk PC");
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[aria-label="Remove Desk PC"]')?.click(),
   );
@@ -150,6 +160,8 @@ it("turns this computer on and off through the desktop app only", async () => {
   };
   desktopWith(device);
   await renderSettings();
+  expect(host.querySelector('[data-testid="this-computer-toggle"]')).toBeNull();
+  await manage("Laptop");
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
   expect(host.textContent).toContain("Let bots use this computer");
   expect(toggle.checked).toBe(false);
@@ -158,13 +170,20 @@ it("turns this computer on and off through the desktop app only", async () => {
   await act(async () => toggle.click());
   expect(device.setAllowed).toHaveBeenCalledWith(true);
   expect(toggle.checked).toBe(true);
-  expect(host.textContent).toContain("LaptopConnected");
+  expect(host.textContent).toContain("LaptopOnline");
+  expect(host.querySelectorAll('[aria-label="Manage Laptop"]')).toHaveLength(1);
+
+  await act(async () => toggle.click());
+  expect(device.setAllowed).toHaveBeenLastCalledWith(false);
+  expect(toggle.checked).toBe(false);
+  expect(host.textContent).toContain("LaptopOnline");
 });
 
 it("reports a failed removal", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([laptop]);
   vi.mocked(removeUserDevice).mockRejectedValue(new Error("offline"));
   await renderSettings();
+  await manage("Laptop");
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[aria-label="Remove Laptop"]')?.click(),
   );
@@ -176,8 +195,8 @@ it("reports a failed removal", async () => {
 it("shows every connected computer as connected", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([laptop, { ...desk, connected: true }]);
   await renderSettings();
-  expect(host.textContent).toContain("LaptopConnected");
-  expect(host.textContent).toContain("Desk PCConnected");
+  expect(host.textContent).toContain("LaptopOnline");
+  expect(host.textContent).toContain("Desk PCOnline");
 });
 
 it("stays off and reports it when turning this computer on fails", async () => {
@@ -190,6 +209,7 @@ it("stays off and reports it when turning this computer on fails", async () => {
   };
   desktopWith(device);
   await renderSettings();
+  await manage("Laptop");
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
   await act(async () => toggle.click());
   expect(device.setAllowed).toHaveBeenCalledWith(true);
@@ -218,6 +238,7 @@ it("turns this computer on and off for the app-managed local server", async () =
     device: { state: async () => null, setAllowed: vi.fn() },
   } as unknown as RakazoDesktop;
   await renderSettings();
+  await manage("This computer");
   const toggle = host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!;
   expect(toggle.checked).toBe(false);
 
@@ -266,6 +287,7 @@ it("keeps the local switch when a later profile read fails", async () => {
     device: { state: async () => null, setAllowed: vi.fn() },
   } as unknown as RakazoDesktop;
   await renderSettings();
+  await manage("This computer");
   await act(async () =>
     host.querySelector<HTMLInputElement>('[data-testid="this-computer-toggle"]')!.click(),
   );
@@ -294,7 +316,7 @@ it("explains plain HTTP next to another computer without a switch", async () => 
   desktopWith({ state: async () => null, setAllowed });
   await renderSettings();
   expect(host.textContent).toContain("Plain HTTP does not pair");
-  expect(host.textContent).toContain("LaptopConnected");
+  expect(host.textContent).toContain("LaptopOnline");
   expect(host.querySelector('[data-testid="this-computer-toggle"]')).toBeNull();
   expect(setAllowed).not.toHaveBeenCalled();
 });
@@ -312,7 +334,7 @@ it("marks only the server-selected connected computer as bound", async () => {
     { ...desk, connected: true, bound: true },
   ]);
   await renderSettings();
-  expect(host.textContent).toContain("LaptopConnected");
+  expect(host.textContent).toContain("LaptopOnline");
   expect(host.textContent).toContain("Desk PCBound to bots");
   expect(host.textContent?.match(/Bound to bots/g)).toHaveLength(1);
 });
@@ -322,4 +344,20 @@ it("never marks an offline computer as bound", async () => {
   await renderSettings();
   expect(host.textContent).toContain("Desk PCOffline");
   expect(host.textContent).not.toContain("Bound to bots");
+});
+
+it("lists signed-in phones, looks at the server's presence deadline, and gives phones no permissions control", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  vi.mocked(rpc.mobileDevices.list).mockResolvedValue([
+    {
+      deviceId: "phone-1",
+      platform: "ios",
+      name: null,
+      connected: true,
+      onlineUntil: "2000-01-01T00:00:00.000Z",
+    },
+  ]);
+  await renderSettings();
+  expect(host.textContent).toContain("iPhoneOffline");
+  expect(host.querySelector("button")).toBeNull();
 });

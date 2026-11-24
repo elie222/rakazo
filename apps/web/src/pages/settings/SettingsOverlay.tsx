@@ -9,26 +9,18 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@rakazo/ui-web";
-import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, XIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PlanUsage } from "../../components/billing/PlanUsage";
-import {
-  CloudComputerSizes,
-  useCloudComputers,
-} from "../../components/computers/CloudComputerSizes";
-import {
-  ComputerDeviceSettings,
-  userDevicesQuery,
-  useThisComputer,
-} from "../../components/computers/ComputerDeviceSettings";
+import { CloudComputerSizes } from "../../components/computers/CloudComputerSizes";
+import { ComputerDeviceSettings } from "../../components/computers/ComputerDeviceSettings";
 import { computersAreUnavailable } from "../../components/computers/ComputersUnavailableHint";
+import { ConnectDevicesSettings } from "../../components/computers/ConnectDevicesSettings";
 import { ApprovalRulesSettings } from "../../components/settings/ApprovalRulesSettings";
 import { SETTINGS_CONTENT_WIDTH } from "../../components/settings/SettingsRows";
 import { VaultSettings } from "../../components/vault/VaultSettings";
 import { canChooseOwnComputer } from "../../lib/computers/computer-sandbox";
 import { desktopBridge } from "../../lib/platform/desktop";
-import { useQueryUserId } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 import { SpaceRpcProvider } from "../../lib/query/space-rpc";
 import { useEventListener } from "../../lib/use-event-listener";
@@ -146,21 +138,9 @@ export function SettingsOverlay({
       canChooseOwnComputer(sandboxProvider) ||
       keepComputerRecovery ||
       computersAreUnavailable(sandboxProvider));
-  const cloud = useCloudComputers();
-  const devices = useQuery(userDevicesQuery(useQueryUserId()));
-  const { thisComputer, plainHttp } = useThisComputer();
-  const showComputer =
-    showComputerSetup ||
-    (cloud.data?.computers.length ?? 0) > 0 ||
-    cloud.isError ||
-    (devices.data?.length ?? 0) > 0 ||
-    devices.isError ||
-    thisComputer !== null ||
-    plainHttp;
   const showUpdates = Boolean(desktopBridge()?.update);
   // A section that isn't available yet (billing before its flag loads) shows General until it is.
   const section =
-    (requestedSection === "computer" && !showComputer) ||
     (requestedSection === "billing" && !billingEnabled) ||
     (requestedSection === "messaging" && !messagingEnabled) ||
     (requestedSection === "wallet" && !paymentWalletProvider) ||
@@ -191,7 +171,6 @@ export function SettingsOverlay({
   const navItems = useSettingsNavItems({
     messaging: messagingEnabled,
     wallet: Boolean(paymentWalletProvider),
-    computer: showComputer,
     billing: billingEnabled,
     updates: showUpdates,
     labs: labsAvailable.length > 0,
@@ -225,7 +204,6 @@ export function SettingsOverlay({
   }, [
     nav,
     section,
-    showComputer,
     billingEnabled,
     messagingEnabled,
     paymentWalletProvider,
@@ -463,7 +441,7 @@ export function SettingsOverlay({
                       <UsageSettingsPanel panelRef={usageRef} />
                     </>
                   ) : null}
-                  {section === "computer" && showComputer ? (
+                  {section === "computer" ? (
                     <div className="space-y-8">
                       {showComputerSetup ? (
                         <ComputerSettingsPanel
@@ -481,6 +459,7 @@ export function SettingsOverlay({
                         onUpgrade={billingEnabled ? () => onSectionChange("billing") : undefined}
                       />
                       <ComputerDeviceSettings />
+                      <ConnectDevicesSettings />
                     </div>
                   ) : null}
                   {section === "labs" ? (

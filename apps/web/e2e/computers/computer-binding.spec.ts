@@ -8,15 +8,9 @@ import {
   signup,
 } from "../helpers/helpers";
 
-test("settings identifies the computer bound to bots among two connected computers", async ({
-  page,
-}, testInfo) => {
-  await signup(
-    page,
-    `computer-binding-${randomUUID()}@rakazo.test`,
-    "password12",
-    "Computer Settings",
-  );
+test("Devices lists connected computers and signed-in phones", async ({ page }, testInfo) => {
+  const email = `computer-binding-${randomUUID()}@rakazo.test`;
+  await signup(page, email, "password12", "Computer Settings");
   await completeOnboarding(page);
   const { prisma, pool } = createDb(process.env.DATABASE_URL!);
   try {
@@ -39,16 +33,36 @@ test("settings identifies the computer bound to bots among two connected compute
         }),
       );
     }
+    await runAsSystem("seed a signed-in phone for settings", async () => {
+      const { id: sessionId } = await prisma.session.findFirstOrThrow({
+        where: { user: { email } },
+        select: { id: true },
+      });
+      await prisma.mobileDevice.create({
+        data: { sessionId, platform: "ios", name: null, lastSeenAt: new Date(0) },
+      });
+    });
     const settings = await openUserSettings(page, "computer");
+    await expect(settings.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
     const computers = settings.getByTestId("computer-devices");
+    const laptop = computers.getByTestId("computer-device-row").filter({ hasText: "Laptop" });
+    const desk = computers.getByTestId("computer-device-row").filter({ hasText: "Desk PC" });
     await expect(computers.getByText("Bound to bots", { exact: true })).toHaveCount(1);
-    await expect(computers.getByText("Laptop").locator("..")).toHaveText("LaptopBound to bots");
-    await expect(computers.getByText("Desk PC").locator("..")).toHaveText("Desk PCConnected");
+    await expect(laptop.getByText("Bound to bots", { exact: true })).toBeVisible();
+    await expect(laptop.getByText("Online", { exact: true })).toBeVisible();
+    await expect(desk.getByText("Online", { exact: true })).toBeVisible();
+    await expect(computers.getByText("iPhone", { exact: true })).toBeVisible();
+    await expect(computers.getByText("Offline", { exact: true })).toHaveCount(1);
+    await expect(computers.getByRole("button", { name: "Manage iPhone" })).toHaveCount(0);
+    await expect(settings.getByRole("heading", { name: "Connect more devices" })).toBeVisible();
     await computers.scrollIntoViewIfNeeded();
-    await captureScreenshot(page, testInfo, "computer-binding-two-connected");
-    await computers.getByRole("button", { name: "Remove Laptop" }).click();
-    await expect(computers.getByText("Desk PC").locator("..")).toHaveText("Desk PCBound to bots");
+    await captureScreenshot(page, testInfo, "device-settings");
+    await laptop.getByRole("button", { name: "Manage Laptop" }).click();
+    await laptop.getByRole("button", { name: "Remove Laptop" }).click();
+    await expect(desk.getByText("Bound to bots", { exact: true })).toBeVisible();
     await captureScreenshot(page, testInfo, "computer-binding-after-removal");
+    await settings.getByRole("button", { name: "Connect your iPhone" }).click();
+    await expect(settings.getByRole("link", { name: "Download Rakazo" })).toBeVisible();
   } finally {
     await prisma.$disconnect();
     await pool.end();

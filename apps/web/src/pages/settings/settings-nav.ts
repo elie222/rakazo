@@ -10,7 +10,7 @@ import {
   KeyRound,
   Layers,
   MessageCircle,
-  Monitor,
+  MonitorSmartphone,
   Settings,
   ShieldCheck,
   Volume2,
@@ -31,7 +31,6 @@ export type SettingsNavItem = {
 export function useSettingsNavItems(available: {
   messaging: boolean;
   wallet: boolean;
-  computer: boolean;
   billing: boolean;
   updates: boolean;
   labs: boolean;
@@ -86,9 +85,7 @@ export function useSettingsNavItems(available: {
           },
         ]
       : []),
-    ...(available.computer
-      ? [{ id: "computer" as const, label: t`Computers`, icon: Monitor }]
-      : []),
+    { id: "computer", label: t`Devices`, icon: MonitorSmartphone },
     ...(available.labs ? [{ id: "labs" as const, label: t`Labs`, icon: FlaskConical }] : []),
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(available.billing ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),

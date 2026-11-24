@@ -61,7 +61,9 @@ test("an admin selects a computer provider and sees its fields", async ({ page }
 });
 
 for (const enabled of [undefined, false]) {
-  test(`Computer settings stay hidden when the flag is ${enabled}`, async ({ page }, testInfo) => {
+  test(`Device settings exclude cloud computer setup when the flag is ${enabled}`, async ({
+    page,
+  }) => {
     await signup(page, `computer-hidden-${randomUUID()}@rakazo.test`, "password12", "Settings");
     await completeOnboarding(page);
     const disabledComputers = async (route: Route) => {
@@ -79,8 +81,8 @@ for (const enabled of [undefined, false]) {
     await page.route("**/rpc/me", disabledComputers);
     await page.route("**/rpc/bootstrap", disabledComputers);
     await page.reload();
-    const settings = await openUserSettings(page);
-    await expect(settings.getByTestId("settings-nav-computer")).toHaveCount(0);
-    await captureScreenshot(page, testInfo, "computer-settings-hidden");
+    const settings = await openUserSettings(page, "computer");
+    await expect(settings.getByTestId("computers-setup-settings")).toHaveCount(0);
+    await expect(settings.getByRole("heading", { name: "Connect more devices" })).toBeVisible();
   });
 }

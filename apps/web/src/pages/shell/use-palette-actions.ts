@@ -13,7 +13,6 @@ import {
   Sun,
   Users,
 } from "lucide-react";
-import { computersAreUnavailable } from "../../lib/computers/computer-sandbox";
 import { desktopBridge } from "../../lib/platform/desktop";
 import type { AppearancePreference } from "../../lib/preferences/ui-appearance";
 import { getUiAppearancePreference, setUiAppearance } from "../../lib/preferences/ui-appearance";
@@ -45,7 +44,6 @@ export function usePaletteActions({
   const settingsNavItems = useSettingsNavItems({
     messaging: messagingEnabled,
     wallet: Boolean(me?.paymentWalletProvider),
-    computer: me?.computerSettingsEnabled === true && computersAreUnavailable(me?.sandboxProvider),
     billing: me?.billingEnabled === true,
     updates: Boolean(desktopBridge()?.update),
     labs: Boolean(me?.labsAvailable.length),
