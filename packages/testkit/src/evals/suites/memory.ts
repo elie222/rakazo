@@ -61,6 +61,8 @@ Asking for a lunch order, the user mentioned in passing that they are vegetarian
 The memory joins two documents. The second, USER.md, said the user works as a data analyst at Brightline Logistics. The user then said they left Brightline and are now a data engineer at Tidewater Analytics. Pass only if the memory gives Tidewater Analytics as the user's current employer and no entry still presents Brightline Logistics as their current employer. Recording Brightline as a former employer is fine. Fail if entries disagree about where the user works now.`,
   "full-memory": `${preamble}
 The memory was nearly full of long, repetitive notes when the user asked the bot to remember a new office door code, 5829. These earlier facts are important and must all survive: works as a product designer at Fernhill Studio; weekly summary on Mondays before 9:00; daughter Mia is allergic to peanuts; manager is Priya Raman; uses the Europe/Lisbon time zone; no meetings on Fridays; Northwind invoices are due on the 5th of each month; prefers metric units; prefers short, direct answers. Pass only if each of these and the door code are recorded accurately. Dropping small talk and repeated entries is expected.`,
+  "dense-full": `${preamble}
+The memory held many distinct facts about an operations lead and was a few hundred bytes from its size limit when the user set a new standing rule: the weekly Brisa Pharma report goes out every Thursday by 16:00 Lisbon time to qa@brisa-pharma.example, copies Lucía Ferrer, lists every delivery whose temperature log went outside 2-8 °C, and flags any carrier with more than one excursion that week. Pass only if the rule is recorded with its day and time, recipient, the 2-8 °C excursion list and the carrier flag, and these earlier facts survive: works at Halvorsen Logistics; manager Tomás Ortega; time zone Europe/Lisbon; Brisa Pharma deliveries need a temperature log PDF; never use Cargoexpress Iberia; annual leave 2026-12-21 to 2027-01-02. Dropping or condensing dated progress notes is expected.`,
   "full-correction": `${preamble}
 The memory was nearly full of long, repetitive notes when the user said their manager is now Tomás Ortega instead of Priya Raman, and asked the bot to remember a new office door code, 5829. These earlier facts are important and must all survive: works as a product designer at Fernhill Studio; weekly summary on Mondays before 9:00; daughter Mia is allergic to peanuts; uses the Europe/Lisbon time zone; no meetings on Fridays; Northwind invoices are due on the 5th of each month; prefers metric units; prefers short, direct answers. Pass only if each of these, the door code, and Tomás Ortega as the current manager are recorded accurately, and no entry still presents Priya Raman as the manager. Dropping small talk and repeated entries is expected.`,
   "ended-rule": `${preamble}
@@ -138,6 +140,20 @@ export const MEMORY_JUDGE_CALIBRATION = [
   },
   {
     input: judgeInput("full-memory", "# Assistant\n\nOffice door code: 5829.\n"),
+    pass: false,
+  },
+  {
+    input: judgeInput(
+      "dense-full",
+      "# Assistant\n\nOperations lead at Halvorsen Logistics. Manager: Tomás Ortega. Time zone Europe/Lisbon.\nBrisa Pharma deliveries need a temperature log PDF.\nNever use Cargoexpress Iberia.\nLeave 2026-12-21 to 2027-01-02.\nBrisa Pharma weekly report: Thursdays by 16:00 Lisbon to qa@brisa-pharma.example, cc Lucía; list deliveries outside 2-8 °C (lane, drop, time); flag carriers with 2+ excursions.\n",
+    ),
+    pass: true,
+  },
+  {
+    input: judgeInput(
+      "dense-full",
+      "# Assistant\n\nOperations lead at Halvorsen Logistics. Manager: Tomás Ortega. Time zone Europe/Lisbon.\nNever use Cargoexpress Iberia.\nBrisa Pharma weekly report on Thursdays.\n",
+    ),
     pass: false,
   },
   {
@@ -262,6 +278,56 @@ ${[
   "The user said they were going to make a cup of tea before continuing our conversation, and came back a few minutes later to finish reviewing the client brief with me together.",
 ].join("\n")}
 `;
+export const DENSE_MEMORY_SEED = `# Assistant
+
+${[
+  "Operations lead at Halvorsen Logistics (Lisbon office); runs the Iberian road-freight desk with a team of six dispatchers.",
+  "Time zone Europe/Lisbon; works 08:00-17:00 Monday to Thursday, 08:00-13:00 Friday.",
+  "Manager: Tomás Ortega (VP Operations). Peer in Madrid: Lucía Ferrer (warehousing).",
+  "Prefers short, direct answers; bullet points only when listing three or more items.",
+  "Writes to customers in Portuguese or Spanish, internal notes in English.",
+  "Metric units always: km, kg, litres, Celsius; currency EUR with comma decimals in customer documents.",
+  "Never schedule calls before 09:30 or on Friday afternoons.",
+  "Key customers: Norvia Foods (chilled), Atlas Ceramica (fragile), Brisa Pharma (temperature-logged, GDP rules).",
+  "Brisa Pharma shipments need a temperature log PDF attached to every delivery confirmation.",
+  "Atlas Ceramica claims go to claims@atlas-ceramica.example within 48 hours, with photos.",
+  "Norvia Foods prefers WhatsApp updates to their dispatcher Rui, not email.",
+  "Carrier scorecards are reviewed on the first Monday of each month with Tomás.",
+  "Fuel surcharge is recalculated every quarter from the national diesel index; next review 2027-01-05.",
+  "Main lanes: Lisbon-Madrid, Porto-Valencia, Lisbon-Seville, Porto-Bilbao.",
+  "Preferred subcontractors: TransDouro (Porto lanes), Rápidos Sur (Seville).",
+  "Do not use Cargoexpress Iberia again after the August 2026 damaged-pallet dispute.",
+  "Monthly board pack due on the 3rd working day; numbers come from the TMS export, not the finance sheet.",
+  'Uses Google Sheets for lane margins; the master sheet is called "Lane P&L 2026".',
+  "Daughter Inês (9) has swimming on Tuesdays at 18:00; avoid late Tuesday meetings.",
+  "Coffee: black, no sugar. Vegetarian; team lunches need a vegetarian option.",
+  "Annual leave booked 2026-12-21 to 2027-01-02; Lucía covers urgent escalations.",
+  "Expense reports go through Pleo; receipts must be uploaded within 7 days.",
+  "Driver hours rules: flag any plan that breaks EU 561/2006 daily or weekly driving limits.",
+  "Customs: UK-bound loads need the broker Kent Clear Ltd booked 72 hours ahead.",
+  "Prefers drafts to be shown before anything is sent to a customer.",
+  'Uses the phrase "lane" for a route pair and "drop" for a delivery stop.',
+  "2026-11-02: finished migrating the Seville lane to Rápidos Sur; first week on-time 96%.",
+  "2026-11-09: checked Q4 tender responses; three carriers shortlisted for Porto-Bilbao.",
+  "2026-11-16: drafted the Brisa Pharma GDP audit checklist; sent to Lucía for review.",
+  "2026-11-20: reminded Rui at Norvia about the new Friday cut-off of 14:00.",
+  'Emergency contact for weekend breakdowns: the duty phone, rota kept in the "On-call" sheet.',
+  "Wants one weekly digest on Monday 08:30 of open claims, late drops and carrier issues.",
+  'Halvorsen\'s fiscal year starts in April; "Q1" means April to June.',
+  "Pallet standard: EUR pallets 120x80 cm, max 1,000 kg each, max 33 per trailer; flag any load plan above that.",
+  "Temperature-controlled trailers come only from FrioNorte; book at least 48 hours ahead, more in December.",
+  'Incident reports use the template "Incident v3" and must name the lane, carrier, drop and time.',
+  "Tomás wants bad news first in any update, then the fix, then the numbers.",
+  "2026-11-12: renegotiated TransDouro rate for Porto-Valencia to EUR 1.42/km from December.",
+  "2026-11-18: chased three missing PODs from Rápidos Sur; two received, one still open.",
+  "Board pack format: one page per lane, on-time %, cost per km, claims count, one-line commentary.",
+  "Lucía's warehouse cut-off for same-day dispatch from Madrid is 11:00.",
+  'Prefers calendar invites titled "[Lane] topic" so they sort by lane.',
+  "Customer NPS survey runs every March and September; results go to Tomás.",
+  "2026-11-21: updated the On-call sheet for December; two weekend gaps still unfilled (13th and 27th).",
+  'Avoid the word "urgent" in customer emails unless a delivery is already late; Tomás finds it alarming.',
+].join("\n")}
+`;
 export const MEMORY_EVAL_CASES: EvalCase[] = [
   {
     id: "memory-moved-city",
@@ -363,6 +429,21 @@ export const MEMORY_EVAL_CASES: EvalCase[] = [
     steps: [{ ask: "Please remember that my new office door code is 5829." }],
     grade: (e) => [check("new-fact-saved", e.memory.includes("5829")), withinCap(e)],
     judge: (e) => judgeInput("full-memory", e.memory),
+  },
+  {
+    id: "memory-dense-full",
+    purpose:
+      "A long new rule into dense memory just under its limit makes room in the same save instead of being refused first.",
+    connections: [],
+    botMemory: DENSE_MEMORY_SEED,
+    steps: [
+      {
+        ask: "New standing rule: every Thursday by 16:00 Lisbon time, send the weekly Brisa Pharma report to qa@brisa-pharma.example and copy Lucía. It must list every delivery whose temperature log went outside 2-8 °C that week, with lane, drop and the time out of range, and flag any carrier that had more than one excursion. Please remember that.",
+      },
+    ],
+    // A save the cap refuses shows as a second call.
+    grade: (e) => [check("one-save", saves(e).length === 1), withinCap(e)],
+    judge: (e) => judgeInput("dense-full", e.memory),
   },
   {
     id: "memory-full-correction",
