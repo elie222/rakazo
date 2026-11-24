@@ -3,6 +3,7 @@ import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { MEETING_CALENDAR_RETURN_PARAM } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import { Gift, Menu, Phone, Video } from "lucide-react";
+import type { ComponentProps } from "react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
@@ -46,6 +47,17 @@ export function ChatHeader({
   const referral = useBilling().status?.referral;
   const [inviteOpen, setInviteOpen] = useState(false);
   const macChrome = windowChromeKind(desktopBridge()) === "darwin";
+  const showCall = phoneCallsEnabled && !inGroup && active;
+  const showMeetings = meetingsEnabled && !inGroup && active;
+  // Call and meetings both reach the bot live, so together they share one capsule.
+  const grouped = Boolean(showCall && showMeetings);
+  const live = grouped
+    ? ({
+        variant: "ghost",
+        size: "icon",
+        className: "app-no-drag rounded-full data-active:bg-accent",
+      } as const)
+    : ({ variant: "floating", size: "icon-lg", className: "app-no-drag" } as const);
   return (
     <div
       data-testid="chat-header"
@@ -99,25 +111,31 @@ export function ChatHeader({
         <div />
       )}
       <div className="flex items-center justify-self-end gap-2">
-        {phoneCallsEnabled && !inGroup && active ? (
-          <IconTooltip label={inCall ? t`Open call` : t`Call`}>
-            <Button
-              variant="floating"
-              size="icon-lg"
-              data-testid="call-button"
-              aria-label={inCall ? t`Open call` : t`Call`}
-              onClick={() => onCall(active)}
-              data-active={inCall ? "" : undefined}
-              data-voice-ready={voiceReady ? "" : undefined}
-              className="app-no-drag"
-            >
-              <Phone strokeWidth={1.75} className="size-4.5" />
-            </Button>
-          </IconTooltip>
-        ) : null}
-        {meetingsEnabled && !inGroup && active ? (
-          <MeetingsControl key={active.id} botId={active.id} />
-        ) : null}
+        <div
+          className={
+            grouped
+              ? "glass flex items-center rounded-full border border-foreground/8 p-0.5"
+              : "contents"
+          }
+        >
+          {showCall ? (
+            <IconTooltip label={inCall ? t`Open call` : t`Call`}>
+              <Button
+                {...live}
+                data-testid="call-button"
+                aria-label={inCall ? t`Open call` : t`Call`}
+                onClick={() => onCall(active)}
+                data-active={inCall ? "" : undefined}
+                data-voice-ready={voiceReady ? "" : undefined}
+              >
+                <Phone strokeWidth={1.75} className="size-4.5" />
+              </Button>
+            </IconTooltip>
+          ) : null}
+          {showMeetings ? (
+            <MeetingsControl key={active.id} botId={active.id} button={live} />
+          ) : null}
+        </div>
         {referral && !inGroup && active ? (
           <IconTooltip label={t`Invite a friend`}>
             <Button
@@ -139,7 +157,13 @@ export function ChatHeader({
   );
 }
 
-function MeetingsControl({ botId }: { botId: string }) {
+function MeetingsControl({
+  botId,
+  button,
+}: {
+  botId: string;
+  button: Pick<ComponentProps<typeof Button>, "variant" | "size" | "className">;
+}) {
   const { t } = useLingui();
   const { botId: routeBotId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -157,13 +181,7 @@ function MeetingsControl({ botId }: { botId: string }) {
   return (
     <>
       <IconTooltip label={t`Meetings`}>
-        <Button
-          variant="floating"
-          size="icon-lg"
-          aria-label={t`Meetings`}
-          onClick={() => setView("meetings")}
-          className="app-no-drag"
-        >
+        <Button {...button} aria-label={t`Meetings`} onClick={() => setView("meetings")}>
           <Video strokeWidth={1.75} className="size-4.5" />
         </Button>
       </IconTooltip>
