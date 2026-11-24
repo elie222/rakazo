@@ -41,6 +41,12 @@ In the bot's settings under **Advanced**, **Computer** is **Team** or **Private*
 Bots save their work on the computer and send you the results as files in the chat. Every file a bot
 has sent is also under **Artifacts** in the account menu.
 
+Ask a bot to attach a screenshot of its own graphical computer to a Rakazo chat, or include the
+request in a routine. The bot takes a fresh screenshot when it calls `attach_file` with
+`screenshot: true`. The image appears as an ordinary attachment on web, desktop, and mobile,
+subject to the same access, approvals, and size limits. Anyone who can access the attachment can
+see everything visible in the screenshot, including sensitive information on the screen.
+
 To have a bot react to files changing, use a [routine](./routines.md) that watches a folder.
 
 ## Fix a computer

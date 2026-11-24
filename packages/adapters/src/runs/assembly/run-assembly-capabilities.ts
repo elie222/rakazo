@@ -611,6 +611,7 @@ export async function resolveRunCapabilities(
     voiceCall,
     acceptsImages,
     graphicalToolsAllowed,
+    computerScreenshotAllowed: graphical && !heldForTakeover,
     pageBrowserAllowed,
     disabledBuiltinTools,
     replyMode,
@@ -661,6 +662,7 @@ export async function selectRunTools(
   const {
     cloudAgent,
     cloudAgentCleanupEnabled,
+    computerScreenshotAllowed,
     disabledBuiltinTools,
     emailInbox,
     emailName,
@@ -732,6 +734,12 @@ export async function selectRunTools(
       ownPromptOnly: ownerComputerRoutine,
       meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
       graphicalToolsAllowed,
+      computerScreenshotAllowed:
+        computerScreenshotAllowed &&
+        Boolean(deps.artifacts) &&
+        !nonOwnerChatRun &&
+        !channelId &&
+        !conversationThread.externalConversationId,
       pageBrowserAllowed,
       groupId: conversationThread.groupId,
       trigger: run.trigger,

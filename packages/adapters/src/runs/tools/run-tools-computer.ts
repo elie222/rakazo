@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { BrowserProvider, SandboxProvider } from "@rakazo/adapter-kit";
+import type { BrowserProvider, ComputerObservation, SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
@@ -25,6 +25,7 @@ import {
   observeShellCommand,
   SHELL_STILL_RUNNING_NOTICE,
 } from "../../computers/sandbox/shell-command-stream.js";
+import { withComputerScreenAvailability } from "../../computers/screens/computer-screens.js";
 import {
   displayBotWorkspacePath,
   resolveBotUploadPath,
@@ -481,19 +482,23 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   }, call.finish);
 }
 
+/** Capture only the screen assigned to this run, subject to its screen turn. */
+export async function captureBotScreen(
+  ctx: RunContext,
+  toolName: string,
+): Promise<ComputerObservation | { error: string }> {
+  const blocked = await screenBlocked(ctx, true);
+  if (blocked) return { error: blocked };
+  return withComputerScreenAvailability(async () =>
+    ctx.deps.sandbox.observe(await ctx.computer.get("tool", toolName), ctx.context),
+  );
+}
+
 /** Tools that drive the bot's computer: screen, page browser and shell. */
 export const computerTools: ToolHandlers = {
   async computer_observe(ctx, call) {
-    const { deps, context } = ctx;
-    const { name } = call;
-    const blocked = await screenBlocked(ctx, true);
-    if (blocked) return { error: blocked };
-    return computerScreenToolResult(async () =>
-      formatObservation(
-        ctx,
-        await deps.sandbox.observe(await ctx.computer.get("tool", name), context),
-      ),
-    );
+    const observation = await captureBotScreen(ctx, call.name);
+    return "error" in observation ? observation : formatObservation(ctx, observation);
   },
   async computer_act(ctx, call) {
     const { deps, context } = ctx;

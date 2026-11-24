@@ -5,6 +5,36 @@ import { BROWSER_ACT_KINDS } from "../browser/browser-tools.js";
 export const READ_FILE_MAX_BYTES = 250_000;
 export const READ_FILE_MAX_KB = READ_FILE_MAX_BYTES / 1000;
 
+const attachFileTool = {
+  name: "attach_file",
+  description:
+    "Attach a workspace file from this bot's home to the chat thread as an image or common file. The user sees it. The file stays in place; users can open it from the message and from the Artifacts tab. For a self-contained HTML page, document, or anything else meant to be viewed on its own — give it name and description: a title and a one-line summary. Skip them for an ordinary attachment like a log file or export. To UPDATE something you already made, call this again with the exact same name — it becomes a new version of that same artifact instead of a separate one; a different name always starts a new artifact.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      path: { type: "string" },
+      name: { type: "string" },
+      description: { type: "string" },
+    },
+    required: ["path"],
+  },
+} satisfies ConnectorTool;
+
+export const attachFileWithScreenshot: ConnectorTool = {
+  ...attachFileTool,
+  description:
+    "Attach a workspace file or a fresh screenshot of this bot's own display to the current Rakazo chat. For a screenshot, set screenshot to true and omit path. Everyone with access to the attachment can see what was on the screen. Only share a screenshot when the user requests it or it is needed for their task, and avoid showing credentials or unrelated private information. For a file, pass its workspace path. Give standalone documents a name and one-line description. Reusing a name adds a version of that artifact.",
+  inputSchema: {
+    ...attachFileTool.inputSchema,
+    properties: {
+      ...attachFileTool.inputSchema.properties,
+      screenshot: { type: "boolean", const: true },
+    },
+    required: [],
+    oneOf: [{ required: ["path"] }, { required: ["screenshot"] }],
+  },
+};
+
 /** Media, computer, browser, file and desktop app tools. */
 export const computerTools: ConnectorTool[] = [
   {
@@ -205,20 +235,7 @@ export const computerTools: ConnectorTool[] = [
       required: ["path", "content"],
     },
   },
-  {
-    name: "attach_file",
-    description:
-      "Attach a workspace file from this bot's home to the chat thread as an image or common file. The user sees it. The file stays in place; users can open it from the message and from the Artifacts tab. For a self-contained HTML page, document, or anything else meant to be viewed on its own — give it name and description: a title and a one-line summary. Skip them for an ordinary attachment like a log file or export. To UPDATE something you already made, call this again with the exact same name — it becomes a new version of that same artifact instead of a separate one; a different name always starts a new artifact.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        path: { type: "string" },
-        name: { type: "string" },
-        description: { type: "string" },
-      },
-      required: ["path"],
-    },
-  },
+  attachFileTool,
   {
     name: "shell",
     description:

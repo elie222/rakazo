@@ -313,7 +313,7 @@ function underRunLease<T>(
 }
 
 export async function completeEffect(
-  deps: ExecutorDeps,
+  store: Pick<Prisma.TransactionClient, "externalEffect">,
   effectId: string,
   expectedStatus: "intended" | "executing",
   result: unknown,
@@ -325,7 +325,7 @@ export async function completeEffect(
     "details" in result
       ? (result as { details: unknown }).details
       : result;
-  return completeExternalEffect(deps.prisma, effectId, expectedStatus, storedResult as never);
+  return completeExternalEffect(store, effectId, expectedStatus, storedResult);
 }
 
 export function uncertainEffectError(toolName: string): Error {

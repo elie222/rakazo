@@ -5,10 +5,13 @@ import path from "node:path";
 import { deferred } from "@rakazo/core/test-async";
 import { createDb, createThreadEvents, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { placeholderObservation } from "../../computers/screens/computer-support.js";
 import { LocalArtifactStore } from "../../storage/artifacts.js";
+import { attachFileWithScreenshot } from "../../tools/builtin-computer.tool-definition.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { withRunLease } from "../assembly/run-messages.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
+import { completeEffect } from "../lifecycle/run-effects.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { fileTools } from "./run-tools-files.js";
 
@@ -82,8 +85,8 @@ postgres("attach_file (PostgreSQL)", () => {
     }
   });
 
-  const attach = (
-    filePath: string,
+  const attach = async (
+    args: { path: string } | { screenshot: true },
     lease: { owner: string; fence: number },
     client: typeof prisma = prisma,
   ) => {
@@ -91,7 +94,10 @@ postgres("attach_file (PostgreSQL)", () => {
       {
         prisma: client,
         artifacts: new LocalArtifactStore(root),
-        sandbox: { readFile: async () => bytes },
+        sandbox: {
+          readFile: async () => bytes,
+          observe: async () => placeholderObservation("routine screenshot"),
+        },
         events: createThreadEvents(prisma),
       } as unknown as ExecutorDeps,
       run.id,
@@ -99,7 +105,7 @@ postgres("attach_file (PostgreSQL)", () => {
     );
     const ctx = {
       deps,
-      run: { ...run, trigger: "user_message" },
+      run: { ...run, trigger: "screenshot" in args ? "routine" : "user_message" },
       runId: run.id,
       bot: { id: run.botId },
       thread: { id: run.threadId, groupId: null },
@@ -116,14 +122,35 @@ postgres("attach_file (PostgreSQL)", () => {
       secrets: [],
       computer: {
         mode: "personal",
-        get: async () => ({ id: "computer" }),
+        stored: { id: "computer" },
+        get: async () => ({ id: "computer", botId: run.botId, kind: "fake" }),
         checkpoint: { markDirty() {} },
       },
+      tools: { builtins: [attachFileWithScreenshot] },
+      state: { screen: { turn: { mustLook: false } } },
     } as unknown as RunContext;
+    const effect =
+      "screenshot" in args
+        ? await fixture(() =>
+            prisma.externalEffect.create({
+              data: {
+                spaceId,
+                runId: run.id,
+                kind: "attach_file",
+                idempotencyKey: randomUUID(),
+                request: args,
+                status: "intended",
+              },
+            }),
+          )
+        : undefined;
     const call = {
       name: "attach_file",
-      args: { path: filePath },
+      args,
       executionId: `call-${randomUUID()}`,
+      applied: effect && { effect },
+      persistEffectResult: async (result: unknown, tx = client) =>
+        effect ? completeEffect(tx, effect.id, "intended", result) : true,
       finish: async (result: unknown) => result,
     } as unknown as ToolCall;
     return runAsSystem("agent run tool call", () => fileTools.attach_file!(ctx, call));
@@ -145,11 +172,11 @@ postgres("attach_file (PostgreSQL)", () => {
 
   it("leaves nothing behind when the message cannot be written, then posts on retry", async () => {
     bytes = new TextEncoder().encode("first image");
-    const failed = await attach("shots/first.png", { owner: "worker-0", fence: 0 });
+    const failed = await attach({ path: "shots/first.png" }, { owner: "worker-0", fence: 0 });
     expect(failed).toMatchObject({ error: expect.stringContaining("history") });
     expect(await state()).toEqual({ artifacts: [], messages: [], stored: [] });
 
-    const posted = (await attach("shots/first.png", { owner: "worker-1", fence: 1 })) as {
+    const posted = (await attach({ path: "shots/first.png" }, { owner: "worker-1", fence: 1 })) as {
       artifactId: string;
     };
     const after = await state();
@@ -158,6 +185,26 @@ postgres("attach_file (PostgreSQL)", () => {
     expect(after.messages.map((message) => message.blocks)).toEqual([
       [expect.objectContaining({ kind: "image", artifactId: posted.artifactId })],
     ]);
+  });
+
+  it("posts a fresh screen image as a routine's chat attachment", async () => {
+    const before = await state();
+    const posted = await attach({ screenshot: true }, { owner: "worker-1", fence: 1 });
+    expect(posted).toMatchObject({ ok: true, artifactId: expect.any(String) });
+    const after = await state();
+    expect(after.messages.slice(before.messages.length).map((message) => message.blocks)).toEqual([
+      [
+        expect.objectContaining({
+          kind: "image",
+          artifactId: (posted as { artifactId: string }).artifactId,
+          mimeType: "image/png",
+        }),
+      ],
+    ]);
+    const effect = await fixture(() =>
+      prisma.externalEffect.findFirst({ where: { runId: run.id, kind: "attach_file" } }),
+    );
+    expect(effect).toMatchObject({ status: "completed", result: posted });
   });
   it("retries the artifact transaction after a deadlock and posts once", async () => {
     bytes = new TextEncoder().encode("second image");
@@ -185,7 +232,11 @@ postgres("attach_file (PostgreSQL)", () => {
     });
 
     const before = await state();
-    const posted = (await attach("shots/second.png", { owner: "worker-1", fence: 1 }, flaky)) as {
+    const posted = (await attach(
+      { path: "shots/second.png" },
+      { owner: "worker-1", fence: 1 },
+      flaky,
+    )) as {
       artifactId: string;
     };
     expect(posted).toMatchObject({ artifactId: expect.any(String) });
@@ -226,7 +277,7 @@ postgres("attach_file (PostgreSQL)", () => {
     const probe = await fixture(() => pool.connect());
     let posted: { artifactId: string };
     try {
-      const attaching = attach("shots/third.png", { owner: "worker-1", fence: 1 });
+      const attaching = attach({ path: "shots/third.png" }, { owner: "worker-1", fence: 1 });
       // Backends waiting on the holder's transaction: the attach, blocked on the thread row.
       const deadline = Date.now() + 5_000;
       for (;;) {

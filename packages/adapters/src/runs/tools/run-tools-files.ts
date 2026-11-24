@@ -25,6 +25,7 @@ import {
 } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { protectedActivateScriptWriteRefusal } from "../../providers/computer/desktop/desktop-guard-words.js";
 import { attachWorkspaceFileToThread } from "../../storage/thread-artifacts.js";
+import { attachFileWithScreenshot } from "../../tools/builtin-computer.tool-definition.js";
 import type { RunWorkspace } from "../../tools/workspace-file-tools.js";
 import {
   listFilesFromTool,
@@ -36,7 +37,7 @@ import { persistMessageInTransaction, runLeaseFor } from "../assembly/run-messag
 import { textContentArg } from "../turn/tool-text.js";
 import { readStoppedRunFile } from "./run-stopped-file.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
-import { recordComputerAction } from "./run-tools-computer.js";
+import { captureBotScreen, recordComputerAction } from "./run-tools-computer.js";
 
 export type AttachmentBlock = Extract<MessageBlock, { kind: "image" | "file" }>;
 
@@ -221,13 +222,29 @@ export const fileTools: ToolHandlers = {
   },
   async attach_file(ctx, call) {
     const { deps, run, bot } = ctx;
-    const filePath = String(call.args.path ?? "");
+    const screenshot = call.args.screenshot === true;
+    let filePath = String(call.args.path ?? "");
     const fail = async (error: string) => {
       await recordComputerAction(ctx, call, "attach_file", filePath, { error });
       return call.finish({ error, path: filePath });
     };
-    const read = await readWorkspaceFile(ctx, call, filePath);
-    if ("error" in read) return fail(read.error);
+    let bytes: Uint8Array;
+    if (screenshot) {
+      if (filePath) return fail("Choose either a workspace path or a screenshot.");
+      if (!ctx.tools.builtins.includes(attachFileWithScreenshot)) {
+        return fail("Screenshot attachments are unavailable in this run.");
+      }
+      const observation = await captureBotScreen(ctx, call.name);
+      if ("error" in observation) return fail(observation.error);
+      const extension = observation.mimeType === "image/jpeg" ? "jpg" : "png";
+      filePath = `screenshot-${new Date().toISOString().replaceAll(":", "-")}.${extension}`;
+      bytes = observation.image;
+    } else {
+      const read = await readWorkspaceFile(ctx, call, filePath);
+      if ("error" in read) return fail(read.error);
+      bytes = read.bytes;
+    }
+    const result = (artifactId: string) => ({ ok: true, artifactId, path: filePath });
     try {
       // Background runs post no message (publishMessage drops attachment blocks).
       const background = isBackgroundRunTrigger(run.trigger);
@@ -237,15 +254,14 @@ export const fileTools: ToolHandlers = {
         ctx,
         call,
         filePath,
-        read.bytes,
+        bytes,
         { botId: bot.id, groupId: await artifactGroupId(ctx) },
         {
           name: typeof call.args.name === "string" ? call.args.name : undefined,
           description:
             typeof call.args.description === "string" ? call.args.description : undefined,
         },
-        // The message commits with the artifact row, so a post that fails leaves no artifact
-        // the user was never shown.
+        // Commit the artifact, message and tool result together so a retry cannot post twice.
         background
           ? undefined
           : async (tx, artifact) => {
@@ -259,6 +275,9 @@ export const fileTools: ToolHandlers = {
                 false,
                 lease,
               );
+              if (call.applied && !(await call.persistEffectResult(result(artifact.id), tx))) {
+                throw new Error("Attachment was already handled by another attempt.");
+              }
             },
       );
       if (committed)
@@ -266,7 +285,7 @@ export const fileTools: ToolHandlers = {
           .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
           .catch((error) => getLogger().error("thread message realtime notification", error));
       await recordComputerAction(ctx, call, "attach_file", filePath);
-      return call.finish({ ok: true, artifactId: saved.artifactId, path: filePath });
+      return background ? call.finish(result(saved.artifactId)) : result(saved.artifactId);
     } catch (error) {
       return fail(error instanceof Error ? error.message : "could not attach file");
     }

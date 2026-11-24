@@ -22,6 +22,7 @@ import {
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
+import type { Prisma } from "@rakazo/db";
 import { runSecretKind } from "@rakazo/db";
 import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
 import {
@@ -105,7 +106,10 @@ export interface ToolCall {
   /** This call moved its effect to executing. request_secret can hand the claim back. */
   claimedEffect: boolean;
   /** Store the result on the effect; false when it could not be stored. */
-  readonly persistEffectResult: (result: unknown) => Promise<boolean>;
+  readonly persistEffectResult: (
+    result: unknown,
+    tx?: Prisma.TransactionClient,
+  ) => Promise<boolean>;
   /** Store the result and return it, or an uncertain-effect result when storing failed. */
   readonly finish: (result: unknown) => Promise<unknown>;
   /** Claim the effect to execute it, or return what an earlier attempt already settled. */
@@ -696,10 +700,10 @@ function createToolCall(
   const call: ToolCall = {
     ...fields,
     claimedEffect: false,
-    persistEffectResult: (result) =>
+    persistEffectResult: (result, tx) =>
       applied
         ? completeEffect(
-            deps,
+            tx ?? deps.prisma,
             applied.effect.id,
             call.claimedEffect ? "executing" : "intended",
             result,
@@ -738,7 +742,7 @@ async function settleToolUncertainty(
     const recovered = await callMediaTool(ctx, call, true);
     if (
       recovered !== undefined &&
-      (await completeEffect(ctx.deps, effectId, "executing", recovered))
+      (await completeEffect(ctx.deps.prisma, effectId, "executing", recovered))
     )
       return recovered;
   }
@@ -748,7 +752,7 @@ async function settleToolUncertainty(
     if (
       recovered &&
       "cost_usd" in recovered &&
-      (await completeEffect(ctx.deps, effectId, "executing", recovered))
+      (await completeEffect(ctx.deps.prisma, effectId, "executing", recovered))
     )
       return recovered;
   }

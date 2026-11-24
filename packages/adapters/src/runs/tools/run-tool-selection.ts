@@ -14,6 +14,7 @@ import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-defini
 import { selectMemoryTools } from "../../memory/memory-tools.js";
 import { filterImageReturningComputerTools } from "../../models/model-vision.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
+import { attachFileWithScreenshot } from "../../tools/builtin-computer.tool-definition.js";
 import { searchHistoryThisChat } from "../../tools/builtin-memory.tool-definition.js";
 import {
   filterBuiltinToolsForRun,
@@ -143,6 +144,7 @@ export function selectBuiltinToolsForRun(options: {
   ownPromptOnly?: boolean;
   meetingTranscriptsAvailable?: boolean;
   graphicalToolsAllowed: boolean;
+  computerScreenshotAllowed?: boolean;
   /** Page browser tools need a graphical computer (Chrome), not model vision. */
   pageBrowserAllowed?: boolean;
   groupId: string | null;
@@ -197,11 +199,15 @@ export function selectBuiltinToolsForRun(options: {
     !options.groupId &&
     !options.messagingChannelRun;
   const emailMailbox = Boolean(options.emailInbox) || emailClaimOffered;
-  const builtins = options.historyMyChats
-    ? builtinAgentTools
-    : builtinAgentTools.map((tool) =>
-        tool.name === "search_history" ? searchHistoryThisChat : tool,
-      );
+  const screenshotAllowed =
+    options.computerScreenshotAllowed &&
+    options.trigger !== BACKGROUND_HELPER_TRIGGER &&
+    !isBackgroundRunTrigger(options.trigger);
+  const builtins = builtinAgentTools.map((tool) => {
+    if (tool.name === "search_history" && !options.historyMyChats) return searchHistoryThisChat;
+    if (tool.name === "attach_file" && screenshotAllowed) return attachFileWithScreenshot;
+    return tool;
+  });
   return selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(

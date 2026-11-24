@@ -258,7 +258,10 @@ export function describeToolActivity(
   if (toolName === "read_file") return `Reading ${detail(record.path)}`;
   if (toolName === "write_file") return `Writing ${detail(record.path)}`;
   if (toolName === "list_files") return `Listing ${detail(record.path ?? ".")}`;
-  if (toolName === "attach_file") return `Attaching ${detail(record.path)}`;
+  if (toolName === "attach_file")
+    return record.screenshot === true
+      ? "Attaching a screenshot"
+      : `Attaching ${detail(record.path)}`;
   if (toolName === "open_path") return `Opening ${detail(record.path)}`;
   if (toolName === "render_plot") return "Rendering a chart";
   if (toolName === "save_page") {
