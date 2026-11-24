@@ -110,6 +110,17 @@ describe("approval rules", () => {
     expect(client.actionApprovalRule.findMany).not.toHaveBeenCalled();
   });
 
+  it("rejects a requested scope that disagrees with the displayed target", async () => {
+    const client = confirmationsClient({ overridden: true });
+
+    await expect(
+      saveApprovalRule(client.prisma, scope, rule, "account", {
+        scope: "space",
+        spaceId: scope.spaceId,
+      }),
+    ).rejects.toMatchObject({ kind: "CONFLICT", code: APPROVAL_RULES_CHANGED });
+  });
+
   it("rejects resetting a displayed rule that no longer exists", async () => {
     const client = confirmationsClient({ overridden: true });
     client.actionApprovalRule.deleteMany.mockResolvedValueOnce({ count: 0 });

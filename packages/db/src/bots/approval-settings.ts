@@ -48,6 +48,9 @@ async function approvalRuleWriteTarget(
   requested?: SettingsScope,
   expected?: EffectiveApprovalTarget,
 ) {
+  if (expected && requested !== undefined && requested !== expected.scope) {
+    throw new ApprovalRulesChangedError();
+  }
   await lockSpaceSettings(tx, scope);
   const effective = await confirmationsTarget(tx, scope, expected ? undefined : requested);
   if (expected && (expected.spaceId !== scope.spaceId || expected.scope !== effective)) {
