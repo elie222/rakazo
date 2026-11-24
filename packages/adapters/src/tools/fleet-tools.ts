@@ -19,6 +19,7 @@ import {
   messagingProviderNamed,
   ONCE_ROUTINE_CRON,
   redactSecrets,
+  zonedDateTime,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -42,7 +43,7 @@ import { asRecord } from "../integrations/connector-http.js";
 import { resolveModelChoice } from "../models/model-choice.js";
 import type { BotModelChangeDeps } from "../models/model-selection.js";
 import { validateBotModelChange } from "../models/model-selection.js";
-import { routineEndInZone } from "../routines/routine-end.js";
+import { routineEndWallClock } from "../routines/routine-end.js";
 import {
   hasRoutineEvents,
   NO_ROUTINE_EVENTS,
@@ -421,7 +422,7 @@ async function prepareChildRoutine(
                 ? { startAt: resolved.nextRunAt.toISOString() }
                 : {}),
             },
-      ...(end.endsAt ? { endAt: end.endsAt.toISOString() } : {}),
+      ...(end.endsAt ? { endAt: routineEndWallClock(end.endsAt, timezone) } : {}),
       ...(hasRoutineEvents(checked.events) ? { on: events } : {}),
     },
     summary: {
@@ -1005,10 +1006,7 @@ export async function createChildRoutine(
   const pinnedTimezone = canonical.timezoneFromAccount === true ? undefined : timezone;
   const replayTimezone =
     pinnedTimezone === undefined ? await userTimeZone(deps.prisma, run.userId) : pinnedTimezone;
-  const approvedEnd = text(canonical.endAt);
-  const endsAt = approvedEnd
-    ? routineEndInZone(new Date(approvedEnd), timezone, replayTimezone)
-    : null;
+  const endAt = text(canonical.endAt);
   const existing = await deps.prisma.routine.findFirst({
     where: {
       spaceId: run.spaceId,
@@ -1021,7 +1019,7 @@ export async function createChildRoutine(
       crons: { equals: cron ? [cron] : [] },
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
-      endsAt,
+      endsAt: endAt ? zonedDateTime(endAt, replayTimezone) : null,
       // The identical routine has the approved events too, so a retry returns it instead of a
       // twin. A bot links one chat app, so any chat event on it is the approved one.
       webhookEnabled: on?.webhook === true,
@@ -1067,7 +1065,7 @@ export async function createChildRoutine(
     ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
     ...(on ? { on } : {}),
-    ...(endsAt ? { endAt: endsAt.toISOString() } : {}),
+    ...(endAt ? { endAt } : {}),
   });
   return "error" in created ? created : { ...created, ...target };
 }

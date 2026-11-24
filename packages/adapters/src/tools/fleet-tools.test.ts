@@ -707,7 +707,7 @@ describe("prepareFleetRequest create_child_routine", () => {
     });
     expect(prepared).toMatchObject({
       ok: true,
-      canonical: { schedule: { cron: "0 9 * * *" }, endAt: "2026-10-24T23:59:59.999Z" },
+      canonical: { schedule: { cron: "0 9 * * *" }, endAt: "2026-10-24T23:59:59.999" },
       summary: {
         lines: [expect.any(String), "Ends 24 Oct 2026, 23:59 UTC", "Prompt: Check the deals"],
       },
@@ -1868,7 +1868,7 @@ describe("createChildRoutine", () => {
       ...canonical,
       timezone: "Europe/Paris",
       timezoneFromAccount: true,
-      endAt: "2026-10-24T21:59:59.999Z",
+      endAt: "2026-10-24T23:59:59.999",
     });
     expect(result).toMatchObject({ ok: true });
     expect(prisma.routine.findFirst).toHaveBeenCalledWith(
@@ -1876,6 +1876,28 @@ describe("createChildRoutine", () => {
     );
     expect(prisma.routine.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ timezone: "Europe/London", endsAt: londonEnd }),
+    });
+  });
+
+  it("reads the approved end in the zone the routine is saved in when the account moves just before", async () => {
+    const { prisma } = fakeFleet({ ...fleet, timezone: "Europe/Paris" });
+    prisma.$transaction.mockImplementation(async (work: (client: unknown) => Promise<unknown>) =>
+      work(prisma),
+    );
+    (prisma as { $queryRaw?: unknown }).$queryRaw = vi.fn(async (strings: TemplateStringsArray) =>
+      strings.join("?").includes("FOR SHARE") ? [{ timezone: "Europe/London" }] : [],
+    );
+    await createChildRoutine(writeDeps(prisma), run, {
+      ...canonical,
+      timezone: "Europe/Paris",
+      timezoneFromAccount: true,
+      endAt: "2026-10-24T23:59:59.999",
+    });
+    expect(prisma.routine.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        timezone: "Europe/London",
+        endsAt: new Date("2026-10-24T22:59:59.999Z"),
+      }),
     });
   });
 
@@ -1896,7 +1918,7 @@ describe("createChildRoutine", () => {
     });
     const result = await createChildRoutine(writeDeps(prisma), run, {
       ...canonical,
-      endAt: endsAt.toISOString(),
+      endAt: "2026-10-24T23:59:59.999",
     });
     expect(result).toMatchObject({
       ok: true,
