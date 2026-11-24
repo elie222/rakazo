@@ -22,7 +22,7 @@
     "wrap-env": "tsx src/cli/wrap-env.ts"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.6",
+    "@hono/node-server": "2.1.11",
     "@orpc/server": "1.16.2",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/adapters": "workspace:*",
@@ -34,7 +34,7 @@
     "@rakazo/memory": "workspace:*",
     "@rakazo/page-kit": "workspace:*",
     "fflate": "0.8.3",
-    "hono": "4.13.17",
+    "hono": "4.13.21",
     "mermaid": "11.17.2",
     "tsx": "4.23.15",
     "zod": "4.6.7"
