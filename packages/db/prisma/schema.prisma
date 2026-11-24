@@ -1069,6 +1069,8 @@ model Bot {
   autoSpeak         Boolean           @default(false)
   modelProvider     String?
   modelId           String?
+  // Keep the id after disconnect so a pinned bot fails rather than changing accounts.
+  modelCredentialId String?
   thinkingLevel     String?
   disabledBuiltinTools String[] @default([])
   webhookSecretId   String?

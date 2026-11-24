@@ -9,6 +9,7 @@ import {
 } from "@rakazo/contracts";
 import {
   botLookState,
+  botModelConnections,
   credentialForModel,
   DEFAULT_BOT_AVATAR_COLOR,
   MODEL_SEARCH_THRESHOLD,
@@ -93,6 +94,7 @@ function BotSettings() {
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(focus === "model" || pickedModel !== undefined);
   const [modelKey, setModelKey] = useState("");
+  const [modelCredentialId, setModelCredentialId] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [autoSpeak, setAutoSpeak] = useState(false);
   // A setting this screen no longer offers still shows while the bot has it changed from the
@@ -173,6 +175,7 @@ function BotSettings() {
     follow(setModelKey, (from) =>
       from.modelProvider && from.modelId ? modelOptionKey(from.modelProvider, from.modelId) : "",
     );
+    follow(setModelCredentialId, (from) => from.modelCredentialId ?? "");
     follow<string>(setThinkingLevel, (from) => from.thinkingLevel ?? "");
     follow(setAutoSpeak, (from) => from.autoSpeak);
     setChanged(
@@ -198,6 +201,15 @@ function BotSettings() {
     ? modelOptionKey(selectedModel.provider, selectedModel.modelId)
     : "";
 
+  const eligibleConnections = botModelConnections(credentials, catalog, selectedModel);
+  const connectionChoices: MenuPickerChoice[] = [
+    { key: "", label: t`Automatic` },
+    ...eligibleConnections.map(({ id, label }) => ({ key: id, label })),
+    ...(modelCredentialId && !eligibleConnections.some(({ id }) => id === modelCredentialId)
+      ? [{ key: modelCredentialId, label: t`Unavailable connection`, disabled: true }]
+      : []),
+  ];
+
   const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
   const effectiveModelId = selectedModel?.modelId ?? me?.defaultModel ?? null;
   const effectiveEntry =
@@ -208,7 +220,9 @@ function BotSettings() {
             resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
         )
       : undefined;
-  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);
+  const effectiveCredential = modelCredentialId
+    ? eligibleConnections.find(({ id }) => id === modelCredentialId)
+    : credentialForModel(credentials, effectiveProvider, effectiveModelId);
   const thinkingOptions = modelThinkingLevels(
     effectiveCredential,
     effectiveEntry,
@@ -238,6 +252,7 @@ function BotSettings() {
   function selectModel(key: string) {
     if (key === selectedModelKey) return;
     setModelKey(key);
+    setModelCredentialId("");
     setThinkingLevel("");
   }
 
@@ -361,6 +376,7 @@ function BotSettings() {
         avatarSet?: BotAvatarSet;
         modelProvider?: string | null;
         modelId?: string | null;
+        modelCredentialId?: string | null;
         thinkingLevel?: ThinkingLevel | null;
         autoSpeak?: boolean;
       } = { botId };
@@ -378,6 +394,9 @@ function BotSettings() {
       if (modelChanged) {
         update.modelProvider = selected?.provider ?? null;
         update.modelId = selected?.modelId ?? null;
+      }
+      if (modelCredentialId !== (bot.modelCredentialId ?? "")) {
+        update.modelCredentialId = modelCredentialId || null;
       }
       if (modelMetaReady && (modelChanged || thinkingChanged)) {
         update.thinkingLevel = thinkingOptions.length
@@ -438,6 +457,7 @@ function BotSettings() {
       autoSpeak !== bot.autoSpeak ||
       (selectedModel?.provider ?? null) !== (bot.modelProvider ?? null) ||
       (selectedModel?.modelId ?? null) !== (bot.modelId ?? null) ||
+      modelCredentialId !== (bot.modelCredentialId ?? "") ||
       (thinkingLevel || null) !== (bot.thinkingLevel ?? null));
 
   const hasVoiceMenu = !voiceError && voices.length > 1;
@@ -594,6 +614,14 @@ function BotSettings() {
                 }
                 value={selectedModelKey}
               />
+              {selectedModel && (eligibleConnections.length > 0 || modelCredentialId) ? (
+                <MenuPicker
+                  choices={connectionChoices}
+                  label={t`Model connection`}
+                  onChange={setModelCredentialId}
+                  value={modelCredentialId}
+                />
+              ) : null}
               {thinkingOptions.length ? (
                 <MenuPicker
                   choices={thinkingChoices}

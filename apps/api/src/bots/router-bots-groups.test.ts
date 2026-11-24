@@ -851,6 +851,13 @@ describe("shared space bot permissions", () => {
     return { client, prisma, secrets };
   }
 
+  it("does not let a Space owner bind a personal connection to another member's bot", async () => {
+    const { client } = sharedBotClient("owner");
+    await expect(
+      client.bots.update({ botId: "bot-1", modelCredentialId: "cred-own" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
   it("keeps a bot's email address with its creator", async () => {
     const { client } = sharedBotClient("owner");
     await expect(client.bots.emailAddress({ botId: "bot-1" })).resolves.toBeNull();

@@ -1,6 +1,7 @@
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import { modelMark } from "../models/model-marks.js";
 import {
+  botModelConnections,
   chatModelChoices,
   connectedModelChoices,
   credentialForModel,
@@ -22,12 +23,14 @@ export function botModelState({
   catalog,
   me,
   modelKey,
+  modelCredentialId,
   spaceDefaultLabel,
 }: {
   credentials: readonly ModelCredential[];
   catalog: readonly ModelCatalogEntry[];
   me: SpaceDefault | null;
   modelKey: string;
+  modelCredentialId?: string;
   spaceDefaultLabel: string;
 }) {
   const stored = modelKey ? parseModelOptionKey(modelKey) : null;
@@ -88,7 +91,10 @@ export function botModelState({
             resolveSelectableModelId(catalog, item.provider, item.id) === modelId,
         )
       : undefined;
-  const credential = credentialForModel(credentials, provider, modelId);
+  const connections = botModelConnections(credentials, catalog, selectedModel);
+  const credential = modelCredentialId
+    ? connections.find(({ id }) => id === modelCredentialId)
+    : credentialForModel(credentials, provider, modelId);
   const thinkingLevels = modelThinkingLevels(credential, entry, modelId).filter(
     (level) => level !== "off",
   );
@@ -97,6 +103,7 @@ export function botModelState({
   return {
     selectedModel,
     selectedModelKey,
+    connections,
     defaultEntry,
     choices,
     /** No connected provider offers a model, so a picker should offer to connect one. */

@@ -9,6 +9,7 @@ import { HostedModelCreditsRequiredError } from "../../models/credits/model-cred
 import type { SavedDeploymentModel } from "../../models/deployment-model.js";
 import type { DeploymentModelDefaults } from "../../models/model-roles.js";
 import { effectiveModelRole } from "../../models/model-roles.js";
+import { ModelConnectionGoneError } from "../../models/model-selection.js";
 import { isRetiredModelCredentialError } from "../../runtime/pi/models/pi-oauth.js";
 import type { restoreComputerModels } from "../../runtime/pi/tools/pi-runtime-computer-mode.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
@@ -26,18 +27,20 @@ export function runModelBackups(
   defaults: DeploymentModelDefaults,
   scripted: boolean,
   registerSecrets: (values: string[]) => void,
+  connectionPinned = false,
 ) {
   let backupChoices: Promise<ModelRoleChoice[]> | undefined;
   const load = () =>
-    (backupChoices ??= scripted
-      ? Promise.resolve([])
-      : effectiveModelRole(deps.prisma, run, "main", defaults).then(
-          (role) => role.backups,
-          (error: unknown) => {
-            getLogger().warn("Backup models could not be loaded", { runId: run.id, error });
-            return [];
-          },
-        ));
+    (backupChoices ??=
+      scripted || connectionPinned
+        ? Promise.resolve([])
+        : effectiveModelRole(deps.prisma, run, "main", defaults).then(
+            (role) => role.backups,
+            (error: unknown) => {
+              getLogger().warn("Backup models could not be loaded", { runId: run.id, error });
+              return [];
+            },
+          ));
   // Backups that could not start here are not offered again once the model runs.
   const unavailable = new Set<ModelRoleChoice>();
   // A main model with no connection, or whose provider refused its sign-in, runs on the
@@ -149,7 +152,9 @@ export async function startRunModel(
       primaryFailure = {
         message: error instanceof Error ? error.message : "Connect the provider again.",
         accountFailure:
-          error instanceof HostedModelCreditsRequiredError || isRetiredModelCredentialError(error),
+          error instanceof HostedModelCreditsRequiredError ||
+          error instanceof ModelConnectionGoneError ||
+          isRetiredModelCredentialError(error),
       };
       if (!terminal) retryPrimary = error;
     }

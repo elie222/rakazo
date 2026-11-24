@@ -338,14 +338,11 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(saved.getByLabel("Header value", { exact: true })).toHaveValue("");
     await saved.getByRole("group", { name: "Headers", exact: true }).scrollIntoViewIfNeeded();
     await captureScreenshot(page, testInfo, "openai-compatible-header-saved");
-    const savedCredentials = await rpc<Array<{ modelId?: string; enabledModelIds?: string[] }>>(
-      page,
-      "models/credentials",
-      {},
-    );
-    expect(
-      savedCredentials.find((entry) => entry.modelId === LOCAL_MODEL_ID)?.enabledModelIds,
-    ).toEqual([LOCAL_MODEL_ID, SECOND_MODEL_ID]);
+    const savedCredentials = await rpc<
+      Array<{ id: string; label: string; modelId?: string; enabledModelIds?: string[] }>
+    >(page, "models/credentials", {});
+    const savedConnection = savedCredentials.find((entry) => entry.modelId === LOCAL_MODEL_ID);
+    expect(savedConnection?.enabledModelIds).toEqual([LOCAL_MODEL_ID, SECOND_MODEL_ID]);
 
     await saved.getByLabel("OpenAI-compatible server URL").fill("");
     await expect(saved.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
@@ -369,6 +366,18 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await localModel.click();
     await modelSaved;
     await expect(settings.getByRole("button", { name: /^Model/ })).toContainText(LOCAL_MODEL_ID);
+    const connection = settings.getByRole("combobox", { name: "Model connection", exact: true });
+    await expect(connection).toHaveText("Automatic");
+    const connectionSaved = page.waitForResponse(
+      (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+    );
+    await chooseOption(connection, savedConnection!.label);
+    const pinned = (await (await connectionSaved).json()) as {
+      json: { modelCredentialId?: string | null };
+    };
+    expect(pinned.json.modelCredentialId).toBe(savedConnection!.id);
+    await expect(connection).toHaveText(savedConnection!.label);
+    await captureScreenshot(page, testInfo, "bot-model-connection");
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );

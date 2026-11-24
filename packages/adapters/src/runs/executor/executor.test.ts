@@ -17,6 +17,7 @@ import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "../../models/endpoints/openai-co
 import { mainRole, withModelRoles } from "../../models/model-roles.test-support.js";
 import { serializeModelSecret } from "../../models/model-secret.js";
 import {
+  PINNED_PROVIDER_NOT_CONNECTED,
   UnavailableModelForAuthError,
   validateConnectedModelChoice,
 } from "../../models/model-selection.js";
@@ -1298,7 +1299,11 @@ function compatibleExecutor(
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 }
 
-function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
+function pinnedRoutineRunPrisma(
+  modelId: string,
+  trigger = "routine",
+  botPin?: { credentialId: string },
+) {
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -1313,7 +1318,7 @@ function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
     modelProvider: COMPATIBLE_PROVIDER,
     modelId,
     thinkingLevel: null,
-    modelPinned: true,
+    modelPinned: !botPin,
     sourceMessageId: null,
     checkpoint: null,
     leaseFence: 0,
@@ -1321,8 +1326,9 @@ function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
   const bot = {
     id: "bot-1",
     name: "Assistant",
-    modelProvider: null,
-    modelId: null,
+    modelProvider: botPin ? COMPATIBLE_PROVIDER : null,
+    modelId: botPin ? modelId : null,
+    modelCredentialId: botPin?.credentialId ?? null,
     thinkingLevel: null,
     memoryScope: "isolated",
     computer: { id: "computer-1", scope: "private" },
@@ -1371,14 +1377,18 @@ function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
 async function continuePinnedRoutineRun(
   plaintext: string,
   modelId: string,
-  options: { trigger?: string; executor?: Record<string, unknown> } = {},
+  options: {
+    trigger?: string;
+    botPin?: { credentialId: string };
+    executor?: Record<string, unknown>;
+  } = {},
 ) {
   const runtimeRun = vi.fn();
   const enqueue = vi.fn(async () => undefined);
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const append = vi.fn(async () => undefined);
   const prisma: Record<string, unknown> = {
-    ...pinnedRoutineRunPrisma(modelId, options.trigger),
+    ...pinnedRoutineRunPrisma(modelId, options.trigger, options.botPin),
     ...compatiblePrismaParts("space-model", plaintext),
   };
   prisma.$transaction = vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
@@ -4192,6 +4202,95 @@ description: Prepare standup notes
         "custom",
       ),
     ).rejects.toThrow("Unknown model for that provider");
+  });
+
+  it("keeps the same provider and model on each bot's exact account, until explicitly unpinned", async () => {
+    const modelId = "same-model";
+    const automaticSecret = compatibleSecret([modelId]);
+    const automatic = compatiblePrismaParts(modelId, automaticSecret);
+    const firstRow = modelPreference({
+      provider: COMPATIBLE_PROVIDER,
+      modelId,
+      secretId: "secret-a",
+    });
+    const secondRow = modelPreference({
+      provider: COMPATIBLE_PROVIDER,
+      modelId,
+      secretId: "secret-b",
+    });
+    const secondBaseUrl = "http://127.0.0.1:8001/v1";
+    const secondSecret = serializeModelSecret({
+      kind: "openai_compatible",
+      baseUrl: secondBaseUrl,
+      enabledModelIds: [modelId],
+    });
+    let secondPin: string | null = "connection-b";
+    const executor = compatibleExecutor(
+      {
+        ...automatic,
+        bot: {
+          findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+            modelProvider: COMPATIBLE_PROVIDER,
+            modelId,
+            modelCredentialId: where.id === "bot-a" ? "connection-a" : secondPin,
+            thinkingLevel: null,
+          })),
+        },
+        userModelCredential: {
+          ...automatic.userModelCredential,
+          findFirst: vi.fn(async ({ where }: { where: { id: string; userId: string } }) => {
+            if (where.userId !== "user-1") return null;
+            const row = where.id === "connection-a" ? firstRow : secondRow;
+            return { ...row.credential, id: where.id, userPreferences: [] };
+          }),
+        },
+        secret: {
+          ...automatic.secret,
+          findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+            id: where.id,
+            ciphertext: where.id === "secret-b" ? secondSecret : automaticSecret,
+          })),
+        },
+      },
+      automaticSecret,
+      {
+        secretStore: { load: vi.fn(async (ciphertext: string) => ciphertext), put: vi.fn() },
+      },
+    );
+
+    const scope = { userId: "user-1", spaceId: "ws-1" };
+    await expect(executor.resolveModel({ ...scope, botId: "bot-a" })).resolves.toMatchObject({
+      id: modelId,
+      connectionId: "connection-a",
+      baseUrl: COMPATIBLE_BASE_URL,
+    });
+    await expect(executor.resolveModel({ ...scope, botId: "bot-b" })).resolves.toMatchObject({
+      id: modelId,
+      connectionId: "connection-b",
+      baseUrl: secondBaseUrl,
+    });
+    await expect(
+      executor.resolveModel({ ...scope, botId: "bot-b", userId: "other-user" }),
+    ).rejects.toThrow(PINNED_PROVIDER_NOT_CONNECTED);
+    secondPin = null;
+    await expect(executor.resolveModel({ ...scope, botId: "bot-b" })).resolves.toMatchObject({
+      id: modelId,
+      connectionId: `credential-${COMPATIBLE_PROVIDER}`,
+      baseUrl: COMPATIBLE_BASE_URL,
+    });
+  });
+
+  it("fails a bot turn whose exact connection disappeared, despite an available default", async () => {
+    const { finalizeRun, runtimeRun, enqueue } = await continuePinnedRoutineRun(
+      compatibleSecret(["space-model"]),
+      "space-model",
+      { trigger: "user", botPin: { credentialId: "revoked-connection" } },
+    );
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "failed", error: PINNED_PROVIDER_NOT_CONNECTED }),
+    );
+    expect(runtimeRun).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it("keeps a bot's thinking level on a non-default enabled model", async () => {

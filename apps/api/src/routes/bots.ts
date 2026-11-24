@@ -429,13 +429,39 @@ export function botsRoutes(ctx: RouterContext) {
           });
           if (!section) throw new IsolationError();
         }
+        const provider =
+          input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider;
+        const model = input.modelId !== undefined ? input.modelId : existing.modelId;
+        const changingModel = provider !== existing.modelProvider || model !== existing.modelId;
+        const writesModel =
+          input.modelProvider !== undefined || input.modelCredentialId !== undefined;
+        if (
+          existing.userId !== context.actor.userId &&
+          (input.modelCredentialId !== undefined || (changingModel && existing.modelCredentialId))
+        ) {
+          throw new ClientError(
+            "FORBIDDEN",
+            "Only this bot's owner can change its model connection.",
+          );
+        }
+        const modelCredentialId =
+          input.modelCredentialId !== undefined
+            ? input.modelCredentialId
+            : changingModel
+              ? null
+              : undefined;
+        const credentialToValidate =
+          modelCredentialId === undefined && input.thinkingLevel
+            ? existing.modelCredentialId
+            : modelCredentialId;
         const modelChange = await validateBotModelChange(botModelValidation(context.actor), {
           userId: context.actor.userId,
           spaceId: context.actor.spaceId,
-          provider:
-            input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider,
-          model: input.modelId !== undefined ? input.modelId : existing.modelId,
+          provider,
+          model,
           thinkingLevel: input.thinkingLevel,
+          credentialId: credentialToValidate ?? undefined,
+          allowPrivateEndpoint: deps.env.mcpAllowPrivateEndpoint,
           current: { provider: existing.modelProvider, model: existing.modelId },
         });
         if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
@@ -460,10 +486,18 @@ export function botsRoutes(ctx: RouterContext) {
           emitBotUpdated:
             botProfileLabelsChanged(input) ||
             input.expectedSettings !== undefined ||
+            modelCredentialId !== undefined ||
             input.dailyCheckIns !== undefined ||
             input.replyMode !== undefined,
           expectedInstructions: input.expectedInstructions,
-          expectedSettings: input.expectedSettings,
+          expectedSettings: writesModel
+            ? {
+                modelProvider: existing.modelProvider,
+                modelId: existing.modelId,
+                ...input.expectedSettings,
+                modelCredentialId: existing.modelCredentialId,
+              }
+            : input.expectedSettings,
           data: {
             name: input.name,
             description: input.description,
@@ -480,6 +514,7 @@ export function botsRoutes(ctx: RouterContext) {
             ...(input.modelProvider !== undefined
               ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
               : {}),
+            ...(modelCredentialId !== undefined ? { modelCredentialId } : {}),
             ...(input.thinkingLevel !== undefined ? { thinkingLevel } : {}),
             ...(input.teamChatAmbientEnabled !== undefined
               ? { teamChatAmbientEnabled: input.teamChatAmbientEnabled }
@@ -498,7 +533,7 @@ export function botsRoutes(ctx: RouterContext) {
               : {}),
           },
         }).catch((error) => {
-          if (input.expectedSettings && isRecordNotFound(error))
+          if ((writesModel || input.expectedSettings) && isRecordNotFound(error))
             throw new ClientError(
               "CONFLICT",
               "Settings changed; review the current settings first.",

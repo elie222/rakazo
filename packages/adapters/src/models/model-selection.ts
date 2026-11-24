@@ -806,13 +806,32 @@ export async function validateBotModelChange(
     provider: string | null;
     model: string | null;
     thinkingLevel?: string | null;
+    credentialId?: string;
+    allowPrivateEndpoint?: boolean;
     current?: { provider: string | null; model: string | null };
   },
 ): Promise<BotModelChangeResult> {
   const scope = { userId: input.userId, spaceId: input.spaceId };
   const { provider, model } = input;
   const changing = provider !== input.current?.provider || model !== input.current?.model;
-  if (changing && provider && model) {
+  if (input.credentialId) {
+    if (!provider || !model) return { ok: false, error: "Choose a bot model first." };
+    if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
+      return { ok: false, error: MODEL_PROVIDER_NOT_ALLOWED_ERROR };
+    }
+    if (
+      !(await hasReadyModelCredential(deps.prisma, deps.secretStore, scope, provider, model, {
+        credentialId: input.credentialId,
+        codexCatalog: deps.codexCatalog,
+        allowPrivateEndpoint: input.allowPrivateEndpoint,
+      }))
+    ) {
+      return {
+        ok: false,
+        error: "This model connection is unavailable or cannot serve this model.",
+      };
+    }
+  } else if (changing && provider && model) {
     if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
       return { ok: false, error: MODEL_PROVIDER_NOT_ALLOWED_ERROR };
     }
@@ -893,6 +912,7 @@ export async function validateBotModelChange(
         scope,
         effectiveProvider,
         effectiveModelId,
+        { credentialId: input.credentialId },
       );
       if (allowed && !allowed.includes(thinkingLevel)) {
         return { ok: false, error: `Thinking level must be one of: ${allowed.join(", ")}` };
@@ -1078,6 +1098,7 @@ export type ModelChoice = {
   modelProvider: string | null;
   modelId: string | null;
   thinkingLevel: string | null;
+  modelCredentialId?: string | null;
 };
 
 /**
@@ -1093,6 +1114,7 @@ export function runModelChoice(
     return {
       modelProvider: run.modelProvider,
       modelId: run.modelId,
+      // A routine's explicit model is its own configuration, not the bot's current connection.
       thinkingLevel: run.thinkingLevel,
     };
   }
@@ -1100,6 +1122,7 @@ export function runModelChoice(
     modelProvider: bot.modelProvider,
     modelId: bot.modelId,
     thinkingLevel: bot.thinkingLevel,
+    ...(bot.modelCredentialId ? { modelCredentialId: bot.modelCredentialId } : {}),
   };
 }
 

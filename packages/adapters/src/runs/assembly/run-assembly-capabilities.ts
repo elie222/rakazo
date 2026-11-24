@@ -104,6 +104,7 @@ export async function startTurnModel(
   const { bot, main, modelChoice, overrideCredential, settings } = parts.records;
   const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
   const runtimeFallback = runtimeFallbackModel(deps.runtime);
+  const credentialPin = modelChoice.modelCredentialId;
   const pinError =
     !pinnedComputerModels &&
     run.modelPinned &&
@@ -124,15 +125,23 @@ export async function startTurnModel(
         credential: null,
         connectionId: pinnedComputerModels.main.connectionId,
       }
-    : selectConfiguredModel({
-        override: modelChoice,
-        overrideCredential,
-        main,
-        hostedProvider: (await modelCreditBillingEnabled(deps))
-          ? resolveDeploymentModel().provider
-          : undefined,
-        defaults: { settings, deployment: runDeployment },
-      });
+    : credentialPin
+      ? {
+          provider: modelChoice.modelProvider,
+          id: modelChoice.modelId,
+          thinkingLevel: modelChoice.thinkingLevel as AgentRunRequest["model"]["thinkingLevel"],
+          credential: overrideCredential,
+          connectionId: credentialPin,
+        }
+      : selectConfiguredModel({
+          override: modelChoice,
+          overrideCredential,
+          main,
+          hostedProvider: (await modelCreditBillingEnabled(deps))
+            ? resolveDeploymentModel().provider
+            : undefined,
+          defaults: { settings, deployment: runDeployment },
+        });
   const selectedProvider = selected.provider ?? runtimeFallback?.provider;
   const selectedModelId = selected.id ?? runtimeFallback?.id;
   // A missing or refused connection of the user's own fails every scheduled run alike.
@@ -159,6 +168,10 @@ export async function startTurnModel(
     await failRunBeforeModel(pinnedComputerFailure, true);
     return;
   }
+  if (!pinnedComputerModels && credentialPin && !overrideCredential) {
+    await failRunBeforeModel(PINNED_PROVIDER_NOT_CONNECTED, true);
+    return;
+  }
   if (pinError) {
     await failRunBeforeModel(pinError, pinError === PINNED_PROVIDER_NOT_CONNECTED);
     return;
@@ -179,6 +192,7 @@ export async function startTurnModel(
     { settings, deployment: runDeployment },
     scripted,
     registerRunSecrets,
+    Boolean(credentialPin),
   );
   const started = await startRunModel(
     deps,

@@ -407,6 +407,65 @@ describe("BotSettings model choices", () => {
   });
 });
 
+describe("BotSettings model connection", () => {
+  it("pins and unpins an exact connection for the same model", async () => {
+    vi.mocked(rpc.models.credentials).mockResolvedValueOnce(
+      [
+        ["first", "Work", true],
+        ["second", "Personal", true],
+        ["old", "Revoked", false],
+      ].map(([id, label, hasKey]) => ({
+        id: String(id),
+        label: String(label),
+        hasKey: Boolean(hasKey),
+        provider: "openai-compatible",
+        isDefault: id === "first",
+        enabledModelIds: ["same-model"],
+      })),
+    );
+    await render("Billing", { modelProvider: "openai-compatible", modelId: "same-model" });
+    await openSettings();
+    const trigger = container.querySelector<HTMLElement>(
+      '[role="combobox"][id$="-model-connection"]',
+    )!;
+    expect(trigger.textContent).toBe("Automatic");
+    const choices = await openOptions(trigger);
+    expect(choices.map((option) => option.textContent)).toEqual(["Automatic", "Work", "Personal"]);
+    await act(async () => choices.find((option) => option.textContent === "Personal")!.click());
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({
+      modelProvider: "openai-compatible",
+      modelId: "same-model",
+      modelCredentialId: "second",
+    });
+    await saveProfile();
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("modelCredentialId");
+    const automatic = (await openOptions(trigger)).find(
+      (option) => option.textContent === "Automatic",
+    );
+    await act(async () => automatic!.click());
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ modelCredentialId: null });
+  });
+
+  it("shows an unavailable pin without disclosing its ID and can clear it", async () => {
+    await render("Billing", {
+      modelProvider: "example",
+      modelId: "model",
+      modelCredentialId: "unavailable-private-id",
+    });
+    await openSettings();
+    const trigger = container.querySelector<HTMLElement>(
+      '[role="combobox"][id$="-model-connection"]',
+    )!;
+    expect(trigger.textContent).toBe("Unavailable connection");
+    expect(container.textContent).not.toContain("unavailable-private-id");
+    const automatic = (await openOptions(trigger)).find(
+      (option) => option.textContent === "Automatic",
+    );
+    await act(async () => automatic!.click());
+    expect(onSave.mock.lastCall?.[0]).toMatchObject({ modelCredentialId: null });
+  });
+});
+
 describe("BotSettings thinking options", () => {
   it("preserves saved thinking on a profile save when options are hidden", async () => {
     await render("Billing", {
