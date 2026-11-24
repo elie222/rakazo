@@ -937,10 +937,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           </View>
         </CompactRowsContext.Provider>
       </SelectedChatContext.Provider>
-      {/* Without a loaded account the footer still leads to Account, to sign out or switch server. */}
-      {embedded && !onShareSelect ? (
-        <InboxFooter initial={initials} columnInsets={columnInsets} />
-      ) : null}
+      {/* Keep Settings available even if the account details haven't loaded. */}
+      {embedded && !onShareSelect ? <InboxFooter columnInsets={columnInsets} /> : null}
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
           bot={organizeChat}

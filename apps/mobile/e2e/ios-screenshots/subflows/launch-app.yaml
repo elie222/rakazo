@@ -4,13 +4,13 @@ appId: com.rakazo.app
 - launchApp:
     stopApp: true
 - extendedWaitUntil:
-    visible: "Account|Sign up for Rakazo|Sign in to Rakazo"
+    visible: "Account|Settings|Sign up for Rakazo|Sign in to Rakazo"
     timeout: 40000
 - runFlow:
     when:
-      visible: "Account"
+      visible: "Account|Settings"
     commands:
-      - tapOn: "Account"
+      - tapOn: "Account|Settings"
       - scrollUntilVisible:
           element: "Sign out"
           direction: DOWN
