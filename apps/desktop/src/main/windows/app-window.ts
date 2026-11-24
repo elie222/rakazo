@@ -234,6 +234,8 @@ function rememberWindowBounds(win: BrowserWindow) {
 export function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
   const icon = developmentIcon();
+  // A window being replaced may have moved within the save delay; record it so this one opens there.
+  if (desktop.mainWindow && !desktop.mainWindow.isDestroyed()) saveWindowBounds(desktop.mainWindow);
   const saved = savedWindowBounds();
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
