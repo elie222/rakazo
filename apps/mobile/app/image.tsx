@@ -2,12 +2,12 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { initialWindowMetrics, SafeAreaProvider } from "react-native-safe-area-context";
 import { ImageArtifactViewer } from "../components/media/image-artifact-viewer";
 import type { MobileArtifactTarget } from "../lib/artifacts/artifact-open";
+import { galleryPictures } from "../lib/artifacts/gallery";
 
 function first(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? "";
 }
 
-/** Full-screen image viewer opened from a thread; a stack screen so the share sheet can sit on top of it. */
 export default function ImageScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -16,6 +16,7 @@ export default function ImageScreen() {
     mimeType?: string | string[];
     botId?: string | string[];
     groupId?: string | string[];
+    gallery?: string | string[];
   }>();
   const groupId = first(params.groupId);
 
@@ -32,6 +33,7 @@ export default function ImageScreen() {
           name: first(params.name),
           mimeType: first(params.mimeType) || "image/png",
         }}
+        gallery={galleryPictures(params.gallery)}
         onClose={() => router.back()}
       />
     </SafeAreaProvider>

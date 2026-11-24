@@ -475,10 +475,14 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     // A chat attachment opens the version it was sent with, not the newest.
     previewFile: (artifactId) =>
       router.push({ pathname: "/artifact", params: { artifactId, exact: "1" } }),
-    previewImage: (target) =>
+    previewImage: (target, gallery) =>
       router.push({
         pathname: "/image",
-        params: { ...target, ...(groupId ? { groupId } : { botId }) },
+        params: {
+          ...target,
+          ...(groupId ? { groupId } : { botId }),
+          ...(gallery && gallery.length > 1 ? { gallery: JSON.stringify(gallery) } : {}),
+        },
       }),
     jump: (messageId) => {
       void applyMessageJump({

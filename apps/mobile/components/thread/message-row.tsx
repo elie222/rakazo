@@ -73,7 +73,10 @@ export type MessageRowActions = {
   openBot: (id: string, name: string) => void;
   openComputer: (id: string, name: string) => void;
   previewFile: (artifactId: string) => void;
-  previewImage: (target: ImageArtifactPreviewTarget) => void;
+  previewImage: (
+    target: ImageArtifactPreviewTarget,
+    gallery?: ImageArtifactPreviewTarget[],
+  ) => void;
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
   openPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
