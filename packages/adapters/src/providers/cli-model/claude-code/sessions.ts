@@ -156,6 +156,7 @@ export const tokenConfigFolder = processFolder("rakazo-claude-code-config-");
 const CLI_HOME_FOLDER = ".claude";
 
 /** The config dir the CLI started with this environment uses. Only its sessions are touched. */
-export function cliConfigDir(env: Record<string, string>): string {
-  return env.CLAUDE_CONFIG_DIR ?? join(env.HOME ?? env.USERPROFILE ?? "", CLI_HOME_FOLDER);
+export function cliConfigDir(childEnv: Record<string, string>): string {
+  const home = childEnv.HOME ?? childEnv.USERPROFILE ?? "";
+  return childEnv.CLAUDE_CONFIG_DIR ?? join(home, CLI_HOME_FOLDER);
 }
