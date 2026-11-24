@@ -2,8 +2,7 @@ import { expect, it, vi } from "vitest";
 import { RoutineEndDate } from "./routine-end-date";
 
 vi.mock("../../lib/i18n/i18n", () => ({
-  useUiLocale: () => "en",
-  dateLocaleForUi: () => "en-US",
+  useDateLocale: () => "en-US",
 }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (parts: TemplateStringsArray) => parts.join("") }),
