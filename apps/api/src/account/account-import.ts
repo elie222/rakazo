@@ -863,6 +863,7 @@ class AccountImporter implements ArchiveSink {
             createdAt: new Date(record.createdAt),
             updatedAt: new Date(record.updatedAt),
             completedAt: date(record.completedAt),
+            archivedAt: date(record.archivedAt ?? null),
           },
         });
         return;

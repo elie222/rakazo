@@ -7,7 +7,9 @@ import {
   signup,
 } from "../helpers/helpers";
 
-test("board creates, edits, and moves a ticket across its views", async ({ page }, testInfo) => {
+test("board creates, moves, archives, and restores a ticket across its views", async ({
+  page,
+}, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
   const title = "Ship the board";
