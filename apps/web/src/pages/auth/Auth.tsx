@@ -130,11 +130,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     !desktopBridge()
       ? providers[0]?.id
       : undefined;
-  const autoStarted = useRef(false);
   useEffect(() => {
-    if (!onlyProvider || autoStarted.current || !ssoAutoStartAllowed()) return;
-    autoStarted.current = true;
-    if (holdSsoAutoStart()) void signInWithProvider(onlyProvider);
+    // The hold also keeps this from starting twice; when it cannot be saved, nothing starts.
+    if (onlyProvider && ssoAutoStartAllowed() && holdSsoAutoStart()) {
+      void signInWithProvider(onlyProvider);
+    }
   }, [onlyProvider]);
 
   async function submit(e: React.FormEvent) {
