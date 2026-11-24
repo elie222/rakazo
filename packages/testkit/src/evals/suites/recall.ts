@@ -1475,12 +1475,12 @@ function toolHeavyFixture(): HistoryFixture {
 /** Checked the asked fact in the graded reply: a shell command matching `command`, after a call to a tool matching `after` when given. */
 const checkedNow = (e: Evidence, command: RegExp, after?: RegExp) => {
   const calls = e.toolCalls.filter((call) => call.step === e.finalStep);
-  const from = after ? calls.findIndex((call) => after.test(call.name)) : 0;
+  const start = after ? calls.findIndex((call) => after.test(call.name)) : -1;
   return check(
     "checked-now",
-    from >= 0 &&
+    (!after || start >= 0) &&
       calls
-        .slice(from)
+        .slice(start + 1)
         .some((call) => call.name === "shell" && command.test(String(call.args.command ?? ""))),
   );
 };
