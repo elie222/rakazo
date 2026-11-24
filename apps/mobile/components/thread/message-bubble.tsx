@@ -53,6 +53,7 @@ import { ChangeUndo, isUndoableChange } from "../cards/change-undo";
 import { ImportSetupCard } from "../cards/ImportSetupCard";
 import { McpApprovalCard } from "../cards/McpApprovalCard";
 import { OutgoingDraftCard } from "../cards/OutgoingDraftCard";
+import { RoutineApprovalDetail } from "../cards/routine-approval-detail";
 import { ToolQuestionCard } from "../cards/ToolQuestionCard";
 import { DraftCard } from "../drafts/draft-card";
 import { AudioAttachment } from "../media/audio-attachment";
@@ -501,7 +502,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                     : plainAskTitle(askBlock.text)}
                 </Text>
               ) : null}
-              {askBlock.receipt ? (
+              {askBlock.routineUpdate ? (
+                <RoutineApprovalDetail review={askBlock.routineUpdate} />
+              ) : askBlock.receipt ? (
                 <AskReceiptView receipt={askBlock.receipt} />
               ) : askBlock.detail ? (
                 <Text
@@ -565,6 +568,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   site={askBlock.site}
                   approval={isApprovalAskBlock(askBlock)}
                   instructions={askBlock.instructionUpdate?.after}
+                  routineUpdate={Boolean(askBlock.routineUpdate)}
                   accessibilityActions={actionProps.accessibilityActions}
                   onAccessibilityAction={actionProps.onAccessibilityAction}
                   onAnswer={(answer) => onAnswer(message, answer)}

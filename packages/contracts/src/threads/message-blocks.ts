@@ -87,6 +87,32 @@ export const AskReceipt = z.object({
 });
 export type AskReceipt = z.infer<typeof AskReceipt>;
 
+// In display order, with the potentially long instructions last.
+export const RoutineApprovalField = z.enum([
+  "active",
+  "name",
+  "schedule",
+  "timezone",
+  "nextRun",
+  "inChat",
+  "prompt",
+]);
+export type RoutineApprovalField = z.infer<typeof RoutineApprovalField>;
+
+const RoutineApprovalValue = z.union([z.string(), z.boolean(), z.null()]);
+const RoutineApprovalChange = z.object({
+  field: RoutineApprovalField,
+  before: RoutineApprovalValue,
+  after: RoutineApprovalValue,
+});
+export type RoutineApprovalChange = z.infer<typeof RoutineApprovalChange>;
+
+const RoutineUpdateApproval = z.object({
+  changes: z.array(RoutineApprovalChange).min(1).max(RoutineApprovalField.options.length),
+  reason: z.string().optional(),
+});
+export type RoutineUpdateApproval = z.infer<typeof RoutineUpdateApproval>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
@@ -113,6 +139,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
       .optional(),
     detail: z.string().optional(),
     detailFormat: z.enum(["text", "code"]).optional(),
+    /** A proposed routine edit. The detail remains readable by clients using the plain card. */
+    routineUpdate: RoutineUpdateApproval.optional(),
     /** On a payment card, the order as the page shows it, drawn as a receipt in place of `detail`. */
     receipt: AskReceipt.optional(),
     input: z.enum(["text", "secret"]).optional(),

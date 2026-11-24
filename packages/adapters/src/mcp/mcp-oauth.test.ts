@@ -2363,11 +2363,10 @@ describe("MCP OAuth", () => {
         if (url === "https://auth.example.test/register" && request.method === "POST") {
           return Response.json(
             {
-              error: "registration_not_supported",
-              error_description:
-                "Dynamic client registration is not supported. Only pre-registered partners are allowed.",
+              error: "invalid_client_metadata",
+              error_description: "The requested scope is not allowed for this client.",
             },
-            { status: 403 },
+            { status: 400 },
           );
         }
         throw new Error(`Unexpected request: ${request.method} ${url}`);
@@ -2420,7 +2419,7 @@ describe("MCP OAuth", () => {
       );
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe(
-      "Could not start MCP OAuth: HTTP 403 registration_not_supported: Dynamic client registration is not supported. Only pre-registered partners are allowed.",
+      "Could not start MCP OAuth: HTTP 400 invalid_client_metadata: The requested scope is not allowed for this client.",
     );
     expect((error as Error).message).not.toContain("[object Response]");
   });
@@ -2430,17 +2429,17 @@ describe("MCP OAuth", () => {
       () =>
         Response.json(
           {
-            error: "registration_not_supported",
+            error: "invalid_client_metadata",
             error_description:
               "Use Bearer access-token-value or quote static-credential-value to continue.",
           },
-          { status: 403 },
+          { status: 400 },
         ),
       "static-credential-value",
     );
 
     expect(error.message).toBe(
-      "Could not start MCP OAuth: HTTP 403 registration_not_supported: Use Bearer [redacted] or quote [redacted] to continue.",
+      "Could not start MCP OAuth: HTTP 400 invalid_client_metadata: Use Bearer [redacted] or quote [redacted] to continue.",
     );
     expect(error.message).not.toContain("access-token-value");
     expect(error.message).not.toContain("static-credential-value");
@@ -2450,13 +2449,13 @@ describe("MCP OAuth", () => {
     const description = `${"a".repeat(2_500)} tail-marker`;
     const error = await rejectedOAuthBegin(() =>
       Response.json(
-        { error: "registration_not_supported", error_description: description },
-        { status: 403 },
+        { error: "invalid_client_metadata", error_description: description },
+        { status: 400 },
       ),
     );
 
     expect(error.message).toBe(
-      `Could not start MCP OAuth: HTTP 403 registration_not_supported: ${"a".repeat(300)}`,
+      `Could not start MCP OAuth: HTTP 400 invalid_client_metadata: ${"a".repeat(300)}`,
     );
     expect(error.message).not.toContain("tail-marker");
   });
@@ -2467,16 +2466,16 @@ describe("MCP OAuth", () => {
       () =>
         Response.json(
           {
-            error: "registration_not_supported",
+            error: "invalid_client_metadata",
             error_description: `${"a".repeat(290)}${secret}`,
           },
-          { status: 403 },
+          { status: 400 },
         ),
       secret,
     );
 
     expect(error.message).toBe(
-      `Could not start MCP OAuth: HTTP 403 registration_not_supported: ${"a".repeat(290)}[redacted]`,
+      `Could not start MCP OAuth: HTTP 400 invalid_client_metadata: ${"a".repeat(290)}[redacted]`,
     );
     expect(error.message).not.toContain(secret.slice(0, 10));
   });
@@ -2484,12 +2483,12 @@ describe("MCP OAuth", () => {
   it("stops reading an oversized OAuth error body", async () => {
     const totalBytes = 128 * 1_024;
     const chunkBytes = 1_024;
-    const bytesRead = trackClonedBodies(403);
+    const bytesRead = trackClonedBodies(400);
 
     const error = await rejectedOAuthBegin(
       () =>
         new Response(chunkedBody(totalBytes, chunkBytes), {
-          status: 403,
+          status: 400,
           headers: { "content-type": "application/json" },
         }),
     );
@@ -2502,12 +2501,12 @@ describe("MCP OAuth", () => {
   });
 
   it("does not read an OAuth error body whose declared length exceeds the cap", async () => {
-    const bytesRead = trackClonedBodies(403);
+    const bytesRead = trackClonedBodies(400);
 
     const error = await rejectedOAuthBegin(
       () =>
         new Response(chunkedBody(64 * 1_024, 1_024), {
-          status: 403,
+          status: 400,
           headers: {
             "content-type": "application/json",
             "content-length": String(1024 * 1024),
@@ -2524,6 +2523,20 @@ describe("MCP OAuth", () => {
 
     expect(error).toBeInstanceOf(McpOAuthClientRequiredError);
     expect(error).toMatchObject({ code: MCP_OAUTH_CLIENT_REQUIRED });
+  });
+
+  it("asks for a pre-registered client when the server refuses to register one", async () => {
+    const error = await rejectedOAuthBegin(() => new Response("Forbidden", { status: 403 }));
+
+    expect(error).toBeInstanceOf(McpOAuthClientRequiredError);
+  });
+
+  it("keeps a forbidden redirect address a refusal rather than asking for a client", async () => {
+    const error = await rejectedOAuthBegin(() =>
+      Response.json({ error: "invalid_redirect_uri" }, { status: 403 }),
+    );
+
+    expect(error).not.toBeInstanceOf(McpOAuthClientRequiredError);
   });
 
   describe("with a pre-registered client", () => {

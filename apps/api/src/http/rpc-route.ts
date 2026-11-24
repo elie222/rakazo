@@ -4,6 +4,7 @@ import { databaseOutage } from "@rakazo/db";
 import { enrichLogContext } from "@rakazo/logging";
 import type { Hono } from "hono";
 import type { requestSessions } from "../auth/request-session.js";
+import { isTrustedOrigin } from "../auth/trusted-origins.js";
 import type { AppEnv } from "../env.js";
 import type { createRouter } from "../router.js";
 import {
@@ -19,7 +20,8 @@ export function mountRpcRoute(
   app: Hono,
   router: ReturnType<typeof createRouter>,
   requestSession: ReturnType<typeof requestSessions>["requestSession"],
-  env: Pick<AppEnv, "minimumClientBuilds" | "maxUploadSizeBytes">,
+  env: Pick<AppEnv, "minimumClientBuilds" | "maxUploadSizeBytes"> &
+    Parameters<typeof isTrustedOrigin>[1],
 ) {
   const rpc = new RPCHandler(router, {
     clientInterceptors: [onError((error, { path, signal }) => handleRpcError(error, path, signal))],
@@ -33,6 +35,9 @@ export function mountRpcRoute(
   );
   const limitRpcBody = rpcBodyLimit(env.maxUploadSizeBytes);
   app.use("/rpc/*", async (c, next) => {
+    if (crossSiteCookieRequest(c.req.raw, env)) {
+      return c.json({ error: "Request origin is not allowed." }, 403);
+    }
     const session = await requestSession(c.req.raw);
     const actor = session?.actor ?? null;
     const tooLarge = await limitRpcBody(c, actor !== null);
@@ -69,4 +74,18 @@ export function mountRpcRoute(
     else if (actor && reply.status < 500) databaseOutage.succeeded();
     return reply;
   });
+}
+
+/**
+ * SameSite=Lax still sends cookies on a form post from a sibling subdomain, and the RPC
+ * handler reads form bodies as full input, so a cookie request must come from a trusted page.
+ */
+export function crossSiteCookieRequest(
+  request: Request,
+  env: Parameters<typeof isTrustedOrigin>[1],
+): boolean {
+  if (!request.headers.has("cookie")) return false;
+  if (request.headers.get("authorization")?.startsWith("Bearer ")) return false;
+  const origin = request.headers.get("origin");
+  return origin !== null && !isTrustedOrigin(origin, env);
 }

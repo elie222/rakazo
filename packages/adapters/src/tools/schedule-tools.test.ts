@@ -1232,7 +1232,10 @@ describe("updateScheduleFromTool", () => {
       timezone: "Europe/Berlin",
       schedule: "Every Monday at 10:00 AM",
       nextRun: "Monday, 2026-10-26 10:00 (UTC+01:00)",
-      changes: { prompt: { before: "Order the usual groceries", after: prompt } },
+      // Only the changed field is reported; the prompt is not echoed unchanged.
+      changes: {
+        prompt: { before: "Order the usual groceries", after: prompt },
+      },
     });
     expect(updateMany).toHaveBeenCalledWith({
       where: {
@@ -1285,6 +1288,60 @@ describe("updateScheduleFromTool", () => {
     };
     expect(result.ok).toBe(true);
     expect(result.changes).toEqual({});
+  });
+
+  it("does not report a retiming the row already stores", async () => {
+    // A paused routine sent its own cron back: the resolved timing is what it already holds.
+    const { update } = setup({ ...weekly, active: false, nextRunAt: null });
+    await expect(update({ schedule: { cron: "0 10 * * 1" } })).resolves.toMatchObject({
+      ok: true,
+      changes: {},
+    });
+  });
+
+  it("conflicts when the row moved since its approval was shown", async () => {
+    const { updateMany, update } = setup();
+    await expect(
+      update({
+        prompt: "Order less",
+        expected: { name: "Groceries", prompt: "Edited elsewhere" },
+      }),
+    ).resolves.toEqual({
+      error: "The schedule changed while saving. Call schedule_list and try again.",
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("applies the change when the pinned before-values still hold", async () => {
+    const { updateMany, update } = setup();
+    await expect(
+      update({
+        prompt: "Order less",
+        expected: { name: "Groceries", prompt: "Order the usual groceries" },
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    // The write only lands on a row that still holds what the approval was shown.
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          name: "Groceries",
+          prompt: "Order the usual groceries",
+        }),
+      }),
+    );
+  });
+
+  it("reports a conflict when the row moved between the read and the write", async () => {
+    const { updateMany, update } = setup();
+    updateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      update({
+        prompt: "Order less",
+        expected: { name: "Groceries", prompt: "Order the usual groceries" },
+      }),
+    ).resolves.toEqual({
+      error: "The schedule changed while saving. Call schedule_list and try again.",
+    });
   });
 
   it("moves the first run of the current repeat with startAt alone", async () => {

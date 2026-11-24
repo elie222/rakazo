@@ -5,6 +5,7 @@ import type {
   BillingProvider,
   BillingSubscriptionSnapshot,
   BillingSubscriptionStatus,
+  MediaGenerationProvider,
   PartnerProgram,
   ProductAnalytics,
   RealtimeFanout,
@@ -18,6 +19,8 @@ import {
 } from "@rakazo/adapter-kit";
 import {
   holdsBillingSubscription,
+  mediaBalance,
+  mediaWithinAllowance,
   sandboxAllowance,
   sandboxDisplayedHourMicros,
   sandboxHoursLeft,
@@ -153,6 +156,8 @@ export function createBillingService(deps: {
   provider: BillingProvider;
   /** Prices computer time for the monthly allowance; without it none is shown. */
   sandbox?: SandboxProvider;
+  /** The deployment's hosted media provider; without one no media balance is shown. */
+  mediaGeneration?: MediaGenerationProvider;
   realtime?: RealtimeFanout;
   managedModelsAvailable?: boolean;
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
@@ -727,10 +732,17 @@ export function createBillingService(deps: {
             getLogger().error("access grant failed", error),
           );
         const sized = supportsComputerSizing();
-        const [credits, account, computerAllowance, days, hadTrial] = await Promise.all([
+        const media = deps.mediaGeneration;
+        const fits = media && mediaWithinAllowance(media);
+        const [credits, account, computerAllowance, mediaLeft, days, hadTrial] = await Promise.all([
           unexpiredCreditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
           deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
+          media &&
+          ((fits?.images && media.prices.imageMicros > 0) ||
+            (fits?.video && media.prices.videoMicros > 0))
+            ? mediaBalance(prisma, organizationId)
+            : null,
           trialDays(organizationId),
           organizationOwnerHadTrial(prisma, organizationId, "byok"),
         ]);
@@ -790,6 +802,16 @@ export function createBillingService(deps: {
             ),
           ...(sized && { standardComputerHours: true as const }),
           computerHoursResetAt: computerAllowance?.resetsAt?.toISOString() ?? null,
+          ...(mediaLeft?.limitMicros && {
+            media: {
+              // A cent is 10,000 micros; a part-spent cent shows as spent.
+              leftCents: Math.max(
+                0,
+                Math.floor((mediaLeft.limitMicros - mediaLeft.usedMicros) / 10_000),
+              ),
+              limitCents: mediaLeft.limitMicros / 10_000,
+            },
+          }),
           referral: await referrals.status(organizationId, isOwner),
         };
       }

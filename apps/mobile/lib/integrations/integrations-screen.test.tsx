@@ -758,7 +758,8 @@ it("shows registered MCP servers with connector initials and sentence case statu
     "BBroken serverNot working",
     "EExpired serverNeeds sign-inReconnect",
   ]);
-  for (const row of [...rows].slice(0, 4)) expect(row.querySelector("button")).toBeNull();
+  // The row itself opens the server; only a server waiting on sign-in adds Connect beside it.
+  for (const row of [...rows].slice(0, 4)) expect(row.querySelectorAll("button")).toHaveLength(1);
   expect(rows[0]?.querySelector('[data-symbol="checkmark"]')?.getAttribute("data-color")).toBe(
     "green",
   );
@@ -785,6 +786,9 @@ it("shows registered MCP servers with connector initials and sentence case statu
   expect([...matches].map((row) => row.textContent)).toEqual(["SSaved serverConnected"]);
   expect(container.textContent?.match(/Saved server/g)).toHaveLength(1);
   expect(container.textContent).not.toContain("No apps match your search.");
+
+  await act(async () => matches[0]?.querySelector("button")?.click());
+  expect(state.push).toHaveBeenCalledWith({ pathname: "/mcp-server", params: { id: "saved" } });
 });
 
 const plugin = {

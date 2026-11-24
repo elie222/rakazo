@@ -6,6 +6,7 @@ import { pageViewerCode } from "@rakazo/page-kit/compile";
 import { PNG } from "pngjs";
 import { sessionCookieHeader } from "../index.js";
 import { ensureRequestCards } from "./ios-screenshot-request-cards.js";
+import { ensureMcpServer } from "./mcp-server-fixture.js";
 
 const MARKER = "marigold checklist";
 const READY = "The fixture workspace is ready.";
@@ -345,6 +346,7 @@ export async function seedIosScreenshotFixture(input: {
       userId: me.userId,
       botId: researcher.id,
     });
+    await ensureMcpServer(db.prisma, { ...me, botIds: [researcher.id, writer.id] });
     await ensureRequestCards(db.prisma, { threadId: support.threadId, botId: support.id });
     await ensurePayments(db.prisma, {
       spaceId: me.spaceId,

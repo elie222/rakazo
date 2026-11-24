@@ -359,6 +359,29 @@ const approvals: Scenario = {
     bot([
       {
         kind: "ask",
+        approvalEffectId: "effect-6",
+        text: "Update “Groceries”?",
+        routineUpdate: {
+          changes: [
+            {
+              field: "schedule",
+              before: "Every Monday at 10:00 AM",
+              after: "Every Monday at 11:00 AM",
+            },
+            {
+              field: "prompt",
+              before: "Order the usual groceries",
+              after: "Order the usual groceries\nSkip cheddar when it is out of stock",
+            },
+          ],
+        },
+        status: "pending",
+        actions: approvalActions,
+      },
+    ]),
+    bot([
+      {
+        kind: "ask",
         text: "Instructions updated",
         status: "answered",
         answer: "allow",

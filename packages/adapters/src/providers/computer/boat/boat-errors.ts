@@ -26,6 +26,8 @@ export class BoatApiError extends Error implements ResponseError {
     readonly retryAfterMs?: number,
     /** The span a start limit counts over: `minute`, `hour`, or `day`. */
     readonly window?: string,
+    /** Boat never ran the request, such as a command sent while the sandbox restores its disk. */
+    readonly retryable = false,
   ) {
     super(message);
   }
@@ -39,6 +41,12 @@ export function boatResumeInProgress(error: unknown): boolean {
         error.response.status === 409 &&
         /\bAgent resume already in progress\b/i.test(error.message)))
   );
+}
+
+/** Boat refused the request without running it, so sending it again is safe. */
+export function boatRetryableRefusal(error: unknown): boolean {
+  const refusal = error instanceof SandboxUnresponsiveError ? error.cause : error;
+  return refusal instanceof BoatApiError && refusal.retryable;
 }
 
 /** Boat's limit on API requests per minute from one IP address, across every endpoint. */
@@ -260,6 +268,7 @@ export async function boatResponseError(
     code,
     response.status === 429 ? retryAfterMs(response, body) : undefined,
     safeIdentifier(body?.window),
+    body?.retryable === true,
   );
 }
 

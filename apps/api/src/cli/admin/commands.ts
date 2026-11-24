@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { accessGrantCommand } from "./access-grant.js";
 import { accountDeleteCommand } from "./account-delete.js";
 import type { AdminCommand, AdminContext, AdminResult } from "./admin-command.js";
 import { billingCancelCommand, billingRefundCommand } from "./billing-commands.js";
@@ -6,6 +7,7 @@ import { botWebhookKeyCommand } from "./bot-webhook-key.js";
 import { webhooksCheckCommand, webhooksUnpublishCommand } from "./webhooks-commands.js";
 
 export const ADMIN_COMMANDS: readonly AdminCommand[] = [
+  accessGrantCommand,
   accountDeleteCommand,
   billingCancelCommand,
   billingRefundCommand,

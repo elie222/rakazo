@@ -226,7 +226,7 @@ function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   }
   if (builtinOffered(disabled, "request_secret") && builtinOffered(disabled, "browser_act")) {
     clauses.push(
-      "For a sign-in code, use browser_act fill_code with secret if list_secrets shows the login's authenticatorCode; otherwise request_secret oneTimeCode and fill_code, never chat.",
+      "For a sign-in code, use browser_act fill_code with secret if list_secrets shows the login's authenticatorCode. If the site sent the code to an inbox you can read, yours or the user's connected email, read it there and type it with browser_act; otherwise request_secret oneTimeCode and fill_code, never chat.",
     );
   }
   if (builtinOffered(disabled, "generate_secret")) {
@@ -344,7 +344,7 @@ function toolUsageLine(parts: {
       ? "Use connect_app when an app needs connecting or the user asks to connect one, then wait for them."
       : undefined,
     builtinOffered(disabled, "remember")
-      ? "Use remember for durable facts, even ones the user mentions in passing without asking."
+      ? "Save lasting facts the user mentions about themselves, people they know, their work or decisions with remember in the same turn, even unasked: using a fact in your answer does not keep it. When the user sets an instruction or a state for a period (a pause until they're back, someone away until the 18th, nothing booked before the 20th), save it with until: the last date it holds, or the event that ends it. A detail of one task, such as a code, tracking number or budget, is not worth saving because it ends; save it only when asked. Each entry shows the date it was saved; work out relative dates from that. Remove a temporary entry as soon as the user lifts it or its event happens; dated ones drop out by themselves."
       : undefined,
     scratchpadClause(disabled),
     parts.followUpsOffered ? FOLLOW_UP_INSTRUCTION : undefined,
@@ -480,7 +480,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "archive_bot",
-      "archive_bot safely archives another bot in this space. Use it when the user asks to remove that bot or when it is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
+      "archive_bot safely archives a bot in this space, yourself included. Use it when the user asks to remove a bot, or when another bot is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.",
     ),
     fleetClause(
       parts.offeredFleetTools,

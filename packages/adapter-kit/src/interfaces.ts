@@ -625,11 +625,15 @@ export interface BillingProvider {
    * Credits never count.
    */
   listPlanPayments?(customerId: string, since: Date): Promise<BillingPlanPayment[]>;
-  /** Inspects or fully refunds the card payment for a customer-owned invoice. */
+  /**
+   * Inspects or refunds the card payment for a customer-owned paid invoice, named by its number
+   * or id; without one, the newest paid invoice. Refunds `amountMinor`, or the whole charge.
+   */
   refundInvoice?(
     customerId: string,
-    invoiceNumber: string,
+    invoice: string | undefined,
     confirm: boolean,
+    amountMinor?: number,
   ): Promise<BillingInvoiceRefund | null>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */

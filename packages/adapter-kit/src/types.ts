@@ -1850,10 +1850,18 @@ export interface BillingPlanPayment {
 
 export interface BillingInvoiceRefund {
   invoiceId: string;
+  /** The number on the customer's receipt; null when the provider gave the invoice none. */
+  invoiceNumber: string | null;
+  /** When the invoice was created, as an ISO timestamp. */
+  createdAt: string;
+  /** The id the provider's credit purchases list the invoice's payment under; read on a preview. */
+  creditPurchaseId: string;
   amountMinor: number;
   currency: string;
   state: "refundable" | "pending" | "succeeded";
   refundId?: string;
+  /** What the refund returns, once there is one; it can be less than the charge. */
+  refundedMinor?: number;
 }
 
 export interface BillingCreditCheckoutRequest {

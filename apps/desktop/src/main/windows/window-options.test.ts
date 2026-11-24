@@ -13,10 +13,17 @@ const laptop = { width: 1440, height: 875 };
 
 describe("desktop window chrome", () => {
   it("uses native traffic lights on macOS", () => {
-    const opts = browserWindowOptions("darwin", laptop);
+    const opts = browserWindowOptions("darwin", laptop, "25.5.0");
     expect(opts.frame).toBe(true);
     expect(opts.titleBarStyle).toBe("hiddenInset");
-    expect(opts.trafficLightPosition).toEqual({ x: 16, y: 16 });
+    expect(opts.trafficLightPosition).toEqual({ x: 16, y: 19 });
+  });
+
+  it("moves the narrower pre-26 traffic lights in to stay centered on the rail", () => {
+    expect(browserWindowOptions("darwin", laptop, "24.6.0").trafficLightPosition).toEqual({
+      x: 20,
+      y: 19,
+    });
   });
 
   it("uses the native Windows frame in the app and setup windows", () => {
