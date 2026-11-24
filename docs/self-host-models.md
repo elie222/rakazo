@@ -146,8 +146,9 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 
 ## Claude Code CLI
 
-With a Claude subscription, a server that only you use can run its deployment model through the
-official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
+Claude Pro and Max plans already work on any install through **Sign in with Claude** in
+**Settings → Models** ([model subscriptions](./model-subscriptions.md)). As an alternative, a server
+that only you use can run its deployment model through the official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
 `claude` command installed on the server and reads its reply. Rakazo never reads, stores, forwards
 or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
 conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,
@@ -162,7 +163,9 @@ What it needs:
   with `claude auth login`. On a server without a browser, the CLI can use the token
   `claude setup-token` creates instead: set it as `CLAUDE_CODE_OAUTH_TOKEN` together with
   `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` in the API's and worker's environment. Either way there is
-  no Claude sign-in inside Rakazo.
+  no Claude sign-in inside Rakazo. Prefer the token: with `claude auth login`, the CLI tells the
+  model the signed-in account's email, so bots may repeat it. With the token, the CLI runs with an
+  empty config directory of its own and the email stays out.
 - One account on the server. A Claude sign-in belongs to one person, so Rakazo refuses Claude Code
   runs while the server has more than one account (people who only message bots from chat apps do
   not count) or bills for model usage.

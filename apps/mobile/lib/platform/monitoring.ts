@@ -82,6 +82,15 @@ export function setMobileMonitoringScreen(next: string | undefined): void {
   sdk?.addBreadcrumb({ type: "navigation", category: "navigation", data: { to: screen } });
 }
 
+/** Only the action travels with a report. A share can contain personal files, URLs and text. */
+export function recordMobileShareAction(action: "select" | "close" | "sign_in"): void {
+  sdk?.addBreadcrumb({
+    type: "navigation",
+    category: "navigation",
+    data: { screen: "share", action },
+  });
+}
+
 /** Clear account context synchronously, before a server/session change starts any I/O. */
 export function resetMobileMonitoring(): void {
   generation += 1;

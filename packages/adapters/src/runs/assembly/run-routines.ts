@@ -8,6 +8,7 @@ import {
 } from "@rakazo/adapter-kit";
 import { ROUTINE_WATCH_DEFAULT_MINUTES } from "@rakazo/contracts";
 import {
+  ACTIVE_RUN_STATUSES,
   displayName,
   expandSkillReferencesInPrompt,
   isOneShotRoutineCrons,
@@ -263,12 +264,25 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         ...routineRunModelPin(current),
       });
       if (pending) return { ...pending, coalesced: true };
+      // Check after coalescing: a queued tick can be claimed while the lookup tries to reuse it.
+      // It still owns this timer's work until it finishes or its question is answered and resumed.
+      const activeTick = await tx.run.findFirst({
+        where: {
+          routineId: routine.id,
+          userId: routine.userId,
+          trigger: "routine",
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+          clientNonce: { startsWith: routineTimerNonce(routine.id, "") },
+        },
+        select: { id: true },
+      });
+      if (activeTick) return "skipped" as const;
       // An edit racing an earlier tick can rewind the schedule onto an occurrence that already ran.
       const fired = await tx.run.findUnique({
         where: { spaceId_clientNonce: { spaceId: routine.spaceId, clientNonce: timerNonce } },
         select: { id: true },
       });
-      if (fired) return "fired" as const;
+      if (fired) return "skipped" as const;
     }
     const task = await tx.task.create({
       data: {
@@ -297,7 +311,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     return { ...run, coalesced: false };
   });
   if (!claimed) return;
-  if (claimed === "fired") {
+  if (claimed === "skipped") {
     if (nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
     else if (routine.endsAt) {
       await deleteSpentRoutine(deps, {

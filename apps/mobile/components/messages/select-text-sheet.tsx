@@ -4,7 +4,7 @@ import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { useSheetPadding } from "../../lib/layout/side-insets";
 import { useThemedStyles } from "../../lib/native/native";
-import { NativeActionButton } from "../native/native-action-button";
+import { SheetBar, SheetBarClose } from "../native/sheet-bar";
 
 /** A message as one block of plain text, so a selection can span paragraphs. */
 export function SelectTextSheet({ text, onClose }: { text: string | null; onClose: () => void }) {
@@ -19,9 +19,7 @@ export function SelectTextSheet({ text, onClose }: { text: string | null; onClos
       onRequestClose={onClose}
     >
       <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
-        <View style={styles.header}>
-          <NativeActionButton fill={false} label={t`Done`} onPress={onClose} prominence="primary" />
-        </View>
+        <SheetBar leading={<SheetBarClose label={t`Done`} onPress={onClose} />} />
         <ScrollView contentContainerStyle={styles.content}>
           {Platform.OS === "ios" ? (
             // iOS selectable Text only copies the whole message; a read-only text
@@ -49,7 +47,6 @@ function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
     sheet: { flex: 1, backgroundColor: tokens.background },
-    header: { flexDirection: "row", justifyContent: "flex-end", padding: 16 },
     content: { paddingHorizontal: 20, paddingBottom: 40 },
     text: { color: tokens.foreground, ...typeScale.body },
     iosTextInput: { paddingTop: 0, paddingBottom: 0 },

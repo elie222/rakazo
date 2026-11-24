@@ -236,7 +236,7 @@ export function PluginBrowse({
 
   return (
     <>
-      {presets.length || remoteMatches.length ? (
+      {presets.length ? (
         <div className="my-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {presets.map((preset) => (
             <PluginRow
@@ -245,15 +245,6 @@ export function PluginBrowse({
               description=""
               installed={Boolean(preset.url && addedEndpoints.has(preset.url))}
               onOpen={() => onOpenPreset(preset)}
-            />
-          ))}
-          {remoteMatches.map((server) => (
-            <PluginRow
-              key={server.source}
-              name={server.name}
-              description=""
-              installed={addedEndpoints.has(server.source)}
-              onOpen={() => onOpenMcp(server)}
             />
           ))}
         </div>
@@ -308,7 +299,7 @@ export function PluginBrowse({
       ) : null}
 
       {searchingPublic && publicCatalog.isError && !waitingForPublic ? (
-        <p role="status" className="text-body text-muted-foreground">
+        <p role="status" className="pt-6 text-center text-body text-muted-foreground">
           <Trans>Could not load MCP servers.</Trans>
         </p>
       ) : null}
@@ -321,7 +312,7 @@ export function PluginBrowse({
       !showFeatured &&
       !pluginMatches.length &&
       !brandMatches.length ? (
-        <p className="text-muted-foreground/80" role="status">
+        <p className="pt-6 text-center text-body text-muted-foreground/80" role="status">
           {browsePublic && !searchingPublic ? (
             <Trans>No matches in your current catalogs.</Trans>
           ) : (
@@ -390,22 +381,46 @@ export function PluginBrowse({
             </div>
           ) : null}
 
+          {remoteMatches.length ? (
+            <section data-testid="public-mcp-results" className="mt-8">
+              <SectionHeading as="h2" className="mb-2 px-2.5">
+                <Trans>Public MCP directory</Trans>
+              </SectionHeading>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {remoteMatches.map((server) => {
+                  const host = new URL(server.source).host;
+                  return (
+                    <PluginRow
+                      key={server.source}
+                      name={server.name}
+                      description={host === server.name ? "" : host}
+                      site={server.source}
+                      installed={addedEndpoints.has(server.source)}
+                      onOpen={() => onOpenMcp(server)}
+                    />
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
           {browsePublic && (!searchingPublic || publicCatalog.isError || waitingForPublic) ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={waitingForPublic}
-              onClick={() => {
-                if (searchingPublic) void publicCatalog.refetch();
-                else onSearchPublic(term);
-              }}
-            >
-              {waitingForPublic ? (
-                <Trans>Searching…</Trans>
-              ) : (
-                <Trans>Search public MCP directory for “{term}”</Trans>
-              )}
-            </Button>
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={waitingForPublic}
+                onClick={() => {
+                  if (searchingPublic) void publicCatalog.refetch();
+                  else onSearchPublic(term);
+                }}
+              >
+                {waitingForPublic ? (
+                  <Trans>Searching…</Trans>
+                ) : (
+                  <Trans>Search public MCP directory for “{term}”</Trans>
+                )}
+              </Button>
+            </div>
           ) : null}
         </>
       )}

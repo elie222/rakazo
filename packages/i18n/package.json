@@ -16,6 +16,7 @@
     "./model-provider": "./src/model-provider.ts",
     "./page-review": "./src/page-review.ts",
     "./plugin-catalog": "./src/plugin-catalog.ts",
+    "./routine-approval": "./src/routine-approval.ts",
     "./run-error": "./src/run-error.ts",
     "./search": "./src/search.ts",
     "./thinking-level": "./src/thinking-level.ts",

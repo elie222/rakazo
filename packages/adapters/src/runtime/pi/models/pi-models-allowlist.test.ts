@@ -63,6 +63,7 @@ describe("model provider allowlist in the catalog", () => {
         name: "Concentrate AI",
         baseUrl: "https://api.concentrate.ai/v1",
         publicModels: true,
+        apiProtocol: "responses",
       },
     ]);
   });
