@@ -241,23 +241,23 @@ export function buildApprovalAskBlock(
     };
   }
   const fetchSite = webFetchSite(toolName, args);
-  const scope = options?.batch?.approvalScope;
-  const scopedActions = scope && options.batch && batchActions(options.batch, args).actions;
-  const summary = describeApprovalAction(toolName, args, options?.batch, secrets);
+  const batch = options?.batch;
+  const scope = batch?.approvalScope;
+  const scopedActions = batch && scope ? batchActions(batch, args).actions : [];
+  const scopePreview = scope && [scope.connectionName, ...scopedActions].join("\n");
+  const summary = describeApprovalAction(toolName, args, batch, secrets);
   const detail = formatApprovalDetail(
     toolName,
     args,
     options?.reviewReason,
-    options?.batch,
+    batch,
     secrets,
+    scopePreview,
   );
-  const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
-  const fullScopeShown =
-    !scope ||
-    (redactSecrets(scope.connectionName, secrets) === scope.connectionName &&
-      scopedActions?.every((action) => redactSecrets(action, secrets) === action) &&
-      safeDetail &&
-      safeDetail.length <= MAX_APPROVAL_DETAIL_LENGTH);
+  const safeDetail = detail
+    ? truncate(redactSecrets(detail, secrets), MAX_APPROVAL_DETAIL_LENGTH)
+    : undefined;
+  const fullScopeShown = !scopePreview || safeDetail?.startsWith(scopePreview);
   return {
     kind: "ask",
     approvalEffectId: effectId,
@@ -265,7 +265,7 @@ export function buildApprovalAskBlock(
       redactSecrets(toolName === "create_space" ? `${summary}?` : `Allow ${summary}?`, secrets),
       MAX_APPROVAL_SUMMARY_LENGTH,
     ),
-    detail: safeDetail ? truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH) : undefined,
+    detail: safeDetail,
     ...(fetchSite ? { site: fetchSite } : {}),
     status: "pending",
     actions:
@@ -285,7 +285,7 @@ export function buildApprovalAskBlock(
                 id: "always",
                 label: fetchSite
                   ? `Always allow ${fetchSite}`
-                  : scopedActions && scopedActions.length > 1
+                  : scopedActions.length > 1
                     ? ALWAYS_ALLOW_BATCH_LABEL
                     : "Always allow this tool",
               },
@@ -360,12 +360,12 @@ function formatApprovalDetail(
   reviewReason: string | undefined,
   batch: ToolBatch | undefined,
   secrets: string[],
+  scopePreview?: string,
 ): string | undefined {
-  const lines: string[] = [];
+  const lines: string[] = scopePreview ? [scopePreview] : [];
   if (reviewReason?.trim()) {
     lines.push(reviewReason.trim().replace(/\u2014|\u2013/g, "-"));
   }
-  if (batch?.approvalScope) lines.push(batch.approvalScope.connectionName);
   if (toolName === "create_space") {
     lines.push(
       "Bots, groups, chats, files, memory, and integrations in this space stay separate from other spaces.",
@@ -403,7 +403,7 @@ function formatApprovalDetail(
           key,
           name: raw
             ? batch.approvalScope
-              ? redactSecrets(raw, secrets)
+              ? connectionToolActionLabel(redactSecrets(raw, secrets))
               : readableToolName(redactSecrets(raw, secrets))
             : "…",
           args: entryArgs,
@@ -412,15 +412,12 @@ function formatApprovalDetail(
     }
     // The title already names a lone named action that runs once, so its arguments need no heading.
     // An unnamed entry keeps its "…" heading, so the card shows the action is unknown.
-    const single =
-      !batch.approvalScope &&
-      entries.length === 1 &&
-      entries[0]?.runs === 1 &&
-      entries[0].name !== "…";
+    const single = entries.length === 1 && entries[0]?.runs === 1 && entries[0].name !== "…";
     // Every action and its destinations first, then each action's long text.
     const later: string[] = [];
     for (const { name, args: entryArgs, runs } of entries) {
       const { first, last } = shown(entryArgs);
+      if (scopePreview && runs === 1 && first.length === 0 && last.length === 0) continue;
       lines.push(...(single ? [] : [runs > 1 ? `${name} ×${runs}` : name]), ...first);
       later.push(...last.map((line) => (single ? line : `${name} ${line}`)));
     }

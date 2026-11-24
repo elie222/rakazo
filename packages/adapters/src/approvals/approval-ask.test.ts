@@ -16,25 +16,39 @@ describe("truncate", () => {
 });
 
 describe("buildApprovalAskBlock", () => {
+  const scopedBatch = {
+    items: "calls",
+    action: "path",
+    arguments: "input",
+    acceptsSingle: true,
+    approvalScope: {
+      connectionId: "notes-1",
+      connectionName: "Personal notes",
+      resolve: async () => ({}),
+    },
+  };
+
   it("offers only one-time approval when a scoped batch's paths exceed the preview", () => {
     const calls = Array.from({ length: 16 }, (_, i) => ({
       path: `tools.notes.action${i}${"x".repeat(400)}`,
       input: {},
     }));
     const block = buildApprovalAskBlock("effect", "notes_call", { calls }, [], {
-      batch: {
-        items: "calls",
-        action: "path",
-        arguments: "input",
-        approvalScope: {
-          connectionId: "notes-1",
-          connectionName: "Personal notes",
-          resolve: async () => ({}),
-        },
-      },
+      batch: scopedBatch,
     });
     expect(block).toMatchObject({
       actions: [{ id: "allow" }, { id: "deny" }],
+    });
+  });
+
+  it("offers a saved rule when only the scoped action's input is truncated", () => {
+    const calls = { path: "tools.notes.writeNote", input: { body: "x".repeat(5_000) } };
+    const block = buildApprovalAskBlock("effect", "notes_call", { calls }, [], {
+      batch: scopedBatch,
+    });
+    expect(block).toMatchObject({
+      detail: expect.stringMatching(/^Personal notes\ntools\.notes\.writeNote\n/),
+      actions: [{ id: "allow" }, { id: "always" }, { id: "deny" }],
     });
   });
 

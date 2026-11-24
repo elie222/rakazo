@@ -298,7 +298,7 @@ const approvals: Scenario = {
         approvalEffectId: "scoped-batch",
         text: "Allow Notes rename note, Notes archive note?",
         detail:
-          "Notes Personal\ntools.notes.renameNote\nTitle: Trip notes\ntools.notes.archiveNote",
+          "Notes Personal\ntools.notes.renameNote\ntools.notes.archiveNote\nNotes rename note\nTitle: Trip notes",
         status: "pending",
         actions: [
           { id: "allow", label: "Allow once" },
