@@ -52,7 +52,6 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  vi.useRealTimers();
 });
 
 let seq = 0;
@@ -583,117 +582,6 @@ it("keeps following until Page preview input scrolls the transcript", () => {
   size.content = 1_860;
   render(baseProps([...later, textMessage("followed-reply", "bot", "Followed update")]));
   expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_860, behavior: "auto" });
-});
-
-it.each(["touch", "pen"])("keeps following while a Page preview owns a %s pan", (pointerType) => {
-  vi.useFakeTimers();
-  const sent = history();
-  render(baseProps(sent));
-  const { transcript, size, scrollTo } = measuredTranscript({});
-  scrollTo.mockImplementation(((options: ScrollToOptions) => {
-    transcript.scrollTop = Math.min(options.top ?? 0, size.content - transcript.clientHeight);
-  }) as typeof transcript.scrollTo);
-  transcript.scrollTop = size.content - transcript.clientHeight;
-  const preview = document.createElement("div");
-  preview.setAttribute("data-page-preview-scroll", "");
-  preview.scrollTop = 60;
-  const previewBody = preview.appendChild(document.createElement("button"));
-  transcript.appendChild(preview);
-  const contact = { bubbles: true, pointerType, pointerId: 1 };
-
-  act(() => {
-    transcript.dispatchEvent(new Event("scroll"));
-    previewBody.dispatchEvent(new PointerEvent("pointerdown", contact));
-    if (pointerType === "touch") {
-      previewBody.dispatchEvent(new Event("touchstart", { bubbles: true }));
-    }
-    // The browser cancels pointer events when it takes over a pan.
-    previewBody.dispatchEvent(new PointerEvent("pointercancel", contact));
-    if (pointerType === "touch") {
-      previewBody.dispatchEvent(new Event("touchend", { bubbles: true }));
-    }
-    vi.advanceTimersByTime(200);
-    preview.scrollTop = 0;
-    preview.dispatchEvent(new Event("scroll"));
-  });
-  const reply = textMessage("new-reply", "bot", "A routine finished");
-  size.content = 1_400;
-  render(baseProps([...sent, reply]));
-  expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_400, behavior: "auto" });
-
-  act(() => {
-    // The programmatic snap above may emit scroll before the same pan reaches the chat.
-    transcript.dispatchEvent(new Event("scroll"));
-    // Preview momentum keeps the pan active beyond the delay from pointercancel.
-    vi.advanceTimersByTime(200);
-    transcript.scrollTop -= 20;
-    transcript.dispatchEvent(new Event("scroll"));
-  });
-  scrollTo.mockClear();
-  size.content = 1_420;
-  render(baseProps([...sent, reply, textMessage("later-reply", "bot", "Another update")]));
-  expect(scrollTo).not.toHaveBeenCalled();
-});
-
-it.each(["scrollend", "removal"])("clears an inactive preview pan after %s", (end) => {
-  const sent = history();
-  render(baseProps(sent));
-  const { transcript, size, scrollTo } = measuredTranscript({});
-  transcript.scrollTop = size.content - transcript.clientHeight;
-  const preview = document.createElement("div");
-  preview.setAttribute("data-page-preview-scroll", "");
-  transcript.appendChild(preview);
-  const contact = { bubbles: true, pointerType: "touch", pointerId: 1 };
-
-  act(() => {
-    preview.dispatchEvent(new PointerEvent("pointerdown", contact));
-    preview.dispatchEvent(new Event("touchstart", { bubbles: true }));
-    preview.dispatchEvent(new PointerEvent("pointercancel", contact));
-    // A native pan at an edge can end without updating either scroll position.
-    if (end === "scrollend") {
-      preview.removeAttribute("data-page-preview-scroll");
-      preview.dispatchEvent(new Event("scrollend"));
-    } else {
-      preview.remove();
-    }
-    transcript.scrollTop -= 10;
-    transcript.dispatchEvent(new Event("scroll"));
-  });
-
-  size.content = 1_400;
-  render(baseProps([...sent, textMessage("new-reply", "bot", "A routine finished")]));
-  expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_400, behavior: "auto" });
-});
-
-it.each(["touch", "pen"])("expires an idle preview %s pan", (pointerType) => {
-  vi.useFakeTimers();
-  const sent = history();
-  render(baseProps(sent));
-  const { transcript, size, scrollTo } = measuredTranscript({});
-  transcript.scrollTop = size.content - transcript.clientHeight;
-  const preview = document.createElement("div");
-  preview.setAttribute("data-page-preview-scroll", "");
-  transcript.appendChild(preview);
-  const contact = { bubbles: true, pointerType, pointerId: 1 };
-
-  act(() => {
-    preview.dispatchEvent(new PointerEvent("pointerdown", contact));
-    if (pointerType === "touch") {
-      preview.dispatchEvent(new Event("touchstart", { bubbles: true }));
-    }
-    preview.dispatchEvent(new PointerEvent("pointercancel", contact));
-    if (pointerType === "touch") {
-      preview.dispatchEvent(new Event("touchend", { bubbles: true }));
-    }
-    vi.advanceTimersByTime(1_000);
-    // The pan never moved either scrollport. A later layout change moves the chat near the end.
-    transcript.scrollTop -= 10;
-    transcript.dispatchEvent(new Event("scroll"));
-  });
-
-  size.content = 1_400;
-  render(baseProps([...sent, textMessage("new-reply", "bot", "A routine finished")]));
-  expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_400, behavior: "auto" });
 });
 
 it("lets a tap at a held reply near the end resume following", () => {

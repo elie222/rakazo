@@ -15,7 +15,7 @@ import {
 } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Globe, MoreHorizontal, Search, Users } from "lucide-react";
-import { useDeferredValue, useRef, useState } from "react";
+import { useDeferredValue, useState } from "react";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { pageMutationOptions } from "../../lib/pages/page-actions";
 import { useOpenPage } from "../../lib/pages/pages";
@@ -32,54 +32,6 @@ function PageAudience({ visibility }: { visibility: PageVisibility }) {
       {label}
       <span aria-hidden="true">·</span>
     </>
-  );
-}
-
-function PageActions({
-  page,
-  pinPending,
-  onRename,
-  onTogglePin,
-  onDelete,
-}: {
-  page: PageSummary;
-  pinPending: boolean;
-  onRename: () => void;
-  onTogglePin: () => void;
-  onDelete: () => void;
-}) {
-  const { t } = useLingui();
-  const openPage = useOpenPage();
-  const trigger = useRef<HTMLButtonElement>(null);
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        ref={trigger}
-        aria-label={t`Actions for ${page.title}`}
-        className="me-1 grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-accent"
-      >
-        <MoreHorizontal className="size-4" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuItem onClick={() => openPage(page.id, { opener: trigger.current })}>
-          <Trans>Open</Trans>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onRename}>
-          <Trans>Rename</Trans>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => openPage(page.id, { share: true, opener: trigger.current })}
-        >
-          <Trans>Share</Trans>
-        </DropdownMenuItem>
-        <DropdownMenuItem disabled={pinPending} onClick={onTogglePin}>
-          {page.pinned ? <Trans>Unpin</Trans> : <Trans>Pin</Trans>}
-        </DropdownMenuItem>
-        <DropdownMenuItem variant="destructive" onClick={onDelete}>
-          <Trans>Delete</Trans>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -250,16 +202,37 @@ function OwnerPages({
           </span>
         </button>
       )}
-      <PageActions
-        page={page}
-        pinPending={pin.isPending}
-        onRename={() => setRenaming({ id: page.id, draft: page.title })}
-        onTogglePin={() => {
-          rename.reset();
-          pin.mutate({ pageId: page.id, pinned: !page.pinned });
-        }}
-        onDelete={() => setDeleting(page)}
-      />
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={t`Actions for ${page.title}`}
+          className="me-1 grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-accent"
+        >
+          <MoreHorizontal className="size-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-44">
+          <DropdownMenuItem onClick={() => openPage(page.id)}>
+            <Trans>Open</Trans>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setRenaming({ id: page.id, draft: page.title })}>
+            <Trans>Rename</Trans>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => openPage(page.id, { share: true })}>
+            <Trans>Share</Trans>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={pin.isPending}
+            onClick={() => {
+              rename.reset();
+              pin.mutate({ pageId: page.id, pinned: !page.pinned });
+            }}
+          >
+            {page.pinned ? <Trans>Unpin</Trans> : <Trans>Pin</Trans>}
+          </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onClick={() => setDeleting(page)}>
+            <Trans>Delete</Trans>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </li>
   );
   const deleteDialog = deleting ? (

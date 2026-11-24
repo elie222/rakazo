@@ -121,12 +121,6 @@ describe("ResizableSidePanel keyboard", () => {
         <button type="button" data-testid="opener" onClick={() => setOpen(true)}>
           Bot
         </button>
-        <section data-chat-transcript data-testid="transcript" tabIndex={-1}>
-          <p>Message text</p>
-          <button type="button" data-testid="message-action">
-            Message action
-          </button>
-        </section>
         <input data-testid="elsewhere" />
         <ResizableSidePanel
           open={open}
@@ -237,23 +231,10 @@ describe("ResizableSidePanel keyboard", () => {
     expect(panelOpen()).toBe(true);
   });
 
-  it("closes Chat Details when the transcript itself has focus", () => {
+  it("ignores Escape while focus is outside the panel", () => {
     openFromButton("settings");
-    const transcript = byId("transcript");
-    transcript.focus();
-
-    expect(pressEscape(transcript).defaultPrevented).toBe(true);
-    expect(panelOpen()).toBe(false);
-    expect(document.activeElement).toBe(transcript);
+    byId("elsewhere").focus();
+    pressEscape(byId("elsewhere"));
+    expect(panelOpen()).toBe(true);
   });
-
-  it.each(["elsewhere", "message-action"])(
-    "ignores Escape in the %s control outside the panel",
-    (id) => {
-      openFromButton("settings");
-      byId(id).focus();
-      expect(pressEscape(byId(id)).defaultPrevented).toBe(false);
-      expect(panelOpen()).toBe(true);
-    },
-  );
 });

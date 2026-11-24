@@ -263,19 +263,6 @@ test("a long Page scrolls in its chat card and opens from the preview", async ({
   await view.getByRole("button", { name: "Close page" }).click();
   await expect(view).toBeHidden();
   await expect(preview).toBeFocused();
-
-  await page.setViewportSize({ width: 400, height: 860 });
-  await openBotPanel(page);
-  const sidePanel = page.getByTestId("side-panel");
-  await expect(page.locator('[data-space-switch="main"]')).toHaveAttribute("inert", "");
-  const actions = sidePanel.getByRole("button", { name: `Actions for ${title}` });
-  await actions.press("Enter");
-  await page.getByRole("menuitem", { name: "Open", exact: true }).press("Enter");
-  await expect(view).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(view).toBeHidden();
-  await expect(actions).toBeFocused();
-  expect(await actions.evaluate((button) => button.matches(":focus-visible"))).toBe(true);
 });
 
 test("a Page preview grows when an absolute item overflows the document body", async ({ page }) => {

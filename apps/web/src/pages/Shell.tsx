@@ -195,7 +195,7 @@ function SpaceShell() {
   const isMobileSidebar = useIsMobile();
   const [panelCoversChat, setPanelCoversChat] = useState(false);
   const [panelOverlays, setPanelOverlays] = useState(false);
-  const pages = usePagesForChat(thread.messageScroll);
+  const pages = usePagesForChat();
   const sidebar = useSidebarView({
     userId,
     isMobile: isMobileSidebar,

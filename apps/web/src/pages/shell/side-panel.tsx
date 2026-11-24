@@ -4,7 +4,6 @@ import { Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
 import { PagesList } from "../../components/pages/PagesList";
-import { usePageSession } from "../../lib/pages/pages";
 import type { createSpaceRpc } from "../../lib/query/rpc";
 import { RoutineEditor } from "../routines/RoutineEditor";
 import type { RoutineList } from "../routines/RoutineList";
@@ -64,7 +63,6 @@ export function ShellSidePanel({
   onOverlays: (overlays: boolean) => void;
 }) {
   const { t } = useLingui();
-  const focusRef = usePageSession()?.sidePanelRef;
   const open = Boolean(panel && (active || activeGroup));
   const botView = panel === "routines" || panel === "pages" || panel === "settings" ? panel : null;
 
@@ -82,7 +80,6 @@ export function ShellSidePanel({
     <ResizableSidePanel
       open={open}
       panel={panel ?? "closed"}
-      focusRef={focusRef}
       onCoversChat={onCoversChat}
       onOverlays={onOverlays}
       onEscape={panel === "settings" && !computerOpen ? () => setPanel(null) : undefined}

@@ -2,10 +2,8 @@ import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock, PageSectionAnchor } from "@rakazo/contracts";
 import { PAGE_RUNTIME_PATH, pageReply, pageReplyText, pageViewerDocument } from "@rakazo/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { RefObject } from "react";
 import {
   createContext,
-  createRef,
   useCallback,
   useContext,
   useMemo,
@@ -122,61 +120,29 @@ export function usePageDocument(
 
 type Dock = { node: HTMLElement | null; page: { id: string; title: string } | null };
 
-function isVisibleInTranscript(element: HTMLElement, transcript: HTMLElement) {
-  const item = element.getBoundingClientRect();
-  const viewport = transcript.getBoundingClientRect();
-  return (
-    item.width > 0 &&
-    item.height > 0 &&
-    item.bottom > viewport.top &&
-    item.top < viewport.bottom &&
-    item.right > viewport.left &&
-    item.left < viewport.right
-  );
-}
-
-function focusWithoutScroll(target: HTMLElement | null | undefined, focusVisible?: boolean) {
-  if (!target?.isConnected) return false;
-  target.focus({ preventScroll: true, focusVisible } as FocusOptions);
-  return target.ownerDocument.activeElement === target;
-}
-
 /**
  * One chat's open-page state: what opened the page (for focus), a Share asked for with it, and
  * where the composer docks. Shared by the shell, the open page and the composer through context.
  */
-export function createPageSession(
-  transcriptRef?: RefObject<HTMLElement | null>,
-  sidePanelRef = createRef<HTMLElement>(),
-) {
+export function createPageSession() {
   let opener: { element: HTMLElement; ring: boolean } | null = null;
   let shareRequest: string | null = null;
   let dock: Dock = { node: null, page: null };
   const dockListeners = new Set<() => void>();
   const replyListeners = new Set<(text: string) => void>();
   return {
-    sidePanelRef,
-    rememberOpener(trigger?: HTMLElement | null) {
-      const focused = document.activeElement;
-      const element = trigger ?? focused;
+    rememberOpener() {
+      const element = document.activeElement;
       opener =
         element instanceof HTMLElement
-          ? { element, ring: focused?.matches(":focus-visible") ?? false }
+          ? { element, ring: element.matches(":focus-visible") }
           : null;
     },
-    /** Restore focus at the reader's current scroll position. */
+    /** Focus goes back to what opened the page, with a ring only if it had one. */
     restoreFocus() {
-      const transcript = transcriptRef?.current;
-      if (
-        opener &&
-        (!transcript?.contains(opener.element) ||
-          isVisibleInTranscript(opener.element, transcript)) &&
-        focusWithoutScroll(opener.element, opener.ring)
-      )
-        return false;
-      if (focusWithoutScroll(transcript, opener?.ring)) return false;
-      // An open side panel can make the chat inert, and its menu item may have unmounted.
-      return !focusWithoutScroll(sidePanelRef.current, opener?.ring);
+      if (!opener?.element.isConnected) return true;
+      opener.element.focus({ focusVisible: opener.ring } as FocusOptions);
+      return false;
     },
     askShare(pageId: string | null) {
       shareRequest = pageId;
@@ -229,10 +195,7 @@ export function createPageSession(
 }
 export type PageSession = ReturnType<typeof createPageSession>;
 
-type OpenPage = (
-  pageId: string,
-  options?: { share?: boolean; opener?: HTMLElement | null },
-) => void;
+type OpenPage = (pageId: string, options?: { share?: boolean }) => void;
 type Pages = { open: OpenPage; session: PageSession };
 
 const PagesContext = createContext<Pages | null>(null);
@@ -250,8 +213,8 @@ export function usePageSession(): PageSession | null {
 }
 
 /** Opens a page by URL, remembering what opened it so focus can go back there. */
-export function usePagesForChat(transcriptRef: RefObject<HTMLElement | null>): Pages {
-  const [session] = useState(() => createPageSession(transcriptRef));
+export function usePagesForChat(): Pages {
+  const [session] = useState(createPageSession);
   const [, setSearchParams] = useSearchParams();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
@@ -260,7 +223,7 @@ export function usePagesForChat(transcriptRef: RefObject<HTMLElement | null>): P
       // A page known to be deleted (its card says so) opens nothing, from a card or a link chip.
       const known = queryClient.getQueryState(queries.pages.get.queryKey({ input: { pageId } }));
       if (errorCode(known?.error) === "NOT_FOUND") return;
-      session.rememberOpener(options?.opener);
+      session.rememberOpener();
       session.askShare(options?.share ? pageId : null);
       setSearchParams((current) => {
         const next = new URLSearchParams(current);
