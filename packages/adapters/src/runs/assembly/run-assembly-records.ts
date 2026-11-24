@@ -230,6 +230,11 @@ export async function loadRunRecords(
             earlierResults: historyReach === "recent" ? ROUTINE_EARLIER_RESULTS : 0,
           }
         : undefined,
+      // A webhook run answers the delivery that started it (or the last of its batch), not a
+      // newer one that arrived while it waited on an approval.
+      run.trigger === "webhook" && run.sourceMessageId
+        ? { sourceMessageId: run.sourceMessageId }
+        : undefined,
     ),
     run.trigger === "bot_message"
       ? loadBotMessageContext(deps.prisma, run.sourceMessageId)

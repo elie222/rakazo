@@ -269,6 +269,67 @@ describePostgres("what a run reads of its thread (PostgreSQL)", () => {
     }
   });
 
+  it("keeps a later delivery out of a run answering an earlier one", async () => {
+    const task = await system.task.create({
+      data: { spaceId, botId, threadId, userId, prompt: "fixture", status: "running" },
+    });
+    const deliveryRun = async () =>
+      (
+        await system.run.create({
+          data: {
+            spaceId,
+            botId,
+            threadId,
+            taskId: task.id,
+            userId,
+            status: "running",
+            trigger: "webhook",
+          },
+        })
+      ).id;
+    const first = await deliveryRun();
+    const second = await deliveryRun();
+    const posted: string[] = [];
+    const post = async (role: "user" | "bot", text: string, run?: string) => {
+      const { id } = await createThreadMessage(system, {
+        threadId,
+        role,
+        blocks: [{ kind: "text", text }],
+        botId,
+      });
+      if (run) await system.message.update({ where: { id }, data: { runId: run } });
+      posted.push(id);
+      return id;
+    };
+    // The second delivery arrives while the first run works, so it is held under that run's id
+    // for display, then gets a run of its own once the first one pauses on an approval.
+    const firstDelivery = await post("user", "Bug: the grid sits too far out");
+    const firstAsk = await post("bot", "Allow the fetch?", first);
+    const secondDelivery = await post("user", "Bug: the composer looks weird", first);
+    const secondAsk = await post("bot", "Allow the fetch?", second);
+    const firstAnswer = await post("bot", "Triage for the grid", first);
+    try {
+      const read = (
+        await runAsTenant({ spaceId, userId }, () =>
+          loadRunHistoryMessages(
+            prisma,
+            { id: first, threadId, botId, userId },
+            100,
+            undefined,
+            undefined,
+            { sourceMessageId: firstDelivery },
+          ),
+        )
+      ).map((message) => message.id);
+      expect(read).toEqual(expect.arrayContaining([firstDelivery, firstAsk, firstAnswer]));
+      expect(read).not.toContain(secondDelivery);
+      expect(read).not.toContain(secondAsk);
+    } finally {
+      await system.message.deleteMany({ where: { id: { in: posted } } });
+      await system.run.deleteMany({ where: { id: { in: [first, second] } } });
+    }
+  });
+
   it("gives a run that does not know its channel only its waking message and own replies", async () => {
     expect(await history({ sourceMessageId: ids.lostMarker })).toEqual(
       [ids.lostMarker, ids.ownReply].sort(),
