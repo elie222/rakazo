@@ -586,6 +586,20 @@ describe("run tool selection", () => {
     ).toHaveProperty("screenshot");
   });
 
+  it("keeps file attachments available when the bot cannot observe its screen", () => {
+    const tools = selectBuiltinToolsForRun({
+      graphicalToolsAllowed: true,
+      computerScreenshotAllowed: true,
+      groupId: null,
+      trigger: "user",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+      disabledBuiltinTools: ["computer_observe"],
+    });
+    const attachment = tools.find((tool) => tool.name === "attach_file");
+    expect(attachment?.inputSchema.required).toEqual(["path"]);
+  });
+
   it("offers schedule creation to routine-triggered runs", () => {
     expect(toolNames("routine")).toContain("schedule_create");
     expect(toolNames("routine")).toContain("task_catalog");

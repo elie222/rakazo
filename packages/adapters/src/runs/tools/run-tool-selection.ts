@@ -204,6 +204,7 @@ export function selectBuiltinToolsForRun(options: {
   const emailMailbox = Boolean(options.emailInbox) || emailClaimOffered;
   const screenshotAllowed =
     options.computerScreenshotAllowed &&
+    !disabled.has("computer_observe") &&
     options.trigger !== BACKGROUND_HELPER_TRIGGER &&
     !isBackgroundRunTrigger(options.trigger);
   const builtins = builtinAgentTools.map((tool) => {

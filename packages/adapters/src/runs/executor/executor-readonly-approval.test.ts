@@ -5868,6 +5868,19 @@ it("refuses a screenshot requested by another bot in Never ask mode", async () =
   expect(f.pauseRunForInput).not.toHaveBeenCalled();
 });
 
+it("refuses to attach a screenshot when a Space rule blocks observing the screen", async () => {
+  const f = fixture({
+    name: "attach_file",
+    builtin: true,
+    browser: new FakeBrowserProvider(),
+    artifacts: new LocalArtifactStore("unused"),
+    rules: [{ effect: "deny", matchKind: "tool", matchValue: "computer_observe" }],
+  });
+  f.setCalls([{ args: { screenshot: true }, executionId: "call-1" }]);
+  await f.run();
+  expect(f.results).toEqual([{ error: expect.stringContaining("blocked in this space") }]);
+});
+
 it("does not blame the webhook on cards every run shows", async () => {
   const space = fixture({ name: "create_space", builtin: true, trigger: "webhook" });
   space.setCalls([{ args: { name: "Relay" }, executionId: "call-1" }]);

@@ -146,7 +146,10 @@ export async function gateToolCall(
   const batch = connectorTool?.batch ? batchActions(connectorTool.batch, args) : undefined;
   const unidentifiedAction = Boolean(batch && !batch.complete);
   const approvalName = connectorCall.route?.connectionId ? connectorCall.route.toolName : name;
-  const approvalToolNames = batch?.actions.length ? batch.actions : [approvalName];
+  const attachesScreenshot = name === "attach_file" && args.screenshot === true;
+  const approvalToolNames = batch?.actions.length
+    ? batch.actions
+    : [approvalName, ...(attachesScreenshot ? ["computer_observe"] : [])];
   // Search and load return a list or a schema. They never call the connector.
   const catalogControlRead =
     !connectorCall.route?.connectionId &&
@@ -325,8 +328,7 @@ export async function gateToolCall(
     (unattendedWatch || scheduleNamesNewSite || routineAddsEvents || ignoresAllowRules) &&
     !toolRequiresApproval(name, viaConnector);
   // Outside requests for a live screen or an agent connection require an approval mode that can review them.
-  const outsideScreenshot =
-    name === "attach_file" && args.screenshot === true && request.heldForApproval;
+  const outsideScreenshot = attachesScreenshot && request.heldForApproval;
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
