@@ -54,6 +54,9 @@ export function ExternalConversationSettings({
   const [policies, setPolicies] = useState<AutomatedSenderPolicies>(
     conversation.automatedSenderPolicies,
   );
+  // What each sender's hours field shows while it is being edited, so it can be
+  // cleared and retyped; the field shows the policy again once it loses focus.
+  const [hoursDrafts, setHoursDrafts] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const save = useSave({
     save: ({ policy }: { policy: ExternalConversationPolicy; json: string }, client) =>
@@ -211,12 +214,16 @@ export function ExternalConversationSettings({
                         type="number"
                         min={1}
                         max={720}
-                        value={policy.rollupHours ?? 6}
-                        onChange={(event) =>
+                        value={hoursDrafts[sender.id] ?? policy.rollupHours ?? 6}
+                        onChange={(event) => {
+                          const { value } = event.target;
+                          setHoursDrafts((current) => ({ ...current, [sender.id]: value }));
+                          if (value.trim() === "" || !Number.isFinite(Number(value))) return;
                           updatePolicies((current) =>
-                            withRollupHours(current, sender, Number(event.target.value)),
-                          )
-                        }
+                            withRollupHours(current, sender, Number(value)),
+                          );
+                        }}
+                        onBlur={() => setHoursDrafts(({ [sender.id]: _, ...rest }) => rest)}
                         size="sm"
                         className="w-16 px-2 text-end"
                       />

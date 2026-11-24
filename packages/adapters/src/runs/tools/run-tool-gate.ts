@@ -1,25 +1,19 @@
-import type {
-  AdapterContext,
-  AgentToolExecutionObserver,
-  AutoReviewRequest,
-  ConnectorCall,
-} from "@rakazo/adapter-kit";
+import type { AgentToolExecutionObserver, ConnectorCall } from "@rakazo/adapter-kit";
 import {
-  applyJudgeDecision,
   approvalModeFromPreference,
-  BACKGROUND_HELPER_TRIGGER,
+  approvalRuleLabel,
   batchActions,
+  clicksBeforeTyping,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
+  connectorToolApprovalIdentity,
   connectorToolRequiresApproval,
   decisiveActionApprovalRules,
   displayName,
-  HELPER_RESULT_TRIGGER,
-  humanizeToolName,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
+  ownComputerActionNeedsReview,
   planActionGate,
-  redactSecrets,
   repeatsDeniedAction,
   resolveActionApprovalForTools,
   SITE_SENDING_TOOLS,
@@ -29,9 +23,7 @@ import {
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
-import type { AuditEventInput } from "@rakazo/db";
-import { recordAuditEvent, runSecretKind } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
+import { runSecretKind } from "@rakazo/db";
 import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
 import {
   approvalActionName,
@@ -46,15 +38,10 @@ import {
   uncertainEffectResult,
 } from "../../approvals/approval-effect.js";
 import { scheduleApprovalExpiry } from "../../approvals/approval-expiry.js";
-import type { AutoReviewChecker } from "../../approvals/auto-review.js";
 import {
   isAutoReviewCheckerConfigured,
-  redactToolArgsForReview,
   resolveAutoReviewChecker,
 } from "../../approvals/auto-review.js";
-import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js";
-import { reviewWithBackups } from "../../approvals/auto-review-backups.js";
-import { reviewOwnerMessages } from "../../approvals/review-owner-messages.js";
 import { pagePaymentPrecheck, paysWithWallet } from "../../billing/spending-gate.js";
 import { reportBotMessageWait } from "../../messaging/bot-messages.js";
 import { findConnectedModelCredential } from "../../models/model-selection.js";
@@ -67,7 +54,7 @@ import { scheduleRunSecretsExpiry } from "../../secrets/run-secrets-expiry.js";
 import { RAKAZO_DOCS_URLS } from "../../tools/builtin-skills.prompt.js";
 import { CATALOG_LOAD, CATALOG_SEARCH } from "../../tools/lazy-tool-catalog.js";
 import { watchFromTool } from "../../tools/schedule-tools.js";
-import type { RunContext, RunTrust } from "../assembly/run-context.js";
+import type { RunContext } from "../assembly/run-context.js";
 import {
   isRunTainted,
   nextMutatingEffectOccurrence,
@@ -76,7 +63,6 @@ import {
   persistTurnCheckpoint,
 } from "../assembly/run-context.js";
 import { connectorTrustKeys } from "../assembly/run-trust.js";
-import type { ExecutorDeps } from "../executor/executor-deps.js";
 import {
   CATALOG_APPROVAL_TOOL,
   claimEffect,
@@ -86,9 +72,11 @@ import {
 } from "../lifecycle/run-effects.js";
 import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lifecycle.js";
 import { notifyRun } from "../lifecycle/run-notifications.js";
-import { autoReviewCheckerProvider, includedAutoReviewChecker } from "../turn/run-auto-review.js";
 import { refusal } from "../turn/tool-refusal.js";
+import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolRequest } from "./run-tool-request.js";
+import { prepareScheduleUpdateApproval } from "./run-tool-request.js";
+import { reviewToolCall } from "./run-tool-review.js";
 import { BUILTIN_AGENT_TOOL_NAMES, READ_ONLY_AGENT_TOOLS } from "./run-tool-selection.js";
 import { callMediaTool } from "./run-tools-files.js";
 import { callPaidService } from "./run-tools-integrations.js";
@@ -130,22 +118,6 @@ export type ToolHandlers = Record<string, ToolHandler>;
 
 type GateOutcome = { result: unknown; replayed?: true } | { call: ToolCall };
 
-type ToolReview = {
-  name: string;
-  args: Record<string, unknown>;
-  connectorKind: ReturnType<typeof connectorKindFromToolName>;
-  newSite: boolean;
-  savedContextWrite: boolean;
-  fetchUrl: string | undefined;
-  matchingRules: ReturnType<typeof resolveActionApprovalForTools>["matchingRules"];
-  gated: boolean;
-  applied: AppliedEffect | undefined;
-  injectedReview: ExecutorDeps["autoReview"];
-  checker: AutoReviewChecker | null | undefined;
-  reviewSettings: Awaited<ReturnType<RunTrust["loadApprovalModel"]>> | null;
-  memberChecker: boolean;
-};
-
 /**
  * Decide whether a resolved call runs, asks the owner, is reviewed, or is refused, and record
  * the effect it claims. Returns the result to hand back when the call stops here.
@@ -170,7 +142,10 @@ export async function gateToolCall(
   // check look at each action, never the batch tool. An entry naming no action asks.
   const batch = connectorTool?.batch ? batchActions(connectorTool.batch, args) : undefined;
   const unidentifiedAction = Boolean(batch && !batch.complete);
-  const approvalName = connectorCall.route?.connectionId ? connectorCall.route.toolName : name;
+  const { name: approvalName, aliases: approvalAliases } = connectorToolApprovalIdentity(
+    name,
+    connectorCall.route,
+  );
   const approvalToolNames = batch?.actions.length ? batch.actions : [approvalName];
   // Search and load return a list or a schema. They never call the connector.
   const catalogControlRead =
@@ -279,10 +254,47 @@ export async function gateToolCall(
   const savedContextWriteReviewed = await savedContextWriteNeedsReview(name, () =>
     isRunTainted(ctx),
   );
+  // The page a call opens, or types into: opening one sends its whole URL to the site, like a
+  // fetch, and typing sends the text to the site of the page the browser last reported.
+  const opensPage = name === "browser_navigate" || name === "open_path";
+  const pageTarget =
+    name === "open_path"
+      ? args.path
+      : name === "browser_navigate"
+        ? args.url
+        : name === "browser_act" && !ctx.state.pageUrlUncertain && !clicksBeforeTyping(args)
+          ? ctx.state.pageUrl
+          : undefined;
+  const pageUrl = typeof pageTarget === "string" ? normalizedHttpUrl(pageTarget) : undefined;
+  const pageSite = pageUrl ? urlSite(pageUrl) : undefined;
+  const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
+  // Only the approval model reads this, so only Auto looks for outside content here.
+  const ownComputerActionReviewed = await ownComputerActionNeedsReview(name, args, {
+    tainted: async () => mode === "auto" && (await isRunTainted(ctx)),
+    pageSiteGiven: async () =>
+      pageUrl !== undefined &&
+      pageSite !== undefined &&
+      outboundSiteGate({
+        site: pageSite,
+        // A search result's exact URL may be opened, as it may be fetched, but what the bot types
+        // or uploads there goes to a page outside content chose.
+        trusted:
+          (opensPage && ctx.trust.searchResultUrls.has(pageUrl)) ||
+          (await ctx.trust.loadTrustedSites()).has(pageSite),
+        rules: await ctx.trust.loadApprovalRules(),
+      }) === "allow",
+  });
+  // A page opened on a new site is judged on its URL alone, as a fetch is, when the URL is short
+  // enough to show whole; a longer one is judged with the call's other arguments, under their limit.
+  const newPageUrl =
+    ownComputerActionReviewed && opensPage && pageSite && pageUrl!.length <= MAX_FETCH_URL_LENGTH
+      ? pageUrl
+      : undefined;
   // Outside text only ever informs the approval model: these go to it in Auto, and nowhere else.
   const reviewOnly =
     connectorReadGated ||
     savedContextWriteReviewed ||
+    ownComputerActionReviewed ||
     (Boolean(request.settingsChange) && (await isRunTainted(ctx)));
   const { purchase, cardUse, loginUse } = request;
   // Saved logins that ask first require the owner on every use, like saved cards.
@@ -317,7 +329,7 @@ export async function gateToolCall(
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
-      aliases: toolName === approvalName && approvalName !== name ? [name] : undefined,
+      aliases: toolName === approvalName ? approvalAliases : undefined,
       connectorKind:
         toolName === approvalName
           ? connectorKind
@@ -334,7 +346,6 @@ export async function gateToolCall(
       : ignoresAllowRules && resolvedRules.source === "always_allow"
         ? { ...resolvedRules, source: "default" as const }
         : resolvedRules;
-  const mode = approvalModeFromPreference(await ctx.trust.loadAutoReviewPreference());
   const reviewable = mode === "auto" && !mandatoryInAnyRun;
   const injectedReview = reviewable ? deps.autoReview : undefined;
   const reviewSettings = !reviewable || injectedReview ? null : await ctx.trust.loadApprovalModel();
@@ -419,6 +430,13 @@ export async function gateToolCall(
   // Auto Review passing one URL clears that call only; it does not give the run the whole site.
   let passedByReview = false;
   const needsApprovalEarly = plan === "ask" || plan === "judge";
+  // The save validates an allowed edit directly. A call that can produce a card
+  // needs the same validation and its before-values before the effect is stored.
+  if (name === "schedule_update" && needsApprovalEarly && nextApprovedTool !== name) {
+    const refused = await prepareScheduleUpdateApproval(ctx, request);
+    if (refused) return { result: refused };
+    effectRequest = request.effectRequest;
+  }
   // A resumed approval keeps its key even if "Always allow" changed the policy.
   const usesApprovalKey =
     nextApprovedTool || name === "request_secret" || needsApprovalEarly || gated;
@@ -510,9 +528,11 @@ export async function gateToolCall(
       name,
       args,
       connectorKind,
-      newSite: siteGate === "new",
+      newSiteUrl: siteGate === "new" ? fetchUrl : newPageUrl,
       savedContextWrite: savedContextWriteReviewed,
-      fetchUrl,
+      ownComputerAction: ownComputerActionReviewed && !newPageUrl,
+      // Only a page the gate knows this call types into; one that may have changed shows none.
+      pageUrl: name === "browser_act" ? pageUrl : undefined,
       matchingRules: approvalResolved.matchingRules,
       gated,
       applied,
@@ -647,6 +667,9 @@ export async function gateToolCall(
     const early = await call.claimOrReturn("intended");
     if (early !== undefined) return { result: early, replayed: true };
   }
+  // A desktop action or a command can change the page the page browser last reported.
+  if (name === "open_path" || name === "launch_app" || name === "computer_act" || name === "shell")
+    ctx.state.pageUrlUncertain = true;
   // Past the gate: this destination is now one the run was given. A search result's exact
   // URL trusts only that URL, never the rest of its site, and a URL Auto Review passed (judged on
   // what that URL carries) trusts nothing beyond itself: the site's next URL is judged again.
@@ -659,32 +682,10 @@ export async function gateToolCall(
   return { call };
 }
 
-/** A bot's consequential tool call, recorded in its organization's audit log. */
-export async function auditToolCall(
-  ctx: RunContext,
-  tool: string,
-  outcome: "success" | "failure" | "denied",
-  metadata: AuditEventInput["metadata"],
-  recorded: Pick<AuditEventInput, "action" | "actor"> = {
-    action: "tool.call",
-    actor: { type: "bot", id: ctx.bot.id, label: ctx.bot.name },
-  },
-): Promise<void> {
-  await recordAuditEvent({
-    ...recorded,
-    spaceId: ctx.run.spaceId,
-    target: { type: "tool", id: tool, label: humanizeToolName(tool) },
-    outcome,
-    runId: ctx.runId,
-    threadId: ctx.thread.id,
-    metadata,
-  });
-}
-
 function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {
   const labels = decisiveActionApprovalRules(resolved).map((rule) => {
     const value = rule.matchValue.trim().replace(/\s+/g, " ");
-    return JSON.stringify(rule.matchKind === "site" ? value : humanizeToolName(value));
+    return JSON.stringify(approvalRuleLabel({ ...rule, matchValue: value }));
   });
   if (labels.length === 0) return "";
   return ` by the saved ${labels.length === 1 ? "rule" : "rules"} ${labels.join(", ")}`;
@@ -823,177 +824,4 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
     threadId: thread.id,
   });
   return pauseForApproval(ctx);
-}
-
-/**
- * Run the configured reviewer (and its backups) on a call and store its verdict on the
- * effect. Returns nothing when there is no reviewer or the run was cancelled.
- */
-async function reviewToolCall(
-  ctx: RunContext,
-  review: ToolReview,
-): Promise<{ reason: string | undefined; decision: "ask" | "allow" } | undefined> {
-  const { deps, run, runId, bot, thread, context } = ctx;
-  const { name, args, connectorKind, fetchUrl, gated, applied } = review;
-  const { injectedReview, checker, reviewSettings, memberChecker } = review;
-  if (!injectedReview && !checker && !reviewSettings?.backups.length) return;
-  try {
-    const delegated =
-      run.trigger === BACKGROUND_HELPER_TRIGGER || run.trigger === HELPER_RESULT_TRIGGER;
-    // A follow-up's task is a fixed "continue" prompt; the owner's latest words are its message.
-    const continuation = run.trigger === "follow_up" || run.trigger === "messaging";
-    const userTask = delegated
-      ? await ctx.trust.loadOwnerWords()
-      : (continuation && (await ctx.trust.loadOwnerWords()).trim()) || ctx.task.prompt;
-    // Older helpers and deleted origins cannot establish authorization from their brief.
-    if (delegated && !userTask.trim()) return { decision: "ask", reason: undefined };
-    const botDescription = redactSecrets(`${bot.name}\n${bot.description}`, ctx.secrets);
-    // A webhook run's task prompt carries the delivery, which someone else wrote, so the checker
-    // gets only the owner's routine. With no routine to judge against, a person decides.
-    const outsideRun = run.trigger === "webhook";
-    const ownerWords = outsideRun ? await ctx.trust.loadOwnerWords() : "";
-    if (outsideRun && !ownerWords.trim()) return { reason: undefined, decision: "ask" };
-    // A new site, or a memory or skill save after outside content, is judged on the owner's own words only:
-    // the task prompt of a webhook or bot-started run carries text someone else wrote.
-    const ownerWordsOnly = (review.newSite && fetchUrl) || review.savedContextWrite;
-    const reviewArgs =
-      review.newSite && fetchUrl
-        ? { url: redactSecrets(fetchUrl, ctx.secrets) }
-        : redactToolArgsForReview(args, ctx.secrets);
-    const ownerMessages = reviewOwnerMessages(
-      // Extra context only: a failed lookup drops it and never fails the review.
-      (
-        (await bestEffort("auto_review.owner_messages", ctx.trust.loadEarlierOwnerMessages())) ?? []
-      ).map((text) => redactSecrets(text, ctx.secrets)),
-    );
-    const reviewRequest: AutoReviewRequest = {
-      toolName: name,
-      connectorKind,
-      args: reviewArgs,
-      userTask: redactSecrets(
-        outsideRun ? ownerWords : ownerWordsOnly ? await ctx.trust.loadOwnerWords() : userTask,
-        ctx.secrets,
-      ),
-      botDescription,
-      matchingRules: review.matchingRules,
-      ...(review.newSite && fetchUrl ? { newSite: true } : {}),
-      ...(review.savedContextWrite ? { savedContextWrite: true } : {}),
-      ...(ownerMessages.length ? { ownerMessages } : {}),
-    };
-    const reviewContext: AdapterContext = {
-      operationId: `auto-review:${runId}`,
-      traceId: `auto-review:${runId}`,
-      spaceId: run.spaceId,
-      userId: run.userId,
-      botId: bot.id,
-      runId,
-      signal: context.signal,
-    };
-    const checkerProvider = (candidate: AutoReviewCandidate) =>
-      autoReviewCheckerProvider(
-        deps,
-        {
-          runId,
-          spaceId: run.spaceId,
-          userId: run.userId,
-          botId: bot.id,
-          threadId: thread.id,
-        },
-        {
-          injectedReview,
-          memberChecker: candidate.role !== "default",
-          registerSecrets: (values) => ctx.secrets.push(...values),
-        },
-        candidate,
-      );
-    // The fallback is extra: failing to look it up must not keep the chosen checkers from running.
-    const included = injectedReview
-      ? null
-      : await bestEffort("auto_review.included_checker", includedAutoReviewChecker(deps));
-    const includedIsPrimary =
-      included &&
-      checker &&
-      !memberChecker &&
-      checker.provider === included.provider &&
-      checker.model === included.model &&
-      !checker.credentialId &&
-      !checker.creditOfferingId;
-    const judge = await reviewWithBackups(
-      [
-        ...(checker
-          ? [{ ...checker, role: memberChecker ? ("member" as const) : ("default" as const) }]
-          : injectedReview
-            ? [{ provider: "injected", model: "injected", role: "default" as const }]
-            : []),
-        ...(reviewSettings?.backups.map((choice) => ({
-          provider: choice.provider,
-          model: choice.modelId,
-          thinkingLevel: choice.thinkingLevel,
-          credentialId: choice.credentialId,
-          creditOfferingId: choice.creditOfferingId,
-          role: "backup" as const,
-        })) ?? []),
-        // A member's unusable choice falls back to the deployment's included reviewer.
-        ...(included && !includedIsPrimary ? [{ ...included, role: "default" as const }] : []),
-      ],
-      async (checker) => {
-        const provider = await checkerProvider(checker);
-        return provider.review(reviewRequest, reviewContext);
-      },
-      context.signal,
-    );
-    if (context.signal.aborted) return;
-    const verdict = {
-      reason: judge.reason,
-      decision: applyJudgeDecision({ decision: judge.decision, consequential: gated }),
-    };
-    if (applied) {
-      await deps.prisma.externalEffect.update({
-        where: { id: applied.effect.id },
-        data: {
-          reviewDecision: judge.decision,
-          reviewReason: judge.reason,
-          reviewModel: judge.model,
-        },
-      });
-    }
-    await auditAutoReview(ctx, name, applied, judge.decision, judge.model);
-    return verdict;
-  } catch {
-    // Cancellation must not write a review the next attempt would reuse.
-    if (context.signal.aborted) return;
-    // Auth/refresh failures must fail closed like a checker error, not fail the run.
-    const reviewReason = "Checker could not authenticate.";
-    const verdict = {
-      reason: reviewReason,
-      decision: applyJudgeDecision({ decision: "error", consequential: gated }),
-    };
-    const reviewModel = checker
-      ? `${checker.provider}/${checker.model}`
-      : (injectedReview?.describe().id ?? "auto-review");
-    if (applied) {
-      await deps.prisma.externalEffect.update({
-        where: { id: applied.effect.id },
-        data: { reviewDecision: "error", reviewReason, reviewModel },
-      });
-    }
-    await auditAutoReview(ctx, name, applied, "error", reviewModel);
-    return verdict;
-  }
-}
-
-function auditAutoReview(
-  ctx: RunContext,
-  tool: string,
-  applied: AppliedEffect | undefined,
-  decision: string,
-  model: string | undefined,
-): Promise<void> {
-  return auditToolCall(
-    ctx,
-    tool,
-    decision === "error" ? "failure" : "success",
-    { effectId: applied?.effect.id, decision },
-    { action: "approval.auto_reviewed", actor: { type: "system", label: model } },
-  );
 }

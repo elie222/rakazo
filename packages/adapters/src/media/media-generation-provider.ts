@@ -15,11 +15,18 @@ import { fetchSafeWebBytes } from "../web/web-ssrf.js";
 import { FAKE_VIDEO_BASE64 } from "./fake-media-assets.js";
 
 export const mediaPromptSchema = z.object({ prompt: z.string().trim().min(1).max(4000) });
-export function validateGeneratedMedia(
-  output: GeneratedMedia,
-  mimeType: GeneratedMedia["mimeType"],
-) {
-  if (output.mimeType !== mimeType || !output.bytes.byteLength) {
+/** The image formats a generated image may arrive in; anything else is refused. */
+export const GENERATED_IMAGE_MIME_TYPES: ReadonlySet<string> = new Set<GeneratedMedia["mimeType"]>([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+export function validateGeneratedMedia(output: GeneratedMedia, kind: "image" | "video") {
+  const supported =
+    kind === "video"
+      ? output.mimeType === "video/mp4"
+      : GENERATED_IMAGE_MIME_TYPES.has(output.mimeType);
+  if (!supported || !output.bytes.byteLength) {
     throw new MediaGenerationError("provider_failure");
   }
   if (output.bytes.byteLength > ATTACHMENT_MAX_BYTES) {
@@ -63,10 +70,26 @@ const queueStatus = z.object({
 });
 const fileResult = z.object({ url: z.string().url() });
 
+/**
+ * What a generation from a model an adapter has no price for is assumed to cost, in micro-dollars:
+ * as much as the dearer common models, so the balance is never checked against too little.
+ */
+export const UNKNOWN_MODEL_PRICES = { imageMicros: 200_000, videoMicros: 800_000 };
+
+/** fal's prices at the defaults this adapter requests, in micro-dollars. */
+const FAL_IMAGE_MICROS = new Map([
+  // Billed per megapixel, rounded up; the default 1024x768 is one.
+  ["fal-ai/flux/schnell", 3_000],
+  ["fal-ai/flux/dev", 25_000],
+]);
+// The 65 frames requested, billed at 16 per second and 480p's per-second rate, rounded up.
+const FAL_VIDEO_MICROS = new Map([["fal-ai/wan/v2.2-a14b/text-to-video", 163_000]]);
+
 /** fal queue HTTP protocol; model-specific parameters stay within this adapter. */
 export class FalMediaGenerationProvider implements MediaGenerationProvider {
   readonly id = "fal";
   readonly capabilities;
+  readonly prices;
   private readonly baseUrl: string;
   constructor(
     private readonly options: {
@@ -96,6 +119,12 @@ export class FalMediaGenerationProvider implements MediaGenerationProvider {
       images: Boolean(options.imageModel),
       video: Boolean(options.videoModel),
       offline: false,
+    };
+    this.prices = {
+      imageMicros:
+        FAL_IMAGE_MICROS.get(options.imageModel ?? "") ?? UNKNOWN_MODEL_PRICES.imageMicros,
+      videoMicros:
+        FAL_VIDEO_MICROS.get(options.videoModel ?? "") ?? UNKNOWN_MODEL_PRICES.videoMicros,
     };
   }
   private path(raw: string) {
@@ -201,7 +230,7 @@ export class FalMediaGenerationProvider implements MediaGenerationProvider {
       if (result.contentType?.split(";")[0]?.trim().toLowerCase() !== mimeType)
         throw new MediaGenerationError("provider_failure");
       const output = { bytes: result.body, mimeType } as GeneratedMedia;
-      validateGeneratedMedia(output, mimeType);
+      validateGeneratedMedia(output, video ? "video" : "image");
       return output;
     } catch (error) {
       context.signal.throwIfAborted();
@@ -246,6 +275,7 @@ export class FalMediaGenerationProvider implements MediaGenerationProvider {
 export class FakeMediaGenerationProvider implements MediaGenerationProvider {
   readonly id = "fake";
   readonly capabilities = { images: true, video: true, offline: true };
+  readonly prices = { imageMicros: 0, videoMicros: 0 };
   async generateImage(
     _input: MediaGenerationInput,
     context: AdapterContext,

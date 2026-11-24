@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { avatarIdentitySeed, avatarPhaseMs } from "@rakazo/core";
 import { captureScreenshot } from "../helpers/helpers";
 
 test("photo working avatars show a visible ring while idle avatars stay plain", async ({
@@ -133,24 +134,45 @@ test("organic avatars hold still while idle and stop working motion while offscr
     clock,
   );
 
-  // The working morph joins the running svg clock instead of restarting it, and fades in.
-  const handoff = await avatar.evaluate(async (svg: SVGSVGElement) => {
-    const body = (mode: string) =>
-      svg.querySelector<SVGPathElement>(`.rakazo-mascot-avatar-body-${mode}`)!;
-    const before = svg.getCurrentTime();
-    svg.parentElement!.querySelector("button")!.click();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    return {
-      before,
-      time: svg.getCurrentTime(),
-      start: body("working").querySelector("animate")?.getStartTime(),
-      fading: body("working")
-        .getAnimations()
-        .some((track) => track instanceof CSSTransition && track.transitionProperty === "opacity"),
-    };
-  });
-  expect(handoff.time).toBeGreaterThanOrEqual(handoff.before);
-  expect(handoff.start).toBeLessThan(handoff.before);
+  // The working morph joins the shared avatar clock, so every copy of the bot morphs
+  // together, and fades in.
+  const handoff = await avatar.evaluate(
+    async (svg: SVGSVGElement, phase: number) => {
+      const body = (mode: string) =>
+        svg.querySelector<SVGPathElement>(`.rakazo-mascot-avatar-body-${mode}`)!;
+      const morph = () => body("working").querySelector("animate");
+      // The morph mounts in the same commit as the layout effect that syncs it, so once it
+      // exists it is on the shared clock.
+      const animate = await new Promise<SVGAnimateElement>((resolve) => {
+        const found = () => {
+          const element = morph();
+          if (!element) return;
+          observer.disconnect();
+          resolve(element);
+        };
+        const observer = new MutationObserver(found);
+        observer.observe(svg, { childList: true, subtree: true });
+        svg.parentElement!.querySelector("button")!.click();
+        found();
+      });
+      // Whole milliseconds: the duration comes back as float seconds.
+      const duration = Math.round(animate.getSimpleDuration() * 1000);
+      return {
+        duration,
+        offset: (svg.getCurrentTime() * 1000 - Date.now() - phase) % duration,
+        fading: body("working")
+          .getAnimations()
+          .some(
+            (track) => track instanceof CSSTransition && track.transitionProperty === "opacity",
+          ),
+      };
+    },
+    avatarPhaseMs(avatarIdentitySeed("organic-fixture")),
+  );
+  // How far the morph sits from this bot's point in its loop on the shared clock, either
+  // way round.
+  const drift = Math.abs(handoff.offset);
+  expect(Math.min(drift, handoff.duration - drift)).toBeLessThan(100);
   expect(handoff.fading).toBe(true);
   await expect(avatar).toHaveAttribute("data-working", "true");
   expect(await motion()).toEqual({

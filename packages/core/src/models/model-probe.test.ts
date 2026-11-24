@@ -1,6 +1,60 @@
 import { describe, expect, it, vi } from "vitest";
 import { deferred } from "../primitives/async.test-support.js";
-import { createModelProbe, initialModelProbeState } from "./model-probe.js";
+import {
+  compatibleModelDiscovery,
+  createModelProbe,
+  initialModelProbeState,
+  sameCompatibleModelEndpoint,
+} from "./model-probe.js";
+
+describe("automatic compatible model discovery", () => {
+  const baseUrl = "https://models.example.test/v1";
+  const draft = { baseUrl, apiKey: "", apiProtocol: "chat-completions", headerRows: null } as const;
+  const preset = { name: "Hosted models", baseUrl };
+
+  it("recognizes edits that keep a key on the same normalized endpoint", () => {
+    expect(sameCompatibleModelEndpoint("https://models.example.test", baseUrl + "/")).toBe(true);
+    expect(sameCompatibleModelEndpoint(baseUrl, "https://models.example.test/v2")).toBe(false);
+    expect(sameCompatibleModelEndpoint(baseUrl, "https://")).toBe(false);
+  });
+
+  it("loads a public catalog without sending the typed key", () => {
+    expect(
+      compatibleModelDiscovery({
+        ...draft,
+        apiKey: "fake-key",
+        preset: { ...preset, publicModels: true },
+      }),
+    ).toMatchObject({ baseUrl, apiKey: undefined });
+  });
+
+  it("waits for a hosted key unless the same endpoint already has a saved one", () => {
+    expect(compatibleModelDiscovery({ ...draft, preset })).toBeNull();
+    expect(compatibleModelDiscovery({ ...draft, preset, apiKey: " fake-key " })).toMatchObject({
+      apiKey: "fake-key",
+    });
+    const credential = { id: "fixture", hasKey: true, baseUrl };
+    expect(compatibleModelDiscovery({ ...draft, preset, credential })).toMatchObject({
+      credentialId: "fixture",
+      apiKey: undefined,
+    });
+    expect(
+      compatibleModelDiscovery({
+        ...draft,
+        preset,
+        credential: { ...credential, baseUrl: "https://old.example.test/v1" },
+      }),
+    ).toBeNull();
+  });
+
+  it("probes a keyless custom server once the URL and headers are ready", () => {
+    expect(compatibleModelDiscovery({ ...draft, baseUrl: "https://" })).toBeNull();
+    expect(
+      compatibleModelDiscovery({ ...draft, headerRows: [{ name: "", value: "" }] }),
+    ).toBeNull();
+    expect(compatibleModelDiscovery(draft)).toMatchObject({ baseUrl, apiKey: undefined });
+  });
+});
 
 function setup() {
   const onChange = vi.fn();

@@ -447,6 +447,7 @@ describe("modelCredentialDto", () => {
         plaintext,
       ),
     ).toEqual({
+      preserveModelOrder: true,
       id: "cred-1",
       provider: "openai-compatible",
       label: "Local MLX",
@@ -1004,4 +1005,10 @@ it("requires HTTPS when saving new or inherited headers on public HTTP", () => {
   } finally {
     vi.unstubAllEnvs();
   }
+});
+
+it("exposes the provider ordering capability on credentials", () => {
+  const row = { id: "ordering", provider: "openai-compatible", label: "Local" };
+  expect(modelCredentialDto(row).preserveModelOrder).toBe(true);
+  expect(modelCredentialDto({ ...row, provider: "openai" }).preserveModelOrder).toBeUndefined();
 });

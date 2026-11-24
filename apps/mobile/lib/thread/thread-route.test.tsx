@@ -40,13 +40,13 @@ vi.mock("../api/api", () => ({
   selectedSpaceId: () => state.selected,
 }));
 vi.mock("../spaces/organizations", () => ({ selectSpaceAcrossOrganizations: state.selectSpace }));
-vi.mock("../integrations/integrations-cache", () => ({ integrationsCacheScope: () => null }));
+vi.mock("../api/verified-scope", () => ({ verifiedScope: () => null }));
 vi.mock("../native/native", () => ({ useMobileTokens: () => ({}) }));
 vi.mock("../api/session", () => ({
   currentReadySessionGeneration: () => 1,
   currentSessionGeneration: () => 1,
   subscribeSessionGeneration: () => () => undefined,
-  loadVerifiedIntegrationsScope: async () => ({
+  loadVerifiedScope: async () => ({
     apiBase: "https://app.example.test",
     userId: "user-1",
   }),

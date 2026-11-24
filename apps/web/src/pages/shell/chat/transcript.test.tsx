@@ -202,6 +202,33 @@ it("shares the armed quote action with the pill and replaces quotes on new selec
   expect(props.onQuote).toHaveBeenCalledTimes(3);
 });
 
+it("keeps the quote draft for an Escape another handler consumed", () => {
+  Range.prototype.getBoundingClientRect = () =>
+    ({ top: 100, bottom: 120, left: 100, width: 40 }) as DOMRect;
+  act(() => root.render(<Transcript {...baseProps(history())} />));
+  selectText(container.querySelector('[data-message-id="m2"]')!, "cabins near");
+  const pill = () => document.querySelector("[data-quote-selection]");
+  expect(pill()).not.toBeNull();
+
+  // The phone drawer closing on Escape prevents the default on document.
+  const consume = (event: Event) => event.preventDefault();
+  document.addEventListener("keydown", consume);
+  act(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  document.removeEventListener("keydown", consume);
+  expect(pill()).not.toBeNull();
+
+  act(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(pill()).toBeNull();
+});
+
 it("rejects cleared, outside and composer selections even before selectionchange", () => {
   Range.prototype.getBoundingClientRect = () =>
     ({ top: 100, bottom: 120, left: 100, width: 40 }) as DOMRect;
@@ -498,6 +525,65 @@ it("follows later messages to the end once a reply that fit has finished", () =>
   expect(scrollTo).toHaveBeenLastCalledWith({ top: 5_000, behavior: "auto" });
 });
 
+it("keeps following until Page preview input scrolls the transcript", () => {
+  const sent = history();
+  render(baseProps(sent));
+  const { transcript, size, scrollTo } = measuredTranscript({});
+  transcript.scrollTop = size.content - transcript.clientHeight;
+  const preview = document.createElement("div");
+  preview.setAttribute("data-page-preview-scroll", "");
+  preview.scrollTop = 60;
+  const previewBody = preview.appendChild(document.createElement("span"));
+  transcript.appendChild(preview);
+  const wheel = () => {
+    const event = new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -60 });
+    expect(previewBody.dispatchEvent(event)).toBe(true);
+  };
+
+  act(() => {
+    // Chromium can update the preview's position before delivering the passive wheel event.
+    preview.scrollTop = 0;
+    wheel();
+    preview.dispatchEvent(new Event("scroll"));
+    // An unrelated layout adjustment near the tail must not pick up the consumed wheel.
+    transcript.scrollTop -= 10;
+    transcript.dispatchEvent(new Event("scroll"));
+  });
+  const reply = textMessage("new-reply", "bot", "A routine finished");
+  size.content = 1_400;
+  render(baseProps([...sent, reply]));
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_400, behavior: "auto" });
+
+  act(() => {
+    preview.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+  });
+  const next = textMessage("next-reply", "bot", "A new notification");
+  size.content = 1_800;
+  render(baseProps([...sent, reply, next]));
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_800, behavior: "auto" });
+
+  // At the preview's top the next wheel moves the transcript, even within its near-end band.
+  act(() => {
+    transcript.scrollTop = size.content - transcript.clientHeight;
+    transcript.dispatchEvent(new Event("scroll"));
+    transcript.scrollTop -= 20;
+    wheel();
+    transcript.dispatchEvent(new Event("scroll"));
+  });
+  scrollTo.mockClear();
+  size.content = 1_820;
+  const later = [...sent, reply, next, textMessage("last-reply", "bot", "Another update")];
+  render(baseProps(later));
+  expect(scrollTo).not.toHaveBeenCalled();
+
+  act(() => {
+    transcript.dispatchEvent(new Event("scrollend"));
+  });
+  size.content = 1_860;
+  render(baseProps([...later, textMessage("followed-reply", "bot", "Followed update")]));
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_860, behavior: "auto" });
+});
+
 it("lets a tap at a held reply near the end resume following", () => {
   const sent = history();
   render(baseProps(sent));
@@ -537,4 +623,39 @@ it("holds the new reply, not older history that loads after the send", () => {
     followRequest: 1,
   });
   expect(scrollTo).toHaveBeenLastCalledWith({ top: 900, behavior: "auto" });
+});
+
+function liveRegion() {
+  return container.querySelector('[data-testid="reply-announcement"]')?.textContent ?? "";
+}
+
+it("announces a finished bot reply once, not streaming, history, first load or your own messages", () => {
+  const initial = history();
+  render(baseProps(initial));
+  expect(liveRegion()).toBe("");
+
+  const streaming = [...initial, liveMessage("Checking")];
+  render(baseProps(streaming));
+  render(baseProps([...initial, liveMessage("Checking the dates")]));
+  expect(liveRegion()).toBe("");
+
+  const reply = { ...textMessage("m5", "bot", "**Booked** the cabin for May"), botId: "bot" };
+  const withReply = [...initial, reply];
+  render(baseProps(withReply));
+  expect(liveRegion()).toBe("Atlas: Booked the cabin for May");
+
+  const own = [...withReply, textMessage("m6", "user", "Thanks")];
+  render(baseProps(own));
+  expect(liveRegion()).toBe("Atlas: Booked the cabin for May");
+
+  const earlier = { ...textMessage("m0", "bot", "An older answer"), seq: 0 };
+  render(baseProps([earlier, ...own]));
+  expect(liveRegion()).toBe("Atlas: Booked the cabin for May");
+});
+
+it("announces the first reply in a thread that opened empty", () => {
+  render(baseProps([]));
+  expect(liveRegion()).toBe("");
+  render(baseProps([{ ...textMessage("m1", "bot", "Hello there"), botId: "bot" }]));
+  expect(liveRegion()).toBe("Atlas: Hello there");
 });

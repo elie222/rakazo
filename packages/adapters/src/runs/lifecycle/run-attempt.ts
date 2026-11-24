@@ -42,7 +42,7 @@ import { claimRun, finishRunAttempt, renewRunLease, requeueComputerRun } from ".
 const RUN_HEARTBEAT_MS = 60_000;
 
 /** What createRunExecutor builds once; every run it continues shares these. */
-export interface RunExecutorServices extends Omit<RunProviders, "cloudAgent"> {
+export interface RunExecutorServices extends Omit<RunProviders, "cloudAgent" | "media"> {
   /** The dependencies as they were passed in, before createRunExecutor wraps run finalization. */
   executorDeps: ExecutorDeps;
   contextStrategy: AgentContextStrategy;
@@ -72,6 +72,8 @@ export async function findContinuableRun(
     "bot.id": run.botId,
     "thread.id": run.threadId,
     "space.id": run.spaceId,
+    "run.trigger": run.trigger,
+    ...(run.routineId ? { "routine.id": run.routineId } : {}),
     ...(run.userId ? { "user.id": run.userId } : {}),
   });
   if (isTerminal(run.status as RunStatus)) {
@@ -457,7 +459,7 @@ async function cancelRunOfFormerMember(
     return { seq: event.seq, continuationId };
   });
   if (!cancelled) return true;
-  await deps.events.notify(run.threadId, cancelled.seq).catch(() => undefined);
+  await deps.events.notify(run.threadId, cancelled.seq);
   if (cancelled.continuationId) await wakeRun(deps.jobs, cancelled.continuationId);
   return true;
 }

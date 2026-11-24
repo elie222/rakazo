@@ -17,6 +17,7 @@ export const HE_MESSAGES: Record<string, string> = {
   Redo: "ביצוע מחדש",
   Cut: "גזירה",
   Copy: "העתקה",
+  "Copy Link Address": "העתקת כתובת הקישור",
   Paste: "הדבקה",
   "Paste and Match Style": "הדבקה והתאמת סגנון",
   Delete: "מחיקה",

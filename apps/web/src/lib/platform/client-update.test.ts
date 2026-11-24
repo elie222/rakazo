@@ -97,11 +97,39 @@ describe("client updates", () => {
     expect(deps.reload).toHaveBeenCalledOnce();
   });
 
-  it("reloads a hidden tab as soon as it learns of a newer build", async () => {
-    const { deps, doc, updates } = setup();
+  it("reloads a tab that stays hidden after the web server confirms the newer build", async () => {
+    const build = deferred<string | null>();
+    const servedBuild = vi.fn(() => build.promise);
+    const { deps, doc, updates } = setup({ servedBuild });
     doc.visibilityState = "hidden";
     updates.noteServerBuild(NEW);
+    expect(servedBuild).toHaveBeenCalledOnce();
+    expect(deps.reload).not.toHaveBeenCalled();
+    build.resolve(NEW);
     await flush();
+    expect(deps.reload).toHaveBeenCalledOnce();
+  });
+
+  it("defers the update when the tab becomes visible during the build check", async () => {
+    const build = deferred<string | null>();
+    const servedBuild = vi.fn(async () => NEW as string | null).mockReturnValueOnce(build.promise);
+    const { deps, doc, reply, fire, store, advance } = setup({ servedBuild });
+    doc.visibilityState = "hidden";
+    reply(200, NEW);
+    expect(servedBuild).toHaveBeenCalledOnce();
+
+    doc.visibilityState = "visible";
+    fire("visibilitychange");
+    build.resolve(NEW);
+    await flush();
+    expect(deps.reload).not.toHaveBeenCalled();
+    expect(store.size).toBe(0);
+
+    advance(CLIENT_UPDATE_CHECK_SPACING_MS);
+    doc.visibilityState = "hidden";
+    fire("visibilitychange");
+    await flush();
+    expect(servedBuild).toHaveBeenCalledTimes(2);
     expect(deps.reload).toHaveBeenCalledOnce();
   });
 

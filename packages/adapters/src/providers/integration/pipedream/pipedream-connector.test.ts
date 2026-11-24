@@ -1,5 +1,10 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import { ResponseTooLargeError } from "@rakazo/core";
+import {
+  appToolApprovalKey,
+  connectorToolApprovalIdentity,
+  ResponseTooLargeError,
+  resolveActionApprovalDetail,
+} from "@rakazo/core";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThirdPartyConnectorEmulator } from "../../../integrations/third-party-connector-emulator.js";
@@ -563,6 +568,51 @@ describe("PipedreamConnector", () => {
         },
       },
     ]);
+  });
+
+  it("lists action permissions that apply to resolved catalog calls across accounts", async () => {
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      ...TEST_NETWORK,
+      fetch: pipedreamMcpFetch({
+        gmail: ["send_email", ...appTools("gmail", 20).gmail!],
+        another_mail_app: ["send_email"],
+      }),
+    });
+    const secondAccount = gmailContext("fake-other-ref");
+    const listed = await connector.listAppTools(connectedContext("gmail"), "gmail");
+    const sendEmail = listed.find((tool) => tool.name === "send_email");
+    const key = appToolApprovalKey(sendEmail?.route);
+    expect(listed).toHaveLength(21);
+    expect(key).toBeTruthy();
+
+    const wrapper = (await connector.discoverTools(secondAccount)).at(-1)!;
+    const resolved = await connector.resolveCall(
+      {
+        tool: wrapper.name,
+        route: wrapper.route,
+        args: { id: "gmail:connection-0:send_email", arguments: { text: "Example" } },
+        executionId: "permission-test",
+      },
+      secondAccount,
+    );
+    expect(resolved).toBeDefined();
+    const action = resolved!.tool;
+    const rules = [{ matchKind: "tool", matchValue: key!, effect: "deny" }] as const;
+    const decision = (name: string, route: typeof action.route) => {
+      const identity = connectorToolApprovalIdentity(name, route);
+      return resolveActionApprovalDetail({
+        toolName: identity.name,
+        toolAliases: identity.aliases,
+        rules: [...rules],
+      }).decision;
+    };
+    expect(decision(action.name, action.route)).toBe("deny");
+    const [otherAction] = await connector.listAppTools(
+      connectedContext("another_mail_app"),
+      "another_mail_app",
+    );
+    expect(otherAction).toBeDefined();
+    expect(decision(otherAction!.name, otherAction!.route)).toBe("allow");
   });
 
   it("routes a catalog execute call to the app that owns the tool", async () => {

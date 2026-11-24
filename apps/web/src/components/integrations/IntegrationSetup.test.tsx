@@ -48,20 +48,18 @@ it("does not search on open without a query", async () => {
   expect(api.capabilities.catalogSearch).not.toHaveBeenCalled();
 });
 
-it("searches the public catalog once for a query it opens with", async () => {
+async function searchCatalog(query: string) {
+  const input = host.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, query);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
   await act(async () =>
-    root.render(
-      <StrictMode>
-        <IntegrationSetup initialQuery="canva" />
-      </StrictMode>,
-    ),
+    host
+      .querySelector("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
-  await vi.waitFor(() => expect(host.textContent).toContain("No remote MCP servers found"));
-  expect(host.querySelector("input")?.value).toBe("canva");
-  expect(api.capabilities.catalogSearch.mock.calls).toEqual([
-    [{ query: "canva", usePublicCatalog: true }],
-  ]);
-});
+}
 
 async function connectTracker() {
   api.capabilities.catalogSearch.mockResolvedValue({
@@ -83,7 +81,8 @@ async function connectTracker() {
       },
     ],
   });
-  await act(async () => root.render(<IntegrationSetup botId="bot-1" initialQuery="tracker" />));
+  await act(async () => root.render(<IntegrationSetup botId="bot-1" />));
+  await searchCatalog("tracker");
   await vi.waitFor(() => expect(host.textContent).toContain("Tracker"));
   const connect = [...host.querySelectorAll("button")].find(
     (button) => button.textContent === "Connect" && !button.closest("details"),
@@ -134,6 +133,7 @@ it("does not offer a catalog server that needs a key", async () => {
       },
     ],
   });
-  await act(async () => root.render(<IntegrationSetup initialQuery="keyed" />));
+  await act(async () => root.render(<IntegrationSetup />));
+  await searchCatalog("keyed");
   await vi.waitFor(() => expect(host.textContent).toContain("No remote MCP servers found"));
 });

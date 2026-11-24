@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
+import { SandboxUnavailableError } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
 import { getLogger } from "@rakazo/logging";
 import type { RawExecEvent } from "../../../computers/sandbox/exec-computer.js";
@@ -265,9 +266,11 @@ export class AppleContainerSandboxProvider extends ImageComputerSandbox {
     while (true) {
       if (await this.screenGatewayUp(computer, context)) return;
       if (Date.now() >= deadline) {
-        throw new Error(
-          `VM computer ${name} did not become ready within ${this.readyTimeoutMs} ms`,
-        );
+        throw new SandboxUnavailableError({
+          cause: new Error(
+            `VM computer ${name} did not become ready within ${this.readyTimeoutMs} ms`,
+          ),
+        });
       }
       await sleep(500, undefined, { signal: context.signal });
     }

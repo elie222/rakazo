@@ -5,6 +5,18 @@ import { BROWSER_ACT_KINDS } from "../browser/browser-tools.js";
 export const READ_FILE_MAX_BYTES = 250_000;
 export const READ_FILE_MAX_KB = READ_FILE_MAX_BYTES / 1000;
 
+const SHELL_DESCRIPTION =
+  "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer. Output can arrive while the command is still running; tell the user any one-time code or sign-in URL in that output. A command is stopped after a few minutes, so on Linux or macOS start longer work, such as a coding agent CLI, as its own statement `nohup <command> < /dev/null > <log> 2>&1 &`, never after `&&`, and read the log to follow it.";
+
+/** The shell description, naming the offered tool that opens this bot's screen, if any. */
+export function shellDescription(screenTool: "computer_observe" | "browser_snapshot" | undefined) {
+  if (screenTool === "computer_observe")
+    return `${SHELL_DESCRIPTION} Graphical programs use this bot's own screen: if one can't open a display, call computer_observe to open it, then run the command again without setting DISPLAY.`;
+  if (screenTool === "browser_snapshot")
+    return `${SHELL_DESCRIPTION} Graphical programs use this bot's own screen, which opens with its browser: if one can't open a display, call browser_snapshot, then run the command again without setting DISPLAY.`;
+  return SHELL_DESCRIPTION;
+}
+
 /** Media, computer, browser, file and desktop app tools. */
 export const computerTools: ConnectorTool[] = [
   {
@@ -181,7 +193,7 @@ export const computerTools: ConnectorTool[] = [
   },
   {
     name: "read_file",
-    description: `Read a UTF-8 text file from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open visual or binary files with open_path instead. Long files come back in line ranges; follow nextOffset. Over ${READ_FILE_MAX_KB} KB, use shell.`,
+    description: `Read a UTF-8 text file or an image from this bot's home. On a Team Computer, relative paths use the bot folder and shared/... accesses shared work. Open other binary files with open_path. Long text comes in line ranges; follow nextOffset. Text over ${READ_FILE_MAX_KB} KB: use shell.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -208,7 +220,7 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "attach_file",
     description:
-      "Attach a workspace file from this bot's home to the chat thread as an image or common file. The user sees it; you do not. The file stays in place; users can open it from the message and from the Artifacts tab. For a self-contained HTML page, document, or anything else meant to be viewed on its own — give it name and description: a title and a one-line summary. Skip them for an ordinary attachment like a log file or export. To UPDATE something you already made, call this again with the exact same name — it becomes a new version of that same artifact instead of a separate one; a different name always starts a new artifact.",
+      "Attach a workspace file from this bot's home to the chat thread as an image or common file. The user sees it. The file stays in place; users can open it from the message and from the Artifacts tab. For a self-contained HTML page, document, or anything else meant to be viewed on its own — give it name and description: a title and a one-line summary. Skip them for an ordinary attachment like a log file or export. To UPDATE something you already made, call this again with the exact same name — it becomes a new version of that same artifact instead of a separate one; a different name always starts a new artifact.",
     inputSchema: {
       type: "object",
       properties: {
@@ -221,8 +233,7 @@ export const computerTools: ConnectorTool[] = [
   },
   {
     name: "shell",
-    description:
-      "Run a command inside this bot's computer. cwd defaults to the bot's folder on a Team Computer and the workspace root on a Private Computer. Output can arrive while the command is still running; tell the user any one-time code or sign-in URL in that output. A command is stopped after a few minutes, so on Linux or macOS start longer work, such as a coding agent CLI, as its own statement `nohup <command> < /dev/null > <log> 2>&1 &`, never after `&&`, and read the log to follow it.",
+    description: shellDescription("computer_observe"),
     inputSchema: {
       type: "object",
       properties: {

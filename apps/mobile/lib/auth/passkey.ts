@@ -280,8 +280,9 @@ async function passkeyOfferDue(userId: string): Promise<boolean> {
 }
 
 /** Offers a passkey once after signup with a native alert; either answer ends the offer for good. */
-export async function offerPasskeyOnce(userId: string, isActive: () => boolean): Promise<void> {
-  if (offered.has(userId)) return;
+/** Resolves true when it asked. */
+export async function offerPasskeyOnce(userId: string, isActive: () => boolean): Promise<boolean> {
+  if (offered.has(userId)) return false;
   offered.add(userId);
   let due: boolean;
   try {
@@ -289,12 +290,12 @@ export async function offerPasskeyOnce(userId: string, isActive: () => boolean):
   } catch {
     // A failed check decides nothing, so the next visit to the inbox asks again.
     offered.delete(userId);
-    return;
+    return false;
   }
-  if (!due) return;
+  if (!due) return false;
   if (!isActive()) {
     offered.delete(userId);
-    return;
+    return false;
   }
   const dismiss = () =>
     void SecureStore.setItemAsync(passkeyOfferDismissedKey(userId), "1").catch(() => undefined);
@@ -310,6 +311,7 @@ export async function offerPasskeyOnce(userId: string, isActive: () => boolean):
       },
     },
   ]);
+  return true;
 }
 
 /** Test-only: forget the loaded native module and in-process offer state. */

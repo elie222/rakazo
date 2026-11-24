@@ -34,7 +34,7 @@ function syncInput({
   bot = { status: "idle", threadStatus: "idle" },
 }: {
   inGroup: boolean;
-  get: () => Promise<ThreadSnapshot>;
+  get: (input: unknown, options?: { signal?: AbortSignal }) => Promise<ThreadSnapshot>;
   refreshBots?: () => Promise<void>;
   commitSnapshot: (next: ThreadSnapshot | null) => void;
   bot?: { status: string; threadStatus?: string };
@@ -271,6 +271,39 @@ it("reconciles a shared computer's own grant without reading the screen again", 
   act(() => root.unmount());
 });
 
+it.each([false, true])(
+  "gives the first read no deadline but leaving the chat, in a group: %s",
+  async (inGroup) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const snapshot = {
+      threadId: "thread-1",
+      cursor: 1,
+      messages: [],
+      run: null,
+    } as unknown as ThreadSnapshot;
+    const read = deferred<ThreadSnapshot>();
+    const get = vi.fn((_input: unknown, _options?: { signal?: AbortSignal }) => read.promise);
+    const commitSnapshot = vi.fn();
+    const input = syncInput({ inGroup, get, commitSnapshot });
+    function Probe() {
+      useThreadSync(input);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Probe)));
+    const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+    const loaded = subscription.loadInitial();
+    // A slow link must not cut the read short: only leaving the chat cancels it.
+    expect(get.mock.calls[0]![1]?.signal).toBe(subscription.signal);
+    read.resolve(snapshot);
+    await act(async () => {
+      await expect(loaded).resolves.toBe(snapshot);
+    });
+    expect(commitSnapshot).toHaveBeenCalledWith(snapshot);
+    act(() => root.unmount());
+  },
+);
+
 it("leaves the screen to a caller that reads it itself", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const snapshot = {
@@ -411,6 +444,70 @@ it("anchors Load earlier on the first visible row, not the whole height delta", 
   expect(scroller.scrollTop).toBe(900);
   act(() => root.unmount());
 });
+
+it.each(["history reset", "different bot", "different group", "viewport replacement"])(
+  "skips a queued Load earlier scroll adjustment after %s",
+  async (change) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const frames: FrameRequestCallback[] = [];
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const viewport = (scrollHeight: number) => ({
+      scrollTop: 120,
+      scrollHeight,
+      querySelectorAll: () => [],
+    });
+    const original = viewport(1_000);
+    const replacement = viewport(1_200);
+    const scroll = ref(original as unknown as HTMLDivElement);
+    const inGroup = change === "different group";
+    const target = inGroup ? { groupId: "group-1" } : { botId: "bot-1" };
+    const snapshot = { ...target, threadId: "thread-1", olderCursor: "cursor-1" } as never;
+    const messages = vi.fn(async () => ({ threadId: "thread-1", messages: [], olderCursor: null }));
+    const input = syncInput({
+      inGroup,
+      get: () => new Promise<ThreadSnapshot>(() => {}),
+      commitSnapshot: vi.fn(),
+    });
+    input.rpc = { threads: { get: input.rpc.threads.get, messages } } as never;
+    input.thread = {
+      ...input.thread,
+      snapshot,
+      snapshotRef: ref(snapshot),
+      updateSnapshot: vi.fn(() => {
+        original.scrollHeight += 200;
+      }),
+      messageScroll: scroll,
+    };
+    let controls!: ReturnType<typeof useThreadSync>;
+    function Probe() {
+      controls = useThreadSync(input);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => root.render(createElement(Probe)));
+      await act(async () => void (await controls.loadOlder()));
+      expect(messages).toHaveBeenCalledExactlyOnceWith({ ...target, before: "cursor-1" });
+      expect(input.thread.updateSnapshot).toHaveBeenCalledTimes(1);
+      expect(frames).toHaveLength(1);
+
+      if (change === "history reset") input.thread.historyEpoch.current += 1;
+      if (change === "different bot") input.activeBotId.current = "bot-2";
+      if (change === "different group") input.activeGroupId.current = "group-2";
+      if (change === "viewport replacement")
+        scroll.current = replacement as unknown as HTMLDivElement;
+      act(() => frames[0]!(0));
+      expect(original.scrollTop).toBe(120);
+      expect(replacement.scrollTop).toBe(120);
+    } finally {
+      act(() => root.unmount());
+      raf.mockRestore();
+    }
+  },
+);
 
 it.each([false, true])("snaps a remounted transcript for group=%s", async (inGroup) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -649,6 +746,7 @@ it.each([false, true])(
         refreshThread: sync.refreshThread,
         refreshGroupThread: vi.fn(),
         onUpgrade: vi.fn(),
+        onSendError: vi.fn(),
       });
       return null;
     }

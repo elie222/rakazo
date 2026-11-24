@@ -1,7 +1,11 @@
 import type { ConnectorCatalogItem } from "@rakazo/adapter-kit";
-import { planLiveConnectionSync } from "@rakazo/adapters";
+import {
+  isLazyCatalogControlRoute,
+  planLiveConnectionSync,
+  sanitizeIntegrationError,
+} from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { availableChatApps, isAvailableChatApp } from "@rakazo/core";
+import { appToolApprovalKey, availableChatApps, isAvailableChatApp } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { IsolationError, recordSecurityEvent } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -155,7 +159,10 @@ export function connectionsRoutes(ctx: RouterContext) {
                 });
               }
               return items;
-            } catch {
+            } catch (error) {
+              getLogger().warn(`${provider.describe().id} catalog could not be loaded`, {
+                error: sanitizeIntegrationError(error),
+              });
               return [];
             }
           }),
@@ -243,16 +250,23 @@ export function connectionsRoutes(ctx: RouterContext) {
           const tools = connector.listAppTools
             ? await connector.listAppTools(adapterContext, input.provider)
             : await connector.discoverTools(adapterContext);
-          return tools.map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            readOnly: tool.readOnly,
-          }));
+          return tools
+            .filter((tool) => !tool.batch && !isLazyCatalogControlRoute(tool.route))
+            .map((tool) => ({
+              name: tool.route?.connectionId ? tool.route.toolName : tool.name,
+              description: tool.description,
+              readOnly: tool.readOnly,
+              approvalKey: appToolApprovalKey(tool.route) ?? tool.name,
+            }));
         } catch (error) {
-          getLogger().error("connections.tools failed", error, {
-            connectorId: input.connectorId,
-            provider: input.provider,
-          });
+          const fields = { connectorId: input.connectorId, provider: input.provider };
+          // The client went away before the list came back.
+          if (context.signal?.aborted)
+            getLogger().warn("connections.tools cancelled", {
+              ...fields,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          else getLogger().error("connections.tools failed", error, fields);
           return [];
         }
       }),

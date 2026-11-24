@@ -1,7 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { ComputerStatus } from "@rakazo/contracts";
-import { createScreenReconnects, screenProbeUrl, waitForScreenPage } from "@rakazo/core";
+import {
+  abortableDelay,
+  createScreenReconnects,
+  screenProbeUrl,
+  waitForScreenPage,
+} from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ComputerScreenResult } from "../../../lib/computers/computer-screen";
@@ -30,8 +35,11 @@ const COMPUTER_CACHE_LIMIT = 20;
 const OWN_CONTROL_EVENT_MS = 10_000;
 
 type CachedComputer = { computer: ComputerStatus | null; screenUrl: string | null };
-/** A screen URL beside what the server said of its sign-in, so the two never drift apart. */
-type Screen = Pick<ComputerScreenResult, "url" | "singleUseSignIn">;
+/**
+ * A screen URL beside what the server said of its sign-in, so the two never drift apart, and the
+ * bot it was read for.
+ */
+type Screen = Pick<ComputerScreenResult, "url" | "singleUseSignIn"> & { botId?: string };
 
 /** The computer shown beside the chat or full screen, and its screen. */
 export function useComputerState({
@@ -74,16 +82,24 @@ export function useComputerState({
   );
   const ownAnswers = useRef(new Map<string, number>());
   const [screen, setScreen] = useState<Screen>({ url: null });
-  const screenUrl = screen.url;
   const screenRef = useRef(screen);
   // A caller holding only a URL shows a cached screen or none; the shown URL keeps its sign-in.
-  const setScreenUrl = useCallback(
-    (url: string | null) => setScreen((current) => (current.url === url ? current : { url })),
-    [],
-  );
+  // No URL leaves the owner as it was.
+  const setScreenUrl = useCallback((url: string | null, botId?: string) => {
+    setScreen((current) => {
+      const owner = botId ?? current.botId;
+      if (current.url !== url) return { url, botId: owner };
+      return current.botId === owner ? current : { ...current, botId: owner };
+    });
+  }, []);
   const [screenUrlLoadedBotId, setScreenUrlLoadedBotId] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
   const [computerBotId, setComputerBotId] = useState<string | undefined>();
+  // Switching bots renders once before the new bot's screen is set, and the opened computer's bot
+  // follows the chat only after that render. A frame that mounts on the previous bot's screen can
+  // stay on it, so the panel draws only the chat's own bot and the full view only the bot it opened.
+  const frameBotId = computerOpen ? (computerBotId ?? activeId) : activeId;
+  const screenUrl = screen.botId === frameBotId ? screen.url : null;
   const computerOpenRef = useRef(false);
   const computerBotIdRef = useRef<string | undefined>(undefined);
   const [computerViewport, setComputerViewport] = useState<{
@@ -125,7 +141,6 @@ export function useComputerState({
   const [shownScreen, setShownScreen] = useState<{ botId?: string; url: string | null }>({
     url: null,
   });
-  const frameBotId = computerBotId ?? activeId;
   if (shownScreen.url !== screenUrl || shownScreen.botId !== frameBotId) {
     const before = embeddableScreenUrl(shownScreen.url);
     const after = embeddableScreenUrl(screenUrl);
@@ -310,14 +325,31 @@ export function useComputerState({
             async (signal) =>
               isProxiedScreenUrl(url) ? probeScreenStatus(screenProbeUrl(url), fetch, signal) : 200,
             { signal: stopped.signal },
-          ).then((outcome) => {
+          ).then(async (outcome) => {
             if (outcome === "cancelled") return;
             if (outcome === "timeout") {
               screenRefocus.current.forget();
               setScreenLoadError(fallback);
+              return;
             }
-            // A refusal shows once the new frame's own check runs.
-            else setScreenFrameKey((key) => key + 1);
+            // A refused link is stale (the sign-in rotated or the control lease ended), so read the
+            // screen's current URL instead of remounting this one. A read that never settles falls
+            // back to the remount, so the reconnect is never left waiting on it.
+            const botId = computerBotIdRef.current;
+            if (outcome === "refused" && botId) {
+              const fresh = await Promise.race([
+                refreshComputerScreen(botId),
+                abortableDelay(SCREEN_FRAME_LOAD_TIMEOUT_MS, stopped.signal).then(() => null),
+              ]);
+              if (stopped.signal.aborted) return;
+              // setScreen may keep the current URL despite a different answer, which would
+              // leave this effect running; release the hold so the next drop can reconnect.
+              reconnectPending = false;
+              // A new URL swaps the frame through setScreen, which starts this effect over.
+              if (fresh !== null && fresh !== screenUrl) return;
+            }
+            // A refusal that reads the same link shows once the remounted frame's own check runs.
+            setScreenFrameKey((key) => key + 1);
           });
         }, delay);
         return;
@@ -409,10 +441,10 @@ export function useComputerState({
     setComputerErrorFromScreen(false);
     const cached = computerCacheRef.current.get(botId);
     if (cached) {
-      setScreenUrl(cached.screenUrl);
+      setScreenUrl(cached.screenUrl, botId);
       commitComputer(cached.computer);
     } else {
-      setScreenUrl(null);
+      setScreenUrl(null, botId);
     }
   }
 
@@ -443,8 +475,8 @@ export function useComputerState({
                 current.singleUseSignIn?.screen === answer.singleUseSignIn.screen))
           )
             return current;
-          if (current.url === answer.url) return current;
-          return { url: answer.url, singleUseSignIn: answer.singleUseSignIn };
+          if (current.url === answer.url && current.botId === id) return current;
+          return { url: answer.url, singleUseSignIn: answer.singleUseSignIn, botId: id };
         });
         // A screen read replaces only its own error; a failed boot keeps its error and Retry.
         if (answer.error || computerErrorFromScreenRef.current) {

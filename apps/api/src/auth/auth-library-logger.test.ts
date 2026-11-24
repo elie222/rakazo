@@ -1,7 +1,7 @@
 import type { TestSink } from "@rakazo/logging";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { authLibraryLogger, withAuthLibraryFailures } from "../app.js";
+import { authLibraryLogger, withAuthLibraryFailures } from "./auth-library-failures.js";
 
 let sink: TestSink;
 beforeEach(() => {

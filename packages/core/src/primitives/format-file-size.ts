@@ -21,14 +21,16 @@ export function fileSizeParts(
     unit += 1;
   }
   const amount = locale
-    ? new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(rounded)
+    ? new Intl.NumberFormat(locale, { maximumFractionDigits: 1, useGrouping: false }).format(
+        rounded,
+      )
     : Number.isInteger(rounded)
       ? String(rounded)
       : rounded.toFixed(1);
   return { amount, unit: FILE_SIZE_UNITS[unit] ?? "TB" };
 }
 
-export function formatFileSize(bytes: number): string {
-  const parts = fileSizeParts(bytes);
+export function formatFileSize(bytes: number, locale?: string): string {
+  const parts = fileSizeParts(bytes, locale);
   return parts ? `${parts.amount} ${parts.unit}` : "";
 }

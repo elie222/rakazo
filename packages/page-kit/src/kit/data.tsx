@@ -1,6 +1,8 @@
 import type { CSSProperties, ReactNode } from "react";
 import { isValidElement, useCallback, useContext, useState } from "react";
+import { isPageIcon } from "../icon-names.js";
 import { finite } from "./dataviz.js";
+import { Glyph } from "./icon.js";
 import { Inline } from "./inline.js";
 import { objectItems } from "./items.js";
 import { useWords } from "./labels.js";
@@ -29,6 +31,7 @@ export type Metric = {
   better?: "up" | "down";
   /** A small trend line under the figure. */
   trend?: number[];
+  icon?: string;
 };
 
 function deltaDirection(delta: string | number): 1 | -1 | 0 {
@@ -115,7 +118,10 @@ export function Metrics({ metrics = [] }: { metrics?: Metric[] }) {
           <div className="rk-metric-value" title={textOf(metric.value) || undefined}>
             {metric.value}
           </div>
-          <div className="rk-metric-label">{metric.label}</div>
+          <div className="rk-metric-label">
+            <Glyph name={metric.icon} />
+            {metric.label}
+          </div>
           {finite(metric.delta) || (typeof metric.delta === "string" && metric.delta !== "") ? (
             <div className="rk-metric-detail">
               <Delta delta={metric.delta} better={metric.better} />
@@ -149,7 +155,7 @@ export function Status({ tone, children }: { tone?: Tone; children?: ReactNode }
 
 type StatusLabel = { label: ReactNode; tone?: Tone };
 
-type Property = { label: ReactNode; value: ReactNode };
+type Property = { label: ReactNode; value: ReactNode; icon?: string };
 
 export function Properties({ items = [] }: { items?: Property[] }) {
   const card = useContext(InGrid);
@@ -157,7 +163,10 @@ export function Properties({ items = [] }: { items?: Property[] }) {
     <dl className="rk-properties" data-card={card || undefined}>
       {objectItems(items).map((item, index) => (
         <div className="rk-property" key={index}>
-          <dt>{item.label}</dt>
+          <dt>
+            <Glyph name={item.icon} />
+            {item.label}
+          </dt>
           <dd>{item.value}</dd>
         </div>
       ))}
@@ -171,6 +180,7 @@ export type Row = {
   detail?: ReactNode;
   meta?: ReactNode;
   status?: StatusLabel;
+  icon?: string;
 };
 
 const present = (node: unknown) => node != null && node !== "" && node !== false;
@@ -179,7 +189,7 @@ const present = (node: unknown) => node != null && node !== "" && node !== false
 export function Rows({ rows = [] }: { rows?: Row[] }) {
   const shown = objectItems(rows);
   if (shown.length === 0) return null;
-  const leads = shown.some((row) => present(row.lead));
+  const leads = shown.some((row) => present(row.lead) || isPageIcon(row.icon));
   return (
     <ul className="rk-rows" data-leads={leads || undefined}>
       {shown.map((row, index) => {
@@ -189,7 +199,12 @@ export function Rows({ rows = [] }: { rows?: Row[] }) {
             : undefined;
         return (
           <li className="rk-row" key={index}>
-            {leads ? <span className="rk-row-lead">{row.lead}</span> : null}
+            {leads ? (
+              <span className="rk-row-lead">
+                <Glyph name={row.icon} />
+                {row.lead}
+              </span>
+            ) : null}
             <div className="rk-row-main">
               <div className="rk-row-title">
                 {row.title}
@@ -214,7 +229,7 @@ export function Rows({ rows = [] }: { rows?: Row[] }) {
   );
 }
 
-export type Step = { title: ReactNode; detail?: ReactNode };
+export type Step = { title: ReactNode; detail?: ReactNode; icon?: string };
 
 export function Steps({ steps = [] }: { steps?: Step[] }) {
   return (
@@ -225,7 +240,10 @@ export function Steps({ steps = [] }: { steps?: Step[] }) {
             {index + 1}
           </span>
           <div>
-            <div className="rk-step-title">{step.title}</div>
+            <div className="rk-step-title">
+              <Glyph name={step.icon} />
+              {step.title}
+            </div>
             {step.detail != null && step.detail !== "" ? (
               <div className="rk-step-detail">
                 <Inline>{step.detail}</Inline>
@@ -318,12 +336,19 @@ function cellText(cell: TableCell): string {
 }
 
 /** "$1,200", "-4.5%" and "12k" sort as the numbers they show. */
-function sortKey(cell: TableCell): number | string {
+function sortKey(cell: TableCell, usesDecimalComma: boolean): number | string {
   if (typeof cell === "number") return cell;
   const raw = cellText(cell).trim();
   if (FIGURE.test(raw)) {
     const scale = /k$/i.test(raw) ? 1e3 : /M$/.test(raw) ? 1e6 : /B$/.test(raw) ? 1e9 : 1;
-    const number = Number.parseFloat(raw.replace(/[^\d.\-\u2212]/g, "").replace("\u2212", "-"));
+    const literal = raw.replace(/[^\d,.\-\u2212]/g, "").replace("\u2212", "-");
+    // Keep a lone three-digit group such as "1,234" as thousands; only flip clear decimals.
+    const decimalComma =
+      usesDecimalComma && /^-?(?:\d+,\d{1,2}|\d{1,3}(?:\.\d{3})+,\d+)$/.test(literal);
+    const normalized = decimalComma
+      ? literal.replaceAll(".", "").replace(",", ".")
+      : literal.replaceAll(",", "");
+    const number = Number.parseFloat(normalized);
     if (Number.isFinite(number)) return number * scale;
   }
   return raw.toLowerCase();
@@ -362,6 +387,12 @@ function useScrollEdges(direction: string) {
     [direction],
   );
   return { ref, edges };
+}
+
+function hasColumnHeader(column: ReactNode): boolean {
+  if (Array.isArray(column)) return column.some(hasColumnHeader);
+  if (typeof column === "string") return column.trim() !== "";
+  return column != null && typeof column !== "boolean";
 }
 
 export function Table({
@@ -422,11 +453,15 @@ export function Table({
       row.some((cell) => cellText(cell).toLowerCase().includes(needle)),
     );
   }
-  if (sort) {
-    const direction = sort.descending ? -1 : 1;
+  const activeSort = sortable && sort && hasColumnHeader(heads[sort.column]) ? sort : null;
+  if (activeSort) {
+    const direction = activeSort.descending ? -1 : 1;
+    const usesDecimalComma = new Intl.NumberFormat(words.intl)
+      .formatToParts(1.5)
+      .some(({ type, value }) => type === "decimal" && value === ",");
     shown = [...shown].sort((a, b) => {
-      const x = sortKey(a.row[sort.column]);
-      const y = sortKey(b.row[sort.column]);
+      const x = sortKey(a.row[activeSort.column], usesDecimalComma);
+      const y = sortKey(b.row[activeSort.column], usesDecimalComma);
       if (typeof x === "number" && typeof y === "number") return (x - y) * direction;
       // Figures come before words, and after them when the order is reversed.
       if (typeof x === "number") return -direction;
@@ -477,17 +512,18 @@ export function Table({
               <tr>
                 {indexes.map((index) => {
                   const column = heads[index];
-                  const sorted = sort?.column === index;
+                  const canSort = sortable && hasColumnHeader(column);
+                  const sorted = activeSort?.column === index;
                   return (
                     <th
                       key={index}
                       scope="col"
                       className={aligns[index] ? `rk-align-${aligns[index]}` : undefined}
                       aria-sort={
-                        sorted ? (sort.descending ? "descending" : "ascending") : undefined
+                        sorted ? (activeSort.descending ? "descending" : "ascending") : undefined
                       }
                     >
-                      {sortable ? (
+                      {canSort ? (
                         <button type="button" className="rk-sort" onClick={() => press(index)}>
                           {column}
                           <span
@@ -495,7 +531,7 @@ export function Table({
                             aria-hidden="true"
                             data-on={sorted || undefined}
                           >
-                            {sorted && sort.descending ? "\u2193" : "\u2191"}
+                            {sorted && activeSort.descending ? "\u2193" : "\u2191"}
                           </span>
                         </button>
                       ) : (
@@ -541,7 +577,8 @@ export function Table({
 
 export type SegmentedOption =
   | string
-  | { value: string; label?: ReactNode; count?: number | string };
+  | number
+  | { value: string | number; label?: ReactNode; count?: number | string };
 
 /** More options than this is a list, not tabs; the chosen one is always kept. */
 const SEGMENTED_MAX = 200;
@@ -552,10 +589,11 @@ export function Segmented({
   onChange,
 }: {
   options?: SegmentedOption[];
-  value?: string;
+  value?: string | number;
   onChange?: (value: string) => void;
 }) {
   type Item = { value: string; label: ReactNode; count?: number | string };
+  const current = value === undefined || value === null ? undefined : String(value);
   const items = (Array.isArray(options) ? options : []).flatMap((option): Item[] =>
     typeof option === "string" || typeof option === "number"
       ? [{ value: String(option), label: String(option) }]
@@ -564,7 +602,7 @@ export function Segmented({
         : [],
   );
   const shown = items.slice(0, SEGMENTED_MAX);
-  const chosen = items.findIndex((item) => item.value === value);
+  const chosen = items.findIndex((item) => item.value === current);
   if (chosen >= SEGMENTED_MAX) shown[SEGMENTED_MAX - 1] = items[chosen]!;
   return (
     <fieldset className="rk-segmented">
@@ -572,7 +610,7 @@ export function Segmented({
         <button
           key={item.value}
           type="button"
-          aria-pressed={item.value === value}
+          aria-pressed={item.value === current}
           onClick={() => onChange?.(item.value)}
         >
           <span className="rk-segment">

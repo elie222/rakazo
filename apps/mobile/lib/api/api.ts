@@ -13,10 +13,10 @@ import {
   readBoundedJsonResponse,
   withAbort,
 } from "@rakazo/core";
+import { identityLabels } from "@rakazo/i18n/identity-display";
 import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
 import { followSelectedSpace, selectedSpaceChanged } from "../billing/referral";
-import { identityLabels } from "../bots/identity-display";
 import {
   newMobileAvatarSnapshotRequest,
   rememberMobileAvatarSnapshot,
@@ -24,7 +24,7 @@ import {
 } from "../bots/logo-avatar-activity";
 import { resumeLiveNotifications } from "../notifications/live-notifications";
 import { reportMobileError } from "../platform/monitoring";
-import { promptAiConsent } from "../settings/ai-consent";
+import { promptAiConsent, promptPageRevisionConsent } from "../settings/ai-consent";
 import { clearUnsentSends } from "../thread/send/thread-feedback";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
@@ -33,7 +33,7 @@ import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
-  saveVerifiedIntegrationsScope,
+  saveVerifiedScope,
   sessionOnlyInMemory,
   sessionSaveInProgress,
   snapshotSessionToken,
@@ -683,17 +683,19 @@ async function request(
   const uses = aiDataUsesForProcedure(proc, body);
   const consentContext =
     options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
-  for (const consentTarget of aiConsentTargets(body)) {
+  for (const consentTarget of aiConsentTargets(body, proc)) {
     await ensureAiDataConsent({
       uses,
       status: () =>
         rpc("aiConsent/status", { uses, ...consentTarget }, { requestContext: consentContext }),
-      prompt: promptAiConsent,
+      prompt: consentTarget.pageId ? promptPageRevisionConsent : promptAiConsent,
       allow: (input) =>
         allowPromptedAiConsent(
-          consentTarget.settingsScope
-            ? { ...input, settingsScope: consentTarget.settingsScope }
-            : input,
+          consentTarget.pageId
+            ? { ...input, pageId: consentTarget.pageId }
+            : consentTarget.settingsScope
+              ? { ...input, settingsScope: consentTarget.settingsScope }
+              : input,
           consentContext,
         ),
       coalesceKey: consentContext ? aiConsentCoalesceKey(consentContext) : undefined,
@@ -881,7 +883,7 @@ async function request(
       typeof verifiedUser?.userId === "string" &&
       typeof verifiedUser.spaceId === "string"
     ) {
-      await saveVerifiedIntegrationsScope(requestSessionGeneration, {
+      await saveVerifiedScope(requestSessionGeneration, {
         apiBase: requestApiBase,
         userId: verifiedUser.userId,
         spaceId: requestSpaceId || verifiedUser.spaceId,

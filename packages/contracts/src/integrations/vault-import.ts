@@ -10,6 +10,8 @@ import {
 import { settingsScopeInput } from "../settings-scope.js";
 
 export const VAULT_IMPORT_FILE_LIMIT = 5_000_000;
+/** The most logins one import request sends; a larger file goes in several. */
+export const VAULT_IMPORT_BATCH_LIMIT = 100;
 
 /** One login read from an export file on the person's device. The file itself never leaves it. */
 export const VaultImportRow = z.strictObject({
@@ -21,7 +23,7 @@ export const VaultImportRow = z.strictObject({
 export type VaultImportRow = z.infer<typeof VaultImportRow>;
 
 export const VaultImportInput = settingsScopeInput.extend({
-  rows: z.array(VaultImportRow).min(1).max(VAULT_ITEM_LIMIT),
+  rows: z.array(VaultImportRow).min(1).max(VAULT_IMPORT_BATCH_LIMIT),
 });
 export type VaultImportInput = z.infer<typeof VaultImportInput>;
 
@@ -42,12 +44,40 @@ export const VaultImportResult = z.strictObject({
   /** Each sent row that wasn't saved, by its place in the rows sent. */
   notSaved: z
     .array(z.strictObject({ index: count, reason: VaultImportReason }))
-    .max(VAULT_ITEM_LIMIT),
+    .max(VAULT_IMPORT_BATCH_LIMIT),
 });
 export type VaultImportResult = z.infer<typeof VaultImportResult>;
 
 export function noneSkipped(): VaultImportSkipped {
   return { notHttps: 0, noPassword: 0, duplicate: 0, invalid: 0, limit: 0 };
+}
+
+/**
+ * Sends `rows` through `send` a batch at a time, so no one request runs long, and answers as one
+ * request for all of them would: each row not saved by its place in `rows`. Once the Vault is
+ * full the rest are counted as not fitting without sending them.
+ */
+export async function sendVaultImport(
+  rows: readonly VaultImportRow[],
+  send: (rows: VaultImportRow[]) => Promise<VaultImportResult>,
+): Promise<VaultImportResult> {
+  const merged: VaultImportResult = { added: 0, skipped: noneSkipped(), notSaved: [] };
+  for (let offset = 0; offset < rows.length; offset += VAULT_IMPORT_BATCH_LIMIT) {
+    if (merged.skipped.limit > 0) {
+      for (let index = offset; index < rows.length; index++) {
+        merged.skipped.limit++;
+        merged.notSaved.push({ index, reason: "limit" });
+      }
+      break;
+    }
+    const result = await send(rows.slice(offset, offset + VAULT_IMPORT_BATCH_LIMIT));
+    merged.added += result.added;
+    for (const reason of VaultImportReason.options)
+      merged.skipped[reason] += result.skipped[reason];
+    for (const { index, reason } of result.notSaved)
+      merged.notSaved.push({ index: offset + index, reason });
+  }
+  return merged;
 }
 
 // Common column names, compared without case, spaces or punctuation.

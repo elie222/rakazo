@@ -3,7 +3,7 @@ import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import { catalogItemAccounts, catalogItemKey } from "@rakazo/core";
 import { Button, Input } from "@rakazo/ui-web";
-import { ChevronLeft, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, Plus } from "lucide-react";
 import { ChatAppLink } from "./parts";
 import { ToolPermissions } from "./tool-permissions";
 import type { PluginConnections } from "./use-plugin-connections";
@@ -107,13 +107,11 @@ export function ConnectorDetail({
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
-              aria-label={t`Remove ${row.displayName}`}
-              className="shrink-0 text-muted-foreground hover:text-destructive pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
+              className="shrink-0 px-2.5 text-label text-muted-foreground pointer-fine:opacity-0 pointer-fine:group-focus-within/account:opacity-100 pointer-fine:group-hover/account:opacity-100"
               disabled={pending === row.id || uninstalling}
               onClick={() => void revokeAccount(row, item)}
             >
-              <Trash2 />
+              {pending === row.id ? <Trans>Removing…</Trans> : <Trans>Remove</Trans>}
             </Button>
           </div>
         ))}

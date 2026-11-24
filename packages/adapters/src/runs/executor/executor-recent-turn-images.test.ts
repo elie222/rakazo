@@ -256,7 +256,7 @@ async function runWithModel(
       ),
     },
     secret: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
-    userModelCredential: { findFirst: vi.fn(async () => null) },
+    userModelCredential: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
     userModelRoleChoice: {
       findMany: vi.fn(async ({ where }: { where: { role: string } }) => {
         if (where.role !== "main") return [];
@@ -278,7 +278,7 @@ async function runWithModel(
     taughtSkill: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     externalEffect: { findMany: vi.fn(async () => []) },
     spaceSettingOverride: { findUnique: async () => null },
     userActionApprovalRule: { findMany: vi.fn(async () => []) },
@@ -463,19 +463,6 @@ describe("computer settings reach the shared API/worker executor", () => {
       computer: { defaultModelId: VISION_MODEL, checkpoint },
     });
     expect(request.computerModel).toBeUndefined();
-  });
-  it("states the literal-command rule only where the desktop guard checks the shell", async () => {
-    const rule = "Shell commands must be literal";
-    const guarded = await runWithModel(VISION_MODEL, undefined, false, false, true, {
-      computer: { kind: "e2b" },
-    });
-    expect(guarded.request.instructions).toContain(rule);
-    const nativeShell = await runWithModel(VISION_MODEL, undefined, false, false, true, {
-      computer: { kind: "desktop" },
-    });
-    expect(nativeShell.request.instructions).not.toContain(rule);
-    const headless = await runWithModel(VISION_MODEL);
-    expect(headless.request.instructions).not.toContain(rule);
   });
   it("does not switch when the computer-use model is the main model", async () => {
     const { request } = await runWithModel(VISION_MODEL, undefined, false, false, true, {

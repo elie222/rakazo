@@ -73,7 +73,13 @@ function stripSingleEmphasis(text: string): string {
     const char = chars[k] ?? "";
     for (const [marker, next] of Object.entries(nextCloser)) {
       if (LINE_END.test(char)) next[k] = -1;
-      else if (char === marker && k > 0 && !SPACE.test(chars[k - 1] ?? " ") && !isWordChar(k + 1))
+      else if (
+        char === marker &&
+        k > 0 &&
+        !SPACE.test(chars[k - 1] ?? " ") &&
+        chars[k - 1] !== marker &&
+        !isWordChar(k + 1)
+      )
         next[k] = k;
       else next[k] = next[k + 1] ?? -1;
     }
@@ -84,7 +90,13 @@ function stripSingleEmphasis(text: string): string {
   while (i < n) {
     const char = chars[i] ?? "";
     const next = nextCloser[char];
-    if (next && !isWordChar(i - 1) && i + 1 < n && !SPACE.test(chars[i + 1] ?? " ")) {
+    if (
+      next &&
+      !isWordChar(i - 1) &&
+      i + 1 < n &&
+      !SPACE.test(chars[i + 1] ?? " ") &&
+      chars[i + 1] !== char
+    ) {
       const close = next[i + 1] ?? -1;
       if (close !== -1) {
         out += chars.slice(i + 1, close).join("");
@@ -144,7 +156,7 @@ export function speakable(input: string): string {
   text = text.replace(/^\s*\d+[.)]\s+/gm, "");
   text = text.replace(/^\s*>\s?/gm, "");
 
-  text = text.replace(/(\*\*|__)(.*?)\1/g, "$2");
+  text = text.replace(/(\*\*|__)(?=\S)(.*?\S)\1/g, "$2");
   text = stripSingleEmphasis(text);
   text = text.replace(/~~(.*?)~~/g, "$1");
 
@@ -171,6 +183,9 @@ export function speakable(input: string): string {
 
 const BOUNDARY =
   /(?<!\b(?:e\.g|i\.e|etc|vs|Dr|Mr|Mrs|Ms|No|approx))(?<![.\d])([.!?])(["')\]]*)\s+/g;
+// CJK sentences end with full-width marks and no following space. A full-width period after a
+// digit is a decimal point in a number, not a sentence end.
+const CJK_BOUNDARY = /((?:[。！？｡]|(?<!\p{N})．|…)+)(["'”’」』）】)\]]*)/gu;
 
 /**
  * Markdown (or any agent output) as the sentences a voice reads, one per item. Unlike
@@ -180,6 +195,7 @@ export function splitSentences(input: string): string[] {
   const MARK = "\u0000";
   return speakable(input)
     .replace(BOUNDARY, `$1$2${MARK}`)
+    .replace(CJK_BOUNDARY, `$1$2${MARK}`)
     .split(MARK)
     .map((s) => s.trim())
     .filter(Boolean);
@@ -189,6 +205,10 @@ export function splitSentences(input: string): string[] {
 export function sentenceKey(sentence: string): string {
   return sentence.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
+
+/** A piece that starts or ends in a script written without spaces is glued with no space. */
+const UNSPACED_EDGE =
+  /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}。！？｡．…」』）】”’]$/u;
 
 /**
  * Split speakable text into utterances a synthesizer can start on.
@@ -212,7 +232,8 @@ export function toUtterances(input: string, { minChars = 12, maxChars = 320 } = 
         (prev.length < minChars || part.length < minChars) &&
         prev.length + 1 + part.length <= maxChars
       ) {
-        out[out.length - 1] = `${prev} ${part}`;
+        out[out.length - 1] =
+          `${prev}${UNSPACED_EDGE.test(prev) || UNSPACED_EDGE.test(part) ? "" : " "}${part}`;
       } else {
         out.push(part);
       }
@@ -294,6 +315,7 @@ export function narrateTool(toolName: string): string | null {
     [/^archive_bot$/, "archiving a bot"],
     [/^remember$/, "writing a memory"],
     [/^save_shared_memory$/, "saving shared memory"],
+    [/^delete_shared_memory$/, "deleting shared memory"],
     [/^attach_file$/, "attaching a file"],
     [/^request_takeover$/, "asking you to take over"],
   ];

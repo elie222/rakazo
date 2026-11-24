@@ -590,7 +590,7 @@ describe("Telegram bots side by side", () => {
 });
 
 describe("Telegram groups", () => {
-  function createGroupSurface() {
+  function createGroupSurface(env: Partial<MessagingEnvironmentValues> = {}) {
     const sends: { token: string; payload: Record<string, unknown> }[] = [];
     vi.stubGlobal(
       "fetch",
@@ -609,6 +609,7 @@ describe("Telegram groups", () => {
             },
           });
         }
+        if (method === "sendChatAction") return Response.json({ ok: true, result: true });
         if (method === "sendRichMessage") {
           return Response.json(
             { ok: false, error_code: 404, description: "Not Found" },
@@ -637,6 +638,7 @@ describe("Telegram groups", () => {
         telegramBotToken: "home-token",
         telegramWebhookSecret: "home-secret",
         telegramBots: [{ name: "work", botToken: "work-token", webhookSecret: "work-secret" }],
+        ...env,
       }),
     );
     const inbound: MessagingInboundEvent[] = [];
@@ -719,6 +721,74 @@ describe("Telegram groups", () => {
       content: "hello group",
     });
     expect(inbound[1]?.type === "message" && inbound[1].mentionsBot).toBeUndefined();
+  });
+
+  it("ignores group chats on every bot when groups are turned off, and still takes direct chats", async () => {
+    const { surface, inbound } = createGroupSurface({ telegramGroups: "OFF" });
+
+    expect(
+      surface.platforms().map(({ provider, capabilities }) => [provider, capabilities]),
+    ).toEqual([
+      ["telegram", expect.objectContaining({ direct: true, groups: false })],
+      ["telegram-work", expect.objectContaining({ direct: true, groups: false })],
+    ]);
+    for (const [provider, secret, updateId] of [
+      ["telegram", "home-secret", 105],
+      ["telegram-work", "work-secret", 106],
+    ] as const) {
+      const response = await surface.handleWebhook(
+        provider,
+        webhook(secret, groupMessage({ text: "@testbot hello" }, updateId)),
+      );
+      expect(response?.status).toBe(200);
+    }
+    expect(inbound).toEqual([]);
+
+    await surface.handleWebhook(
+      "telegram",
+      webhook("home-secret", {
+        update_id: 107,
+        message: {
+          message_id: 16,
+          date: 1_700_000_000,
+          chat: { id: 777, type: "private", first_name: "Grace" },
+          from: sender,
+          text: "hello direct",
+        },
+      }),
+    );
+    expect(inbound).toEqual([
+      expect.objectContaining({
+        threadId: "telegram:777",
+        isDirect: true,
+        content: "hello direct",
+      }),
+    ]);
+  });
+
+  it("keeps group chats on by default and for on, true and 1", () => {
+    for (const telegramGroups of [undefined, "", "on", " TRUE ", "1"]) {
+      const { surface } = createGroupSurface({ telegramGroups });
+      expect(surface.platforms().every(({ capabilities }) => capabilities.groups)).toBe(true);
+    }
+  });
+
+  it("turns group chats off for off, false and 0 in any case", () => {
+    for (const telegramGroups of ["off", "OFF", " False ", "0"]) {
+      const { surface } = createGroupSurface({ telegramGroups });
+      expect(surface.platforms().map(({ capabilities }) => capabilities.groups)).toEqual([
+        false,
+        false,
+      ]);
+    }
+  });
+
+  it("refuses a TELEGRAM_GROUPS value it cannot read, instead of leaving groups on", () => {
+    for (const telegramGroups of ["no", "disabled", "flase"]) {
+      expect(() => createGroupSurface({ telegramGroups })).toThrow(
+        "TELEGRAM_GROUPS must be on or off",
+      );
+    }
   });
 
   it("keeps a plain reply on the group's own thread", async () => {

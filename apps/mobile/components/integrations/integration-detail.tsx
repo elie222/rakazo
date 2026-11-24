@@ -92,13 +92,11 @@ export function IntegrationDetail({
             />
             <NativeActionButton
               accessibilityLabel={t`Remove ${ph({ name: row.displayName })}`}
-              busy={pending === row.id}
-              disabled={uninstalling}
+              disabled={pending === row.id || uninstalling}
               fill={false}
-              icon={{ ios: "trash", android: "trash-outline" }}
+              label={pending === row.id ? t`Working…` : t`Remove`}
               onPress={() => onRevoke(row)}
               prominence="destructive"
-              size="compact"
             />
           </View>
         ))}

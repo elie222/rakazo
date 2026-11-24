@@ -6,7 +6,9 @@ import {
   pruneForRebuild,
   pruneStalePageStateContext,
 } from "./context-pruning.js";
-import { TOOL_IMAGE_REMOVED_NOTE } from "./runtime-context.prompt.js";
+import { SCREENSHOT_REMOVED_NOTE, TOOL_IMAGE_REMOVED_NOTE } from "./runtime-context.prompt.js";
+
+type ToolResultMessage = Extract<Message, { role: "toolResult" }>;
 
 describe("context pruning on rebuild", () => {
   const pageResult = (id: string, toolName: string, text = `page ${id} ${"x".repeat(1_200)}`) => ({
@@ -414,5 +416,85 @@ describe("context pruning on rebuild", () => {
     expect(JSON.stringify(pruned.slice(1, 4))).not.toContain("Earlier page state trimmed");
     expect(kept(pruned.slice(4))).toEqual([false, true, true]);
     expect(pruneForRebuild(messages.slice(1, 4))).toEqual(messages.slice(1, 4));
+  });
+
+  const multiImage = (name: string, count: number): Message => ({
+    role: "toolResult",
+    toolCallId: name,
+    toolName: "computer_observe",
+    content: [
+      { type: "text", text: `${name} observed` },
+      ...Array.from({ length: count }, (_, index) => ({
+        type: "image" as const,
+        data: `${name}-${index + 1}`,
+        mimeType: "image/png" as const,
+      })),
+    ],
+    details: { frameId: name },
+    isError: false,
+    timestamp: 1,
+  });
+  const imageData = (message: Message | undefined) =>
+    (message as ToolResultMessage).content.flatMap((part) =>
+      part.type === "image" ? [part.data] : [],
+    );
+
+  it("keeps the newest result's latest images when it alone exceeds the budget", () => {
+    const messages = [multiImage("old", 1), multiImage("new", 3)];
+
+    const pruned = pruneComputerScreenshotContext(messages);
+
+    expect(kept(pruned)).toEqual([false, true]);
+    expect(imageData(pruned[1])).toEqual(["new-2", "new-3"]);
+    expect(pruned[1]).toMatchObject({
+      content: [
+        { type: "text", text: "new observed" },
+        { type: "image", data: "new-2" },
+        { type: "image", data: "new-3" },
+        { type: "text", text: SCREENSHOT_REMOVED_NOTE },
+      ],
+    });
+    expect(imageData(messages[1])).toEqual(["new-1", "new-2", "new-3"]);
+  });
+
+  it("keeps a newest result with exactly the budget whole and prunes older results", () => {
+    const messages = [multiImage("old", 1), multiImage("new", 2)];
+
+    const pruned = pruneComputerScreenshotContext(messages);
+
+    expect(kept(pruned)).toEqual([false, true]);
+    expect(pruned[1]).toBe(messages[1]);
+  });
+
+  it("keeps the latest images in order and the text around them when images are interleaved", () => {
+    const interleaved: Message = {
+      role: "toolResult",
+      toolCallId: "interleaved",
+      toolName: "computer_act",
+      content: [
+        { type: "text", text: "first" },
+        { type: "image", data: "i-1", mimeType: "image/png" },
+        { type: "text", text: "second" },
+        { type: "image", data: "i-2", mimeType: "image/png" },
+        { type: "text", text: "third" },
+        { type: "image", data: "i-3", mimeType: "image/png" },
+      ],
+      details: { frameId: "interleaved" },
+      isError: false,
+      timestamp: 1,
+    };
+
+    const pruned = pruneComputerScreenshotContext([interleaved]);
+
+    expect(pruned[0]).toMatchObject({
+      content: [
+        { type: "text", text: "first" },
+        { type: "text", text: "second" },
+        { type: "image", data: "i-2" },
+        { type: "text", text: "third" },
+        { type: "image", data: "i-3" },
+        { type: "text", text: SCREENSHOT_REMOVED_NOTE },
+      ],
+    });
   });
 });

@@ -4,6 +4,7 @@ import type { Actor, SpaceNavigation } from "@rakazo/contracts";
 import type { createGroupRepos, createRepos, PrismaClient } from "@rakazo/db";
 import {
   acceptSpaceInvite,
+  accountPreferencesChangesScope,
   addSpaceMember,
   cancelSpaceInvites,
   createExternalConversationRepos,
@@ -27,6 +28,7 @@ import {
   setSpaceSettingOverride,
   spaceSettingOverrides,
 } from "@rakazo/db";
+import { hasChatHistory } from "../account/first-bot.js";
 import { otherSpaceOfBot, otherSpaceOfGroup } from "../bots/bot-space.js";
 import { invitationRecipientKey, sendInvitationEmail } from "../email/invitation-email.js";
 import type { RouterDeps } from "../router.js";
@@ -63,9 +65,21 @@ export function spacesRoutes(ctx: RouterContext) {
       overrides: authed.spaceSettings.overrides.handler(({ context }) =>
         spaceSettingOverrides(deps.prisma, context.actor),
       ),
-      setOverride: authed.spaceSettings.setOverride.handler(({ context, input }) =>
-        setSpaceSettingOverride(deps.prisma, context.actor, input.setting, input.enabled),
-      ),
+      setOverride: authed.spaceSettings.setOverride.handler(async ({ context, input }) => {
+        const updated = await setSpaceSettingOverride(
+          deps.prisma,
+          context.actor,
+          input.setting,
+          input.enabled,
+        );
+        if (input.setting === "confirmations") {
+          await deps.events.publishSpaceChange?.(
+            accountPreferencesChangesScope(context.actor.userId),
+            "preferences",
+          );
+        }
+        return updated;
+      }),
     },
     spaces: {
       list: authed.spaces.list.handler(async ({ context }) =>
@@ -331,6 +345,7 @@ export function spacesRoutes(ctx: RouterContext) {
         thread,
         routines,
         spaces: navigation.spaces,
+        firstBotDue: navigation.firstBotDue,
         ...(botSpaceId ? { botSpaceId } : {}),
         ...(groupSpaceId ? { groupSpaceId } : {}),
       };
@@ -441,7 +456,11 @@ async function memberSpaceNavigation(
   const sectionsFor = (spaceId: string) => sectionsBySpace.get(spaceId) ?? [];
   const staleClaimBefore = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
 
+  // Only an account with nothing in sight is worth the wider look at its own Spaces.
+  const firstBotDue = spacesWithContent.size === 0 && !(await hasChatHistory(deps.prisma, actor));
+
   return {
+    firstBotDue,
     current: {
       id: actor.spaceId,
       name: currentMembership.space.name,

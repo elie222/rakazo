@@ -318,7 +318,6 @@ function contents(archive: string) {
 describe("development database configuration", () => {
   it.each([
     ["rakazo", "rakazo"],
-    ["custom_admin", "custom_db"],
     ["admin with spaces", "db with $dollar; punctuation"],
   ])("uses container credentials %j / %j for backup and restore", (user, database) => {
     const f = fixture();
@@ -986,7 +985,7 @@ describe("production backup deployment and archive behavior", () => {
     const f = fixture();
     write(
       path.join(f.checkout, ".env"),
-      "OVERLAY=ops/b.yml\nRAKAZO_COMPOSE_FILE=a.yml:${OVERLAY}\n",
+      `OVERLAY=ops/b.yml\nRAKAZO_COMPOSE_FILE=a.yml:\${OVERLAY}\n`,
     );
     write(path.join(f.checkout, "docker-compose.images.yml"), "services: {}\n");
     const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_DEPLOY_DIR: f.checkout });

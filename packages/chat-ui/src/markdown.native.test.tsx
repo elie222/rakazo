@@ -360,6 +360,15 @@ describe("native markdown view", () => {
     renderToStaticMarkup(<ChatMarkdown>{"Done."}</ChatMarkdown>);
     expect(nativeProps().streamingAnimation).toBe(false);
   });
+
+  it("draws tables on the message's own background", () => {
+    renderToStaticMarkup(<ChatMarkdown>{"| A |\n| - |\n| 1 |"}</ChatMarkdown>);
+    expect(nativeProps().markdownStyle?.table).toMatchObject({
+      headerBackgroundColor: "transparent",
+      rowEvenBackgroundColor: "transparent",
+      rowOddBackgroundColor: "transparent",
+    });
+  });
 });
 
 const codeBlock = (code: string, language = ""): MarkdownCodeBlock => ({
