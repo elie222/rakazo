@@ -103,6 +103,8 @@ for (const platform of ["darwin", "linux"]) {
     await expect(dialog).toBeHidden();
     // Settings keeps the choice reachable after the one-time prompt.
     const settings = await openUserSettings(page, "computer");
+    await expect(settings.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+    await settings.getByRole("button", { name: "Manage This computer", exact: true }).click();
     const toggle = settings.getByTestId("this-computer-toggle");
     await toggle.scrollIntoViewIfNeeded();
     await expect(toggle).toBeChecked();
