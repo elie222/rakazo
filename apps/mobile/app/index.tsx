@@ -389,7 +389,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         undefined,
         snoozeNow,
       );
-    // Android pins sit above the list; iOS keeps rows with native swipe and context menus.
+    // Pins sit above the list as tiles, as on desktop.
     const otherSpaces = shownSpaces.filter((space) => space.id !== me?.spaceId);
     const pinned: PinnedChat[] = [
       ...[...visible, ...otherSpaces.flatMap((space) => space.bots)]
@@ -402,13 +402,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     // A snoozed pin waits under Snoozed rather than in the tiles.
     const sidebarSpaces = inboxSpaces.map((space) => ({
       ...space,
-      bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned || chatSnoozed(bot, snoozeNow)),
-      groups: space.groups.filter(
-        (group) => SWIPE_ROWS || !group.pinned || chatSnoozed(group, snoozeNow),
-      ),
+      bots: space.bots.filter((bot) => !bot.pinned || chatSnoozed(bot, snoozeNow)),
+      groups: space.groups.filter((group) => !group.pinned || chatSnoozed(group, snoozeNow)),
     }));
     const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId, snoozeNow);
-    return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
+    return pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
   }, [
     inboxSpaces,
     collapsed,
