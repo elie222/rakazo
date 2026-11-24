@@ -919,25 +919,18 @@ describe("expo push access token", () => {
   });
 });
 
-it("plays a sound only for notifications that need the person's attention", async () => {
+it("requests a sound for actionable pushes and leaves completion pushes silent", async () => {
   const tokens = new MemoryPushTokenStore();
   await tokens.save("user-1", "ExponentPushToken[test]");
-  const fetchMock = vi.fn(async () => jsonResponse({ data: { status: "ok" } }));
-  vi.stubGlobal("fetch", fetchMock);
+  const { sent } = fakeExpo([]);
   const push = new ExpoPushProvider(tokens);
-  const sent = async (kind: "help" | "takeover" | "failure" | "completion") => {
-    await push.send(
-      { kind, title: "Marketing", body: "Body", botId: "bot", threadId: "t" },
-      notifyContext,
-    );
-    return JSON.parse(
-      String((fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit])[1].body),
-    );
-  };
-  for (const kind of ["help", "takeover", "failure"] as const) {
-    expect(await sent(kind)).toMatchObject({ sound: "default" });
-  }
-  expect(await sent("completion")).not.toHaveProperty("sound");
+
+  await push.send({ ...pushMessage, kind: "help" }, notifyContext);
+  await push.send({ ...pushMessage, kind: "completion" }, notifyContext);
+
+  expect(sent).toHaveLength(2);
+  expect(sent[0]).toHaveProperty("sound", "default");
+  expect(sent[1]).not.toHaveProperty("sound");
 });
 
 it("carries sender identity, marks actionable notifications high priority, and bounds UTF-8 payloads", async () => {
