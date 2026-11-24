@@ -7,7 +7,7 @@ import { useEffect, useMemo, useReducer, useState } from "react";
 import { Platform, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { runErrorDiagnostic, runErrorWhatHappened } from "../../lib/cards/run-error-presentation";
-import { useUiLocale } from "../../lib/i18n/i18n";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
 import { useMobileTokens } from "../../lib/native/native";
 import { NativeSymbol } from "../native/native-symbol";
 import { SheetCloseButton } from "../native/sheet-close-button";
@@ -31,7 +31,7 @@ export function useRunError(details: string | null, includeReset = true) {
           if (message === "Your model provider") return t`Model provider`;
           return translateRunError(message, values);
         },
-        locale,
+        dateLocaleForUi(locale),
         Date.now(),
       )
     : null;
@@ -66,7 +66,7 @@ export function RunErrorSheet({
   const [technical, setTechnical] = useState(false);
   useEffect(() => setTechnical(false), [details]);
   if (!error) return null;
-  const diagnostic = runErrorDiagnostic(error, locale);
+  const diagnostic = runErrorDiagnostic(error, dateLocaleForUi(locale));
   const whatHappened = runErrorWhatHappened(error);
   const textStyle = { color: tokens.foreground, fontSize: 16, lineHeight: 24 };
   return (

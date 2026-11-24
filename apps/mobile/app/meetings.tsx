@@ -14,6 +14,7 @@ import {
 import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
+import { dateLocaleForUi } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useThemedStyles } from "../lib/native/native";
 import { useScreenHeader } from "../lib/navigation/screen-header";
@@ -107,8 +108,12 @@ export default function MeetingsScreen() {
               <SettingsRow
                 key={meeting.id}
                 title={meetingPlatformLabel(meeting.platform)}
-                detail={canRead ? meetingTime(meeting.createdAt) : status}
-                value={canRead || canLeave ? undefined : meetingTime(meeting.createdAt)}
+                detail={canRead ? meetingTime(meeting.createdAt, dateLocaleForUi()) : status}
+                value={
+                  canRead || canLeave
+                    ? undefined
+                    : meetingTime(meeting.createdAt, dateLocaleForUi())
+                }
                 chevron={canRead ? "right" : undefined}
                 accessibilityRole={canRead ? "button" : undefined}
                 accessibilityHint={canRead ? t`View transcript` : undefined}

@@ -62,8 +62,62 @@ export function getActiveUiLocale(): UiLocale {
   return activeLocale;
 }
 
+/** The phone's own date and time preferences: its region and its 12- or 24-hour clock. */
+type DeviceDateFormat = { region: string | null; hourCycle: "h12" | "h23" | null };
+
+const NO_DEVICE_DATE_FORMAT: DeviceDateFormat = { region: null, hourCycle: null };
+let deviceDateFormat = NO_DEVICE_DATE_FORMAT;
+
+/**
+ * The locale dates, times and numbers are formatted in: the app language written the way the
+ * phone's region writes it, on the phone's 12- or 24-hour clock (`en-GB-u-hc-h23`).
+ */
 export function dateLocaleForUi(locale: UiLocale = activeLocale): string {
-  return locale === "en" ? "en-US" : htmlLangForLocale(locale);
+  const language = htmlLangForLocale(locale);
+  const { region, hourCycle } = deviceDateFormat;
+  // A language that names its own region (zh-TW, pt-BR) keeps it: there the region picks the wording.
+  let base = language;
+  if (!language.includes("-")) {
+    if (region) base = `${language}-${region}`;
+    else if (locale === "en") base = "en-US";
+  }
+  return hourCycle ? `${base}-u-hc-${hourCycle}` : base;
+}
+
+async function readDeviceDateFormat(): Promise<void> {
+  // Lazy: nearly every module imports i18n, including ones evaluated without native modules.
+  try {
+    const localization = await import("expo-localization");
+    const region = localization.getLocales()[0]?.regionCode;
+    const uses24hourClock = localization.getCalendars()[0]?.uses24hourClock;
+    deviceDateFormat = {
+      region: region && /^([A-Z]{2}|\d{3})$/.test(region) ? region : null,
+      hourCycle: uses24hourClock === true ? "h23" : uses24hourClock === false ? "h12" : null,
+    };
+  } catch {
+    // Keep the language's own conventions.
+  }
+}
+
+let watchingDeviceDateFormat = false;
+
+/** The phone's date settings can change while the app is in the background. */
+async function watchDeviceDateFormat(): Promise<void> {
+  if (watchingDeviceDateFormat) return;
+  watchingDeviceDateFormat = true;
+  try {
+    const { AppState } = await import("react-native");
+    AppState.addEventListener("change", (state) => {
+      if (state === "active") void readDeviceDateFormat();
+    });
+  } catch {
+    // Tests and some hosts have no app state.
+  }
+}
+
+/** Test-only: set the phone's date preferences without native modules. */
+export function setDeviceDateFormatForTests(format: Partial<DeviceDateFormat>): void {
+  deviceDateFormat = { ...NO_DEVICE_DATE_FORMAT, ...format };
 }
 
 /** The app language, re-rendering when it changes. Strings come from Lingui's `useLingui`. */
@@ -121,6 +175,8 @@ export async function bootstrapI18n(): Promise<UiLocale> {
       ? process.env.EXPO_PUBLIC_DEFAULT_UI_LOCALE
       : null;
   const locale = resolveUiLocale({ stored, envDefault, deviceLanguage: await deviceLanguage() });
+  await readDeviceDateFormat();
+  void watchDeviceDateFormat();
   activateUiLocale(locale);
   await applyDirection(locale);
   return locale;
@@ -155,6 +211,7 @@ export async function setUiLocale(locale: UiLocale): Promise<UiLocale> {
 /** Test-only: set the in-memory locale without I/O. */
 export function resetI18nForTests(locale: UiLocale = "en"): void {
   activeLocale = locale;
+  deviceDateFormat = NO_DEVICE_DATE_FORMAT;
   i18n.activate(locale);
   uiLocaleWriteChain = Promise.resolve();
   emit();

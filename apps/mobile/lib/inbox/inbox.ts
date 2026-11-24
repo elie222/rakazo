@@ -21,7 +21,7 @@ export function formatThreadTime(iso: string, now = new Date()) {
   const dayDiff = Math.round((startOfToday - startOfThatDay) / DAY_MS);
 
   if (dayDiff <= 0) {
-    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    return clockTime(date);
   }
   if (dayDiff < 7) {
     return date.toLocaleDateString(dateLocaleForUi(), { weekday: "long" });
@@ -33,11 +33,12 @@ export function formatThreadTime(iso: string, now = new Date()) {
 export function formatSnoozeWake(iso: string, now = new Date()) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const time = clockTime(date);
   const day = snoozeWakeDay(date, now);
   return day ? `${date.toLocaleDateString(dateLocaleForUi(), day)} ${time}` : time;
 }
 
-function pad(value: number) {
-  return String(value).padStart(2, "0");
+/** The time of day on the phone's 12- or 24-hour clock. */
+function clockTime(date: Date) {
+  return date.toLocaleTimeString(dateLocaleForUi(), { hour: "numeric", minute: "2-digit" });
 }

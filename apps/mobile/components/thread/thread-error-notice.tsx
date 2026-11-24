@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { useUiLocale } from "../../lib/i18n/i18n";
+import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
 import { native, useMobileTokens } from "../../lib/native/native";
 import { RunErrorAction, RunErrorTextAction } from "../cards/run-error-actions";
 import { NativeSymbol } from "../native/native-symbol";
@@ -29,7 +29,7 @@ export function ThreadErrorNotice({
   const upcomingReset =
     resetAt && resetAt > Date.now()
       ? t`Resets ${ph({
-          date: new Intl.DateTimeFormat(locale, {
+          date: new Intl.DateTimeFormat(dateLocaleForUi(locale), {
             month: "short",
             day: "numeric",
             timeZone: "UTC",

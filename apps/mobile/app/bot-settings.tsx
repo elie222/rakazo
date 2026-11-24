@@ -47,6 +47,7 @@ import { loadSessionToken } from "../lib/api/session";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computers/computer";
+import { dateLocaleForUi } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { chatModelPickerChoices } from "../lib/models/chat-model";
 import { thinkingLevelLabel } from "../lib/models/thinking-level";
@@ -722,7 +723,7 @@ export default function BotSettingsScreen() {
                       value=""
                       choices={bot.instructionHistory.map((version) => ({
                         key: version.id,
-                        label: `${new Date(version.createdAt).toLocaleString()} (${version.reason})`,
+                        label: `${new Date(version.createdAt).toLocaleString(dateLocaleForUi())} (${version.reason})`,
                       }))}
                       onChange={(versionId) => {
                         if (pendingRef.current || instructions !== bot.instructions) return;
