@@ -171,6 +171,15 @@ const structuredData = homeStructuredData({
             </svg>
           </button>
         </div>
+        <nav class="hero__platforms" aria-label={copy.platforms.heading}>
+          <a href={APP_URL}>{copy.platforms.web}</a>
+          {desktopPlatforms.map((platform) => (
+            <a href={desktopDownloadHref(platform)}>{PLATFORM_NAMES[platform]}</a>
+          ))}
+          <a href={IOS_APP_URL}>iOS</a>
+          <a href={ANDROID_APP_STORE_URL}>Android</a>
+          <a class="hero__license" href={`${GITHUB_URL}/blob/main/LICENSE`}>Apache-2.0</a>
+        </nav>
       </section>
 
       <section id="demo">
