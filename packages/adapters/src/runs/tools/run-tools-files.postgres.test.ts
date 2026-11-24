@@ -7,7 +7,6 @@ import { createDb, createThreadEvents, runAsSystem } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { placeholderObservation } from "../../computers/screens/computer-support.js";
 import { LocalArtifactStore } from "../../storage/artifacts.js";
-import { attachFileWithScreenshot } from "../../tools/builtin-computer.tool-definition.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { withRunLease } from "../assembly/run-messages.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
@@ -127,7 +126,6 @@ postgres("attach_file (PostgreSQL)", () => {
         get: async () => ({ id: "computer", botId: run.botId, kind: "fake" }),
         checkpoint: { markDirty() {} },
       },
-      tools: { builtins: [attachFileWithScreenshot] },
       state: { screen: { turn: { mustLook: false } } },
     } as unknown as RunContext;
     const effect =

@@ -48,6 +48,7 @@ import {
   vaultCardUseOf,
   vaultLoginUseOf,
 } from "../../secrets/vault/vault-card-use.js";
+import { attachFileWithScreenshot } from "../../tools/builtin-computer.tool-definition.js";
 import {
   isFleetApprovalTool,
   modelLabel,
@@ -418,6 +419,22 @@ export async function prepareToolRequest(
   // A bot that archived itself only finishes its reply; retrying its own archive still reconciles.
   if ((ctx.state.selfArchived || bot.archivedAt) && !archivesItself(bot, name, args))
     return refusal("bot_archived", "You are archived, so no more tools can run. Send your reply.");
+  if (name === "attach_file" && args.screenshot === true) {
+    if (!ctx.tools.builtins.includes(attachFileWithScreenshot)) {
+      return refusal(
+        "screenshot_unavailable",
+        "Screenshot attachments are unavailable in this run.",
+      );
+    }
+    if (args.path != null && args.path !== "") {
+      return refusal("screenshot_with_path", "Choose either a workspace path or a screenshot.");
+    }
+    // An outside request for the live screen needs review even if regular attachments are allowed.
+    if (!ctx.source.ownerStartedRun || (await ctx.trust.receivedOutsideMessage())) {
+      request.heldForApproval = true;
+      request.ignoresAllowRules = true;
+    }
+  }
   if (
     (SCHEDULE_TOOL_NAMES.has(name) || SKILL_TOOL_NAMES.has(name) || name === "remove_mcp_server") &&
     (ctx.source.messagingChannelRun ||

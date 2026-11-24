@@ -26,7 +26,6 @@ import {
 } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { protectedActivateScriptWriteRefusal } from "../../providers/computer/desktop/desktop-guard-words.js";
 import { attachWorkspaceFileToThread } from "../../storage/thread-artifacts.js";
-import { attachFileWithScreenshot } from "../../tools/builtin-computer.tool-definition.js";
 import type { RunWorkspace } from "../../tools/workspace-file-tools.js";
 import {
   listFilesFromTool,
@@ -234,10 +233,6 @@ export const fileTools: ToolHandlers = {
     try {
       let bytes: Uint8Array;
       if (screenshot) {
-        if (filePath) return fail("Choose either a workspace path or a screenshot.");
-        if (!ctx.tools.builtins.includes(attachFileWithScreenshot)) {
-          return fail("Screenshot attachments are unavailable in this run.");
-        }
         filePath = "screenshot";
         const observation = await captureBotScreen(ctx, call.name);
         if ("error" in observation) return fail(observation.error);

@@ -6,6 +6,7 @@ import { relabelVaultItem, resolveLoginFill, storeBotSecret } from "../../secret
 import { fakeDatabase } from "../../secrets/bot-secrets.test-support.js";
 import { EncryptedSecretStore } from "../../secrets/secrets.js";
 import { LOGIN_CODE_FIELD, vaultLoginUseOf } from "../../secrets/vault/vault-card-use.js";
+import { attachFileWithScreenshot } from "../../tools/builtin-computer.tool-definition.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { prepareScheduleUpdateApproval, prepareToolRequest } from "./run-tool-request.js";
 import { taskTools } from "./run-tools-tasks.js";
@@ -113,6 +114,43 @@ describe("prepareToolRequest: after the bot archived itself", () => {
     const { ctx, request } = ownBotUpdateCall();
     Object.assign(ctx.bot, { name: "Scout", archivedAt: new Date("2026-11-23T12:00:00.000Z") });
     await expect(prepareToolRequest(ctx as never, request())).resolves.toEqual(archived);
+  });
+});
+
+describe("prepareToolRequest: screen attachments", () => {
+  const takeScreenshot = (): ToolRequest => ({
+    ...ownBotUpdateCall().request(),
+    name: "attach_file",
+    args: { screenshot: true },
+  });
+
+  it.each([
+    { trigger: "bot_message", ownerStartedRun: false, outsideMessage: false, asks: true },
+    { trigger: "routine", ownerStartedRun: true, outsideMessage: false, asks: false },
+    { trigger: "user", ownerStartedRun: true, outsideMessage: true, asks: true },
+  ])("sets approval policy for a $trigger run", async (input) => {
+    const ctx = {
+      deps: {},
+      run: { trigger: input.trigger },
+      bot: {},
+      state: {},
+      source: { ownerStartedRun: input.ownerStartedRun },
+      trust: { receivedOutsideMessage: async () => input.outsideMessage },
+      tools: { builtins: [attachFileWithScreenshot] },
+    };
+    const request = takeScreenshot();
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    expect(request).toMatchObject({
+      heldForApproval: input.asks,
+      ignoresAllowRules: input.asks,
+    });
+  });
+
+  it("refuses a runtime call when screenshot attachments were unavailable", async () => {
+    const ctx = { bot: {}, state: {}, tools: { builtins: [] } };
+    await expect(prepareToolRequest(ctx as never, takeScreenshot())).resolves.toEqual({
+      error: "Screenshot attachments are unavailable in this run.",
+    });
   });
 });
 
