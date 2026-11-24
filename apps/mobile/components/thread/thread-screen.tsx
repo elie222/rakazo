@@ -17,7 +17,7 @@ import {
 } from "@rakazo/core";
 import { cronLabels } from "@rakazo/i18n/cron";
 import { bestEffort } from "@rakazo/logging/best-effort";
-import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { I18nManager, Platform, View } from "react-native";
@@ -465,7 +465,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     jump,
   });
 
-  useThreadHeader({
+  const headerOptions = useThreadHeader({
     botId,
     groupId,
     inGroup,
@@ -613,6 +613,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
 
   return (
     <View style={{ flex: 1 }}>
+      <Stack.Screen options={headerOptions} />
       <KeyboardAvoidingView
         enabled={!rootAvoidsKeyboard && keyboard.avoiding}
         // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
