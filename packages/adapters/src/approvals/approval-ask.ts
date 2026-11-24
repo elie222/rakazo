@@ -389,14 +389,21 @@ function formatApprovalDetail(
     // The title already names a lone named action that runs once, so its arguments need no heading.
     // An unnamed entry keeps its "…" heading, so the card shows the action is unknown.
     const single = entries.length === 1 && entries[0]?.runs === 1 && entries[0].name !== "…";
-    // Every action and its destinations first, then each action's long text.
-    const later: string[] = [];
-    for (const { name, args: entryArgs, runs } of entries) {
-      const { first, last } = shown(entryArgs);
-      lines.push(...(single ? [] : [runs > 1 ? `${name} ×${runs}` : name]), ...first);
-      later.push(...last.map((line) => (single ? line : `${name} ${line}`)));
+    if (single) {
+      const { first, last } = shown(entries[0]!.args);
+      lines.push(...first, ...last);
+    } else {
+      // Every action and its destinations first, then each action's long text under its name
+      // again. A blank line sets each action apart.
+      const groups: string[][] = [];
+      const later: string[][] = [];
+      for (const { name, args: entryArgs, runs } of entries) {
+        const { first, last } = shown(entryArgs);
+        groups.push([runs > 1 ? `${name} ×${runs}` : name, ...first]);
+        if (last.length) later.push([name, ...last]);
+      }
+      lines.push([...groups, ...later].map((group) => group.join("\n")).join("\n\n"));
     }
-    lines.push(...later);
   } else {
     const { first, last } = shown(args);
     lines.push(...first, ...last);
@@ -455,6 +462,16 @@ export function readableToolName(name: string): string {
     .split(/[\s_.-]+/)
     .filter(Boolean);
   if (words.length === 0) return name;
+  // An app named twice, run together then spaced (`DRIVEAPP_DRIVE_APP_DELETE`), is named once.
+  const first = words[0]!.toLowerCase();
+  for (let end = 2; end <= words.length; end++) {
+    const joined = words.slice(1, end).join("").toLowerCase();
+    if (joined === first) {
+      words.splice(1, end - 1);
+      break;
+    }
+    if (joined.length >= first.length) break;
+  }
   const text = words.join(" ").toLowerCase();
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
