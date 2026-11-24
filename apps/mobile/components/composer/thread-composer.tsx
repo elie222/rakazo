@@ -679,7 +679,7 @@ export function ThreadComposer({
           }}
         >
           <ComposerKeyboard
-            enterEnabled={optionCount > 0 || (enterToSend && !sendBlocked)}
+            enterEnabled={enterToSend || optionCount > 0}
             commandEnterEnabled={!sendBlocked}
             pickerOpen={optionCount > 0}
             onHardwareKey={(event) => onHardwareKey(event.nativeEvent.key)}

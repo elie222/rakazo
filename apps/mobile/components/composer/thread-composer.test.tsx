@@ -915,6 +915,16 @@ describe("thread composer isolation", () => {
     expect(props.send).toHaveBeenCalledOnce();
   });
 
+  it("consumes hardware Enter without changing an empty draft when Enter sends", () => {
+    const enter = container.querySelector<HTMLButtonElement>('button[aria-label="Hardware Enter"]');
+    expect(enter?.disabled).toBe(false);
+
+    press("Hardware Enter");
+
+    expect(composer.current!.snapshot().promptText).toBe("");
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
   it("honors the hardware Enter toggle", async () => {
     await act(() => setComposerEnterToSendPreference(false));
     try {
