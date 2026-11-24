@@ -324,6 +324,7 @@ export * from "./tools/builtin.tool-definition.js";
 export * from "./tools/builtin-skills.prompt.js";
 export * from "./tools/builtin-tool-bridge.js";
 export * from "./tools/fleet-tools.js";
+export { isLazyCatalogControlRoute } from "./tools/lazy-tool-catalog.js";
 export * from "./tools/schedule-tools.js";
 export * from "./tools/skill-tools.js";
 export * from "./voice/voice-factory.js";

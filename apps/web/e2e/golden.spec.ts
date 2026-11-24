@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import {
   activeBotId,
   captureScreenshot,
@@ -192,11 +193,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(detail.getByLabel("Account label").nth(1)).toHaveValue(accountName);
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
-  await page
-    .getByTestId("connection-tools")
-    .getByText(/tools?$/)
-    .click();
-  await expect(detail.getByText("Send email", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Send email", { exact: true })).toBeHidden();
+  await detail.getByRole("button", { name: "Other actions", exact: true }).click();
+  const permission = detail.getByRole("combobox", { name: "Send email", exact: true });
+  await expect(permission).toHaveText("Default");
+  await permission.click();
+  await page.getByRole("option", { name: "Block", exact: true }).click();
+  await expect(permission).toHaveText("Block");
   await captureScreenshot(page, testInfo, "11a3-plugin-tools");
 
   await page.getByRole("button", { name: "Close integrations" }).click();
@@ -211,6 +214,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 
   await detailAgain.getByRole("button", { name: "Remove", exact: true }).last().click();
   await expect(detailAgain.getByLabel("Account label")).toHaveCount(1);
+  await detailAgain.getByRole("button", { name: "Other actions", exact: true }).click();
+  const reopenedPermission = detailAgain.getByRole("combobox", { name: "Send email", exact: true });
+  await expect(reopenedPermission).toHaveText("Block");
+  await reopenedPermission.click();
+  await page.getByRole("option", { name: "Default", exact: true }).click();
+  await expect(reopenedPermission).toHaveText("Default");
+
   await detailAgain.getByRole("button", { name: "Uninstall", exact: true }).click();
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   const gmailRowEmpty = page
@@ -228,9 +238,41 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const popup = await connectPopup;
   await popup.close();
   await expect(linearRow.getByRole("button", { name: "Added", exact: true })).toBeVisible();
-  await linearRow.getByRole("button", { name: "Added", exact: true }).click();
+  // This is Linear's first detail open, so a cached successful read cannot bypass the mock.
+  const toolsRoute = "**/rpc/connections/tools";
+  const toolsResponse = deferred<void>();
+  await page.route(toolsRoute, async (route) => {
+    if (route.request().postDataJSON()?.json?.provider !== "linear") {
+      await route.fallback();
+      return;
+    }
+    await toolsResponse.promise;
+    await route.fulfill({
+      status: 500,
+      json: {
+        json: {
+          defined: false,
+          code: "INTERNAL_SERVER_ERROR",
+          status: 500,
+          message: "Internal server error",
+        },
+      },
+    });
+  });
   const linearDetail = page.getByTestId("connection-detail");
-  await expect(linearDetail).toBeVisible();
+  try {
+    await linearRow.getByRole("button", { name: "Added", exact: true }).click();
+    await expect(
+      linearDetail.getByRole("status", { name: "Loading tool permissions…" }),
+    ).toBeVisible();
+    await captureScreenshot(page, testInfo, "11b2-plugin-tools-loading");
+  } finally {
+    toolsResponse.resolve();
+  }
+  await expect(linearDetail.getByRole("alert")).toHaveText("Could not load permissions");
+  await expect(linearDetail.getByTestId("connection-tools")).toBeHidden();
+  await captureScreenshot(page, testInfo, "11b3-plugin-tools-unavailable");
+  await page.unroute(toolsRoute);
   await linearDetail.getByRole("button", { name: "Uninstall", exact: true }).click();
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   await expect(linearRow.getByRole("button", { name: "Add Linear", exact: true })).toBeVisible();

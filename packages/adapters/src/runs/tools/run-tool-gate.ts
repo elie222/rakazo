@@ -1,14 +1,15 @@
 import type { AgentToolExecutionObserver, ConnectorCall } from "@rakazo/adapter-kit";
 import {
   approvalModeFromPreference,
+  approvalRuleLabel,
   batchActions,
   clicksBeforeTyping,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
+  connectorToolApprovalIdentity,
   connectorToolRequiresApproval,
   decisiveActionApprovalRules,
   displayName,
-  humanizeToolName,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
   ownComputerActionNeedsReview,
@@ -141,7 +142,10 @@ export async function gateToolCall(
   // check look at each action, never the batch tool. An entry naming no action asks.
   const batch = connectorTool?.batch ? batchActions(connectorTool.batch, args) : undefined;
   const unidentifiedAction = Boolean(batch && !batch.complete);
-  const approvalName = connectorCall.route?.connectionId ? connectorCall.route.toolName : name;
+  const { name: approvalName, aliases: approvalAliases } = connectorToolApprovalIdentity(
+    name,
+    connectorCall.route,
+  );
   const approvalToolNames = batch?.actions.length ? batch.actions : [approvalName];
   // Search and load return a list or a schema. They never call the connector.
   const catalogControlRead =
@@ -325,7 +329,7 @@ export async function gateToolCall(
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
-      aliases: toolName === approvalName && approvalName !== name ? [name] : undefined,
+      aliases: toolName === approvalName ? approvalAliases : undefined,
       connectorKind:
         toolName === approvalName
           ? connectorKind
@@ -681,7 +685,7 @@ export async function gateToolCall(
 function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {
   const labels = decisiveActionApprovalRules(resolved).map((rule) => {
     const value = rule.matchValue.trim().replace(/\s+/g, " ");
-    return JSON.stringify(rule.matchKind === "site" ? value : humanizeToolName(value));
+    return JSON.stringify(approvalRuleLabel({ ...rule, matchValue: value }));
   });
   if (labels.length === 0) return "";
   return ` by the saved ${labels.length === 1 ? "rule" : "rules"} ${labels.join(", ")}`;
