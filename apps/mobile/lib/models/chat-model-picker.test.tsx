@@ -16,7 +16,11 @@ import BotSettingsScreen from "../../app/bot-settings";
 import { ModelPickerList } from "../../components/models/model-picker-list";
 import { queryClient } from "../query/query";
 import type { ModelConnectionRequest } from "./model-connection-request";
-import { modelConnectionRequest, openModelConnection } from "./model-connection-request";
+import {
+  closeModelConnection,
+  modelConnectionRequest,
+  openModelConnection,
+} from "./model-connection-request";
 import { modelPickerRequest } from "./model-picker-selection";
 
 const mocks = vi.hoisted(() => ({
@@ -184,6 +188,15 @@ vi.mock("../api/api", () => ({
         verificationUri: "https://example.com/sign-in",
         userCode: "FIXTURE",
         expiresInSeconds: 600,
+      };
+    if (procedure === "models/finishOAuth")
+      return {
+        id: CREDENTIAL_ID,
+        provider: "openrouter",
+        label: "OpenRouter",
+        modelId: "vendor/model-1",
+        hasKey: false,
+        authKind: "oauth",
       };
     if (procedure === "models/completeOAuth") return mocks.completeOAuth(options?.signal);
     if (procedure === "models/disconnectPreview") return mocks.disconnectPreview;
@@ -865,6 +878,7 @@ async function renderConnection(request: Partial<ModelConnectionRequest> = {}) {
     ...request,
   });
   await renderStack("connection", { requestId });
+  return requestId;
 }
 
 function searchModels(text: string) {
@@ -1043,6 +1057,59 @@ describe("provider connection screen", () => {
     });
     await act(async () => completeSignIn.resolve({ status: "ready" }));
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
+  });
+
+  it("hands a finished sign-in to the screen that opened it and returns there", async () => {
+    mocks.connected = false;
+    mocks.subscriptionSignIn = true;
+    mocks.completeOAuth.mockResolvedValueOnce({ status: "ready" });
+    const onSaved = vi.fn();
+    await renderConnection({ onSaved });
+    await act(async () => buttonWithText("Sign in")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/beginOAuth",
+      expect.objectContaining({ provider: "openrouter", credentialId: null, makeDefault: false }),
+    );
+    expect(onSaved).toHaveBeenCalledExactlyOnceWith(CREDENTIAL_ID);
+    expect(mocks.back).toHaveBeenCalledOnce();
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("hands a saved API key to the screen that opened it and returns there", async () => {
+    mocks.connected = false;
+    const onSaved = vi.fn();
+    await renderConnection({ onSaved });
+    editField("API key", "fixture-key");
+    await act(async () => buttonWithText("Connect API key")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/connect",
+      expect.objectContaining({
+        provider: "openrouter",
+        apiKey: "fixture-key",
+        makeDefault: false,
+      }),
+    );
+    expect(onSaved).toHaveBeenCalledExactlyOnceWith(CREDENTIAL_ID);
+    expect(mocks.back).toHaveBeenCalledOnce();
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("does not return to Voice after its connection request was closed", async () => {
+    mocks.connected = false;
+    const finished = deferred<void>();
+    mocks.rpc.mockImplementation((procedure: string) =>
+      procedure === "models/connect" ? finished.promise : undefined,
+    );
+    const onSaved = vi.fn();
+    const requestId = await renderConnection({ onSaved });
+    editField("API key", "fixture-key");
+    await act(async () => buttonWithText("Connect API key")!.click());
+
+    closeModelConnection(requestId);
+    await act(async () => finished.resolve());
+
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(mocks.back).not.toHaveBeenCalled();
   });
 
   it("opens prerequisites before issuing a code and lets the browser handoff be retried", async () => {

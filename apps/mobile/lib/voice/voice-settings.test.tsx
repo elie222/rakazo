@@ -6,6 +6,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import VoiceSettings from "../../app/(settings)/voice";
+import { modelConnectionRequest } from "../models/model-connection-request";
 import { queryClient } from "../query/query";
 
 const state = vi.hoisted(() => ({
@@ -14,11 +15,13 @@ const state = vi.hoisted(() => ({
   save: vi.fn(),
   params: {} as { spaceId?: string },
   held: null as Promise<void> | null,
+  push: vi.fn(),
 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (callback: () => void) => useEffect(callback, [callback]),
   useLocalSearchParams: () => state.params,
+  useRouter: () => ({ push: state.push }),
 }));
 vi.mock("../api/api", () => ({
   rpc: state.rpc,
@@ -87,6 +90,21 @@ vi.mock("react-native-safe-area-context", () => ({
 vi.mock("../../components/native/native-action-button", () => ({
   NativeActionButton: ({ label, onPress, disabled }: ButtonProps & { label: string }) => (
     <button type="button" disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
+vi.mock("../../components/models/model-connection-fields", () => ({
+  DisclosureRow: ({
+    label,
+    expanded,
+    onPress,
+  }: {
+    label: string;
+    expanded: boolean;
+    onPress: () => void;
+  }) => (
+    <button type="button" aria-expanded={expanded} onClick={onPress}>
       {label}
     </button>
   ),
@@ -180,6 +198,7 @@ beforeEach(() => {
   state.load.mockReset().mockResolvedValue(true);
   state.save.mockReset().mockResolvedValue(undefined);
   state.held = null;
+  state.push.mockReset();
   state.rpc.mockReset().mockImplementation(async (proc: string, args?: { provider: string }) => {
     if (state.held) await state.held;
     if (proc === "voice/catalog") return catalog;
@@ -727,48 +746,204 @@ async function typeInto(label: string, text: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-function withLinkedProvider(credential: { hasKey: boolean } | null) {
+const personalPlan = { id: "model-connection-1", label: "Personal plan" };
+const workPlan = { id: "model-connection-2", label: "Work plan" };
+function withLinkedProvider(
+  credential: { hasKey: boolean } | null,
+  entry: { modelConnections?: { id: string; label: string }[]; modelSignIn?: string } = {
+    modelConnections: [personalPlan],
+  },
+) {
   const original = state.rpc.getMockImplementation()!;
   let saved = credential && { id: "linked", provider: "linked", voiceId: "", ...credential };
-  state.rpc.mockImplementation((proc: string, args?: { provider: string }) => {
-    if (proc === "voice/catalog")
-      return [
-        ...catalog,
-        { id: "linked", name: "Linked", transcribe: true, modelConnection: true },
-      ];
-    if (proc === "voice/credentials") return saved ? [...credentials, saved] : credentials;
-    if (proc === "voice/connect") {
-      saved = { id: "linked", provider: "linked", voiceId: "", hasKey: false };
-      return saved;
-    }
-    return original(proc, args);
-  });
+  state.rpc.mockImplementation(
+    (proc: string, args?: { provider: string; modelCredentialId?: string }) => {
+      if (proc === "voice/catalog")
+        return [...catalog, { id: "linked", name: "Linked", transcribe: true, ...entry }];
+      if (proc === "voice/credentials") return saved ? [...credentials, saved] : credentials;
+      if (proc === "voice/connect") {
+        saved = {
+          id: "linked",
+          provider: "linked",
+          voiceId: "",
+          hasKey: !args?.modelCredentialId,
+          ...(args?.modelCredentialId ? { modelCredentialId: args.modelCredentialId } : {}),
+        };
+        return saved;
+      }
+      return original(proc, args);
+    },
+  );
+}
+const keyField = () => container.querySelector<HTMLInputElement>('input[aria-label="API key"]');
+function expectOnlyDisconnect() {
+  expect(keyField()).toBeNull();
+  const labels = [...container.querySelectorAll("button")].map((item) => item.textContent);
+  expect(labels).not.toContain("Connect");
+  expect(labels).not.toContain("Replace key");
+  expect(labels.some((label) => label?.startsWith("Use "))).toBe(false);
+  expect(labels).not.toContain("Or paste an API key");
+  expect(button("Disconnect").disabled).toBe(false);
 }
 
-it("connects through the account's model connection with no key, then offers no key to replace", async () => {
+it.each([personalPlan, workPlan])(
+  "connects through the model connection $label with no key, then offers only the other one",
+  async (connection) => {
+    state.load.mockResolvedValue(false);
+    withLinkedProvider(null, { modelConnections: [personalPlan, workPlan] });
+    await render();
+    await click("Linked");
+    // The key form folds behind the model connections.
+    expect(keyField()).toBeNull();
+    expect(button("Or paste an API key").getAttribute("aria-expanded")).toBe("false");
+    await click(`Use ${connection.label}`);
+    expect(state.rpc).toHaveBeenCalledWith("voice/connect", {
+      provider: "linked",
+      scope: "account",
+      apiKey: "",
+      modelCredentialId: connection.id,
+    });
+    const other = connection === personalPlan ? workPlan : personalPlan;
+    const labels = [...container.querySelectorAll("button")].map((item) => item.textContent);
+    expect(labels.filter((label) => label?.startsWith("Use "))).toEqual([`Use ${other.label}`]);
+    expect(keyField()).toBeNull();
+    expect(labels).not.toContain("Or paste an API key");
+    expect(button("Disconnect").disabled).toBe(false);
+    expect(container.textContent).toContain("linked voice");
+  },
+);
+
+it("still connects a typed key from behind the model connection choices", async () => {
   state.load.mockResolvedValue(false);
   withLinkedProvider(null);
   await render();
   await click("Linked");
-  const key = () => container.querySelector<HTMLInputElement>('input[aria-label="API key"]');
-  expect(key()?.placeholder).toBe("Optional");
-  expect(button("Connect").disabled).toBe(false);
-  // A key the user does type must still be a whole one.
+  await click("Or paste an API key");
+  expect(keyField()?.placeholder).toBe("Paste your API key");
+  // An empty key no longer stands in for the model connection.
+  expect(button("Connect").disabled).toBe(true);
   await typeInto("API key", "short");
   expect(button("Connect").disabled).toBe(true);
-  await typeInto("API key", "");
+  await typeInto("API key", "a-whole-key");
   await click("Connect");
+  const [, sent] = state.rpc.mock.calls.find(([proc]) => proc === "voice/connect")!;
+  expect(sent).toMatchObject({ provider: "linked", scope: "account", apiKey: "a-whole-key" });
+  expect(sent.modelCredentialId).toBeUndefined();
+  expect(keyField()?.placeholder).toBe("Paste a replacement key");
+  expect(button("Replace key")).toBeDefined();
+});
+
+it("signs in through the Models connection screen, then connects voice through the saved connection", async () => {
+  state.load.mockResolvedValue(false);
+  const entry: { modelConnections?: { id: string; label: string }[]; modelSignIn?: string } = {
+    modelSignIn: "Sign in with a plan",
+  };
+  withLinkedProvider(null, entry);
+  await render();
+  await click("Linked");
+  expect(keyField()).toBeNull();
+  expect(button("Or paste an API key")).toBeDefined();
+  await click("Sign in with a plan");
+  expect(state.push).toHaveBeenCalledWith({
+    pathname: "/model-connection",
+    params: { requestId: expect.any(String) },
+  });
+  const [{ params }] = state.push.mock.calls[0] as [{ params: { requestId: string } }];
+  const request = modelConnectionRequest(params.requestId)!;
+  expect(request).toMatchObject({
+    provider: "linked",
+    credentialId: null,
+    makeDefault: false,
+    target: { scope: "account" },
+  });
+  expect(state.rpc).not.toHaveBeenCalledWith("voice/connect", expect.anything());
+
+  // The sign-in saved a Models connection, which the catalog now lists.
+  entry.modelConnections = [{ id: "signed-in-connection", label: "Signed in" }];
+  await act(async () => request.onSaved!("signed-in-connection"));
   expect(state.rpc).toHaveBeenCalledWith("voice/connect", {
     provider: "linked",
     scope: "account",
     apiKey: "",
+    modelCredentialId: "signed-in-connection",
   });
-  expect(key()).toBeNull();
-  const labels = [...container.querySelectorAll("button")].map((item) => item.textContent);
-  expect(labels).not.toContain("Connect");
-  expect(labels).not.toContain("Replace key");
-  expect(button("Disconnect").disabled).toBe(false);
-  expect(container.textContent).toContain("linked voice");
+  expectOnlyDisconnect();
+});
+
+it("opens one sign-in screen for a double tap and keeps its request", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider(null, { modelSignIn: "Sign in with a plan" });
+  await render();
+  await click("Linked");
+  await click("Sign in with a plan");
+  await click("Sign in with a plan");
+  expect(state.push).toHaveBeenCalledOnce();
+  const [{ params }] = state.push.mock.calls[0] as [{ params: { requestId: string } }];
+  expect(modelConnectionRequest(params.requestId)).toMatchObject({ provider: "linked" });
+});
+
+it("offers the new connection, not another sign-in, when voice cannot connect through it", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider(null, { modelSignIn: "Sign in with a plan" });
+  await render();
+  await click("Linked");
+  await click("Sign in with a plan");
+  const [{ params }] = state.push.mock.calls[0] as [{ params: { requestId: string } }];
+  const request = modelConnectionRequest(params.requestId)!;
+  // The sign-in saved a Models connection, which the next catalog read lists; voice refuses it.
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc, args) => {
+    if (proc === "voice/connect") throw new Error("The provider is unavailable.");
+    if (proc === "voice/catalog")
+      return [
+        ...catalog,
+        { id: "linked", name: "Linked", transcribe: true, modelConnections: [personalPlan] },
+      ];
+    return original(proc, args);
+  });
+
+  await act(async () => request.onSaved!("signed-in-connection"));
+
+  expect(container.textContent).toContain("The provider is unavailable.");
+  expect(button("Use Personal plan")).toBeDefined();
+  expect(
+    [...container.querySelectorAll("button")].some(
+      (item) => item.textContent === "Sign in with a plan",
+    ),
+  ).toBe(false);
+});
+
+it("moves a working link to another of the account's subscriptions", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider({ hasKey: false, modelCredentialId: personalPlan.id } as { hasKey: boolean }, {
+    modelConnections: [personalPlan, workPlan],
+  });
+  await render();
+  await click("Linked");
+  expect(container.textContent).not.toContain(`Use ${personalPlan.label}`);
+  expect(container.textContent).not.toContain("Or paste an API key");
+  await click(`Use ${workPlan.label}`);
+  expect(state.rpc).toHaveBeenCalledWith("voice/connect", {
+    provider: "linked",
+    scope: "account",
+    apiKey: "",
+    modelCredentialId: workPlan.id,
+  });
+});
+
+it("links voice again once the model connection it used is gone", async () => {
+  state.load.mockResolvedValue(false);
+  withLinkedProvider({ hasKey: false, modelCredentialId: "gone" } as { hasKey: boolean });
+  await render();
+  await click("Linked");
+  await click("Use Personal plan");
+  expect(state.rpc).toHaveBeenCalledWith("voice/connect", {
+    provider: "linked",
+    scope: "account",
+    apiKey: "",
+    modelCredentialId: personalPlan.id,
+  });
+  expectOnlyDisconnect();
 });
 
 it("still needs a whole key to replace a key saved for a model-connection provider", async () => {
@@ -776,12 +951,20 @@ it("still needs a whole key to replace a key saved for a model-connection provid
   withLinkedProvider({ hasKey: true });
   await render();
   await click("Linked");
-  expect(
-    container.querySelector<HTMLInputElement>('input[aria-label="API key"]')?.placeholder,
-  ).toBe("Paste a replacement key");
+  expect(keyField()?.placeholder).toBe("Paste a replacement key");
   expect(button("Replace key").disabled).toBe(true);
   await typeInto("API key", "a-whole-key");
   expect(button("Replace key").disabled).toBe(false);
+});
+
+it("keeps management of an existing voice connection in account settings", async () => {
+  state.params = { spaceId: "space-other" };
+  withLinkedProvider({ hasKey: true });
+  await render();
+  await click("Linked");
+
+  expect(container.textContent).not.toContain("Use Personal plan");
+  expect(keyField()).toBeNull();
 });
 
 it("keeps a successful connection when the following settings read fails", async () => {
@@ -797,7 +980,7 @@ it("keeps a successful connection when the following settings read fails", async
     if (proc === "voice/connect") connected = true;
     return result;
   });
-  await click("Connect");
+  await click("Use Personal plan");
   expect(container.textContent).toContain("Could not load voice settings");
   expect(container.textContent).not.toContain("Could not connect");
   expect(button("Disconnect")).toBeDefined();
@@ -830,7 +1013,7 @@ it("still reports a failed connection without pretending it was saved", async ()
     if (proc === "voice/connect") throw new Error();
     return original(proc, args);
   });
-  await click("Connect");
+  await click("Use Personal plan");
   expect(container.textContent).toContain("Could not connect");
   expect(container.textContent).not.toContain("Could not load voice settings");
   expect(container.textContent).not.toContain("Disconnect");
@@ -897,7 +1080,7 @@ it("keeps a newly connected voice ready for samples across a failed refresh and 
   await render();
   await click("Linked");
   expect(container.textContent).not.toContain("Hear a sample");
-  await click("Connect");
+  await click("Use Personal plan");
   expect(container.textContent).toContain("Hear a sample");
   await act(async () => root.render(null));
   await render();
