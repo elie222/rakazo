@@ -54,7 +54,12 @@ import {
   writeSetup,
   writeUiLocale,
 } from "./setup/setup-store.js";
-import { destroySetupWindow, registerSetupIpc, showSetupWindow } from "./setup/setup-window.js";
+import {
+  destroySetupWindow,
+  isSetupSaveInProgress,
+  registerSetupIpc,
+  showSetupWindow,
+} from "./setup/setup-window.js";
 import { createBadgeHandler } from "./system/badge.js";
 import { createClipboardHandler } from "./system/clipboard.js";
 import {
@@ -132,6 +137,7 @@ import {
   resolveSessionForTarget,
   ServerUnavailable,
 } from "./windows/app-window.js";
+import { DEEP_LINK_SCHEME } from "./windows/deep-link.js";
 import { registerDeepLinkHandlers } from "./windows/second-instance.js";
 import { registerWindowControls } from "./windows/window-controls.js";
 import { isMcpOAuthServerId, mcpOAuthPartition } from "./windows/window-open.js";
@@ -536,28 +542,32 @@ async function recoverFromCrashedSave(
   showSetupWindow(message);
   return message;
 }
-async function reopenTargetServer(url: string) {
-  if (!(await appOpener.open(url))) return;
-  commitPendingAppSwitch();
-  deepLinks?.applyPending();
+function reopenAppWindow() {
+  if (desktop.currentTargetUrl === null) {
+    showSetupWindow(desktop.setupError);
+    return;
+  }
+  void appOpener.open(desktop.currentTargetUrl).then((opened) => {
+    if (!opened) return;
+    commitPendingAppSwitch();
+    deepLinks?.applyPending();
+  });
 }
 
 // A second launch on Linux/Windows would rerun host-computer setup, overwrite
 // the saved token and restart the local stack under the running instance.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
-let deepLinks: ReturnType<typeof registerDeepLinkHandlers> | undefined;
-if (!hasSingleInstanceLock) {
-  app.quit();
-} else {
-  deepLinks = registerDeepLinkHandlers(app, {
-    initialArgv: process.argv,
-    isOpening: () => appOpener.busy(),
-    reopenTarget: (url) => void reopenTargetServer(url),
-  });
-}
+const deepLinks = hasSingleInstanceLock
+  ? registerDeepLinkHandlers(app, {
+      initialArgv: process.argv,
+      isOpening: () => appOpener.busy() || isSetupSaveInProgress(),
+      reopen: reopenAppWindow,
+    })
+  : undefined;
+if (!hasSingleInstanceLock) app.quit();
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
-  deepLinks?.registerProtocol();
+  if (app.isPackaged) app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
   installSessionPermissions(session.defaultSession, permissionTarget);
   const userDataDir = app.getPath("userData");
   startDesktopLocale(
@@ -913,26 +923,10 @@ app.whenReady().then(async () => {
     if (!(await appOpener.open(url))) return;
     commitPendingAppSwitch();
     destroySetupWindow();
-    deepLinks?.applyPending();
   };
 
   // Register before startup awaits so macOS dock clicks during probe/open are handled.
-  app.on("activate", () => {
-    if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
-      desktop.setupWindow.show();
-      desktop.setupWindow.focus();
-      return;
-    }
-    if (desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed()) {
-      clearTimeout(desktop.warmWindowTimer);
-      desktop.mainWindow.show();
-      desktop.mainWindow.focus();
-      return;
-    }
-    if (appOpener.busy()) return;
-    if (desktop.currentTargetUrl === null) showSetupWindow(desktop.setupError);
-    else void reopenTargetServer(desktop.currentTargetUrl);
-  });
+  deepLinks?.registerActivate();
 
   if (target.kind === "setup") {
     showSetupWindow();
@@ -965,7 +959,7 @@ app.whenReady().then(async () => {
   } else {
     await openInitialServer(target.url);
   }
-  deepLinks?.markStartupReady();
+  deepLinks?.finishStartup();
 });
 app.on("window-all-closed", () => {
   // A hidden session probe (defaultSessionHasOriginData) can be the only window

@@ -250,14 +250,7 @@ export function registerSetupIpc({
       }
     } finally {
       setupSaveInProgress = false;
-      if (
-        (desktop.setupWindow === null || desktop.setupWindow.isDestroyed()) &&
-        desktop.mainWindow !== null &&
-        !desktop.mainWindow.isDestroyed() &&
-        desktop.currentTargetUrl !== null
-      ) {
-        onAppReadyCallback?.();
-      }
+      if (desktop.setupWindow === null) onAppReadyCallback?.();
     }
   });
 

@@ -1,9 +1,8 @@
-import type { BrowserWindow } from "electron";
+import { EventEmitter } from "node:events";
+import type { App, BrowserWindow } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { desktop } from "../desktop-state.js";
 import {
-  createDeepLinkController,
-  handleSecondInstance,
   registerDeepLinkHandlers,
   revealSecondInstanceWindow,
   secondInstanceWindow,
@@ -19,6 +18,7 @@ function fakeWindow(overrides: Partial<BrowserWindow> = {}, currentUrl = "https:
     focus: vi.fn(),
     webContents: {
       getURL: vi.fn(() => currentUrl),
+      isLoadingMainFrame: vi.fn(() => false),
       loadURL,
     },
     ...overrides,
@@ -63,207 +63,24 @@ describe("second-instance window", () => {
   });
 });
 
-describe("handleSecondInstance", () => {
-  it("focuses the main window without navigating when no deep link is present", () => {
-    const main = fakeWindow();
-    const onRevealMainWindow = vi.fn();
-    const result = handleSecondInstance({
-      argv: ["Rakazo.exe"],
-      setupWindow: null,
-      mainWindow: main,
-      currentTargetUrl: "https://rakazo.example",
-      onRevealMainWindow,
-    });
-    expect(result).toEqual({ kind: "focused" });
-    expect(onRevealMainWindow).toHaveBeenCalledOnce();
-    expect(main.focus).toHaveBeenCalledOnce();
-    expect(main.webContents.loadURL).not.toHaveBeenCalled();
-  });
-
-  it("focuses and navigates the main window for a valid deep link on a configured server", () => {
-    const main = fakeWindow({ isMinimized: () => true });
-    const result = handleSecondInstance({
-      argv: ["Rakazo.exe", "rakazo://app/bot-99?m=abc"],
-      setupWindow: null,
-      mainWindow: main,
-      currentTargetUrl: "https://rakazo.example:8443",
-    });
-    expect(result).toEqual({ kind: "navigated" });
-    expect(main.restore).toHaveBeenCalledOnce();
-    expect(main.show).toHaveBeenCalledOnce();
-    expect(main.focus).toHaveBeenCalledOnce();
-    expect(main.webContents.loadURL).toHaveBeenCalledWith(
-      "https://rakazo.example:8443/app/bot-99?m=abc",
-    );
-  });
-
-  it("focuses without navigating when the deep link is invalid or disallowed", () => {
-    const main = fakeWindow();
-    const result = handleSecondInstance({
-      argv: ["Rakazo.exe", "rakazo://billing"],
-      setupWindow: null,
-      mainWindow: main,
-      currentTargetUrl: "https://rakazo.example",
-    });
-    expect(result).toEqual({ kind: "focused" });
-    expect(main.focus).toHaveBeenCalledOnce();
-    expect(main.webContents.loadURL).not.toHaveBeenCalled();
-  });
-
-  it("focuses the setup window and queues the deep link without bypassing setup", () => {
-    const setup = fakeWindow();
-    const main = fakeWindow();
-    const result = handleSecondInstance({
-      argv: ["Rakazo.exe", "rakazo://app/bot-99"],
-      setupWindow: setup,
-      mainWindow: main,
-      currentTargetUrl: "https://rakazo.example",
-    });
-    expect(result).toEqual({
-      kind: "queued",
-      deepLink: { kind: "bot", botId: "bot-99", search: "", hash: "" },
-    });
-    expect(setup.focus).toHaveBeenCalledOnce();
-    expect(main.focus).not.toHaveBeenCalled();
-    expect(main.webContents.loadURL).not.toHaveBeenCalled();
-  });
-
-  it("queues a valid deep link when the main window or server is not ready yet", () => {
-    const result = handleSecondInstance({
-      argv: ["Rakazo.exe", "rakazo://app/bot-99"],
-      setupWindow: null,
-      mainWindow: null,
-      currentTargetUrl: null,
-    });
-    expect(result).toEqual({
-      kind: "queued",
-      deepLink: { kind: "bot", botId: "bot-99", search: "", hash: "" },
-    });
-  });
-});
-
-describe("createDeepLinkController", () => {
-  it("applies a cold-start argv deep link once the app window is ready and clears it", () => {
-    let setupWindow: BrowserWindow | null = fakeWindow();
-    let mainWindow: ReturnType<typeof fakeWindow> | null = null;
-    let currentTargetUrl: string | null = null;
-
-    const controller = createDeepLinkController({
-      initialArgv: ["Rakazo.exe", "rakazo://app/bot-cold"],
-      setupWindow: () => setupWindow,
-      mainWindow: () => mainWindow,
-      currentTargetUrl: () => currentTargetUrl,
-      onRevealMainWindow: vi.fn(),
-      reopenIfClosed: vi.fn(),
-    });
-
-    // Does not navigate while setup is open or main is not ready.
-    controller.applyPending();
-
-    mainWindow = fakeWindow();
-    currentTargetUrl = "https://rakazo.example";
-    controller.applyPending();
-    expect(mainWindow.webContents.loadURL).not.toHaveBeenCalled();
-
-    // Once setup closes, applies exactly once and clears.
-    setupWindow = null;
-    controller.applyPending();
-    expect(mainWindow.webContents.loadURL).toHaveBeenCalledOnce();
-    expect(mainWindow.webContents.loadURL).toHaveBeenCalledWith(
-      "https://rakazo.example/app/bot-cold",
-    );
-
-    mainWindow.webContents.loadURL.mockClear();
-    controller.applyPending();
-    expect(mainWindow.webContents.loadURL).not.toHaveBeenCalled();
-  });
-
-  it("handles open-url by ignoring invalid links and reopening when the main window is closed", () => {
-    let mainWindow: ReturnType<typeof fakeWindow> | null = null;
-    const reopenIfClosed = vi.fn();
-
-    const controller = createDeepLinkController({
-      initialArgv: ["Rakazo"],
-      setupWindow: () => null,
-      mainWindow: () => mainWindow,
-      currentTargetUrl: () => "https://rakazo.example",
-      onRevealMainWindow: vi.fn(),
-      reopenIfClosed,
-    });
-
-    controller.handleOpenUrl("rakazo://billing");
-    expect(reopenIfClosed).not.toHaveBeenCalled();
-
-    controller.handleOpenUrl("rakazo://app/bot-mac");
-    expect(reopenIfClosed).toHaveBeenCalledOnce();
-
-    mainWindow = fakeWindow();
-    controller.applyPending();
-    expect(mainWindow.webContents.loadURL).toHaveBeenCalledWith(
-      "https://rakazo.example/app/bot-mac",
-    );
-  });
-
-  it("queues a deep link while appOpener is still loading the main window", () => {
-    let opening = true;
-    const main = fakeWindow();
-
-    const controller = createDeepLinkController({
-      initialArgv: ["Rakazo"],
-      setupWindow: () => null,
-      mainWindow: () => main,
-      currentTargetUrl: () => "https://rakazo.example",
-      isOpening: () => opening,
-      onRevealMainWindow: vi.fn(),
-      reopenIfClosed: vi.fn(),
-    });
-
-    expect(controller.handleArgv(["Rakazo", "rakazo://app/bot-reopen"])).toEqual({
-      kind: "queued",
-      deepLink: { kind: "bot", botId: "bot-reopen", search: "", hash: "" },
-    });
-    expect(main.webContents.loadURL).not.toHaveBeenCalled();
-
-    // Still loading: applyPending keeps the link queued.
-    controller.applyPending();
-    expect(main.webContents.loadURL).not.toHaveBeenCalled();
-
-    // Once opening completes, applyPending navigates once.
-    opening = false;
-    controller.applyPending();
-    expect(main.webContents.loadURL).toHaveBeenCalledOnce();
-    expect(main.webContents.loadURL).toHaveBeenCalledWith("https://rakazo.example/app/bot-reopen");
-  });
-});
-
-describe("registerDeepLinkHandlers", () => {
-  it("registers the rakazo protocol only for packaged builds", () => {
-    const packagedApp = {
-      isPackaged: true,
-      isReady: () => true,
-      on: vi.fn(),
-      setAsDefaultProtocolClient: vi.fn(),
+describe("desktop deep-link events", () => {
+  function listen(initialArgv: string[] = []) {
+    const app = new EventEmitter() as EventEmitter & Pick<App, "on">;
+    const isOpening = vi.fn(() => false);
+    const reopen = vi.fn();
+    const handlers = registerDeepLinkHandlers(app, { initialArgv, isOpening, reopen });
+    return {
+      ...handlers,
+      isOpening,
+      reopen,
+      launch: (...argv: string[]) => app.emit("second-instance", {}, ["Rakazo", ...argv]),
+      openUrl: (url: string) => {
+        const preventDefault = vi.fn();
+        app.emit("open-url", { preventDefault }, url);
+        return preventDefault;
+      },
     };
-    registerDeepLinkHandlers(packagedApp as never, {
-      initialArgv: ["Rakazo.exe"],
-      isOpening: () => false,
-      reopenTarget: vi.fn(),
-    }).registerProtocol();
-    expect(packagedApp.setAsDefaultProtocolClient).toHaveBeenCalledWith("rakazo");
-
-    const devApp = {
-      isPackaged: false,
-      isReady: () => true,
-      on: vi.fn(),
-      setAsDefaultProtocolClient: vi.fn(),
-    };
-    registerDeepLinkHandlers(devApp as never, {
-      initialArgv: ["electron", "."],
-      isOpening: () => false,
-      reopenTarget: vi.fn(),
-    }).registerProtocol();
-    expect(devApp.setAsDefaultProtocolClient).not.toHaveBeenCalled();
-  });
+  }
 
   afterEach(() => {
     desktop.setupWindow = null;
@@ -271,44 +88,90 @@ describe("registerDeepLinkHandlers", () => {
     desktop.currentTargetUrl = null;
   });
 
-  it("waits until startup finishes before opening setup on open-url with no configured server", () => {
-    const listeners = new Map<string, (...args: unknown[]) => void>();
-    const electronApp = {
-      isPackaged: true,
-      on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
-        listeners.set(event, listener);
-      }),
-      setAsDefaultProtocolClient: vi.fn(),
-    };
-    const reopenTarget = vi.fn();
-    const showSetup = vi.fn();
-    desktop.setupWindow = null;
-    desktop.mainWindow = null;
-    desktop.currentTargetUrl = null;
+  it("reuses the signed-in window for a second-instance launch", () => {
+    const events = listen();
+    events.finishStartup();
+    const win = fakeWindow({ isMinimized: () => true });
+    desktop.mainWindow = win;
+    desktop.currentTargetUrl = "https://rakazo.example:8443";
 
-    const handlers = registerDeepLinkHandlers(electronApp as never, {
-      initialArgv: ["Rakazo"],
-      isOpening: () => false,
-      reopenTarget,
-      showSetup,
-    });
+    events.launch("rakazo://app/bot-99?m=abc");
 
-    // During startup, open-url only queues without opening setup prematurely.
-    const preventDefaultEarly = vi.fn();
-    listeners.get("open-url")?.({ preventDefault: preventDefaultEarly }, "rakazo://app/bot-early");
-    expect(preventDefaultEarly).toHaveBeenCalledOnce();
-    expect(showSetup).not.toHaveBeenCalled();
-    expect(reopenTarget).not.toHaveBeenCalled();
-
-    // Once startup has finished, open-url with all windows closed opens setup.
-    handlers.markStartupReady();
-    const preventDefaultLate = vi.fn();
-    listeners.get("open-url")?.(
-      { preventDefault: preventDefaultLate },
-      "rakazo://app/bot-unconfigured",
+    expect(win.restore).toHaveBeenCalledOnce();
+    expect(win.focus).toHaveBeenCalledOnce();
+    expect(win.webContents.loadURL).toHaveBeenCalledExactlyOnceWith(
+      "https://rakazo.example:8443/app/bot-99?m=abc",
     );
-    expect(preventDefaultLate).toHaveBeenCalledOnce();
-    expect(showSetup).toHaveBeenCalledOnce();
-    expect(reopenTarget).not.toHaveBeenCalled();
+  });
+
+  it("opens a cold-start argument once startup finishes", () => {
+    const events = listen(["Rakazo", "rakazo://app/cold"]);
+    const win = fakeWindow();
+    desktop.mainWindow = win;
+    desktop.currentTargetUrl = "https://rakazo.example";
+
+    events.applyPending();
+    expect(win.webContents.loadURL).not.toHaveBeenCalled();
+    events.finishStartup();
+    events.applyPending();
+    expect(win.webContents.loadURL).toHaveBeenCalledExactlyOnceWith(
+      "https://rakazo.example/app/cold",
+    );
+  });
+
+  it("keeps the latest link while setup or a server switch is still in progress", () => {
+    const events = listen();
+    events.finishStartup();
+    const win = fakeWindow();
+    const setup = fakeWindow();
+    desktop.mainWindow = win;
+    desktop.setupWindow = setup;
+    desktop.currentTargetUrl = "https://previous.example";
+
+    events.launch("rakazo://app/first");
+    expect(setup.focus).toHaveBeenCalledOnce();
+    expect(win.webContents.loadURL).not.toHaveBeenCalled();
+
+    desktop.setupWindow = null;
+    events.isOpening.mockReturnValue(true);
+    events.launch("rakazo://app/latest");
+    expect(win.webContents.loadURL).not.toHaveBeenCalled();
+
+    desktop.currentTargetUrl = "https://rakazo.example";
+    events.isOpening.mockReturnValue(false);
+    events.applyPending();
+    expect(win.webContents.loadURL).toHaveBeenCalledExactlyOnceWith(
+      "https://rakazo.example/app/latest",
+    );
+  });
+
+  it("waits for startup before reopening a closed app for a macOS URL", () => {
+    const events = listen();
+    expect(events.openUrl("rakazo://app/early")).toHaveBeenCalledOnce();
+    expect(events.reopen).not.toHaveBeenCalled();
+    events.finishStartup();
+
+    events.openUrl("rakazo://app/reopen");
+    expect(events.reopen).toHaveBeenCalledOnce();
+
+    const win = fakeWindow();
+    desktop.mainWindow = win;
+    desktop.currentTargetUrl = "https://rakazo.example";
+    events.applyPending();
+    expect(win.webContents.loadURL).toHaveBeenCalledExactlyOnceWith(
+      "https://rakazo.example/app/reopen",
+    );
+  });
+
+  it("preserves duplicate-launch focus and ignores unsupported macOS URLs", () => {
+    const events = listen();
+    events.finishStartup();
+    const win = fakeWindow();
+    desktop.mainWindow = win;
+
+    events.launch("--regular-launch");
+    expect(events.openUrl("rakazo://billing")).not.toHaveBeenCalled();
+    expect(win.focus).toHaveBeenCalledOnce();
+    expect(win.webContents.loadURL).not.toHaveBeenCalled();
   });
 });

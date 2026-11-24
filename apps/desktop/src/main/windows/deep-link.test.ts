@@ -12,19 +12,16 @@ import {
 describe("parseDeepLink", () => {
   it("parses valid rakazo://app/<botId> links with optional query and hash", () => {
     expect(parseDeepLink("rakazo://app/c000000000000000000000001")).toEqual({
-      kind: "bot",
       botId: "c000000000000000000000001",
       search: "",
       hash: "",
     });
     expect(parseDeepLink("rakazo://app/bot_1-Alpha?m=msg_42&routine=r1#bottom")).toEqual({
-      kind: "bot",
       botId: "bot_1-Alpha",
       search: "?m=msg_42&routine=r1",
       hash: "#bottom",
     });
     expect(parseDeepLink("RAKAZO://APP/BotCase123")).toEqual({
-      kind: "bot",
       botId: "BotCase123",
       search: "",
       hash: "",
@@ -69,21 +66,6 @@ describe("parseDeepLink", () => {
 });
 
 describe("extractDeepLinkFromArgv", () => {
-  it("extracts a valid deep link from Windows and Linux command lines", () => {
-    expect(
-      extractDeepLinkFromArgv([
-        "C:\\Users\\alice\\AppData\\Local\\Programs\\Rakazo\\Rakazo.exe",
-        "--allow-file-access-from-files",
-        "rakazo://app/bot-1?m=9",
-      ]),
-    ).toEqual({
-      kind: "bot",
-      botId: "bot-1",
-      search: "?m=9",
-      hash: "",
-    });
-  });
-
   it("picks the last valid deep link and ignores invalid rakazo links or flags", () => {
     expect(
       extractDeepLinkFromArgv([
@@ -94,7 +76,6 @@ describe("extractDeepLinkFromArgv", () => {
         "rakazo://app/bot-second",
       ]),
     ).toEqual({
-      kind: "bot",
       botId: "bot-second",
       search: "",
       hash: "",
@@ -137,10 +118,14 @@ describe("navigateWindowToDeepLink", () => {
       isDestroyed: vi.fn(() => false),
       webContents: {
         getURL: vi.fn(() => currentUrl),
+        isLoadingMainFrame: vi.fn(() => false),
         loadURL,
       },
     } as unknown as BrowserWindow & {
-      webContents: { getURL: ReturnType<typeof vi.fn>; loadURL: ReturnType<typeof vi.fn> };
+      webContents: {
+        isLoadingMainFrame: ReturnType<typeof vi.fn>;
+        loadURL: ReturnType<typeof vi.fn>;
+      };
     };
   }
 
@@ -156,6 +141,14 @@ describe("navigateWindowToDeepLink", () => {
     const link = parseDeepLink("rakazo://app/bot-42")!;
     expect(navigateWindowToDeepLink(win, link, "https://rakazo.example")).toBe(true);
     expect(win.webContents.loadURL).not.toHaveBeenCalled();
+  });
+
+  it("loads the latest target when a navigation is already in progress", () => {
+    const win = fakeWindow("https://rakazo.example/app/bot-42");
+    win.webContents.isLoadingMainFrame.mockReturnValue(true);
+    const link = parseDeepLink("rakazo://app/bot-42")!;
+    expect(navigateWindowToDeepLink(win, link, "https://rakazo.example")).toBe(true);
+    expect(win.webContents.loadURL).toHaveBeenCalledWith("https://rakazo.example/app/bot-42");
   });
 
   it("returns false when the window is destroyed or no target server is set", () => {

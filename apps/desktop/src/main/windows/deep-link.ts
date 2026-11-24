@@ -3,59 +3,25 @@ import type { BrowserWindow } from "electron";
 
 export const DEEP_LINK_SCHEME = "rakazo";
 
-const SCHEME_PREFIX = `${DEEP_LINK_SCHEME}://`;
-const APP_BOT_PATH = /^app\/([A-Za-z0-9_-]{1,200})$/i;
+const BOT_LINK = /^rakazo:\/\/app\/([A-Za-z0-9_-]{1,200})(?:[?#].*)?$/i;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: reject raw controls before URL normalization.
+const CONTROL_OR_WHITESPACE = /[\u0000-\u0020\u007f\s]/u;
 // Non-bot routes mounted under /app/* in the web router.
 const RESERVED_APP_SEGMENTS = new Set(["artifacts", "board", "g", "x"]);
 
 export type ParsedDeepLink = {
-  kind: "bot";
   botId: string;
   search: string;
   hash: string;
 };
 
-function hasControlOrWhitespace(value: string): boolean {
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code <= 0x20 || code === 0x7f) return true;
-  }
-  return /\s/.test(value);
-}
-
-/**
- * Parses an allowlisted `rakazo://` deep link (`rakazo://app/<botId>` with optional query/hash).
- * Rejects any other host, traversal segments, credentials, ports, or control characters.
- */
+/** Match the raw address before URL parsing can normalize path segments. */
 export function parseDeepLink(raw: string): ParsedDeepLink | null {
-  if (typeof raw !== "string" || raw.length === 0 || hasControlOrWhitespace(raw)) return null;
-  if (!raw.toLowerCase().startsWith(SCHEME_PREFIX)) return null;
-
-  const withoutScheme = raw.slice(SCHEME_PREFIX.length);
-  const queryOrHash = withoutScheme.search(/[?#]/);
-  const authorityAndPath = queryOrHash === -1 ? withoutScheme : withoutScheme.slice(0, queryOrHash);
-  const match = APP_BOT_PATH.exec(authorityAndPath);
-  const botId = match?.[1];
+  if (CONTROL_OR_WHITESPACE.test(raw)) return null;
+  const botId = BOT_LINK.exec(raw)?.[1];
   if (botId === undefined || RESERVED_APP_SEGMENTS.has(botId.toLowerCase())) return null;
-
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return null;
-  }
-
-  if (url.protocol !== `${DEEP_LINK_SCHEME}:`) return null;
-  if (url.hostname.toLowerCase() !== "app") return null;
-  if (url.port !== "" || url.username !== "" || url.password !== "") return null;
-  if (url.pathname !== `/${botId}`) return null;
-
-  return {
-    kind: "bot",
-    botId,
-    search: url.search,
-    hash: url.hash,
-  };
+  const { search, hash } = new URL(raw);
+  return { botId, search, hash };
 }
 
 /** Extracts the last valid `rakazo://` deep link from process/second-instance arguments. */
@@ -79,29 +45,14 @@ export function resolveDeepLinkTarget(
 ): string | null {
   if (currentTargetUrl === null) return null;
 
-  let base: URL;
-  try {
-    base = new URL(currentTargetUrl);
-  } catch {
-    return null;
-  }
+  const base = URL.parse(currentTargetUrl);
+  if (base === null || (base.protocol !== "http:" && base.protocol !== "https:")) return null;
 
-  if ((base.protocol !== "http:" && base.protocol !== "https:") || base.origin === "null") {
-    return null;
-  }
-
-  let resolved: URL;
-  try {
-    resolved = new URL(
-      `/app/${encodeURIComponent(deepLink.botId)}${deepLink.search}${deepLink.hash}`,
-      base.origin,
-    );
-  } catch {
-    return null;
-  }
-
-  if (resolved.origin !== base.origin) return null;
-  return resolved.href;
+  const target = new URL(base.origin);
+  target.pathname = `/app/${deepLink.botId}`;
+  target.search = deepLink.search;
+  target.hash = deepLink.hash;
+  return target.href;
 }
 
 function isNavigationAbort(error: unknown): boolean {
@@ -119,10 +70,11 @@ export function navigateWindowToDeepLink(
   if (win.isDestroyed()) return false;
   const targetUrl = resolveDeepLinkTarget(deepLink, currentTargetUrl);
   if (targetUrl === null) return false;
-  if (win.webContents.getURL() === targetUrl) return true;
+  const contents = win.webContents;
+  if (contents.getURL() === targetUrl && !contents.isLoadingMainFrame()) return true;
   void bestEffort(
     "navigate to desktop deep link",
-    win.webContents.loadURL(targetUrl).catch((error: unknown) => {
+    contents.loadURL(targetUrl).catch((error: unknown) => {
       if (isNavigationAbort(error)) return;
       throw error;
     }),

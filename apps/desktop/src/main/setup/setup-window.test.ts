@@ -41,16 +41,19 @@ let page: ReturnType<typeof fakeWindow>;
 let opening: ReturnType<typeof deferred<boolean>>;
 const settleLocalStack = vi.fn<() => Promise<void>>();
 const onAppReady = vi.fn();
+const recoverFromCrashedSave = vi.fn<() => Promise<string>>();
 
 beforeEach(() => {
   page = fakeWindow();
   opening = deferred<boolean>();
   settleLocalStack.mockReset().mockResolvedValue(undefined);
   onAppReady.mockReset();
+  recoverFromCrashedSave.mockReset();
   desktop.setupWindow = page as unknown as BrowserWindow;
   desktop.mainWindow = null;
   desktop.setupError = null;
   desktop.currentSetup = null;
+  desktop.currentTargetUrl = null;
   registerSetupIpc({
     userDataDir: "unused",
     appOpener: { busy: () => false, open: () => opening.promise },
@@ -59,7 +62,7 @@ beforeEach(() => {
     syncHostComputerAccess: vi.fn(),
     commitPendingAppSwitch: vi.fn(),
     abandonPendingAppSwitch: vi.fn(),
-    recoverFromCrashedSave: vi.fn(),
+    recoverFromCrashedSave,
     stopStackLeftBehind: vi.fn(),
     settleLocalStack,
     onAppReady,
@@ -68,6 +71,8 @@ beforeEach(() => {
 afterEach(() => {
   desktop.setupWindow = null;
   desktop.setupError = null;
+  desktop.mainWindow = null;
+  desktop.currentTargetUrl = null;
 });
 
 it("checks the selected stack before saving a local connection", async () => {
@@ -134,155 +139,76 @@ describe("showSetupWindow", () => {
     showSetupWindow("Could not reach the server.");
     expect(page.reload).toHaveBeenCalledOnce();
   });
+});
 
-  it("notifies onAppReady after saving a server and closing setup", async () => {
-    const destroy = vi.fn(() => {
-      desktop.setupWindow = null;
-    });
-    (page as unknown as { destroy: ReturnType<typeof vi.fn> }).destroy = destroy;
+describe("app readiness after setup", () => {
+  function openSetup({ crashOnClose = false } = {}) {
+    let closed: (() => void) | undefined;
+    let crashed = false;
     desktop.mainWindow = {
       ...fakeWindow(),
-      webContents: { once: vi.fn(), removeListener: vi.fn(), isCrashed: () => false },
+      webContents: { once: vi.fn(), removeListener: vi.fn(), isCrashed: () => crashed },
     } as unknown as BrowserWindow;
     desktop.currentTargetUrl = SERVER;
-    const save = mocks.invoke.get("desktop.setup.save")?.(page.event, {
-      mode: "existing",
-      serverUrl: SERVER,
-      headers: {},
-    });
-    expect(isSetupSaveInProgress()).toBe(true);
-    opening.resolve(true);
-    await expect(save).resolves.toEqual({ ok: true });
-    expect(isSetupSaveInProgress()).toBe(false);
-    expect(destroy).toHaveBeenCalledOnce();
-    expect(onAppReady).toHaveBeenCalledOnce();
-  });
-
-  it("defers onAppReady while setup save is in progress and fires it if setup closed before a failed save", async () => {
-    let closedHandler: (() => void) | undefined;
-    const main = {
-      isDestroyed: () => false,
-      hide: vi.fn(),
-      show: vi.fn(),
-      focus: vi.fn(),
-      webContents: {
-        once: vi.fn(),
-        removeListener: vi.fn(),
-        isCrashed: () => false,
-      },
-    };
-    desktop.mainWindow = main as unknown as BrowserWindow;
-    desktop.currentTargetUrl = "https://previous.example";
     desktop.setupWindow = null;
-
-    const createdSetup = {
-      ...fakeWindow(),
-      once: vi.fn((event: string, listener: () => void) => {
-        if (event === "closed") closedHandler = listener;
-      }),
-      destroy: vi.fn(() => {
-        desktop.setupWindow = null;
-        closedHandler?.();
-      }),
-      loadFile: vi.fn(() => Promise.resolve()),
-      webContents: {
-        mainFrame: {},
-        setWindowOpenHandler: vi.fn(),
+    const setup = Object.assign(fakeWindow(), {
+      once: (_event: "closed", listener: () => void) => {
+        closed = listener;
       },
-    };
+      destroy: () => {
+        closed?.();
+        crashed = crashOnClose;
+      },
+      loadFile: vi.fn().mockResolvedValue(undefined),
+    });
+    Object.assign(setup.webContents, { setWindowOpenHandler: vi.fn() });
     vi.mocked(BrowserWindow).mockImplementationOnce(function mockWindow() {
-      return createdSetup as unknown as BrowserWindow;
+      return setup as unknown as BrowserWindow;
     });
     showSetupWindow();
-    const setupEvent = {
-      sender: createdSetup.webContents,
-      senderFrame: createdSetup.webContents.mainFrame,
-    } as unknown as IpcCaller;
+    return {
+      setup,
+      close: setup.destroy,
+      save: () =>
+        mocks.invoke.get("desktop.setup.save")?.(setup.event, {
+          mode: "existing",
+          serverUrl: SERVER,
+          headers: {},
+        }),
+    };
+  }
 
-    const save = mocks.invoke.get("desktop.setup.save")?.(setupEvent, {
-      mode: "existing",
-      serverUrl: SERVER,
-      headers: {},
-    });
+  it("notifies after saving the server and closing setup", async () => {
+    const { save } = openSetup();
+    const result = save();
     expect(isSetupSaveInProgress()).toBe(true);
-    // Closing setup while save is still running must not fire onAppReady against the old server.
-    closedHandler?.();
+    opening.resolve(true);
+    await expect(result).resolves.toEqual({ ok: true });
+    expect(onAppReady).toHaveBeenCalledOnce();
+    expect(desktop.setupWindow).toBeNull();
+    expect(isSetupSaveInProgress()).toBe(false);
+  });
+
+  it("waits for a failed save before notifying when setup closed during the save", async () => {
+    const { save, close } = openSetup();
+    const result = save();
+    close();
     expect(onAppReady).not.toHaveBeenCalled();
 
-    // Save fails and leaves the restored main window visible with setup closed: now onAppReady runs.
     opening.resolve(false);
-    await expect(save).resolves.toMatchObject({ ok: false });
-    expect(isSetupSaveInProgress()).toBe(false);
+    await expect(result).resolves.toMatchObject({ ok: false });
     expect(onAppReady).toHaveBeenCalledOnce();
   });
 
-  it("does not fire onAppReady when a post-destroy renderer crash rolls back to setup", async () => {
-    let closedHandler: (() => void) | undefined;
-    let crashed = false;
-    const main = {
-      isDestroyed: () => false,
-      hide: vi.fn(),
-      show: vi.fn(),
-      focus: vi.fn(),
-      webContents: {
-        once: vi.fn(),
-        removeListener: vi.fn(),
-        isCrashed: () => crashed,
-      },
-    };
-    desktop.mainWindow = main as unknown as BrowserWindow;
-    desktop.currentTargetUrl = "https://previous.example";
-    desktop.setupWindow = null;
-
-    const createdSetup = {
-      ...fakeWindow(),
-      once: vi.fn((event: string, listener: () => void) => {
-        if (event === "closed") closedHandler = listener;
-      }),
-      destroy: vi.fn(() => {
-        desktop.setupWindow = null;
-        closedHandler?.();
-        crashed = true;
-      }),
-      loadFile: vi.fn(() => Promise.resolve()),
-      webContents: {
-        mainFrame: {},
-        setWindowOpenHandler: vi.fn(),
-      },
-    };
-    vi.mocked(BrowserWindow).mockImplementationOnce(function mockWindow() {
-      return createdSetup as unknown as BrowserWindow;
+  it("does not notify when a renderer crash after setup closes reopens setup", async () => {
+    const { setup, save } = openSetup({ crashOnClose: true });
+    recoverFromCrashedSave.mockImplementation(async () => {
+      desktop.setupWindow = setup as unknown as BrowserWindow;
+      return "Renderer stopped.";
     });
-    registerSetupIpc({
-      userDataDir: "unused",
-      appOpener: { busy: () => false, open: () => opening.promise },
-      probeServer: async () => ({ ok: true }),
-      configureHeaderSession: vi.fn(),
-      syncHostComputerAccess: vi.fn(),
-      commitPendingAppSwitch: vi.fn(),
-      abandonPendingAppSwitch: vi.fn(),
-      recoverFromCrashedSave: async () => {
-        desktop.setupWindow = createdSetup as unknown as BrowserWindow;
-        return "Renderer stopped.";
-      },
-      stopStackLeftBehind: vi.fn(),
-      settleLocalStack,
-      onAppReady,
-    } as unknown as Parameters<typeof registerSetupIpc>[0]);
-
-    showSetupWindow();
-    const setupEvent = {
-      sender: createdSetup.webContents,
-      senderFrame: createdSetup.webContents.mainFrame,
-    } as unknown as IpcCaller;
-
-    const save = mocks.invoke.get("desktop.setup.save")?.(setupEvent, {
-      mode: "existing",
-      serverUrl: SERVER,
-      headers: {},
-    });
+    const result = save();
     opening.resolve(true);
-    await expect(save).resolves.toMatchObject({ ok: false });
+    await expect(result).resolves.toMatchObject({ ok: false });
     expect(onAppReady).not.toHaveBeenCalled();
   });
 });
