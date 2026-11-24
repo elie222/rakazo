@@ -2,8 +2,9 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { X } from "lucide-react";
-import type { ComponentProps, Dispatch, ReactNode, RefObject, SetStateAction } from "react";
+import type { ComponentProps, Dispatch, ReactNode, SetStateAction } from "react";
 import { PagesList } from "../../components/pages/PagesList";
+import { usePageSession } from "../../lib/pages/pages";
 import type { createSpaceRpc } from "../../lib/query/rpc";
 import { RoutineEditor } from "../routines/RoutineEditor";
 import type { RoutineList } from "../routines/RoutineList";
@@ -15,7 +16,6 @@ import { firstThreadRoute } from "./use-shell-navigation";
 
 /** The panel beside the chat: a bot, a routine, a group, or an import. */
 export function ShellSidePanel({
-  focusRef,
   rpc,
   panel,
   setPanel,
@@ -39,7 +39,6 @@ export function ShellSidePanel({
   onCoversChat,
   onOverlays,
 }: {
-  focusRef: RefObject<HTMLElement | null>;
   rpc: ReturnType<typeof createSpaceRpc>;
   panel: Panel;
   setPanel: (panel: Panel) => void;
@@ -65,6 +64,7 @@ export function ShellSidePanel({
   onOverlays: (overlays: boolean) => void;
 }) {
   const { t } = useLingui();
+  const focusRef = usePageSession()?.sidePanelRef;
   const open = Boolean(panel && (active || activeGroup));
   const botView = panel === "routines" || panel === "pages" || panel === "settings" ? panel : null;
 

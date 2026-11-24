@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { RefObject } from "react";
 import {
   createContext,
+  createRef,
   useCallback,
   useContext,
   useMemo,
@@ -146,7 +147,7 @@ function focusWithoutScroll(target: HTMLElement | null | undefined, focusVisible
  */
 export function createPageSession(
   transcriptRef?: RefObject<HTMLElement | null>,
-  sidePanelRef?: RefObject<HTMLElement | null>,
+  sidePanelRef = createRef<HTMLElement>(),
 ) {
   let opener: { element: HTMLElement; ring: boolean } | null = null;
   let shareRequest: string | null = null;
@@ -154,6 +155,7 @@ export function createPageSession(
   const dockListeners = new Set<() => void>();
   const replyListeners = new Set<(text: string) => void>();
   return {
+    sidePanelRef,
     rememberOpener(trigger?: HTMLElement | null) {
       const focused = document.activeElement;
       const element = trigger ?? focused;
@@ -174,7 +176,7 @@ export function createPageSession(
         return false;
       if (focusWithoutScroll(transcript, opener?.ring)) return false;
       // An open side panel can make the chat inert, and its menu item may have unmounted.
-      return !focusWithoutScroll(sidePanelRef?.current, opener?.ring);
+      return !focusWithoutScroll(sidePanelRef.current, opener?.ring);
     },
     askShare(pageId: string | null) {
       shareRequest = pageId;
@@ -248,11 +250,8 @@ export function usePageSession(): PageSession | null {
 }
 
 /** Opens a page by URL, remembering what opened it so focus can go back there. */
-export function usePagesForChat(
-  transcriptRef: RefObject<HTMLElement | null>,
-  sidePanelRef: RefObject<HTMLElement | null>,
-): Pages {
-  const [session] = useState(() => createPageSession(transcriptRef, sidePanelRef));
+export function usePagesForChat(transcriptRef: RefObject<HTMLElement | null>): Pages {
+  const [session] = useState(() => createPageSession(transcriptRef));
   const [, setSearchParams] = useSearchParams();
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
