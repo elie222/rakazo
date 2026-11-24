@@ -31,7 +31,7 @@ x-start: &start |
   esac
   if [ -n "$${RAKAZO_PUBLIC_URL-}" ]; then
     host=$${RAKAZO_PUBLIC_URL#*://}
-    host=$${host%%/*}
+    host=$${host%%[/?#]*}
     export RAKAZO_ALLOWED_HOSTS="$${RAKAZO_ALLOWED_HOSTS:+$$RAKAZO_ALLOWED_HOSTS,}$${host%%:*}"
   fi
   exec "$$@"
