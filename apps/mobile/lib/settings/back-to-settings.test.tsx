@@ -4,7 +4,7 @@ import { act, useLayoutEffect } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { openFromSettings, useBackToSettings } from "./back-to-settings";
+import { openFromSettings, useBackToSettings, useRestoreSpaces } from "./back-to-settings";
 
 type Removed = (event: { data: { action: { type: string } } }) => void;
 
@@ -12,12 +12,13 @@ const page = vi.hoisted(() => ({
   fromSettings: undefined as string | undefined,
   platform: { OS: "ios" },
   push: vi.fn(),
+  setParams: vi.fn(),
   removed: new Set<Removed>(),
 }));
 
 vi.mock("react-native", () => ({ Platform: page.platform }));
 vi.mock("expo-router", () => {
-  const router = { push: page.push };
+  const router = { push: page.push, setParams: page.setParams };
   const navigation = {
     addListener: (name: string, listener: Removed) => {
       if (name !== "removed") throw new Error(`Unexpected listener: ${name}`);
@@ -53,6 +54,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   page.platform.OS = "ios";
   page.push.mockReset();
+  page.setParams.mockReset();
   root = createRoot(document.createElement("div"));
 });
 
@@ -62,13 +64,13 @@ afterEach(() => {
 });
 
 it.each([
-  ["POP", "/account"],
-  ["GO_BACK", "/spaces"],
-])("restores the originating Settings stack on %s", async (action, origin) => {
+  ["POP", "/account", "/account"],
+  ["GO_BACK", "/spaces", { pathname: "/account", params: { fromSettings: "/spaces" } }],
+] as const)("restores the originating Settings stack on %s", async (action, origin, href) => {
   page.fromSettings = origin;
   await act(async () => root.render(<Navigator />));
   await act(async () => root.render(<Navigator action={action} />));
-  expect(page.push).toHaveBeenCalledExactlyOnceWith(origin, { withAnchor: true });
+  expect(page.push).toHaveBeenCalledExactlyOnceWith(href);
   expect(page.removed.size).toBe(0);
 });
 
@@ -97,4 +99,15 @@ it("pushes above Settings on Android", () => {
   page.platform.OS = "android";
   openFromSettings({ push: page.push }, { pathname: "/board" }, "/account");
   expect(page.push).toHaveBeenCalledExactlyOnceWith({ pathname: "/board" });
+});
+
+it("opens Spaces once Account is mounted and clears the return marker", async () => {
+  function Account() {
+    useRestoreSpaces();
+    return null;
+  }
+  page.fromSettings = "/spaces";
+  await act(async () => root.render(<Account />));
+  expect(page.setParams).toHaveBeenCalledExactlyOnceWith({ fromSettings: undefined });
+  expect(page.push).toHaveBeenCalledExactlyOnceWith("/spaces");
 });
