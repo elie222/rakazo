@@ -6,6 +6,7 @@ import {
   browserWindowOptions,
   DEFAULT_WARM_WINDOW_TTL_MS,
   developmentIconFile,
+  parseSavedBackground,
   setupWindowOptions,
   warmWindowTtlMs,
 } from "./window-options.js";
@@ -133,12 +134,25 @@ describe("window background", () => {
     expect(appWindowBackground(null, false)).toBe(webLightTokens.background);
   });
 
-  it("opens in the background the page last painted, whatever the system appearance", () => {
-    expect(appWindowBackground("#0A0A0A", false)).toBe("#0A0A0A");
+  it("opens in the background the page last painted while the system appearance is unchanged", () => {
+    const saved = parseSavedBackground(
+      JSON.stringify({ color: "#0A0A0A", systemUsesDarkColors: false }),
+    );
+    expect(appWindowBackground(saved, false)).toBe("#0A0A0A");
   });
 
-  it("ignores a saved value that is not a color", () => {
-    expect(appWindowBackground("oklch(0.2 0 0)", true)).toBe(appWindowBackground(null, true));
+  it("follows the system once its appearance has changed since the page painted", () => {
+    const saved = parseSavedBackground(
+      JSON.stringify({ color: "#0A0A0A", systemUsesDarkColors: true }),
+    );
+    expect(appWindowBackground(saved, false)).toBe(appWindowBackground(null, false));
+  });
+
+  it("ignores a saved background that is not a color", () => {
+    expect(
+      parseSavedBackground(JSON.stringify({ color: "oklch(0.2 0 0)", systemUsesDarkColors: true })),
+    ).toBeNull();
+    expect(parseSavedBackground("#0A0A0A")).toBeNull();
   });
 
   it("keeps the always-dark setup page on the dark background", async () => {

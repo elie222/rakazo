@@ -36,11 +36,13 @@ import {
   oauthPopupSessionPreferences,
   shouldOpenInAppPopup,
 } from "./window-open.js";
+import type { SavedBackground } from "./window-options.js";
 import {
   appWindowBackground,
   browserWindowOptions,
   developmentIconFile,
   paintedBackground,
+  parseSavedBackground,
   systemWindowBackground,
   warmWindowTtlMs,
 } from "./window-options.js";
@@ -163,7 +165,7 @@ function windowBackgroundFile() {
 }
 function lastPaintedBackground() {
   try {
-    return readFileSync(windowBackgroundFile(), "utf8").trim();
+    return parseSavedBackground(readFileSync(windowBackgroundFile(), "utf8"));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT")
       reportDesktopError(error, "desktop.startup");
@@ -192,7 +194,16 @@ export function createWindow(url: string, partition: string | null) {
     if (background === null) return;
     win.setBackgroundColor(background);
     savedBackground = savedBackground.then(() =>
-      bestEffort("save the window background", writeFile(windowBackgroundFile(), background)),
+      bestEffort(
+        "save the window background",
+        writeFile(
+          windowBackgroundFile(),
+          JSON.stringify({
+            color: background,
+            systemUsesDarkColors: nativeTheme.shouldUseDarkColors,
+          } satisfies SavedBackground),
+        ),
+      ),
     );
   });
   win.on("unresponsive", () =>

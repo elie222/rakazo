@@ -37,13 +37,33 @@ export function paintedBackground(color: string | null | undefined) {
   return color && HEX_COLOR.test(color) ? color : null;
 }
 
+/** The background the app's page last painted, and the system appearance at the time. */
+export type SavedBackground = { color: string; systemUsesDarkColors: boolean };
+
+/** A saved background read back from disk, or null when it is missing or not one. */
+export function parseSavedBackground(text: string | null): SavedBackground | null {
+  try {
+    const value: unknown = JSON.parse(text ?? "null");
+    if (typeof value !== "object" || value === null) return null;
+    const { color, systemUsesDarkColors } = value as Record<string, unknown>;
+    const background = paintedBackground(typeof color === "string" ? color : null);
+    return background !== null && typeof systemUsesDarkColors === "boolean"
+      ? { color: background, systemUsesDarkColors }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The app window opens in the background its page last painted, so an appearance picked in
- * settings does not flash the system's. Until a page has painted, it follows the system, as
- * the page does by default.
+ * settings does not flash the system's. A system that has switched appearance since then
+ * (automatic light and dark, say) means the page most likely follows it, so the window does too.
  */
-export function appWindowBackground(lastPainted: string | null, systemUsesDarkColors: boolean) {
-  return paintedBackground(lastPainted) ?? systemWindowBackground(systemUsesDarkColors);
+export function appWindowBackground(saved: SavedBackground | null, systemUsesDarkColors: boolean) {
+  return saved !== null && saved.systemUsesDarkColors === systemUsesDarkColors
+    ? saved.color
+    : systemWindowBackground(systemUsesDarkColors);
 }
 
 function windowChrome(platform: NodeJS.Platform, release: string) {
