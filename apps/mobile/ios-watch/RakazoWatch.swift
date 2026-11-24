@@ -298,9 +298,14 @@ private struct WatchConversation: View {
     // A suspended iPhone app cannot publish a revision, so ask it to wait for the reply.
     .task(id: botWorking && connection.reachable && phase == .active ? waits : nil) {
       guard botWorking, connection.reachable, phase == .active else { return }
-      let reply = try? await connection.request(WatchRequest(action: .wait, scope: scope, chat: chat))
-      guard let reply, !Task.isCancelled else { return }
-      if reply.changed == true { await refresh() } else { waits += 1 }
+      do {
+        let reply = try await connection.request(WatchRequest(action: .wait, scope: scope, chat: chat))
+        guard !Task.isCancelled else { return }
+        if reply.changed == true { await refresh() } else { waits += 1 }
+      } catch {
+        // Stop rather than retry; the message asks for a refresh.
+        if !Task.isCancelled { failure = error as? WatchFailure ?? .unavailable }
+      }
     }
   }
 

@@ -294,7 +294,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
 
   /// Events after which the watch's copy of a chat is out of date.
   private static let changes: Set<String> = [
-    "thread.message.created", "thread.cleared", "thread.ask", "run.waiting_input",
+    "thread.message.created", "thread.message.updated", "thread.cleared", "thread.ask", "run.waiting_input",
     "run.completed", "run.failed", "run.cancelled", "computer.takeover.requested",
   ]
 
