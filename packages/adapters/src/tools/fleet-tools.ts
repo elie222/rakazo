@@ -19,7 +19,6 @@ import {
   messagingProviderNamed,
   ONCE_ROUTINE_CRON,
   redactSecrets,
-  zonedDateTime,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -43,7 +42,7 @@ import { asRecord } from "../integrations/connector-http.js";
 import { resolveModelChoice } from "../models/model-choice.js";
 import type { BotModelChangeDeps } from "../models/model-selection.js";
 import { validateBotModelChange } from "../models/model-selection.js";
-import { routineEndWallClock } from "../routines/routine-end.js";
+import { routineEndInZone } from "../routines/routine-end.js";
 import {
   hasRoutineEvents,
   NO_ROUTINE_EVENTS,
@@ -422,7 +421,7 @@ async function prepareChildRoutine(
                 ? { startAt: resolved.nextRunAt.toISOString() }
                 : {}),
             },
-      ...(end.endsAt ? { endAt: routineEndWallClock(end.endsAt, timezone) } : {}),
+      ...(end.endsAt ? { endAt: end.endsAt.toISOString() } : {}),
       ...(hasRoutineEvents(checked.events) ? { on: events } : {}),
     },
     summary: {
@@ -1019,7 +1018,7 @@ export async function createChildRoutine(
       crons: { equals: cron ? [cron] : [] },
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
-      endsAt: endAt ? zonedDateTime(endAt, replayTimezone) : null,
+      endsAt: endAt ? routineEndInZone(new Date(endAt), timezone, replayTimezone) : null,
       // The identical routine has the approved events too, so a retry returns it instead of a
       // twin. A bot links one chat app, so any chat event on it is the approved one.
       webhookEnabled: on?.webhook === true,
@@ -1065,7 +1064,7 @@ export async function createChildRoutine(
     ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
     ...(on ? { on } : {}),
-    ...(endAt ? { endAt } : {}),
+    ...(endAt ? { endAt, endTimezone: timezone } : {}),
   });
   return "error" in created ? created : { ...created, ...target };
 }

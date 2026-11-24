@@ -52,10 +52,6 @@ export function routineEndInZone(endsAt: Date | null, from: string, to: string):
   return moved ? new Date(moved.getTime() + endsAt.getUTCMilliseconds()) : endsAt;
 }
 
-export function routineEndWallClock(endsAt: Date, timezone: string): string {
-  return `${wallClock(endsAt, timezone)}.${String(endsAt.getUTCMilliseconds()).padStart(3, "0")}`;
-}
-
 export function routineEndFromText(
   value: string | undefined,
   timezone: string,

@@ -627,6 +627,7 @@ export async function createScheduleFromTool(
     /** The tool's `on`: events that start the routine besides its timing, or instead of it. */
     on?: unknown;
     endAt?: string;
+    endTimezone?: string;
   },
 ) {
   const routineBotId = input.target?.botId ?? input.botId;
@@ -695,7 +696,11 @@ export async function createScheduleFromTool(
       ? { ok: true, cron: "", nextRunAt: new Date(0), oneShot: false }
       : resolveScheduleTiming(input.schedule, timezone);
     if (!resolved.ok) return { error: resolved.error } as const;
-    const end = toolRoutineEnd(input.endAt, timezone, {
+    const endAt =
+      input.endAt && input.endTimezone
+        ? routineEndInZone(new Date(input.endAt), input.endTimezone, timezone)?.toISOString()
+        : input.endAt;
+    const end = toolRoutineEnd(endAt, timezone, {
       crons: eventsOnly ? [] : [resolved.cron],
       watch: null,
       nextRunAt: eventsOnly ? null : resolved.nextRunAt,

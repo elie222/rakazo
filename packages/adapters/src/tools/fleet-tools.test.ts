@@ -707,7 +707,7 @@ describe("prepareFleetRequest create_child_routine", () => {
     });
     expect(prepared).toMatchObject({
       ok: true,
-      canonical: { schedule: { cron: "0 9 * * *" }, endAt: "2026-10-24T23:59:59.999" },
+      canonical: { schedule: { cron: "0 9 * * *" }, endAt: "2026-10-24T23:59:59.999Z" },
       summary: {
         lines: [expect.any(String), "Ends 24 Oct 2026, 23:59 UTC", "Prompt: Check the deals"],
       },
@@ -1868,7 +1868,7 @@ describe("createChildRoutine", () => {
       ...canonical,
       timezone: "Europe/Paris",
       timezoneFromAccount: true,
-      endAt: "2026-10-24T23:59:59.999",
+      endAt: "2026-10-24T21:59:59.999Z",
     });
     expect(result).toMatchObject({ ok: true });
     expect(prisma.routine.findFirst).toHaveBeenCalledWith(
@@ -1891,13 +1891,26 @@ describe("createChildRoutine", () => {
       ...canonical,
       timezone: "Europe/Paris",
       timezoneFromAccount: true,
-      endAt: "2026-10-24T23:59:59.999",
+      endAt: "2026-10-24T21:59:59.999Z",
     });
     expect(prisma.routine.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         timezone: "Europe/London",
         endsAt: new Date("2026-10-24T22:59:59.999Z"),
       }),
+    });
+  });
+
+  it("keeps the exact approved end while the zone stays the same", async () => {
+    const { prisma } = fakeFleet(fleet);
+    const secondHalfPastTwo = new Date("2026-10-25T01:30:00.000Z");
+    await createChildRoutine(writeDeps(prisma), run, {
+      ...canonical,
+      timezone: "Europe/Paris",
+      endAt: secondHalfPastTwo.toISOString(),
+    });
+    expect(prisma.routine.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ endsAt: secondHalfPastTwo }),
     });
   });
 
@@ -1918,7 +1931,7 @@ describe("createChildRoutine", () => {
     });
     const result = await createChildRoutine(writeDeps(prisma), run, {
       ...canonical,
-      endAt: "2026-10-24T23:59:59.999",
+      endAt: endsAt.toISOString(),
     });
     expect(result).toMatchObject({
       ok: true,
