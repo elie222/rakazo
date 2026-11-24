@@ -472,12 +472,6 @@ export async function listSpaceArtifacts(
   const botFilter = scopeBotId
     ? Prisma.sql`AND latest."botId" = ${scopeBotId} AND (latest."groupId" IS NULL OR latest."runId" IS NOT NULL)`
     : Prisma.empty;
-  // Only the families this bot has a version in need their newest version picked and counted;
-  // a busy Space keeps the rest out of the work entirely.
-  const botFamilyFilter = scopeBotId ? Prisma.sql`WHERE "botId" = ${scopeBotId}` : Prisma.empty;
-  const familyRestriction = scopeBotId
-    ? Prisma.sql`AND COALESCE("rootArtifactId", id) IN (SELECT "familyId" FROM families)`
-    : Prisma.empty;
   const madeByBots = input.madeByBots ?? false;
   const madeByBotsFilter = madeByBots
     ? Prisma.sql`AND (latest."runId" IS NOT NULL OR latest."meetingSessionId" IS NOT NULL)`
@@ -499,21 +493,26 @@ export async function listSpaceArtifacts(
       SELECT * FROM "artifacts"
       WHERE "spaceId" = ${actor.spaceId}
         AND "createdAt" <= ${asOf} AND "mimeType" NOT IN (${Prisma.join(HIDDEN_ARTIFACT_MIME_TYPES)})
-    ),
-    families AS (
-      SELECT DISTINCT COALESCE("rootArtifactId", id) AS "familyId" FROM scoped ${botFamilyFilter}
+        ${
+          scopeBotId
+            ? Prisma.sql`AND COALESCE("rootArtifactId", id) IN (
+                SELECT COALESCE("rootArtifactId", id) FROM "artifacts"
+                WHERE "spaceId" = ${actor.spaceId} AND "botId" = ${scopeBotId}
+                  AND "createdAt" <= ${asOf}
+                  AND "mimeType" NOT IN (${Prisma.join(HIDDEN_ARTIFACT_MIME_TYPES)})
+              )`
+            : Prisma.empty
+        }
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
         id, "botId", "groupId", "runId", "meetingSessionId", name, description, "mimeType", size, version, "createdAt", "rootArtifactId"
       FROM scoped
-      WHERE true ${familyRestriction}
       ORDER BY COALESCE("rootArtifactId", id), version DESC
     ),
     counts AS (
       SELECT COALESCE("rootArtifactId", id) AS "familyId", COUNT(*)::int AS "versionCount"
       FROM scoped
-      WHERE true ${familyRestriction}
       GROUP BY COALESCE("rootArtifactId", id)
     )
     SELECT latest.id, COALESCE(latest."rootArtifactId", latest.id) AS "familyId",
