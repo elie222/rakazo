@@ -21,11 +21,11 @@ const childRoutineTargetProperties = {
 /** Same exactly-one-timing-method rule as schedule_create, without watches, plus the target bot. */
 const createChildRoutineInputSchema = {
   oneOf: [
-    scheduleCreateBranch(["cron"], childRoutineTargetProperties),
-    scheduleCreateBranch(["every", "unit"], childRoutineTargetProperties),
-    scheduleCreateBranch(["runAt"], childRoutineTargetProperties),
-    scheduleCreateBranch(["delayMinutes"], childRoutineTargetProperties),
-    scheduleCreateBranch(["delaySeconds"], childRoutineTargetProperties),
+    scheduleCreateBranch(["cron"], childRoutineTargetProperties, false),
+    scheduleCreateBranch(["every", "unit"], childRoutineTargetProperties, false),
+    scheduleCreateBranch(["runAt"], childRoutineTargetProperties, false),
+    scheduleCreateBranch(["delayMinutes"], childRoutineTargetProperties, false),
+    scheduleCreateBranch(["delaySeconds"], childRoutineTargetProperties, false),
   ],
 };
 

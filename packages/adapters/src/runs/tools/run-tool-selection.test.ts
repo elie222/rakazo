@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_AGENT_TOOL_NAMES, unavailableBuiltinToolReasons } from "./run-tool-selection.js";
+import {
+  BUILTIN_AGENT_TOOL_NAMES,
+  selectBuiltinToolsForRun,
+  unavailableBuiltinToolReasons,
+} from "./run-tool-selection.js";
 
 const none: { name: string }[] = [];
 
@@ -79,5 +83,23 @@ describe("unavailableBuiltinToolReasons", () => {
 
     expect(reasons).not.toHaveProperty("not_a_tool");
     for (const name of Object.keys(reasons)) expect(BUILTIN_AGENT_TOOL_NAMES.has(name)).toBe(true);
+  });
+});
+
+describe("selectBuiltinToolsForRun", () => {
+  const shellFor = (graphicalToolsAllowed: boolean, pageBrowserAllowed: boolean) =>
+    selectBuiltinToolsForRun({
+      graphicalToolsAllowed,
+      pageBrowserAllowed,
+      groupId: null,
+      trigger: "user",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+    }).find((tool) => tool.name === "shell")?.description;
+
+  it("points the shell at a screen tool the run was offered", () => {
+    expect(shellFor(true, true)).toContain("call computer_observe to open it");
+    expect(shellFor(false, true)).toContain("call browser_snapshot,");
+    expect(shellFor(false, false)).not.toContain("open a display");
   });
 });

@@ -55,6 +55,17 @@ export function zonedDateTime(value: string, timezone = "UTC"): Date | null {
   return new Date(local.getDate().getTime() + ms);
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function zonedEndDateTime(value: string, timezone = "UTC"): Date | null {
+  const text = value.trim();
+  return zonedDateTime(ISO_DATE.test(text) ? `${text}T23:59:59.999` : text, timezone);
+}
+
+export function isEndOfZonedDay(instant: Date, timezone = "UTC"): boolean {
+  return wallClock(instant, timezone).endsWith("T23:59:59");
+}
+
 /** The local date and time of `instant` in `timezone`, as zonedDateTime reads it back. */
 export function wallClock(instant: Date, timezone = "UTC"): string {
   const local = new CronDate(instant, validTimezoneOrUtc(timezone));
