@@ -272,13 +272,15 @@ describe("gateToolCall: bot management held for the owner", () => {
     expect(plans).toEqual(["ask", "ask", "deny"]);
   });
 
-  it("lets an already-approved replay reach its persisted effect even if the space switched to Never ask, unless a deny rule blocks it", async () => {
+  it("lets an already-approved replay reach its persisted effect even if the space switched to Never ask", async () => {
     const neverAsk = { enabled: false, skipApprovals: true };
     // recordEffect mock throws "asks the user", confirming the gate reached effect claim instead of denying early.
     expect(await fleetGate(neverAsk, { approvedReplay: true })).toBe("asks the user");
     expect(plans).toEqual(["allow"]);
+  });
 
-    plans.length = 0;
+  it("still blocks an already-approved replay when a deny rule matches under Never ask", async () => {
+    const neverAsk = { enabled: false, skipApprovals: true };
     expect(await fleetGate(neverAsk, { approvedReplay: true, rule: "deny" })).toEqual({
       result: { error: expect.stringContaining("is blocked in this space") },
     });
