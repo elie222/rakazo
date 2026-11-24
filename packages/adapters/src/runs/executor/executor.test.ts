@@ -34,7 +34,6 @@ import {
 } from "../../runtime/pi/pi-runtime-models.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import {
-  desktopGuardShellInstruction,
   dockerComputerToolInstruction,
   persistentComputerInstruction,
   RAKAZO_PLATFORM_INSTRUCTION,
@@ -1937,16 +1936,6 @@ describe("userTurnInstructions", () => {
     expect(instructions.join("\n")).not.toContain(
       "Never ask for a raw credential in chat or inject it into shell commands.",
     );
-  });
-});
-
-describe("desktopGuardShellInstruction", () => {
-  it("names write_file only when it is offered and says nothing without shell", () => {
-    expect(desktopGuardShellInstruction(new Set(["shell", "write_file"]))).toBe(
-      "Shell commands must be literal: no `$(...)`, backticks, subshells, loops, or `$` variables, environment variables included. Otherwise write a script with write_file and run it with `python3` or `bash`.",
-    );
-    expect(desktopGuardShellInstruction(new Set(["shell"]))).toContain("write a script file and");
-    expect(desktopGuardShellInstruction(new Set(["write_file"]))).toBeUndefined();
   });
 });
 
