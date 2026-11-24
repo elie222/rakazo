@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// A bot the watch face can offer, as the watch app last listed it.
 struct WatchShelfChat: Codable, Hashable, Identifiable {
@@ -46,6 +47,13 @@ enum WatchShelf {
     return components.url
   }
 
+  /// The list to save after a load: bots the load left out to fit one message stay on the face.
+  static func merging(_ listed: [WatchShelfChat], allChats: Bool) -> [WatchShelfChat] {
+    guard !allChats else { return listed }
+    let ids = Set(listed.map(\.id))
+    return listed + load().filter { !ids.contains($0.id) }
+  }
+
   static func voiceTarget(_ url: URL) -> (kind: String, id: String)? {
     guard url.scheme == "rakazo-watch", url.host == "voice",
       let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
@@ -53,5 +61,15 @@ enum WatchShelf {
       let id = items.first(where: { $0.name == "id" })?.value
     else { return nil }
     return (kind, id)
+  }
+}
+
+extension Color {
+  /// A bot's color as the relay sends it, #RRGGBB.
+  init?(hex: String) {
+    guard hex.count == 7, let value = UInt32(hex.dropFirst(), radix: 16) else { return nil }
+    self.init(
+      red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
+      blue: Double(value & 0xFF) / 255)
   }
 }

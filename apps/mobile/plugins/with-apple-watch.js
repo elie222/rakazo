@@ -80,13 +80,14 @@ function addWatchTarget(project, root, name, config) {
   const appGroup = `group.${config.ios.bundleIdentifier}`;
   writeEntitlements(directory, TARGET, appGroup);
   for (const build of targetBuildSettings(project, uuid)) {
-    delete build.INFOPLIST_FILE;
     Object.assign(build, {
       ASSETCATALOG_COMPILER_APPICON_NAME: "AppIcon",
       CODE_SIGN_ENTITLEMENTS: `${TARGET}/${TARGET}.entitlements`,
       CODE_SIGN_STYLE: "Automatic",
       CURRENT_PROJECT_VERSION: config.ios.buildNumber ?? "1",
       GENERATE_INFOPLIST_FILE: "YES",
+      // Merged into the generated one: registers the link a complication opens.
+      INFOPLIST_FILE: `${TARGET}/Info.plist`,
       INFOPLIST_KEY_CFBundleDisplayName: config.name,
       INFOPLIST_KEY_NSMicrophoneUsageDescription:
         '"Rakazo records your voice to send it as a message."',

@@ -14,6 +14,7 @@ struct WatchVoiceSheet: View {
 
   @State private var recorder = WatchRecorder()
   @State private var stage = Stage.recording
+  @State private var attempt = 0
 
   private enum Stage: Equatable {
     case recording, transcribing
@@ -39,10 +40,11 @@ struct WatchVoiceSheet: View {
       case .failed(let failure):
         Text(failure?.label ?? "Didn’t catch that.")
           .multilineTextAlignment(.center)
-        Button("Try Again", systemImage: "mic.fill") { Task { await listen() } }
+        Button("Try Again", systemImage: "mic.fill") { attempt += 1 }
       }
     }
-    .task { await listen() }
+    // Closing the sheet cancels the attempt, so words that arrive later are never sent.
+    .task(id: attempt) { await listen() }
     .onDisappear { recorder.cancel() }
   }
 
@@ -59,8 +61,10 @@ struct WatchVoiceSheet: View {
     stage = .transcribing
     do {
       let text = try await transcribe(audio).trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !Task.isCancelled else { return }
       if text.isEmpty { stage = .failed(nil) } else { finish(.text(text)) }
     } catch WatchFailure.noVoice {
+      guard !Task.isCancelled else { return }
       finish(.typeInstead)
     } catch {
       stage = .failed(error as? WatchFailure ?? .voiceFailed)

@@ -41,6 +41,8 @@ struct WatchRequest: Codable {
 struct WatchReply: Codable {
   var scope: UUID?
   var chats: [WatchChatRow]?
+  /// False when older chats were left out to fit one message.
+  var allChats: Bool?
   var messages: [WatchMessage]?
   var botWorking: Bool?
   /// Whether the server can turn a recording into text; nil when it could not say.

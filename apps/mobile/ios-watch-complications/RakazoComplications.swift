@@ -125,7 +125,7 @@ private struct ChatComplicationAvatar: View {
         .clipShape(Circle())
     } else {
       ZStack {
-        if renderingMode == .fullColor, let color = chat?.color.flatMap(Color.init(complicationHex:)) {
+        if renderingMode == .fullColor, let color = chat?.color.flatMap(Color.init(hex:)) {
           Circle().fill(color)
         } else {
           AccessoryWidgetBackground().clipShape(Circle())
@@ -143,11 +143,3 @@ private struct ChatComplicationAvatar: View {
   }
 }
 
-private extension Color {
-  init?(complicationHex hex: String) {
-    guard hex.count == 7, let value = UInt32(hex.dropFirst(), radix: 16) else { return nil }
-    self.init(
-      red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
-      blue: Double(value & 0xFF) / 255)
-  }
-}

@@ -149,7 +149,7 @@ private struct WatchChats: View {
     }
     .onChange(of: connection.identityRevision) {
       clearChats()
-      saveShelf([])
+      saveShelf([], allChats: true)
       needsReload = true
     }
     .onOpenURL { url in
@@ -177,16 +177,17 @@ private struct WatchChats: View {
     listen = true
   }
 
-  private func saveShelf(_ rows: [WatchChatRow]) {
-    let saved = rows.map {
+  private func saveShelf(_ rows: [WatchChatRow], allChats: Bool) {
+    let listed = rows.map {
       WatchShelfChat(kind: $0.chat.kind.rawValue, id: $0.id, name: $0.chat.name, color: $0.color, avatar: $0.avatar)
     }
-    guard WatchShelf.save(saved) else { return }
+    guard WatchShelf.save(WatchShelf.merging(listed, allChats: allChats)) else { return }
     WidgetCenter.shared.invalidateConfigurationRecommendations()
     WidgetCenter.shared.reloadTimelines(ofKind: WatchShelf.complicationKind)
   }
 
   private func clearChats() {
+    voiceTarget = nil
     path = []
     chats = []
     scope = nil
@@ -206,8 +207,10 @@ private struct WatchChats: View {
       chats = reply.chats ?? []
       canTranscribe = reply.transcribe
       failure = nil
-      saveShelf(chats.filter { $0.chat.kind == .bot })
+      saveShelf(chats.filter { $0.chat.kind == .bot }, allChats: reply.allChats == true)
       openVoiceTarget()
+      // A bot that is gone opens nothing, and a later load must not start listening by itself.
+      voiceTarget = nil
     } catch {
       guard !Task.isCancelled, identity == connection.identityRevision else { return }
       chats = []
@@ -548,13 +551,6 @@ private enum WatchDate {
 }
 
 private extension Color {
-  init?(hex: String) {
-    guard hex.count == 7, let value = UInt32(hex.dropFirst(), radix: 16) else { return nil }
-    self.init(
-      red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
-      blue: Double(value & 0xFF) / 255)
-  }
-
   static func isLight(hex: String) -> Bool {
     guard let value = UInt32(hex.dropFirst(), radix: 16) else { return false }
     let components = [16, 8, 0].map { Double((value >> $0) & 0xFF) / 255 }

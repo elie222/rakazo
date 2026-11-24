@@ -14,28 +14,34 @@ const xcode = createRequire(require.resolve("@expo/config-plugins", { paths: [di
   "xcode",
 );
 
-it("embeds one watch app and its complications with the correct sources, icon, and identity", () => {
+const NAME = "HelloWorld";
+
+/** Adds the watch targets to Expo's template project, writes it, and adds them again on the result. */
+function regenerate(directory) {
+  const file = join(directory, "project.pbxproj");
+  mkdirSync(join(directory, NAME));
+  writeFileSync(
+    file,
+    execFileSync("tar", [
+      "-xOf",
+      join(expoRoot, "template.tgz"),
+      "package/ios/HelloWorld.xcodeproj/project.pbxproj",
+    ]),
+  );
+  const project = xcode.project(file);
+  project.parseSync();
+  addWatchTarget(project, directory, NAME, config.expo);
+  writeFileSync(file, project.writeSync());
+  const regenerated = xcode.project(file);
+  regenerated.parseSync();
+  addWatchTarget(regenerated, directory, NAME, config.expo);
+  return regenerated;
+}
+
+it("embeds one watch app with the correct sources, icon, and companion identity", () => {
   const directory = mkdtempSync(join(tmpdir(), "rakazo-watch-target-"));
   try {
-    const file = join(directory, "project.pbxproj");
-    const name = "HelloWorld";
-    mkdirSync(join(directory, name));
-    writeFileSync(
-      file,
-      execFileSync("tar", [
-        "-xOf",
-        join(expoRoot, "template.tgz"),
-        "package/ios/HelloWorld.xcodeproj/project.pbxproj",
-      ]),
-    );
-    const project = xcode.project(file);
-    project.parseSync();
-    addWatchTarget(project, directory, name, config.expo);
-    writeFileSync(file, project.writeSync());
-
-    const regenerated = xcode.project(file);
-    regenerated.parseSync();
-    addWatchTarget(regenerated, directory, name, config.expo);
+    const regenerated = regenerate(directory);
     const { PBXCopyFilesBuildPhase, PBXNativeTarget } = regenerated.hash.project.objects;
     const [target] = Object.values(PBXNativeTarget).filter(
       (entry) => entry.name?.replaceAll('"', "") === "RakazoWatch",
@@ -62,7 +68,47 @@ it("embeds one watch app and its complications with the correct sources, icon, a
       4,
     );
 
-    // The complications live inside the watch app, never the iPhone app.
+    const watchSigning = config.expo.extra.eas.build.experimental.ios.appExtensions.find(
+      ({ targetName }) => targetName === "RakazoWatch",
+    );
+    const settings = Object.values(regenerated.pbxXCBuildConfigurationSection()).filter(
+      (entry) => entry.buildSettings?.PRODUCT_NAME?.replaceAll('"', "") === "RakazoWatch",
+    );
+    expect(settings).toHaveLength(2);
+    for (const { buildSettings } of settings) {
+      expect(buildSettings.INFOPLIST_KEY_WKCompanionAppBundleIdentifier).toBe(
+        config.expo.ios.bundleIdentifier,
+      );
+      expect(buildSettings.PRODUCT_BUNDLE_IDENTIFIER.replaceAll('"', "")).toBe(
+        watchSigning.bundleIdentifier,
+      );
+    }
+
+    const bundleIdentifier = "com.example.rakazo-custom";
+    addWatchTarget(regenerated, directory, NAME, {
+      ...config.expo,
+      ios: { ...config.expo.ios, bundleIdentifier },
+    });
+    for (const { buildSettings } of settings) {
+      expect(buildSettings.INFOPLIST_KEY_WKCompanionAppBundleIdentifier).toBe(bundleIdentifier);
+      expect(buildSettings.PRODUCT_BUNDLE_IDENTIFIER.replaceAll('"', "")).toBe(
+        `${bundleIdentifier}.watchkitapp`,
+      );
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+it("embeds the complications in the watch app with their sources and shared App Group", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rakazo-watch-complications-"));
+  try {
+    const regenerated = regenerate(directory);
+    const { PBXCopyFilesBuildPhase, PBXNativeTarget } = regenerated.hash.project.objects;
+    const [target] = Object.values(PBXNativeTarget).filter(
+      (entry) => entry.name?.replaceAll?.('"', "") === "RakazoWatch",
+    );
+    // Inside the watch app, never the iPhone app.
     const [complications] = Object.entries(PBXNativeTarget).filter(
       ([, entry]) => entry.name?.replaceAll?.('"', "") === "RakazoWatchComplications",
     );
@@ -91,10 +137,6 @@ it("embeds one watch app and its complications with the correct sources, icon, a
     const watchSigning = config.expo.extra.eas.build.experimental.ios.appExtensions.find(
       ({ targetName }) => targetName === "RakazoWatch",
     );
-    const settings = Object.values(regenerated.pbxXCBuildConfigurationSection()).filter(
-      (entry) => entry.buildSettings?.PRODUCT_NAME?.replaceAll('"', "") === "RakazoWatch",
-    );
-    expect(settings).toHaveLength(2);
     const complicationSigning = config.expo.extra.eas.build.experimental.ios.appExtensions.find(
       ({ targetName }) => targetName === "RakazoWatchComplications",
     );
@@ -111,26 +153,6 @@ it("embeds one watch app and its complications with the correct sources, icon, a
     for (const { buildSettings } of complicationSettings) {
       expect(buildSettings.PRODUCT_BUNDLE_IDENTIFIER.replaceAll('"', "")).toBe(
         complicationSigning.bundleIdentifier,
-      );
-    }
-    for (const { buildSettings } of settings) {
-      expect(buildSettings.INFOPLIST_KEY_WKCompanionAppBundleIdentifier).toBe(
-        config.expo.ios.bundleIdentifier,
-      );
-      expect(buildSettings.PRODUCT_BUNDLE_IDENTIFIER.replaceAll('"', "")).toBe(
-        watchSigning.bundleIdentifier,
-      );
-    }
-
-    const bundleIdentifier = "com.example.rakazo-custom";
-    addWatchTarget(regenerated, directory, name, {
-      ...config.expo,
-      ios: { ...config.expo.ios, bundleIdentifier },
-    });
-    for (const { buildSettings } of settings) {
-      expect(buildSettings.INFOPLIST_KEY_WKCompanionAppBundleIdentifier).toBe(bundleIdentifier);
-      expect(buildSettings.PRODUCT_BUNDLE_IDENTIFIER.replaceAll('"', "")).toBe(
-        `${bundleIdentifier}.watchkitapp`,
       );
     }
   } finally {

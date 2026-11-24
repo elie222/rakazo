@@ -197,7 +197,8 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       let entries = list.current.bots.map { (WatchChat.Kind.bot, $0) }
         + list.current.groups.map { (WatchChat.Kind.group, $0) }
       var avatarBudget = 16_000
-      var rows = entries.filter { $0.1.archivedAt == nil }
+      let open = entries.filter { $0.1.archivedAt == nil }
+      var rows = open
         .sorted { $0.1.updatedAt > $1.1.updatedAt }
         .prefix(60)
         .map { kind, entry in
@@ -222,7 +223,8 @@ final class WatchRelay: NSObject, WCSessionDelegate {
         else { rows.removeLast() }
       }
       chats = rows.map(\.chat)
-      return WatchReply(scope: scope, chats: rows, transcribe: transcribe)
+      return WatchReply(
+        scope: scope, chats: rows, allChats: rows.count == open.count, transcribe: transcribe)
     }
 
     guard let scope, request.scope == scope, let scopedSession, sameSession(scopedSession, session),
