@@ -9,6 +9,7 @@ import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@r
 import {
   isUniqueViolation,
   pageImageNames,
+  pageImagesNamedIn,
   pageVersionImages,
   signalPage,
   signalPageUsers,
@@ -207,9 +208,9 @@ export async function holdSharedPageSave(
       ? [`Title: ${redactSecrets(parsedTitle.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH)}`]
       : []),
     ...changedLines(current, proposed.source),
-    ...Object.entries(await pageImageSourceLabels(ctx, shownSources(sources, proposed.source))).map(
-      ([name, source]) => `+ Image ${name}: ${source.replace(/[\p{Cc}\u2028\u2029]+/gu, " ")}`,
-    ),
+    ...Object.entries(
+      await pageImageSourceLabels(ctx, pageImagesNamedIn(sources, proposed.source)),
+    ).map(([name, source]) => `+ Image ${name}: ${source.replace(/[\p{Cc}\u2028\u2029]+/gu, " ")}`),
   ];
   // Measured as the card shows it, redacted, so nothing an approval covers is cut off.
   if (redactSecrets(lines.join("\n"), ctx.secrets).length > MAX_APPROVAL_DETAIL_LENGTH)
@@ -440,11 +441,6 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     ...missingImages(source, kept),
   ];
   return warnings.length ? { ...result, warnings } : result;
-}
-
-function shownSources(sources: PageImageSources, source: string): PageImageSources {
-  const shown = pageImageNames(source);
-  return Object.fromEntries(Object.entries(sources).filter(([name]) => shown.has(name)));
 }
 
 function missingImages(source: string, kept: string[]): string[] {
