@@ -71,6 +71,11 @@ describe("speakable", () => {
     expect(speakable("**Done** ✅ — [x] shipped the _thing_")).toBe("Done — shipped the thing");
   });
 
+  it("keeps double-asterisk operators while still dropping bold", () => {
+    expect(speakable("Compute 2 ** 3 ** 4 now")).toBe("Compute 2 ** 3 ** 4 now");
+    expect(speakable("**bold** words")).toBe("bold words");
+  });
+
   it("keeps underscores inside identifiers and asterisks in arithmetic", () => {
     expect(speakable("Open user_profile_page.tsx and set max_retry_count to 3")).toBe(
       "Open user_profile_page.tsx and set max_retry_count to 3",
@@ -228,6 +233,23 @@ describe("toUtterances", () => {
     expect(out.join("")).toBe(text);
   });
 
+  it("breaks a long Japanese reply at sentence ends, never mid-sentence", () => {
+    // 33 units: a length that does not divide the 320 budget, so a cut would land mid-sentence.
+    const sentence = "今日は晴れていて、散歩に行くのにちょうど良い天気になるでしょうね。";
+    const text = sentence.repeat(12);
+    const out = toUtterances(text);
+    expect(out.length).toBeGreaterThan(1);
+    for (const piece of out) {
+      expect(piece.length).toBeLessThanOrEqual(320);
+      expect(piece.endsWith("。")).toBe(true);
+    }
+    expect(out.join("")).toBe(text);
+  });
+
+  it("glues short Chinese sentences without inserting a space", () => {
+    expect(toUtterances("你好。好的。")).toEqual(["你好。好的。"]);
+  });
+
   it("does not glue short sentences past the limit", () => {
     const text = `${"a".repeat(319)}. Yes.`;
     expect(toUtterances(text)).toEqual([`${"a".repeat(319)}.`, "Yes."]);
@@ -311,6 +333,26 @@ describe("splitSentences", () => {
       "Ship it.",
       "(a TypeScript code block)",
     ]);
+  });
+
+  it("splits Japanese and Chinese sentences after full-width punctuation with no space", () => {
+    expect(
+      splitSentences("今日は晴れです。明日は雨が降るでしょう。週末は曇りになりそうです。"),
+    ).toEqual(["今日は晴れです。", "明日は雨が降るでしょう。", "週末は曇りになりそうです。"]);
+    expect(splitSentences("你好！今天天气很好。我们走吧？")).toEqual([
+      "你好！",
+      "今天天气很好。",
+      "我们走吧？",
+    ]);
+    expect(splitSentences("他停住了……然后走了。")).toEqual(["他停住了……", "然后走了。"]);
+  });
+
+  it("keeps closing quotes and brackets with the sentence they close", () => {
+    expect(splitSentences("他说「好。」然后走了。")).toEqual(["他说「好。」", "然后走了。"]);
+  });
+
+  it("does not split a full-width period inside a number", () => {
+    expect(splitSentences("版本１．５已发布。")).toEqual(["版本１．５已发布。"]);
   });
 
   it("leaves an unfinished sentence as the last piece", () => {

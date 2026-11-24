@@ -139,6 +139,31 @@ test("a deactivated account's sign-in says so", async ({ page }, testInfo) => {
   await captureScreenshot(page, testInfo, "sign-in-account-deactivated");
 });
 
+test("a browser outside the desktop app opens sign-in on its local server", async ({
+  page,
+}, testInfo) => {
+  await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+  await page.route("**/api/auth/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        passwordAuth: true,
+        sso: null,
+        passwordReset: false,
+        resetUrl: null,
+        registrationOpen: false,
+      },
+    }),
+  );
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sign up", exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "local-account-sign-in");
+
+  await page.goto("/sign-up/email?next=%2Fintegrations%2Fsetup");
+  await expect(page).toHaveURL(/\/sign-in\?next=%2Fintegrations%2Fsetup$/);
+});
+
 test("an unknown page offers a way home", async ({ page }, testInfo) => {
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
   await page.goto("/no-such-page");
@@ -209,8 +234,10 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   await captureScreenshot(page, testInfo, "37-logged-out-returning");
 
+  const isProtectedSignIn = (url: URL) =>
+    url.pathname === "/sign-in" && url.searchParams.get("next") === protectedBotPath;
   await page.goto(protectedBotPath);
-  await page.waitForURL((url) => url.pathname === "/sign-in");
+  await expect(page).toHaveURL(isProtectedSignIn);
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
   await expect(page.getByText("Chief", { exact: true })).toHaveCount(0);
   await expect(page.getByText(userName, { exact: true })).toHaveCount(0);
@@ -230,7 +257,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
       .locator("form")
       .getByText(/invalid email or password|invalid credentials|incorrect password/i),
   ).toBeVisible();
-  await expect(page).toHaveURL(/\/sign-in$/);
+  await expect(page).toHaveURL(isProtectedSignIn);
   await captureScreenshot(page, testInfo, "39-invalid-credentials");
 
   await page.getByPlaceholder("Password").fill(password);

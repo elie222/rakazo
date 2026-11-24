@@ -217,6 +217,7 @@ export function sanitizeMonitoringEvent<T extends MonitoringEvent>(event: T, use
 export type ClientOperation =
   | "react.render"
   | "mobile.startup"
+  | "mobile.share"
   | "voice.microphone"
   | "voice.turn"
   | "rpc.transport"
@@ -226,7 +227,8 @@ export type ClientOperation =
   | "desktop.child"
   | "desktop.menu"
   | "desktop.ipc"
-  | "desktop.unresponsive";
+  | "desktop.unresponsive"
+  | "account.import.refresh";
 
 export interface ClientErrorReporter {
   capture(error: unknown, operation: ClientOperation, tags?: Record<string, string>): void;

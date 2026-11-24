@@ -1,8 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, Disclosure, Input, Label, OptionSelect, Switch } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
-import { ModelSignInProgress } from "../../components/models/ModelSignInProgress";
+import { SubscriptionSignInSteps } from "../../components/models/SubscriptionSignInSteps";
 import { CompatibleKeyField } from "./compatible-key-field";
+
 import type { ModelSettingsState } from "./use-model-settings";
 
 export function ConnectionControls({
@@ -33,7 +34,6 @@ export function ConnectionControls({
   oauthPending,
   pasteCode,
   pending,
-  popupBlocked,
   selected,
   selectionRevisionRef,
   setAccountId,
@@ -75,7 +75,6 @@ export function ConnectionControls({
   | "oauthPending"
   | "pasteCode"
   | "pending"
-  | "popupBlocked"
   | "selected"
   | "selectionRevisionRef"
   | "setAccountId"
@@ -103,36 +102,31 @@ export function ConnectionControls({
   return !isOpenAiCompatible ? (
     <>
       {subscriptionSignIn && (credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
-        <div className="mt-5 flex flex-wrap items-center gap-2 first:mt-0">
-          {oauth ? (
-            <ModelSignInProgress
-              oauth={oauth}
-              pasteCode={pasteCode}
-              setPasteCode={setPasteCode}
-              submitOAuthCode={submitOAuthCode}
-              popupBlocked={popupBlocked}
-              codeCopied={codeCopied}
-              copyOAuthCode={copyOAuthCode}
-              cancelOAuthAttempt={cancelOAuthAttempt}
-              onPageOpened={() => reportSignInStep("page_opened")}
-            />
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => beginSelectedSubscriptionSignIn()}
-            >
-              {oauthPending ? (
-                <Trans>Starting…</Trans>
-              ) : credential?.authKind === "oauth" ? (
+        <div className="mt-5 first:mt-0">
+          <SubscriptionSignInSteps
+            oauth={oauth}
+            setup={selected?.signInSetup}
+            startLabel={
+              credential?.authKind === "oauth" ? (
                 <Trans>Sign in again</Trans>
               ) : (
                 (selected?.oauthLabel ?? t`Sign in`)
-              )}
-            </Button>
-          )}
+              )
+            }
+            starting={oauthPending}
+            disabled={busy}
+            onStart={() => beginSelectedSubscriptionSignIn()}
+            onRestart={() => {
+              cancelOAuthAttempt("replaced");
+              beginSelectedSubscriptionSignIn();
+            }}
+            codeCopied={codeCopied}
+            onCopyCode={copyOAuthCode}
+            pasteCode={pasteCode}
+            onPasteCodeChange={setPasteCode}
+            onSubmitCode={() => void submitOAuthCode()}
+            onPageOpened={() => reportSignInStep("page_opened")}
+          />
         </div>
       ) : null}
 

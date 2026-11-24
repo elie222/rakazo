@@ -18,7 +18,12 @@ test("user bubbles stay close to the avatar color with white text in both themes
   const message = "Let's plan the week ahead.";
   const composer = page.getByRole("combobox", { name: /^Message/ });
   await composer.fill(message);
+  // The bubble shows before the server stores the send; wait for that before reloading.
+  const stored = page.waitForResponse(
+    (response) => response.url().includes("/rpc/threads/send") && response.ok(),
+  );
   await page.getByRole("button", { name: "Send", exact: true }).click();
+  await stored;
   const bubble = page.getByTestId("message-user-bubble").filter({ hasText: message });
   await expect(bubble).toBeVisible();
 

@@ -61,10 +61,17 @@ const apnsTransport: ApnsTransport = (origin, headers, body) =>
     request.end(body);
   });
 
+/** Replies that blame the token, but also come back for every token when the environment or bundle is wrong. */
+const TOKEN_REJECTIONS = new Set(["BadDeviceToken", "DeviceTokenNotForTopic"]);
+/** How long a delivered push vouches for this client's environment and bundle. */
+const CONFIRMED_SETUP_MS = 24 * 60 * 60 * 1000;
+
 /** Signs and sends one APNs request; each push type adds its own topic and payload. */
 export class ApnsClient {
   private readonly key;
   private jwt?: { value: string; issuedAt: number };
+  /** When Apple last accepted a push from this client, proving its environment and bundle. */
+  private deliveredAt?: number;
   constructor(
     readonly config: ApnsVoipConfig,
     private readonly transport: ApnsTransport = apnsTransport,
@@ -120,10 +127,23 @@ export class ApnsClient {
         JSON.stringify(request.body),
       );
       if (reply.status === 410 || reply.reason === "Unregistered") return "invalid";
-      if (reply.status === 200) return "sent";
-      // BadDeviceToken also means a sandbox/production mismatch, so it never drops the token.
-      getLogger().warn(failureEvent, { status: reply.status, reason: reply.reason });
-      return "unavailable";
+      if (reply.status === 200) {
+        this.deliveredAt = Date.now();
+        return "sent";
+      }
+      // A sandbox/production or bundle mismatch rejects every token the same way, so a token is
+      // only dropped once another push from this client got through, e.g. an App Store build's
+      // token registered with a server that sends for a development build.
+      const confirmed =
+        this.deliveredAt !== undefined && Date.now() - this.deliveredAt < CONFIRMED_SETUP_MS;
+      const rejected =
+        confirmed && reply.reason !== undefined && TOKEN_REJECTIONS.has(reply.reason);
+      getLogger().warn(failureEvent, {
+        status: reply.status,
+        reason: reply.reason,
+        ...(rejected ? { dropped: true } : {}),
+      });
+      return rejected ? "invalid" : "unavailable";
     } catch (error) {
       getLogger().warn(failureEvent, { error });
       return "unavailable";

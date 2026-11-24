@@ -34,6 +34,8 @@ vi.mock("../account/ConfirmIdentityDialog", async () => {
     },
   };
 });
+const reportClientError = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/platform/monitoring", () => ({ reportClientError }));
 vi.mock("../../lib/query/rpc", () => {
   const rpc = { export: { accountToken } };
   return {
@@ -152,6 +154,23 @@ it("uploads the chosen archive and refreshes spaces", async () => {
     body: file,
   });
   expect(onImported).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('[data-testid="success"]')).not.toBeNull();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("reports a failed refresh after a successful import without failing it", async () => {
+  fetchMock.mockResolvedValue(
+    new Response(JSON.stringify({ spaces: [{ id: "space_1", name: "Imported" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  );
+  const refreshError = new Error("refresh failed");
+  await render(vi.fn(async () => Promise.reject(refreshError)));
+
+  await chooseFile(new File(["zip"], "rakazo-export.zip", { type: "application/zip" }));
+
+  expect(reportClientError).toHaveBeenCalledWith(refreshError, "account.import.refresh");
   expect(container.querySelector('[data-testid="success"]')).not.toBeNull();
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });

@@ -11,6 +11,11 @@ const current = {
   thinkingLevel: "high",
   autoSpeak: false,
   voiceId: null,
+  replyMode: "chat",
+  teamChatAmbientEnabled: false,
+  teamChatRules: "",
+  memoryScope: null,
+  disabledBuiltinTools: ["shell"],
 };
 
 describe("dropUnchangedOwnBotArgs", () => {
@@ -27,6 +32,11 @@ describe("dropUnchangedOwnBotArgs", () => {
           thinkingLevel: "high",
           readAloud: false,
           voice: "default",
+          replyMode: "chat",
+          teamChatAmbientEnabled: false,
+          teamChatRules: "",
+          memoryScope: "default",
+          disableTools: ["shell"],
           use_attached_image: false,
           instructions_offset: 0,
         },
@@ -89,6 +99,19 @@ describe("dropUnchangedOwnBotArgs", () => {
       readAloud: true,
       use_attached_image: true,
       model: "gpt-fixture",
+    });
+  });
+
+  it("keeps a setting change and tools not yet turned off", () => {
+    expect(
+      dropUnchangedOwnBotArgs(
+        { replyMode: "messages", disableTools: ["shell", "web_search"], memoryScope: "shared" },
+        current,
+      ),
+    ).toEqual({
+      replyMode: "messages",
+      disableTools: ["shell", "web_search"],
+      memoryScope: "shared",
     });
   });
 });

@@ -1,4 +1,4 @@
-import { COMPUTER_RUNNING_ERROR } from "@rakazo/contracts";
+import { COMPUTER_RECOVERY_REQUIRED_ERROR, COMPUTER_RUNNING_ERROR } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
@@ -204,6 +204,8 @@ export function restoreHomeVersion(
         },
       });
       if (computer?.homeStorageId !== storageId) throw new HomeVersionNotFoundError();
+      if (computer.state === "quarantined")
+        throw new ClientError("CONFLICT", COMPUTER_RECOVERY_REQUIRED_ERROR);
       if (!IDLE_STATES.includes(computer.state) || computer.maintenanceId)
         throw new HomeRestoreRunningError();
       const current = computer.homeStorageRevision;
@@ -246,6 +248,8 @@ export function restoreHomeVersion(
         select: { state: true, maintenanceId: true, homeStorageId: true },
       });
       if (now?.homeStorageId !== storageId) throw new HomeVersionNotFoundError();
+      if (now.state === "quarantined")
+        throw new ClientError("CONFLICT", COMPUTER_RECOVERY_REQUIRED_ERROR);
       if (!IDLE_STATES.includes(now.state) || now.maintenanceId)
         throw new HomeRestoreRunningError();
       throw new HomeRestoreChangedError();

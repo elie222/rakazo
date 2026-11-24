@@ -1,0 +1,11 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "O Rakazo usa a câmera para que você possa anexar fotos a uma mensagem para um bot.",
+    "NSPhotoLibraryUsageDescription": "O Rakazo usa sua fototeca para que você possa anexar imagens a uma mensagem para um bot.",
+    "NSPhotoLibraryAddUsageDescription": "O Rakazo salva na sua fototeca as fotos e os vídeos que você baixa dos Artefatos.",
+    "NSLocalNetworkUsageDescription": "O Rakazo se conecta a um servidor Rakazo auto-hospedado na sua rede local.",
+    "NSMicrophoneUsageDescription": "O Rakazo usa o microfone para chamadas de voz com seus bots.",
+    "NSSpeechRecognitionUsageDescription": "O Rakazo transforma sua fala em mensagens durante as chamadas de voz.",
+    "NSFaceIDUsageDescription": "Permita que o Rakazo use o Face ID."
+  }
+}

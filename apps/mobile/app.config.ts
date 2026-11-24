@@ -1,6 +1,9 @@
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
 const RELEASE_PROFILES = new Set(["production", "android-apk", "diagnostic"]);
+const BUNDLE_ID = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+const APPLE_TEAM_ID = /^[A-Z0-9]{10}$/;
+const EXPO_PROJECT_ID = /^[A-Za-z0-9-]+$/;
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   if (RELEASE_PROFILES.has(process.env.EAS_BUILD_PROFILE ?? "")) {
@@ -23,6 +26,79 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   }
 
   let result = config as ExpoConfig;
+
+  // Self-signed iOS builds use their own bundle id and team. Config plugins derive extension ids
+  // from ios.bundleIdentifier, and EAS appExtensions and the share extension's app group follow.
+  const ownBundleId = env("RAKAZO_IOS_BUNDLE_ID");
+  if (ownBundleId && !BUNDLE_ID.test(ownBundleId)) {
+    throw new Error("RAKAZO_IOS_BUNDLE_ID must be a reverse-DNS bundle identifier.");
+  }
+  const ownTeamId = env("RAKAZO_APPLE_TEAM_ID");
+  if (ownTeamId && !APPLE_TEAM_ID.test(ownTeamId)) {
+    throw new Error("RAKAZO_APPLE_TEAM_ID must be a 10-character Apple Developer Team ID.");
+  }
+  const ownProjectId = env("RAKAZO_EXPO_PROJECT_ID");
+  if (ownProjectId && !EXPO_PROJECT_ID.test(ownProjectId)) {
+    throw new Error("RAKAZO_EXPO_PROJECT_ID must be an Expo project ID.");
+  }
+  const ownOwner = env("RAKAZO_EXPO_OWNER");
+
+  const prevBundleId = result.ios?.bundleIdentifier;
+  const movedOffUpstreamBundle = Boolean(ownBundleId && ownBundleId !== prevBundleId);
+  if (ownBundleId || ownTeamId) {
+    const appGroup = ownBundleId ? `group.${ownBundleId}` : undefined;
+    const rewrittenEas =
+      ownBundleId && prevBundleId && appGroup
+        ? rewriteEasIosAppExtensions(result.extra, prevBundleId, ownBundleId, appGroup)
+        : undefined;
+    result = {
+      ...result,
+      ios: {
+        ...result.ios,
+        ...(ownBundleId ? { bundleIdentifier: ownBundleId } : {}),
+        ...(ownTeamId ? { appleTeamId: ownTeamId } : {}),
+      },
+      ...(appGroup && result.plugins
+        ? {
+            plugins: result.plugins.map((plugin) =>
+              Array.isArray(plugin) && plugin[0] === "expo-sharing"
+                ? [plugin[0], { ...plugin[1], ios: { ...plugin[1]?.ios, appGroupId: appGroup } }]
+                : plugin,
+            ),
+          }
+        : {}),
+      ...(appGroup
+        ? {
+            extra: {
+              ...result.extra,
+              iosAppGroup: appGroup,
+              ...(rewrittenEas ? { eas: rewrittenEas } : {}),
+            },
+          }
+        : {}),
+    };
+  }
+
+  // Push tokens and OTA updates belong to an Expo project. Upstream's project has no APNs key for
+  // a self-signed bundle id and serves upstream's JS, so either move them onto the build's own
+  // project or detach them when building under a different bundle id without an Expo project.
+  if (ownProjectId) {
+    const { owner: _upstreamOwner, ...withoutOwner } = result;
+    result = {
+      ...withoutOwner,
+      ...(ownOwner ? { owner: ownOwner } : {}),
+      extra: { ...result.extra, eas: { ...result.extra?.eas, projectId: ownProjectId } },
+      updates: { ...result.updates, url: `https://u.expo.dev/${ownProjectId}` },
+    };
+  } else {
+    if (movedOffUpstreamBundle) {
+      result = detachUpstreamExpoProject(result);
+    }
+    if (ownOwner) {
+      result = { ...result, owner: ownOwner };
+    }
+  }
+
   const rpId = passkeyRpId(process.env.EXPO_PUBLIC_API_URL);
   if (rpId) {
     // Native passkeys only work for domains the binary is associated with, so the app reads the
@@ -87,4 +163,92 @@ function passkeyRpId(apiUrl: string | undefined): string | null {
   if (url.protocol !== "https:" || !host.includes(".")) return null;
   if (host.startsWith("[") || /^\d+(\.\d+){3}$/.test(host)) return null;
   return host;
+}
+
+function env(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value || undefined;
+}
+
+/** Moves EAS's iOS extension bundle IDs and share app group onto a self-signed bundle ID. */
+function rewriteEasIosAppExtensions(
+  extra: Record<string, unknown> | undefined,
+  prevBundleId: string,
+  ownBundleId: string,
+  appGroup: string,
+): Record<string, unknown> | undefined {
+  const eas = asRecord(extra?.eas);
+  const build = asRecord(eas?.build);
+  const experimental = asRecord(build?.experimental);
+  const ios = asRecord(experimental?.ios);
+  if (!eas || !build || !experimental || !ios || !Array.isArray(ios.appExtensions)) {
+    return undefined;
+  }
+  const prevPrefix = `${prevBundleId}.`;
+  const prevAppGroup = `group.${prevBundleId}`;
+  const appExtensions = ios.appExtensions.map((entry) => {
+    const ext = asRecord(entry);
+    if (!ext) return entry;
+    const bundleIdentifier =
+      typeof ext.bundleIdentifier === "string" && ext.bundleIdentifier.startsWith(prevPrefix)
+        ? `${ownBundleId}${ext.bundleIdentifier.slice(prevBundleId.length)}`
+        : ext.bundleIdentifier;
+    const entitlements = asRecord(ext.entitlements);
+    const groups = entitlements?.["com.apple.security.application-groups"];
+    const nextEntitlements =
+      entitlements && Array.isArray(groups)
+        ? {
+            ...entitlements,
+            "com.apple.security.application-groups": groups.map((group) =>
+              group === prevAppGroup ? appGroup : group,
+            ),
+          }
+        : ext.entitlements;
+    return {
+      ...ext,
+      ...(bundleIdentifier !== undefined ? { bundleIdentifier } : {}),
+      ...(nextEntitlements !== undefined ? { entitlements: nextEntitlements } : {}),
+    };
+  });
+  return {
+    ...eas,
+    build: {
+      ...build,
+      experimental: {
+        ...experimental,
+        ios: {
+          ...ios,
+          appExtensions,
+        },
+      },
+    },
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** Keeps a self-signed build without its own Expo project off upstream's pushes and OTA channel. */
+function detachUpstreamExpoProject(config: ExpoConfig): ExpoConfig {
+  const { owner: _owner, ...withoutOwner } = config;
+  const eas = asRecord(config.extra?.eas);
+  let nextExtra = config.extra;
+  if (eas && "projectId" in eas) {
+    const { projectId: _projectId, ...restEas } = eas;
+    const { eas: _eas, ...restExtra } = config.extra ?? {};
+    nextExtra = Object.keys(restEas).length > 0 ? { ...restExtra, eas: restEas } : restExtra;
+  }
+  let nextUpdates = config.updates;
+  if (config.updates) {
+    const { url: _url, ...restUpdates } = config.updates;
+    nextUpdates = { ...restUpdates, enabled: false };
+  }
+  return {
+    ...withoutOwner,
+    ...(nextExtra !== undefined ? { extra: nextExtra } : {}),
+    ...(nextUpdates !== undefined ? { updates: nextUpdates } : {}),
+  };
 }

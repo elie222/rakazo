@@ -53,7 +53,8 @@ vi.mock("@lingui/react/macro", () => {
   };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { Disclosure, OptionSelect, useCopyText } = await importOriginal<typeof UiWeb>();
+  const { buttonVariants, Disclosure, OptionSelect, Stepper, useCopyText } =
+    await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
@@ -66,6 +67,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogClose: Container,
     DialogContent: Container,
     DialogTitle: Container,
+    buttonVariants,
     Disclosure,
     Field: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
     FieldLabel: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
@@ -73,6 +75,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     OptionSelect,
+    Stepper,
     useCopyText,
   };
 });
@@ -204,7 +207,6 @@ describe("a provider the account's model connection can authenticate", () => {
       ...xai,
       modelSignIn: "Sign in with Subscription",
     });
-    vi.spyOn(window, "open").mockReturnValue(null);
     const completion = deferred<{ status: "ready" }>();
     models.beginOAuth.mockReset().mockResolvedValue({
       mode: "device-code",
@@ -259,7 +261,6 @@ describe("a provider the account's model connection can authenticate", () => {
       ...xai,
       modelSignIn: "Sign in with Subscription",
     });
-    vi.spyOn(window, "open").mockReturnValue(null);
     models.beginOAuth.mockReset().mockResolvedValue({
       mode: "device-code",
       loginId: "login-1",
@@ -383,7 +384,6 @@ describe("a provider the account's model connection can authenticate", () => {
     const { container, close } = await open({ ...xai, modelSignIn: "Sign in with Subscription" }, [
       { ...linkedCredential, modelCredentialId: "cred-gone" },
     ]);
-    vi.spyOn(window, "open").mockReturnValue(null);
     models.beginOAuth.mockReset().mockResolvedValue({
       mode: "device-code",
       loginId: "login-1",

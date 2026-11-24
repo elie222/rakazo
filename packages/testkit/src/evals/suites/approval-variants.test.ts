@@ -90,6 +90,15 @@ describe("approval variants", () => {
       context,
     );
     expect(seen[1]!.questions.decision!.criteria).toEqual({ pass: "p", ask: "a" });
+    // So does a lasting write, such as the bot's own instructions.
+    await provider.decide(
+      {
+        ...productRequest,
+        state: { ...productRequest.state, toolName: "update_bot", args: { instructions: "i" } },
+      },
+      context,
+    );
+    expect(seen[2]!.questions.decision!.criteria).toEqual({ pass: "p", ask: "a" });
   });
 
   it("builds the same variant for a plain model's prompt", () => {
@@ -104,6 +113,15 @@ describe("approval variants", () => {
       variantPromptFor(
         base,
         { ...planted, newSite: true },
+        parseApprovalVariant("lean-ask"),
+        escape,
+      ),
+    ).toBe(base);
+    // So does a lasting write.
+    expect(
+      variantPromptFor(
+        base,
+        { ...planted, toolName: "schedule_create", args: { prompt: "p" } },
         parseApprovalVariant("lean-ask"),
         escape,
       ),

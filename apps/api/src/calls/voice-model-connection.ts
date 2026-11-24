@@ -9,6 +9,7 @@ import {
 import type { Actor, VoiceCatalogEntry } from "@rakazo/contracts";
 import { connectionDisplayName } from "@rakazo/contracts";
 import { modelCredentialProviderFilter, newestModelCredentialOrder } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import type { VoiceDeps } from "./voice.js";
 
 /**
@@ -57,13 +58,17 @@ export async function voiceCredentialLink(
   row: { provider: string; secretId: string },
 ): Promise<{ hasKey: boolean; modelCredentialId?: string }> {
   if (!voiceCatalogEntry(row.provider)?.modelConnection) return { hasKey: true };
+  const secret = await deps.prisma.secret.findFirst({
+    where: { id: row.secretId, userId: actor.userId, spaceId: null },
+  });
+  if (!secret) return { hasKey: true };
   try {
-    const secret = await deps.prisma.secret.findFirst({
-      where: { id: row.secretId, userId: actor.userId, spaceId: null },
-    });
-    if (!secret) return { hasKey: true };
     return voiceLinkOf(await deps.secrets.load(secret.ciphertext, secret.id));
-  } catch {
+  } catch (error) {
+    getLogger().warn("could not read voice credential link", {
+      provider: row.provider,
+      reason: error instanceof Error ? error.name : "unknown",
+    });
     return { hasKey: true };
   }
 }

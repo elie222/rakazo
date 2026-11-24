@@ -1,6 +1,11 @@
 import type { ConnectorTool, ToolBatch } from "@rakazo/adapter-kit";
-import type { AskReceipt, MessageBlock } from "@rakazo/contracts";
-import { BOT_INSTRUCTIONS_MAX_LENGTH, draftBatchEntry, OutgoingDraft } from "@rakazo/contracts";
+import type { AskReceipt, MessageBlock, RoutineUpdateApproval } from "@rakazo/contracts";
+import {
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  draftBatchEntry,
+  OutgoingDraft,
+  TEAM_CHAT_RULES_MAX_LENGTH,
+} from "@rakazo/contracts";
 import {
   batchActions,
   CARD_TITLE_ESCAPED_CHARACTERS,
@@ -9,6 +14,7 @@ import {
   redactSecrets,
   SITE_SENDING_TOOLS,
   sanitizeMessagingLabel,
+  sliceWellFormed,
   toolRequiresExplicitApproval,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
@@ -30,16 +36,20 @@ export type FleetCardSummary = {
   lines: string[];
   onceOnly?: boolean;
   receipt?: AskReceipt;
+  /** The routine preview's values, with secrets already redacted. */
+  routineUpdate?: RoutineUpdateApproval;
 };
 
 /**
  * The child instruction card shows the whole new text, so its detail holds the longest
- * instructions plus the two length lines above them.
+ * instructions plus the two length lines above them. A child settings card holds the longest
+ * team chat rules beside its other lines.
  */
 export function approvalDetailLength(toolName: string): number {
-  return toolName === "set_child_instructions"
-    ? BOT_INSTRUCTIONS_MAX_LENGTH + MAX_APPROVAL_SUMMARY_LENGTH
-    : MAX_APPROVAL_DETAIL_LENGTH;
+  if (toolName === "set_child_instructions")
+    return BOT_INSTRUCTIONS_MAX_LENGTH + MAX_APPROVAL_SUMMARY_LENGTH;
+  if (toolName === "update_bot") return TEAM_CHAT_RULES_MAX_LENGTH + MAX_APPROVAL_DETAIL_LENGTH;
+  return MAX_APPROVAL_DETAIL_LENGTH;
 }
 
 function redactReceipt(receipt: AskReceipt, secrets: string[]): AskReceipt {
@@ -93,15 +103,30 @@ export function buildApprovalAskBlock(
   }
   if (options?.summary) {
     // Built from what was resolved before the effect was recorded, not from what the model typed.
+    // The review reason leads, so the approver still sees why the call was held. It is redacted
+    // like every other card text, bounded like the title, and draws on the same length budget
+    // as the lines: a reason on top of a near-limit summary cuts the lines' tail only as far as
+    // the reason is long, never more, and no reason can push the detail past the limit.
+    const { routineUpdate } = options.summary;
+    const reason =
+      routineUpdate && options.reviewReason?.trim()
+        ? truncate(redactSecrets(options.reviewReason.trim(), secrets), MAX_APPROVAL_SUMMARY_LENGTH)
+        : undefined;
+    const lines = truncate(
+      redactSecrets(options.summary.lines.join("\n"), secrets),
+      reason
+        ? Math.max(0, approvalDetailLength(toolName) - reason.length - 2)
+        : approvalDetailLength(toolName),
+    );
     return {
       kind: "ask",
       approvalEffectId: effectId,
       text: truncate(redactSecrets(options.summary.title, secrets), MAX_APPROVAL_SUMMARY_LENGTH),
-      detail: truncate(
-        redactSecrets(options.summary.lines.join("\n"), secrets),
-        approvalDetailLength(toolName),
-      ),
+      detail: reason ? `${reason}\n${lines}` : lines,
       detailFormat: toolName === "set_child_instructions" ? "code" : "text",
+      ...(routineUpdate
+        ? { routineUpdate: { changes: routineUpdate.changes, ...(reason ? { reason } : {}) } }
+        : {}),
       ...(options.summary.receipt
         ? { receipt: redactReceipt(options.summary.receipt, secrets) }
         : {}),
@@ -109,7 +134,12 @@ export function buildApprovalAskBlock(
       actions:
         onceOnly || options.summary.onceOnly
           ? [
-              { id: "allow", label: "Allow once" },
+              // Approving a child bot's instruction replacement applies it at once, so the
+              // button names the action instead of a generic allow.
+              {
+                id: "allow",
+                label: toolName === "set_child_instructions" ? "Apply now" : "Allow once",
+              },
               { id: "deny", label: "Deny" },
             ]
           : [
@@ -474,7 +504,7 @@ function pickScopeLabel(args: Record<string, unknown>): string | undefined {
 }
 
 export function truncate(value: string, maxLength: number): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+  return value.length > maxLength ? `${sliceWellFormed(value, maxLength)}…` : value;
 }
 
 function screenActionLine(value: unknown): string {

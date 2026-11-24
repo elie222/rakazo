@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelHeaderRow } from "@rakazo/contracts";
 import { Button, Input } from "@rakazo/ui-web";
 import { X } from "lucide-react";
+import { useId } from "react";
 
 export function ModelHeadersEditor({
   rows,
@@ -16,6 +17,8 @@ export function ModelHeadersEditor({
 }) {
   const { t } = useLingui();
   const visible = rows ?? savedNames.map((name) => ({ name, value: "" }));
+  const ids = useId();
+  const nameId = (index: number) => `${ids}-${index}`;
   return (
     <fieldset className="mt-4 space-y-2" disabled={disabled}>
       <legend className="text-body">
@@ -23,6 +26,9 @@ export function ModelHeadersEditor({
       </legend>
       {visible.map((row, index) => (
         <div className="flex items-center gap-2" key={index}>
+          <span id={nameId(index)} className="sr-only">
+            {row.name}
+          </span>
           <Input
             aria-label={t`Header name`}
             value={row.name}
@@ -38,6 +44,7 @@ export function ModelHeadersEditor({
           />
           <Input
             aria-label={t`Header value`}
+            aria-describedby={nameId(index)}
             type="password"
             placeholder={savedNames.includes(row.name) ? "••••••••" : undefined}
             value={row.value}
@@ -56,6 +63,7 @@ export function ModelHeadersEditor({
             variant="ghost"
             size="icon-xs"
             aria-label={t`Remove header`}
+            aria-describedby={nameId(index)}
             onClick={() => onChange(visible.filter((_, i) => i !== index))}
           >
             <X />

@@ -8,6 +8,7 @@ import {
   readVoiceJson,
   readVoiceText,
   speechUploadName,
+  VoiceProviderRefusedError,
   verifyVoiceHttpGet,
   voiceAccountIssue,
   voiceLanguageHint,
@@ -278,6 +279,14 @@ describe("voiceAccountIssue", () => {
     expect(voiceRequestError(400, "ElevenLabs", "speaking", null)).not.toBeInstanceOf(
       VoiceAccountError,
     );
+  });
+
+  it("keeps the status and reason code of other refusals for the logs", () => {
+    const error = voiceRequestError(400, "ElevenLabs", "speaking", {
+      detail: { status: "voice_not_found", message: "A voice with that id was not found." },
+    });
+    expect(error).toBeInstanceOf(VoiceProviderRefusedError);
+    expect(error).toMatchObject({ status: 400, reason: "voice_not_found" });
   });
 });
 

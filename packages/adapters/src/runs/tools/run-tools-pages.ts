@@ -1,7 +1,8 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH, PageTitleSchema } from "@rakazo/contracts";
 import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
-import { isUniqueViolation } from "@rakazo/db";
+import { isUniqueViolation, signalPage, signalPageUsers } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
@@ -142,7 +143,7 @@ export async function holdSharedPageSave(
     return undefined;
   }
   // Only a card the user approved pins a version.
-  const { approvedVersion: _ignored, ...args } = request.args;
+  const { approvedVersion: _version, approvedVisibility: _visibility, ...args } = request.args;
   request.args = args;
   request.effectRequest = args;
   if (args.help === true || !argumentGiven(args.pageId)) return undefined;
@@ -159,7 +160,7 @@ export async function holdSharedPageSave(
       versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
     },
   });
-  if (page?.visibility !== "link") return undefined;
+  if (!page || !["link", "people"].includes(page.visibility)) return undefined;
   const parsedTitle = hasTitle ? PageTitleSchema.safeParse(args.title) : undefined;
   if (parsedTitle && !parsedTitle.success) return undefined;
   const current = page.versions[0]?.source ?? "";
@@ -178,14 +179,24 @@ export async function holdSharedPageSave(
   if (redactSecrets(lines.join("\n"), ctx.secrets).length > MAX_APPROVAL_DETAIL_LENGTH)
     return {
       error:
-        "This page is shared by link, and this change is too long to show the user for approval. Save it as several smaller edits.",
+        "This page is shared, and this change is too long to show the user for approval. Save it as several smaller edits.",
     };
   const title = page.title.replace(new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g"), "\\$&");
-  request.args = { ...args, approvedVersion: page.currentVersion };
+  request.args = {
+    ...args,
+    approvedVersion: page.currentVersion,
+    approvedVisibility: page.visibility,
+  };
   request.effectRequest = request.args;
   request.heldForApproval = true;
   request.fleetSummary = { title: `Update shared page “${title}”?`, lines };
   return undefined;
+}
+
+function pageSharingHint(visibility: string | undefined) {
+  if (visibility === "link") return { sharedByLink: true };
+  if (visibility === "people") return { sharedWithPeople: true };
+  return {};
 }
 
 async function savePage(ctx: RunContext, call: ToolCall) {
@@ -226,7 +237,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
       pageId: page.id,
       version: page.currentVersion,
       title: page.title,
-      ...(page.visibility === "link" ? { sharedByLink: true } : {}),
+      ...pageSharingHint(page.visibility),
       source: current,
     };
   }
@@ -237,6 +248,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   // An approved change applies only to the version the user saw it against.
   if (page && args.approvedVersion !== undefined && args.approvedVersion !== page.currentVersion)
     return { error: "The page changed while saving; read it again and retry.", unchanged: true };
+  // Older approval cards were only issued for link sharing.
+  const approvedVisibility =
+    call.nextApprovedTool === "save_page"
+      ? args.approvedVisibility === "people"
+        ? "people"
+        : "link"
+      : undefined;
   const proposed = proposedSource(current, args);
   if (!proposed.ok) return { error: proposed.error, unchanged: true };
   const { source } = proposed;
@@ -282,7 +300,11 @@ async function savePage(ctx: RunContext, call: ToolCall) {
         where: {
           id: page.id,
           currentVersion: page.currentVersion,
-          ...(unapproved ? { visibility: "private" } : {}),
+          ...(unapproved
+            ? { visibility: "private" }
+            : approvedVisibility
+              ? { visibility: { in: ["private", approvedVisibility] } }
+              : {}),
         },
         data: { currentVersion: version, title, updatedAt: new Date() },
       });
@@ -308,6 +330,12 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     }
     throw error;
   }
+  if (deps.events?.publishSpaceChange) {
+    const change = page
+      ? signalPage(deps.prisma, deps.events, page.id)
+      : signalPageUsers(deps.events, [run.userId]);
+    await bestEffort("signal page save", change);
+  }
   const block: MessageBlock = { kind: "page", ...saved };
   const linkText = saved.title.replace(/[\\[\]]/g, "\\$&");
   try {
@@ -325,7 +353,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   }
   const result = {
     ...saved,
-    ...(page?.visibility === "link" ? { sharedByLink: true } : {}),
+    ...pageSharingHint(page?.visibility),
     mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
   };
   return check.warnings?.length ? { ...result, warnings: check.warnings } : result;

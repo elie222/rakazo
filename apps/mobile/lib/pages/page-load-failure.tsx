@@ -13,11 +13,13 @@ export function PageLoadFailure({
   fallback,
   gone,
   onRetry,
+  retrying,
 }: {
   error: unknown;
   fallback: string;
   gone?: string;
   onRetry: () => void;
+  retrying?: boolean;
 }) {
   const { t } = useLingui();
   const tokens = useMobileTokens();
@@ -34,7 +36,12 @@ export function PageLoadFailure({
         {message}
       </Text>
       {message === gone ? null : (
-        <NativeActionButton label={t`Try again`} prominence="secondary" onPress={onRetry} />
+        <NativeActionButton
+          label={t`Try again`}
+          prominence="secondary"
+          busy={retrying}
+          onPress={onRetry}
+        />
       )}
     </View>
   );

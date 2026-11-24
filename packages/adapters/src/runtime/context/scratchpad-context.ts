@@ -7,6 +7,7 @@ import {
   SCRATCHPAD_CUT_HINT,
   SCRATCHPAD_PREAMBLE,
   scratchpadMoreItemsNote,
+  scratchpadParkedNote,
 } from "./scratchpad-context.prompt.js";
 
 const MAX_SCRATCHPAD_CONTEXT_BYTES = 4 * 1024;
@@ -19,12 +20,14 @@ export async function loadAgentScratchpadContext(
   input: { spaceId: string; botId: string },
   maxBytes = MAX_SCRATCHPAD_CONTEXT_BYTES,
 ): Promise<string | undefined> {
-  const items = await listScratchpadItems(deps, {
-    spaceId: input.spaceId,
-    botId: input.botId,
-    includeDone: false,
-  });
-  if (items.length === 0) return undefined;
+  // Parked work is set aside: it is counted here and read on demand, so it never crowds out open work.
+  const [items, parked] = await Promise.all([
+    listScratchpadItems(deps, { spaceId: input.spaceId, botId: input.botId, status: "open" }),
+    deps.prisma.scratchpadItem.count({
+      where: { spaceId: input.spaceId, botId: input.botId, status: "parked" },
+    }),
+  ]);
+  if (items.length === 0 && parked === 0) return undefined;
 
   const fixedBytes = byteLength(SCRATCHPAD_PREAMBLE) + byteLength(SCRATCHPAD_CLOSING);
   if (maxBytes <= fixedBytes)
@@ -36,12 +39,14 @@ export async function loadAgentScratchpadContext(
     tail: ` (id: ${escapePromptData(item.id)})`,
   }));
   const more =
-    items.length > MAX_OPEN_ITEMS ? scratchpadMoreItemsNote(items.length - MAX_OPEN_ITEMS) : "";
+    (items.length > MAX_OPEN_ITEMS ? scratchpadMoreItemsNote(items.length - MAX_OPEN_ITEMS) : "") +
+    (parked > 0 ? scratchpadParkedNote(parked) : "");
   const bodyBytes = maxBytes - fixedBytes;
-  const withoutNotes = entries.map((entry) => entry.head + entry.tail).join("") + more;
-  // Titles alone overflow: keep what fits, newest first.
+  const titles = entries.map((entry) => entry.head + entry.tail).join("");
+  const withoutNotes = titles + more;
+  // Titles alone overflow: keep what fits, newest first, and always the counts and hints after them.
   if (byteLength(withoutNotes) >= bodyBytes) {
-    return `${SCRATCHPAD_PREAMBLE}${truncateUtf8(withoutNotes, bodyBytes)}${SCRATCHPAD_CLOSING}`;
+    return `${SCRATCHPAD_PREAMBLE}${keepEnding(titles, more, bodyBytes)}${SCRATCHPAD_CLOSING}`;
   }
 
   // Every item keeps its title, so one long note cannot hide the other open work.
@@ -52,7 +57,7 @@ export async function loadAgentScratchpadContext(
   const fits = wanted.reduce((sum, bytes) => sum + bytes, 0) <= notesBytes;
   const hint = fits ? "" : truncateUtf8(SCRATCHPAD_CUT_HINT, bodyBytes);
   if (byteLength(hint) > notesBytes) {
-    return `${SCRATCHPAD_PREAMBLE}${truncateUtf8(withoutNotes, bodyBytes - byteLength(hint))}${hint}${SCRATCHPAD_CLOSING}`;
+    return `${SCRATCHPAD_PREAMBLE}${keepEnding(titles, more + hint, bodyBytes)}${SCRATCHPAD_CLOSING}`;
   }
   const granted = fits ? wanted : shareBytes(wanted, notesBytes - byteLength(hint));
   const lines = entries.map((entry, index) => {
@@ -68,6 +73,12 @@ export async function loadAgentScratchpadContext(
     return `${entry.head}${cutNote}${entry.tail}`;
   });
   return `${SCRATCHPAD_PREAMBLE}${lines.join("")}${more}${hint}${SCRATCHPAD_CLOSING}`;
+}
+
+/** Cuts `text` so `ending` still fits after it within `maxBytes`. */
+function keepEnding(text: string, ending: string, maxBytes: number): string {
+  const kept = truncateUtf8(ending, maxBytes);
+  return truncateUtf8(text, maxBytes - byteLength(kept)) + kept;
 }
 
 /** Splits `total` so short requests are met in full and the longest share what is left. */

@@ -1340,6 +1340,46 @@ describe("saved website logins", () => {
     expect(await loadLoginPasswordRedactions(prisma, secretStore, scope)).toContain(password);
   });
 
+  it("unlocks several saved logins at once and keeps their order", async () => {
+    const context = { operationId: "test", traceId: "test", signal: new AbortController().signal };
+    const rows: Record<string, unknown>[] = [];
+    for (let index = 0; index < 12; index += 1) {
+      const encrypted = await secretStore.put(
+        JSON.stringify({ username: "fake-user@example.test", password: `fake-password-${index}` }),
+        { ...scope, ...context },
+        { recordId: `login-${index}` },
+      );
+      rows.push({ ...scope, ...login, name: `login_${index}`, ...encrypted });
+    }
+    const held: Deferred[] = [];
+    const store = {
+      load: vi.fn(async (...args: Parameters<typeof secretStore.load>) => {
+        const wait = deferred();
+        held.push(wait);
+        await wait.promise;
+        return secretStore.load(...args);
+      }),
+    };
+    const prisma = {
+      spaceSettingOverride: ownVault,
+      vaultCredential: { findMany: vi.fn(async (query) => matchingRows(rows, query)) },
+    } as unknown as PrismaClient;
+    const loading = loadLoginPasswordRedactions(prisma, store, scope);
+    // Answered last first, so a list built in answer order would come out reversed.
+    const answerHeld = () => {
+      for (const wait of held.splice(0).reverse()) wait.resolve();
+    };
+    await vi.waitFor(() => expect(held).toHaveLength(8));
+    await flush();
+    expect(held).toHaveLength(8);
+    answerHeld();
+    await vi.waitFor(() => expect(held).toHaveLength(4));
+    answerHeld();
+    const redactions = await loading;
+    const passwords = redactions.filter((form) => form.startsWith("fake-password-"));
+    expect(passwords).toEqual(rows.map((_, index) => `fake-password-${index}`));
+  });
+
   it("hides a saved password in its plain, URL, form and base64 forms", async () => {
     const username = "fake-user@example.test";
     const password = "fake pass!word+1";

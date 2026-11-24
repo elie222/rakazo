@@ -320,6 +320,7 @@ describe("createBackgroundJobHandlers", () => {
       baseUrl: undefined,
       thinkingLevel: null,
       oauth: undefined,
+      billing: "deployment",
     });
   });
 
@@ -349,6 +350,7 @@ describe("createBackgroundJobHandlers", () => {
       baseUrl: undefined,
       thinkingLevel: null,
       oauth: undefined,
+      billing: "deployment",
     });
   });
 });

@@ -31,7 +31,8 @@ Find it in **Settings → Memory**, on the web, desktop and mobile apps.
 Optionally, connect a memory service so bots can also recall facts by meaning, not just by reading
 their notes. In **Settings → Memory**, choose **Connect memory provider**:
 
-- **Supermemory**: its cloud service, or your own instance.
+- **Supermemory**: its cloud service, or your own instance. Bots can forget a memory by id, but
+  only one they can recall: their own, or the Space's shared memory with the Shared scope.
 - **Serenity**: choose **Recall and write**, or **Recall only** to keep it read-only.
 - **Honcho**: saves and recalls facts using Rakazo’s own peers. Optionally, enter a workspace
   and **User peer** to also recall what Honcho already knows about you. That existing peer stays
@@ -104,6 +105,9 @@ remains enabled, and sharing knowledge never bypasses the receiving Space's acce
 
 Separate from memory, each bot keeps a short list of **Open work**: things it has started and not
 finished. It is in the bot's settings. You can add items for it, or mark them complete.
+
+With daily check-ins on, an item nobody touches for 14 days is set aside automatically. Set-aside
+items wait behind **Show more**, where you can reopen them, and the bot can still read them.
 
 ## Memory across spaces
 

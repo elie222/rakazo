@@ -1,5 +1,6 @@
 import SwiftUI
 import WatchConnectivity
+import WidgetKit
 
 @main
 struct RakazoWatch: App {
@@ -62,7 +63,8 @@ private final class WatchConnection: NSObject, WCSessionDelegate {
         switch request.action {
         case .send: error = .sendUnconfirmed
         case .answer: error = .answerUnconfirmed
-        case .chats, .thread: error = .unavailable
+        case .transcribe: error = .voiceFailed
+        case .chats, .thread, .wait: error = .unavailable
         }
         continuation.resume(throwing: error)
       }
@@ -71,17 +73,38 @@ private final class WatchConnection: NSObject, WCSessionDelegate {
     if let error = reply.error { throw error }
     return reply
   }
+
+  /// Sends a recording in parts that each fit one message, and answers its words.
+  func transcribe(_ audio: Data, scope: UUID, chat: WatchChat) async throws -> String {
+    let id = UUID()
+    let size = 40_000
+    let parts = (audio.count + size - 1) / size
+    var reply = WatchReply()
+    for part in 0..<parts {
+      let start = audio.startIndex + part * size
+      try Task.checkCancellation()
+      reply = try await request(
+        WatchRequest(
+          action: .transcribe, scope: scope, chat: chat, nonce: id,
+          audio: audio[start..<min(start + size, audio.endIndex)], part: part, parts: parts))
+    }
+    return reply.text ?? ""
+  }
 }
 
 private struct WatchChats: View {
   let connection: WatchConnection
   @Environment(\.scenePhase) private var phase
   @State private var scope: UUID?
-  @State private var chats: [WatchChat] = []
-  @State private var path: [WatchChat] = []
+  @State private var chats: [WatchChatRow] = []
+  @State private var path: [WatchChatRow.ID] = []
   @State private var failure: WatchFailure?
   @State private var loading = false
   @State private var needsReload = false
+  @State private var canTranscribe: Bool?
+  /// The chat a complication opened, waiting for the list that has it.
+  @State private var voiceTarget: WatchChat?
+  @State private var listen = false
 
   var body: some View {
     NavigationStack(path: $path) {
@@ -93,18 +116,24 @@ private struct WatchChats: View {
         } else if chats.isEmpty {
           Text("No chats in this Space")
         }
-        ForEach(chats) { chat in
-          NavigationLink(chat.name, value: chat)
+        ForEach(chats) { row in
+          NavigationLink(value: row.id) { WatchChatSummary(row: row) }
         }
       }
       .navigationTitle("Chats")
       .toolbar {
-        Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
-          .disabled(loading)
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
+            .labelStyle(.iconOnly)
+            .disabled(loading)
+        }
       }
-      .navigationDestination(for: WatchChat.self) { chat in
-        if let scope {
-          WatchConversation(connection: connection, chat: chat, scope: scope) {
+      .navigationDestination(for: WatchChatRow.ID.self) { id in
+        if let scope, let row = chats.first(where: { $0.id == id }) {
+          WatchConversation(
+            connection: connection, row: row, scope: scope, canTranscribe: canTranscribe != false,
+            listen: $listen
+          ) {
             path = []
             await load()
           }
@@ -123,6 +152,14 @@ private struct WatchChats: View {
       clearChats()
       needsReload = true
     }
+    .onOpenURL { url in
+      guard let target = WatchShelf.voiceTarget(url), let kind = WatchChat.Kind(rawValue: target.kind)
+      else { return }
+      let name = WatchShelf.load().first { $0.id == target.id }?.name ?? ""
+      voiceTarget = WatchChat(kind: kind, id: target.id, name: name)
+      openVoiceTarget()
+      if voiceTarget != nil { Task { await load() } }
+    }
     .onChange(of: needsReload && !loading && path.isEmpty && phase == .active) { _, ready in
       guard ready else { return }
       needsReload = false
@@ -133,7 +170,28 @@ private struct WatchChats: View {
     }
   }
 
+  private func openVoiceTarget() {
+    guard scope != nil, let target = voiceTarget,
+      let row = chats.first(where: { $0.chat.kind == target.kind && $0.id == target.id })
+    else { return }
+    voiceTarget = nil
+    path = [row.id]
+    listen = true
+  }
+
+  private func saveShelf(_ bots: [WatchBot], rows: [WatchChatRow]) {
+    let saved = bots.map { bot in
+      WatchShelfChat(
+        kind: WatchChat.Kind.bot.rawValue, id: bot.id, name: bot.name, color: bot.color,
+        avatar: rows.first { $0.chat.kind == .bot && $0.id == bot.id }?.avatar)
+    }
+    guard WatchShelf.save(saved) else { return }
+    WidgetCenter.shared.invalidateConfigurationRecommendations()
+    WidgetCenter.shared.reloadTimelines(ofKind: WatchShelf.complicationKind)
+  }
+
   private func clearChats() {
+    voiceTarget = nil
     path = []
     chats = []
     scope = nil
@@ -143,28 +201,92 @@ private struct WatchChats: View {
   private func load() async {
     guard !loading else { return }
     let identity = connection.identityRevision
+    let requested = voiceTarget
     loading = true
     defer { loading = false }
     do {
-      let reply = try await connection.request(WatchRequest(action: .chats))
+      // The relay keeps the chat a complication opened in the list, however old it is.
+      let reply = try await connection.request(WatchRequest(action: .chats, chat: voiceTarget))
       guard phase == .active, !Task.isCancelled, identity == connection.identityRevision
       else { return }
       scope = reply.scope
       chats = reply.chats ?? []
+      canTranscribe = reply.transcribe
       failure = nil
+      saveShelf(reply.bots ?? [], rows: chats)
+      openVoiceTarget()
+      // A tap during a load that asked for another bot or none asks again. A bot that is gone
+      // opens nothing, and a later load must not start listening by itself.
+      if voiceTarget != nil && voiceTarget != requested { Task { await load() } }
+      else { voiceTarget = nil }
     } catch {
       guard !Task.isCancelled, identity == connection.identityRevision else { return }
       chats = []
       scope = nil
       failure = error as? WatchFailure ?? .unavailable
+      // Signed out: the face stops offering the account's bots. Each load replaces them otherwise.
+      if failure == .signIn { saveShelf([], rows: []) }
     }
+  }
+}
+
+private struct WatchChatSummary: View {
+  let row: WatchChatRow
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        WatchAvatar(row: row)
+        VStack(alignment: .leading, spacing: 0) {
+          Text(row.chat.name).font(.headline).lineLimit(1)
+          if let date = WatchDate.parse(row.updatedAt) {
+            Text(WatchDate.label(date)).font(.footnote).foregroundStyle(.secondary)
+          }
+        }
+      }
+      let preview = row.preview.split(whereSeparator: \.isNewline).joined(separator: " ")
+      if !preview.isEmpty {
+        Text(preview).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+      }
+    }
+    .padding(.vertical, 4)
+  }
+}
+
+private struct WatchAvatar: View {
+  let row: WatchChatRow
+  var size: CGFloat = 32
+
+  var body: some View {
+    let color = row.color.flatMap(Color.init(hex:)) ?? Color.gray
+    Group {
+      if let data = row.avatar, let image = UIImage(data: data) {
+        Image(uiImage: image).resizable().scaledToFill()
+      } else {
+        ZStack {
+          color
+          if row.chat.kind == .group {
+            Image(systemName: "person.2.fill").font(.system(size: size * 0.4))
+          } else {
+            Text(row.chat.name.prefix(1).uppercased()).font(.system(size: size * 0.5, weight: .semibold))
+          }
+        }
+        .foregroundStyle(row.color.map(Color.isLight(hex:)) == true ? .black : .white)
+      }
+    }
+    .frame(width: size, height: size)
+    .clipShape(Circle())
+    .accessibilityHidden(true)
   }
 }
 
 private struct WatchConversation: View {
   let connection: WatchConnection
-  let chat: WatchChat
+  let row: WatchChatRow
   let scope: UUID
+  let canTranscribe: Bool
+  /// Set when a complication opened the chat to speak a message.
+  @Binding var listen: Bool
   let reloadChats: () async -> Void
 
   @Environment(\.scenePhase) private var phase
@@ -176,49 +298,50 @@ private struct WatchConversation: View {
   @State private var sendNonce = UUID()
   @State private var sendingText: String?
   @State private var needsRefresh = false
+  @State private var recording = false
+  @State private var sendAfterWork = false
+  @FocusState private var typing: Bool
+  @State private var waits = 0
+
+  private var chat: WatchChat { row.chat }
+  private var tint: Color { row.color.flatMap(Color.init(hex:)) ?? Color.gray }
 
   var body: some View {
-    List {
-      if let failure { Text(failure.label) }
-      Button("Message", systemImage: "square.and.pencil") { editing = true }
-        .disabled(working || failure == .signIn || failure == .unlockPhone)
-        .sheet(isPresented: $editing) {
-          VStack {
-            TextField("Message", text: $draft)
-            Button("Send") { startSend() }
-              .disabled(working || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    ScrollViewReader { proxy in
+      ScrollView {
+        VStack(spacing: 6) {
+          if working && messages.isEmpty { ProgressView() }
+          ForEach(messages) { message in
+            if !message.text.isEmpty { WatchBubble(message: message, tint: tint) }
+            if let prompt = message.prompt {
+              NavigationLink {
+                WatchReview(prompt: prompt, busy: $working) { answer in
+                  startAnswer(message.id, prompt: prompt, answer: answer)
+                }
+              } label: {
+                Label {
+                  Text(prompt.kind == .phone ? "Continue on iPhone" : prompt.title).lineLimit(3)
+                } icon: {
+                  Image(systemName: prompt.kind == .approval ? "hand.raised" : "questionmark.bubble")
+                }
+              }
+            }
           }
-          .padding(.horizontal)
+          if botWorking { WatchTypingBubble(tint: tint) }
+          if let failure {
+            Text(failure.label).font(.footnote).foregroundStyle(.secondary)
+          }
+          TextField("Message", text: $draft)
+            .onSubmit { startSend() }
+            .disabled(working || failure == .signIn || failure == .unlockPhone)
+            .focused($typing)
+            .id(Self.composer)
         }
-      if botWorking {
-        Label("Working", systemImage: "hourglass")
-          .foregroundStyle(.secondary)
+        .padding(.horizontal, 4)
       }
-      ForEach(messages.reversed()) { message in
-        if let prompt = message.prompt {
-          NavigationLink {
-            WatchReview(prompt: prompt, busy: $working) { answer in
-              startAnswer(message.id, prompt: prompt, answer: answer)
-            }
-          } label: {
-            Label {
-              Text(prompt.kind == .phone ? "Continue on iPhone" : prompt.title)
-                .lineLimit(3)
-            } icon: {
-              Image(systemName: prompt.kind == .approval ? "hand.raised" : "questionmark.bubble")
-            }
-          }
-        }
-        if !message.text.isEmpty {
-          VStack(alignment: .leading, spacing: 4) {
-            if message.fromUser {
-              Text("You").font(.caption2).foregroundStyle(.secondary)
-            }
-            Text(message.text)
-          }
-        }
-      }
-      if working && messages.isEmpty { ProgressView() }
+      .defaultScrollAnchor(.bottom)
+      .onChange(of: messages.last?.id) { proxy.scrollTo(Self.composer, anchor: .bottom) }
+      .onChange(of: botWorking) { proxy.scrollTo(Self.composer, anchor: .bottom) }
     }
     .onChange(of: connection.chatRevision) {
       guard phase == .active else { return }
@@ -229,18 +352,58 @@ private struct WatchConversation: View {
       needsRefresh = false
       Task { await refresh() }
     }
+    .onChange(of: working) {
+      guard !working, sendAfterWork else { return }
+      sendAfterWork = false
+      startSend()
+    }
+    .onChange(of: listen, initial: true) {
+      guard listen else { return }
+      listen = false
+      if canTranscribe { recording = true } else { typing = true }
+    }
+    .sheet(isPresented: $recording) {
+      WatchVoiceSheet { audio in
+        try await connection.transcribe(audio, scope: scope, chat: chat)
+      } finish: { result in
+        recording = false
+        switch result {
+        case .text(let text):
+          // The words wait in the composer while they send, so the wrist shows what went out.
+          draft = text
+          if working { sendAfterWork = true } else { startSend() }
+        case .typeInstead:
+          typing = true
+        }
+      }
+    }
     .navigationTitle(chat.name)
     .toolbar {
-      Button("Refresh", systemImage: "arrow.clockwise") { Task { await refresh() } }
-        .disabled(working)
+      ToolbarItem(placement: .topBarTrailing) {
+        Button("Refresh", systemImage: "arrow.clockwise") { Task { await refresh() } }
+          .labelStyle(.iconOnly)
+          .disabled(working)
+      }
     }
     .task(id: connection.reachable && phase == .active) {
       if connection.reachable && phase == .active { await refresh() }
       else if phase == .active { failure = .unavailable }
     }
+    // A suspended iPhone app cannot publish a revision, so ask it to wait for the reply.
+    .task(id: botWorking && connection.reachable && phase == .active ? waits : nil) {
+      guard botWorking, connection.reachable, phase == .active else { return }
+      do {
+        let reply = try await connection.request(WatchRequest(action: .wait, scope: scope, chat: chat))
+        guard !Task.isCancelled else { return }
+        if reply.changed == true { await refresh() } else { waits += 1 }
+      } catch {
+        // Stop rather than retry; the message asks for a refresh.
+        if !Task.isCancelled { failure = error as? WatchFailure ?? .unavailable }
+      }
+    }
   }
 
-  @State private var editing = false
+  private static let composer = "composer"
 
   private func refresh() async {
     guard !working else {
@@ -260,6 +423,7 @@ private struct WatchConversation: View {
       messages = reply.messages ?? []
       botWorking = reply.botWorking == true
       failure = nil
+      waits += 1
     } catch {
       guard !Task.isCancelled, identity == connection.identityRevision else { return }
       let reason = error as? WatchFailure ?? .unavailable
@@ -271,26 +435,27 @@ private struct WatchConversation: View {
   }
 
   private func startSend() {
-    guard !working else { return }
+    guard !working, !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
     working = true
-    editing = false
     Task { await send() }
   }
 
   private func send() async {
     defer { working = false }
-    if draft != sendingText {
-      sendingText = draft
+    let text = draft
+    if text != sendingText {
+      sendingText = text
       sendNonce = UUID()
     }
     do {
       _ = try await connection.request(
-        WatchRequest(action: .send, scope: scope, chat: chat, text: draft, nonce: sendNonce))
+        WatchRequest(action: .send, scope: scope, chat: chat, text: text, nonce: sendNonce))
     } catch {
       failure = error as? WatchFailure ?? .sendUnconfirmed
       return
     }
-    draft = ""
+    // Words spoken while this sent wait to go next.
+    if draft == text { draft = "" }
     sendingText = nil
     await read()
   }
@@ -308,6 +473,137 @@ private struct WatchConversation: View {
       messages.removeAll { $0.id == id }
       await read()
     }
+  }
+}
+
+private struct WatchBubble: View {
+  let message: WatchMessage
+  let tint: Color
+
+  var body: some View {
+    let alignment: HorizontalAlignment = message.fromUser ? .trailing : .leading
+    VStack(alignment: alignment, spacing: 2) {
+      if let author = message.author {
+        Text(author).font(.caption2).foregroundStyle(.secondary)
+      }
+      // People's messages show as typed, the way the phone shows them.
+      Text(message.fromUser || message.author != nil
+        ? AttributedString(message.text) : WatchMarkdown.render(message.text))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+          message.fromUser ? Color.gray.opacity(0.4) : tint.opacity(0.3),
+          in: RoundedRectangle(cornerRadius: 16))
+    }
+    .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
+    .padding(message.fromUser ? .leading : .trailing, 16)
+  }
+}
+
+/// The bot's side of the thread while it works on a reply: a bubble with pulsing dots.
+private struct WatchTypingBubble: View {
+  let tint: Color
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    TimelineView(.animation(minimumInterval: 0.15, paused: reduceMotion)) { context in
+      let phase = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate * 2.4
+      HStack(spacing: 4) {
+        ForEach(0..<3, id: \.self) { index in
+          let wave = (sin(phase - Double(index) * 0.9) + 1) / 2
+          Circle()
+            .frame(width: 6, height: 6)
+            .opacity(0.35 + 0.65 * wave)
+            .offset(y: -2 * wave)
+        }
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 10)
+      .background(tint.opacity(0.3), in: RoundedRectangle(cornerRadius: 16))
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement()
+    .accessibilityLabel("Working")
+  }
+}
+
+/// Renders the Markdown bots write with what a watch `Text` can show: inline styles, headings
+/// as bold lines, bullets and code blocks.
+enum WatchMarkdown {
+  static func render(_ text: String) -> AttributedString {
+    var result = AttributedString()
+    var fence: String?
+    var first = true
+    for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+      var line = String(raw)
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if let open = fence, trimmed.hasPrefix(open) {
+        fence = nil
+        continue
+      }
+      if fence == nil, let open = ["```", "~~~"].first(where: trimmed.hasPrefix) {
+        fence = open
+        continue
+      }
+      // Table rows read as cells side by side; their divider lines add nothing.
+      if fence == nil, trimmed.hasPrefix("|") {
+        if trimmed.allSatisfy({ "|-: ".contains($0) }) { continue }
+        line = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "| "))
+          .components(separatedBy: "|")
+          .map { $0.trimmingCharacters(in: .whitespaces) }
+          .joined(separator: "  ")
+      }
+      if !first { result += AttributedString("\n") }
+      first = false
+      if fence != nil {
+        var code = AttributedString(line)
+        code.font = Font.system(.footnote, design: .monospaced)
+        result += code
+        continue
+      }
+      var heading = false
+      if let marker = line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+        line.removeSubrange(marker)
+        if let closing = line.range(of: #"\s+#+\s*$"#, options: .regularExpression) {
+          line.removeSubrange(closing)
+        }
+        heading = true
+      } else if let marker = line.range(of: #"^\s*[-*+]\s+"#, options: .regularExpression) {
+        let indent = line[marker].prefix { $0 == " " }
+        line.replaceSubrange(marker, with: indent + "• ")
+      }
+      var part =
+        (try? AttributedString(
+          markdown: line, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        ?? AttributedString(line)
+      if heading { part.font = Font.headline }
+      result += part
+    }
+    return result
+  }
+}
+
+private enum WatchDate {
+  static func parse(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = formatter.date(from: value) { return date }
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: value)
+  }
+
+  static func label(_ date: Date) -> String {
+    Calendar.current.isDateInToday(date)
+      ? date.formatted(date: .omitted, time: .shortened)
+      : date.formatted(.dateTime.month(.defaultDigits).day())
+  }
+}
+
+private extension Color {
+  static func isLight(hex: String) -> Bool {
+    guard let value = UInt32(hex.dropFirst(), radix: 16) else { return false }
+    let components = [16, 8, 0].map { Double((value >> $0) & 0xFF) / 255 }
+    return 0.299 * components[0] + 0.587 * components[1] + 0.114 * components[2] > 0.6
   }
 }
 
@@ -357,7 +653,7 @@ private struct WatchReview: View {
   }
 }
 
-private extension WatchFailure {
+extension WatchFailure {
   var label: LocalizedStringKey {
     switch self {
     case .unlockPhone: "Unlock your iPhone, then refresh."
@@ -369,6 +665,9 @@ private extension WatchFailure {
     case .sendRejected: "Couldn’t send this message."
     case .sendUnconfirmed: "Send unconfirmed. Refresh before trying again."
     case .answerUnconfirmed: "Answer unconfirmed. Go back and refresh."
+    case .noVoice: "Voice messages aren’t set up."
+    case .voiceFailed: "Couldn’t transcribe. Try again."
+    case .voiceAccount: "Check Voice settings on your iPhone."
     }
   }
 }

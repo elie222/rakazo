@@ -1,8 +1,10 @@
 import type { Actor } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { connectedModelChoices as pickerModelChoices } from "@rakazo/core";
 import { listAvailablePiCatalog } from "../runtime/pi/models/pi-catalog-availability.js";
 import type { PiCatalogEntry } from "../runtime/pi/models/pi-models.js";
 import { listPiCatalog, offeredCatalog } from "../runtime/pi/models/pi-models.js";
+import { listModelCredentials } from "./model-credential-list.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { modelCredentialAuthKindsForSpace, spaceCanRunCatalogModel } from "./model-selection.js";
 
@@ -13,27 +15,52 @@ export type ModelChoiceResult =
   | { ok: false; error: string };
 
 const CANDIDATE_LIMIT = 5;
+const choiceKey = (choice: Pick<ModelChoice, "provider" | "id">) =>
+  `${choice.provider}/${choice.id}`;
 /** Errors echo the query back to the model; a huge one must not inflate the tool result. */
 const ECHOED_QUERY_LIMIT = 200;
 export const echoedQuery = (query: string) =>
   query.length > ECHOED_QUERY_LIMIT ? `${query.slice(0, ECHOED_QUERY_LIMIT)}…` : query;
 
-/** The catalog models this user's connections, or hosted credits, can run. */
+/**
+ * The models this user can run: the catalog models their connections, or hosted credits, can
+ * run, then the models a connection names itself (a custom server's ids, or one typed in), as
+ * the model pickers list them.
+ */
 export async function connectedModelChoices(
   deps: Pick<BotModelChangeDeps, "prisma" | "secretStore" | "hostedProvider">,
   scope: Pick<Actor, "userId" | "spaceId">,
 ): Promise<ModelChoice[]> {
-  const auth = await modelCredentialAuthKindsForSpace(
-    deps.prisma,
-    deps.secretStore,
-    scope,
-    deps.hostedProvider,
+  const [auth, credentials] = await Promise.all([
+    modelCredentialAuthKindsForSpace(deps.prisma, deps.secretStore, scope, deps.hostedProvider),
+    listModelCredentials(deps, scope, { runnable: true }),
+  ]);
+  const catalog = offeredCatalog(listAvailablePiCatalog(auth.byProvider, auth.byModel)).filter(
+    (entry) => {
+      if (entry.placeholder || !spaceCanRunCatalogModel(auth, entry)) return false;
+      const kind = auth.byModel[entry.provider]?.[entry.id] ?? auth.byProvider[entry.provider];
+      return kind !== undefined && kind !== "disconnected";
+    },
   );
-  return offeredCatalog(listAvailablePiCatalog(auth.byProvider, auth.byModel)).filter((entry) => {
-    if (entry.placeholder || !spaceCanRunCatalogModel(auth, entry)) return false;
-    const kind = auth.byModel[entry.provider]?.[entry.id] ?? auth.byProvider[entry.provider];
-    return kind !== undefined && kind !== "disconnected";
-  });
+  const listed = new Set(catalog.map(choiceKey));
+  // Bundled models stay as the catalog above judged them; only a connection's own ids are added.
+  const bundled = new Set(
+    listPiCatalog()
+      .filter((entry) => !entry.placeholder)
+      .map(choiceKey),
+  );
+  // Only a connection that lists the ids it serves adds them; others run what the catalog lists.
+  const servers = credentials.filter((c) => c.enabledModelIds !== undefined);
+  const own = pickerModelChoices(servers, listPiCatalog())
+    .filter((choice) => !bundled.has(`${choice.provider}/${choice.modelId}`))
+    .map((choice) => ({
+      provider: choice.provider,
+      providerName: choice.providerLabel ?? choice.provider,
+      id: choice.modelId,
+      label: choice.modelLabel ?? choice.modelId,
+    }))
+    .filter((choice) => !listed.has(choiceKey(choice)));
+  return [...catalog, ...own];
 }
 
 /**
@@ -110,8 +137,6 @@ export function matchModelChoice(
   return { match: first && (!second || order(first, second) < 0) ? first : undefined, ranked };
 }
 
-const choiceKey = (choice: ModelChoice) => `${choice.provider}/${choice.id}`;
-
 /**
  * Resolve a loose model name against the models this user can run. `provider` limits the search
  * to one provider; `preferredProvider` breaks ties toward it.
@@ -155,6 +180,6 @@ export async function resolveModelChoice(
     ok: false,
     error: providers.length
       ? `No connected model matches "${echoedQuery(input.model)}". The user needs to connect ${providers.join(" or ")} in Settings first.`
-      : `No model matches "${echoedQuery(input.model)}".`,
+      : `No model matches "${echoedQuery(input.model)}". The user can connect a model provider in Settings.`,
   };
 }

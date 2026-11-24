@@ -196,9 +196,13 @@ describe("voiceCredentialLink", () => {
     expect(await voiceCredentialLink(broken.deps, actor, linked)).toEqual({ hasKey: true });
     const missing = depsWith({});
     expect(await voiceCredentialLink(missing.deps, actor, linked)).toEqual({ hasKey: true });
-    const dbDown = depsWith({ "voice-secret": adapters.modelConnectionVoiceSecret() });
-    dbDown.raw.prisma.secret.findFirst.mockRejectedValue(new Error("db down"));
-    expect(await voiceCredentialLink(dbDown.deps, actor, linked)).toEqual({ hasKey: true });
+  });
+
+  it("lets the credentials read report a database failure", async () => {
+    const { deps, raw } = depsWith({});
+    const outage = new Error("database unavailable");
+    raw.prisma.secret.findFirst.mockRejectedValue(outage);
+    await expect(voiceCredentialLink(deps, actor, linked)).rejects.toBe(outage);
   });
 });
 

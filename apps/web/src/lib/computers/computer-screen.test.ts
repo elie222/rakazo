@@ -537,3 +537,11 @@ describe("giving a reconnected screen the keyboard back", () => {
     expect(refocus.connected(body, frame, body)).toBe(false);
   });
 });
+
+describe("screen frame detail emoji limit", () => {
+  it("does not cut an emoji in half at the detail limit", () => {
+    expect(
+      screenFrameMessage({ rakazoScreen: "failed", detail: `${"a".repeat(199)}😀 tail` })?.detail,
+    ).toBe("a".repeat(199));
+  });
+});

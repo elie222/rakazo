@@ -6,34 +6,43 @@ import type {
   MediaVideoJob,
 } from "@rakazo/adapter-kit";
 import { MediaGenerationError } from "@rakazo/adapter-kit";
-import { ATTACHMENT_MAX_BASE64_LENGTH } from "@rakazo/contracts";
-import { deadlineSignal, ResponseTooLargeError } from "@rakazo/core";
-import { z } from "zod";
-import { detectImageMimeType } from "../../../media/image-mime-type.js";
 import {
-  GENERATED_IMAGE_MIME_TYPES,
-  mediaPromptSchema,
-  validateGeneratedMedia,
-} from "../../../media/media-generation-provider.js";
-import { readBodyCapped } from "../../../web/web-ssrf.js";
+  checkMediaModelId,
+  mediaBaseUrl,
+  requestImagesApiImage,
+} from "../../../media/images-api.js";
+import { UNKNOWN_MODEL_PRICES } from "../../../media/media-generation-provider.js";
+import type { ResolveHostname } from "../../../web/web-ssrf.js";
 
 const API = "https://api.openai.com/v1";
-const IMAGE_DEADLINE_MS = 180_000;
-/** One base64 image at the attachment limit, plus room for the JSON around it. */
-const MAX_RESPONSE_BYTES = ATTACHMENT_MAX_BASE64_LENGTH + 64 * 1024;
-const MODEL_ID_PATTERN = /^[\w.:/@+-]{1,200}$/;
-const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
-const imagesResponse = z.object({
-  data: z.array(z.object({ b64_json: z.string().min(1) })).min(1),
-});
+/**
+ * Per model: the most one image costs at the auto size and quality this adapter requests (high
+ * quality, the dearer of square and landscape), and the token rates its usage is billed at, all in
+ * micro-dollars. Models without token usage are charged their image price.
+ */
+const MODELS = new Map<string, { imageMicros: number; textToken?: number; outputToken?: number }>([
+  ["gpt-image-2", { imageMicros: 211_000, textToken: 5, outputToken: 30 }],
+  ["gpt-image-1", { imageMicros: 250_000, textToken: 5, outputToken: 40 }],
+  ["gpt-image-1-mini", { imageMicros: 52_000, textToken: 2, outputToken: 8 }],
+  ["dall-e-3", { imageMicros: 40_000 }],
+  ["dall-e-2", { imageMicros: 20_000 }],
+]);
+
+/** The image models a key's picker offers, newest first. */
+export const OPENAI_IMAGE_MODELS = [
+  { id: "gpt-image-2", label: "GPT Image 2" },
+  { id: "gpt-image-1", label: "GPT Image 1" },
+  { id: "gpt-image-1-mini", label: "GPT Image 1 Mini" },
+] as const;
 
 /**
  * The Images API (`POST /images/generations`). Servers that speak the same API work through the
- * base URL. It returns the image inline, so there is no output URL to fetch; it has no video.
+ * base URL. It has no video.
  */
 export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
   readonly id = "openai";
   readonly capabilities = { images: true, video: false, offline: false };
+  readonly prices;
   private readonly endpoint: string;
   constructor(
     private readonly options: {
@@ -41,76 +50,39 @@ export class OpenAIMediaGenerationProvider implements MediaGenerationProvider {
       imageModel: string;
       baseUrl?: string;
       fetch?: typeof fetch;
+      resolveHostname?: ResolveHostname;
     },
   ) {
-    const url = new URL(options.baseUrl ?? API);
-    if (
-      !["https:", "http:"].includes(url.protocol) ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash
-    )
-      throw new Error("Invalid media generation base URL");
-    if (!MODEL_ID_PATTERN.test(options.imageModel)) throw new Error("Invalid media model id");
-    this.endpoint = `${url.href.replace(/\/$/, "")}/images/generations`;
+    this.endpoint = `${mediaBaseUrl(options.baseUrl ?? API)}/images/generations`;
+    checkMediaModelId(options.imageModel);
+    this.prices = {
+      imageMicros: MODELS.get(options.imageModel)?.imageMicros ?? UNKNOWN_MODEL_PRICES.imageMicros,
+      videoMicros: 0,
+    };
   }
-  async generateImage(
-    input: MediaGenerationInput,
-    context: AdapterContext,
-  ): Promise<GeneratedMedia> {
-    const parsed = mediaPromptSchema.safeParse(input);
-    if (!parsed.success) throw new MediaGenerationError("invalid_input");
-    context.signal.throwIfAborted();
-    const signal = deadlineSignal(IMAGE_DEADLINE_MS, context.signal);
-    let body: unknown;
-    try {
-      const response = await (this.options.fetch ?? fetch)(this.endpoint, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.options.apiKey}`,
-          "Content-Type": "application/json",
+  generateImage(input: MediaGenerationInput, context: AdapterContext): Promise<GeneratedMedia> {
+    return requestImagesApiImage(
+      {
+        ...this.options,
+        endpoint: this.endpoint,
+        model: this.options.imageModel,
+        ...input,
+        costMicros: (usage) => {
+          const rates = MODELS.get(this.options.imageModel);
+          // A partial count would undercharge, so the image is then charged at its saved price.
+          if (
+            !rates?.outputToken ||
+            usage.input_tokens === undefined ||
+            usage.output_tokens === undefined
+          )
+            return undefined;
+          return (
+            usage.input_tokens * (rates.textToken ?? 0) + usage.output_tokens * rates.outputToken
+          );
         },
-        body: JSON.stringify({ model: this.options.imageModel, prompt: parsed.data.prompt, n: 1 }),
-        signal,
-        redirect: "error",
-      });
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw new MediaGenerationError(
-          response.status === 429
-            ? "rate_limit"
-            : [401, 403].includes(response.status)
-              ? "authentication"
-              : "provider_failure",
-        );
-      }
-      body = JSON.parse(
-        new TextDecoder().decode(await readBodyCapped(response, MAX_RESPONSE_BYTES, signal)),
-      );
-    } catch (error) {
-      context.signal.throwIfAborted();
-      if (error instanceof MediaGenerationError) throw error;
-      throw new MediaGenerationError(
-        error instanceof ResponseTooLargeError ? "output_limit" : "provider_failure",
-      );
-    }
-    const result = imagesResponse.safeParse(body);
-    if (!result.success) throw new MediaGenerationError("provider_failure");
-    const encoded = result.data.data[0]!.b64_json;
-    if (encoded.length > ATTACHMENT_MAX_BASE64_LENGTH)
-      throw new MediaGenerationError("output_limit");
-    // Buffer.from skips characters that are not base64, so damaged data would decode short.
-    if (encoded.length % 4 || !BASE64_PATTERN.test(encoded))
-      throw new MediaGenerationError("provider_failure");
-    const bytes = new Uint8Array(Buffer.from(encoded, "base64"));
-    // The format is read from the bytes: servers differ in what they return and how they label it.
-    const mimeType = detectImageMimeType(bytes);
-    if (!mimeType || !GENERATED_IMAGE_MIME_TYPES.has(mimeType))
-      throw new MediaGenerationError("provider_failure");
-    const output = { bytes, mimeType } as GeneratedMedia;
-    validateGeneratedMedia(output, "image");
-    return output;
+      },
+      context,
+    );
   }
   async generateVideo(): Promise<MediaVideoJob> {
     throw new MediaGenerationError("unsupported");

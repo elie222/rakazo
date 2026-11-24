@@ -114,6 +114,7 @@ describe("computer allowance", () => {
         )
       )?.limitMicros;
     expect(await limit("active", "pro")).toBe(20_000_000);
+    expect(await limit("active", "ultra")).toBe(120_000_000);
     // An overdue plan's tier waits for its payment.
     expect(await limit("past_due", "max")).toBe(5_000_000);
     // Rows synced before tiers existed are Standard.
@@ -121,7 +122,7 @@ describe("computer allowance", () => {
     // A lapsed plan's tier no longer applies.
     expect(await limit("canceled", "max")).toBe(5_000_000);
     // Every tier's trial gets the trial allowance.
-    expect(await limit("trialing", "max")).toBe(3_000_000);
+    expect(await limit("trialing", "ultra")).toBe(3_000_000);
   });
 
   it("adds extra allowance granted this period to a paid own-key tier", async () => {

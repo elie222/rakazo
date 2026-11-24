@@ -50,8 +50,7 @@ HTTPS 仍会校验证书；和私有 IP 端点一样，受信任主机名也允�
 
 需要截图计算机工具时，选择支持视觉的模型。
 Compose 也会将运行时支持的标准提供商密钥（例如 `OPENAI_API_KEY`、`GEMINI_API_KEY`）传给 API 和 worker，
-用于没有已存储凭据的模型。`RAKAZO_LIVE_MODEL_CATALOG=off` 可关闭在线模型目录探测。
-其他标准密钥还包括 `MISTRAL_API_KEY`、`GROQ_API_KEY` 和 `XAI_API_KEY`。
+用于没有已存储凭据的模型。其他标准密钥还包括 `MISTRAL_API_KEY`、`GROQ_API_KEY` 和 `XAI_API_KEY`。
 
 使用宿主机凭据的云模型需显式设置 `PI_DEFAULT_CREDENTIALS=host`。
 例如 Bedrock 使用 `PI_DEFAULT_PROVIDER=amazon-bedrock`、`PI_DEFAULT_MODEL`、`AWS_REGION` 和宿主机角色；
@@ -60,6 +59,21 @@ Vertex 使用 `PI_DEFAULT_PROVIDER=google-vertex` 及宿主机的应用默认凭
 使用宿主机凭据的请求费用由对应云账号承担。
 使用实例角色时，应保留[计算机出站限制（英文）](../self-host-docker-computers.md#restricted-computer-egress)，
 防止机器人通过元数据端点读取角色凭据。
+
+### 所有人的默认模型
+
+管理员（`RAKAZO_ADMIN_EMAILS`）也可以在 **Settings → Models → Default for everyone** 中设置部署模型：
+选择通过 API 密钥连接的提供商，粘贴密钥并选择模型。对于没有自己模型的所有人，它会取代
+`PI_DEFAULT_PROVIDER` 和 `PI_DEFAULT_MODEL`，从下一次运行起生效，无需重启；选择 **Default** 则恢复环境中的设置。
+密钥加密保存，不会再次显示，并像环境中的密钥一样从运行输出中隐藏。每次更改都会记入安全审计日志。
+
+`RAKAZO_MODEL_PROVIDER_ALLOWLIST` 对它的作用与对任何账号连接相同：列表未包含的提供商不会提供，
+已保存的选择会停止服务，并重新使用环境中的模型。启用模型额度的部署始终使用运营方自己的连接，
+因此不提供此选项，已保存的选择也会被忽略。由运营方付费的调用（例如部署的审批检查器）继续使用环境中的密钥。
+开放注册的消息应用只在环境配置了模型时才会在启动时开启。
+
+`RAKAZO_LIVE_MODEL_CATALOG=off`（或 `false`、`0`、`no`）可关闭提供商和 Codex 的在线模型目录探测；默认开启，
+无法识别的值会让 API 在启动时停止。
 
 ## 集中配置本地模型
 
@@ -88,8 +102,22 @@ RAKAZO_LOCAL_REASONING_MODELS=qwen3:4b
 `RAKAZO_LOCAL_MAX_TOKENS` 是每次请求的输出上限，连接自身设置优先，且不会超过上下文窗口的四分之一。
 输出上限越大，留给提示词的空间越少，长聊天可能更早压缩。将 `RAKAZO_LOCAL_MODELS` 留空可禁用此提供商。
 
-Ollama Cloud 可直接在“设置 → 模型”中填写其 API 密钥并查找模型，无需配置环境变量；
-即使 `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`，该入口仍可用。
+Ollama Cloud 可直接在“设置 → 模型”中填写其 API 密钥，再从加载出的列表中选择模型，无需配置环境变量；
+即使 `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`，该入口仍可用。`RAKAZO_MODEL_PROVIDER_ALLOWLIST` 不含 `ollama-cloud` 时会移除该预设，
+在 `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` 下也会移除其主机豁免；见[限制模型提供商](#限制模型提供商)。
+
+## 限制模型提供商
+
+在 API 和 worker 的部署环境中设置 `RAKAZO_MODEL_PROVIDER_ALLOWLIST=provider1,provider2`，然后重建这些容器，
+即可限制用户能连接的模型提供商。条目是模型注册表中的提供商 ID（例如 `openrouter`、`anthropic`，
+以及表示 OpenAI 兼容端点的 `openai-compatible`）。该列表作用于模型目录：不在列表中的提供商不会提供，
+其密钥在保存和导入时会被拒绝，机器人不能切换到它，其运行会以明确的错误失败。
+未设置或为空的列表表示允许所有提供商，行为与不设置完全相同。
+
+托管的 OpenAI 兼容预设包括 Ollama Cloud（`ollama-cloud`）、Concentrate AI（`concentrate`）和 DeepInfra（`deepinfra`）。
+在“设置 → 模型”中选择其一，填写 API 密钥并选择模型，Rakazo 会自动加载模型列表。
+即使 `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`，它们的 HTTPS 主机仍可用。
+设置提供商允许列表时，请包含 `openai-compatible` 以及要保留的预设 ID。省略某个预设 ID 会隐藏它并移除其主机豁免。
 
 ## 思考能力与缓存
 
@@ -121,7 +149,8 @@ Ollama Cloud 可直接在“设置 → 模型”中填写其 API 密钥并查找
 `RAKAZO_AUTO_REVIEW_MODEL=typesafe/jev-1.14`；它使用 `OPENROUTER_API_KEY` 和 Decisions API。
 直接使用 TypeSafe 时设置 `RAKAZO_AUTO_REVIEW_PROVIDER=jev` 和 `TYPESAFE_API_KEY`。
 核心功能不依赖这两个托管服务。使用 TypeSafe 时，`RAKAZO_AUTO_REVIEW_MODEL` 默认是
-`jev-latest`，`RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE`（0 到 1，默认 `0.5`）是低于此置信度时询问用户的阈值，
+`jev-latest`，`RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE`（0 到 1）是低于此置信度时询问用户的阈值；
+未设置时，每个决策模型使用自己校准的下限（Jev 为 `0.5`）。
 `RAKAZO_AUTO_REVIEW_TIMEOUT_MS`（200 到 30000，默认 `10000`）限制每次检查。
 
 ## 图片与视频生成
@@ -137,12 +166,35 @@ MEDIA_GENERATION_IMAGE_MODEL=fal-ai/flux/schnell
 MEDIA_GENERATION_VIDEO_MODEL=fal-ai/wan/v2.2-a14b/text-to-video
 ```
 
-`MEDIA_GENERATION_PROVIDER` 接受 `disabled`（默认）、`fal` 或 `fake`（仅用于离线测试）。
-`MEDIA_GENERATION_BASE_URL` 可选，默认使用上面的地址。只为要启用的能力设置图片或视频模型字段。
-兼容服务器可以复用同一组连接字段，但模型必须支持相应的队列 API 以及 Flux/Wan 的输入和输出格式。
+仅生成图片时，`openai` 改用 Images API（`POST /images/generations`）：
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=openai
+MEDIA_GENERATION_BASE_URL=https://api.openai.com/v1
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=gpt-image-1
+```
+
+`openrouter` 通过 OpenRouter 的 Images API（`POST /images`）生成图片，通过其视频任务 API（`POST /videos`）
+生成四秒视频；可设置其中一个模型或两个都设置：
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=openrouter
+MEDIA_GENERATION_BASE_URL=https://openrouter.ai/api/v1
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=openai/gpt-image-1-mini
+MEDIA_GENERATION_VIDEO_MODEL=google/veo-3.1-fast
+```
+
+视频模型必须接受四秒时长。
+
+`MEDIA_GENERATION_PROVIDER` 接受 `disabled`（默认）、`fal`、`openai`、`openrouter` 或 `fake`（仅用于离线测试）。
+`MEDIA_GENERATION_BASE_URL` 可选，默认使用上面对应提供商的地址。只为要启用的能力设置图片或视频模型字段；
+`openai` 只接受图片模型。兼容服务器可以复用同一组连接字段，但模型必须支持相应的 fal 队列 API 以及 Flux/Wan 的输入和输出格式，
+或支持在响应中返回 base64 图片数据（`b64_json`）的 Images API。
 请把这些值放进部署的密钥配置，不要提交真实凭据。
 
-图片工具生成 PNG；视频工具提交四秒 MP4，并返回任务 ID 和排队或运行状态。
+图片工具附上一张图片（PNG、JPEG 或 WebP）；视频工具提交四秒 MP4，并返回任务 ID 和排队或运行状态。
 worker 会在后台持续检查任务，重启后也会继续，并将完成的视频发送到原聊天一次，再让机器人跟进。
 视频失败或一小时后仍未完成时，会标记为失败并让机器人说明。机器人也可通过 `jobId` 查询进度。
 两种工具默认都需要审批，且每次运行最多提交两次（失败也计入），工单运行不可使用这些聊天媒体工具。

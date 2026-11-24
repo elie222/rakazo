@@ -127,7 +127,6 @@ export function createInboxStyles() {
       paddingBottom: 12,
     },
     pinnedTile: {
-      width: "33.33%",
       alignItems: "center",
       paddingVertical: 8,
       paddingHorizontal: 4,

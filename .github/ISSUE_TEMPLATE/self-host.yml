@@ -1,6 +1,5 @@
 name: Self-host setup
 description: Cannot start Rakazo, run compose, migrate, or build the sandbox
-title: "[Self-host]: "
 labels:
   - self-host
 body:

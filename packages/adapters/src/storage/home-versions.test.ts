@@ -1,3 +1,5 @@
+import { COMPUTER_RECOVERY_REQUIRED_ERROR, COMPUTER_RUNNING_ERROR } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import type { HomeVersion } from "./home-versions.js";
 import {
@@ -103,6 +105,60 @@ describe("restoreHomeVersion", () => {
     return { $transaction: (work: (db: typeof tx) => unknown) => work(tx) } as never;
   }
 
+  it.each([null, "update-1"])(
+    "requires recovery before any restore writes with maintenance %s",
+    async (maintenanceId) => {
+      const tx = {
+        computer: {
+          findUnique: vi.fn().mockResolvedValue({
+            ...idle,
+            state: "quarantined",
+            maintenanceId,
+          }),
+          updateMany: vi.fn(),
+        },
+        computerHomeVersion: {
+          updateMany: vi.fn(),
+          createMany: vi.fn(),
+        },
+      };
+      const db = { $transaction: (work: (db: typeof tx) => unknown) => work(tx) } as never;
+
+      // Even selecting the current revision must not bypass the recovery requirement.
+      for (const revision of ["rev-1", "rev-2"]) {
+        const restored = restoreHomeVersion(db, "home-1", "storage-1", revision);
+        await expect(restored).rejects.toBeInstanceOf(ClientError);
+        await expect(restored).rejects.toMatchObject({
+          kind: "CONFLICT",
+          code: "CONFLICT",
+          message: COMPUTER_RECOVERY_REQUIRED_ERROR,
+        });
+      }
+      expect(tx.computer.updateMany).not.toHaveBeenCalled();
+      expect(tx.computerHomeVersion.updateMany).not.toHaveBeenCalled();
+      expect(tx.computerHomeVersion.createMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([null, "update-1"])(
+    "requires recovery when quarantined meanwhile with maintenance %s",
+    async (maintenanceId) => {
+      const restored = restoreHomeVersion(
+        racedBy({ state: "quarantined", maintenanceId }),
+        "home-1",
+        "storage-1",
+        "rev-1",
+      );
+
+      await expect(restored).rejects.toBeInstanceOf(ClientError);
+      await expect(restored).rejects.toMatchObject({
+        kind: "CONFLICT",
+        code: "CONFLICT",
+        message: COMPUTER_RECOVERY_REQUIRED_ERROR,
+      });
+    },
+  );
+
   it.each([
     ["the computer started meanwhile", { state: "running" }, HomeRestoreRunningError],
     ["maintenance began meanwhile", { maintenanceId: "update-1" }, HomeRestoreRunningError],
@@ -114,4 +170,58 @@ describe("restoreHomeVersion", () => {
       restoreHomeVersion(racedBy(after), "home-1", "storage-1", "rev-1"),
     ).rejects.toBeInstanceOf(expected);
   });
+
+  it("keeps the stop-first code when the computer starts meanwhile", async () => {
+    await expect(
+      restoreHomeVersion(racedBy({ state: "running" }), "home-1", "storage-1", "rev-1"),
+    ).rejects.toMatchObject({ kind: "CONFLICT", code: COMPUTER_RUNNING_ERROR });
+  });
+
+  it("does not disclose quarantine when the stored home changed meanwhile", async () => {
+    await expect(
+      restoreHomeVersion(
+        racedBy({ state: "quarantined", homeStorageId: "storage-2" }),
+        "home-1",
+        "storage-1",
+        "rev-1",
+      ),
+    ).rejects.toBeInstanceOf(HomeVersionNotFoundError);
+  });
+
+  it.each(["stopped", "suspended", "error", "running", "maintenance"])(
+    "preserves restore eligibility for %s",
+    async (state) => {
+      const tx = {
+        computer: {
+          findUnique: vi.fn().mockResolvedValue({
+            ...idle,
+            state: state === "maintenance" ? "stopped" : state,
+            maintenanceId: state === "maintenance" ? "update-1" : null,
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        computerHomeVersion: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          createMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+      };
+      const db = { $transaction: (work: (db: typeof tx) => unknown) => work(tx) } as never;
+      const restored = restoreHomeVersion(db, "home-1", "storage-1", "rev-1");
+
+      if (state === "running" || state === "maintenance") {
+        await expect(restored).rejects.toMatchObject({
+          kind: "CONFLICT",
+          code: COMPUTER_RUNNING_ERROR,
+        });
+        expect(tx.computer.updateMany).not.toHaveBeenCalled();
+      } else {
+        await expect(restored).resolves.toBeUndefined();
+        expect(tx.computer.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ homeStorageRevision: "rev-1" }),
+          }),
+        );
+      }
+    },
+  );
 });

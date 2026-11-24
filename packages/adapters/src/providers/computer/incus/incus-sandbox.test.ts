@@ -4,6 +4,7 @@ import path from "node:path";
 import type { PeerCertificate } from "node:tls";
 import { rootCertificates } from "node:tls";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
+import { SandboxUnavailableError } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -270,12 +271,17 @@ describe("IncusSandboxProvider", () => {
     const fake = new FakeIncus((command) =>
       command.some((arg) => arg.includes("/dev/tcp")) ? { code: 1 } : {},
     );
-    await expect(
-      providerFor(fake, { readyTimeoutMs: 1 }).provision(
-        { botId: "bot-a", homePath: "/unused" },
-        context,
-      ),
-    ).rejects.toThrow("did not become ready");
+    const provision = providerFor(fake, { readyTimeoutMs: 1 }).provision(
+      { botId: "bot-a", homePath: "/unused" },
+      context,
+    );
+    await expect(provision).rejects.toBeInstanceOf(SandboxUnavailableError);
+    await expect(provision).rejects.toMatchObject({ cause: expect.any(Error) });
+    await expect(provision).rejects.toMatchObject({
+      cause: {
+        message: expect.stringMatching(/^Incus instance .+ did not become ready within 1 ms$/),
+      },
+    });
     expect(fake.instances.size).toBe(0);
   });
 
@@ -322,7 +328,13 @@ describe("IncusSandboxProvider", () => {
     it("is removed, trying a failed removal again", async () => {
       const { error, left, stops, instances } = await start(1);
 
-      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      expect(error).toBeInstanceOf(SandboxUnavailableError);
+      expect(error).toMatchObject({ cause: expect.any(Error) });
+      expect(error).toMatchObject({
+        cause: {
+          message: expect.stringMatching(/^Incus instance .+ did not become ready within 1 ms$/),
+        },
+      });
       expect(stops).toBe(2);
       expect(instances).toEqual([]);
       expect(left).toEqual([]);
@@ -331,7 +343,13 @@ describe("IncusSandboxProvider", () => {
     it("is reported when it cannot be removed, and the start's own error stands", async () => {
       const { error, left, stops, instances } = await start(4);
 
-      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      expect(error).toBeInstanceOf(SandboxUnavailableError);
+      expect(error).toMatchObject({ cause: expect.any(Error) });
+      expect(error).toMatchObject({
+        cause: {
+          message: expect.stringMatching(/^Incus instance .+ did not become ready within 1 ms$/),
+        },
+      });
       expect(stops).toBe(4);
       expect(left).toEqual([{ provider: "incus", machineId: instances[0] }]);
     });
@@ -339,7 +357,13 @@ describe("IncusSandboxProvider", () => {
     it("is reported within the cleanup's 20 seconds when Incus stops answering", async () => {
       const { error, left, stops, instances, cleanupMs, stillOpen } = await start(0, true);
 
-      expect(error).toMatchObject({ message: expect.stringContaining("did not become ready") });
+      expect(error).toBeInstanceOf(SandboxUnavailableError);
+      expect(error).toMatchObject({ cause: expect.any(Error) });
+      expect(error).toMatchObject({
+        cause: {
+          message: expect.stringMatching(/^Incus instance .+ did not become ready within 1 ms$/),
+        },
+      });
       // Each try is cut off after 10 seconds; a try used to wait a minute of its own.
       expect(stops).toBe(2);
       expect(cleanupMs).toBe(20_000);

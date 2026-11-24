@@ -26,9 +26,7 @@
   "packages/adapters/src/runtime/pi/models/pi-oauth.ts": 1,
   "packages/adapters/src/storage/home-object-store.ts": 1,
   "packages/core/src/integrations/connection-catalog.ts": 1,
-  "packages/core/src/models/model-oauth.ts": 1,
   "packages/db/src/artifacts/artifact-versions.ts": 1,
-  "packages/db/src/database/client.ts": 3,
   "packages/db/src/database/database-outage.ts": 1,
   "packages/db/src/database/deferred-migrations.ts": 1,
   "packages/db/src/database/transaction-retry.ts": 1

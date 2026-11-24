@@ -4,6 +4,7 @@ import {
   SandboxFileTooLargeError,
   SandboxRequestRejectedError,
   SandboxUnresponsiveError,
+  WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
@@ -1291,5 +1292,82 @@ describe("Docker sandbox stopped containers", () => {
     await expect(
       provider.connectScreen(computer, { view: "stream", interactive: false }, context),
     ).resolves.toMatchObject({ url: null });
+  });
+
+  describe("workspace export", () => {
+    const computer = { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" };
+    const listings: Record<string, unknown[]> = {
+      "": [
+        { path: "a.txt", kind: "file", size: 3 },
+        { path: "node_modules", kind: "dir", size: 0 },
+        { path: "project", kind: "dir", size: 0 },
+      ],
+      project: [
+        { path: "project/b.txt", kind: "file", size: 4 },
+        { path: "project/c.txt", kind: "file", size: 5, executable: true },
+      ],
+    };
+    const stubSupervisor = () => {
+      const fetch = vi.fn(async (url: string) => {
+        const query = new URL(url).searchParams;
+        if (query.get("mode") === "list") return Response.json(listings[query.get("path") ?? ""]);
+        return Response.json({ content: Buffer.from(query.get("path") ?? "").toString("base64") });
+      });
+      vi.stubGlobal("fetch", fetch);
+      return fetch;
+    };
+    const reads = (fetch: ReturnType<typeof stubSupervisor>) =>
+      fetch.mock.calls.filter(([url]) => new URL(url).searchParams.get("mode") === "read").length;
+
+    it("exports the kept files in walk order", async () => {
+      stubSupervisor();
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      const files = [];
+      for await (const file of provider.exportWorkspace(computer, context, {
+        maxBytes: 12,
+        maxFiles: 3,
+      }))
+        files.push({ ...file, content: Buffer.from(file.content).toString() });
+      expect(files).toEqual([
+        { path: "a.txt", content: "a.txt", executable: undefined },
+        { path: "project/b.txt", content: "project/b.txt", executable: undefined },
+        { path: "project/c.txt", content: "project/c.txt", executable: true },
+      ]);
+    });
+
+    it("streams an export without limits instead of listing the whole home first", async () => {
+      const root = Array.from({ length: 8 }, (_, index) => ({
+        path: `f${index}.txt`,
+        kind: "file",
+        size: 1,
+      }));
+      const fetch = vi.fn(async (url: string) => {
+        const query = new URL(url).searchParams;
+        if (query.get("mode") === "read") return Response.json({ content: "" });
+        return Response.json(
+          query.get("path") ? [] : [...root, { path: "later", kind: "dir", size: 0 }],
+        );
+      });
+      vi.stubGlobal("fetch", fetch);
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      const exported = provider.exportWorkspace(computer, context)[Symbol.asyncIterator]();
+      await expect(exported.next()).resolves.toMatchObject({ value: { path: "f0.txt" } });
+      const listed = fetch.mock.calls
+        .map(([url]) => new URL(url).searchParams)
+        .filter((query) => query.get("mode") === "list")
+        .map((query) => query.get("path"));
+      expect(listed).toEqual([""]);
+    });
+
+    it.each([
+      [{ maxBytes: 11, maxFiles: 3 }, "bytes"],
+      [{ maxBytes: 12, maxFiles: 2 }, "files"],
+    ])("refuses a home over %o from the listing, before reading a file", async (limits) => {
+      const fetch = stubSupervisor();
+      const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+      const exported = provider.exportWorkspace(computer, context, limits)[Symbol.asyncIterator]();
+      await expect(exported.next()).rejects.toBeInstanceOf(WorkspaceTooLargeError);
+      expect(reads(fetch)).toBe(0);
+    });
   });
 });

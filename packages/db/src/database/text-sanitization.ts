@@ -1,4 +1,9 @@
-import { sanitizeJsonValue, sanitizeUtf16ForJson, stripDirectionalControls } from "@rakazo/core";
+import {
+  isPlainObject,
+  sanitizeJsonValue,
+  sanitizeUtf16ForJson,
+  stripDirectionalControls,
+} from "@rakazo/core";
 import type { PrismaClient } from "../generated/prisma/client.js";
 
 const WRITE_OPERATIONS = new Set([
@@ -20,12 +25,6 @@ const WRITE_KEYS = ["data", "create", "update"] as const;
  * mixed-direction writing uses the marks legitimately, and stored text must stay what was written.
  */
 const NAME_KEY = /(names?|label|title)$/i;
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== "object") return false;
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
-}
 
 /** Copy-on-change: untouched values keep their identity. Dates, bytes, and decimals pass through. */
 function sanitizeValue(value: unknown, key?: string): unknown {

@@ -10,10 +10,13 @@ import type {
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
+  MAX_TRANSCRIPTION_VOCABULARY_LENGTH,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  savedVoiceTranscriptionVocabulary,
   voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh } from "@rakazo/core/query";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import {
   Button,
   Dialog,
@@ -30,7 +33,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { ModelSignInProgress } from "../../components/models/ModelSignInProgress";
+import { SubscriptionSignInSteps } from "../../components/models/SubscriptionSignInSteps";
 import { useCallSession } from "../../lib/calls/call-session";
 import { speaker } from "../../lib/calls/tts";
 import { useCopyText } from "../../lib/copy-text";
@@ -82,6 +85,7 @@ export function VoiceSettingsOverlay({
   const baseUrlId = useId();
   const ttsModelId = useId();
   const sttModelId = useId();
+  const transcriptionVocabularyId = useId();
   const sttBaseUrlId = useId();
   const sttApiKeyId = useId();
   const providerSelectId = useId();
@@ -111,6 +115,7 @@ export function VoiceSettingsOverlay({
   const [speechModel, setSpeechModel] = useState(cached?.credential?.speechModel ?? "");
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
+  const [transcriptionVocabulary, setTranscriptionVocabulary] = useState<string>();
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
@@ -120,6 +125,7 @@ export function VoiceSettingsOverlay({
     baseUrl,
     ttsModel,
     sttModel,
+    transcriptionVocabulary,
     sttBaseUrl,
     apiKey,
     sttApiKey,
@@ -129,6 +135,7 @@ export function VoiceSettingsOverlay({
     baseUrl,
     ttsModel,
     sttModel,
+    transcriptionVocabulary,
     sttBaseUrl,
     apiKey,
     sttApiKey,
@@ -146,13 +153,16 @@ export function VoiceSettingsOverlay({
   const signIn = useModelOAuthSignIn({
     onClearError: () => setError(null),
     onError: setError,
-    onFinished: async (controller, credentialId) => {
+    onFinished: async (controller, saved) => {
       // Models lists the new connection too; nothing signals it, so its reads go stale here.
       void queryClient.invalidateQueries({ queryKey: queries.models.credentials.queryKey() });
       void queryClient.invalidateQueries({ queryKey: queries.models.list.queryKey() });
-      if (controller.signal.aborted || (await connect(credentialId))) return;
+      if (controller.signal.aborted || (await connect(saved.id))) return;
       // The sign-in saved the model connection; it should show as one to use, not another sign-in.
-      await refresh(providerRef.current, { keepForm: true }).catch(() => undefined);
+      await bestEffort(
+        "refresh voice after model sign-in",
+        refresh(providerRef.current, { keepForm: true }),
+      );
     },
   });
   const signingIn = signIn.oauthPending || signIn.oauth !== null;
@@ -198,6 +208,7 @@ export function VoiceSettingsOverlay({
     if (!keep("baseUrl")) setBaseUrl(cred?.endpoint ?? "");
     if (!keep("ttsModel")) setTtsModel(cred?.ttsModel ?? "");
     if (!keep("sttModel")) setSttModel(cred?.sttModel ?? "");
+    if (!keep("transcriptionVocabulary")) setTranscriptionVocabulary(undefined);
     if (!keep("sttBaseUrl")) setSttBaseUrl(cred?.sttEndpoint ?? "");
     if (!cred) return Promise.resolve();
     return queryClient
@@ -319,11 +330,17 @@ export function VoiceSettingsOverlay({
     apiKey,
     baseUrl,
   });
-  // A linked connection has no key to fold away, only other connections to move to.
-  const keyFolded =
-    !linked &&
-    (modelConnections.length > 0 || Boolean(modelSignIn)) &&
-    keyShownFor !== selected?.id;
+  const offersModelConnection = modelConnections.length > 0 || Boolean(modelSignIn);
+  const keyFolded = !linked && offersModelConnection && keyShownFor !== selected?.id;
+
+  function startModelSignIn() {
+    if (!selected) return;
+    void signIn.startSubscriptionSignIn({
+      provider: selected.id,
+      credentialId: null,
+      makeDefault: false,
+    });
+  }
 
   /** Connects with the key form, or through the account's model connection when given one. */
   async function connect(modelCredentialId?: string): Promise<boolean> {
@@ -351,6 +368,10 @@ export function VoiceSettingsOverlay({
                 baseUrl: baseUrl.trim(),
                 ttsModel: ttsModel.trim() || undefined,
                 sttModel: sttModel.trim() || undefined,
+                ...(selected.transcriptionVocabulary &&
+                edited.current.has("transcriptionVocabulary")
+                  ? { transcriptionVocabulary }
+                  : {}),
                 sttBaseUrl: sttBaseUrl.trim(),
                 sttApiKey: sentSttApiKey.trim(),
               }
@@ -374,6 +395,10 @@ export function VoiceSettingsOverlay({
       // A key typed meanwhile stays pinned to the address it was typed for.
       if (connection.current.apiKey !== sent.apiKey) edited.current.add("baseUrl");
       if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
+      if (connection.current.transcriptionVocabulary !== sent.transcriptionVocabulary) {
+        edited.current.add("baseUrl");
+        edited.current.add("sttBaseUrl");
+      }
       setNotice(t`Connected ${selected.name}.`);
       // The saved connection (the server may have picked another voice for a new address) shows
       // at once in untouched fields, so a failed read after it cannot leave stale values to send.
@@ -571,52 +596,41 @@ export function VoiceSettingsOverlay({
         <>
           {managesConnection ? (
             <>
-              {modelConnections.length || modelSignIn ? (
+              {modelSignIn ? (
+                <div className="mt-5">
+                  <SubscriptionSignInSteps
+                    oauth={signIn.oauth}
+                    setup={undefined}
+                    startLabel={modelSignIn}
+                    starting={signIn.oauthPending}
+                    disabled={busy || signingIn}
+                    onStart={startModelSignIn}
+                    onRestart={() => {
+                      signIn.cancelOAuthAttempt("replaced");
+                      startModelSignIn();
+                    }}
+                    codeCopied={codeCopied}
+                    onCopyCode={copyOAuthCode}
+                    pasteCode={signIn.pasteCode}
+                    onPasteCodeChange={signIn.setPasteCode}
+                    onSubmitCode={() => void signIn.submitOAuthCode()}
+                    onPageOpened={() => signIn.reportSignInStep("page_opened")}
+                  />
+                </div>
+              ) : null}
+              {modelConnections.length ? (
                 <div className="mt-5 flex flex-wrap items-center gap-2">
-                  {signIn.oauth ? (
-                    <ModelSignInProgress
-                      oauth={signIn.oauth}
-                      pasteCode={signIn.pasteCode}
-                      setPasteCode={signIn.setPasteCode}
-                      submitOAuthCode={signIn.submitOAuthCode}
-                      popupBlocked={signIn.popupBlocked}
-                      codeCopied={codeCopied}
-                      copyOAuthCode={copyOAuthCode}
-                      cancelOAuthAttempt={signIn.cancelOAuthAttempt}
-                      onPageOpened={() => signIn.reportSignInStep("page_opened")}
-                    />
-                  ) : modelSignIn ? (
+                  {modelConnections.map(({ id, label }) => (
                     <Button
+                      key={id}
                       type="button"
-                      disabled={busy || signIn.oauthPending}
-                      onClick={() =>
-                        void signIn.startSubscriptionSignIn({
-                          provider: selected.id,
-                          credentialId: null,
-                          makeDefault: false,
-                        })
-                      }
+                      variant={modelConnections.length === 1 && !linked ? "default" : "outline"}
+                      disabled={busy || signingIn}
+                      onClick={() => void connect(id)}
                     >
-                      {!signIn.oauthPending ? (
-                        modelSignIn
-                      ) : pending === "connect" ? (
-                        <Trans>Connecting…</Trans>
-                      ) : (
-                        <Trans>Starting…</Trans>
-                      )}
+                      {t`Use ${label}`}
                     </Button>
-                  ) : (
-                    modelConnections.map(({ id, label }) => (
-                      <Button
-                        key={id}
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void connect(id)}
-                      >
-                        {t`Use ${label}`}
-                      </Button>
-                    ))
-                  )}
+                  ))}
                 </div>
               ) : null}
               {keyFolded ? (
@@ -710,6 +724,30 @@ export function VoiceSettingsOverlay({
                       placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
                     />
                   </Field>
+                  {selected.transcriptionVocabulary ? (
+                    <Field className="mt-5">
+                      <FieldLabel htmlFor={transcriptionVocabularyId}>
+                        <Trans>Transcription vocabulary</Trans>
+                      </FieldLabel>
+                      <Input
+                        id={transcriptionVocabularyId}
+                        autoComplete="off"
+                        spellCheck={false}
+                        maxLength={MAX_TRANSCRIPTION_VOCABULARY_LENGTH}
+                        placeholder={t`Names and terms (optional)`}
+                        value={
+                          transcriptionVocabulary ??
+                          savedVoiceTranscriptionVocabulary(credential, baseUrl, sttBaseUrl)
+                        }
+                        onChange={(event) => {
+                          edited.current.add("transcriptionVocabulary");
+                          edited.current.add("baseUrl");
+                          edited.current.add("sttBaseUrl");
+                          setTranscriptionVocabulary(event.target.value);
+                        }}
+                      />
+                    </Field>
+                  ) : null}
                   <Field className="mt-5">
                     <FieldLabel htmlFor={sttBaseUrlId}>
                       <Trans>Transcription server URL</Trans>
@@ -752,6 +790,7 @@ export function VoiceSettingsOverlay({
                 <Button
                   type="button"
                   className="mt-3"
+                  variant={offersModelConnection ? "outline" : "default"}
                   disabled={busy || signingIn || !canConnect}
                   onClick={() => void connect()}
                 >
@@ -961,6 +1000,13 @@ function selectedProvider(
 const NO_VOICES: VoiceInfo[] = [];
 const NO_MODELS: VoiceModelInfo[] = [];
 
-const CONNECTION_FIELDS = ["speechModel", "baseUrl", "ttsModel", "sttModel", "sttBaseUrl"] as const;
+const CONNECTION_FIELDS = [
+  "speechModel",
+  "baseUrl",
+  "ttsModel",
+  "sttModel",
+  "sttBaseUrl",
+  "transcriptionVocabulary",
+] as const;
 
 type EditableField = "voiceId" | (typeof CONNECTION_FIELDS)[number];

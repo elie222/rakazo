@@ -320,10 +320,14 @@ export function useInboxRenderItem({
             chats={item.chats}
             onOpenBot={openBot}
             onOpenGroup={openGroup}
-            onLongPressBot={organizeBot}
-            onLongPressGroup={organizeGroup}
+            onLongPressBot={SWIPE_ROWS ? undefined : organizeBot}
+            onLongPressGroup={SWIPE_ROWS ? undefined : organizeGroup}
             onBotAction={botAction}
             onGroupAction={groupAction}
+            sectionsOf={sectionsOf}
+            onOrganize={organizeFromMenu}
+            onEditSection={editSectionFromMenu}
+            onSnooze={snoozeChat}
           />
         </AvatarRow>
       ) : item.type === "heading" ? (

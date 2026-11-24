@@ -7,6 +7,7 @@ import * as controls from "./controls.js";
 import * as data from "./data.js";
 import * as dataviz from "./dataviz.js";
 import * as diagram from "./diagram.js";
+import * as icon from "./icon.js";
 import * as layout from "./layout.js";
 import * as media from "./media.js";
 import * as text from "./text.js";
@@ -19,6 +20,7 @@ const modules = {
   ...data,
   ...dataviz,
   ...diagram,
+  ...icon,
   ...layout,
   ...media,
   ...text,

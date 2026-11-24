@@ -1,6 +1,7 @@
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { MAX_RETRY_AFTER_MS } from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +36,7 @@ beforeEach(async () => {
   userData = await mkdtemp(path.join(tmpdir(), "rakazo-device-"));
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await rm(userData, { recursive: true, force: true, maxRetries: 5 });
 });
 
@@ -189,6 +191,7 @@ describe("remote computer access", () => {
     expect(JSON.parse(String(requests[0]!.init.body))).toEqual({
       name: "Test Mac",
       platform: "darwin",
+      pairingKey: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(clients).toMatchObject([{ origin, token: "device-token", closed: false }]);
     expect(access.state(origin)).toEqual({ deviceId: "device-1", allowed: false });
@@ -412,7 +415,7 @@ describe("remote computer access", () => {
     clients[0]!.revoke();
     answer.resolve(true);
     await turningOn;
-    expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
+    expect(await readDeviceConsent(userData, origin)).toBeNull();
     expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
     expect(requests.filter(({ url }) => url.endsWith("/pair"))).toHaveLength(1);
   });
@@ -429,7 +432,7 @@ describe("remote computer access", () => {
     await access.select(origin);
     await expect(access.setAllowed(origin, true)).rejects.toThrow();
     expect(access.state(origin)).toEqual({ deviceId: null, allowed: false });
-    expect(await readDeviceConsent(userData, origin)).toMatchObject({ consent: "declined" });
+    expect(await readDeviceConsent(userData, origin)).toBeNull();
     status = 200;
     await access.setAllowed(origin, true);
     expect(access.state(origin)).toEqual({ deviceId: "device-1", allowed: true });
@@ -502,12 +505,123 @@ describe("remote computer access", () => {
     await access.pair();
     expect(clients).toHaveLength(1);
 
+    vi.useFakeTimers({ toFake: ["Date"] });
     const refused = setup({ fetch });
-    status = 404;
-    await refused.access.select(other);
-    await refused.access.pair();
-    await refused.access.pair();
-    expect(fetch.mock.calls.filter(([url]) => url.startsWith(other))).toHaveLength(1);
+    for (const refusal of [400, 403, 404, 405, 409, 413, 415, 422, 426]) {
+      status = refusal;
+      const target = `https://refused-${refusal}.example.com`;
+      await refused.access.select(target);
+      await refused.access.pair();
+      // Past any retry delay, so only a remembered refusal keeps the second load from asking.
+      vi.setSystemTime(Date.now() + MAX_RETRY_AFTER_MS + 1);
+      await refused.access.pair();
+      expect(fetch.mock.calls.filter(([url]) => url.startsWith(target))).toHaveLength(1);
+    }
+  });
+
+  it("retries a pairing the server could not answer on a later page load", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    for (const failure of [503, 502, 500, 429, 408, "network"] as const) {
+      let failing = true;
+      const fetch = vi.fn(async (url: string) => {
+        if (!url.endsWith("/api/devices/pair")) return new Response(null, { status: 204 });
+        if (failing && failure === "network") throw new Error("offline");
+        return failing
+          ? new Response(null, { status: failure as number })
+          : Response.json({ deviceId: "device-1", token: "device-token" });
+      });
+      const { access, clients } = setup({ fetch });
+      await access.select(`https://retry-${failure}.example.com`);
+      await access.pair();
+      await access.pair();
+      expect(clients).toEqual([]);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      failing = false;
+      vi.advanceTimersByTime(5_000);
+      await access.pair();
+      expect(clients).toHaveLength(1);
+    }
+  });
+
+  it("reuses a random request key after a lost pairing response", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const tokens: string[] = [];
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (!url.endsWith("/api/devices/pair")) return new Response(null, { status: 204 });
+      const { pairingKey } = JSON.parse(init!.body as string);
+      tokens.push(pairingKey);
+      if (tokens.length < 3) throw new Error("response lost");
+      return Response.json({ deviceId: "device-1", token: "server-token" });
+    });
+    const { access, clients } = setup({ fetch });
+    await access.select(other);
+    await access.pair();
+    vi.advanceTimersByTime(5_000);
+    await access.pair();
+    vi.advanceTimersByTime(5_000);
+    await access.pair();
+    expect(tokens.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(tokens).size).toBe(1);
+    expect(tokens[0]).toMatch(/^[a-f0-9]{64}$/);
+    expect(clients).toHaveLength(1);
+  });
+
+  it("starts a fresh pairing after the server refuses recovery by another sign-in", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const keys: string[] = [];
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (!url.endsWith("/api/devices/pair")) return new Response(null, { status: 204 });
+      keys.push(JSON.parse(init!.body as string).pairingKey);
+      if (keys.length === 1) throw new Error("response lost");
+      if (keys.length === 2) return new Response(null, { status: 401 });
+      return Response.json({ deviceId: "device-1", token: "server-token" });
+    });
+    const { access, clients } = setup({ fetch });
+    await access.select(other);
+    await access.pair();
+    vi.advanceTimersByTime(5_000);
+    await access.pair();
+    await access.pair();
+    expect(keys).toHaveLength(3);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[0]);
+    expect(clients).toHaveLength(1);
+  });
+
+  it.each([429, 503])("honors Retry-After after %i without scheduling requests", async (status) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const fetch = vi.fn(async () =>
+      fetch.mock.calls.length === 1
+        ? new Response(null, { status, headers: { "retry-after": "60" } })
+        : Response.json({ deviceId: "device-1", token: "server-token" }),
+    );
+    const { access, clients } = setup({ fetch });
+    await access.select(other);
+    await access.pair();
+    await access.pair();
+    vi.advanceTimersByTime(59_999);
+    await access.pair();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await access.pair();
+    expect(clients).toHaveLength(1);
+  });
+
+  it("sends a fresh request when computer access is turned on during the retry delay", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const fetch = vi.fn(async () =>
+      fetch.mock.calls.length === 1
+        ? new Response(null, { status: 503, headers: { "retry-after": "60" } })
+        : Response.json({ deviceId: "device-1", token: "server-token" }),
+    );
+    const { access, clients } = setup({ fetch });
+    await access.select(other);
+    await access.pair();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await access.setAllowed(other, true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(clients).toHaveLength(1);
   });
 
   it("never pairs without secure storage", async () => {
