@@ -56,7 +56,7 @@ export function SidebarHeader({
   const labelSide = mini ? "inline-end" : undefined;
   // In the rail the buttons share the bot tiles' box, so hover shapes line up.
   const railTile = mini ? "size-12 rounded-xl" : "";
-  // Beside the macOS traffic lights the toggle keeps one spot in both modes, just past the rail.
+  // Beside the macOS traffic lights the toggle keeps the spot it has in the open sidebar.
   const pinnedToggle = windowChromeKind(desktopBridge()) === "darwin" && !rail;
   const toggle = (
     <IconTooltip label={toggleLabel} side={labelSide}>
