@@ -12,6 +12,7 @@ import { SettingsRow } from "../settings/settings-group";
 import { ListSearchInput } from "../ui/list-search-input";
 import { MenuPickerMenu } from "../ui/menu-picker";
 import { Checkmark } from "../ui/row-accessories";
+import { HttpEndpointsSwitch } from "./http-endpoints-switch";
 import { DisclosureRow } from "./model-connection-fields";
 import { createModelsStyles } from "./model-connection-styles";
 
@@ -241,6 +242,7 @@ export function CompatibleEndpointForm({
                 disabled={busy}
                 savedValuePlaceholder={savedHeaderPlaceholder}
               />
+              <HttpEndpointsSwitch />
             </>
           ) : null}
         </>
