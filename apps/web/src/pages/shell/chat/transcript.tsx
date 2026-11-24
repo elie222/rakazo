@@ -27,7 +27,7 @@ import {
 import type { GroupAvatarMember } from "@rakazo/ui-web";
 import { Button, cn, Spinner } from "@rakazo/ui-web";
 import { ArrowDown } from "lucide-react";
-import type { CSSProperties, RefObject } from "react";
+import type { CSSProperties, RefObject, TouchEvent } from "react";
 import {
   Fragment,
   memo,
@@ -76,8 +76,14 @@ export function bubbleFrameWidth(role: ThreadMessage["role"]) {
 /** Rows drawn in the frame a chat opens; the rest mount right after without blocking input. */
 const FIRST_FRAME_ROWS = 20;
 const PAGE_PREVIEW_SCROLL = "[data-page-preview-scroll]";
+const PREVIEW_PAN_IDLE_MS = 300;
 
-type PreviewScrollInput = { top: number; contact?: { id: number; scrollport: Element } };
+type PreviewPanContact = { id: number; scrollport: Element; idleDeadline?: number };
+type PreviewScrollInput = { top: number; contact?: PreviewPanContact };
+
+function previewPanIsActive(contact: PreviewPanContact) {
+  return contact.idleDeadline === undefined || performance.now() < contact.idleDeadline;
+}
 
 export const Transcript = memo(function Transcript({
   scrollRef,
@@ -613,6 +619,17 @@ export const Transcript = memo(function Transcript({
     heldAt.current = null;
   }
 
+  function extendPreviewPan({ target }: TouchEvent<HTMLElement>) {
+    const contact = previewScrollInput.current?.contact;
+    if (
+      contact?.idleDeadline !== undefined &&
+      target instanceof Node &&
+      contact.scrollport.contains(target)
+    ) {
+      contact.idleDeadline = performance.now() + PREVIEW_PAN_IDLE_MS;
+    }
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1">
       <ImageGalleryProvider images={galleryImages}>
@@ -642,6 +659,13 @@ export const Transcript = memo(function Transcript({
               previewScrollInput.current = null;
             }
           }}
+          onPointerCancel={(event) => {
+            const contact = previewScrollInput.current?.contact;
+            // A pan at the edge can end without moving either scrollport or firing scrollend.
+            if (contact?.id === event.pointerId) {
+              contact.idleDeadline = performance.now() + PREVIEW_PAN_IDLE_MS;
+            }
+          }}
           onTouchStart={(event) => {
             if (event.target instanceof Element && event.target.closest(PAGE_PREVIEW_SCROLL))
               return;
@@ -650,6 +674,8 @@ export const Transcript = memo(function Transcript({
           onTouchCancel={() => {
             if (previewScrollInput.current?.contact) previewScrollInput.current = null;
           }}
+          onTouchMove={extendPreviewPan}
+          onTouchEnd={extendPreviewPan}
           onScrollEndCapture={(event) => {
             const input = previewScrollInput.current;
             if (
@@ -680,6 +706,15 @@ export const Transcript = memo(function Transcript({
           }}
           onScrollCapture={(event) => {
             const input = previewScrollInput.current;
+            const contact = input?.contact;
+            if (
+              contact?.scrollport === event.target &&
+              contact.idleDeadline !== undefined &&
+              previewPanIsActive(contact)
+            ) {
+              // Keep tracking active momentum after the pointer or touch events have ended.
+              contact.idleDeadline = performance.now() + PREVIEW_PAN_IDLE_MS;
+            }
             if (
               input &&
               !input.contact &&
@@ -695,7 +730,9 @@ export const Transcript = memo(function Transcript({
             const scrolledDown = transcriptMovedDown(lastScrollTop.current, top);
             const input = previewScrollInput.current;
             const activeContact =
-              input?.contact && event.currentTarget.contains(input.contact.scrollport);
+              input?.contact &&
+              previewPanIsActive(input.contact) &&
+              event.currentTarget.contains(input.contact.scrollport);
             if (input && (input.contact ? activeContact && top !== input.top : top < input.top)) {
               pauseFollowing(top);
             } else {
