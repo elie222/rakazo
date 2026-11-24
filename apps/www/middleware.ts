@@ -24,9 +24,7 @@ export default function middleware(request: Request): Response {
   const url = new URL(request.url);
 
   if (url.hostname.toLowerCase() === WWW_HOST) {
-    // Same path and query on the apex, never another host: a path that starts with two slashes
-    // (or a backslash, which a special-scheme URL parser reads as one) would otherwise become
-    // the destination's authority, so the redirect would leave rakazo.com.
+    // Set the path after parsing the origin so leading slashes cannot replace the host.
     const destination = new URL(APEX_ORIGIN);
     destination.pathname = url.pathname;
     destination.search = url.search;
