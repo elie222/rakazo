@@ -373,11 +373,14 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const billingProvider: BillingProvider | undefined =
     billingOverride ??
     (stripeBilling ? new StripeBillingProvider(stripeBilling) : localBillingEmulator);
+  // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
+  const mediaGeneration = createMediaGenerationProvider();
   const billing = billingProvider
     ? createBillingService({
         prisma,
         provider: billingProvider,
         sandbox,
+        mediaGeneration,
         realtime,
         webOrigin: env.webOrigin,
         managedModelsAvailable: resolveDeploymentModel().configured,
@@ -531,8 +534,6 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   // One cache serves models.list, selection validation, and run-time model
   // resolution alike, so a list call warms the run path in this process.
   const codexCatalog = new CodexCatalogCache();
-  // One instance: chat runs submit videos and, in single-process mode, background polls finish them.
-  const mediaGeneration = createMediaGenerationProvider();
   // The computers bots may reach: paired desktops, and this server's own screen when it has one.
   const botUserDevices =
     userDevicesOverride ??

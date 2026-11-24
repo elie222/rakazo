@@ -141,6 +141,16 @@ describe("OpenAI-compatible model probes", () => {
     expect(new Headers(request?.[1]?.headers).has("Authorization")).toBe(false);
   });
 
+  it("loads a preset's model list larger than a custom endpoint may send", async () => {
+    const { client, fetch } = fixture();
+    const padding = "x".repeat(3 * 1024 * 1024);
+    fetch.mockResolvedValue(Response.json({ data: [{ id: "test-model", description: padding }] }));
+
+    await expect(
+      client.models.probeOpenAiCompatible({ baseUrl: "https://api.concentrate.ai/v1" }),
+    ).resolves.toEqual({ models: ["test-model"] });
+  });
+
   it("tells the member the server could not be reached", async () => {
     const { deps, fetch } = fixture();
     fetch.mockRejectedValue(new TypeError("fetch failed"));

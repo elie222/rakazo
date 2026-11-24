@@ -22,6 +22,7 @@ const settingsScreens = new Set([
   "labs",
   "messaging",
   "language",
+  "mcp-server",
   "memory",
   "memory-note",
   "model-settings",

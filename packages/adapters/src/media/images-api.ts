@@ -28,7 +28,16 @@ const imagesResponse = z.object({
       z.union([z.object({ b64_json: z.string().min(1) }), z.object({ url: z.string().min(1) })]),
     )
     .min(1),
+  usage: z
+    .object({
+      cost: z.number().nonnegative().optional(),
+      input_tokens: z.number().int().nonnegative().optional(),
+      output_tokens: z.number().int().nonnegative().optional(),
+    })
+    .optional()
+    .catch(undefined),
 });
+export type ImagesApiUsage = NonNullable<z.infer<typeof imagesResponse>["usage"]>;
 
 /** The base URL without a trailing slash, refusing credentials, queries and fragments. */
 export function mediaBaseUrl(raw: string): string {
@@ -44,8 +53,10 @@ export function mediaBaseUrl(raw: string): string {
   return url.href.replace(/\/$/, "");
 }
 
+export const isMediaModelId = (model: string) => MODEL_ID_PATTERN.test(model);
+
 export function checkMediaModelId(model: string) {
-  if (!MODEL_ID_PATTERN.test(model)) throw new Error("Invalid media model id");
+  if (!isMediaModelId(model)) throw new Error("Invalid media model id");
 }
 
 export function mediaHttpError(status: number): MediaGenerationError {
@@ -68,8 +79,12 @@ export async function requestImagesApiImage(
     apiKey: string;
     model: string;
     prompt: string;
+    /** Extra request fields the provider's own API takes, such as its routing preferences. */
+    extraBody?: Record<string, unknown>;
     fetch?: typeof fetch;
     resolveHostname?: ResolveHostname;
+    /** What the response's usage says the image cost, in micro-dollars, if it says. */
+    costMicros?: (usage: ImagesApiUsage) => number | undefined;
   },
   context: AdapterContext,
 ): Promise<GeneratedMedia> {
@@ -85,7 +100,12 @@ export async function requestImagesApiImage(
         Authorization: `Bearer ${options.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model: options.model, prompt: parsed.data.prompt, n: 1 }),
+      body: JSON.stringify({
+        ...options.extraBody,
+        model: options.model,
+        prompt: parsed.data.prompt,
+        n: 1,
+      }),
       signal,
       redirect: "error",
     });
@@ -115,7 +135,13 @@ export async function requestImagesApiImage(
   const mimeType = detectImageMimeType(bytes);
   if (!mimeType || !GENERATED_IMAGE_MIME_TYPES.has(mimeType))
     throw new MediaGenerationError("provider_failure");
-  const output = { bytes, mimeType } as GeneratedMedia;
+  const usage = result.data.usage;
+  const costMicros = usage && options.costMicros?.(usage);
+  const output = {
+    bytes,
+    mimeType,
+    ...(costMicros === undefined ? {} : { costMicros }),
+  } as GeneratedMedia;
   validateGeneratedMedia(output, "image");
   return output;
 }

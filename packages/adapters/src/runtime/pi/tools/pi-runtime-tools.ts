@@ -409,8 +409,8 @@ function toAgentTool(
       const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       if (tool.name === "remember") {
         return {
-          content: String(raw.content ?? ""),
-          ...(typeof raw.old_text === "string" && raw.old_text ? { old_text: raw.old_text } : {}),
+          operations: raw.operations,
+          ...(typeof raw.path === "string" && raw.path.trim() ? { path: raw.path } : {}),
         };
       }
       if (tool.name === "request_takeover") {

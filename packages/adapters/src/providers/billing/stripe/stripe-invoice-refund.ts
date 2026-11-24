@@ -31,7 +31,10 @@ const refundSchema = z.object({
   id: z.string(),
   amount: z.number().int(),
   status: z.string().nullable(),
+  metadata: z.record(z.string(), z.string()).nullish(),
 });
+/** Marks the refunds this sends, so a repeat never mistakes someone else's refund for its own. */
+const REFUND_MARK = "rakazo_operator_refund";
 
 type StripeInvoiceApi = {
   request(method: "GET" | "POST", path: string, params?: Record<string, unknown>): Promise<unknown>;
@@ -43,6 +46,7 @@ export async function stripeInvoiceRefund(
   customerId: string,
   reference: string | undefined,
   confirm: boolean,
+  amountMinor?: number,
 ): Promise<BillingInvoiceRefund | null> {
   const invoices = await api.listPages(
     `/v1/invoices?customer=${encodeURIComponent(customerId)}&status=paid`,
@@ -116,14 +120,29 @@ export async function stripeInvoiceRefund(
       `/v1/refunds?charge=${encodeURIComponent(charge.id)}`,
       refundSchema,
     );
-    const existing = refunds.find(
-      (refund) =>
-        refund.amount === charge.amount &&
-        (refund.status === "pending" || refund.status === "succeeded"),
+    const live = refunds.filter(
+      (refund) => refund.status === "pending" || refund.status === "succeeded",
     );
-    if (existing) return { ...result, ...refundStatus(existing) };
+    const [existing] = live;
+    // Only one marked refund covering everything refunded is this command's, maybe from a lost
+    // response; a repeat asking for a different amount must not pass as that one.
+    if (
+      existing &&
+      live.length === 1 &&
+      // Full refunds sent before the mark existed carry none.
+      (existing.metadata?.[REFUND_MARK] === "1" || existing.amount === charge.amount) &&
+      existing.amount === charge.amount_refunded &&
+      (amountMinor === undefined || amountMinor === existing.amount)
+    )
+      return { ...result, ...refundStatus(existing) };
     throw new ClientError("CONFLICT", "This charge has a previous refund. Review it in billing.");
   }
+  const amount = amountMinor ?? charge.amount;
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > charge.amount)
+    throw new ClientError(
+      "BAD_REQUEST",
+      "The refund must be more than zero and at most the charge",
+    );
   if (!confirm) return { ...result, state: "refundable" };
   // The transport reuses a key for retries within this request. A later confirmation checks
   // refund state again and uses a fresh key, so it can recover from a cached provider error.
@@ -131,11 +150,12 @@ export async function stripeInvoiceRefund(
   const refund = refundSchema.parse(
     await api.request("POST", "/v1/refunds", {
       charge: charge.id,
-      amount: charge.amount,
+      amount,
       reason: "requested_by_customer",
+      metadata: { [REFUND_MARK]: "1" },
     }),
   );
-  if (refund.amount !== charge.amount)
+  if (refund.amount !== amount)
     throw new ClientError("CONFLICT", "The refund amount needs review in billing");
   return { ...result, ...refundStatus(refund) };
 }
@@ -143,5 +163,5 @@ export async function stripeInvoiceRefund(
 function refundStatus(refund: z.infer<typeof refundSchema>) {
   if (refund.status !== "succeeded" && refund.status !== "pending")
     throw new ClientError("CONFLICT", "The refund needs review in billing");
-  return { state: refund.status, refundId: refund.id };
+  return { state: refund.status, refundId: refund.id, refundedMinor: refund.amount };
 }

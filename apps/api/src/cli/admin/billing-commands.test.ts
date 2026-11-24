@@ -47,8 +47,10 @@ const context = {
   prisma: {
     user: { findMany: async () => [{ id: "user_fixture", email }] },
     modelCreditAccount: { findUnique: async () => ({ balanceMicros: 9_680_000n }) },
+    modelCreditLot: { findUnique: async () => ({ usedMicros: 320_000n }) },
     modelCreditEntry: {
       findUnique: async () => ({
+        id: "entry_fixture",
         organizationId: "org_fixture",
         amountMicros: 10_000_000n,
         createdAt: new Date("2030-01-01T00:00:05Z"),
@@ -78,16 +80,46 @@ describe("operator billing writes", () => {
     expect(mocks.recordAuditEvent).toHaveBeenCalledTimes(1);
   });
 
-  it("previews the newest invoice with the credits its refund takes back", async () => {
+  it("previews a refund that keeps what paid for the credits used", async () => {
     mocks.refundInvoice.mockResolvedValueOnce(preview);
     const refund = billingRefundCommand.parse([email], {})!;
     const result = await refund(context);
     expect(mocks.refundInvoice).toHaveBeenCalledWith("cus_fixture", undefined, false);
     expect(result.json).toMatchObject({
-      credits: { fromInvoice: 10, spentSincePaid: 0.32, balanceAfterRefund: -0.32 },
+      refundMinor: 968,
+      keptMinor: 32,
+      balanceAfterRefund: 0,
       subscriptionRenews: true,
     });
     expect(result.text).toContain("Add EXAMPLE-0001 --confirm");
+  });
+
+  it("reports a refund already sent instead of planning another", async () => {
+    const sent = { ...preview, state: "succeeded", refundId: "re_fixture", refundedMinor: 968 };
+    mocks.refundInvoice.mockResolvedValueOnce(sent).mockResolvedValueOnce(sent);
+    const refund = billingRefundCommand.parse([email, "EXAMPLE-0001"], { confirm: true })!;
+    await expect(refund(context)).resolves.toMatchObject({ json: { refundedMinor: 968 } });
+    expect(mocks.refundInvoice).toHaveBeenLastCalledWith(
+      "cus_fixture",
+      "EXAMPLE-0001",
+      true,
+      undefined,
+    );
+  });
+
+  it("refunds the whole charge with --full", async () => {
+    mocks.refundInvoice.mockResolvedValueOnce(preview).mockResolvedValueOnce({
+      ...preview,
+      state: "pending",
+      refundId: "re_fixture",
+      refundedMinor: 968,
+    });
+    const refund = billingRefundCommand.parse([email, "EXAMPLE-0001"], {
+      confirm: true,
+      full: true,
+    })!;
+    await refund(context);
+    expect(mocks.refundInvoice).toHaveBeenLastCalledWith("cus_fixture", "EXAMPLE-0001", true, 1000);
   });
 
   it("audits a refund request before sending it and reconciles after an uncertain response", async () => {
@@ -108,16 +140,19 @@ describe("operator billing writes", () => {
   });
 
   it("records the provider's reported refund outcome separately from the request", async () => {
-    mocks.refundInvoice
-      .mockResolvedValueOnce(preview)
-      .mockResolvedValueOnce({ ...preview, state: "pending", refundId: "re_fixture" });
+    mocks.refundInvoice.mockResolvedValueOnce(preview).mockResolvedValueOnce({
+      ...preview,
+      state: "pending",
+      refundId: "re_fixture",
+      refundedMinor: 968,
+    });
     const refund = billingRefundCommand.parse([email, "EXAMPLE-0001"], { confirm: true })!;
     await expect(refund(context)).resolves.toMatchObject({ json: { state: "pending" } });
     expect(mocks.recordAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "billing.invoice.refund_result",
         target: { type: "invoice", id: preview.invoiceId },
-        metadata: { refundId: "re_fixture", status: "pending", amountMinor: 1000, currency: "usd" },
+        metadata: { refundId: "re_fixture", status: "pending", amountMinor: 968, currency: "usd" },
       }),
     );
   });

@@ -21,7 +21,7 @@ import {
 } from "@rakazo/ui-web/components/ui/table";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
 import { usageModelKey, usageModelLabels } from "./usage-model-labels";
 
@@ -49,7 +49,19 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   });
 
   const catalogQuery = useQuery(queries.models.list.queryOptions());
-  const catalog = catalogQuery.data ?? NO_CATALOG;
+  // Image and video models are not chat models, so their names come from the media lists.
+  const { data: media } = useQuery(queries.models.media.queryOptions({ input: {} }));
+  const catalog = useMemo(
+    () => [
+      ...(catalogQuery.data ?? NO_CATALOG),
+      ...(media ? [...media.image.options, ...media.video.options] : []).map((option) => ({
+        provider: option.provider,
+        id: option.modelId,
+        label: option.label,
+      })),
+    ],
+    [catalogQuery.data, media],
+  );
   const fallbackLabel =
     catalogQuery.data !== undefined
       ? t`Unlisted model`

@@ -36,14 +36,15 @@ available in all your spaces too, unless you narrow them with **Available in**.
 
 ## Share a space
 
-Open the space's **Settings** and choose **Invite** next to **Members**. A link is copied for you to
-send. It works once and expires after 7 days. To stop links you sent but nobody has used, choose
-**⋯** next to **Invite**, then **Cancel open invites** (on iOS and Android it is a row under the
-members list).
+Open the space's **Settings** and choose **Invite** next to **Members**. People in your
+[organization](./account.md#organizations) are listed there to add at once. For anyone else,
+choose **Invite by email** or **Copy invite link**. A link works once and expires after 7 days. To
+stop links you sent but nobody has used, choose **⋯** next to **Invite**, then
+**Cancel open invites** (on iOS and Android it is a row under the members list).
 
-Whoever opens the link sees what sharing means and chooses **Join**. They join that space only: it
-shows up in their space list next to their own spaces, and your other spaces stay private. They
-don't join your organization or take a seat. Its [audit log](./self-host-audit-log.md) records what
+Someone outside your organization sees what sharing means and chooses **Join**. They join that
+space only: it shows up in their space list next to their own spaces, and your other spaces stay
+private. They don't join your organization or take a seat. Its [audit log](./self-host-audit-log.md) records what
 they do in the space, but never names their own vault items.
 
 Sharing is per space, not per bot: you can't share one bot and keep the others private. To give

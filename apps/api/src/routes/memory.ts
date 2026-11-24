@@ -3,6 +3,7 @@ import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import {
   buildAgentMemoryPrompt,
   isScratchpadStatus,
+  latestEndedDate,
   listScratchpadItems,
   mapScratchpadItem,
   memoryProviderDescriptors,
@@ -45,14 +46,19 @@ export function memoryRoutes(ctx: RouterContext) {
       budget: authed.memory.budget.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
         // Read through the store a run uses, so the numbers match what the bot receives.
-        const documents = await readAgentMemory(deps.memory, input.botId, {
-          operationId: "mem",
-          traceId: "mem",
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
-          botId: input.botId,
-          signal: context.signal ?? new AbortController().signal,
-        });
+        const documents = await readAgentMemory(
+          deps.memory,
+          input.botId,
+          {
+            operationId: "mem",
+            traceId: "mem",
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            botId: input.botId,
+            signal: context.signal ?? new AbortController().signal,
+          },
+          latestEndedDate(new Date()),
+        );
         return buildAgentMemoryPrompt(documents).plan;
       }),
       update: authed.memory.update.handler(async ({ context, input }) => {

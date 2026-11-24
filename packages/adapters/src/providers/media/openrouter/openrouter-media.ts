@@ -18,6 +18,7 @@ import {
 } from "../../../media/images-api.js";
 import {
   mediaPromptSchema,
+  UNKNOWN_MODEL_PRICES,
   validateGeneratedMedia,
 } from "../../../media/media-generation-provider.js";
 import type { ResolveHostname } from "../../../web/web-ssrf.js";
@@ -27,7 +28,25 @@ const API = "https://openrouter.ai/api/v1";
 const REQUEST_TIMEOUT_MS = 30_000;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 const MAX_JSON_BYTES = 100_000;
-const VIDEO_SECONDS = 4;
+export const VIDEO_SECONDS = 4;
+/**
+ * Per model, the most one image (auto size and quality) or one four-second video with its default
+ * audio costs, from OpenRouter's published prices, in micro-dollars. Each response reports what
+ * the generation actually cost, and that is what is charged.
+ */
+const IMAGE_MICROS = new Map([
+  ["openai/gpt-image-2", 211_000],
+  ["openai/gpt-image-1", 250_000],
+  ["openai/gpt-image-1-mini", 52_000],
+  ["google/gemini-2.5-flash-image", 40_000],
+]);
+const VIDEO_MICROS = new Map([
+  ["google/veo-3.1-lite", 320_000],
+  ["google/veo-3.1-fast", 480_000],
+  ["google/veo-3.1", 1_600_000],
+]);
+const usageCost = z.object({ usage: z.object({ cost: z.number().nonnegative() }) });
+const costMicros = (cost: number) => Math.round(cost * 1_000_000);
 const JOB_ID_PATTERN = /^[\w-]{1,200}$/;
 const videoJob = z.object({
   id: z.string().regex(JOB_ID_PATTERN),
@@ -44,12 +63,15 @@ type PendingJob = Exclude<MediaVideoJob, { status: "completed" }>;
 export class OpenRouterMediaGenerationProvider implements MediaGenerationProvider {
   readonly id = "openrouter";
   readonly capabilities;
+  readonly prices;
   private readonly baseUrl: string;
   constructor(
     private readonly options: {
       apiKey: string;
       imageModel?: string;
       videoModel?: string;
+      /** Route only to endpoints that keep no prompts, as the connection asks. */
+      zeroDataRetention?: boolean;
       baseUrl?: string;
       fetch?: typeof fetch;
       resolveHostname?: ResolveHostname;
@@ -63,12 +85,23 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
       video: Boolean(options.videoModel),
       offline: false,
     };
+    this.prices = {
+      imageMicros: IMAGE_MICROS.get(options.imageModel ?? "") ?? UNKNOWN_MODEL_PRICES.imageMicros,
+      videoMicros: VIDEO_MICROS.get(options.videoModel ?? "") ?? UNKNOWN_MODEL_PRICES.videoMicros,
+    };
   }
   generateImage(input: MediaGenerationInput, context: AdapterContext): Promise<GeneratedMedia> {
     const model = this.options.imageModel;
     if (!model) return Promise.reject(new MediaGenerationError("unsupported"));
     return requestImagesApiImage(
-      { ...this.options, endpoint: `${this.baseUrl}/images`, model, ...input },
+      {
+        ...this.options,
+        endpoint: `${this.baseUrl}/images`,
+        model,
+        ...input,
+        extraBody: this.routing(),
+        costMicros: (usage) => (usage.cost === undefined ? undefined : costMicros(usage.cost)),
+      },
       context,
     );
   }
@@ -82,6 +115,7 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
     if (!parsed.success) throw new MediaGenerationError("invalid_input");
     const job = this.job(
       await this.request("/videos", context, {
+        ...this.routing(),
         model,
         prompt: parsed.data.prompt,
         duration: VIDEO_SECONDS,
@@ -92,12 +126,21 @@ export class OpenRouterMediaGenerationProvider implements MediaGenerationProvide
   }
   async pollVideo(id: string, context: AdapterContext): Promise<MediaVideoJob> {
     if (!JOB_ID_PATTERN.test(id)) throw new MediaGenerationError("invalid_input");
-    const job = this.job(await this.request(`/videos/${id}`, context));
+    const body = await this.request(`/videos/${id}`, context);
+    const job = this.job(body);
     if (job.id !== id) throw new MediaGenerationError("provider_failure");
     if (job.status !== "completed") return job;
-    const output = { bytes: await this.content(id, context), mimeType: "video/mp4" } as const;
+    const cost = usageCost.safeParse(body);
+    const output = {
+      bytes: await this.content(id, context),
+      mimeType: "video/mp4",
+      ...(cost.success ? { costMicros: costMicros(cost.data.usage.cost) } : {}),
+    } as const;
     validateGeneratedMedia(output, "video");
     return { id, status: "completed", output };
+  }
+  private routing() {
+    return this.options.zeroDataRetention ? { provider: { zdr: true } } : {};
   }
   private job(body: unknown): PendingJob | { id: string; status: "completed" } {
     const parsed = videoJob.safeParse(body);
