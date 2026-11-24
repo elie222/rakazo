@@ -1,5 +1,5 @@
 import type { ConnectorCatalogItem } from "@rakazo/adapter-kit";
-import { planLiveConnectionSync } from "@rakazo/adapters";
+import { planLiveConnectionSync, sanitizeIntegrationError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { availableChatApps, isAvailableChatApp } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
@@ -155,7 +155,10 @@ export function connectionsRoutes(ctx: RouterContext) {
                 });
               }
               return items;
-            } catch {
+            } catch (error) {
+              getLogger().warn(`${provider.describe().id} catalog could not be loaded`, {
+                error: sanitizeIntegrationError(error),
+              });
               return [];
             }
           }),
