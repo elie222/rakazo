@@ -1244,8 +1244,9 @@ describe("graphical computer spec", () => {
         const node = path.join(dri, "renderD128");
         writeFileSync(node, "");
         const gpu = run(launcher);
-        expect(gpu).toEqual(expect.arrayContaining(vulkan));
-        for (const flag of software) expect(gpu).not.toContain(flag);
+        expect(gpu).toEqual(expect.arrayContaining([...vulkan, "--enable-unsafe-swiftshader"]));
+        expect(gpu).not.toContain("--disable-gpu");
+        expect(gpu.filter((flag) => flag === "--enable-unsafe-swiftshader")).toHaveLength(1);
         expect(gpu.slice(-3)).toEqual([
           "--test-type",
           "--no-first-run",

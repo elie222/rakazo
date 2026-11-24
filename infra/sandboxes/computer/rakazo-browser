@@ -453,7 +453,8 @@ gpu_usable() {
 }
 GPU_FLAGS="--disable-gpu --enable-unsafe-swiftshader"
 if gpu_usable; then
-  GPU_FLAGS="--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan"
+  # SwiftShader stays allowed so WebGL falls back to software if the GPU fails later.
+  GPU_FLAGS="--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan --enable-unsafe-swiftshader"
   # Per-screen launchers pass the software flags too; drop them here.
   for arg in "$@"; do
     shift
