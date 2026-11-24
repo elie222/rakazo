@@ -96,7 +96,9 @@ it("saves the toggle as the admin flips it", async () => {
   const container = await renderSwitch(true);
   const toggle = await vi.waitFor(() => {
     const found = container.querySelector<HTMLElement>('[data-testid="http-endpoints-toggle"]');
-    if (!found) throw new Error("the switch is not rendered yet");
+    if (!found || (found as HTMLButtonElement).disabled) {
+      throw new Error("the switch is not ready yet");
+    }
     return found;
   });
   await act(async () => {
