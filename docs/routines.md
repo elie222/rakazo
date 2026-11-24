@@ -80,6 +80,9 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 - **Run history** shows each past run and its result.
 - A running routine shows **Running** in the list, with **Stop**.
 
+A recurring timer skips new runs while an earlier run from that timer is still active. If it is
+waiting for your input, answer in the chat where the question appeared to continue that run.
+
 ## On mobile
 
 The mobile app lists a bot's routines from its profile. Tap **+** to create one. Tapping a routine

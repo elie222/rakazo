@@ -91,18 +91,27 @@ function BotProfileScreen() {
         />
       </View>
       <SettingsGroup>
-        {bot?.meetingsEnabled ? (
-          <SettingsRow
-            key="meetings"
-            accessibilityRole="button"
-            chevron="right"
-            title={t`Meetings`}
-            leading={
-              <NativeSymbol ios="video" android="videocam-outline" color={tokens.mutedForeground} />
-            }
-            onPress={() => router.push({ pathname: "/meetings", params: { botId } })}
-          />
-        ) : null}
+        <SettingsRow
+          key="computer"
+          accessibilityRole="button"
+          chevron="right"
+          title={t`Computer`}
+          leading={
+            <NativeSymbol
+              ios="desktopcomputer"
+              android="desktop-outline"
+              color={tokens.mutedForeground}
+            />
+          }
+          value={
+            computer?.state === "running"
+              ? t`Running`
+              : computer?.state === "suspended"
+                ? t`Asleep`
+                : undefined
+          }
+          onPress={() => router.push({ pathname: "/computer", params: { botId, name } })}
+        />
         <SettingsRow
           key="routines"
           accessibilityRole="button"
@@ -143,27 +152,18 @@ function BotProfileScreen() {
           }
           onPress={() => router.push({ pathname: "/artifacts", params: { botId } })}
         />
-        <SettingsRow
-          key="computer"
-          accessibilityRole="button"
-          chevron="right"
-          title={t`Computer`}
-          leading={
-            <NativeSymbol
-              ios="desktopcomputer"
-              android="desktop-outline"
-              color={tokens.mutedForeground}
-            />
-          }
-          value={
-            computer?.state === "running"
-              ? t`Running`
-              : computer?.state === "suspended"
-                ? t`Asleep`
-                : undefined
-          }
-          onPress={() => router.push({ pathname: "/computer", params: { botId, name } })}
-        />
+        {bot?.meetingsEnabled ? (
+          <SettingsRow
+            key="meetings"
+            accessibilityRole="button"
+            chevron="right"
+            title={t`Meetings`}
+            leading={
+              <NativeSymbol ios="video" android="videocam-outline" color={tokens.mutedForeground} />
+            }
+            onPress={() => router.push({ pathname: "/meetings", params: { botId } })}
+          />
+        ) : null}
       </SettingsGroup>
       <BotEmailGroup botId={botId} botName={name} />
       {bot ? (

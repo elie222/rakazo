@@ -42,6 +42,7 @@ let root: Root;
 let editor: ReturnType<typeof useRoutineEditor>;
 let finishUpdate: Deferred<Routine>;
 const update = vi.fn();
+const create = vi.fn();
 const rotateWebhookSecret = vi.fn();
 const testRun = vi.fn();
 const openGroup = vi.fn();
@@ -51,9 +52,10 @@ const activeBotId = { current: "" };
 
 function Harness() {
   editor = useRoutineEditor({
-    rpc: { routines: { update, testRun }, bots: { rotateWebhookSecret } } as unknown as ReturnType<
-      typeof createSpaceRpc
-    >,
+    rpc: {
+      routines: { update, create, testRun },
+      bots: { rotateWebhookSecret },
+    } as unknown as ReturnType<typeof createSpaceRpc>,
     active: activeBot,
     activeBotId,
     timezone: "UTC",
@@ -103,6 +105,20 @@ it("keeps edits made while a save is in flight", async () => {
   expect(editor.editingRoutine?.name).toBe("Weekly");
   expect(editor.editorProps!.draft.name).toBe("Monthly");
   expect(editor.editorProps!.draft.prompt).toBe("Check in.");
+});
+
+it("saves a copy in the zone of the routine it copies", async () => {
+  const newYork = { ...routine, timezone: "America/New_York" };
+  create.mockResolvedValue({ ...newYork, id: "routine-2", active: false });
+  act(() => editor.editRoutine(newYork));
+  act(() => editor.editorProps!.onCopy());
+  expect(editor.editorProps!.timezone).toBe("America/New_York");
+  await act(async () => {
+    await editor.editorProps!.onSave();
+  });
+  expect(create).toHaveBeenCalledWith(
+    expect.objectContaining({ timezone: "America/New_York", active: false }),
+  );
 });
 
 it("sends on/off only when the save changes it", async () => {
