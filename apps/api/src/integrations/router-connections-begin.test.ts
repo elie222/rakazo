@@ -903,6 +903,54 @@ describe("connection tool listing", () => {
     }
   });
 
+  it("lists a shared app tool once when the catalog returns it for multiple accounts", async () => {
+    const route = {
+      connectorId: "example",
+      resourceId: "mail",
+      toolName: "send_email",
+    };
+    const client = createRouterClient(
+      createRouter({
+        prisma: { connection: { findFirst: async () => ({ id: "connection-1" }) } },
+        connectors: {
+          managed: () => ({
+            listAppTools: async () => [
+              {
+                name: "send_email_one",
+                description: "Send an email",
+                route: { ...route, connectionId: "connection-1" },
+              },
+              {
+                name: "send_email_two",
+                description: "Send an email",
+                route: { ...route, connectionId: "connection-2" },
+              },
+              {
+                name: "send_email_other",
+                description: "Send from the archive",
+                route: { ...route, resourceId: "archive", connectionId: "connection-1" },
+              },
+            ],
+          }),
+        },
+      } as unknown as RouterDeps),
+      { context: { actor: { spaceId: "workspace-1", userId: "user-1" } } as never },
+    );
+
+    expect(await client.connections.tools({ connectorId: "example", provider: "mail" })).toEqual([
+      {
+        name: "send_email",
+        description: "Send an email",
+        approvalKey: 'app-tool/["example","mail","send_email"]',
+      },
+      {
+        name: "send_email",
+        description: "Send from the archive",
+        approvalKey: 'app-tool/["example","archive","send_email"]',
+      },
+    ]);
+  });
+
   it("does not report a listing the client cancelled", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));

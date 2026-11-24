@@ -1,4 +1,8 @@
-import type { RpcOutput, ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/contracts";
+import type {
+  RpcInput,
+  RpcOutput,
+  ActionApprovalRule as StoredActionApprovalRule,
+} from "@rakazo/contracts";
 import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
 
 export { isSecretAskBlock } from "../asks/ask-kind.js";
@@ -872,6 +876,23 @@ export function approvalRuleEffectChoices(
 
 export type AppPermissionTool = RpcOutput<"connections/tools">[number];
 export type AppToolPermission = ActionApprovalRule["effect"] | "default";
+export type AppToolPermissionChange = { key: string; permission: AppToolPermission };
+
+export function appToolPermissionChoices(mode: ApprovalMode | null | undefined) {
+  return [
+    { permission: "default", disabled: false },
+    ...APPROVAL_RULE_EFFECTS.map((permission) => ({
+      permission,
+      disabled: !approvalRuleApplies(mode, permission),
+    })),
+  ] satisfies { permission: AppToolPermission; disabled: boolean }[];
+}
+
+type PermissionRead = { isPending: boolean; isFetching: boolean; error: unknown };
+
+export function appToolPermissionReadsReady(...reads: PermissionRead[]) {
+  return reads.every((read) => !read.isPending && !read.isFetching && !read.error);
+}
 
 export function groupAppPermissionTools(tools: readonly AppPermissionTool[]) {
   const reads: AppPermissionTool[] = [];
@@ -889,6 +910,21 @@ export function appToolRules(rules: readonly StoredActionApprovalRule[]) {
       .filter((rule) => rule.matchKind === "tool")
       .map((rule) => [rule.matchValue.toLowerCase(), rule]),
   );
+}
+
+type AppToolPermissionRequest =
+  | { kind: "set"; input: RpcInput<"approvalRules/set"> }
+  | { kind: "remove"; input: RpcInput<"approvalRules/remove"> };
+
+export function appToolPermissionRequest(
+  { key, permission }: AppToolPermissionChange,
+  rules: ReturnType<typeof appToolRules>,
+): AppToolPermissionRequest | undefined {
+  if (permission === "default") {
+    const rule = rules.get(key.toLowerCase());
+    return rule ? { kind: "remove", input: { id: rule.id } } : undefined;
+  }
+  return { kind: "set", input: { effect: permission, matchKind: "tool", matchValue: key } };
 }
 
 const APP_TOOL_RULE_PREFIX = "app-tool/";

@@ -1,18 +1,17 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AppPermissionTool, AppToolPermission } from "@rakazo/core";
+import type { AppPermissionTool, AppToolPermissionChange } from "@rakazo/core";
 import {
-  approvalRuleApplies,
   appToolLabel,
+  appToolPermissionChoices,
+  appToolPermissionReadsReady,
+  appToolPermissionRequest,
   appToolRules,
   groupAppPermissionTools,
 } from "@rakazo/core";
-import type { SelectOption } from "@rakazo/ui-web";
 import { Disclosure, OptionSelect, SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
-
-type Change = { key: string; permission: AppToolPermission };
 
 export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; slug: string }) {
   const { t } = useLingui();
@@ -21,39 +20,27 @@ export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; s
   const modeQuery = useQuery(queries.autoReview.get.queryOptions({ input: {} }));
   const rules = appToolRules(rulesQuery.data ?? []);
   const change = useSave({
-    save: async ({ key, permission }: Change, rpc) => {
-      if (permission === "default") {
-        const rule = rules.get(key.toLowerCase());
-        if (rule) await rpc.approvalRules.remove({ id: rule.id });
-      } else {
-        await rpc.approvalRules.set({ effect: permission, matchKind: "tool", matchValue: key });
-      }
+    save: async (selection: AppToolPermissionChange, rpc) => {
+      const request = appToolPermissionRequest(selection, rules);
+      if (request?.kind === "remove") await rpc.approvalRules.remove(request.input);
+      if (request?.kind === "set") await rpc.approvalRules.set(request.input);
     },
     stale: [queries.approvalRules.list.key()],
   });
   const loadError = rulesQuery.error ?? modeQuery.error;
-  const disabled =
-    rulesQuery.isPending ||
-    rulesQuery.isFetching ||
-    modeQuery.isPending ||
-    modeQuery.isFetching ||
-    Boolean(loadError) ||
-    change.pending;
+  const disabled = !appToolPermissionReadsReady(rulesQuery, modeQuery) || change.pending;
   const mode = modeQuery.data?.mode;
-  const options: SelectOption<AppToolPermission>[] = [
-    { value: "default", label: t`Default` },
-    {
-      value: "always_allow",
-      label: t`Allow`,
-      disabled: !approvalRuleApplies(mode, "always_allow"),
-    },
-    {
-      value: "require_approval",
-      label: t`Ask`,
-      disabled: !approvalRuleApplies(mode, "require_approval"),
-    },
-    { value: "deny", label: t`Block` },
-  ];
+  const labels = {
+    default: t`Default`,
+    always_allow: t`Allow`,
+    require_approval: t`Ask`,
+    deny: t`Block`,
+  };
+  const options = appToolPermissionChoices(mode).map(({ permission, disabled }) => ({
+    value: permission,
+    label: labels[permission],
+    disabled,
+  }));
   const { reads, other } = groupAppPermissionTools(tools);
   const groups = [
     { key: "reads", title: t`Reads`, tools: reads },
@@ -61,10 +48,13 @@ export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; s
   ].filter((group) => group.tools.length > 0);
 
   return (
-    <section data-testid="connection-tools" className="space-y-2">
+    <section data-testid="connection-tools" className="group/tool-permissions space-y-2">
       <SectionHeading variant="label" className="px-2">
         <Trans>Tool permissions</Trans>
       </SectionHeading>
+      <p className="hidden px-2 text-body-sm text-muted-foreground group-has-[[aria-expanded=true]]/tool-permissions:block">
+        <Trans>Other approval rules still apply.</Trans>
+      </p>
       {mode === "never" ? (
         <p className="px-2 text-body-sm text-muted-foreground">
           <Trans>Only Block rules apply in Never ask.</Trans>

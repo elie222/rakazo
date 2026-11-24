@@ -5,6 +5,7 @@ import {
   sanitizeIntegrationError,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import type { AppPermissionTool } from "@rakazo/core";
 import { appToolApprovalKey, availableChatApps, isAvailableChatApp } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { IsolationError, recordSecurityEvent } from "@rakazo/db";
@@ -250,14 +251,20 @@ export function connectionsRoutes(ctx: RouterContext) {
           const tools = connector.listAppTools
             ? await connector.listAppTools(adapterContext, input.provider)
             : await connector.discoverTools(adapterContext);
-          return tools
-            .filter((tool) => !tool.batch && !isLazyCatalogControlRoute(tool.route))
-            .map((tool) => ({
+          const appTools = new Map<string, AppPermissionTool>();
+          for (const tool of tools) {
+            if (tool.batch || isLazyCatalogControlRoute(tool.route)) continue;
+            const approvalKey = appToolApprovalKey(tool.route) ?? tool.name;
+            const key = approvalKey.toLowerCase();
+            if (appTools.has(key)) continue;
+            appTools.set(key, {
               name: tool.route?.connectionId ? tool.route.toolName : tool.name,
               description: tool.description,
               readOnly: tool.readOnly,
-              approvalKey: appToolApprovalKey(tool.route) ?? tool.name,
-            }));
+              approvalKey,
+            });
+          }
+          return [...appTools.values()];
         } catch (error) {
           const fields = { connectorId: input.connectorId, provider: input.provider };
           // The client went away before the list came back.

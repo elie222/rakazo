@@ -1,8 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
-import type { AppPermissionTool, AppToolPermission } from "@rakazo/core";
+import type { AppPermissionTool, AppToolPermissionChange } from "@rakazo/core";
 import {
-  approvalRuleApplies,
   appToolLabel,
+  appToolPermissionChoices,
+  appToolPermissionReadsReady,
+  appToolPermissionRequest,
   appToolRules,
   groupAppPermissionTools,
 } from "@rakazo/core";
@@ -12,12 +14,9 @@ import { errorText } from "../../lib/api/user-error";
 import { useThemedStyles } from "../../lib/native/native";
 import { rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
-import type { MenuPickerChoice } from "../ui/menu-picker";
 import { MenuPicker } from "../ui/menu-picker";
 import { Chevron } from "../ui/row-accessories";
 import { createIntegrationsStyles } from "./integrations-styles";
-
-type Change = { key: string; permission: AppToolPermission };
 
 export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; slug: string }) {
   const { t } = useLingui();
@@ -28,35 +27,27 @@ export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; s
   const modeQuery = useScreenQuery(rpcQuery("autoReview/get", {}));
   const rules = appToolRules(rulesQuery.data ?? []);
   const change = useSave({
-    save: async ({ key, permission }: Change, send) => {
-      if (permission === "default") {
-        const rule = rules.get(key.toLowerCase());
-        if (rule) await send("approvalRules/remove", { id: rule.id });
-      } else {
-        await send("approvalRules/set", { effect: permission, matchKind: "tool", matchValue: key });
-      }
+    save: async (selection: AppToolPermissionChange, send) => {
+      const request = appToolPermissionRequest(selection, rules);
+      if (request?.kind === "remove") await send("approvalRules/remove", request.input);
+      if (request?.kind === "set") await send("approvalRules/set", request.input);
     },
     stale: [rulesRead.queryKey],
   });
   const loadError = rulesQuery.error ?? modeQuery.error;
-  const disabled =
-    rulesQuery.isPending ||
-    rulesQuery.isFetching ||
-    modeQuery.isPending ||
-    modeQuery.isFetching ||
-    Boolean(loadError) ||
-    change.pending;
+  const disabled = !appToolPermissionReadsReady(rulesQuery, modeQuery) || change.pending;
   const mode = modeQuery.data?.mode;
-  const choices: (MenuPickerChoice & { key: AppToolPermission })[] = [
-    { key: "default", label: t`Default` },
-    { key: "always_allow", label: t`Allow`, disabled: !approvalRuleApplies(mode, "always_allow") },
-    {
-      key: "require_approval",
-      label: t`Ask`,
-      disabled: !approvalRuleApplies(mode, "require_approval"),
-    },
-    { key: "deny", label: t`Block` },
-  ];
+  const labels = {
+    default: t`Default`,
+    always_allow: t`Allow`,
+    require_approval: t`Ask`,
+    deny: t`Block`,
+  };
+  const choices = appToolPermissionChoices(mode).map(({ permission, disabled }) => ({
+    key: permission,
+    label: labels[permission],
+    disabled,
+  }));
   const grouped = groupAppPermissionTools(tools);
   const titles = { reads: t`Reads`, other: t`Other actions` };
   const failure = change.error ?? loadError;
@@ -64,6 +55,9 @@ export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; s
   return (
     <View style={styles.card}>
       <Text style={styles.section}>{t`Tool permissions`}</Text>
+      {open.reads || open.other ? (
+        <Text style={styles.secondary}>{t`Other approval rules still apply.`}</Text>
+      ) : null}
       {mode === "never" ? (
         <Text style={styles.secondary}>{t`Only Block rules apply in Never ask.`}</Text>
       ) : null}
