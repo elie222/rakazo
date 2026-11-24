@@ -107,7 +107,14 @@ export function ResizableSidePanel({
     if (!onEscape) return;
     if (event.key !== "Escape" || event.defaultPrevented || isComposingKey(event)) return;
     const focused = document.activeElement;
-    if (focused && focused !== document.body && !panelRef.current?.contains(focused)) return;
+    // Clicking a message's text can focus the transcript itself.
+    if (
+      focused &&
+      focused !== document.body &&
+      !focused.hasAttribute("data-chat-transcript") &&
+      !panelRef.current?.contains(focused)
+    )
+      return;
     // A field saves when it loses focus, and closing the panel would unmount it before that.
     if (focused?.matches("input, textarea, select, [contenteditable]:not([contenteditable=false])"))
       return;

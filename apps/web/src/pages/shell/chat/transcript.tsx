@@ -635,6 +635,7 @@ export const Transcript = memo(function Transcript({
       <ImageGalleryProvider images={galleryImages}>
         <section
           ref={scrollRef}
+          data-chat-transcript
           data-testid="transcript"
           aria-label={t`Chat`}
           tabIndex={-1}
