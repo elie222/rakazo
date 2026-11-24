@@ -955,6 +955,12 @@ describe("DesktopUpdateController", () => {
       expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
     });
 
+    it("skips a download while the app on disk is being replaced", async () => {
+      const { fake, controller } = await readyController(null);
+      expect(controller.installBeforeQuit()).toBeNull();
+      expect(fake.updater.quitAndInstall).not.toHaveBeenCalled();
+    });
+
     it("lets the app quit when staging fails", async () => {
       const { fake, controller } = await readyController("0.1.0");
       const installing = controller.installBeforeQuit();

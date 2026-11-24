@@ -563,10 +563,13 @@ export class DesktopUpdateController {
     this.quitInstallSettled?.();
   }
 
-  /** True when the app on disk is no longer the version running, so a download would downgrade or clobber it. */
+  /**
+   * True when the app on disk is no longer the version running, so a download would downgrade or
+   * clobber it. An unreadable version counts too: it means another install is replacing the app.
+   */
   installedElsewhere() {
-    const installed = this.environment.installedVersion?.();
-    return installed != null && installed !== this.environment.version;
+    const read = this.environment.installedVersion;
+    return read !== undefined && read() !== this.environment.version;
   }
 
   async install() {
