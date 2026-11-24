@@ -37,9 +37,9 @@ export function useBackToSettings(): void {
 
     // Expo Router reports removals in a layout effect, before this passive effect unsubscribes.
     return navigation.addListener("removed", ({ data: { action } }) => {
-      if (action.type !== "GO_BACK" && action.type !== "POP") return;
-      router.push("/account");
-      if (fromSettings === "/spaces") router.push("/spaces");
+      if (action.type === "GO_BACK" || action.type === "POP") {
+        router.push(fromSettings, { withAnchor: true });
+      }
     });
   }, [fromSettings, navigation, router]);
 }

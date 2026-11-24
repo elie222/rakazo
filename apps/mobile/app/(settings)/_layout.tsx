@@ -7,6 +7,8 @@ import { floatingHeaderOptions, glassHeaderOptions } from "../../components/nati
 import { native, useMobileTokens } from "../../lib/native/native";
 import { registerSettingsSheet, settingsSheetCloser } from "../../lib/settings/settings-sheet";
 
+export const unstable_settings = { anchor: "account" };
+
 /** Settings pages share one stack, which the root layout presents as a sheet on iOS. */
 export default function SettingsLayout() {
   const { t } = useLingui();
@@ -27,7 +29,7 @@ export default function SettingsLayout() {
         // Settings has no visible title, so iOS's long-press back menu would list it as a blank entry.
         headerBackButtonMenuEnabled: false,
         contentStyle: { backgroundColor: String(native.page) },
-        // The first page closes the sheet, or returns Home when opened by a cold deep link.
+        // The first page closes the sheet.
         // The inner stack has no native back arrow on its first page.
         ...(navigation.getState().routes[0]?.key === route.key
           ? Platform.OS === "ios"

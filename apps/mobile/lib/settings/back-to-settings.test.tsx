@@ -62,13 +62,13 @@ afterEach(() => {
 });
 
 it.each([
-  ["POP", "/account", [["/account"]]],
-  ["GO_BACK", "/spaces", [["/account"], ["/spaces"]]],
-])("restores the originating Settings stack on %s", async (action, origin, stack) => {
+  ["POP", "/account"],
+  ["GO_BACK", "/spaces"],
+])("restores the originating Settings stack on %s", async (action, origin) => {
   page.fromSettings = origin;
   await act(async () => root.render(<Navigator />));
   await act(async () => root.render(<Navigator action={action} />));
-  expect(page.push.mock.calls).toEqual(stack);
+  expect(page.push).toHaveBeenCalledExactlyOnceWith(origin, { withAnchor: true });
   expect(page.removed.size).toBe(0);
 });
 
