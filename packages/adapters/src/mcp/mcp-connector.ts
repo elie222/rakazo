@@ -10,6 +10,7 @@ import {
   TemporarilyUnavailableError,
   TooManyRequestsError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type {
   AdapterContext,
@@ -37,6 +38,7 @@ import {
   redactConnectorPayload,
   sanitizeConnectorError,
 } from "../integrations/connector-safety.js";
+import { mcpToolFields } from "../integrations/mcp-tool-metadata.js";
 import { appendToolCompletionAudit } from "../runs/turn/tool-completion-audit.js";
 import { credentialDigest } from "../secrets/credential-digest.js";
 import type { CatalogEntry } from "../tools/lazy-tool-catalog.js";
@@ -52,6 +54,8 @@ import {
   resolveCatalogCall,
   UnknownCatalogToolError,
 } from "../tools/lazy-tool-catalog.js";
+import type { McpToolOutcome } from "./mcp-action-approval.js";
+import { lookupMcpApprovalActions, McpApprovalConnectionChanged } from "./mcp-action-approval.js";
 import { mcpToolAppResourceUri, readMcpApp } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
 import { UNAVAILABLE_TOOL, unavailableTool } from "./mcp-connector.tool-definition.js";
@@ -75,10 +79,15 @@ import {
 import { reportExpiredMcpSignIn } from "./mcp-reconnect-card.js";
 import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
-import { mcpToolAllowed } from "./mcp-tool-permissions.js";
+import {
+  currentMcpAssignment,
+  mcpToolAllowed,
+  reportAllowlistDrift,
+  sharedMcpAssignment,
+} from "./mcp-tool-permissions.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import { ConnectorRedirectError, isMcpSessionGoneError, mcpToolFields } from "./remote-mcp.js";
+import { ConnectorRedirectError, isMcpSessionGoneError } from "./remote-mcp.js";
 
 type SessionEntry = {
   session: McpSession;
@@ -298,50 +307,6 @@ export function mcpStdioOptionsFromEnv(
   };
 }
 
-/** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
-/**
- * Stale allowlist entries are filtered out below with no error. Discovery already has the
- * live tool list, so compare once and warn when string allowlist names are missing from the
- * server. Non-string JSON values are ignored for both the missing list and the ratio.
- */
-export function allowlistDrift(
-  allowedTools: unknown,
-  offered: Array<{ name: string }>,
-): { missing: string[]; offered: number; stringAllowedCount: number } {
-  const names = new Set(offered.map((tool) => tool.name));
-  const allowed = Array.isArray(allowedTools) ? allowedTools : [];
-  const stringAllowed = allowed.filter((name): name is string => typeof name === "string");
-  return {
-    missing: stringAllowed.filter((name) => !names.has(name)),
-    offered: names.size,
-    stringAllowedCount: stringAllowed.length,
-  };
-}
-
-/** A server every agent may use acts as an assignment that allows all its tools. */
-function sharedAssignment<Server extends { id: string }>(server: Server) {
-  return { serverId: server.id, allowAllTools: true, allowedTools: [] as unknown, server };
-}
-
-function reportAllowlistDrift(
-  assignment: { allowAllTools: boolean; allowedTools: unknown; server: { slug: string } },
-  offered: Array<{ name: string }>,
-  context: { spaceId: string; botId?: string },
-): void {
-  if (assignment.allowAllTools) return;
-  const drift = allowlistDrift(assignment.allowedTools, offered);
-  if (drift.missing.length === 0) return;
-  getLogger().warn(
-    `mcp allowlist drift on ${assignment.server.slug}: ${drift.missing.length}/${drift.stringAllowedCount} allowed tools are not offered (server offers ${drift.offered})`,
-    {
-      spaceId: context.spaceId,
-      botId: context.botId,
-      // Cap the list: the point is to name the drift, not to print an allowlist.
-      missing: drift.missing.slice(0, 10),
-    },
-  );
-}
-
 /** Redact complete credential documents and values a process may quote separately. */
 function credentialContentSecrets(content: string): string[] {
   const values = content.length >= 8 ? [content] : [];
@@ -380,6 +345,7 @@ async function closeEntry(entry: { session: McpSession; credentialDir?: string }
   );
 }
 
+/** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
 export class McpConnector implements ConnectorProvider {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly connecting = new Map<string, PendingSession>();
@@ -508,7 +474,7 @@ export class McpConnector implements ConnectorProvider {
         where: { ...usable, allBots: true, assignments: { none: { botId: context.botId } } },
       }),
     ]);
-    const assignments = [...assigned, ...shared.map(sharedAssignment)];
+    const assignments = [...assigned, ...shared.map(sharedMcpAssignment)];
     const groups = await Promise.all(
       assignments.map(async (assignment): Promise<ConnectorTool[]> => {
         const startedAt = Date.now();
@@ -544,9 +510,11 @@ export class McpConnector implements ConnectorProvider {
         // the session and other calls on it carry on.
         const listing = new AbortController();
         try {
+          let peer: string | undefined;
           const listed = await withDeadline(
             this.withSession(server, context, (session) => {
               entry = this.sessions.get(key);
+              peer = session.client.getServerVersion()?.name;
               return session.listTools({
                 signal: AbortSignal.any([context.signal, listing.signal]),
                 refresh: idle || refresh(assignment.serverId, server.slug),
@@ -569,7 +537,23 @@ export class McpConnector implements ConnectorProvider {
             .map((tool) => ({
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
-              ...mcpToolFields(tool, server.transport === "stdio" ? undefined : server.endpoint),
+              ...mcpToolFields(tool, server.transport === "stdio" ? undefined : server.endpoint, {
+                peer,
+                connection: server,
+                lookup: (name, args, signal) => {
+                  const lookupContext = { ...context, signal };
+                  return lookupMcpApprovalActions(
+                    this.prisma,
+                    server,
+                    tool.name,
+                    lookupContext,
+                    (current) =>
+                      this.invokeMcpTool(current, lookupContext, (session) =>
+                        session.callTool(name, args, { signal }),
+                      ),
+                  );
+                },
+              }),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,
@@ -720,21 +704,7 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "error", message: "MCP tools require a bot context" };
       return;
     }
-    const usable = { enabled: true, ...availableInSpace(context) };
-    const assignment =
-      (await this.prisma.botMcpServer.findFirst({
-        where: {
-          botId: context.botId,
-          serverId: call.route.resourceId,
-          spaceId: context.spaceId,
-          userId: context.userId,
-          server: usable,
-        },
-        include: { server: true },
-      })) ??
-      (await this.prisma.mcpServer
-        .findFirst({ where: { ...usable, id: call.route.resourceId, allBots: true } })
-        .then((server) => (server ? sharedAssignment(server) : null)));
+    const assignment = await currentMcpAssignment(this.prisma, call.route.resourceId, context);
     if (assignment && call.route.toolName === UNAVAILABLE_TOOL) {
       const reason =
         this.unavailable.get(this.sessionKey(assignment.server, context)) ??
@@ -749,50 +719,79 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "error", message: "MCP tool is not assigned to this bot" };
       return;
     }
-    // Capture material before callTool so a concurrent eviction/replace cannot
-    // drop this call's OAuth secrets from model-visible redaction. Recompute via
-    // oauthMaterialSecrets(material) so in-place token refresh stays covered.
-    let material: OAuthMaterial | undefined;
-    let launchSecrets: string[] = [];
-    const sessionKey = this.sessionKey(assignment.server, context);
-    let used: McpSession | undefined;
-    try {
-      const toolName = call.route.toolName;
-      const result = await this.withSession(assignment.server, context, (session) => {
-        used = session;
-        material = this.sessions.get(sessionKey)?.material;
-        launchSecrets = this.sessions.get(sessionKey)?.launchSecrets ?? [];
-        return session.callTool(toolName, call.args, {
+    if (call.approvalBinding && assignment.server.revision !== call.route.resourceRevision) {
+      yield { type: "error", message: new McpApprovalConnectionChanged().message };
+      return;
+    }
+    const { server } = assignment;
+    const { toolName, appResourceUri } = call.route;
+    const outcome = await this.invokeMcpTool(
+      server,
+      context,
+      (session) =>
+        session.callTool(toolName, call.args, {
           signal: context.signal,
           asker: {
             owner: context.runId ?? context.operationId,
-            source: assignment.server.name,
+            source: server.name,
             ask: context.askPerson,
           },
-        });
+        }),
+      call.approvalBinding,
+    );
+    if ("error" in outcome) {
+      yield { type: "error", message: outcome.error };
+      return;
+    }
+    const { result, secrets } = outcome;
+    yield { type: "result", data: redactConnectorPayload(result, secrets) };
+    const app = await readMcpApp(
+      server.name,
+      call.withApp ? appResourceUri : undefined,
+      result,
+      (uri) =>
+        this.withSession(server, context, (session) =>
+          session.readResource(uri, { signal: context.signal }),
+        ),
+      secrets,
+    );
+    if (app) yield { type: "app", app };
+  }
+
+  private async invokeMcpTool(
+    server: McpServer,
+    context: AdapterContext,
+    invoke: (session: McpSession) => Promise<CallToolResult>,
+    approvalBinding?: object,
+  ): Promise<McpToolOutcome> {
+    const key = this.sessionKey(server, context);
+    // Capture credentials before the call in case a concurrent call replaces the session.
+    // Read the material afterwards so redaction also covers in-place OAuth refresh.
+    let used: McpSession | undefined;
+    let material: OAuthMaterial | undefined;
+    let launchSecrets: string[] = [];
+    const secrets = () => [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
+    try {
+      return await this.withSession(server, context, async (session) => {
+        used = session;
+        if (approvalBinding && approvalBinding !== session)
+          throw new McpApprovalConnectionChanged();
+        const entry = this.sessions.get(key);
+        material = entry?.material;
+        launchSecrets = entry?.launchSecrets ?? [];
+        return {
+          result: await invoke(session),
+          binding: session,
+          secrets: secrets(),
+        };
       });
-      const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
-      yield { type: "result", data: redactConnectorPayload(result, secrets) };
-      const app = await readMcpApp(
-        assignment.server.name,
-        call.withApp ? call.route.appResourceUri : undefined,
-        result,
-        (uri) =>
-          this.withSession(assignment.server, context, (session) =>
-            session.readResource(uri, { signal: context.signal }),
-          ),
-        secrets,
-      );
-      if (app) yield { type: "app", app };
     } catch (error) {
-      const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
-      // Drop a broken, hung or unauthorized connection, so the next call reconnects. A
-      // cancelled run or the server's own error leaves a stdio process and the server's
-      // session state in place. A session another call already replaced stays replaced:
-      // evicting the key then would close the fresh one.
-      const replaced = used !== undefined && this.sessions.get(sessionKey)?.session !== used;
-      if (!replaced && !keepsMcpSession(used, error, context.signal)) await this.evict(sessionKey);
-      yield { type: "error", message: sanitizeConnectorError(error, secrets) };
+      if (error instanceof McpApprovalConnectionChanged) return { error: error.message };
+      // Drop broken connections. Leave a replacement session or an open session with a
+      // cancellation or protocol error alone.
+      const replaced = used !== undefined && this.sessions.get(key)?.session !== used;
+      if (!replaced && !keepsMcpSession(used, error, context.signal)) await this.evict(key);
+      return { error: sanitizeConnectorError(error, secrets()) };
     }
   }
 

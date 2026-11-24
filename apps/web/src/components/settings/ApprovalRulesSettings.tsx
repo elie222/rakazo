@@ -13,6 +13,8 @@ import {
   approvalRuleChoices,
   approvalRuleEffectChoices,
   approvalRuleLabel,
+  approvalRulePath,
+  withSavedApprovalRule,
 } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import {
@@ -107,15 +109,7 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
       matchKind: rule.matchKind,
       matchValue: rule.matchValue,
     });
-    // Saving replaces any other effect on the same match.
-    await setRules((current) => [
-      ...current.filter(
-        (other) =>
-          other.matchKind !== saved.matchKind ||
-          other.matchValue.toLowerCase() !== saved.matchValue.toLowerCase(),
-      ),
-      saved,
-    ]);
+    await setRules((current) => withSavedApprovalRule(current, saved));
   }
 
   const modeDetail =
@@ -188,20 +182,29 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
             className={unused ? "opacity-50" : undefined}
           >
             <SettingsGroup title={title} data-testid={`approval-rules-${effect}`}>
-              {matching.map((rule) => (
-                <SettingsRow
-                  key={rule.id}
-                  label={approvalRuleLabel(rule)}
-                  control={
-                    <RuleControls
-                      rule={rule}
-                      disabled={saving}
-                      onEffect={(effect) => change.run({ kind: "rule", rule: { ...rule, effect } })}
-                      onRemove={() => change.run({ kind: "remove", rule })}
-                    />
-                  }
-                />
-              ))}
+              {matching.map((rule) => {
+                const path = approvalRulePath(rule);
+                return (
+                  <SettingsRow
+                    key={rule.id}
+                    label={approvalRuleLabel(rule)}
+                    control={
+                      <RuleControls
+                        rule={rule}
+                        disabled={saving}
+                        onEffect={(effect) =>
+                          change.run({ kind: "rule", rule: { ...rule, effect } })
+                        }
+                        onRemove={() => change.run({ kind: "remove", rule })}
+                      />
+                    }
+                  >
+                    {path ? (
+                      <p className="break-all text-body-sm text-muted-foreground">{path}</p>
+                    ) : null}
+                  </SettingsRow>
+                );
+              })}
             </SettingsGroup>
           </div>
         );

@@ -1,4 +1,5 @@
 import { t } from "@lingui/core/macro";
+import { alwaysAllowActionLabel } from "@rakazo/i18n/approval-action";
 
 export type AskAction = { id: string; label: string; outcome?: "created" | "cancelled" };
 
@@ -23,7 +24,7 @@ export function askActionLabel(
   // The server's label when approving makes the change itself, as replacing another bot's instructions.
   if (action.id === "allow" && action.label === "Apply now") return t`Apply now`;
   if (action.id === "allow") return t`Allow once`;
-  if (action.id === "always") return site ? t`Always allow ${site}` : t`Always allow this tool`;
+  if (action.id === "always") return alwaysAllowActionLabel(action.label, site);
   if (action.id === "deny") return t`Deny`;
   return action.label;
 }

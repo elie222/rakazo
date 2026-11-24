@@ -1,3 +1,4 @@
+import type { ScopedBatchAction } from "@rakazo/contracts";
 import { CATALOG_APPROVAL_TOOL } from "@rakazo/contracts";
 import {
   isToolEffectIdempotencyKey,
@@ -153,7 +154,7 @@ export async function recordEffect(
   request: unknown,
   legacyIdempotencyKey?: string,
   consumedIds?: Set<string>,
-  batchActions?: string[],
+  batchActions?: (string | ScopedBatchAction)[],
 ) {
   if (kind === RUN_TURN_CHECKPOINT_KIND) throw new Error("Unsupported tool effect kind");
   const existing = await deps.prisma.externalEffect.findUnique({

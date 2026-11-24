@@ -22,11 +22,12 @@ import { infisicalFake } from "../secrets/secret-store-fake.js";
 import { EncryptedSecretStore } from "../secrets/secrets.js";
 import { CATALOG_EXECUTE, DIRECT_TOOL_LIMIT } from "../tools/lazy-tool-catalog.js";
 import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
-import { allowlistDrift, DEFAULT_MCP_STDIO_IDLE_MS, McpConnector } from "./mcp-connector.js";
+import { DEFAULT_MCP_STDIO_IDLE_MS, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import type * as reconnectCard from "./mcp-reconnect-card.js";
 import { reportExpiredMcpSignIn } from "./mcp-reconnect-card.js";
+import { allowlistDrift } from "./mcp-tool-permissions.js";
 import { McpSession } from "./mcp-transport.js";
 import { MCP_TOOL_TIMEOUT_MS } from "./remote-mcp.js";
 
@@ -87,6 +88,7 @@ function mcpFetch(
   state: {
     failNext: boolean;
     initializations: number;
+    serverName?: string;
     /** Tool requests to answer 404, as a server that expired the session. */
     sessionNotFound?: number;
     /** Overrides the 404 with another rejection, e.g. the SDK's 400 after a restart. */
@@ -100,6 +102,7 @@ function mcpFetch(
       annotations?: { readOnlyHint?: boolean };
     }>;
     calls?: string[];
+    toolResult?: (name: string | undefined, args: unknown) => unknown;
     /** Answer tool calls with a JSON-RPC error, as a server whose tool failed. */
     rpcError?: boolean;
     /** Hold tool calls until the request is aborted, as a slow tool. */
@@ -123,7 +126,7 @@ function mcpFetch(
     const message = JSON.parse(await request.text()) as {
       id?: number;
       method?: string;
-      params?: { name?: string };
+      params?: { name?: string; arguments?: unknown };
     };
     if (
       (message.method === "tools/call" || message.method === "tools/list") &&
@@ -142,7 +145,7 @@ function mcpFetch(
         result: {
           protocolVersion: "2025-11-25",
           capabilities: { tools: {} },
-          serverInfo: { name: "test", version: "1" },
+          serverInfo: { name: state.serverName ?? "test", version: "1" },
         },
       });
     }
@@ -174,7 +177,9 @@ function mcpFetch(
       const reply = {
         jsonrpc: "2.0",
         id: message.id,
-        result: { content: [{ type: "text", text: "ok" }] },
+        result: state.toolResult?.(message.params?.name, message.params?.arguments) ?? {
+          content: [{ type: "text", text: "ok" }],
+        },
       };
       if (!state.announceListChanged) return Response.json(reply);
       state.announceListChanged = false;
@@ -4095,6 +4100,111 @@ describe("allowlistDrift", () => {
       stringAllowedCount: 1,
     });
   });
+});
+
+function scopedMcpFixture() {
+  const path = "tools.demo.renameNote";
+  const assignment = { ...ASSIGNMENT, server: { ...SERVER, name: "Personal notes" } };
+  const toolResult = vi.fn(() => ({
+    content: [{ type: "text", text: JSON.stringify({ items: [{ path }], missing: [] }) }],
+  }));
+  const state = {
+    failNext: false,
+    initializations: 0,
+    serverName: "Executor",
+    sessionNotFound: 0,
+    tools: [
+      { name: "call", inputSchema: { type: "object", properties: { calls: {} } } },
+      { name: "describe", inputSchema: { type: "object" } },
+    ],
+    toolResult,
+  };
+  vi.stubGlobal("fetch", mcpFetch(state));
+  const findFirst = vi.fn(async (): Promise<typeof assignment | null> => assignment);
+  const connector = new McpConnector(
+    {
+      mcpServer: NO_SHARED_SERVERS,
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst,
+      },
+    } as never,
+    new EncryptedSecretStore("fake-key"),
+    { network: TEST_NETWORK },
+  );
+  const context = {
+    operationId: "test",
+    traceId: "test",
+    spaceId: "w1",
+    userId: "u1",
+    botId: "bot-1",
+    signal: new AbortController().signal,
+  };
+  return { path, toolResult, connector, context, findFirst, state };
+}
+
+it("resolves a scoped batch against the MCP connection that advertises it", async () => {
+  const { connector, context, path, toolResult } = scopedMcpFixture();
+  try {
+    const tools = await connector.discoverTools(context);
+    const scope = tools.find((tool) => tool.route?.toolName === "call")?.batch?.approvalScope;
+    expect(scope?.connectionId).toBe(ASSIGNMENT.serverId);
+    await expect(scope?.resolve([path], context.signal)).resolves.toBeDefined();
+    expect(toolResult).toHaveBeenCalledExactlyOnceWith("describe", { paths: [path] });
+    expect(tools.find((tool) => tool.route?.toolName === "describe")?.batch).toBeUndefined();
+  } finally {
+    await connector.close();
+  }
+});
+
+it("checks the live wrapper assignment before reading scoped actions", async () => {
+  const { connector, context, path, toolResult, findFirst } = scopedMcpFixture();
+  try {
+    const tools = await connector.discoverTools(context);
+    const scope = tools.find((tool) => tool.route?.toolName === "call")!.batch!.approvalScope!;
+    findFirst.mockResolvedValueOnce(null);
+    await expect(scope.resolve([path], context.signal)).resolves.toBeUndefined();
+    expect(toolResult).not.toHaveBeenCalled();
+  } finally {
+    await connector.close();
+  }
+});
+
+it("does not dispatch scoped actions on a replacement session", async () => {
+  const { connector, context, path, toolResult, state } = scopedMcpFixture();
+  try {
+    const tools = await connector.discoverTools(context);
+    const wrapper = tools.find((tool) => tool.route?.toolName === "call")!;
+    const lookup = tools.find((tool) => tool.route?.toolName === "describe")!;
+    const approvalBinding = await wrapper.batch!.approvalScope!.resolve([path], context.signal);
+    expect(approvalBinding).toBeDefined();
+    state.sessionNotFound = 1;
+    for await (const event of connector.execute(
+      { tool: lookup.name, route: lookup.route, args: { paths: [path] }, executionId: "replace" },
+      context,
+    )) {
+      expect(event.type).toBe("result");
+    }
+    toolResult.mockClear();
+    const result: unknown[] = [];
+    for await (const event of connector.execute(
+      {
+        tool: wrapper.name,
+        route: wrapper.route,
+        args: { calls: { path, input: {} } },
+        executionId: "dispatch",
+        approvalBinding,
+      },
+      context,
+    ))
+      result.push(event);
+    expect(result).toMatchObject([
+      { type: "error", message: "MCP connection changed before the call could run" },
+    ]);
+    expect(toolResult).not.toHaveBeenCalled();
+  } finally {
+    await connector.close();
+  }
 });
 
 it("preserves explicit MCP read-only annotations for unattended consumers", async () => {

@@ -1,6 +1,10 @@
 import type { SettingsScope } from "@rakazo/contracts";
+import { ScopedBatchAction } from "@rakazo/contracts";
+import { approvalRuleTargetKey } from "@rakazo/core";
+import * as z from "zod";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
+import { readJsonColumn } from "../database/json-column.js";
 import { lockSpaceSettings, settingsTarget } from "../spaces/space-settings.js";
 
 type Scope = { userId: string; spaceId: string };
@@ -15,12 +19,20 @@ type ConfirmationsClient = Pick<
   | "userActionAutoReviewPreference"
 >;
 
+const BatchActions = z.array(z.union([z.string(), ScopedBatchAction]));
+
 /** A stored effect's batch actions, or undefined when the effect is not a batch. */
 export function storedBatchActions(
   value: Prisma.JsonValue | null | undefined,
-): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value.filter((action): action is string => typeof action === "string");
+  id: string,
+): z.infer<typeof BatchActions> | undefined {
+  if (value == null) return undefined;
+  return readJsonColumn(
+    BatchActions,
+    value,
+    { table: "external_effects", column: "batchActions", id },
+    "reject",
+  );
 }
 
 export type ApprovalRuleInput = { effect: string; matchKind: string; matchValue: string };
@@ -50,8 +62,8 @@ export async function listApprovalRules(
 
 /**
  * Saves a rule once and drops any other effect on the same match in the same copy, so a match
- * has one rule. Matching ignores case, so the replacement does too; the lock keeps concurrent
- * saves of different effects from both landing. Runs inside the caller's transaction.
+ * has one rule. Tool paths on a connection match exactly, other targets ignore case, and the lock
+ * keeps concurrent saves of different effects from both landing. Runs in the caller's transaction.
  */
 export async function saveApprovalRule(
   tx: ConfirmationsTx,
@@ -62,7 +74,7 @@ export async function saveApprovalRule(
   await lockSpaceSettings(tx, scope);
   const account = (await confirmationsTarget(tx, scope, requested)) === "account";
   const owner = account ? `account:${scope.userId}` : `${scope.spaceId}:${scope.userId}`;
-  const value = rule.matchValue.toLowerCase();
+  const value = approvalRuleTargetKey(rule.matchKind, rule.matchValue);
   await tx.$queryRaw(Prisma.sql`
     SELECT pg_advisory_xact_lock(hashtextextended(${`approval-rule:${owner}:${rule.matchKind}:${value}`}, 0))::text AS "lock"
   `);
@@ -70,7 +82,7 @@ export async function saveApprovalRule(
   // insensitive mode: that is ILIKE, where "_" is a wildcard.
   const replaced = (rows: Array<{ id: string; effect: string; matchValue: string }>) =>
     rows
-      .filter((row) => row.matchValue.toLowerCase() === value)
+      .filter((row) => approvalRuleTargetKey(rule.matchKind, row.matchValue) === value)
       .filter((row) => row.effect !== rule.effect || row.matchValue !== rule.matchValue)
       .map((row) => row.id);
   const select = { id: true, effect: true, matchValue: true } as const;

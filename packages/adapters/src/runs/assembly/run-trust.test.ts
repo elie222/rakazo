@@ -3,6 +3,12 @@ import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { connectorTrustKeys, createRunTrustLoaders } from "./run-trust.js";
 
 describe("connectorTrustKeys", () => {
+  it("grants no trust for a batch with no known actions", () => {
+    expect(
+      connectorTrustKeys([], { connectorId: "mcp", resourceId: "server-a" }, "mcp", []),
+    ).toEqual([]);
+  });
+
   const providers = ["gmail", "slack"];
 
   it("keys a batch by the app each action reaches", () => {
@@ -33,6 +39,32 @@ describe("connectorTrustKeys", () => {
       connectorTrustKeys(undefined, { connectorId: "mcp", resourceId: "server-a" }, "mcp", []),
     ).toEqual(["resource:mcp:server-a"]);
   });
+});
+
+it("omits a corrupted batch while restoring trust from other passed effects", async () => {
+  const trust = createRunTrustLoaders(
+    {
+      prisma: {
+        externalEffect: {
+          findMany: vi.fn(async () => [
+            { id: "bad", kind: "mcp__notes__call", request: {}, batchActions: [42] },
+            { id: "good", kind: "calendar_get_event", request: {}, batchActions: null },
+          ]),
+        },
+      },
+    } as unknown as ExecutorDeps,
+    {
+      run: { userId: "user", spaceId: "space", trigger: "user" },
+      runId: "run",
+      botId: "bot",
+      taskPrompt: "",
+      ownerStartedRun: true,
+      messagingChannelRun: false,
+      sourceMessage: null,
+      connectedPlugins: [],
+    },
+  );
+  expect(await trust.loadTrustedConnectors()).toEqual(new Set(["kind:calendar"]));
 });
 
 describe("delegated authorization provenance", () => {

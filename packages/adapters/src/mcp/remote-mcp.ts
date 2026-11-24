@@ -26,6 +26,7 @@ import { cancelResponseBody } from "@rakazo/core";
 import { Agent } from "undici";
 import { sensitiveQueryParameter } from "../integrations/connector-http.js";
 import { combineSignals } from "../integrations/connector-safety.js";
+import { mcpToolFields } from "../integrations/mcp-tool-metadata.js";
 import type { ResolvedAddress, ResolveHostname } from "../network/network-address.js";
 import {
   createAddressCheckedLookup,
@@ -34,7 +35,6 @@ import {
 } from "../network/network-address.js";
 import { createCheckedProxyDispatcher } from "../network/proxy-dispatcher.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "../network/undici-fetch.js";
-import { composioMcpToolFields } from "../providers/integration/composio/composio-batch.js";
 import { credentialDigest } from "../secrets/credential-digest.js";
 import { mcpToolAppResourceUri, mcpToolVisibleToModel } from "./mcp-app.js";
 import type { McpCallAsker } from "./mcp-elicitation.js";
@@ -133,19 +133,6 @@ export interface SafeRemoteFetch {
 
 const resolveHostname: ResolveHostname = (hostname) =>
   lookup(hostname, { all: true, verbatim: true });
-
-/** The ConnectorTool fields every MCP server's tool maps the same way; name, description
- * and app routing differ by caller. */
-export function mcpToolFields(
-  tool: Tool,
-  endpoint?: string | null,
-): Pick<ConnectorTool, "inputSchema" | "readOnly" | "batch" | "outgoingDraft"> {
-  return {
-    inputSchema: tool.inputSchema as Record<string, unknown>,
-    readOnly: tool.annotations?.readOnlyHint,
-    ...composioMcpToolFields(tool.name, endpoint),
-  };
-}
 
 export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<ConnectorTool[]> {
   const list = async (client: Client, signal: AbortSignal | undefined): Promise<ConnectorTool[]> =>

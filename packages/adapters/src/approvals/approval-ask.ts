@@ -1,6 +1,7 @@
 import type { ConnectorTool, ToolBatch } from "@rakazo/adapter-kit";
 import type { AskReceipt, MessageBlock, RoutineUpdateApproval } from "@rakazo/contracts";
 import {
+  ALWAYS_ALLOW_BATCH_LABEL,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   draftBatchEntry,
   OutgoingDraft,
@@ -9,6 +10,7 @@ import {
 import {
   batchActions,
   CARD_TITLE_ESCAPED_CHARACTERS,
+  connectionToolActionLabel,
   instructionUpdateDiff,
   messagingProviderName,
   redactSecrets,
@@ -239,15 +241,23 @@ export function buildApprovalAskBlock(
     };
   }
   const fetchSite = webFetchSite(toolName, args);
-  const summary = describeApprovalAction(toolName, args, options?.batch, secrets);
+  const batch = options?.batch;
+  const scope = batch?.approvalScope;
+  const scopedActions = batch && scope ? batchActions(batch, args).actions : [];
+  const scopePreview = scope && [scope.connectionName, ...scopedActions].join("\n");
+  const summary = describeApprovalAction(toolName, args, batch, secrets);
   const detail = formatApprovalDetail(
     toolName,
     args,
     options?.reviewReason,
-    options?.batch,
+    batch,
     secrets,
+    scopePreview,
   );
-  const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
+  const safeDetail = detail
+    ? truncate(redactSecrets(detail, secrets), MAX_APPROVAL_DETAIL_LENGTH)
+    : undefined;
+  const fullScopeShown = !scopePreview || safeDetail?.startsWith(scopePreview);
   return {
     kind: "ask",
     approvalEffectId: effectId,
@@ -255,7 +265,7 @@ export function buildApprovalAskBlock(
       redactSecrets(toolName === "create_space" ? `${summary}?` : `Allow ${summary}?`, secrets),
       MAX_APPROVAL_SUMMARY_LENGTH,
     ),
-    detail: safeDetail ? truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH) : undefined,
+    detail: safeDetail,
     ...(fetchSite ? { site: fetchSite } : {}),
     status: "pending",
     actions:
@@ -264,7 +274,7 @@ export function buildApprovalAskBlock(
             { id: "allow", label: "Create space", outcome: "created" },
             { id: "deny", label: "Cancel", outcome: "cancelled" },
           ]
-        : onceOnly
+        : onceOnly || !fullScopeShown
           ? [
               { id: "allow", label: "Allow once" },
               { id: "deny", label: "Deny" },
@@ -273,7 +283,11 @@ export function buildApprovalAskBlock(
               { id: "allow", label: "Allow once" },
               {
                 id: "always",
-                label: fetchSite ? `Always allow ${fetchSite}` : "Always allow this tool",
+                label: fetchSite
+                  ? `Always allow ${fetchSite}`
+                  : scopedActions.length > 1
+                    ? ALWAYS_ALLOW_BATCH_LABEL
+                    : "Always allow this tool",
               },
               { id: "deny", label: "Deny" },
             ],
@@ -295,7 +309,11 @@ function batchActionNames(
   const batch = batchShape && batchActions(batchShape, args);
   if (!batch?.actions.length) return undefined;
   return [
-    ...batch.actions.map((action) => readableToolName(redactSecrets(action, secrets))),
+    ...batch.actions.map((action) =>
+      (batchShape?.approvalScope ? connectionToolActionLabel : readableToolName)(
+        redactSecrets(action, secrets),
+      ),
+    ),
     ...(batch.complete ? [] : ["…"]),
   ].join(", ");
 }
@@ -342,8 +360,9 @@ function formatApprovalDetail(
   reviewReason: string | undefined,
   batch: ToolBatch | undefined,
   secrets: string[],
+  scopePreview?: string,
 ): string | undefined {
-  const lines: string[] = [];
+  const lines: string[] = scopePreview ? [scopePreview] : [];
   if (reviewReason?.trim()) {
     lines.push(reviewReason.trim().replace(/\u2014|\u2013/g, "-"));
   }
@@ -359,7 +378,8 @@ function formatApprovalDetail(
       secrets,
       SITE_SENDING_TOOLS.has(toolName) ? ["url", "method", "body"] : undefined,
     );
-  const items = batch ? args[batch.items] : undefined;
+  const value = batch ? args[batch.items] : undefined;
+  const items = Array.isArray(value) ? value : batch?.acceptsSingle ? [value] : undefined;
   if (batch && Array.isArray(items)) {
     // An entry repeated back to back with the same action and arguments is shown once, with how
     // many times it runs; entries are compared as sent, since two raw names can read the same.
@@ -381,7 +401,11 @@ function formatApprovalDetail(
       else
         entries.push({
           key,
-          name: raw ? readableToolName(redactSecrets(raw, secrets)) : "…",
+          name: raw
+            ? batch.approvalScope
+              ? connectionToolActionLabel(redactSecrets(raw, secrets))
+              : readableToolName(redactSecrets(raw, secrets))
+            : "…",
           args: entryArgs,
           runs: 1,
         });
@@ -393,6 +417,7 @@ function formatApprovalDetail(
     const later: string[] = [];
     for (const { name, args: entryArgs, runs } of entries) {
       const { first, last } = shown(entryArgs);
+      if (scopePreview && runs === 1 && first.length === 0 && last.length === 0) continue;
       lines.push(...(single ? [] : [runs > 1 ? `${name} ×${runs}` : name]), ...first);
       later.push(...last.map((line) => (single ? line : `${name} ${line}`)));
     }

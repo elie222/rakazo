@@ -7,6 +7,7 @@ import {
   ActionApprovalRuleSchema,
   ActionAutoReviewSettingsSchema,
   ApprovalModeSchema,
+  parseConnectionToolRuleValue,
 } from "./approvals.js";
 import {
   CATALOG_SEARCH_QUERY_MAX_LENGTH,
@@ -293,11 +294,17 @@ export const integrationsRpc = {
     list: oc.input(settingsScopeInput.optional()).output(z.array(ActionApprovalRuleSchema)),
     set: oc
       .input(
-        settingsScopeInput.extend({
-          effect: z.enum(["always_allow", "require_approval", "deny"]),
-          matchKind: z.enum(["tool", "connector", "site"]),
-          matchValue: z.string().trim().min(1),
-        }),
+        settingsScopeInput
+          .extend({
+            effect: z.enum(["always_allow", "require_approval", "deny"]),
+            matchKind: z.enum(["tool", "connector", "site", "connection_tool"]),
+            matchValue: z.string().trim().min(1),
+          })
+          .refine(
+            ({ matchKind, matchValue }) =>
+              matchKind !== "connection_tool" || Boolean(parseConnectionToolRuleValue(matchValue)),
+            { path: ["matchValue"], error: "Invalid connection tool" },
+          ),
       )
       .output(ActionApprovalRuleSchema),
     remove: oc

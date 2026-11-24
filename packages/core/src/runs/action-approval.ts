@@ -1,5 +1,5 @@
 import type { ActionApprovalRule as StoredActionApprovalRule } from "@rakazo/contracts";
-import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
+import { BUILTIN_TOOL_NAMES, parseConnectionToolRuleValue } from "@rakazo/contracts";
 
 export { isSecretAskBlock } from "../asks/ask-kind.js";
 
@@ -570,6 +570,8 @@ function ruleSpecificity(rule: ActionApprovalRule): number {
   switch (rule.matchKind) {
     case "site":
       return 4;
+    case "connection_tool":
+      return 4;
     case "tool":
       return 3;
     case "connector":
@@ -613,15 +615,24 @@ export function resolveActionApprovalDetail(input: {
   connectorKind?: string;
   readOnly?: boolean;
   site?: string;
+  connectionId?: string;
   rules: ActionApprovalRule[];
 }): ActionApprovalResolved {
   const connectorKind = input.connectorKind ?? connectorKindFromToolName(input.toolName);
-  const matchingRules = input.rules.filter(
-    (rule) =>
+  const matchingRules = input.rules.filter((rule) => {
+    if (rule.matchKind === "connection_tool") {
+      const target = parseConnectionToolRuleValue(rule.matchValue);
+      return (
+        target !== undefined && target[0] === input.connectionId && target[1] === input.toolName
+      );
+    }
+    if (input.connectionId && rule.effect === "always_allow") return false;
+    return (
       ruleMatches(rule, input.toolName, connectorKind, input.readOnly, input.site) ||
       (rule.matchKind === "tool" &&
-        input.toolAliases?.some((alias) => alias.toLowerCase() === rule.matchValue.toLowerCase())),
-  );
+        input.toolAliases?.some((alias) => alias.toLowerCase() === rule.matchValue.toLowerCase()))
+    );
+  });
   if (matchingRules.length === 0) {
     return { decision: "allow", source: "default", matchingRules, decisiveRules: [] };
   }
@@ -665,12 +676,12 @@ export function resolveActionApproval(input: {
  * none: nothing can show what it does, so the call must ask.
  */
 export function batchActions(
-  shape: { items: string; action: string },
+  shape: { items: string; action: string; acceptsSingle?: boolean; approvalScope?: unknown },
   args: unknown,
 ): { actions: string[]; complete: boolean } {
-  const items =
+  const value =
     args && typeof args === "object" ? (args as Record<string, unknown>)[shape.items] : undefined;
-  if (!Array.isArray(items)) return { actions: [], complete: false };
+  const items = Array.isArray(value) ? value : shape.acceptsSingle ? [value] : [];
   const actions = new Set<string>();
   let complete = items.length > 0;
   for (const item of items) {
@@ -678,7 +689,8 @@ export function batchActions(
       item && typeof item === "object"
         ? (item as Record<string, unknown>)[shape.action]
         : undefined;
-    if (typeof action === "string" && action.trim()) actions.add(action.trim());
+    if (typeof action === "string" && action.trim())
+      actions.add(shape.approvalScope ? action : action.trim());
     else complete = false;
   }
   return { actions: [...actions], complete };
@@ -687,7 +699,7 @@ export function batchActions(
 /**
  * Rules for every action one call runs. The strictest action decides, so one allowed action never
  * carries the rest of a batch, and the batch is allowed by rule only when each action is. `wrapper`
- * can only block: a block on the batch tool itself or its connector still stops every batch.
+ * can block every batch, and may also preserve a rule that requires the user's approval.
  */
 export function resolveActionApprovalForTools(input: {
   tools: ReadonlyArray<{
@@ -695,8 +707,14 @@ export function resolveActionApprovalForTools(input: {
     aliases?: readonly string[];
     connectorKind?: string;
     readOnly?: boolean;
+    connectionId?: string;
   }>;
-  wrapper?: { name: string; connectorKind?: string };
+  wrapper?: {
+    name: string;
+    aliases?: readonly string[];
+    connectorKind?: string;
+    forceAsk?: boolean;
+  };
   site?: string;
   rules: ActionApprovalRule[];
 }): ActionApprovalResolved {
@@ -705,18 +723,21 @@ export function resolveActionApprovalForTools(input: {
     aliases?: readonly string[];
     connectorKind?: string;
     readOnly?: boolean;
+    connectionId?: string;
   }) =>
     resolveActionApprovalDetail({
       toolName: tool.name,
       toolAliases: tool.aliases,
       connectorKind: tool.connectorKind,
       readOnly: tool.readOnly,
+      connectionId: tool.connectionId,
       site: input.site,
       rules: input.rules,
     });
   const parts = input.tools.map(resolve);
   const wrapper = input.wrapper ? resolve(input.wrapper) : undefined;
-  if (wrapper?.decision === "deny") parts.push(wrapper);
+  if (wrapper?.decision === "deny" || (wrapper?.decision === "ask" && input.wrapper?.forceAsk))
+    parts.push(wrapper);
   const matchingRules = [...new Set(parts.flatMap((part) => part.matchingRules))];
   const strictest =
     parts.find((part) => part.decision === "deny") ?? parts.find((part) => part.decision === "ask");
@@ -872,7 +893,50 @@ export function approvalRuleEffectChoices(
 
 /** A site reads as itself; a tool, app or older category by its name. */
 export function approvalRuleLabel(rule: ActionApprovalRule): string {
+  if (rule.matchKind === "connection_tool") {
+    const target = parseConnectionToolRuleValue(rule.matchValue);
+    if (target) return `${connectionToolActionLabel(target[1])} · ${target[2]}`;
+  }
   return rule.matchKind === "site" ? rule.matchValue : humanizeToolName(rule.matchValue);
+}
+
+export function connectionToolActionLabel(path: string): string {
+  return humanizeToolName(
+    path
+      .replace(/^tools(?=[.[])/, "")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/[.[\]"'-]+/g, " "),
+  );
+}
+
+export function approvalRulePath(rule: ActionApprovalRule): string | undefined {
+  return rule.matchKind === "connection_tool"
+    ? parseConnectionToolRuleValue(rule.matchValue)?.[1]
+    : undefined;
+}
+
+/** The target within one match kind. Connection paths keep their case and ignore the display name. */
+export function approvalRuleTargetKey(matchKind: string, matchValue: string): string {
+  if (matchKind === "connection_tool") {
+    const target = parseConnectionToolRuleValue(matchValue);
+    if (target) return JSON.stringify([target[0], target[1]]);
+  }
+  return matchValue.toLowerCase();
+}
+
+export function withSavedApprovalRule(
+  current: StoredActionApprovalRule[],
+  saved: StoredActionApprovalRule,
+): StoredActionApprovalRule[] {
+  const target = approvalRuleTargetKey(saved.matchKind, saved.matchValue);
+  return [
+    ...current.filter(
+      (rule) =>
+        rule.matchKind !== saved.matchKind ||
+        approvalRuleTargetKey(rule.matchKind, rule.matchValue) !== target,
+    ),
+    saved,
+  ];
 }
 
 /** A built-in tool a person can add a rule for. */

@@ -1,6 +1,7 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import {
   BOT_SECRET_VALUE_MAX_LENGTH,
+  connectionToolRuleValue,
   encodeLoginSecret,
   STEP_SCREENSHOT_MIME_TYPES,
 } from "@rakazo/contracts";
@@ -2884,6 +2885,17 @@ describe("answerRunInput approvals", () => {
     },
   );
 
+  const scopedAction = {
+    connectionId: "connection-1",
+    path: "tools.demo.renameNote",
+    connectionName: "Notes",
+  };
+  const scopedApproval = connectionToolRuleValue(
+    scopedAction.connectionId,
+    scopedAction.path,
+    scopedAction.connectionName,
+  );
+
   it.each([
     [
       "a batch",
@@ -2891,6 +2903,7 @@ describe("answerRunInput approvals", () => {
       ["GMAIL_ARCHIVE_THREAD", "GMAIL_SEND_EMAIL"],
     ],
     ["a batch with an entry naming no action", [], []],
+    ["a connection-scoped batch", [scopedAction], [scopedApproval]],
     [
       "a batch from before its actions were recorded",
       null,
@@ -2975,8 +2988,16 @@ describe("answerRunInput approvals", () => {
       data: { status: "approved" },
     });
     expect(
-      tx.userActionApprovalRule.upsert.mock.calls.map(([call]) => call.create.matchValue),
-    ).toEqual(saved);
+      tx.userActionApprovalRule.upsert.mock.calls.map(([call]) => ({
+        matchKind: call.create.matchKind,
+        matchValue: call.create.matchValue,
+      })),
+    ).toEqual(
+      saved.map((matchValue) => ({
+        matchKind: matchValue === scopedApproval ? "connection_tool" : "tool",
+        matchValue,
+      })),
+    );
   });
 
   it("does not let another workspace member create an always-allow rule for the run owner", async () => {

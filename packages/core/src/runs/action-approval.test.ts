@@ -1,3 +1,4 @@
+import { connectionToolRuleValue } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import type { ActionApprovalRule, ApprovalMode } from "./action-approval.js";
 import {
@@ -33,6 +34,7 @@ import {
   toolResultTaintsRun,
   unattendedApprovalExpireAfterMs,
   watchToolRefusal,
+  withSavedApprovalRule,
 } from "./action-approval.js";
 
 describe("toolRequiresApproval", () => {
@@ -1234,6 +1236,20 @@ describe("receiptItems", () => {
       { name: "Gesamtpaket Socken", amount: "$9.00" },
     ]);
   });
+});
+
+it("replaces a renamed connection's rule while keeping a case-distinct path", () => {
+  const rule = (id: string, path: string, name: string) => ({
+    id,
+    matchKind: "connection_tool" as const,
+    matchValue: connectionToolRuleValue("notes-1", path, name),
+    effect: "always_allow" as const,
+    createdAt: "2026-01-01T00:00:00Z",
+  });
+  const old = rule("old", "tools.notes.renameNote", "My notes");
+  const otherCase = rule("other", "tools.notes.RenameNote", "My notes");
+  const saved = rule("saved", "tools.notes.renameNote", "Personal notes");
+  expect(withSavedApprovalRule([old, otherCase], saved)).toEqual([otherCase, saved]);
 });
 
 describe("approvalRuleChoices", () => {

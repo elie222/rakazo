@@ -12,6 +12,7 @@ import {
   resolveAskChoice,
   selectedAskActionLabel,
 } from "@rakazo/core";
+import { alwaysAllowActionLabel } from "@rakazo/i18n/approval-action";
 import { routineApprovalActionLabel } from "@rakazo/i18n/routine-approval";
 import {
   Button,
@@ -125,7 +126,7 @@ function approvalActionLabel(
   // The server's label when approving makes the change itself, as replacing another bot's instructions.
   if (id === "allow" && fallback === "Apply now") return t`Apply now`;
   if (id === "allow") return t`Allow once`;
-  if (id === "always") return site ? t`Always allow ${site}` : t`Always allow this tool`;
+  if (id === "always") return alwaysAllowActionLabel(fallback, site);
   if (id === "deny") return t`Deny`;
   return fallback;
 }

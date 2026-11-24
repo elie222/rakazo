@@ -6,8 +6,8 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { MEMORY_REVISION_CONFLICT_ERROR, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
-import type { ModelRoleSettings, SpendingLimit } from "@rakazo/contracts";
-import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import type { ModelRoleSettings, ScopedBatchAction, SpendingLimit } from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH, connectionToolRuleValue } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
@@ -19,6 +19,7 @@ import { fakeSpendingPrisma } from "../../billing/fake-spending.js";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
 import type { HostComputerRequest } from "../../computers/host/host-computer-protocol.js";
 import type { UserDeviceGateway } from "../../computers/host/user-device-protocol.js";
+import { executorApprovalFields } from "../../providers/integration/executor/executor-approval.js";
 import { FakeWebProvider } from "../../providers/web/fake/fake-web.js";
 import { routineComputerFingerprint } from "../../routines/routine-owner-computer.js";
 import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
@@ -72,7 +73,7 @@ type Effect = {
   idempotencyKey: string;
   status: string;
   request: unknown;
-  batchActions?: string[];
+  batchActions?: (string | ScopedBatchAction)[];
   result?: unknown;
   reviewDecision?: string;
   runId?: string;
@@ -1614,6 +1615,131 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(run.pauseRunForInput).toHaveBeenCalledOnce();
       expect(isApprovalPausedResult(run.results[0])).toBe(true);
     }
+  });
+});
+
+describe("connection-scoped MCP batches", () => {
+  const outer = "mcp__demo__call";
+  const rename = "tools.demo.renameNote";
+  const archive = "tools.demo.archiveNote";
+  const connection = { id: "demo-connection", name: "Demo Personal" };
+  const entry = (path: string) => ({ path, input: { id: "fixture-1" } });
+  const scopedRule = (path: string, effect: ActionApprovalRule["effect"] = "always_allow") =>
+    ({
+      effect,
+      matchKind: "connection_tool",
+      matchValue: connectionToolRuleValue(connection.id, path, connection.name),
+    }) satisfies ActionApprovalRule;
+  const scopedFixture = (
+    options: Parameters<typeof fixture>[0] = {},
+    source = connection,
+    catalogPaths = [rename, archive],
+  ) => {
+    const { batch } = executorApprovalFields(
+      "Executor",
+      { name: "call", inputSchema: { properties: { calls: {} } } },
+      source,
+      async (_name, { paths }) => ({
+        binding: source,
+        result: {
+          structuredContent: {
+            items: catalogPaths
+              .map((path) => ({ path }))
+              .filter(({ path }) => Array.isArray(paths) && paths.includes(path)),
+            missing: [],
+          },
+        },
+      }),
+    );
+    return fixture({
+      name: outer,
+      route: { connectorId: "mcp", resourceId: source.id, resourceRevision: 1, toolName: "call" },
+      batch,
+      ...options,
+    });
+  };
+
+  it("prepares the exact scoped rule and shows its connection on the approval card", async () => {
+    const f = scopedFixture();
+    f.setCalls([{ args: { calls: entry(rename) }, executionId: "call-1" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.effects[0]?.batchActions).toEqual([
+      { connectionId: connection.id, path: rename, connectionName: connection.name },
+    ]);
+    expect(askDetail(f)).toContain(connection.name);
+  });
+
+  it("runs an allowed action from either input form", async () => {
+    const f = scopedFixture({ rules: [scopedRule(rename)] });
+    f.setCalls([
+      { args: { calls: entry(rename) }, executionId: "single" },
+      { args: { calls: [entry(rename)] }, executionId: "array" },
+    ]);
+    await f.run();
+    expect(f.execute).toHaveBeenCalledTimes(2);
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+  });
+
+  it("asks for a batch with an action that has no scoped allow", async () => {
+    const f = scopedFixture({
+      rules: [scopedRule(rename), { effect: "always_allow", matchKind: "tool", matchValue: outer }],
+    });
+    f.setCalls([{ args: { calls: [entry(rename), entry(archive)] }, executionId: "mixed" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("runs a mixed batch when every action has a scoped allow", async () => {
+    const f = scopedFixture({ rules: [scopedRule(rename), scopedRule(archive)] });
+    f.setCalls([{ args: { calls: [entry(rename), entry(archive)] }, executionId: "mixed" }]);
+    await f.run();
+    expect(f.execute).toHaveBeenCalledOnce();
+  });
+
+  it("preserves an outer Ask rule in Auto mode", async () => {
+    reviewMock.mockClear();
+    const f = scopedFixture({
+      autoReview: true,
+      rules: [
+        scopedRule(rename),
+        { effect: "require_approval", matchKind: "tool", matchValue: outer },
+      ],
+    });
+    f.setCalls([{ args: { calls: entry(rename) }, executionId: "ask" }]);
+    await f.run();
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    scopedRule(archive, "deny"),
+    { effect: "deny", matchKind: "tool", matchValue: outer } as const,
+  ])("honors a $matchKind block in Never ask", async (rule) => {
+    const f = scopedFixture({ skipApprovals: true, rules: [scopedRule(rename), rule] });
+    f.setCalls([{ args: { calls: [entry(rename), entry(archive)] }, executionId: "blocked" }]);
+    await f.run();
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+    expect(f.execute).not.toHaveBeenCalled();
+  });
+
+  it("asks about the same action on another connection", async () => {
+    const f = scopedFixture({ rules: [scopedRule(rename)] }, { ...connection, id: "demo-other" });
+    f.setCalls([{ args: { calls: entry(rename) }, executionId: "other" }]);
+    await f.run();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+  });
+
+  it("refuses an unresolved action before dispatch", async () => {
+    const f = scopedFixture({ skipApprovals: true }, connection, [rename]);
+    f.setCalls([{ args: { calls: [entry(rename), entry(archive)] }, executionId: "unresolved" }]);
+    await f.run();
+    expect(f.results[0]).toMatchObject({
+      error: "Could not verify every action on this connection.",
+    });
+    expect(f.execute).not.toHaveBeenCalled();
   });
 });
 
