@@ -2511,6 +2511,16 @@ it("attaches files dropped anywhere on the chat column", () => {
   expect(overlay()).toBeNull();
 });
 
+it("lets the composer's gaps catch drops only during file drags", () => {
+  const { transcript } = renderInChatColumn({});
+  const fieldset = container!.querySelector("fieldset")!;
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+  dispatchDrag(transcript, "dragenter", fileDrag);
+  expect(fieldset.classList.contains("pointer-events-auto")).toBe(true);
+  dispatchDrag(transcript, "drop", fileDrag);
+  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+});
+
 it("ignores files dragged from within the page", () => {
   const onAttachmentPick = vi.fn(() => true);
   const { transcript, overlay } = renderInChatColumn({ onAttachmentPick });

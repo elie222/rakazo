@@ -404,7 +404,7 @@ const ComposerBody = memo(function Composer({
   const replyAnnouncementKind = useRef<"reply" | "cancelled" | null>(null);
   const prevReplyTarget = useRef<ThreadMessage | null>(null);
   const [fieldset, setFieldset] = useState<HTMLFieldSetElement | null>(null);
-  const fileDropOverlay = useComposerFileDrop({
+  const { fileDragActive, fileDropOverlay } = useComposerFileDrop({
     docked,
     composer: fieldset,
     disabled,
@@ -633,7 +633,7 @@ const ComposerBody = memo(function Composer({
     <fieldset
       ref={setFieldset}
       aria-label={t`Message composer`}
-      className={`pointer-events-none relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6"} [&>*]:pointer-events-auto`}
+      className={`relative z-30 m-0 min-w-0 border-0 ${docked ? "p-0" : "px-3 pb-4 pt-0 md:px-[max(1.5rem,calc((100%_-_60rem)/2))] md:pb-6"} [&>*]:pointer-events-auto ${fileDragActive ? "pointer-events-auto" : "pointer-events-none"}`}
     >
       {fileDropOverlay}
       <div role="status" data-testid="composer-announcement" className="sr-only">
