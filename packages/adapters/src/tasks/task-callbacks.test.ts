@@ -10,21 +10,27 @@ import {
 
 const now = new Date("2026-11-25T12:00:00Z");
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
+const url = "https://hooks.example.test/rakazo";
 
-function setup(runStatus: string, answer = 204) {
-  const updateMany = vi.fn(async () => ({ count: 1 }));
+function setup(
+  runStatus: string,
+  { answer = 204, delivered = {} as { runId?: string; status?: string } } = {},
+) {
+  const update = vi.fn(async () => ({}));
   const prisma = {
     taskCallback: {
       findUnique: vi.fn(async () => ({
         id: "callback-1",
         taskId: "task-1",
-        url: "https://hooks.example.test/rakazo",
+        url,
         userId: "user-1",
         spaceId: "space-1",
+        deliveredRunId: delivered.runId ?? null,
+        deliveredStatus: delivered.status ?? null,
         deliveredAt: null,
         createdAt: now,
       })),
-      updateMany,
+      update,
     },
     task: {
       findFirst: vi.fn(async () => ({
@@ -35,6 +41,7 @@ function setup(runStatus: string, answer = 204) {
         runs: [{ id: "run-1", status: runStatus, updatedAt: now }],
       })),
     },
+    run: { findFirst: vi.fn(async () => ({ id: "run-1", createdAt: now })) },
     message: {
       findMany: vi.fn(async () => [{ id: "m1", blocks: [{ kind: "text", text: "Done" }] }]),
     },
@@ -56,7 +63,7 @@ function setup(runStatus: string, answer = 204) {
       },
       "task-1",
     );
-  return { deliver, enqueue, requests, updateMany };
+  return { deliver, enqueue, requests, update };
 }
 
 describe("task callbacks", () => {
@@ -73,29 +80,40 @@ describe("task callbacks", () => {
     );
   });
 
-  it("posts a settled task once, signed with the task's own secret", async () => {
-    const { deliver, requests, updateMany } = setup("completed");
+  it("posts a settled task signed with the person's secret for that address", async () => {
+    const { deliver, requests, update } = setup("completed");
     await deliver();
     const [request] = requests;
     const body = await request!.text();
     expect(JSON.parse(body)).toMatchObject({
       type: "task.settled",
+      id: "task-1:run-1:completed",
       task: { id: "task-1", status: "completed", output: "Done" },
     });
-    const secret = taskCallbackSecret("root-key", "callback-1");
+    expect(request!.headers.get("x-rakazo-delivery")).toBe("task-1:run-1:completed");
+    const secret = taskCallbackSecret("root-key", "user-1", url);
     const timestamp = Math.floor(now.getTime() / 1000);
     const expected = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
     expect(request!.headers.get("x-rakazo-signature")).toBe(`t=${timestamp},v1=${expected}`);
-    expect(updateMany).toHaveBeenCalledWith({
-      where: { id: "callback-1", deliveredAt: null },
-      data: { deliveredAt: now },
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "callback-1" },
+      data: { deliveredAt: now, deliveredRunId: "run-1", deliveredStatus: "completed" },
     });
   });
 
+  it("sends each settled state once, and a later one again", async () => {
+    const same = setup("completed", { delivered: { runId: "run-1", status: "completed" } });
+    await same.deliver();
+    expect(same.requests).toEqual([]);
+    const answered = setup("completed", { delivered: { runId: "run-1", status: "needs_input" } });
+    await answered.deliver();
+    expect(answered.requests).toHaveLength(1);
+  });
+
   it("leaves a refused delivery for the queue to retry", async () => {
-    const { deliver, updateMany } = setup("failed", 500);
+    const { deliver, update } = setup("failed", { answer: 500 });
     await expect(deliver()).rejects.toThrow("Task callback answered 500");
-    expect(updateMany).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("signs with a stable, verifiable format", () => {

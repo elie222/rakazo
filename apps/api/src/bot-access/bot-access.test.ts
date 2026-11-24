@@ -19,7 +19,12 @@ const BOTS: Record<string, Bot[]> = {
 };
 const MEMBER_OF = ["space-mine", "space-team"];
 
-function setup(verified: VerifiedApiKey = { ok: true, userId: "user-1", keyId: "key-1" }) {
+function setup(
+  verified: VerifiedApiKey = { ok: true, userId: "user-1", keyId: "key-1" },
+  // The task the send names: in a shared Space, another member's run can hold the chat.
+  sentTaskId = "task-sent",
+  messageRun: { id: string; userId: string; taskId: string } | null = null,
+) {
   const listedFor: string[] = [];
   const sentAs: Array<{ actor: Actor; botId: string }> = [];
   const router = os.$context<{ actor: Actor }>().router({
@@ -33,17 +38,33 @@ function setup(verified: VerifiedApiKey = { ok: true, userId: "user-1", keyId: "
       head: os.handler(() => ({ threadId: "thread-1", cursor: 7 })),
       send: os.$context<{ actor: Actor }>().handler(({ context, input }) => {
         sentAs.push({ actor: context.actor, botId: (input as { botId: string }).botId });
-        return { taskId: "task-sent", runId: "run-1", seq: 8 };
+        return { taskId: sentTaskId, runId: "run-1", seq: 8 };
       }),
     },
   });
   const tasks = [
     { id: "task-1", userId: "user-1", spaceId: "space-mine", botId: "bot-a" },
     { id: "task-sent", userId: "user-1", spaceId: "space-team", botId: "bot-c" },
+    { id: "task-next", userId: "user-1", spaceId: "space-mine", botId: "bot-a" },
+    { id: "task-peer", userId: "user-2", spaceId: "space-team", botId: "bot-c" },
+    { id: "task-own-queued", userId: "user-1", spaceId: "space-team", botId: "bot-c" },
     { id: "task-theirs", userId: "user-2", spaceId: "space-mine", botId: "bot-a" },
   ];
   const at = new Date("2026-11-25T00:00:00Z");
+  const callbacks = new Map<string, { url: string }>([
+    ["task-1", { url: "https://hooks.example.test/a" }],
+  ]);
+  const enqueueIn = vi.fn(async () => undefined);
   const prisma = {
+    $transaction: async (work: (tx: unknown) => unknown) => work(prisma),
+    taskCallback: {
+      findUnique: vi.fn(
+        async ({ where }: { where: { taskId: string } }) => callbacks.get(where.taskId) ?? null,
+      ),
+      upsert: vi.fn(async ({ create }: { create: { taskId: string; url: string } }) => {
+        callbacks.set(create.taskId, { url: create.url });
+      }),
+    },
     user: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
         where.id === "user-1" ? { email: "user@rakazo.test", deactivatedAt: null } : null,
@@ -65,17 +86,27 @@ function setup(verified: VerifiedApiKey = { ok: true, userId: "user-1", keyId: "
         return task && { ...task, createdAt: at, updatedAt: at, runs: [] };
       }),
     },
-    message: { findMany: vi.fn(async () => []) },
+    message: {
+      findMany: vi.fn(async () => []),
+      findFirst: vi.fn(async () => (messageRun ? { runId: messageRun.id } : { runId: null })),
+    },
+    run: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string; userId: string } }) =>
+        messageRun && messageRun.id === where.id && messageRun.userId === where.userId
+          ? { taskId: messageRun.taskId }
+          : null,
+      ),
+    },
   } as unknown as PrismaClient;
   const access = createBotAccess({
     prisma,
     auth: { verifyApiKey: vi.fn(async () => verified) },
     router: router as unknown as BotAccessDeps["router"],
-    jobs: { enqueueIn: vi.fn(async () => undefined) },
+    jobs: { enqueueIn },
     taskCallbackRootKey: "root",
   });
   const caller = { userId: "user-1", email: "user@rakazo.test", keyId: "key-1" };
-  return { access, caller, listedFor, sentAs, prisma };
+  return { access, caller, listedFor, sentAs, prisma, callbacks, enqueueIn };
 }
 
 const withKey = (value = "rkz_key") => new Headers({ authorization: `Bearer ${value}` });
@@ -140,6 +171,21 @@ describe("bot access", () => {
     expect(task).toMatchObject({ id: "task-sent", status: "working", output: "" });
   });
 
+  it("reports the person's own task when another member's run holds the chat", async () => {
+    const queued = setup(undefined, "task-peer", {
+      id: "run-own",
+      userId: "user-1",
+      taskId: "task-own-queued",
+    });
+    await expect(
+      queued.access.createTask(queued.caller, { bot: "bot-c", text: "hi" }),
+    ).resolves.toMatchObject({ task: { id: "task-own-queued" } });
+    const absorbed = setup(undefined, "task-peer");
+    await expect(
+      absorbed.access.createTask(absorbed.caller, { bot: "bot-c", text: "hi" }),
+    ).rejects.toMatchObject({ kind: "CONFLICT" });
+  });
+
   it("finds a bot by a name only it has, and refuses a shared name", async () => {
     const { access, caller } = setup();
     await expect(access.resolveBot(caller, "scout")).resolves.toMatchObject({ id: "bot-a" });
@@ -153,6 +199,17 @@ describe("bot access", () => {
         kind: "NOT_FOUND",
       });
     expect(sentAs).toEqual([]);
+  });
+
+  it("reports a follow-up's new task to the address the first one used", async () => {
+    const { access, caller, callbacks, enqueueIn } = setup(undefined, "task-next");
+    const { task } = await access.sendToTask(caller, "task-1", "Keep going");
+    expect(task.id).toBe("task-next");
+    expect(callbacks.get("task-next")).toEqual({ url: "https://hooks.example.test/a" });
+    expect(enqueueIn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ name: "task.callback", payload: { taskId: "task-next" } }),
+    );
   });
 
   it("reads only the person's own tasks", async () => {

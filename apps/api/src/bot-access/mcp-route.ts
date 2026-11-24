@@ -1,3 +1,5 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { PublicTask } from "@rakazo/contracts";
 import type { Hono } from "hono";
 import { requestBodyLimit } from "../http/request-body-limit.js";
@@ -30,8 +32,7 @@ async function answer(run: () => Promise<Record<string, unknown>>): Promise<Tool
 }
 
 /** Builds a server for one request: the protocol keeps no session, so any instance answers. */
-async function mcpServer(access: BotAccess, caller: KeyCaller, signal: AbortSignal) {
-  const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+function mcpServer(access: BotAccess, caller: KeyCaller, signal: AbortSignal) {
   const server = new McpServer({ name: "rakazo", version: "1.0.0" });
   const wait = (
     started: Parameters<BotAccess["waitForTask"]>[1],
@@ -89,10 +90,7 @@ export function mountMcpRoute(app: Hono, access: BotAccess) {
         405,
         { allow: "POST" },
       );
-    const { WebStandardStreamableHTTPServerTransport } = await import(
-      "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
-    );
-    const server = await mcpServer(access, caller, c.req.raw.signal);
+    const server = mcpServer(access, caller, c.req.raw.signal);
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

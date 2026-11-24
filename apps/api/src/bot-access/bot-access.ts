@@ -195,71 +195,95 @@ export function createBotAccess(deps: BotAccessDeps) {
     return task;
   }
 
+  /**
+   * The person's own task for a message they sent. A send names the run that holds the chat,
+   * which in a shared Space can be another member's; the message itself names its own run.
+   */
+  async function ownTaskId(
+    actor: Actor,
+    sent: { threadId: string; clientNonce: string; taskId: string },
+  ): Promise<string> {
+    const own = await runAsTenant(actor, async () => {
+      const message = await prisma.message.findFirst({
+        where: { threadId: sent.threadId, clientNonce: sent.clientNonce },
+        select: { runId: true },
+      });
+      const run = message?.runId
+        ? await prisma.run.findFirst({
+            where: { id: message.runId, userId: actor.userId },
+            select: { taskId: true },
+          })
+        : null;
+      if (run) return run.taskId;
+      const task = await prisma.task.findFirst({
+        where: { id: sent.taskId, userId: actor.userId },
+        select: { id: true },
+      });
+      return task?.id ?? null;
+    });
+    if (!own)
+      throw new ClientError("CONFLICT", "The bot is busy with someone else's request; try again");
+    return own;
+  }
+
   /** Sends one message to a bot's chat, as the person would from the app. */
   async function send(caller: KeyCaller, actor: Actor, botId: string, text: string) {
     const rpc = client(caller, actor);
-    const { cursor } = await rpc.threads.head({ botId });
-    const sent = await rpc.threads.send({ botId, text, clientNonce: `api:${randomUUID()}` });
-    return { taskId: sent.taskId, cursor };
+    // Read before sending, so a follower sees every event the turn writes.
+    const { threadId, cursor } = await rpc.threads.head({ botId });
+    const clientNonce = `api:${randomUUID()}`;
+    const sent = await rpc.threads.send({ botId, text, clientNonce });
+    return {
+      taskId: await ownTaskId(actor, { threadId, clientNonce, taskId: sent.taskId }),
+      cursor,
+    };
   }
 
-  /**
-   * Starts a task. With a callback address, the callback row and its backup job commit together,
-   * so the job reports the task even if this process stops right after.
-   */
+  /** Reports a task to `url`; the job commits with the row, so a stopped process loses nothing. */
+  async function watchTask(actor: Actor, taskId: string, url: string) {
+    await runAsTenant(actor, () =>
+      prisma.$transaction(async (tx) => {
+        await tx.taskCallback.upsert({
+          where: { taskId },
+          create: { taskId, url, spaceId: actor.spaceId, userId: actor.userId },
+          update: { url },
+        });
+        await deps.jobs.enqueueIn(
+          tx,
+          taskCallbackJob(taskId, new Date(Date.now() + TASK_CALLBACK_RECHECK_MS)),
+        );
+      }),
+    );
+  }
+
   async function createTask(
     caller: KeyCaller,
     input: { bot: string; text: string; callbackUrl?: string },
   ) {
     const bot = await resolveBot(caller, input.bot);
     const { taskId, cursor } = await send(caller, bot.actor, bot.id, input.text);
-    let callbackSecret: string | undefined;
-    if (input.callbackUrl) {
-      const url = input.callbackUrl;
-      const callback = await runAsTenant(bot.actor, () =>
-        prisma.$transaction(async (tx) => {
-          // A message absorbed into a task already running reports that task once.
-          const saved = await tx.taskCallback.upsert({
-            where: { taskId },
-            create: { taskId, url, spaceId: bot.actor.spaceId, userId: caller.userId },
-            update: {},
-            select: { id: true },
-          });
-          await deps.jobs.enqueueIn(
-            tx,
-            taskCallbackJob(taskId, new Date(Date.now() + TASK_CALLBACK_RECHECK_MS)),
-          );
-          return saved;
-        }),
-      );
-      callbackSecret = taskCallbackSecret(deps.taskCallbackRootKey, callback.id);
-    }
+    if (input.callbackUrl) await watchTask(bot.actor, taskId, input.callbackUrl);
     return {
       task: await readTask(bot.actor, taskId),
       actor: bot.actor,
       cursor,
-      callbackSecret,
+      callbackSecret: input.callbackUrl
+        ? taskCallbackSecret(deps.taskCallbackRootKey, caller.userId, input.callbackUrl)
+        : undefined,
     };
   }
 
-  /** A follow-up in the task's chat; it answers a question the task is waiting on. */
+  /**
+   * A follow-up in the task's chat; it answers a question the task is waiting on. Once the task
+   * has ended, the follow-up starts a new one, which is returned and reported to the same address.
+   */
   async function sendToTask(caller: KeyCaller, taskId: string, text: string) {
     const { actor, botId } = await taskActor(caller, taskId);
     const sent = await send(caller, actor, botId, text);
-    // The callback reports the task's next settled state too.
-    await runAsTenant(actor, () =>
-      prisma.$transaction(async (tx) => {
-        const rearmed = await tx.taskCallback.updateMany({
-          where: { taskId: sent.taskId, deliveredAt: { not: null } },
-          data: { deliveredAt: null },
-        });
-        if (rearmed.count)
-          await deps.jobs.enqueueIn(
-            tx,
-            taskCallbackJob(sent.taskId, new Date(Date.now() + TASK_CALLBACK_RECHECK_MS)),
-          );
-      }),
+    const callback = await runAsTenant(actor, () =>
+      prisma.taskCallback.findUnique({ where: { taskId }, select: { url: true } }),
     );
+    if (callback) await watchTask(actor, sent.taskId, callback.url);
     return { task: await readTask(actor, sent.taskId), actor, cursor: sent.cursor };
   }
 

@@ -65,6 +65,9 @@ For long jobs, start a task and come back for the result.
 | `GET /api/v1/tasks/<id>/events`                                 | Streams it as server-sent `task` events until it settles |
 | `POST /api/v1/tasks/<id>/messages` with `{ "input" }`           | Sends a follow-up, such as an answer                     |
 
+A follow-up to a task that has ended starts a new task. The response is the task the message went
+to, so follow its `id`; a callback on the first task reports the new one too.
+
 A task reads:
 
 ```json
@@ -86,13 +89,16 @@ bot asked while it needs input.
 
 ### Callbacks
 
-With an HTTPS `callback_url`, Rakazo posts `{ "type": "task.settled", "task": { … } }` there once
-the task completes, fails, is cancelled or needs input. A follow-up message arms it again. The
-create response includes a `callback_secret`, shown once. Each callback carries
-`x-rakazo-signature: t=<unix seconds>,v1=<signature>`, where the signature is the hex
-HMAC-SHA256 of `<t>.<raw body>` with that secret. Check it, and reject an old `t`. A failed
-delivery is retried with backoff. The address must be public: private and local addresses are
-refused.
+With an HTTPS `callback_url`, Rakazo posts `{ "type": "task.settled", "id": "…", "task": { … } }`
+there each time the task completes, fails, is cancelled or needs input. `id`, also sent as the
+`x-rakazo-delivery` header, names that state and stays the same if a delivery is retried, so drop
+one you have already handled.
+
+The create response includes a `callback_secret`, shown once. It is the same for every task you
+send to the same address. Each callback carries `x-rakazo-signature: t=<unix seconds>,v1=<signature>`,
+where the signature is the hex HMAC-SHA256 of `<t>.<raw body>` with that secret. Check it, and
+reject an old `t`. A failed delivery is retried with backoff. The address must be public: private
+and local addresses are refused.
 
 ## MCP server
 

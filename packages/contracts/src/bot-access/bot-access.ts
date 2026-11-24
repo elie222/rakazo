@@ -77,10 +77,15 @@ export type CreateTaskInput = z.infer<typeof CreateTaskInputSchema>;
 
 export const TaskMessageInputSchema = z.object({ input: TaskInputText });
 
-/** What a callback POSTs, with `x-rakazo-signature: t=<unix seconds>,v1=<hex HMAC-SHA256>`. */
+/**
+ * What a callback POSTs, with `x-rakazo-signature: t=<unix seconds>,v1=<hex HMAC-SHA256>`. `id`
+ * names the settled state and stays the same on a retry, so a receiver can drop a repeat.
+ */
 export const TaskCallbackBodySchema = z.object({
   type: z.literal("task.settled"),
+  id: z.string(),
   task: PublicTaskSchema,
 });
 export type TaskCallbackBody = z.infer<typeof TaskCallbackBodySchema>;
 export const TASK_CALLBACK_SIGNATURE_HEADER = "x-rakazo-signature";
+export const TASK_CALLBACK_DELIVERY_HEADER = "x-rakazo-delivery";

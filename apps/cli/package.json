@@ -1,6 +1,7 @@
 {
   "name": "@rakazo/cli",
   "version": "0.1.0",
+  "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "description": "Hand work to your Rakazo bots from a terminal or script.",
@@ -15,8 +16,10 @@
     "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/cli/src"
   },
+  "dependencies": {
+    "@rakazo/contracts": "workspace:*"
+  },
   "devDependencies": {
-    "@rakazo/contracts": "workspace:*",
     "@types/node": "24.19.2",
     "esbuild": "0.28.2",
     "typescript": "7.0.2",

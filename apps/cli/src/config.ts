@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -29,6 +29,11 @@ export async function saveConfig(
 ): Promise<string> {
   const file = configPath(env);
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  await writeFile(file, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  // A mode given on creation leaves an existing folder or file as open as it was.
+  await chmod(path.dirname(file), 0o700);
+  // A new file replaces the old one, so the key never sits in a file others can read.
+  const fresh = `${file}.${process.pid}.tmp`;
+  await writeFile(fresh, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+  await rename(fresh, file);
   return file;
 }

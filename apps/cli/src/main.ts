@@ -19,7 +19,7 @@ const USAGE = `Usage: rakazo <command>
 <bot> is a bot's id or exact name. RAKAZO_URL and RAKAZO_API_KEY override saved login.
 `;
 
-function printTask(task: PublicTask, json: boolean) {
+function printTask(task: PublicTask & { callback_secret?: string }, json: boolean) {
   if (json) {
     stdout.write(`${JSON.stringify(task, null, 2)}\n`);
     return;
@@ -35,10 +35,18 @@ async function waitFor(client: Client, task: PublicTask): Promise<PublicTask> {
   return last;
 }
 
-async function ask(question: string): Promise<string> {
-  const prompt = createInterface({ input: stdin, output: stdout });
+/** Reads one line; with `hidden`, what is typed is not echoed, as for a password. */
+async function ask(question: string, hidden = false): Promise<string> {
+  const prompt = createInterface({ input: stdin, output: stdout, terminal: stdin.isTTY });
+  if (hidden) {
+    stdout.write(question);
+    const echo = (prompt as unknown as { _writeToOutput: (text: string) => void })._writeToOutput;
+    (prompt as unknown as { _writeToOutput: (text: string) => void })._writeToOutput = (text) => {
+      if (text.includes("\n")) echo.call(prompt, "\n");
+    };
+  }
   try {
-    return (await prompt.question(question)).trim();
+    return (await prompt.question(hidden ? "" : question)).trim();
   } finally {
     prompt.close();
   }
@@ -65,7 +73,7 @@ export async function main(argv: string[]): Promise<number> {
 
   if (command === "login") {
     const url = values.url ?? (await ask("Rakazo URL: "));
-    const key = values.key ?? (await ask("API key: "));
+    const key = values.key ?? (await ask("API key: ", true));
     if (!url || !key) throw new Error("Both a URL and an API key are needed");
     const config = { url: url.replace(/\/+$/, ""), key };
     const bots = await createClient(config).bots();
@@ -96,15 +104,16 @@ export async function main(argv: string[]): Promise<number> {
   }
   if (command === "task") {
     if (sub === "create" && first && words.length) {
-      let task = await client.createTask({
+      const created = await client.createTask({
         bot: first,
         input: words.join(" "),
         callback_url: values.callback,
       });
-      if (task.callback_secret && !values.json)
-        stdout.write(`Callback secret: ${task.callback_secret}\n`);
-      if (values.wait) task = await waitFor(client, task);
-      printTask(task, values.json);
+      const { callback_secret: secret } = created;
+      // The secret is only ever sent now, so it is printed whatever else is asked for.
+      if (secret && !values.json) stdout.write(`Callback secret: ${secret}\n`);
+      const task = values.wait ? await waitFor(client, created) : created;
+      printTask(secret ? { ...task, callback_secret: secret } : task, values.json);
       return task.status === "failed" ? 1 : 0;
     }
     if (sub === "get" && first) {

@@ -1359,17 +1359,20 @@ model Task {
   @@map("tasks")
 }
 
-/// Where to report a task an API caller started once it ends. Its signing key is derived from
-/// the server's key and this row's id, so nothing secret is stored.
+/// Where to report a task an API caller started each time it settles. Its signing key is derived
+/// from the server's key, the person and the address, so nothing secret is stored.
 model TaskCallback {
-  id          String    @id @default(cuid())
-  taskId      String    @unique
-  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  spaceId     String
-  userId      String
-  url         String
-  deliveredAt DateTime?
-  createdAt   DateTime  @default(now())
+  id              String    @id @default(cuid())
+  taskId          String    @unique
+  task            Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  spaceId         String
+  userId          String
+  url             String
+  /// The run and task status last sent, so each settled state is sent once.
+  deliveredRunId  String?
+  deliveredStatus String?
+  deliveredAt     DateTime?
+  createdAt       DateTime  @default(now())
 
   @@index([spaceId, userId])
   @@map("task_callbacks")

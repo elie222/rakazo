@@ -34,6 +34,8 @@ CREATE TABLE "task_callbacks" (
     "spaceId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "url" TEXT NOT NULL,
+    "deliveredRunId" TEXT,
+    "deliveredStatus" TEXT,
     "deliveredAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
