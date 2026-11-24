@@ -1,6 +1,7 @@
 import { stuckWorkStatusMessage, TAKEOVER_COMPUTER_SKIPPED_STATE } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import type { Prisma } from "../database/client.js";
+import { TransactionConflictError } from "../database/transaction-retry.js";
 import { expireStuckRun } from "./expire-stuck-run.js";
 
 const updatedAt = new Date("2026-09-27T12:00:00.000Z");
@@ -259,12 +260,25 @@ describe("expireStuckRun", () => {
     });
   });
 
+  it("rolls the card back when a worker claims the run first", async () => {
+    const client = tx({ cancelled: 0, status: "waiting_takeover", takeoverCard: true });
+    await expect(
+      expireStuckRun(client as unknown as Prisma.TransactionClient, {
+        runId: "run-1",
+        threadId: "thread-1",
+        status: "waiting_takeover",
+        updatedAt,
+        now,
+      }),
+    ).rejects.toBeInstanceOf(TransactionConflictError);
+  });
+
   it("does nothing when the run already moved on", async () => {
-    const client = tx({ cancelled: 0, status: "waiting_takeover" });
+    const client = tx({ cancelled: 0, status: "queued" });
     const result = await expireStuckRun(client as unknown as Prisma.TransactionClient, {
       runId: "run-1",
       threadId: "thread-1",
-      status: "waiting_takeover",
+      status: "queued",
       updatedAt,
       now,
     });

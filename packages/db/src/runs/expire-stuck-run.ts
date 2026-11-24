@@ -4,7 +4,7 @@ import type { ExpirableWaitStatus } from "@rakazo/core";
 import { ACTIVE_RUN_STATUSES, stuckWorkExpiredNonce, stuckWorkStatusMessage } from "@rakazo/core";
 import { expireComputerExecutionLeases } from "../computers/computers.js";
 import type { Prisma, PrismaClient } from "../database/client.js";
-import { withTransactionRetry } from "../database/transaction-retry.js";
+import { TransactionConflictError, withTransactionRetry } from "../database/transaction-retry.js";
 import { publishSpaceChange } from "../spaces/space-changes.js";
 import { notifyRealtime } from "../threads/event-stream.js";
 import {
@@ -78,7 +78,13 @@ export async function expireStuckRun(
       leaseExpiresAt: null,
     },
   });
-  if (cancelled.count !== 1) return null;
+  if (cancelled.count !== 1) {
+    // A worker claimed the run after the read above; undo the card and read the run again.
+    if (input.status === "waiting_takeover") {
+      throw new TransactionConflictError("The takeover wait changed while it expired");
+    }
+    return null;
+  }
   await clearEndedRunState(tx, [input.runId]);
 
   await tx.attempt.updateMany({
