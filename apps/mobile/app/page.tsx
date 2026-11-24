@@ -32,6 +32,7 @@ import {
   pageDocument,
   pageMessage,
   pageTapStart,
+  readPageState,
 } from "../lib/pages/pages";
 
 type Loaded =
@@ -103,16 +104,18 @@ export default function PageScreen() {
   shownPageId.current = pageId;
   const saving = loaded.status === "ready" && loaded.page.readerState !== undefined;
   useSpaceChanges(
-    "pages",
-    () =>
-      bestEffort(
+    "pageState",
+    () => {
+      const reading = pageId;
+      return bestEffort(
         "read saved page values again",
-        getLatestPage(pageId, { refresh: true }).then((page) => {
-          if (!page.readerState || page.id !== shownPageId.current) return;
-          latestState.current = { pageId: page.id, values: page.readerState };
-          answerPage.current?.(pageStateUpdate(page.readerState));
+        readPageState(reading).then((values) => {
+          if (reading !== shownPageId.current) return;
+          latestState.current = { pageId: reading, values };
+          answerPage.current?.(pageStateUpdate(values));
         }),
-      ),
+      );
+    },
     saving,
   );
   const receive = useCallback(

@@ -54,7 +54,10 @@ function Review({ pageId }: { pageId: string }) {
     draftCode: draft.isError ? undefined : draft.data?.code,
     reported: anchors,
   });
-  const readerState = draftId ? undefined : page?.readerState;
+  const stateRead = targetRpcQuery(ACCOUNT_SETTINGS, "pageReviews/state", { pageId });
+  const savesState = !draftId && page?.readerState !== undefined;
+  const latestState = useScreenQuery(stateRead, { enabled: savesState });
+  const readerState = savesState ? (latestState.data ?? page?.readerState) : undefined;
   const savedState = useRef(readerState);
   savedState.current = readerState;
   const answerPage = useRef<((message: object) => void) | null>(null);
@@ -63,7 +66,7 @@ function Review({ pageId }: { pageId: string }) {
   }, [readerState]);
   const stateSaver = usePageStateSaver(pageId, {
     target: ACCOUNT_SETTINGS,
-    stale: [read.queryKey],
+    stale: [stateRead.queryKey],
   });
   const apiBase = currentApiBase();
   const runtimeError = t`This page couldn't be shown.`;

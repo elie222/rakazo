@@ -113,7 +113,7 @@ describe("usePageState", () => {
     });
   });
 
-  it("takes another copy's values, but not over a change this copy just made", () => {
+  it("takes another copy's values, holding the latest one over a fresh change until it settles", () => {
     render([
       ["note", ""],
       ["other", ""],
@@ -122,8 +122,13 @@ describe("usePageState", () => {
     fromHost({ note: "Older read", other: "From my phone" });
     expect(shown("note")).toBe('"Mine"');
     expect(shown("other")).toBe('"From my phone"');
-    vi.advanceTimersByTime(5000);
-    fromHost({ note: "From my phone" });
-    expect(shown("note")).toBe('"From my phone"');
+    fromHost({ note: "Mine" });
+    act(() => vi.advanceTimersByTime(5000));
+    expect(shown("note")).toBe('"Mine"');
+    set("note", "Mine again");
+    fromHost({ note: "From my laptop" });
+    expect(shown("note")).toBe('"Mine again"');
+    act(() => vi.advanceTimersByTime(5000));
+    expect(shown("note")).toBe('"From my laptop"');
   });
 });

@@ -67,6 +67,12 @@ describe("pageStateRequest", () => {
     });
     expect(pageStateRequest({ type: "rakazo-page:state", values: {} })).toBeNull();
     expect(pageStateRequest({ type: "rakazo-page:state", values: { "bad key": 1 } })).toBeNull();
+    expect(
+      pageStateRequest({
+        type: "rakazo-page:state",
+        values: { note: "kept", huge: "x".repeat(70_000), deep: [[[[[[[1]]]]]]] },
+      }),
+    ).toEqual({ note: "kept" });
     expect(pageStateRequest({ type: "rakazo-page:copy", values: { note: "x" } })).toBeNull();
   });
 });

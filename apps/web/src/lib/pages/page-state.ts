@@ -1,44 +1,19 @@
-import type { PageState } from "@rakazo/contracts";
+import type { PageStateSave } from "@rakazo/chat-ui/hooks";
+import { usePageStateQueue } from "@rakazo/chat-ui/hooks";
 import type { QueryKey } from "@tanstack/react-query";
-import { useRef } from "react";
 import { useSave } from "../query/query";
 import { useEventListener } from "../use-event-listener";
 
-type Queued = { pageId: string; values: PageState };
-
 export function usePageStateSaver(pageId: string, stale: readonly QueryKey[]) {
-  const queued = useRef<Queued | null>(null);
-  const sending = useRef(false);
-  const next = useRef(() => {});
+  const queue = usePageStateQueue(pageId, (save) => saver.run(save));
   const saver = useSave({
-    save: (input: Queued, rpc) => rpc.pageReviews.saveState(input),
+    save: (input: PageStateSave, rpc) => rpc.pageReviews.saveState(input),
     stale,
-    onSaved: () => {
-      sending.current = false;
-      next.current();
-    },
-    onFailed: (_error, input) => {
-      sending.current = false;
-      const later = queued.current?.pageId === input.pageId ? queued.current.values : {};
-      queued.current = { pageId: input.pageId, values: { ...input.values, ...later } };
-    },
+    onSaved: (_saved, input) => queue.saved(input),
+    onFailed: (_error, input) => queue.failed(input),
   });
-  next.current = () => {
-    const input = queued.current;
-    if (sending.current || !input || input.pageId !== pageId) return;
-    queued.current = null;
-    sending.current = true;
-    saver.run(input);
-  };
   const failed = saver.error !== null && !saver.pending;
-  useEventListener(failed ? window : null, "focus", () => next.current());
-  useEventListener(failed ? window : null, "online", () => next.current());
-  return {
-    save(values: PageState) {
-      const earlier = queued.current?.pageId === pageId ? queued.current.values : {};
-      queued.current = { pageId, values: { ...earlier, ...values } };
-      next.current();
-    },
-    failed,
-  };
+  useEventListener(failed ? window : null, "focus", queue.retry);
+  useEventListener(failed ? window : null, "online", queue.retry);
+  return { save: queue.save, failed };
 }

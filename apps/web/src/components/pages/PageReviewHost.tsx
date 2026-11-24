@@ -39,7 +39,7 @@ export default function PageReviewHost() {
       followStream(
         (signal) => subscribe(undefined, { signal }),
         (frame) => {
-          if (frame.type === "pages") void spaceChanged("pages");
+          if (frame.type === "pages" || frame.type === "pageState") void spaceChanged(frame.type);
         },
       ),
     [subscribe],
@@ -78,9 +78,12 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
     draftCode: draft.isError ? undefined : draft.data?.code,
     reported: anchors,
   });
-  const readerState = draftId ? undefined : page?.readerState;
+  const stateRead = queries.pageReviews.state.queryOptions({ input: { pageId } });
+  const savesState = !draftId && page?.readerState !== undefined;
+  const latestState = useQuery({ ...stateRead, enabled: savesState });
+  const readerState = savesState ? (latestState.data ?? page?.readerState) : undefined;
   const preview = usePageDocument(code, "card", false, 0, !draftId, revision?.anchor, readerState);
-  const stateSaver = usePageStateSaver(pageId, [queries.pageReviews.get.key()]);
+  const stateSaver = usePageStateSaver(pageId, [stateRead.queryKey]);
   const publish = useSave({
     save: (requestId: string, rpc) => rpc.pageReviews.publish({ pageId, requestId }),
     stale: [

@@ -147,8 +147,12 @@ export async function savePageReaderState(
   const changed = await writePageReview(prisma, actor, pageId, (tx, { page }) =>
     savePageState(tx, page, actor.userId, values),
   );
-  if (changed) await signalPageUsers(events, [actor.userId]);
+  if (changed) await signalPageUsers(events, [actor.userId], "pageState");
   return { ok: true as const };
+}
+
+export function getPageReaderState(prisma: PrismaClient, actor: Actor, pageId: string) {
+  return readPageReview(prisma, actor, pageId, (tx) => readPageState(tx, pageId, actor.userId));
 }
 
 export function getPageGrants(prisma: PrismaClient, actor: Actor, pageId: string) {

@@ -104,9 +104,10 @@ function OpenPage({
     stale: reads,
     onFailed: reconcile,
   });
-  const readerState = usePageStateSaver(shownId, [
-    queries.pages.get.queryKey({ input: { pageId: shownId } }),
-  ]);
+  const stateRead = queries.pageReviews.state.queryOptions({ input: { pageId: shownId } });
+  const savesState = pageId !== null && page.data?.readerState !== undefined;
+  const latestState = useQuery({ ...stateRead, enabled: savesState });
+  const readerState = usePageStateSaver(shownId, [stateRead.queryKey]);
   const visibility = useSave({
     save: (visibility: PageVisibility, rpc) =>
       rpc.pages.setVisibility({ pageId: shownId, visibility }),
@@ -179,8 +180,8 @@ function OpenPage({
       }
       composer={<div ref={setDockNode} />}
       onReply={session.offerReply}
-      savedState={data?.readerState}
-      onSaveState={data?.readerState ? readerState.save : undefined}
+      savedState={savesState ? (latestState.data ?? data?.readerState) : undefined}
+      onSaveState={savesState ? readerState.save : undefined}
       share={
         data ? (
           <>

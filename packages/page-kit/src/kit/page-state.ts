@@ -29,18 +29,38 @@ function cooled() {
   timer = setTimeout(cooled, SEND_DELAY_MS);
 }
 
-function receive(event: MessageEvent) {
-  const data = event.data as { type?: unknown; values?: unknown } | null;
-  if (data?.type !== STATE_MESSAGE || !data.values || typeof data.values !== "object") return;
+const held = new Map<string, unknown>();
+let holdTimer: ReturnType<typeof setTimeout> | undefined;
+
+function apply(incoming: Iterable<[string, unknown]>) {
   const now = Date.now();
   let changed = false;
-  for (const [key, value] of Object.entries(data.values)) {
-    if (now - (changedAt.get(key) ?? Number.NEGATIVE_INFINITY) < OWN_CHANGE_MS) continue;
+  let wait = Number.POSITIVE_INFINITY;
+  for (const [key, value] of incoming) {
+    const age = now - (changedAt.get(key) ?? Number.NEGATIVE_INFINITY);
+    if (age < OWN_CHANGE_MS) {
+      held.set(key, value);
+      wait = Math.min(wait, OWN_CHANGE_MS - age);
+      continue;
+    }
+    held.delete(key);
     if (JSON.stringify(values.get(key)) === JSON.stringify(value)) continue;
     values.set(key, value);
     changed = true;
   }
   if (changed) notify();
+  if (wait !== Number.POSITIVE_INFINITY && holdTimer === undefined) {
+    holdTimer = setTimeout(() => {
+      holdTimer = undefined;
+      apply([...held]);
+    }, wait);
+  }
+}
+
+function receive(event: MessageEvent) {
+  const data = event.data as { type?: unknown; values?: unknown } | null;
+  if (data?.type !== STATE_MESSAGE || !data.values || typeof data.values !== "object") return;
+  apply(Object.entries(data.values));
 }
 
 export function startPageState(saved: unknown) {
@@ -70,6 +90,7 @@ function setValue(key: string, value: unknown) {
   const saved = asJson(value);
   if (saved === undefined) return;
   changedAt.set(key, Date.now());
+  held.delete(key);
   unsent.set(key, saved);
   if (timer !== undefined) return;
   send();

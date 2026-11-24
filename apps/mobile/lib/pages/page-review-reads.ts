@@ -17,4 +17,13 @@ export function usePageReviewSignals() {
       }),
     focused,
   );
+  useSpaceChanges(
+    "pageState",
+    () =>
+      queryClient.invalidateQueries({
+        predicate: ({ queryKey }) =>
+          queryKey.some((key) => typeof key === "string" && key.startsWith("pageReviews/state")),
+      }),
+    focused,
+  );
 }

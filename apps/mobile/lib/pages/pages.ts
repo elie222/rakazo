@@ -147,6 +147,10 @@ export function getLatestPage(
   return read;
 }
 
+export function readPageState(pageId: string) {
+  return rpc("pageReviews/state", { pageId });
+}
+
 export function renamePage(pageId: string, title: string) {
   return rpc("pages/rename", { pageId, title }).finally(() => pageReads.delete(pageId));
 }

@@ -1,5 +1,5 @@
 import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
-import { PageSectionOccurrence, PageStateSchema } from "@rakazo/contracts";
+import { PAGE_STATE_MAX_KEYS, PageSectionOccurrence, PageStateSchema } from "@rakazo/contracts";
 
 // Same policy as the web preview: nothing loads from the network, so a script
 // cannot send what it reads to a remote image or font URL.
@@ -121,9 +121,11 @@ const PAGE_STATE_MESSAGE = "rakazo-page:state";
 export function pageStateRequest(data: unknown): PageState | null {
   if (!data || typeof data !== "object") return null;
   const { type, values } = data as { type?: unknown; values?: unknown };
-  if (type !== PAGE_STATE_MESSAGE) return null;
-  const parsed = PageStateSchema.safeParse(values);
-  return parsed.success && Object.keys(parsed.data).length > 0 ? parsed.data : null;
+  if (type !== PAGE_STATE_MESSAGE || !values || typeof values !== "object") return null;
+  const valid = Object.entries(values).filter(
+    ([key, value]) => PageStateSchema.safeParse(Object.fromEntries([[key, value]])).success,
+  );
+  return valid.length > 0 && valid.length <= PAGE_STATE_MAX_KEYS ? Object.fromEntries(valid) : null;
 }
 
 export function pageStateUpdate(values: PageState) {

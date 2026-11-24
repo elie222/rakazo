@@ -1,53 +1,29 @@
-import type { PageState } from "@rakazo/contracts";
+import type { PageStateSave } from "@rakazo/chat-ui/hooks";
+import { usePageStateQueue } from "@rakazo/chat-ui/hooks";
 import type { QueryKey } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useAppForeground } from "../platform/app-foreground";
 import { useSave } from "../query/query";
 import type { SettingsTarget } from "../query/settings-target";
 
-type Queued = { pageId: string; values: PageState };
-
 export function usePageStateSaver(
   pageId: string,
   options: { target?: SettingsTarget; stale?: readonly QueryKey[] } = {},
 ) {
-  const queued = useRef<Queued | null>(null);
-  const sending = useRef(false);
-  const next = useRef(() => {});
+  const queue = usePageStateQueue(pageId, (save) => saver.run(save));
   const saver = useSave({
     target: options.target,
-    save: (input: Queued, send) => send("pageReviews/saveState", input),
+    save: (input: PageStateSave, send) => send("pageReviews/saveState", input),
     stale: options.stale,
-    onSaved: () => {
-      sending.current = false;
-      next.current();
-    },
-    onFailed: (_error, input) => {
-      sending.current = false;
-      const later = queued.current?.pageId === input.pageId ? queued.current.values : {};
-      queued.current = { pageId: input.pageId, values: { ...input.values, ...later } };
-    },
+    onSaved: (_saved, input) => queue.saved(input),
+    onFailed: (_error, input) => queue.failed(input),
   });
-  next.current = () => {
-    const input = queued.current;
-    if (sending.current || !input || input.pageId !== pageId) return;
-    queued.current = null;
-    sending.current = true;
-    saver.run(input);
-  };
-  const failed = saver.error !== null && !saver.pending;
   const foreground = useAppForeground();
   const wasForeground = useRef(foreground);
+  const { retry } = queue;
   useEffect(() => {
-    if (foreground && !wasForeground.current) next.current();
+    if (foreground && !wasForeground.current) retry();
     wasForeground.current = foreground;
-  }, [foreground]);
-  return {
-    save(values: PageState) {
-      const earlier = queued.current?.pageId === pageId ? queued.current.values : {};
-      queued.current = { pageId, values: { ...earlier, ...values } };
-      next.current();
-    },
-    failed,
-  };
+  }, [foreground, retry]);
+  return { save: queue.save, failed: saver.error !== null && !saver.pending };
 }

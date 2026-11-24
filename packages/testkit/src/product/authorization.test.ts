@@ -531,6 +531,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["pageReviews/askRevision"],
       ["pageReviews/draft"],
       ["pageReviews/publish"],
+      ["pageReviews/state"],
       ["pageReviews/saveState"],
       ["pages/list"],
       ["pages/get"],

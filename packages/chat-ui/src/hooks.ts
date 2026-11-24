@@ -1,6 +1,7 @@
+import type { PageState } from "@rakazo/contracts";
 import type { ListSearchOptions } from "@rakazo/core";
 import { listSearch } from "@rakazo/core";
-import { useEffect, useEffectEvent, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 
 /**
  * Calls `callback` once, `ms` after mount. A new `ms` or `restartKey` starts the wait again and
@@ -31,4 +32,62 @@ export function useNow(ms: number | null): number {
 export function useListSearch<T>(items: readonly T[], options: ListSearchOptions<T>) {
   const [query, setQuery] = useState("");
   return { query, setQuery, ...listSearch(items, query, options) };
+}
+
+export type PageStateSave = { pageId: string; values: PageState };
+
+const pageStateQueues = new Map<string, { queued: PageState; sending: PageState | null }>();
+
+function pageStateQueue(pageId: string) {
+  let queue = pageStateQueues.get(pageId);
+  if (!queue) {
+    queue = { queued: {}, sending: null };
+    pageStateQueues.set(pageId, queue);
+  }
+  return queue;
+}
+
+function requeue(pageId: string) {
+  const queue = pageStateQueue(pageId);
+  if (queue.sending) queue.queued = { ...queue.sending, ...queue.queued };
+  queue.sending = null;
+}
+
+/**
+ * What a reader changed on a page, saved one request at a time: changes made while one is out go
+ * in the next, a failed one goes again with the next, and one whose answer never came back because
+ * the page closed goes again when it opens.
+ */
+export function usePageStateQueue(pageId: string, run: (save: PageStateSave) => void) {
+  const send = useRef(run);
+  send.current = run;
+  const next = useCallback(() => {
+    const queue = pageStateQueue(pageId);
+    if (queue.sending || Object.keys(queue.queued).length === 0) return;
+    queue.sending = queue.queued;
+    queue.queued = {};
+    send.current({ pageId, values: queue.sending });
+  }, [pageId]);
+  const opened = useRef<string | null>(null);
+  useEffect(() => {
+    if (opened.current === pageId) return;
+    opened.current = pageId;
+    requeue(pageId);
+    next();
+  }, [pageId, next]);
+  return {
+    save(values: PageState) {
+      const queue = pageStateQueue(pageId);
+      queue.queued = { ...queue.queued, ...values };
+      next();
+    },
+    saved(save: PageStateSave) {
+      pageStateQueue(save.pageId).sending = null;
+      if (save.pageId === pageId) next();
+    },
+    failed(save: PageStateSave) {
+      requeue(save.pageId);
+    },
+    retry: next,
+  };
 }

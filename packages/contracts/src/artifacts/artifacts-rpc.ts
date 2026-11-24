@@ -140,6 +140,7 @@ export const artifactsRpc = {
     publish: oc
       .input(PageAccessInput.extend({ requestId: Id }))
       .output(z.object({ version: PageVersionNumber })),
+    state: oc.input(PageAccessInput).output(PageStateSchema),
     saveState: oc
       .input(PageAccessInput.extend({ values: PageStateSchema }))
       .output(z.object({ ok: z.literal(true) })),
