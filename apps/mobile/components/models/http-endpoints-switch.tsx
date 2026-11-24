@@ -13,7 +13,8 @@ export function HttpEndpointsSwitch() {
   const { t } = useLingui();
   const me = useScreenQuery(rpcQuery("me"));
   const settingRead = rpcQuery("models/httpEndpointsAllowed");
-  const setting = useScreenQuery(settingRead);
+  // The RPC refuses anyone but an admin, so a member never asks for it.
+  const setting = useScreenQuery(settingRead, { enabled: me.data?.isAdmin === true });
   const save = useSave({
     save: (allowed: boolean, send) => send("models/setHttpEndpointsAllowed", { allowed }),
     stale: [settingRead.queryKey],
