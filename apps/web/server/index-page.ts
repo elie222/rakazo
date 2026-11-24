@@ -9,8 +9,9 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
  * since no crawler can reach it, and a public host is served over TLS.
  */
 export function publicOrigin(host: string | undefined): string | undefined {
-  if (!host || LOOPBACK_HOSTS.has(host.toLowerCase())) return undefined;
-  return new URL(`https://${host}`).origin;
+  if (!host) return undefined;
+  const url = new URL(`https://${host}`);
+  return LOOPBACK_HOSTS.has(url.hostname) ? undefined : url.origin;
 }
 
 /** Link previews ignore a relative image, so the page names its preview image in full. */
