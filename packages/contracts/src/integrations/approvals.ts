@@ -10,6 +10,8 @@ export const ActionApprovalRuleSchema = z.object({
 });
 export type ActionApprovalRule = z.infer<typeof ActionApprovalRuleSchema>;
 
+export const ALWAYS_ALLOW_BATCH_LABEL = "Always allow these tools";
+
 export const ConnectionToolPath = z
   .string()
   .min(1)

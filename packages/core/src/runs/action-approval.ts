@@ -699,7 +699,7 @@ export function batchActions(
 /**
  * Rules for every action one call runs. The strictest action decides, so one allowed action never
  * carries the rest of a batch, and the batch is allowed by rule only when each action is. `wrapper`
- * can only block: a block on the batch tool itself or its connector still stops every batch.
+ * can block every batch, and may also preserve a rule that requires the user's approval.
  */
 export function resolveActionApprovalForTools(input: {
   tools: ReadonlyArray<{
@@ -709,7 +709,12 @@ export function resolveActionApprovalForTools(input: {
     readOnly?: boolean;
     connectionId?: string;
   }>;
-  wrapper?: { name: string; aliases?: readonly string[]; connectorKind?: string };
+  wrapper?: {
+    name: string;
+    aliases?: readonly string[];
+    connectorKind?: string;
+    forceAsk?: boolean;
+  };
   site?: string;
   rules: ActionApprovalRule[];
 }): ActionApprovalResolved {
@@ -731,7 +736,8 @@ export function resolveActionApprovalForTools(input: {
     });
   const parts = input.tools.map(resolve);
   const wrapper = input.wrapper ? resolve(input.wrapper) : undefined;
-  if (wrapper?.decision === "deny") parts.push(wrapper);
+  if (wrapper?.decision === "deny" || (wrapper?.decision === "ask" && input.wrapper?.forceAsk))
+    parts.push(wrapper);
   const matchingRules = [...new Set(parts.flatMap((part) => part.matchingRules))];
   const strictest =
     parts.find((part) => part.decision === "deny") ?? parts.find((part) => part.decision === "ask");

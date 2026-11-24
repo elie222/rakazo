@@ -49,3 +49,12 @@ test("shows the connection and exact path beside a scoped rule", async ({ page }
   await expect(allowed.getByText(path, { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "scoped-approval-rule");
 });
+
+test("shows the scope of an approval that saves multiple rules", async ({ page }, testInfo) => {
+  await page.goto("/e2e/fixtures/gallery.html?embed&scenario=approvals&theme=light");
+  await expect(page.getByTestId("ask-detail").filter({ hasText: "Notes Personal" })).toBeVisible();
+  const always = page.getByRole("button", { name: "Always allow these tools" });
+  await always.scrollIntoViewIfNeeded();
+  await expect(always).toBeEnabled();
+  await captureScreenshot(page, testInfo, "scoped-batch-approval");
+});

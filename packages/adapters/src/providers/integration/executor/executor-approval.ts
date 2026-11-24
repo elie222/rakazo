@@ -17,7 +17,11 @@ export function executorApprovalFields(
   peer: string | undefined,
   tool: { name: string; inputSchema: { properties?: Record<string, unknown> } },
   connection: { id: string; name: string },
-  lookup: (tool: string, args: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>,
+  lookup: (
+    tool: string,
+    args: Record<string, unknown>,
+    signal: AbortSignal,
+  ) => Promise<{ result: unknown; binding: object } | undefined>,
 ): Pick<ConnectorTool, "batch" | "readOnly"> {
   if (
     peer?.toLowerCase() !== "executor" ||
@@ -37,21 +41,23 @@ export function executorApprovalFields(
         connectionId: connection.id,
         connectionName: connection.name,
         resolve: async (paths, signal) => {
-          if (!paths.every((path) => ConnectionToolPath.safeParse(path).success)) return false;
+          if (!paths.every((path) => ConnectionToolPath.safeParse(path).success)) return undefined;
+          let binding: object | undefined;
           for (let start = 0; start < paths.length; start += DESCRIBE_PATH_LIMIT) {
             const group = paths.slice(start, start + DESCRIBE_PATH_LIMIT);
-            const response = describeResponse.safeParse(
-              await lookup("describe", { paths: group }, signal),
-            );
-            if (!response.success || response.data.isError) return false;
+            const lookupResult = await lookup("describe", { paths: group }, signal);
+            if (!lookupResult || (binding && binding !== lookupResult.binding)) return undefined;
+            binding = lookupResult.binding;
+            const response = describeResponse.safeParse(lookupResult.result);
+            if (!response.success || response.data.isError) return undefined;
             const { structuredContent, content } = response.data;
             const result = describedTools.safeParse(structuredContent ?? parseTextResult(content));
-            if (!result.success) return false;
+            if (!result.success) return undefined;
             const found = new Set(result.data.items.map((item) => item.path));
             if (found.size !== group.length || !group.every((path) => found.has(path)))
-              return false;
+              return undefined;
           }
-          return true;
+          return binding;
         },
       },
     },

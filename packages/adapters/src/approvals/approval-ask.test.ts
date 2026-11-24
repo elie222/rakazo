@@ -16,6 +16,28 @@ describe("truncate", () => {
 });
 
 describe("buildApprovalAskBlock", () => {
+  it("offers only one-time approval when a scoped batch's paths exceed the preview", () => {
+    const calls = Array.from({ length: 16 }, (_, i) => ({
+      path: `tools.notes.action${i}${"x".repeat(400)}`,
+      input: {},
+    }));
+    const block = buildApprovalAskBlock("effect", "notes_call", { calls }, [], {
+      batch: {
+        items: "calls",
+        action: "path",
+        arguments: "input",
+        approvalScope: {
+          connectionId: "notes-1",
+          connectionName: "Personal notes",
+          resolve: async () => ({}),
+        },
+      },
+    });
+    expect(block).toMatchObject({
+      actions: [{ id: "allow" }, { id: "deny" }],
+    });
+  });
+
   it("binds the approval to its effect and redacts secrets", () => {
     const block = buildApprovalAskBlock(
       "effect-1",

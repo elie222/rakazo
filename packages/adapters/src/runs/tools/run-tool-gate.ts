@@ -144,15 +144,10 @@ export async function gateToolCall(
   const batch = connectorTool?.batch ? batchActions(connectorTool.batch, args) : undefined;
   const approvalScope = connectorTool?.batch?.approvalScope;
   if (approvalScope) {
-    let resolved = false;
-    try {
-      resolved = Boolean(
-        batch?.complete && (await approvalScope.resolve(batch.actions, context.signal)),
-      );
-    } catch {
-      // A failed lookup may include connection details in its error. Refuse without exposing them.
-    }
-    if (!resolved) {
+    const binding = batch?.complete
+      ? await approvalScope.resolve(batch.actions, context.signal)
+      : undefined;
+    if (!binding) {
       return {
         result: refusal(
           "connector_actions_unresolved",
@@ -160,7 +155,7 @@ export async function gateToolCall(
         ),
       };
     }
-    connectorCall = { ...connectorCall, verifyResourceRevision: true };
+    connectorCall = { ...connectorCall, approvalBinding: binding };
   }
   const unidentifiedAction = Boolean(batch && !batch.complete);
   const approvalName = connectorCall.route?.connectionId ? connectorCall.route.toolName : name;
@@ -358,7 +353,12 @@ export async function gateToolCall(
       connectionId: approvalScope?.connectionId,
     })),
     wrapper: batch
-      ? { name, connectorKind, aliases: approvalName === name ? undefined : [approvalName] }
+      ? {
+          name,
+          connectorKind,
+          aliases: approvalName === name ? undefined : [approvalName],
+          forceAsk: Boolean(approvalScope),
+        }
       : undefined,
     site: fetchSite,
     rules: await ctx.trust.loadApprovalRules(),

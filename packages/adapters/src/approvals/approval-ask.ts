@@ -1,6 +1,7 @@
 import type { ConnectorTool, ToolBatch } from "@rakazo/adapter-kit";
 import type { AskReceipt, MessageBlock, RoutineUpdateApproval } from "@rakazo/contracts";
 import {
+  ALWAYS_ALLOW_BATCH_LABEL,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   draftBatchEntry,
   OutgoingDraft,
@@ -240,8 +241,8 @@ export function buildApprovalAskBlock(
     };
   }
   const fetchSite = webFetchSite(toolName, args);
-  const scopedBatch =
-    options?.batch?.approvalScope && batchActions(options.batch, args).actions.length > 1;
+  const scope = options?.batch?.approvalScope;
+  const scopedActions = scope && options.batch && batchActions(options.batch, args).actions;
   const summary = describeApprovalAction(toolName, args, options?.batch, secrets);
   const detail = formatApprovalDetail(
     toolName,
@@ -251,6 +252,12 @@ export function buildApprovalAskBlock(
     secrets,
   );
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
+  const fullScopeShown =
+    !scope ||
+    (redactSecrets(scope.connectionName, secrets) === scope.connectionName &&
+      scopedActions?.every((action) => redactSecrets(action, secrets) === action) &&
+      safeDetail &&
+      safeDetail.length <= MAX_APPROVAL_DETAIL_LENGTH);
   return {
     kind: "ask",
     approvalEffectId: effectId,
@@ -267,7 +274,7 @@ export function buildApprovalAskBlock(
             { id: "allow", label: "Create space", outcome: "created" },
             { id: "deny", label: "Cancel", outcome: "cancelled" },
           ]
-        : onceOnly
+        : onceOnly || !fullScopeShown
           ? [
               { id: "allow", label: "Allow once" },
               { id: "deny", label: "Deny" },
@@ -278,8 +285,8 @@ export function buildApprovalAskBlock(
                 id: "always",
                 label: fetchSite
                   ? `Always allow ${fetchSite}`
-                  : scopedBatch
-                    ? "Always allow these tools"
+                  : scopedActions && scopedActions.length > 1
+                    ? ALWAYS_ALLOW_BATCH_LABEL
                     : "Always allow this tool",
               },
               { id: "deny", label: "Deny" },

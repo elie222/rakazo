@@ -1640,11 +1640,14 @@ describe("connection-scoped MCP batches", () => {
       { name: "call", inputSchema: { properties: { calls: {} } } },
       source,
       async (_name, { paths }) => ({
-        structuredContent: {
-          items: catalogPaths
-            .map((path) => ({ path }))
-            .filter(({ path }) => Array.isArray(paths) && paths.includes(path)),
-          missing: [],
+        binding: source,
+        result: {
+          structuredContent: {
+            items: catalogPaths
+              .map((path) => ({ path }))
+              .filter(({ path }) => Array.isArray(paths) && paths.includes(path)),
+            missing: [],
+          },
         },
       }),
     );
@@ -1691,6 +1694,21 @@ describe("connection-scoped MCP batches", () => {
     f.setCalls([{ args: { calls: [entry(rename), entry(archive)] }, executionId: "mixed" }]);
     await f.run();
     expect(f.execute).toHaveBeenCalledOnce();
+  });
+
+  it("preserves an outer Ask rule in Auto mode", async () => {
+    reviewMock.mockClear();
+    const f = scopedFixture({
+      autoReview: true,
+      rules: [
+        scopedRule(rename),
+        { effect: "require_approval", matchKind: "tool", matchValue: outer },
+      ],
+    });
+    f.setCalls([{ args: { calls: entry(rename) }, executionId: "ask" }]);
+    await f.run();
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
   });
 
   it.each([

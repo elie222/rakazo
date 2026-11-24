@@ -37,7 +37,7 @@ import {
   redactConnectorPayload,
   sanitizeConnectorError,
 } from "../integrations/connector-safety.js";
-import { executorApprovalFields } from "../providers/integration/executor/executor-approval.js";
+import { mcpToolFields } from "../integrations/mcp-tool-metadata.js";
 import { appendToolCompletionAudit } from "../runs/turn/tool-completion-audit.js";
 import { credentialDigest } from "../secrets/credential-digest.js";
 import type { CatalogEntry } from "../tools/lazy-tool-catalog.js";
@@ -79,7 +79,7 @@ import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.
 import { mcpToolAllowed } from "./mcp-tool-permissions.js";
 import { McpSession, mcpStdioRefusal } from "./mcp-transport.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import { ConnectorRedirectError, isMcpSessionGoneError, mcpToolFields } from "./remote-mcp.js";
+import { ConnectorRedirectError, isMcpSessionGoneError } from "./remote-mcp.js";
 
 type SessionEntry = {
   session: McpSession;
@@ -102,6 +102,12 @@ class McpSecretChangedError extends Error {
   /** `missing`: the server's current secret record could not be read, which a retry rarely fixes. */
   constructor(readonly missing = false) {
     super("Secret changed during MCP connection; retry");
+  }
+}
+
+class McpApprovalConnectionChanged extends Error {
+  constructor() {
+    super("MCP connection changed before the call could run");
   }
 }
 
@@ -572,12 +578,12 @@ export class McpConnector implements ConnectorProvider {
             .map((tool) => ({
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
-              ...mcpToolFields(tool, server.transport === "stdio" ? undefined : server.endpoint),
-              ...executorApprovalFields(peer, tool, server, (name, args, signal) =>
-                this.withSession(server, context, (session) =>
-                  session.callTool(name, args, { signal }),
-                ),
-              ),
+              ...mcpToolFields(tool, server.transport === "stdio" ? undefined : server.endpoint, {
+                peer,
+                connection: server,
+                lookup: (name, args, signal) =>
+                  this.lookupApprovalActions(server, tool.name, name, args, { ...context, signal }),
+              }),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,
@@ -728,21 +734,7 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "error", message: "MCP tools require a bot context" };
       return;
     }
-    const usable = { enabled: true, ...availableInSpace(context) };
-    const assignment =
-      (await this.prisma.botMcpServer.findFirst({
-        where: {
-          botId: context.botId,
-          serverId: call.route.resourceId,
-          spaceId: context.spaceId,
-          userId: context.userId,
-          server: usable,
-        },
-        include: { server: true },
-      })) ??
-      (await this.prisma.mcpServer
-        .findFirst({ where: { ...usable, id: call.route.resourceId, allBots: true } })
-        .then((server) => (server ? sharedAssignment(server) : null)));
+    const assignment = await this.currentAssignment(call.route.resourceId, context);
     if (assignment && call.route.toolName === UNAVAILABLE_TOOL) {
       const reason =
         this.unavailable.get(this.sessionKey(assignment.server, context)) ??
@@ -757,7 +749,7 @@ export class McpConnector implements ConnectorProvider {
       yield { type: "error", message: "MCP tool is not assigned to this bot" };
       return;
     }
-    if (call.verifyResourceRevision && assignment.server.revision !== call.route.resourceRevision) {
+    if (call.approvalBinding && assignment.server.revision !== call.route.resourceRevision) {
       yield { type: "error", message: "MCP connection changed before the call could run" };
       return;
     }
@@ -772,6 +764,8 @@ export class McpConnector implements ConnectorProvider {
       const toolName = call.route.toolName;
       const result = await this.withSession(assignment.server, context, (session) => {
         used = session;
+        if (call.approvalBinding && call.approvalBinding !== session)
+          throw new McpApprovalConnectionChanged();
         material = this.sessions.get(sessionKey)?.material;
         launchSecrets = this.sessions.get(sessionKey)?.launchSecrets ?? [];
         return session.callTool(toolName, call.args, {
@@ -797,6 +791,10 @@ export class McpConnector implements ConnectorProvider {
       );
       if (app) yield { type: "app", app };
     } catch (error) {
+      if (error instanceof McpApprovalConnectionChanged) {
+        yield { type: "error", message: error.message };
+        return;
+      }
       const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
       // Drop a broken, hung or unauthorized connection, so the next call reconnects. A
       // cancelled run or the server's own error leaves a stdio process and the server's
@@ -805,6 +803,79 @@ export class McpConnector implements ConnectorProvider {
       const replaced = used !== undefined && this.sessions.get(sessionKey)?.session !== used;
       if (!replaced && !keepsMcpSession(used, error, context.signal)) await this.evict(sessionKey);
       yield { type: "error", message: sanitizeConnectorError(error, secrets) };
+    }
+  }
+
+  private async currentAssignment(serverId: string, context: AdapterContext) {
+    if (!context.botId) return null;
+    const usable = { enabled: true, ...availableInSpace(context) };
+    return (
+      (await this.prisma.botMcpServer.findFirst({
+        where: {
+          botId: context.botId,
+          serverId,
+          spaceId: context.spaceId,
+          userId: context.userId,
+          server: usable,
+        },
+        include: { server: true },
+      })) ??
+      (await this.prisma.mcpServer
+        .findFirst({ where: { ...usable, id: serverId, allBots: true } })
+        .then((server) => (server ? sharedAssignment(server) : null)))
+    );
+  }
+
+  private async lookupApprovalActions(
+    expected: Pick<McpServer, "id" | "revision">,
+    wrapper: string,
+    lookup: string,
+    args: Record<string, unknown>,
+    context: AdapterContext,
+  ) {
+    const assignment = await this.currentAssignment(expected.id, context);
+    if (
+      !assignment ||
+      assignment.server.revision !== expected.revision ||
+      !mcpToolAllowed(assignment, wrapper)
+    )
+      return undefined;
+
+    // This read serves the approval for the authorized wrapper. It never exposes the
+    // metadata tool or its result to the bot, and it cannot pause the run for input.
+    const { server } = assignment;
+    const key = this.sessionKey(server, context);
+    let used: McpSession | undefined;
+    let material: OAuthMaterial | undefined;
+    let launchSecrets: string[] = [];
+    try {
+      return await this.withSession(server, context, async (session) => {
+        used = session;
+        const entry = this.sessions.get(key);
+        material = entry?.material;
+        launchSecrets = entry?.launchSecrets ?? [];
+        const result = await session.callTool(lookup, args, { signal: context.signal });
+        if (result.isError) {
+          getLogger().warn("mcp.approval_actions.lookup_failed", {
+            reason: "MCP server reported an error",
+          });
+          return undefined;
+        }
+        return {
+          result,
+          binding: session,
+        };
+      });
+    } catch (error) {
+      const entry = this.sessions.get(key);
+      if (context.signal.aborted) return undefined;
+      const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
+      getLogger().warn("mcp.approval_actions.lookup_failed", {
+        reason: sanitizeConnectorError(error, secrets),
+      });
+      if ((!used || used === entry?.session) && !keepsMcpSession(used, error, context.signal))
+        await this.evict(key);
+      return undefined;
     }
   }
 

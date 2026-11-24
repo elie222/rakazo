@@ -4101,47 +4101,106 @@ describe("allowlistDrift", () => {
   });
 });
 
-it("resolves a scoped batch against the MCP connection that advertises it", async () => {
+function scopedMcpFixture() {
   const path = "tools.demo.renameNote";
+  const assignment = { ...ASSIGNMENT, server: { ...SERVER, name: "Personal notes" } };
   const toolResult = vi.fn(() => ({
     content: [{ type: "text", text: JSON.stringify({ items: [{ path }], missing: [] }) }],
   }));
-  vi.stubGlobal(
-    "fetch",
-    mcpFetch({
-      failNext: false,
-      initializations: 0,
-      serverName: "Executor",
-      tools: [
-        { name: "call", inputSchema: { type: "object", properties: { calls: {} } } },
-        { name: "describe", inputSchema: { type: "object" } },
-      ],
-      toolResult,
-    }),
-  );
+  const state = {
+    failNext: false,
+    initializations: 0,
+    serverName: "Executor",
+    sessionNotFound: 0,
+    tools: [
+      { name: "call", inputSchema: { type: "object", properties: { calls: {} } } },
+      { name: "describe", inputSchema: { type: "object" } },
+    ],
+    toolResult,
+  };
+  vi.stubGlobal("fetch", mcpFetch(state));
+  const findFirst = vi.fn(async (): Promise<typeof assignment | null> => assignment);
   const connector = new McpConnector(
     {
       mcpServer: NO_SHARED_SERVERS,
-      botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) },
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst,
+      },
     } as never,
     new EncryptedSecretStore("fake-key"),
     { network: TEST_NETWORK },
   );
-  const signal = new AbortController().signal;
+  const context = {
+    operationId: "test",
+    traceId: "test",
+    spaceId: "w1",
+    userId: "u1",
+    botId: "bot-1",
+    signal: new AbortController().signal,
+  };
+  return { path, toolResult, connector, context, findFirst, state };
+}
+
+it("resolves a scoped batch against the MCP connection that advertises it", async () => {
+  const { connector, context, path, toolResult } = scopedMcpFixture();
   try {
-    const tools = await connector.discoverTools({
-      operationId: "test",
-      traceId: "test",
-      spaceId: "w1",
-      userId: "u1",
-      botId: "bot-1",
-      signal,
-    });
+    const tools = await connector.discoverTools(context);
     const scope = tools.find((tool) => tool.route?.toolName === "call")?.batch?.approvalScope;
     expect(scope?.connectionId).toBe(ASSIGNMENT.serverId);
-    await expect(scope?.resolve([path], signal)).resolves.toBe(true);
+    await expect(scope?.resolve([path], context.signal)).resolves.toBeDefined();
     expect(toolResult).toHaveBeenCalledExactlyOnceWith("describe", { paths: [path] });
     expect(tools.find((tool) => tool.route?.toolName === "describe")?.batch).toBeUndefined();
+  } finally {
+    await connector.close();
+  }
+});
+
+it("checks the live wrapper assignment before reading scoped actions", async () => {
+  const { connector, context, path, toolResult, findFirst } = scopedMcpFixture();
+  try {
+    const tools = await connector.discoverTools(context);
+    const scope = tools.find((tool) => tool.route?.toolName === "call")!.batch!.approvalScope!;
+    findFirst.mockResolvedValueOnce(null);
+    await expect(scope.resolve([path], context.signal)).resolves.toBeUndefined();
+    expect(toolResult).not.toHaveBeenCalled();
+  } finally {
+    await connector.close();
+  }
+});
+
+it("does not dispatch scoped actions on a replacement session", async () => {
+  const { connector, context, path, toolResult, state } = scopedMcpFixture();
+  try {
+    const tools = await connector.discoverTools(context);
+    const wrapper = tools.find((tool) => tool.route?.toolName === "call")!;
+    const lookup = tools.find((tool) => tool.route?.toolName === "describe")!;
+    const approvalBinding = await wrapper.batch!.approvalScope!.resolve([path], context.signal);
+    expect(approvalBinding).toBeDefined();
+    state.sessionNotFound = 1;
+    for await (const event of connector.execute(
+      { tool: lookup.name, route: lookup.route, args: { paths: [path] }, executionId: "replace" },
+      context,
+    )) {
+      expect(event.type).toBe("result");
+    }
+    toolResult.mockClear();
+    const result: unknown[] = [];
+    for await (const event of connector.execute(
+      {
+        tool: wrapper.name,
+        route: wrapper.route,
+        args: { calls: { path, input: {} } },
+        executionId: "dispatch",
+        approvalBinding,
+      },
+      context,
+    ))
+      result.push(event);
+    expect(result).toMatchObject([
+      { type: "error", message: "MCP connection changed before the call could run" },
+    ]);
+    expect(toolResult).not.toHaveBeenCalled();
   } finally {
     await connector.close();
   }

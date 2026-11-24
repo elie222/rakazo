@@ -367,7 +367,7 @@ export interface ToolBatch {
   approvalScope?: {
     connectionId: string;
     connectionName: string;
-    resolve: (paths: readonly string[], signal: AbortSignal) => Promise<boolean>;
+    resolve: (paths: readonly string[], signal: AbortSignal) => Promise<object | undefined>;
   };
   outgoingDrafts?: Readonly<Record<string, OutgoingDraftDescriptor>>;
 }
@@ -391,8 +391,8 @@ export interface ConnectorCall {
   connectionId?: string;
   executionId: string;
   route?: ConnectorRoute;
-  /** The gate resolved the actions against the routed resource's current configuration. */
-  verifyResourceRevision?: boolean;
+  /** Opaque adapter binding for the connection that resolved the approved actions. */
+  approvalBinding?: object;
   /** Read the tool's app after a successful call. Only a caller that shows it asks. */
   withApp?: boolean;
 }

@@ -30,17 +30,6 @@ test("gallery shows a tool's question as plain text with its form", async ({ pag
   await captureScreenshot(page, testInfo, "tool-question-card");
 });
 
-test("gallery shows the scope of an approval that saves multiple rules", async ({
-  page,
-}, testInfo) => {
-  await page.goto("/e2e/fixtures/gallery.html?embed&scenario=approvals&theme=light");
-  await expect(page.getByTestId("ask-detail").filter({ hasText: "Notes Personal" })).toBeVisible();
-  const always = page.getByRole("button", { name: "Always allow these tools" });
-  await always.scrollIntoViewIfNeeded();
-  await expect(always).toBeEnabled();
-  await captureScreenshot(page, testInfo, "scoped-batch-approval");
-});
-
 test("gallery shows routine changes as small rows", async ({ page }, testInfo) => {
   await page.goto("/e2e/fixtures/gallery.html?scenario=routines&theme=light");
   const rows = page.getByTestId("routine-event-row");
