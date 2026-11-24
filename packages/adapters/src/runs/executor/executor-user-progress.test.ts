@@ -1,5 +1,6 @@
 import type { AgentRunRequest, AgentRuntimeEvent, BackgroundJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID, FIRST_BOT_SPAWN_KEY } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { AppendEventInput, Prisma } from "@rakazo/db";
 import {
@@ -20,10 +21,7 @@ import {
 import { PEER_NOTHING_NEW_REPLY } from "../assembly/silent-reply.js";
 import type * as RunNotificationsModule from "../lifecycle/run-notifications.js";
 import { notifyRun } from "../lifecycle/run-notifications.js";
-import {
-  MID_TURN_PROGRESS_MIN_TURN_AGE_MS,
-  userProgressClientNonce,
-} from "../lifecycle/user-progress.js";
+import { userProgressClientNonce } from "../lifecycle/user-progress.js";
 import { createJobReconciler } from "../wakeups/job-reconciler.js";
 import { createRunExecutor } from "./executor.js";
 
@@ -66,6 +64,8 @@ async function runTurn(
   intent: "fyi" | "request" | "question" = "fyi",
   options: {
     trigger?: string;
+    /** The run's bot is the one a new account starts with. */
+    firstBot?: boolean;
     doneText?: string;
     splitText?: boolean;
     priorProgressText?: string;
@@ -197,6 +197,7 @@ async function runTurn(
         memoryScope: null,
         replyMode: options.replyMode ?? "chat",
         computer: { id: "computer-1", scope: "dedicated" },
+        spawnKey: options.firstBot ? FIRST_BOT_SPAWN_KEY : null,
       })),
       findMany: vi.fn(async () => []),
     },
@@ -300,7 +301,7 @@ async function runTurn(
     taughtSkill: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     externalEffect: {
       findMany: vi.fn(async () => []),
       findFirst: vi.fn(async () => null),
@@ -810,49 +811,132 @@ describe("notes that can't be posted as messages", () => {
     expect(lines).toContainEqual({ text: "Reading march.csv", activity: true });
   });
 
-  it("tells the bot whether a message_user update it can't post can be retried", async () => {
-    const update = async ({
+  const updateTurn = async (
+    updates: string[],
+    {
       startedAt,
-      earlier = [],
       steerAt = -1,
-    }: {
-      startedAt?: Date;
-      earlier?: string[];
-      steerAt?: number;
-    } = {}) => {
-      let result: unknown;
-      const { messages } = await runTurn("", false, undefined, [], "fyi", {
-        startedAt,
-        runtime: async function* (request) {
-          for (const [index, message] of [...earlier, "On it, checking now."].entries()) {
-            const executionId = `call-${index}`;
-            if (index === steerAt) yield { type: "steered", fromRunUser: true };
-            yield { type: "tool", name: "message_user", args: { message }, executionId };
-            result = await request.executeTool!("message_user", { message }, executionId);
-          }
-          yield { type: "text", text: "Done." };
-          yield { type: "done", text: "" };
-        },
-      });
-      return { result, sent: sentTexts(messages) };
-    };
-    const notYet = {
-      ok: true,
-      note: `This update was not posted because the turn just started. Keep working and put anything the person needs in your final reply. Once the turn has run ${MID_TURN_PROGRESS_MIN_TURN_AGE_MS / 1000} seconds, a later update can be posted.`,
-    };
-    const stop = {
-      ok: true,
-      note: "This update was not posted. The chat already has enough interim messages for this run. Do not send more progress updates — keep working and put everything in your final reply.",
-    };
-    expect(await update()).toEqual({ result: notYet, sent: [] });
+      final = "Done.",
+    }: { startedAt?: Date; steerAt?: number; final?: string } = {},
+  ) => {
+    const results: unknown[] = [];
+    const { messages, append, finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      startedAt,
+      runtime: async function* (request) {
+        for (const [index, message] of updates.entries()) {
+          const executionId = `call-${index}`;
+          if (index === steerAt) yield { type: "steered", fromRunUser: true };
+          yield { type: "tool", name: "message_user", args: { message }, executionId };
+          results.push(await request.executeTool!("message_user", { message }, executionId));
+        }
+        if (final) yield { type: "text", text: final };
+        yield { type: "done", text: "" };
+      },
+    });
+    const statuses = progress(append)
+      .filter((event) => (event.payload as { reset?: boolean }).reset)
+      .map((event) => (event.payload as { text: string }).text);
+    return { results, sent: sentTexts(messages), statuses, reply: finalText(finalizeRun) };
+  };
 
+  it("shows a message_user update it can't post as the working line, with nothing to retry", async () => {
+    expect(await updateTurn(["On it, checking now."])).toEqual({
+      results: [{ ok: true }],
+      sent: [],
+      statuses: ["On it, checking now."],
+      reply: "Done.",
+    });
     const earlier = ["One.", "Two.", "Three."];
     const longTurn = new Date(Date.now() - 120_000);
-    expect(await update({ startedAt: longTurn, earlier })).toEqual({ result: stop, sent: earlier });
-    // The person's message restarts the budget, so after the answer the turn is fresh again.
+    expect(await updateTurn([...earlier, "Four."], { startedAt: longTurn })).toEqual({
+      results: Array(4).fill({ ok: true }),
+      sent: earlier,
+      statuses: ["Four."],
+      reply: "Done.",
+    });
+    // The person's message restarts the budget: the answer is posted, the next update waits.
     expect(
-      await update({ startedAt: longTurn, earlier: [...earlier, "Yes, still on it."], steerAt: 3 }),
-    ).toEqual({ result: notYet, sent: [...earlier, "Yes, still on it."] });
+      await updateTurn([...earlier, "Yes, still on it.", "Nearly there."], {
+        startedAt: longTurn,
+        steerAt: 3,
+      }),
+    ).toMatchObject({ sent: [...earlier, "Yes, still on it."], statuses: ["Nearly there."] });
+  });
+
+  it("replies with an update it couldn't post when the bot writes nothing after it", async () => {
+    expect(await updateTurn(["The total is 4."], { final: "" })).toMatchObject({
+      sent: [],
+      reply: "The total is 4.",
+    });
+  });
+
+  it("prefers that update over a note written before it", async () => {
+    const { finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtime: async function* (request) {
+        yield { type: "text", text: "Looking it up." };
+        yield { type: "tool", name: "message_user", args: {}, executionId: "call-1" };
+        await request.executeTool!("message_user", { message: "The total is 4." }, "call-1");
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(finalText(finalizeRun)).toBe("The total is 4.");
+    expect(stepNotes(finalizeRun)).toEqual(["Looking it up."]);
+  });
+
+  it("does not reply with an update it couldn't post once a later one was posted", async () => {
+    expect(
+      await updateTurn(["Starting.", "The total is 4."], { steerAt: 1, final: "" }),
+    ).toMatchObject({ sent: ["The total is 4."], reply: "" });
+  });
+
+  it("does not post the same update twice in a row", async () => {
+    const longTurn = new Date(Date.now() - 120_000);
+    expect(
+      await updateTurn(["Checking.", "Checking.", "Checking.", "Done checking."], {
+        startedAt: longTurn,
+      }),
+    ).toMatchObject({
+      results: Array(4).fill({ ok: true }),
+      sent: ["Checking.", "Done checking."],
+    });
+  });
+
+  it("posts a repeated update when it answers the person's message", async () => {
+    expect(
+      await updateTurn(["Still checking.", "Still checking."], {
+        startedAt: new Date(Date.now() - 120_000),
+        steerAt: 1,
+      }),
+    ).toMatchObject({ sent: ["Still checking.", "Still checking."] });
+  });
+
+  it("replies with an update it couldn't post even when an earlier message said the same", async () => {
+    expect(
+      await updateTurn(["A.", "B.", "C.", "A."], {
+        startedAt: new Date(Date.now() - 120_000),
+        final: "",
+      }),
+    ).toMatchObject({ sent: ["A.", "B.", "C."], statuses: ["A."], reply: "A." });
+  });
+
+  it("keeps an update it couldn't post as the reply when the bot then repeats an earlier one", async () => {
+    expect(
+      await updateTurn(["A.", "B.", "C.", "D.", "C."], {
+        startedAt: new Date(Date.now() - 120_000),
+        final: "",
+      }),
+    ).toMatchObject({ sent: ["A.", "B.", "C."], statuses: ["D."], reply: "D." });
+  });
+
+  it("still says when an update was cut off, whether it was posted or shown as the working line", async () => {
+    const long = `Checking ${"every invoice ".repeat(60)}`.trim();
+    const cutOff = { ok: true, truncated: true, note: expect.stringContaining("cut off") };
+    const fresh = await updateTurn([long]);
+    expect(fresh.results).toEqual([cutOff]);
+    expect(fresh.sent).toEqual([]);
+    const posted = await updateTurn([long], { startedAt: new Date(Date.now() - 120_000) });
+    expect(posted.results).toEqual([cutOff]);
+    expect(posted.sent).toHaveLength(1);
   });
 
   it("posts one heads-up at once once a fresh turn calls a browser or desktop tool", async () => {
@@ -976,6 +1060,35 @@ describe("messages mode", () => {
     });
     expect(sentTexts(messages)).toEqual(updates);
     expect(finalText(finalizeRun)).toBe("Here is the answer.");
+  });
+
+  it("does not post the same update twice in a row", async () => {
+    const updates = ["Starting.", "Starting.", "Found it.", "Starting."];
+    const { messages } = await runTurn("", false, undefined, [], "fyi", {
+      ...messagesMode,
+      runtime: async function* (request) {
+        for (const [index, message] of updates.entries())
+          await request.executeTool!("message_user", { message }, `call-${index + 1}`);
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual(["Starting.", "Found it.", "Starting."]);
+  });
+
+  it("keeps text written before a repeated update out of the reply", async () => {
+    const { finalizeRun, messages } = await runTurn("", false, undefined, [], "fyi", {
+      ...messagesMode,
+      runtime: async function* (request) {
+        yield { type: "tool", name: "message_user", args: {}, executionId: "call-1" };
+        await request.executeTool!("message_user", { message: "The total is 4." }, "call-1");
+        yield { type: "text", text: "Double-checking privately." };
+        yield { type: "tool", name: "message_user", args: {}, executionId: "call-2" };
+        await request.executeTool!("message_user", { message: "The total is 4." }, "call-2");
+        yield { type: "done", text: "" };
+      },
+    });
+    expect(sentTexts(messages)).toEqual(["The total is 4."]);
+    expect(finalText(finalizeRun)).toBe("");
   });
 
   it("shows the latest text as the reply when nothing follows the last step", async () => {
@@ -1178,6 +1291,44 @@ describe("text written before a question", () => {
         ],
       }),
     );
+  });
+
+  describe("a first bot's opening question", () => {
+    const opening = { kind: "ask", text: "Which order?" } as const;
+    const offered = async (options: Parameters<typeof runTurn>[5]) => {
+      const { pauseRunForInput } = await runTurn("", false, "", [], "fyi", {
+        trigger: "created",
+        firstBot: true,
+        ...options,
+        runtimeEvents: [
+          { type: "tool", name: "ask_user", args: {}, executionId: "ask-1" },
+          { type: "ask", text: "Which order?", actions: [{ id: "choice-1", label: "Art first" }] },
+        ],
+      });
+      const blocks = (pauseRunForInput.mock.calls[0] as unknown as [{ blocks: MessageBlock[] }])[0]
+        .blocks;
+      const ask = blocks.find((block) => block.kind === "ask");
+      expect(ask).toMatchObject(opening);
+      return ask?.kind === "ask" ? ask.actions?.map((action) => action.id) : undefined;
+    };
+
+    it("also offers the agent import", async () => {
+      expect(await offered({})).toEqual(["choice-1", AGENT_IMPORT_ASK_ACTION_ID]);
+    });
+
+    it("is not offered on any other bot", async () => {
+      expect(await offered({ firstBot: false })).toEqual(["choice-1"]);
+    });
+
+    it("is not offered after the person has written", async () => {
+      expect(await offered({ history: [{ id: "m1", seq: 1, role: "user", text: "Hi" }] })).toEqual([
+        "choice-1",
+      ]);
+    });
+
+    it("is not offered outside a new bot's introduction", async () => {
+      expect(await offered({ trigger: "user" })).toEqual(["choice-1"]);
+    });
   });
 
   it("posts the text on runs that may finish silently", async () => {

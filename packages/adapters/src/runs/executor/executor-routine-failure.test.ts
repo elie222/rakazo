@@ -226,6 +226,7 @@ async function failRun(scenario: Scenario) {
             }
           : null,
       ),
+      findMany: vi.fn(async () => []),
     },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
@@ -236,7 +237,7 @@ async function failRun(scenario: Scenario) {
     taughtSkill: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     externalEffect: { findMany: vi.fn(async () => []) },
     artifact: { findMany: vi.fn(async () => []) },
     $queryRaw: vi.fn(async () => []),
@@ -398,7 +399,7 @@ describe("a routine run's prompt", () => {
   it("tells the bot it is one scheduled run, before the routine's own words", async () => {
     const { runtimeRun } = await failRun({ error: new Error("Invalid API key") });
     expect(prompt(runtimeRun)).toMatch(
-      /^This is one scheduled run of your routine "Inbox sweep": do the work now, and do not schedule it again\.\n\nSweep the inbox/,
+      /^This is one scheduled run of your routine "Inbox sweep": do the work now, and do not schedule it again\.[^\n]*\n\nSweep the inbox/,
     );
   });
 
@@ -408,7 +409,7 @@ describe("a routine run's prompt", () => {
       routineGone: true,
     });
     expect(prompt(runtimeRun)).toMatch(
-      /^This is one scheduled run of your routine: do the work now, and do not schedule it again\.\n\nSweep the inbox/,
+      /^This is one scheduled run of your routine: do the work now, and do not schedule it again\.[^\n]*\n\nSweep the inbox/,
     );
   });
 

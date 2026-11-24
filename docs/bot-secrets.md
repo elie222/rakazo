@@ -32,7 +32,7 @@ Authentication supports Bearer tokens, a named header (`{"type":"header","name":
 
 Self-hosted deployments can set `RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP=1` to also allow plain `http://` origins on private or loopback addresses (for example `http://nas.local:8123` or `http://localhost:3000`). It is off by default. Credentials sent this way are unencrypted: anything on that network, or any local service on that port, can read them. Enable it only on a network you trust. Link-local and cloud metadata addresses stay blocked, and public origins still require HTTPS.
 
-Calling `request_secret` again with the same name and configuration returns the saved reference. Add `"replace": true` to show another protected card and replace its value. `forget_secret` with `{"name":"example_api"}` removes the stored value and prevents future use; an already-started request may finish. Remove a credential before changing its origin or authentication configuration. Each user can save up to 100 credentials per bot, with values limited to 16,384 characters.
+Calling `request_secret` again with the same name and configuration returns the saved reference. Add `"replace": true` to show another protected card and replace its value. `forget_secret` with `{"name":"example_api"}` removes the stored value and prevents future use; an already-started request may finish. Remove a credential before changing its origin or authentication configuration. A Vault holds up to 1,000 items, with values limited to 16,384 characters.
 
 The model has no tool for reading these values, and the backend removes direct and common encoded echoes from API responses. The approved service still receives the credential: redaction cannot defend against a malicious service deliberately transforming it. Choose a service you trust and use appropriately scoped credentials.
 
@@ -63,7 +63,7 @@ A command variable is redacted from command output in its plain, base64 and URL-
 
 **The bot's shell reads this value.** A command variable is a convenience for the bot, not a boundary against it: the shell command the bot runs, and the code that command starts, can print, encode or send the value. Redaction stops it appearing in a result the model reads; it does not stop a permitted bot, or anything the bot runs, from using it. There is no secrecy from the bot that was given the credential, so treat a command variable as shared with that bot and save only values you would let it use unattended, scoped to what it needs.
 
-Command variables are managed in the same Vault as other reusable credentials. The request card a bot opens in a thread shows a command variable's variable name in place of a site.
+Command variables are managed in the same Vault as other reusable credentials. Open the saved variable in the Vault to see its exact environment variable name.
 
 Each variable a command is sent with is recorded as a use of it (`credential.used` in the [audit log](./self-host-audit-log.md#what-is-recorded)) and listed in its item's activity: once per variable each time a run starts or resumes, however many commands that run then runs, and once per variable for each check of a [routine](./routines.md#when-something-changes) that watches a command. The record never holds the value, and has no site, since a shell is not one. A command that is refused, or that never reaches the computer, is not a use, and neither is a run reading the variables when it starts in order to hide them from its output. A variable a bot may not use (see Managing the vault) is neither exported to its commands nor recorded.
 
@@ -202,9 +202,10 @@ password, takes the first HTTPS site of a cell that lists several (a site
 written without `https://`, such as `example.com`, counts as HTTPS; `http://` does not), reads a file
 of up to 5 MB, and shows how many logins it will add before
 saving, with a line saying that bots can use each one until you change its Bots setting. A Vault
-holds 100 items, so when a file has more new logins than there is room for, the
-review counts the rest as "Vault full". It still sends them, up to 100 at a time, and the server
-decides which fit; its result lists any it had no room for. An import that stops partway says some logins
+holds 1,000 items, so when a file has more new logins than there is room for, the
+review counts the rest as "Vault full". It still sends them, as many as a Vault holds, in requests of
+100, and the server decides which fit; its result lists any it had no room for, and once the
+Vault fills, the rest aren't sent. An import that stops partway says some logins
 may have been saved; importing the file again skips them.
 It leaves out rows whose site isn't HTTPS or is one no login may be saved for, rows without a password, rows
 with a value too long to save, rows with more cells than the header, and logins already saved for the same site and

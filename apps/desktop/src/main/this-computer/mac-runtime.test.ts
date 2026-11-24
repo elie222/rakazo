@@ -90,6 +90,16 @@ describe("versionAtLeast", () => {
     expect(versionAtLeast(undefined, "1.7.0")).toBe(false);
     expect(versionAtLeast("unknown", "1.7.0")).toBe(false);
   });
+
+  it.each([
+    ["1.7.0-rc.1", false],
+    ["1.7.0-rc.1+build.7", false],
+    ["1.7.0+build.7", true],
+    ["1.7.1-rc.1", true],
+    ["1.7", true],
+  ])("compares %s against a stable minimum", (version, expected) => {
+    expect(versionAtLeast(version, "1.7.0")).toBe(expected);
+  });
 });
 
 describe("downloadVerified", () => {
@@ -279,45 +289,51 @@ describe("resolveContainerRuntime", () => {
     expect(fake.calls.some((call) => call.includes("start") || call.includes("stop"))).toBe(false);
   });
 
-  it("starts the person's own install with its own defaults when nothing runs", async () => {
-    const fake = fakeRuntime({ userVersion: "1.7.0" });
-    const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
-    await expect(resolveContainerRuntime(deps, async () => ourCli())).resolves.toEqual({
-      cli: USER_CONTAINER_CLI,
-      ours: false,
-    });
-    expect(fake.calls.at(-1)).toEqual([
-      USER_CONTAINER_CLI,
-      "system",
-      "start",
-      "--enable-kernel-install",
-      "--timeout",
-      "120",
-    ]);
-  });
+  it.each(["1.7.0", "1.7.0+build.7"])(
+    "starts the person's own install (%s) with its own defaults when nothing runs",
+    async (userVersion) => {
+      const fake = fakeRuntime({ userVersion });
+      const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
+      await expect(resolveContainerRuntime(deps, async () => ourCli())).resolves.toEqual({
+        cli: USER_CONTAINER_CLI,
+        ours: false,
+      });
+      expect(fake.calls.at(-1)).toEqual([
+        USER_CONTAINER_CLI,
+        "system",
+        "start",
+        "--enable-kernel-install",
+        "--timeout",
+        "120",
+      ]);
+    },
+  );
 
-  it("ignores an install that is too old and starts our own copy in the app's folders", async () => {
-    const fake = fakeRuntime({ userVersion: "1.6.0" });
-    const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
-    await expect(resolveContainerRuntime(deps, async () => ourCli())).resolves.toEqual({
-      cli: ourCli(),
-      ours: true,
-    });
-    expect(fake.calls.at(-1)).toEqual([
-      ourCli(),
-      "system",
-      "start",
-      "--enable-kernel-install",
-      "--timeout",
-      "120",
-      "--install-root",
-      path.join(dir, "container-1.7.1"),
-      "--app-root",
-      path.join(dir, "vm"),
-      "--log-root",
-      path.join(dir, "vm-logs"),
-    ]);
-  });
+  it.each(["1.6.0", "1.7.0-rc.1", "1.7.0-rc.1+build.7"])(
+    "falls back from user runtime %s to our stable copy in the app's folders",
+    async (userVersion) => {
+      const fake = fakeRuntime({ userVersion });
+      const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
+      await expect(resolveContainerRuntime(deps, async () => ourCli())).resolves.toEqual({
+        cli: ourCli(),
+        ours: true,
+      });
+      expect(fake.calls.at(-1)).toEqual([
+        ourCli(),
+        "system",
+        "start",
+        "--enable-kernel-install",
+        "--timeout",
+        "120",
+        "--install-root",
+        path.join(dir, "container-1.7.1"),
+        "--app-root",
+        path.join(dir, "vm"),
+        "--log-root",
+        path.join(dir, "vm-logs"),
+      ]);
+    },
+  );
 
   it("keeps using our running copy while the person has none", async () => {
     const root = path.join(dir, "container-1.7.1");
@@ -416,20 +432,25 @@ describe("resolveContainerRuntime", () => {
     expect(fake.calls.some((call) => call.includes("stop") || call.includes("start"))).toBe(false);
   });
 
-  it("refuses to start beside an outdated system it did not start", async () => {
-    const fake = fakeRuntime({
-      running: { root: "/opt/old", version: "1.6.2" },
-      launchdRoot: "/opt/old",
-      userVersion: "1.7.1",
-    });
-    const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
-    await expect(
-      resolveContainerRuntime(deps, async () => {
-        throw new Error("must not download");
-      }),
-    ).rejects.toBeInstanceOf(RuntimeTooOldError);
-    expect(fake.calls.some((call) => call.includes("stop") || call.includes("start"))).toBe(false);
-  });
+  it.each(["1.6.2", "1.7.0-rc.1"])(
+    "refuses to start beside another system running %s",
+    async (version) => {
+      const fake = fakeRuntime({
+        running: { root: "/opt/old", version },
+        launchdRoot: "/opt/old",
+        userVersion: "1.7.1",
+      });
+      const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
+      await expect(
+        resolveContainerRuntime(deps, async () => {
+          throw new Error("must not download");
+        }),
+      ).rejects.toBeInstanceOf(RuntimeTooOldError);
+      expect(fake.calls.some((call) => call.includes("stop") || call.includes("start"))).toBe(
+        false,
+      );
+    },
+  );
 
   it("replaces an outdated copy of its own", async () => {
     const root = path.join(dir, "container-1.7.1");

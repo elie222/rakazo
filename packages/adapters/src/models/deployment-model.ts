@@ -1,9 +1,13 @@
 import { getEnvApiKey } from "@earendil-works/pi-ai/compat";
-import type { ModelUsageLookup } from "@rakazo/adapter-kit";
+import type { ModelUsageLookup, SecretStore } from "@rakazo/adapter-kit";
+import { canonicalPiProviderId } from "@rakazo/contracts";
 import { modelCreditOfferings } from "../model-credits/offerings.js";
 import { LOCAL_PROVIDER_ID, localModelIds } from "../runtime/pi/models/pi-local-provider-id.js";
+import type { PiCatalogEntry } from "../runtime/pi/models/pi-models.js";
+import { hiddenCatalogModel, listPiCatalog } from "../runtime/pi/models/pi-models.js";
 
 import { modelProviderDefinition, modelProviders } from "./model-provider-registry.js";
+import { parseModelSecret } from "./model-secret.js";
 
 export const DEFAULT_OPENROUTER_MODEL_ID = modelProviders.openrouter.deployment.defaultModel;
 
@@ -67,4 +71,100 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
 export function deploymentModelUsageLookup(): ModelUsageLookup | undefined {
   const model = resolveDeploymentModel();
   return model.key ? modelProviderDefinition(model.provider)?.usageLookup?.(model.key) : undefined;
+}
+
+/** Record id binding the key an admin saved for everyone to the deployment's settings row. */
+export const DEPLOYMENT_MODEL_RECORD = "deployment-model";
+
+/** The deployment settings row's fields that hold an admin's default model for everyone. */
+export type SavedDeploymentModel = {
+  defaultModelProvider?: string | null;
+  defaultModelId?: string | null;
+  deploymentModelProvider?: string | null;
+  deploymentModelId?: string | null;
+  deploymentModelCredentialCipher?: string | null;
+  modelCreditsEnabled?: boolean;
+};
+
+/**
+ * The model and key an admin connected for everyone, while they apply. Model credits always run
+ * on the operator's own connection, so a saved one is never used on a credits deployment, and the
+ * provider allowlist governs it like any connection an app account makes.
+ */
+export function adminDeploymentModel(
+  settings: SavedDeploymentModel | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): { provider: string; modelId: string; cipher: string } | null {
+  const provider = settings?.deploymentModelProvider?.trim();
+  const modelId = settings?.deploymentModelId?.trim();
+  const cipher = settings?.deploymentModelCredentialCipher;
+  if (!provider || !modelId || !cipher) return null;
+  if (settings.modelCreditsEnabled || modelCreditOfferings(env)) return null;
+  if (
+    !listPiCatalog().some(
+      (entry) =>
+        entry.provider === provider && entry.id === modelId && eligibleDeploymentModel(entry),
+    )
+  )
+    return null;
+  return { provider, modelId, cipher };
+}
+
+export function matchingAdminDeploymentModel(
+  settings: SavedDeploymentModel | null | undefined,
+  provider: string,
+  modelId: string,
+) {
+  const saved = adminDeploymentModel(settings);
+  return saved &&
+    canonicalPiProviderId(saved.provider) === canonicalPiProviderId(provider) &&
+    saved.modelId === modelId
+    ? saved
+    : null;
+}
+
+export async function loadAdminDeploymentModelKey(
+  secretStore: Pick<SecretStore, "load">,
+  cipher: string,
+): Promise<string> {
+  const secret = parseModelSecret(await secretStore.load(cipher, DEPLOYMENT_MODEL_RECORD));
+  if (secret.kind !== "api_key") throw new Error("Invalid deployment model credential");
+  return secret.key;
+}
+
+/**
+ * Providers an admin can connect for everyone with a key alone, and the models each runs. Ones
+ * that need routing ids, a sign-in or an endpoint stay operator configuration.
+ */
+export function deploymentModelProviders(): {
+  id: string;
+  name: string;
+  models: { id: string; label: string }[];
+}[] {
+  const providers = new Map<
+    string,
+    { id: string; name: string; models: { id: string; label: string }[] }
+  >();
+  for (const entry of listPiCatalog()) {
+    if (!eligibleDeploymentModel(entry)) continue;
+    const provider = providers.get(entry.provider) ?? {
+      id: entry.provider,
+      name: entry.providerName ?? entry.provider,
+      models: [],
+    };
+    provider.models.push({ id: entry.id, label: entry.label });
+    providers.set(entry.provider, provider);
+  }
+  return [...providers.values()];
+}
+
+function eligibleDeploymentModel(entry: PiCatalogEntry): boolean {
+  return (
+    !entry.placeholder &&
+    !entry.endpointPresets &&
+    !entry.routingFields?.length &&
+    (entry.auth === "api-key" || entry.auth === "both") &&
+    !modelProviderDefinition(entry.provider)?.requiresHostConfiguration &&
+    !hiddenCatalogModel(entry)
+  );
 }

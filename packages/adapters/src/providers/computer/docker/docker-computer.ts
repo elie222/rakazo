@@ -12,6 +12,7 @@ export const dockerComputer: ComputerProviderDefinition = {
     serverHomeMount: "always",
     serverOwnsStoredTeamHome: false,
     storedHomeIsBackup: true,
+    offersHostComputer: true,
   },
   // Production without a supervisor token cannot run Docker computers; boot as none instead of exiting.
   unavailable: (source) =>

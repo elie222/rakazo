@@ -109,8 +109,18 @@ test("the chat's model can be changed from the message box once turned on", asyn
   const picker = composer.getByRole("button", { name: /^Model/ });
   await expect(picker).toBeVisible();
   await captureScreenshot(page, testInfo, "composer-model-picker");
-  await picker.click();
+  // Hovering names the keys that open the list and step its thinking.
+  await picker.hover();
+  await expect(page.locator('[data-slot="tooltip-content"]')).toContainText("Model");
+  await captureScreenshot(page, testInfo, "composer-model-picker-shortcuts");
+  await page.getByRole("combobox", { name: /^Message/ }).focus();
   const smart = page.getByRole("option", { name: "e2e-smart" });
+  // The same chord opens the list from the message box and closes it again.
+  await page.keyboard.press("ControlOrMeta+Shift+M");
+  await expect(smart).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+Shift+M");
+  await expect(smart).toHaveCount(0);
+  await picker.click();
   await expect(smart).toBeVisible();
   await captureScreenshot(page, testInfo, "composer-model-picker-open");
   await smart.click();
@@ -121,4 +131,52 @@ test("the chat's model can be changed from the message box once turned on", asyn
     modelId: "e2e-smart",
     thinkingLevel: null,
   });
+
+  // A write outside the settings UI reaches the open chat through the live stream.
+  await rpc(page, "preferences/update", { chatPreferences: { composerModelPicker: false } });
+  await expect(picker).toHaveCount(0);
+  await rpc(page, "preferences/update", { chatPreferences: { composerModelPicker: true } });
+  await expect(picker).toBeVisible();
+});
+
+test("the message box lists a provider's newest models first", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `composer-model-order-${stamp}@rakazo.test`, "password12", "Model Order");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  const botId = new URL(page.url()).pathname.split("/").at(-1)!;
+
+  // Enabled out of order, so the list has to sort them.
+  await page.route("**/rpc/models/credentials", (route) =>
+    route.fulfill({
+      json: {
+        json: [
+          {
+            id: "cred-e2e-order",
+            provider: "openai",
+            label: "OpenAI",
+            hasKey: true,
+            isDefault: true,
+            enabledModelIds: ["demo-4.1", "demo-5", "demo-4.5"],
+          },
+        ],
+      },
+    }),
+  );
+
+  const settings = await openUserSettings(page);
+  const toggle = settings.getByTestId("composer-model-picker-toggle");
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+  await page.goto(`/app/${botId}`);
+  const picker = page.getByTestId("composer-bar").getByRole("button", { name: /^Model/ });
+  await expect(picker).toBeVisible();
+  await picker.click();
+  await expect(page.getByRole("option", { name: /^demo-/ })).toHaveText([
+    /demo-5/,
+    /demo-4\.5/,
+    /demo-4\.1/,
+  ]);
+  await captureScreenshot(page, testInfo, "composer-model-picker-newest-first");
 });

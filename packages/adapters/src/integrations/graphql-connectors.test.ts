@@ -812,6 +812,37 @@ describe("GraphQL execution failures", () => {
     ).rejects.toThrow(/validation limit/);
   });
 
+  it("returns partial data with field errors instead of throwing", async () => {
+    const events = await executeGraphqlProvider(async () =>
+      Response.json({
+        data: { me: { id: "1", email: null } },
+        errors: [{ message: "email: forbidden", path: ["me", "email"], extensions: { x: 1 } }],
+      }),
+    );
+    expect(events).toEqual([
+      {
+        type: "result",
+        data: {
+          status: 200,
+          data: { me: { id: "1", email: null } },
+          errors: [{ message: "email: forbidden", path: ["me", "email"] }],
+        },
+      },
+    ]);
+  });
+
+  it("caps the number and length of partial-success errors", async () => {
+    const events = await executeGraphqlProvider(async () =>
+      Response.json({
+        data: { a: null },
+        errors: Array.from({ length: 50 }, () => ({ message: "x".repeat(2_000) })),
+      }),
+    );
+    const data = (events[0] as { data: { errors: { message: string }[] } }).data;
+    expect(data.errors).toHaveLength(20);
+    expect(data.errors[0]?.message).toHaveLength(500);
+  });
+
   it("yields type error from InstalledConnectorProvider on GraphQL errors array", async () => {
     const events = await executeGraphqlProvider(async () =>
       Response.json({ errors: [{ message: "Field 'hello' is required" }], data: null }),

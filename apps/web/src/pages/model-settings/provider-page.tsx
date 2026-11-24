@@ -1,9 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import type { ConnectionModel } from "@rakazo/core";
 import { ListSearchInput, SectionHeading } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { SettingsPageHeader } from "../../components/settings/SettingsPageHeader";
-import { useListSearch } from "../../lib/use-list-search";
 import { SettingsListRow } from "./providers-section";
 
 type ProviderModel = ConnectionModel;

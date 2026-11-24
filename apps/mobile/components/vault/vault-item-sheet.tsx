@@ -8,17 +8,18 @@ import {
   otherSitesText,
   vaultKind,
 } from "@rakazo/contracts";
+import { siteHost } from "@rakazo/core";
 import { vaultBotsLine } from "@rakazo/i18n/vault";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
-import { Modal, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Modal, ScrollView, StyleSheet, Text, View } from "react-native";
 import { formatActivityRelativeTime } from "../../lib/inbox/activity";
+import { useSheetPadding } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { siteHost } from "../../lib/vault/secret-destination";
 import { readableItem, vaultKindLabel, vaultKindSymbol } from "../../lib/vault/vault";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
+import { SheetBar, SheetBarBack, SheetBarClose } from "../native/sheet-bar";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 import { VaultTile } from "./vault-tile";
 
@@ -55,7 +56,7 @@ export function VaultItemSheet({
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetPadding();
   const readable = readableItem(item);
   const kind = readable ? vaultKind(readable.auth.type) : undefined;
   const symbol = kind ? vaultKindSymbol(kind) : { ios: "questionmark", android: "help" };
@@ -126,36 +127,27 @@ export function VaultItemSheet({
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View
-        accessibilityViewIsModal
-        style={[
-          styles.sheet,
-          {
-            paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
-            paddingBottom: insets.bottom,
-          },
-        ]}
-      >
-        <View style={styles.header}>
-          {usesOpen ? (
-            <NativeActionButton
-              label={t`Back`}
-              onPress={() => setUsesOpen(false)}
-              prominence="plain"
-            />
-          ) : (
-            <NativeActionButton label={t`Done`} onPress={onClose} prominence="plain" />
-          )}
-          {readable && !usesOpen ? (
-            <NativeActionButton
-              disabled={busy}
-              fill={false}
-              label={t`Edit`}
-              onPress={onEdit}
-              prominence="plain"
-            />
-          ) : null}
-        </View>
+      <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
+        <SheetBar
+          leading={
+            usesOpen ? (
+              <SheetBarBack label={t`Back`} onPress={() => setUsesOpen(false)} />
+            ) : (
+              <SheetBarClose label={t`Done`} onPress={onClose} />
+            )
+          }
+          trailing={
+            readable && !usesOpen ? (
+              <NativeActionButton
+                disabled={busy}
+                fill={false}
+                label={t`Edit`}
+                onPress={onEdit}
+                prominence="plain"
+              />
+            ) : null
+          }
+        />
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.heading}>
             <VaultTile origin={kind === "login" ? item.origin : undefined} style={styles.tile}>
@@ -249,13 +241,6 @@ export function VaultItemSheet({
 function createStyles() {
   return StyleSheet.create({
     sheet: { flex: 1, backgroundColor: native.groupedPage },
-    header: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingHorizontal: 20,
-      paddingBottom: 12,
-    },
     content: { paddingHorizontal: 20, paddingBottom: 40, gap: 24 },
     heading: { flexDirection: "row", alignItems: "center", gap: 12 },
     headingText: { flex: 1 },

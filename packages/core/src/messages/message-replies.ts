@@ -2,17 +2,20 @@ import type { MessageAuthor, MessageBlock, ReplyPreview } from "@rakazo/contract
 import { MessageAuthorSchema, ReplyPreviewSchema } from "@rakazo/contracts";
 import { isQuestionAskBlock } from "../asks/ask-kind.js";
 import { displayName } from "../bots/display-name.js";
+import type { ThreadItem, VoiceChatMessage } from "../calls/voice-chat-groups.js";
 import { plainTextFromMarkdown } from "./markdown-plain.js";
 import { messageReaction } from "./message-reactions.js";
-import { isDeliveryMessage } from "./message-visibility.js";
+import { isDeliveryMessage, isPeerReceiptBlocks } from "./message-visibility.js";
 
 /** Bound the source considered when deriving a reply excerpt. */
 export const MAX_QUOTABLE_SOURCE_LENGTH = 100_000;
 
+const REPLY_LINE_BREAK = /\r\n?|\n/u;
+
 /** The first nonblank reply line, capped without splitting a surrogate pair. */
 export function compactReplyExcerpt(text: string): string {
   const first = text
-    .split(/\r?\n/u)
+    .split(REPLY_LINE_BREAK)
     .map((line) => line.trim())
     .find(Boolean);
   const excerpt = (first ?? "").slice(0, 280);
@@ -59,6 +62,44 @@ export function otherAuthor(
   return author && meId && author.id !== meId ? author : undefined;
 }
 
+type SenderMessage = VoiceChatMessage & { author?: MessageAuthor; botId?: string };
+
+/** Later messages in a visible sender group do not need another sender header. */
+export function continuedSenderMessageIds(
+  items: readonly ThreadItem<SenderMessage>[],
+  separatorIds: ReadonlySet<string>,
+  unreadDividerId: string | null,
+  canShowSender?: (message: SenderMessage) => boolean,
+): Set<string> {
+  const continued = new Set<string>();
+  let previousRole: string | undefined;
+  let previousSender: string | undefined;
+  for (const item of items) {
+    if (
+      item.kind === "voiceChat" ||
+      isPeerReceiptBlocks(item.message.blocks) ||
+      canShowSender?.(item.message) === false
+    ) {
+      previousSender = undefined;
+      continue;
+    }
+    const { id, role, botId, author } = item.message;
+    const sender = role === "bot" ? botId : role === "user" ? author?.id : undefined;
+    if (
+      sender &&
+      sender === previousSender &&
+      role === previousRole &&
+      !separatorIds.has(id) &&
+      id !== unreadDividerId
+    ) {
+      continued.add(id);
+    }
+    previousRole = role;
+    previousSender = sender;
+  }
+  return continued;
+}
+
 /**
  * A message that leaves the chat unread for this viewer until they read it: a bot's, or one
  * someone else in the space wrote. Their own never does. Takes a stored message or a live
@@ -101,7 +142,9 @@ export function memberMessageAlerts(message: {
 }
 
 export function replyLineText(quote?: string, preview?: string, fallback?: string): string {
-  return quote ? quote.replace(/\s+/gu, " ") : (preview || fallback || "").split(/\r?\n/u)[0] || "";
+  return quote
+    ? quote.replace(/\s+/gu, " ")
+    : (preview || fallback || "").split(REPLY_LINE_BREAK, 1)[0] || "";
 }
 
 /** Pick only metadata from validated parent blocks, preferring a photo over a file. */

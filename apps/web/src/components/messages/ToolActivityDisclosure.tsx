@@ -48,8 +48,11 @@ export function ToolSteps({
             ) : null}
             <div className="flex min-w-0 items-center gap-2 leading-5">
               <span
-                className={`text-label ${isCurrent ? "text-warning" : "text-success"}`}
-                style={{ animation: isCurrent ? "rkPulse 1.2s ease-in-out infinite" : undefined }}
+                className={`text-label ${
+                  isCurrent
+                    ? "text-warning motion-safe:animate-[rkPulse_1.2s_ease-in-out_infinite]"
+                    : "text-success"
+                }`}
               >
                 {isCurrent ? "◷" : "✓"}
               </span>

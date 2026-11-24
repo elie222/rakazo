@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { BotMcpServer, McpServer } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
-import { isRetryableError } from "@rakazo/core";
+import { isRetryableError, sameMcpServerAccess } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -51,10 +51,6 @@ const INSTALL_POLL_MS = 2500;
 /** A server whose authorization server cannot register a client until the user enters one. */
 function needsOAuthClient(server: McpServer): boolean {
   return server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId;
-}
-
-function sameAccess(a: AgentAccess, b: AgentAccess): boolean {
-  return a.allBots === b.allBots && [...a.botIds].sort().join() === [...b.botIds].sort().join();
 }
 
 function oauthActionLabel(server: McpServer, pending: boolean): string {
@@ -194,7 +190,7 @@ export function McpServersOverlay({
     try {
       const config = mcpServerConfig(draft, editing);
       if (editing) {
-        await rpc.mcp.servers.update({
+        const update = {
           id: editing.id,
           config: {
             ...config,
@@ -202,15 +198,17 @@ export function McpServersOverlay({
             description: editing.description,
             enabled: editing.enabled,
           },
-        });
-        if (!sameAccess(draft.access, accessOf(editing)))
-          await rpc.mcp.servers.agents({ id: editing.id, ...draft.access });
+        };
+        await (sameMcpServerAccess(draft.access, accessOf(editing))
+          ? rpc.mcp.servers.update(update)
+          : rpc.mcp.servers.save({ ...update, access: draft.access }));
         await refresh();
         resetForm();
         return;
       }
-      const created = await rpc.mcp.servers.create(config);
-      if (!draft.access.allBots) await rpc.mcp.servers.agents({ id: created.id, ...draft.access });
+      const created = draft.access.allBots
+        ? await rpc.mcp.servers.create(config)
+        : await rpc.mcp.servers.createForBots({ config, botIds: draft.access.botIds });
       await refresh();
       resetForm();
       // A remote server is checked in the background; wait for that check so a server

@@ -111,6 +111,50 @@ describe("connect-time model check", () => {
       error: "credit",
     },
     {
+      name: "an account out of quota",
+      config: { provider: "openai", id: "gpt-6-luna" },
+      fetch: rejection(429, {
+        error: {
+          message: "You exceeded your current quota, please check your plan and billing details.",
+          type: "insufficient_quota",
+          code: "insufficient_quota",
+        },
+      }),
+      error: "credit",
+    },
+    {
+      name: "an account whose credit balance is too low",
+      config: { provider: "anthropic", id: "claude-haiku-5-5" },
+      fetch: rejection(400, {
+        type: "error",
+        error: {
+          type: "invalid_request_error",
+          message: "Your credit balance is too low to access the API.",
+        },
+      }),
+      error: "credit",
+    },
+    {
+      name: "a team that has no credits yet",
+      config: { provider: "xai", id: "grok-4.3" },
+      fetch: rejection(403, {
+        code: "The caller does not have permission to execute the specified operation",
+        error: "Your newly created team doesn't have any credits or licenses yet.",
+      }),
+      error: "credit",
+    },
+    {
+      name: "an account suspended for its balance",
+      config: { provider: "moonshotai", id: "kimi-k2.6" },
+      fetch: rejection(429, {
+        error: {
+          message: "Your account is not active, please check your account balance",
+          type: "exceeded_current_quota_error",
+        },
+      }),
+      error: "spending",
+    },
+    {
       name: "a rejected key",
       config: { provider: "groq", id: "openai/gpt-oss-120b" },
       fetch: rejection(401, {
@@ -128,7 +172,19 @@ describe("connect-time model check", () => {
 
   it.each([
     ["a rate limit", rejection(429, { error: { message: "Rate limit reached.", code: 429 } })],
+    [
+      "a concurrency limit",
+      rejection(429, {
+        error: { message: "Too many concurrent requests.", type: "exceeded_concurrent_quota" },
+      }),
+    ],
     ["an outage", rejection(503, { error: { message: "Service unavailable.", code: 503 } })],
+    [
+      "a provider that does not answer in time",
+      vi.fn<typeof fetch>(async () => {
+        throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      }),
+    ],
     [
       "an unreachable provider",
       vi.fn<typeof fetch>(async () => {

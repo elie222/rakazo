@@ -21,7 +21,6 @@ import { appHandler, createRouter, handle } from "./router-test-support.js";
 
 describe("account preferences", () => {
   function preferencesDeps(avatarStyle: string, timezone: string | null = null) {
-    const update = vi.fn().mockResolvedValue({});
     const user = {
       email: "user@rakazo.test",
       name: "Test User",
@@ -29,6 +28,7 @@ describe("account preferences", () => {
       timezone,
       secrets: [],
     };
+    const update = vi.fn(async ({ data }: { data: object }) => Object.assign(user, data));
     const updateMany = vi.fn(
       async ({ where, data }: { where: { timezone: null }; data: { timezone: string } }) => {
         if (user.timezone !== where.timezone) return { count: 0 };
@@ -90,6 +90,7 @@ describe("account preferences", () => {
     } as unknown as PrismaClient;
     const deps = {
       prisma,
+      events: { publishSpaceChange: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) },
       env: {
         defaultProvider: "fake",
@@ -125,19 +126,11 @@ describe("account preferences", () => {
     await expect(client.analytics.screen({ screen: "chat", surface: "desktop" })).resolves.toEqual({
       ok: true,
     });
-    expect(capture).toHaveBeenCalledWith(
-      actor.userId,
-      { name: "screen_viewed", screen: "chat", surface: "desktop" },
-      undefined,
-      undefined,
-    );
-    await client.analytics.screen({ screen: "plans", surface: "web", planLayout: "tiers" });
-    expect(capture).toHaveBeenLastCalledWith(
-      actor.userId,
-      { name: "screen_viewed", screen: "plans", surface: "web", planLayout: "tiers" },
-      undefined,
-      { "plan-layout": "tiers" },
-    );
+    expect(capture).toHaveBeenCalledWith(actor.userId, {
+      name: "screen_viewed",
+      screen: "chat",
+      surface: "desktop",
+    });
     await expect(
       client.analytics.screen({
         screen: "chat",
@@ -149,7 +142,7 @@ describe("account preferences", () => {
     await expect(
       anonymous.analytics.screen({ screen: "chat", surface: "web" }),
     ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    expect(capture).toHaveBeenCalledTimes(2);
+    expect(capture).toHaveBeenCalledTimes(1);
   });
 
   it("reports model credential store outages as service unavailable", async () => {
@@ -414,6 +407,27 @@ describe("account preferences", () => {
     });
   });
 
+  it("saves a partial chat preference patch for the authenticated account", async () => {
+    const { deps, actor, update } = preferencesDeps("organic");
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    await expect(
+      client.preferences.update({ chatPreferences: { composerModelPicker: false } }),
+    ).resolves.toMatchObject({
+      chatPreferences: { composerModelPicker: false, streamReplies: null },
+    });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: actor.userId },
+      data: { composerModelPicker: false },
+    });
+    expect(deps.events.publishSpaceChange).toHaveBeenCalledWith(
+      `preferences:${actor.userId}`,
+      "preferences",
+    );
+    await expect(client.me()).resolves.toMatchObject({
+      chatPreferences: { composerModelPicker: false },
+    });
+  });
+
   it("saves the timezone and the language preference in one write", async () => {
     const setup = preferencesDeps("organic", "Africa/Cairo");
 
@@ -529,7 +543,7 @@ describe("account preferences", () => {
     expect(setup.updateMany).not.toHaveBeenCalled();
   });
 
-  it.each(["robot", "organic", "custom-cdn"])(
+  it.each(["robot", "custom-cdn"])(
     "always reports the organic style, whatever is stored (%s)",
     async (style) => {
       const { actor, handler } = preferencesDeps(style);

@@ -1,6 +1,9 @@
 import * as z from "zod";
 import { Id } from "../ids.js";
 
+/** The longest space search query the server accepts, in UTF-16 units (JavaScript string length). */
+export const SEARCH_QUERY_MAX_LENGTH = 200;
+
 export const SearchHitKindSchema = z.enum(["conversation", "message", "file", "link", "routine"]);
 
 export const SearchHitSchema = z

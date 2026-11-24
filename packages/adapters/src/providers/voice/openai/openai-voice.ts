@@ -88,15 +88,6 @@ export class OpenAIVoiceProvider implements VoiceProvider {
         : {}),
       bytes: await readVoiceAudio(res, signal),
       mimeType: "audio/mpeg",
-      ...(request.model === "tts-1" || request.model === "tts-1-hd"
-        ? {
-            usage: {
-              model: request.model,
-              unit: "characters" as const,
-              units: Array.from(request.text).length,
-            },
-          }
-        : {}),
     };
   }
 
@@ -165,12 +156,7 @@ export class OpenAIVoiceProvider implements VoiceProvider {
 }
 
 export const openaiVoice: VoiceProviderDefinition = {
-  deploymentUsageUnit: (operation, model) => {
-    if (operation === "synthesize" && (model === "tts-1" || model === "tts-1-hd"))
-      return "characters";
-    if (operation === "transcribe" && model === "whisper-1") return "seconds";
-    return undefined;
-  },
+  transcriptionUsageUnit: (model) => (model === "whisper-1" ? "seconds" : undefined),
   catalog: {
     name: "OpenAI",
     description: "Simple TTS plus Whisper-class transcription. Reuse an OpenAI key.",

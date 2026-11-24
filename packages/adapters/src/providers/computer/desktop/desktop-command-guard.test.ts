@@ -696,3 +696,39 @@ it("guards by the computer a run actually uses", () => {
   ).toBe(true);
   expect(desktopGuardApplies({ graphical: true, stored: { kind: "wuying" } })).toBe(false);
 });
+
+describe("killall5", () => {
+  // killall5 signals every process outside its own session, so it ends the browser and desktop like killall.
+  it.each([
+    "killall5 -9",
+    "killall5",
+    "sudo killall5 -15",
+    'bash -c "killall5 -9"',
+    'k"illall5" -9',
+  ])("refuses %s", (command) => {
+    expect(protectedComputerLifecycleRefusal(command)).toBe("protected command killall5");
+  });
+});
+
+describe("digit-only special parameters", () => {
+  it.each([
+    'python3 report.py; echo "exit: $?"',
+    "ls missing-file 2>/dev/null; echo $?",
+    "grep -c invoice notes.txt; test $? -eq 0 && echo found",
+    'echo "args: $#"',
+  ])("runs %s", (command) => {
+    expect(protectedComputerLifecycleRefusal(command)).toBeUndefined();
+  });
+
+  it("still refuses protected commands that use them", () => {
+    expect(protectedComputerLifecycleRefusal("pkill chromium; echo $?")).toBe(
+      "protected command pkill",
+    );
+    expect(protectedComputerLifecycleRefusal("kill $?")).toBe("protected command kill");
+  });
+
+  it("still refuses process ids it cannot see", () => {
+    expect(protectedComputerLifecycleRefusal("sleep 5 & echo $!")).toMatch(/unresolved variable/);
+    expect(protectedComputerLifecycleRefusal("echo $$")).toMatch(/unresolved variable/);
+  });
+});

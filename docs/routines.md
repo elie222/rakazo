@@ -15,8 +15,9 @@ The bot creates the routine and reports each run back in the same chat.
 
 ## Create or edit one yourself
 
-Open the bot's computer with **Agent computer** at the top of the chat. Below the screen is the
-bot's **Routines** list. Choose **Create Routine** (the **+**), or click a routine to edit it.
+On web or desktop, click the bot's name at the top of its chat to open the bot panel. In
+**Routines**, choose **New routine** if the list is empty, or **+** (labeled **Create routine**) if
+it already has routines. To edit a routine, select it from the list.
 
 1. **Name** the routine and write the **Instruction**: what it should do each time it runs.
 2. Under **When to run**, choose **Add trigger**.
@@ -78,6 +79,9 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 - Turn off **Active** to pause a routine without deleting it.
 - **Run history** shows each past run and its result.
 - A running routine shows **Running** in the list, with **Stop**.
+
+A recurring timer skips new runs while an earlier run from that timer is still active. If it is
+waiting for your input, answer in the chat where the question appeared to continue that run.
 
 ## On mobile
 

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isIPv4 } from "node:net";
 import path from "node:path";
+import { browserReadyCommand } from "./browser-ready.js";
 import { TERMINAL_SERVER_PROGRAM } from "./terminal-server.js";
 // Each live Chrome needs a private debugger port. This is the TCP address-space
 // boundary, not a product limit on bots or saved browser profiles.
@@ -418,6 +419,7 @@ function browserLauncherCommand(
   env: DesktopEnvironment,
 ) {
   const layout = commandLayout(index, env);
+  const profile = shellQuote(browserProfilePathForScreen(screenId, env));
   return [
     "#!/bin/bash",
     "set -eu",
@@ -427,8 +429,8 @@ function browserLauncherCommand(
       : []),
     "browser=$(command -v rakazo-browser || command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)",
     `export DISPLAY=${layout.display} HOME=${shellQuote(env.homeDir)}`,
-    // Docker exec does not inherit the session bus exported by container startup.
-    // The boot portal draws on displayStart; other screens must source their own bus.
+    // The boot portal draws on displayStart; other screens use their own portal bus
+    // and must not fall back to the image's boot bus.
     ...browserSessionBusLines(index, env),
     // The image preloads libnss_wrapper so arbitrary UIDs resolve. Chromium's
     // process stays up with these flags while that library is loaded, and the
@@ -452,7 +454,13 @@ function browserLauncherCommand(
     '  if [ -n "$_kept" ]; then export LD_PRELOAD="$_kept"; else unset LD_PRELOAD; fi',
     "  unset _kept _rest _entry",
     "fi",
-    `exec "$browser" --test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=${layout.debugPort} --user-data-dir=${shellQuote(browserProfilePathForScreen(screenId, env))} "$@"`,
+    // rakazo-browser owns the full Chromium flag set (and derives the debugger port from DISPLAY);
+    // passing those flags here too duplicates every flag in Chromium's argv.
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    'case "${browser##*/}" in',
+    `  rakazo-browser) exec "$browser" --user-data-dir=${profile} "$@" ;;`,
+    `  *) exec "$browser" --test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=${layout.debugPort} --user-data-dir=${profile} "$@" ;;`,
+    "esac",
   ].join("\n");
 }
 
@@ -514,6 +522,11 @@ export function browserCloseProgram() {
 
 /** Exit status of a browser stop that found a browser open on the profile again. */
 export const BROWSER_STILL_RUNNING_EXIT = 76;
+/**
+ * The screen did not come up this time: its display, browser, or viewer did not start, or the
+ * computer lacks the viewer tools until it is prepared. Asking again later can succeed.
+ */
+export const SCREEN_NOT_READY_EXIT = 77;
 
 export function stopBrowserCommand(screenId: string, env = DEFAULT_DESKTOP_ENV) {
   return stopBrowserProfileCommand(
@@ -691,7 +704,7 @@ function gatewayCommand(port: string, host = "127.0.0.1") {
     `if ! (echo >/dev/tcp/${probeHost}/${port}) >/dev/null 2>&1; then`,
     "  echo 'screen gateway did not start' >&2",
     `  tail -c 2000 /tmp/rakazo/gateway-${port}.log >&2 || true`,
-    "  exit 1",
+    `  exit ${SCREEN_NOT_READY_EXIT}`,
     "fi",
   ].join("\n");
 }
@@ -764,8 +777,8 @@ export function prepareBrowserProfileCommand(screenId: string, env = DEFAULT_DES
 
 function proxyEnvironmentCommand() {
   return [
-    'if command -v websockify >/dev/null 2>&1; then proxy=$(command -v websockify); elif [ -x /opt/noVNC/utils/websockify/run ]; then proxy=/opt/noVNC/utils/websockify/run; else echo "websockify is required" >&2; exit 1; fi',
-    'if [ -d /usr/share/novnc ]; then web=/usr/share/novnc; elif [ -d /opt/noVNC ]; then web=/opt/noVNC; else echo "noVNC is required" >&2; exit 1; fi',
+    `if command -v websockify >/dev/null 2>&1; then proxy=$(command -v websockify); elif [ -x /opt/noVNC/utils/websockify/run ]; then proxy=/opt/noVNC/utils/websockify/run; else echo "websockify is required" >&2; exit ${SCREEN_NOT_READY_EXIT}; fi`,
+    `if [ -d /usr/share/novnc ]; then web=/usr/share/novnc; elif [ -d /opt/noVNC ]; then web=/opt/noVNC; else echo "noVNC is required" >&2; exit ${SCREEN_NOT_READY_EXIT}; fi`,
   ].join("\n");
 }
 
@@ -797,7 +810,7 @@ function renderEnsureScreenCommand(
           `  rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber}`,
           `  nohup Xvfb ${layout.display} -screen 0 1280x800x24 -ac +extension RANDR +render -noreset -nolisten tcp 8>&- 9>&- </dev/null >${log}-xvfb.log 2>&1 &`,
           `  for i in $(seq 1 100); do xdpyinfo -display ${layout.display} >/dev/null 2>&1 && break; sleep 0.1; done`,
-          `  if ! xdpyinfo -display ${layout.display} >/dev/null 2>&1; then echo 'computer display did not start' >&2; tail -c 2000 ${log}-xvfb.log >&2 || true; exit 1; fi`,
+          `  if ! xdpyinfo -display ${layout.display} >/dev/null 2>&1; then echo 'computer display did not start' >&2; tail -c 2000 ${log}-xvfb.log >&2 || true; exit ${SCREEN_NOT_READY_EXIT}; fi`,
           `  if [ -f /etc/rakazo/fluxbox/init ]; then cp /etc/rakazo/fluxbox/init ${fluxHome}/.fluxbox/init; else printf "session.screen0.toolbar.visible: false\\n" >${fluxHome}/.fluxbox/init; fi`,
           `  cp /etc/rakazo/fluxbox/apps ${fluxHome}/.fluxbox/apps 2>/dev/null || true`,
           `  printf '\\nsession.menuFile: %s\\n' ${fluxHome}/.fluxbox/menu >>${fluxHome}/.fluxbox/init`,
@@ -813,12 +826,15 @@ function renderEnsureScreenCommand(
   const socket = `/tmp/rakazo/sockets/view-${layout.displayNumber}-\${desktop_view_token}`;
   const setupView = [
     `mkdir -p ${TARGETS} /tmp/rakazo/sockets`,
-    `if [ ! -S ${socket} ] || ! pgrep -f ${quoteLayout(`^([^ ]*/)?x11vnc .* -unixsock ${socket}( |$)`)} >/dev/null; then`,
+    // The viewer takes no keys: -repeat leaves X key autorepeat to the control process, which
+    // turns it off while a person types. Without it the viewer turns autorepeat back on, and a
+    // key-up delayed on the network repeats the key. Replace a viewer started without it.
+    `if [ ! -S ${socket} ] || ! pgrep -f ${quoteLayout(`^([^ ]*/)?x11vnc .* -viewonly -repeat .* -unixsock ${socket}( |$)`)} >/dev/null; then`,
     stopVncCommand("view", layout),
-    `  nohup x11vnc -display ${layout.display} -forever -shared -viewonly -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 8>&- 9>&- </dev/null >${log}-x11vnc.log 2>&1 &`,
+    `  nohup x11vnc -display ${layout.display} -forever -shared -viewonly -repeat -nopw -rfbport 0 -unixsock ${socket} -xkb -ncache 0 8>&- 9>&- </dev/null >${log}-x11vnc.log 2>&1 &`,
     "fi",
     `for i in $(seq 1 50); do [ -S ${socket} ] && break; sleep 0.1; done`,
-    `if [ ! -S ${socket} ]; then echo 'screen viewer did not start' >&2; tail -c 2000 ${log}-x11vnc.log >&2 || true; exit 1; fi`,
+    `if [ ! -S ${socket} ]; then echo 'screen viewer did not start' >&2; tail -c 2000 ${log}-x11vnc.log >&2 || true; exit ${SCREEN_NOT_READY_EXIT}; fi`,
     // Leave an unchanged mapping in place. Replacing it on every ensure races
     // TokenFile, which reloads the directory on each handshake.
     `desired=$(printf '%s: unix_socket:%s\\n' "$desktop_view_token" ${socket})`,
@@ -849,32 +865,11 @@ function renderEnsureScreenCommand(
     `  nohup ${browserLauncherPath(layout.displayNumber)} 8>&- 9>&- </dev/null >${log}-browser.log 2>&1 & launched=$!`,
     `  printf %s "$launched" >${pidFile}`,
     "}",
-    "launched=",
-    "relaunched=0",
-    "browser_running || launch_browser",
-    "waited=0",
-    'while [ "$waited" -lt 80 ]; do',
-    "  if browser_running; then",
-    `    (echo >/dev/tcp/127.0.0.1/${layout.debugPort}) >/dev/null 2>&1 && break`,
-    // The browser found running can be closed, by its window or a home save, before its port
-    // answers. Start it again once rather than wait out a browser that is gone.
-    '  elif [ "$relaunched" -eq 0 ] && ! { [ -n "$launched" ] && kill -0 "$launched" 2>/dev/null; }; then',
-    "    relaunched=1",
-    "    waited=0",
-    "    launch_browser",
-    "  fi",
-    "  sleep 0.25",
-    "  waited=$((waited + 1))",
-    "done",
-    `if ! browser_running || ! (echo >/dev/tcp/127.0.0.1/${layout.debugPort}) >/dev/null 2>&1; then`,
-    `  echo "computer browser CDP not ready on ${layout.debugPort} (running=$(browser_running && echo yes || echo no))" >&2`,
-    `  tail -c 4000 ${log}-browser.log >&2 || true`,
-    "  exit 1",
-    "fi",
+    ...browserReadyCommand(layout.debugPort, pidFile, `${log}-browser.log`, SCREEN_NOT_READY_EXIT),
     ...setupView,
     `for i in $(seq 1 50); do (echo >/dev/tcp/${gatewayProbeHost(layout.bindHost)}/${layout.viewPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
     "echo 'screen view port did not open' >&2",
-    "exit 1",
+    `exit ${SCREEN_NOT_READY_EXIT}`,
   ].join("\n");
 }
 

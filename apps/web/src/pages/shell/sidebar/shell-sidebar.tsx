@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, NavLink } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
+import { formatBillingDate } from "@rakazo/i18n/billing";
 import {
   Button,
   InputGroup,
@@ -18,12 +19,12 @@ import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { CreateOrganizationDialog } from "../../../components/spaces/CreateOrganizationDialog";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
 import { useSignOut } from "../../../lib/auth/sign-out";
-import { formatBillingDate } from "../../../lib/billing/billing";
 import type { BotsSidebarDensity } from "../../../lib/preferences/bots-sidebar-density-pref";
 import { useQueryUserId } from "../../../lib/query/query";
 import { switchOrganization, useOrganizations } from "../../../lib/spaces/organizations";
 import { ActivityList } from "../../space/ActivityList";
 import { SpaceSearchResults } from "../../space/SpaceSearch";
+import { useAppRail } from "../app-rail";
 import type { ChatMenuState } from "../chat/chat-context-menu";
 import type { Panel } from "../right-panel-state";
 import type { SettingsSection } from "../shell-overlay-url";
@@ -74,6 +75,7 @@ export function ShellSidebar({
   setPanel,
   navigate,
   setNewSpaceOpen,
+  openAgentImport,
   setCreateBotOpen,
   chatMenu,
   roster,
@@ -104,6 +106,7 @@ export function ShellSidebar({
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
+  openAgentImport: () => void;
   setCreateBotOpen: (open: boolean) => void;
   chatMenu: ChatMenuState;
   roster: ReactNode;
@@ -118,6 +121,7 @@ export function ShellSidebar({
   openSpaceChat: (spaceId: string, path: string) => void;
 }) {
   const { t } = useLingui();
+  const rail = useAppRail();
   const {
     query,
     setQuery,
@@ -163,7 +167,8 @@ export function ShellSidebar({
         className={
           isMobile
             ? `absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-sidebar-border bg-sidebar transition-transform duration-200 ease-out motion-reduce:transition-none ${mobileOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"}`
-            : "h-full overflow-hidden border-sidebar-border"
+            : // The sidebar is fixed to the window edge, so it steps aside for the rail there.
+              `h-full overflow-hidden border-sidebar-border ${rail ? "data-[side=left]:left-23 data-[side=right]:right-23" : ""}`
         }
       >
         <SidebarHeader
@@ -189,6 +194,7 @@ export function ShellSidebar({
           setPanel={setPanel}
           navigate={navigate}
           setNewSpaceOpen={setNewSpaceOpen}
+          openAgentImport={openAgentImport}
           setCreateBotOpen={setCreateBotOpen}
         />
         {mini ||
@@ -217,6 +223,8 @@ export function ShellSidebar({
                   event.keyCode === 229
                 )
                   return;
+                // Handled here, so an open phone drawer stays open for this keypress.
+                event.preventDefault();
                 if (activityMode) setActivityFilters({ ...activityFilters, query: "" });
                 else setQuery("");
                 setSearchOpen(false);
@@ -417,6 +425,11 @@ function ShellSidebarFooter({
           setMenuOpen(false);
           closeMobileSidebar();
           navigate(`/app/x/${link.id}`);
+        }}
+        onSharedPages={() => {
+          setMenuOpen(false);
+          closeMobileSidebar();
+          navigate("/review");
         }}
         onArtifacts={() => {
           setMenuOpen(false);

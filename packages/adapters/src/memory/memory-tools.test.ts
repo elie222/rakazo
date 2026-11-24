@@ -160,6 +160,17 @@ describe("appendMemoryFact", () => {
     expect(appendMemoryFact("", "  durable fact  ")).toBe("durable fact\n");
   });
 
+  it("treats the same fact saved on another day as one it already holds", () => {
+    const existing = "Prefers mornings. (saved 2026-03-01)\n";
+    expect(appendMemoryFact(existing, "Prefers mornings. (saved 2026-03-09)")).toBe(existing);
+  });
+
+  it("adds a fact again when it comes with a new end", () => {
+    const existing = "Hold sends. (saved 2026-03-01, ends 2026-03-12)\n";
+    const renewed = "Hold sends. (saved 2026-03-09, ends 2026-03-30)";
+    expect(appendMemoryFact(existing, renewed)).toBe(`${existing}${renewed}\n`);
+  });
+
   it("leaves memory unchanged for a fact it already holds or an empty fact", () => {
     expect(appendMemoryFact("a\ndurable fact\n", "durable fact")).toBe("a\ndurable fact\n");
     expect(appendMemoryFact("a\n", "   ")).toBe("a\n");
@@ -198,51 +209,98 @@ describe("multiline memory facts", () => {
 
 describe("editMemory", () => {
   const memory = "# Memory\n- Lives in London.\n- Prefers short replies.\n";
+  const add = (content: string) => ({ action: "add" as const, content });
+  const replace = (old_text: string, content: string) => ({
+    action: "replace" as const,
+    old_text,
+    content,
+  });
+  const remove = (old_text: string) => ({ action: "remove" as const, old_text });
 
-  it("appends a fact when no old_text is given", () => {
-    expect(editMemory(memory, "Works at Combient.")).toEqual({
+  it("appends an added fact", () => {
+    expect(editMemory(memory, [add("Works at Combient.")])).toEqual({
       content: `${memory}Works at Combient.\n`,
     });
   });
 
   it("replaces the whole entry that holds old_text", () => {
-    expect(editMemory(memory, "- Lives in Berlin.", "London")).toEqual({
+    expect(editMemory(memory, [replace("London", "- Lives in Berlin.")])).toEqual({
       content: "# Memory\n- Lives in Berlin.\n- Prefers short replies.\n",
     });
   });
 
-  it("removes the entry when the replacement is empty", () => {
-    expect(editMemory(memory, "", "short replies")).toEqual({
+  it("removes the entry that holds old_text", () => {
+    expect(editMemory(memory, [remove("short replies")])).toEqual({
       content: "# Memory\n- Lives in London.\n",
     });
-    expect(editMemory("a\nlast", "", "last")).toEqual({ content: "a\n" });
   });
 
-  it("changes nothing when old_text is missing or ambiguous", () => {
-    expect(editMemory(memory, "x", "Paris")).toEqual({
-      error: expect.stringContaining("No entry"),
-      entries: ["# Memory", "- Lives in London.", "- Prefers short replies."],
+  it("prefers a whole entry over one that only contains old_text", () => {
+    const doc = "Lives in London. Moved to Berlin.\nLives in London.\n";
+    expect(editMemory(doc, [remove("Lives in London.")])).toEqual({
+      content: "Lives in London. Moved to Berlin.\n",
     });
-    expect(editMemory(memory, "x", "- ")).toEqual({
+  });
+
+  it("matches old_text that differs only in quotes, dashes or spacing", () => {
+    const doc = "- Manager\u2019s name \u2014 Priya   Raman\n- Likes tea\n";
+    expect(editMemory(doc, [replace("Manager's name - Priya Raman", "- Manager: Tom")])).toEqual({
+      content: "- Manager: Tom\n- Likes tea\n",
+    });
+  });
+
+  it("refuses old_text found in more than one different entry", () => {
+    expect(editMemory(memory, [replace("- ", "x")])).toEqual({
       error: expect.stringContaining("more than one"),
       entries: ["- Lives in London.", "- Prefers short replies."],
     });
   });
 
-  it("treats repeats within one line as one entry", () => {
-    expect(editMemory("aaaa\nb\n", "c", "a")).toEqual({ content: "c\nb\n" });
+  it("changes every copy of a repeated entry", () => {
+    expect(editMemory("a\nb\na\n", [replace("a", "c")])).toEqual({ content: "c\nb\n" });
   });
 
-  it("refuses a save that grows memory past the cap and returns the entries", () => {
+  it("matches a multi-line old_text that differs only in spacing", () => {
+    const doc = "- Trip:\n  Lisbon \u2014 May\n- Likes tea\n";
+    expect(editMemory(doc, [remove("- Trip:\nLisbon - May")])).toEqual({
+      content: "- Likes tea\n",
+    });
+  });
+
+  it("refuses a replace with no new content", () => {
+    expect(editMemory(memory, [replace("London", " ")])).toMatchObject({
+      error: expect.stringContaining("Use remove"),
+    });
+  });
+
+  it("answers a missed old_text with the closest entries by shared words", () => {
+    const doc = "- Lives in London.\n- Likes green tea.\n- Dog: Biscuit.\n- Tea at 4pm.\n- Runs.\n";
+    expect(editMemory(doc, [remove("Enjoys green tea")])).toEqual({
+      error: expect.stringContaining("No entry matches"),
+      entries: ["- Likes green tea.", "- Tea at 4pm."],
+    });
+  });
+
+  it("applies every operation or none", () => {
+    const result = editMemory(memory, [add("Works at Combient."), remove("Paris")]);
+    expect(result).toMatchObject({
+      error: expect.stringMatching(/^Operation 2: .*Nothing was saved/),
+    });
+  });
+
+  it("checks the cap on the result, so one call can make room and add", () => {
     const full = `${"a".repeat(30)}\n`;
-    expect(editMemory(full, "b".repeat(10), "", 32)).toEqual({
-      error: expect.stringContaining("Memory is full"),
+    expect(editMemory(full, [add("b".repeat(10))], 32)).toEqual({
+      error: expect.stringContaining("10 bytes over the 32-byte limit"),
       entries: ["a".repeat(30)],
+    });
+    expect(editMemory(full, [remove("aaa"), add("b".repeat(10))], 32)).toEqual({
+      content: `${"b".repeat(10)}\n`,
     });
   });
 
   it("lets a save that shrinks oversized memory through", () => {
     const oversized = `${"a".repeat(40)}\n${"b".repeat(40)}\n`;
-    expect(editMemory(oversized, "", "bbb", 32)).toEqual({ content: `${"a".repeat(40)}\n` });
+    expect(editMemory(oversized, [remove("bbb")], 32)).toEqual({ content: `${"a".repeat(40)}\n` });
   });
 });

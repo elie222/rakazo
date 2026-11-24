@@ -18,7 +18,6 @@ import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 import { runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import { wakeRun } from "../runs/wakeups/wake-run.js";
@@ -226,9 +225,7 @@ export async function handoffToGroupBot(
     } as const;
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if ("error" in committed) return committed;
-  await deps.events.notify(committed.threadId, committed.eventSeq).catch((error) => {
-    getLogger().error("group handoff realtime notification", error);
-  });
+  await deps.events.notify(committed.threadId, committed.eventSeq);
   await wakeRun(deps.jobs, committed.runId);
   return {
     ok: true,

@@ -3,6 +3,7 @@ import type { Bot, Group, ThreadSnapshot } from "@rakazo/contracts";
 import { MEETING_CALENDAR_RETURN_PARAM } from "@rakazo/contracts";
 import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import { Gift, Menu, Phone, Video } from "lucide-react";
+import type { ComponentProps } from "react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { useBilling } from "../../../components/billing/SubscriptionGate";
@@ -46,66 +47,89 @@ export function ChatHeader({
   const referral = useBilling().status?.referral;
   const [inviteOpen, setInviteOpen] = useState(false);
   const macChrome = windowChromeKind(desktopBridge()) === "darwin";
+  const showCall = phoneCallsEnabled && !inGroup && active;
+  const showMeetings = meetingsEnabled && !inGroup && active;
+  // Call and meetings both reach the bot live, so together they share one capsule.
+  const grouped = Boolean(showCall && showMeetings);
+  const live = grouped
+    ? ({
+        variant: "ghost",
+        size: "icon",
+        className: "app-no-drag rounded-full data-active:bg-accent",
+      } as const)
+    : ({ variant: "floating", size: "icon-lg", className: "app-no-drag" } as const);
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-[13px] md:px-[22px] [&_button]:pointer-events-auto">
+    <div
+      data-testid="chat-header"
+      className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 pt-2 pb-3 md:px-[22px] [&_button]:pointer-events-auto"
+    >
       <div className="flex items-center">
         {macChrome ? <WindowChrome className="md:hidden" /> : null}
         <Button
           variant="floating"
           size="icon-lg"
+          data-navigation-trigger=""
           aria-label={t`Open navigation`}
           onClick={onOpenNavigation}
           className="app-no-drag md:hidden"
         >
-          <Menu strokeWidth={1.7} className="size-[19px]" />
+          <Menu strokeWidth={1.75} className="size-4.5" />
         </Button>
       </div>
-      <Button
-        variant="floating"
-        data-testid="bot-settings-trigger"
-        aria-expanded={panelOpen}
-        onClick={onTogglePanel}
-        className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
-      >
-        {inGroup ? (
-          <GroupAvatar members={activeSnapshot?.members ?? activeGroup?.members ?? []} size={26} />
-        ) : active ? (
-          <BotAvatar
-            avatarSet={active.avatarSet}
-            color={active.color}
-            identity={active.id}
-            size={26}
-            status={active.status}
-          />
-        ) : null}
-        <span className="min-w-0">
-          <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
-            {inGroup
-              ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
-              : (active?.name ?? t`Select a bot`)}
+      {/* With no bot or group the chip has nothing to open, so it is left out. */}
+      {inGroup || active ? (
+        <Button
+          variant="floating"
+          data-testid="bot-settings-trigger"
+          aria-expanded={panelOpen}
+          onClick={onTogglePanel}
+          className="app-no-drag h-auto min-w-0 gap-2 py-1 ps-1 pe-3.5"
+        >
+          {inGroup ? (
+            <GroupAvatar
+              members={activeSnapshot?.members ?? activeGroup?.members ?? []}
+              size={26}
+            />
+          ) : active ? (
+            <BotAvatar
+              avatarSet={active.avatarSet}
+              color={active.color}
+              identity={active.id}
+              size={26}
+              status={active.status}
+            />
+          ) : null}
+          <span className="min-w-0">
+            <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
+              {inGroup
+                ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
+                : active?.name}
+            </span>
           </span>
-        </span>
-      </Button>
+        </Button>
+      ) : (
+        <div />
+      )}
       <div className="flex items-center justify-self-end gap-2">
-        {phoneCallsEnabled && !inGroup && active ? (
-          <IconTooltip label={inCall ? t`Open call` : t`Call`}>
-            <Button
-              variant="floating"
-              size="icon-lg"
-              data-testid="call-button"
-              aria-label={inCall ? t`Open call` : t`Call`}
-              onClick={() => onCall(active)}
-              data-active={inCall ? "" : undefined}
-              data-voice-ready={voiceReady ? "" : undefined}
-              className="app-no-drag"
-            >
-              <Phone strokeWidth={1.6} className="size-[17px]" />
-            </Button>
-          </IconTooltip>
-        ) : null}
-        {meetingsEnabled && !inGroup && active ? (
-          <MeetingsControl key={active.id} botId={active.id} />
-        ) : null}
+        <div className={grouped ? "glass flex items-center rounded-full p-0.5" : "contents"}>
+          {showCall ? (
+            <IconTooltip label={inCall ? t`Open call` : t`Call`}>
+              <Button
+                {...live}
+                data-testid="call-button"
+                aria-label={inCall ? t`Open call` : t`Call`}
+                onClick={() => onCall(active)}
+                data-active={inCall ? "" : undefined}
+                data-voice-ready={voiceReady ? "" : undefined}
+              >
+                <Phone strokeWidth={1.75} className="size-4.5" />
+              </Button>
+            </IconTooltip>
+          ) : null}
+          {showMeetings ? (
+            <MeetingsControl key={active.id} botId={active.id} button={live} />
+          ) : null}
+        </div>
         {referral && !inGroup && active ? (
           <IconTooltip label={t`Invite a friend`}>
             <Button
@@ -115,7 +139,7 @@ export function ChatHeader({
               onClick={() => setInviteOpen(true)}
               className="app-no-drag"
             >
-              <Gift strokeWidth={1.6} className="size-[17px]" />
+              <Gift strokeWidth={1.75} className="size-4.5" />
             </Button>
           </IconTooltip>
         ) : null}
@@ -127,7 +151,13 @@ export function ChatHeader({
   );
 }
 
-function MeetingsControl({ botId }: { botId: string }) {
+function MeetingsControl({
+  botId,
+  button,
+}: {
+  botId: string;
+  button: Pick<ComponentProps<typeof Button>, "variant" | "size" | "className">;
+}) {
   const { t } = useLingui();
   const { botId: routeBotId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -145,14 +175,8 @@ function MeetingsControl({ botId }: { botId: string }) {
   return (
     <>
       <IconTooltip label={t`Meetings`}>
-        <Button
-          variant="floating"
-          size="icon-lg"
-          aria-label={t`Meetings`}
-          onClick={() => setView("meetings")}
-          className="app-no-drag"
-        >
-          <Video strokeWidth={1.6} className="size-[17px]" />
+        <Button {...button} aria-label={t`Meetings`} onClick={() => setView("meetings")}>
+          <Video strokeWidth={1.75} className="size-4.5" />
         </Button>
       </IconTooltip>
       {view !== "closed" ? (

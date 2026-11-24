@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type { ModelCredential } from "@rakazo/contracts";
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -70,6 +71,8 @@ let host: HTMLDivElement;
 let root: ReturnType<typeof createQueryRoot>;
 
 beforeEach(() => {
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   host = document.body.appendChild(document.createElement("div"));
   root = createQueryRoot(host, new QueryClient({ defaultOptions: { queries: { retry: false } } }));

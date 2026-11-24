@@ -18,7 +18,58 @@ export type PlaywrightPrFeatureFrameSelection = {
   omittedCount: number;
 };
 
+export type PrChangedFile = { changes?: number; filename: string; patch?: string };
+
 const SPEC_FILE_PATTERN = /^(.*)\.spec\.[cm]?[jt]sx?$/i;
+const STRING_LITERAL = /(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
+const CAPTURE_NAME = /^[a-z0-9][a-z0-9._-]*$/i;
+const NAME_PART = /^[a-z0-9._-]{2,}$/i;
+
+type TemplateName = { prefix: string; suffix: string };
+type CaptureNames = { exact: Set<string>; templates: TemplateName[] };
+
+// A checkpoint belongs to this PR only when the PR adds or edits the line naming it, as in
+// captureScreenshot(page, testInfo, "billing-account-menu"). A template name matches by the
+// literal text before its first and after its last placeholder.
+function captureNamesFromPatch(patch: string): CaptureNames {
+  const exact = new Set<string>();
+  const templates: TemplateName[] = [];
+  for (const line of patch.split("\n")) {
+    if (!line.startsWith("+") || line.startsWith("+++")) continue;
+    for (const [, quote, value = ""] of line.matchAll(STRING_LITERAL)) {
+      const templateStart = quote === "`" ? value.indexOf("${") : -1;
+      if (templateStart < 0) {
+        const name = value.replace(/\.png$/i, "");
+        if (CAPTURE_NAME.test(name)) exact.add(name.toLowerCase());
+        continue;
+      }
+      const prefix = value.slice(0, templateStart).toLowerCase();
+      const suffix = value
+        .slice(value.lastIndexOf("}") + 1)
+        .replace(/\.png$/i, "")
+        .toLowerCase();
+      const usable = (part: string) => NAME_PART.test(part);
+      if (
+        (usable(prefix) || usable(suffix)) &&
+        (!prefix || usable(prefix)) &&
+        (!suffix || usable(suffix))
+      ) {
+        templates.push({ prefix, suffix });
+      }
+    }
+  }
+  return { exact, templates };
+}
+
+function screenshotNamedByChange(source: string, names: CaptureNames): boolean {
+  const name = (source.split(/[\\/]/).at(-1) ?? source).replace(/\.png$/i, "").toLowerCase();
+  // A capture taller than one image continues in "<name>-2", "<name>-3" and so on.
+  return (
+    names.exact.has(name) ||
+    names.exact.has(name.replace(/-\d+$/, "")) ||
+    names.templates.some(({ prefix, suffix }) => name.startsWith(prefix) && name.endsWith(suffix))
+  );
+}
 
 export function specStemsFromChangedPaths(changedPaths: readonly string[]): string[] {
   const stems = new Set<string>();
@@ -42,18 +93,35 @@ export function screenshotMatchesSpecStem(source: string, specStem: string): boo
 }
 
 export function selectPlaywrightPrFeatureFrames(input: {
-  changedPaths: readonly string[];
+  changedFiles: readonly PrChangedFile[];
   limit?: number;
   screenshots: readonly PlaywrightPrCommentScreenshot[];
 }): PlaywrightPrFeatureFrameSelection {
   const limit = input.limit ?? PLAYWRIGHT_PR_FEATURE_FRAME_LIMIT;
-  const stems = specStemsFromChangedPaths(input.changedPaths);
-  // The main baseline can trail main by hours, so checkpoints other merged PRs added also
-  // look new. Only specs this PR touched say anything about this PR.
+  // GitHub leaves out the patch of a very large diff; then every checkpoint of that spec counts.
+  // A rename with no edits has no patch either, and names nothing.
+  const specs = input.changedFiles.flatMap((file) => {
+    const stem = specStemsFromChangedPaths([file.filename])[0];
+    return stem
+      ? [
+          {
+            names:
+              file.patch || !file.changes ? captureNamesFromPatch(file.patch ?? "") : undefined,
+            stem,
+          },
+        ]
+      : [];
+  });
+  // The main baseline can trail main by hours, so checkpoints other merged PRs added look new
+  // and unrelated ones look changed. Only checkpoints this PR's diff names are about this PR.
   const checkpoints = input.screenshots.filter(
     (screenshot) =>
       screenshot.captureType === "checkpoint" &&
-      stems.some((stem) => screenshotMatchesSpecStem(screenshot.source, stem)),
+      specs.some(
+        ({ names, stem }) =>
+          screenshotMatchesSpecStem(screenshot.source, stem) &&
+          (!names || screenshotNamedByChange(screenshot.source, names)),
+      ),
   );
   const frames: PlaywrightPrFeatureFrame[] = [
     ...checkpoints
@@ -71,7 +139,7 @@ export function selectPlaywrightPrFeatureFrames(input: {
 }
 
 export function buildPlaywrightPrScreenshotComment(input: {
-  changedPaths: readonly string[];
+  changedFiles: readonly PrChangedFile[];
   dashboardUrl: string;
   galleryUrl: string;
   limit?: number;

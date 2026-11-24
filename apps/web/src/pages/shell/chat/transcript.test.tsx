@@ -202,6 +202,33 @@ it("shares the armed quote action with the pill and replaces quotes on new selec
   expect(props.onQuote).toHaveBeenCalledTimes(3);
 });
 
+it("keeps the quote draft for an Escape another handler consumed", () => {
+  Range.prototype.getBoundingClientRect = () =>
+    ({ top: 100, bottom: 120, left: 100, width: 40 }) as DOMRect;
+  act(() => root.render(<Transcript {...baseProps(history())} />));
+  selectText(container.querySelector('[data-message-id="m2"]')!, "cabins near");
+  const pill = () => document.querySelector("[data-quote-selection]");
+  expect(pill()).not.toBeNull();
+
+  // The phone drawer closing on Escape prevents the default on document.
+  const consume = (event: Event) => event.preventDefault();
+  document.addEventListener("keydown", consume);
+  act(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  document.removeEventListener("keydown", consume);
+  expect(pill()).not.toBeNull();
+
+  act(() => {
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(pill()).toBeNull();
+});
+
 it("rejects cleared, outside and composer selections even before selectionchange", () => {
   Range.prototype.getBoundingClientRect = () =>
     ({ top: 100, bottom: 120, left: 100, width: 40 }) as DOMRect;
@@ -537,4 +564,39 @@ it("holds the new reply, not older history that loads after the send", () => {
     followRequest: 1,
   });
   expect(scrollTo).toHaveBeenLastCalledWith({ top: 900, behavior: "auto" });
+});
+
+function liveRegion() {
+  return container.querySelector('[data-testid="reply-announcement"]')?.textContent ?? "";
+}
+
+it("announces a finished bot reply once, not streaming, history, first load or your own messages", () => {
+  const initial = history();
+  render(baseProps(initial));
+  expect(liveRegion()).toBe("");
+
+  const streaming = [...initial, liveMessage("Checking")];
+  render(baseProps(streaming));
+  render(baseProps([...initial, liveMessage("Checking the dates")]));
+  expect(liveRegion()).toBe("");
+
+  const reply = { ...textMessage("m5", "bot", "**Booked** the cabin for May"), botId: "bot" };
+  const withReply = [...initial, reply];
+  render(baseProps(withReply));
+  expect(liveRegion()).toBe("Atlas: Booked the cabin for May");
+
+  const own = [...withReply, textMessage("m6", "user", "Thanks")];
+  render(baseProps(own));
+  expect(liveRegion()).toBe("Atlas: Booked the cabin for May");
+
+  const earlier = { ...textMessage("m0", "bot", "An older answer"), seq: 0 };
+  render(baseProps([earlier, ...own]));
+  expect(liveRegion()).toBe("Atlas: Booked the cabin for May");
+});
+
+it("announces the first reply in a thread that opened empty", () => {
+  render(baseProps([]));
+  expect(liveRegion()).toBe("");
+  render(baseProps([{ ...textMessage("m1", "bot", "Hello there"), botId: "bot" }]));
+  expect(liveRegion()).toBe("Atlas: Hello there");
 });

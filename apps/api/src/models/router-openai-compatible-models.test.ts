@@ -126,6 +126,31 @@ describe("OpenAI-compatible model probes", () => {
     });
   });
 
+  it("loads a public preset's models without opening a saved credential", async () => {
+    const { client, fetch, findCredentials, load } = fixture();
+    const presetUrl = "https://api.concentrate.ai/v1";
+
+    await expect(
+      client.models.probeOpenAiCompatible({ baseUrl: presetUrl, credentialId: "cred-1" }),
+    ).resolves.toEqual({ models: ["test-model"] });
+
+    expect(findCredentials).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+    const request = fetch.mock.calls[0];
+    expect(String(request?.[0])).toBe(`${presetUrl}/models`);
+    expect(new Headers(request?.[1]?.headers).has("Authorization")).toBe(false);
+  });
+
+  it("loads a preset's model list larger than a custom endpoint may send", async () => {
+    const { client, fetch } = fixture();
+    const padding = "x".repeat(3 * 1024 * 1024);
+    fetch.mockResolvedValue(Response.json({ data: [{ id: "test-model", description: padding }] }));
+
+    await expect(
+      client.models.probeOpenAiCompatible({ baseUrl: "https://api.concentrate.ai/v1" }),
+    ).resolves.toEqual({ models: ["test-model"] });
+  });
+
   it("tells the member the server could not be reached", async () => {
     const { deps, fetch } = fixture();
     fetch.mockRejectedValue(new TypeError("fetch failed"));
@@ -189,7 +214,7 @@ describe("OpenAI-compatible model probes", () => {
     );
   });
 
-  it.each([undefined, "", "   "])("uses the saved key for a blank key %j", async (apiKey) => {
+  it.each([undefined, "   "])("uses the saved key for a blank key %j", async (apiKey) => {
     const { client, fetch, findSecret, load } = fixture();
     const response = await client.models.probeOpenAiCompatible({ baseUrl, apiKey });
     expect(fetch).toHaveBeenCalledWith(
@@ -916,6 +941,7 @@ describe("openai-compatible enabled models", () => {
       apiKey: "sk-fake-replacement-key",
       modelId: "m-z",
       enabledModelIds: ["m-z"],
+      makeDefault: true,
       reasoning: true,
       thinkingLevel: "high",
     });

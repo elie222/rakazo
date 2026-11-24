@@ -3,10 +3,10 @@ import { tokensForAppearance } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ComposeSegmentedControl from "./native-segmented-control-compose";
 
-vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
 
 const state = vi.hoisted(() => ({ scheme: "light" as "light" | "dark" }));
 vi.mock("../../lib/native/native", () => ({

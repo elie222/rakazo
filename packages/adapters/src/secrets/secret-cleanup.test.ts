@@ -32,7 +32,7 @@ function fixture(held: string | null = null, remote = true) {
   const row = (column: string) => vi.fn(async () => (held === null ? null : { [column]: held }));
   /** How many of a table's rows hold the reference asked about. */
   const count = () => vi.fn(async (_args: { where: Record<string, unknown> }) => 0);
-  /** A purchase holds `held` in whichever of its sealed columns is read. */
+  /** A purchase or the deployment holds `held` in whichever of its sealed columns is read. */
   const purchase = vi.fn(async ({ select }: { select: Record<string, boolean> }) =>
     held === null ? null : Object.fromEntries(Object.keys(select).map((column) => [column, held])),
   );
@@ -42,7 +42,7 @@ function fixture(held: string | null = null, remote = true) {
     vaultCredential: { count: count() },
     integrationProviderConfig: { count: count() },
     messagingInstallation: { findUnique: row("ciphertext") },
-    deploymentSettings: { findUnique: row("computerProviderCipher") },
+    deploymentSettings: { findUnique: purchase },
     purchase: { findUnique: purchase },
     paymentWallet: { findUnique: row("ciphertext") },
     /** Whether any holder column has the reference, as a written entry's backup asks. */
@@ -194,6 +194,13 @@ describe("secret cleanup", () => {
       "deploymentSettings",
       { id: "default" },
       "computerProviderCipher",
+    ],
+    [
+      "deployment_model",
+      "deployment-model",
+      "deploymentSettings",
+      { id: "default" },
+      "deploymentModelCredentialCipher",
     ],
     [
       "purchase_request",

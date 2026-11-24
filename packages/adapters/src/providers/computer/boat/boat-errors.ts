@@ -6,8 +6,7 @@ import {
   SandboxUnavailableError,
   SandboxUnresponsiveError,
 } from "@rakazo/adapter-kit";
-import { parseRetryAfter, redactSecrets } from "@rakazo/core";
-import { readBodyCapped } from "../../../web/web-ssrf.js";
+import { parseRetryAfter, readErrorTextWithin, redactSecrets } from "@rakazo/core";
 
 const MAX_BOAT_ERROR_RESPONSE_BYTES = 16 * 1024;
 const BOAT_ERROR_RESPONSE_TIMEOUT_MS = 2_000;
@@ -27,6 +26,8 @@ export class BoatApiError extends Error implements ResponseError {
     readonly retryAfterMs?: number,
     /** The span a start limit counts over: `minute`, `hour`, or `day`. */
     readonly window?: string,
+    /** Boat never ran the request, such as a command sent while the sandbox restores its disk. */
+    readonly retryable = false,
   ) {
     super(message);
   }
@@ -40,6 +41,12 @@ export function boatResumeInProgress(error: unknown): boolean {
         error.response.status === 409 &&
         /\bAgent resume already in progress\b/i.test(error.message)))
   );
+}
+
+/** Boat refused the request without running it, so sending it again is safe. */
+export function boatRetryableRefusal(error: unknown): boolean {
+  const refusal = error instanceof SandboxUnresponsiveError ? error.cause : error;
+  return refusal instanceof BoatApiError && refusal.retryable;
 }
 
 /** Boat's limit on API requests per minute from one IP address, across every endpoint. */
@@ -261,6 +268,7 @@ export async function boatResponseError(
     code,
     response.status === 429 ? retryAfterMs(response, body) : undefined,
     safeIdentifier(body?.window),
+    body?.retryable === true,
   );
 }
 
@@ -291,12 +299,13 @@ async function readErrorBody(
   response: Response,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown> | undefined> {
-  const readSignal = signal
-    ? AbortSignal.any([signal, AbortSignal.timeout(BOAT_ERROR_RESPONSE_TIMEOUT_MS)])
-    : AbortSignal.timeout(BOAT_ERROR_RESPONSE_TIMEOUT_MS);
+  const text = await readErrorTextWithin(response, {
+    maxBytes: MAX_BOAT_ERROR_RESPONSE_BYTES,
+    timeoutMs: BOAT_ERROR_RESPONSE_TIMEOUT_MS,
+    signal,
+  });
   try {
-    const bytes = await readBodyCapped(response, MAX_BOAT_ERROR_RESPONSE_BYTES, readSignal);
-    const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    const body: unknown = JSON.parse(text);
     return body !== null && typeof body === "object" && !Array.isArray(body)
       ? (body as Record<string, unknown>)
       : undefined;

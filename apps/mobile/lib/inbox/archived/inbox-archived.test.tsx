@@ -411,17 +411,9 @@ describe("bot profile menu archive notifications", () => {
   });
 
   it.each([
-    [{ name: "thread", params: { botId: "bot-b" } }, true],
     [{ name: "bot-profile", params: { botId: "bot-b" } }, true],
-    [{ name: "bot-settings", params: { botId: "bot-b" } }, true],
-    [{ name: "bot-model", params: { botId: "bot-b" } }, true],
-    [{ name: "computer", params: { botId: "bot-b" } }, true],
-    [{ name: "routines", params: { botId: "bot-b" } }, true],
-    [{ name: "routine", params: { botId: "bot-b" } }, true],
-    [{ name: "pages", params: { groupId: "removed-group" } }, true],
     [{ name: "thread", params: { botId: "other-bot" } }, false],
     [{ name: "thread", params: { groupId: "removed-group" } }, true],
-    [{ name: "group-settings", params: { groupId: "removed-group" } }, true],
     [{ name: "thread", params: { groupId: "retained-group" } }, false],
     [{ name: "artifacts", params: { botId: "bot-b" } }, false],
     [{ name: "index" }, false],

@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
 import { botModelState, modelOptionKey } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   Button,
   DropdownMenu,
@@ -22,6 +23,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal, Plus, X } from 
 import type { ComponentProps, ReactNode } from "react";
 import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { BotEmailAddressField } from "../../../components/BotEmailAddressField";
+import { ComputerHomeVersions } from "../../../components/computers/ComputerHomeVersions";
 import { ErrorBoundary, SectionLoadFailed } from "../../../components/ErrorBoundary";
 import { PagesList } from "../../../components/pages/PagesList";
 import { botProfilePatch } from "../../../lib/bots/bot-profile-patch";
@@ -281,7 +283,13 @@ export function BotSettings({
     choices: modelChoices,
     thinkingLevels: thinkingOptions,
     defaultThinkingLevel,
-  } = botModelState({ credentials, catalog, me, modelKey, spaceDefaultLabel: t`Space default` });
+  } = botModelState({
+    credentials,
+    catalog: catalog.map(localizeModelEntry),
+    me,
+    modelKey,
+    spaceDefaultLabel: t`Space default`,
+  });
 
   async function executeSave(
     patchOverrides?: {
@@ -489,12 +497,12 @@ export function BotSettings({
   const headerButtons = (
     <Button
       variant="ghost"
-      size="icon-sm"
+      size="icon"
       className="text-muted-foreground"
       aria-label={t`Close panel`}
       onClick={onClose}
     >
-      <X size={16} strokeWidth={1.8} />
+      <X className="size-4.5" strokeWidth={1.75} />
     </Button>
   );
 
@@ -504,12 +512,12 @@ export function BotSettings({
         <div className="mb-4 flex items-center justify-between">
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             className="text-muted-foreground"
             aria-label={t`Back`}
             onClick={() => onViewChange?.("settings")}
           >
-            <ChevronLeft className="rtl:rotate-180" />
+            <ChevronLeft className="size-4.5 rtl:rotate-180" strokeWidth={1.75} />
           </Button>
           <div className="text-body-lg font-medium text-foreground">
             {view === "routines" ? <Trans>Routines</Trans> : <Trans>Pages</Trans>}
@@ -527,13 +535,13 @@ export function BotSettings({
               render={
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon"
                   className="text-muted-foreground"
                   aria-label={t`More actions`}
                 />
               }
             >
-              <MoreHorizontal size={16} strokeWidth={1.8} />
+              <MoreHorizontal className="size-4.5" strokeWidth={1.75} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               {email && !email.address && !claimingEmail ? (
@@ -692,6 +700,8 @@ export function BotSettings({
                 disabled={saving}
                 onChange={(checked) => setComputerMode(checked ? "dedicated" : "team")}
               />
+              {/* Read only once the settings are open: listing versions reads object storage. */}
+              {settingsOpen ? <ComputerHomeVersions botId={bot.id} /> : null}
               {changed.readAloud ? (
                 <SwitchRow
                   id={`${ids}-auto-speak`}

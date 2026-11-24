@@ -1,8 +1,10 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import type * as MessageQuote from "@rakazo/core/message-quote";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyLocalChoiceDismissals,
+  askOptions,
   choiceCardOptions,
   DISMISSED_CHOICE_ANSWER_ID,
   hasQuotableText,
@@ -337,4 +339,17 @@ describe("messageHasInlineControls", () => {
       ]),
     ).toBe(true);
   });
+});
+
+it("leaves out the agent import option, which only web and desktop can open", () => {
+  expect(
+    askOptions({
+      kind: "ask",
+      text: "Which city?",
+      actions: [
+        { id: "choice-1", label: "Paris" },
+        { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" },
+      ],
+    }),
+  ).toEqual([{ id: "choice-1", label: "Paris" }]);
 });

@@ -6,6 +6,141 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-23
+
+### Security
+
+- Changing an MCP server's URL no longer carries its stored bearer token, header values or an OAuth client that never signed in to the new address. Before, the connection check after saving sent the old token to the new URL.
+- `RAKAZO_NAV_LINKS` also rejects links to the app's own routes written in other letter cases or percent-encoded, such as `/API/me`, matching how the bundled proxy routes them.
+- Password managers no longer fill or save in the vault's login fields.
+- The web server refuses to start when its build id is not a plain timestamp, so a malformed id cannot touch files outside the asset archive.
+
+### Added
+
+- Attach Word (.docx) and PowerPoint (.pptx) files to a chat, and bots can hand them back. Macro-enabled and legacy Office formats are still refused.
+- A routine's owner can switch on **Use my computer** so scheduled runs, Run now and @mentions use the computer paired in the desktop app, with the same approvals as in chat. Changing the routine's prompt, owner or bot, or the paired computers, turns it off.
+- Webhooks on private installs: set `INGRESS_PROVIDER` (`manual` with `INGRESS_PUBLIC_URL`, or `tailscale`) to publish only the inbound webhook routes at a separate public address while sign-in, the app and the API stay private ([webhooks](docs/self-host-webhooks.md)).
+- Operator admin commands inside the API container: `admin.js bot webhook-key <bot-id>` issues a bot's webhook key, and preview-first commands delete accounts, cancel subscriptions and refund invoices once given `--confirm` ([self-hosting](docs/self-host.md)).
+- A scheduled routine whose runs fail five times in a row for a reason the user must fix, such as their own model connection or quota, pauses itself and the bot says why in the routine's chat.
+- Bots can see images they fetch or read, save lasting facts you mention in passing without being asked, see and pick models from custom connections, and change more chat preferences on request, such as the composer's model picker and reply streaming.
+- When a bot asks a question, approval or secret in a chat app such as Telegram or Slack, the message links to that bot's chat in the app, and signing in from the link returns you there.
+- Click any image in a chat to browse all of that chat's images in a lightbox with arrow keys and thumbnails.
+- A webhook routine created from chat has a key button on its chat row, on web and mobile, showing its URL and key after the creator confirms their identity.
+- Settings has a Spaces tab that lists your Spaces and opens each one's page, on web and mobile.
+- GitHub, Linear and Notion can be connected directly from Integrations on self-hosted servers, and the public MCP directory can be searched from the same list.
+- Azure Blob storage can authenticate with Entra ID through `OBJECT_STORAGE_AUTH` (service principal with secret or certificate, workload identity, or managed identity) ([storage](docs/self-host-storage.md)).
+- Self-hosted speech connections can save a transcription vocabulary of names and terms.
+- On mobile, swipe between images and videos in Artifacts and download them to the photo library.
+
+### Changed
+
+- Signing in with a Claude or ChatGPT subscription now starts on a stronger model. API keys keep the lighter defaults, and models you picked are kept.
+- Bots can hand work back and forth for up to 100 messages in a chain, up from 6.
+- Pinned chats show as a grid of large avatars in the web and desktop sidebar. Collapsed sidebar sections show chat counts, and the Space gear opens its settings directly.
+- A sent text message appears in the web chat at once, and the chat's status line says Thinking between steps.
+- The chat header fades messages softly as they scroll under it.
+- Hosted speech from any voice provider priced per character counts against the plan's speech allowance.
+- Computers boot faster, and bots skip cross-chat history search in runs that cannot use it.
+- With one Space, Settings lists it by name like several Spaces. Chat Find says "No matches" instead of 0/0. A read-aloud failure with no voice set up offers **Open Voice settings**.
+- Mobile Integrations paints its last answer instantly after a cold launch, and a removed bot template says so instead of showing an error.
+
+### Fixed
+
+- Changing which bots can use an MCP server no longer removes it from archived bots, so a restored bot gets its servers back. You can also choose a teammate's bot in the same Space, and it uses the server only in runs the server's owner starts.
+- The mobile app no longer restarts in a loop on phones set to Arabic, Persian or Urdu, and iOS permission prompts appear in every language the app ships.
+- Android dictation no longer cancels itself once a transcribing voice provider is connected, and wide code blocks and tables in Android chats scroll sideways.
+- Computers no longer leak a session D-Bus daemon per command, which could hit the process limit on long-running computers. Desktop setup restores the missing screen-sharing tool, so a bot's Linux computer starts again.
+- A busy thread that delegates work no longer keeps reconnecting and delivering messages late.
+- Replies from local model servers that cache the prompt are no longer slowed down while a computer's disk is nearly full.
+- Replying to a bot's welcome question or daily check-in counts as your turn, so the bot can search your other chats from that reply.
+- Typing on a computer from the phone browser no longer erases text after the Space-bar gesture moves the caret.
+- Teaching by demonstration keeps its last inputs and never moves them into the next recording.
+- Usage loads for accounts on the old `Asia/Rangoon` timezone name, and meeting transcript times past an hour read as H:MM:SS.
+- Outbound requests to a single address follow Node's `--dns-result-order`, so hosts with no IPv6 route can avoid failures.
+- Fixed smaller issues in Pages (charts, pictures, Select, search, right-to-left contents), the browser on computers, emoji kept whole in names and menus, accent-insensitive mobile search, screen-reader labels, right-to-left shortcut help, desktop setup sizes and runtime checks, group members, Boards, Skills retry, integration logos and the model catalog.
+
+### Self-host upgrade notes
+
+- `BOT_MESSAGE_MAX_HOPS` is removed. The bot-to-bot limit is now a fixed 100.
+- Webhook ingress is off unless `INGRESS_PROVIDER` is set. When set, the API opens a second port, 3101, and Compose gains an opt-in `tailscale-ingress` profile.
+- A routine that already meets the five-failure rule pauses on its next failure after upgrading.
+- New opt-in `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` passes `CLAUDE_CODE_OAUTH_TOKEN` to the Claude Code CLI provider so a headless server can run model turns ([models](docs/self-host-models.md)).
+- If you use `RAKAZO_NAV_LINKS`, a link reaching an app route through different casing or percent-encoding is now rejected.
+
+## [0.14.0] - 2026-11-22
+
+### Security
+
+- Auto Review knows when a recipient, site, payee or bank account appeared only in content the bot read, and asks before sending private data, granting access or paying that party. After a run reads outside content, it also checks shell commands, typing into pages, desktop input and opening new sites. Saving memory or skills, changing routines and rewriting instructions after outside content are checked against what the owner actually asked for ([approvals](docs/approvals.md)).
+- Only the person who made a routine can edit it, so an edit no longer makes the routine run with the editor's accounts. Restoring an archived bot or group turns back on only the restorer's own routines.
+- Bot run prompts are encrypted at rest with the Space's keys, like chat messages. Memory text is escaped before it reaches the prompt, so a saved memory cannot read as instructions ([content encryption](docs/content-encryption.md)).
+- Names and labels lose invisible text-direction characters, so a chat member cannot disguise their name as someone else's.
+- Voice no longer uses a model connection set to zero data retention, and switching a call to **This device** voice keeps later replies off the hosted voice provider.
+- When desktop runs its local server without Docker, its computer bridge listens only on this machine. Its protection guard refuses `killall5`, and switching servers removes the cookie that lets its window create local accounts.
+- Every embedded computer screen runs in a sandboxed frame. `/internal/health` returns deployment details only inside the deployment's network.
+- Deleting a Space always disconnects its meeting bots and calendars and removes stored secrets. Handled webhook, Git and email deliveries cannot be replayed after chat history retention deletes their messages.
+- `SIGNUPS_ENABLED=FALSE` now closes signups, and unreadable values for security settings stop startup instead of falling back to a looser default.
+- Purchase approval matches clicks correctly in a zoomed browser, recognizes login, cancel and card fields in more languages, and skips the action on a page that cannot be read instead of asking to approve a payment.
+- Fixed smaller issues in image handling from tool servers, credit restoration after disputes, push delivery during upgrades, the meeting allowance, Git webhook signatures, plugin review emails and a regular-expression dependency.
+
+### Added
+
+- Share a Page privately with specific accounts. Reviewers can comment by section and ask the bot for a revision the owner can preview and publish ([Pages](docs/pages.md)).
+- Bots can do more of what their owner can from chat: manage routines and watch intervals, edit or delete skills and shared memory documents, remove remote MCP servers, and change their own and managed bots' settings. Changes to other bots follow the owner's approval mode.
+- Bots can list upcoming events and add events to a chosen calendar. In a private mobile chat, a bot can use the phone's calendar, and on iOS create and complete reminders.
+- Meeting bots can join Microsoft Teams meetings from a pasted link or a connected Google Calendar ([meetings](docs/meetings.md)).
+- **Settings → Computers** sets the size of each cloud computer and lists paired computers. Restore earlier versions of a computer's saved files from the bot's settings. With several paired computers, bots stay on the first one and switch only while it is offline.
+- The ticket Board has drag-and-drop status, a table view, and, with the Board lab on, a rail to switch between **Chats** and **Board** ([Board](docs/board.md)).
+- Organizations have an **Activity log** with export. Owners and admins see every event, other members their own.
+- Model setup follows the same steps on every platform, and keys without credits are refused when connecting. New choices include GPT-6.2 Sol and Astra for ChatGPT account connections, OpenRouter for voice, Mnemoverse for memory, Microsoft Decision 1.1 for Auto Review, and Concentrate AI as a hosted preset. Connections that support it have a **Zero data retention** switch.
+- Admins can set the shared model and key for everyone in **Settings → Models → Default for everyone** on web and desktop.
+- Billing offers an **Ultra** plan for customers who bring their own model, and paid plans get an included speech allowance when hosted speech is configured. Mobile users on a self-hosted server can choose an optional **Support Rakazo** subscription.
+- Thai is available as a UI language. Encrypted chat search finds Chinese and Japanese terms in the middle of a sentence.
+- Cmd+Shift+M opens the composer's model list and Cmd+Shift+E cycles thinking levels. Desktop's Connect apps moves to Cmd+Shift+A, and right-click offers **Copy Link Address**.
+- **Import an agent** sits next to **New bot**, and a new account's first bot offers to move from another assistant.
+- On mobile, select several messages to copy, switch back to servers you used before, and rate the app from Settings. Wide screens can hide the chat list.
+- The full-window computer view can save a screenshot. Desktop's local server can create more than one account from the app window.
+- Self-hosters can generate images through any OpenAI Images API server with `MEDIA_GENERATION_PROVIDER=openai` and `MEDIA_GENERATION_BASE_URL`, limit connectable model providers with `RAKAZO_MODEL_PROVIDER_ALLOWLIST`, set unattended approval expiry with `UNATTENDED_APPROVAL_EXPIRE_AFTER_MS`, and limit Telegram bots to direct chats with `TELEGRAM_GROUPS=off`. The supervisor `egress` command reports whether new computers get restricted network access ([Docker computers](docs/self-host-docker-computers.md)).
+
+### Changed
+
+- The Apple Watch app looks like Messages, renders Markdown, and works while the iPhone is locked.
+- On calls the bot speaks each sentence as soon as it is written, and people speaking Chinese, Japanese or Thai can interrupt it.
+- Approval cards ask a plain question and show only changed lines for instruction edits. Auto mode no longer asks before plain reads, public pages or searches.
+- Chat shows a sender's name once above consecutive messages, and a long streaming reply stops scrolling once its first line reaches the top.
+- **Settings → Messaging** lists every chat app as its own row. Slack replies keep their formatting and split long messages. Files sent to bots in chat app direct messages arrive reliably and in order.
+- Subscription sign-in shows numbered steps, copies the device code before opening the provider, and survives brief provider errors. The web model picker lists newest models first and opens on the model in use.
+- A Vault holds up to 1,000 items. One-time reminder routines delete themselves after running, and open work untouched for 14 days is parked.
+- Every new account gets the starter Chief bot, including mobile signups.
+- Reading files from a stopped computer is faster and waits for the saved copy before waking it. Team computer saves give up quickly when over the size limit. Stopped computers wake at the chosen size.
+- Bots see images returned by MCP tools, and MCP tools with nested parameters show their real fields. Installing an API from an OpenAPI document handles relative server URLs, and GraphQL returns partial data with field errors.
+- Settings → Usage shows cached input tokens and counts local-model calls as free. Dates use the app language and show the year for earlier years. Prices and sizes on mobile use the language's number format.
+- Screen readers announce new replies, failures, search progress and saves across web and mobile, and repeated buttons name what they act on.
+
+### Fixed
+
+- Computers that are damaged, rate limited, at their provider's cap or slow to start report a clear status or ask to **Recover** instead of failing runs with a server error. Setup reinstalls missing screen tools and waits for the package manager, and saves survive files deleted mid-save.
+- A provider error partway through a reply, or a request that hits its deadline, can retry or move to a backup model. Saving an existing model connection no longer makes it the main model.
+- A typed answer after a paused run resumes reaches the bot once. A message from another bot waits for the chat's current run instead of being handled twice.
+- Restoring an archived bot turns its routines back on, and routines held after a model sign-in failure resume when the model reconnects.
+- Messages over 100,000 characters keep your draft with a clear error. Text shortened for previews and summaries no longer cuts emoji in half.
+- Phone keyboards on computer screens handle Korean, Japanese and Chinese input, emoji and Ctrl. Take control no longer types doubled keys, and a bot's panel no longer shows another bot's screen.
+- MCP servers saved as SSE connect after moving to Streamable HTTP, and connected apps deleted at the provider are marked for reconnect.
+- Desktop fixes Find, window sizing, the update check, offline update servers, full disks on Spanish-language Macs, and copying Space invite links. Computer Access on a Mac without Docker offers **Use this Mac**.
+- Mobile fixes crashes from the chat header invite button and some catalog icons on Android, keyboard and landscape layout, dark mode tables, double-tap Delete account, and shared photos without a file type.
+- Right-to-left layouts, charts and tables on Pages, login field labels in more languages, link detection near CJK punctuation, and skill imports with duplicate names or extra whitespace now behave correctly.
+- Tapping a mobile notification opens its chat with the chat list underneath, so Back returns to the list. Mobile Meetings, Pages and artifacts recover from a failed load, and restoring archived chats shows distinct errors.
+- `install-images.sh` deletes replaced images on Docker's containerd image store, and `content-encryption status` finishes on large tables.
+
+### Self-host upgrade notes
+
+- After deploying and once the previous release has stopped, run `content-encryption migrate` to encrypt existing run prompts. Before rolling back, set `CONTENT_ENCRYPTION=off` on the API and workers, then run `content-encryption decrypt` ([content encryption](docs/content-encryption.md)).
+- Welcome, referral, model connection reminder and agent import emails are sent only when `EMAIL_COPY_DIR` holds their copy. `WELCOME_EMAIL_ENABLED` is removed.
+- These settings now stop startup when their value cannot be read: `SIGNUPS_ENABLED`, `TELEGRAM_GROUPS`, `LARK_DOMAIN`, `RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE` (0 to 1), `AUDIT_EVENT_RETENTION_DAYS`, `USER_DEVICES_ENABLED`, `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC`, `RAKAZO_LIVE_MODEL_CATALOG` and `MAX_TOOL_CALLS_PER_TURN`. `RAKAZO_LOCAL_MODELS_URL` refuses embedded credentials; use `RAKAZO_LOCAL_MODELS_API_KEY`.
+- `SANDBOX_TEAM_SCREEN_LIMIT` and `SANDBOX_MAX_COMPUTERS_PER_SPACE` now reach the supervisor on Compose installs. On the native desktop stack, ` #` in `.env` starts a comment; quote values that contain it.
+- Monitoring outside the deployment's network should use `/health` instead of `/internal/health`. Log tooling matching `Completed task` or `Failed task` should match `job_queue.log` events instead.
+- Members whose voice used a zero data retention connection need a separate voice key. Phone calendars and reminders need the new mobile app build.
+
 ## [0.13.0] - 2026-11-19
 
 ### Security

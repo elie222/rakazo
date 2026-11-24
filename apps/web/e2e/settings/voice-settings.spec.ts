@@ -23,6 +23,9 @@ test("a self-hosted voice connection offers a separate transcription server", as
   await expect(voice.getByLabel("Transcription API key")).toHaveCount(0);
   await voice.getByLabel("Transcription server URL").fill("http://127.0.0.1:8881/v1");
   await expect(voice.getByLabel("Transcription API key")).toBeVisible();
+  const vocabulary = voice.getByLabel("Transcription vocabulary", { exact: true });
+  await expect(vocabulary).toBeVisible();
+  await vocabulary.fill("Acme, Xyla");
   await voice.getByLabel("Transcription API key").scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "voice-self-hosted-transcription-server");
 });

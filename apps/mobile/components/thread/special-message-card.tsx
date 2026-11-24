@@ -1,11 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
-import { ChatMarkdown } from "@rakazo/chat-ui/native";
+import { ChatMarkdown, useNativeLinkConfirm } from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
 import { cloudAgentHttpsUrl, helperCardState, displayName as safeDisplayName } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewInstance } from "react-native";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -205,6 +205,7 @@ export function SpecialMessageCard(props: SpecialMessageCardProps) {
   const { special, actionProps, bots, members, onOpenBot, userBubble } = props;
   const tokens = withUserBubble(mobileTokens(), userBubble);
   const { t } = useLingui();
+  const openLink = useNativeLinkConfirm();
   if (special.kind === "subagent") return <HelperMessageCard {...props} special={special} />;
   if (special.kind === "cloud_agent") {
     const title = special.title || t`Cloud agent`;
@@ -226,7 +227,7 @@ export function SpecialMessageCard(props: SpecialMessageCardProps) {
       <Pressable
         {...actionProps}
         onPress={() => {
-          if (href) Linking.openURL(href).catch(() => undefined);
+          if (href) openLink(href);
         }}
         testID="cloud-agent-card"
         accessibilityRole={href ? "link" : "text"}

@@ -20,12 +20,38 @@ name: Pages
     visible: "Who can view"
     timeout: 10000
 - takeScreenshot: 03-share-sheet
+- tapOn: "Specific people"
+- extendedWaitUntil:
+    visible: "Account email"
+    timeout: 10000
+- takeScreenshot: 03-specific-people
 - tapOn: "Anyone with the link"
 - extendedWaitUntil:
     visible: "Copy link"
     timeout: 10000
 - takeScreenshot: 04-share-link
 - tapOn: "Only you"
+- swipe:
+    start: 50%, 24%
+    end: 50%, 90%
+- tapOn: "Review page"
+- extendedWaitUntil:
+    visible: "Comments"
+    timeout: 10000
+- tapOn: "Comments"
+- extendedWaitUntil:
+    visible: "Post comment"
+    timeout: 10000
+- extendedWaitUntil:
+    visible: "Section"
+    timeout: 10000
+- takeScreenshot: 04-page-review
+- tapOn: "Section"
+- extendedWaitUntil:
+    visible: "Launch dashboard"
+    timeout: 10000
+- takeScreenshot: 04-page-review-sections
+- tapOn: "Launch dashboard"
 - openLink: "rakazo:///pages?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
 - extendedWaitUntil:
     visible: "Launch dashboard"
@@ -36,3 +62,8 @@ name: Pages
     visible: "Pin"
     timeout: 10000
 - takeScreenshot: 06-pages-menu
+- openLink: "rakazo:///shared-pages"
+- extendedWaitUntil:
+    visible: "No pages shared with you yet."
+    timeout: 20000
+- takeScreenshot: 07-shared-pages

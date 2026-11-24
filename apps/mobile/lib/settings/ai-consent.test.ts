@@ -7,7 +7,7 @@ import { i18n } from "@lingui/core";
 import { generateMessageId } from "@lingui/message-utils/generateMessageId";
 import type { AiRecipient } from "@rakazo/contracts";
 import { resetI18nForTests } from "../i18n/i18n";
-import { promptAiConsent } from "./ai-consent";
+import { promptAiConsent, promptPageRevisionConsent } from "./ai-consent";
 
 /** A catalog message in the active language, looked up as the compiled macro does. */
 function t(message: string, values?: Record<string, string>) {
@@ -63,6 +63,17 @@ describe("mobile AI consent prompt", () => {
     shown.options.onDismiss?.();
     await expect(pending).resolves.toBe(false);
     expect(alert).toHaveBeenCalledOnce();
+  });
+
+  it("discloses what a Page revision sends and how to withdraw permission", async () => {
+    const pending = promptPageRevisionConsent(recipient);
+    const shown = currentAlert();
+    expect(shown.message).toBe(
+      "The page and selected comment are sent to draft a revision.\n\nTo turn this off, use Withdraw all permissions in Account → AI data sharing.",
+    );
+    expect(shown.buttons.map((button) => button.text)).toEqual([t("Not now"), t("Allow")]);
+    shown.buttons[0]?.onPress?.();
+    await expect(pending).resolves.toBe(false);
   });
 
   it("treats dismissing without a choice as a refusal", async () => {

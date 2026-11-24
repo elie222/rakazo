@@ -2,6 +2,7 @@ import { implement, ORPCError } from "@orpc/server";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { CatalogReads } from "@rakazo/adapters";
 import {
+  adminDeploymentModel,
   applyCodexLiveCatalog,
   applyProviderLiveCatalog,
   approvedModelCreditCatalogEntry,
@@ -16,6 +17,7 @@ import {
   createFaviconResolver,
   decisionModelCatalog,
   deploymentModelRole,
+  deploymentPaysForReview,
   findConnectedModelCredential,
   hasHostedModelCredits,
   hasReadyModelCredential,
@@ -103,6 +105,7 @@ export function createRouterContext(deps: RouterDeps) {
     actor: Actor | null;
     /** The signed-in session, so a push token ends with the session that registered it. */
     sessionId?: string;
+    nativeSessionId?: string;
     signal?: AbortSignal;
     /** Re-runs the request's auth so a long-lived stream notices sign-out and revocation. */
     stillAuthorized?: () => Promise<boolean>;
@@ -121,7 +124,7 @@ export function createRouterContext(deps: RouterDeps) {
     prepareMcpServer,
     insertMcpServer,
     announceMcpServer,
-  } = createMcpServers(deps, onboardingDeps, mcpOAuth);
+  } = createMcpServers(deps, mcpOAuth);
   const announceRoutine = createRoutineAnnouncer(deps);
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
   const { verifyModelConnection, connectModelCredential } = createModelConnector(
@@ -301,26 +304,34 @@ export function createRouterContext(deps: RouterDeps) {
       );
   };
 
-  // Shown where a member chose no model, so the list names what actually runs.
+  // Shown where a member chose no model, so the list names what actually runs and whether
+  // the deployment pays for it.
   const deploymentDefault = async (
     actor: Actor,
     role: ModelRole,
-  ): Promise<ModelRoleChoice | null> => {
+  ): Promise<Pick<ModelRoleView, "deploymentPrimary" | "deploymentIncluded">> => {
     if (role === "main") {
-      if (!deps.env.deploymentModelConfigured) return null;
+      const settings = await deps.prisma.deploymentSettings.findUnique({
+        where: { id: "default" },
+      });
+      if (!deps.env.deploymentModelConfigured && !adminDeploymentModel(settings))
+        return { deploymentPrimary: null };
       const access = await bestEffort(
         "read main model default funding",
-        deploymentModelAccess(deps, actor),
+        deploymentModelAccess(deps, actor, settings),
       );
-      return access?.hasDeployment
-        ? deploymentModelRole(role, {
-            settings: await deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
-            deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
-          }).primary
-        : null;
+      return {
+        deploymentPrimary: access?.hasDeployment
+          ? deploymentModelRole(role, {
+              settings,
+              deployment: { provider: deps.env.defaultProvider, model: deps.env.defaultModel },
+            }).primary
+          : null,
+      };
     }
+    const creditsEnabled = deps.billing?.modelCreditsEnabled === true;
     let deploymentPrimary = deploymentModelRole(role, {
-      includedApproval: deps.billing?.modelCreditsEnabled === true,
+      includedApproval: creditsEnabled,
     }).primary;
     if (
       role === "approval" &&
@@ -346,7 +357,14 @@ export function createRouterContext(deps: RouterDeps) {
         deploymentPrimary = null;
       }
     }
-    return deploymentPrimary;
+    return role === "approval" &&
+      deploymentPrimary &&
+      deploymentPaysForReview(
+        { provider: deploymentPrimary.provider, model: deploymentPrimary.modelId },
+        creditsEnabled,
+      )
+      ? { deploymentPrimary, deploymentIncluded: true }
+      : { deploymentPrimary };
   };
   /**
    * The main role also says whether its model reads images where runs use it, so settings
@@ -596,7 +614,7 @@ export function createRouterContext(deps: RouterDeps) {
     home: deps.home,
     dataDir: deps.dataDir,
   });
-  const agentSkills = createAgentSkillsService(deps.prisma);
+  const agentSkills = createAgentSkillsService(deps.prisma, deps.events);
 
   const signedIn = os.middleware(async ({ context, next }) => {
     const actor = context.actor;
