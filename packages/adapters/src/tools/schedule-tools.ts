@@ -10,7 +10,6 @@ import {
 } from "@rakazo/contracts";
 import {
   cronFromPreset,
-  formatCron,
   isOneShotRoutineCron,
   isOneShotRoutineCrons,
   nextCronDate,
@@ -46,7 +45,7 @@ import {
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
 import type { ScheduleUnit } from "./schedule-intervals.js";
 import { intervalRangeError } from "./schedule-intervals.js";
-import { routineChanges } from "./schedule-update-view.js";
+import { describeRoutineTiming, routineChanges } from "./schedule-update-view.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
@@ -273,21 +272,6 @@ export function resolveScheduleTiming(
 function nowIn(timezone: string): string {
   const now = new Date();
   return `It is now ${localDateTime(now, timezone) ?? now.toISOString()} in ${timezone}.`;
-}
-
-/** The stored timing as the bot should report it: in the routine's timezone, with the next run. */
-export function describeRoutineTiming(row: {
-  crons: string[];
-  timezone: string;
-  nextRunAt: Date | null;
-}) {
-  return {
-    timezone: row.timezone,
-    ...(row.crons.length ? { schedule: row.crons.map((cron) => formatCron(cron)).join("; ") } : {}),
-    nextRun: row.nextRunAt
-      ? (localDateTime(row.nextRunAt, row.timezone) ?? row.nextRunAt.toISOString())
-      : null,
-  };
 }
 
 function validateRepeatingCron(cron: string): string | null {

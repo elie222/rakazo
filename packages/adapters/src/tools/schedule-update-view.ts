@@ -1,7 +1,23 @@
 import type { RoutineApprovalChange } from "@rakazo/contracts";
 import { RoutineApprovalField } from "@rakazo/contracts";
-import { redactSecrets, sliceWellFormed } from "@rakazo/core";
+import { formatCron, redactSecrets, sliceWellFormed } from "@rakazo/core";
 import type { routineEventsView } from "../routines/routine-triggers.js";
+import { localDateTime } from "../runs/assembly/current-time.prompt.js";
+
+/** The stored timing as the bot should report it: in the routine's timezone, with the next run. */
+export function describeRoutineTiming(row: {
+  crons: string[];
+  timezone: string;
+  nextRunAt: Date | null;
+}) {
+  return {
+    timezone: row.timezone,
+    ...(row.crons.length ? { schedule: row.crons.map((cron) => formatCron(cron)).join("; ") } : {}),
+    nextRun: row.nextRunAt
+      ? (localDateTime(row.nextRunAt, row.timezone) ?? row.nextRunAt.toISOString())
+      : null,
+  };
+}
 
 /** How a routine reads in a change report: the fields the schedule tools compare. */
 export type RoutineView = {
