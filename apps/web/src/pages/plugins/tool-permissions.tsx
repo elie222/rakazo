@@ -7,15 +7,8 @@ import {
   groupAppPermissionTools,
 } from "@rakazo/core";
 import type { SelectOption } from "@rakazo/ui-web";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-  OptionSelect,
-  SectionHeading,
-} from "@rakazo/ui-web";
+import { Disclosure, OptionSelect, SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight } from "lucide-react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
 
@@ -61,10 +54,10 @@ export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; s
     },
     { value: "deny", label: t`Block` },
   ];
-  const { reads, writes } = groupAppPermissionTools(tools);
+  const { reads, other } = groupAppPermissionTools(tools);
   const groups = [
     { key: "reads", title: t`Reads`, tools: reads },
-    { key: "writes", title: t`Writes`, tools: writes },
+    { key: "other", title: t`Other actions`, tools: other },
   ].filter((group) => group.tools.length > 0);
 
   return (
@@ -79,49 +72,44 @@ export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; s
       ) : null}
       <div className="divide-y divide-border rounded-xl border border-border">
         {groups.map((group) => (
-          <Collapsible key={group.key} className="group/tools">
-            <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-3 py-2 text-start text-body font-medium text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
-              <ChevronRight
-                aria-hidden="true"
-                className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open/tools:rotate-90 motion-reduce:transition-none"
-              />
-              {group.title}
-            </CollapsibleTrigger>
-            <CollapsibleContent hiddenUntilFound>
-              <ul className="space-y-0.5 px-3 pb-2">
-                {group.tools.map((tool) => {
-                  const key = tool.approvalKey;
-                  const label = appToolLabel(tool.name, slug);
-                  return (
-                    <li key={key ?? tool.name} className="flex items-center gap-3 py-1 ps-5.5">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-body-sm text-foreground">{label}</div>
-                        {tool.description !== tool.name && tool.description ? (
-                          <div
-                            className="truncate text-label text-muted-foreground"
-                            title={tool.description}
-                          >
-                            {tool.description}
-                          </div>
-                        ) : null}
-                      </div>
-                      {key ? (
-                        <OptionSelect
-                          size="sm"
-                          className="w-32 shrink-0"
-                          aria-label={label}
-                          value={rules.get(key.toLowerCase())?.effect ?? "default"}
-                          options={options}
-                          disabled={disabled}
-                          onValueChange={(permission) => change.run({ key, permission })}
-                        />
+          <Disclosure
+            key={group.key}
+            summary={group.title}
+            summaryClassName="w-full px-3 py-2 text-body font-medium"
+          >
+            <ul className="space-y-0.5 px-3 pb-2">
+              {group.tools.map((tool) => {
+                const key = tool.approvalKey;
+                const label = appToolLabel(tool.name, slug);
+                return (
+                  <li key={key ?? tool.name} className="flex items-center gap-3 py-1 ps-5.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-body-sm text-foreground">{label}</div>
+                      {tool.description !== tool.name && tool.description ? (
+                        <div
+                          className="truncate text-label text-muted-foreground"
+                          title={tool.description}
+                        >
+                          {tool.description}
+                        </div>
                       ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </CollapsibleContent>
-          </Collapsible>
+                    </div>
+                    {key ? (
+                      <OptionSelect
+                        size="sm"
+                        className="w-32 shrink-0"
+                        aria-label={label}
+                        value={rules.get(key.toLowerCase())?.effect ?? "default"}
+                        options={options}
+                        disabled={disabled}
+                        onValueChange={(permission) => change.run({ key, permission })}
+                      />
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </Disclosure>
         ))}
       </div>
       {change.error ? (

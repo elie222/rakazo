@@ -193,7 +193,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
   await expect(detail.getByText("Send email", { exact: true })).toBeHidden();
-  await detail.getByRole("button", { name: "Writes", exact: true }).click();
+  await detail.getByRole("button", { name: "Other actions", exact: true }).click();
   const permission = detail.getByRole("combobox", { name: "Send email", exact: true });
   await expect(permission).toHaveText("Default");
   await permission.click();
@@ -213,7 +213,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 
   await detailAgain.getByRole("button", { name: "Remove", exact: true }).last().click();
   await expect(detailAgain.getByLabel("Account label")).toHaveCount(1);
-  await detailAgain.getByRole("button", { name: "Writes", exact: true }).click();
+  await detailAgain.getByRole("button", { name: "Other actions", exact: true }).click();
   const reopenedPermission = detailAgain.getByRole("combobox", { name: "Send email", exact: true });
   await expect(reopenedPermission).toHaveText("Block");
   await reopenedPermission.click();

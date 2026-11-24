@@ -22,7 +22,7 @@ type Change = { key: string; permission: AppToolPermission };
 export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; slug: string }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createIntegrationsStyles);
-  const [open, setOpen] = useState({ reads: false, writes: false });
+  const [open, setOpen] = useState({ reads: false, other: false });
   const rulesRead = rpcQuery("approvalRules/list", {});
   const rulesQuery = useScreenQuery(rulesRead);
   const modeQuery = useScreenQuery(rpcQuery("autoReview/get", {}));
@@ -58,7 +58,7 @@ export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; s
     { key: "deny", label: t`Block` },
   ];
   const grouped = groupAppPermissionTools(tools);
-  const titles = { reads: t`Reads`, writes: t`Writes` };
+  const titles = { reads: t`Reads`, other: t`Other actions` };
   const failure = change.error ?? loadError;
 
   return (
@@ -67,7 +67,7 @@ export function ToolPermissions({ tools, slug }: { tools: AppPermissionTool[]; s
       {mode === "never" ? (
         <Text style={styles.secondary}>{t`Only Block rules apply in Never ask.`}</Text>
       ) : null}
-      {(["reads", "writes"] as const).map((group) => {
+      {(["reads", "other"] as const).map((group) => {
         if (!grouped[group].length) return null;
         return (
           <View key={group}>

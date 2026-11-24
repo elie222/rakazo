@@ -875,12 +875,12 @@ export type AppToolPermission = ActionApprovalRule["effect"] | "default";
 
 export function groupAppPermissionTools(tools: readonly AppPermissionTool[]) {
   const reads: AppPermissionTool[] = [];
-  const writes: AppPermissionTool[] = [];
+  const other: AppPermissionTool[] = [];
   for (const tool of tools) {
-    const group = connectorToolRequiresApproval(tool.name, tool.readOnly) ? writes : reads;
+    const group = connectorToolRequiresApproval(tool.name, tool.readOnly) ? other : reads;
     group.push(tool);
   }
-  return { reads, writes };
+  return { reads, other };
 }
 
 export function appToolRules(rules: readonly StoredActionApprovalRule[]) {
