@@ -459,12 +459,14 @@ async function commitAnswerRunInput(
     // "Always" on a card for a request to a site allows that site, never every site the tool can
     // reach, and on a batch allows each action in it, never every action the batch tool can run.
     const site = alwaysAllowedSite(approvalEffect!);
-    const tools = storedBatchActions(approvalEffect!.batchActions, approvalEffect!.id) ?? [
-      approvalEffect!.kind,
-    ];
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
+      const tools = site
+        ? [site]
+        : (storedBatchActions(approvalEffect!.batchActions, approvalEffect!.id) ?? [
+            approvalEffect!.kind,
+          ]);
       // Saved where the member's confirmations apply in this Space: the account or its override.
-      for (const tool of site ? [site] : tools) {
+      for (const tool of tools) {
         const target =
           typeof tool === "string"
             ? { matchKind: site ? "site" : "tool", matchValue: tool }

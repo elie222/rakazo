@@ -11,8 +11,10 @@ import {
 import { sitesInText, urlSite } from "@rakazo/core/egress";
 import {
   findAutoReviewPreference,
+  JsonColumnMismatchError,
   listApprovalRules,
   readMessageBlocks,
+  reportJsonColumnOnce,
   storedBatchActions,
   storedMessageBlocks,
 } from "@rakazo/db";
@@ -58,7 +60,8 @@ export function connectorTrustKeys(
   providers: string[],
 ): string[] {
   const connection = connectorTrustKey(route, connectorKind);
-  if (!batchActions?.length) return [connection];
+  // An empty batch has no known actions. Only a tool without batch metadata trusts its connection.
+  if (!batchActions) return [connection];
   const apps = providers.map((provider) => provider.toLowerCase());
   return batchActions.map((name) => {
     const action = name.toLowerCase();
@@ -285,17 +288,26 @@ export function createRunTrustLoaders(
           new Set(
             rows
               .filter((row) => !BUILTIN_AGENT_TOOL_NAMES.has(row.kind))
-              .flatMap((row) =>
-                connectorTrustKeys(
-                  storedBatchActions(row.batchActions, row.id)?.map((action) =>
-                    typeof action === "string" ? action : action.path,
-                  ),
-                  boundDirectApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route ??
-                    catalogApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route,
-                  connectorKindFromToolName(row.kind, providers),
-                  providers,
-                ),
-              ),
+              .flatMap((row) => {
+                try {
+                  return connectorTrustKeys(
+                    storedBatchActions(row.batchActions, row.id)?.map((action) =>
+                      typeof action === "string" ? action : action.path,
+                    ),
+                    boundDirectApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route ??
+                      catalogApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route,
+                    connectorKindFromToolName(row.kind, providers),
+                    providers,
+                  );
+                } catch (error) {
+                  if (!(error instanceof JsonColumnMismatchError)) throw error;
+                  reportJsonColumnOnce(
+                    "Skipping connector trust for invalid batch actions",
+                    error.row,
+                  );
+                  return [];
+                }
+              }),
           ),
       );
     return trustedConnectorsPromise;

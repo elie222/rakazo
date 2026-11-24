@@ -1,3 +1,8 @@
+import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { PrismaClient } from "@rakazo/db";
+import { availableInSpace } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+
 /** The same assignment policy applies to ordinary MCP calls and protocol bridges. */
 export function mcpToolAllowed(
   assignment: { allowAllTools: boolean; allowedTools: unknown },
@@ -8,11 +13,6 @@ export function mcpToolAllowed(
     (Array.isArray(assignment.allowedTools) && assignment.allowedTools.includes(tool))
   );
 }
-
-import type { AdapterContext } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
-import { availableInSpace } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
 
 /** A server every agent may use acts as an assignment that allows all its tools. */
 export function sharedMcpAssignment<Server extends { id: string }>(server: Server) {

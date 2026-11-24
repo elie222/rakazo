@@ -31,7 +31,7 @@ export function storedBatchActions(
     BatchActions,
     value,
     { table: "external_effects", column: "batchActions", id },
-    { fallback: [] },
+    "reject",
   );
 }
 
