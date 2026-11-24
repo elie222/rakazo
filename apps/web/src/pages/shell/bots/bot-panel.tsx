@@ -130,6 +130,8 @@ export function BotSettings({
   const [tab, setTab] = useState<BotPanelTab>("details");
   // Read only once its tab has been opened: listing versions reads object storage.
   const [computerTabVisited, setComputerTabVisited] = useState(false);
+  // A memory save that conflicted waits for the reader even after they leave the tab.
+  const [memoryAttention, setMemoryAttention] = useState(false);
   const queryClient = useQueryClient();
   function selectTab(value: BotPanelTab) {
     setTab(value);
@@ -652,8 +654,19 @@ export function BotSettings({
             <TabsTrigger value="library" data-testid="bot-tab-library">
               <Trans>Library</Trans>
             </TabsTrigger>
-            <TabsTrigger value="memory" data-testid="bot-tab-memory">
+            <TabsTrigger
+              value="memory"
+              data-testid="bot-tab-memory"
+              aria-label={memoryAttention ? t`Memory, needs attention` : undefined}
+            >
               <Trans>Memory</Trans>
+              {memoryAttention ? (
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 shrink-0 rounded-full bg-destructive"
+                  data-testid="memory-attention"
+                />
+              ) : null}
             </TabsTrigger>
             <TabsTrigger value="settings" data-testid="bot-tab-settings">
               <Trans>Settings</Trans>
@@ -724,7 +737,7 @@ export function BotSettings({
           <TabsContent keepMounted value="memory" className="space-y-6 pt-4">
             <ErrorBoundary fallback={<SectionLoadFailed />}>
               <Suspense fallback={null}>
-                <KnowledgeSection botId={bot.id} full />
+                <KnowledgeSection botId={bot.id} full onConflictChange={setMemoryAttention} />
               </Suspense>
             </ErrorBoundary>
             {onOpenMemorySettings ? (
