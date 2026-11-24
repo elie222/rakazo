@@ -146,8 +146,9 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 
 ## Claude Code CLI
 
-With a Claude subscription, a server that only you use can run its deployment model through the
-official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
+Claude Pro and Max plans already work on any install through **Sign in with Claude** in
+**Settings → Models** ([model subscriptions](./model-subscriptions.md)). As an alternative, a server
+that only you use can run its deployment model through the official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
 `claude` command installed on the server and reads its reply. Rakazo never reads, stores, forwards
 or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
 conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,

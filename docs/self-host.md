@@ -9,8 +9,11 @@ English | [简体中文](./zh-CN/self-host.md)
 
 ## What you need
 
-- Docker Engine 26 or newer with the Compose plugin, curl and OpenSSL. Nothing else is needed for
-  the published images.
+- A server with 2 vCPUs and 4 GB of RAM. Rakazo itself uses about 1 GB; each running bot computer
+  can use up to 2 GB (`RAKAZO_COMPUTER_MEMORY`), so add memory for several busy bots or use a
+  remote computer provider.
+- Docker Engine 26 or newer with the Compose plugin, curl and OpenSSL. On Linux, running the
+  installer as root installs Docker for you. Nothing else is needed for the published images.
 - A model: an OpenRouter key, a connection added in the app after signup, or a model server you
   run yourself ([models](./self-host-models.md)).
 - For a public host, a domain and TLS ([production deployment](./self-host-production.md)).
@@ -41,7 +44,9 @@ Signup and local Docker computers work without an E2B account. Optional remote p
 `SANDBOX_PROVIDER` to `e2b`, `novita`, `daytona`, `createos`, or `boat` and add the matching API key. The published-images
 Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it empty and `compose up` fails closed.
 
-Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup. Other providers,
+Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup. Claude Pro or Max
+and eligible ChatGPT plans connect with their own sign-in in **Settings → Models**
+([model subscriptions](./model-subscriptions.md)). Other providers,
 local models and approvals are covered in [models](./self-host-models.md).
 
 The example defaults to `latest`, which follows stable releases only. Every publish is multi-arch
@@ -77,6 +82,35 @@ instead of this host proxy.
 
 If the installer, Compose downloads, or image pulls are blocked, use the
 [restricted-network guide](./self-host-restricted-network.md) for mirror settings and local files.
+
+## Any VPS: paste user data
+
+Hosts such as DigitalOcean, Vultr, Akamai (Linode), Hetzner and Hostinger take a cloud-init
+"user data" script when you create a server. Create an Ubuntu 22.04 or newer server of the
+[size above](#what-you-need), paste [`infra/cloud-init/user-data.yaml`](../infra/cloud-init/user-data.yaml)
+into that field, and Rakazo installs itself into `/opt/rakazo` on first boot with no SSH.
+`/var/log/cloud-init-output.log` shows progress.
+
+Its two settings are optional. `OPENROUTER_API_KEY` gives everyone a model; user data stays readable
+from the host's metadata service, so you may prefer to connect a model in the app instead. Without
+`RAKAZO_DOMAIN`, Rakazo listens only on the server's loopback: open an SSH tunnel with
+`ssh -N -L 5173:127.0.0.1:5173 root@SERVER_IP` and browse to `http://127.0.0.1:5173`.
+
+To serve it publicly, point a domain's DNS at the server and run:
+
+```bash
+sudo bash /opt/rakazo/setup-server.sh --domain app.example.com
+```
+
+This sets the public origins in `.env`, restarts the stack and starts Caddy, which serves the
+domain with an automatic HTTPS certificate. Setting `RAKAZO_DOMAIN` in the user data does the same
+on first boot. Signup is open, so once your account exists, close it:
+
+```bash
+sudo bash /opt/rakazo/setup-server.sh --close-signup
+```
+
+The script is safe to rerun, and the login message repeats the next step.
 
 ## Docker Compose (single machine)
 
