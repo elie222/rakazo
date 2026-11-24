@@ -7,6 +7,7 @@ import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import type { Ref } from "react";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CallCard } from "../components/call/CallCard";
@@ -69,6 +70,7 @@ import { SnoozedChats } from "./shell/sidebar/snoozed-chats";
 import { useChatSnooze } from "./shell/sidebar/use-chat-snooze";
 import { useMobileSidebar } from "./shell/sidebar/use-mobile-sidebar";
 import { useSidebarExpansion } from "./shell/sidebar/use-sidebar-expansion";
+import { useSidebarScroll } from "./shell/sidebar/use-sidebar-scroll";
 import { useSidebarSearch } from "./shell/sidebar/use-sidebar-search";
 import { useSidebarView } from "./shell/sidebar/use-sidebar-view";
 import { useSnoozeClock } from "./shell/sidebar/use-snooze-clock";
@@ -92,12 +94,13 @@ import { useSpaceActions } from "./shell/use-space-actions";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
 
 export function ShellPage() {
-  // A new key per space switch, so nothing from the previous space survives it.
+  // Reset the Space's shell while keeping the scroll position of the shared roster.
   const spaceEpoch = useSpaceEpoch();
-  return <SpaceShell key={spaceEpoch} />;
+  const sidebarScrollRef = useSidebarScroll();
+  return <SpaceShell key={spaceEpoch} sidebarScrollRef={sidebarScrollRef} />;
 }
 
-function SpaceShell() {
+function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement> }) {
   const { botId, groupId } = useParams();
   const [shellSpaceId] = useState(selectedSpaceId);
   const [rpc] = useState(() => createSpaceRpc(shellSpaceId));
@@ -655,6 +658,7 @@ function SpaceShell() {
         />
       ) : null}
       <ShellSidebar
+        scrollRef={sidebarScrollRef}
         isMobile={isMobileSidebar}
         mobileOpen={mobileSidebarOpen}
         setMobileOpen={setMobileSidebarOpen}
