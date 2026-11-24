@@ -24,10 +24,37 @@ const routine: Routine = {
   watchState: null,
   lastRunAt: null,
   nextRunAt: null,
+  endsAt: null,
   createdAt: "2026-11-01T00:00:00.000Z",
 };
 
 describe("routineSaveRequest", () => {
+  it("clears the end when an email trigger is added, which takes no end", () => {
+    const ending = { ...routine, endsAt: "2031-11-30T17:00:00.000Z" };
+    const draft = draftFromRoutine(ending);
+    expect(routineSaveRequest({ ...draft, emailSenders: "owner" }, ending, "bot-1", "UTC")).toEqual(
+      { update: { routineId: ending.id, emailSenders: "owner", endsAt: null } },
+    );
+  });
+
+  it("sends an end only when its day changes, and on a new routine as that day ends", () => {
+    const ending = { ...routine, endsAt: "2031-11-30T17:00:00.000Z" };
+    const draft = draftFromRoutine(ending);
+    expect(routineSaveRequest({ ...draft, name: "Mail" }, ending, "bot-1", "UTC")).toEqual({
+      update: { routineId: ending.id, name: "Mail" },
+    });
+    expect(routineSaveRequest({ ...draft, endsOn: "" }, ending, "bot-1", "UTC")).toEqual({
+      update: { routineId: ending.id, endsAt: null },
+    });
+    const created = routineSaveRequest(
+      { ...draftFromRoutine(routine), endsOn: "2031-12-24" },
+      null,
+      "bot-1",
+      "Europe/Berlin",
+    );
+    expect("create" in created && created.create.endsAt).toBe("2031-12-24T22:59:59.999Z");
+  });
+
   it("sends Use my computer only when the owner flips it, and never to a copy", () => {
     const own = { ...routine, useComputer: false };
     const draft = draftFromRoutine(own);
@@ -111,6 +138,13 @@ describe("routineSaveRequest", () => {
     expect(routineSaveRequest(unhooked, null, "bot-1", "UTC", copy)).toEqual({ error: "trigger" });
     // A one-time routine is only set up from chat, so it has no copy.
     expect(routineCopy({ ...routine, crons: ["@once"] }, "Once (copy)")).toBeNull();
+  });
+
+  it("creates a copy in the zone of the routine it copies, not the device's", () => {
+    const copy = routineCopy({ ...routine, timezone: "America/New_York" }, "Inbox (copy)")!;
+    expect(
+      routineSaveRequest(draftFromRoutine(copy), null, "bot-1", "Australia/Sydney", copy),
+    ).toEqual({ create: expect.objectContaining({ timezone: "America/New_York" }) });
   });
 
   it("creates a routine with the device zone and its schedules", () => {

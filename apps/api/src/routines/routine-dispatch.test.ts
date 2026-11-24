@@ -28,6 +28,7 @@ describe("routine dispatch DTO", () => {
       watchState: null,
       lastRunAt: null,
       nextRunAt: new Date("2026-10-26T08:00:00Z"),
+      endsAt: null,
       createdAt: new Date("2026-10-25T00:00:00Z"),
     };
     expect(mapRoutine(row)).toMatchObject({

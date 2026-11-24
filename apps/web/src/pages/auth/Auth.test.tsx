@@ -101,6 +101,7 @@ afterEach(async () => {
   host.remove();
   vi.restoreAllMocks();
   delete window.rakazoDesktop;
+  localStorage.clear();
 });
 async function render(mode: "in" | "up" | "forgot" = "in", entry = "/") {
   await act(async () =>
@@ -303,6 +304,56 @@ it("keeps SSO available for retry while an authorization request is pending", as
   expect(button.disabled).toBe(false);
   await act(async () => button.click());
   expect(authClient.signIn.social).toHaveBeenCalledTimes(2);
+});
+
+const ssoOnly: AuthCapabilities = {
+  ...capabilities,
+  sso: { name: "Example", availability: "available" },
+};
+
+it("starts the only provider once, and waits for a click on the next visit", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
+  await render("in", "/sign-in?next=%2Finvite%2Fabc");
+  expect(authClient.signIn.social).toHaveBeenCalledOnce();
+  expect(authClient.signIn.social).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "oidc", callbackURL: "/invite/abc" }),
+  );
+  // Back from the provider lands here again and must not send the person straight back.
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+  expect(authClient.signIn.social).toHaveBeenCalledOnce();
+  expect(host.textContent).toContain("Continue with Example");
+});
+
+it("starts the only provider from sign-up, where a first visit lands", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
+  await render("up", "/sign-up");
+  expect(authClient.signIn.social).toHaveBeenCalledWith(
+    expect.objectContaining({ provider: "oidc", newUserCallbackURL: "/onboarding" }),
+  );
+});
+
+it("waits for a click after the provider returned an error", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
+  await render("in", "/sign-in?error=");
+  expect(authClient.signIn.social).not.toHaveBeenCalled();
+});
+
+it("waits for a click when storage cannot save that it started", async () => {
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new DOMException("Full", "QuotaExceededError");
+  });
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
+  await render();
+  expect(authClient.signIn.social).not.toHaveBeenCalled();
+});
+
+it("waits for a click on desktop, where sign-in opens a window", async () => {
+  window.rakazoDesktop = {} as NonNullable<Window["rakazoDesktop"]>;
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue(ssoOnly);
+  await render();
+  expect(authClient.signIn.social).not.toHaveBeenCalled();
 });
 
 const codeCapabilities: AuthCapabilities = {

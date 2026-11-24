@@ -3,12 +3,19 @@ import {
   FLEET_TOOL_NAMES,
   FLEET_WRITE_TOOL_NAMES,
 } from "@rakazo/contracts";
-import { BACKGROUND_HELPER_TRIGGER, isBackgroundRunTrigger, isOwnerStartedRun } from "@rakazo/core";
+import {
+  approvalCardExpires,
+  BACKGROUND_HELPER_TRIGGER,
+  isBackgroundRunTrigger,
+  isOwnerStartedRun,
+} from "@rakazo/core";
 import { selectCloudAgentTools } from "../../cloud-agents/cloud-agent-tools-select.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { selectMemoryTools } from "../../memory/memory-tools.js";
 import { filterImageReturningComputerTools } from "../../models/model-vision.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
+import { shellDescription } from "../../tools/builtin-computer.tool-definition.js";
+import { searchHistoryThisChat } from "../../tools/builtin-memory.tool-definition.js";
 import {
   filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
@@ -131,6 +138,8 @@ export function selectBuiltinToolsForRun(options: {
   ticketBoardEnabled?: boolean;
   phoneCallsEnabled?: boolean;
   historyRetrievalEnabled?: boolean;
+  /** See historyMyChatsAllowed; otherwise search_history offers only this chat. */
+  historyMyChats?: boolean;
   /** A routine with its owner's computer: only OWN_PROMPT_ONLY_TOOLS. */
   ownPromptOnly?: boolean;
   meetingTranscriptsAvailable?: boolean;
@@ -189,12 +198,17 @@ export function selectBuiltinToolsForRun(options: {
     !options.groupId &&
     !options.messagingChannelRun;
   const emailMailbox = Boolean(options.emailInbox) || emailClaimOffered;
-  return selectCloudAgentTools(
+  const builtins = options.historyMyChats
+    ? builtinAgentTools
+    : builtinAgentTools.map((tool) =>
+        tool.name === "search_history" ? searchHistoryThisChat : tool,
+      );
+  const offered = selectCloudAgentTools(
     selectMemoryTools(
       filterBuiltinToolsForRun(
         filterBuiltinToolsForThread(
           filterPageBrowserTools(
-            filterImageReturningComputerTools(builtinAgentTools, options.graphicalToolsAllowed),
+            filterImageReturningComputerTools(builtins, options.graphicalToolsAllowed),
             options.pageBrowserAllowed ?? options.graphicalToolsAllowed,
           ),
           options.groupId,
@@ -212,8 +226,10 @@ export function selectBuiltinToolsForRun(options: {
       !disabled.has(tool.name) &&
       (options.trigger !== "created" || CREATED_RUN_TOOL_NAMES.has(tool.name)) &&
       (options.trigger !== BACKGROUND_HELPER_TRIGGER || !SUBAGENT_HIDDEN_TOOLS.has(tool.name)) &&
+      // A run nobody is watching is offered them too; its writes wait for the owner's approval.
       (!FLEET_TOOL_NAMES_SET.has(tool.name) ||
-        (Boolean(options.fleetManagement) && ownerStartedRun)) &&
+        (Boolean(options.fleetManagement) &&
+          (ownerStartedRun || approvalCardExpires(options.trigger)))) &&
       (ownerStartedRun || (tool.name !== "update_preferences" && tool.name !== "feedback")) &&
       (options.paymentWalletEnabled || !PURCHASE_TOOL_NAMES.has(tool.name)) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
@@ -262,6 +278,24 @@ export function selectBuiltinToolsForRun(options: {
           !tool.name.startsWith("scratchpad_") &&
           !tool.name.startsWith("ticket_"))),
   );
+  return withShellScreenTool(offered);
+}
+
+/** Tools that open this bot's own screen, in the order the shell names them. */
+const SCREEN_OPENING_TOOLS = ["computer_observe", "browser_snapshot"] as const;
+
+/** The offered tool a graphical shell command is told to open the bot's screen with. */
+export function screenOpeningTool(tools: readonly { name: string }[]) {
+  const offered = new Set(tools.map((tool) => tool.name));
+  return SCREEN_OPENING_TOOLS.find((name) => offered.has(name));
+}
+
+/** A text-only model has no computer_observe, so the shell points it at a tool it was offered. */
+function withShellScreenTool<T extends { name: string; description?: string }>(tools: T[]): T[] {
+  const screenTool = screenOpeningTool(tools);
+  if (screenTool === SCREEN_OPENING_TOOLS[0]) return tools;
+  const description = shellDescription(screenTool);
+  return tools.map((tool) => (tool.name === "shell" ? { ...tool, description } : tool));
 }
 
 /**

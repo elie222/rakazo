@@ -114,6 +114,23 @@ describe("connectionFormFields", () => {
     });
   });
 
+  it("starts a new preset connection on the protocol the preset names", () => {
+    const presetUrl = "https://hosted.example/v1";
+    const fields = connectionFormFields({
+      catalog: [
+        {
+          provider: COMPATIBLE,
+          id: "",
+          endpointPresets: [{ name: "Hosted", baseUrl: presetUrl, apiProtocol: "responses" }],
+        },
+      ],
+      provider: COMPATIBLE,
+      modelId: "",
+      presetBaseUrl: presetUrl,
+    });
+    expect(fields.apiProtocol).toBe("responses");
+  });
+
   it("shows a saved OpenAI-compatible connection, whose models choose their own effort", () => {
     const saved = credential({
       provider: COMPATIBLE,

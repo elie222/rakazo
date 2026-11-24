@@ -33,6 +33,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
 const breakdown = vi.hoisted(() => ({ fetch: vi.fn() }));
 const catalog = vi.hoisted(() => ({
   entries: [] as { provider: string; id: string; label: string; providerName?: string }[] | Error,
+  imageModels: [] as Array<{ provider: string; modelId: string; label: string }>,
 }));
 
 vi.mock("../../lib/query/query", async (importOriginal) => ({
@@ -46,6 +47,22 @@ vi.mock("../../lib/query/query", async (importOriginal) => ({
             if (catalog.entries instanceof Error) throw catalog.entries;
             return catalog.entries;
           },
+        }),
+      },
+      media: {
+        queryOptions: () => ({
+          queryKey: ["models-media"],
+          queryFn: async () => ({
+            image: {
+              options: catalog.imageModels.map((model) => ({
+                ...model,
+                credentialId: "key",
+                connectionLabel: "Work",
+              })),
+              selected: null,
+            },
+            video: { options: [], selected: null },
+          }),
         }),
       },
     },
@@ -100,10 +117,14 @@ const usageFor = (input: Input) => ({
 
 const settle = () => act(flush);
 
-async function renderPanel(entries: typeof catalog.entries = []) {
+async function renderPanel(
+  entries: typeof catalog.entries = [],
+  imageModels: typeof catalog.imageModels = [],
+) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   breakdown.fetch.mockReset();
   catalog.entries = entries;
+  catalog.imageModels = imageModels;
   breakdown.fetch.mockImplementation(async (input: Input) => usageFor(input));
   const container = document.createElement("div");
   document.body.append(container);
@@ -436,6 +457,21 @@ it("keeps a known provider name when the recorded model is no longer listed", as
     );
     expect(panel.container.textContent).not.toContain("retired-opaque-id");
     expect(await panel.options("Model")).toEqual(["All models", "Unlisted model"]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("names an image model from the member's media models", async () => {
+  const panel = await renderPanel([], [{ provider: "alpha", modelId: "draw-2", label: "Draw 2" }]);
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      modelOptions: [{ provider: "alpha", model: "draw-2" }],
+      models: [{ provider: "alpha", model: "draw-2", ...point(1, 0, 0.04) }],
+    }));
+    await panel.pick("7 days");
+    expect(await panel.options("Model")).toEqual(["All models", "Draw 2"]);
   } finally {
     await panel.unmount();
   }

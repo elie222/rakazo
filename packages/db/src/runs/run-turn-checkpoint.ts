@@ -1,7 +1,10 @@
+import { z } from "zod";
 import type { PrismaClient } from "../database/client.js";
 import type { JsonColumnRow } from "../database/json-column.js";
+import { readJsonColumn } from "../database/json-column.js";
 import { ciphertextKeyId, decryptText, encryptText } from "../encryption/content-crypto.js";
 import { contentEncryptionOf } from "../encryption/content-encryption.js";
+import { Prisma } from "../generated/prisma/client.js";
 
 // A reserved effect kind/status keeps transcripts out of approval queues and
 // client events while reusing run/space cascades and latest-only upsert storage.
@@ -20,22 +23,50 @@ export function runTurnCheckpointRow(runId: string): JsonColumnRow {
   return { table, column, id: rowId };
 }
 
+const checkpointWhere = (run: { id: string; spaceId: string }) => ({
+  runId: run.id,
+  spaceId: run.spaceId,
+  kind: RUN_TURN_CHECKPOINT_KIND,
+  status: RUN_TURN_CHECKPOINT_KIND,
+  idempotencyKey: keyOf(run.id),
+});
+
+const checkpointRequest = z.object({
+  introEffects: z
+    .array(z.object({ id: z.string(), kind: z.string(), idempotencyKey: z.string() }))
+    .optional(),
+});
+
 export async function loadRunTurnCheckpoint(
   prisma: PrismaClient,
   run: { id: string; spaceId: string },
 ): Promise<string | undefined> {
+  return (await loadRunTurnState(prisma, run)).turnCheckpoint;
+}
+
+export async function loadRunTurnState(prisma: PrismaClient, run: { id: string; spaceId: string }) {
   const rows = await prisma.externalEffect.findMany({
-    where: {
-      runId: run.id,
-      spaceId: run.spaceId,
-      kind: RUN_TURN_CHECKPOINT_KIND,
-      status: RUN_TURN_CHECKPOINT_KIND,
-      idempotencyKey: keyOf(run.id),
-    },
-    select: { result: true },
+    where: checkpointWhere(run),
+    select: { result: true, request: true },
   });
+  const { introEffects = [] } = readJsonColumn(
+    checkpointRequest,
+    rows[0]?.request ?? {},
+    { ...runTurnCheckpointRow(run.id), column: "request" },
+    "reject",
+  );
   const blob = rows[0]?.result;
-  if (typeof blob !== "string") return undefined;
+  return {
+    turnCheckpoint: typeof blob === "string" ? await openCheckpoint(prisma, run, blob) : undefined,
+    introEffects,
+  };
+}
+
+async function openCheckpoint(
+  prisma: PrismaClient,
+  run: { id: string; spaceId: string },
+  blob: string,
+): Promise<string> {
   const keyId = ciphertextKeyId(blob);
   if (!keyId) return blob;
   const encryption = contentEncryptionOf(prisma);
@@ -93,7 +124,35 @@ export async function dropRunTurnCheckpoint(
       data: { leaseFence },
     });
     if (locked.count !== 1) throw new Error("Run lease expired before checkpoint");
-    await clearRunTurnCheckpoints(tx, [run.id]);
+    // Keep the intro receipts when a later pause has no resumable transcript.
+    const where = checkpointWhere(run);
+    const removed = await tx.externalEffect.deleteMany({
+      where: { ...where, request: { equals: {} } },
+    });
+    if (removed.count === 0) {
+      await tx.externalEffect.updateMany({ where, data: { result: Prisma.DbNull } });
+    }
+  });
+}
+
+/** Snapshot the receipt identities before the run can start executing the user's task. */
+export async function retireIntroTurnCheckpoint(
+  tx: Prisma.TransactionClient,
+  run: { id: string; spaceId: string },
+): Promise<void> {
+  const introEffects = await tx.externalEffect.findMany({
+    where: { runId: run.id, spaceId: run.spaceId, kind: { not: RUN_TURN_CHECKPOINT_KIND } },
+    select: { id: true, kind: true, idempotencyKey: true },
+  });
+  const where = checkpointWhere(run);
+  if (introEffects.length === 0) {
+    await tx.externalEffect.deleteMany({ where });
+    return;
+  }
+  await tx.externalEffect.upsert({
+    where: { idempotencyKey: where.idempotencyKey },
+    create: { ...where, request: { introEffects } },
+    update: { request: { introEffects }, result: Prisma.DbNull },
   });
 }
 

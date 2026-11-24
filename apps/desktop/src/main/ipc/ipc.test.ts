@@ -58,6 +58,7 @@ function appBridge(caller: IpcCaller): RakazoDesktop {
     readFileSync(path.join(import.meta.dirname, "../../preload/preload.cjs"), "utf8"),
     {
       process: { platform: "darwin" },
+      window: { addEventListener: () => undefined },
       require: () => ({
         contextBridge: {
           exposeInMainWorld: (_name: string, value: RakazoDesktop) => (bridge = value),

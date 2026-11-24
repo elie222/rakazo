@@ -1,13 +1,13 @@
 {
   "name": "@rakazo/desktop",
   "productName": "Rakazo",
-  "version": "0.14.0",
+  "version": "0.16.0",
   "author": {
     "name": "Rakazo"
   },
   "license": "Apache-2.0",
   "type": "module",
-  "main": "dist/main.js",
+  "main": "dist/launch.js",
   "scripts": {
     "dev": "pnpm build && electron .",
     "build": "node scripts/build.mjs && node scripts/copy-static.mjs && node scripts/build-speech.mjs",
@@ -19,8 +19,6 @@
     "release": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --publish never"
   },
   "dependencies": {
-    "@rakazo/contracts": "workspace:*",
-    "@rakazo/logging": "workspace:*",
     "@sentry/electron": "8.3.0",
     "electron-updater": "6.8.12",
     "koffi": "3.3.7"
@@ -28,7 +26,9 @@
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@rakazo/adapters": "workspace:*",
+    "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
+    "@rakazo/logging": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "electron": "45.2.3",
     "electron-builder": "26.18.1",
@@ -71,7 +71,7 @@
     ],
     "extraMetadata": {
       "name": "rakazo",
-      "main": "dist/main.js"
+      "main": "dist/launch.js"
     },
     "mac": {
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",

@@ -1850,10 +1850,18 @@ export interface BillingPlanPayment {
 
 export interface BillingInvoiceRefund {
   invoiceId: string;
+  /** The number on the customer's receipt; null when the provider gave the invoice none. */
+  invoiceNumber: string | null;
+  /** When the invoice was created, as an ISO timestamp. */
+  createdAt: string;
+  /** The id the provider's credit purchases list the invoice's payment under; read on a preview. */
+  creditPurchaseId: string;
   amountMinor: number;
   currency: string;
   state: "refundable" | "pending" | "succeeded";
   refundId?: string;
+  /** What the refund returns, once there is one; it can be less than the charge. */
+  refundedMinor?: number;
 }
 
 export interface BillingCreditCheckoutRequest {
@@ -1887,7 +1895,10 @@ export interface BillingSubscriptionSnapshot {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
-  /** When the latest invoice was settled, if it billed anything: a trial's free invoice is no payment. */
+  /**
+   * When the latest invoice was settled, if it billed anything: a trial's free invoice is no
+   * payment. For a subscription that no longer grants access, its first paid invoice counts too.
+   */
   paidAt?: Date;
   /** The flat own-key plan, which grants access without credits. */
   byokPlan?: boolean;

@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { TimeZoneSchema } from "../account/preferences.js";
-import { Id, ThinkingLevelSchema } from "../ids.js";
+import { Id, IsoDate, ThinkingLevelSchema } from "../ids.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 
 /**
@@ -73,6 +73,7 @@ export const RoutineSchema = z.object({
   watchState: RoutineWatchStateSchema.nullable(),
   lastRunAt: z.string().nullable(),
   nextRunAt: z.string().nullable(),
+  endsAt: z.string().nullable().default(null),
   /** Computed by the server; absent on older servers. Not a worker-health diagnosis. */
   scheduleDelayed: z.boolean().optional(),
   createdAt: z.string(),
@@ -120,6 +121,7 @@ export const CreateRoutineInput = z
     modelId: z.string().trim().min(1).max(200).nullable().default(null),
     thinkingLevel: ThinkingLevelSchema.nullable().default(null),
     watch: RoutineWatchSchema.nullable().default(null),
+    endsAt: IsoDate.nullable().default(null),
   })
   .superRefine((value, ctx) => {
     routineModelIssues(value, ctx);

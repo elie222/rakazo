@@ -9,7 +9,8 @@ permissions:
 
 # Superseded PR checks cancel together. On main, each job that leads to a deploy holds a per-job
 # lock: one revision runs while only the newest waits, so a burst of merges deploys its last commit
-# without stopping work already in progress. Main reruns only what the deploy needs; the pull
+# without stopping work already in progress. Release jobs queue in order instead and skip a
+# revision that is no longer main's head. Main reruns only what the deploy needs; the pull
 # request already ran the rest against the then-current main, and the nightly run refreshes the
 # E2E screenshot baseline.
 concurrency:
@@ -298,9 +299,23 @@ jobs:
       contents: read
       id-token: write
     steps:
+      # A deploy that waited behind a newer merge leaves production to that merge's own deploy, so a
+      # burst of merges skips to its newest commit and a late older revision never rolls back.
+      - name: Check the revision is still main
+        id: head
+        run: |
+          head="$(git ls-remote "https://github.com/${GITHUB_REPOSITORY}" refs/heads/main | awk '{print $1}')"
+          test -n "$head"
+          if [[ "$head" == "$GITHUB_SHA" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipped: main is now $head, which has its own deploy." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # Production SSH is reachable only over the tailnet; the runner joins with a short-lived
       # GitHub OIDC identity scoped to this environment, so no Tailscale secret is stored.
       - name: Join the tailnet
+        if: steps.head.outputs.current == 'true'
         uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4.4.0
         with:
           oauth-client-id: ${{ vars.TAILSCALE_CLIENT_ID }}
@@ -309,6 +324,7 @@ jobs:
           ping: ${{ secrets.PRODUCTION_SSH_HOST }}
 
       - name: Configure production SSH identity
+        if: steps.head.outputs.current == 'true'
         env:
           SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
@@ -322,6 +338,7 @@ jobs:
           ssh-keygen -y -f "$HOME/.ssh/rakazo-production" >/dev/null
 
       - name: Deploy successful main revision
+        if: steps.head.outputs.current == 'true'
         env:
           SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
           SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}

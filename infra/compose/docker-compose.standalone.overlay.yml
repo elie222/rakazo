@@ -1,0 +1,167 @@
+# Source for docker-compose.standalone.yml, the single file a server panel deploys by URL with no
+# .env (docs/self-host.md#from-a-docker-panel). Edit this, then run
+# `node infra/compose/build-standalone.mjs`. Compose checks the base file's required variables
+# before it merges, so this overlay does not start on its own with `-f`; use the generated file.
+
+# Every secret a panel install generates: NAME:random bytes:the services that receive it.
+x-generated-secrets: &generated-secrets >-
+  POSTGRES_PASSWORD:16:postgres,migrate
+  POSTGRES_APP_PASSWORD:16:migrate,api,worker
+  BETTER_AUTH_SECRET:32:api
+  ENCRYPTION_KEY:32:api,worker
+  SCREEN_PROXY_SECRET:32:api,web
+  SANDBOX_SUPERVISOR_TOKEN:32:api,worker,supervisor
+
+# How each of those services starts, written beside its copies as /run/rakazo-secrets/start: a
+# secret left unset is read from the service's copy, and a database URL with an empty password
+# gets the matching one. Commands run with `compose exec` go through it too, for example
+# `exec api sh /run/rakazo-secrets/start node dist/cli/admin.js`.
+x-start: &start |
+  for file in /run/rakazo-secrets/*; do
+    name=$${file##*/}
+    case $$name in '' | *[!A-Z0-9_]*) continue ;; esac
+    eval "current=\$${$$name:-}"
+    [ -n "$$current" ] || export "$$name=$$(cat "$$file")"
+  done
+  case $${DATABASE_URL-} in
+    *://*:@*) export DATABASE_URL="$${DATABASE_URL%%:@*}:$$POSTGRES_APP_PASSWORD@$${DATABASE_URL#*:@}" ;;
+  esac
+  case $${DATABASE_MIGRATION_URL-} in
+    *://*:@*) export DATABASE_MIGRATION_URL="$${DATABASE_MIGRATION_URL%%:@*}:$$POSTGRES_PASSWORD@$${DATABASE_MIGRATION_URL#*:@}" ;;
+  esac
+  if [ -n "$${RAKAZO_PUBLIC_URL-}" ]; then
+    host=$${RAKAZO_PUBLIC_URL#*://}
+    host=$${host%%[/?#]*}
+    export RAKAZO_ALLOWED_HOSTS="$${RAKAZO_ALLOWED_HOSTS:+$$RAKAZO_ALLOWED_HOSTS,}$${host%%:*}"
+  fi
+  exec "$$@"
+
+x-after-secrets: &after-secrets
+  secrets:
+    condition: service_completed_successfully
+
+services:
+  # Generates each secret in the list above once and never replaces it, then gives every service
+  # a copy of only the secrets it receives. Back up the secrets volume with the database: content
+  # encrypted with ENCRYPTION_KEY cannot be read without it.
+  secrets:
+    image: ${BUSYBOX_IMAGE:-busybox:1}
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        umask 077
+        for entry in $$RAKAZO_GENERATED_SECRETS; do
+          name=$${entry%%:*}
+          rest=$${entry#*:}
+          bytes=$${rest%%:*}
+          if [ ! -s "/secrets/$$name" ]; then
+            head -c "$$bytes" /dev/urandom | od -An -vtx1 | tr -d ' \n' > "/secrets/$$name.new"
+            [ "$$(wc -c < "/secrets/$$name.new")" -eq "$$((bytes * 2))" ]
+            mv "/secrets/$$name.new" "/secrets/$$name"
+          fi
+        done
+        sync
+        find /services -mindepth 2 -delete
+        for entry in $$RAKAZO_GENERATED_SECRETS; do
+          name=$${entry%%:*}
+          for service in $$(echo "$${entry##*:}" | tr , ' '); do
+            cp "/secrets/$$name" "/services/$$service/$$name"
+          done
+        done
+        for dir in /services/*; do
+          printf '%s' "$$RAKAZO_START" > "$$dir/start"
+        done
+        chown -R 1000:1000 /services
+        chmod -R u=rX,go= /services
+    environment:
+      RAKAZO_GENERATED_SECRETS: *generated-secrets
+      RAKAZO_START: *start
+    network_mode: none
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    volumes:
+      - secrets:/secrets
+      - secrets-postgres:/services/postgres
+      - secrets-migrate:/services/migrate
+      - secrets-api:/services/api
+      - secrets-worker:/services/worker
+      - secrets-web:/services/web
+      - secrets-supervisor:/services/supervisor
+
+  # Each service keeps its image's own entrypoint and command, started through the wrapper.
+  postgres:
+    entrypoint: ["sh", "/run/rakazo-secrets/start", "docker-entrypoint.sh"]
+    command: ["postgres"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - secrets-postgres:/run/rakazo-secrets:ro
+    depends_on: *after-secrets
+
+  supervisor:
+    entrypoint: ["sh", "/run/rakazo-secrets/start", "docker-entrypoint.sh"]
+    environment:
+      SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:-}
+    volumes:
+      - secrets-supervisor:/run/rakazo-secrets:ro
+    depends_on: *after-secrets
+
+  migrate:
+    entrypoint: ["sh", "/run/rakazo-secrets/start", "docker-entrypoint.sh"]
+    environment:
+      DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-rakazo}
+      DATABASE_MIGRATION_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-rakazo}
+    volumes:
+      - secrets-migrate:/run/rakazo-secrets:ro
+    depends_on: *after-secrets
+
+  api:
+    entrypoint: ["sh", "/run/rakazo-secrets/start", "docker-entrypoint.sh"]
+    environment:
+      DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-rakazo}
+      SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:-}
+      SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:-}
+      API_URL: ${API_URL:-${RAKAZO_PUBLIC_URL:-http://127.0.0.1:5173}}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-${RAKAZO_PUBLIC_URL:-http://127.0.0.1:5173}}
+      WEB_ORIGIN: ${WEB_ORIGIN:-${RAKAZO_PUBLIC_URL:-http://127.0.0.1:5173}}
+    volumes:
+      - secrets-api:/run/rakazo-secrets:ro
+    depends_on: *after-secrets
+
+  worker:
+    entrypoint: ["sh", "/run/rakazo-secrets/start", "docker-entrypoint.sh"]
+    environment:
+      DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-rakazo}
+      SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:-}
+      API_URL: ${API_URL:-${RAKAZO_PUBLIC_URL:-http://127.0.0.1:5173}}
+      WEB_ORIGIN: ${WEB_ORIGIN:-${RAKAZO_PUBLIC_URL:-http://127.0.0.1:5173}}
+    volumes:
+      - secrets-worker:/run/rakazo-secrets:ro
+    depends_on: *after-secrets
+
+  web:
+    entrypoint: ["sh", "/run/rakazo-secrets/start", "docker-entrypoint.sh"]
+    environment:
+      SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:-}
+      RAKAZO_PUBLIC_URL: ${RAKAZO_PUBLIC_URL:-}
+    volumes:
+      - secrets-web:/run/rakazo-secrets:ro
+    depends_on: *after-secrets
+
+volumes:
+  secrets:
+  secrets-postgres:
+  secrets-migrate:
+  secrets-api:
+  secrets-worker:
+  secrets-web:
+  secrets-supervisor:
