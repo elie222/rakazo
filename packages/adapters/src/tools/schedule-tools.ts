@@ -286,7 +286,7 @@ function withNow(error: string, timezone: string): string {
   return `${error} ${nowIn(timezone)}`;
 }
 
-function toolRoutineEnd(
+export function toolRoutineEnd(
   value: string | undefined,
   timezone: string,
   timing: Parameters<typeof newRoutineEnd>[2],

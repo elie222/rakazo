@@ -696,6 +696,40 @@ describe("prepareFleetRequest create_child_routine", () => {
     });
   });
 
+  it("stores a repeating routine's end as an instant and shows it on the card", async () => {
+    const { deps } = fakeFleet(fleet);
+    const prepared = await prepareFleetRequest(deps, run, "create_child_routine", {
+      bot_name: "Writer",
+      name: "Deals",
+      prompt: "Check the deals",
+      cron: "0 9 * * *",
+      endAt: "2026-10-24",
+    });
+    expect(prepared).toMatchObject({
+      ok: true,
+      canonical: { schedule: { cron: "0 9 * * *" }, endAt: "2026-10-24T23:59:59.999Z" },
+      summary: {
+        lines: [expect.any(String), "Ends 24 Oct 2026, 23:59 UTC", "Prompt: Check the deals"],
+      },
+    });
+  });
+
+  it("refuses an end the routine cannot reach", async () => {
+    const { deps } = fakeFleet(fleet);
+    expect(
+      await prepareFleetRequest(deps, run, "create_child_routine", {
+        bot_name: "Writer",
+        name: "Deals",
+        prompt: "Check the deals",
+        cron: "0 9 * * *",
+        endAt: "2026-10-18T08:30:00Z",
+      }),
+    ).toEqual({
+      ok: false,
+      error: expect.stringMatching(/^The end date is before the next run\. /),
+    });
+  });
+
   it("refuses a bot outside the current space", async () => {
     const { deps } = fakeFleet({
       ...fleet,
@@ -1819,6 +1853,19 @@ describe("createChildRoutine", () => {
     });
     expect(prisma.routine.delete).toHaveBeenCalledWith({ where: { id: "routine-new" } });
     expect(deps.append).not.toHaveBeenCalled();
+  });
+
+  it("creates the routine with the approved end and finds a retry by it", async () => {
+    const { prisma } = fakeFleet(fleet);
+    const endAt = "2026-10-24T23:59:59.999Z";
+    const result = await createChildRoutine(writeDeps(prisma), run, { ...canonical, endAt });
+    expect(result).toMatchObject({ ok: true, endAt: "Saturday, 2026-10-24 23:59 (UTC+00:00)" });
+    expect(prisma.routine.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ endsAt: new Date(endAt) }) }),
+    );
+    expect(prisma.routine.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ endsAt: new Date(endAt) }),
+    });
   });
 
   it("keeps the routine name on one line in the routine, its result and its notification", async () => {
