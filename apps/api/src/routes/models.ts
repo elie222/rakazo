@@ -12,6 +12,7 @@ import {
   listModelCredentials,
   listPiCatalog,
   ModelSignInError,
+  mediaModelsView,
   oauthCredentialEmail,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
@@ -19,6 +20,7 @@ import {
   providerCatalogCache,
   selectDefaultCredentialId,
   serializeModelSecret,
+  setMediaModel,
   storedOpenAiCompatibleProbeHeaders,
   storedOpenAiCompatibleProbeKey,
   subscriptionSignInChoice,
@@ -210,6 +212,25 @@ export function modelsRoutes(ctx: RouterContext) {
         );
         return withImageInput(context.actor, role, { ...settings, ...deployment }, reads);
       }),
+      media: authed.models.media.handler(async ({ context, input }) => {
+        if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
+          throw new ORPCError("FORBIDDEN");
+        const target = await modelRoleTarget(deps.prisma, context.actor, input.scope);
+        return mediaModelsView(deps.prisma, target);
+      }),
+      setMedia: authed.models.setMedia.handler(async ({ context, input }) => {
+        if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
+          throw new ORPCError("FORBIDDEN");
+        const { actor } = context;
+        const { role, credentialId, modelId, scope } = input;
+        await setMediaModel(
+          deps.prisma,
+          { userId: actor.userId, spaceId: actor.spaceId, scope },
+          role,
+          { credentialId, modelId },
+        );
+        return mediaModelsView(deps.prisma, await modelRoleTarget(deps.prisma, actor, scope));
+      }),
       backups: authed.models.backups.handler(async ({ context }) =>
         (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
           ({ provider, modelId, credentialId, creditOfferingId }) => ({
@@ -335,7 +356,11 @@ export function modelsRoutes(ctx: RouterContext) {
               { ...input, apiKey, headers },
               preset ? deps.modelConnectionFetch : undefined,
               context.signal,
-              { allowPrivate: mayUsePrivateEndpoint(deps), allowHttp },
+              {
+                allowPrivate: mayUsePrivateEndpoint(deps),
+                allowHttp,
+                catalogProbe: preset !== undefined,
+              },
             );
             return { models };
           } catch (error) {

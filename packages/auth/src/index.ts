@@ -12,6 +12,7 @@ import {
   isMessagingEmail,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
+  parseEnvFlag,
   partnerClickFromHeaders,
   signupAttributionFromHeaders,
   signupPolicyFromEnv,
@@ -82,6 +83,7 @@ export type { HomeDeletionReason } from "./home-deletion-email.js";
 export { homeDeletionEmail } from "./home-deletion-email.js";
 export { modelConnectionEmail } from "./model-connection-email.js";
 export type { OidcConfig } from "./oidc.js";
+export { oidcAuthorizationParams } from "./oidc.js";
 export {
   organizationInvitationEmail,
   spaceInvitationEmail,
@@ -176,11 +178,17 @@ const ACCOUNT_EVENT_PATHS: Record<string, SecurityEventType> = {
   "/passkey/delete-passkey": "auth.passkey.removed",
 };
 
-/** Shared across API processes. Off outside production so tests can sign in freely. */
-export function authRateLimitOptions(nodeEnv = process.env.NODE_ENV) {
+/**
+ * Shared across API processes. Off outside production so tests can sign in freely, unless
+ * `AUTH_RATE_LIMIT_ENABLED` says otherwise.
+ */
+export function authRateLimitOptions(
+  nodeEnv = process.env.NODE_ENV,
+  override = process.env.AUTH_RATE_LIMIT_ENABLED,
+) {
   const rule = { window: 15 * 60, max: 10 };
   return {
-    enabled: nodeEnv === "production",
+    enabled: parseEnvFlag("AUTH_RATE_LIMIT_ENABLED", override, nodeEnv === "production"),
     storage: "database" as const,
     customRules: {
       ...Object.fromEntries(CREDENTIAL_PATHS.map((path) => [path, rule])),

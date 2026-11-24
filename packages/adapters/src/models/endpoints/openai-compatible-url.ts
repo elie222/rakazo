@@ -24,7 +24,9 @@ export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
     name: "Concentrate AI",
     baseUrl: "https://api.concentrate.ai/v1",
     publicModels: true,
+    apiProtocol: "responses",
   },
+  { id: "deepinfra", name: "DeepInfra", baseUrl: "https://api.deepinfra.com/v1/openai" },
 ];
 
 const BUILT_IN_PUBLIC_MODEL_HOSTS = presetHosts(COMPATIBLE_ENDPOINT_PRESETS);

@@ -295,6 +295,8 @@ vi.mock("../api/api", () => ({
               : []),
           ]
         : [];
+    if (procedure === "models/media")
+      return { image: { options: [], selected: null }, video: { options: [], selected: null } };
     return [];
   },
 }));
@@ -631,6 +633,10 @@ vi.mock("@expo/ui/community/menu", () => ({
 
 let root: Root;
 let container: HTMLDivElement;
+// The shared level labels read the active catalog.
+i18n.load("en", {});
+i18n.activate("en");
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.reportVisibleRows = true;

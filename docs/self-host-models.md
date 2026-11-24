@@ -146,8 +146,9 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 
 ## Claude Code CLI
 
-With a Claude subscription, a server that only you use can run its deployment model through the
-official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
+Claude Pro and Max plans already work on any install through **Sign in with Claude** in
+**Settings → Models** ([model subscriptions](./model-subscriptions.md)). As an alternative, a server
+that only you use can run its deployment model through the official Claude Code CLI, signed in with your own account. For each model turn Rakazo starts the
 `claude` command installed on the server and reads its reply. Rakazo never reads, stores, forwards
 or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
 conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,
@@ -162,7 +163,9 @@ What it needs:
   with `claude auth login`. On a server without a browser, the CLI can use the token
   `claude setup-token` creates instead: set it as `CLAUDE_CODE_OAUTH_TOKEN` together with
   `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` in the API's and worker's environment. Either way there is
-  no Claude sign-in inside Rakazo.
+  no Claude sign-in inside Rakazo. Prefer the token: with `claude auth login`, the CLI tells the
+  model the signed-in account's email, so bots may repeat it. With the token, the CLI runs with an
+  empty config directory of its own and the email stays out.
 - One account on the server. A Claude sign-in belongs to one person, so Rakazo refuses Claude Code
   runs while the server has more than one account (people who only message bots from chat apps do
   not count) or bills for model usage.
@@ -232,8 +235,8 @@ provider not on it is not offered, a key for it is refused on save and on import
 switched to it, and its runs fail with a clear error. An unset or empty list means every provider,
 exactly the behavior without it.
 
-Hosted OpenAI-compatible presets include Ollama Cloud (`ollama-cloud`) and Concentrate AI
-(`concentrate`). Choose either in **Settings → Models**, enter its API key, and select
+Hosted OpenAI-compatible presets include Ollama Cloud (`ollama-cloud`), Concentrate AI
+(`concentrate`) and DeepInfra (`deepinfra`). Choose one in **Settings → Models**, enter its API key, and select
 a model. Rakazo loads the list automatically. Their HTTPS hosts remain available with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`.
 If you set a provider allowlist, include `openai-compatible` and the ids of the presets you
 want to keep. Leaving out a preset id hides it and removes its host exemption.

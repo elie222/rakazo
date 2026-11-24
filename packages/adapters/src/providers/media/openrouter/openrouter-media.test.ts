@@ -70,6 +70,22 @@ describe("OpenRouter media generation", () => {
       duration: 4,
     });
   });
+  it("asks for no-retention endpoints on images and videos when the connection does", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    fetch
+      .mockResolvedValueOnce(json({ data: [{ b64_json: Buffer.from(PNG).toString("base64") }] }))
+      .mockResolvedValueOnce(json({ id: "job-1", status: "pending" }, { status: 202 }));
+    const provider = new OpenRouterMediaGenerationProvider({
+      apiKey: "fake-key",
+      ...both,
+      zeroDataRetention: true,
+      fetch,
+    });
+    await provider.generateImage({ prompt: "draw" }, context);
+    await provider.generateVideo({ prompt: "move" }, context);
+    for (const [, init] of fetch.mock.calls)
+      expect(JSON.parse(init?.body as string)).toMatchObject({ provider: { zdr: true } });
+  });
   it("reports progress while the job runs", async () => {
     const { fetch, provider } = setup(
       both,
@@ -107,6 +123,25 @@ describe("OpenRouter media generation", () => {
     expect(url).toBe("https://openrouter.ai/api/v1/videos/job-1/content?index=0");
     expect(init?.redirect).toBe("error");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer fake-key");
+  });
+  it("reports what an image cost", async () => {
+    const image = setup(
+      both,
+      json({ data: [{ b64_json: Buffer.from(PNG).toString("base64") }], usage: { cost: 0.039 } }),
+    );
+    expect(await image.provider.generateImage({ prompt: "draw" }, context)).toMatchObject({
+      costMicros: 39_000,
+    });
+  });
+  it("reports what a finished video cost", async () => {
+    const video = setup(
+      both,
+      json({ id: "job-1", status: "completed", usage: { cost: 0.2, is_byok: false } }),
+      mp4(),
+    );
+    expect(await video.provider.pollVideo("job-1", context)).toMatchObject({
+      output: { costMicros: 200_000 },
+    });
   });
   it.each(["failed", "cancelled", "expired"])("reports a %s job as failed", async (status) => {
     const { provider } = setup(

@@ -1862,6 +1862,8 @@ export interface BillingInvoiceRefund {
   currency: string;
   state: "refundable" | "pending" | "succeeded";
   refundId?: string;
+  /** What the refund returns, once there is one; it can be less than the charge. */
+  refundedMinor?: number;
 }
 
 export interface BillingCreditCheckoutRequest {

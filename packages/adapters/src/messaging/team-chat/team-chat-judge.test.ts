@@ -279,7 +279,7 @@ describe("team chat engagement judge", () => {
               "x-boundary": "12345678",
               "x-region": "us",
             },
-            models: { "model-fixture": { reasoning: true } },
+            models: { "model-fixture": { reasoning: true, thinkingLevel: "high" } },
           }),
       } as never,
       deploymentProvider: "openai-compatible",
@@ -307,6 +307,7 @@ describe("team chat engagement judge", () => {
           headers: { "x-route": "route-value-fixture", "x-boundary": "12345678", "x-region": "us" },
           reasoning: true,
           allowHttpEndpoint: true,
+          thinkingLevel: "high",
         },
       });
       expect(sink.events).toHaveLength(1);

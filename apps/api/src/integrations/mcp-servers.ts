@@ -292,7 +292,7 @@ export function createMcpServers(deps: RouterDeps, mcpOAuth: McpOAuthBroker) {
     input: McpServerConfigInput,
     stored: Awaited<ReturnType<typeof prepareMcpServer>>,
     // What the user adds reaches all their spaces and agents; an import stays with its agent.
-    options: { everywhere?: boolean } = {},
+    options: { everywhere?: boolean; allBots?: boolean } = {},
   ) => {
     if (options.everywhere)
       await assertNameFreeWhereAvailable(
@@ -318,7 +318,7 @@ export function createMcpServers(deps: RouterDeps, mcpOAuth: McpOAuthBroker) {
         spaceId: actor.spaceId,
         userId: actor.userId,
         allSpaces: options.everywhere ?? false,
-        allBots: options.everywhere ?? false,
+        allBots: options.allBots ?? options.everywhere ?? false,
         slug: input.slug,
         name: input.name,
         description: input.description,

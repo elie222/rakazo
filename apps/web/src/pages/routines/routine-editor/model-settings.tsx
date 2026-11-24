@@ -1,6 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
-import { credentialForModel, modelThinkingLevels } from "@rakazo/core";
+import { credentialForModel, modelDefaultThinkingLevel, modelThinkingLevels } from "@rakazo/core";
 import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import {
   Button,
@@ -58,7 +58,11 @@ export function RoutineModelSettings({
     selectedEntry,
     selectedModel?.modelId,
   ).filter((level) => level !== "off");
-  const defaultThinkingLevel = selectedCredential?.thinkingLevel ?? "medium";
+  const defaultThinkingLevel = modelDefaultThinkingLevel(
+    selectedCredential,
+    selectedModel?.modelId,
+    thinkingOptions,
+  );
 
   return (
     <Popover>
