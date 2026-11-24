@@ -6,7 +6,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { MEMORY_REVISION_CONFLICT_ERROR, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
-import type { ModelRoleSettings, SpendingLimit } from "@rakazo/contracts";
+import type { ModelRoleSettings, ScopedBatchAction, SpendingLimit } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, connectionToolRuleValue } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
@@ -73,7 +73,7 @@ type Effect = {
   idempotencyKey: string;
   status: string;
   request: unknown;
-  batchActions?: string[];
+  batchActions?: (string | ScopedBatchAction)[];
   result?: unknown;
   reviewDecision?: string;
   runId?: string;
@@ -1664,7 +1664,9 @@ describe("connection-scoped MCP batches", () => {
     f.setCalls([{ args: { calls: entry(rename) }, executionId: "call-1" }]);
     await f.run();
     expect(f.execute).not.toHaveBeenCalled();
-    expect(f.effects[0]?.batchActions).toEqual([scopedRule(rename).matchValue]);
+    expect(f.effects[0]?.batchActions).toEqual([
+      { connectionId: connection.id, path: rename, connectionName: connection.name },
+    ]);
     expect(askDetail(f)).toContain(connection.name);
   });
 

@@ -8,11 +8,11 @@ import type {
 import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_SECRET_VALUE_MAX_LENGTH,
+  connectionToolRuleValue,
   encodeLoginSecret,
   loginAnswerValue,
   MessageBlock as MessageBlockSchema,
   normalizeOneTimeCode,
-  parseConnectionToolRuleValue,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
@@ -459,22 +459,27 @@ async function commitAnswerRunInput(
     // "Always" on a card for a request to a site allows that site, never every site the tool can
     // reach, and on a batch allows each action in it, never every action the batch tool can run.
     const site = alwaysAllowedSite(approvalEffect!);
-    const tools = storedBatchActions(approvalEffect!.batchActions) ?? [approvalEffect!.kind];
+    const tools = storedBatchActions(approvalEffect!.batchActions, approvalEffect!.id) ?? [
+      approvalEffect!.kind,
+    ];
     if (input.answer === "always" && (site || approvalEffect!.kind !== "web_fetch")) {
       // Saved where the member's confirmations apply in this Space: the account or its override.
       for (const tool of site ? [site] : tools) {
+        const target =
+          typeof tool === "string"
+            ? { matchKind: site ? "site" : "tool", matchValue: tool }
+            : {
+                matchKind: "connection_tool",
+                matchValue: connectionToolRuleValue(
+                  tool.connectionId,
+                  tool.path,
+                  tool.connectionName,
+                ),
+              };
         await saveApprovalRule(
           tx,
           { userId: approvalUserId!, spaceId: input.spaceId },
-          {
-            effect: "always_allow",
-            matchKind: site
-              ? "site"
-              : parseConnectionToolRuleValue(tool)
-                ? "connection_tool"
-                : "tool",
-            matchValue: tool,
-          },
+          { effect: "always_allow", ...target },
         );
       }
     }

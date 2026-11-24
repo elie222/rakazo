@@ -1,5 +1,4 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { parseConnectionToolRuleValue } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import {
   BACKGROUND_HELPER_TRIGGER,
@@ -279,7 +278,7 @@ export function createRunTrustLoaders(
     trustedConnectorsPromise ??= deps.prisma.externalEffect
       .findMany({
         where: { runId, status: { in: PASSED_EFFECT_STATUSES } },
-        select: { kind: true, request: true, batchActions: true },
+        select: { id: true, kind: true, request: true, batchActions: true },
       })
       .then(
         (rows) =>
@@ -288,8 +287,8 @@ export function createRunTrustLoaders(
               .filter((row) => !BUILTIN_AGENT_TOOL_NAMES.has(row.kind))
               .flatMap((row) =>
                 connectorTrustKeys(
-                  storedBatchActions(row.batchActions)?.map(
-                    (action) => parseConnectionToolRuleValue(action)?.[1] ?? action,
+                  storedBatchActions(row.batchActions, row.id)?.map((action) =>
+                    typeof action === "string" ? action : action.path,
                   ),
                   boundDirectApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route ??
                     catalogApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route,

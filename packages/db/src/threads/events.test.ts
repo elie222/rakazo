@@ -2885,7 +2885,16 @@ describe("answerRunInput approvals", () => {
     },
   );
 
-  const scopedApproval = connectionToolRuleValue("connection-1", "tools.demo.renameNote", "Notes");
+  const scopedAction = {
+    connectionId: "connection-1",
+    path: "tools.demo.renameNote",
+    connectionName: "Notes",
+  };
+  const scopedApproval = connectionToolRuleValue(
+    scopedAction.connectionId,
+    scopedAction.path,
+    scopedAction.connectionName,
+  );
 
   it.each([
     [
@@ -2894,7 +2903,7 @@ describe("answerRunInput approvals", () => {
       ["GMAIL_ARCHIVE_THREAD", "GMAIL_SEND_EMAIL"],
     ],
     ["a batch with an entry naming no action", [], []],
-    ["a connection-scoped batch", [scopedApproval], [scopedApproval]],
+    ["a connection-scoped batch", [scopedAction], [scopedApproval]],
     [
       "a batch from before its actions were recorded",
       null,

@@ -1,7 +1,9 @@
 import type { SettingsScope } from "@rakazo/contracts";
-import { parseConnectionToolRuleValue } from "@rakazo/contracts";
+import { parseConnectionToolRuleValue, ScopedBatchAction } from "@rakazo/contracts";
+import * as z from "zod";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
+import { readJsonColumn } from "../database/json-column.js";
 import { lockSpaceSettings, settingsTarget } from "../spaces/space-settings.js";
 
 type Scope = { userId: string; spaceId: string };
@@ -16,12 +18,20 @@ type ConfirmationsClient = Pick<
   | "userActionAutoReviewPreference"
 >;
 
+const BatchActions = z.array(z.union([z.string(), ScopedBatchAction]));
+
 /** A stored effect's batch actions, or undefined when the effect is not a batch. */
 export function storedBatchActions(
   value: Prisma.JsonValue | null | undefined,
-): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value.filter((action): action is string => typeof action === "string");
+  id: string,
+): z.infer<typeof BatchActions> | undefined {
+  if (value == null) return undefined;
+  return readJsonColumn(
+    BatchActions,
+    value,
+    { table: "external_effects", column: "batchActions", id },
+    { fallback: [] },
+  );
 }
 
 export type ApprovalRuleInput = { effect: string; matchKind: string; matchValue: string };

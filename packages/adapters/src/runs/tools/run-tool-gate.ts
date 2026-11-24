@@ -1,5 +1,4 @@
 import type { AgentToolExecutionObserver, ConnectorCall } from "@rakazo/adapter-kit";
-import { connectionToolRuleValue } from "@rakazo/contracts";
 import {
   approvalModeFromPreference,
   approvalRuleLabel,
@@ -506,11 +505,11 @@ export async function gateToolCall(
             (batch.complete
               ? batch.actions.map((action) =>
                   approvalScope
-                    ? connectionToolRuleValue(
-                        approvalScope.connectionId,
-                        action,
-                        approvalScope.connectionName,
-                      )
+                    ? {
+                        connectionId: approvalScope.connectionId,
+                        path: action,
+                        connectionName: approvalScope.connectionName,
+                      }
                     : action,
                 )
               : []),

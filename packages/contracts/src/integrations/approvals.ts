@@ -17,11 +17,9 @@ export const ConnectionToolPath = z
   .min(1)
   .max(512)
   .refine((path) => !/[\p{Cc}\p{Cf}]/u.test(path));
-const ConnectionToolRuleValue = z.tuple([
-  Id.max(128),
-  ConnectionToolPath,
-  z.string().min(1).max(160),
-]);
+const ConnectionToolId = Id.max(128);
+const ConnectionToolName = z.string().min(1).max(160);
+const ConnectionToolRuleValue = z.tuple([ConnectionToolId, ConnectionToolPath, ConnectionToolName]);
 const CONNECTION_TOOL_PREFIX = "connection-tool:";
 
 export function connectionToolRuleValue(
@@ -43,6 +41,14 @@ export function parseConnectionToolRuleValue(value: string) {
     return undefined;
   }
 }
+
+/** A stored effect distinguishes verified connection actions from free-form batch names. */
+export const ScopedBatchAction = z.object({
+  connectionId: ConnectionToolId,
+  path: ConnectionToolPath,
+  connectionName: ConnectionToolName,
+});
+export type ScopedBatchAction = z.infer<typeof ScopedBatchAction>;
 
 /** How much a space asks before acting; see VISION.md. */
 export const ApprovalModeSchema = z.enum(["never", "auto", "ask"]);
