@@ -94,6 +94,17 @@ it("retries a failed deployment lookup", async () => {
   expect(fetch).toHaveBeenCalledTimes(2);
 });
 
+it("reads local registration availability again after the first account is created", async () => {
+  const local = { ...capability, passwordAuth: true, sso: null };
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ ...local, registrationOpen: true }))
+    .mockResolvedValueOnce(Response.json({ ...local, registrationOpen: false }));
+  vi.stubGlobal("fetch", fetch);
+  await expect(fetchAuthCapabilities()).resolves.toMatchObject({ registrationOpen: true });
+  await expect(fetchAuthCapabilities()).resolves.toMatchObject({ registrationOpen: false });
+});
+
 it.each(["checking", "unavailable"])(
   "refreshes %s SSO discovery on the next lookup",
   async (availability) => {

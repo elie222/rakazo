@@ -4,7 +4,12 @@ import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
 } from "@rakazo/contracts";
-import { inferAttachmentMimeType, isStaticPng, PNG_ANIMATION_HEADER_BYTES } from "@rakazo/core";
+import {
+  attachmentExtensionForMimeType,
+  inferAttachmentMimeType,
+  isStaticPng,
+  PNG_ANIMATION_HEADER_BYTES,
+} from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File, FileMode } from "expo-file-system";
 import type * as ImageManipulatorModule from "expo-image-manipulator";
@@ -36,6 +41,12 @@ function loadImageManipulator() {
     // Older binaries may not be able to load the package.
   }
   return imageManipulator;
+}
+
+function photoName(asset: ImagePicker.ImagePickerAsset, id: string | number): string {
+  const mimeType = asset.mimeType;
+  const extension = mimeType?.startsWith("image/") ? attachmentExtensionForMimeType(mimeType) : "";
+  return asset.fileName ?? `photo-${id}${extension || ".jpg"}`;
 }
 
 function compressedImageName(name: string, format: ImageManipulatorModule.SaveFormat): string {
@@ -134,7 +145,7 @@ export async function pickFromLibrary(
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
   for (const asset of result.assets) {
-    const originalName = asset.fileName ?? `photo-${asset.assetId ?? Date.now()}.jpg`;
+    const originalName = photoName(asset, asset.assetId ?? Date.now());
     // Once full, let the filter report the skip without processing the file.
     let candidate: Parameters<typeof filterPickedAttachments>[1][number] = {
       name: originalName,
@@ -194,7 +205,7 @@ export async function takePhoto(
   if (result.canceled) return { attachments: [], skipped: [] };
   const asset = result.assets[0];
   if (!asset) return { attachments: [], skipped: [] };
-  const originalName = asset.fileName ?? `photo-${Date.now()}.jpg`;
+  const originalName = photoName(asset, Date.now());
   const prepared = await prepareImage(
     asset.uri,
     originalName,

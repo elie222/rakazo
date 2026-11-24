@@ -7,6 +7,7 @@ import { NativeActionButton } from "../components/native/native-action-button";
 import { SettingsGroup, SettingsInputRow } from "../components/settings/settings-group";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
+import { announceToScreenReader } from "../lib/native/announce";
 import { native, useThemedStyles } from "../lib/native/native";
 import { useSave } from "../lib/query/query";
 import { ACCOUNT_SETTINGS } from "../lib/query/settings-target";
@@ -23,6 +24,7 @@ export default function NewOrganization() {
   const router = useRouter();
   const organizations = useOrganizations().data;
   const [name, setName] = useState("");
+  const creationError = (failure: Error) => errorText(failure, t`Something went wrong. Try again.`);
   const creation = useSave({
     // An organization belongs to the account, so opening it does not end the save that made it.
     target: ACCOUNT_SETTINGS,
@@ -43,12 +45,12 @@ export default function NewOrganization() {
         router.replace("/");
       }
     },
+    // Create keeps focus after a failure, so VoiceOver and TalkBack are told as well as shown.
+    onFailed: (failure) => announceToScreenReader(creationError(failure)),
     closesScreen: true,
   });
   const pending = creation.pending;
-  const error = creation.error
-    ? errorText(creation.error, t`Something went wrong. Try again.`)
-    : null;
+  const error = creation.error ? creationError(creation.error) : null;
 
   function create() {
     const trimmed = name.trim();

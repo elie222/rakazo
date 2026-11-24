@@ -65,6 +65,7 @@
       "change-password",
       "models",
       "integrations",
+      "mcp-server",
       "voice",
       "ai-data-sharing",
       "labs",
@@ -117,6 +118,7 @@
       "approval-rule-add",
       "vault",
       "archived-bots",
+      "spaces",
       "space",
       "space-members"
     ]
@@ -149,7 +151,7 @@
     "id": "pages",
     "title": "Pages",
     "flow": "flows/pages.yaml",
-    "screens": ["page", "page-share", "pages"]
+    "screens": ["page", "page-share", "page-review", "pages", "shared-pages"]
   },
   {
     "id": "organizations",

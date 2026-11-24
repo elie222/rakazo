@@ -68,6 +68,9 @@ export function MentionPicker({
   onHighlight: (mention: ComposerMention) => void;
 }) {
   const { t } = useLingui();
+  // Options sharing a name (a bot and a group, say) are told apart by their visible subtitle.
+  const nameCounts = new Map<string, number>();
+  for (const { name } of options) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
   return (
     <div
       id={listboxId}
@@ -79,6 +82,8 @@ export function MentionPicker({
       {options.map((mention, index) => {
         const optionId = `${listboxId}-option-${index}`;
         const highlighted = index === activeIndex;
+        const labelWithSubtitle =
+          Boolean(mention.subtitle) && (nameCounts.get(mention.name) ?? 0) > 1;
         return (
           <button
             id={optionId}
@@ -86,7 +91,9 @@ export function MentionPicker({
             type="button"
             role="option"
             aria-selected={highlighted}
-            aria-label={t`@${mention.name}`}
+            aria-label={
+              labelWithSubtitle ? t`@${mention.name}, ${mention.subtitle}` : t`@${mention.name}`
+            }
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onPick(mention)}
             // Opening the list under a stationary pointer must not steal the keyboard highlight.

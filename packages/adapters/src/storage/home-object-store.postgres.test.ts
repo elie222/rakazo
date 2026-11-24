@@ -10,6 +10,7 @@ import {
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PrismaAgentHomeRecords } from "./home-object-store.js";
+import { HomeRestoreRunningError, HomeVersionNotFoundError } from "./home-versions.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
@@ -70,6 +71,113 @@ describePostgres("agent home storage records (PostgreSQL)", () => {
     });
     expect(finished.count).toBe(1);
     expect((await records.load(homeKey))?.revision).toBe("rev-1");
+  });
+
+  it("leaves the revision where it was when its version cannot be recorded", async () => {
+    const homeKey = `home-versions-${randomUUID()}`;
+    await system.computer.create({
+      data: {
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        scopeKey: homeKey,
+        homeKey,
+        kind: "fake",
+        state: "running",
+      },
+    });
+    const records = new PrismaAgentHomeRecords(db.prisma, memoryRing());
+    const { storageId } = (await records.create(homeKey))!;
+    expect(await records.advance(homeKey, storageId, null, "rev-1")).toBe(true);
+    const failing = new PrismaAgentHomeRecords(
+      {
+        computer: db.prisma.computer,
+        computerHomeVersion: db.prisma.computerHomeVersion,
+        $transaction: ((work: (tx: PrismaClient) => Promise<unknown>) =>
+          db.prisma.$transaction((tx) =>
+            work({
+              computer: tx.computer,
+              computerHomeVersion: {
+                createMany: () => Promise.reject(new Error("connection lost")),
+              },
+            } as unknown as PrismaClient),
+          )) as unknown as PrismaClient["$transaction"],
+      },
+      memoryRing(),
+    );
+
+    await expect(failing.advance(homeKey, storageId, "rev-1", "rev-2")).rejects.toThrow(
+      "connection lost",
+    );
+    expect((await records.load(homeKey))?.revision).toBe("rev-1");
+    expect(await records.advance(homeKey, storageId, "rev-1", "rev-2")).toBe(true);
+    expect((await records.versions(homeKey))?.versions.map((v) => v.revision).sort()).toEqual([
+      "rev-1",
+      "rev-2",
+    ]);
+  });
+
+  it("keeps versions across saves, prunes them and restores one", async () => {
+    const homeKey = `home-versions-${randomUUID()}`;
+    const computer = await system.computer.create({
+      data: {
+        spaceId: identity.spaceId,
+        userId: identity.userId,
+        scopeKey: homeKey,
+        homeKey,
+        kind: "fake",
+        state: "running",
+        providerRef: "machine-1",
+      },
+    });
+    const records = new PrismaAgentHomeRecords(db.prisma, memoryRing());
+    const { storageId } = (await records.create(homeKey))!;
+    const revisions = ["rev-1", "rev-2", "rev-3", "rev-4", "rev-5"];
+    let from: string | null = null;
+    for (const revision of revisions) {
+      expect(await records.advance(homeKey, storageId, from, revision)).toBe(true);
+      from = revision;
+    }
+    const savedAt = (revision: string) =>
+      new Date(Date.UTC(2026, 10, 19, 10) + revisions.indexOf(revision) * 60_000);
+    for (const revision of revisions)
+      await system.computerHomeVersion.updateMany({
+        where: { storageId, revision },
+        data: { savedAt: savedAt(revision) },
+      });
+
+    // The day's first save and the newest two stay.
+    expect((await records.prune(homeKey, storageId, savedAt("rev-5"))).sort()).toEqual([
+      "rev-2",
+      "rev-3",
+    ]);
+    expect((await records.versions(homeKey))?.versions.map((v) => v.revision)).toEqual([
+      "rev-5",
+      "rev-4",
+      "rev-1",
+    ]);
+    expect((await records.revisions([storageId])).get(storageId)).toEqual(
+      new Set(["rev-1", "rev-4", "rev-5"]),
+    );
+
+    await expect(records.restore(homeKey, storageId, "rev-1")).rejects.toThrow(
+      HomeRestoreRunningError,
+    );
+    await system.computer.update({ where: { id: computer.id }, data: { state: "suspended" } });
+    await expect(records.restore(homeKey, storageId, "rev-2")).rejects.toThrow(
+      HomeVersionNotFoundError,
+    );
+    await records.restore(homeKey, storageId, "rev-1");
+    expect(
+      await system.computer.findUniqueOrThrow({
+        where: { id: computer.id },
+        select: { homeStorageRevision: true, homeRevision: true, restorePending: true },
+      }),
+    ).toEqual({ homeStorageRevision: "rev-1", homeRevision: "rev-1", restorePending: true });
+    // A prune right after never drops the restored revision, however old it is.
+    expect(await records.prune(homeKey, storageId, savedAt("rev-5"))).toEqual([]);
+
+    await system.computer.delete({ where: { id: computer.id } });
+    expect(await system.computerHomeVersion.count({ where: { storageId } })).toBe(0);
   });
 });
 

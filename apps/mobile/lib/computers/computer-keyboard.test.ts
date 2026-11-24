@@ -28,10 +28,15 @@ describe("computer keyboard edits", () => {
     expect(computerKeyboardChanges("שלו", "שלום")).toEqual({ backspaces: 0, text: "ם" });
   });
 
-  it("ignores a change anywhere but the end", () => {
-    expect(computerKeyboardChanges("recieve", "receive")).toEqual({ backspaces: 0, text: "" });
-    expect(computerKeyboardChanges("482", "4182")).toEqual({ backspaces: 0, text: "" });
-    expect(computerKeyboardChanges("482", "42")).toEqual({ backspaces: 0, text: "" });
+  it.each([
+    ["ㅎ", "하", 1, "하"],
+    ["k", "か", 1, "か"],
+    ["読む にほん", "読む 日本", 3, "日本"],
+    ["你好 pin", "你好 拼", 3, "拼"],
+    ["a😀", "a😁", 1, "😁"],
+    ["482", "42", 2, "2"],
+  ])("rewrites the suffix of %s to produce %s", (before, after, backspaces, text) => {
+    expect(computerKeyboardChanges(before, after)).toEqual({ backspaces, text });
   });
 
   it("keeps a return between the characters on either side", () => {

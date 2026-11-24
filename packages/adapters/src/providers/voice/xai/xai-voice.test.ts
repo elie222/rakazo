@@ -36,7 +36,6 @@ describe("XaiVoiceProvider", () => {
     expect(clip).toMatchObject({
       bytes: new Uint8Array([1, 2, 3]),
       mimeType: "audio/mpeg",
-      usage: { model: "tts", units: 3, unit: "characters" },
     });
     const [url, init] = fetch.mock.calls[0]!;
     expect(String(url)).toBe("https://api.x.ai/v1/tts");
@@ -140,7 +139,7 @@ describe("XaiVoiceProvider", () => {
   });
 });
 
-it("returns character and duration evidence for operator speech accounting", async () => {
+it("returns request ids and duration evidence for operator speech accounting", async () => {
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(
@@ -163,11 +162,6 @@ it("returns character and duration evidence for operator speech accounting", asy
     context,
   );
   expect(clip.providerRequestId).toBe("fake-tts");
-  expect(clip.usage).toEqual({
-    model: "tts",
-    unit: "characters",
-    units: 2,
-  });
   const transcript = await provider.transcribe(
     {
       apiKey: "fake-server-key",

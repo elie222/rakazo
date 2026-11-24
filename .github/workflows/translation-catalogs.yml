@@ -12,6 +12,7 @@ on:
       - apps/mobile/components/**
       - apps/mobile/lib/**
       - packages/i18n/src/**
+      - packages/adapters/src/models/model-provider-registry.ts
       - lingui.config.ts
   workflow_dispatch:
 

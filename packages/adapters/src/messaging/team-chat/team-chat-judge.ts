@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunModel, AgentRuntime, SecretStore } from "@rakazo/adapter-kit";
-import { redactSecrets } from "@rakazo/core";
+import { redactSecrets, savedThinkingLevel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { findModelCredential, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -10,6 +10,10 @@ import {
 } from "../../model-credits/offerings.js";
 import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
+import {
+  loadAdminDeploymentModelKey,
+  matchingAdminDeploymentModel,
+} from "../../models/deployment-model.js";
 import {
   persistRefreshedModelCredential,
   refreshStoredModelCredential,
@@ -22,7 +26,7 @@ import {
   modelProviderAllowlist,
 } from "../../models/model-provider-allowlist.js";
 import { deploymentModelRole, resolveMemberMainModel } from "../../models/model-roles.js";
-import { secretValuesToRedact } from "../../models/model-secret.js";
+import { modelBilling, secretValuesToRedact } from "../../models/model-secret.js";
 import {
   hasHostedModelCredits,
   validateCreditOfferingChoice,
@@ -280,14 +284,30 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         provider,
         modelId,
       );
+      const admin =
+        !hosted &&
+        !pinned &&
+        !mainModel &&
+        matchingAdminDeploymentModel(settings, provider, modelId);
       const apiKey =
         material?.apiKey ??
-        (provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined);
+        (admin
+          ? await loadAdminDeploymentModelKey(this.deps.secrets, admin.cipher)
+          : provider === this.deps.deploymentProvider
+            ? this.deps.deploymentModelKey
+            : undefined);
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
         : undefined;
       return {
-        model: { provider, id: modelId, ...material, ...(apiKey ? { apiKey } : {}), callObserver },
+        model: {
+          provider,
+          id: modelId,
+          ...material,
+          ...(apiKey ? { apiKey } : {}),
+          callObserver,
+          billing: modelBilling({ credits: Boolean(callObserver || material) }),
+        },
       };
     }
 
@@ -312,12 +332,18 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     );
     const parsed = auth.secret;
     const modelSettings = connectionModelSettings(parsed, provider, modelId, credential);
+    const billing = modelBilling({ secret: parsed });
     const limit = {
       ...(modelSettings.maxTokens !== undefined ? { maxTokens: modelSettings.maxTokens } : {}),
       ...(modelSettings.contextWindow !== undefined
         ? { contextWindow: modelSettings.contextWindow }
         : {}),
       ...(modelSettings.reasoning !== undefined ? { reasoning: modelSettings.reasoning } : {}),
+      thinkingLevel: savedThinkingLevel(
+        modelSettings.thinkingLevel,
+        { modelId: credential.defaultModel, thinkingLevel: credential.thinkingLevel },
+        modelId,
+      ),
     };
     const context = parsed.kind === "oauth" ? {} : { cacheCapabilities: parsed.cacheCapabilities };
     if (parsed.kind === "oauth") {
@@ -325,6 +351,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         model: {
           provider,
           id: modelId,
+          billing,
           ...limit,
           oauth: {
             credential: { ...parsed.credential },
@@ -351,6 +378,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         model: {
           provider,
           id: modelId,
+          billing,
           apiKey: parsed.apiKey,
           baseUrl: parsed.baseUrl,
           headers: parsed.headers,
@@ -365,6 +393,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
       model: {
         provider,
         id: modelId,
+        billing,
         apiKey: auth.apiKey,
         projectId: parsed.projectId,
         region: parsed.region,

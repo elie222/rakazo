@@ -279,13 +279,12 @@ Docker 互換 CLI を試すには、アプリを起動する前に `RAKAZO_DOCKE
 ## UI の言語
 
 Web（および Electron 内）の UI は、**Settings → Language**（設定 → 言語）で English、Deutsch、한국어、Türkçe、हिन्दी、
-Português (Brasil)、简体中文、Español、Русский、Français、עברית、Nederlands、日本語 に対応しています。
-Expo アプリには English、简体中文、Русский、Deutsch、Nederlands、日本語 のカタログが含まれ、
-**Account → Language**（アカウント → 言語）にこの 6 つが表示されます。保存された選択がない場合は、デバイスの言語または
-`EXPO_PUBLIC_DEFAULT_UI_LOCALE` が最初のカタログを決めます。
-マーケティング用ホームページ（`apps/www`）は、フッターの言語リンクから en/de/ko/zh/ja で表示できます（`/`、`/de/`、
-`/ko/`、`/zh/`、`/ja/`）。その他のマーケティングページは英語のままです。ロシア語のマーケティング用ホームページと、
-Electron ネイティブのセットアップ画面／メニューの翻訳は、今後の課題として残っています。
+Português (Brasil)、简体中文、繁體中文、Español、Русский、Français、עברית、Nederlands、日本語、Polski、ไทยに対応しています。
+Expo アプリでも **Account → Language**（アカウント → 言語）で同じ 16 言語を選べます。
+保存された選択がない場合は、デバイスの言語または `EXPO_PUBLIC_DEFAULT_UI_LOCALE` が最初のカタログを決めます。
+Electron ネイティブのセットアップ画面とメニューも Web UI と同じ言語に対応し、アプリで保存した言語（初回起動時はシステムの言語）を使います。
+マーケティング用ホームページ（`apps/www`）は、フッターの言語リンクから 15 言語で表示できます（`/zh/` と `/zh-tw/` を含む）。
+その他のマーケティングページは主に英語です。
 
 ## 開発
 

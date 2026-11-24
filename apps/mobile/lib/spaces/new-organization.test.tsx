@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   selectedSpace: "space-1",
   organizations: { organizations: [{ id: "org-1", name: "First", spaceIds: ["space-1"] }] },
   alert: vi.fn(),
+  announce: vi.fn(),
   rpc: vi.fn(),
   switchOrganization: vi.fn(),
   refreshOrganizations: vi.fn(),
@@ -51,6 +52,7 @@ vi.mock("react-native", () => ({
     <span role={accessibilityRole === "alert" ? "alert" : undefined}>{children}</span>
   ),
 }));
+vi.mock("../native/announce", () => ({ announceToScreenReader: state.announce }));
 vi.mock("../../components/settings/settings-group", () => ({
   SettingsGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   SettingsInputRow: ({
@@ -228,4 +230,58 @@ it("opens the new organization even when the sheet was closed before the answer"
   root = createRoot(container);
   await act(async () => answer.resolve(created));
   expect(state.switchOrganization).toHaveBeenCalledWith(opened, state.organizations.organizations);
+});
+
+it("announces a failed creation once, and again when a retry fails", async () => {
+  state.rpc.mockRejectedValue(new Error("Name taken"));
+  await start();
+  await act(async () => submit().click());
+  expect(failure()).toBe("Name taken");
+  expect(state.announce).toHaveBeenCalledOnce();
+  expect(state.announce).toHaveBeenLastCalledWith("Name taken");
+  await act(async () => submit().click());
+  expect(state.announce).toHaveBeenCalledTimes(2);
+  expect(state.announce).toHaveBeenLastCalledWith("Name taken");
+});
+
+it("speaks a server refusal as the same text the screen shows", async () => {
+  state.rpc.mockRejectedValue(new Error("Something went wrong. Try again."));
+  await start();
+  await act(async () => submit().click());
+  expect(failure()).toBe("Something went wrong. Try again.");
+  expect(state.announce).toHaveBeenCalledWith("Something went wrong. Try again.");
+});
+
+it("announces nothing when a retry after a failure succeeds", async () => {
+  state.rpc.mockRejectedValueOnce(new Error("Name taken"));
+  await start();
+  await act(async () => submit().click());
+  expect(state.announce).toHaveBeenCalledOnce();
+  await act(async () => submit().click());
+  expect(state.switchOrganization).toHaveBeenCalledOnce();
+  expect(state.announce).toHaveBeenCalledOnce();
+});
+
+it("announces the failure only once the attempt has failed, not while it is pending", async () => {
+  const answer = deferred<typeof created>();
+  state.rpc.mockReturnValueOnce(answer.promise);
+  await start();
+  await act(async () => submit().click());
+  expect(state.announce).not.toHaveBeenCalled();
+  await act(async () => answer.reject(new Error("Name taken")));
+  expect(failure()).toBe("Name taken");
+  expect(state.announce).toHaveBeenCalledOnce();
+  expect(state.announce).toHaveBeenLastCalledWith("Name taken");
+});
+
+it("does not announce a failure after the sheet has been closed", async () => {
+  const answer = deferred<typeof created>();
+  state.rpc.mockReturnValueOnce(answer.promise);
+  await start();
+  await act(async () => submit().click());
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => answer.reject(new Error("Name taken")));
+  expect(state.announce).not.toHaveBeenCalled();
+  expect(state.switchOrganization).not.toHaveBeenCalled();
 });

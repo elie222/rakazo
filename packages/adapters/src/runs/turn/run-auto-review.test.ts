@@ -50,6 +50,7 @@ it("keeps project routing from the saved checker connection through the runtime 
       userId: "user-fixture",
       botId: "bot-fixture",
       threadId: "thread-fixture",
+      operationId: "auto-review:run-fixture:effect-fixture",
     },
     { memberChecker: true, registerSecrets: vi.fn() },
     { provider: "google-vertex", model: "gemini-4-hydrogen" },
@@ -111,6 +112,7 @@ it.each([false, true])(
         userId: "user-fixture",
         botId: "bot-fixture",
         threadId: "thread-fixture",
+        operationId: "auto-review:run-fixture:effect-fixture",
       },
       options,
       { provider: "openrouter", model: "typesafe/jev-1.14" },
@@ -126,7 +128,14 @@ it("preserves personal authentication for a legacy hosted deployment checker", a
   const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
   await autoReviewCheckerProvider(
     deps,
-    { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+    {
+      runId: "run",
+      spaceId: "space",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+      operationId: "auto-review:run:effect",
+    },
     { memberChecker: false, registerSecrets: vi.fn() },
     { provider: "google-vertex", model: "gemini-4-hydrogen" },
   );
@@ -149,7 +158,14 @@ it("keeps a personal decision connection when hosted auth is unavailable", async
   const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
   await autoReviewCheckerProvider(
     deps,
-    { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+    {
+      runId: "run",
+      spaceId: "space",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+      operationId: "auto-review:run:effect",
+    },
     { memberChecker: false, registerSecrets: vi.fn() },
     { provider: "openrouter", model: "typesafe/jev-1.14" },
   );
@@ -172,7 +188,14 @@ it("keeps an explicitly credit-funded checker separate from the included checker
   const deps = { billingEnabled: true, prisma: {}, secretStore: {} } as unknown as ExecutorDeps;
   await autoReviewCheckerProvider(
     deps,
-    { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+    {
+      runId: "run",
+      spaceId: "space",
+      userId: "user",
+      botId: "bot",
+      threadId: "thread",
+      operationId: "auto-review:run:effect",
+    },
     { memberChecker: false, registerSecrets: vi.fn() },
     { provider: "openrouter", model: "typesafe/jev-1.14", creditOfferingId: "member-offering" },
   );
@@ -213,6 +236,7 @@ it("retains direct self-hosted checker usage in the customer usage view", async 
     userId: "user",
     botId: "bot",
     threadId: "thread",
+    operationId: "auto-review:run:effect",
   };
   const checker = await autoReviewCheckerProvider(
     deps,
@@ -244,6 +268,7 @@ it("retains direct self-hosted checker usage in the customer usage view", async 
           fundingSource: "customer",
           provider: "typesafe",
           costUsd: 0.0001,
+          operationId: "auto-review:run:effect",
         }),
       ],
     }),
@@ -298,7 +323,14 @@ it.each([
     } as unknown as ExecutorDeps;
     const checker = await autoReviewCheckerProvider(
       deps,
-      { runId: "run", spaceId: "space", userId: "user", botId: "bot", threadId: "thread" },
+      {
+        runId: "run",
+        spaceId: "space",
+        userId: "user",
+        botId: "bot",
+        threadId: "thread",
+        operationId: "auto-review:run:effect",
+      },
       { memberChecker: personal, registerSecrets },
       { provider: providerId, model },
     );
@@ -359,6 +391,7 @@ const reviewScope = {
   userId: "user",
   botId: "bot",
   threadId: "thread",
+  operationId: "auto-review:run:effect",
 };
 
 function reviewEachCandidate(deps: ExecutorDeps) {
@@ -456,7 +489,31 @@ const checkerDeps = {
   runtime: { describe: () => ({ capabilities: { scripted: false } }), run: vi.fn() },
 } as unknown as ExecutorDeps;
 
-it("refuses a decision-model checker on a connection that restricts data retention", async () => {
+it("keeps a decision-model checker on a data-retention connection to hosts that retain nothing", async () => {
+  vi.mocked(resolveModelKey).mockResolvedValueOnce({
+    apiKey: "fixture-model-key",
+    zeroDataRetention: true,
+  } as Awaited<ReturnType<typeof resolveModelKey>>);
+  const fetchMock = vi.fn<typeof fetch>(async () =>
+    Response.json({
+      answers: { decision: { type: "choice", choice: "pass", confidence: 0.99 } },
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  const provider = await autoReviewCheckerProvider(
+    checkerDeps,
+    reviewScope,
+    { memberChecker: true, registerSecrets: vi.fn() },
+    { provider: "openrouter", model: "typesafe/jev-1.14" },
+  );
+  await provider.review(reviewRequest, reviewContext);
+  expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+    model: "typesafe/jev-1.14",
+    provider: { zdr: true },
+  });
+});
+
+it("refuses a decision-model checker whose host cannot restrict data retention", async () => {
   vi.mocked(resolveModelKey).mockResolvedValueOnce({
     apiKey: "fixture-model-key",
     zeroDataRetention: true,
@@ -466,7 +523,7 @@ it("refuses a decision-model checker on a connection that restricts data retenti
       checkerDeps,
       reviewScope,
       { memberChecker: true, registerSecrets: vi.fn() },
-      { provider: "openrouter", model: "typesafe/jev-1.14" },
+      { provider: "typesafe", model: "jev-1.14" },
     ),
   ).rejects.toMatchObject({
     code: "DATA_RETENTION_UNSUPPORTED",
@@ -485,13 +542,14 @@ it("still builds a decision-model checker when data retention is not restricted"
   ).resolves.toBeDefined();
 });
 
-it("passes the data retention choice to a language-model checker", async () => {
+it("passes the data retention choice and who pays to a language-model checker", async () => {
   const run = vi.fn(async function* (_request: AgentRunRequest) {
     yield { type: "done", text: '{"decision":"ask","reason":"Requires review."}' };
   });
   vi.mocked(resolveModelKey).mockResolvedValueOnce({
     apiKey: "fixture-model-key",
     zeroDataRetention: true,
+    billing: "api_key",
   } as Awaited<ReturnType<typeof resolveModelKey>>);
   const provider = await autoReviewCheckerProvider(
     {
@@ -503,5 +561,8 @@ it("passes the data retention choice to a language-model checker", async () => {
     { provider: "openrouter", model: "example/model" },
   );
   await provider.review(reviewRequest, reviewContext);
-  expect(run.mock.calls[0]?.[0].model).toMatchObject({ zeroDataRetention: true });
+  expect(run.mock.calls[0]?.[0].model).toMatchObject({
+    zeroDataRetention: true,
+    billing: "api_key",
+  });
 });

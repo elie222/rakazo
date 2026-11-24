@@ -25,6 +25,11 @@ export function sandboxNotFoundError(message: string, options?: ErrorOptions): E
   return error;
 }
 
+/** An error named `SandboxNotFoundError` itself, such as one `sandboxNotFoundError` made. */
+export function isSandboxNotFoundError(error: unknown): boolean {
+  return error instanceof Error && error.name === "SandboxNotFoundError";
+}
+
 /** A computer whose system cannot start programs, reported as `SandboxDamagedError`. */
 export function isSandboxDamagedError(error: unknown): boolean {
   if (isSandboxUnsafeStopError(error)) return false;

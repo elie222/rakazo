@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createDb,
+  installConnectRetry,
   installSaturationReport,
   isPoolCheckoutTimeout,
   isTooManyDatabaseConnections,
@@ -128,6 +129,40 @@ describe("retryOnTooManyConnections", () => {
         throw error;
       }),
     ).rejects.toBe(error);
+  });
+});
+
+describe("installConnectRetry", () => {
+  it("retries a callback checkout and hands the callback the client's release", async () => {
+    vi.useFakeTimers();
+    try {
+      const client = { release: vi.fn() } as unknown as PoolClient;
+      const tooMany = Object.assign(new Error("sorry, too many clients already"), {
+        code: "53300",
+      });
+      const originalConnect = vi.fn().mockRejectedValueOnce(tooMany).mockResolvedValueOnce(client);
+      const pool = { connect: originalConnect } as unknown as Pool;
+      installConnectRetry(pool);
+      const callback = vi.fn();
+      pool.connect(callback);
+      await vi.advanceTimersByTimeAsync(200);
+      expect(originalConnect).toHaveBeenCalledTimes(2);
+      expect(callback).toHaveBeenCalledWith(undefined, client, client.release);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("passes an unrelated failure to the callback without retrying", async () => {
+    const error = new Error("connection refused");
+    const originalConnect = vi.fn().mockRejectedValue(error);
+    const pool = { connect: originalConnect } as unknown as Pool;
+    installConnectRetry(pool);
+    const callback = vi.fn();
+    pool.connect(callback);
+    await vi.waitFor(() => expect(callback).toHaveBeenCalled());
+    expect(originalConnect).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith(error, undefined, expect.any(Function));
   });
 });
 

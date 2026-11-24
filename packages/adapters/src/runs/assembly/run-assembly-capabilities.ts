@@ -1,6 +1,6 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { disabledBuiltinToolSet, modelRoleConnectionId } from "@rakazo/contracts";
+import { disabledBuiltinToolSet } from "@rakazo/contracts";
 import {
   BACKGROUND_HELPER_TRIGGER,
   chatAppConnectNote,
@@ -11,9 +11,10 @@ import {
   messagingDmSurfaceNote,
   nonOwnerChatPrivacyBlock,
 } from "@rakazo/core";
-import { availableInSpace, parseComputerMode } from "@rakazo/db";
+import { mayBeChannelMessage, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createApprovedEffectReplayQueue } from "../../approvals/approval-effect.js";
+import { appendOutsideText, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
 import { loadGroupContext } from "../../bots/group-handoff.js";
 import { USER_CLOUD_AGENT_KEY_PREFIX } from "../../cloud-agents/cloud-agent-factory.js";
 import { diskNoteInstruction, recordComputerDisk } from "../../computers/computer-disk.js";
@@ -27,6 +28,7 @@ import { resolveComputerRunModel } from "../../computers/computer-model-settings
 import { checkpointRunComputerWorkspace } from "../../computers/computer-workspace.js";
 import { sandboxKindCapabilities } from "../../computers/sandbox/sandbox-kind-capabilities.js";
 import { teamWorkspaceInstruction } from "../../computers/screens/computer-support.prompt.js";
+import type { RunMediaSources } from "../../media/media-sources.js";
 import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
 import { selectConfiguredModel } from "../../models/model-roles.js";
@@ -39,6 +41,7 @@ import { modelAcceptsImageInput } from "../../models/model-vision.js";
 import { paymentWalletConnected } from "../../payments/payment-wallets.js";
 import { desktopGuardApplies } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { backOffRoutineAfterAccountError } from "../../routines/routine-backoff.js";
+import { pauseRoutineAfterRepeatedFailures } from "../../routines/routine-failure-pause.js";
 import { filterStrategicInitiativeTools } from "../../routines/strategic-initiative.js";
 import {
   createEarlierFileQueue,
@@ -55,7 +58,6 @@ import {
 import { backgroundHelpersAllowed } from "../../tasks/background-helpers.js";
 import { TASK_CATALOG_GUIDANCE } from "../../tasks/task-catalog.prompt.js";
 import { agentConnectionTools, builtinAgentTools } from "../../tools/builtin.tool-definition.js";
-import type { ExecutorDeps } from "../executor/executor-deps.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { APPROVED_EFFECT_REPLAY_ORDER } from "../lifecycle/run-effects.js";
 import { createRunWorkspaceCheckpoint, failRunBeforeTurn } from "../lifecycle/run-lifecycle.js";
@@ -63,7 +65,9 @@ import {
   BUILTIN_AGENT_TOOL_NAMES,
   offersAgentConnectionTools,
   selectBuiltinToolsForRun,
+  unavailableBuiltinToolReasons,
 } from "../tools/run-tool-selection.js";
+import { historyMyChatsAllowed } from "../tools/run-tools-memory.js";
 import type { UserComputerState } from "../tools/run-tools-user-computer.js";
 import { USER_COMPUTER_SHELL_TOOL, userComputerOwner } from "../tools/run-tools-user-computer.js";
 import {
@@ -74,7 +78,7 @@ import {
 import { runModelBackups, startRunModel } from "../turn/run-model-start.js";
 import { RECENT_TURN_IMAGE_TURNS } from "../turn/run-turn-images.js";
 import { refreshTakeoverContinuePlan } from "../turn/takeover-resume.js";
-import { historyReplaysOutsideContent } from "../turn/tool-step-calls.js";
+import { historyReplaysOutsideContent, historyToolResults } from "../turn/tool-step-calls.js";
 import type { ThreadHistory, TurnContext } from "./run-assembly-history.js";
 import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
 import { lazyRunComputer } from "./run-computer.js";
@@ -89,25 +93,6 @@ import {
 } from "./run-instructions.prompt.js";
 import { runReplyMode } from "./run-replies.prompt.js";
 import { createRunTrustLoaders } from "./run-trust.js";
-
-/** Same reach as the MCP connector: usable servers assigned to the bot or shared with every bot. */
-async function verbatimMcpServersForRun(
-  prisma: ExecutorDeps["prisma"],
-  scope: { botId: string; spaceId: string; userId: string },
-) {
-  if (!prisma.mcpServer?.findMany) return undefined;
-  const servers = await prisma.mcpServer.findMany({
-    where: {
-      verbatimResults: true,
-      enabled: true,
-      ...availableInSpace(scope),
-      AND: [{ OR: [{ allBots: true }, { assignments: { some: { botId: scope.botId } } }] }],
-    },
-    select: { id: true, slug: true },
-  });
-  if (!servers?.length) return undefined;
-  return { ids: servers.map((server) => server.id), slugs: servers.map((server) => server.slug) };
-}
 
 /** Undefined when the run cannot start its model: it was failed instead of starting a turn. */
 export async function startTurnModel(
@@ -159,10 +144,14 @@ export async function startTurnModel(
       { attemptId: attempt.id, workerId, fence },
       message,
     );
-    if (failed && accountFailure && run.trigger === "routine" && run.routineId) {
-      await backOffRoutineAfterAccountError(deps, {
-        routineId: run.routineId,
-        userId: run.userId,
+    if (failed && run.trigger === "routine" && run.routineId) {
+      const ref = { routineId: run.routineId, userId: run.userId };
+      if (accountFailure) await backOffRoutineAfterAccountError(deps, ref);
+      // The model setup the user chose cannot start, which only they can change.
+      await pauseRoutineAfterRepeatedFailures(deps, {
+        ...ref,
+        spaceId: run.spaceId,
+        botId: run.botId,
       });
     }
   };
@@ -199,6 +188,7 @@ export async function startTurnModel(
       id: selectedModelId,
       credential: selected.credential,
       connectionId: selected.connectionId,
+      adminSettings: settings,
       thinkingLevel: selected.thinkingLevel,
     },
     pinnedComputerModels?.main,
@@ -487,8 +477,7 @@ export async function resolveRunCapabilities(
     provider: runModelProvider,
     id: runModelId,
     ...(credential ? { connectionId: credential.id } : {}),
-    ...resolvedModelRunFields(resolved),
-    thinkingLevel: thinkingLevel ?? null,
+    ...resolvedModelRunFields(resolved, thinkingLevel),
   };
   // Saved identities win on resume, including when the setting was cleared meanwhile.
   const computerModel =
@@ -568,6 +557,7 @@ export async function resolveRunCapabilities(
     messagingChannelRun: nonOwnerChatRun,
     runUserId: run.userId,
     botUserId: bot.userId,
+    ownerComputerRoutine: parts.records.ownerComputerRoutine,
   });
   let userComputer: UserComputerState;
   let userComputerShell = false;
@@ -648,19 +638,23 @@ export async function selectRunTools(
     turnContext: TurnContext;
     capabilities: RunCapabilities;
     meetingTranscriptsAvailable?: boolean;
+    media: RunMediaSources;
   },
 ) {
-  const { contextStrategy, mediaGeneration, paidServices } = services;
+  const { contextStrategy, paidServices } = services;
   const { deps, run, runId } = hold;
   const { checkpointLoadError, turnCheckpoint } = parts.saved;
   const {
     bot,
+    channelId,
+    conversationRun,
     nonOwnerChatRun,
     sourceBlocks,
     task,
     conversationThread,
     ticketBoardEnabled,
     unknownChannelSourceId,
+    ownerComputerRoutine,
   } = parts.records;
   const { connectedPlugins, semanticMemory } = parts.connected;
   const { discovered, groupReplyOptional, history, semanticMemoryEnabled } = parts.turnContext;
@@ -680,20 +674,32 @@ export async function selectRunTools(
     userComputerShell,
     voiceCall,
   } = parts.capabilities;
-  // In a group the members are the room's; a bot elsewhere messages the Space's other bots.
-  const teammates = conversationThread.groupId
-    ? []
-    : await deps.prisma.bot.findMany({
-        where: {
-          spaceId: run.spaceId,
-          archivedAt: null,
-          id: { not: bot.id },
-          thread: { isNot: null },
-        },
-        select: { id: true, name: true, description: true },
-        orderBy: { createdAt: "asc" },
-        take: BOT_DIRECTORY_LIMIT,
-      });
+  const myChatsAllowed = historyMyChatsAllowed(
+    conversationRun,
+    parts.records.origin?.sourceMessage ?? sourceMessage,
+    nonOwnerChatRun ||
+      Boolean(
+        channelId ||
+          conversationThread.externalConversationId ||
+          (sourceMessage && mayBeChannelMessage(sourceMessage)),
+      ),
+  );
+  // In a group the members are the room's; a bot elsewhere messages the Space's other bots. A
+  // routine with its owner's computer messages none, nor reads their names and descriptions.
+  const teammates =
+    conversationThread.groupId || ownerComputerRoutine
+      ? []
+      : await deps.prisma.bot.findMany({
+          where: {
+            spaceId: run.spaceId,
+            archivedAt: null,
+            id: { not: bot.id },
+            thread: { isNot: null },
+          },
+          select: { id: true, name: true, description: true },
+          orderBy: { createdAt: "asc" },
+          take: BOT_DIRECTORY_LIMIT,
+        });
   // Another group the bot belongs to, which post_to_group can post into.
   const otherGroups = await deps.prisma.chatGroup.findMany({
     where: {
@@ -722,6 +728,8 @@ export async function selectRunTools(
           }),
         ),
       historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      historyMyChats: myChatsAllowed,
+      ownPromptOnly: ownerComputerRoutine,
       meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
       graphicalToolsAllowed,
       pageBrowserAllowed,
@@ -730,8 +738,8 @@ export async function selectRunTools(
       semanticMemoryEnabled,
       semanticMemoryForgets: Boolean(semanticMemory?.forget),
       semanticMemoryReflects: Boolean(semanticMemory?.reflect),
-      mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
-      mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
+      mediaImagesEnabled: Boolean(deps.artifacts && parts.media.image),
+      mediaVideoEnabled: Boolean(deps.artifacts && parts.media.video),
       paidServicesEnabled: Boolean(paidServices),
       cloudAgentEnabled: Boolean(cloudAgent),
       cloudAgentCleanupEnabled,
@@ -758,6 +766,7 @@ export async function selectRunTools(
     // creator's, and a connected agent's messages run as them, so only their runs may
     // open, approve or use one.
     ...(run.userId === bot.userId &&
+    !ownerComputerRoutine &&
     offersAgentConnectionTools({
       hasMessagingIdentity,
       crossSpaceCommunication: bot.crossSpaceCommunication === true,
@@ -770,9 +779,11 @@ export async function selectRunTools(
     trigger: run.trigger,
     clientNonce: run.clientNonce,
   });
-  const exposedConnectorTools = discovered.filter(
-    (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
-  );
+  // Connector and MCP results are other services' text, which a routine with its owner's computer
+  // never reads (see selectBuiltinToolsForRun's ownPromptOnly).
+  const exposedConnectorTools = ownerComputerRoutine
+    ? []
+    : discovered.filter((tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name));
   const strategicConnectorTools = filterStrategicInitiativeTools(exposedConnectorTools, {
     trigger: run.trigger,
     clientNonce: run.clientNonce,
@@ -799,12 +810,27 @@ export async function selectRunTools(
     Boolean(turnCheckpoint) ||
     Boolean(checkpointLoadError) ||
     historyReplaysOutsideContent(history);
+  // What Auto Review checks a call's targets against: a run someone else started carries their
+  // words in its task, and replayed history the results earlier turns read.
+  const initialOutsideText = [
+    ...(taskPromptIsOutside(run, ownerStartedRun) ? [task.prompt] : []),
+    ...historyToolResults(history),
+  ].reduce<string>(appendOutsideText, "");
   // The creation intro only asks what the bot is for (see selectBuiltinToolsForRun),
   // so it gets no connector tools either.
   const tools =
     run.trigger === "created"
       ? strategicBuiltins
       : [...strategicBuiltins, ...strategicConnectorTools];
+  // Reasons come from the bot's own settings, not the handoff_to_bot entry added above.
+  const unavailableToolReasons = unavailableBuiltinToolReasons(
+    {
+      groupId: conversationThread.groupId,
+      trigger: run.trigger,
+      disabledBuiltinTools: bot.disabledBuiltinTools,
+    },
+    tools,
+  );
   const taskCatalogInstruction = tools.some((tool) => tool.name === "task_catalog")
     ? TASK_CATALOG_GUIDANCE
     : undefined;
@@ -816,12 +842,15 @@ export async function selectRunTools(
   const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
   return {
     teammates,
+    myChatsAllowed,
     strategicBuiltins,
     connectorTools,
     trustLoaders,
     searchResultUrls,
     initiallyTainted,
+    initialOutsideText,
     tools,
+    unavailableToolReasons,
     taskCatalogInstruction,
     approvedEffects,
     approvedEffectReplays,
@@ -904,49 +933,3 @@ export async function loadComputerInstructions(
 }
 
 export type ComputerInstructions = Awaited<ReturnType<typeof loadComputerInstructions>>;
-
-export async function loadModelFallbacks(
-  hold: RunHold,
-  parts: { records: RunRecords; model: StartedTurnModel; capabilities: RunCapabilities },
-) {
-  const { deps, run } = hold;
-  const { bot } = parts.records;
-  const { backups, runModelId, runModelProvider } = parts.model;
-  const { mainRunModel } = parts.capabilities;
-  const verbatimMcpServers = await verbatimMcpServersForRun(deps.prisma, {
-    botId: bot.id,
-    spaceId: run.spaceId,
-    userId: run.userId,
-  });
-  // The running model is not its own backup, unless another account serves it.
-  const fallbackModels = (await backups.load()).filter(
-    (candidate) =>
-      !backups.unavailable.has(candidate) &&
-      (candidate.provider !== runModelProvider ||
-        candidate.modelId !== runModelId ||
-        (modelRoleConnectionId(candidate) !== undefined &&
-          modelRoleConnectionId(candidate) !== mainRunModel.connectionId)),
-  );
-  const fallbackKey = (provider: string, modelId: string, credentialId?: string | null) =>
-    JSON.stringify([provider, modelId, credentialId ?? null]);
-  const fallbackModelKeys = new Set(
-    fallbackModels.map((candidate) =>
-      fallbackKey(candidate.provider, candidate.modelId, modelRoleConnectionId(candidate)),
-    ),
-  );
-  const fallbackModelIds = new Set(
-    fallbackModels.map((candidate) => fallbackKey(candidate.provider, candidate.modelId)),
-  );
-  // Provider kind and model id only: custom endpoints are identified by kind, never host.
-  const activeModel = { "model.provider": runModelProvider, "model.id": runModelId };
-  return {
-    verbatimMcpServers,
-    fallbackModels,
-    fallbackKey,
-    fallbackModelKeys,
-    fallbackModelIds,
-    activeModel,
-  };
-}
-
-export type ModelFallbacks = Awaited<ReturnType<typeof loadModelFallbacks>>;

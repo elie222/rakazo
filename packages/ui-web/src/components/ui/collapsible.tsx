@@ -11,6 +11,7 @@ function CollapsibleTrigger({ ...props }: CollapsiblePrimitive.Trigger.Props) {
 }
 
 // Folds over 150ms. The clip margin keeps focus rings of full-width controls visible.
+// A zero minimum lets clipped panels shrink below their content height in flex layouts.
 function CollapsibleContent({
   className,
   ...props
@@ -19,7 +20,7 @@ function CollapsibleContent({
     <CollapsiblePrimitive.Panel
       data-slot="collapsible-content"
       className={cn(
-        "h-(--collapsible-panel-height) overflow-clip transition-[height] duration-150 ease-out [overflow-clip-margin:4px] data-ending-style:h-0 data-starting-style:h-0 motion-reduce:transition-none",
+        "h-(--collapsible-panel-height) min-h-0 overflow-clip transition-[height] duration-150 ease-out [overflow-clip-margin:4px] data-ending-style:h-0 data-starting-style:h-0 motion-reduce:transition-none",
         className,
       )}
       {...props}

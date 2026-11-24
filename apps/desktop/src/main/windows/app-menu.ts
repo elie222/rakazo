@@ -167,7 +167,7 @@ export function applicationMenuInstaller({
     });
     const newItem = command(t("New…"), "CmdOrCtrl+N", "new");
     const newGroupItem = command(t("New Group Chat"), "CmdOrCtrl+Shift+N", "new-group");
-    const connectAppsItem = command(t("Connect Apps…"), "CmdOrCtrl+Shift+M", "integrations");
+    const connectAppsItem = command(t("Connect Apps…"), "CmdOrCtrl+Shift+A", "integrations");
     const helpMenu: Electron.MenuItemConstructorOptions = {
       label: t("Help"),
       role: "help",

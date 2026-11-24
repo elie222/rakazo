@@ -391,8 +391,7 @@ async function finishPoll(
     return { seq, wakeRunId, nextPollAt };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (!committed) return;
-  if (committed.seq !== undefined)
-    await deps.events.notify(agent.threadId, committed.seq).catch(() => undefined);
+  if (committed.seq !== undefined) await deps.events.notify(agent.threadId, committed.seq);
   if (committed.wakeRunId) await wakeRun(deps.jobs, committed.wakeRunId);
   if (committed.nextPollAt) await enqueueCloudAgent(deps, agent.id, committed.nextPollAt);
 }

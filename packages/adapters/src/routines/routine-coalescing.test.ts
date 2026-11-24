@@ -16,7 +16,15 @@ function fixture(
   const updatedAt = new Date("2026-01-01T00:00:00Z");
   const findMany = vi.fn(async (_args: Prisma.RunFindManyArgs) =>
     clientNonce?.startsWith("routine-timer:routine-1:")
-      ? [{ id: "run-1", taskId: "task-1", leaseFence: 0, updatedAt }]
+      ? [
+          {
+            id: "run-1",
+            taskId: "task-1",
+            leaseFence: 0,
+            updatedAt,
+            task: { prompt: config.prompt },
+          },
+        ]
       : [],
   );
   const updateMany = vi.fn(async () => ({ count: 1 }));
@@ -39,7 +47,7 @@ describe("pending routine timer coalescing", () => {
           attempts: { none: {} },
           effects: { none: {} },
           steeringMessages: { none: {} },
-          task: { status: "queued", prompt: config.prompt },
+          task: { status: "queued" },
           modelPinned: false,
           modelProvider: null,
           modelId: null,
@@ -50,6 +58,57 @@ describe("pending routine timer coalescing", () => {
       where: { ...findMany.mock.calls[0]![0]!.where, id: "run-1", leaseFence: 0 },
       data: { updatedAt },
     });
+  });
+  it("passes over queued work started under an older prompt", async () => {
+    const { tx, findMany } = fixture();
+    const updatedAt = new Date("2026-01-01T00:00:00Z");
+    const older = Array.from({ length: 100 }, (_, index) => ({
+      id: `old-${index}`,
+      taskId: `old-task-${index}`,
+      leaseFence: 0,
+      updatedAt,
+      createdAt: updatedAt,
+      task: { prompt: "an earlier prompt" },
+    }));
+    findMany.mockResolvedValueOnce(older as never).mockResolvedValueOnce([
+      {
+        id: "run-1",
+        taskId: "task-1",
+        leaseFence: 0,
+        updatedAt,
+        task: { prompt: config.prompt },
+      },
+    ] as never);
+    expect(await findPendingRoutineTick(tx, config)).toEqual({ id: "run-1", taskId: "task-1" });
+    expect(findMany.mock.calls[1]![0]!.where!.OR).toEqual([
+      { createdAt: { gt: updatedAt } },
+      { createdAt: updatedAt, id: { gt: "old-99" } },
+    ]);
+  });
+  it("looks past a page whose only match holds the computer", async () => {
+    const { tx, findMany } = fixture();
+    const updatedAt = new Date("2026-01-01T00:00:00Z");
+    const first = Array.from({ length: 100 }, (_, index) => ({
+      id: `held-${index}`,
+      taskId: `held-task-${index}`,
+      leaseFence: 0,
+      updatedAt,
+      createdAt: updatedAt,
+      task: { prompt: index === 0 ? config.prompt : "an earlier prompt" },
+    }));
+    findMany.mockResolvedValueOnce(first as never).mockResolvedValueOnce([
+      {
+        id: "run-1",
+        taskId: "task-1",
+        leaseFence: 0,
+        updatedAt,
+        task: { prompt: config.prompt },
+      },
+    ] as never);
+    vi.mocked(tx.computerExecutionLease.findMany).mockResolvedValueOnce([
+      { runId: "held-0" },
+    ] as never);
+    expect(await findPendingRoutineTick(tx, config)).toEqual({ id: "run-1", taskId: "task-1" });
   });
   it("preserves manual runs even with no client nonce", async () => {
     const { tx, updateMany } = fixture(null);

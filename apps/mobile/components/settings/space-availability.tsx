@@ -1,4 +1,4 @@
-import { ph } from "@lingui/core/macro";
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { AvailabilityKind, SpaceAvailability } from "@rakazo/contracts";
 import type { QueryKey } from "@tanstack/react-query";
@@ -10,17 +10,14 @@ import { mobileTokens } from "../../lib/appearance/appearance";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { MenuPicker } from "../ui/menu-picker";
 
+export { reachesOtherSpaces } from "@rakazo/core";
+
 type Space = { id: string; name: string };
 
 /** The user's spaces; choosing where something is available only matters with two or more. */
 export function useOwnSpaces(): Space[] {
   const { data } = useQuery(rpcQuery("spaces/list"), queryClient);
   return useMemo(() => (data?.spaces ?? []).map(({ id, name }) => ({ id, name })), [data]);
-}
-
-/** True when removing an item takes it from more than this one space. */
-export function reachesOtherSpaces(availability: SpaceAvailability | undefined, spaces: number) {
-  return spaces > 1 && Boolean(availability?.allSpaces || (availability?.spaceIds.length ?? 0) > 1);
 }
 
 /**
@@ -53,12 +50,11 @@ export function SpaceAvailabilityPicker({
   if (spaces.length < 2 || !availability) return null;
   const several = !availability.allSpaces && availability.spaceIds.length > 1;
   const value = availability.allSpaces ? "all" : several ? "several" : availability.spaceIds[0]!;
+  const severalLabel = t`${plural(availability.spaceIds.length, { one: "# space", other: "# spaces" })}`;
   const choices = [
     { key: "all", label: t`All spaces` },
     ...spaces.map((space) => ({ key: space.id, label: space.name })),
-    ...(several
-      ? [{ key: "several", label: t`${ph({ count: availability.spaceIds.length })} spaces` }]
-      : []),
+    ...(several ? [{ key: "several", label: severalLabel }] : []),
   ];
   return (
     <View>

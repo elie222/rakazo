@@ -89,12 +89,6 @@ export function createModelsStyles() {
       padding: 16,
       marginTop: 8,
     },
-    link: {
-      color: native.label,
-      fontSize: 14,
-      textDecorationLine: "underline",
-      marginTop: 6,
-    },
     code: {
       color: native.label,
       fontFamily: "monospace",

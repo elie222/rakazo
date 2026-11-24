@@ -77,11 +77,12 @@ WORKDIR /app
 # --link keeps each layer independent of the ones below, so an unchanged one is reused as is.
 COPY --link --from=deps /app /app
 COPY --link --from=build /app /app
-RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp /app/apps/web/asset-archive
+RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp /app/apps/web/asset-archive /run/ingress
 # Last root step, so a cached earlier layer cannot be the filesystem that ships.
 RUN /tmp/apt-security.sh --check && rm -f /tmp/apt-security.sh
 ARG GIT_SHA
 ENV NODE_ENV=production
+ENV EMAIL_COPY_DIR=/app/email-copy
 ENV GIT_SHA=$GIT_SHA
 EXPOSE 3100 5173 7091
 # The signal on which a replaced API lets its chat turns end before it exits (apps/api/src/http/drain.ts).

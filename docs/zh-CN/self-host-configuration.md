@@ -49,7 +49,6 @@ COMPUTER_MAX_ACTIVE_UNBILLED_MS=0 # 不按运行时长计费的提供商（Docke
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # 5 分钟后停止 shell 命令
 MAX_TOOL_CALLS_PER_TURN=  # 可选的 Pi 单轮工具调用熔断值；未设置或为 0 表示不限
 RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user 的长度上限；旁白仍为 500
-BOT_MESSAGE_MAX_HOPS=6    # 一条 bot 到 bot 消息链最多可经过的跳数，超过后拒绝下一条
 E2B_API_KEY=              # SANDBOX_PROVIDER=e2b 时使用
 NOVITA_API_KEY=           # SANDBOX_PROVIDER=novita 时使用；需先构建其模板
 DAYTONA_API_KEY=          # SANDBOX_PROVIDER=daytona 时使用
@@ -79,12 +78,13 @@ RAKAZO_EXTRA_AUTH_ORIGINS=https://rakazo.your-tailnet.ts.net,http://192.168.1.20
 
 ## 功能开关
 
-| 变量                   | 默认值      | 效果                                                                                                      |
-| ---------------------- | ----------- | --------------------------------------------------------------------------------------------------------- |
-| `TICKET_BOARD_ENABLED` | `false`     | 为所有账号开启工单板。否则每个人在 **Settings → Labs** 中自行开启。需设置在 API 和 worker 上。            |
-| `USER_DEVICES_ENABLED` | 开启        | `false` 阻止已登录的桌面应用允许机器人在用户自己的计算机上运行命令。需设置在 API 和 worker 上。           |
-| `PI_SESSION_RECORDING` | 关闭        | `true` 会把智能体会话记录为 `DATA_DIR/pi-sessions` 下的 JSONL。文件未加密，不要在共享或多租户部署中使用。 |
-| `PRIVACY_POLICY_URL`   | Rakazo 政策 | AI 数据共享提示中链接的隐私政策。设置在 API 上。                                                          |
+| 变量                      | 默认值         | 效果                                                                                                      |
+| ------------------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
+| `TICKET_BOARD_ENABLED`    | `false`        | 为所有账号开启工单板。否则每个人在 **Settings → Labs** 中自行开启。需设置在 API 和 worker 上。            |
+| `USER_DEVICES_ENABLED`    | 开启           | `false` 阻止已登录的桌面应用允许机器人在用户自己的计算机上运行命令。需设置在 API 和 worker 上。           |
+| `PI_SESSION_RECORDING`    | 关闭           | `true` 会把智能体会话记录为 `DATA_DIR/pi-sessions` 下的 JSONL。文件未加密，不要在共享或多租户部署中使用。 |
+| `PRIVACY_POLICY_URL`      | Rakazo 政策    | AI 数据共享提示中链接的隐私政策。设置在 API 上。                                                          |
+| `AUTH_RATE_LIMIT_ENABLED` | 生产环境中开启 | 对登录及其他凭据路由限流。`true` 会在未设置 `NODE_ENV=production` 的部署中开启它。设置在 API 上。         |
 
 ## 聊天历史保留
 

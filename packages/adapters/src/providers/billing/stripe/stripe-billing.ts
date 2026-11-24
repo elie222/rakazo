@@ -27,6 +27,7 @@ import {
 } from "@rakazo/contracts";
 import { readBoundedJsonResponse } from "@rakazo/core";
 import { z } from "zod";
+import { stripeInvoiceRefund } from "./stripe-invoice-refund.js";
 
 export const STRIPE_API_VERSION = "2026-09-30.endive";
 const WEBHOOK_TOLERANCE_SECONDS = 300;
@@ -171,6 +172,21 @@ export class StripeBillingProvider implements BillingProvider {
       interval: price.recurring.interval,
       intervalCount: price.recurring.interval_count,
     };
+  }
+
+  refundInvoice(
+    customerId: string,
+    invoice: string | undefined,
+    confirm: boolean,
+    amountMinor?: number,
+  ) {
+    return stripeInvoiceRefund(
+      { request: this.request.bind(this), listPages: this.listPages.bind(this) },
+      customerId,
+      invoice,
+      confirm,
+      amountMinor,
+    );
   }
 
   async createCustomer(input: { email: string; organizationId: string }) {

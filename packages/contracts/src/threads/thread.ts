@@ -26,6 +26,11 @@ export const REPLY_QUOTE_MAX_LENGTH = 2_000;
  */
 export const THREAD_MESSAGE_TEXT_MAX_LENGTH = 100_000;
 
+/** Whether the server accepts this text: it counts UTF-16 code units, as `string.length` does. */
+export function messageTextFits(text: string): boolean {
+  return text.length <= THREAD_MESSAGE_TEXT_MAX_LENGTH;
+}
+
 /** Cap an excerpt at the quote limit without splitting a surrogate pair. */
 export function truncateReplyQuote(value: string): string {
   const truncated = value.slice(0, REPLY_QUOTE_MAX_LENGTH);

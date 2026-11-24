@@ -134,6 +134,35 @@ describeRunsList("runs.list activity tracker", () => {
     expect(recent.runs.length).toBe(1);
   });
 
+  it("finds an older failure in a chat after 20 chats completed newer runs", async () => {
+    const cookie = await signup(app, `runs-status-${stamp}@rakazo.test`, "Runs User");
+    const failedAt = new Date("2026-01-01T00:00:00Z");
+    const successes = [];
+    for (let i = 20; i > 0; i -= 1) {
+      const bot = await rpc<{ id: string }>(app, cookie, "bots/create", { name: `Worker ${i}` });
+      const completedAt = new Date(failedAt.getTime() + i * 1_000);
+      successes.push(await seedRun(prisma, bot.id, "completed", `success ${i}`, completedAt));
+    }
+    const failure = await seedRun(prisma, successes[0]!.botId, "failed", "older failure", failedAt);
+
+    const recent = await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", {
+      filter: "recent",
+    });
+    expect(recent.runs.map((run) => run.runId)).toEqual(successes.map((run) => run.id));
+
+    const failed = await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", {
+      filter: "recent",
+      status: "failed",
+    });
+    expect(failed.runs.map((run) => run.runId)).toEqual([failure.id]);
+
+    const active = await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", {
+      filter: "active",
+      status: "failed",
+    });
+    expect(active.runs).toEqual([]);
+  });
+
   it("lists each chat's latest finished run, so a busy chat leaves room for the rest", async () => {
     const cookie = await signup(app, `runs-busy-${stamp}@rakazo.test`, "Busy User");
     const busy = await rpc<{ id: string }>(app, cookie, "bots/create", {
@@ -288,7 +317,7 @@ describeRunsList("runs.list activity tracker", () => {
 async function seedRun(
   prisma: PrismaClient,
   botId: string,
-  status: "queued" | "running" | "completed",
+  status: "queued" | "running" | "completed" | "failed",
   prompt: string,
   completedAt?: Date | null,
   threadId?: string,
@@ -315,7 +344,8 @@ async function seedRun(
       taskId: task.id,
       status,
       trigger: "user",
-      completedAt: status === "completed" ? (completedAt ?? new Date()) : null,
+      completedAt:
+        status === "completed" || status === "failed" ? (completedAt ?? new Date()) : null,
     },
   });
 }

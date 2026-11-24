@@ -130,6 +130,17 @@ tags:
     visible: "Remote MCP server"
     timeout: 10000
 - takeScreenshot: "14-integrations-advanced"
+- tapOn: "Cancel"
+- extendedWaitUntil:
+    visible:
+      id: "registered-mcp-server"
+    timeout: 10000
+- tapOn:
+    id: "registered-mcp-server"
+- extendedWaitUntil:
+    visible: "Test connection"
+    timeout: 10000
+- takeScreenshot: "14b-mcp-server"
 
 - openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
 - extendedWaitUntil:
@@ -213,6 +224,12 @@ tags:
     visible: "Take control"
     timeout: 10000
 - takeScreenshot: "18-computer"
+
+- openLink: "rakazo:///computers"
+- extendedWaitUntil:
+    visible: "Computers"
+    timeout: 10000
+- takeScreenshot: "18b-computers"
 
 - openLink: "rakazo:///group-thread?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}&name=Launch%20team"
 - extendedWaitUntil:

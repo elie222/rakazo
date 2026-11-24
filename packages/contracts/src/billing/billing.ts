@@ -1,28 +1,42 @@
 import * as z from "zod";
 import type { ComputerSize } from "../computers/computer.js";
 import { ComputerSizeSchema } from "../computers/computer.js";
-import { EXPERIMENTS } from "../experiments.js";
 
 export const MODEL_CREDIT_AMOUNTS = [2000, 3000, 5000, 10000, 20000] as const;
 /** Amounts no longer offered that existing purchases and subscriptions may still carry. */
 export const RETIRED_MODEL_CREDIT_AMOUNTS = [1000, 50000] as const;
 
 /**
- * What an hour of a billed computer counts against the allowance, $0.20, whatever its size: above
- * a small cloud machine's raw price, so the allowance also covers storage and saves.
+ * The allowance rate for historical runs and providers that cannot confirm their machine size.
  */
 export const SANDBOX_HOURLY_COST_MICROS = 200_000;
+export const SANDBOX_SIZE_HOURLY_COST_MICROS = {
+  standard: 50_000,
+  large: 100_000,
+  xlarge: SANDBOX_HOURLY_COST_MICROS,
+} satisfies Record<ComputerSize, number>;
+
+export function computerSizesUpTo(max: ComputerSize): ComputerSize[] {
+  return ComputerSizeSchema.options.slice(0, ComputerSizeSchema.options.indexOf(max) + 1);
+}
 /** What a trial may spend on computers, in cents; ending the trial early starts the full allowance. */
 export const TRIAL_SANDBOX_ALLOWANCE_CENTS = 300;
 /** The share of a monthly credit plan an organization may also spend on computers. */
 export const CREDITS_SANDBOX_ALLOWANCE_PERCENT = 20;
+/** The share of a plan's monthly price an organization may spend on included speech. */
+export const SPEECH_ALLOWANCE_PERCENT = 20;
+/** What a paid plan may spend each month on hosted image and video generation, in cents. */
+export const MEDIA_ALLOWANCE_CENTS = 100;
 
 /** Computer hours an allowance in cents buys. */
-export function sandboxAllowanceHours(allowanceCents: number): number {
-  return (allowanceCents * 10_000) / SANDBOX_HOURLY_COST_MICROS;
+export function sandboxAllowanceHours(
+  allowanceCents: number,
+  hourMicros = SANDBOX_HOURLY_COST_MICROS,
+): number {
+  return (allowanceCents * 10_000) / hourMicros;
 }
 
-export const ByokTierSchema = z.enum(["standard", "pro", "max"]);
+export const ByokTierSchema = z.enum(["standard", "pro", "max", "ultra"]);
 export type ByokTier = z.infer<typeof ByokTierSchema>;
 
 export interface ByokTierTerms {
@@ -38,7 +52,7 @@ export interface ByokTierTerms {
 
 /**
  * The own-model plan's tiers, in order. Standard is the plan new organizations start on; the
- * others add bigger computers and more computer hours.
+ * others add computer hours and may offer bigger computers.
  */
 export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
   standard: {
@@ -62,6 +76,13 @@ export const BYOK_TIERS: Record<ByokTier, ByokTierTerms> = {
     computerAllowanceCents: 4000,
     computerSize: "xlarge",
   },
+  ultra: {
+    name: "Ultra",
+    monthlyPriceCents: 19900,
+    annualPriceCents: 190800,
+    computerAllowanceCents: 12000,
+    computerSize: "xlarge",
+  },
 };
 
 /** The tier's price for new subscriptions billed every `interval`; null when it is not offered. */
@@ -78,12 +99,6 @@ export function byokTierPriceCents(tier: ByokTier, interval: ByokInterval): numb
 export const INVITED_TRIAL_WEEKS = 2;
 /** Length of a new organization's free trial of the own-model plan, in days. */
 export const TRIAL_DAYS = 7;
-/**
- * How the plan choice is laid out: the own-key plan beside credits, or its tiers first with
- * credits below. Each organization keeps one, so its plans look the same everywhere.
- */
-export const PlanLayoutSchema = z.enum(EXPERIMENTS["plan-layout"]);
-
 export const ByokIntervalSchema = z.enum(["month", "year"]);
 export type ByokInterval = z.infer<typeof ByokIntervalSchema>;
 export const DEFAULT_MONTHLY_CREDIT_AMOUNT = 3000;
@@ -142,11 +157,11 @@ export const BillingStatusSchema = z.object({
         annualPriceCents: z.number().int().positive().nullable(),
         computerSize: ComputerSizeSchema,
         computerHours: z.number().nonnegative(),
+        /** The advertised size is a maximum and hours are measured at Standard. */
+        computerSizeChoice: z.literal(true).optional(),
       }),
     )
     .optional(),
-  /** The plan choice's layout; absent from servers that only lay it out as cards. */
-  planLayout: PlanLayoutSchema.optional(),
   /** End of an unpaid own-key organization's free period. */
   byokFreeUntil: z.string().nullable().optional(),
   access: z.boolean(),
@@ -179,8 +194,17 @@ export const BillingStatusSchema = z.object({
   hasCustomer: z.boolean(),
   /** Computer hours left in the current allowance period; absent when computers have no limit. */
   computerHoursLeft: z.number().nonnegative().nullable().optional(),
+  /** Hours are counted at the Standard size's rate; larger sizes use them faster. */
+  standardComputerHours: z.literal(true).optional(),
   /** Next allowance renewal, distinct from a yearly subscription payment. */
   computerHoursResetAt: z.string().nullable().optional(),
+  /**
+   * This period's balance for hosted image and video generation, apart from computer hours;
+   * absent where hosted media is not metered or the plan includes none.
+   */
+  media: z
+    .object({ leftCents: z.number().int().nonnegative(), limitCents: z.number().int().positive() })
+    .optional(),
   /** Present once the organization has subscribed: its invite link and free months earned. */
   referral: z
     .object({ url: z.string().url(), rewards: z.number().int().nonnegative() })

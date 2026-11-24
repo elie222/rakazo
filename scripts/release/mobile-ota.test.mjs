@@ -10,7 +10,7 @@ import { otaEligibility, otaSummary } from "./mobile-ota.mjs";
 const script = fileURLToPath(new URL("./mobile-ota.mjs", import.meta.url));
 const BASE = "0123456789abcdef0123456789abcdef01234567";
 
-test("bundled JavaScript, TypeScript and shared CSS ship over the air", () => {
+test("bundled JavaScript, TypeScript, shared CSS and translation catalogs ship over the air", () => {
   const files = [
     "apps/mobile/app/(tabs)/index.tsx",
     "apps/mobile/components/deep/nested/Card.tsx",
@@ -21,6 +21,8 @@ test("bundled JavaScript, TypeScript and shared CSS ship over the air", () => {
     "packages/contracts/src/rpc/app-contract.ts",
     "packages/core/src/time.ts",
     "packages/logging/src/index.ts",
+    "packages/i18n/src/cron.ts",
+    "packages/i18n/locales/zh-TW/messages.po",
   ];
   assert.deepEqual(otaEligibility(files), { publish: true, blocked: [] });
 });
@@ -51,6 +53,7 @@ test("anything else that changed blocks the update", () => {
     "packages/core/src/data.json",
     "packages/core/package.json",
     "packages/logging/src/style.css",
+    "packages/i18n/package.json",
     "pnpm-lock.yaml (mobile dependency tree)",
   ];
   assert.deepEqual(otaEligibility(["apps/mobile/lib/query/query.ts", ...blocked]), {
@@ -79,7 +82,7 @@ test("the summary explains the decision against the base commit", () => {
   );
   assert.equal(
     otaSummary(BASE, { publish: true, blocked: [] }),
-    "### Mobile OTA eligible\n\nSince `012345678`, only JavaScript, TypeScript, or bundled CSS used by the mobile client changed.\n",
+    "### Mobile OTA eligible\n\nSince `012345678`, only JavaScript, TypeScript, bundled CSS, or translation catalogs used by the mobile client changed.\n",
   );
   assert.equal(
     otaSummary(BASE, { publish: false, blocked: [] }),

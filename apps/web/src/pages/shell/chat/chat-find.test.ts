@@ -66,6 +66,18 @@ describe("findTextRanges", () => {
     expect(found(root, "messages")).toEqual(["messages"]);
   });
 
+  it("skips Markdown table announcements without skipping visible cells or status text", () => {
+    const root = transcript(
+      '<div role="status" class="rk-sr-only"><span>Sorted by Revenue</span></div>' +
+        "<table><tbody><tr><td>North <b>region</b></td><td>Revenue</td></tr></tbody></table>" +
+        '<div role="status">Report ready</div>',
+    );
+    expect(found(root, "sorted by")).toEqual([]);
+    expect(found(root, "revenue")).toEqual(["Revenue"]);
+    expect(found(root, "north region")).toEqual(["North region"]);
+    expect(found(root, "report ready")).toEqual(["Report ready"]);
+  });
+
   it("never joins words across an inline image", () => {
     const root = transcript('<p>left<img alt="" src="x.png">right</p>');
     expect(found(root, "leftright")).toEqual([]);
