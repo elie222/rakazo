@@ -8,9 +8,11 @@ test("createDb wraps the Prisma client in the required security extension order"
     "utf8",
   );
 
-  assert.match(
-    source,
-    /^\s*const prisma\s*=\s*withTextSanitization\s*\(\s*withRowLevelSecurity\s*\(\s*withContentEncryption\s*\(\s*client\s*,/m,
-    "Nest withContentEncryption inside withRowLevelSecurity so rewritten reads still decrypt content. Wrap both with withTextSanitization so write arguments are cleaned first.",
+  const composition =
+    /^\s*const prisma\s*=\s*withTextSanitization\s*\(\s*withRowLevelSecurity\s*\(\s*withContentEncryption\s*\(\s*client\s*,/m;
+
+  assert.ok(
+    composition.test(source),
+    "Nest withContentEncryption inside withRowLevelSecurity so rewritten reads still decrypt content. Keep withTextSanitization outermost to clean the final write arguments before Postgres.",
   );
 });
