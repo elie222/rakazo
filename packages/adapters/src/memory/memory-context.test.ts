@@ -327,6 +327,14 @@ describe("memory prompt budget", () => {
     );
   });
 
+  it("tells the bot to make room in the same save when private memory is nearly full", () => {
+    const { text } = buildAgentMemoryPrompt([doc("bot", "MEMORY.md", "x".repeat(3700), 1, OLD)]);
+
+    expect(text).toContain(
+      "(revision 1, 3700 of 4096 bytes, nearly full: any add must remove or shorten entries in the same remember call)",
+    );
+  });
+
   it("renders empty private memory as a heading and reports it accurately", () => {
     const { text, plan } = buildAgentMemoryPrompt([
       doc("bot", "MEMORY.md", "", 1, OLD),

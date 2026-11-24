@@ -320,6 +320,17 @@ describe("tool completion audit", () => {
     expect(completion).not.toHaveProperty("result");
   });
 
+  it("records a shell command with a nonzero exit code as a tool error", () => {
+    const payload = toolCompletionAuditPayload({
+      name: "shell",
+      executionId: "call-1",
+      durationMs: 4,
+      result: { kind: "agent_tool_result", content: [], details: { code: 1 } },
+    });
+
+    expect(payload.outcome).toBe("error");
+  });
+
   it("records an MCP tool result flagged isError as an error", () => {
     const payload = toolCompletionAuditPayload({
       name: "mcp__files__read_text_file",
@@ -2315,6 +2326,7 @@ describe("createRunExecutor", () => {
           task: { create: taskCreate },
           run: {
             create: runCreate,
+            findFirst: vi.fn(async () => null),
             findMany: vi.fn(async () => []),
             findUnique: vi.fn(async () => null),
           },

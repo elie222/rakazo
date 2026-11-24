@@ -380,25 +380,34 @@ const listCalls = () => rpc.mock.calls.filter(([procedure]) => procedure === "ro
 const routinesRow = () => button("Routines");
 
 describe("bot profile", () => {
-  it("links the bot's settings, routines, pages, artifacts and computer", async () => {
-    profileRpc(async () => []);
+  it("links the bot's settings and features in order of priority", async () => {
+    profileRpc(async () => [], { bot: async () => ({ ...fixtureBot, meetingsEnabled: true }) });
     await render(createElement(BotProfile));
 
     expect(container.textContent).toContain("Fixture");
+    const rows = [...container.querySelectorAll("button")].map((node) => node.textContent);
+    expect(rows.slice(0, 6)).toEqual([
+      "Edit",
+      "Computer",
+      "Routines0 on",
+      "Pages",
+      "Artifacts",
+      "Meetings",
+    ]);
     button("Edit").click();
+    button("Computer").click();
     routinesRow().click();
     button("Pages").click();
     button("Artifacts").click();
-    button("Computer").click();
+    button("Meetings").click();
     expect(push.mock.calls).toEqual([
       [{ pathname: "/bot-settings", params: { botId: "bot-fixture" } }],
+      [{ pathname: "/computer", params: { botId: "bot-fixture", name: "Fixture" } }],
       [{ pathname: "/routines", params: { botId: "bot-fixture", name: "Fixture" } }],
       [{ pathname: "/pages", params: { botId: "bot-fixture" } }],
       [{ pathname: "/artifacts", params: { botId: "bot-fixture" } }],
-      [{ pathname: "/computer", params: { botId: "bot-fixture", name: "Fixture" } }],
+      [{ pathname: "/meetings", params: { botId: "bot-fixture" } }],
     ]);
-    const rows = [...container.querySelectorAll("button")].map((node) => node.textContent);
-    expect(rows.slice(0, 5)).toEqual(["Edit", "Routines0 on", "Pages", "Artifacts", "Computer"]);
   });
 
   it("keeps the bot's less common actions in its … menu, and clears the open chat", async () => {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Evidence } from "../cases.js";
 import { EMPTY_SETTINGS } from "../cases.js";
 import {
+  DENSE_MEMORY_SEED,
   FULL_MEMORY_SEED,
   MEMORY_EVAL_CASES,
   MEMORY_JUDGE_CALIBRATION,
@@ -129,6 +130,12 @@ describe("memory outcome grading", () => {
       "memory-within-cap",
     ]);
     expect(failed("full", evidence("# Assistant\n\nOffice door code: 5829\n"))).toEqual([]);
+  });
+
+  it("seeds dense memory close enough to the cap that the new rule only fits by making room", () => {
+    const free = BOT_MEMORY_MAX_BYTES - Buffer.byteLength(DENSE_MEMORY_SEED);
+    expect(free).toBeGreaterThan(0);
+    expect(free).toBeLessThan(250);
   });
 
   it("requires a full-memory correction in one save", () => {

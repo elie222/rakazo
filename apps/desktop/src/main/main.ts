@@ -21,12 +21,12 @@ import {
   nativeImage,
   net,
   powerMonitor,
-  safeStorage,
   session,
   shell,
   systemPreferences,
 } from "electron";
 import { createBrowserAuthHandlers } from "./auth/browser-auth.js";
+import { chooseLinuxKeyring, deviceTokenCipher } from "./auth/device-token-cipher.js";
 import { associatedPasskeyRpIds } from "./auth/passkeys.js";
 import { installSessionPermissions } from "./auth/session-permissions.js";
 import { createUserDeviceAccess, deviceName } from "./auth/user-device.js";
@@ -154,6 +154,7 @@ const updaterEnvironment = {
 };
 let hostScreen: HostScreen | undefined;
 markOnce("rk:main:module-evaluated");
+chooseLinuxKeyring();
 if (PERFORMANCE_USER_DATA) {
   app.setPath("userData", PERFORMANCE_USER_DATA);
   app.setPath("sessionData", path.join(PERFORMANCE_USER_DATA, "session"));
@@ -451,16 +452,6 @@ function syncHostComputerAccess() {
   );
   void desktop.userDevices?.select(remoteServerOrigin()).catch(() => undefined);
   installApplicationMenu();
-}
-function deviceTokenCipher() {
-  return {
-    // Linux without a keyring falls back to a fixed key; keep the token off disk there.
-    available: async () =>
-      (await safeStorage.isAsyncEncryptionAvailable()) &&
-      !(process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text"),
-    encrypt: (value: string) => safeStorage.encryptStringAsync(value),
-    decrypt: async (value: Buffer) => (await safeStorage.decryptStringAsync(value)).result,
-  };
 }
 /** Drop the previous app window after the new server is opened and persisted. */
 function commitPendingAppSwitch() {
