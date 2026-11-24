@@ -108,6 +108,7 @@ export * from "./meetings/meeting-service.js";
 export { purgeClearedConversationMemory } from "./memory/conversation-memory-cleanup.js";
 export { readAgentMemory } from "./memory/memory-context.js";
 export { AGENT_MEMORY_MAX_BYTES, buildAgentMemoryPrompt } from "./memory/memory-context.prompt.js";
+export { userMemoryDate } from "./memory/memory-expiry.js";
 export * from "./memory/memory-provider-factory.js";
 export * from "./messaging/bot-messages.js";
 export * from "./messaging/chat-sdk-surface.js";
