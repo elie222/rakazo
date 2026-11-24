@@ -189,6 +189,35 @@ describe("tickRoutineWatch", () => {
     return { deps, routine, updateMany, messages };
   }
 
+  it("ends a routine whose quiet check leaves no check before its end", async () => {
+    const { deps, routine, updateMany } = setup({ data: { items: [] } });
+    const deleteMany = vi.fn(async () => ({ count: 1 }));
+    Object.assign(deps.prisma.routine, { deleteMany });
+    const endsAt = new Date(Date.now() + 60_000);
+    expect(await tickRoutineWatch(deps, { ...routine, endsAt }, target, scheduledAt)).toEqual({
+      run: false,
+    });
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: "routine-1", nextRunAt: scheduledAt, endsAt }),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps checking a quiet watch whose end moved during the check", async () => {
+    const { deps, routine, updateMany } = setup({ data: { items: [] } });
+    Object.assign(deps.prisma.routine, { deleteMany: vi.fn(async () => ({ count: 0 })) });
+    updateMany.mockResolvedValueOnce({ count: 0 });
+    const endsAt = new Date(Date.now() + 60_000);
+    await tickRoutineWatch(deps, { ...routine, endsAt }, target, scheduledAt);
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: expect.objectContaining({ nextRunAt: scheduledAt }),
+      data: expect.objectContaining({ nextRunAt: expect.any(Date) }),
+    });
+    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "routine.wakeup" }),
+    );
+  });
+
   it("reschedules temporary HTTP failures at the watch interval without disabling it", async () => {
     const { deps, routine, updateMany, messages } = setup(
       {},
