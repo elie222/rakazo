@@ -19,7 +19,7 @@ import {
   finishModelOAuthAttempt,
   waitForModelOAuth,
 } from "../models/model-auth";
-import { analyticsSurface } from "../native/analytics-surface";
+import { analyticsClient } from "../native/analytics-surface";
 import type { SettingsTarget } from "../query/settings-target";
 
 type SubscriptionSignInOptions = {
@@ -141,8 +141,10 @@ export function useSubscriptionSignIn({
     setCredentialId(saved.id);
     onSaved?.(saved);
     setOauth(null);
-    if (await finishConnecting(selected?.id ?? modelId, saved.id)) return;
-    await load({ modelId });
+    // A new subscription can save a stronger model than the one the form showed.
+    const savedModelId = saved.modelId ?? selected?.id ?? modelId;
+    if (await finishConnecting(savedModelId, saved.id)) return;
+    await load({ modelId: savedModelId });
     if (controller.signal.aborted) return;
     publishFeedback("connection", { notice: t`Subscription connected.` });
   }
@@ -169,7 +171,7 @@ export function useSubscriptionSignIn({
           label: selected.providerName ?? selected.provider,
           credentialId: credentialIdRef.current,
           codePage: true,
-          surface: analyticsSurface(),
+          ...analyticsClient(),
         },
         { signal: controller.signal },
       );

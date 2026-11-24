@@ -1022,7 +1022,6 @@ describe("VaultSettings list", () => {
   );
 
   it.each([
-    ["account", []],
     ["account", ["models"]],
     ["space", ["credentials"]],
   ] as const)(

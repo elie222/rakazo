@@ -1,19 +1,7 @@
-import {
-  Button,
-  ContextMenu,
-  Divider,
-  Group,
-  Host,
-  List,
-  Menu,
-  RNHostView,
-  SwipeActions,
-  Toggle,
-} from "@expo/ui/swift-ui";
+import { ContextMenu, Group, Host, List, RNHostView, SwipeActions } from "@expo/ui/swift-ui";
 import type { ViewModifier } from "@expo/ui/swift-ui/modifiers";
 import {
   contentShape,
-  labelStyle,
   listRowBackground,
   listRowInsets,
   listRowSeparator,
@@ -21,19 +9,17 @@ import {
   scrollContentBackground,
   scrollDisabled,
   shapes,
-  tint,
 } from "@expo/ui/swift-ui/modifiers";
-import { useLingui } from "@lingui/react/macro";
-import { SNOOZE_PRESETS, snoozePresetTime } from "@rakazo/core";
 import type { ReactElement } from "react";
 import { useContext, useState } from "react";
-import { PlatformColor, useWindowDimensions, View } from "react-native";
+import { useWindowDimensions, View } from "react-native";
 import type { InboxRowAction } from "../../lib/inbox/inbox-swipe";
-import { INBOX_ROW_ACTIONS, inboxRowActions, SNOOZE_LABELS } from "../../lib/inbox/inbox-swipe";
+import { inboxRowActions } from "../../lib/inbox/inbox-swipe";
 import { native, useResolvedAppearance } from "../../lib/native/native";
 import { iosAtLeast } from "../../lib/native/native-controls";
 import { NativeListRowContext } from "../native/native-list-row";
 import { NativeRowContent } from "../native/native-row";
+import { ChatActionButton, ChatMenuItems } from "./chat-menu-items.ios";
 import { InboxChatPreview } from "./inbox-chat-preview";
 import { InboxSwipeContent } from "./inbox-swipe-content.ios";
 import type { InboxSwipeRowProps } from "./inbox-swipe-row";
@@ -61,7 +47,6 @@ export function InboxSwipeRow({
   onSnooze,
   children,
 }: InboxSwipeRowProps) {
-  const { t, i18n } = useLingui();
   const scheme = useResolvedAppearance();
   const window = useWindowDimensions();
   const [width, setWidth] = useState(window.width);
@@ -70,27 +55,15 @@ export function InboxSwipeRow({
   const nativeRow = useContext(NativeListRowContext);
   const interactiveSwipe = iosAtLeast(26);
 
-  function button(action: InboxRowAction, swipe = false) {
-    const { label, systemImage } = INBOX_ROW_ACTIONS[action];
-    const fill =
-      action === "archive" ? "systemRed" : action === actions.leading ? "systemBlue" : null;
-    return (
-      <Button
-        key={action}
-        label={i18n._(label)}
-        systemImage={systemImage}
-        role={!swipe && action === "delete" ? "destructive" : undefined}
-        modifiers={
-          swipe ? [labelStyle("iconOnly"), ...(fill ? [tint(PlatformColor(fill))] : [])] : undefined
-        }
-        onPress={() => onAction(action)}
-      />
-    );
-  }
-
-  function moveTo(id: string | null) {
-    if (id !== (sectionId ?? null)) onOrganize({ sectionId: id });
-  }
+  const swipeButton = (action: InboxRowAction) => (
+    <ChatActionButton
+      key={action}
+      action={action}
+      leading={actions.leading}
+      swipe
+      onAction={onAction}
+    />
+  );
 
   function swipeRow(rowModifiers: ViewModifier[], content: ReactElement) {
     const menu = (
@@ -100,58 +73,18 @@ export function InboxSwipeRow({
           <InboxChatPreview {...preview} />
         </ContextMenu.Preview>
         <ContextMenu.Items>
-          {button(actions.leading)}
-          {button(pinned ? "unpin" : "pin")}
-          {notifyOnFinish === undefined ? null : (
-            <Button
-              label={notifyOnFinish ? t`Silence notifications` : t`Resume notifications`}
-              systemImage={notifyOnFinish ? "bell.slash" : "bell"}
-              onPress={() => onOrganize({ notifyOnFinish: !notifyOnFinish })}
-            />
-          )}
-          {!onSnooze ? null : snoozed ? (
-            <Button label={t`Unsnooze`} systemImage="moon.zzz" onPress={() => onSnooze(null)} />
-          ) : (
-            <Menu label={t`Snooze`} systemImage="moon.zzz">
-              {SNOOZE_PRESETS.map((preset) => (
-                <Button
-                  key={preset}
-                  label={i18n._(SNOOZE_LABELS[preset])}
-                  onPress={() => onSnooze(snoozePresetTime(preset, new Date()).toISOString())}
-                />
-              ))}
-            </Menu>
-          )}
-          <Menu label={t`Move to`} systemImage="folder">
-            {sections.map((section) => (
-              <Toggle
-                key={section.id}
-                label={section.name}
-                isOn={sectionId === section.id}
-                onIsOnChange={() => moveTo(section.id)}
-              />
-            ))}
-            <Toggle
-              label={t`Unassigned`}
-              isOn={sectionId == null}
-              onIsOnChange={() => moveTo(null)}
-            />
-            <Divider />
-            <Button
-              label={t`New section`}
-              systemImage="folder.badge.plus"
-              onPress={() => onEditSection("create")}
-            />
-            {sections.some((section) => section.id === sectionId) ? (
-              <Button
-                label={t`Rename section`}
-                systemImage="pencil"
-                onPress={() => onEditSection("rename")}
-              />
-            ) : null}
-          </Menu>
-          {button("archive")}
-          {button("delete")}
+          <ChatMenuItems
+            unread={unread}
+            pinned={pinned}
+            notifyOnFinish={notifyOnFinish}
+            sectionId={sectionId}
+            sections={sections}
+            onAction={onAction}
+            onOrganize={onOrganize}
+            onEditSection={onEditSection}
+            snoozed={snoozed}
+            onSnooze={onSnooze}
+          />
         </ContextMenu.Items>
       </ContextMenu>
     );
@@ -159,9 +92,9 @@ export function InboxSwipeRow({
     return (
       <SwipeActions modifiers={rowModifiers}>
         {menu}
-        <SwipeActions.Actions edge="leading">{button(actions.leading, true)}</SwipeActions.Actions>
+        <SwipeActions.Actions edge="leading">{swipeButton(actions.leading)}</SwipeActions.Actions>
         <SwipeActions.Actions edge="trailing">
-          {actions.trailing.map((action) => button(action, true))}
+          {actions.trailing.map(swipeButton)}
         </SwipeActions.Actions>
       </SwipeActions>
     );

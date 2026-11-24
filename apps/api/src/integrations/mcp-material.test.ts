@@ -169,6 +169,55 @@ describe("buildMcpUpdateMaterial", () => {
     expect(JSON.stringify(update)).not.toContain("stored-header");
   });
 
+  it("drops the old transport's credentials when a server switches transport", () => {
+    expect(
+      buildMcpUpdateMaterial(
+        { headers: { "X-Api-Key": "stored-header" } },
+        { transport: "stdio", slug: "x", name: "x", command: "npx", env: {} },
+        { clearOAuth: true, endpointChanged: true, commandChanged: true },
+      ),
+    ).toEqual({ action: "store", material: {} });
+    expect(
+      buildMcpUpdateMaterial(
+        { env: { TOKEN: "stored-env" } },
+        {
+          transport: "streamable_http",
+          slug: "x",
+          name: "x",
+          endpoint: "https://mcp.example.test",
+          headers: {},
+        },
+        { clearOAuth: true, endpointChanged: true, commandChanged: true },
+      ),
+    ).toEqual({ action: "store", material: {} });
+  });
+
+  it("drops the stored token and blank headers at a new endpoint, keeping what is typed", () => {
+    const existing = { secret: "stored-token", headers: { "X-Api-Key": "stored-header" } };
+    const moved = {
+      transport: "streamable_http",
+      slug: "x",
+      name: "x",
+      endpoint: "https://other.example.test",
+      headers: { "X-Api-Key": "" },
+    };
+    const options = { clearOAuth: true, endpointChanged: true };
+    expect(buildMcpUpdateMaterial(existing, moved, options)).toEqual({
+      action: "store",
+      material: {},
+    });
+    expect(
+      buildMcpUpdateMaterial(
+        existing,
+        { ...moved, secret: "new-token", headers: { "X-Api-Key": "new-header" } },
+        options,
+      ),
+    ).toEqual({
+      action: "store",
+      material: { secret: "new-token", headers: { "X-Api-Key": "new-header" } },
+    });
+  });
+
   it("clearing removes static credentials but keeps OAuth state", () => {
     const existing = { secret: "token", env: { A: "b" }, oauth: { tokens: { access_token: "t" } } };
     const result = buildMcpUpdateMaterial(existing, {
@@ -200,7 +249,7 @@ describe("buildMcpUpdateMaterial", () => {
     expect(result).toEqual({ action: "store", material: {} });
   });
 
-  it("clears endpoint-bound OAuth state while preserving static credentials", () => {
+  it("clears OAuth state alone while preserving static credentials", () => {
     const result = buildMcpUpdateMaterial(
       { secret: "token", oauth: { tokens: { access_token: "endpoint-token" } } },
       {
@@ -344,7 +393,13 @@ describe("buildMcpUpdateMaterial", () => {
         }),
       ).toEqual({
         action: "store",
-        material: { oauthClient: { client_id: "client-a", client_secret: "rotated" } },
+        material: {
+          oauthClient: {
+            client_id: "client-a",
+            client_secret: "rotated",
+            authorization_server: "https://auth.example.test/",
+          },
+        },
       });
     });
 
@@ -355,7 +410,7 @@ describe("buildMcpUpdateMaterial", () => {
       });
     });
 
-    it("stores the scope and drops it when the update leaves it empty", () => {
+    it("stores a new client's scope and leaves it out when empty", () => {
       expect(
         buildMcpUpdateMaterial(
           {},
@@ -373,6 +428,122 @@ describe("buildMcpUpdateMaterial", () => {
         action: "store",
         material: { oauthClient: { client_id: "client-a" } },
       });
+    });
+
+    it("keeps the client and its grant when the same client is resent without a scope", () => {
+      const scoped = {
+        oauthClient: { client_id: "client-a", client_secret: "secret-a", scope: "mail.read" },
+        oauth: { tokens: { access_token: "t" } },
+      };
+      expect(
+        buildMcpUpdateMaterial(scoped, { ...remote, oauthClient: { clientId: "client-a" } }),
+      ).toEqual({ action: "store", material: { ...scoped } });
+    });
+
+    it("clears the stored scope and its grant when the same client is resent with an empty one", () => {
+      const scoped = {
+        oauthClient: { client_id: "client-a", client_secret: "secret-a", scope: "mail.read" },
+        oauth: { tokens: { access_token: "t" } },
+      };
+      expect(
+        buildMcpUpdateMaterial(scoped, {
+          ...remote,
+          oauthClient: { clientId: "client-a", scope: "" },
+        }),
+      ).toEqual({
+        action: "store",
+        material: { oauthClient: { client_id: "client-a", client_secret: "secret-a" } },
+      });
+    });
+
+    it("starts a client typed again at a new endpoint afresh, even a bound one", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          {
+            oauthClient: {
+              client_id: "client-a",
+              client_secret: "secret-a",
+              authorization_server: "https://auth.example.test/",
+            },
+          },
+          {
+            ...remote,
+            endpoint: "https://other.example.test",
+            oauthClient: { clientId: "client-a", clientSecret: "secret-b" },
+          },
+          { clearOAuth: true, endpointChanged: true },
+        ),
+      ).toEqual({
+        action: "store",
+        material: { oauthClient: { client_id: "client-a", client_secret: "secret-b" } },
+      });
+    });
+
+    it("uses only what is supplied when an unbound client is resent at a new endpoint", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          { oauthClient: { client_id: "client-a", client_secret: "secret-a", scope: "read" } },
+          {
+            ...remote,
+            endpoint: "https://other.example.test",
+            oauthClient: { clientId: "client-a" },
+          },
+          { clearOAuth: true, endpointChanged: true },
+        ),
+      ).toEqual({ action: "store", material: { oauthClient: { client_id: "client-a" } } });
+    });
+
+    it("drops a client not yet bound to an authorization server when the endpoint changes", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          { oauthClient: { client_id: "client-a", client_secret: "secret-a" } },
+          { ...remote, endpoint: "https://other.example.test" },
+          { clearOAuth: true, endpointChanged: true },
+        ),
+      ).toEqual({ action: "store", material: {} });
+      const bound = {
+        oauthClient: {
+          client_id: "client-a",
+          authorization_server: "https://auth.example.test/",
+        },
+      };
+      expect(
+        buildMcpUpdateMaterial(
+          bound,
+          { ...remote, endpoint: "https://other.example.test" },
+          { clearOAuth: true, endpointChanged: true },
+        ),
+      ).toEqual({ action: "store", material: bound });
+    });
+
+    it("keeps the scope and parameters when the same client is resent with a new secret", () => {
+      const scoped = {
+        oauthClient: {
+          client_id: "client-a",
+          client_secret: "secret-a",
+          scope: "mail.read",
+          authorization_params: "access_type=offline",
+        },
+      };
+      expect(
+        buildMcpUpdateMaterial(scoped, {
+          ...remote,
+          oauthClient: { clientId: "client-a", clientSecret: "rotated" },
+        }),
+      ).toEqual({
+        action: "store",
+        material: {
+          oauthClient: {
+            client_id: "client-a",
+            client_secret: "rotated",
+            scope: "mail.read",
+            authorization_params: "access_type=offline",
+          },
+        },
+      });
+      expect(
+        buildMcpUpdateMaterial(scoped, { ...remote, oauthClient: { clientId: "client-b" } }),
+      ).toEqual({ action: "store", material: { oauthClient: { client_id: "client-b" } } });
     });
 
     it("drops the grant when the scope changes, since its tokens carry the old scope", () => {
@@ -441,7 +612,7 @@ describe("buildMcpUpdateMaterial", () => {
         });
       });
 
-      it("drops the grant when the authorization server changes", () => {
+      it("drops the grant and the client secret when the authorization server changes", () => {
         expect(
           buildMcpUpdateMaterial(bound, {
             ...stdio,
@@ -453,7 +624,6 @@ describe("buildMcpUpdateMaterial", () => {
             env: stdio.env,
             oauthClient: {
               client_id: "client-a",
-              client_secret: "secret-a",
               scope: "mail.read",
               authorization_server: "https://login.example.test/",
             },

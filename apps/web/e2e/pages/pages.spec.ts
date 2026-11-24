@@ -25,7 +25,7 @@ function Dashboard() {
         <ReplyButton label="Ask about churn" reply="Why did churn change this week?" />
         <CopyButton label="Copy MRR" text="MRR $12,400" />
         <Toggle label={targets ? "Targets shown" : "Show targets"} value={targets} onChange={setTargets} />
-        <Metrics metrics={[{ value: "$12,400", label: "MRR" }, { value: "398", label: "New users" }, { value: "${churn}", label: "Churn", tone: "warning" }, { value: "4.8%", label: "Trial to paid" }]} />
+        <Metrics metrics={[{ value: "$12,400", label: "MRR", icon: "banknote" }, { value: "398", label: "New users", icon: "user-plus" }, { value: "${churn}", label: "Churn", tone: "warning", icon: "trending-down" }, { value: "4.8%", label: "Trial to paid", icon: "percent" }]} />
       </Section>
       <Grid columns={2}>
         <Section heading="Signups over time"><LineChart points={points} ceiling={86} floor={0} labels={["Signups"]} /></Section>
@@ -192,6 +192,192 @@ test("a day calendar fits a phone-width page while a week calendar scrolls", asy
   }
   expect(layout.weekOverflow).toBeGreaterThan(0);
   await captureScreenshot(page, testInfo, "page-day-calendar-phone");
+});
+
+test("a long Page scrolls in its chat card and opens from the preview", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-scroll-${Date.now()}@rakazo.test`, "password12", "Page Reader");
+  await completeOnboarding(page);
+
+  const title = "Garden plans";
+  const source = `export default function GardenPlans() {
+    return <Page title="Garden plans" summary="A planting plan for the community garden.">
+      <div style={{ minHeight: "100vh" }}>
+        <Section heading="What to plant">
+          {Array.from({ length: 7 }, (_, i) => <Text key={i}>Garden bed {i + 1} has room for two rows of seedlings.</Text>)}
+        </Section>
+      </div>
+      <Section heading="Next steps"><Text>Water the seedlings each morning.</Text></Section>
+    </Page>;
+  }`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+
+  const card = page.getByTestId("page-card").filter({ hasText: title });
+  const preview = card.getByRole("region", { name: `Preview of ${title}` });
+  const fade = card.getByTestId("page-card-preview-fade");
+  const lastLine = pageFrame(page, title).getByText("Water the seedlings each morning.");
+  await expect(preview).toBeVisible({ timeout: 30_000 });
+  await expect(lastLine).toBeAttached();
+  await expect(lastLine).not.toBeInViewport();
+  const viewportHeight = await lastLine.evaluate(() => window.innerHeight);
+  expect(viewportHeight).toBeLessThan(
+    await preview.evaluate((element) => element.clientHeight * 2),
+  );
+
+  await page.mouse.move(0, 0);
+  const transparentScrollbar = "rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)";
+  await expect(preview).toHaveCSS("scrollbar-color", transparentScrollbar);
+  await expect(fade).toBeVisible();
+  await expect(fade).toHaveCSS("height", "100px");
+  const previewWidth = await preview.evaluate((element) => element.clientWidth);
+  await captureScreenshot(page, testInfo, "page-chat-card-idle");
+
+  await preview.hover();
+  await expect(preview).not.toHaveCSS("scrollbar-color", transparentScrollbar);
+  expect(await preview.evaluate((element) => element.clientWidth)).toBe(previewWidth);
+
+  const scrollTop = () => preview.evaluate((element) => element.scrollTop);
+  await card.getByRole("button", { name: `Open ${title}` }).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(preview).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(scrollTop).toBeGreaterThan(0);
+  await page.keyboard.press("Home");
+  await expect.poll(scrollTop).toBe(0);
+
+  await page.mouse.wheel(0, 2_000);
+  await expect(lastLine).toBeInViewport({ ratio: 0.95 });
+  await expect(fade).toBeHidden();
+  expect(await lastLine.evaluate(() => window.innerHeight)).toBe(viewportHeight);
+  const view = page.getByTestId("page-view");
+  await expect(view).toBeHidden();
+  await captureScreenshot(page, testInfo, "page-chat-card-scrolled");
+
+  await page.mouse.wheel(0, -100);
+  await expect(fade).toBeVisible();
+  await preview.click();
+  await expect(view).toBeVisible();
+  await expect(pageFrame(page, title).getByRole("heading", { name: title })).toBeVisible();
+  await view.getByRole("button", { name: "Close page" }).click();
+  await expect(view).toBeHidden();
+  await expect(preview).toBeFocused();
+});
+
+test("a Page preview grows when an absolute item overflows the document body", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-overflow-${Date.now()}@rakazo.test`, "password12", "Page Reader");
+  await completeOnboarding(page);
+
+  const title = "Planting notes";
+  const source = `export default function PlantingNotes() {
+    const [expanded, setExpanded] = useState(false);
+    return <Page title="Planting notes">
+      <div style={{ height: 100 }}>
+        <button type="button" onClick={() => setExpanded(true)}>Move notes</button>
+        <div style={{ position: "absolute", top: expanded ? 1050 : 36 }}>
+          <Text>Leave room for the beans to climb.</Text>
+        </div>
+      </div>
+    </Page>;
+  }`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+
+  const card = page.getByTestId("page-card").filter({ hasText: title });
+  const preview = card.getByTestId("page-card-preview");
+  const frame = pageFrame(page, title);
+  const note = frame.getByText("Leave room for the beans to climb.");
+  await expect(note).toBeInViewport({ ratio: 0.95, timeout: 30_000 });
+  const bodyHeight = () => note.evaluate(() => document.body.scrollHeight);
+  const initialBodyHeight = await bodyHeight();
+  const overflow = () => preview.evaluate((element) => element.scrollHeight - element.clientHeight);
+  expect(await overflow()).toBeLessThanOrEqual(1);
+
+  const openButton = card.getByRole("button", { name: `Open ${title}` });
+  const view = page.getByTestId("page-view");
+  // The short card's open button covers the preview. Click inside that visible area.
+  await preview.scrollIntoViewIfNeeded();
+  const previewBox = (await preview.boundingBox())!;
+  await page.mouse.click(previewBox.x + previewBox.width / 2, previewBox.y + previewBox.height / 2);
+  await expect(view).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(view).toBeHidden();
+  await expect(openButton).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(view).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(view).toBeHidden();
+
+  // Trigger the page component's own update inside the otherwise inert preview.
+  await frame.locator("button").filter({ hasText: "Move notes" }).dispatchEvent("click");
+  await expect(note).not.toBeInViewport();
+  expect(await bodyHeight()).toBe(initialBodyHeight);
+  await expect.poll(overflow).toBeGreaterThan(500);
+  await preview.hover();
+  await page.mouse.wheel(0, 2_000);
+  await expect(note).toBeInViewport({ ratio: 0.95 });
+  await expect(card.getByTestId("page-card-preview-fade")).toBeHidden();
+});
+
+test("wheel scrolling within a Page preview keeps the chat following new messages", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 650 });
+  const stamp = Date.now();
+  await signup(page, `pages-follow-${stamp}@rakazo.test`, "password12", "Page Reader");
+  await completeOnboarding(page);
+  const botId = await activeBotId(page);
+
+  const title = "Garden checklist";
+  const source = `export default function Checklist() {
+    return <Page title="Garden checklist">
+      {Array.from({ length: 24 }, (_, i) => <Text key={i}>Check the soil in garden bed {i + 1}.</Text>)}
+    </Page>;
+  }`;
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source })}\nthen say Checklist ready.`,
+  );
+  await expect(page.getByText("Checklist ready.", { exact: true }).last()).toBeVisible();
+
+  const transcript = page.getByTestId("transcript");
+  const preview = page.getByRole("region", { name: `Preview of ${title}` });
+  const gapToEnd = () =>
+    transcript.evaluate(
+      (element) => element.scrollHeight - element.scrollTop - element.clientHeight,
+    );
+  const chatTop = () => transcript.evaluate((element) => element.scrollTop);
+  const previewTop = () => preview.evaluate((element) => element.scrollTop);
+  await expect.poll(gapToEnd).toBeLessThan(2);
+  await preview.hover();
+  const initialChatTop = await chatTop();
+  await page.mouse.wheel(0, 300);
+  await expect.poll(previewTop).toBeGreaterThan(200);
+  const innerTop = await previewTop();
+  await page.mouse.wheel(0, -80);
+  await expect.poll(previewTop).toBeLessThan(innerTop);
+  expect(await previewTop()).toBeGreaterThan(0);
+  expect(await chatTop()).toBe(initialChatTop);
+
+  // A send outside this tab exercises follow mode without the composer's own-send snap.
+  const note = `Fresh garden notes ${stamp}`;
+  await rpc(page, "threads/send", {
+    botId,
+    text: `work for 1 second ${note}\nWatering schedule\nTool check\nSeed count\nMulch delivery`,
+    clientNonce: `page-follow-${stamp}`,
+  });
+  await expect(page.getByTestId("message-user-bubble").filter({ hasText: note })).toBeInViewport();
+  await expect.poll(gapToEnd).toBeLessThan(2);
+
+  await preview.hover();
+  await preview.press("Home");
+  await expect.poll(previewTop).toBe(0);
+  const beforeBoundaryWheel = await chatTop();
+  expect(beforeBoundaryWheel).toBeGreaterThan(0);
+  await page.mouse.wheel(0, -180);
+  await expect.poll(chatTop).toBeLessThan(beforeBoundaryWheel);
+  expect(await previewTop()).toBe(0);
 });
 
 test("shared page contents jump below the header and copy fallback", async ({

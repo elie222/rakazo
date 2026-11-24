@@ -7,19 +7,21 @@ import { Button, SectionHeading } from "@rakazo/ui-web";
 import { Check, ChevronLeft, CircleAlert, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { ROW_BUTTON, ROW_HOVER, ROW_SHELL } from "../../components/integrations/plugin-marketplace";
+import { useCatalogIconVisibility } from "../../components/integrations/use-catalog-icon-visibility";
 import type { PluginConnections } from "./use-plugin-connections";
 
 export function ConnectorIcon({ name, logo }: { name: string; logo?: string | null }) {
-  return logo ? (
+  const { ready, placeholderRef } = useCatalogIconVisibility(Boolean(logo));
+  return logo && ready ? (
     <img
       src={logo}
       alt=""
-      loading="lazy"
       decoding="async"
       className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
     />
   ) : (
     <div
+      ref={placeholderRef}
       aria-hidden="true"
       className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground"
     >

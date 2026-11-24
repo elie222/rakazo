@@ -48,7 +48,7 @@ import { readBoundedBody } from "../http/http-body.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
 import { hasDeploymentVoiceConsent } from "../voice/deployment-consent.js";
 import { voiceHttpError } from "../voice/http-errors.js";
-import { withSpeechCost } from "../voice/operator-cost.js";
+import { TRANSCRIBE, withSpeechCost } from "../voice/operator-cost.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
 
 export interface VoiceDeps {
@@ -124,7 +124,7 @@ export function toVoiceCredential(row: {
   isDefault: boolean;
   voiceId: string;
   speechModel?: string | null;
-  server?: { endpoint: string; sttEndpoint: string; ttsModel: string; sttModel: string };
+  server?: ReturnType<typeof openAiCompatibleVoiceServer>;
   /** False when the connection uses the account's model connection instead of a key. */
   hasKey?: boolean;
 }): VoiceCredential {
@@ -140,11 +140,14 @@ export function toVoiceCredential(row: {
     sttEndpoint: row.server?.sttEndpoint ?? "",
     ttsModel: row.server?.ttsModel ?? "",
     sttModel: row.server?.sttModel ?? "",
+    ...(row.server?.transcriptionVocabulary
+      ? { transcriptionVocabulary: row.server.transcriptionVocabulary }
+      : {}),
   };
 }
 
 /**
- * A self-hosted connection's address and model ids, read from its secret. Undefined for
+ * A self-hosted connection's editable settings, read from its secret. Undefined for
  * hosted providers and for a secret that cannot be read, which still lists the connection.
  */
 export async function voiceCredentialServer(
@@ -210,6 +213,7 @@ export function voiceCredentialPlaintext(input: {
   sttApiKey?: string;
   ttsModel?: string;
   sttModel?: string;
+  transcriptionVocabulary?: string;
   /** The stored secret for this provider; blank fields keep its key and models. */
   previousPlaintext?: string;
   allowPrivateEndpoint?: boolean;
@@ -237,6 +241,7 @@ export function voiceCredentialPlaintext(input: {
         sttApiKey: input.sttApiKey,
         ttsModel: input.ttsModel,
         sttModel: input.sttModel,
+        transcriptionVocabulary: input.transcriptionVocabulary,
       },
       input.previousPlaintext,
       { allowPrivate: input.allowPrivateEndpoint },
@@ -443,6 +448,7 @@ export async function persistVoiceCredential(
     sttApiKey?: string;
     ttsModel?: string;
     sttModel?: string;
+    transcriptionVocabulary?: string;
     /** Which copy the connection becomes the default voice in; omitted is what applies. */
     scope?: SettingsScope;
     signal?: AbortSignal;
@@ -783,7 +789,8 @@ export async function synthesizeVoice(
     throw new ORPCError("BAD_REQUEST", { message: "That utterance is too long to speak." });
   }
   const provider = await voiceProviderFor(deps, target.cred.provider);
-  return withSpeechCost(deps, { ...actor, callId: input.callId }, target, "synthesize", () =>
+  const speech = { operation: "synthesize" as const, text };
+  return withSpeechCost(deps, { ...actor, callId: input.callId }, target, speech, () =>
     withVoiceConnection(target.cred.provider, target.linked, () =>
       provider.synthesize(
         {
@@ -828,7 +835,7 @@ export async function transcribeVoice(
   if (input.audio.byteLength === 0 || input.audio.byteLength > MAX_TRANSCRIBE_BYTES) {
     throw new ORPCError("BAD_REQUEST", { message: "That recording is empty or too large." });
   }
-  return withSpeechCost(deps, { ...actor, callId: input.callId }, loaded, "transcribe", () =>
+  return withSpeechCost(deps, { ...actor, callId: input.callId }, loaded, TRANSCRIBE, () =>
     withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
       provider.transcribe!(
         {
@@ -880,7 +887,7 @@ export async function transcribeInboundVoice(
   }
   const provider = await voiceProviderFor(deps, loaded.cred.provider);
   if (!provider.transcribe) return null;
-  const { text } = await withSpeechCost(deps, owner, loaded, "transcribe", () =>
+  const { text } = await withSpeechCost(deps, owner, loaded, TRANSCRIBE, () =>
     withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
       provider.transcribe!(
         {
@@ -959,6 +966,9 @@ export function mountVoiceHttpRoutes(
           signal: c.req.raw.signal,
         }),
       );
+      // A silent or unusable clip reaches the client as no words, with no error to report.
+      if (!result.text.trim())
+        getLogger().info("voice transcript empty", { bytes: audio.byteLength });
       return c.json({ text: result.text });
     } catch (error) {
       return voiceHttpError(c, error);

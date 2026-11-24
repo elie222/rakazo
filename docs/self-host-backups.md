@@ -109,8 +109,8 @@ sudo systemctl start rakazo-backup.service
 Run it from the deployment directory. The deployment directory is added to
 `/etc/rakazo/backup.env` on a line of its own, without replacing settings already there. The
 last command takes the first backup now, so a misconfiguration shows at once in
-`journalctl -u rakazo-backup.service`. The restore steps below apply with your own Compose file
-and volume names. That first backup is plaintext until you set recipients as described under
+`journalctl -u rakazo-backup.service`. [Restoring](#restoring-an-encrypted-backup) says what to
+change for this install. That first backup is plaintext until you set recipients as described under
 [encrypted and off-site backups](#encrypted-and-off-site-backups); the drill reads encrypted
 snapshots only. Its script is not part of this install. Where you keep the identity file, fetch
 it and run it on an encrypted snapshot you copied there:
@@ -202,6 +202,12 @@ any step fails.
 Run these commands in one Bash session on the machine with the identity file. Replace the
 snapshot and volume names first. `VOLUME` must name the volume the API currently mounts at
 `/data`, which can differ when the stack uses another project name.
+
+For a [published-images install](#published-images-installs), run the same steps from its
+deployment directory in place of `/srv/rakazo`, with
+`COMPOSE="sudo docker compose --env-file .env -f docker-compose.images.yml"` (add `-f` for each
+overlay you layer) and `VOLUME=rakazo_appdata`. That stack's `supervisor` also writes to the
+volume, so stop and start `api worker web supervisor` wherever the steps name `api worker web`.
 
 ```bash
 set -euo pipefail

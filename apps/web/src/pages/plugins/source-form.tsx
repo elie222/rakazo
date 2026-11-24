@@ -1,9 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type {
-  IntegrationCatalogResult,
-  IntegrationCatalogSurface,
-  McpSourcePreset,
-} from "@rakazo/contracts";
+import type { IntegrationCatalogSurface, McpSourcePreset } from "@rakazo/contracts";
 import { Button, Field, FieldDescription, FieldLabel, Input, OptionSelect } from "@rakazo/ui-web";
 import { useState } from "react";
 import { ViewTitle } from "./parts";
@@ -25,11 +21,13 @@ export function useSourceForm() {
   const [authType, setAuthType] = useState<SourceAuth>("bearer");
   const [authName, setAuthName] = useState("x-api-key");
   const [sourceHint, setSourceHint] = useState<string | null>(null);
+  const [unreviewed, setUnreviewed] = useState(false);
 
   function start(kind: SourceKind, preset: McpSourcePreset | null) {
     setSourceKind(kind);
     setSourcePreset(preset);
     setSourceHint(null);
+    setUnreviewed(false);
     setSourceName(preset?.name ?? "");
     setSourceUrl(preset?.url ?? preset?.defaultUrl ?? "");
     setCredential("");
@@ -39,18 +37,20 @@ export function useSourceForm() {
 
   /** A domain search result prefills the form with what it found. */
   function startFromCatalog(
-    result: IntegrationCatalogResult,
-    surface: IntegrationCatalogSurface,
+    kind: "mcp" | "openapi",
+    name: string,
     source: string,
+    auth: IntegrationCatalogSurface["auth"],
   ) {
-    setSourceKind(surface.kind === "mcp" ? "mcp" : "api");
+    setSourceKind(kind === "mcp" ? "mcp" : "api");
     setSourcePreset(null);
-    setSourceName(result.name);
+    setSourceName(name);
     setSourceUrl(source);
     setCredential("");
-    setAuthType(surface.auth?.type ?? "none");
-    setAuthName(surface.auth?.headerName ?? "x-api-key");
-    setSourceHint(surface.auth?.note ?? null);
+    setAuthType(auth?.type ?? "none");
+    setAuthName(auth?.headerName ?? "x-api-key");
+    setSourceHint(auth?.note ?? null);
+    setUnreviewed(true);
   }
 
   function close() {
@@ -73,6 +73,7 @@ export function useSourceForm() {
     authName,
     setAuthName,
     sourceHint,
+    unreviewed,
     start,
     startFromCatalog,
     close,
@@ -107,6 +108,7 @@ export function SourceFormView({
     authName,
     setAuthName,
     sourceHint,
+    unreviewed,
   } = form;
   if (!sourceKind) return null;
   const custom = !sourcePreset;
@@ -146,17 +148,19 @@ export function SourceFormView({
           onSubmit();
         }}
       >
-        <Field>
-          <FieldLabel htmlFor="source-name">
-            <Trans>Name</Trans>
-          </FieldLabel>
-          <Input
-            id="source-name"
-            value={sourceName}
-            onChange={(event) => setSourceName(event.target.value)}
-            autoFocus
-          />
-        </Field>
+        {!sourcePreset?.featured ? (
+          <Field>
+            <FieldLabel htmlFor="source-name">
+              <Trans>Name</Trans>
+            </FieldLabel>
+            <Input
+              id="source-name"
+              value={sourceName}
+              onChange={(event) => setSourceName(event.target.value)}
+              autoFocus
+            />
+          </Field>
+        ) : null}
         {!sourcePreset?.url ? (
           <Field>
             <FieldLabel htmlFor="source-url">URL</FieldLabel>
@@ -173,6 +177,11 @@ export function SourceFormView({
                     : "https://example.com/openapi.json")
               }
             />
+            {unreviewed ? (
+              <FieldDescription>
+                <Trans>Not reviewed by Rakazo. Only add it if you trust this address.</Trans>
+              </FieldDescription>
+            ) : null}
           </Field>
         ) : null}
         {custom ? (
@@ -208,17 +217,35 @@ export function SourceFormView({
         {(!custom || authType !== "none") && authType !== "oauth" ? (
           <Field>
             <FieldLabel htmlFor="source-credential">
-              {sourcePreset ? <Trans>Bearer token</Trans> : <Trans>Credential</Trans>}
+              {sourcePreset?.credentialHelpUrl ? (
+                <Trans>Personal access token</Trans>
+              ) : sourcePreset ? (
+                <Trans>Bearer token</Trans>
+              ) : (
+                <Trans>Credential</Trans>
+              )}
             </FieldLabel>
             <Input
               id="source-credential"
               type="password"
               autoComplete="new-password"
+              autoFocus={sourcePreset?.featured}
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
             />
             <FieldDescription>
-              <Trans>Credentials are encrypted and never sent to the model.</Trans>
+              {sourcePreset?.credentialHelpUrl ? (
+                <a
+                  href={sourcePreset.credentialHelpUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline"
+                >
+                  <Trans>Create a personal access token</Trans>
+                </a>
+              ) : (
+                <Trans>Credentials are encrypted and never sent to the model.</Trans>
+              )}
             </FieldDescription>
           </Field>
         ) : null}

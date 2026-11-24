@@ -44,7 +44,7 @@ const summary = {
   models: [
     {
       provider: "subscription",
-      model: "example-large",
+      model: "claude-sonnet-4-5",
       inputTokens: 910_000,
       outputTokens: 86_000,
       totalTokens: 996_000,
@@ -70,7 +70,8 @@ const breakdown = {
     },
   ],
   modelOptions: [
-    { provider: "subscription", model: "example-large" },
+    { provider: "subscription", model: "claude-sonnet-4-5" },
+    { provider: "openrouter", model: "google/gemini-2.5-flash-image" },
     { provider: "retired", model: "opaque-legacy-id" },
   ],
   totals: {
@@ -78,8 +79,8 @@ const breakdown = {
     inputTokens: 910_000,
     outputTokens: 86_000,
     totalTokens: 996_000,
-    costUsd: 4.2,
-    modelCalls: 180,
+    costUsd: 4.44,
+    modelCalls: 186,
   },
   models: [
     ...summary.models.map((model) => ({
@@ -91,6 +92,17 @@ const breakdown = {
       modelCalls: model.modelCalls - 1,
       cachedTokens: 0,
     })),
+    // Images made on the member's own key count no tokens.
+    {
+      provider: "openrouter",
+      model: "google/gemini-2.5-flash-image",
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      costUsd: 0.24,
+      modelCalls: 6,
+      cachedTokens: 0,
+    },
     {
       provider: "retired",
       model: "opaque-legacy-id",
@@ -181,15 +193,32 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
           ...body.json,
           {
             provider: "subscription",
-            providerName: "Example Provider",
-            id: "example-large",
-            label: "Example Large",
+            providerName: "Anthropic",
+            id: "claude-sonnet-4-5",
+            label: "Claude Sonnet 4.5",
             billing: "subscription",
           },
         ],
       },
     });
   });
+  const draw = {
+    credentialId: "media-key",
+    modelId: "google/gemini-2.5-flash-image",
+    label: "Google: Gemini 2.5 Flash Image",
+    provider: "openrouter",
+    connectionLabel: "OpenRouter",
+  };
+  await page.route("**/rpc/models/media", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          image: { options: [draw], selected: draw },
+          video: { options: [], selected: null },
+        },
+      },
+    }),
+  );
   await page.route("**/rpc/usage/limits", (route) => route.fulfill({ json: { json: plans } }));
   await page.route("**/rpc/usage/summary", (route) => route.fulfill({ json: { json: summary } }));
   await page.route("**/rpc/usage/breakdown", (route) => {
@@ -206,7 +235,12 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
             ? {
                 totals: { ...point, runs: 14, tokensPartial: true },
                 models: [
-                  { provider: "subscription", model: "example-large", ...point, cachedTokens: 0 },
+                  {
+                    provider: "subscription",
+                    model: "claude-sonnet-4-5",
+                    ...point,
+                    cachedTokens: 0,
+                  },
                 ],
                 overTime: [point],
               }
@@ -237,12 +271,15 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   );
   await expect(cards.nth(1)).toContainText("work@example.com");
   await expect(settings.getByTestId("credit-balance")).toHaveCount(0);
-  await expect(settings.getByRole("cell", { name: /Example Large/ })).toBeVisible();
-  await expect(settings.getByRole("cell", { name: /Example Large/ })).toContainText(
-    "Example Provider",
+  await expect(settings.getByRole("cell", { name: /Claude Sonnet 4.5/ })).toBeVisible();
+  await expect(settings.getByRole("cell", { name: /Claude Sonnet 4.5/ })).toContainText(
+    "Anthropic",
   );
   const unlisted = settings.getByRole("cell", { name: "Unlisted model", exact: true });
   await expect(unlisted).toBeVisible();
+  await expect(
+    settings.getByRole("row").filter({ hasText: "Gemini 2.5 Flash Image" }),
+  ).toContainText("$0.24");
   await expect(settings).not.toContainText("opaque-legacy-id");
   await unlisted.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "usage-model-labels");
@@ -282,14 +319,14 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await expect(totals).toContainText("330,000+");
   await captureScreenshot(page, testInfo, "usage-tokens-partial");
   await expect(totals).toContainText("$1.40");
-  await expect(settings.getByRole("row").filter({ hasText: "Example Large" })).toContainText(
+  await expect(settings.getByRole("row").filter({ hasText: "Claude Sonnet 4.5" })).toContainText(
     "300,000",
   );
   await expect(settings.getByRole("button", { name: "Nov 12: 330,000 tokens, $1.40" })).toHaveCount(
     1,
   );
   await captureScreenshot(page, testInfo, "usage-limits-settings-filtered");
-  await settings.getByRole("cell", { name: /Example Large/ }).scrollIntoViewIfNeeded();
+  await settings.getByRole("cell", { name: /Claude Sonnet 4.5/ }).scrollIntoViewIfNeeded();
   const bar = settings.getByRole("button", { name: "Nov 12: 330,000 tokens, $1.40" });
   await bar.focus();
   await page.keyboard.press("Shift+Tab");
@@ -314,4 +351,15 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await openUserSettings(page, "usage");
   await expect(page.getByTestId("credit-balance")).toContainText("$12.50 left");
   await captureScreenshot(page, testInfo, "usage-limits-settings-credits");
+
+  // A paid plan's media balance sits beside credits, apart from computer hours.
+  await page.route("**/rpc/billing/status", (route) =>
+    route.fulfill({
+      json: { json: { ...creditStatus, media: { leftCents: 62, limitCents: 100 } } },
+    }),
+  );
+  await page.reload();
+  await openUserSettings(page, "usage");
+  await expect(page.getByTestId("media-balance")).toContainText("$0.62 of $1.00 left");
+  await captureScreenshot(page, testInfo, "usage-media-balance");
 });

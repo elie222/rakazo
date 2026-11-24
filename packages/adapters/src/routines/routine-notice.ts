@@ -8,7 +8,7 @@ import {
 import { bestEffort } from "@rakazo/logging";
 import { stableStringify } from "./routine-watch.js";
 
-export type RoutineNoticeDeps = { prisma: PrismaClient; events: ThreadEvents };
+export type RoutineNoticeDeps = { prisma: PrismaClient; events: Pick<ThreadEvents, "notify"> };
 
 export type RoutineNoticeInput = {
   spaceId: string;
@@ -17,6 +17,8 @@ export type RoutineNoticeInput = {
   botId: string;
   change: RoutineEventChange;
   name: string;
+  /** The saved routine's state, which decides whether its row can show the bot's webhook key. */
+  routine?: { webhookEnabled: boolean; active: boolean };
 };
 
 /** What an edit means for the chat: an on/off flip reads as enabled or disabled. */
@@ -46,6 +48,7 @@ const EDITABLE_FIELDS = [
   "thinkingLevel",
   "watch",
   "nextRunAt",
+  "endsAt",
 ] as const;
 
 const comparable = (value: unknown) =>
@@ -59,6 +62,17 @@ export function routineEdited(
   return EDITABLE_FIELDS.some((key) => comparable(before[key]) !== comparable(after[key]));
 }
 
+/** A live routine a webhook starts, on a bot that already holds a key to show. */
+async function offersWebhookKey(prisma: PrismaClient, input: RoutineNoticeInput) {
+  if (!input.routine?.webhookEnabled || !input.routine.active) return false;
+  if (input.change === "deleted" || input.change === "disabled") return false;
+  const bot = await prisma.bot.findUnique({
+    where: { id: input.botId },
+    select: { webhookSecretId: true },
+  });
+  return Boolean(bot?.webhookSecretId);
+}
+
 /** The bot's own chat, for a routine saved without one. */
 async function botThreadId(prisma: PrismaClient, botId: string): Promise<string | undefined> {
   const bot = await prisma.bot.findUnique({
@@ -70,8 +84,11 @@ async function botThreadId(prisma: PrismaClient, botId: string): Promise<string 
 
 /**
  * The small row a routine change leaves in its chat: a system message with one `routine_event`
- * block holding the routine's name and what happened, never the prompt or schedule. A system
- * message is not unread, and the block has no text, so the model never sees it. Never throws: the change is already saved, so a failure is only logged.
+ * block holding the routine's name and what happened, never the prompt or schedule. A live
+ * routine a webhook starts is flagged, so its creator can read the key back from the row; the
+ * key itself never enters the message. A system message is not unread, and the block has no
+ * text, so the model never sees it. Never throws: the change is already saved, so a failure is
+ * only logged.
  */
 export async function postRoutineNotice(
   deps: RoutineNoticeDeps,
@@ -84,7 +101,15 @@ async function writeRoutineNotice(deps: RoutineNoticeDeps, input: RoutineNoticeI
   const threadId = input.threadId ?? (await botThreadId(deps.prisma, input.botId));
   if (!threadId) return;
   const name = input.name.slice(0, 200);
-  const blocks = [{ kind: "routine_event" as const, change: input.change, name }];
+  const showsWebhook = await offersWebhookKey(deps.prisma, input);
+  const blocks = [
+    {
+      kind: "routine_event" as const,
+      change: input.change,
+      name,
+      ...(showsWebhook ? { webhook: true as const } : {}),
+    },
+  ];
   const seq = await deps.prisma.$transaction(async (tx) => {
     const message = await createThreadMessageInTransaction(tx, {
       threadId,

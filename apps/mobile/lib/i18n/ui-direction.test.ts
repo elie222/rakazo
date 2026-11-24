@@ -54,7 +54,7 @@ describe("mobile ui direction", () => {
     const { applyMobileUiDirection } = await import("./ui-direction");
 
     expect(applyMobileUiDirection("en-US")).toBe(false);
-    expect(I18nManager.allowRTL).toHaveBeenCalledWith(true);
+    expect(I18nManager.allowRTL).toHaveBeenCalledWith(false);
     expect(I18nManager.forceRTL).toHaveBeenCalledWith(false);
     await Promise.resolve();
     expect(reloadAppAsync).toHaveBeenCalledWith("ui-direction");
@@ -88,5 +88,50 @@ describe("mobile ui direction", () => {
     expect(I18nManager.forceRTL).toHaveBeenCalledWith(false);
     await Promise.resolve();
     expect(reloadAppAsync).toHaveBeenCalledWith("ui-direction");
+  });
+
+  // React Native's native rule (I18nUtil.isRTL on Android) is forced || (allowed && device
+  // language is RTL), read once per start; allowRTL and forceRTL are saved and apply from the
+  // next start.
+  it("reloads at most once on an RTL phone whose language has no UI locale", async () => {
+    const saved = { allowed: true, forced: false }; // React Native's defaults
+    const deviceLanguageRtl = true;
+    let reloads = 0;
+    for (let start = 0; start < 4; start++) {
+      vi.resetModules();
+      vi.clearAllMocks();
+      const { I18nManager } = await import("react-native");
+      const { reloadAppAsync } = await import("expo");
+      const native = I18nManager as unknown as {
+        isRTL: boolean;
+        allowRTL: ReturnType<typeof vi.fn>;
+        forceRTL: ReturnType<typeof vi.fn>;
+      };
+      native.isRTL = saved.forced || (saved.allowed && deviceLanguageRtl);
+      native.allowRTL.mockImplementation((value: boolean) => {
+        saved.allowed = value;
+      });
+      native.forceRTL.mockImplementation((value: boolean) => {
+        saved.forced = value;
+      });
+      const { applyMobileUiDirection } = await import("./ui-direction");
+
+      // The phone's language is RTL, but the UI resolves to English.
+      expect(applyMobileUiDirection("en")).toBe(false);
+      await Promise.resolve();
+      reloads += vi.mocked(reloadAppAsync).mock.calls.length;
+    }
+    expect(reloads).toBe(1);
+    expect(saved).toEqual({ allowed: false, forced: false });
+  });
+
+  it("still lays out right to left when the UI locale is RTL on that phone", async () => {
+    const { I18nManager } = await import("react-native");
+    (I18nManager as { isRTL: boolean }).isRTL = false;
+    const { applyMobileUiDirection } = await import("./ui-direction");
+
+    expect(applyMobileUiDirection("he")).toBe(true);
+    expect(I18nManager.allowRTL).toHaveBeenCalledWith(true);
+    expect(I18nManager.forceRTL).toHaveBeenCalledWith(true);
   });
 });

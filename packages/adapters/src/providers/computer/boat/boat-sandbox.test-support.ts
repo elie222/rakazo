@@ -852,10 +852,23 @@ export function fakeBoatProvider(api = new FakeBoatApi()): BoatSandboxProvider {
 }
 
 /** What the SDK throws for a non-2xx response: Boat's error envelope behind a `ResponseError`. */
-export function boatError(status: number, code: string, message: string): ResponseError {
+export function boatError(
+  status: number,
+  code: string,
+  message: string,
+  extra?: Record<string, unknown>,
+): ResponseError {
   return new ResponseError(
     Response.json(
-      { ok: false, type: "error", status, code, message, error: { code, message, status } },
+      {
+        ok: false,
+        type: "error",
+        status,
+        code,
+        message,
+        error: { code, message, status },
+        ...extra,
+      },
       { status },
     ),
     "Response returned an error code",

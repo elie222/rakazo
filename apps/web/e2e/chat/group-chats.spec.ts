@@ -284,6 +284,24 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await expect(markdownDialog.getByRole("heading", { name: "Group artifact" })).toBeVisible();
   await markdownDialog.getByRole("button", { name: "Close preview" }).click();
 
+  await expect(page.getByTestId("chat-top-fade")).toBeVisible();
+  await transcript.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect.poll(() => transcript.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  const originalTheme = await page.locator("html").getAttribute("data-theme");
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (value) => document.documentElement.setAttribute("data-theme", value),
+      theme,
+    );
+    await captureScreenshot(page, testInfo, `chat-top-fade-scrolled-${theme}`);
+  }
+  await page.evaluate((theme) => {
+    if (theme === null) document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", theme);
+  }, originalTheme);
+
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
   await expect(page.getByTestId("app-rail")).toHaveCount(0);

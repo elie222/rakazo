@@ -6,7 +6,7 @@ import { notifyManager, QueryClient, QueryClientProvider } from "@tanstack/react
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
 // The test alias for the macro package has no Trans, so it renders its children as the web build does.
 vi.mock("@lingui/react/macro", async (importOriginal) => ({
@@ -25,8 +25,8 @@ vi.mock("../../lib/query/rpc", () => ({
 import { emptyActivityFilters } from "../../lib/activity-list-filters";
 import { ActivityList } from "./ActivityList";
 
+beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
 beforeAll(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   notifyManager.setNotifyFunction((notify) => act(notify));
   i18n.load("en", {});
   i18n.activate("en");

@@ -3,11 +3,16 @@ import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  cronFromPreset,
   defaultCronPreset,
+  defaultRoutineEndDay,
   draftFromRoutine,
   emptyRoutineDraft,
+  formatRoutineEnd,
   isOneShotRoutineCrons,
+  routineCanEnd,
   routineCopy,
+  wallClock,
 } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +21,7 @@ import { useBotEmail } from "../components/bots/bot-email";
 import { GlassIconButton } from "../components/native/glass-icon-button";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { RoutineEmailTrigger } from "../components/routines/routine-email-trigger";
+import { RoutineEndDate } from "../components/routines/routine-end-date";
 import { RoutineScheduleEditor } from "../components/routines/routine-schedule-editor";
 import {
   SettingsGroup,
@@ -37,6 +43,7 @@ import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/r
 import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
   routineDraftChanged,
+  routineDraftEventTriggered,
   routineSaveRequest,
   routineScheduleLocked,
   routineWithDraftTriggers,
@@ -262,6 +269,13 @@ function RoutineView({
           <SettingsRow key={trigger} title={trigger} />
         ))}
         {nextRun ? <SettingsRow key="next" title={t`Next run`} value={nextRun} /> : null}
+        {routine.endsAt ? (
+          <SettingsRow
+            key="ends"
+            title={t`Ends`}
+            value={formatRoutineEnd(routine.endsAt, routine.timezone, dateLocaleForUi(locale))}
+          />
+        ) : null}
       </SettingsGroup>
       <SettingsGroup>
         <SettingsRow
@@ -350,6 +364,11 @@ function RoutineEditor({
   const source = base ?? template;
   const kept = source ? routineWithDraftTriggers(source, draft) : null;
   const webTriggers = kept ? routineWebTriggers(kept) : [];
+  const draftCrons = draft.schedules.map(cronFromPreset);
+  const repeats =
+    !locked &&
+    routineCanEnd(draftCrons, Boolean(kept?.watch), routineDraftEventTriggered(draft, source));
+  const zone = draft.timezone ?? deviceTimeZone() ?? "UTC";
 
   // On Android, back leaves the form for the routine instead of leaving the routine.
   useEffect(() => {
@@ -368,7 +387,7 @@ function RoutineEditor({
 
   async function save() {
     if (busy.current) return;
-    const timezone = base?.timezone ?? deviceTimeZone() ?? "UTC";
+    const timezone = deviceTimeZone() ?? "UTC";
     const request = routineSaveRequest(draft, base, botId, timezone, template);
     if ("error" in request) {
       setSaveError(
@@ -559,6 +578,14 @@ function RoutineEditor({
               ))}
             </SettingsGroup>
           ) : null}
+          {repeats ? (
+            <RoutineEndDate
+              endsOn={draft.endsOn}
+              today={wallClock(new Date(), zone).slice(0, 10)}
+              firstDay={defaultRoutineEndDay(draftCrons, zone)}
+              onChange={(endsOn) => update({ endsOn })}
+            />
+          ) : null}
           {locked ? null : (
             <SettingsGroup>
               {/* A change trigger checks on its own interval, so it never shares a schedule. */}
@@ -577,7 +604,8 @@ function RoutineEditor({
                   accessibilityRole="button"
                   tinted
                   title={t`Add email trigger`}
-                  onPress={() => update({ emailSenders: "owner" })}
+                  // An email trigger's bot never gets the owner's computer.
+                  onPress={() => update({ emailSenders: "owner", useComputer: undefined })}
                 />
               ) : null}
             </SettingsGroup>
@@ -593,6 +621,17 @@ function RoutineEditor({
           onChange={(emailSenders) => update({ emailSenders })}
           onRemove={() => update({ emailSenders: null })}
         />
+      ) : null}
+      {/* Only the owner, with a computer paired, sees it; a watch's runs never get the computer. */}
+      {base?.useComputer !== undefined && !base.inChat && !kept?.watch && !draft.emailSenders ? (
+        <SettingsGroup>
+          <SettingsSwitch
+            key="computer"
+            label={t`Use my computer`}
+            value={draft.useComputer ?? base.useComputer}
+            onChange={(useComputer) => update({ useComputer })}
+          />
+        </SettingsGroup>
       ) : null}
       {base ? (
         <SettingsGroup>

@@ -26,7 +26,8 @@ import {
 import { resolveScreenProxySecret } from "@rakazo/core/node/secrets-guard";
 import type { Logger } from "@rakazo/logging";
 import { ASSET_ARCHIVE_DIR, archiveAssets } from "./asset-archive.js";
-import { instanceThemeIndexMiddleware, instanceThemeMiddleware } from "./instance-theme.js";
+import { indexPageMiddleware, publicOrigin, withAbsoluteSocialImage } from "./index-page.js";
+import { instanceThemeMiddleware, withInstanceThemeLink } from "./instance-theme.js";
 import { missingAssetMiddleware } from "./missing-asset.js";
 import {
   collectNovncHtml,
@@ -508,6 +509,7 @@ export function webServerSettings(read: (name: string) => string | undefined, lo
       instanceThemeMiddleware(themeFile, (reason) =>
         log.warn("web.instance_theme_ignored", { reason }),
       ),
+    publicOrigin: publicOrigin(read("RAKAZO_HOST")),
     imageTag: read("RAKAZO_IMAGE_TAG") ?? "edge",
     appPolicy: appContentSecurityPolicy({
       scriptSrc: parseContentSecuritySources(
@@ -575,6 +577,14 @@ export function attachPreviewMiddleware(
   }
   attachNovncProxy(server, settings);
   return () => {
-    if (settings.instanceTheme) middlewares.use(instanceThemeIndexMiddleware(site.outDir));
+    const { instanceTheme, publicOrigin } = settings;
+    if (!instanceTheme && !publicOrigin) return;
+    middlewares.use(
+      indexPageMiddleware(site.outDir, (html) => {
+        // Without RAKAZO_THEME the page never links the theme, so the default deploy is unchanged.
+        const themed = instanceTheme ? withInstanceThemeLink(html) : html;
+        return publicOrigin ? withAbsoluteSocialImage(themed, publicOrigin) : themed;
+      }),
+    );
   };
 }

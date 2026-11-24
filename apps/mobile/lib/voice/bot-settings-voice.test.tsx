@@ -177,6 +177,7 @@ vi.mock("react-native", () => {
     );
   return {
     Alert: { alert: mocks.alert, prompt: mocks.prompt },
+    I18nManager: { isRTL: false },
     Share: { share: mocks.share },
     Platform: {
       get OS() {

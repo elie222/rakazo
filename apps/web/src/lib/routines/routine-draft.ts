@@ -30,9 +30,18 @@ export type RoutineDraftState = RoutineDraft & {
   modelKey: string;
   thinkingLevel: string;
   inChat: boolean;
+  /** Its runs may use the owner's own computer; see Routine.useComputer. */
+  useComputer: boolean;
   /** Null unless the routine starts when something changes. */
   watch: RoutineWatchDraft | null;
 };
+
+/** Whether outside events start it (webhook, Git, chat app or email), so it can't use the computer. */
+export function routineDraftEventTriggered(draft: RoutineDraftState): boolean {
+  return Boolean(
+    draft.webhookEnabled || draft.githubEnabled || draft.messageProvider || draft.emailSenders,
+  );
+}
 
 /** The change trigger as the editor holds it: free text until saved. */
 export type RoutineWatchDraft = {
@@ -131,6 +140,7 @@ export function emptyRoutineDraftState(): RoutineDraftState {
     modelKey: "",
     thinkingLevel: "",
     inChat: false,
+    useComputer: false,
     watch: null,
   };
 }
@@ -148,6 +158,7 @@ export function draftStateFromRoutine(routine: Routine): RoutineDraftState {
         : "",
     thinkingLevel: routine.thinkingLevel ?? "",
     inChat: routine.inChat,
+    useComputer: routine.useComputer ?? false,
     watch: watchDraftFromRoutine(routine.watch),
   };
 }

@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { AnalyticsSurface } from "../account/analytics.js";
+import { AnalyticsAppVersion, AnalyticsSurface } from "../account/analytics.js";
 import { Id } from "../ids.js";
 import { AccessGrantInputSchema, AccessGrantSchema } from "./access-grants.js";
 import {
@@ -51,6 +51,7 @@ export const billingRpc = {
           funding: z.enum(["byok", "credits"]),
           client: BillingClientSchema,
           surface: AnalyticsSurface.optional(),
+          appVersion: AnalyticsAppVersion.optional(),
           /** Billing period of the own-key plan's checkout; monthly when omitted. */
           interval: ByokIntervalSchema.optional(),
           /** The own-key plan's tier; Standard when omitted. */

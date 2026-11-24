@@ -1,6 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Ticket, TicketStatus } from "@rakazo/contracts";
+import { useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import { NativeActionButton } from "../components/native/native-action-button";
 import { LoadFailure } from "../components/ui/load-failure";
 import { errorText } from "../lib/api/user-error";
 import { boardSections } from "../lib/board/board";
@@ -15,6 +17,7 @@ export default function BoardScreen() {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const sideInsets = useSideInsets();
+  const [refreshingEmpty, setRefreshingEmpty] = useState(false);
   const listRead = rpcQuery("tickets/list", {});
   const list = useScreenQuery(listRead);
   const move = useSave({
@@ -35,9 +38,17 @@ export default function BoardScreen() {
   });
   const tickets = list.data?.tickets;
   const error = list.error ? errorText(list.error, t`Try again.`) : "";
-  const loading = !tickets && (list.isFetching || !list.error);
 
   if (!tickets || tickets.length === 0) {
+    const loading = !tickets && (list.isFetching || !list.error);
+    async function refreshEmpty() {
+      setRefreshingEmpty(true);
+      try {
+        await list.refetch({ cancelRefetch: false });
+      } finally {
+        setRefreshingEmpty(false);
+      }
+    }
     return (
       <View style={[styles.centered, sideInsets]}>
         {loading ? (
@@ -45,7 +56,16 @@ export default function BoardScreen() {
         ) : error ? (
           <LoadFailure message={error} onRetry={() => void list.refetch()} />
         ) : (
-          <Text style={styles.message}>{t`No tickets yet.`}</Text>
+          <View style={styles.empty}>
+            <Text style={styles.message}>{t`No tickets yet.`}</Text>
+            <NativeActionButton
+              label={t`Refresh`}
+              busy={refreshingEmpty}
+              fill={false}
+              prominence="secondary"
+              onPress={() => void refreshEmpty()}
+            />
+          </View>
         )}
       </View>
     );
@@ -73,6 +93,7 @@ function createStyles() {
       paddingHorizontal: 32,
       backgroundColor: native.groupedPage,
     },
+    empty: { alignItems: "center", gap: 8 },
     message: { color: native.secondaryLabel, fontSize: 17, textAlign: "center" },
   });
 }

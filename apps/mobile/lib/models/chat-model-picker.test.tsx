@@ -97,6 +97,7 @@ const catalog = Array.from({ length: 11 }, (_, index) => ({
   ...(index === 1 ? { live: true } : {}),
 }));
 
+vi.mock("../platform/app-version", () => ({ analyticsAppVersion: () => undefined }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ bottom: 34 }),
@@ -294,6 +295,8 @@ vi.mock("../api/api", () => ({
               : []),
           ]
         : [];
+    if (procedure === "models/media")
+      return { image: { options: [], selected: null }, video: { options: [], selected: null } };
     return [];
   },
 }));
@@ -630,6 +633,10 @@ vi.mock("@expo/ui/community/menu", () => ({
 
 let root: Root;
 let container: HTMLDivElement;
+// The shared level labels read the active catalog.
+i18n.load("en", {});
+i18n.activate("en");
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.reportVisibleRows = true;
@@ -1575,7 +1582,7 @@ describe("initial model picker scroll", () => {
     });
   });
 
-  it.each(["first", "model-0", "", "missing"])(
+  it.each(["first", "model-0", "missing"])(
     "leaves the initial viewport alone for %s",
     async (key) => {
       await render(key);

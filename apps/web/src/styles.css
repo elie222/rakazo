@@ -7,6 +7,19 @@
    which restyles every element on the page mid-resize. */
 @source not inline("container");
 
+/* The floating chat header draws over the transcript. The fade, the transcript's top
+   padding and its scroll padding all read this clearance; it is global so fixture
+   transcripts and any other surface that renders the transcript share the same spacing. */
+:root {
+  --chat-top-clearance: 5rem;
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --chat-top-clearance: 5.25rem;
+  }
+}
+
 html,
 body,
 #root {
@@ -80,6 +93,22 @@ body,
 }
 .rk-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-hover);
+}
+
+/* Keep the page width stable if its responsive layout starts or stops overflowing. */
+@media (pointer: fine) {
+  .rk-page-preview {
+    scrollbar-gutter: stable;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+  .rk-page-preview:not(:hover, :focus-visible, [data-scrolling]) {
+    scrollbar-color: transparent transparent;
+  }
+  .rk-page-preview:not(:hover, :focus-visible, [data-scrolling])::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
 }
 
 .app-drag {

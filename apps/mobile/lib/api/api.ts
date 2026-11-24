@@ -33,7 +33,7 @@ import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
-  saveVerifiedIntegrationsScope,
+  saveVerifiedScope,
   sessionOnlyInMemory,
   sessionSaveInProgress,
   snapshotSessionToken,
@@ -883,7 +883,7 @@ async function request(
       typeof verifiedUser?.userId === "string" &&
       typeof verifiedUser.spaceId === "string"
     ) {
-      await saveVerifiedIntegrationsScope(requestSessionGeneration, {
+      await saveVerifiedScope(requestSessionGeneration, {
         apiBase: requestApiBase,
         userId: verifiedUser.userId,
         spaceId: requestSpaceId || verifiedUser.spaceId,

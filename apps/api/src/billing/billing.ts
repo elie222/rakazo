@@ -5,6 +5,7 @@ import type {
   BillingProvider,
   BillingSubscriptionSnapshot,
   BillingSubscriptionStatus,
+  MediaGenerationProvider,
   PartnerProgram,
   ProductAnalytics,
   RealtimeFanout,
@@ -18,6 +19,8 @@ import {
 } from "@rakazo/adapter-kit";
 import {
   holdsBillingSubscription,
+  mediaBalance,
+  mediaWithinAllowance,
   sandboxAllowance,
   sandboxDisplayedHourMicros,
   sandboxHoursLeft,
@@ -56,6 +59,7 @@ import {
   organizationOwnerHadTrial,
   organizationSeatCount,
   ownedBillingAccounts,
+  personalOrganizationIds,
   publishOrganizationChange,
   releaseByokTrialCheckout,
   releaseByokTrialCheckouts,
@@ -140,7 +144,10 @@ export interface BillingService {
   /** Pushes the organization's member count to the provider. Call when members change. */
   syncSeats(organizationId: string): Promise<void>;
   cancelForDeletedUser(userId: string): Promise<void>;
-  cancelForDeletedOrganization(organizationId: string): Promise<void>;
+  cancelOrganizationSubscriptions(
+    organizationId: string,
+    expectedCustomerId?: string,
+  ): Promise<void>;
   claimReferral(actor: Actor, code: string): Promise<void>;
 }
 
@@ -149,6 +156,8 @@ export function createBillingService(deps: {
   provider: BillingProvider;
   /** Prices computer time for the monthly allowance; without it none is shown. */
   sandbox?: SandboxProvider;
+  /** The deployment's hosted media provider; without one no media balance is shown. */
+  mediaGeneration?: MediaGenerationProvider;
   realtime?: RealtimeFanout;
   managedModelsAvailable?: boolean;
   /** The session cookie lives on the web origin, which also proxies /api to this server. */
@@ -393,15 +402,23 @@ export function createBillingService(deps: {
     return members.find((member) => isOwnerRole(member.role))?.userId;
   }
 
-  async function cancel(organizationId: string) {
+  async function cancel(organizationId: string, expectedCustomerId?: string) {
     // Holds the organization's checkout lease, so a checkout still opening finishes first and
     // the session it leaves is expired here instead of outliving the cancellation. The account
     // is read under the lease: that checkout may have replaced its customer.
-    await withCheckoutLease(prisma, organizationId, async () => {
+    await withCheckoutLease(prisma, organizationId, async (underLease) => {
       const account = await billingAccountForOrganization(prisma, organizationId);
+      if (expectedCustomerId && account?.customerId !== expectedCustomerId)
+        throw new ClientError(
+          "CONFLICT",
+          "The billing account changed. Preview the cancellation again.",
+        );
       if (!account) return;
       await provider.cancelCustomerSubscriptions(account.customerId);
+      // A checkout may have completed before expiration. Sync the resulting subscription before
+      // releasing the hold, so another organization cannot offer that owner a second trial.
       await sync(account.customerId);
+      await underLease((tx) => releaseByokTrialCheckouts(tx, organizationId));
     });
   }
 
@@ -715,10 +732,17 @@ export function createBillingService(deps: {
             getLogger().error("access grant failed", error),
           );
         const sized = supportsComputerSizing();
-        const [credits, account, computerAllowance, days, hadTrial] = await Promise.all([
+        const media = deps.mediaGeneration;
+        const fits = media && mediaWithinAllowance(media);
+        const [credits, account, computerAllowance, mediaLeft, days, hadTrial] = await Promise.all([
           unexpiredCreditAccount(prisma, organizationId),
           billingAccountForOrganization(prisma, organizationId),
           deps.sandbox ? sandboxAllowance({ prisma, sandbox: deps.sandbox }, organizationId) : null,
+          media &&
+          ((fits?.images && media.prices.imageMicros > 0) ||
+            (fits?.video && media.prices.videoMicros > 0))
+            ? mediaBalance(prisma, organizationId)
+            : null,
           trialDays(organizationId),
           organizationOwnerHadTrial(prisma, organizationId, "byok"),
         ]);
@@ -778,6 +802,16 @@ export function createBillingService(deps: {
             ),
           ...(sized && { standardComputerHours: true as const }),
           computerHoursResetAt: computerAllowance?.resetsAt?.toISOString() ?? null,
+          ...(mediaLeft?.limitMicros && {
+            media: {
+              // A cent is 10,000 micros; a part-spent cent shows as spent.
+              leftCents: Math.max(
+                0,
+                Math.floor((mediaLeft.limitMicros - mediaLeft.usedMicros) / 10_000),
+              ),
+              limitCents: mediaLeft.limitMicros / 10_000,
+            },
+          }),
           referral: await referrals.status(organizationId, isOwner),
         };
       }
@@ -920,16 +954,14 @@ export function createBillingService(deps: {
     },
 
     async cancelForDeletedUser(userId) {
+      const departing = new Set(await personalOrganizationIds(prisma, userId));
       for (const account of await ownedBillingAccounts(prisma, userId))
-        await cancel(account.organizationId);
+        if (departing.has(account.organizationId)) await cancel(account.organizationId);
     },
 
-    async cancelForDeletedOrganization(organizationId) {
-      if (!(await billingAccountForOrganization(prisma, organizationId))) return;
-      await cancel(organizationId);
-      // The cancellation expired the organization's open checkout sessions, so their hold on
-      // the owners' trial goes; a failed cancellation keeps it until a retry succeeds.
-      await releaseByokTrialCheckouts(prisma, organizationId);
+    async cancelOrganizationSubscriptions(organizationId, expectedCustomerId) {
+      if (expectedCustomerId || (await billingAccountForOrganization(prisma, organizationId)))
+        await cancel(organizationId, expectedCustomerId);
     },
   };
 }

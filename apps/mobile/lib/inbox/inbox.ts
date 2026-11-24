@@ -3,13 +3,18 @@ import { dateLocaleForUi } from "../i18n/i18n";
 
 const DAY_MS = 86_400_000;
 
+// Lowercase then compose, so "é" typed as one character or as "e" plus an accent compare equal.
+function searchKey(text: string): string {
+  return text.toLowerCase().normalize("NFC");
+}
+
 export function filterBots<T extends { name: string; preview: string }>(
   bots: T[],
   query: string,
 ): T[] {
-  const needle = query.trim().toLowerCase();
+  const needle = searchKey(query.trim());
   if (!needle) return bots;
-  return bots.filter((bot) => `${bot.name} ${bot.preview}`.toLowerCase().includes(needle));
+  return bots.filter((bot) => searchKey(`${bot.name} ${bot.preview}`).includes(needle));
 }
 
 export function formatThreadTime(iso: string, now = new Date()) {

@@ -1,6 +1,6 @@
 import { EmailEmulator } from "@rakazo/adapters";
 import { writeEmailCopyDir } from "@rakazo/auth/test-email-copy";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { marketingEmailRoutes, sendWelcomeEmail, unsubscribeUrl } from "./marketing-email.js";
 
 const secret = "test-auth-secret-at-least-32-characters";
@@ -47,8 +47,9 @@ describe("marketing email unsubscribe", () => {
 });
 
 describe("sendWelcomeEmail", () => {
-  beforeAll(() => {
-    vi.stubEnv("EMAIL_COPY_DIR", writeEmailCopyDir({ welcome: true }));
+  const copyDir = writeEmailCopyDir({ welcome: true });
+  beforeEach(() => {
+    vi.stubEnv("EMAIL_COPY_DIR", copyDir);
   });
 
   function deps(claimed: boolean) {
