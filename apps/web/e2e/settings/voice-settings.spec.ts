@@ -9,6 +9,24 @@ import {
   signup,
 } from "../helpers/helpers";
 
+test("Voice offers subscription sign-in and reveals the API-key field on request", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `voice-sign-in-${Date.now()}@rakazo.test`, "password12", "Voice Preview");
+  await completeOnboarding(page);
+  await openUserSettings(page, "voice");
+  const voice = page.getByTestId("voice-settings");
+  await chooseOption(voice.getByRole("combobox", { name: "Provider" }), "xAI");
+  await expect(voice.getByRole("button", { name: /^Sign in with / })).toBeVisible();
+  const key = voice.getByLabel("API key", { exact: true });
+  const revealKey = voice.getByRole("button", { name: "Or paste an API key" });
+  await expect(revealKey).toBeVisible();
+  await expect(key).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "voice-subscription-sign-in");
+  await revealKey.click();
+  await expect(key).toBeFocused();
+});
+
 test("a self-hosted voice connection offers a separate transcription server", async ({
   page,
 }, testInfo) => {

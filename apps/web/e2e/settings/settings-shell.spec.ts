@@ -182,13 +182,6 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
   await expect(settings.getByTestId("voice-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice");
-  const voice = settings.getByTestId("voice-settings");
-  await chooseOption(voice.getByLabel("Provider", { exact: true }), "xAI");
-  // With no xAI model connection, the subscription sign-in leads and the key form folds away.
-  await expect(voice.getByRole("button", { name: /^Sign in with / })).toBeVisible();
-  await expect(voice.getByRole("button", { name: "Or paste an API key" })).toBeVisible();
-  await expect(voice.getByLabel("API key", { exact: true })).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "settings-shell-voice-xai");
 
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("user-settings")).toHaveCount(0);

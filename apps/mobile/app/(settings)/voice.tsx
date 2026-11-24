@@ -424,6 +424,7 @@ export default function VoiceSettings() {
     };
   }, [listsSpeechModels, provider, target]);
   const keyless = Boolean(selected?.keyless);
+  const managesConnection = deviceSettings || !credential;
   const { linked, canConnect, modelConnections, modelSignIn } = voiceConnectionForm({
     entry: selected,
     credential,
@@ -697,7 +698,7 @@ export default function VoiceSettings() {
         ) : null}
         {selected && deviceVoiceReady && !deviceVoice ? (
           <>
-            {selfHosted ? (
+            {managesConnection && selfHosted ? (
               <TextInput
                 accessibilityLabel={t`Server URL`}
                 autoCapitalize="none"
@@ -713,17 +714,19 @@ export default function VoiceSettings() {
                 textContentType="URL"
               />
             ) : null}
-            <VoiceModelConnectionActions
-              provider={selected.id}
-              target={target}
-              choices={modelConnections}
-              signInLabel={modelSignIn}
-              linked={linked}
-              disabled={pending !== null}
-              onChoose={connect}
-              onSignedIn={connectSignedIn}
-            />
-            {offersModelConnection && !linked && !credential?.hasKey ? (
+            {managesConnection ? (
+              <VoiceModelConnectionActions
+                provider={selected.id}
+                target={target}
+                choices={modelConnections}
+                signInLabel={modelSignIn}
+                linked={linked}
+                disabled={pending !== null}
+                onChoose={connect}
+                onSignedIn={connectSignedIn}
+              />
+            ) : null}
+            {managesConnection && offersModelConnection && !linked && !credential?.hasKey ? (
               <DisclosureRow
                 label={t`Or paste an API key`}
                 expanded={showKeyForm}
@@ -732,7 +735,7 @@ export default function VoiceSettings() {
                 }
               />
             ) : null}
-            {keyless || linked || !showKeyForm ? null : (
+            {managesConnection && !keyless && !linked && showKeyForm ? (
               <TextInput
                 accessibilityLabel={t`API key`}
                 autoCapitalize="none"
@@ -754,8 +757,8 @@ export default function VoiceSettings() {
                 style={styles.input}
                 textContentType="none"
               />
-            )}
-            {selfHosted ? (
+            ) : null}
+            {managesConnection && selfHosted ? (
               <>
                 <Text style={styles.fieldLabel}>{t`Speech model`}</Text>
                 <TextInput
@@ -836,7 +839,7 @@ export default function VoiceSettings() {
                 ) : null}
               </>
             ) : null}
-            {(keyless && credential) || linked || !showKeyForm ? null : (
+            {managesConnection && !(keyless && credential) && !linked && showKeyForm ? (
               <NativeActionButton
                 disabled={pending !== null || !canConnect}
                 prominence={offersModelConnection ? "secondary" : "primary"}
@@ -845,7 +848,7 @@ export default function VoiceSettings() {
                 }
                 onPress={() => void connect()}
               />
-            )}
+            ) : null}
             {credential && scope === "account" ? (
               <NativeActionButton
                 disabled={pending !== null}

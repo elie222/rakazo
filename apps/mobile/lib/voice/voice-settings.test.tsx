@@ -957,6 +957,16 @@ it("still needs a whole key to replace a key saved for a model-connection provid
   expect(button("Replace key").disabled).toBe(false);
 });
 
+it("keeps management of an existing voice connection in account settings", async () => {
+  state.params = { spaceId: "space-other" };
+  withLinkedProvider({ hasKey: true });
+  await render();
+  await click("Linked");
+
+  expect(container.textContent).not.toContain("Use Personal plan");
+  expect(keyField()).toBeNull();
+});
+
 it("keeps a successful connection when the following settings read fails", async () => {
   state.load.mockResolvedValue(false);
   withLinkedProvider(null);
