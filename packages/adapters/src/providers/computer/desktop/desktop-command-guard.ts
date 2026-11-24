@@ -22,6 +22,8 @@ const DELETE_OR_WRITE = new Set([
   "shred",
   "truncate",
   "install",
+  "chmod",
+  "chown",
   "find",
 ]);
 // Words that run the next word as the command.

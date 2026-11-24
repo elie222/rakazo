@@ -25,6 +25,8 @@ describe("desktop-protection guard", () => {
     "killall -u rakazo",
     "pkill dbus-daemon",
     "xkill -all",
+    "/bin/rm -rf ~/.browser-profiles",
+    "chmod -R 000 ~/.browser-profiles",
   ])("refuses %s", (command) => {
     expect(protectedComputerLifecycleRefusal(command)).toBeDefined();
   });
