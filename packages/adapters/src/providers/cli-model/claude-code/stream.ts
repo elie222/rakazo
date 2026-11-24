@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -27,6 +27,7 @@ import {
   splitErrorToolResultImages,
   transformMessages,
 } from "@earendil-works/pi-ai/api/transform-messages";
+import { bestEffort } from "@rakazo/logging";
 import { sanitizeSensitiveText } from "../../../runtime/pi/pi-runtime-errors.js";
 import { modelStreamIdleTimeoutMs } from "../../../runtime/pi/pi-runtime-limits.js";
 import type { ClaudeCodeProcess } from "./cli.js";
@@ -37,6 +38,16 @@ import {
   claudeCodeEnv,
   startClaudeCode,
 } from "./cli.js";
+import type { SavedSession } from "./sessions.js";
+import {
+  cliConfigDir,
+  forgetSessionFiles,
+  saveSession,
+  takeSession,
+  tokenConfigFolder,
+  transcriptHashes,
+  workingFolder,
+} from "./sessions.js";
 
 /** The CLI lists each MCP tool as `mcp__<server>__<tool>`. */
 const TOOL_SERVER = "rakazo";
@@ -181,15 +192,6 @@ export function claudeCodeFrames(context: TranscriptContext, model: Model<Api>):
   return frames.map((frame, index) =>
     frame.type === "user" && index < frames.length - 1 ? { ...frame, shouldQuery: false } : frame,
   );
-}
-
-/** One id per conversation, from how it starts, so the CLI's prompt prefix stays cacheable. */
-function conversationId(system: string, first: Frame | undefined): string {
-  const hex = createHash("sha256")
-    .update(JSON.stringify([system, first?.message ?? null]))
-    .digest("hex");
-  const variant = ((Number.parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16);
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
 const EFFORT: Record<NonNullable<SimpleStreamOptions["reasoning"]>, string> = {
@@ -371,6 +373,7 @@ export function streamClaudeCode(
   void (async () => {
     let child: ClaudeCodeProcess | undefined;
     let files: string | undefined;
+    let taken: SavedSession | undefined;
     const stop = () => child?.stop();
     options.signal?.addEventListener("abort", stop, { once: true });
     try {
@@ -381,9 +384,21 @@ export function streamClaudeCode(
       const offeredToolNames = new Set(tools.map((tool) => `${TOOL_PREFIX}${tool.name}`));
       const offeredCallNames = new Set(tools.map((tool) => tool.name));
       const frames = claudeCodeFrames(context, model);
+      const manifest = tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.parameters,
+      }));
+      // A session only continues the same prompt: a new system prompt, tool list or model starts over.
+      const seed = [model.id, system, manifest];
+      const messages = frames.map((frame) => frame.message);
+      const resumable = takeSession(
+        transcriptHashes(seed, messages),
+        (index) => frames[index]?.type === "assistant",
+      );
+      taken = resumable?.session;
       files = await mkdtemp(join(tmpdir(), "rakazo-claude-code-request-"));
-      const cwd = join(files, "cwd");
-      await mkdir(cwd, { mode: 0o700 });
+      const cwd = await workingFolder();
       await checkClaudeCode(cwd, options.signal);
       const systemFile = join(files, "system.md");
       await writeFile(systemFile, system, { mode: 0o600 });
@@ -408,32 +423,23 @@ export function streamClaudeCode(
         "dontAsk",
         "--max-turns",
         "1",
-        "--no-session-persistence",
         "--disable-slash-commands",
-        "--session-id",
-        conversationId(system, frames[0]),
       ];
       if (tools.length) {
-        const manifest = join(files, "tools.json");
+        const manifestFile = join(files, "tools.json");
         const server = join(files, "inventory.mjs");
         const config = join(files, "mcp.json");
-        await writeFile(
-          manifest,
-          JSON.stringify(
-            tools.map((tool) => ({
-              name: tool.name,
-              description: tool.description,
-              inputSchema: tool.parameters,
-            })),
-          ),
-          { mode: 0o600 },
-        );
+        await writeFile(manifestFile, JSON.stringify(manifest), { mode: 0o600 });
         await writeFile(server, INVENTORY_SERVER, { mode: 0o600 });
         await writeFile(
           config,
           JSON.stringify({
             mcpServers: {
-              [TOOL_SERVER]: { type: "stdio", command: process.execPath, args: [server, manifest] },
+              [TOOL_SERVER]: {
+                type: "stdio",
+                command: process.execPath,
+                args: [server, manifestFile],
+              },
             },
           }),
           { mode: 0o600 },
@@ -442,255 +448,300 @@ export function streamClaudeCode(
       }
       if (model.reasoning && options.reasoning) args.push("--effort", EFFORT[options.reasoning]);
       const maxTokens = options.maxTokens ?? model.maxTokens;
-      const config = join(files, "config");
-      await mkdir(config, { mode: 0o700 });
-      options.signal?.throwIfAborted();
-      child = startClaudeCode(args, {
-        cwd,
-        env: claudeCodeEnv(
-          process.env,
-          maxTokens ? { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxTokens) } : {},
-          config,
-        ),
-      });
+      const env = claudeCodeEnv(
+        process.env,
+        maxTokens ? { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxTokens) } : {},
+        tokenConfigFolder,
+      );
+      const configDir = cliConfigDir(env);
       const idleMs = modelStreamIdleTimeoutMs();
-      const read = () => nextEvent(child!, options.signal, idleMs);
 
-      for (const frame of frames) {
-        options.signal?.throwIfAborted();
-        const write = child.write(`${JSON.stringify(frame)}\n`).then(
-          () => true,
-          () => false,
-        );
-        if (!(await exchange(write, options.signal, idleMs))) {
-          throw await exitError(child, "while loading the conversation");
-        }
-        if (frame.shouldQuery !== false) continue;
-        // A history turn is acknowledged with a result that used no model turn.
-        for (;;) {
-          const event = await read();
-          if (!event) throw await exitError(child, "while loading the conversation");
-          if (event.type === "system") checkInit(event, tools.length > 0);
-          if (event.type !== "result") continue;
-          if (event.num_turns !== 0 || event.is_error) {
-            throw new Error(
-              "This Claude Code version cannot load conversation history. Run `claude update`.",
+      // A session that cannot be continued (gone, or refused by the CLI) is replayed in full.
+      for (const resume of resumable ? [resumable, undefined] : [undefined]) {
+        let answered = false;
+        try {
+          options.signal?.throwIfAborted();
+          const sessionId = randomUUID();
+          child = startClaudeCode(
+            [
+              ...args,
+              "--session-id",
+              sessionId,
+              ...(resume
+                ? [
+                    "--resume",
+                    resume.session.id,
+                    "--fork-session",
+                    // Drops what the CLI added after the reply, such as refusing the tool call.
+                    "--resume-session-at",
+                    resume.session.replyId,
+                  ]
+                : []),
+            ],
+            { cwd, env },
+          );
+          const running = child;
+          const read = () => nextEvent(running, options.signal, idleMs);
+
+          for (const frame of resume ? frames.slice(resume.held) : frames) {
+            options.signal?.throwIfAborted();
+            const write = running.write(`${JSON.stringify(frame)}\n`).then(
+              () => true,
+              () => false,
             );
-          }
-          break;
-        }
-      }
-      child.closeInput();
-
-      const blocks = new Map<number, OpenBlock>();
-      let started = false;
-      const start = () => {
-        if (started) return;
-        started = true;
-        stream.push({ type: "start", partial: output });
-      };
-      let messageComplete = false;
-      const finish = () => {
-        start();
-        if (output.stopReason === "error") {
-          stream.push({ type: "error", reason: "error", error: output });
-        } else {
-          stream.push({
-            type: "done",
-            reason: output.stopReason as "stop" | "length" | "toolUse",
-            message: output,
-          });
-        }
-        stream.end();
-      };
-      for (;;) {
-        const event = await read();
-        if (!event) throw await exitError(child, "before replying");
-        if (event.type === "system") {
-          checkInit(event, tools.length > 0);
-          continue;
-        }
-        if (event.type === "assistant") {
-          const message = (event.message ?? {}) as Record<string, unknown>;
-          if (event.error || message.error) {
-            throw apiError(event.error ?? message.error, textOf(message.content));
-          }
-          continue;
-        }
-        if (event.type === "result") {
-          if (event.is_error) {
-            const detail =
-              typeof event.result === "string"
-                ? event.result
-                : Array.isArray(event.errors)
-                  ? event.errors.join("; ")
-                  : String(event.subtype ?? "");
-            throw apiError(undefined, detail, event.api_error_status);
-          }
-          if (!messageComplete) throw new Error("Claude Code finished without a reply.");
-          finish();
-          return;
-        }
-        if (event.type !== "stream_event") continue;
-        const native = (event.event ?? {}) as Record<string, unknown>;
-        switch (native.type) {
-          case "message_start": {
-            const message = (native.message ?? {}) as Record<string, unknown>;
-            if (typeof message.id === "string") output.responseId = message.id;
-            if (typeof message.model === "string") output.responseModel = message.model;
-            applyUsage(output.usage, message.usage);
-            start();
-            break;
-          }
-          case "content_block_start": {
-            start();
-            const index = Number(native.index);
-            const block = (native.content_block ?? {}) as Record<string, unknown>;
-            const contentIndex = output.content.length;
-            if (block.type === "text") {
-              output.content.push({ type: "text", text: "" });
-              blocks.set(index, { index: contentIndex, json: "" });
-              stream.push({ type: "text_start", contentIndex, partial: output });
-            } else if (block.type === "thinking") {
-              output.content.push({ type: "thinking", thinking: "", thinkingSignature: "" });
-              blocks.set(index, { index: contentIndex, json: "" });
-              stream.push({ type: "thinking_start", contentIndex, partial: output });
-            } else if (block.type === "redacted_thinking") {
-              output.content.push({
-                type: "thinking",
-                thinking: "[Reasoning redacted]",
-                thinkingSignature: String(block.data ?? ""),
-                redacted: true,
-              });
-              stream.push({ type: "thinking_start", contentIndex, partial: output });
-              stream.push({
-                type: "thinking_end",
-                contentIndex,
-                content: "[Reasoning redacted]",
-                partial: output,
-              });
-            } else if (block.type === "tool_use") {
-              const name = String(block.name ?? "");
-              // A call the request did not offer (the CLI's own MCP resource tools, or a deferred
-              // tool named before find_tool lists it) goes to the agent loop under a name no offered
-              // tool has, so the loop answers "not found" and the model can recover. The name keeps
-              // to the API's tool-name characters and leaves room for the prefix when replayed.
-              let callName = name.slice(TOOL_PREFIX.length);
-              if (!offeredToolNames.has(name)) {
-                const called = name.startsWith(TOOL_PREFIX) ? callName : name;
-                const base = `${called.slice(0, 36)}_not_offered`;
-                callName = base;
-                for (let suffix = 2; offeredCallNames.has(callName); suffix += 1) {
-                  callName = `${base}${suffix}`;
-                }
+            if (!(await exchange(write, options.signal, idleMs))) {
+              throw await exitError(running, "while loading the conversation");
+            }
+            if (frame.shouldQuery !== false) continue;
+            // A history turn is acknowledged with a result that used no model turn.
+            for (;;) {
+              const event = await read();
+              if (!event) throw await exitError(running, "while loading the conversation");
+              if (event.type === "system") checkInit(event, tools.length > 0);
+              if (event.type !== "result") continue;
+              if (event.num_turns !== 0 || event.is_error) {
+                throw new Error(
+                  "This Claude Code version cannot load conversation history. Run `claude update`.",
+                );
               }
-              output.content.push({
-                type: "toolCall",
-                id: String(block.id ?? ""),
-                name: callName,
-                arguments: {},
-              });
-              blocks.set(index, { index: contentIndex, json: "" });
-              stream.push({ type: "toolcall_start", contentIndex, partial: output });
+              break;
             }
-            break;
           }
-          case "content_block_delta": {
-            const open = blocks.get(Number(native.index));
-            const delta = (native.delta ?? {}) as Record<string, unknown>;
-            if (!open) break;
-            const block = output.content[open.index]!;
-            if (delta.type === "text_delta" && block.type === "text") {
-              const text = String(delta.text ?? "");
-              block.text += text;
-              stream.push({
-                type: "text_delta",
-                contentIndex: open.index,
-                delta: text,
-                partial: output,
-              });
-            } else if (delta.type === "thinking_delta" && block.type === "thinking") {
-              const text = String(delta.thinking ?? "");
-              block.thinking += text;
-              stream.push({
-                type: "thinking_delta",
-                contentIndex: open.index,
-                delta: text,
-                partial: output,
-              });
-            } else if (delta.type === "signature_delta" && block.type === "thinking") {
-              block.thinkingSignature = `${block.thinkingSignature ?? ""}${String(delta.signature ?? "")}`;
-            } else if (delta.type === "input_json_delta" && block.type === "toolCall") {
-              const json = String(delta.partial_json ?? "");
-              open.json += json;
-              block.arguments = parseStreamingJson(open.json);
-              stream.push({
-                type: "toolcall_delta",
-                contentIndex: open.index,
-                delta: json,
-                partial: output,
-              });
-            }
-            break;
-          }
-          case "content_block_stop": {
-            const key = Number(native.index);
-            const open = blocks.get(key);
-            if (!open) break;
-            blocks.delete(key);
-            const block = output.content[open.index]!;
-            if (block.type === "text") {
-              stream.push({
-                type: "text_end",
-                contentIndex: open.index,
-                content: block.text,
-                partial: output,
-              });
-            } else if (block.type === "thinking") {
-              stream.push({
-                type: "thinking_end",
-                contentIndex: open.index,
-                content: block.thinking,
-                partial: output,
-              });
+          running.closeInput();
+
+          const blocks = new Map<number, OpenBlock>();
+          let started = false;
+          const start = () => {
+            if (started) return;
+            started = true;
+            stream.push({ type: "start", partial: output });
+          };
+          let messageComplete = false;
+          /** The CLI's id for its last saved part of the reply, where the next step continues. */
+          let replyId: string | undefined;
+          const finish = () => {
+            start();
+            if (output.stopReason === "error") {
+              stream.push({ type: "error", reason: "error", error: output });
             } else {
-              const parsed = parseToolCallArguments(open.json || "{}");
-              const toolCall: ToolCall = Object.assign(block, parsed);
+              const content = assistantBlocks(output);
+              if (replyId && content.length) {
+                const reply = { role: "assistant", content };
+                saveSession(transcriptHashes(seed, [...messages, reply]).at(-1)!, {
+                  id: sessionId,
+                  replyId,
+                  configDir,
+                  cwd,
+                  savedAt: Date.now(),
+                });
+              }
               stream.push({
-                type: "toolcall_end",
-                contentIndex: open.index,
-                toolCall,
-                partial: output,
+                type: "done",
+                reason: output.stopReason as "stop" | "length" | "toolUse",
+                message: output,
               });
             }
-            break;
-          }
-          case "message_delta": {
-            const delta = (native.delta ?? {}) as Record<string, unknown>;
-            applyUsage(output.usage, native.usage);
-            const reason = delta.stop_reason;
-            if (reason === "max_tokens" || reason === "model_context_window_exceeded") {
-              output.stopReason = "length";
-            } else if (reason === "tool_use") {
-              output.stopReason = "toolUse";
-            } else if (reason === "refusal") {
-              output.stopReason = "error";
-              output.errorMessage = "The model refused to complete the request";
-            } else if (typeof reason === "string") {
-              output.stopReason = "stop";
+            stream.end();
+          };
+          for (;;) {
+            const event = await read();
+            if (!event) throw await exitError(running, "before replying");
+            if (event.type === "system") {
+              checkInit(event, tools.length > 0);
+              continue;
             }
-            break;
-          }
-          case "message_stop": {
-            if (blocks.size)
-              throw new Error("Claude Code ended a reply with incomplete content blocks.");
-            messageComplete = true;
-            if (output.stopReason === "toolUse" || output.stopReason === "error") {
+            if (event.type === "assistant") {
+              answered = true;
+              const message = (event.message ?? {}) as Record<string, unknown>;
+              if (event.error || message.error) {
+                throw apiError(event.error ?? message.error, textOf(message.content));
+              }
+              if (typeof event.uuid === "string") replyId = event.uuid;
+              continue;
+            }
+            if (event.type === "result") {
+              // After a tool call the CLI refuses to run it and stops at its turn limit.
+              if (event.is_error && !(messageComplete && output.stopReason === "toolUse")) {
+                const detail =
+                  typeof event.result === "string"
+                    ? event.result
+                    : Array.isArray(event.errors)
+                      ? event.errors.join("; ")
+                      : String(event.subtype ?? "");
+                throw apiError(undefined, detail, event.api_error_status);
+              }
+              if (!messageComplete) throw new Error("Claude Code finished without a reply.");
               finish();
               return;
             }
-            break;
+            if (event.type !== "stream_event") continue;
+            answered = true;
+            const native = (event.event ?? {}) as Record<string, unknown>;
+            switch (native.type) {
+              case "message_start": {
+                const message = (native.message ?? {}) as Record<string, unknown>;
+                if (typeof message.id === "string") output.responseId = message.id;
+                if (typeof message.model === "string") output.responseModel = message.model;
+                applyUsage(output.usage, message.usage);
+                start();
+                break;
+              }
+              case "content_block_start": {
+                start();
+                const index = Number(native.index);
+                const block = (native.content_block ?? {}) as Record<string, unknown>;
+                const contentIndex = output.content.length;
+                if (block.type === "text") {
+                  output.content.push({ type: "text", text: "" });
+                  blocks.set(index, { index: contentIndex, json: "" });
+                  stream.push({ type: "text_start", contentIndex, partial: output });
+                } else if (block.type === "thinking") {
+                  output.content.push({ type: "thinking", thinking: "", thinkingSignature: "" });
+                  blocks.set(index, { index: contentIndex, json: "" });
+                  stream.push({ type: "thinking_start", contentIndex, partial: output });
+                } else if (block.type === "redacted_thinking") {
+                  output.content.push({
+                    type: "thinking",
+                    thinking: "[Reasoning redacted]",
+                    thinkingSignature: String(block.data ?? ""),
+                    redacted: true,
+                  });
+                  stream.push({ type: "thinking_start", contentIndex, partial: output });
+                  stream.push({
+                    type: "thinking_end",
+                    contentIndex,
+                    content: "[Reasoning redacted]",
+                    partial: output,
+                  });
+                } else if (block.type === "tool_use") {
+                  const name = String(block.name ?? "");
+                  // A call the request did not offer (the CLI's own MCP resource tools, or a deferred
+                  // tool named before find_tool lists it) goes to the agent loop under a name no offered
+                  // tool has, so the loop answers "not found" and the model can recover. The name keeps
+                  // to the API's tool-name characters and leaves room for the prefix when replayed.
+                  let callName = name.slice(TOOL_PREFIX.length);
+                  if (!offeredToolNames.has(name)) {
+                    const called = name.startsWith(TOOL_PREFIX) ? callName : name;
+                    const base = `${called.slice(0, 36)}_not_offered`;
+                    callName = base;
+                    for (let suffix = 2; offeredCallNames.has(callName); suffix += 1) {
+                      callName = `${base}${suffix}`;
+                    }
+                  }
+                  output.content.push({
+                    type: "toolCall",
+                    id: String(block.id ?? ""),
+                    name: callName,
+                    arguments: {},
+                  });
+                  blocks.set(index, { index: contentIndex, json: "" });
+                  stream.push({ type: "toolcall_start", contentIndex, partial: output });
+                }
+                break;
+              }
+              case "content_block_delta": {
+                const open = blocks.get(Number(native.index));
+                const delta = (native.delta ?? {}) as Record<string, unknown>;
+                if (!open) break;
+                const block = output.content[open.index]!;
+                if (delta.type === "text_delta" && block.type === "text") {
+                  const text = String(delta.text ?? "");
+                  block.text += text;
+                  stream.push({
+                    type: "text_delta",
+                    contentIndex: open.index,
+                    delta: text,
+                    partial: output,
+                  });
+                } else if (delta.type === "thinking_delta" && block.type === "thinking") {
+                  const text = String(delta.thinking ?? "");
+                  block.thinking += text;
+                  stream.push({
+                    type: "thinking_delta",
+                    contentIndex: open.index,
+                    delta: text,
+                    partial: output,
+                  });
+                } else if (delta.type === "signature_delta" && block.type === "thinking") {
+                  block.thinkingSignature = `${block.thinkingSignature ?? ""}${String(delta.signature ?? "")}`;
+                } else if (delta.type === "input_json_delta" && block.type === "toolCall") {
+                  const json = String(delta.partial_json ?? "");
+                  open.json += json;
+                  block.arguments = parseStreamingJson(open.json);
+                  stream.push({
+                    type: "toolcall_delta",
+                    contentIndex: open.index,
+                    delta: json,
+                    partial: output,
+                  });
+                }
+                break;
+              }
+              case "content_block_stop": {
+                const key = Number(native.index);
+                const open = blocks.get(key);
+                if (!open) break;
+                blocks.delete(key);
+                const block = output.content[open.index]!;
+                if (block.type === "text") {
+                  stream.push({
+                    type: "text_end",
+                    contentIndex: open.index,
+                    content: block.text,
+                    partial: output,
+                  });
+                } else if (block.type === "thinking") {
+                  stream.push({
+                    type: "thinking_end",
+                    contentIndex: open.index,
+                    content: block.thinking,
+                    partial: output,
+                  });
+                } else {
+                  const parsed = parseToolCallArguments(open.json || "{}");
+                  const toolCall: ToolCall = Object.assign(block, parsed);
+                  stream.push({
+                    type: "toolcall_end",
+                    contentIndex: open.index,
+                    toolCall,
+                    partial: output,
+                  });
+                }
+                break;
+              }
+              case "message_delta": {
+                const delta = (native.delta ?? {}) as Record<string, unknown>;
+                applyUsage(output.usage, native.usage);
+                const reason = delta.stop_reason;
+                if (reason === "max_tokens" || reason === "model_context_window_exceeded") {
+                  output.stopReason = "length";
+                } else if (reason === "tool_use") {
+                  output.stopReason = "toolUse";
+                } else if (reason === "refusal") {
+                  output.stopReason = "error";
+                  output.errorMessage = "The model refused to complete the request";
+                } else if (typeof reason === "string") {
+                  output.stopReason = "stop";
+                }
+                break;
+              }
+              case "message_stop": {
+                if (blocks.size)
+                  throw new Error("Claude Code ended a reply with incomplete content blocks.");
+                messageComplete = true;
+                if (output.stopReason === "error") {
+                  finish();
+                  return;
+                }
+                break;
+              }
+            }
           }
+        } catch (error) {
+          if (!resume || answered || options.signal?.aborted || error instanceof Aborted) {
+            throw error;
+          }
+          child?.stop();
         }
       }
     } catch (error) {
@@ -709,7 +760,13 @@ export function streamClaudeCode(
       options.signal?.removeEventListener("abort", stop);
       // One turn is all Rakazo asks for: the CLI is done once the reply is complete.
       child?.stop();
-      if (files) await rm(files, { recursive: true, force: true }).catch(() => {});
+      // The session continued from is replaced by its fork, or could not be continued.
+      if (taken) forgetSessionFiles(taken);
+      if (files)
+        await bestEffort(
+          "Remove Claude Code request files",
+          rm(files, { recursive: true, force: true }),
+        );
     }
   })();
   return stream;

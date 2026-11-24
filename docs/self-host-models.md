@@ -152,7 +152,8 @@ that only you use can run its deployment model through the official Claude Code 
 `claude` command installed on the server and reads its reply. Rakazo never reads, stores, forwards
 or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
 conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,
-settings, project files and saved sessions turned off.
+settings and project files turned off. Each model turn continues the CLI's saved session from the
+turn before, so its prompt cache carries over, and Rakazo removes each session once it moves on.
 
 What it needs:
 

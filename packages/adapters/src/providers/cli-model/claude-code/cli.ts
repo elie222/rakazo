@@ -94,7 +94,7 @@ const BRIDGE_ENV = {
 export function claudeCodeEnv(
   source: NodeJS.ProcessEnv = process.env,
   extra: Record<string, string> = {},
-  emptyConfigDir?: string,
+  emptyConfigDir?: () => string,
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(source)) {
@@ -107,14 +107,14 @@ export function claudeCodeEnv(
   if (!token) return { ...env, ...BRIDGE_ENV, ...extra };
   // The token needs no stored profile, and the CLI tells the model the profile's email.
   const config: Record<string, string> = emptyConfigDir
-    ? { CLAUDE_CONFIG_DIR: emptyConfigDir }
+    ? { CLAUDE_CONFIG_DIR: emptyConfigDir() }
     : {};
   return { ...env, [OPT_IN_TOKEN_NAME]: token, ...config, ...BRIDGE_ENV, ...extra };
 }
 
 const stoppedProcesses = new WeakSet<ChildProcess>();
 
-/** The CLI owns no persistent state; stop its group immediately after the model turn. */
+/** Stops the CLI and everything it started as soon as the model turn is done. */
 function stopProcessTree(child: ChildProcess): void {
   if (stoppedProcesses.has(child)) return;
   stoppedProcesses.add(child);
