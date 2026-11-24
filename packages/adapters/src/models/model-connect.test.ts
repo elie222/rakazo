@@ -404,7 +404,7 @@ describe("modelCredentialDto", () => {
       const secret = parseModelSecret(
         serializeModelSecret({
           kind: "openai_compatible",
-          baseUrl: "https://example.invalid/v1",
+          baseUrl: "http://127.0.0.1:8000/v1",
           enabledModelIds: ["custom-model"],
           visionModelIds,
         }),
@@ -458,8 +458,9 @@ describe("modelCredentialDto", () => {
       baseUrl: "https://example.invalid/v1",
       modelId: "qwen3-4b",
       reasoning: false,
-      thinkingLevels: ["off"],
-      visionModelIds: [],
+      thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+      visionModelIds: ["qwen3-4b"],
+      modelDefaults: { "qwen3-4b": { images: true, reasoning: true } },
     });
   });
 

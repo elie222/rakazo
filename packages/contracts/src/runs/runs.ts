@@ -158,6 +158,8 @@ export const RunSchema = z.object({
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   error: z.string().nullable(),
+  /** The worker confirmed that this failure can start a fresh reply. */
+  retryable: z.boolean().optional(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
   createdAt: z.string(),

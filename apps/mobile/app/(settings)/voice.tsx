@@ -27,6 +27,10 @@ import { MenuPicker } from "../../components/ui/menu-picker";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import {
+  loadCallAutoLanguage,
+  saveCallAutoLanguage,
+} from "../../lib/calls/call-language-preference";
+import {
   loadCallGreetingEnabled,
   loadCallSoundsEnabled,
   loadWaitSoundEnabled,
@@ -160,9 +164,10 @@ export default function VoiceSettings() {
   const [callSounds, setCallSounds] = useState<boolean | null>(null);
   const [waitSound, setWaitSound] = useState<boolean | null>(null);
   const [callGreeting, setCallGreeting] = useState<boolean | null>(null);
+  const [autoLanguage, setAutoLanguage] = useState<boolean | null>(null);
   // Prevent stale reads from overwriting a saved preference.
-  const soundPrefsRevision = useRef(0);
-  const soundPrefSaving = useRef(false);
+  const callPrefsRevision = useRef(0);
+  const callPrefSaving = useRef(false);
   // Only the first visit waits; a revisit paints what it saw last and refreshes behind it.
   const [loading, setLoading] = useState(!cached);
   const [pending, setPending] = useState<
@@ -252,17 +257,21 @@ export default function VoiceSettings() {
           setDeviceVoiceReady(true);
           setError(errorText(err, t`Could not load voice settings`));
         });
-      const soundRevision = soundPrefsRevision.current;
+      const callRevision = callPrefsRevision.current;
       void Promise.allSettled([
         loadCallSoundsEnabled(),
         loadWaitSoundEnabled(),
         loadCallGreetingEnabled(),
-      ]).then(([calls, waiting, greeting]) => {
-        if (soundPrefSaving.current || soundPrefsRevision.current !== soundRevision) return;
+        loadCallAutoLanguage(),
+      ]).then(([calls, waiting, greeting, language]) => {
+        if (callPrefSaving.current || callPrefsRevision.current !== callRevision) return;
         setCallSounds(calls.status === "fulfilled" ? calls.value : null);
         setWaitSound(waiting.status === "fulfilled" ? waiting.value : null);
         setCallGreeting(greeting.status === "fulfilled" ? greeting.value : null);
-        const failed = [calls, waiting, greeting].find((result) => result.status === "rejected");
+        setAutoLanguage(language.status === "fulfilled" ? language.value : null);
+        const failed = [calls, waiting, greeting, language].find(
+          (result) => result.status === "rejected",
+        );
         if (failed?.status === "rejected") {
           setError(errorText(failed.reason, t`Could not load voice settings`));
         }
@@ -270,15 +279,15 @@ export default function VoiceSettings() {
     }, [deviceSettings, open, t]),
   );
 
-  /** One sound-switch save at a time; a failed save rolls back only that switch. */
-  async function saveSoundPref(
+  /** One call preference save at a time; a failed save rolls back only that switch. */
+  async function saveCallPref(
     next: boolean,
     show: (value: boolean) => void,
     save: (value: boolean) => Promise<void>,
   ): Promise<boolean> {
-    if (soundPrefSaving.current) return false;
-    soundPrefSaving.current = true;
-    soundPrefsRevision.current += 1;
+    if (callPrefSaving.current) return false;
+    callPrefSaving.current = true;
+    callPrefsRevision.current += 1;
     show(next);
     try {
       await save(next);
@@ -288,24 +297,24 @@ export default function VoiceSettings() {
       setError(t`Could not save that preference`);
       return false;
     } finally {
-      soundPrefSaving.current = false;
-      soundPrefsRevision.current += 1;
+      callPrefSaving.current = false;
+      callPrefsRevision.current += 1;
     }
   }
 
   async function toggleWaitSound(next: boolean) {
     if (waitSound === null) return;
-    await saveSoundPref(next, setWaitSound, saveWaitSoundEnabled);
+    await saveCallPref(next, setWaitSound, saveWaitSoundEnabled);
   }
 
   async function toggleCallGreeting(next: boolean) {
     if (callGreeting === null) return;
-    await saveSoundPref(next, setCallGreeting, saveCallGreetingEnabled);
+    await saveCallPref(next, setCallGreeting, saveCallGreetingEnabled);
   }
 
   async function toggleCallSounds(next: boolean) {
     if (callSounds === null) return;
-    const saved = await saveSoundPref(next, setCallSounds, saveCallSoundsEnabled);
+    const saved = await saveCallPref(next, setCallSounds, saveCallSoundsEnabled);
     // The preview is a courtesy: if it cannot play, the saved choice still stands.
     if (saved && next) await playCallCue("start").catch(() => undefined);
   }
@@ -923,6 +932,19 @@ export default function VoiceSettings() {
                 value={callGreeting === true}
                 disabled={callGreeting === null}
                 onValueChange={(next) => void toggleCallGreeting(next)}
+              />
+            </View>
+            <View style={[styles.groupRow, styles.groupDivider]}>
+              <View style={styles.rowCopy}>
+                <Text style={styles.cardTitle}>{t`Detect call language automatically`}</Text>
+              </View>
+              <NativeSwitch
+                accessibilityLabel={t`Detect call language automatically`}
+                value={autoLanguage === true}
+                disabled={autoLanguage === null}
+                onValueChange={(next) =>
+                  void saveCallPref(next, setAutoLanguage, saveCallAutoLanguage)
+                }
               />
             </View>
           </View>

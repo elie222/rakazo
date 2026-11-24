@@ -96,6 +96,20 @@ export const ModelSettingsSchema = z
   });
 export type ModelSettings = z.infer<typeof ModelSettingsSchema>;
 
+/**
+ * A model's own settings over what it does by default. A limit of its own drops the default
+ * limits when the two would not fit together.
+ */
+export function withModelDefaults(
+  defaults: ModelSettings | undefined,
+  settings: ModelSettings,
+): ModelSettings {
+  const merged = { ...defaults, ...settings };
+  if (modelOutputLeavesInputRoom(merged.maxTokens, merged.contextWindow)) return merged;
+  const { maxTokens: _maxTokens, contextWindow: _contextWindow, ...capabilities } = defaults ?? {};
+  return { ...capabilities, ...settings };
+}
+
 /** How many models on one connection may keep their own settings. */
 export const MAX_MODEL_SETTINGS_PER_CONNECTION = 200;
 
@@ -148,6 +162,8 @@ export const ModelCredentialSchema = z.object({
   visionModelIds: z.array(z.string()).optional(),
   /** Settings saved for individual models on this connection. */
   modelSettings: z.record(z.string(), ModelSettingsSchema).optional(),
+  /** What each compatible model does where its own settings say nothing. */
+  modelDefaults: z.record(z.string(), ModelSettingsSchema).optional(),
   /** Stored secret kind. Absent when the secret could not be read. */
   authKind: z.enum(["api_key", "oauth", "openai_compatible"]).optional(),
   /**

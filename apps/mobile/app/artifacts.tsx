@@ -42,10 +42,12 @@ import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useThemedStyles } from "../lib/native/native";
 import { rpcQuery } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
+import { useBackToSettings } from "../lib/settings/back-to-settings";
 
 const PAGE_SIZE = 30;
 
 export default function ArtifactsScreen() {
+  useBackToSettings();
   const sideInsets = useSideInsets();
   const navigation = useNavigation();
   const router = useRouter();
