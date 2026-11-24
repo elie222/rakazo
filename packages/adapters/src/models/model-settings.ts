@@ -1,5 +1,6 @@
 import type { ModelSettings } from "@rakazo/contracts";
-import { withModelDefaults } from "@rakazo/contracts";
+import { DEFAULT_MODEL_MAX_TOKENS, withModelDefaults } from "@rakazo/contracts";
+import { REASONING_MODEL_MAX_TOKENS } from "../runtime/pi/pi-runtime-limits.js";
 import { isPrivateOpenAiCompatibleHostname } from "./endpoints/openai-compatible-url.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { catalogKnowsModel, compatibleModelSeesImages } from "./model-vision.js";
@@ -38,8 +39,17 @@ export function compatibleModelDefaults(
 ): ModelSettings {
   const listed = secret.listedModels?.[modelId.trim()] ?? {};
   const url = URL.parse(secret.baseUrl);
-  if (url && isPrivateOpenAiCompatibleHostname(url.hostname)) return listed;
-  return { images: true, reasoning: true, ...listed };
+  const defaults =
+    url && isPrivateOpenAiCompatibleHostname(url.hostname)
+      ? { ...listed }
+      : { images: true, reasoning: true, ...listed };
+  // The list names the model's ceiling; a request asks for the usual modest share of it.
+  if (defaults.maxTokens !== undefined)
+    defaults.maxTokens = Math.min(
+      defaults.maxTokens,
+      defaults.reasoning ? REASONING_MODEL_MAX_TOKENS : DEFAULT_MODEL_MAX_TOKENS,
+    );
+  return defaults;
 }
 
 function savedModelSettings(

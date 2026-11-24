@@ -49,6 +49,7 @@ import {
   MODEL_CONNECT_TIMEOUT_MS,
   MODEL_STREAM_AGENT_TIMEOUTS,
   modelConnectTimeoutMs,
+  REASONING_MODEL_MAX_TOKENS,
 } from "../pi-runtime-limits.js";
 import { splitLeadingThinkBlock } from "../stream/pi-think-tags.js";
 import { guardToolCallNames } from "../tools/pi-tool-call-guard.js";
@@ -91,7 +92,8 @@ export function openAiCompatibleModel(
   baseUrl: string,
   reasoning = false,
   acceptsImages = false,
-  maxTokens = DEFAULT_MODEL_MAX_TOKENS,
+  // A thinking model spends its output on thinking too, so it gets the wider default.
+  maxTokens = reasoning ? REASONING_MODEL_MAX_TOKENS : DEFAULT_MODEL_MAX_TOKENS,
   contextWindow = DEFAULT_MODEL_CONTEXT_WINDOW,
   apiProtocol: ModelApiProtocol = "chat-completions",
 ): Model<"openai-completions" | "openai-responses" | "anthropic-messages"> {

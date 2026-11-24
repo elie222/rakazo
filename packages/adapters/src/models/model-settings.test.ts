@@ -433,6 +433,18 @@ describe("compatible model defaults", () => {
     expect(credentialModelSettings(dto, "plain").reasoning).toBe(false);
   });
 
+  it("ask for the usual share of a listed output ceiling", () => {
+    const hosted = parseModelSecret(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://models.example.test/v1",
+        listedModels: { big: { maxTokens: 128_000 }, small: { maxTokens: 16_000 } },
+      }),
+    );
+    expect(connectionModelSettings(hosted, row.provider, "big").maxTokens).toBe(32_768);
+    expect(connectionModelSettings(hosted, row.provider, "small").maxTokens).toBe(16_000);
+  });
+
   it("assume neither on a local server", () => {
     const local = secret("http://127.0.0.1:8000/v1");
     expect(connectionModelSettings(local, row.provider, "plain")).toEqual({});
