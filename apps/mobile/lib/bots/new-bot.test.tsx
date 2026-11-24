@@ -12,16 +12,25 @@ import NewBot from "../../app/new-bot";
 import type { SaveSend } from "../query/query";
 import { queryClient } from "../query/query";
 
-const { rpc, router, params, selected, header, createInboxBot, askForModelBeforeFirstBot } =
-  vi.hoisted(() => ({
-    rpc: vi.fn(),
-    selected: { spaceId: "space-1" },
-    router: { back: vi.fn(), dismiss: vi.fn(), push: vi.fn() },
-    params: { current: {} as { spaceId?: string } },
-    header: { cancel: (): void => undefined },
-    createInboxBot: vi.fn(),
-    askForModelBeforeFirstBot: vi.fn(),
-  }));
+const {
+  rpc,
+  router,
+  params,
+  selected,
+  header,
+  createInboxBot,
+  askForModelBeforeFirstBot,
+  announce,
+} = vi.hoisted(() => ({
+  announce: vi.fn(),
+  rpc: vi.fn(),
+  selected: { spaceId: "space-1" },
+  router: { back: vi.fn(), dismiss: vi.fn(), push: vi.fn() },
+  params: { current: {} as { spaceId?: string } },
+  header: { cancel: (): void => undefined },
+  createInboxBot: vi.fn(),
+  askForModelBeforeFirstBot: vi.fn(),
+}));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../api/api", () => ({
   rpc,
@@ -50,7 +59,14 @@ vi.mock("react-native", () => {
     BackHandler: { addEventListener: () => ({ remove: () => undefined }) },
     View,
     ScrollView: View,
-    Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+    AccessibilityInfo: { announceForAccessibility: announce },
+    Text: ({
+      children,
+      accessibilityRole,
+    }: {
+      children?: ReactNode;
+      accessibilityRole?: string;
+    }) => <span role={accessibilityRole}>{children}</span>,
     TextInput: ({
       value,
       onChangeText,
@@ -183,7 +199,31 @@ it("shows the failure and offers Create again", async () => {
   await act(async () => button("Create")!.click());
   await act(async () => creating.reject(new Error("Name taken")));
   expect(container.textContent).toContain("Name taken");
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe("Name taken");
   expect(button("Create")?.disabled).toBe(false);
+});
+
+it("announces a failed create once, and again when a retry fails too", async () => {
+  await start();
+  await act(async () => button("Create")!.click());
+  expect(announce).not.toHaveBeenCalled();
+  await act(async () => creating.reject(new Error("Name taken")));
+  expect(announce).toHaveBeenCalledOnce();
+  expect(announce).toHaveBeenLastCalledWith("Name taken");
+  // A rerender with the same failure does not speak it again.
+  await act(async () => root.render(<NewBot />));
+  expect(announce).toHaveBeenCalledOnce();
+  await act(async () => button("Create")!.click());
+  await act(async () => creating.reject(new Error("Name taken")));
+  expect(announce).toHaveBeenCalledTimes(2);
+  expect(announce).toHaveBeenLastCalledWith("Name taken");
+});
+
+it("announces nothing when the create succeeds", async () => {
+  await start();
+  await act(async () => button("Create")!.click());
+  await act(async () => creating.resolve("created"));
+  expect(announce).not.toHaveBeenCalled();
 });
 
 it.each(["needsModel", "stale"])(

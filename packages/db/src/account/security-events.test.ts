@@ -151,8 +151,13 @@ describe("retention", () => {
   it("defaults to 90 days and accepts a positive override", () => {
     expect(securityEventRetentionDays({})).toBe(90);
     expect(securityEventRetentionDays({ SECURITY_EVENT_RETENTION_DAYS: "30" })).toBe(30);
-    expect(securityEventRetentionDays({ SECURITY_EVENT_RETENTION_DAYS: "0" })).toBe(90);
-    expect(securityEventRetentionDays({ SECURITY_EVENT_RETENTION_DAYS: "soon" })).toBe(90);
+    expect(securityEventRetentionDays({ SECURITY_EVENT_RETENTION_DAYS: "  " })).toBe(90);
+  });
+
+  it("refuses a value that is not a day count instead of falling back or never pruning", () => {
+    expect(() => securityEventRetentionDays({ SECURITY_EVENT_RETENTION_DAYS: "30 days" })).toThrow(
+      /SECURITY_EVENT_RETENTION_DAYS must be a whole number of days from 1 to 36500/,
+    );
   });
 
   it("deletes only events older than the window", async () => {

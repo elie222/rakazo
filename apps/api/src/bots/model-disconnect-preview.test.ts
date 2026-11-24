@@ -53,21 +53,25 @@ describe("modelDisconnectPreview", () => {
       mainModel: true,
       otherChoice: false,
       usedBy: ["Inbox", "Scout", "Morning digest"],
-      // The routine named like a bot is shown once and still counted.
       usedByTotal: 4,
     });
     // The legacy rows without a funding pin ran on the last connection, so they count too.
     expect(prisma.userModelRoleChoice.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          OR: [{ credentialId: "only" }, { credentialId: null, creditOfferingId: null }],
+          OR: [{ credentialId: { in: ["only"] } }, { credentialId: null, creditOfferingId: null }],
         }),
       }),
     );
     expect(prisma.bot.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: "user-1", modelProvider: "provider-a", archivedAt: null },
-        take: 50,
+        where: {
+          userId: "user-1",
+          modelProvider: "provider-a",
+          archivedAt: null,
+          space: { memberships: { some: { userId: "user-1" } } },
+        },
+        take: 3,
       }),
     );
     // A routine that is switched off has no runs to stop.
@@ -76,7 +80,7 @@ describe("modelDisconnectPreview", () => {
     );
   });
 
-  it("names no bot while another connection of the provider still serves them", async () => {
+  it("reports provider pins without naming them when another connection remains", async () => {
     const { prisma, preview } = fixture({
       connections: ["personal", "work"],
       spaceRoles: [{ role: "main", position: 1 }],
@@ -87,13 +91,13 @@ describe("modelDisconnectPreview", () => {
       mainModel: false,
       otherChoice: true,
       usedBy: [],
-      usedByTotal: 0,
+      usedByTotal: 1,
     });
     expect(prisma.bot.findMany).not.toHaveBeenCalled();
     expect(prisma.routine.findMany).not.toHaveBeenCalled();
     expect(prisma.spaceModelRoleChoice.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ OR: [{ credentialId: "work" }] }),
+        where: expect.objectContaining({ OR: [{ credentialId: { in: ["work"] } }] }),
       }),
     );
   });

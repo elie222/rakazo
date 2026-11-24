@@ -8,6 +8,7 @@ import {
 import { CALENDAR_CSS } from "./calendar.js";
 import { CONTROLS_CSS } from "./controls.js";
 import { DATAVIZ_CSS } from "./dataviz-styles.js";
+import { ICON_CSS } from "./icon.js";
 import { MEDIA_CSS } from "./media.js";
 import { TEXT_KIT_CSS } from "./text.js";
 
@@ -106,7 +107,7 @@ body{font-size:1rem}
 .rk-check[data-done="true"] .rk-check-mark circle{fill:var(--rk-success);stroke:var(--rk-success)}
 .rk-check[data-done="true"] .rk-check-mark path{stroke:var(--background);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .rk-check[data-done="true"] .rk-check-text{color:var(--rk-secondary)}
-.rk-check-meta{margin:.1rem 0 0 1.75rem;font-size:.8125rem;line-height:1.4;color:var(--rk-secondary)}
+.rk-check-meta{margin:.1rem 0 0;margin-inline-start:1.75rem;font-size:.8125rem;line-height:1.4;color:var(--rk-secondary)}
 .rk-table-wrap{display:flex;flex-direction:column;gap:.5rem;min-width:0}
 .rk-table-filter{align-self:flex-start;width:min(16rem,100%);height:1.75rem;padding:0 .625rem;border:1px solid var(--rk-line);border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:.8125rem}
 .rk-table-filter::placeholder{color:var(--rk-secondary)}
@@ -230,4 +231,4 @@ const RHYTHM_CSS = `
 .rk-section>.rk-section-head+.rk-section-fold:not([data-open]){margin-top:0}
 `;
 
-export const PAGE_STYLES = `${renderTokensCss()}\n${KIT_CSS}\n${TEXT_KIT_CSS}\n${DATAVIZ_CSS}\n${CONTROLS_CSS}\n${MEDIA_CSS}\n${CALENDAR_CSS}\n${RHYTHM_CSS}`;
+export const PAGE_STYLES = `${renderTokensCss()}\n${KIT_CSS}\n${TEXT_KIT_CSS}\n${DATAVIZ_CSS}\n${CONTROLS_CSS}\n${MEDIA_CSS}\n${CALENDAR_CSS}\n${ICON_CSS}\n${RHYTHM_CSS}`;

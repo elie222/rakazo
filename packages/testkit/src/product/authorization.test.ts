@@ -208,20 +208,26 @@ describeWithDatabase("API authorization and resource isolation", () => {
     await rpc(app, owner, "bots/archive", { botId: archived.id }, space.id);
     const botIds = [own.id, other.id, archived.id, cross.id, "missing-bot"];
     // Members of one space share its bots and routines; archived and other-space bots stay out.
-    const ownRows = await rpc<unknown[]>(app, owner, "routines/list", { botId: own.id }, space.id);
-    const peerRows = await rpc<unknown[]>(
-      app,
-      peer,
-      "routines/list",
-      { botId: other.id },
-      space.id,
-    );
-    const shared = [
-      { botId: own.id, routines: ownRows },
-      { botId: other.id, routines: peerRows },
+    // Each row says whether the viewer is who it runs as, so a viewer's batch matches their own reads.
+    const listFor = async (cookie: string) => [
+      {
+        botId: own.id,
+        routines: await rpc<unknown[]>(app, cookie, "routines/list", { botId: own.id }, space.id),
+      },
+      {
+        botId: other.id,
+        routines: await rpc<unknown[]>(app, cookie, "routines/list", { botId: other.id }, space.id),
+      },
     ];
-    expect(await rpc(app, owner, "routines/listForMentions", { botIds }, space.id)).toEqual(shared);
-    expect(await rpc(app, peer, "routines/listForMentions", { botIds }, space.id)).toEqual(shared);
+    const ownerShared = await listFor(owner);
+    const peerShared = await listFor(peer);
+    expect(peerShared).not.toEqual(ownerShared);
+    expect(await rpc(app, owner, "routines/listForMentions", { botIds }, space.id)).toEqual(
+      ownerShared,
+    );
+    expect(await rpc(app, peer, "routines/listForMentions", { botIds }, space.id)).toEqual(
+      peerShared,
+    );
     const crossRows = await rpc<unknown[]>(
       app,
       owner,
@@ -254,6 +260,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/forRole"],
       ["models/role"],
       ["models/setRole"],
+      ["models/media"],
+      ["models/setMedia"],
       ["models/backups"],
       ["models/setBackups"],
       ["models/probeOpenAiCompatible"],
@@ -262,6 +270,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/saveModelSettings"],
       ["models/disconnectPreview"],
       ["models/disconnect"],
+      ["models/deployment/get"],
+      ["models/deployment/update", { provider: null }],
       ["spaces/list"],
       ["meetingCalendar/status", { botId: "missing-bot" }],
       ["meetingCalendar/upcoming", { botId: "missing-bot" }],
@@ -361,6 +371,29 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/messages", { botId: "missing-bot", before: 1 }],
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
+      [
+        "threads/nativeCalendarPending",
+        { botId: "missing-bot", deviceKey: "00000000-0000-4000-8000-000000000000" },
+      ],
+      [
+        "threads/nativeCalendarClaim",
+        {
+          id: "missing",
+          runId: "missing",
+          threadId: "missing",
+          deviceKey: "00000000-0000-4000-8000-000000000000",
+        },
+      ],
+      [
+        "threads/nativeCalendarResult",
+        {
+          id: "missing",
+          runId: "missing",
+          threadId: "missing",
+          deviceKey: "00000000-0000-4000-8000-000000000000",
+          response: { status: "cancelled" },
+        },
+      ],
       ["threads/send", { groupId: "missing-group", text: "Nope" }],
       [
         "threads/sendWithRoutines",
@@ -410,6 +443,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/releaseInterrupted"],
       ["computer/dismissUpdate"],
       ["computer/dismissDiskWarning", { botId: "missing-bot" }],
+      ["computer/homeVersions", { botId: "missing-bot" }],
+      ["computer/restoreHomeVersion", { botId: "missing-bot", versionId: "missing-version" }],
       ["computer/downloadFile"],
       ["computer/uploadFile"],
       ["computer/terminalUrl"],
@@ -486,6 +521,17 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["artifacts/get"],
       ["artifacts/getById"],
       ["artifacts/remove"],
+      ["pageReviews/list"],
+      ["pageReviews/get"],
+      ["pageReviews/grants"],
+      ["pageReviews/grant"],
+      ["pageReviews/revoke"],
+      ["pageReviews/comments"],
+      ["pageReviews/comment"],
+      ["pageReviews/resolve"],
+      ["pageReviews/askRevision"],
+      ["pageReviews/draft"],
+      ["pageReviews/publish"],
       ["pages/list"],
       ["pages/get"],
       ["pages/rename"],
@@ -521,6 +567,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["voice/disconnect", { provider: "elevenlabs" }],
       ["voice/setVoice", { voiceId: "missing-voice" }],
       ["voice/voices", {}],
+      ["voice/models", { provider: "openrouter" }],
       ["voice/prepare", { text: "Nope" }],
       ["voice/setSpeechModel"],
       ["analytics/screen"],
@@ -530,6 +577,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["aiConsent/revoke"],
       ["billing/status"],
       ["billing/computerUsage"],
+      ["cloudComputers/list"],
+      ["cloudComputers/setSize", { computerId: "missing-computer", size: "standard" }],
       ["billing/refresh"],
       ["billing/selectFunding"],
       ["billing/purchaseCredits"],
@@ -567,8 +616,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["marketplace/submissions"],
       ["mcp/servers/list"],
       ["mcp/servers/create"],
+      ["mcp/servers/createForBots"],
       ["mcp/servers/connect"],
       ["mcp/servers/update"],
+      ["mcp/servers/save"],
       ["mcp/servers/remove"],
       ["mcp/servers/test"],
       ["mcp/servers/agents"],
@@ -581,6 +632,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/oauth/complete"],
       ["mcp/oauth/disconnect"],
       ["onboarding/signupSurvey"],
+      ["onboarding/firstBot"],
       ["onboarding/start"],
       ["onboarding/promptFocus"],
       ["onboarding/choose"],
@@ -2495,6 +2547,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await expectForbidden(app, cookie, "updater/apply", {});
       await expectForbidden(app, cookie, "integrationSetup/save", {
         provider: "composio",
+        apiKey: "fake-key",
+      });
+      await expectForbidden(app, cookie, "models/deployment/get", {});
+      await expectForbidden(app, cookie, "models/deployment/update", {
+        provider: "openrouter",
+        modelId: "anthropic/claude-haiku-5.5",
         apiKey: "fake-key",
       });
     }

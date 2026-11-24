@@ -187,6 +187,32 @@ describe("computer keyboard accessory", () => {
     }
   });
 
+  it.each([
+    ["Korean", "ㅎ", "하", 1],
+    ["Japanese", "にほん", "日本", 3],
+    ["Chinese", "ni", "你", 2],
+  ])(
+    "sends %s composition once and deletes the composed text",
+    async (_, draft, composed, count) => {
+      const bar = await renderBar();
+      try {
+        await bar.typeTwice("a", `a${draft}`, `a${composed}`);
+        await bar.key("Backspace");
+        await bar.typeTwice(`a${composed.slice(0, -1)}`);
+
+        expect(bar.onCommand.mock.calls).toEqual([
+          [{ type: "text", text: "a" }],
+          [{ type: "text", text: draft }],
+          [{ type: "backspace", count }],
+          [{ type: "text", text: composed }],
+          [{ type: "backspace", count: 1 }],
+        ]);
+      } finally {
+        await bar.unmount();
+      }
+    },
+  );
+
   it("sends a code typed digit by digit, each reported twice, with corrections and Enter", async () => {
     const bar = await renderBar();
     try {
@@ -307,7 +333,7 @@ describe("computer keyboard accessory", () => {
     }
   });
 
-  it("keeps the caret at the end and sends nothing for an edit before it", async () => {
+  it("keeps the caret at the end and rewrites the changed suffix", async () => {
     const bar = await renderBar();
     try {
       await bar.type("482");
@@ -319,10 +345,11 @@ describe("computer keyboard accessory", () => {
       await bar.select(0, 3);
       expect(input.setSelection).toHaveBeenLastCalledWith(3, 3);
       await bar.type("4182");
-      expect(bar.onCommand).not.toHaveBeenCalled();
       await bar.type("41829");
       await bar.type("4182");
       expect(bar.onCommand.mock.calls).toEqual([
+        [{ type: "backspace", count: 2 }],
+        [{ type: "text", text: "182" }],
         [{ type: "text", text: "9" }],
         [{ type: "backspace", count: 1 }],
       ]);

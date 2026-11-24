@@ -16,44 +16,44 @@ describe("modelDisconnectWarning", () => {
 
   it("says the main model choice is cleared", () => {
     expect(modelDisconnectWarning({ ...unused, mainModel: true })).toBe(
-      "Your main model choice is cleared, and connecting again does not bring it back.",
+      "Reconnecting will not restore the main model choice that uses this connection.",
     );
   });
 
   it("names both when it serves the main model and another choice", () => {
     expect(modelDisconnectWarning({ ...unused, mainModel: true, otherChoice: true })).toBe(
-      "Your main model choice and others that use it are cleared, and connecting again does not bring them back.",
+      "Reconnecting will not restore the main model choice or other choices that use this connection.",
     );
   });
 
   it("says a choice is cleared when a backup or another purpose is all it serves", () => {
     expect(modelDisconnectWarning({ ...unused, otherChoice: true })).toBe(
-      "A model choice that uses it is cleared, and connecting again does not bring it back.",
+      "Reconnecting will not restore saved model choices that use this connection.",
     );
   });
 
   it("names the bots and routines that may stop", () => {
     expect(
       modelDisconnectWarning({ ...unused, usedBy: ["Inbox", "Morning digest"], usedByTotal: 2 }),
-    ).toBe("These use it and may stop until it is connected again: Inbox, Morning digest.");
+    ).toBe("Inbox, Morning digest may stop until you reconnect.");
   });
 
-  it("counts a bot and a routine that share the one name shown", () => {
-    expect(modelDisconnectWarning({ ...unused, usedBy: ["Inbox"], usedByTotal: 2 })).toBe(
-      "These use it and may stop until it is connected again: Inbox and 1 more.",
+  it("warns without naming pins when another connection remains", () => {
+    expect(modelDisconnectWarning({ ...unused, usedByTotal: 2 })).toBe(
+      "Bots and routines that rely on this connection may stop.",
     );
   });
 
-  it("names the first three and counts the rest from the total, not from the names sent", () => {
+  it("counts the affected bots and routines beyond the names sent", () => {
     expect(
       modelDisconnectWarning({
         ...unused,
         mainModel: true,
-        usedBy: ["A", "B", "C", "D", "E"],
+        usedBy: ["A", "B", "C"],
         usedByTotal: 80,
       }),
     ).toBe(
-      "Your main model choice is cleared, and connecting again does not bring it back. These use it and may stop until it is connected again: A, B, C and 77 more.",
+      "Reconnecting will not restore the main model choice that uses this connection. A, B, C and 77 more may stop until you reconnect.",
     );
   });
 });

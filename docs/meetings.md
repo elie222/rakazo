@@ -4,7 +4,8 @@ Send a Rakazo bot to Zoom, Google Meet, or a Microsoft Teams work meeting. After
 
 ## Send a bot to a meeting
 
-1. Open a direct chat with the bot and select **Meetings** in the chat header.
+1. Open a direct chat with the bot. On web or desktop, select **Meetings** in the chat header.
+   On mobile, tap the bot's name in the chat header to open its profile, then tap **Meetings**.
 2. Get permission to record and share the transcript with the Space. Paste the attendee link into **Meeting link** and select **Join meeting**.
 3. Admit the bot from the waiting room and grant capture permission if the meeting platform prompts you.
 

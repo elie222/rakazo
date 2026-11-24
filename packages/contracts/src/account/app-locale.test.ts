@@ -3,7 +3,7 @@ import { AppLocaleSchema } from "./preferences.js";
 
 describe("AppLocaleSchema", () => {
   it("accepts the app's language codes and nothing else", () => {
-    for (const locale of ["es", "en", "pl", "pt-BR", "zh-CN", "zh-TW"]) {
+    for (const locale of ["es", "en", "pl", "pt-BR", "th", "zh-CN", "zh-TW"]) {
       expect(AppLocaleSchema.safeParse(locale).success, locale).toBe(true);
     }
     for (const locale of [

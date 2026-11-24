@@ -223,9 +223,9 @@ describe("independent outcome graders", () => {
     e.files["results/language.txt"] = "French";
     expect(passes("updated-preference", e)).toBe(false);
   });
-  it("has 18 distinct cases, each rejects empty evidence and a completion claim", () => {
-    expect(EVAL_CASES).toHaveLength(18);
-    expect(new Set(EVAL_CASES.map((c) => c.id)).size).toBe(18);
+  it("has 19 distinct cases, each rejects empty evidence and a completion claim", () => {
+    expect(EVAL_CASES).toHaveLength(19);
+    expect(new Set(EVAL_CASES.map((c) => c.id)).size).toBe(19);
     for (const scenario of EVAL_CASES) {
       expect(
         passes(scenario.id, { ...evidence(), text: "Done! I completed everything." }),
@@ -464,6 +464,14 @@ const PRODUCT_EVIDENCE: Record<string, (e: Evidence, reviewed: Record<string, st
     e.files["results/watched-release.txt"] = file!;
   },
   "rakazo-development-bot": conversation,
+  "describe-image-url": (e, { reply }) => {
+    e.toolCalls.push({
+      step: 1,
+      name: "web_fetch",
+      args: { url: "https://example.test/shapes.png" },
+    });
+    e.text = reply!;
+  },
   "what-is-rakazo": conversation,
 };
 /** Every reviewed example that is a product case's own judge input, with the evidence behind it. */

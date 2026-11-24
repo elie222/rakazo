@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
-import { appConnectedInput, waitForSignIn } from "@rakazo/core";
+import { appConnectedInput, appConnectLabel, waitForSignIn } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
@@ -10,6 +10,7 @@ import { rpc } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
 import { appConnectPresentation } from "../../lib/cards/app-connect";
 import { native, useMobileTokens } from "../../lib/native/native";
+import { refreshRpcQueries } from "../../lib/query/query";
 import { useThreadReadOnly } from "../../lib/thread/thread-read-only";
 import { ConnectorIcon } from "../integrations/connector-icon";
 import { NativeActionButton } from "../native/native-action-button";
@@ -54,7 +55,7 @@ export function AppConnectCard({
         {
           connectorId: block.connectorId,
           provider: block.provider,
-          displayName: block.name,
+          displayName: appConnectLabel(block),
         },
         { signal: controller.signal },
       );
@@ -75,6 +76,9 @@ export function AppConnectCard({
         },
       );
       if (result.status === "connected") {
+        // The sidebar shows connected apps; it reads them again now rather than on its next visit,
+        // keeping what it shows until the new answer arrives.
+        void refreshRpcQueries("connections/list");
         await rpc("onboarding/appConnected", appConnectedInput(botId, threadId, block, messageId));
         if (controller.signal.aborted) return;
         setLocalStatus("connected");

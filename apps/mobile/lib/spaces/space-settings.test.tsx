@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   push: vi.fn(),
   rpc: vi.fn(),
   alert: vi.fn(),
+  announce: vi.fn(),
   overrides: [] as string[],
   focusCount: 0,
   rules: [] as { id: string }[],
@@ -48,6 +49,7 @@ vi.mock("../native/native", () => ({
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
 vi.mock("../api/user-error", () => ({ errorText: (_: unknown, fallback: string) => fallback }));
+vi.mock("../native/announce", () => ({ announceToScreenReader: state.announce }));
 vi.mock("../api/api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "https://app.example.test",
@@ -112,17 +114,19 @@ vi.mock("../../components/settings/settings-group", () => ({
   SettingsRow: ({
     title,
     value,
+    detail,
     onPress,
     trailing,
   }: {
     title: string;
     value?: string;
+    detail?: string;
     onPress?: () => void;
     trailing?: ReactNode;
   }) =>
     createElement(
       "div",
-      { "data-row": [title, value].filter(Boolean).join(": ") },
+      { "data-row": [title, value].filter(Boolean).join(": "), "data-detail": detail },
       onPress ? createElement("button", { type: "button", onClick: onPress }, title) : title,
       trailing,
     ),
@@ -144,6 +148,8 @@ async function render() {
 async function press(node: HTMLElement) {
   await act(async () => node.click());
 }
+const detail = (title: string) =>
+  container.querySelector(`[data-row="${title}"]`)?.getAttribute("data-detail") ?? null;
 const control = (label: string) =>
   container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
 
@@ -156,6 +162,7 @@ beforeEach(async () => {
   state.selectedSpace = "space-selected";
   state.push.mockReset();
   state.alert.mockReset();
+  state.announce.mockReset();
   state.rpc
     .mockReset()
     .mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
@@ -191,6 +198,10 @@ it("follows the account until a setting is customized, then opens the same scree
   for (const name of ["Models", "Voice", "Approvals", "Vault"])
     expect(control(`Customize ${name}`)?.checked).toBe(false);
   expect(container.querySelector("button")).toBeNull();
+  expect(container.querySelector("section")?.getAttribute("aria-label")).toBe(
+    "Settings for this Space",
+  );
+  expect(detail("Models")).toBe("Same as your account");
 
   await press(control("Customize Models")!);
   expect(state.rpc).toHaveBeenCalledWith(
@@ -203,6 +214,7 @@ it("follows the account until a setting is customized, then opens the same scree
     params: { spaceId: "space-other" },
   });
   expect(control("Customize Models")?.checked).toBe(true);
+  expect(detail("Models")).toBeNull();
 
   state.push.mockReset();
   await act(async () => container.querySelector("button")!.click());
@@ -375,6 +387,33 @@ it("keeps a failed save's error when a read that was pending then succeeds", asy
   expect(container.textContent).toContain("Could not save that preference");
 });
 
+it("reads each failed save out, so a repeat of the same failure is heard again", async () => {
+  const base = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
+    if (proc === "spaceSettings/setOverride") throw new Error("offline");
+    return base(proc, input);
+  });
+  await press(control("Customize Models")!);
+  expect(state.announce.mock.calls).toEqual([["Could not save that preference"]]);
+  await press(control("Customize Models")!);
+  expect(state.announce.mock.calls).toEqual([
+    ["Could not save that preference"],
+    ["Could not save that preference"],
+  ]);
+});
+
+it("does not read out a failed background re-read, which stays on screen as it was", async () => {
+  const base = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, input?: Record<string, unknown>) => {
+    if (proc === "spaceSettings/overrides") throw new Error("offline");
+    return base(proc, input);
+  });
+  state.focusCount += 1;
+  await render();
+  expect(container.textContent).toContain("Something went wrong. Try again.");
+  expect(state.announce).not.toHaveBeenCalled();
+});
+
 it("keeps a saved setting, with no save error, when the next read fails", async () => {
   await press(control("Customize Voice")!);
   expect(control("Customize Voice")?.checked).toBe(true);
@@ -477,3 +516,11 @@ it.each([
     }
   },
 );
+
+it("reads nothing out when a save fails after the screen has gone", async () => {
+  const save = holdSave();
+  await press(control("Customize Models")!);
+  await act(async () => root.render(createElement("div")));
+  await act(async () => save.finish(new Error("offline")));
+  expect(state.announce).not.toHaveBeenCalled();
+});

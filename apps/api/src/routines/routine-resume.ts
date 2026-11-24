@@ -1,8 +1,8 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { routineWakeupJob } from "@rakazo/adapter-kit";
+import { firstWatchCheck } from "@rakazo/adapters";
 import { isOneShotRoutineCrons, nextCronDateAcross } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { firstWatchCheck } from "./routines.js";
 
 interface ResumeDeps {
   prisma: PrismaClient;
@@ -13,12 +13,23 @@ interface ResumeDeps {
 /**
  * Turns back on the routines that archiving these bots turned off, each on its next occurrence
  * from now. A one-time routine stays off: archiving dropped the time it was set for. Safe to
- * repeat, so a restore that failed part-way is finished by restoring again.
+ * repeat, so a restore that failed part-way is finished by restoring again. Only the restoring
+ * member's own routines resume: a routine runs with its owner's accounts, so another member's
+ * stays off until they turn it on.
  */
-export async function resumeRoutinesAfterRestore(deps: ResumeDeps, botIds: string[]) {
+export async function resumeRoutinesAfterRestore(
+  deps: ResumeDeps,
+  userId: string,
+  botIds: string[],
+) {
   if (botIds.length === 0) return;
   // Only while it is still marked and its bot is still restored.
-  const marked = { botId: { in: botIds }, resumeOnRestore: true, bot: { archivedAt: null } };
+  const marked = {
+    botId: { in: botIds },
+    userId,
+    resumeOnRestore: true,
+    bot: { archivedAt: null },
+  };
   const routines = await deps.prisma.routine.findMany({
     where: marked,
     select: { id: true, spaceId: true },

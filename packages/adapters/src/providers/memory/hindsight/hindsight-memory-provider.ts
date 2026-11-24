@@ -11,7 +11,7 @@ import type {
   SemanticMemoryResult,
   SemanticMemorySaveRequest,
 } from "@rakazo/adapter-kit";
-import { truncateUtf8 } from "@rakazo/core";
+import { byteLength, truncateUtf8 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { memoryConnectionIdentity } from "../../../memory/memory-provider-descriptor.js";
 import {
@@ -536,6 +536,12 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     if (request.source.kind === "history") return { ok: true, value: undefined };
     const content = request.content.trim();
     if (!content) return { ok: false, error: "Hindsight save skipped: memory content is empty." };
+    if (byteLength(content) > MAX_CONTENT_BYTES) {
+      return {
+        ok: false,
+        error: `Hindsight save skipped: memory content is longer than ${MAX_CONTENT_BYTES} bytes. Save a shorter fact.`,
+      };
+    }
     const signal = AbortSignal.any([
       context.signal,
       AbortSignal.timeout(HINDSIGHT_WRITE_TIMEOUT_MS),
@@ -543,7 +549,7 @@ export class HindsightMemoryProvider implements SemanticMemoryProvider {
     const connection = await this.connectionForRequest(signal);
     if (!connection.ok) return connection;
     const item = {
-      content: truncateUtf8(content, MAX_CONTENT_BYTES),
+      content,
       context:
         "A fact a Rakazo AI assistant chose to remember about the people it works for and their work",
       timestamp: new Date().toISOString(),

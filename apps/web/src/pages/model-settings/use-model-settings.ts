@@ -1,10 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Me, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
-  compatibleEndpointPresets,
-  connectionDisplayName,
-  matchCompatibleEndpointPreset,
+  modelConnectionNames,
   modelRoutingDirty,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -20,10 +19,10 @@ import {
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import { modelDisconnectWarning } from "@rakazo/i18n/model-disconnect";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/models/localized-provider-hint";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
 import { analyticsSurface } from "../../lib/platform/desktop";
@@ -89,11 +88,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     baseUrl,
     connectionErrorText,
     enabledModelIds,
+    compatibleKeyRequired,
+    endpointPreset,
     gatewayId,
     projectId,
     region,
     headerRows,
-    invalidatePreflight,
     needsRouting,
     isOpenAiCompatible,
     modelId,
@@ -133,7 +133,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     pasteCode,
     setPasteCode,
     oauthPending,
-    popupBlocked,
     cancelOAuthAttempt,
     reportSignInStep,
     startSubscriptionSignIn,
@@ -141,13 +140,19 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   } = useModelOAuthSignIn({
     onClearError: () => setError(null),
     onError: setError,
-    onFinished: async (_controller, credentialId) => {
+    onFinished: async (_controller, saved) => {
       // A new account's later saves update it rather than adding another.
-      setCredentialId(credentialId);
-      await refresh();
+      setCredentialId(saved.id);
+      // A new subscription can save a stronger model than the one the form showed.
+      await refresh({ modelId: saved.modelId });
       const started = oauthChoiceRef.current;
       oauthChoiceRef.current = null;
-      if (started) await started.intent?.onConnected?.({ ...started.choice, credentialId });
+      if (started)
+        await started.intent?.onConnected?.({
+          ...started.choice,
+          modelId: saved.modelId ?? started.choice.modelId,
+          credentialId: saved.id,
+        });
     },
   });
   const copyOAuthCode = (code: string) => {
@@ -164,9 +169,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   async function refresh({
     keepForm = false,
     reuse = false,
+    modelId: savedModelId,
   }: {
     keepForm?: boolean;
     reuse?: boolean;
+    modelId?: string;
   } = {}) {
     const refreshRevision = ++refreshRevisionRef.current;
     const selectionRevision = keepForm ? -1 : selectionRevisionRef.current;
@@ -176,7 +183,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       fetchFresh(queryClient, meQuery, { reuse }),
     ]);
     if (refreshRevision !== refreshRevisionRef.current) return undefined;
-    applyLoaded(nextCatalog, nextCredentials, nextMe, selectionRevision);
+    applyLoaded(nextCatalog, nextCredentials, nextMe, selectionRevision, savedModelId);
     return nextCredentials;
   }
 
@@ -186,6 +193,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     nextCredentials: typeof credentials,
     nextMe: Me,
     selectionRevision: number,
+    savedModelId?: string,
   ) {
     const nextProvider =
       provider && nextCatalog.some((entry) => entry.provider === provider)
@@ -201,10 +209,9 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       provider: nextProvider,
       credential: nextCredential,
       defaults: nextMe,
-      current: modelId,
+      current: savedModelId ?? modelId,
     });
     if (selectionRevision === selectionRevisionRef.current) {
-      invalidatePreflight();
       resetOpenAiCompatibleProbe();
       setProvider(nextProvider);
       setModelId(nextModel);
@@ -237,7 +244,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     };
   }, []);
 
-  const groups = useMemo(() => {
+  const groups = (() => {
     const grouped = new Map<string, ModelCatalogEntry[]>();
     for (const entry of catalog) {
       const entries = grouped.get(entry.provider) ?? [];
@@ -247,33 +254,23 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     return popularModelProvidersFirst(
       [...grouped].map(([id, entries]) => ({
         id,
-        name: providerDisplayName(
-          id,
-          entries[0]?.providerName ?? id,
-          credentials.find((entry) => entry.provider === id)?.authKind,
-        ),
+        name: providerDisplayName(localizeModelEntry(entries[0] ?? { provider: id })),
         entries,
       })),
       (group) => group.id,
       (group) => group.name,
     );
-  }, [catalog, credentials]);
+  })();
   const credentialByProvider = useMemo(
     () => new Map(credentials.map((entry) => [entry.provider, entry])),
     [credentials],
   );
   selectedLabelRef.current = selected?.label;
-  const endpointPresets = useMemo(() => compatibleEndpointPresets(catalog), [catalog]);
-  // A hosted preset needs its key, so the form asks for it up front.
-  const endpointPreset = matchCompatibleEndpointPreset(endpointPresets, baseUrl);
+  const selectedEntry = localizeModelEntry(modelsForProvider[0] ?? { provider });
   const selectedProviderName =
-    endpointPreset?.name ?? groups.find((group) => group.id === provider)?.name ?? provider;
+    endpointPreset?.name ?? providerDisplayName(selectedEntry, credential?.authKind);
   const selectedConnectionName = credential
-    ? connectionDisplayName(
-        credential,
-        groups.find((group) => group.id === provider)?.name ?? provider,
-        modelsForProvider[0]?.providerName ? [modelsForProvider[0].providerName] : [],
-      )
+    ? modelConnectionNames(selectedEntry, credential).connectionName
     : selectedProviderName;
   const disconnectName = selectedConnectionName;
   // Read when the question opens. A failed read must not keep Disconnect disabled.
@@ -307,21 +304,19 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       : [];
   const busy = pending !== null || oauthPending;
   const savedHeaderEndpointMatches = savedCompatibleEndpointMatches(baseUrl, credential?.baseUrl);
-  const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = compatibleConnectionReady({
     apiKey,
     baseUrl,
     modelId,
     headerRows,
     credential,
-    keyRequired: Boolean(endpointPreset),
+    keyRequired: compatibleKeyRequired,
   });
   const compatibleRows = compatibleModelRows(
     savedCompatibleModelIds(credential, baseUrl),
     enabledModelIds,
     probeModels,
   );
-  const defaultModelOptions = [...new Set([...enabledModelIds, modelId])];
   // Saved-connection settings edited without a new key (gateway ids, data retention).
   const settingsDirty =
     !isOpenAiCompatible &&
@@ -335,7 +330,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     presetBaseUrl?: string,
     targetCredentialId: string | null = null,
   ) {
-    cancelOAuthAttempt();
+    cancelOAuthAttempt("replaced");
     formRevisionRef.current += 1;
     selectionRevisionRef.current += 1;
     const nextCredential = targetCredentialId
@@ -358,6 +353,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
         credential: nextCredential,
         presetBaseUrl,
       }),
+      presetBaseUrl,
     );
   }
 
@@ -386,7 +382,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       credential,
       credentialId: credential?.id ?? null,
       settingsOnly,
-      ...(intent ? { makeDefault: { makeDefault: intent.makeDefault, scope } } : {}),
+      // Always explicit: a save from a provider page has no intent and must not move the main model.
+      makeDefault: { makeDefault: intent?.makeDefault ?? false, scope },
     });
     if (request.status === "incomplete") return;
     const { input, savingWithoutKey, activeModelId } = request;
@@ -444,7 +441,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   }
 
   function handleClose() {
-    cancelOAuthAttempt(false);
+    cancelOAuthAttempt("left", false);
     onClose();
   }
 
@@ -460,7 +457,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       provider: selected.provider,
       credentialId: credential?.id ?? null,
       modelId: selected.id,
-      ...(intent ? { makeDefault: intent.makeDefault, scope } : {}),
+      makeDefault: intent?.makeDefault ?? false,
+      scope,
       thinkingLevel: clampCatalogThinkingLevel(
         thinkingLevel,
         selected.thinkingLevels,
@@ -491,14 +489,10 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     credentialByProvider,
     credentials,
     currentEntry,
-    defaultModelOptions,
     disconnectCredential,
     disconnectName,
     disconnectPreviewLoading,
     disconnectWarning,
-    endpointPreset,
-    endpointPresets,
-    effectiveBaseUrl,
     groups,
     handleClose,
     hostCredentialSource,
@@ -509,7 +503,6 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     openAiCompatibleReady,
     pasteCode,
     pending,
-    popupBlocked,
     selectedConnectionName,
     selectedProviderName,
     selectionRevisionRef,

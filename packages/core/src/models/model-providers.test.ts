@@ -497,6 +497,118 @@ it("offers Azure catalog models for a credential saved with the old provider id"
   expect(pickCatalogModelId(catalog, "azure-openai-responses", "gpt-4o")).toBe("gpt-4o");
 });
 
+describe("groupModelChoices order", () => {
+  const entry = (id: string) => ({
+    provider: "zai",
+    providerName: "Z.AI",
+    id,
+    label: id.toUpperCase(),
+  });
+
+  it("lists a provider's newest models first and keeps default choices on top", () => {
+    const connected = connectedModelChoices(
+      [{ provider: "zai", label: "Z.AI" }],
+      [entry("glm-4.5"), entry("glm-5"), entry("glm-4.6")],
+    );
+    const sections = groupModelChoices(chatModelChoices(connected, "", "Space default"), "");
+    expect(sections[0]?.data.map((choice) => choice.key)).toEqual([""]);
+    expect(sections[1]?.data.map((choice) => choice.modelId)).toEqual([
+      "glm-5",
+      "glm-4.6",
+      "glm-4.5",
+    ]);
+  });
+
+  it("preserves catalog order when the credential declares it", () => {
+    const catalog = [entry("glm-4.5"), entry("glm-5"), entry("glm-4.6")];
+    const connected = connectedModelChoices(
+      [{ provider: "zai", label: "Local", modelId: "glm-5", preserveModelOrder: true }],
+      catalog,
+    );
+    expect(groupModelChoices(connected, "")[0]?.data.map((choice) => choice.modelId)).toEqual([
+      "glm-4.5",
+      "glm-5",
+      "glm-4.6",
+    ]);
+  });
+
+  it("keeps a compatible endpoint's models in the order they were enabled", () => {
+    const connected = connectedModelChoices(
+      [
+        {
+          provider: "custom-endpoint",
+          preserveModelOrder: true,
+          label: "Local",
+          enabledModelIds: ["model-1", "model-3", "model-2"],
+        },
+      ],
+      [],
+    );
+    expect(groupModelChoices(connected, "")[0]?.data.map((choice) => choice.modelId)).toEqual([
+      "model-1",
+      "model-3",
+      "model-2",
+    ]);
+  });
+});
+
+describe("groupModelChoices under a shared heading", () => {
+  it("sorts another provider's models while a compatible endpoint keeps its order", () => {
+    const choices = [
+      {
+        key: "a",
+        label: "x",
+        provider: "custom-endpoint",
+        preserveModelOrder: true,
+        modelId: "model-1",
+        providerLabel: "Shared",
+        modelLabel: "model-1",
+      },
+      {
+        key: "b",
+        label: "x",
+        provider: "custom-endpoint",
+        preserveModelOrder: true,
+        modelId: "model-3",
+        providerLabel: "Shared",
+        modelLabel: "model-3",
+      },
+      {
+        key: "c",
+        label: "x",
+        provider: "zai",
+        modelId: "glm-4.5",
+        providerLabel: "Shared",
+        modelLabel: "glm-4.5",
+      },
+      {
+        key: "d",
+        label: "x",
+        provider: "zai",
+        modelId: "glm-5",
+        providerLabel: "Shared",
+        modelLabel: "glm-5",
+      },
+      {
+        key: "e",
+        label: "x",
+        provider: "custom-endpoint",
+        preserveModelOrder: true,
+        modelId: "model-2",
+        providerLabel: "Shared",
+        modelLabel: "model-2",
+      },
+    ];
+    expect(groupModelChoices(choices, "")[0]?.data.map((choice) => choice.modelId)).toEqual([
+      "glm-5",
+      "glm-4.5",
+      "model-1",
+      "model-3",
+      "model-2",
+    ]);
+  });
+});
+
 describe("groupModelChoices", () => {
   const connected = connectedModelChoices(
     [{ provider: "openrouter", label: "OpenRouter" }],

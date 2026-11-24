@@ -17,6 +17,8 @@ export type MenuPickerChoice = {
   label: string;
   /** An action shown in red, such as removing the item the row picks for. */
   destructive?: boolean;
+  /** Shown but not choosable. */
+  disabled?: boolean;
 };
 
 /** Native choice menu shared by rows with different layouts. */
@@ -55,7 +57,7 @@ export function MenuPickerMenu({
               id: `choice:${choice.key}`,
               title: choice.label,
               state: choice.key === value ? ("on" as const) : ("off" as const),
-              attributes: { disabled },
+              attributes: { disabled: disabled || choice.disabled },
             })),
           // Destructive choices are actions, not values: their own section, without a checkmark.
           ...destructive(choices, disabled),
@@ -98,6 +100,7 @@ export function MenuPicker({
   label,
   choices,
   value,
+  placeholder,
   onChange,
   onPress,
   divider = false,
@@ -108,6 +111,7 @@ export function MenuPicker({
   label: string;
   choices: readonly MenuPickerChoice[];
   value: string;
+  placeholder?: string;
   onChange: (key: string) => void;
   onPress?: () => void;
   divider?: boolean;
@@ -118,7 +122,8 @@ export function MenuPicker({
   const styles = useThemedStyles(createStyles);
   const tokens = useMobileTokens();
   const rowStyle = [styles.row, plain && { paddingHorizontal: 0, minHeight: 44 }];
-  const current = choices.find((choice) => choice.key === value)?.label ?? choices[0]?.label ?? "";
+  const current =
+    choices.find((choice) => choice.key === value)?.label ?? placeholder ?? choices[0]?.label ?? "";
   const row = {
     accessibilityLabel: label,
     accessibilityRole: "button",

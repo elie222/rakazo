@@ -1,8 +1,9 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { PageIcon } from "@rakazo/chat-ui/web";
-import type { PageSummary } from "@rakazo/contracts";
+import type { PageSummary, PageVisibility } from "@rakazo/contracts";
 import { PAGE_TITLE_MAX_LENGTH } from "@rakazo/contracts";
 import { uniquePages } from "@rakazo/core";
+import { pageSharingLabel } from "@rakazo/i18n/page-review";
 import {
   Button,
   DropdownMenu,
@@ -13,13 +14,26 @@ import {
   Spinner,
 } from "@rakazo/ui-web";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Globe, MoreHorizontal, Search } from "lucide-react";
+import { ChevronRight, Globe, MoreHorizontal, Search, Users } from "lucide-react";
 import { useDeferredValue, useState } from "react";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { pageMutationOptions } from "../../lib/pages/page-actions";
 import { useOpenPage } from "../../lib/pages/pages";
 import { useSpaceQueries } from "../../lib/query/query";
 import { DeleteItemDialog } from "../../pages/shell/create-delete-dialogs";
+
+function PageAudience({ visibility }: { visibility: PageVisibility }) {
+  const label = pageSharingLabel(visibility);
+  if (!label) return null;
+  const Icon = visibility === "people" ? Users : Globe;
+  return (
+    <>
+      <Icon aria-hidden="true" className="size-3" strokeWidth={1.8} />
+      {label}
+      <span aria-hidden="true">·</span>
+    </>
+  );
+}
 
 /** Enough to fill the panel; Show more brings the next batch. */
 const PAGE_SIZE = 20;
@@ -86,7 +100,8 @@ function OwnerPages({
   const [renaming, setRenaming] = useState<{ id: string; draft: string } | null>(null);
   if (preview && !pages.isError && !pages.data?.pages.some((read) => read.items.length > 0))
     return null;
-  if (pages.isPending) {
+  // A search with nothing to show yet waits under its field, so the field stays editable.
+  if (pages.isPending && !query) {
     return (
       <div className="grid place-items-center py-6 text-muted-foreground">
         <Spinner />
@@ -94,8 +109,8 @@ function OwnerPages({
     );
   }
   const items = uniquePages((pages.data?.pages ?? []).flatMap((read) => read.items));
-  // A failed read is not an empty list: say so, and offer to read it again.
-  if (pages.isError && items.length === 0) {
+  // Keep an active search editable when its results cannot be loaded.
+  if (pages.isError && items.length === 0 && !query) {
     return (
       <div role="alert" className="flex flex-col items-start gap-2 px-1 py-2">
         <p className="text-body-sm text-muted-foreground">
@@ -181,13 +196,7 @@ function OwnerPages({
               {page.title}
             </span>
             <span className="flex items-center gap-1 text-label text-muted-foreground">
-              {page.visibility === "link" ? (
-                <>
-                  <Globe aria-hidden="true" className="size-3" strokeWidth={1.8} />
-                  <Trans>Shared</Trans>
-                  <span aria-hidden="true">·</span>
-                </>
-              ) : null}
+              <PageAudience visibility={page.visibility} />
               <span>{formatRelativeTime(page.updatedAt)}</span>
             </span>
           </span>
@@ -306,7 +315,11 @@ function OwnerPages({
         </label>
       ) : null}
       {actionError}
-      {items.length === 0 ? (
+      {pages.isPending ? (
+        <div className="grid place-items-center py-6 text-muted-foreground">
+          <Spinner />
+        </div>
+      ) : !pages.isError && items.length === 0 ? (
         <p className="px-2 py-1 text-body-sm text-muted-foreground">
           <Trans>No pages match “{query}”.</Trans>
         </p>

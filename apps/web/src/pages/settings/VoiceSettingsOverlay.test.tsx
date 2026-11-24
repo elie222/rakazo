@@ -231,7 +231,13 @@ it("connects a self-hosted speech server by URL without a key", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   voice.connect.mockReset();
   voice.catalog.mockResolvedValue([
-    { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
+    {
+      id: "openai-compatible",
+      name: "Self-hosted",
+      description: "",
+      transcribe: true,
+      freeformVoice: true,
+    },
   ]);
   voice.credentials.mockResolvedValue([]);
   voice.status.mockResolvedValue({
@@ -315,8 +321,11 @@ it("connects a self-hosted speech server by URL without a key", async () => {
 
 it.each([
   { field: "Server URL", value: "http://100.64.0.11:8880/v1" },
+  { field: "Transcription server URL", value: "http://100.64.0.12:9000" },
   { field: "Speech model", value: "new-model" },
   { field: "Transcription model", value: "new-transcriber" },
+  { field: "Transcription vocabulary", value: "Acme, Xyla" },
+  { field: "Transcription vocabulary", value: "" },
   { field: "API key", value: "replacement-test-key" },
 ])(
   "restores saved self-hosted fields and reconnects after editing $field",
@@ -329,9 +338,16 @@ it.each([
       endpoint: "http://100.64.0.10:8810/v1",
       ttsModel: "saved-speech",
       sttModel: "saved-transcription",
+      transcriptionVocabulary: "Saved term",
     };
     voice.catalog.mockResolvedValue([
-      { id: saved.provider, name: "Self-hosted", description: "", transcribe: true },
+      {
+        id: saved.provider,
+        name: "Self-hosted",
+        description: "",
+        transcribe: true,
+        transcriptionVocabulary: true,
+      },
     ]);
     voice.credentials.mockResolvedValue([saved]);
     voice.status.mockResolvedValue({
@@ -354,6 +370,9 @@ it.each([
       expect(labelledInput(container, "Server URL").value).toBe(saved.endpoint);
       expect(labelledInput(container, "Speech model").value).toBe(saved.ttsModel);
       expect(labelledInput(container, "Transcription model").value).toBe(saved.sttModel);
+      expect(labelledInput(container, "Transcription vocabulary").value).toBe(
+        saved.transcriptionVocabulary,
+      );
       expect(labelledInput(container, "API key").value).toBe("");
       await act(async () => {
         const input = labelledInput(container, field);
@@ -363,6 +382,9 @@ it.each([
         );
         input.dispatchEvent(new Event("input", { bubbles: true }));
       });
+      if (field === "Server URL" || field === "Transcription server URL") {
+        expect(labelledInput(container, "Transcription vocabulary").value).toBe("");
+      }
       await act(async () => {
         [...container.querySelectorAll("button")]
           .find((button) => button.textContent === "Reconnect")
@@ -378,6 +400,12 @@ it.each([
           sttModel: field === "Transcription model" ? value : saved.sttModel,
         }),
       );
+      const sent = voice.connect.mock.calls[0]?.[0];
+      if (field === "Transcription vocabulary") {
+        expect(sent).toHaveProperty("transcriptionVocabulary", value);
+      } else {
+        expect(sent).not.toHaveProperty("transcriptionVocabulary");
+      }
     } finally {
       await act(async () => root.unmount());
       container.remove();
@@ -396,11 +424,15 @@ it("keeps self-hosted edits typed while a reconnect is in flight", async () => {
     ttsModel: "saved-speech",
     sttModel: "saved-transcription",
   };
-  voice.catalog
-    .mockReset()
-    .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
-    ]);
+  voice.catalog.mockReset().mockResolvedValue([
+    {
+      id: "openai-compatible",
+      name: "Self-hosted",
+      description: "",
+      transcribe: true,
+      freeformVoice: true,
+    },
+  ]);
   voice.credentials.mockReset().mockResolvedValue([saved]);
   voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
   voice.voices.mockReset().mockResolvedValue([]);
@@ -470,11 +502,15 @@ it("shows what a reconnect saved for fields edited before it started", async () 
     ttsModel: "saved-speech",
     sttModel: "saved-transcription",
   };
-  voice.catalog
-    .mockReset()
-    .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
-    ]);
+  voice.catalog.mockReset().mockResolvedValue([
+    {
+      id: "openai-compatible",
+      name: "Self-hosted",
+      description: "",
+      transcribe: true,
+      freeformVoice: true,
+    },
+  ]);
   // The server adds the missing /v1 and keeps the speech model the blank field left out.
   voice.credentials
     .mockReset()
@@ -545,11 +581,15 @@ it("follows the voice a reconnect saves when the voice field was edited and reve
     ttsModel: "saved-speech",
     sttModel: "saved-transcription",
   };
-  voice.catalog
-    .mockReset()
-    .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
-    ]);
+  voice.catalog.mockReset().mockResolvedValue([
+    {
+      id: "openai-compatible",
+      name: "Self-hosted",
+      description: "",
+      transcribe: true,
+      freeformVoice: true,
+    },
+  ]);
   // The connect on a new endpoint drops the old voice; the server picks another.
   voice.credentials
     .mockReset()
@@ -883,6 +923,7 @@ it("lets a background refresh update untouched fields but keeps edited ones", as
       name: "Self-hosted",
       description: "",
       transcribe: true,
+      freeformVoice: true,
     },
   ];
   const saved = {
@@ -957,11 +998,15 @@ it("keeps a typed transcription key with the address it was typed for", async ()
     endpoint: "http://127.0.0.1:8000/v1",
     sttEndpoint: "http://127.0.0.1:9000/v1",
   };
-  voice.catalog
-    .mockReset()
-    .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
-    ]);
+  voice.catalog.mockReset().mockResolvedValue([
+    {
+      id: "openai-compatible",
+      name: "Self-hosted",
+      description: "",
+      transcribe: true,
+      freeformVoice: true,
+    },
+  ]);
   voice.credentials.mockReset().mockResolvedValue([saved]);
   voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
   voice.voices.mockReset().mockResolvedValue([]);
@@ -1070,11 +1115,15 @@ it("saves a typed self-hosted voice on blur without dropping other unsaved edits
     ttsModel: "",
     sttModel: "",
   };
-  voice.catalog
-    .mockReset()
-    .mockResolvedValue([
-      { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
-    ]);
+  voice.catalog.mockReset().mockResolvedValue([
+    {
+      id: "openai-compatible",
+      name: "Self-hosted",
+      description: "",
+      transcribe: true,
+      freeformVoice: true,
+    },
+  ]);
   voice.credentials.mockReset().mockResolvedValue([saved]);
   voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
   voice.voices.mockReset().mockResolvedValue([{ id: "af_heart", label: "Heart" }]);
@@ -1331,11 +1380,15 @@ describe("the API key stays with the server URL it was typed for", () => {
 
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    voice.catalog
-      .mockReset()
-      .mockResolvedValue([
-        { id: "openai-compatible", name: "Self-hosted", description: "", transcribe: true },
-      ]);
+    voice.catalog.mockReset().mockResolvedValue([
+      {
+        id: "openai-compatible",
+        name: "Self-hosted",
+        description: "",
+        transcribe: true,
+        freeformVoice: true,
+      },
+    ]);
     voice.status.mockReset().mockResolvedValue({ ready: true, provider: "openai-compatible" });
     voice.voices.mockReset().mockResolvedValue([]);
     voice.connect.mockReset().mockResolvedValue(saved);

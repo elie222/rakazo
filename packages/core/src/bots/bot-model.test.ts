@@ -22,7 +22,25 @@ describe("botModelState", () => {
     expect(state.defaultEntry?.label).toBe("Fast");
     expect(state.choices.map((choice) => choice.key)).toEqual(["", "acme::fast", "acme::plain"]);
     expect(state.thinkingLevels).toEqual(["low", "high"]);
-    expect(state.defaultThinkingLevel).toBe("medium");
+    expect(state.defaultThinkingLevel).toBe("high");
+  });
+
+  it("names the level the model's own settings chose as its default", () => {
+    const state = botModelState({
+      credentials: [
+        {
+          provider: "acme",
+          label: "Acme",
+          modelId: "fast",
+          modelSettings: { fast: { reasoning: true, thinkingLevel: "high" } },
+        },
+      ] as unknown as ModelCredential[],
+      catalog,
+      me,
+      modelKey: "",
+      spaceDefaultLabel: "Space default",
+    });
+    expect(state.defaultThinkingLevel).toBe("high");
   });
 
   it("follows the bot's own model", () => {

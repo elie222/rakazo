@@ -38,7 +38,23 @@ addEventListener("message", (event) => {
     } else if (data && data.type === "rakazo-page:copy" && typeof data.id === "string" && typeof data.text === "string") {
       parent.postMessage({ type: data.type, id: data.id, text: data.text, gesture: fresh }, "*");
     } else if (data && data.type === "rakazo-page:height" && Number.isFinite(data.height)) {
-      parent.postMessage({ type: data.type, height: data.height }, "*");
+      const dimensions = { type: data.type, height: data.height };
+      if (Number.isFinite(data.scrollHeight) && data.scrollHeight >= 0) {
+        dimensions.scrollHeight = data.scrollHeight;
+      }
+      parent.postMessage(dimensions, "*");
+    } else if (data && data.type === "rakazo-page:sections" && Array.isArray(data.sections)) {
+      const sections = data.sections.slice(0, 80)
+        .filter((section) => typeof section === "string")
+        .map((section) => section.slice(0, 200));
+      // Section suggestions are display data. Rebuild the payload before passing it to the app.
+      const anchors = Array.isArray(data.anchors) ? data.anchors.slice(0, 80)
+        .filter((anchor) => anchor && typeof anchor.section === "string" &&
+          Number.isInteger(anchor.sectionOccurrence) &&
+          anchor.sectionOccurrence >= 0 && anchor.sectionOccurrence < 80)
+        .map(({ section, sectionOccurrence }) => ({ section: section.slice(0, 200), sectionOccurrence }))
+        : undefined;
+      parent.postMessage({ type: data.type, sections, anchors }, "*");
     }
     return;
   }
@@ -46,6 +62,10 @@ addEventListener("message", (event) => {
   // The app's answer to a copy: only whether it worked comes back down, never clipboard contents.
   if (event.data && event.data.type === "rakazo-page:copied") {
     preview.contentWindow.postMessage({ type: event.data.type, id: String(event.data.id), ok: event.data.ok === true }, "*");
+    return;
+  }
+  if (event.data?.type === "rakazo-page:scroll-preview" && Number.isFinite(event.data.top) && event.data.top >= 0) {
+    preview.contentWindow.postMessage({ type: event.data.type, top: event.data.top }, "*");
     return;
   }
   if (typeof event.data !== "string") return;

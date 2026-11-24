@@ -15,6 +15,9 @@ let NativeSheet: typeof SheetModule.NativeSheet;
 let useNativeSheet: typeof SheetModule.useNativeSheet;
 let RunErrorSheetContainer: typeof ErrorModule.RunErrorSheetContainer;
 
+const announce = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/native/announce", () => ({ announceToScreenReader: announce }));
+
 const mocks = vi.hoisted(() => ({
   missing: "",
   appearance: "dark" as "light" | "dark",
@@ -344,7 +347,7 @@ describe("native sheet behavior", () => {
 });
 
 describe("inbox organization actions", () => {
-  async function organize(botOverrides = {}) {
+  async function organize(botOverrides = {}, snoozed?: boolean) {
     const props = {
       bot: {
         name: "Sample chat",
@@ -368,6 +371,8 @@ describe("inbox organization actions", () => {
       onCreateSection: vi.fn().mockResolvedValue(undefined),
       onRenameSection: vi.fn().mockResolvedValue(undefined),
       onDeleteSection: vi.fn().mockResolvedValue(undefined),
+      onSnooze: snoozed === undefined ? undefined : vi.fn().mockResolvedValue(undefined),
+      snoozed,
     };
     const root = await mount(<BotOrganizeModal {...props} />);
     const click = async (label: string) => {
@@ -430,6 +435,41 @@ describe("inbox organization actions", () => {
     expect(props.onUpdate).toHaveBeenCalledWith(update);
     expect(props.onClose).toHaveBeenCalledOnce();
     expect(mocks.sheet).toHaveBeenCalled();
+    expect(announce).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["Pin", {}],
+    ["Unsnooze", {}],
+  ])("announces a failed %s without closing the sheet", async (label, overrides) => {
+    const { props, root, click } = await organize(
+      overrides,
+      label === "Unsnooze" ? true : undefined,
+    );
+    props.onUpdate.mockRejectedValue(undefined);
+    props.onSnooze?.mockRejectedValue(undefined);
+    await click(label);
+    expect(root.element.textContent).toContain("Could not update chat");
+    expect(announce).toHaveBeenCalledExactlyOnceWith("Could not update chat");
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+  it("announces a failed section delete with its displayed fallback", async () => {
+    const { props, root, click } = await organize();
+    props.onDeleteSection.mockRejectedValue(undefined);
+    await click("Delete section");
+    expect(root.element.textContent).toContain("Could not delete section");
+    expect(announce).toHaveBeenCalledExactlyOnceWith("Could not delete section");
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+  it("announces the same failure again on retry and stays silent when the retry succeeds", async () => {
+    const { props, root, click } = await organize();
+    props.onUpdate.mockRejectedValueOnce(undefined).mockRejectedValueOnce(undefined);
+    await click("Pin");
+    await click("Pin");
+    expect(announce.mock.calls).toEqual([["Could not update chat"], ["Could not update chat"]]);
+    await click("Pin");
+    expect(props.onClose).toHaveBeenCalledOnce();
+    expect(root.element.textContent).not.toContain("Could not update chat");
+    expect(announce).toHaveBeenCalledTimes(2);
   });
   it("keeps rename inputs and saving connected", async () => {
     const { props, click, root } = await organize();

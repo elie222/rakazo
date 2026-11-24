@@ -69,6 +69,34 @@ describe("current-turn thread files", () => {
     );
     expect(result.block).toMatchObject({ name: expectedName, mimeType: "application/pdf" });
   });
+  it("signals the Space's artifacts after a file is attached", async () => {
+    const artifact = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn(async ({ data }) => ({ id: "artifact", ...data })),
+    };
+    const tx = { artifact, $queryRaw: vi.fn().mockResolvedValue([]) };
+    const publishSpaceChange = vi.fn(async () => {});
+    await attachWorkspaceFileToThread(
+      {
+        prisma: {
+          artifact,
+          $transaction: async (work: (client: typeof tx) => Promise<unknown>) => work(tx),
+        } as unknown as PrismaClient,
+        artifacts: { put: vi.fn().mockResolvedValue({ id: "stored" }) } as unknown as ArtifactStore,
+        events: { publishSpaceChange },
+      },
+      {
+        spaceId: "space",
+        userId: "owner",
+        botId: "bot",
+        runId: "run",
+        filePath: "report.pdf",
+        bytes: new Uint8Array([1]),
+        operationId: "op",
+      },
+    );
+    expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith("space", "artifacts");
+  });
   it("rejects generated output above a lower configured attachment limit before storage", async () => {
     const put = vi.fn();
     await expect(

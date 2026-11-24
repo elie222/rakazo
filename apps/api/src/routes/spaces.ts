@@ -27,6 +27,7 @@ import {
   setSpaceSettingOverride,
   spaceSettingOverrides,
 } from "@rakazo/db";
+import { hasChatHistory } from "../account/first-bot.js";
 import { otherSpaceOfBot, otherSpaceOfGroup } from "../bots/bot-space.js";
 import { invitationRecipientKey, sendInvitationEmail } from "../email/invitation-email.js";
 import type { RouterDeps } from "../router.js";
@@ -331,6 +332,7 @@ export function spacesRoutes(ctx: RouterContext) {
         thread,
         routines,
         spaces: navigation.spaces,
+        firstBotDue: navigation.firstBotDue,
         ...(botSpaceId ? { botSpaceId } : {}),
         ...(groupSpaceId ? { groupSpaceId } : {}),
       };
@@ -389,6 +391,7 @@ async function memberSpaceNavigation(
     externalConversations,
     contentBots,
     contentGroups,
+    deletedBots,
     guestSpaces,
   ] = await Promise.all([
     repos.listBots(actor),
@@ -410,6 +413,11 @@ async function memberSpaceNavigation(
       select: { spaceId: true },
       distinct: ["spaceId"],
     }),
+    // A Space whose bots were all deleted was used, so it is not sent back to onboarding.
+    deps.prisma.botDeletion.groupBy({
+      by: ["spaceId"],
+      where: { spaceId: { in: spaceIds } },
+    }),
     // Spaces someone from outside their organization belongs to, marked so nobody shares
     // there unaware.
     deps.prisma.spaceMember.findMany({
@@ -423,6 +431,7 @@ async function memberSpaceNavigation(
   const spacesWithContent = new Set([
     ...contentBots.map((row) => row.spaceId),
     ...contentGroups.map((row) => row.spaceId),
+    ...deletedBots.map((row) => row.spaceId),
   ]);
   const currentMembership = memberships.find((membership) => membership.spaceId === actor.spaceId);
   if (!currentMembership) throw new IsolationError();
@@ -434,7 +443,11 @@ async function memberSpaceNavigation(
   const sectionsFor = (spaceId: string) => sectionsBySpace.get(spaceId) ?? [];
   const staleClaimBefore = new Date(Date.now() - SPACE_DELETION_CLAIM_TIMEOUT_MS);
 
+  // Only an account with nothing in sight is worth the wider look at its own Spaces.
+  const firstBotDue = spacesWithContent.size === 0 && !(await hasChatHistory(deps.prisma, actor));
+
   return {
+    firstBotDue,
     current: {
       id: actor.spaceId,
       name: currentMembership.space.name,

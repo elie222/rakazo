@@ -244,6 +244,8 @@ describe("instabox computer sizes", () => {
     const provider = emulatedInstabox(emulator).provider();
     const large = await provider.provision({ ...request, size: "large" }, ctx);
     const standard = await provider.provision({ ...request, size: "standard" }, ctx);
+    expect(large.size).toBe("large");
+    expect(standard.size).toBe("standard");
     expect(sizeOf(emulator, large.id)).toEqual({ vcpus: 8, memMiB: 16384 });
     expect(sizeOf(emulator, standard.id)).toEqual({ vcpus: 4, memMiB: 8192 });
     expect(emulator.requests.filter((name) => name.startsWith("create "))).toEqual([
@@ -270,7 +272,7 @@ describe("instabox computer sizes", () => {
       { ...request, providerRef: computer.id, providerKind: "instabox", size: "large" },
       ctx,
     );
-    expect(resumed).toMatchObject({ id: computer.id, fresh: false });
+    expect(resumed).toMatchObject({ id: computer.id, fresh: false, size: "large" });
     expect(sizeOf(emulator, computer.id)).toEqual({ vcpus: 8, memMiB: 16384 });
     expect(emulator.computers.get(computer.id)!.state).toBe("running");
   });
@@ -295,7 +297,10 @@ describe("instabox computer sizes", () => {
     });
     expect(sizeOf(emulator, computer.id)).toEqual({ vcpus: 4, memMiB: 8192 });
     // The lifecycle then starts it at the size it has.
-    await expect(provider.provision(reconnect, ctx)).resolves.toMatchObject({ fresh: false });
+    await expect(provider.provision(reconnect, ctx)).resolves.toMatchObject({
+      fresh: false,
+      size: "standard",
+    });
   });
 
   it("surfaces a resize failure that is not about the size instead of falling back", async () => {

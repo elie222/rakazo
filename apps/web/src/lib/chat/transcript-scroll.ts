@@ -30,3 +30,23 @@ export function firstVisibleTranscriptRow(
   }
   return null;
 }
+
+/**
+ * Where following a reply must stop so its first row stays at the top of the viewport, or null
+ * while the whole reply still fits and following can go on to the end.
+ */
+export function replyStartScrollTop(
+  element: Pick<
+    HTMLElement,
+    "scrollHeight" | "scrollTop" | "clientHeight" | "getBoundingClientRect"
+  >,
+  row: Pick<HTMLElement, "getBoundingClientRect">,
+  scrollPaddingTop: number,
+): number | null {
+  const top =
+    row.getBoundingClientRect().top -
+    element.getBoundingClientRect().top +
+    element.scrollTop -
+    scrollPaddingTop;
+  return element.scrollHeight - element.clientHeight > top ? Math.max(0, top) : null;
+}

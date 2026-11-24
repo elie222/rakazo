@@ -152,6 +152,57 @@ describe("resolveGroupTargetBotIds", () => {
     ).toEqual(["review", "ux", "support"]);
   });
 
+  describe("explicit mentions of same-name members", () => {
+    const roster = [
+      { id: "first", name: "Research" },
+      { id: "second", name: "Research" },
+      { id: "writer", name: "Writer" },
+    ];
+
+    it.each([
+      ["@Research please check", ["second"]],
+      ["@Research and @Writer", ["second", "writer"]],
+      ["@Research and @everyone", ["second", "first", "writer"]],
+    ])("routes %s with the second Research selected", (text, expected) => {
+      expect(
+        resolveGroupTargetBotIds({ text, members: roster, explicitMentions: ["second"] }),
+      ).toEqual(expected);
+    });
+
+    it("keeps typed matches when the explicit ID is outside the group", () => {
+      expect(
+        resolveGroupTargetBotIds({
+          text: "@Research please check",
+          members: roster,
+          explicitMentions: ["outsider"],
+        }),
+      ).toEqual(["first", "second"]);
+    });
+
+    it("keeps both IDs when both same-name members are selected", () => {
+      expect(
+        resolveGroupTargetBotIds({
+          text: "@Research and @Research",
+          members: roster,
+          explicitMentions: ["second", "first"],
+        }),
+      ).toEqual(["second", "first"]);
+    });
+
+    it("uses the same Unicode name matching for an explicit and typed mention", () => {
+      expect(
+        resolveGroupTargetBotIds({
+          text: "@ſupport please check",
+          members: [
+            { id: "first", name: "Support" },
+            { id: "second", name: " ſupport " },
+          ],
+          explicitMentions: ["second"],
+        }),
+      ).toEqual(["second"]);
+    });
+  });
+
   it("keeps all members with the same complete name", () => {
     expect(
       resolveGroupTargetBotIds({

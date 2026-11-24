@@ -35,12 +35,15 @@ import { JsonObject, readJsonColumn } from "../database/json-column.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "../database/transaction-retry.js";
 import { contentEncryptionOf } from "../encryption/content-encryption.js";
 import { deleteRunSecretsInTransaction } from "../runs/run-secrets.js";
-import { RUN_TURN_CHECKPOINT_KIND } from "../runs/run-turn-checkpoint.js";
+import {
+  RUN_TURN_CHECKPOINT_KIND,
+  retireIntroTurnCheckpoint,
+} from "../runs/run-turn-checkpoint.js";
 import { publishSpaceChange } from "../spaces/space-changes.js";
 import { notifyCommittedEvent, notifyRealtime } from "./event-stream.js";
 import type { FinalizeRunResult } from "./events.js";
 import { appendEventInTransaction, transientRunEventsWhere } from "./events.js";
-import { readMessageBlocks } from "./message-blocks.js";
+import { changeMessageBlocks, readMessageBlocks } from "./message-blocks.js";
 import { createThreadMessageInTransaction, loadMessageAuthor } from "./messages.js";
 import { editOutgoingDraft } from "./outgoing-draft.js";
 import { createPendingSteeringRun, releaseUnreadHandovers } from "./thread-steering.js";
@@ -174,6 +177,22 @@ export interface RunSecretWriter {
   }): Promise<void>;
 }
 
+/**
+ * The first unanswered ask in one stored message, read entry by entry so a sibling block the current
+ * schema rejects cannot hide the card. `entry` is the row's own object, so a write-back can replace
+ * exactly that block with `changeMessageBlocks` and leave the rest as they were stored.
+ */
+function pendingAskIn(message: { id: string; blocks: unknown }) {
+  for (const block of readMessageBlocks(message).blocks) {
+    if (block.kind !== "ask" || block.status === "answered") continue;
+    const parsed = MessageBlockSchema.safeParse(block);
+    if (parsed.success && parsed.data.kind === "ask") {
+      return { entry: block, ask: parsed.data };
+    }
+  }
+  return undefined;
+}
+
 async function findPendingAsk(
   tx: Prisma.TransactionClient,
   input: { threadId: string; runId: string },
@@ -189,12 +208,8 @@ async function findPendingAsk(
     select: { id: true, blocks: true },
   });
   for (const message of messages) {
-    const parsed = MessageBlockSchema.array().safeParse(message.blocks);
-    if (!parsed.success) continue;
-    const pendingAsk = parsed.data.find(
-      (block) => block.kind === "ask" && block.status !== "answered",
-    );
-    if (pendingAsk?.kind === "ask") return { messageId: message.id, pendingAsk };
+    const pendingAsk = pendingAskIn(message);
+    if (pendingAsk) return { messageId: message.id, pendingAsk: pendingAsk.ask };
   }
   return null;
 }
@@ -206,7 +221,7 @@ async function commitAnswerRunInput(
 ): Promise<{
   threadId: string;
   seq: number;
-  approval?: { decision: string; effectKind: string };
+  approval?: { decision: string; effectKind: string; effectId: string };
 } | null> {
   // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
   // concurrent clear cannot deadlock against this transaction.
@@ -230,6 +245,7 @@ async function commitAnswerRunInput(
       checkpoint: true,
       trigger: true,
       clientNonce: true,
+      taskId: true,
       task: { select: { prompt: true } },
     },
   });
@@ -244,12 +260,9 @@ async function commitAnswerRunInput(
       role: "bot",
     },
   });
-  const parsed = MessageBlockSchema.array().safeParse(message?.blocks);
-  if (!message || !parsed.success) return null;
-  const pendingAsk = parsed.data.find(
-    (block) => block.kind === "ask" && block.status !== "answered",
-  );
-  if (pendingAsk?.kind !== "ask") return null;
+  const found = message ? pendingAskIn(message) : undefined;
+  if (!message || !found) return null;
+  const { entry: pendingAskEntry, ask: pendingAsk } = found;
   const approvalAsk = isApprovalAskBlock(pendingAsk);
   const secretAsk = isSecretAskBlock(pendingAsk);
   const choiceAsk = !approvalAsk && !secretAsk && Boolean(pendingAsk.actions?.length);
@@ -341,8 +354,8 @@ async function commitAnswerRunInput(
     }
   }
 
-  // Answering the creation intro's or a daily check-in's question resumes as the user's
-  // turn: with the conversation and every tool, to get going on that answer.
+  // A composer reply to the creation intro or a daily check-in starts the user's turn.
+  // Preserve its source so the resumed run can prove who started it.
   const answersOpener =
     run.trigger === "created" ||
     (run.trigger === "routine" &&
@@ -363,11 +376,21 @@ async function commitAnswerRunInput(
     },
     data: {
       status: "queued",
-      ...(resumedTrigger !== run.trigger ? { trigger: resumedTrigger } : {}),
+      ...(resumedTrigger !== run.trigger
+        ? {
+            trigger: resumedTrigger,
+            ...(input.answerMessageId ? { sourceMessageId: input.answerMessageId } : {}),
+          }
+        : {}),
       ...(choiceAsk ? { checkpoint: null } : {}),
     },
   });
   if (queued.count !== 1) return null;
+  // The answer starts the user's task. Replaying the intro would keep its hidden
+  // instruction to greet the user and ask what they want as the model's request.
+  if (run.trigger === "created" && resumedTrigger === "user") {
+    await retireIntroTurnCheckpoint(tx, { id: input.runId, spaceId: input.spaceId });
+  }
 
   const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);
   const callId = callIdFromClientNonce(input.clientNonce);
@@ -453,11 +476,11 @@ async function commitAnswerRunInput(
       where: secretRequest,
       data: { status: "completed", result: DISMISSED_SECRET_RESULT },
     });
-    const task = await tx.task.updateMany({
-      where: { runs: { some: { id: input.runId } } },
+    await tx.task.update({
+      where: { id: run.taskId },
       data: { prompt: resumePrompt(run, pendingAsk.text, DISMISSED_SECRET_PROMPT) },
+      select: { id: true },
     });
-    if (task.count !== 1) throw new Error("Run task was not available to answer");
   } else if (secretAsk) {
     await runSecretWriter!.store({
       botId: run.botId,
@@ -486,8 +509,8 @@ async function commitAnswerRunInput(
     const resumeLabel = selectedChoice
       ? resumeChoiceLabel(selectedChoice, run.checkpoint)
       : undefined;
-    const task = await tx.task.updateMany({
-      where: { runs: { some: { id: input.runId } } },
+    await tx.task.update({
+      where: { id: run.taskId },
       data: {
         prompt: resumePrompt(
           { ...run, trigger: resumedTrigger },
@@ -495,12 +518,14 @@ async function commitAnswerRunInput(
           selectedChoice ? `Selected choice ${selectedChoice.id}: ${resumeLabel}` : input.answer,
         ),
       },
+      select: { id: true },
     });
-    if (task.count !== 1) throw new Error("Run task was not available to answer");
   }
 
-  const blocks = parsed.data.map((block) =>
-    block === pendingAsk
+  // Only the answered block is replaced: entries a read drops, or that a later release stored,
+  // stay in the row as they were, as `changeMessageBlocks` documents.
+  const edited = changeMessageBlocks(message, (block) =>
+    block === pendingAskEntry
       ? {
           ...block,
           status: "answered" as const,
@@ -526,20 +551,27 @@ async function commitAnswerRunInput(
         }
       : block,
   );
-  await tx.message.update({ where: { id: message.id }, data: { blocks } });
+  if (!edited) return null;
+  await tx.message.update({ where: { id: message.id }, data: { blocks: edited.stored } });
   const updated = await appendEventInTransaction(tx, {
     spaceId: input.spaceId,
     threadId: input.threadId,
     botId: run.botId,
     type: "thread.message.updated",
     runId: input.runId,
-    payload: { messageId: message.id, role: "bot", blocks },
+    payload: { messageId: message.id, role: "bot", blocks: edited.blocks },
   });
   return {
     threadId: updated.threadId,
     seq: updated.seq,
     ...(approvalEffect
-      ? { approval: { decision: approvalAnswer, effectKind: approvalEffect.kind } }
+      ? {
+          approval: {
+            decision: approvalAnswer,
+            effectKind: approvalEffect.kind,
+            effectId: approvalEffect.id,
+          },
+        }
       : {}),
   };
 }
@@ -572,6 +604,7 @@ export async function answerRunInput(
       metadata: {
         decision: committed.approval.decision,
         effectKind: committed.approval.effectKind,
+        effectId: committed.approval.effectId,
         runId: input.runId,
       },
     });
@@ -608,13 +641,14 @@ export async function retireWaitingQuestionInTransaction(
     where: { threadId: input.threadId, runId: input.runId, role: "bot" },
     select: { id: true, blocks: true },
   });
-  const questions = [];
+  const questions: Array<{
+    id: string;
+    stored: Prisma.InputJsonArray;
+    blocks: MessageBlock[];
+  }> = [];
   for (const message of messages) {
-    const parsed = MessageBlockSchema.array().safeParse(message.blocks);
-    if (!parsed.success) return false;
-    const pending = parsed.data.filter(
-      (block) => block.kind === "ask" && block.status !== "answered",
-    );
+    const { blocks } = readMessageBlocks(message);
+    const pending = blocks.filter((block) => block.kind === "ask" && block.status !== "answered");
     // Never implicitly dismiss credentials or authorize an external effect, even on a mixed card.
     if (
       pending.some(
@@ -622,21 +656,20 @@ export async function retireWaitingQuestionInTransaction(
       )
     )
       return false;
-    if (pending.length) {
-      questions.push({
-        id: message.id,
-        blocks: parsed.data.map((block) =>
-          pending.includes(block)
-            ? {
-                ...block,
-                status: "answered" as const,
-                answer,
-                answerMessageId: input.answerMessageId,
-              }
-            : block,
-        ),
-      });
-    }
+    if (!pending.length) continue;
+    // Answer only these blocks and keep every sibling exactly as the row stores it.
+    const edited = changeMessageBlocks(message, (block) =>
+      block.kind === "ask" && block.status !== "answered"
+        ? {
+            ...block,
+            status: "answered" as const,
+            answer,
+            answerMessageId: input.answerMessageId,
+          }
+        : block,
+    );
+    if (!edited) continue;
+    questions.push({ id: message.id, stored: edited.stored, blocks: edited.blocks });
   }
   if (!questions.length) return false;
   const now = new Date();
@@ -666,7 +699,7 @@ export async function retireWaitingQuestionInTransaction(
     data: { status: "cancelled" },
   });
   for (const question of questions) {
-    await tx.message.update({ where: { id: question.id }, data: { blocks: question.blocks } });
+    await tx.message.update({ where: { id: question.id }, data: { blocks: question.stored } });
     await appendEventInTransaction(tx, {
       ...input,
       type: "thread.message.updated",

@@ -6,7 +6,9 @@ import {
   COMPUTER_CONTROL_HEARTBEAT_MS,
   COMPUTER_HEARTBEAT_MS,
   isRetryableError,
+  newClientId,
 } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button, Spinner } from "@rakazo/ui-web";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -40,6 +42,7 @@ export function useComputerControls({
   refreshThread,
   refreshGroupThread,
   onUpgrade,
+  onSendError,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   state: ComputerState;
@@ -58,6 +61,7 @@ export function useComputerControls({
   ) => Promise<ThreadSnapshot>;
   refreshGroupThread: (groupId: string) => Promise<ThreadSnapshot>;
   onUpgrade: () => void;
+  onSendError: (message: string) => void;
 }) {
   const { t } = useLingui();
   const {
@@ -201,6 +205,36 @@ export function useComputerControls({
     if (readScreen) await refreshComputerScreen(targetBotId);
   }
 
+  const [cleaningUpDisk, setCleaningUpDisk] = useState(false);
+  function dismissDiskWarning(targetBotId: string) {
+    const current = computerRef.current;
+    if (current?.botId === targetBotId) commitComputer({ ...current, diskFullPercent: undefined });
+    const cached = computerCacheRef.current.get(targetBotId)?.computer;
+    if (cached)
+      cacheComputerFor(targetBotId, { computer: { ...cached, diskFullPercent: undefined } });
+    return bestEffort(
+      "dismiss computer disk warning",
+      rpc.computer.dismissDiskWarning({ botId: targetBotId }),
+    );
+  }
+  /** Asks the bot to free up its computer's disk, then lets the warning go. */
+  function cleanUpDisk(targetBotId: string) {
+    setCleaningUpDisk(true);
+    void rpc.threads
+      .send({
+        botId: targetBotId,
+        clientNonce: newClientId(),
+        text: t`Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need.`,
+      })
+      .then(async () => {
+        // The refresh must read the dismissal, or it would paint the warning again.
+        await dismissDiskWarning(targetBotId);
+        void refreshThread(targetBotId);
+      })
+      .catch((error: unknown) => onSendError(errorText(error)))
+      .finally(() => setCleaningUpDisk(false));
+  }
+
   useEffect(() => {
     setComputerOpen(false);
     setComputerError(null);
@@ -242,9 +276,16 @@ export function useComputerControls({
     }).catch(() => undefined);
   }, [computerBlockedByRun]);
 
-  useEventListener(computerOpen ? window : null, "keydown", (event) => {
-    if (event.key === "Escape" && !event.isComposing && event.keyCode !== 229)
+  useEventListener(computerOpen ? document : null, "keydown", (event) => {
+    if (
+      event.key === "Escape" &&
+      !event.defaultPrevented &&
+      !event.isComposing &&
+      event.keyCode !== 229
+    ) {
+      event.preventDefault();
       setComputerOpen(false);
+    }
   });
 
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
@@ -314,7 +355,7 @@ export function useComputerControls({
     if (computer?.botId !== id) {
       setScreenUrlLoadedBotId(null);
       commitComputer(targetComputer);
-      setScreenUrl(targetScreen);
+      setScreenUrl(targetScreen, id);
     }
     // Reopening during a boot shows it; a second boot would be refused as busy.
     const bootInFlight = bootsInFlight.current.has(id) || targetComputer?.state === "booting";
@@ -504,6 +545,33 @@ export function useComputerControls({
     !computerPreviewScreen &&
     !computerScreenError &&
     showComputerRecoveryHint;
+  /** The screen as both the bot panel and the full-screen computer show it. */
+  const screenProps = {
+    computer,
+    booting,
+    embeddedScreenUrl,
+    screenFrameKey: state.screenFrameKey,
+    heldScreen: state.heldScreen,
+    screenFrameRef: state.setScreenFrame,
+    computerScreenError,
+    computerBooting,
+  };
+  /** The bot panel's computer for `bot`, apart from settings and recovery, which the shell owns. */
+  function panelProps(bot: Bot) {
+    return {
+      ...screenProps,
+      bot,
+      computerOpen,
+      embeddedScreenUrl: panel === "settings" ? embeddedScreenUrl : null,
+      showingRecoveryHint,
+      showComputerRecoveryHint,
+      onRecoveryDismissed: releaseComputerRecovery,
+      onOpen: () => void openComputer(),
+      cleaningUpDisk,
+      onCleanUpDisk: () => cleanUpDisk(bot.id),
+      onDismissDiskWarning: () => void dismissDiskWarning(bot.id),
+    };
+  }
 
   return {
     computerBot,
@@ -520,5 +588,7 @@ export function useComputerControls({
     hasControl,
     computerScreenError,
     computerBooting,
+    screenProps,
+    panelProps,
   };
 }

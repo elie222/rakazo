@@ -142,13 +142,23 @@ export async function assertCompatibleDefaultChange(
   );
 }
 
-/**
- * What disconnecting one connection takes with it. The main and backup choices it serves are
- * deleted with it, in the account's models and in every Space that has its own, and connecting
- * again does not bring them back. The member's bots and active routines set to the provider are
- * named only when this is the provider's last connection. With another one left, which of them
- * it serves depends on that connection's models, so none is named rather than guessed.
- */
+export function disconnectedModelChoices(
+  userId: string,
+  provider: ReturnType<typeof modelCredentialProviderFilter>,
+  credentialIds: string[],
+  lastConnection: boolean,
+) {
+  return {
+    userId,
+    provider,
+    OR: [
+      { credentialId: { in: credentialIds } },
+      // Legacy choices without a funding pin ran on the provider's last connection.
+      ...(lastConnection ? [{ credentialId: null, creditOfferingId: null }] : []),
+    ],
+  };
+}
+
 export async function modelDisconnectPreview(
   deps: RouterDeps,
   actor: Actor,
@@ -163,17 +173,7 @@ export async function modelDisconnectPreview(
     return { mainModel: false, otherChoice: false, usedBy: [], usedByTotal: 0 };
   }
   const last = connections.length === 1;
-  // The rows `models.disconnect` deletes, less a Space's saved choices that are not in use
-  // because the Space follows the account's models: a warning about those would name a main
-  // model that is not the one running.
-  const roles = {
-    userId: actor.userId,
-    provider,
-    OR: [
-      { credentialId: input.credentialId },
-      ...(last ? [{ credentialId: null, creditOfferingId: null }] : []),
-    ],
-  };
+  const roles = disconnectedModelChoices(actor.userId, provider, [input.credentialId], last);
   const position = { role: true, position: true } as const;
   // Only the first names are sent, so only those are read; the total is counted.
   const named = {
@@ -181,7 +181,12 @@ export async function modelDisconnectPreview(
     orderBy: { name: "asc" },
     take: MAX_MODEL_DISCONNECT_NAMES,
   } as const;
-  const pinned = { userId: actor.userId, modelProvider: provider };
+  // The owning member can see their bots and routines across their current Spaces.
+  const pinned = {
+    userId: actor.userId,
+    modelProvider: provider,
+    space: { memberships: { some: { userId: actor.userId } } },
+  };
   const bots = { ...pinned, archivedAt: null };
   const routines = { ...pinned, active: true, bot: { archivedAt: null } };
   // A connection is the account's, so its uses are read in every Space it serves.
@@ -189,21 +194,17 @@ export async function modelDisconnectPreview(
     await runAsSystem("what disconnecting a model connection takes with it", () =>
       Promise.all([
         deps.prisma.userModelRoleChoice.findMany({ where: roles, select: position }),
-        deps.prisma.spaceModelRoleChoice.findMany({
-          where: { ...roles, spaceMember: { settingOverrides: { some: { setting: "models" } } } },
-          select: position,
-        }),
+        deps.prisma.spaceModelRoleChoice.findMany({ where: roles, select: position }),
         last ? deps.prisma.bot.findMany({ where: bots, ...named }) : [],
         last ? deps.prisma.routine.findMany({ where: routines, ...named }) : [],
-        last ? deps.prisma.bot.count({ where: bots }) : 0,
-        last ? deps.prisma.routine.count({ where: routines }) : 0,
+        deps.prisma.bot.count({ where: bots }),
+        deps.prisma.routine.count({ where: routines }),
       ]),
     );
   const served = [...accountRoles, ...spaceRoles];
   const runsMain = (row: { role: string; position: number }) =>
     row.role === "main" && row.position === 0;
-  // A name is shown once; the total counts every bot and routine, same-named ones included.
-  const names = [...new Set([...botNames, ...routineNames].map((row) => row.name))];
+  const names = [...botNames, ...routineNames].map((row) => row.name);
   return {
     mainModel: served.some(runsMain),
     otherChoice: served.some((row) => !runsMain(row)),

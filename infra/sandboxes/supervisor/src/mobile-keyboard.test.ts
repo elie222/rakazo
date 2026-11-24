@@ -213,20 +213,36 @@ function keyboardFixture(
     contains: () => false,
   };
   const inputAttributes = new Map([["aria-hidden", "true"]]);
+  let inputValue = "";
   const input = {
-    value: "",
+    get value() {
+      return inputValue;
+    },
+    set value(value: string) {
+      inputValue = value;
+      this.selectionStart = value.length;
+      this.selectionEnd = value.length;
+    },
+    selectionStart: null as number | null,
+    selectionEnd: null as number | null,
     attributes: inputAttributes,
     setAttribute: (name: string, value: string) => inputAttributes.set(name, value),
     removeAttribute: (name: string) => inputAttributes.delete(name),
     addEventListener: (type: string, listener: (event: object) => void) =>
       inputListeners.set(type, listener),
-    removeEventListener: () => {},
+    removeEventListener: (type: string) => inputListeners.delete(type),
     focus: () => {},
     blur: () => {},
-    setSelectionRange: () => {},
+    setSelectionRange(start: number, end: number) {
+      this.selectionStart = start;
+      this.selectionEnd = end;
+    },
   };
   const documentTarget = {
     activeElement: input as unknown,
+    addEventListener: (type: string, listener: (event: object) => void) =>
+      inputListeners.set(`document:${type}`, listener),
+    removeEventListener: (type: string) => inputListeners.delete(`document:${type}`),
     documentElement: {
       style: { setProperty: () => {}, removeProperty: () => {} },
       classList: { toggle: () => {}, remove: () => {} },
@@ -242,8 +258,12 @@ function keyboardFixture(
     focusOnClick: true,
     sendKey: (keysym: number, code?: string, down?: boolean) => keys.push([keysym, code, down]),
   };
+  let keyboard: Keyboard | undefined;
   class Keyboard {
-    onkeyevent = null;
+    onkeyevent: ((keysym: number, code: string, down: boolean) => void) | null = null;
+    constructor() {
+      keyboard = this;
+    }
     grab() {}
     ungrab() {}
   }
@@ -283,6 +303,7 @@ function keyboardFixture(
     keyBar,
     keyBarListeners,
     buttons,
+    keyboard,
     windowTarget,
     detach,
   };
@@ -295,8 +316,8 @@ describe("mobile computer keyboard", () => {
       text: "a",
     });
     expect(mobileInputChanges("___", "hi___", 2)).toEqual({
-      backspaces: 3,
-      text: "hi___",
+      backspaces: 0,
+      text: "hi",
     });
     expect(mobileInputChanges("___a", "___", 3)).toEqual({
       backspaces: 1,
@@ -304,10 +325,150 @@ describe("mobile computer keyboard", () => {
     });
   });
 
+  it("ignores an unchanged suffix after an edit at a moved caret", () => {
+    expect(mobileInputChanges("___hello", "___hexllo", 6)).toEqual({ backspaces: 0, text: "x" });
+    expect(mobileInputChanges("___hello", "___hllo", 4)).toEqual({ backspaces: 1, text: "" });
+    expect(mobileInputChanges("___😀ok", "___😁ok", 5)).toEqual({ backspaces: 1, text: "😁" });
+    expect(mobileInputChanges("___", "____", 2)).toEqual({ backspaces: 0, text: "_" });
+    expect(mobileInputChanges("___", "___a", null)).toEqual({ backspaces: 0, text: "a" });
+  });
+
+  it("returns a moved caret or selected range to the end without sending keys", () => {
+    const { input, inputListeners, keys, detach } = keyboardFixture();
+    for (const [start, end] of [
+      [96, 96],
+      [90, 95],
+      [99, 99],
+    ] as const) {
+      input.setSelectionRange(start, end);
+      inputListeners.get("document:selectionchange")?.({});
+      expect([input.selectionStart, input.selectionEnd]).toEqual([99, 99]);
+    }
+    expect(keys).toEqual([]);
+    detach();
+    expect(inputListeners.has("document:selectionchange")).toBe(false);
+  });
+
+  it("leaves selections alone while another field is focused or an IME is composing", () => {
+    const { input, inputListeners, documentTarget, keys } = keyboardFixture();
+    documentTarget.activeElement = {};
+    input.setSelectionRange(96, 96);
+    inputListeners.get("document:selectionchange")?.({});
+    expect(input.selectionStart).toBe(96);
+    documentTarget.activeElement = input;
+    inputListeners.get("compositionstart")?.({});
+    inputListeners.get("document:selectionchange")?.({});
+    expect(input.selectionStart).toBe(96);
+    inputListeners.get("compositionend")?.({});
+    inputListeners.get("document:selectionchange")?.({});
+    expect(input.selectionStart).toBe(99);
+    expect(keys).toEqual([]);
+  });
+
+  it("sends only the edit when input arrives before the caret correction, then keeps typing", () => {
+    const { input, inputListeners, keys } = keyboardFixture();
+    const seed = input.value;
+    input.value = `${seed.slice(0, 96)}x___`;
+    input.setSelectionRange(97, 97);
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    expect(keys).toEqual([[120, undefined, undefined]]);
+    expect(input.value).toBe(`${seed}x`);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([100, 100]);
+    input.value += "y";
+    input.setSelectionRange(101, 101);
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    expect(keys).toEqual([
+      [120, undefined, undefined],
+      [121, undefined, undefined],
+    ]);
+    input.value = input.value.slice(0, -1);
+    input.setSelectionRange(100, 100);
+    inputListeners.get("input")?.({ target: input, inputType: "deleteContentBackward" });
+    expect(keys.at(-1)).toEqual([0xff08, "Backspace", undefined]);
+  });
+
+  it("moves a middle deletion to the remote end without retyping its suffix", () => {
+    const { input, inputListeners, keys } = keyboardFixture();
+    const seed = input.value;
+    input.value += "hello";
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    keys.length = 0;
+    input.value = `${seed}hllo`;
+    input.setSelectionRange(seed.length + 1, seed.length + 1);
+    inputListeners.get("input")?.({ target: input, inputType: "deleteContentBackward" });
+    expect(keys).toEqual([[0xff08, "Backspace", undefined]]);
+    expect(input.value).toBe(`${seed}hell`);
+    expect(input.selectionStart).toBe(input.value.length);
+  });
+
+  it("replaces an emoji at a moved caret and preserves code points in the next deletion", () => {
+    const { input, inputListeners, keys } = keyboardFixture();
+    const seed = input.value;
+    input.value += "😀ok";
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    keys.length = 0;
+    input.value = `${seed}😁ok`;
+    input.setSelectionRange(seed.length + 2, seed.length + 2);
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    expect(keys).toEqual([
+      [0xff08, "Backspace", undefined],
+      [0x1f601, undefined, undefined],
+    ]);
+    expect(input.value).toBe(`${seed}😀o😁`);
+    input.value = `${seed}😀o`;
+    inputListeners.get("input")?.({ target: input, inputType: "deleteContentBackward" });
+    expect(keys.at(-1)).toEqual([0xff08, "Backspace", undefined]);
+    expect(keys).toHaveLength(3);
+  });
+
+  it("does not move the caret during composing input, then aligns it when composition ends", () => {
+    const { input, inputListeners, keys } = keyboardFixture();
+    const seed = input.value;
+    inputListeners.get("compositionstart")?.({});
+    input.value = `${seed.slice(1)}か_`;
+    input.setSelectionRange(seed.length, seed.length);
+    inputListeners.get("input")?.({ target: input, isComposing: true });
+    inputListeners.get("document:selectionchange")?.({});
+    expect(input.value).toBe(`${seed.slice(1)}か_`);
+    expect(input.selectionStart).toBe(seed.length);
+    inputListeners.get("compositionend")?.({});
+    expect(input.value).toBe(`${seed}か`);
+    expect(input.selectionStart).toBe(input.value.length);
+    input.value = seed;
+    inputListeners.get("input")?.({ target: input, inputType: "deleteContentBackward" });
+    expect(keys).toEqual([
+      [0x304b, undefined, undefined],
+      [0xff08, "Backspace", undefined],
+    ]);
+  });
+
   it("replaces corrected text instead of duplicating it", () => {
     expect(mobileInputChanges("___teh", "___the", 6)).toEqual({
       backspaces: 2,
       text: "he",
+    });
+  });
+
+  it("counts an emoji as one Backspace and keeps a replaced emoji whole", () => {
+    expect(mobileInputChanges("___😀", "___", 3)).toEqual({
+      backspaces: 1,
+      text: "",
+    });
+    expect(mobileInputChanges("___ab😀", "___ab")).toEqual({
+      backspaces: 1,
+      text: "",
+    });
+    expect(mobileInputChanges("___😀", "___😁", 5)).toEqual({
+      backspaces: 1,
+      text: "😁",
+    });
+    expect(mobileInputChanges("___a😀", "___a😁")).toEqual({
+      backspaces: 1,
+      text: "😁",
+    });
+    expect(mobileInputChanges("___", "___😀")).toEqual({
+      backspaces: 0,
+      text: "😀",
     });
   });
 
@@ -455,6 +616,26 @@ describe("mobile computer keyboard", () => {
     expect(windowTarget.rakazoComputerKeyboard).toBeUndefined();
   });
 
+  it("sends one Backspace for a deleted emoji and the whole new emoji for a replaced one", () => {
+    const { input, inputListeners, keys } = keyboardFixture();
+    const seed = input.value;
+    input.value = `${seed}😀`;
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    input.value = seed;
+    inputListeners.get("input")?.({ target: input, inputType: "deleteContentBackward" });
+    input.value = `${seed}😀`;
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    input.value = `${seed}😁`;
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    expect(keys).toEqual([
+      [0x1f600, undefined, undefined],
+      [0xff08, "Backspace", undefined],
+      [0x1f600, undefined, undefined],
+      [0xff08, "Backspace", undefined],
+      [0x1f601, undefined, undefined],
+    ]);
+  });
+
   it("keeps the in-page keyboard hidden when the native app supplies keys", () => {
     const { button, keyBar, keys, windowTarget } = keyboardFixture({
       nativeKeys: true,
@@ -491,6 +672,74 @@ describe("mobile computer keyboard", () => {
       preventDefault() {},
     });
     expect(keys.at(-1)).toEqual([0xff1b, "Escape", undefined]);
+  });
+
+  it("holds a latched Ctrl around a key that noVNC sends on keydown, then clears it", () => {
+    const { keys, keyBarListeners, buttons, input, inputListeners, keyboard } = keyboardFixture({
+      keyBar: true,
+    });
+    const control = buttons.find((item) => item.getAttribute("data-key") === "Control");
+    keyBarListeners.get("click")?.({ target: control, preventDefault() {} });
+    keyboard?.onkeyevent?.(0xff0d, "Enter", true);
+    keyboard?.onkeyevent?.(0xff0d, "Enter", false);
+    expect(keys).toEqual([
+      [0xffe3, "ControlLeft", true],
+      [0xff0d, "Enter", true],
+      [0xff0d, "Enter", false],
+      [0xffe3, "ControlLeft", false],
+    ]);
+    expect(control?.getAttribute("aria-pressed")).toBe("false");
+    const seed = input.value;
+    input.value = `${seed}a`;
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    expect(keys.slice(4)).toEqual([[97, undefined, undefined]]);
+  });
+
+  it("keeps a latched Ctrl through a modifier keydown until the next other key", () => {
+    const { keys, keyBarListeners, buttons, keyboard } = keyboardFixture({ keyBar: true });
+    const control = buttons.find((item) => item.getAttribute("data-key") === "Control");
+    keyBarListeners.get("click")?.({ target: control, preventDefault() {} });
+    keyboard?.onkeyevent?.(0xffe1, "ShiftLeft", true);
+    keyboard?.onkeyevent?.(0xffe1, "ShiftLeft", false);
+    expect(control?.getAttribute("aria-pressed")).toBe("true");
+    expect(keys).toEqual([
+      [0xffe1, "ShiftLeft", true],
+      [0xffe1, "ShiftLeft", false],
+    ]);
+  });
+
+  it("releases a Ctrl held for a keydown when the keyboard loses focus", () => {
+    const { keys, keyBarListeners, buttons, keyboard, inputListeners } = keyboardFixture({
+      keyBar: true,
+    });
+    const control = buttons.find((item) => item.getAttribute("data-key") === "Control");
+    keyBarListeners.get("click")?.({ target: control, preventDefault() {} });
+    keyboard?.onkeyevent?.(0xff0d, "Enter", true);
+    inputListeners.get("blur")?.({});
+    expect(keys).toEqual([
+      [0xffe3, "ControlLeft", true],
+      [0xff0d, "Enter", true],
+      [0xffe3, "ControlLeft", false],
+    ]);
+    keyboard?.onkeyevent?.(0xff0d, "Enter", false);
+    expect(keys.slice(3)).toEqual([[0xff0d, "Enter", false]]);
+  });
+
+  it("applies a latched Ctrl to a Backspace found by a deleting input", () => {
+    const { keys, keyBarListeners, buttons, input, inputListeners } = keyboardFixture({
+      keyBar: true,
+    });
+    const control = buttons.find((item) => item.getAttribute("data-key") === "Control");
+    keyBarListeners.get("click")?.({ target: control, preventDefault() {} });
+    input.value = input.value.slice(0, -1);
+    inputListeners.get("input")?.({ target: input, inputType: "deleteContentBackward" });
+    expect(keys).toEqual([
+      [0xffe3, "ControlLeft", true],
+      [0xff08, "Backspace", true],
+      [0xff08, "Backspace", false],
+      [0xffe3, "ControlLeft", false],
+    ]);
+    expect(control?.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("lets sibling chrome controls receive taps while the keyboard is open", () => {

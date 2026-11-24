@@ -165,6 +165,21 @@ describe("openai-compatible URL policy", () => {
     }
   });
 
+  it("reads the public hosts switch strictly", () => {
+    for (const value of ["0", "false", "FALSE", " false "]) {
+      process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = value;
+      expect(openAiCompatAllowPublicHosts()).toBe(false);
+    }
+    for (const value of ["", "1", "true", "TRUE"]) {
+      process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = value;
+      expect(openAiCompatAllowPublicHosts()).toBe(true);
+    }
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "no";
+    expect(() => openAiCompatAllowPublicHosts()).toThrow(
+      "RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC must be true or false",
+    );
+  });
+
   it("allows public hosts unless the operator sets 0", () => {
     delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
     expect(openAiCompatAllowPublicHosts()).toBe(true);

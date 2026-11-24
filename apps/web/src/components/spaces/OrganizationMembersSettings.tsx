@@ -16,7 +16,6 @@ import {
   DropdownMenuTrigger,
   Input,
   toast,
-  writeClipboard,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal } from "lucide-react";
@@ -25,6 +24,7 @@ import { useQueryUserId, useSave } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
 import type { Organization } from "../../lib/spaces/organizations";
 import { organizationMembersQuery, organizationsQuery } from "../../lib/spaces/organizations";
+import { useCopyInviteLink } from "../../lib/spaces/use-copy-invite-link";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { SettingsPageHeader } from "../settings/SettingsPageHeader";
 import { SettingsGroup } from "../settings/SettingsRows";
@@ -51,13 +51,7 @@ export function OrganizationMembersSettings({
   const stale = [organizationsQuery(userId).queryKey];
   const [email, setEmail] = useState("");
   const [removing, setRemoving] = useState<OrganizationMember | null>(null);
-  /** A link the browser would not copy, offered to copy by hand. */
-  const [manualLink, setManualLink] = useState<string | null>(null);
-
-  async function copyLink(url: string) {
-    if (await writeClipboard(url)) toast(t`Invite link copied`);
-    else setManualLink(url);
-  }
+  const { manualLink, copyLink, dismissManualLink } = useCopyInviteLink();
 
   const invite = useSave({
     save: (address: string, rpc) =>
@@ -231,7 +225,7 @@ export function OrganizationMembersSettings({
       <CopyTextFallback
         open={manualLink !== null}
         onOpenChange={(open) => {
-          if (!open) setManualLink(null);
+          if (!open) dismissManualLink();
         }}
         text={manualLink ?? ""}
         label={t`Invite link`}

@@ -5,6 +5,34 @@ import org.junit.Test
 
 class MarkdownPreviewTest {
   @Test
+  fun `strips only closing ATX heading markers`() {
+    val cases = listOf(
+      "## Weekly report ##\nReady to review." to "Weekly report Ready to review.",
+      "   ###\tTitle\t######## \t" to "Title",
+      "## ##\nAfter" to "After",
+      "## C#\nKeep C# and the tag #" to "C# Keep C# and the tag #",
+      "## Ticket #42 \t#" to "Ticket #42",
+      "## Keep # suffix" to "Keep # suffix",
+      "## Keep #\u00a0" to "Keep #",
+      "## Keep \\#" to "Keep #",
+      "## Keep `#`" to "Keep #",
+      "## Keep `a\nb` ##" to "Keep a b ##",
+      "## [Keep #](https://example.test)" to "Keep #",
+      "## Keep # <!-- note -->" to "Keep #",
+      "    ## Keep ##" to "## Keep ##",
+      "####### Keep ##" to "####### Keep ##",
+      "```\n## Keep ##\n```" to "## Keep ##",
+    )
+    for ((source, expected) in cases) assertEquals(expected, markdownToPreview(source))
+  }
+
+  @Test
+  fun `does not remove a hash at a preview cut in the middle of heading text`() {
+    val heading = "## " + "x".repeat(4_091) + " #"
+    assertEquals(heading.removePrefix("## "), markdownToPreview("$heading continued"))
+  }
+
+  @Test
   fun `normalizes CR LF and CRLF before reading Markdown blocks`() {
     val cases = listOf(
       "# Heading\n## Subheading" to "Heading Subheading",

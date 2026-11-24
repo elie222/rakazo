@@ -8,12 +8,11 @@ import type {
   NotificationProvider,
 } from "@rakazo/adapter-kit";
 import { pushReceiptJob } from "@rakazo/adapter-kit";
-import { ResponseTooLargeError } from "@rakazo/core";
+import { ResponseTooLargeError, readResponseWithin } from "@rakazo/core";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { IncomingCallPush, VoipPushProvider } from "../calls/apns-voip.js";
 import { combineSignals } from "../integrations/connector-safety.js";
 import { credentialDigest } from "../secrets/credential-digest.js";
-import { readBodyCapped, withAbort } from "../web/web-ssrf.js";
 import type { PushRecord, PushTokenStore } from "./push-token-store.js";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -550,23 +549,15 @@ function capped(text: string, maxChars: number): string {
 }
 
 async function readExpoPushBody(response: Response, signal: AbortSignal): Promise<unknown> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_EXPO_PUSH_RESPONSE_BYTES) {
-    const cancel = response.body?.cancel() ?? Promise.resolve();
-    await withAbort(
-      cancel.catch(() => undefined),
-      signal,
-    ).catch(() => undefined);
-    throw new ResponseTooLargeError(RESPONSE_TOO_LARGE);
-  }
+  const bytes = await readResponseWithin(response, {
+    maxBytes: MAX_EXPO_PUSH_RESPONSE_BYTES,
+    tooLargeMessage: RESPONSE_TOO_LARGE,
+    signal,
+  });
+  if (bytes.byteLength === 0) return undefined;
   try {
-    const bytes = await readBodyCapped(response, MAX_EXPO_PUSH_RESPONSE_BYTES, signal);
-    if (bytes.byteLength === 0) return undefined;
     return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
   } catch (error) {
-    if (error instanceof ResponseTooLargeError) {
-      throw new ResponseTooLargeError(RESPONSE_TOO_LARGE, { cause: error });
-    }
     if (error instanceof SyntaxError) return undefined;
     throw error;
   }

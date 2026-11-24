@@ -13,6 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../lib/query/rpc", () => {
   const rpc = {
+    // No earlier versions of the computer's files to restore.
+    computer: { homeVersions: vi.fn(async () => []) },
     voice: { voices: vi.fn(async () => []) },
     models: {
       credentials: vi.fn(async () => []),
@@ -20,7 +22,7 @@ vi.mock("../../../lib/query/rpc", () => {
     },
     me: vi.fn(async () => ({})),
     // This server receives no email, so the panel offers no address.
-    bots: { emailAddress: vi.fn(async () => null) },
+    bots: { emailAddress: vi.fn(async () => null), get: vi.fn(async () => bot) },
   };
   return {
     rpc,

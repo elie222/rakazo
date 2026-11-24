@@ -1,7 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { isQuestionAskBlock } from "./ask-kind.js";
 
-export { isQuestionAskBlock } from "./ask-kind.js";
+export { askOptionLetter, isQuestionAskBlock } from "./ask-kind.js";
 
 import { resolveAskChoice } from "./answerable-ask.js";
 

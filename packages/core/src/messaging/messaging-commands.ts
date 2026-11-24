@@ -42,6 +42,8 @@ const STOP_WORDS = new Set([
   // Hebrew
   "עצור",
   "תפסיק",
+  // Thai
+  "หยุด",
 ]);
 
 export function parseMessagingCommand(text: string): MessagingCommand | null {

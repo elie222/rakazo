@@ -1,0 +1,11 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Rakazo 會使用相機，讓你在傳給機器人的訊息中附加照片。",
+    "NSPhotoLibraryUsageDescription": "Rakazo 會使用你的照片圖庫，讓你在傳給機器人的訊息中附加圖片。",
+    "NSPhotoLibraryAddUsageDescription": "Rakazo 會將你從成品下載的照片和影片儲存到你的照片圖庫。",
+    "NSLocalNetworkUsageDescription": "Rakazo 會連線到你區域網路中自行託管的 Rakazo 伺服器。",
+    "NSMicrophoneUsageDescription": "Rakazo 會使用麥克風與你的機器人進行語音通話。",
+    "NSSpeechRecognitionUsageDescription": "Rakazo 會在語音通話中將你的語音轉換為訊息。",
+    "NSFaceIDUsageDescription": "允許 Rakazo 使用 Face ID。"
+  }
+}

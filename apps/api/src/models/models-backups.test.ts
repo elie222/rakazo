@@ -361,6 +361,36 @@ describe("role-based model settings API", () => {
       },
     );
 
+    it.each([true, false])(
+      "says whether the deployment pays for its approval default with credits on: %s",
+      async (credits) => {
+        clearApprovalEnvironment();
+        vi.stubEnv("OPENROUTER_API_KEY", "fake-key");
+        const { call } = setup({ credits });
+        for (const procedure of ["models/role", "models/setRole"]) {
+          const { response } = await call(procedure, { role: "approval" });
+          expect(response.status).toBe(200);
+          const view = (await response.json()).json;
+          expect(view.deploymentPrimary).toMatchObject({ provider: "openrouter" });
+          expect(view.deploymentIncluded).toBe(credits ? true : undefined);
+        }
+        const main = await call("models/role", { role: "main" });
+        expect((await main.response.json()).json.deploymentIncluded).toBeUndefined();
+      },
+    );
+
+    it("marks a verifier the deployment pays for as included", async () => {
+      clearApprovalEnvironment();
+      vi.stubEnv("RAKAZO_AUTO_REVIEW_PROVIDER", "jev");
+      vi.stubEnv("TYPESAFE_API_KEY", "fake-key");
+      const { call } = setup({ credits: true });
+      const { response } = await call("models/role", { role: "approval" });
+      expect((await response.json()).json).toMatchObject({
+        deploymentPrimary: { provider: "jev" },
+        deploymentIncluded: true,
+      });
+    });
+
     it("preserves a saved approval model when its connection is unavailable", async () => {
       clearApprovalEnvironment();
       const { call, prisma } = setup();
@@ -880,6 +910,7 @@ describe("role-based model settings API", () => {
     const { call, prisma, roles } = setup({
       compatible: { enabledModelIds: ["model-a"], defaultModel: "model-a" },
     });
+    const preference = { modelId: "model-a", thinkingLevel: null, updatedAt: new Date(0) };
     const connection = (id: string) => ({
       id,
       userId: owner.userId,
@@ -888,6 +919,7 @@ describe("role-based model settings API", () => {
       secretId: `secret-${id}`,
       createdAt: new Date(0),
       updatedAt: new Date(0),
+      userPreferences: id === "a" ? [preference] : [],
     });
     const [connectionA, connectionB] = [connection("a"), connection("b")];
     const client = prisma as unknown as {
@@ -901,9 +933,7 @@ describe("role-based model settings API", () => {
     client.userModelCredential.findMany.mockResolvedValue([connectionA, connectionB]);
     client.userModelPreference.findMany.mockResolvedValue([
       {
-        modelId: "model-a",
-        thinkingLevel: null,
-        updatedAt: new Date(0),
+        ...preference,
         credential: connectionA,
       },
     ]);

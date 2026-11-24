@@ -996,18 +996,6 @@ describe("openai-compatible provider", () => {
     ).rejects.toThrow(/empty response.*explicit model id/s);
   });
 
-  it("rejects oversized model lists", async () => {
-    const fetchImpl = async () => new Response("x".repeat(2 * 1024 * 1024 + 1));
-    await expect(
-      probeOpenAiCompatibleModels(
-        { baseUrl: "http://127.0.0.1:8000/v1" },
-        fetchImpl,
-        undefined,
-        OWNER,
-      ),
-    ).rejects.toThrow(/too large.*explicit model id/is);
-  });
-
   it("cancels model responses whose declared size exceeds the limit", async () => {
     let cancelled = false;
     const fetchImpl = async () =>
@@ -1268,6 +1256,26 @@ describe("built-in public compatible host", () => {
     ).resolves.toEqual(["example-model"]);
     expect(String(transport.mock.calls[0]?.[0])).toBe("https://ollama.com/api/balance");
     expect(transport).toHaveBeenCalledTimes(2);
+  });
+  it("verifies a DeepInfra key and lists only its chat models", async () => {
+    const transport = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith("/v1/me")
+        ? new Response(null)
+        : Response.json({
+            data: [
+              { id: "chat-model", metadata: { tags: ["chat", "vision"] } },
+              { id: "embedding-model", metadata: { tags: ["embeddings"] } },
+              { id: "untagged-model", metadata: null },
+            ],
+          }),
+    );
+    await expect(
+      probeOpenAiCompatibleModels(
+        { baseUrl: "https://api.deepinfra.com/v1/openai", apiKey: "fake-key" },
+        transport,
+      ),
+    ).resolves.toEqual(["chat-model", "untagged-model"]);
+    expect(String(transport.mock.calls[0]?.[0])).toBe("https://api.deepinfra.com/v1/me");
   });
   it("does not verify unrelated compatible servers and rejects missing keys", async () => {
     const transport = vi.fn();

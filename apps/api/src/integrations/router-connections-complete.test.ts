@@ -503,10 +503,12 @@ describe("connections.complete", () => {
       enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
       enqueueIn: vi.fn(async (_tx: unknown, _job: BackgroundJob) => undefined),
     };
+    const analytics = { capture: vi.fn(), flush: vi.fn() };
     const handler = new RPCHandler(
       createRouter({
         prisma,
         jobs,
+        analytics,
         connectors: { managed: () => connector },
         env: {
           defaultProvider: "fake",
@@ -557,6 +559,7 @@ describe("connections.complete", () => {
       client,
       jobs,
       securityEvents,
+      analytics,
       row,
       sink,
       transaction,
@@ -901,7 +904,7 @@ describe("connections.complete", () => {
   });
 
   it("records one credential event per connection, not per poll", async () => {
-    const { complete, securityEvents } = pollFixture("pending");
+    const { complete, securityEvents, analytics, row } = pollFixture("pending");
 
     for (let poll = 0; poll < 3; poll += 1) {
       await expect(complete()).resolves.toMatchObject({
@@ -918,10 +921,20 @@ describe("connections.complete", () => {
         connectionId: "conn-1",
       },
     });
+    expect(analytics.capture.mock.calls).toEqual([
+      ["user-1", { name: "tool_connected", app: "gmail" }, { id: "conn-1", at: row.createdAt }],
+    ]);
   });
 
   it("records the credential once when the catalog finds the app connected", async () => {
-    const row = { id: "conn-1", provider: "gmail", displayName: "Gmail", status: "pending" };
+    const createdAt = new Date("2026-08-26T00:00:00.000Z");
+    const row = {
+      id: "conn-1",
+      provider: "gmail",
+      displayName: "Gmail",
+      status: "pending",
+      createdAt,
+    };
     const connection = {
       findMany: vi.fn(async () => [{ ...row }]),
       updateMany: vi.fn(async ({ where }: { where: { id?: string; status: string } }) => {
@@ -947,9 +960,11 @@ describe("connections.complete", () => {
         },
       ]),
     };
+    const analytics = { capture: vi.fn(), flush: vi.fn() };
     const client = createRouterClient(
       createRouter({
         prisma,
+        analytics,
         connectors: { managed: () => provider },
         env: {
           defaultProvider: "fake",
@@ -982,13 +997,17 @@ describe("connections.complete", () => {
       "security.event.type": "credential.created",
       "security.event.metadata": { procedure: "connections.catalog", connectionId: "conn-1" },
     });
+    expect(analytics.capture.mock.calls).toEqual([
+      ["user-1", { name: "tool_connected", app: "gmail" }, { id: "conn-1", at: createdAt }],
+    ]);
   });
 
   it("records nothing while the connection is still pending", async () => {
-    const { complete, connector, securityEvents } = pollFixture("pending");
+    const { complete, connector, securityEvents, analytics } = pollFixture("pending");
     connector.connectionReady.mockResolvedValue(false);
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "pending" } } });
     expect(securityEvents()).toEqual([]);
+    expect(analytics.capture).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { SearchHit } from "@rakazo/contracts";
 import { searchHitListKey } from "@rakazo/core";
+import { searchKindLabel } from "@rakazo/i18n/search";
 import { Button, ContextMenuTrigger } from "@rakazo/ui-web";
 import { Fragment } from "react";
 import type { ChatMenuState, ChatMenuTarget } from "../shell/chat/chat-context-menu";
@@ -23,9 +23,10 @@ export function SpaceSearchResults({
   /** Gives bot and group results the roster's right-click menu. */
   chatMenu?: ChatMenuState;
 }) {
+  // Loading and empty share one status region, so its text change is announced.
   if (loading) {
     return (
-      <div className="px-3 py-4 text-body text-muted-foreground">
+      <div role="status" className="px-3 py-4 text-body text-muted-foreground">
         <Trans>Searching…</Trans>
       </div>
     );
@@ -44,7 +45,7 @@ export function SpaceSearchResults({
   }
   if (!hits.length) {
     return (
-      <div className="px-3 py-4 text-body text-muted-foreground">
+      <div role="status" className="px-3 py-4 text-body text-muted-foreground">
         <Trans>No results</Trans>
       </div>
     );
@@ -98,19 +99,4 @@ function searchHitChat(hit: SearchHit): ChatMenuTarget | null {
   if (hit.kind !== "conversation") return null;
   if (hit.groupId) return { kind: "group", id: hit.groupId };
   return hit.botId ? { kind: "bot", id: hit.botId } : null;
-}
-
-function searchKindLabel(hit: SearchHit): string {
-  switch (hit.kind) {
-    case "conversation":
-      return hit.groupId ? t`Group` : t`Bot`;
-    case "message":
-      return t`Message`;
-    case "file":
-      return t`File`;
-    case "link":
-      return t`Link`;
-    case "routine":
-      return t`Routine`;
-  }
 }

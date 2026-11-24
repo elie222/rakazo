@@ -2,20 +2,31 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import type { CronLabels } from "@rakazo/core";
-import { ENGLISH_CRON_LABELS, formatCron, isOneShotRoutineCrons } from "@rakazo/core";
+import {
+  ENGLISH_CRON_LABELS,
+  formatCron,
+  formatRoutineEnd,
+  isOneShotRoutineCrons,
+} from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
 import { Button, Empty, EmptyHeader, EmptyMedia, EmptyTitle, Switch } from "@rakazo/ui-web";
 import type { LucideIcon } from "lucide-react";
 import { Clock, Eye, GitBranch, Globe, Mail, MessageSquare, Plus, Repeat } from "lucide-react";
-import { cronLabels } from "../../lib/routines/cron";
+import { OwnerLabel } from "./routine-editor/access-note";
 
 export function routineTriggerSummary(
   routine: Routine,
   labels: CronLabels = ENGLISH_CRON_LABELS,
+  locale = "en",
 ): string {
   if (!routine.active) return t`Paused`;
   // Schedules first: they say when it runs, so they matter most when the line is cut off.
   const parts: string[] = routine.crons.map((cron) => formatCron(cron, labels));
   if (routine.watch) parts.push(t`When something changes`);
+  if (routine.endsAt) {
+    const end = formatRoutineEnd(routine.endsAt, routine.timezone, locale);
+    parts.push(t`until ${end}`);
+  }
   if (routine.messageProvider === "slack") parts.push(t`Slack message`);
   else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
   else if (routine.messageProvider) parts.push(t`Message event`);
@@ -187,8 +198,11 @@ function RoutineListRow({
           <span className="block truncate text-body-lg font-medium text-foreground" dir="auto">
             {routine.name}
           </span>
-          <span className="flex min-w-0 gap-2 text-body-sm text-muted-foreground/80">
-            <span className="truncate">{routineTriggerSummary(routine, scheduleLabels)}</span>
+          <span className="flex min-w-0 flex-wrap gap-x-2 text-body-sm text-muted-foreground/80">
+            <span className="truncate">
+              {routineTriggerSummary(routine, scheduleLabels, i18n.locale)}
+            </span>
+            <OwnerLabel routine={routine} />
             {routine.modelProvider && routine.modelId ? (
               <span className="truncate">{routine.modelId}</span>
             ) : null}

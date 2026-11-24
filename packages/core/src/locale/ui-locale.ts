@@ -17,6 +17,7 @@ export const APP_LOCALE_LABELS: Record<(typeof AppLocaleSchema.options)[number],
   nl: "Nederlands",
   ja: "日本語",
   pl: "Polski",
+  th: "ไทย",
 };
 
 /**

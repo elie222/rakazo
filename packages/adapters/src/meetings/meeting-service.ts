@@ -335,6 +335,7 @@ export class MeetingService {
     tx: Prisma.TransactionClient,
     bot: { spaceId: string; id: string },
   ): Promise<Job[]> {
+    await keepDeletedBotMeetingsCounted(tx, bot);
     if (!this.providerId) return [];
     const sessions = await runAsSystemInTransaction(
       tx,
@@ -770,7 +771,7 @@ function nextObservation(
   };
 }
 
-type MeetingQuotaReader = Pick<Prisma.TransactionClient, "meetingSession">;
+type MeetingQuotaReader = Pick<Prisma.TransactionClient, "meetingSession" | "meetingAllowanceUse">;
 
 export function meetingUtcDayStart(timestamp: number) {
   return Math.floor(timestamp / DAY_MS) * DAY_MS;
@@ -797,21 +798,60 @@ export function countSpaceMeetingsInPastDay(
   });
 }
 
-function countSpaceMeetings(
-  prisma: MeetingQuotaReader,
-  spaceId: string,
-  time: { gte: Date; lt: Date } | { gt: Date; lte: Date },
-) {
-  return prisma.meetingSession.count({
-    where: {
-      spaceId,
-      OR: [
-        { scheduledFor: null, createdAt: time },
-        {
-          scheduledFor: time,
-          OR: [{ status: { not: "ended" } }, { receivedAt: { not: null } }],
-        },
-      ],
+type MeetingTime = { gte: Date; lt: Date } | { gt: Date; lte: Date } | { gte: Date; lte: Date };
+
+function countedMeetings(time: MeetingTime) {
+  return [
+    { scheduledFor: null, createdAt: time },
+    {
+      scheduledFor: time,
+      OR: [{ status: { not: "ended" } }, { receivedAt: { not: null } }],
     },
+  ] satisfies Prisma.MeetingSessionWhereInput[];
+}
+
+async function countSpaceMeetings(prisma: MeetingQuotaReader, spaceId: string, time: MeetingTime) {
+  const sessions = await prisma.meetingSession.count({
+    where: { spaceId, OR: countedMeetings(time) },
+  });
+  const deletedBotUses = await prisma.meetingAllowanceUse.count({
+    where: { spaceId, countedAt: time },
+  });
+  return sessions + deletedBotUses;
+}
+
+/**
+ * Deleting a bot deletes its meetings, so the ones the allowance still counts are kept as uses.
+ * Its upcoming reservations are not, unless the meeting already started early.
+ */
+export async function keepDeletedBotMeetingsCounted(
+  tx: Prisma.TransactionClient,
+  bot: { spaceId: string; id: string },
+  now = new Date(),
+) {
+  // Both counters look back at most to the start of the previous UTC day.
+  const since = new Date(meetingUtcDayStart(now.getTime()) - DAY_MS);
+  await runAsSystemInTransaction(tx, "keep deleted bot meetings counted", async () => {
+    const used = await tx.meetingSession.findMany({
+      where: {
+        botId: bot.id,
+        spaceId: bot.spaceId,
+        OR: [
+          ...countedMeetings({ gte: since, lte: now }),
+          { scheduledFor: { gt: now }, receivedAt: { not: null } },
+        ],
+      },
+      select: { createdAt: true, scheduledFor: true },
+    });
+    await tx.meetingAllowanceUse.deleteMany({
+      where: { spaceId: bot.spaceId, countedAt: { lt: since } },
+    });
+    if (used.length === 0) return;
+    await tx.meetingAllowanceUse.createMany({
+      data: used.map((row) => ({
+        spaceId: bot.spaceId,
+        countedAt: row.scheduledFor ?? row.createdAt,
+      })),
+    });
   });
 }

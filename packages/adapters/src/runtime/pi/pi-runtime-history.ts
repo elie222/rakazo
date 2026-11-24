@@ -106,7 +106,12 @@ function replaysAsToolCalls(segments: NonNullable<HistoryEntry["segments"]>): bo
 
 function replayedArguments(json: string | undefined): ToolCall["arguments"] {
   try {
-    const value: unknown = JSON.parse(json ?? "{}");
+    // Old calls can contain unpaired UTF-16 surrogates that a model API rejects in JSON.
+    const value: unknown = JSON.parse(json ?? "{}", (key, item: unknown) => {
+      // Leave differently named valid fields intact if repairing a key would collide with them.
+      if (/\p{Surrogate}/u.test(key)) return undefined;
+      return typeof item === "string" ? item.replace(/\p{Surrogate}/gu, "\uFFFD") : item;
+    });
     return value && typeof value === "object" && !Array.isArray(value)
       ? (value as ToolCall["arguments"])
       : {};
