@@ -94,6 +94,7 @@ describe("usePageState", () => {
           items={[
             { text: "Passport", done: true },
             { text: "Charger", id: "charger" },
+            { text: "Passport" },
           ]}
         />,
       ),
@@ -101,6 +102,7 @@ describe("usePageState", () => {
     const boxes = host.querySelectorAll<HTMLInputElement>("input");
     expect([...boxes].map((box) => [box.checked, box.disabled])).toEqual([
       [true, false],
+      [false, false],
       [false, false],
     ]);
     act(() => boxes[1]!.click());

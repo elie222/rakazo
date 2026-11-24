@@ -241,20 +241,30 @@ export function Steps({ steps = [] }: { steps?: Step[] }) {
 
 type ChecklistItem = { text: ReactNode; done?: boolean; meta?: ReactNode; id?: string };
 
-function checklistKey(item: ChecklistItem, index: number): string {
-  if (typeof item.id === "string" && item.id) return item.id;
-  return typeof item.text === "string" || typeof item.text === "number"
-    ? String(item.text)
-    : String(index);
+function checklistKeys(items: ChecklistItem[]): string[] {
+  const seen = new Map<string, number>();
+  return items.map((item, index) => {
+    const base =
+      typeof item.id === "string" && item.id
+        ? item.id
+        : typeof item.text === "string" || typeof item.text === "number"
+          ? String(item.text)
+          : String(index);
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    return count === 0 ? base : `${base}#${count + 1}`;
+  });
 }
 
 export function Checklist({ items = [], saveAs }: { items?: ChecklistItem[]; saveAs?: string }) {
   const tickable = typeof saveAs === "string" && saveAs !== "";
   const [ticks, setTicks] = usePageState<Record<string, boolean>>(tickable ? saveAs : "", {});
+  const listed = objectItems(items);
+  const keys = checklistKeys(listed);
   return (
     <ul className="rk-checklist" data-tickable={tickable || undefined}>
-      {objectItems(items).map((item, index) => {
-        const key = checklistKey(item, index);
+      {listed.map((item, index) => {
+        const key = keys[index]!;
         const done = tickable && typeof ticks[key] === "boolean" ? ticks[key] : item.done === true;
         return (
           <li key={index}>

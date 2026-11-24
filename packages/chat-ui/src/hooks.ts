@@ -47,6 +47,8 @@ export function usePageStateQueue(pageId: string, run: (save: PageStateSave) => 
   send.current = run;
   const queued = useRef<PageStateSave | null>(null);
   const sending = useRef(false);
+  const shown = useRef(pageId);
+  shown.current = pageId;
   const next = useCallback(() => {
     const save = queued.current;
     if (sending.current || !save || save.pageId !== pageId) return;
@@ -67,7 +69,10 @@ export function usePageStateQueue(pageId: string, run: (save: PageStateSave) => 
     failed(save: PageStateSave, error: unknown) {
       sending.current = false;
       const code = errorCode(error);
-      if (typeof code === "string" && REFUSED.has(code)) return;
+      if ((typeof code === "string" && REFUSED.has(code)) || save.pageId !== shown.current) {
+        next();
+        return;
+      }
       const later = queued.current?.pageId === save.pageId ? queued.current.values : {};
       queued.current = { pageId: save.pageId, values: { ...save.values, ...later } };
     },
