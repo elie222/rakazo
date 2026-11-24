@@ -154,11 +154,12 @@ export function createPageSession(
   const dockListeners = new Set<() => void>();
   const replyListeners = new Set<(text: string) => void>();
   return {
-    rememberOpener() {
-      const element = document.activeElement;
+    rememberOpener(trigger?: HTMLElement | null) {
+      const focused = document.activeElement;
+      const element = trigger ?? focused;
       opener =
         element instanceof HTMLElement
-          ? { element, ring: element.matches(":focus-visible") }
+          ? { element, ring: focused?.matches(":focus-visible") ?? false }
           : null;
     },
     /** Restore focus at the reader's current scroll position. */
@@ -226,7 +227,10 @@ export function createPageSession(
 }
 export type PageSession = ReturnType<typeof createPageSession>;
 
-type OpenPage = (pageId: string, options?: { share?: boolean }) => void;
+type OpenPage = (
+  pageId: string,
+  options?: { share?: boolean; opener?: HTMLElement | null },
+) => void;
 type Pages = { open: OpenPage; session: PageSession };
 
 const PagesContext = createContext<Pages | null>(null);
@@ -257,7 +261,7 @@ export function usePagesForChat(
       // A page known to be deleted (its card says so) opens nothing, from a card or a link chip.
       const known = queryClient.getQueryState(queries.pages.get.queryKey({ input: { pageId } }));
       if (errorCode(known?.error) === "NOT_FOUND") return;
-      session.rememberOpener();
+      session.rememberOpener(options?.opener);
       session.askShare(options?.share ? pageId : null);
       setSearchParams((current) => {
         const next = new URLSearchParams(current);

@@ -64,6 +64,29 @@ describe("page session", () => {
     }
   });
 
+  it.each([true, false])(
+    "restores a menu's trigger with the menu item's focus visibility (%s)",
+    (ring) => {
+      const host = document.body.appendChild(document.createElement("div"));
+      const trigger = host.appendChild(document.createElement("button"));
+      const item = host.appendChild(document.createElement("button"));
+      const session = createPageSession();
+      try {
+        item.focus();
+        vi.spyOn(item, "matches").mockReturnValue(ring);
+        const focus = vi.spyOn(trigger, "focus");
+        session.rememberOpener(trigger);
+        item.remove();
+
+        expect(session.restoreFocus()).toBe(false);
+        expect(focus).toHaveBeenCalledWith({ preventScroll: true, focusVisible: ring });
+        expect(document.activeElement).toBe(trigger);
+      } finally {
+        host.remove();
+      }
+    },
+  );
+
   it("allows the dialog's default focus restoration if neither target can receive focus", () => {
     const transcript = document.body.appendChild(document.createElement("section"));
     const opener = transcript.appendChild(document.createElement("button"));
