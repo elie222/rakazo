@@ -100,15 +100,18 @@ rm -f -- "$SETTINGS_FILE"
 bash install-images.sh
 
 if [[ -n "$domain" ]]; then
+  web_bind="$(env_value RAKAZO_WEB_BIND)"
+  [[ -n "$web_bind" && "$web_bind" != 0.0.0.0 ]] || web_bind=127.0.0.1
+  web_port="$(env_value RAKAZO_WEB_PORT)"
   mkdir -p https
   cat >https/Caddyfile <<'CADDYFILE'
 {$RAKAZO_HOST} {
 	encode zstd gzip
 	header Strict-Transport-Security "max-age=31536000"
-	reverse_proxy 127.0.0.1:5173
+	reverse_proxy {$RAKAZO_WEB_UPSTREAM}
 }
 CADDYFILE
-  # Host networking reaches the web port that Compose binds to loopback only.
+  # Host networking reaches the web port wherever .env binds it, loopback by default.
   cat >https/compose.yml <<YAML
 name: ${HTTPS_PROJECT}
 services:
@@ -125,6 +128,7 @@ services:
       - NET_BIND_SERVICE
     environment:
       RAKAZO_HOST: ${domain}
+      RAKAZO_WEB_UPSTREAM: ${web_bind}:${web_port:-5173}
       GODEBUG: multipathtcp=0
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
