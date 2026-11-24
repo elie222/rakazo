@@ -36,13 +36,15 @@ import {
   oauthPopupSessionPreferences,
   shouldOpenInAppPopup,
 } from "./window-open.js";
-import type { SavedBackground } from "./window-options.js";
+import type { SavedBackground, SavedWindowBounds } from "./window-options.js";
 import {
   appWindowBackground,
   browserWindowOptions,
   developmentIconFile,
   paintedBackground,
   parseSavedBackground,
+  parseSavedWindowBounds,
+  restorableWindowBounds,
   systemWindowBackground,
   warmWindowTtlMs,
 } from "./window-options.js";
@@ -178,12 +180,75 @@ function saveBackground(saved: SavedBackground) {
     reportDesktopError(error, "desktop.startup");
   }
 }
+const SAVE_BOUNDS_DELAY_MS = 500;
+function windowBoundsFile() {
+  return path.join(app.getPath("userData"), "window-bounds.json");
+}
+function savedWindowBounds() {
+  let text: string;
+  try {
+    text = readFileSync(windowBoundsFile(), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      reportDesktopError(error, "desktop.startup");
+    return null;
+  }
+  return restorableWindowBounds(
+    parseSavedWindowBounds(text),
+    screen.getAllDisplays().map((display) => display.workArea),
+  );
+}
+function currentWindowBounds(win: BrowserWindow): SavedWindowBounds {
+  return { ...win.getNormalBounds(), maximized: win.isMaximized(), fullScreen: win.isFullScreen() };
+}
+/** Synchronous, so a later save can never land before an earlier one and quitting cannot lose it. */
+function saveWindowBounds(win: BrowserWindow) {
+  try {
+    writeFileSync(windowBoundsFile(), JSON.stringify(currentWindowBounds(win)), "utf8");
+  } catch (error) {
+    reportDesktopError(error, "desktop.startup");
+  }
+}
+/** Remembers where the app window is so the next one opens there; a replaced window stops counting. */
+function rememberWindowBounds(win: BrowserWindow) {
+  let timer: NodeJS.Timeout | undefined;
+  const current = () => desktop.mainWindow === win && !win.isDestroyed();
+  const saveSoon = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (current()) saveWindowBounds(win);
+    }, SAVE_BOUNDS_DELAY_MS);
+  };
+  win.on("move", saveSoon);
+  win.on("resize", saveSoon);
+  win.on("maximize", saveSoon);
+  win.on("unmaximize", saveSoon);
+  win.on("enter-full-screen", saveSoon);
+  win.on("leave-full-screen", saveSoon);
+  win.on("close", () => {
+    clearTimeout(timer);
+    if (current()) saveWindowBounds(win);
+  });
+  win.once("closed", () => clearTimeout(timer));
+}
 export function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
   const icon = developmentIcon();
+  // A window being replaced may have moved within the save delay; record it so this one opens there.
+  if (desktop.mainWindow && !desktop.mainWindow.isDestroyed()) saveWindowBounds(desktop.mainWindow);
+  const saved = savedWindowBounds();
   const win = new BrowserWindow({
     ...browserWindowOptions(process.platform, screen.getPrimaryDisplay().workAreaSize),
     backgroundColor: appWindowBackground(lastPaintedBackground(), nativeTheme.shouldUseDarkColors),
+    ...(saved === null
+      ? {}
+      : {
+          x: saved.x,
+          y: saved.y,
+          width: saved.width,
+          height: saved.height,
+          fullscreen: saved.fullScreen,
+        }),
     ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "preload.cjs"),
@@ -196,6 +261,7 @@ export function createWindow(url: string, partition: string | null) {
       ...(partition === null ? {} : { partition }),
     },
   });
+  if (saved?.maximized === true && !saved.fullScreen) win.maximize();
   // The page names its background in its theme-color meta tag, including an appearance picked
   // in settings; the window keeps it for resizes and opens in it next time.
   win.webContents.on("did-change-theme-color", (_event, color) => {
@@ -209,6 +275,7 @@ export function createWindow(url: string, partition: string | null) {
   );
   desktop.mainWindow = win;
   appWindowTargets.set(win, url);
+  rememberWindowBounds(win);
   const targetOrigin = safeOrigin(url);
   // Intentional OAuth flows open the provider's authorize page via a named
   // window; give those and same-origin popups a normal frame. Everything else

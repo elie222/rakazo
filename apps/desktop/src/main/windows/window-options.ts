@@ -117,3 +117,42 @@ export function setupWindowOptions(platform: NodeJS.Platform, workArea: WorkArea
     ...windowChrome(platform),
   };
 }
+
+type Rectangle = { x: number; y: number; width: number; height: number };
+/** The app window's last normal (unmaximized) rectangle and whether it was maximized or full screen. */
+export type SavedWindowBounds = Rectangle & { maximized: boolean; fullScreen: boolean };
+
+/** Reads what `JSON.stringify(SavedWindowBounds)` wrote; anything else means no saved bounds. */
+export function parseSavedWindowBounds(text: string): SavedWindowBounds | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const { x, y, width, height, maximized, fullScreen } = value as Record<string, unknown>;
+  const integer = (n: unknown): n is number => Number.isSafeInteger(n);
+  if (!integer(x) || !integer(y) || !integer(width) || !integer(height)) return null;
+  if (width <= 0 || height <= 0) return null;
+  return { x, y, width, height, maximized: maximized === true, fullScreen: fullScreen === true };
+}
+
+function overlapArea(a: Rectangle, b: Rectangle) {
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  return width > 0 && height > 0 ? width * height : 0;
+}
+
+/**
+ * The saved bounds when at least half the window still lands on a connected display's work area
+ * (displays do not overlap, so the shares add up); otherwise null, so the window opens at the default.
+ */
+export function restorableWindowBounds(
+  saved: SavedWindowBounds | null,
+  workAreas: Rectangle[],
+): SavedWindowBounds | null {
+  if (saved === null) return null;
+  const visible = workAreas.reduce((sum, area) => sum + overlapArea(saved, area), 0);
+  return visible * 2 >= saved.width * saved.height ? saved : null;
+}
