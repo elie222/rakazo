@@ -91,7 +91,7 @@ type ThreadComposerProps = {
   botId?: string;
   onCall: boolean;
   sending: boolean;
-  styles: { circleButton: ViewStyle; composerFill: ViewStyle };
+  styles: { composerFill: ViewStyle };
   attachActions: MenuAction[];
   attachFrom: (source: string) => void;
   send: () => Promise<void>;
@@ -435,9 +435,9 @@ export function ThreadComposer({
   }
 
   const composerPillStyle = {
-    width: 36,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
   } as const;
@@ -627,41 +627,45 @@ export function ThreadComposer({
           ))}
         </ScrollView>
       ) : null}
-      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 10, marginTop: 8 }}>
+      <GlassSurface
+        shape="roundedRectangle"
+        style={{
+          marginTop: 8,
+          minHeight: 44,
+          borderRadius: 22,
+          flexDirection: "row",
+          alignItems: "flex-end",
+          gap: 8,
+          // Inset the round buttons as far from the edge as from the top and bottom.
+          paddingStart: 6,
+          paddingEnd: 6,
+        }}
+        fallbackStyle={styles.composerFill}
+      >
         <MenuView
           actions={attachActions}
           colorScheme={colorScheme}
           onPressAction={(event) => attachFrom(event.nativeEvent.event)}
+          // The native menu host sizes to its child and drops the child's margin.
+          style={{ marginBottom: stacked ? 8 : pillInset }}
         >
           <View
             accessible
             accessibilityRole="button"
             accessibilityLabel={t`Attach file`}
-            style={{ width: 44, height: 44, marginBottom: (lineHeight - 44) / 2 }}
+            style={[composerPillStyle, { backgroundColor: tokens.muted }]}
           >
-            <GlassSurface
-              shape="circle"
-              style={styles.circleButton}
-              fallbackStyle={styles.composerFill}
-            >
-              <NativeSymbol ios="plus" android="add" size={18} color={tokens.mutedForeground} />
-            </GlassSurface>
+            <NativeSymbol ios="plus" android="add" size={17} color={tokens.mutedForeground} />
           </View>
         </MenuView>
-        <GlassSurface
-          shape="roundedRectangle"
+        <View
           style={{
             flex: 1,
-            minHeight: 44,
-            borderRadius: 22,
             flexDirection: stacked ? "column" : "row",
             alignItems: stacked ? "stretch" : "flex-end",
-            // Keeps text clear of the call/send pill even when it runs to the trailing edge (RTL).
+            // Keeps text clear of the call/send button even when it runs to the trailing edge (RTL).
             gap: 8,
-            paddingStart: 16,
-            paddingEnd: 8,
           }}
-          fallbackStyle={styles.composerFill}
         >
           <View
             style={{
@@ -932,8 +936,8 @@ export function ThreadComposer({
               )}
             </TrailingControls>
           )}
-        </GlassSurface>
-      </View>
+        </View>
+      </GlassSurface>
     </>
   );
 }

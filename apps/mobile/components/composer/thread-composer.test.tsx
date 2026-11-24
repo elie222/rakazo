@@ -251,7 +251,7 @@ const props: Omit<ComponentProps<typeof ThreadComposer>, "ref"> = {
   botId: "bot-1",
   onCall: false,
   sending: false,
-  styles: { circleButton: {}, composerFill: {} },
+  styles: { composerFill: {} },
   attachActions: [],
   attachFrom: vi.fn(),
   send: vi.fn(async () => {}),
@@ -1435,7 +1435,7 @@ describe("thread composer isolation", () => {
     }
   });
 
-  it("keeps right-to-left text clear of the call and send pills", () => {
+  it("keeps right-to-left text clear of the call and send buttons", () => {
     const style = (element: Element) => JSON.parse((element as HTMLElement).dataset.style!);
     // Right-to-left text runs up to the field's trailing edge, right next to the pill.
     for (const [label, draft] of [
@@ -1445,8 +1445,8 @@ describe("thread composer isolation", () => {
     ] as const) {
       type(draft);
       const button = container.querySelector(`button[aria-label="${label}"]`)!;
-      const capsule = style(button.closest('[data-glass="roundedRectangle"]')!);
-      expect(capsule.gap).toBe(capsule.paddingEnd);
+      // The text and the trailing buttons share a row that keeps space between them.
+      expect(style(button.parentElement!).gap).toBeGreaterThan(0);
     }
   });
 });
