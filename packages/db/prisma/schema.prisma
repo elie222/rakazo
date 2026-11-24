@@ -1253,6 +1253,7 @@ model Message {
   clientNonce      String?
   nativeCalendarSessionId String?
   nativeCalendarDeviceDigest String?
+  nativeClockDeviceDigest    String?
   /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.
   searchTokens     Int[]
   /// A bot reply's tool calls as sent and returned (JSON, see ToolHistorySchema), encrypted like

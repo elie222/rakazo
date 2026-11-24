@@ -507,6 +507,7 @@ export async function sendThreadMessage(
     clientNonce?: string;
     nativeCalendarSessionId?: string;
     nativeCalendarDeviceDigest?: string;
+    nativeClockDeviceDigest?: string;
     /** No model to start a turn: the send may only stop active work. */
     noModel?: boolean;
   },
@@ -680,6 +681,7 @@ export async function sendThreadMessage(
           clientNonce: input.clientNonce,
           nativeCalendarSessionId: input.nativeCalendarSessionId,
           nativeCalendarDeviceDigest: input.nativeCalendarDeviceDigest,
+          nativeClockDeviceDigest: input.nativeClockDeviceDigest,
         });
         // A bare "stop" from the owner while work is active is the Stop button, not a reply.
         const stopping = activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
