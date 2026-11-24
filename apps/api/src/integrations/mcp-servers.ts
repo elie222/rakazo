@@ -51,7 +51,7 @@ export function mcpServerDto(
     createdAt: Date;
     updatedAt: Date;
   },
-  oauth: McpOAuthSummary = { status: "none", clientId: null, credential: true },
+  oauth: McpOAuthSummary,
 ): McpServer {
   const keysOf = (value: unknown) =>
     value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
@@ -73,7 +73,14 @@ export function mcpServerDto(
     installId: row.installId ?? null,
     // A lone OAuth generation marker keeps a secret row without holding a credential.
     hasSecret: row.secretId !== null && oauth.credential,
-    oauthStatus: oauth.status,
+    // A successful remote probe with a saved bearer token needs no OAuth grant.
+    oauthStatus:
+      oauth.status === "reconnect" &&
+      oauth.hasBearerToken &&
+      row.transport !== "stdio" &&
+      row.healthStatus === "ok"
+        ? "none"
+        : oauth.status,
     oauthClientId: oauth.clientId,
     enabled: row.enabled,
     verbatimResults: row.verbatimResults ?? false,

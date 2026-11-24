@@ -50,11 +50,12 @@ const secretCard: AskBlock = {
 async function render(
   onAnswer: () => Promise<void>,
   onDismiss: () => Promise<void> = async () => undefined,
+  block = secretCard,
 ) {
   await act(async () =>
     root.render(
       <SecretAskCard
-        block={secretCard}
+        block={block}
         canAnswer
         canDismiss
         onAnswer={onAnswer}
@@ -79,6 +80,16 @@ async function type(value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+
+it("keeps the command variable out of the credential request", async () => {
+  await render(async () => undefined, undefined, {
+    ...secretCard,
+    text: "Repository access token",
+    credential: { name: "repo-token", origin: "", auth: { type: "command" } },
+  });
+  expect(container.textContent).not.toContain("REPO_TOKEN");
+  expect(container.querySelector('[data-testid="secret-ask-destination"]')).toBeNull();
+});
 
 it("announces a failed inline answer and clears the typed value", async () => {
   await render(async () => {

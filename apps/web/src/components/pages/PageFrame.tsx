@@ -27,6 +27,7 @@ export function PageFrame({
   title,
   interactive = false,
   onHeight,
+  previewScrollTop,
   onReply,
   onSections,
   savedState,
@@ -36,6 +37,8 @@ export function PageFrame({
   title: string;
   interactive?: boolean;
   onHeight?: (height: number) => void;
+  /** The card's scroll position in the preview document's unscaled pixels. */
+  previewScrollTop?: number;
   /** Where a page's reply button puts its text; without it the page offers no replies. */
   onReply?: (text: unknown) => void;
   onSections?: (sections: PageSectionAnchor[]) => void;
@@ -57,6 +60,7 @@ export function PageFrame({
   useEffect(() => {
     if (savedState) answerFrame.current?.(pageStateUpdate(savedState));
   }, [savedState]);
+  const scrollablePreview = previewScrollTop !== undefined;
   const receive = useCallback(
     (data: unknown, answer: (message: object) => void, focused: boolean) => {
       if (!data || typeof data !== "object") return;
@@ -67,6 +71,7 @@ export function PageFrame({
       const message = data as {
         type?: unknown;
         height?: unknown;
+        scrollHeight?: unknown;
         text?: unknown;
         gesture?: unknown;
       };
@@ -78,7 +83,15 @@ export function PageFrame({
             "--page-height": `${height}px`,
           } as CSSProperties);
         }
-        onHeight?.(height);
+        const scrollHeight = message.scrollHeight;
+        onHeight?.(
+          scrollablePreview &&
+            typeof scrollHeight === "number" &&
+            Number.isFinite(scrollHeight) &&
+            scrollHeight >= 0
+            ? pageFrameHeight(scrollHeight)
+            : height,
+        );
         return;
       }
       const sections = onSections && pageReviewSections(data);
@@ -100,7 +113,7 @@ export function PageFrame({
       else if (url) open(url);
       else if (reply) reply(message.text);
     },
-    [interactive, onHeight, onReply, onSaveState, onSections, open],
+    [interactive, onHeight, onReply, onSaveState, onSections, open, scrollablePreview],
   );
   return (
     <>
@@ -113,6 +126,7 @@ export function PageFrame({
           html={document}
           title={title}
           className="bg-transparent"
+          previewScrollTop={previewScrollTop}
           onFrameMessage={receive}
         />
       </div>

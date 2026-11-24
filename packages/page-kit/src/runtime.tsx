@@ -80,21 +80,56 @@ const HOOKS: Record<(typeof PAGE_HOOKS)[number], unknown> = {
   useReducer,
 };
 
-/** The public viewer sizes its frame to the page, so the page scrolls and prints as a whole. */
-function reportHeight() {
-  const post = () =>
-    window.parent?.postMessage(
-      { type: "rakazo-page:height", height: document.body.scrollHeight },
-      "*",
-    );
-  if (typeof ResizeObserver === "undefined") {
-    // Without it the page still reports its height once drawn, and again on each resize.
-    addEventListener("load", post);
-    addEventListener("resize", post);
-    setTimeout(post, 0);
-    return;
+/** Report content height for printing and the viewport's scrollable extent for previews. */
+function reportHeight(host: HTMLElement) {
+  const body = document.body;
+  let previous: { height: number; scrollHeight: number; width: number } | undefined;
+  let scheduled = false;
+  const schedule = () => {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      const height = body.scrollHeight;
+      // An absolutely positioned descendant can overflow the document without overflowing body.
+      const scrollHeight = document.scrollingElement?.scrollHeight ?? height;
+      const width = window.innerWidth;
+      // Interactive viewers also use the report to keep their print width current.
+      if (
+        previous &&
+        height === previous.height &&
+        scrollHeight === previous.scrollHeight &&
+        width === previous.width
+      )
+        return;
+      previous = { height, scrollHeight, width };
+      window.parent?.postMessage({ type: "rakazo-page:height", height, scrollHeight }, "*");
+    });
+  };
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(schedule).observe(body);
+  // Positioned descendants can change the scroll range without resizing the body box.
+  new MutationObserver(schedule).observe(host, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+    attributes: true,
+  });
+  // Resources and CSS motion can finish changing the layout without a DOM mutation.
+  for (const event of [
+    "load",
+    "error",
+    "loadedmetadata",
+    "transitionend",
+    "transitioncancel",
+    "animationend",
+    "animationcancel",
+  ]) {
+    host.addEventListener(event, schedule, true);
   }
-  new ResizeObserver(post).observe(document.body);
+  document.fonts?.addEventListener("loadingdone", schedule);
+  addEventListener("load", schedule);
+  addEventListener("resize", schedule);
+  schedule();
 }
 
 /** Count same-name headings before filtering visibility so a reveal keeps their anchors stable. */
@@ -149,9 +184,9 @@ function reportSections(host: HTMLElement, anchor?: string, anchorOccurrence?: n
 
 function mount(boot: PageBoot) {
   document.documentElement.dataset.theme = boot.theme === "light" ? "light" : "dark";
-  reportHeight();
   const host =
     document.getElementById("root") ?? document.body.appendChild(document.createElement("div"));
+  reportHeight(host);
   if (boot.review) reportSections(host, boot.reviewAnchor, boot.reviewAnchorOccurrence);
   startPageState(boot.state);
   const root = createRoot(host);

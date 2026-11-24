@@ -40,7 +40,11 @@ addEventListener("message", (event) => {
     } else if (data && data.type === "rakazo-page:state" && data.values && typeof data.values === "object") {
       parent.postMessage({ type: data.type, values: data.values }, "*");
     } else if (data && data.type === "rakazo-page:height" && Number.isFinite(data.height)) {
-      parent.postMessage({ type: data.type, height: data.height }, "*");
+      const dimensions = { type: data.type, height: data.height };
+      if (Number.isFinite(data.scrollHeight) && data.scrollHeight >= 0) {
+        dimensions.scrollHeight = data.scrollHeight;
+      }
+      parent.postMessage(dimensions, "*");
     } else if (data && data.type === "rakazo-page:sections" && Array.isArray(data.sections)) {
       const sections = data.sections.slice(0, 80)
         .filter((section) => typeof section === "string")
@@ -64,6 +68,10 @@ addEventListener("message", (event) => {
   }
   if (event.data && event.data.type === "rakazo-page:state" && event.data.values && typeof event.data.values === "object") {
     preview.contentWindow.postMessage({ type: event.data.type, values: event.data.values }, "*");
+    return;
+  }
+  if (event.data?.type === "rakazo-page:scroll-preview" && Number.isFinite(event.data.top) && event.data.top >= 0) {
+    preview.contentWindow.postMessage({ type: event.data.type, top: event.data.top }, "*");
     return;
   }
   if (typeof event.data !== "string") return;
