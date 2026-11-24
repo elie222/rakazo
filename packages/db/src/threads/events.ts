@@ -76,9 +76,9 @@ import type { ClaimedSteeringMessage, ClaimSteeringInput } from "./thread-steeri
 import {
   claimSteering,
   createPendingSteeringRun,
-  discardAnsweredSteering,
   hasChannelMessage,
   releaseUnreadHandovers,
+  settleFailedRunSteering,
 } from "./thread-steering.js";
 import type {
   AnswerTakeoverRequestInput,
@@ -888,39 +888,8 @@ async function finalizeRunOnce(
     });
     if (task.count !== 1) throw new Error("Run task was not available to finalize");
 
-    let retryable = false;
-    if (input.outcome === "failed") {
-      // Before the partial reply below is saved: a reply the failure cut short answers no
-      // steering, so the steering it was answering still gets a run of its own.
-      await discardAnsweredSteering(tx, input);
-      const { sourceMessage } = await tx.run.findUniqueOrThrow({
-        where: { id: input.runId },
-        select: {
-          sourceMessage: { select: { seq: true, role: true, threadId: true, authorUserId: true } },
-        },
-      });
-      if (
-        input.retryable &&
-        sourceMessage?.role === "user" &&
-        sourceMessage.threadId === input.threadId &&
-        sourceMessage.authorUserId === writableRun?.userId
-      ) {
-        const newer = await tx.message.findFirst({
-          where: { threadId: input.threadId, role: "user", seq: { gt: sourceMessage.seq } },
-          select: { id: true },
-        });
-        retryable = !newer;
-      }
-      // A continuation's source is the newest steering it was created for. Only newer
-      // messages justify another run after failure, even if setup failed before claiming.
-      await tx.steeringMessage.updateMany({
-        where: {
-          runId: input.runId,
-          message: sourceMessage ? { seq: { gt: sourceMessage.seq } } : undefined,
-        },
-        data: { runId: null },
-      });
-    }
+    const retryable =
+      input.outcome === "failed" && (await settleFailedRunSteering(tx, input, writableRun?.userId));
     let firstResponse = false;
     // Clients get the blocks without the kept calls, in the message and in its event alike.
     const { blocks: replyBlocks, toolHistory } = splitToolHistory(
