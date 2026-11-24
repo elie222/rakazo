@@ -70,7 +70,7 @@ export function BotLibrary({
             {items.map((item) => (
               <li key={item.id}>
                 <Link
-                  to={`/app/artifacts/${item.id}`}
+                  to={`/app/artifacts/${item.id}?bot=${encodeURIComponent(botId)}`}
                   className="flex w-full items-center gap-3 rounded-md px-2 py-2 text-start outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span className="shrink-0 text-muted-foreground">

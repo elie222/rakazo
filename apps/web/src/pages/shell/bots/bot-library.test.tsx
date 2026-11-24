@@ -110,7 +110,7 @@ it("opens a file on the Artifacts page", async () => {
     container.querySelector<HTMLAnchorElement>('[data-testid="bot-library-files"] a')!.click();
   });
   expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
-    "/app/artifacts/artifact-1",
+    "/app/artifacts/artifact-1?bot=bot-1",
   );
 });
 
