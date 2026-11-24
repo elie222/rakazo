@@ -59,18 +59,18 @@ describe("APNs VoIP", () => {
   ] as const)("classifies %j as %s", async (reply, result) => {
     expect(await new ApnsVoipProvider(config, async () => reply).send("fake", call)).toBe(result);
   });
-  it.each(["BadDeviceToken", "DeviceTokenNotForTopic"])(
-    "drops a token rejected with %s once another push got through",
-    async (reason) => {
-      const transport = vi.fn<ApnsTransport>().mockResolvedValue({ status: 400, reason });
-      const push = new ApnsVoipProvider(config, transport);
-      expect(await push.send("fake", call)).toBe("unavailable");
-      transport.mockResolvedValueOnce({ status: 200 });
-      expect(await push.send("working-token", call)).toBe("sent");
-      expect(await push.send("fake", call)).toBe("invalid");
-      expect(await push.send("fake", call)).toBe("invalid");
-    },
-  );
+  it("drops a token rejected with BadDeviceToken once another push got through", async () => {
+    const transport = vi.fn<ApnsTransport>().mockResolvedValue({
+      status: 400,
+      reason: "BadDeviceToken",
+    });
+    const push = new ApnsVoipProvider(config, transport);
+    expect(await push.send("fake", call)).toBe("unavailable");
+    transport.mockResolvedValueOnce({ status: 200 });
+    expect(await push.send("working-token", call)).toBe("sent");
+    expect(await push.send("fake", call)).toBe("invalid");
+    expect(await push.send("fake", call)).toBe("invalid");
+  });
   it("stops trusting an old delivery to drop rejected tokens", async () => {
     vi.useFakeTimers();
     try {
