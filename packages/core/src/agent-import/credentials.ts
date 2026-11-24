@@ -65,16 +65,18 @@ export function credentialRanges(text: string): TextRange[] {
 export function credentialMatches(text: string): TextRange[] {
   const found: TextRange[] = [];
   for (const shape of SHAPES) {
+    // A block runs to its END line, or to the end of the text without one: a BEGIN inside it is
+    // part of it, so each END is searched for once.
+    let blockEnd = -1;
     for (const match of text.matchAll(shape.pattern)) {
+      if (shape.block && match.index < blockEnd) continue;
       if (shape.random && !random(match[1] ?? match[0])) continue;
       const end = match.index + match[0].length;
       if (shape.block) {
         BLOCK_END.lastIndex = end;
         const close = BLOCK_END.exec(text);
-        found.push({
-          start: match.index,
-          end: close ? close.index + close[0].length : text.length,
-        });
+        blockEnd = close ? close.index + close[0].length : text.length;
+        found.push({ start: match.index, end: blockEnd });
       } else {
         // A token that ends a sentence leaves the period out.
         let last = end;

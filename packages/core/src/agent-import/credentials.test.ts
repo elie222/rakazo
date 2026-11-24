@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { credentialRanges, looksLikeCredential } from "./credentials.js";
 import { parseAgentImport } from "./index.js";
@@ -129,6 +130,11 @@ describe("credential ranges", () => {
   it("covers a private key with no END line to the end of the text", () => {
     const key = join("-----BEGIN ", "RSA PRIVATE", " KEY-----\nAAAA\nBBBB");
     expect(found(`Here:\n${key}`)).toEqual([key]);
+  });
+
+  it("scans many unclosed private key lines in linear time", () => {
+    const begin = join("-----BEGIN ", "RSA PRIVATE", " KEY-----\n");
+    expectLinearTime(() => credentialRanges(begin.repeat(100_000)));
   });
 });
 
