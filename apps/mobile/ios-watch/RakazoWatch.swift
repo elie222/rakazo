@@ -254,11 +254,7 @@ private struct WatchConversation: View {
               }
             }
           }
-          if botWorking {
-            ProgressView()
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .accessibilityLabel("Working")
-          }
+          if botWorking { WatchTypingBubble(tint: tint) }
           if let failure {
             Text(failure.label).font(.footnote).foregroundStyle(.secondary)
           }
@@ -387,6 +383,33 @@ private struct WatchBubble: View {
     }
     .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
     .padding(message.fromUser ? .leading : .trailing, 16)
+  }
+}
+
+/// The bot's side of the thread while it works on a reply: a bubble with pulsing dots.
+private struct WatchTypingBubble: View {
+  let tint: Color
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    TimelineView(.animation(minimumInterval: 0.15, paused: reduceMotion)) { context in
+      let phase = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate * 2.4
+      HStack(spacing: 4) {
+        ForEach(0..<3, id: \.self) { index in
+          let wave = (sin(phase - Double(index) * 0.9) + 1) / 2
+          Circle()
+            .frame(width: 6, height: 6)
+            .opacity(0.35 + 0.65 * wave)
+            .offset(y: -2 * wave)
+        }
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 10)
+      .background(tint.opacity(0.3), in: RoundedRectangle(cornerRadius: 16))
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement()
+    .accessibilityLabel("Working")
   }
 }
 
