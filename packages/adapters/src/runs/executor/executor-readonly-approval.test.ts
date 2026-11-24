@@ -1776,7 +1776,7 @@ describe("Composio batches", () => {
     )[0]?.[0].blocks[0];
     expect(card).toMatchObject({
       text: "Allow Gmail send email, …?",
-      detail: "Gmail send email\nTo: a@example.com\n…",
+      detail: "Gmail send email\nTo: a@example.com\n\n…",
     });
   });
 

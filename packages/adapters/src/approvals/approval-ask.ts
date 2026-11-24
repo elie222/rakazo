@@ -402,7 +402,8 @@ function formatApprovalDetail(
         groups.push([runs > 1 ? `${name} ×${runs}` : name, ...first]);
         if (last.length) later.push([name, ...last]);
       }
-      lines.push([...groups, ...later].map((group) => group.join("\n")).join("\n\n"));
+      if (groups.length)
+        lines.push([...groups, ...later].map((group) => group.join("\n")).join("\n\n"));
     }
   } else {
     const { first, last } = shown(args);
@@ -455,6 +456,10 @@ function argumentText(value: unknown): string {
  * `GMAIL_FETCH_EMAILS` reads "Gmail fetch emails" and `createIssue` reads "Create issue".
  */
 export function readableToolName(name: string): string {
+  return readableWords(name, true);
+}
+
+function readableWords(name: string, collapseApp: boolean): string {
   const words = name
     // A connected server's tools carry our `mcp__` namespace, which means nothing to the reader.
     .replace(/^mcp__/, "")
@@ -464,7 +469,7 @@ export function readableToolName(name: string): string {
   if (words.length === 0) return name;
   // An app named twice, run together then spaced (`DRIVEAPP_DRIVE_APP_DELETE`), is named once.
   const first = words[0]!.toLowerCase();
-  for (let end = 2; end <= words.length; end++) {
+  for (let end = 2; collapseApp && end <= words.length; end++) {
     const joined = words.slice(1, end).join("").toLowerCase();
     if (joined === first) {
       words.splice(1, end - 1);
@@ -480,7 +485,7 @@ const UPPERCASE_ARGUMENT_WORDS = new Set(["id", "ids", "url", "urls"]);
 
 /** An argument name as words: `max_results` reads "Max results". */
 function readableArgumentName(key: string): string {
-  return readableToolName(key)
+  return readableWords(key, false)
     .split(" ")
     .map((word) => (UPPERCASE_ARGUMENT_WORDS.has(word.toLowerCase()) ? word.toUpperCase() : word))
     .join(" ");
