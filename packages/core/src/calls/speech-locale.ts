@@ -1,5 +1,9 @@
 /** Per-device opt-in to provider transcription without a language hint during calls. */
-export const CALL_AUTO_LANGUAGE_KEY = "rakazo.call-auto-language";
+export const callAutoLanguagePreference = {
+  key: "rakazo.call-auto-language",
+  parse: (value: string | null) => value === "1",
+  serialize: (enabled: boolean) => (enabled ? "1" : null),
+};
 
 /** Speech recognizers need regional BCP-47 tags for the app's UI locale codes. */
 const SPEECH_LOCALE_TAGS = {
