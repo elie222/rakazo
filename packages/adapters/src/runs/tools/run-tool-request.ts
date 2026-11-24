@@ -97,6 +97,8 @@ export interface ToolRequest {
   settingsChange: boolean;
   /** Outside text may have asked for it, so a saved Always allow rule does not skip its approval. */
   ignoresAllowRules: boolean;
+  /** Held for the owner personally: Auto Review cannot pass it, and Never ask refuses it. */
+  requiresOwnerApproval: boolean;
   /** This page tool call completes a purchase, which a person approves each time. */
   purchase: PurchaseApproval | undefined;
   /** This page tool call types a saved card into a checkout, which a person approves each time. */
@@ -326,6 +328,7 @@ export async function resolveToolRequest(
     heldForApproval: false,
     settingsChange: false,
     ignoresAllowRules: false,
+    requiresOwnerApproval: false,
     purchase: undefined,
     cardUse: undefined,
     loginUse: undefined,
@@ -511,28 +514,37 @@ export async function prepareToolRequest(
     const unattended = !ctx.source.ownerStartedRun && approvalCardExpires(run.trigger);
     if (!ctx.source.ownerStartedRun && !unattended)
       return refusal("run_not_owner_started", "Bot management tools need a run you started.");
-    // Text from a channel or webhook, or whatever started a run nobody is watching, may have asked
-    // for it, so it goes through the approval mode, and an Always allow rule saved for calls the
-    // owner asked for does not skip it.
-    // Reading another bot's instructions or routine prompts waits too: a run nobody is watching
-    // may answer a bot from another Space.
-    const readsPrivateText =
-      unattended &&
-      ((name === "list_fleet" && argumentGiven(args.bot_id)) || name === "schedule_list");
-    if (
-      readsPrivateText ||
-      (fleetWrite && (unattended || (await ctx.trust.receivedOutsideMessage())))
-    ) {
-      request.heldForApproval = true;
-      request.ignoresAllowRules = true;
-    }
     // The card names the bot, and an approved replay acts on its id, not a name another bot
-    // could take by then.
+    // could take by then. Resolve before classifying fleet writes and private reads so naming
+    // this bot itself follows the same path as omitting the target or passing its own id.
     if (managedRoutines && nextApprovedTool !== name) {
       const target = await resolveBot(deps.prisma, ctx.fleetRun, args);
       if ("error" in target) return refusal("bot_management_request_invalid", target.error);
       const { bot_id: _id, bot_name: _name, ...rest } = args;
       args = target.id === bot.id ? rest : { ...rest, bot_id: target.id, bot_name: target.name };
+    }
+    const targetManagedRoutines = reachesManagedRoutines(name, args);
+    const targetFleetWrite =
+      FLEET_WRITE_TOOL_NAMES_SET.has(name) ||
+      name === "archive_bot" ||
+      (name === "update_bot" && argumentGiven(args.bot_id)) ||
+      (targetManagedRoutines && name !== "schedule_list");
+    // Text from a channel or webhook, or whatever started a run nobody is watching, may have asked
+    // for it, so it waits for the owner's approval: an Always allow rule or Auto Review does not
+    // skip it, and Never ask refuses it.
+    // Reading another bot's instructions or routine prompts waits too: a run nobody is watching
+    // may answer a bot from another Space.
+    const readsPrivateText =
+      unattended &&
+      ((name === "list_fleet" && argumentGiven(args.bot_id)) ||
+        (name === "schedule_list" && targetManagedRoutines));
+    if (
+      readsPrivateText ||
+      (targetFleetWrite && (unattended || (await ctx.trust.receivedOutsideMessage())))
+    ) {
+      request.heldForApproval = true;
+      request.ignoresAllowRules = true;
+      request.requiresOwnerApproval = true;
     }
   }
   // Only a persisted approval may supply the before-values the save checks against.

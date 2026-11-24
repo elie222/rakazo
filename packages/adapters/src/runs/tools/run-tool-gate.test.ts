@@ -62,6 +62,7 @@ function gate(options: {
     heldForApproval: false,
     settingsChange: false,
     ignoresAllowRules: false,
+    requiresOwnerApproval: false,
     purchase: undefined,
     cardUse: undefined,
     loginUse: options.asks === false ? undefined : loginUse,
@@ -145,6 +146,7 @@ describe("gateToolCall: typing into a page after outside content, in Auto", () =
       heldForApproval: false,
       settingsChange: false,
       ignoresAllowRules: false,
+      requiresOwnerApproval: false,
     } as unknown as ToolRequest;
     const ctx = {
       deps: { prisma: {}, autoReview: {} },
@@ -192,5 +194,94 @@ describe("gateToolCall: typing into a page after outside content, in Auto", () =
       { kind: "fill", ref: "e2", text: "12 Rua Nova" },
     ]);
     expect(reviewOnly).toEqual([false, true]);
+  });
+});
+
+describe("gateToolCall: bot management held for the owner", () => {
+  beforeEach(() => {
+    plans.length = 0;
+  });
+
+  function fleetGate(
+    pref: { enabled: boolean; skipApprovals: boolean },
+    options: {
+      approvedReplay?: boolean;
+      rule?: "always_allow" | "deny";
+    } = {},
+  ) {
+    const args = { bot_id: "child-1" };
+    const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
+    const request: ToolRequest = {
+      name: "list_fleet",
+      args,
+      executionId,
+      connectorCall: { tool: "list_fleet", args, executionId, route: undefined },
+      effectRequest: args,
+      resolvedTool: undefined,
+      catalogRemapped: false,
+      nextApprovedTool: options.approvedReplay ? "list_fleet" : undefined,
+      approvedEffectKey: options.approvedReplay ? "run-1:list_fleet:approved" : undefined,
+      replayEffectToolName: "list_fleet",
+      fleetSummary: undefined,
+      heldForApproval: true,
+      settingsChange: false,
+      ignoresAllowRules: true,
+      requiresOwnerApproval: true,
+      purchase: undefined,
+      cardUse: undefined,
+      loginUse: undefined,
+    };
+    const ctx = {
+      deps: { prisma: {}, autoReview: {} },
+      run: { id: "run-1", userId: "user-1", spaceId: "space-1", trigger: "bot_message" },
+      runId: "run-1",
+      bot: { id: "bot-1", name: "Helper" },
+      thread: { id: "thread-1" },
+      context: { signal: new AbortController().signal },
+      source: { ownerStartedRun: false },
+      tools: { connector: new Map(), connectedPlugins: [] },
+      state: {
+        tainted: true,
+        effects: { consumedIds: new Set(), counts: new Map(), occurrences: [] },
+      },
+      trust: {
+        loadApprovalRules: async () => [
+          {
+            effect: options.rule ?? "always_allow",
+            matchKind: "tool",
+            matchValue: "list_fleet",
+          },
+        ],
+        loadAutoReviewPreference: async () => pref,
+      },
+    };
+    return gateToolCall(ctx as never, request, undefined).then(
+      (outcome) => outcome,
+      (error: Error) => error.message,
+    );
+  }
+
+  it("asks in Ask and Auto without Auto Review and denies fresh calls in Never ask", async () => {
+    for (const pref of [
+      { enabled: false, skipApprovals: false },
+      { enabled: true, skipApprovals: false },
+      { enabled: false, skipApprovals: true },
+    ]) {
+      await fleetGate(pref);
+    }
+    expect(plans).toEqual(["ask", "ask", "deny"]);
+  });
+
+  it("lets an already-approved replay reach its persisted effect even if the space switched to Never ask, unless a deny rule blocks it", async () => {
+    const neverAsk = { enabled: false, skipApprovals: true };
+    // recordEffect mock throws "asks the user", confirming the gate reached effect claim instead of denying early.
+    expect(await fleetGate(neverAsk, { approvedReplay: true })).toBe("asks the user");
+    expect(plans).toEqual(["allow"]);
+
+    plans.length = 0;
+    expect(await fleetGate(neverAsk, { approvedReplay: true, rule: "deny" })).toEqual({
+      result: { error: expect.stringContaining("is blocked in this space") },
+    });
+    expect(plans).toEqual(["deny"]);
   });
 });
