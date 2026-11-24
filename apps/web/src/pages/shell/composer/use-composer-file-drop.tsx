@@ -1,4 +1,6 @@
+import { Paperclip } from "lucide-react";
 import { createContext, useContext, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { isFileDrag } from "../../../lib/composer/pending-attachments";
 import { useEventListener } from "../../../lib/use-event-listener";
 
@@ -7,8 +9,8 @@ export const FileDropZoneContext = createContext<HTMLElement | null>(null);
 
 /**
  * Files dragged in from outside the page over the chat column, or over the composer itself while
- * it is docked over an open page. `fileDragOverZone` controls the input highlight, and dropping
- * files in the zone hands them to `onDropFiles`. `fileDragActive` is true while such a
+ * it is docked over an open page. While they are over it that area shows a drop overlay, and
+ * dropping them anywhere on it hands them to `onDropFiles`. `fileDragActive` is true while such a
  * drag is anywhere over the window, so the composer's gaps can catch the drop.
  */
 export function useComposerFileDrop({
@@ -76,7 +78,29 @@ export function useComposerFileDrop({
     if (!disabled) onDropFiles(dataTransfer.files);
   });
 
-  const fileDragOverZone =
+  const overZone =
     !disabled && zone !== null && dragTargets.some((target) => zone.contains(target));
-  return { fileDragActive: dragTargets.length > 0, fileDragOverZone };
+  // Docked, the overlay sits in the composer's own short row, which hands its children input.
+  const fileDropOverlay =
+    overZone && zone
+      ? createPortal(
+          <div
+            aria-hidden="true"
+            data-testid="file-drop-overlay"
+            className={`pointer-events-none! absolute z-40 grid place-items-center border-2 border-dashed border-ring bg-background/80 ${
+              docked ? "inset-0 rounded-[14px]" : "inset-2 rounded-2xl"
+            }`}
+          >
+            {docked ? (
+              <Paperclip size={16} strokeWidth={1.8} className="text-muted-foreground" />
+            ) : (
+              <span className="grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
+                <Paperclip size={20} strokeWidth={1.8} />
+              </span>
+            )}
+          </div>,
+          zone,
+        )
+      : null;
+  return { fileDragActive: dragTargets.length > 0, fileDropOverlay };
 }

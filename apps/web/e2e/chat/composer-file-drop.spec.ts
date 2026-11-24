@@ -6,8 +6,7 @@ test("files dropped anywhere on the chat attach to the composer", async ({ page 
   await completeOnboarding(page);
   await expect(page.getByRole("combobox", { name: /Message/ })).toBeVisible();
   const transcript = page.getByTestId("transcript");
-  const composerBar = page.getByTestId("composer-bar");
-  const overlay = composerBar.getByTestId("file-drop-overlay");
+  const overlay = page.getByTestId("file-drop-overlay");
   const dataTransfer = await page.evaluateHandle(() => {
     const transfer = new DataTransfer();
     transfer.items.add(new File(["Meeting notes"], "notes.txt", { type: "text/plain" }));
@@ -17,8 +16,7 @@ test("files dropped anywhere on the chat attach to the composer", async ({ page 
   await transcript.dispatchEvent("dragenter", { dataTransfer });
   await transcript.dispatchEvent("dragover", { dataTransfer });
   await expect(overlay).toBeVisible();
-  await expect(page.getByTestId("file-drop-overlay")).toHaveCount(1);
-  await captureScreenshot(page, testInfo, "01-file-drop-composer-highlight");
+  await captureScreenshot(page, testInfo, "01-file-drop-overlay");
 
   await transcript.dispatchEvent("drop", { dataTransfer });
   await expect(overlay).toHaveCount(0);
