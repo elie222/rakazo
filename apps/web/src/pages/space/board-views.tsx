@@ -64,6 +64,7 @@ function TicketActions({
   onArchive,
 }: Pick<TicketViewProps, "changing" | "onArchive"> & { ticket: Ticket }) {
   const { t } = useLingui();
+  if (ticket.archivedAt === undefined) return null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger

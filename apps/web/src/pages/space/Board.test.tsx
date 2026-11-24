@@ -455,6 +455,9 @@ it.each([
   try {
     await act(async () => vi.advanceTimersByTimeAsync(5_000));
     expect(api.notifications.subscribe).toHaveBeenCalledTimes(attempts);
+    const alert = page.container.querySelector('[role="alert"]');
+    if (attempts === 1) expect(alert?.textContent).toContain("Live board updates are unavailable.");
+    else expect(alert).toBeNull();
   } finally {
     await page.cleanup();
     vi.useRealTimers();

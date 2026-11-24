@@ -10,8 +10,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import BoardScreen from "../../app/board";
 import { queryClient } from "../query/query";
 
-const state = vi.hoisted(() => ({ rpc: vi.fn(), foreground: true }));
-const { rpc } = state;
+const state = vi.hoisted(() => ({
+  rpc: vi.fn(),
+  foreground: true,
+  header: vi.fn(),
+  alert: vi.fn(),
+}));
+const { rpc, header, alert } = state;
 vi.mock("../api/api", () => ({
   rpc: state.rpc,
   currentApiBase: () => "http://api.test",
@@ -24,14 +29,15 @@ vi.mock("../api/api", () => ({
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../api/roster-signals", () => ({ useSpaceChanges: () => {} }));
-vi.mock("../navigation/screen-header", () => ({ useScreenHeader: () => {} }));
+vi.mock("../navigation/screen-header", () => ({ useScreenHeader: state.header }));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => state.foreground }));
 vi.mock("expo-router", () => ({
   useFocusEffect: (effect: EffectCallback) => useEffect(effect, [effect]),
 }));
 vi.mock("react-native", () => ({
   ActivityIndicator: () => createElement("div", { role: "progressbar" }),
-  Alert: { alert: vi.fn() },
+  Alert: { alert: state.alert },
+  Platform: { OS: "android" },
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: ({ children }: { children?: ReactNode }) => createElement("span", null, children),
   View: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
@@ -106,6 +112,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.foreground = true;
   rpc.mockReset();
+  header.mockReset();
+  alert.mockReset();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -121,6 +129,19 @@ const button = (label: string) =>
     (element) => (element.getAttribute("aria-label") ?? element.textContent) === label,
   );
 const render = () => act(async () => root.render(createElement(BoardScreen)));
+
+it("keeps an older server's board tickets out of the archive view", async () => {
+  rpc.mockResolvedValue({ tickets: [ticket] });
+  await render();
+  await vi.waitFor(() => expect(host.textContent).toContain("Example ticket"));
+
+  header.mock.lastCall?.[0].action.onPress();
+  const choices = alert.mock.lastCall?.[2] as { text: string; onPress: () => void }[];
+  await act(async () => choices.find((choice) => choice.text === "Archived")?.onPress());
+
+  await vi.waitFor(() => expect(host.textContent).toContain("No matching tickets"));
+  expect(host.textContent).not.toContain("Example ticket");
+});
 
 it("retries a failed first load without leaving the screen", async () => {
   const retry = deferred<{ tickets: Ticket[] }>();

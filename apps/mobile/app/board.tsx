@@ -96,7 +96,8 @@ export default function BoardScreen() {
       },
     },
   });
-  const tickets = list.data?.tickets;
+  // Older servers ignore the scope, and omit archivedAt on all their tickets.
+  const tickets = list.data?.tickets.filter((ticket) => ticketInScope(ticket, scope));
   const error = list.error ? errorText(list.error, t`Try again.`) : "";
 
   if (!tickets || tickets.length === 0) {

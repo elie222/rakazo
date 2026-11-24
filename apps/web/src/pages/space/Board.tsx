@@ -72,14 +72,22 @@ export function BoardPage() {
     : tickets;
   const selected = shownTickets.find((ticket) => ticket.id === selectedId);
   const loadFailed = ticketsQuery.error ?? botsQuery.error;
-  const error = loadFailed ? errorText(loadFailed) : "";
+  const [liveUnavailable, setLiveUnavailable] = useState(false);
+  const error = loadFailed
+    ? errorText(loadFailed)
+    : liveUnavailable
+      ? t`Live board updates are unavailable.`
+      : "";
   useEffect(
     () =>
       followStream(
         (signal) => queries.notifications.subscribe.call(undefined, { signal }),
         (frame) => {
-          if (frame.type === "board") void spaceChanged("board", queryClient);
+          if (frame.type !== "board") return;
+          setLiveUnavailable(false);
+          void spaceChanged("board", queryClient);
         },
+        () => setLiveUnavailable(true),
       ),
     [queryClient, queries],
   );

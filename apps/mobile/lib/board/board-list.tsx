@@ -111,13 +111,17 @@ function TicketMoveRow({
   const statuses = ticket.archivedAt
     ? []
     : TICKET_STATUSES.filter((status) => status !== ticket.status);
+  const archive =
+    ticket.archivedAt !== undefined
+      ? [{ id: "archive", title: ticket.archivedAt ? t`Restore ticket` : t`Archive ticket` }]
+      : [];
   if (moving) return <SettingsRow title={ticket.title} detail={ticket.ref} disabled dimmed />;
   return (
     <MenuView
       ref={menu}
       actions={[
         ...statuses.map((status) => ({ id: status, title: ticketStatusLabel(status) })),
-        { id: "archive", title: ticket.archivedAt ? t`Restore ticket` : t`Archive ticket` },
+        ...archive,
       ]}
       colorScheme={colorScheme}
       onPressAction={({ nativeEvent }) => {

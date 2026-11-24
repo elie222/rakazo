@@ -104,7 +104,8 @@ export const TicketSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   completedAt: z.string().nullable(),
-  archivedAt: z.string().nullable(),
+  /** Older servers omit this field and cannot archive tickets. */
+  archivedAt: z.string().nullable().optional(),
 });
 export type Ticket = z.infer<typeof TicketSchema>;
 

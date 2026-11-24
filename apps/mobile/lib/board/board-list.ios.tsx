@@ -112,10 +112,12 @@ export function BoardList({
                   ))}
                 </Section>
               ) : null}
-              <Button
-                label={ticket.archivedAt ? t`Restore ticket` : t`Archive ticket`}
-                onPress={() => onArchive(ticket)}
-              />
+              {ticket.archivedAt !== undefined ? (
+                <Button
+                  label={ticket.archivedAt ? t`Restore ticket` : t`Archive ticket`}
+                  onPress={() => onArchive(ticket)}
+                />
+              ) : null}
             </Menu>
           ))}
         </Section>
