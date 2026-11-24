@@ -24,7 +24,10 @@ export default function middleware(request: Request): Response {
   const url = new URL(request.url);
 
   if (url.hostname.toLowerCase() === WWW_HOST) {
-    const destination = new URL(`${url.pathname}${url.search}`, APEX_ORIGIN);
+    // Set the path after parsing the origin so leading slashes cannot replace the host.
+    const destination = new URL(APEX_ORIGIN);
+    destination.pathname = url.pathname;
+    destination.search = url.search;
     return permanentRedirect(destination.toString());
   }
 
