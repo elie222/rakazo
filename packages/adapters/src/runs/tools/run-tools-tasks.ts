@@ -3,7 +3,7 @@ import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../../approvals/approval-ask.js";
 import {
   desktopGuardApplies,
-  desktopProtectionGuardMessage,
+  desktopGuardRefusalMessage,
   protectedComputerLifecycleRefusal,
 } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { findRoutinesTarget } from "../../routines/routine-target.js";
@@ -50,9 +50,7 @@ import type { ToolHandlers } from "./run-tool-gate.js";
 function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undefined {
   const command = commandWatchFromTool(watch);
   const refusal = command === undefined ? undefined : protectedComputerLifecycleRefusal(command);
-  return desktopGuardApplies(ctx.computer) && refusal
-    ? desktopProtectionGuardMessage(refusal, command ?? "")
-    : undefined;
+  return desktopGuardApplies(ctx.computer) && refusal ? desktopGuardRefusalMessage() : undefined;
 }
 
 /**
