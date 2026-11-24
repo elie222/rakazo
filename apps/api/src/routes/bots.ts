@@ -447,7 +447,7 @@ export function botsRoutes(ctx: RouterContext) {
         const modelCredentialId =
           input.modelCredentialId !== undefined
             ? input.modelCredentialId
-            : changingModel
+            : changingModel && existing.modelCredentialId
               ? null
               : undefined;
         const credentialToValidate =
