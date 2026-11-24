@@ -15,6 +15,7 @@ import {
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
   ThinkingLevelSchema,
+  withModelDefaults,
 } from "@rakazo/contracts";
 import {
   clampCatalogThinkingLevel,
@@ -31,6 +32,7 @@ type SettingsCredential = Pick<
   | "reasoning"
   | "visionModelIds"
   | "maxImagesPerPrompt"
+  | "modelDefaults"
 >;
 type SettingsEntry = Pick<ModelCatalogEntry, "live" | "contextWindow" | "maxTokens">;
 
@@ -180,12 +182,19 @@ export function modelSettingsDefaults(
 
 /**
  * The settings a model on this connection runs with: its own, else the values that were saved
- * for the whole connection before models had their own.
+ * for the whole connection before models had their own, over what the model does by default.
  */
 export function credentialModelSettings(
   credential: SettingsCredential,
   modelId: string,
 ): ModelSettings {
+  return withModelDefaults(
+    credential.modelDefaults?.[modelId],
+    savedModelSettings(credential, modelId),
+  );
+}
+
+function savedModelSettings(credential: SettingsCredential, modelId: string): ModelSettings {
   const own = credential.modelSettings?.[modelId];
   if (own) return own;
   const compatible = credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID;

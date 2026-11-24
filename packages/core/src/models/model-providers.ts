@@ -172,6 +172,7 @@ type CredentialModelRef = {
   modelId?: string | null;
   enabledModelIds?: readonly string[] | null;
   modelSettings?: Readonly<Record<string, ModelSettings>>;
+  modelDefaults?: Readonly<Record<string, ModelSettings>>;
   isDefault?: boolean;
   preferenceRank?: number;
 };
@@ -358,7 +359,8 @@ export function connectedModelChoices(
       enabled.length > 0
         ? enabled.map((id) => {
             const known = providerModels.find((entry) => entry.id === id)?.images;
-            const own = credential.modelSettings?.[id]?.images;
+            const own =
+              credential.modelSettings?.[id]?.images ?? credential.modelDefaults?.[id]?.images;
             return {
               ...freeFormChoice(credential, id),
               images:

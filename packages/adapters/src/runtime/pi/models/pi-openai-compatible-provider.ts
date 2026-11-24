@@ -27,6 +27,8 @@ import {
 } from "@rakazo/contracts";
 import type { Dispatcher } from "undici";
 import { Agent } from "undici";
+import type { ListedModelDetails } from "../../../models/endpoints/listed-model-details.js";
+import { listedModelDetails } from "../../../models/endpoints/listed-model-details.js";
 import type { OpenAiCompatibleUrlPolicy } from "../../../models/endpoints/openai-compatible-url.js";
 import {
   assertAllowedOpenAiCompatibleRequestUrl,
@@ -520,6 +522,7 @@ function isTaggedNonChatModel(entry: { id?: string; metadata?: { tags?: unknown 
 function probeModelIds(
   body: OpenAiCompatibleModelsResponse,
   opts?: { catalogProbe?: boolean; chatOnly?: boolean },
+  details?: Record<string, ListedModelDetails>,
 ): string[] {
   const { maxModelIds } = modelsProbeLimits(opts?.catalogProbe);
   const entries = Array.isArray(body?.data)
@@ -540,6 +543,10 @@ function probeModelIds(
       throw new ConnectionSetupError("Model server returned too many or overly long model ids");
     }
     ids.push(id);
+    if (details) {
+      const listed = listedModelDetails(entry);
+      if (Object.keys(listed).length > 0) details[id] = listed;
+    }
   }
   return ids;
 }
@@ -654,16 +661,41 @@ function overTransport<T>(call: Promise<T>): Promise<T> {
   });
 }
 
+type OpenAiCompatibleListInput = {
+  baseUrl: string;
+  apiKey?: string;
+  headers?: Record<string, string>;
+  apiProtocol?: ModelApiProtocol;
+};
+type OpenAiCompatibleListOptions = OpenAiCompatibleUrlPolicy & { catalogProbe?: boolean };
+
 export async function probeOpenAiCompatibleModels(
-  input: {
-    baseUrl: string;
-    apiKey?: string;
-    headers?: Record<string, string>;
-    apiProtocol?: ModelApiProtocol;
-  },
+  input: OpenAiCompatibleListInput,
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
-  opts?: OpenAiCompatibleUrlPolicy & { catalogProbe?: boolean },
+  opts?: OpenAiCompatibleListOptions,
+): Promise<string[]> {
+  return listOpenAiCompatibleModels(input, fetchImpl, signal, opts);
+}
+
+/** What the server's model list says about each model that reports anything. */
+export async function probeOpenAiCompatibleModelDetails(
+  input: OpenAiCompatibleListInput,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal,
+  opts?: OpenAiCompatibleListOptions,
+): Promise<Record<string, ListedModelDetails>> {
+  const details: Record<string, ListedModelDetails> = Object.create(null);
+  await listOpenAiCompatibleModels(input, fetchImpl, signal, opts, details);
+  return details;
+}
+
+async function listOpenAiCompatibleModels(
+  input: OpenAiCompatibleListInput,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal,
+  opts?: OpenAiCompatibleListOptions,
+  details?: Record<string, ListedModelDetails>,
 ): Promise<string[]> {
   const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl, opts);
   assertHttpsForKeyedOpenAiCompatibleUrl(
@@ -711,10 +743,11 @@ export async function probeOpenAiCompatibleModels(
         );
       }
       const body = await overTransport(readBoundedJson(response, opts));
-      const pageIds = probeModelIds(body, {
-        ...opts,
-        chatOnly: baseUrl.hostname === "api.deepinfra.com",
-      });
+      const pageIds = probeModelIds(
+        body,
+        { ...opts, chatOnly: baseUrl.hostname === "api.deepinfra.com" },
+        details,
+      );
       if (ids.length + pageIds.length > maxModelIds) {
         throw new ConnectionSetupError("Model server returned too many or overly long model ids");
       }

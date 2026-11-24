@@ -15,6 +15,7 @@ import {
   parseModelHeaders,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
+import type { ListedModelDetails } from "./endpoints/listed-model-details.js";
 
 const CORRUPT_MODEL_SECRET_MESSAGE =
   "Stored model credential is corrupt. Connect the provider again.";
@@ -33,6 +34,19 @@ function parsedModelSettings(value: unknown): StoredModelSettings {
     if (modelId.trim() && parsed.success) models[modelId] = parsed.data;
   }
   return Object.keys(models).length > 0 ? { models } : {};
+}
+
+function parsedListedModels(value: unknown): Record<string, ListedModelDetails> | undefined {
+  const models = parsedModelSettings(value).models;
+  if (!models) return undefined;
+  const listed: Record<string, ListedModelDetails> = Object.create(null);
+  for (const [modelId, { contextWindow, maxTokens, images, reasoning }] of Object.entries(models)) {
+    const details = { contextWindow, maxTokens, images, reasoning };
+    listed[modelId] = Object.fromEntries(
+      Object.entries(details).filter(([, field]) => field !== undefined),
+    );
+  }
+  return listed;
 }
 
 function serializedModelSettings(secret: StoredModelSettings): StoredModelSettings {
@@ -91,6 +105,8 @@ export type StoredModelSecret =
       visionModelIds?: string[];
       enabledModelIds?: string[];
       maxImagesPerPrompt?: number;
+      /** What the server's model list said about the enabled models when last saved. */
+      listedModels?: Record<string, ListedModelDetails>;
     } & StoredModelLimits &
       StoredModelSettings);
 
@@ -163,6 +179,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
         : undefined;
     const visionModelIds = parsedModelIds(parsed.visionModelIds);
     const enabledModelIds = parsedModelIds(parsed.enabledModelIds);
+    const listedModels = parsedListedModels(parsed.listedModels);
     const maxImagesPerPrompt =
       typeof parsed.maxImagesPerPrompt === "number" &&
       Number.isInteger(parsed.maxImagesPerPrompt) &&
@@ -183,6 +200,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       ...(visionModelIds ? { visionModelIds } : {}),
       ...(enabledModelIds ? { enabledModelIds } : {}),
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
+      ...(listedModels ? { listedModels } : {}),
       ...modelLimits(parsed),
       ...parsedModelSettings(parsed.models),
     };
@@ -275,6 +293,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
       ...(secret.maxImagesPerPrompt !== undefined
         ? { maxImagesPerPrompt: secret.maxImagesPerPrompt }
         : {}),
+      ...(secret.listedModels ? { listedModels: parsedListedModels(secret.listedModels) } : {}),
       ...serializedModelSettings(secret),
     });
   }
