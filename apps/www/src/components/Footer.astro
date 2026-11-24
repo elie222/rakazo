@@ -22,6 +22,7 @@ import {
 } from "../site";
 import { marketing } from "../marketing-site";
 import Logo from "./Logo.astro";
+import ProductHuntBadge from "./ProductHuntBadge.astro";
 
 type Props = {
   locale?: Locale;
@@ -126,6 +127,7 @@ const columns: Array<{ heading: string; links: FooterLink[] }> = [
         </ul>
       </details>
     </nav>
+    <ProductHuntBadge />
     <span class="site-footer__legal">
       <span>© 2026 <a href={INBOX_ZERO_URL} target="_blank" rel="noopener">Inbox Zero Inc.</a></span>
       <span>Apache-2.0</span>
