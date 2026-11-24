@@ -7,6 +7,7 @@ import {
 } from "@rakazo/contracts";
 import { readHistory, searchHistory } from "@rakazo/db";
 import { redactConnectorPayload } from "../../integrations/connector-safety.js";
+import { stampMemoryEntry, userMemoryDate } from "../../memory/memory-expiry.js";
 import { editMemory } from "../../memory/memory-tools.js";
 import { MAX_RECALLED_MEMORIES } from "../../runtime/context/history-compaction.prompt.js";
 import { sharedMemorySaveError } from "../../tools/builtin.tool-definition.js";
@@ -101,10 +102,16 @@ async function readHistoryTool(ctx: RunContext, call: ToolCall) {
 /** Memory documents, semantic memory and thread history. */
 export const memoryTools: ToolHandlers = {
   async remember(ctx, call) {
-    const { deps, runId, bot, thread, context } = ctx;
+    const { deps, runId, bot, thread, context, run } = ctx;
     const { args } = call;
     const parsed = RememberInputSchema.safeParse(args);
     if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    const today = await userMemoryDate(deps.prisma, run.userId, deps.now?.() ?? new Date());
+    const operations = parsed.data.operations.map((operation) =>
+      operation.action !== "remove" && operation.content?.trim()
+        ? { ...operation, content: stampMemoryEntry(operation.content, today, operation.until) }
+        : operation,
+    );
     // A save may edit any document the bot already has, such as an imported one. A path it
     // does not have means the index: a save never creates a document, so models cannot
     // invent file names to get past the size cap.
@@ -117,7 +124,7 @@ export const memoryTools: ToolHandlers = {
         snapshot = await read(MEMORY_INDEX_PATH);
       const existing = snapshot.documents[0];
       const path = existing?.path ?? MEMORY_INDEX_PATH;
-      const edit = editMemory(existing?.content ?? "", parsed.data.operations);
+      const edit = editMemory(existing?.content ?? "", operations);
       if ("error" in edit) return call.finish(edit);
       const { content } = edit;
       if (content === (existing?.content ?? "")) return call.finish({ ok: true });

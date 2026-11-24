@@ -52,6 +52,7 @@ vi.mock("../../lib/appearance/appearance", () => ({ mobileTokens: () => ({}) }))
 vi.mock("../../lib/native/native", () => ({
   useThemedStyles: (factory: () => unknown) => factory(),
 }));
+vi.mock("../native/sheet-bar", () => import("../native/sheet-bar.test-support"));
 vi.mock("../native/native-action-button", () => ({
   NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) => (
     <button type="button" onClick={onPress}>

@@ -101,7 +101,8 @@ Web, desktop, iPhone, iPad, and Android, all talking to the same server.
 
 ## Quick start (published images)
 
-You need Docker Engine, the Compose plugin, curl, and OpenSSL. No clone or Node install.
+You need Docker Engine, the Compose plugin, curl, and OpenSSL. No clone or Node install. On Linux,
+the installer installs Docker for you when run as root.
 
 ```bash
 mkdir -p rakazo && cd rakazo &&
@@ -129,8 +130,8 @@ For an agent-assisted install, use [SETUP_PROMPT.md](./SETUP_PROMPT.md).
 
 ## Run on a server
 
-Bots stay on when the backend runs on a server. Use the same installer on a VPS, then connect from
-the desktop app, the mobile app, or a browser.
+Bots stay on when the backend runs on a server. Use the same installer on a VPS with 2 vCPUs and
+4 GB of RAM, then connect from the desktop app, the mobile app, or a browser.
 
 ```bash
 bash install-images.sh --prepare-only

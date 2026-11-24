@@ -20,6 +20,12 @@ export const RememberInputSchema = z.object({
         action: z.enum(["add", "replace", "remove"]),
         content: z.string().optional(),
         old_text: z.string().optional(),
+        until: z
+          .string()
+          .optional()
+          .describe(
+            "For an instruction or state the user set for a period: the last date it holds (YYYY-MM-DD) or the event that ends it. Omit for lasting facts.",
+          ),
       }),
     )
     .min(1),

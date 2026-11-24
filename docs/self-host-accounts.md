@@ -15,13 +15,16 @@ SIGNUP_ALLOWLIST=you@example.com,@company.com
 Server configuration belongs in the operator's environment. App accounts cannot change signup policy,
 server integration credentials, or deployment updates, and cannot read deployment security logs.
 
-There is no app-admin role, first-user privilege, or `ADMINS` list. Workspace owners manage only their own workspace.
+The first account to sign up gets no special rights. Two kinds of admin exist, and neither can
+change server configuration:
 
-`RAKAZO_ADMIN_EMAILS` names accounts, comma-separated, that review plugin submissions, add stdio
-MCP servers ([integrations](self-host-integrations.md)), choose the model for everyone
-([models](self-host-models.md#default-for-everyone)), and, on deployments that sell model
-credits, give free access at `/admin/access`. An account counts only once its email is verified.
-It grants nothing else.
+- **Server admins** are the accounts named in `RAKAZO_ADMIN_EMAILS`, comma-separated, once their
+  email is verified. They review plugin submissions, add stdio MCP servers
+  ([integrations](self-host-integrations.md)), choose the model for everyone
+  ([models](self-host-models.md#default-for-everyone)), and, on deployments that sell model
+  credits, give free access at `/admin/access`. Nothing else.
+- **Organization admins** manage the members of their own organization
+  ([Set up a team](#set-up-a-team)). They have no rights over the server or other organizations.
 
 A free-access grant names an email and gives up to $1,000 of model credits, up to 12 free own-key
 months, or both. Whoever owns an organization with that verified email receives it the next time they
@@ -47,12 +50,11 @@ they choose.
    directly. See [Share a space](./spaces.md#share-a-space).
 
 The owner and admins invite people, change roles and remove members; the owner can't be removed. A
-removed member's spaces that nobody else uses pass to whoever removed them. Members are managed on
-web and desktop.
+removed member's spaces that nobody else uses pass to whoever removed them.
 
 SSO and SCIM create accounts but don't add anyone to an organization: invite them after their first
-sign-in. Organization admins are unrelated to `RAKAZO_ADMIN_EMAILS`, and a self-hosted server has no
-seats or billing unless you [set it up](./self-host-billing.md).
+sign-in. A self-hosted server has no seats or billing unless you
+[set it up](./self-host-billing.md).
 
 ## Email verification and sign-in codes
 

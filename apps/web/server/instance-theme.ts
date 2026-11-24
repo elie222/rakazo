@@ -155,22 +155,6 @@ export function withInstanceThemeLink(html: string): string {
 }
 
 /**
- * The built page with the theme linked, for `vite preview`. Runs after Vite's SPA fallback has
- * rewritten the request to `/index.html`, so it answers exactly the requests that get the app.
- */
-export function instanceThemeIndexMiddleware(outDir: string) {
-  const html = withInstanceThemeLink(readFileSync(path.join(outDir, "index.html"), "utf8"));
-  return (req: IncomingMessage, res: ServerResponse, next: () => void) => {
-    if (req.url?.split("?", 1)[0] !== "/index.html" || req.headers["sec-fetch-dest"] === "script") {
-      return next();
-    }
-    res.setHeader("content-type", "text/html; charset=utf-8");
-    res.setHeader("cache-control", "no-cache");
-    res.end(req.method === "HEAD" ? undefined : html);
-  };
-}
-
-/**
  * Serves `RAKAZO_THEME`'s stylesheet and font files. The file is re-read when it changes, so a
  * self-hoster sees edits on reload; an unchanged file is parsed once, and a bad file is logged
  * and serves nothing.

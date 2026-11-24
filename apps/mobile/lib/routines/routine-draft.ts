@@ -92,6 +92,7 @@ export function routineSaveRequest(
   draft: MobileRoutineDraft,
   routine: Routine | null,
   botId: string,
+  /** The device's zone, for a new routine that isn't a copy. */
   timezone: string,
   /**
    * For a new routine started as a copy: the triggers and settings it keeps from it. Not its model,
@@ -118,7 +119,7 @@ export function routineSaveRequest(
         name,
         prompt,
         crons,
-        timezone,
+        timezone: draft.timezone ?? timezone,
         active: draft.active,
         notify: kept?.notify ?? true,
         ...(draft.emailSenders ? { emailSenders: draft.emailSenders } : {}),
