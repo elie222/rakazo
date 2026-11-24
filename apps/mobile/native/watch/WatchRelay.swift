@@ -18,6 +18,8 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   private var scopedSession: RakazoSession?
   private var spaceId: String?
   private var chats: [WatchChat] = []
+  /// The recording the watch is sending in parts.
+  private var upload: (id: UUID, next: Int, audio: Data)?
 
   private enum Change: String { case chat, roster, space, sessionUnavailable, sessionReady }
 
@@ -94,6 +96,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     scopedSession = nil
     spaceId = nil
     chats = []
+    upload = nil
   }
 
   private func publishRevision() {
@@ -128,7 +131,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     Task { @MainActor in
       var response: WatchReply
       do {
-        guard data.count <= 32_768 else { throw WatchFailure.rejected }
+        guard data.count <= 65_536 else { throw WatchFailure.rejected }
         let request = try JSONDecoder().decode(WatchRequest.self, from: data)
         response = try await handle(request)
       } catch let error as WatchFailure {
@@ -179,8 +182,12 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     try verify(session, revision: revision)
 
     if request.action == .chats {
+      async let voice: WatchVoiceStatus = session.rpc(
+        "voice/status", [:], spaceId: session.selectedSpaceId, timeout: 8)
       let list: WatchSpace = try await session.rpc(
         "spaces/list", [:], spaceId: session.selectedSpaceId, timeout: 8)
+      // Unknown when the status cannot be read: the watch still offers to listen.
+      let transcribe = (try? await voice)?.transcribe
       try verify(session, revision: revision)
       if scopedSession.map({ sameSession($0, session) }) != true || spaceId != list.current.id {
         scope = UUID()
@@ -215,7 +222,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
         else { rows.removeLast() }
       }
       chats = rows.map(\.chat)
-      return WatchReply(scope: scope, chats: rows)
+      return WatchReply(scope: scope, chats: rows, transcribe: transcribe)
     }
 
     guard let scope, request.scope == scope, let scopedSession, sameSession(scopedSession, session),
@@ -231,6 +238,15 @@ final class WatchRelay: NSObject, WCSessionDelegate {
         botWorking: thread.activeRuns?.contains {
           ["queued", "leased", "running"].contains($0.status)
         } == true)
+    }
+
+    if request.action == .transcribe {
+      guard let audio = try receive(request) else { return WatchReply() }
+      try await session.requireConsent(target, uses: ["voice"], spaceId: spaceId, timeout: 8)
+      try verify(session, revision: revision)
+      let text = try await transcribe(audio, session: session, spaceId: spaceId)
+      try verify(session, revision: revision)
+      return WatchReply(text: text)
     }
 
     guard let text = request.text?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -258,7 +274,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       input["messageId"] = message.id
       input["answer"] = text
       try await write("threads/answer", input, session: session, spaceId: spaceId, failure: .answerUnconfirmed)
-    case .chats, .thread:
+    case .chats, .thread, .transcribe:
       throw WatchFailure.rejected
     }
     return WatchReply()
@@ -271,6 +287,47 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       return try await session.rpc("threads/get", target, spaceId: spaceId, timeout: 8)
     } catch MessageBotError.rejected(let status, _) where status == 403 || status == 404 {
       throw WatchFailure.reload
+    }
+  }
+
+  /// Adds one part of a recording, answering the whole recording once its last part arrives.
+  private func receive(_ request: WatchRequest) throws -> Data? {
+    guard let id = request.nonce, let audio = request.audio, let part = request.part,
+      let parts = request.parts, (1...16).contains(parts), (0..<parts).contains(part)
+    else { throw WatchFailure.rejected }
+    if part == 0 { upload = (id, 0, Data()) }
+    guard var current = upload, current.id == id, current.next == part,
+      current.audio.count + audio.count <= 640_000
+    else {
+      upload = nil
+      throw WatchFailure.rejected
+    }
+    current.audio.append(audio)
+    current.next += 1
+    upload = part == parts - 1 ? nil : current
+    return part == parts - 1 ? current.audio : nil
+  }
+
+  /// Turns speech into text with the voice provider the account set up, as the app's dictation does.
+  private func transcribe(_ audio: Data, session: RakazoSession, spaceId: String) async throws -> String {
+    var body: [String: Any] = ["audioBase64": audio.base64EncodedString(), "mimeType": "audio/m4a"]
+    // Without a language the provider guesses one, and a short clip can come back in another.
+    if let language = Locale.current.language.languageCode?.identifier { body["language"] = language }
+    let (status, data): (Int, Data)
+    do {
+      (status, data) = try await session.post("/api/voice/transcribe", body, spaceId: spaceId, timeout: 30)
+    } catch MessageBotError.signedOut {
+      throw WatchFailure.signIn
+    } catch {
+      throw WatchFailure.voiceFailed
+    }
+    let reply = try? JSONDecoder().decode(WatchTranscript.self, from: data)
+    switch status {
+    case 200..<300: return reply?.text ?? ""
+    // The server answers 409 when no voice provider is set up.
+    case 409: throw WatchFailure.noVoice
+    case 403 where reply?.code == "AI_CONSENT_REQUIRED": throw WatchFailure.consent
+    default: throw WatchFailure.voiceFailed
     }
   }
 
@@ -324,6 +381,13 @@ final class WatchRelay: NSObject, WCSessionDelegate {
 }
 
 private struct WatchAcknowledgement: Decodable {}
+
+private struct WatchVoiceStatus: Decodable { let transcribe: Bool }
+
+private struct WatchTranscript: Decodable {
+  let text: String?
+  let code: String?
+}
 
 private struct WatchSpace: Decodable {
   struct Current: Decodable {

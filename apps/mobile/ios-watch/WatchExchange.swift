@@ -24,7 +24,7 @@ struct WatchChatRow: Codable, Identifiable {
 }
 
 struct WatchRequest: Codable {
-  enum Action: String, Codable { case chats, thread, send, answer }
+  enum Action: String, Codable { case chats, thread, send, answer, transcribe }
   let action: Action
   var scope: UUID?
   var chat: WatchChat?
@@ -32,6 +32,10 @@ struct WatchRequest: Codable {
   var nonce: UUID?
   var messageId: String?
   var prompt: WatchPrompt?
+  /// A recording travels in parts that each fit one message; the nonce names the recording.
+  var audio: Data?
+  var part: Int?
+  var parts: Int?
 }
 
 struct WatchReply: Codable {
@@ -39,12 +43,15 @@ struct WatchReply: Codable {
   var chats: [WatchChatRow]?
   var messages: [WatchMessage]?
   var botWorking: Bool?
+  /// Whether the server can turn a recording into text; nil when it could not say.
+  var transcribe: Bool?
+  var text: String?
   var error: WatchFailure?
 }
 
 enum WatchFailure: String, Codable, Error {
   case unlockPhone, signIn, consent, unavailable, reload, rejected, sendRejected
-  case sendUnconfirmed, answerUnconfirmed
+  case sendUnconfirmed, answerUnconfirmed, noVoice, voiceFailed
 }
 
 struct WatchMessage: Codable, Identifiable {
