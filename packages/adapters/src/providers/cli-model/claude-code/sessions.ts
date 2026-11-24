@@ -96,8 +96,14 @@ async function findProjectFolder(session: { id: string; configDir: string }) {
     // The folder belongs to Rakazo's own working folder, so anything old in it is a leftover.
     for (const file of await readdir(folder)) {
       const path = join(folder, file);
-      const { mtimeMs } = await stat(path);
-      if (Date.now() - mtimeMs > STALE_FILE_MS) await rm(path, { recursive: true, force: true });
+      // Another cleanup may have removed it since the listing.
+      const info = await stat(path).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (info && Date.now() - info.mtimeMs > STALE_FILE_MS) {
+        await rm(path, { recursive: true, force: true });
+      }
     }
     return folder;
   }
@@ -134,8 +140,10 @@ function privateFolder(name: string, empty: boolean): () => string {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
     const info = lstatSync(folder);
-    const mine = info.isDirectory() && (uid === undefined || info.uid === uid);
-    if (mine && (info.mode & 0o077) === 0 && (!empty || readdirSync(folder).length === 0)) {
+    // Windows has no owner or mode bits here; its temp folder is already the user's own.
+    const mine =
+      info.isDirectory() && (uid === undefined || (info.uid === uid && (info.mode & 0o077) === 0));
+    if (mine && (!empty || readdirSync(folder).length === 0)) {
       return folder;
     }
     own ??= mkdtempSync(join(tmpdir(), `${name}-`));
