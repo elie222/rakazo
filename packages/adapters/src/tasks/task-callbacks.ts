@@ -7,10 +7,11 @@ import {
   TASK_CALLBACK_SIGNATURE_HEADER,
   taskSettled,
 } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
-import { fetchSafeHttpRequest } from "../web/web-ssrf.js";
+import { assertSafeWebUrl, fetchSafeHttpRequest } from "../web/web-ssrf.js";
 import { readPublicTask } from "./public-task.js";
 
 /** While a task works, its callback checks back this often; settling sends it at once. */
@@ -18,6 +19,24 @@ export const TASK_CALLBACK_RECHECK_MS = 5 * 60_000;
 /** A run still working a week after it started is not reported. */
 const TASK_CALLBACK_GIVE_UP_MS = 7 * 24 * 60 * 60_000;
 const DELIVERY_TIMEOUT_MS = 15_000;
+const CALLBACK_PORTS = [443];
+
+/** Refuses, before any work starts, an address a callback could never be delivered to. */
+export async function assertCallbackUrl(
+  url: string,
+  resolveHostname?: SafeWebFetchOptions["resolveHostname"],
+): Promise<void> {
+  try {
+    await assertSafeWebUrl(url, resolveHostname, undefined, CALLBACK_PORTS);
+  } catch (error) {
+    throw new ClientError(
+      "BAD_REQUEST",
+      "callback_url must be a public HTTPS address on the default port",
+      "BAD_REQUEST",
+      { cause: error },
+    );
+  }
+}
 
 /** The key every callback secret is derived from, so no callback secret is stored. */
 export function taskCallbackRootKey(encryptionKey: string): string {
@@ -109,7 +128,12 @@ export async function deliverTaskCallback(
       },
       body,
     },
-    { ...deps.egress, timeoutMs: DELIVERY_TIMEOUT_MS, maxBytes: 1024, allowedPorts: [443] },
+    {
+      ...deps.egress,
+      timeoutMs: DELIVERY_TIMEOUT_MS,
+      maxBytes: 1024,
+      allowedPorts: CALLBACK_PORTS,
+    },
   );
   if (response.status < 200 || response.status >= 300) {
     getLogger().warn("task callback refused", { taskId, status: response.status });

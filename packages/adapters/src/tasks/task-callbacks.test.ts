@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
+  assertCallbackUrl,
   deliverTaskCallback,
   signTaskCallback,
   TASK_CALLBACK_RECHECK_MS,
@@ -114,6 +115,18 @@ describe("task callbacks", () => {
     const { deliver, update } = setup("failed", { answer: 500 });
     await expect(deliver()).rejects.toThrow("Task callback answered 500");
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("refuses up front an address a callback could never reach", async () => {
+    await expect(assertCallbackUrl(url, publicResolver)).resolves.toBeUndefined();
+    for (const refused of [
+      "https://hooks.example.test:8443/rakazo",
+      "https://127.0.0.1/rakazo",
+      "https://localhost/rakazo",
+    ])
+      await expect(assertCallbackUrl(refused, publicResolver)).rejects.toMatchObject({
+        kind: "BAD_REQUEST",
+      });
   });
 
   it("signs with a stable, verifiable format", () => {

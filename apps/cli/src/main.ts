@@ -29,9 +29,16 @@ function printTask(task: PublicTask & { callback_secret?: string }, json: boolea
   if (task.question) stdout.write(`\n${task.question}\n`);
 }
 
+/** Follows a task until it settles, reconnecting when a stream ends early. */
 async function waitFor(client: Client, task: PublicTask): Promise<PublicTask> {
   let last = task;
-  for await (const next of client.followTask(task.id)) last = next;
+  for (let quiet = 0; last.status === "working"; ) {
+    const before = last.updated_at;
+    for await (const next of client.followTask(task.id)) last = next;
+    quiet = last.updated_at === before ? quiet + 1 : 0;
+    if (last.status === "working" && quiet >= 3)
+      throw new Error(`Lost the connection while task ${task.id} was still working`);
+  }
   return last;
 }
 
@@ -129,7 +136,7 @@ export async function main(argv: string[]): Promise<number> {
       let task = await client.sendToTask(first, words.join(" "));
       if (values.wait) task = await waitFor(client, task);
       printTask(task, values.json);
-      return 0;
+      return task.status === "failed" ? 1 : 0;
     }
   }
   stdout.write(USAGE);

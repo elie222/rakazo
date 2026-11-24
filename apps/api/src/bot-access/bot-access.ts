@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { createRouterClient, ORPCError, onError } from "@orpc/server";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { taskCallbackJob } from "@rakazo/adapter-kit";
-import { readPublicTask, TASK_CALLBACK_RECHECK_MS, taskCallbackSecret } from "@rakazo/adapters";
+import {
+  assertCallbackUrl,
+  readPublicTask,
+  TASK_CALLBACK_RECHECK_MS,
+  taskCallbackSecret,
+} from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import type { Actor, PublicBot, PublicTask } from "@rakazo/contracts";
 import { taskSettled } from "@rakazo/contracts";
@@ -260,6 +265,7 @@ export function createBotAccess(deps: BotAccessDeps) {
     caller: KeyCaller,
     input: { bot: string; text: string; callbackUrl?: string },
   ) {
+    if (input.callbackUrl) await assertCallbackUrl(input.callbackUrl);
     const bot = await resolveBot(caller, input.bot);
     const { taskId, cursor } = await send(caller, bot.actor, bot.id, input.text);
     if (input.callbackUrl) await watchTask(bot.actor, taskId, input.callbackUrl);
