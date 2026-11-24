@@ -1334,7 +1334,7 @@ describe("tickRoutineWatch on a computer", () => {
       providerRef: "ecd-1",
     };
     vi.mocked(provisionComputer).mockResolvedValueOnce(computer);
-    const command = "Write-Output 'pkill chromium'";
+    const command = "kill -Name chromium";
     expect(protectedComputerLifecycleRefusal(command)).toBeDefined();
     const { deps, routine, execute } = setupComputer(
       { kind: "command", command },

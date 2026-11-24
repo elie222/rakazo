@@ -18,6 +18,13 @@ describe("desktop-protection guard", () => {
     "find ~/.browser-profiles -name Cookies -delete",
     "rm -f /tmp/.X1-lock",
     "rm -rf /tmp/.X11-unix",
+    "printf X > ~/.browser-profiles/chromium/Cookies",
+    ": > /tmp/.X1-lock",
+    "kill -9 -1",
+    "pkill -u rakazo",
+    "killall -u rakazo",
+    "pkill dbus-daemon",
+    "xkill -all",
   ])("refuses %s", (command) => {
     expect(protectedComputerLifecycleRefusal(command)).toBeDefined();
   });
@@ -33,6 +40,10 @@ describe("desktop-protection guard", () => {
     "systemctl status chromium",
     "ls -la ~/.browser-profiles",
     "rm -rf build dist",
+    "rg 'pkill|chromium' src",
+    "git commit -m 'Stop running systemctl restart in setup'",
+    "docker compose restart api && kubectl get service web",
+    "pkill -u rakazo node",
   ])("runs %s", (command) => {
     expect(protectedComputerLifecycleRefusal(command)).toBeUndefined();
   });
