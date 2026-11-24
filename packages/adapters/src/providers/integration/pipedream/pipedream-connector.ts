@@ -184,42 +184,49 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       [...new Set(apps)].map(async (app) => {
         try {
           const accounts = approvedAccounts(context, app);
-          return (
-            await Promise.all(
-              accounts.map(async (account) => {
-                try {
-                  const tools = await listRemoteMcpTools({
-                    endpoint: MCP_ENDPOINT,
-                    headers: this.mcpHeaders(context, app, account.id, token),
-                    signal: context.signal,
-                    fetch: this.dependencies.fetch,
-                    resolveHostname: this.dependencies.resolveHostname,
-                  });
-                  const connection = {
-                    id: account.connectionId,
-                    connectorId: "pipedream",
-                    externalId: app,
-                    displayName: account.label,
-                    providerRef: account.id,
-                  };
-                  return catalogApp === undefined
-                    ? scopeConnectorTools(tools, connection)
-                    : tools.map((tool) => ({
-                        ...tool,
-                        route: connectorAccountRoute(tool, connection),
-                      }));
-                } catch (error) {
-                  if (catalogApp !== undefined) throw error;
-                  getLogger().error(
-                    "pipedream account discovery failed",
-                    sanitizeConnectorError(error),
-                    { "connector.app": app, "connection.id": account.connectionId },
-                  );
-                  return [];
-                }
-              }),
-            )
-          ).flat();
+          const results = await Promise.allSettled(
+            accounts.map(async (account) => {
+              const tools = await listRemoteMcpTools({
+                endpoint: MCP_ENDPOINT,
+                headers: this.mcpHeaders(context, app, account.id, token),
+                signal: context.signal,
+                fetch: this.dependencies.fetch,
+                resolveHostname: this.dependencies.resolveHostname,
+              });
+              const connection = {
+                id: account.connectionId,
+                connectorId: "pipedream",
+                externalId: app,
+                displayName: account.label,
+                providerRef: account.id,
+              };
+              return catalogApp === undefined
+                ? scopeConnectorTools(tools, connection)
+                : tools.map((tool) => ({
+                    ...tool,
+                    route: connectorAccountRoute(tool, connection),
+                  }));
+            }),
+          );
+          if (catalogApp !== undefined) {
+            context.signal.throwIfAborted();
+            const first = results[0];
+            if (
+              first?.status === "rejected" &&
+              results.every((result) => result.status === "rejected")
+            ) {
+              throw first.reason;
+            }
+          }
+          return results.flatMap((result, index) => {
+            if (result.status === "fulfilled") return result.value;
+            getLogger().error(
+              "pipedream account discovery failed",
+              sanitizeConnectorError(result.reason, [token]),
+              { "connector.app": app, "connection.id": accounts[index]?.connectionId },
+            );
+            return [];
+          });
         } catch (error) {
           if (catalogApp !== undefined) throw new Error(sanitizeConnectorError(error, [token]));
           // A single unavailable app must not hide tools from other connections.

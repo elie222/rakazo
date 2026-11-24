@@ -852,18 +852,20 @@ describe("integration setup authorization", () => {
 
 describe("connection tool listing", () => {
   it.each([true, false])("selects app catalog when available: %s", async (hasCatalog) => {
-    const findFirst = vi.fn(async () => ({
-      id: "connection-1",
-      displayName: "Example",
-      providerRef: "account-1",
-    }));
+    const findMany = vi.fn(async () => [
+      {
+        id: "connection-1",
+        displayName: "Example",
+        providerRef: "account-1",
+      },
+    ]);
     const tools = [{ name: "example_action", description: "An action" }];
     const listAppTools = vi.fn(async () => tools);
     const discoverTools = vi.fn(async () => tools);
     const connector = { discoverTools, ...(hasCatalog ? { listAppTools } : {}) };
     const client = createRouterClient(
       createRouter({
-        prisma: { connection: { findFirst } },
+        prisma: { connection: { findMany } },
         connectors: { managed: () => connector },
       } as unknown as RouterDeps),
       {
@@ -873,7 +875,7 @@ describe("connection tool listing", () => {
     expect(await client.connections.tools({ connectorId: "example", provider: "example" })).toEqual(
       [{ ...tools[0], approvalKey: "example_action" }],
     );
-    expect(findFirst).toHaveBeenCalledWith({
+    expect(findMany).toHaveBeenCalledWith({
       where: {
         spaceId: "workspace-1",
         userId: "user-1",
@@ -881,6 +883,7 @@ describe("connection tool listing", () => {
         provider: "example",
         status: "connected",
       },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     if (hasCatalog) {
       expect(listAppTools).toHaveBeenCalledWith(expect.anything(), "example");
@@ -909,32 +912,32 @@ describe("connection tool listing", () => {
       resourceId: "mail",
       toolName: "send_email",
     };
+    const listAppTools = vi.fn(async ({ connectedConnections }) =>
+      connectedConnections.flatMap(({ id }: { id: string }) => [
+        {
+          name: `send_email_${id}`,
+          description: "Send an email",
+          route: { ...route, connectionId: id },
+        },
+        ...(id === "connection-2"
+          ? [
+              {
+                name: "export_mail",
+                description: "Export mail",
+                route: { ...route, toolName: "export_mail", connectionId: id },
+              },
+            ]
+          : []),
+      ]),
+    );
     const client = createRouterClient(
       createRouter({
-        prisma: { connection: { findFirst: async () => ({ id: "connection-1" }) } },
-        connectors: {
-          managed: () => ({
-            listAppTools: async () => [
-              {
-                name: "send_email_one",
-                description: "Send an email",
-                route: { ...route, connectionId: "connection-1" },
-              },
-              {
-                name: "send_email_two",
-                description: "Send an email",
-                route: { ...route, connectionId: "connection-2" },
-              },
-              {
-                name: "send_email_other",
-                description: "Send from the archive",
-                route: { ...route, resourceId: "archive", connectionId: "connection-1" },
-              },
-            ],
-          }),
+        prisma: {
+          connection: { findMany: async () => [{ id: "connection-1" }, { id: "connection-2" }] },
         },
+        connectors: { managed: () => ({ listAppTools }) },
       } as unknown as RouterDeps),
-      { context: { actor: { spaceId: "workspace-1", userId: "user-1" } } as never },
+      { context: { actor: { spaceId: "workspace-1", userId: "user-1" } as never } },
     );
 
     expect(await client.connections.tools({ connectorId: "example", provider: "mail" })).toEqual([
@@ -944,9 +947,9 @@ describe("connection tool listing", () => {
         approvalKey: 'app-tool/["example","mail","send_email"]',
       },
       {
-        name: "send_email",
-        description: "Send from the archive",
-        approvalKey: 'app-tool/["example","archive","send_email"]',
+        name: "export_mail",
+        description: "Export mail",
+        approvalKey: 'app-tool/["example","mail","export_mail"]',
       },
     ]);
   });
@@ -954,7 +957,7 @@ describe("connection tool listing", () => {
   it("returns an RPC error when the app tool catalog fails to load", async () => {
     const handler = new RPCHandler(
       createRouter({
-        prisma: { connection: { findFirst: async () => ({ id: "connection-1" }) } },
+        prisma: { connection: { findMany: async () => [{ id: "connection-1" }] } },
         connectors: {
           managed: () => ({
             listAppTools: vi.fn().mockRejectedValue(new Error("Upstream catalog unavailable")),
@@ -988,7 +991,7 @@ describe("connection tool listing", () => {
     });
     const client = createRouterClient(
       createRouter({
-        prisma: { connection: { findFirst: async () => ({ id: "connection-1" }) } },
+        prisma: { connection: { findMany: async () => [{ id: "connection-1" }] } },
         connectors: { managed: () => ({ discoverTools: vi.fn(), listAppTools }) },
       } as unknown as RouterDeps),
       {

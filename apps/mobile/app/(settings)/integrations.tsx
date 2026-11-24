@@ -527,6 +527,7 @@ export default function Integrations() {
                 labelDrafts={labelDrafts}
                 setLabelDrafts={setLabelDrafts}
                 tools={tools}
+                toolsLoading={toolsQuery.isLoading}
                 toolsFailed={toolsFailed}
                 onBack={() => closeDetail()}
                 onUninstall={() => uninstall(detailItem)}

@@ -549,6 +549,22 @@ describe("PipedreamConnector", () => {
     await expect(connector.listAppTools(connectedContext("gmail"), "gmail")).rejects.toThrow();
   });
 
+  it("keeps tools from a healthy account in the settings catalog when another account fails", async () => {
+    const healthy = pipedreamMcpFetch({ gmail: ["send_email"] });
+    const fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (request.headers.get("x-pd-account-id") === "apn_work") {
+        return new Response("upstream down", { status: 503 });
+      }
+      return healthy(request);
+    });
+    const connector = new PipedreamConnector(FAKE_CONFIG, { ...TEST_NETWORK, fetch });
+
+    const tools = await connector.listAppTools(gmailContext("apn_work", "apn_home"), "gmail");
+
+    expect(tools).toMatchObject([{ name: "send_email", route: { connectionId: "connection-1" } }]);
+  });
+
   it("lists catalog names grouped by connected app", async () => {
     const connector = new PipedreamConnector(FAKE_CONFIG, {
       ...TEST_NETWORK,

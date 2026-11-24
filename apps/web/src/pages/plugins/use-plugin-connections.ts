@@ -123,6 +123,7 @@ export function usePluginConnections({
     }),
   );
   const tools = (detailKey && toolsQuery.data) || [];
+  const toolsLoading = Boolean(detailKey) && toolsQuery.isLoading;
   const toolsFailed = Boolean(detailKey) && toolsQuery.isError;
 
   function updateIntegrations(
@@ -315,6 +316,7 @@ export function usePluginConnections({
     catalogFeedEnabled,
     loadError,
     tools,
+    toolsLoading,
     toolsFailed,
     updateIntegrations,
     refresh,

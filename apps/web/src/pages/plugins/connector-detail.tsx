@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import { catalogItemAccounts, catalogItemKey } from "@rakazo/core";
-import { Button, Input } from "@rakazo/ui-web";
+import { Button, Input, Spinner } from "@rakazo/ui-web";
 import { ChevronLeft, Plus } from "lucide-react";
 import { ChatAppLink } from "./parts";
 import { ToolPermissions } from "./tool-permissions";
@@ -27,6 +27,7 @@ export function ConnectorDetail({
     labelDrafts,
     setLabelDrafts,
     tools,
+    toolsLoading,
     toolsFailed,
     connect,
     revokeAccount,
@@ -132,6 +133,10 @@ export function ConnectorDetail({
         <p role="alert" className="px-2 text-body-sm text-destructive">
           <Trans>Could not load permissions</Trans>
         </p>
+      ) : toolsLoading ? (
+        <div className="px-2 text-muted-foreground">
+          <Spinner aria-label={t`Loading tool permissions…`} />
+        </div>
       ) : tools.length > 0 ? (
         <ToolPermissions tools={tools} slug={item.slug} />
       ) : null}

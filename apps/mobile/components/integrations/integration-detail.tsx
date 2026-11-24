@@ -4,8 +4,8 @@ import type { Connection, ConnectionCatalogItem, RpcOutput } from "@rakazo/contr
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import { catalogItemKey } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
-import { useThemedStyles } from "../../lib/native/native";
+import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { native, useThemedStyles } from "../../lib/native/native";
 import { NativeActionButton } from "../native/native-action-button";
 import { ConnectorIcon } from "./connector-icon";
 import { createIntegrationsStyles, LOGO_SIZE } from "./integrations-styles";
@@ -21,6 +21,7 @@ export function IntegrationDetail({
   labelDrafts,
   setLabelDrafts,
   tools,
+  toolsLoading,
   toolsFailed,
   onBack,
   onUninstall,
@@ -35,6 +36,7 @@ export function IntegrationDetail({
   labelDrafts: Record<string, string>;
   setLabelDrafts: Dispatch<SetStateAction<Record<string, string>>>;
   tools: ConnectionTool[];
+  toolsLoading: boolean;
   toolsFailed: boolean;
   onBack: () => void;
   onUninstall: () => void;
@@ -113,6 +115,13 @@ export function IntegrationDetail({
         <Text accessibilityRole="alert" style={styles.error}>
           {t`Could not load permissions`}
         </Text>
+      ) : toolsLoading ? (
+        <ActivityIndicator
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={t`Loading tool permissions…`}
+          color={native.secondaryLabel}
+        />
       ) : tools.length > 0 ? (
         <ToolPermissions tools={tools} slug={item.slug} />
       ) : null}

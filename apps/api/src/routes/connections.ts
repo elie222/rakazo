@@ -224,7 +224,7 @@ export function connectionsRoutes(ctx: RouterContext) {
       tools: authed.connections.tools.handler(async ({ context, input }) => {
         const connector = deps.connectors.managed(input.connectorId);
         if (!connector) return [];
-        const row = await deps.prisma.connection.findFirst({
+        const rows = await deps.prisma.connection.findMany({
           where: {
             spaceId: context.actor.spaceId,
             userId: context.actor.userId,
@@ -232,25 +232,26 @@ export function connectionsRoutes(ctx: RouterContext) {
             provider: input.provider,
             status: "connected",
           },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         });
-        if (!row) return [];
+        if (rows.length === 0) return [];
         try {
           const adapterContext = {
             ...connectionContext(context.actor, "connections.tools", context.signal),
-            connectedConnections: [
-              {
-                id: row.id,
-                connectorId: input.connectorId,
-                externalId: input.provider,
-                displayName: row.displayName,
-                providerRef: row.providerRef ?? undefined,
-              },
-            ],
+            connectedConnections: rows.map((row) => ({
+              id: row.id,
+              connectorId: input.connectorId,
+              externalId: input.provider,
+              displayName: row.displayName,
+              providerRef: row.providerRef ?? undefined,
+            })),
             connectedProviders: [input.provider],
           };
+          adapterContext.signal.throwIfAborted();
           const tools = connector.listAppTools
             ? await connector.listAppTools(adapterContext, input.provider)
             : await connector.discoverTools(adapterContext);
+          adapterContext.signal.throwIfAborted();
           const appTools = new Map<string, AppPermissionTool>();
           for (const tool of tools) {
             if (tool.batch || isLazyCatalogControlRoute(tool.route)) continue;
