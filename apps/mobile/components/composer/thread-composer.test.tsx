@@ -201,11 +201,15 @@ vi.mock("expo", () => ({
     () =>
     ({
       children,
-      keys,
+      enterEnabled,
+      commandEnterEnabled,
+      pickerOpen,
       onHardwareKey,
     }: {
       children: ReactNode;
-      keys: string[];
+      enterEnabled: boolean;
+      commandEnterEnabled: boolean;
+      pickerOpen: boolean;
       onHardwareKey: (event: { nativeEvent: { key: string } }) => void;
     }) =>
       createElement(
@@ -217,7 +221,11 @@ vi.mock("expo", () => ({
             key,
             type: "button",
             "aria-label": `Hardware ${key}`,
-            disabled: !keys.includes(key),
+            disabled: !(key === "Enter"
+              ? enterEnabled
+              : key === "CommandEnter"
+                ? commandEnterEnabled
+                : pickerOpen),
             onClick: () => onHardwareKey({ nativeEvent: { key } }),
           }),
         ),

@@ -7,8 +7,14 @@ public final class RakazoComposerKeyboardModule: Module {
 
     View(RakazoComposerKeyboardView.self) {
       Events("onHardwareKey")
-      Prop("keys") { (view: RakazoComposerKeyboardView, keys: [String]) in
-        view.keys = keys
+      Prop("enterEnabled") { (view: RakazoComposerKeyboardView, enabled: Bool) in
+        view.enterEnabled = enabled
+      }
+      Prop("commandEnterEnabled") { (view: RakazoComposerKeyboardView, enabled: Bool) in
+        view.commandEnterEnabled = enabled
+      }
+      Prop("pickerOpen") { (view: RakazoComposerKeyboardView, open: Bool) in
+        view.pickerOpen = open
       }
     }
   }
@@ -16,41 +22,62 @@ public final class RakazoComposerKeyboardModule: Module {
 
 final class RakazoComposerKeyboardView: ExpoView {
   let onHardwareKey = EventDispatcher()
-  var keys: [String] = []
+  var enterEnabled = false
+  var commandEnterEnabled = false
+  var pickerOpen = false
 
   private lazy var commands = [
-    "Enter": command("\r", key: "Enter"),
-    "CommandEnter": command("\r", key: "CommandEnter", modifiers: .command),
-    "ArrowUp": command(UIKeyCommand.inputUpArrow, key: "ArrowUp"),
-    "ArrowDown": command(UIKeyCommand.inputDownArrow, key: "ArrowDown"),
-    "Escape": command(UIKeyCommand.inputEscape, key: "Escape"),
-    "Tab": command("\t", key: "Tab"),
+    command("\r", key: "Enter", action: #selector(handleEnter(_:))),
+    command("\r", key: "CommandEnter", action: #selector(handleCommandEnter(_:)), modifiers: .command),
+    command(UIKeyCommand.inputUpArrow, key: "ArrowUp", action: #selector(handlePickerKey(_:))),
+    command(UIKeyCommand.inputDownArrow, key: "ArrowDown", action: #selector(handlePickerKey(_:))),
+    command(UIKeyCommand.inputEscape, key: "Escape", action: #selector(handlePickerKey(_:))),
+    command("\t", key: "Tab", action: #selector(handlePickerKey(_:))),
   ]
 
   private func command(
-    _ input: String, key: String, modifiers: UIKeyModifierFlags = []
+    _ input: String, key: String, action: Selector, modifiers: UIKeyModifierFlags = []
   ) -> UIKeyCommand {
     let command = UIKeyCommand(
-      title: "", action: #selector(handleHardwareKey(_:)), input: input,
-      modifierFlags: modifiers, propertyList: key
+      title: "", action: action, input: input, modifierFlags: modifiers, propertyList: key
     )
     // UITextView otherwise handles Return and arrow keys before this responder.
     command.wantsPriorityOverSystemBehavior = true
     return command
   }
 
-  override var keyCommands: [UIKeyCommand]? {
-    guard !keys.isEmpty, let input = focusedInput(in: self), input.markedTextRange == nil else {
-      return super.keyCommands
+  // UIKit can cache the responder's command list while the text view keeps focus.
+  override var keyCommands: [UIKeyCommand]? { commands }
+
+  override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+    switch action {
+    case #selector(handleEnter(_:)): return enterEnabled && canHandleKeys
+    case #selector(handleCommandEnter(_:)): return commandEnterEnabled && canHandleKeys
+    case #selector(handlePickerKey(_:)): return pickerOpen && canHandleKeys
+    default: return super.canPerformAction(action, withSender: sender)
     }
-    return keys.compactMap { commands[$0] }
   }
 
-  @objc private func handleHardwareKey(_ command: UIKeyCommand) {
-    guard let key = command.propertyList as? String, keys.contains(key),
-      let input = focusedInput(in: self), input.markedTextRange == nil
-    else { return }
+  @objc private func handleEnter(_ command: UIKeyCommand) {
+    if enterEnabled { dispatch(command) }
+  }
+
+  @objc private func handleCommandEnter(_ command: UIKeyCommand) {
+    if commandEnterEnabled { dispatch(command) }
+  }
+
+  @objc private func handlePickerKey(_ command: UIKeyCommand) {
+    if pickerOpen { dispatch(command) }
+  }
+
+  private func dispatch(_ command: UIKeyCommand) {
+    guard canHandleKeys, let key = command.propertyList as? String else { return }
     onHardwareKey(["key": key])
+  }
+
+  private var canHandleKeys: Bool {
+    guard let input = focusedInput(in: self) else { return false }
+    return input.markedTextRange == nil
   }
 
   private func focusedInput(in view: UIView) -> UITextView? {

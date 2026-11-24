@@ -475,14 +475,6 @@ export function ThreadComposer({
     (!canSend && dictation.status === "idle");
 
   const enterToSend = useComposerHardwareEnterPreference();
-  const hardwareKeys = optionCount
-    ? ["Enter", "CommandEnter", "ArrowUp", "ArrowDown", "Escape", "Tab"]
-    : sendBlocked
-      ? []
-      : enterToSend
-        ? ["Enter", "CommandEnter"]
-        : ["CommandEnter"];
-
   function onHardwareKey(key: string) {
     const action = resolveMentionPickerKey({
       key: key === "CommandEnter" ? "Enter" : key,
@@ -687,7 +679,9 @@ export function ThreadComposer({
           }}
         >
           <ComposerKeyboard
-            keys={hardwareKeys}
+            enterEnabled={optionCount > 0 || (enterToSend && !sendBlocked)}
+            commandEnterEnabled={!sendBlocked}
+            pickerOpen={optionCount > 0}
             onHardwareKey={(event) => onHardwareKey(event.nativeEvent.key)}
             style={{
               flex: stacked ? undefined : 1,

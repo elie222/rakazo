@@ -6,7 +6,9 @@ import { View } from "react-native";
 type ComposerKeyboardProps = {
   children: ReactNode;
   style: ViewProps["style"];
-  keys: string[];
+  enterEnabled: boolean;
+  commandEnterEnabled: boolean;
+  pickerOpen: boolean;
   onHardwareKey: (event: { nativeEvent: { key: string } }) => void;
 };
 
