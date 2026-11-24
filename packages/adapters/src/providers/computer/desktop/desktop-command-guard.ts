@@ -1,6 +1,5 @@
 import { parse as parseShellCommand } from "shell-quote";
 import { sandboxKindCapabilities } from "../../../computers/sandbox/sandbox-kind-capabilities.js";
-import { desktopGuardRefusalMessage } from "./desktop-command-guard.prompt.js";
 import {
   braceExpansionHazard,
   executesWrittenHeredoc,
@@ -20,6 +19,9 @@ import {
   teeDestinationPaths,
 } from "./desktop-guard-heredoc.js";
 import { quotedHeredocLifecycleHazard } from "./desktop-guard-quoted.js";
+
+export { desktopGuardRefusalMessage } from "./desktop-command-guard.prompt.js";
+
 import {
   assignmentEntries,
   commandBaseAt,
@@ -622,10 +624,15 @@ function protectedWordRefusal(words: readonly string[]): string | undefined {
 /** Short reason the desktop-protection guard refuses `command`, when it does. */
 export function protectedComputerLifecycleRefusal(command: string): string | undefined {
   const prepared = prepareDesktopGuardCommand(command);
-  if ("reason" in prepared) return prepared.reason;
-  const tokenized = tokenizeProtectedShellCommand(prepared.command, prepared.literals);
-  if ("reason" in tokenized) return tokenized.reason;
-  return protectedWordRefusal(tokenized.words);
+  const tokenized =
+    "reason" in prepared
+      ? prepared
+      : tokenizeProtectedShellCommand(prepared.command, prepared.literals);
+  const reason = "reason" in tokenized ? tokenized.reason : protectedWordRefusal(tokenized.words);
+  if (reason === undefined) return undefined;
+  // Shell syntax the guard cannot follow runs unless the text names something it protects.
+  const syntax = SYNTAX_REFUSALS.has(reason) || reason.startsWith("unresolved variable");
+  return syntax && !namesProtectedTarget(command) ? undefined : reason;
 }
 
 /** Whether commands reach the Linux desktop this guard protects rather than a native shell. */
@@ -664,8 +671,12 @@ const SYNTAX_REFUSALS = new Set([
   "unsupported shell syntax",
 ]);
 
-/** Whether the raw text names anything the guard protects, wherever it sits. */
+/**
+ * Whether the raw text names anything the guard protects, wherever it sits,
+ * including a name spliced from parts (`pk$x'ill'`, `p$(printf k)ill`).
+ */
 function namesProtectedTarget(command: string): boolean {
+  if (quotedHeredocLifecycleHazard(command)) return true;
   // Quotes and backslashes join a word the shell would see whole, as in k\ill or "k"ill.
   const folded = command.toLowerCase().replaceAll(/[\\'"]/g, "");
   if (BROWSER_PROFILE_PATH.test(folded) || X11_PATH.test(folded)) return true;
@@ -673,9 +684,4 @@ function namesProtectedTarget(command: string): boolean {
     const base = word.split("/").at(-1) ?? "";
     return KILL_COMMANDS.test(base) || SERVICE_COMMANDS.test(base);
   });
-}
-
-export function desktopProtectionGuardMessage(reason: string, command: string): string {
-  const syntax = SYNTAX_REFUSALS.has(reason) || reason.startsWith("unresolved variable");
-  return desktopGuardRefusalMessage(reason, syntax && !namesProtectedTarget(command));
 }

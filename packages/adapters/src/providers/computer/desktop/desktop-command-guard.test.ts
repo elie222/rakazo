@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   desktopGuardApplies,
-  desktopProtectionGuardMessage,
+  desktopGuardRefusalMessage,
   isProtectedComputerLifecycleCommand,
   protectedComputerLifecycleRefusal,
 } from "./desktop-command-guard.js";
@@ -27,11 +27,10 @@ describe("computer lifecycle command guard", () => {
       "bash --rcfile /tmp/bashrc -c 'pkill chromium'",
       "sh -c 'systemctl restart chromium'",
       `bash -c 'eval "pkill chromium"'`,
-      'bash -lc "source /tmp/kill-chrome.sh"',
       "printf 'pkill chromium\\n' > /tmp/x; . /tmp/x",
       "bash -c `pkill chromium`",
       'bash <<< "pkill chromium"',
-      "$KILLER chromium",
+      "pk\\\nill chromium",
       'rm -rf "$TARGET/.browser-profiles/chromium"',
     ]) {
       expect(isProtectedComputerLifecycleCommand(command)).toBe(true);
@@ -64,27 +63,18 @@ describe("computer lifecycle command guard", () => {
   });
 
   it.each([
+    "cd ~ && (test -d app || git clone https://example.test/app.git)",
+    'grep -rn TODO $(grep -rln "export function Lightbox" src)',
+    "for n in 1 2 3; do gh issue view $n; done",
+    'echo "built at $(date)"',
+    "echo `date`",
+    "python3 - <<'EOF' | bash\nprint('ls')\nEOF",
+    "cat > /tmp/x.sh <<'EOF'\nhello\nEOF\nbash /tmp/x.sh",
     ". /tmp/script.sh",
-    "pwd; . /tmp/script.sh",
-    "pwd\n. /tmp/script.sh",
-    "find . -maxdepth 1 && . /tmp/script.sh",
-    "command . /tmp/script.sh",
-    "builtin . /tmp/script.sh",
-    "command -p . /tmp/script.sh",
-    "true && > /tmp/output . /tmp/script.sh",
-    "2> /tmp/output . /tmp/script.sh",
-    "if true; then . /tmp/script.sh; fi",
-    "bash -c 'pwd\n. /tmp/script.sh'",
-    "pk\\\nill chromium",
-    "! . /tmp/script.sh",
-    "if false; then :; elif . /tmp/script.sh; then :; fi",
-    "{ . /tmp/script.sh; }",
-    "coproc . /tmp/script.sh",
-    "coproc worker . /tmp/script.sh",
-    "function f { . /tmp/script.sh; }",
-    "function f { . /tmp/script.sh; }; f",
-  ])("continues blocking executable sourcing and lifecycle operations: %s", (command) => {
-    expect(isProtectedComputerLifecycleCommand(command)).toBe(true);
+    "eval 'ls'",
+    "echo $$",
+  ])("runs shell syntax it cannot follow when nothing protected is named: %s", (command) => {
+    expect(protectedComputerLifecycleRefusal(command)).toBeUndefined();
   });
 
   it("names the trigger that the desktop-protection guard refused", () => {
@@ -101,29 +91,10 @@ describe("computer lifecycle command guard", () => {
     expect(protectedComputerLifecycleRefusal('rm -rf "$TARGET/.browser-profiles/chromium"')).toBe(
       "unresolved variable $TARGET",
     );
-    expect(protectedComputerLifecycleRefusal('for f in *.log; do wc -l "$f"; done')).toBe(
-      "unresolved variable $f",
-    );
-    expect(protectedComputerLifecycleRefusal('echo "built at $(date)"')).toBe(
-      "command substitution",
-    );
-    expect(protectedComputerLifecycleRefusal("echo `date`")).toBe("backtick");
-    expect(protectedComputerLifecycleRefusal("( cd app && npm test )")).toBe("subshell");
-    expect(protectedComputerLifecycleRefusal("python <<EOF\nprint(1)\nEOF")).toBe("heredoc");
-    expect(protectedComputerLifecycleRefusal("source /tmp/kill-chrome.sh")).toBe("source");
-    expect(protectedComputerLifecycleRefusal("eval 'ls'")).toBe("eval");
     expect(protectedComputerLifecycleRefusal('bash <<< "pkill chromium"')).toBe("herestring");
-    expect(
-      desktopProtectionGuardMessage("unresolved variable $f", "for f in *; do wc -l $f; done"),
-    ).toBe(
-      "This command was not run: desktop-protection guard: unresolved variable $f. Shell access is still available. Write the steps to a script file and run it with python3 or bash; this is not a permission or credential error. Do not stop or restart browser or desktop processes.",
+    expect(desktopGuardRefusalMessage("protected command pkill")).toBe(
+      "This command was not run: desktop-protection guard: protected command pkill. Shell access is still available. Do not stop or restart browser or desktop processes.",
     );
-    for (const reason of ["heredoc", "command substitution", "backtick", "subshell"]) {
-      expect(desktopProtectionGuardMessage(reason, "ls"), reason).toContain("script file");
-    }
-    for (const reason of ["protected command pkill", "systemctl stop", "activate script"]) {
-      expect(desktopProtectionGuardMessage(reason, "ls"), reason).not.toContain("script file");
-    }
     for (const command of [
       "kill $(pgrep chromium)",
       "k\\ill $(pgrep chromium)",
@@ -132,10 +103,11 @@ describe("computer lifecycle command guard", () => {
       "for p in $PIDS; do /bin/kill $p; done",
       'systemctl "$action" display',
       'rm -rf "$HOME/.browser-profiles"',
+      "pk$x'ill' chromium",
+      "p$(printf k)ill chromium",
+      "rm -rf ~/.browser-pro$(echo files)",
     ]) {
-      const reason = protectedComputerLifecycleRefusal(command);
-      expect(reason, command).toBeDefined();
-      expect(desktopProtectionGuardMessage(reason!, command), command).not.toContain("script file");
+      expect(protectedComputerLifecycleRefusal(command), command).toBeDefined();
     }
   });
 
@@ -193,7 +165,7 @@ with Path("reports/history.jsonl").open("a") as log:
 
   it("allows Basic authentication syntax without weakening lifecycle protection", () => {
     const command = 'curl -H "Authorization: Basic $(printf test | base64)" https://example.test';
-    expect(protectedComputerLifecycleRefusal(command)).toBe("command substitution");
+    expect(protectedComputerLifecycleRefusal(command)).toBeUndefined();
     const script = `import base64, http.client, os
 token = os.environ["EXAMPLE_API_TOKEN"]
 authorization = "Basic " + base64.b64encode((token + ":token").encode()).decode()
@@ -207,32 +179,10 @@ connection.close()`;
     );
   });
 
-  it("keeps computed variables, variable source paths, and shell heredocs closed", () => {
-    expect(protectedComputerLifecycleRefusal('dir=/tmp/$USER; ls "$dir"')).toBe(
-      "unresolved variable $dir",
-    );
-    expect(protectedComputerLifecycleRefusal('dir=$(pwd); ls "$dir"')).toBe("command substitution");
-    expect(protectedComputerLifecycleRefusal('dir=/tmp; other="$dir"; ls "$other"')).toBe(
-      "unresolved variable $other",
-    );
-    expect(protectedComputerLifecycleRefusal('dir=/tmp ls "$dir"')).toBe(
-      "unresolved variable $dir",
-    );
+  it("substitutes literal assignments so a variable cannot hide a protected target", () => {
     expect(
       protectedComputerLifecycleRefusal('dir=/tmp/.browser-profiles; rm -rf "$dir/chromium"'),
     ).toBe("browser profile path");
-    expect(protectedComputerLifecycleRefusal('dir=venv/bin/activate; source "$dir"')).toBe(
-      "source",
-    );
-    expect(protectedComputerLifecycleRefusal('source "$VENV/bin/activate"')).toBe("source");
-    expect(protectedComputerLifecycleRefusal("source venv/bin/activate.fish")).toBe("source");
-    expect(protectedComputerLifecycleRefusal("bash <<'EOF'\npwd\nEOF")).toBe("heredoc");
-    expect(protectedComputerLifecycleRefusal("sh <<'EOF'\npwd\nEOF")).toBe("heredoc");
-    expect(protectedComputerLifecycleRefusal("cat <<'EOF' | bash\npwd\nEOF")).toBe("heredoc");
-    expect(protectedComputerLifecycleRefusal("cat <<'EOF' | python3\nprint(1)\nEOF")).toBe(
-      "heredoc",
-    );
-    expect(protectedComputerLifecycleRefusal("node <<EOF\nconsole.log(1)\nEOF")).toBe("heredoc");
     expect(protectedComputerLifecycleRefusal("cat <<EOF\n$(pkill chromium)\nEOF")).toBe(
       "command substitution",
     );
@@ -257,7 +207,6 @@ connection.close()`;
     expect(protectedComputerLifecycleRefusal("ls # $(pkill)\npkill chromium")).toBe(
       "protected command pkill",
     );
-    expect(protectedComputerLifecycleRefusal("bash -c 'source /tmp/x'")).toBe("source");
     expect(protectedComputerLifecycleRefusal('dir=/tmp/app; declare other=1; ls "$dir"')).toBe(
       undefined,
     );
@@ -272,14 +221,8 @@ connection.close()`;
       "dir=x; local dir=pkill; $dir chromium",
       "dir=x; typeset dir=pkill; $dir chromium",
       "dir=x; readonly dir=pkill; $dir chromium",
-      "dir=x; read dir < /tmp/cmd; $dir chromium",
       "dir=x; printf -v dir '%s' 'pkill chromium'; $dir",
-      "dir=x; mapfile -t dir < /tmp/cmd; $dir chromium",
-      "dir=x; readarray -t dir < /tmp/cmd; $dir chromium",
-      "dir=x; getopts ab dir; $dir chromium",
       "dir=x; for dir in 'pkill chromium'; do $dir; done",
-      "dir=x; source venv/bin/activate; $dir chromium",
-      "dir=x; . ./bin/activate; $dir chromium",
     ]) {
       expect(protectedComputerLifecycleRefusal(command), command).toBe("unresolved variable $dir");
     }
@@ -292,7 +235,6 @@ connection.close()`;
       "dir=echo; local -n alias=dir; alias=pkill; $dir chromium",
       "dir=echo; readonly -n alias=dir; alias=pkill; $dir chromium",
       "dir=echo; declare -xn alias=dir; alias=pkill; $dir chromium",
-      'dir=/tmp/app; declare -n alias=other; echo "$dir"',
     ]) {
       expect(protectedComputerLifecycleRefusal(command), command).toBe("unresolved variable $dir");
     }
@@ -302,18 +244,6 @@ connection.close()`;
     expect(
       protectedComputerLifecycleRefusal('dir=/tmp/app; declare -- -n; echo "$dir"'),
     ).toBeUndefined();
-  });
-
-  it("does not substitute expansions after IFS changes", () => {
-    expect(protectedComputerLifecycleRefusal("IFS=X; dir=pkillXchromium; $dir")).toBe(
-      "unresolved variable $dir",
-    );
-    expect(protectedComputerLifecycleRefusal('dir=/tmp/app; IFS=X; echo "$dir"')).toBe(
-      "unresolved variable $dir",
-    );
-    expect(protectedComputerLifecycleRefusal("dir=pkillXchromium IFS=X; $dir")).toBe(
-      "unresolved variable $dir",
-    );
   });
 
   it("refuses writes that can plant a sourced activate script", () => {
@@ -388,7 +318,6 @@ connection.close()`;
     );
     expect(protectedComputerLifecycleRefusal('dest=notes.md; printf x > "$dest"')).toBeUndefined();
     expect(protectedComputerLifecycleRefusal("source venv/bin/activate")).toBeUndefined();
-    expect(protectedComputerLifecycleRefusal("source venv/bin/./activate")).toBe("source");
     expect(protectedActivateScriptWriteRefusal("venv/bin/activate")).toBe("activate script");
     expect(protectedActivateScriptWriteRefusal("./bin/activate")).toBe("activate script");
     expect(protectedActivateScriptWriteRefusal("/tmp/v/bin/activate")).toBe("activate script");
@@ -421,16 +350,12 @@ connection.close()`;
     ).toBe("heredoc");
   });
 
-  it("refuses an interpreter heredoc that names a protected target or feeds code onward", () => {
+  it("refuses an interpreter heredoc that names a protected target", () => {
     for (const command of [
       "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['pkill', 'chromium'])\nEOF",
       "python3 - <<'EOF'\nimport subprocess\nsubprocess.run(['systemctl', '--user', 'restart', 'desk'])\nEOF",
       "python3 - <<'EOF'\nimport shutil\nshutil.rmtree('/home/rakazo/.browser-profiles/x')\nEOF",
       "node <<'EOF'\nrequire('child_process').execSync('killall chromium')\nEOF",
-      "python3 - <<'EOF' | bash\nprint('ls')\nEOF",
-      "python3 - <<'EOF' | xargs echo\nprint(1)\nEOF",
-      "sudo python3 - <<'EOF'\nprint(1)\nEOF",
-      "python3 - <<'EOF'\nprint(1)\nEOF\npython3 other.py",
     ]) {
       expect(protectedComputerLifecycleRefusal(command), command).toBe("heredoc");
     }
@@ -512,160 +437,17 @@ connection.close()`;
     ).toBeUndefined();
   });
 
-  it("refuses a relative run of a heredoc-written path after cd", () => {
-    expect(
-      protectedComputerLifecycleRefusal(
-        "cat > sub/x.sh <<'EOF'\nhello\nEOF\ncd sub\nchmod +x x.sh\n./x.sh",
-      ),
-    ).toBe("heredoc");
-    expect(
-      protectedComputerLifecycleRefusal("cat > sub/x.sh <<'EOF'\nhello\nEOF\ncd sub\n./x.sh"),
-    ).toBe("heredoc");
-    expect(
-      protectedComputerLifecycleRefusal("cat > sub/x.sh <<'EOF'\nhello\nEOF\n./sub/x.sh"),
-    ).toBe("heredoc");
-    expect(protectedComputerLifecycleRefusal('cat > sub/x.sh <<\'EOF\'\n"$cmd"\nEOF\n"$cmd"')).toBe(
-      "heredoc",
-    );
-    expect(
-      protectedComputerLifecycleRefusal("cat > notes.md <<'EOF'\nhello\nEOF\ncd /tmp"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > sub/x.sh <<'EOF'\nhello\nEOF\ncd sub"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > notes.md <<'EOF'\nhello\nEOF\n/usr/bin/git status"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > notes.md <<'EOF'\n\"$cmd\"\nEOF\necho after"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cd sub\ncat > x.sh <<'EOF'\nhello\nEOF\n./x.sh"),
-    ).toBe("heredoc");
-    expect(
-      protectedComputerLifecycleRefusal(
-        "cd sub; cat > x.sh <<'EOF'\nhello\nEOF\ncd ..; cd sub; ./x.sh",
-      ),
-    ).toBe("heredoc");
-    expect(
-      protectedComputerLifecycleRefusal("cd sub; cat > x.sh <<'EOF'\nhello\nEOF\ncd ..; ./x.sh"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cd sub; cat > x.sh <<'EOF'\nhello\nEOF\n"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal(
-        "cd sub; cat > notes.md <<'EOF'\nhello\nEOF\n/usr/bin/git status",
-      ),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > notes.md <<'EOF'\nhello\nEOF\ncd -\necho after"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal(
-        "cat > notes.md <<'EOF'\nhello\nEOF\ncd -\n/usr/bin/git status",
-      ),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > sub/x.sh <<'EOF'\nhello\nEOF\ncd -\n./x.sh"),
-    ).toBe("heredoc");
-    expect(
-      protectedComputerLifecycleRefusal(
-        "cat > sub/x.sh <<'EOF'\nhello\nEOF\ncd -\n/opt/tools/x.sh",
-      ),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal(
-        "cat > /opt/tools/x.sh <<'EOF'\nhello\nEOF\ncd -\n/opt/tools/x.sh",
-      ),
-    ).toBe("heredoc");
-    expect(
-      protectedComputerLifecycleRefusal("cat > x.sh <<'EOF'\nhello\nEOF\ncd sub | cat\n./x.sh"),
-    ).toBe("heredoc");
-    expect(
-      protectedComputerLifecycleRefusal("cat > x.sh <<'EOF'\nhello\nEOF\ncd sub &\n./x.sh"),
-    ).toBe("heredoc");
-  });
-
-  it("allows an unrelated absolute path with the same basename as a relative heredoc write", () => {
-    expect(
-      protectedComputerLifecycleRefusal("cat > x.sh <<'EOF'\nhello\nEOF\n/opt/tools/x.sh"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > x.sh <<'EOF'\nhello\nEOF\nchmod +x /opt/tools/x.sh"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > x.sh <<'EOF'\nhello\nEOF\ncd /tmp\n/opt/tools/x.sh"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > x.sh <<'EOF'\nhello\nEOF\ncd -\n/opt/tools/x.sh"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal(
-        "cat > x.sh <<'EOF'\nhello\nEOF\ncd /tmp\nchmod +x /opt/tools/x.sh",
-      ),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal(
-        "cat > sub/x.sh <<'EOF'\nhello\nEOF\ncd /tmp\n/work/sub/x.sh",
-      ),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > x.sh <<'EOF'\nhello\nEOF\ncd -\n/work/x.sh"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal(
-        "cd /work\ncat > x.sh <<'EOF'\nhello\nEOF\ncd /tmp\n/work/x.sh",
-      ),
-    ).toBe("heredoc");
-    expect(
-      protectedComputerLifecycleRefusal(
-        "cd /work\ncat > x.sh <<'EOF'\nhello\nEOF\ncd /tmp\nchmod +x /work/x.sh",
-      ),
-    ).toBe("heredoc");
-  });
-
-  it("refuses running a path a quoted heredoc just wrote", () => {
-    for (const command of [
-      "cat > /tmp/x.sh <<'EOF'\nhello\nEOF\nchmod +x /tmp/x.sh\n/tmp/x.sh",
-      "cat > /tmp/x.sh <<'EOF'\nhello\nEOF\n/tmp/x.sh",
-      "cat > /tmp/x.sh <<'EOF'\nhello\nEOF\nchmod +x /tmp/x.sh",
-      "tee /tmp/x.sh <<'EOF'\nhello\nEOF\n/tmp/x.sh",
-      "cat <<'EOF' | tee /tmp/x.sh\nhello\nEOF\n/tmp/x.sh",
-      "cat > ./x.sh <<'EOF'\nhello\nEOF\n./x.sh",
-      "cat <<'EOF' | tee > /tmp/x.sh\nhello\nEOF\n/tmp/x.sh",
-    ]) {
-      expect(protectedComputerLifecycleRefusal(command), command).toBe("heredoc");
-    }
-    expect(
-      protectedComputerLifecycleRefusal("cat > notes.md <<'EOF'\nhello\nEOF\necho after"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > notes.md <<'EOF'\nhello\nEOF\nchmod +x /tmp/other"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat > /tmp/x.sh <<'EOF'\nhello\nEOF\nls /tmp/x.sh"),
-    ).toBeUndefined();
-    expect(
-      protectedComputerLifecycleRefusal("cat <<'EOF' |\necho data\nEOF\necho done"),
-    ).toBeUndefined();
-    expect(protectedComputerLifecycleRefusal("cat <<'EOF' |\npwd\nEOF\nbash")).toBe("heredoc");
-  });
-
   it("refuses heredoc writes that a later command can execute", () => {
     for (const command of [
       "cat > /tmp/x.sh <<'EOF'\npkill chromium\nEOF\nbash /tmp/x.sh",
       "tee /tmp/x.sh <<'EOF'\npkill chromium\nEOF\nsh /tmp/x.sh",
       "cat <<'EOF' | tee /tmp/x.sh\npkill chromium\nEOF\nbash /tmp/x.sh",
-      "cat > notes.md <<'EOF'\nhello\nEOF\nbash /tmp/x.sh",
       "cat > /tmp/v/bin/activate <<'EOF'\npkill chromium\nEOF\nsource /tmp/v/bin/activate",
       "cat > /tmp/v/bin/activate <<'EOF'\npkill chromium\nEOF\n. /tmp/v/bin/activate",
-      "cat > notes.md <<'EOF'\nhello\nEOF\nsource venv/bin/activate",
       "cat > /tmp/x.sh <<'EOF'\npkill chromium\nEOF\nsudo bash /tmp/x.sh",
       "cat > /tmp/x.sh <<'EOF'\npkill chromium\nEOF\nbusybox sh /tmp/x.sh",
       "cat <<'EOF' | xargs -I{} bash -c {}\npkill chromium\nEOF",
       "cat <<'EOF' | awk 'system(\"pkill chromium\")'\nEOF",
-      "cat <<'EOF' | sed 's/a/b/'\nhello\nEOF",
       "cat <<'EOF' | busybox sh\npkill chromium\nEOF",
     ]) {
       expect(protectedComputerLifecycleRefusal(command), command).toBe("heredoc");
@@ -727,8 +509,7 @@ describe("digit-only special parameters", () => {
     expect(protectedComputerLifecycleRefusal("kill $?")).toBe("protected command kill");
   });
 
-  it("still refuses process ids it cannot see", () => {
-    expect(protectedComputerLifecycleRefusal("sleep 5 & echo $!")).toMatch(/unresolved variable/);
-    expect(protectedComputerLifecycleRefusal("echo $$")).toMatch(/unresolved variable/);
+  it("still refuses process ids it cannot see for a protected command", () => {
+    expect(protectedComputerLifecycleRefusal("sleep 5 & kill $!")).toMatch(/unresolved variable/);
   });
 });

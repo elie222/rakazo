@@ -21,7 +21,7 @@ import { hostedMediaPrice } from "../../media/media-usage.js";
 import { mediaDelivery, scheduleMediaPoll } from "../../media/media-video-poll.js";
 import {
   desktopGuardApplies,
-  desktopProtectionGuardMessage,
+  desktopGuardRefusalMessage,
 } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { protectedActivateScriptWriteRefusal } from "../../providers/computer/desktop/desktop-guard-words.js";
 import { attachWorkspaceFileToThread } from "../../storage/thread-artifacts.js";
@@ -191,7 +191,7 @@ export const fileTools: ToolHandlers = {
     if (desktopGuardApplies(ctx.computer)) {
       const activateRefusal = protectedActivateScriptWriteRefusal(filePath);
       if (activateRefusal) {
-        return call.finish({ error: desktopProtectionGuardMessage(activateRefusal, filePath) });
+        return call.finish({ error: desktopGuardRefusalMessage(activateRefusal) });
       }
     }
     const content = new TextEncoder().encode(textContentArg(args.content, ""));

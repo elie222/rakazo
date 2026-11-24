@@ -135,13 +135,6 @@ export function persistentComputerInstruction(options: {
   return `You have a persistent sandbox${capabilities}. This backend does not provide model-visible graphical control.${toolSentence}`;
 }
 
-/** Only where the desktop-protection guard checks shell commands. */
-export function desktopGuardShellInstruction(offeredToolNames: ReadonlySet<string>) {
-  if (!offeredToolNames.has("shell")) return undefined;
-  const write = offeredToolNames.has("write_file") ? "a script with write_file" : "a script file";
-  return `Shell commands must be literal: no \`$(...)\`, backticks, subshells, loops, or \`$\` variables, environment variables included. Otherwise write ${write} and run it with \`python3\` or \`bash\`.`;
-}
-
 export function dockerComputerToolInstruction(
   computerKind: string,
   disabled?: ReadonlySet<string>,
