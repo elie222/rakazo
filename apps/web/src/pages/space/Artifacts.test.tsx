@@ -220,6 +220,19 @@ it("applies the bot filter named in the URL", async () => {
   }
 });
 
+it("falls back to every bot when bootstrap cannot confirm the link's bot", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.mocked(takeInitialBootstrap).mockRejectedValue(new Error("bootstrap failed"));
+  api.listSpace.mockResolvedValue({ items: [], nextCursor: null });
+  const page = await renderArtifacts("/app/artifacts?bot=bot-9");
+  try {
+    expect(api.listSpace.mock.lastCall?.[0]).toMatchObject({ botId: undefined });
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("keeps loading later pages when search hides the current snapshot", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.listSpace.mockImplementation(async (input: { cursor?: string }) => {

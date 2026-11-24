@@ -138,9 +138,9 @@ export function ArtifactsPage() {
   // A saved link naming a bot that no longer exists reads as all bots, not as a refused listing.
   const requestedBotId = searchParams.get("bot");
   const activeBotId =
-    requestedBotId && botsQuery.isSuccess && !bots.some((bot) => bot.id === requestedBotId)
-      ? null
-      : requestedBotId;
+    requestedBotId && (botsQuery.isPending || bots.some((bot) => bot.id === requestedBotId))
+      ? requestedBotId
+      : null;
   const botQuery = activeBotId ? `?bot=${activeBotId}` : "";
   const listingOptions = queries.artifacts.listSpace.infiniteOptions({
     input: (cursor: string | undefined) => ({
