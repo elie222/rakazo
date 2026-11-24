@@ -60,7 +60,9 @@ export function createIntegrationsStyles() {
     pressed: { backgroundColor: native.fillPressed },
     rowLink: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10 },
     dimmed: { opacity: 0.6 },
-    categoryPicker: { alignSelf: "flex-start" },
+    searchRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+    searchInput: { flex: 1 },
+    categoryPicker: { flexShrink: 1, maxWidth: "45%" },
     sectionHeader: {
       marginTop: 10,
       flexDirection: "row",
@@ -111,6 +113,6 @@ export function createIntegrationsStyles() {
     toolSummary: { flex: 1, minWidth: 0 },
     toolPicker: { width: 100 },
     toolName: { color: native.label, fontSize: 14 },
-    addCustom: { alignSelf: "flex-end", padding: 12 },
+    addCustom: { padding: 12 },
   });
 }

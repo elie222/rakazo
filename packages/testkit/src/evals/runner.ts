@@ -120,6 +120,7 @@ export async function runTrial(
   const notifications = new CapturingNotificationProvider();
   const realtime = new SilenceObserver();
   const routineRuns: RoutineEvidence[] = [];
+  let webhookSecret: string | undefined;
   const peerExchanges: NonNullable<Evidence["peerExchanges"]> = [];
   let handles: EvalApp | undefined;
   // The harness observes product state outside any request or job.
@@ -439,11 +440,19 @@ export async function runTrial(
         botId,
         name: scenario.routine.name ?? "Release watch",
         prompt: scenario.routine.prompt,
-        crons: ["0 9 * * *"],
+        crons: scenario.routine.webhook ? [] : ["0 9 * * *"],
+        ...(scenario.routine.webhook ? { webhookEnabled: true } : {}),
         timezone: "UTC",
         active: true,
         notify: true,
       });
+      if (scenario.routine.webhook)
+        ({ secret: webhookSecret } = await rpc<{ secret: string }>(
+          app,
+          cookie,
+          "bots/rotateWebhookSecret",
+          { botId },
+        ));
     }
     const botAuthor = (author: string | undefined) => {
       if (!author) return botId;
@@ -710,7 +719,7 @@ export async function runTrial(
         clearedToolCount = seenTools.size - (await countCurrentTools());
         continue;
       }
-      if (scenario.routine || "wakeRoutine" in step)
+      if (scenario.routine || "wakeRoutine" in step || "webhook" in step)
         await rpc(app, cookie, "threads/markRead", { botId });
       const notificationOffset = notifications.sent.length;
       let runId: string;
@@ -750,6 +759,22 @@ export async function runTrial(
           where: { id: runId },
           select: { sourceMessageId: true },
         }));
+      } else if ("webhook" in step) {
+        if (!webhookSecret)
+          throw new EvalFailure("harness", "A webhook step needs a webhook routine");
+        services.calls.length = 0;
+        const res = await app.request(`/api/v1/bots/${botId}/webhook`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${webhookSecret}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(step.webhook),
+        });
+        const delivered = (await res.json()) as { runId?: string | null };
+        if (!res.ok || !delivered.runId)
+          throw new EvalFailure("harness", `Webhook delivery did not start a run: ${res.status}`);
+        runId = delivered.runId;
       } else if ("fromPeer" in step) {
         if (!peer) throw new EvalFailure("harness", "A fromPeer step needs the case's peer bot");
         await deliverPeerMessage(
@@ -871,6 +896,7 @@ export async function runTrial(
               "ask" in next ||
               "slack" in next ||
               "wakeRoutine" in next ||
+              "webhook" in next ||
               "fromPeer" in next ||
               "fromMember" in next,
           )
@@ -1095,7 +1121,7 @@ export async function runTrial(
           reply: returned.length ? returned.join("\n") : null,
         });
       }
-      if ("wakeRoutine" in step) {
+      if ("wakeRoutine" in step || "webhook" in step) {
         const messages = await prisma.message.findMany({
           where: { runId, role: "bot" },
           select: { id: true, blocks: true },

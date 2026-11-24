@@ -20,9 +20,8 @@ import {
   pluginCategories,
 } from "@rakazo/core";
 import { pluginCategoryLabel } from "@rakazo/i18n/plugin-catalog";
-import type { NativeStackNavigationOptions } from "expo-router";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
@@ -53,7 +52,7 @@ import {
 } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { iosAtLeast } from "../../lib/native/native-controls";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { openExternalUrl } from "../../lib/platform/open-url";
 import { queryClient, rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
@@ -63,7 +62,6 @@ export default function Integrations() {
   const router = useRouter();
   // A merged brand's plugin page sends people back here to manage the app's accounts.
   const { app: appToOpen } = useLocalSearchParams<{ app?: string }>();
-  const navigation = useNavigation();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
   const { width } = useWindowDimensions();
@@ -398,26 +396,16 @@ export default function Integrations() {
     );
   }
 
-  useLayoutEffect(() => {
-    if (!iosAtLeast(26)) return;
-    navigation.setOptions({
-      unstable_headerRightItems: () => [
-        {
-          type: "menu" as const,
-          label: t`Add custom`,
-          accessibilityLabel: t`Add custom`,
-          icon: { type: "sfSymbol" as const, name: "plus" },
-          menu: {
-            items: addOptions.map((option) => ({
-              type: "action" as const,
-              label: option.label,
-              onPress: () => startAdding(option),
-            })),
-          },
-        },
-      ],
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, presetsQuery.data, installsQuery.data, serversQuery.data, t]);
+  useScreenHeader({
+    action: {
+      kind: "menu",
+      label: t`Add custom`,
+      symbol: "plus",
+      items: addOptions.map(({ id, label }) => ({ id, label })),
+      onSelect: (id) => startAdding(addOptions.find((option) => option.id === id)),
+      Fallback: AddCustomMenu,
+    },
+  });
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
@@ -436,41 +424,44 @@ export default function Integrations() {
           />
         ) : (
           <>
-            {!detailItem ? <AddCustomMenu options={addOptions} onSelect={startAdding} /> : null}
             {!detailItem ? (
-              <TextInput
-                value={query}
-                onChangeText={(value) => {
-                  setQuery(value);
-                  setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
-                  setPluginCount(PLUGIN_PAGE_SIZE);
-                }}
-                accessibilityLabel={t`Search apps`}
-                placeholder={t`Search apps`}
-                placeholderTextColor={native.tertiaryLabel}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-                style={styles.input}
-              />
-            ) : null}
-
-            {!detailItem && (categories.length >= 2 || category) ? (
-              <View style={styles.categoryPicker}>
-                <MenuPicker
-                  label={t`Category`}
-                  showLabel={false}
-                  plain
-                  choices={[
-                    { key: "", label: t`All` },
-                    ...categories.map((name) => ({ key: name, label: pluginCategoryLabel(name) })),
-                  ]}
-                  value={category}
-                  onChange={(key) => {
-                    setCategory(key);
+              <View style={styles.searchRow}>
+                <TextInput
+                  value={query}
+                  onChangeText={(value) => {
+                    setQuery(value);
+                    setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
                     setPluginCount(PLUGIN_PAGE_SIZE);
                   }}
+                  accessibilityLabel={t`Search apps`}
+                  placeholder={t`Search apps`}
+                  placeholderTextColor={native.tertiaryLabel}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                  style={[styles.input, styles.searchInput]}
                 />
+                {categories.length >= 2 || category ? (
+                  <View style={styles.categoryPicker}>
+                    <MenuPicker
+                      label={t`Category`}
+                      showLabel={false}
+                      plain
+                      choices={[
+                        { key: "", label: t`All` },
+                        ...categories.map((name) => ({
+                          key: name,
+                          label: pluginCategoryLabel(name),
+                        })),
+                      ]}
+                      value={category}
+                      onChange={(key) => {
+                        setCategory(key);
+                        setPluginCount(PLUGIN_PAGE_SIZE);
+                      }}
+                    />
+                  </View>
+                ) : null}
               </View>
             ) : null}
 

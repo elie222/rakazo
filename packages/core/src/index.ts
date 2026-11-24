@@ -26,6 +26,7 @@ export * from "./avatars/logo-avatar-traits.js";
 export * from "./avatars/notification-avatar.js";
 export * from "./billing/spending.js";
 export * from "./billing/subscription.js";
+export * from "./bots/bot-chat-route.js";
 export * from "./bots/bot-look.js";
 export * from "./bots/bot-mentions.js";
 export * from "./bots/bot-messages.js";

@@ -39,6 +39,14 @@
   },
   "build": {
     "appId": "dev.rakazo.desktop",
+    "protocols": [
+      {
+        "name": "Rakazo",
+        "schemes": [
+          "rakazo"
+        ]
+      }
+    ],
     "directories": {
       "output": "out",
       "buildResources": "assets"
