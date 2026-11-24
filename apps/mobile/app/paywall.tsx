@@ -241,6 +241,9 @@ export default function Paywall() {
             else if (nativeEvent.event === "sign-out") void leave();
             else organizationAction(nativeEvent.event);
           }}
+          // The 44-point target reaches 2 points past the bar's inset so the icon stays put; the
+          // menu host drops its child's margin, so the offset sits on the host.
+          style={{ marginEnd: -2 }}
         >
           <View
             accessible
@@ -725,7 +728,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
   },
-  account: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  account: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   content: {
     width: "100%",
     maxWidth: FORM_COLUMN_WIDTH,

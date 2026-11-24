@@ -14,6 +14,7 @@ import { McpServersOverlay } from "./McpServersOverlay";
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   create: vi.fn(),
+  createForBots: vi.fn(),
   test: vi.fn(),
   update: vi.fn(),
   agents: vi.fn(),
@@ -817,6 +818,58 @@ it("keeps Save off while a stored header is renamed without a new value", async 
     expect(saveButton()?.disabled).toBe(true);
     await act(async () => type("Header value", "new"));
     expect(saveButton()?.disabled).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("adds a server for chosen bots in one call that an older API refuses", async () => {
+  const created = { ...server("docs"), allBots: false } as McpServer;
+  mocks.list.mockReset().mockResolvedValue([]);
+  mocks.list.mockResolvedValueOnce([]).mockResolvedValue([created]);
+  mocks.create.mockReset();
+  mocks.createForBots.mockReset().mockResolvedValue(created);
+  mocks.agents.mockReset();
+  mocks.test.mockReset().mockResolvedValue(created);
+  access.bots.mockResolvedValue([
+    { id: "bot_1", name: "Ada", color: "#F97316" },
+    { id: "bot_2", name: "Grace", color: "#6366F1" },
+  ]);
+  access.all.mockResolvedValue([]);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const type = (selector: string, value: string) => {
+    const input = host.querySelector<HTMLInputElement>(selector)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const option = (name: string) =>
+    Array.from(host.querySelectorAll<HTMLButtonElement>("button[aria-checked]")).find(
+      (item) => item.textContent === name,
+    );
+  try {
+    await act(async () => root.render(overlay()));
+    await vi.waitFor(() => expect(host.querySelector("#mcp-name")).not.toBeNull());
+    await vi.waitFor(() => expect(option("Ada")?.disabled).toBe(false));
+    await act(async () => {
+      type("#mcp-name", "docs");
+      type("#mcp-endpoint", "https://mcp.example.test/mcp");
+    });
+    await act(async () => option("Ada")!.click());
+    const addServer = Array.from(host.querySelectorAll("button")).find(
+      (item) => item.textContent === "Add server",
+    );
+    await act(async () => addServer?.click());
+    await vi.waitFor(() =>
+      expect(mocks.createForBots).toHaveBeenCalledWith(
+        expect.objectContaining({ botIds: ["bot_2"] }),
+      ),
+    );
+    // The form closes once the save has finished, with no error.
+    await vi.waitFor(() => expect(host.querySelector("#mcp-name")).toBeNull());
+    expect(host.textContent).not.toContain("Could not add MCP server");
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.agents).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
   }

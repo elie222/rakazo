@@ -33,7 +33,8 @@ export function DictationBar({
   const tokens = useMobileTokens();
   const { t } = useLingui();
   const transcribing = status === "transcribing";
-  const hitSlop = { top: 8, bottom: 8, left: 4, right: 4 };
+  // The 44-point tap target iOS asks for around each circle.
+  const hitSlop = (44 - Number(pillStyle.width)) / 2;
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingBottom: 8 }}>
       <Pressable

@@ -3,6 +3,7 @@ import { BOT_MEMORY_MAX_BYTES } from "@rakazo/contracts";
 import { byteLength } from "@rakazo/core";
 import type { z } from "zod";
 import type { RememberInputSchema } from "../tools/builtin-conversation.tool-definition.js";
+import { withoutSavedDate } from "./memory-expiry.js";
 
 const SEMANTIC_MEMORY_TOOL_NAMES = new Set([
   "recall_memory",
@@ -31,10 +32,13 @@ export function appendMemoryFact(existing: string, fact: string): string {
   const current = existing.trimEnd().replace(/\r\n/g, "\n");
   const next = fact.trim();
   const comparableFact = next.replace(/\r\n/g, "\n");
+  // The same fact saved on another day is still a duplicate.
+  const unstamped = withoutSavedDate(next);
   if (
     !next ||
     `\n${current}\n`.includes(`\n${comparableFact}\n`) ||
-    (!next.includes("\n") && current.split("\n").some((line) => line.trim() === next))
+    (!next.includes("\n") &&
+      current.split("\n").some((line) => withoutSavedDate(line.trim()) === unstamped))
   )
     return existing;
   return existing ? `${existing}${existing.endsWith("\n") ? "" : "\n"}${next}\n` : `${next}\n`;

@@ -8,6 +8,7 @@ import type { WriteStream } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
+import { homedir } from "node:os";
 import path from "node:path";
 import type { DesktopLocalStackPhase, DesktopLocalStackState } from "@rakazo/contracts";
 import { t } from "../i18n.js";
@@ -999,7 +1000,20 @@ export class NativeStackController extends StackLifecycle {
   }
 
   private baseEnv(): Record<string, string> {
-    const env: Record<string, string> = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
+    // A GUI launch may omit the directories where the user installs CLIs.
+    const directories = [
+      ...(this.deps.env.PATH ?? "").split(":"),
+      "/usr/bin",
+      "/bin",
+      "/usr/sbin",
+      "/sbin",
+      path.posix.join(this.deps.env.HOME || homedir(), ".local", "bin"),
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+    ];
+    const env: Record<string, string> = {
+      PATH: [...new Set(directories.filter(Boolean))].join(":"),
+    };
     for (const name of INHERITED_ENV) {
       const value = this.deps.env[name];
       if (value) env[name] = value;
@@ -1025,9 +1039,11 @@ export class NativeStackController extends StackLifecycle {
     const fromFile = Object.fromEntries(
       [...stackEnv].filter(([name, value]) => value !== "" && !COMPOSE_ONLY.test(name)),
     );
+    const configuredPath = stackEnv.get("PATH");
     return {
       ...fromFile,
       ...this.nodeEnv(),
+      ...(configuredPath === undefined ? {} : { PATH: configuredPath }),
       DATA_DIR: this.dir("data"),
       WAKEUP_DRIVER: "graphile",
       AGENT_RUNTIME: "pi",
