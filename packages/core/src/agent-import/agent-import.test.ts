@@ -1053,6 +1053,58 @@ describe("renameSkillMd", () => {
     expect(renameSkillMd(original.join(newline), "New")).toBe(expected.join(newline));
   });
 
+  it.each([["\n"], ["\r\n"]])(
+    "replaces a plain scalar on the next line and keeps the line endings",
+    (newline) => {
+      const original = ["---", "name:", "  old", "description: d", "---", "Body"];
+      const expected = ["---", 'name: "new: x"', "description: d", "---", "Body"];
+      const renamed = renameSkillMd(original.join(newline), "new: x");
+      expect(renamed).toBe(expected.join(newline));
+      expect(parseSkillMd(renamed)).toMatchObject({ name: "new: x", description: "d" });
+    },
+  );
+
+  it("replaces a plain scalar that spans two indented lines", () => {
+    const original = ["---", "name:", "  old", "  name", "description: d", "---", "Body"];
+    const expected = ["---", "name: New", "description: d", "---", "Body"];
+    expect(renameSkillMd(original.join("\n"), "New")).toBe(expected.join("\n"));
+  });
+
+  it("replaces a next-line name after a blank line", () => {
+    const original = "---\nname:\n\n  old\ndescription: d\n---\nBody";
+    expect(renameSkillMd(original, "New")).toBe("---\nname: New\ndescription: d\n---\nBody");
+  });
+
+  it("keeps indented comment lines under a commented name", () => {
+    const original = "---\nname: # set below\n  # keep this note\ndescription: d\n---\nBody";
+    expect(renameSkillMd(original, "New")).toBe(
+      "---\nname: New\n  # keep this note\ndescription: d\n---\nBody",
+    );
+  });
+
+  it("stays fast on many blank lines and indented comments", () => {
+    const original = `---\nname:\n${"\n  #\n".repeat(50_000)}description: d\n---\nBody`;
+    expectLinearTime(() => renameSkillMd(original, "New"));
+  });
+
+  it("replaces only the name line when the empty name is followed by a key", () => {
+    const original = ["---", "name:", "description: d", "---", "Body"];
+    const expected = ["---", "name: New", "description: d", "---", "Body"];
+    expect(renameSkillMd(original.join("\n"), "New")).toBe(expected.join("\n"));
+  });
+
+  it("renames a file with leading blank lines, leading spaces, or a trailing-space fence", () => {
+    expect(renameSkillMd("\n---\nname: Old\ndescription: d\n---\nBody", "New")).toBe(
+      "\n---\nname: New\ndescription: d\n---\nBody",
+    );
+    expect(renameSkillMd("  --- \nname: Old\ndescription: d\n---  \nBody", "New")).toBe(
+      "  --- \nname: New\ndescription: d\n---  \nBody",
+    );
+    expect(renameSkillMd("\uFEFF\n---\nname: Old\ndescription: d\n----\n---\nBody", "New")).toBe(
+      "\uFEFF\n---\nname: New\ndescription: d\n----\n---\nBody",
+    );
+  });
+
   it("stays fast on a long indented block", () => {
     const content = `---\nname: >\n${"\t".repeat(200_000)}\u2028\n---\n`;
     expectLinearTime(() => renameSkillMd(content, "New"));

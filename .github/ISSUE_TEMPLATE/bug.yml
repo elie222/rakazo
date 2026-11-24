@@ -1,6 +1,5 @@
 name: Bug report
 description: Something is broken in Rakazo
-title: "[Bug]: "
 labels:
   - bug
 body:
@@ -8,14 +7,6 @@ body:
     attributes:
       value: |
         For **security vulnerabilities**, email [security@rakazo.com](mailto:security@rakazo.com) — do not use this form. See [SECURITY.md](https://github.com/elie222/rakazo/blob/main/SECURITY.md).
-
-  - type: checkboxes
-    id: not-security
-    attributes:
-      label: Confirmation
-      options:
-        - label: This is not a security vulnerability report
-          required: true
 
   - type: textarea
     id: description
@@ -42,15 +33,11 @@ body:
     id: expected
     attributes:
       label: Expected behavior
-    validations:
-      required: true
 
   - type: textarea
     id: actual
     attributes:
       label: Actual behavior
-    validations:
-      required: true
 
   - type: input
     id: version
@@ -69,8 +56,6 @@ body:
         - Linux
         - Windows
         - Other
-    validations:
-      required: true
 
   - type: input
     id: sandbox

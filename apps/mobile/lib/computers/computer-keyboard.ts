@@ -17,21 +17,23 @@ export type ComputerKeyboardCommand =
   | { type: "char"; text: string; control?: boolean };
 
 /**
- * What one change of the hidden field means on the remote, whose caret is at the field's end:
- * text added at the end is typed, text removed from the end is that many Backspaces.
- * Counted in code points, as the remote receives them. Any other change means nothing.
+ * Keep the common prefix and replace the suffix from the remote caret at the end.
+ * An input method can rewrite text it has already reported. Count Backspaces in
+ * code points, as the remote receives them.
  */
 export function computerKeyboardChanges(
   oldValue: string,
   newValue: string,
 ): { backspaces: number; text: string } {
-  if (newValue.startsWith(oldValue)) {
-    return { backspaces: 0, text: newValue.slice(oldValue.length) };
+  let prefix = 0;
+  for (const character of oldValue) {
+    if (character.codePointAt(0) !== newValue.codePointAt(prefix)) break;
+    prefix += character.length;
   }
-  if (oldValue.startsWith(newValue)) {
-    return { backspaces: Array.from(oldValue.slice(newValue.length)).length, text: "" };
-  }
-  return { backspaces: 0, text: "" };
+  return {
+    backspaces: Array.from(oldValue.slice(prefix)).length,
+    text: newValue.slice(prefix),
+  };
 }
 
 export function commandsForKeyboardChange(

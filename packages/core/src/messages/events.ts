@@ -7,8 +7,11 @@ import type {
 } from "@rakazo/contracts";
 import { preserveIdentitySource } from "../bots/identity-source.js";
 import { cloudAgentBlockFromPayload } from "../integrations/cloud-agent.js";
+import { sliceWellFormed } from "../primitives/utf8.js";
 import { modelFallbackFailure, parseModelFallbackFailure } from "../runs/run-error.js";
 import { payloadAuthor } from "./message-replies.js";
+import type { SecretMatcher } from "./secret-matcher.js";
+import { createSecretMatcher } from "./secret-matcher.js";
 
 export function projectMessages(
   events: Array<{
@@ -304,7 +307,7 @@ export function runFailureError(event: {
 // text while the UI shows a bounded first line.
 function clampRunFailure(message: string): string {
   return message.length > RUN_FAILURE_ERROR_MAX
-    ? `${message.slice(0, RUN_FAILURE_ERROR_MAX)}…`
+    ? `${sliceWellFormed(message, RUN_FAILURE_ERROR_MAX)}…`
     : message;
 }
 
@@ -648,6 +651,9 @@ export function subagentBlockFromPayload(
   );
 }
 
+/** What redaction writes in place of a secret. */
+export const REDACTED_MARKER = "[redacted]";
+
 /** Shorter lines, or lines with spaces such as a key's BEGIN header, also appear in ordinary text. */
 const MIN_SECRET_LINE_LENGTH = 16;
 
@@ -670,45 +676,42 @@ function protectedValues(secrets: Iterable<string>): string[] {
   return [...values];
 }
 
+/** The matcher for `secrets` and the values it was built from, for each array asked about. */
+const matchers = new WeakMap<object, { from: string[]; matcher: SecretMatcher }>();
+
+/**
+ * One matcher per secrets array, rebuilt whenever the array's values differ from those it was
+ * built from: a run's list grows as values are added, and a stale matcher would miss one. Held
+ * weakly, so it goes with the array. Other iterables build a new one each time.
+ */
+function matcherFor(secrets: Iterable<string>): SecretMatcher {
+  if (!Array.isArray(secrets)) return createSecretMatcher(protectedValues(secrets));
+  const cached = matchers.get(secrets);
+  if (
+    cached &&
+    cached.from.length === secrets.length &&
+    cached.from.every((value, index) => value === secrets[index])
+  )
+    return cached.matcher;
+  const matcher = createSecretMatcher(protectedValues(secrets));
+  matchers.set(secrets, { from: [...secrets], matcher });
+  return matcher;
+}
+
 /**
  * The stretches protected values cover in `value`, in order, as [start, end). Matches that
  * overlap make one stretch, so a shorter value inside or across a longer one can't cut it and
  * leave the rest readable; matches that only touch stay separate.
  */
 export function redactedRanges(value: string, secrets: Iterable<string>): Array<[number, number]> {
-  // Count matches starting and ending at each offset rather than listing every match, so a value
-  // that repeats or overlaps itself across a long text costs no more than two counters per offset.
-  let starts: Int32Array | undefined;
-  let ends: Int32Array | undefined;
-  for (const secret of protectedValues(secrets)) {
-    for (let at = value.indexOf(secret); at !== -1; at = value.indexOf(secret, at + 1)) {
-      starts ??= new Int32Array(value.length + 1);
-      ends ??= new Int32Array(value.length + 1);
-      starts[at] = starts[at]! + 1;
-      ends[at + secret.length] = ends[at + secret.length]! + 1;
-    }
-  }
-  if (!starts || !ends) return [];
-  const ranges: Array<[number, number]> = [];
-  let open = 0;
-  let start = 0;
-  for (let offset = 0; offset <= value.length; offset += 1) {
-    const ending = ends[offset]!;
-    const starting = starts[offset]!;
-    if (ending === 0 && starting === 0) continue;
-    open -= ending;
-    if (ending > 0 && open === 0) ranges.push([start, offset]);
-    if (starting > 0 && open === 0) start = offset;
-    open += starting;
-  }
-  return ranges;
+  return matcherFor(secrets).ranges(value);
 }
 
 export function redactSecrets(value: string, secrets: readonly string[]): string {
   let output = "";
   let offset = 0;
   for (const [start, end] of redactedRanges(value, secrets)) {
-    output += `${value.slice(offset, start)}[redacted]`;
+    output += `${value.slice(offset, start)}${REDACTED_MARKER}`;
     offset = end;
   }
   return output + value.slice(offset);
@@ -721,27 +724,26 @@ export function redactSecretsAfter(before: string, text: string, secrets: string
   let offset = before.length;
   for (const [start, end] of redactedRanges(value, secrets)) {
     if (end <= offset) continue;
-    output += `${value.slice(offset, Math.max(start, offset))}[redacted]`;
+    output += `${value.slice(offset, Math.max(start, offset))}${REDACTED_MARKER}`;
     offset = end;
   }
   return output + value.slice(offset);
 }
 
 export function containsSecret(value: unknown, secrets: string[]): boolean {
-  const active = protectedValues(secrets);
-  if (active.length === 0) return false;
+  const matcher = matcherFor(secrets);
+  if (matcher.empty) return false;
   const serialized = JSON.stringify(value);
   if (serialized === undefined) return false;
   const pending: unknown[] = [JSON.parse(serialized)];
   while (pending.length > 0) {
     const current = pending.pop();
     if (typeof current === "string") {
-      if (active.some((secret) => current.includes(secret))) return true;
+      if (matcher.test(current)) return true;
       continue;
     }
     if (current === null || typeof current === "number" || typeof current === "boolean") {
-      const primitive = String(current);
-      if (active.some((secret) => primitive.includes(secret))) return true;
+      if (matcher.test(String(current))) return true;
       continue;
     }
     if (Array.isArray(current)) {
@@ -750,7 +752,7 @@ export function containsSecret(value: unknown, secrets: string[]): boolean {
     }
     if (current && typeof current === "object") {
       for (const [key, nested] of Object.entries(current)) {
-        if (active.some((secret) => key.includes(secret))) return true;
+        if (matcher.test(key)) return true;
         pending.push(nested);
       }
     }
@@ -809,7 +811,9 @@ export function sanitizeJsonValue<T>(value: T): T {
 
 export function createStreamingRedactor(secrets: string[]) {
   const values = protectedValues(secrets);
-  const maxLength = Math.max(0, ...values.map((value) => value.length));
+  const matcher = createSecretMatcher(values);
+  // A loop, not a spread: a Vault of many-line values can pass more lengths than a call takes.
+  const maxLength = values.reduce((longest, value) => Math.max(longest, value.length), 0);
   let buffer = "";
   let covered = 0;
 
@@ -825,9 +829,9 @@ export function createStreamingRedactor(secrets: string[]) {
       const cut = final ? buffer.length : Math.max(0, buffer.length - maxLength + 1);
       let offset = covered;
       output = "";
-      for (const [start, end] of redactedRanges(buffer, values)) {
+      for (const [start, end] of matcher.ranges(buffer)) {
         if (start >= cut) break;
-        if (start >= offset) output += `${buffer.slice(offset, start)}[redacted]`;
+        if (start >= offset) output += `${buffer.slice(offset, start)}${REDACTED_MARKER}`;
         offset = Math.max(offset, end);
       }
       output += buffer.slice(Math.min(offset, cut), cut);

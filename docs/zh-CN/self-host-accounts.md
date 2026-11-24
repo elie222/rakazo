@@ -78,9 +78,11 @@ EMAIL_EMULATOR=true
 
 `NODE_ENV=production` 时模拟器被强制禁用，且要求 API 绑定回环地址。在 `NODE_ENV=development` 中，禁用缓存后可从 `http://127.0.0.1:3100/api/dev/emails` 查看捕获邮件；API 只记录投递元数据，不记录重置令牌。测试、预发布和生产环境不会注册收件箱路由。
 
-设置 `WELCOME_EMAIL_ENABLED=true` 后，每个新账号首次登录会收到一封带退订链接的欢迎邮件。它需要上述任一提供商。
+Rakazo 还可以发送带退订链接的产品邮件：新账号首次登录后的欢迎邮件、开启计费推荐时的推荐邮件，以及配置计费后在套餐开始后发送的提醒。本仓库不包含这些邮件的文案，因此只有在你提供对应文案（并配置上述任一提供商）时，每封邮件才会发送。
 
-配置计费后，同一开关还会在套餐开始一天后，向仍未连接模型的组织拥有者发送一封提醒邮件。该提醒由 worker 排队并发送，因此 worker 必须使用与 API 相同的邮件设置（包括这个开关；Compose 文件已经这样做）；没有这些设置的 worker 会丢弃提醒。
+文案是一个文件夹，每封邮件一个 `<email>.json` 文件（`welcome`、`referral`、`model-connection`、`agent-import`），把每种应用语言映射到该邮件各个键的字符串。每个字符串必须恰好使用 `packages/auth/src/email-copy/email-keys.ts` 为该键列出的 `{placeholders}`。只有当文件的英文（`en`）为每个键都提供了有效字符串时，该邮件才会发送；其他语言缺失或无效的字符串会回退到该英文。启动时，API 和 worker 会记录每封被关闭的邮件及原因。
+
+应用从 `EMAIL_COPY_DIR`（镜像中为 `/app/email-copy`）读取该文件夹，因此请为 `api` 和 `worker` 服务挂载它，或把 `EMAIL_COPY_DIR` 指向它。`node packages/auth/scripts/check-email-copy.ts <dir>` 会检查一个文件夹。
 
 ## 密码策略
 
@@ -104,6 +106,8 @@ OIDC_NAME=SSO
 OIDC_SCOPES=openid email profile
 AUTH_PASSWORD_ENABLED=true
 OIDC_ALLOW_SIGNUP_BYPASS=false
+OIDC_EMAIL_VERIFIED_CLAIM=
+OIDC_AUTHORIZATION_PARAMS=
 ```
 
 Issuer 必须是 HTTPS，并与发现文档中的 issuer 完全一致。Rakazo 加载 `<issuer>/.well-known/openid-configuration`，用发现 JWKS 校验 ID token 的 issuer、audience 和 nonce，并使用带 PKCE 的授权码流程。额外 scope 可以用空格或逗号分隔；`openid email profile` 总是会请求。`OIDC_NAME` 是按钮标签，默认为 “SSO”。密钥只在 API 上保留；Compose 会清除 worker 的 OIDC 凭据。能力端点只暴露标签、发现可用性和已启用的登录方式。
@@ -116,7 +120,7 @@ https://app.example.com/api/auth/callback/oidc
 
 网页、桌面和移动端使用同一个提供商回调 URI。Electron 在共享应用会话的沙箱内嵌弹出窗口中完成 SSO，再返回主窗口。移动端在 API 上完成回调，然后通过 Better Auth 的 Expo 授权代理和原生认证浏览器会话返回 `rakazo://sign-in`（绑定或重新认证时为 `rakazo://account`）。认证服务器信任 `rakazo` 应用 scheme；不要在移动应用中注册客户端密钥。移动端像密码登录一样，把结果会话保存在 SecureStore。原生构建需要 Expo WebBrowser 模块。
 
-提供商邮箱只有在 `email_verified` 为布尔值 `true` 时才算已验证。false 或缺失会保持未验证，后续登录也一样；未验证声明不会更改账号邮箱。登录不会仅凭邮箱自动绑定账号，除了认领[目录供应](#目录供应scim)创建的账号。如果邮箱属于另一个账号，请登录该账号并在账号设置中选择 **Link SSO**。绑定要求已认证会话、提供商邮箱已验证且邮箱一致。有邮件投递时，账号只有邮箱验证后才能绑定 SSO。没有邮件时，未验证账号只能从已登录它的浏览器绑定，移动应用不能绑定。之后用 issuer 和提供商 subject 识别绑定关系。更换 issuer 不会复用旧身份。旧 issuer 的绑定仍会保存，但不算当前提供商的绑定，因此 **Link SSO** 会重新可用。请在已登录的现有账号上绑定新身份；已认证会话、已验证邮箱和邮箱一致的检查仍然适用。恢复旧 issuer 后，它的现有绑定可再次使用。
+提供商邮箱在 `email_verified` 为布尔值 `true` 或字符串 `true`（不区分大小写）时算已验证。其他值，包括 `false` 和缺失，都会保持未验证，后续登录也一样；未验证声明不会更改账号邮箱。如果提供商不发送 `email_verified`，而是用自己的声明证明邮箱，请在 `OIDC_EMAIL_VERIFIED_CLAIM` 中填写该声明名；只有在缺少 `email_verified` 时才按同样规则读取它。Microsoft Entra ID 需在 **Token configuration** 中添加可选 ID 令牌声明 `email` 和 `xms_edov`，并设置 `OIDC_EMAIL_VERIFIED_CLAIM=xms_edov`。登录不会仅凭邮箱自动绑定账号，除了认领[目录供应](#目录供应scim)创建的账号。如果邮箱属于另一个账号，请登录该账号并在账号设置中选择 **Link SSO**。绑定要求已认证会话、提供商邮箱已验证且邮箱一致。有邮件投递时，账号只有邮箱验证后才能绑定 SSO。没有邮件时，未验证账号只能从已登录它的浏览器绑定，移动应用不能绑定。之后用 issuer 和提供商 subject 识别绑定关系。更换 issuer 不会复用旧身份。旧 issuer 的绑定仍会保存，但不算当前提供商的绑定，因此 **Link SSO** 会重新可用。请在已登录的现有账号上绑定新身份；已认证会话、已验证邮箱和邮箱一致的检查仍然适用。恢复旧 issuer 后，它的现有绑定可再次使用。
 
 普通 SSO 登录和绑定可以复用身份提供商的现有会话。它们不能为删除账号提供新的认证证明。账号设置中的显式重新认证流程会请求 `prompt=login` 和 `max_age=0`，把回调绑定到同一个 issuer 和 subject，并要求发起会话保持有效。只有该回调会给结果会话授予证明，在提供商认证后五分钟过期（回调延迟不会延长）。验证过的 ID token 必须包含与请求一致的 `auth_time`（允许 60 秒时钟偏差），且不超过五分钟。缺失、过期或无效声明都会失败。OAuth 回调是一次性的，并发请求也一样。密码验证和邮箱删除验证码仍可用。删除验证码必须通过账号设置或带 CSRF 保护的 `POST /api/auth/delete-user` 提交；GET 删除回调已禁用。
 
@@ -125,6 +129,20 @@ SSO 注册会先遵守关闭注册和部署允许名单，再创建账号。允�
 设置 `AUTH_PASSWORD_ENABLED=false` 可进入 SSO-only 模式。服务端禁用密码登录、注册、密码重置和密码修改端点，登录表单也会隐藏。未完整配置 OIDC 凭据时，API 在该模式下会拒绝启动。发现服务暂时不可用时仍可启动：提供商保持注册，登录返回临时错误，后台重试会自动恢复，无需重启。发现服务在首次使用时懒加载，并在后台刷新；失败最多退避一分钟。可用性反映发现服务状态，不保证提供商 token 端点当前可达。
 
 删除账号时，密码用户仍需密码确认。没有密码的用户可以在五分钟内完成显式组织 SSO 重新认证后删除；**Sign in again** 会发起一个绑定到已登录账号的新提供商往返。选择其他身份无法确认删除，也不能在该流程中创建另一个账号。过期或借用的会话不能授权删除。配置事务邮件后，**Send deletion code** 会向账号邮箱发送一次性验证码，10 分钟有效。在账号设置中输入即可确认删除。邮箱验证码请求有限流；无效、过期或错误账号的验证码都会失败。删除不需要创建密码。
+
+### 登录提示
+
+`OIDC_AUTHORIZATION_PARAMS` 会给每次跳转到提供商的请求加上默认参数，格式为用 `&` 连接的 `name=value`。值按表单编码读取：`&`、`=` 和 `+` 要写成 `%26`、`%3D` 和 `%2B`，因为单独的 `+` 会被读成空格。可用于提供商自带的提示，跳过账号或组织选择：
+
+| 提供商             | 设置                         | 效果                                                             |
+| ------------------ | ---------------------------- | ---------------------------------------------------------------- |
+| Microsoft Entra ID | `domain_hint=example.com`    | 直接进入你组织的登录页，域名使用联合身份提供商时也直接跳转过去。 |
+| Google Workspace   | `hd=example.com`             | 只提供该域名下的账号。                                           |
+| Keycloak           | `kc_idp_hint=<alias>`        | 跳过 Keycloak 登录页，直接使用该别名对应的身份提供商。           |
+| Okta               | `idp=<identity provider id>` | 直接跳转到该身份提供商。                                         |
+| 任意               | `prompt=select_account`      | 即使只登录了一个账号，也询问使用哪个账号。                       |
+
+可以组合使用，例如 `domain_hint=example.com&prompt=select_account`；同一个参数名只能出现一次。是否采用提示由提供商决定（例如 Entra 租户可以设置为忽略 `domain_hint`），设置后请实际登录一次确认。登录请求自己带上的同名参数会覆盖这里的默认值。请求由 API 生成，所以这些参数对网页、桌面和移动端登录以及绑定都生效。如果其中包含登录流程自己设置的参数（`client_id`、`redirect_uri`、`response_type`、`response_mode`、`scope`、`state`、`nonce`、`code_challenge`、`code_challenge_method`、`request` 或 `request_uri`），API 会拒绝启动。上文的显式重新认证仍会发送 `prompt=login` 和 `max_age=0`，不受这里的设置影响。提示只会缩短提供商的页面，谁能登录仍由提供商和本部署的注册规则决定。
 
 ## Google 和 Apple 登录
 

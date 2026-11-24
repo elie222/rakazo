@@ -42,10 +42,14 @@ function harness() {
       .filter((botId) => botId !== "empty")
       .flatMap((botId) => [routine(botId, `${botId}-2`), routine(botId, `${botId}-1`)]),
   );
+  const findOwners = vi.fn(async () => [
+    { userId: actor.userId, member: { user: { name: "Riley", email: "riley@example.test" } } },
+  ]);
   const deps = {
     prisma: {
       bot: { findMany: findBots },
       routine: { findMany: findRoutines },
+      spaceMember: { findMany: findOwners },
     } as unknown as PrismaClient,
     env: {
       defaultProvider: "fake",
@@ -68,11 +72,11 @@ function harness() {
     );
     return response!;
   }
-  return { findBots, findRoutines, request };
+  return { findBots, findRoutines, findOwners, request };
 }
 
 describe("routine mention batch endpoint", () => {
-  it("reads the space's bots and their routines in two queries", async () => {
+  it("reads the space's bots, their routines and who they run as in three queries", async () => {
     const h = harness();
     const ids = Array.from({ length: 100 }, (_, index) => `bot-${index}`);
     const response = await h.request(ids);
@@ -88,6 +92,8 @@ describe("routine mention batch endpoint", () => {
     expect(h.findRoutines).toHaveBeenCalledExactlyOnceWith({
       where: { botId: { in: ids }, spaceId: actor.spaceId },
     });
+    expect(h.findOwners).toHaveBeenCalledOnce();
+    expect(body[0].routines[0].runsAs).toEqual({ name: "Riley", isViewer: true });
   });
 
   it("omits unowned bots and keeps owned bots without routines", async () => {

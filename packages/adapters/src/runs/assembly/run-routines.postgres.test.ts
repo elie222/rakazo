@@ -13,9 +13,10 @@ import {
   sendUserMessage,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { deleteSpentRoutine } from "../../routines/routine-end.js";
+import { routineGroupThreadId } from "../../routines/routine-thread.js";
 import { createRunExecutor } from "../executor/executor.js";
 import { createJobReconciler } from "../wakeups/job-reconciler.js";
-import { deleteSpentOneShotRoutine } from "./run-routines.js";
 
 const url = process.env.DATABASE_URL;
 const describePostgres = process.env.VERIFY_DATABASE === "1" && url ? describe : describe.skip;
@@ -44,6 +45,37 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
       await db.prisma.$disconnect();
       await db.pool.end();
     }
+  });
+
+  it("picks a group thread only while the group is live and the bot is in it", async () => {
+    const { userId, spaceId, botId } = identity;
+    const other = await system.bot.create({
+      data: { spaceId, userId, name: "Other", color: "#000000" },
+    });
+    const group = await system.chatGroup.create({
+      data: {
+        spaceId,
+        userId,
+        name: "Team",
+        members: { create: [{ botId }, { botId: other.id }] },
+      },
+    });
+    const thread = await system.thread.create({ data: { spaceId, userId, groupId: group.id } });
+    const routine = { spaceId, threadId: thread.id };
+    await expect(routineGroupThreadId(system, routine, botId)).resolves.toBe(thread.id);
+    await expect(
+      routineGroupThreadId(system, { spaceId, threadId: identity.threadId }, botId),
+    ).resolves.toBe(identity.threadId);
+    await expect(
+      routineGroupThreadId(system, { spaceId, threadId: null }, botId),
+    ).resolves.toBeNull();
+    await system.chatGroupMember.deleteMany({ where: { groupId: group.id, botId } });
+    await expect(routineGroupThreadId(system, routine, botId)).resolves.toBeNull();
+    await system.chatGroupMember.create({ data: { groupId: group.id, botId } });
+    await system.chatGroup.update({ where: { id: group.id }, data: { archivedAt: new Date() } });
+    await expect(routineGroupThreadId(system, routine, botId)).resolves.toBeNull();
+    await system.chatGroup.delete({ where: { id: group.id } });
+    await system.bot.delete({ where: { id: other.id } });
   });
 
   it("runs the prompt that was saved with the model it claims", async () => {
@@ -101,20 +133,23 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     expect(run).toMatchObject({ modelProvider: "prov-b", modelId: "model-B", modelPinned: true });
   });
 
-  it("deletes only a spent one-time routine and keeps its run history", async () => {
+  it("deletes only a spent routine and keeps its run history", async () => {
     const spent = { crons: ["@once"], active: false, nextRunAt: null, lastRunAt: new Date() };
     const create = (data: Partial<Prisma.RoutineUncheckedCreateInput>) =>
       system.routine.create({
         data: { ...identity, name: "reminder", prompt: "remind me", ...spent, ...data },
       });
-    const [done, rescheduled, recurring, webhook, busy, paused] = await Promise.all([
-      create({}),
-      create({ active: true, nextRunAt: new Date(Date.now() + 60 * 60_000) }),
-      create({ crons: ["0 9 * * *"] }),
-      create({ webhookEnabled: true }),
-      create({}),
-      create({ lastRunAt: null }),
-    ]);
+    const [done, rescheduled, recurring, webhook, busy, paused, ended, pausedPastEnd] =
+      await Promise.all([
+        create({}),
+        create({ active: true, nextRunAt: new Date(Date.now() + 60 * 60_000) }),
+        create({ crons: ["0 9 * * *"] }),
+        create({ webhookEnabled: true }),
+        create({}),
+        create({ lastRunAt: null }),
+        create({ crons: ["0 9 * * *"], active: true, endsAt: new Date(Date.now() - 60_000) }),
+        create({ crons: ["0 9 * * *"], endsAt: new Date(Date.now() - 60_000) }),
+      ]);
     const task = await system.task.create({
       data: { ...identity, prompt: "remind me", status: "completed" },
     });
@@ -130,24 +165,24 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     const deps = {
       prisma: system,
       events: {
+        notify: async () => undefined,
         publishSpaceChange: async (spaceId: string, kind: string) => {
           published.push(`${spaceId}:${kind}`);
         },
       },
     };
-    for (const routine of [done, rescheduled, recurring, webhook, busy, paused])
-      await deleteSpentOneShotRoutine(deps, { ...identity, routineId: routine.id });
+    const all = [done, rescheduled, recurring, webhook, busy, paused, ended, pausedPastEnd];
+    for (const routine of all)
+      await deleteSpentRoutine(deps, { ...identity, routineId: routine.id });
 
     const left = await system.routine.findMany({
-      where: {
-        id: { in: [done.id, rescheduled.id, recurring.id, webhook.id, busy.id, paused.id] },
-      },
+      where: { id: { in: all.map((routine) => routine.id) } },
       select: { id: true },
     });
     expect(left.map((row) => row.id).sort()).toEqual(
-      [rescheduled.id, recurring.id, webhook.id, busy.id, paused.id].sort(),
+      [rescheduled.id, recurring.id, webhook.id, busy.id, paused.id, pausedPastEnd.id].sort(),
     );
-    expect(published).toEqual([`${identity.spaceId}:routines`]);
+    expect(published).toEqual([`${identity.spaceId}:routines`, `${identity.spaceId}:routines`]);
     await expect(
       system.run.findUniqueOrThrow({ where: { id: finished.id }, select: { routineId: true } }),
     ).resolves.toEqual({ routineId: null });

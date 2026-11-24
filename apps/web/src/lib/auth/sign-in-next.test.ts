@@ -28,3 +28,15 @@ it("starts a new account in onboarding unless it came for an invite or invitatio
   expect(newAccountDestination("/integrations/setup")).toBe("/onboarding");
   expect(newAccountDestination(null)).toBe("/onboarding");
 });
+
+it("returns to a Page review or the shared Pages list, including a trailing slash", () => {
+  for (const next of ["/review", "/review/", "/review/page-1", "/review/page-1/"])
+    expect(signInNext(next)).toBe(next);
+  for (const next of ["//review/page-1", "/review//", "/review/../app", "/review/%2fapp"])
+    expect(signInNext(next)).toBeNull();
+});
+
+it("returns to a bot's chat", () => {
+  expect(signInNext("/app/bot_1-A")).toBe("/app/bot_1-A");
+  expect(signInNext("/app/bot/../../admin")).toBeNull();
+});

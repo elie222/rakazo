@@ -21,11 +21,18 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-async function open(draft: RoutineDraftState, onChange = vi.fn()) {
+async function open(draft: RoutineDraftState, onChange = vi.fn(), computerOffered = false) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const root = createRoot(document.body.appendChild(document.createElement("div")));
   await act(async () =>
-    root.render(<RoutineModelSettings draft={draft} onChange={onChange} fieldId="routine" />),
+    root.render(
+      <RoutineModelSettings
+        draft={draft}
+        onChange={onChange}
+        fieldId="routine"
+        computerOffered={computerOffered}
+      />,
+    ),
   );
   const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Advanced"]')!;
   await act(async () => trigger.click());
@@ -63,5 +70,41 @@ it("offers no in-chat switch to a routine that watches for changes", async () =>
   });
 
   expect(inChatSwitch()).toBeNull();
+  await act(async () => root.unmount());
+});
+
+const computerSwitch = () =>
+  document.getElementById("routine-computer") as HTMLButtonElement | null;
+
+it("offers Use my computer only where the server offers it, and not with a run in the chat", async () => {
+  const hidden = await open(emptyRoutineDraftState());
+  expect(computerSwitch()).toBeNull();
+  await act(async () => hidden.root.unmount());
+  document.body.replaceChildren();
+
+  const draft = emptyRoutineDraftState();
+  const { root, onChange } = await open(draft, vi.fn(), true);
+  expect(computerSwitch()?.closest("label")?.textContent).toContain("Use my computer");
+  await act(async () => computerSwitch()!.click());
+  expect(onChange).toHaveBeenCalledWith({ ...draft, useComputer: true });
+  await act(async () => root.unmount());
+  document.body.replaceChildren();
+
+  const inChat = await open({ ...draft, inChat: true }, vi.fn(), true);
+  expect(computerSwitch()).toBeNull();
+  await act(async () => inChat.root.unmount());
+  document.body.replaceChildren();
+
+  // The server refuses it once outside events start the routine.
+  const hooked = await open({ ...draft, webhookEnabled: true }, vi.fn(), true);
+  expect(computerSwitch()).toBeNull();
+  await act(async () => hooked.root.unmount());
+});
+
+it("turns Use my computer off when the routine starts running in the chat", async () => {
+  const draft = { ...emptyRoutineDraftState(), useComputer: true };
+  const { root, onChange } = await open(draft, vi.fn(), true);
+  await act(async () => inChatSwitch()!.click());
+  expect(onChange).toHaveBeenCalledWith({ ...draft, inChat: true, useComputer: false });
   await act(async () => root.unmount());
 });

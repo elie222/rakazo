@@ -17,10 +17,13 @@
   "schema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["screenshots", "complete"],
+    "required": ["screenshots", "complete", "blocker"],
     "properties": {
       "complete": {
         "type": "boolean"
+      },
+      "blocker": {
+        "type": "string"
       },
       "screenshots": {
         "type": "array",

@@ -19,6 +19,7 @@ function setup() {
   const row = {
     id: "local-job",
     status: "media_pending",
+    request: {},
     result: { provider: "fake", jobId: "remote-job" },
   };
   const externalEffect = {
@@ -39,6 +40,7 @@ function setup() {
     args: { prompt: "draw" } as Record<string, unknown>,
     executionId: "execution",
     provider,
+    source: { kind: "hosted" as const },
     prisma: {
       externalEffect,
       artifact: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -95,6 +97,81 @@ describe("bot media tools", () => {
       expect.objectContaining({ id: "local-job" }),
     );
     expect(publish).toHaveBeenCalledTimes(1);
+  });
+  it("saves the submission's price and charges it with the stored image", async () => {
+    const { options, externalEffect, attach } = setup();
+    const charge = { organizationId: "org", micros: 40_000 };
+    externalEffect.create.mockImplementation(async ({ data }) => ({
+      id: "local-job",
+      status: "media_submitting",
+      request: data.request,
+      result: data.result,
+    }));
+    const result = await generateMediaFromTool({ ...options, price: async () => ({ charge }) });
+    expect(result).toMatchObject({ status: "completed" });
+    expect(externalEffect.create.mock.calls[0]?.[0].data.request).toMatchObject({ charge });
+    expect(attach.mock.calls[0]?.[2].charge).toEqual({
+      organizationId: "org",
+      kind: "image",
+      amountMicros: 40_000,
+    });
+  });
+  it("charges what the provider reported instead of the saved price", async () => {
+    const { options, externalEffect, attach, provider } = setup();
+    vi.spyOn(provider, "generateImage").mockResolvedValue({
+      bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      mimeType: "image/png",
+      costMicros: 12_000,
+    });
+    externalEffect.create.mockImplementation(async ({ data }) => ({
+      id: "local-job",
+      status: "media_submitting",
+      request: data.request,
+      result: data.result,
+    }));
+    const charge = { organizationId: "org", micros: 40_000 };
+    await generateMediaFromTool({ ...options, price: async () => ({ charge }) });
+    expect(attach.mock.calls[0]?.[2].charge.amountMicros).toBe(12_000);
+  });
+  it("submits nothing when the media balance cannot cover the price", async () => {
+    const { options, externalEffect, provider } = setup();
+    const generate = vi.spyOn(provider, "generateImage");
+    const error = "Not enough media balance left this month for this image.";
+    expect(await generateMediaFromTool({ ...options, price: async () => ({ error }) })).toEqual({
+      error,
+    });
+    expect(externalEffect.create).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+  it("hands an own-key image's model and cost to be recorded, and none for a hosted one", async () => {
+    const { options, provider, attach } = setup();
+    vi.spyOn(provider, "generateImage").mockResolvedValue({
+      bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      mimeType: "image/png",
+      costMicros: 40_000,
+    });
+    await generateMediaFromTool({
+      ...options,
+      source: { kind: "connection", connectionId: "connection", model: "lab/draw" },
+    });
+    expect(attach.mock.calls[0]![2].spend).toEqual({
+      role: "image",
+      provider: "fake",
+      model: "lab/draw",
+      costMicros: 40_000,
+      estimated: false,
+    });
+    await generateMediaFromTool({ ...options, executionId: "hosted" });
+    expect(attach.mock.calls[1]![2].spend).toBeUndefined();
+  });
+  it("counts an own-key image whose response names no cost at the model's saved price", async () => {
+    const { options, provider, attach } = setup();
+    Object.assign(provider, { prices: { imageMicros: 52_000, videoMicros: 0 } });
+    await generateMediaFromTool({
+      ...options,
+      source: { kind: "connection", connectionId: "connection", model: "lab/draw" },
+    });
+    expect(attach.mock.calls[0]![2].spend).toMatchObject({ costMicros: 52_000, estimated: true });
   });
   it("names an attached image after the format the provider returned", async () => {
     const { options, provider, attach } = setup();

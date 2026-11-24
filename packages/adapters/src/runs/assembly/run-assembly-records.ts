@@ -5,7 +5,7 @@ import {
   effectiveMemoryScope,
   expireRunToolQuestions,
   loadRunHistoryMessages,
-  loadRunTurnCheckpoint,
+  loadRunTurnState,
   readMessageBlocks,
   teamChatRunFromOwner,
 } from "@rakazo/db";
@@ -36,6 +36,7 @@ import {
   mergeConnectedPlugins,
   needsLivePluginSync,
 } from "../../providers/integration/composio/composio-connector.js";
+import { routineRunUsesOwnerComputer } from "../../routines/routine-owner-computer.js";
 import { LEGACY_HISTORY_WINDOW_SIZE } from "../../runtime/context/history-compaction.js";
 import { restoreComputerModels } from "../../runtime/pi/tools/pi-runtime-computer-mode.js";
 import {
@@ -47,7 +48,11 @@ import {
 import { listAgentSkillRecords } from "../../tools/skill-tools.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { PausedTurnModelUnlistedError } from "../lifecycle/run-lifecycle.js";
-import { isDelegatedRun, loadRunOrigin } from "../lifecycle/run-origin.js";
+import {
+  isDelegatedRun,
+  loadRunOrigin,
+  RunOriginUnauthorizedError,
+} from "../lifecycle/run-origin.js";
 import { runReplaysToolHistory } from "../turn/tool-step-calls.js";
 import { restoreTurnCheckpoint } from "../turn/turn-checkpoint.js";
 import type { HistoryReach } from "./run-instructions.prompt.js";
@@ -57,13 +62,14 @@ export async function loadSavedTurn(services: RunExecutorServices, hold: RunHold
   const { deps, run, secrets: runSecrets } = hold;
   // A saved computer turn owns both identities. Resolve them before consulting
   // today's main selection, whose connection may have changed while paused.
-  let turnCheckpoint: string | undefined;
+  let saved: Awaited<ReturnType<typeof loadRunTurnState>> | undefined;
   let checkpointLoadError: Error | undefined;
   try {
-    turnCheckpoint = await loadRunTurnCheckpoint(deps.prisma, run);
+    saved = await loadRunTurnState(deps.prisma, run);
   } catch (error) {
     checkpointLoadError = error instanceof Error ? error : new Error("Unsupported turn checkpoint");
   }
+  const turnCheckpoint = saved?.turnCheckpoint;
   const storedTurnCheckpoint = Boolean(turnCheckpoint);
   const resolveCheckpointModel = (
     provider: string,
@@ -111,6 +117,7 @@ export async function loadSavedTurn(services: RunExecutorServices, hold: RunHold
   }
   return {
     turnCheckpoint,
+    introEffects: saved?.introEffects ?? [],
     checkpointLoadError,
     storedTurnCheckpoint,
     resolveCheckpointModel,
@@ -153,7 +160,7 @@ export async function loadRunRecords(
   const { pinnedComputerModels } = parts.saved;
   const origin = await loadRunOrigin(deps.prisma, run);
   if (isDelegatedRun(run.trigger) && run.delegatedFromRunId && !origin)
-    throw new Error("The originating conversation no longer authorizes this task.");
+    throw new RunOriginUnauthorizedError();
   const conversationRun = origin ?? run;
   const messagingSource =
     conversationRun.trigger === "messaging" && conversationRun.sourceMessageId
@@ -173,7 +180,9 @@ export async function loadRunRecords(
   // so the run reads only the message that woke it and gets no history tools.
   const unknownChannelSourceId =
     messagingChannelRun && !channelId ? messagingSource?.id : undefined;
-  const historyReach = runHistoryReach(run);
+  // A routine the owner let use their computer reads only its own prompt.
+  const ownerComputerRoutine = await routineRunUsesOwnerComputer(deps.prisma, run);
+  const historyReach = ownerComputerRoutine ? "none" : runHistoryReach(run);
   const [
     { bot, ownerLabs },
     thread,
@@ -215,7 +224,11 @@ export async function loadRunRecords(
     loadRunHistoryMessages(
       deps.prisma,
       run,
-      historyReach === "recent" ? ROUTINE_RECENT_MESSAGES : LEGACY_HISTORY_WINDOW_SIZE,
+      ownerComputerRoutine
+        ? 0
+        : historyReach === "recent"
+          ? ROUTINE_RECENT_MESSAGES
+          : LEGACY_HISTORY_WINDOW_SIZE,
       run.trigger === BACKGROUND_HELPER_TRIGGER
         ? undefined
         : channelId
@@ -323,6 +336,7 @@ export async function loadRunRecords(
       : null;
   return {
     historyReach,
+    ownerComputerRoutine,
     origin,
     conversationRun,
     conversationThread,

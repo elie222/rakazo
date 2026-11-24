@@ -44,49 +44,59 @@ vi.mock("react-native-reanimated", () => {
   };
 });
 
-let root: Root;
-let container: HTMLDivElement;
-let clock: ReturnType<typeof useLogoAvatarClock>;
-function Clock({ running, activity }: { running: boolean; activity: string }) {
-  clock = useLogoAvatarClock(running);
-  return <span>{activity}</span>;
+let roots: Root[] = [];
+const clocks: Record<string, ReturnType<typeof useLogoAvatarClock>> = {};
+function Clock({ name, running }: { name: string; running: boolean }) {
+  clocks[name] = useLogoAvatarClock(running);
+  return null;
+}
+function mount(name: string, running = true) {
+  const root = createRoot(document.createElement("div"));
+  roots.push(root);
+  act(() => root.render(<Clock name={name} running={running} />));
+  return root;
 }
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
+  vi.setSystemTime(24_000 * 1000 + 1200);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  container = document.createElement("div");
-  root = createRoot(container);
 });
 afterEach(() => {
-  act(() => root.unmount());
+  for (const root of roots) act(() => root.unmount());
+  roots = [];
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
-it("keeps elapsed native phase across activity rerenders and offscreen/reduced-motion pauses", () => {
-  act(() => root.render(<Clock running activity="reading" />));
-  act(() => vi.advanceTimersByTime(1200));
-  expect(clock.value).toBeCloseTo(1200);
-  act(() => root.render(<Clock running activity="writing" />));
+it("starts at the shared clock's point in the loop", () => {
+  mount("first");
+  expect(clocks.first!.value).toBeCloseTo(1200);
   act(() => vi.advanceTimersByTime(300));
-  expect(clock.value).toBeCloseTo(1500);
-  act(() => root.render(<Clock running={false} activity="writing" />));
-  act(() => vi.advanceTimersByTime(5000));
-  expect(clock.value).toBeCloseTo(1500);
-  act(() => root.render(<Clock running activity="computer" />));
-  act(() => vi.advanceTimersByTime(400));
-  expect(clock.value).toBeCloseTo(1900);
-  expect(vi.getTimerCount()).toBe(0);
+  expect(clocks.first!.value).toBeCloseTo(1500);
+  // Only the timer that starts the next run is armed: no frame or interval timers.
+  expect(vi.getTimerCount()).toBe(1);
 });
 
-it("keeps the native clock moving after repeated24-second wraps", () => {
-  act(() => root.render(<Clock running activity="reading" />));
-  act(() => vi.advanceTimersByTime(49_200));
-  expect(clock.value % 24000).toBeCloseTo(1200);
-  act(() => root.render(<Clock running={false} activity="reading" />));
-  expect(clock.value % 24000).toBeCloseTo(1200);
-  act(() => root.render(<Clock running activity="computer" />));
-  act(() => vi.advanceTimersByTime(800));
-  expect(clock.value % 24000).toBeCloseTo(2000);
-  expect(vi.getTimerCount()).toBe(0);
+it("starts a new run from the shared clock when one runs out", () => {
+  mount("first");
+  act(() => vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 700));
+  expect(clocks.first!.value % 24_000).toBeCloseTo(1_900);
+  expect(clocks.first!.value).toBeLessThan(24 * 60 * 60 * 1000);
+});
+
+it("keeps two copies mounted at different times in step", () => {
+  mount("first");
+  act(() => vi.advanceTimersByTime(7_300));
+  mount("second");
+  act(() => vi.advanceTimersByTime(500));
+  expect(clocks.second!.value % 24_000).toBeCloseTo(clocks.first!.value % 24_000);
+  expect(clocks.second!.value % 24_000).toBeCloseTo(9_000);
+});
+
+it("catches up with the shared clock after a pause", () => {
+  const root = mount("first");
+  act(() => root.render(<Clock name="first" running={false} />));
+  act(() => vi.advanceTimersByTime(5_000));
+  act(() => root.render(<Clock name="first" running />));
+  expect(clocks.first!.value).toBeCloseTo(6_200);
 });

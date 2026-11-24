@@ -15,11 +15,12 @@ import {
 } from "./fingerprint.js";
 import { regradeTrial } from "./grading.js";
 import type { EvalJudge } from "./judge.js";
+import type { JudgeSettings, RecordedJudge } from "./judge-identity.js";
 import { SpendBudget } from "./measurement.js";
 import type { TrialResult } from "./report.js";
 import { emptyTrial, evidenceSnapshot } from "./report.js";
 import type { StoredReport } from "./run-store.js";
-import { judgeIdentity, RunStore } from "./run-store.js";
+import { RunStore } from "./run-store.js";
 
 const connection: ModelConnectInput = {
   provider: "openai-compatible",
@@ -216,9 +217,24 @@ function trial(n: number, overrides: Partial<TrialResult> = {}): TrialResult {
     ...overrides,
   };
 }
+const settings: JudgeSettings = {
+  endpoint: "0123456789ab",
+  maxOutputTokens: 2048,
+  reasoning: null,
+  thinkingLevel: null,
+};
+const judgeOf = (
+  rubricVersion = "meaning-v1",
+  overrides: Partial<RecordedJudge> = {},
+): RecordedJudge => ({ model: "judge-model", rubricVersion, settings, ...overrides });
 const report = (
   trials: TrialResult[],
-  options: { fingerprint?: string | null; rubric?: string; startedAt?: string } = {},
+  options: {
+    fingerprint?: string | null;
+    rubric?: string;
+    startedAt?: string;
+    judge?: RecordedJudge & { costUsd?: number | null };
+  } = {},
 ): StoredReport => ({
   suite: "recall",
   startedAt: options.startedAt ?? "2026-11-13T00:00:00.000Z",
@@ -227,7 +243,7 @@ const report = (
   fixtureVersion: "recall-v1",
   caseFixtureVersions: { lease: "recall-v1" },
   codeRevision: "abc",
-  judge: { model: "judge-model", rubricVersion: options.rubric ?? "meaning-v1" },
+  judge: options.judge ?? judgeOf(options.rubric),
   ...(options.fingerprint === null
     ? {}
     : {
@@ -253,7 +269,7 @@ describe("run store", () => {
       trials: 3,
       strategy: "current",
       fingerprint,
-      judge: judgeIdentity({ model: "judge-model", rubricVersion: rubric }),
+      judge: judgeOf(rubric),
     });
 
   it("indexes each run with its counts and keeps a rerun beside the first", () => {
@@ -277,6 +293,11 @@ describe("run store", () => {
     expect(s.read(first).trials).toHaveLength(2);
   });
 
+  it("leaves new spend unknown when the judge's cost is unknown", () => {
+    const run = report([trial(1)], { judge: { ...judgeOf(), costUsd: null } });
+    expect(store().save(run).costUsd.new).toBeNull();
+  });
+
   it("reuses under the same judge, regrades under another, and runs on a new fingerprint", () => {
     const s = store();
     s.save(report([trial(1), trial(2)]));
@@ -290,16 +311,33 @@ describe("run store", () => {
         trials: 3,
         strategy: "current",
         fingerprint: "f1",
-        judge: judgeIdentity({
-          provider: "other",
-          model: "judge-model",
-          rubricVersion: "meaning-v1",
-        }),
+        judge: judgeOf("meaning-v1", { provider: "other" }),
       }),
     ).toMatchObject({ kind: "regrade" });
     // Once a regrade is stored, the newer judge reuses it.
     s.save(report([trial(1), trial(2)], { rubric: "meaning-v2" }));
     expect(plan(s, "f1", "meaning-v2")).toMatchObject({ kind: "reuse" });
+  });
+
+  it("regrades under other judge settings, and when the stored run never recorded them", () => {
+    const s = store();
+    s.save(report([trial(1)]));
+    const planWith = (judge: RecordedJudge) =>
+      s.plan({ scenario, trials: 3, strategy: "current", fingerprint: "f1", judge });
+    expect(planWith(judgeOf())).toMatchObject({ kind: "reuse" });
+    expect(
+      planWith(judgeOf("meaning-v1", { settings: { ...settings, thinkingLevel: "high" } })),
+    ).toMatchObject({ kind: "regrade" });
+    expect(
+      planWith(judgeOf("meaning-v1", { settings: { ...settings, endpoint: null } })),
+    ).toMatchObject({ kind: "regrade" });
+
+    // A run from before judge settings were recorded may have been graded under others.
+    const { settings: _, ...unrecorded } = judgeOf();
+    s.save(report([trial(1)], { fingerprint: "f2", judge: unrecorded }));
+    expect(
+      s.plan({ scenario, trials: 3, strategy: "current", fingerprint: "f2", judge: judgeOf() }),
+    ).toMatchObject({ kind: "regrade" });
   });
 
   it("never reuses legacy reports, infrastructure failures, or trials it cannot regrade", () => {
@@ -347,7 +385,7 @@ describe("run store", () => {
         trials: 3,
         strategy: "current",
         fingerprint: "f1",
-        judge: judgeIdentity({ model: "judge-model", rubricVersion: "meaning-v1" }),
+        judge: judgeOf(),
       });
     expect(planFor(scenario)).toMatchObject({ kind: "reuse" });
     const stricter: EvalCase = {

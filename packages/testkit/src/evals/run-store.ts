@@ -5,6 +5,8 @@ import { gunzipSync, gzipSync } from "node:zlib";
 import type { EvalCase } from "./cases.js";
 import { caseKey } from "./fingerprint.js";
 import { gradedAsStored, regradable } from "./grading.js";
+import type { RecordedJudge } from "./judge-identity.js";
+import { judgeDifferences } from "./judge-identity.js";
 import type { TrialResult } from "./report.js";
 
 /** The parts of an eval report the store reads; the rest is kept as written. */
@@ -16,12 +18,7 @@ export type StoredReport = {
   fixtureVersion: string | null;
   caseFixtureVersions?: Record<string, string>;
   codeRevision: string | null;
-  judge: {
-    model: string;
-    provider?: string;
-    rubricVersion: string;
-    costUsd?: number | null;
-  } | null;
+  judge: (RecordedJudge & { costUsd?: number | null }) | null;
   fingerprint?: { run: string | null; cases: Record<string, string | null> };
   workflowTotals?: { costUsd: number | null };
   trials: TrialResult[];
@@ -67,10 +64,6 @@ const usable = (trial: TrialResult) =>
   !trial.cleanupFailed &&
   (trial.status === "passed" ||
     (trial.status === "failed" && (trial.category === "agent" || trial.category === "product")));
-
-/** The judge's provider, model and rubric version; a change to any of them regrades. */
-export const judgeIdentity = (judge: StoredReport["judge"]) =>
-  judge ? `${judge.provider ?? ""}/${judge.model}@${judge.rubricVersion}` : null;
 
 /**
  * Finished eval runs kept by fingerprint: `index.jsonl` with one line per run, and each report
@@ -168,7 +161,11 @@ export class RunStore {
       },
       costUsd: {
         // The bot's new calls and the judge's, which a regrade alone still pays for.
-        new: sumNullable(report.workflowTotals?.costUsd ?? null, report.judge?.costUsd ?? 0),
+        // A judge on the person's own plan records its cost as unknown, which leaves the total unknown.
+        new: sumNullable(
+          report.workflowTotals?.costUsd ?? null,
+          report.judge?.costUsd === null ? null : (report.judge?.costUsd ?? 0),
+        ),
         trials: sumCosts(attempted),
       },
       cases: Object.fromEntries(
@@ -196,7 +193,7 @@ export class RunStore {
     /** Trials the run wants; more stored than that does not make a run a better source. */
     trials: number;
     fingerprint: string;
-    judge: string | null;
+    judge: RecordedJudge | null;
   }): CasePlan {
     const key = caseKey(input.scenario.id, input.strategy);
     const graded = !!(input.scenario.judge || input.scenario.observe);
@@ -214,8 +211,9 @@ export class RunStore {
           )
           .sort((a, b) => a.trial - b.trial);
         // Stored verdicts stand only while the judge and the case's own checks give them again.
+        // A judge whose settings went unrecorded may have graded differently, so it regrades.
         const current =
-          (!graded || judgeIdentity(this.read(entry).judge) === input.judge) &&
+          (!graded || judgeDifferences(this.read(entry).judge, input.judge).length === 0) &&
           trials.every((t) => gradedAsStored(input.scenario, t));
         return { entry, trials, current };
       })

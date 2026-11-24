@@ -1,14 +1,14 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { memberName, resolvePersonaColorDef } from "@rakazo/core";
+import { memberName, resolvePersonaColorDef, speechFromBlocks } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { useNavigation, useRouter } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { Alert, AppState } from "react-native";
 import type { ApiRequestContext } from "../api/api";
-import { captureApiRequestContext, rpc } from "../api/api";
+import { captureApiRequestContext, rpc, selectedSpaceId } from "../api/api";
 import type { MobileBot, MobileMessage, MobileSnapshot } from "../api/mobile-types";
-import { blockText } from "../api/mobile-types";
 import { currentSessionGeneration } from "../api/session";
 import { errorText } from "../api/user-error";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "../calls/bot-switch";
@@ -34,14 +34,8 @@ import { available as dictationAvailable } from "../voice/dictation";
 import { speakQueue, speakText } from "../voice/voice";
 import { speakerColorFor } from "./thread-message-text";
 
-const ATTACHMENT_PLACEHOLDER_LINE = /^\[(?:image|file|chart): .*\]$/;
-
 function speakableMessageText(message: MobileMessage): string {
-  return blockText(message)
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !ATTACHMENT_PLACEHOLDER_LINE.test(line))
-    .join("\n");
+  return speechFromBlocks(message.blocks);
 }
 
 /**
@@ -218,9 +212,15 @@ export function useThreadVoiceCall({
     if (!targetBotId || voiceCallStarting.current) return;
     voiceCallStarting.current = true;
     const loadVoiceStatus = () => rpc("voice/status");
+    const spaceId = selectedSpaceId();
+    // A late answer must not act on another chat or a newer sign-in.
+    const stillHere = () =>
+      activeBotId.current === targetBotId &&
+      setupSession === currentSessionGeneration() &&
+      selectedSpaceId() === spaceId;
     try {
       const autoLanguage = await loadCallAutoLanguage();
-      if (setupSession !== currentSessionGeneration()) return;
+      if (!stillHere()) return;
       const [plan, callerName, greet] = await Promise.all([
         resolveVoiceCallPlan({
           autoLanguage,
@@ -231,9 +231,21 @@ export function useThreadVoiceCall({
         loadCallCallerName(() => rpc("me")),
         loadCallGreetingEnabled().catch(() => true),
       ]);
-      if (activeBotId.current !== targetBotId) return;
+      if (!stillHere()) return;
       if (plan.kind === "settings") {
-        router.push("/voice");
+        // The call read the selected Space's own voice when it has one, so open that copy.
+        const overrides = spaceId
+          ? await bestEffort(
+              "voice call: read Space overrides",
+              captureApiRequestContext(spaceId).then((requestContext) =>
+                rpc("spaceSettings/overrides", undefined, { requestContext }),
+              ),
+            )
+          : undefined;
+        if (!stillHere()) return;
+        router.push(
+          overrides?.includes("voice") ? { pathname: "/voice", params: { spaceId } } : "/voice",
+        );
         return;
       }
       if (plan.kind === "dictation") {
@@ -252,7 +264,8 @@ export function useThreadVoiceCall({
       const botName = displayName ?? t`Bot`;
       // The call keeps the Space it starts in: an organization or Space switch mid-call must
       // not move its turns, speech or hang-up to another Space.
-      const requestContext: ApiRequestContext = await captureApiRequestContext();
+      const requestContext: ApiRequestContext = await captureApiRequestContext(spaceId);
+      if (!stillHere()) return;
       const startedCallId = startCall({
         botId: targetBotId,
         botName,
@@ -277,8 +290,11 @@ export function useThreadVoiceCall({
           })
           .catch(() => undefined);
       }
-    } catch {
-      if (activeBotId.current === targetBotId) router.push("/voice");
+    } catch (err) {
+      // A failed check is not missing setup: show why instead of opening Voice settings.
+      if (stillHere()) {
+        Alert.alert(t`Could not start the call`, errorText(err, t`Try again.`));
+      }
     } finally {
       voiceCallStarting.current = false;
     }

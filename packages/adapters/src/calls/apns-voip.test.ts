@@ -59,6 +59,32 @@ describe("APNs VoIP", () => {
   ] as const)("classifies %j as %s", async (reply, result) => {
     expect(await new ApnsVoipProvider(config, async () => reply).send("fake", call)).toBe(result);
   });
+  it("drops a token rejected with BadDeviceToken once another push got through", async () => {
+    const transport = vi.fn<ApnsTransport>().mockResolvedValue({
+      status: 400,
+      reason: "BadDeviceToken",
+    });
+    const push = new ApnsVoipProvider(config, transport);
+    expect(await push.send("fake", call)).toBe("unavailable");
+    transport.mockResolvedValueOnce({ status: 200 });
+    expect(await push.send("working-token", call)).toBe("sent");
+    expect(await push.send("fake", call)).toBe("invalid");
+    expect(await push.send("fake", call)).toBe("invalid");
+  });
+  it("stops trusting an old delivery to drop rejected tokens", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = vi.fn<ApnsTransport>().mockResolvedValueOnce({ status: 200 });
+      const push = new ApnsVoipProvider(config, transport);
+      const fresh = { ...call, expiresAt: new Date(Date.now() + 48 * 3600_000).toISOString() };
+      expect(await push.send("working-token", fresh)).toBe("sent");
+      vi.advanceTimersByTime(24 * 3600_000);
+      transport.mockResolvedValue({ status: 400, reason: "BadDeviceToken" });
+      expect(await push.send("fake", fresh)).toBe("unavailable");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("does not deliver expired calls; transient errors permit fallback", async () => {
     const transport = vi.fn<ApnsTransport>().mockRejectedValue(new Error("offline"));
     const push = new ApnsVoipProvider(config, transport);

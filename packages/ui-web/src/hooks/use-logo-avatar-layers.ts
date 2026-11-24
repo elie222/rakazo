@@ -1,6 +1,7 @@
 import type { LogoAvatarActivity } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { syncAvatarAnimations } from "../lib/sync-avatar-animations.js";
 
 interface Layer {
   key: number;
@@ -11,9 +12,10 @@ interface Layer {
 }
 
 /**
- * Infinite CSS tracks share elapsed active time. A changed activity never restarts
- * that clock. Two continuing poses crossfade briefly, with zero opacity velocity
- * at the fade endpoints; no JavaScript runs on animation frames.
+ * Infinite CSS tracks follow the shared avatar clock, so a changed activity never
+ * restarts them and every copy of a bot's avatar moves together. Two continuing poses
+ * crossfade briefly, with zero opacity velocity at the fade endpoints; no JavaScript
+ * runs on animation frames.
  */
 export function useLogoAvatarLayers(
   ref: RefObject<SVGSVGElement | null>,
@@ -22,7 +24,6 @@ export function useLogoAvatarLayers(
   animated: boolean,
 ) {
   const serial = useRef(0);
-  const clock = useRef<{ last: number; elapsed: number; running: boolean } | null>(null);
   const knownFades = useRef(new WeakSet<Animation>());
   const [layers, setLayers] = useState<Layer[]>([
     { key: 0, activity, entering: false, outgoing: false, opacity: 1 },
@@ -60,20 +61,13 @@ export function useLogoAvatarLayers(
 
   useLayoutEffect(() => {
     const element = ref.current;
-    if (!element) return;
-    const now = Number(document.timeline?.currentTime ?? 0);
-    const previous = clock.current;
-    const elapsed = previous
-      ? previous.elapsed + (previous.running ? Math.max(0, now - previous.last) : 0)
-      : 0;
-    clock.current = { last: now, elapsed, running };
     // Static avatars have no tracks to sync; skipping avoids a style flush per change.
-    if (!animated) return;
-    for (const animation of element.getAnimations?.({ subtree: true }) ?? []) {
-      if (animation.effect?.getTiming().iterations === Number.POSITIVE_INFINITY) {
-        if (running) animation.startTime = now - elapsed;
-        else animation.currentTime = elapsed;
-      } else if (!knownFades.current.has(animation)) {
+    if (!element || !animated) return;
+    const animations = syncAvatarAnimations(element);
+    const now = Number(document.timeline?.currentTime ?? 0);
+    for (const animation of animations) {
+      if (animation.effect?.getTiming().iterations === Number.POSITIVE_INFINITY) continue;
+      if (!knownFades.current.has(animation)) {
         animation.startTime = now;
         knownFades.current.add(animation);
       }

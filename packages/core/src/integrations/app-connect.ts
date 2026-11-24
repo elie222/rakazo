@@ -1,4 +1,5 @@
 import type { ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
+import { connectionLabelFrom } from "./connection-catalog.js";
 import { featuredConnectorProvidersMatch } from "./featured-connectors.js";
 
 export type AppConnectBlock = Extract<MessageBlock, { kind: "app_connect" }>;
@@ -90,4 +91,9 @@ export function appConnectedInput(
     connectorId: block.connectorId,
     provider: block.provider,
   };
+}
+
+/** What an app card sends as the new connection's name: its catalog name, kept to a valid label. */
+export function appConnectLabel(block: AppConnectBlock) {
+  return connectionLabelFrom(block.name, block.provider);
 }

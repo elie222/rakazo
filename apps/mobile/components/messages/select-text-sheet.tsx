@@ -1,16 +1,16 @@
 import { useLingui } from "@lingui/react/macro";
 import { typeScale } from "@rakazo/ui-tokens";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../../lib/appearance/appearance";
+import { useSheetPadding } from "../../lib/layout/side-insets";
 import { useThemedStyles } from "../../lib/native/native";
-import { NativeActionButton } from "../native/native-action-button";
+import { SheetBar, SheetBarClose } from "../native/sheet-bar";
 
 /** A message as one block of plain text, so a selection can span paragraphs. */
 export function SelectTextSheet({ text, onClose }: { text: string | null; onClose: () => void }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
-  const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetPadding();
   return (
     <Modal
       visible={text !== null}
@@ -18,20 +18,8 @@ export function SelectTextSheet({ text, onClose }: { text: string | null; onClos
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View
-        accessibilityViewIsModal
-        style={[
-          styles.sheet,
-          // Page sheets clear the notch on iOS; Android modals are full-screen.
-          {
-            paddingTop: Platform.OS === "ios" ? 12 : insets.top + 12,
-            paddingBottom: insets.bottom,
-          },
-        ]}
-      >
-        <View style={styles.header}>
-          <NativeActionButton fill={false} label={t`Done`} onPress={onClose} prominence="primary" />
-        </View>
+      <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
+        <SheetBar leading={<SheetBarClose label={t`Done`} onPress={onClose} />} />
         <ScrollView contentContainerStyle={styles.content}>
           {Platform.OS === "ios" ? (
             // iOS selectable Text only copies the whole message; a read-only text
@@ -59,7 +47,6 @@ function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
     sheet: { flex: 1, backgroundColor: tokens.background },
-    header: { flexDirection: "row", justifyContent: "flex-end", padding: 16 },
     content: { paddingHorizontal: 20, paddingBottom: 40 },
     text: { color: tokens.foreground, ...typeScale.body },
     iosTextInput: { paddingTop: 0, paddingBottom: 0 },

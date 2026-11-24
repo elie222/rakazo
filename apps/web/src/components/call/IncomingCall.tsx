@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot } from "@rakazo/contracts";
 import { nextIncomingCall, respondToIncomingCall } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { BotAvatar, Button, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Phone, PhoneOff } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -175,7 +176,7 @@ export function IncomingCall({
       if (mounted.current) setHandled((current) => new Set(current).add(call.callId));
       if (getSnapshot() || !mounted.current || selectedSpaceId() !== context.spaceId) {
         // Another call or view took over. Close the accepted call without replacing it.
-        void rpc.threads.endCall(target, { context }).catch(() => undefined);
+        void bestEffort("close superseded incoming call", rpc.threads.endCall(target, { context }));
         return;
       }
       startCall({

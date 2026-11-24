@@ -3,7 +3,6 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { BillingStatus, HeldCreditAmount } from "@rakazo/contracts";
 import {
-  ByokTierSchema,
   byokTierChangeOffered,
   byokYearlySwitchSavings,
   creditAmountChoices,
@@ -13,7 +12,9 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
 } from "@rakazo/contracts";
+import { ownKeySubscriptionCents, subscribedTier, tierPriceCents } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
+import { formatBillingAmount, formatBillingDate, formatMonthlyPrice } from "@rakazo/i18n/billing";
 import { computerUsageDetails, tierComputerDescription } from "@rakazo/i18n/computer-usage";
 import { useIsFocused, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -24,29 +25,16 @@ import {
   useStackedSettings,
 } from "../../components/settings/settings-group";
 import { selectedSpaceId } from "../../lib/api/api";
-import {
-  currentPlan,
-  openBillingPage,
-  ownKeySubscriptionCents,
-  planEndsAt,
-} from "../../lib/billing/billing";
+import { currentPlan, openBillingPage, planEndsAt } from "../../lib/billing/billing";
 import { rememberReferral } from "../../lib/billing/referral";
 import { dateLocaleForUi } from "../../lib/i18n/i18n";
 import { useSideInsets } from "../../lib/layout/side-insets";
-import { analyticsSurface } from "../../lib/native/analytics-surface";
+import { analyticsClient } from "../../lib/native/analytics-surface";
 import type { SaveSend } from "../../lib/query/query";
 import { formRead, queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
 import type { SettingsTarget } from "../../lib/query/settings-target";
 import { openFromSettingsSheet } from "../../lib/settings/settings-sheet";
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(dateLocaleForUi(), {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 export default function BillingScreen() {
   const sideInsets = useSideInsets();
@@ -99,10 +87,12 @@ export default function BillingScreen() {
   const pending = change.pending;
   const action = (work: BillingChange, failure?: string) => change.run({ work, failure });
   if (!status) return null;
+  const locale = dateLocaleForUi();
   const usageDetails =
-    status.canManage && showComputerUsage
-      ? computerUsageDetails(computerUsage, dateLocaleForUi())
-      : null;
+    status.canManage && showComputerUsage ? computerUsageDetails(computerUsage, locale) : null;
+  const usd = (cents: number) => formatBillingAmount(cents, "usd", locale);
+  const monthly = (cents: number) => formatMonthlyPrice(cents, locale);
+  const formatDate = (iso: string) => formatBillingDate(iso, locale);
 
   const plan = currentPlan(status);
   const endsAt = planEndsAt(status);
@@ -119,16 +109,13 @@ export default function BillingScreen() {
   const annualCents = status.byokAnnualPriceCents;
   const tiers = status.byokTiers ?? [];
   type TierOffer = (typeof tiers)[number];
-  const currentTier = ownKeyCents
-    ? tiers.find((offer) => offer.tier === ByokTierSchema.catch("standard").parse(status.byokTier))
-    : undefined;
+  const currentTier = ownKeyCents ? subscribedTier(status) : undefined;
   const tierChange = byokTierChangeOffered(status);
   const interval = status.byokInterval ?? "month";
-  const tierCents = (offer: TierOffer) =>
-    interval === "year" ? offer.annualPriceCents : offer.monthlyPriceCents;
+  const tierCents = (offer: TierOffer) => tierPriceCents(offer, interval);
   /** "$49 / month", at the plan's interval. */
   const tierPrice = (cents: number) => {
-    const price = `$${cents / 100}`;
+    const price = usd(cents);
     return interval === "year" ? t`${price} / year` : t`${price} / month`;
   };
   const changeTier = (offer: TierOffer, cents: number) =>
@@ -170,8 +157,8 @@ export default function BillingScreen() {
           detail={
             ownKeyCents
               ? status.byokInterval === "year"
-                ? t`${ph({ price: `$${ownKeyCents / 100}` })} / year`
-                : t`${ph({ price: `$${ownKeyCents / 100}` })} / month`
+                ? t`${ph({ price: usd(ownKeyCents) })} / year`
+                : t`${ph({ price: usd(ownKeyCents) })} / month`
               : undefined
           }
           value={
@@ -227,8 +214,8 @@ export default function BillingScreen() {
               Alert.alert(
                 t`Switch to yearly?`,
                 status.state === "trialing"
-                  ? t`Your plan becomes ${ph({ price: `$${annualCents / 100}` })} / year when your trial ends.`
-                  : t`Your card is charged ${ph({ price: `$${annualCents / 100}` })} today, less the unused part of this month.`,
+                  ? t`Your plan becomes ${ph({ price: usd(annualCents) })} / year when your trial ends.`
+                  : t`Your card is charged ${ph({ price: usd(annualCents) })} today, less the unused part of this month.`,
                 [
                   { text: t`Cancel`, style: "cancel" },
                   {
@@ -284,7 +271,7 @@ export default function BillingScreen() {
                 Alert.alert(
                   t`Start your plan now?`,
                   ownKeyCents
-                    ? t`Your trial ends and your card is charged ${ph({ price: `$${ownKeyCents / 100}` })} today.`
+                    ? t`Your trial ends and your card is charged ${ph({ price: usd(ownKeyCents) })} today.`
                     : t`Your trial ends and your card is charged today.`,
                   [
                     { text: t`Cancel`, style: "cancel" },
@@ -336,14 +323,17 @@ export default function BillingScreen() {
         >
           <SettingsRow
             title={t`Available credits`}
-            value={`$${(status.balanceUsd ?? 0).toFixed(2)}`}
+            value={new Intl.NumberFormat(locale, {
+              style: "currency",
+              currency: "USD",
+            }).format(status.balanceUsd ?? 0)}
           />
           {status.canManage && recurring ? (
             <>
               <MenuView
                 actions={creditAmountChoices(amount).map((value) => ({
                   id: String(value),
-                  title: `$${value / 100} / month`,
+                  title: monthly(value),
                   state: amount === value ? ("on" as const) : ("off" as const),
                 }))}
                 onPressAction={({ nativeEvent }) =>
@@ -352,7 +342,7 @@ export default function BillingScreen() {
               >
                 <SettingsRow
                   title={t`Monthly credits`}
-                  value={`$${amount / 100} / month`}
+                  value={monthly(amount)}
                   chevron="down"
                   disabled={pending}
                 />
@@ -381,7 +371,7 @@ export default function BillingScreen() {
             <MenuView
               actions={MODEL_CREDIT_AMOUNTS.map((value) => ({
                 id: String(value),
-                title: `$${value / 100}`,
+                title: usd(value),
               }))}
               onPressAction={({ nativeEvent }) =>
                 action(async (send) => {
@@ -409,7 +399,7 @@ export default function BillingScreen() {
                 action(async (send) => {
                   await send("billing/selectFunding", {
                     funding: "credits",
-                    surface: analyticsSurface(),
+                    ...analyticsClient(),
                   });
                   router.replace("/models");
                   return undefined;

@@ -7,17 +7,17 @@ import {
   mcpServerHealthDto,
   mcpStdioRefusal,
   recordMcpServerHealth,
+  removeMcpServerInTransaction,
 } from "@rakazo/adapters";
 import type { Actor, McpServer, McpServerConfigInput } from "@rakazo/contracts";
 import { ConnectionSetupError, mcpOAuthEnvReferences } from "@rakazo/contracts";
 import type { McpServer as McpServerRow, Prisma } from "@rakazo/db";
-import { itemSecretIn, spaceAvailability } from "@rakazo/db";
+import { assertNameFreeWhereAvailable, itemSecretIn, spaceAvailability } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isAdmin } from "../auth/admins.js";
 import type { RouterDeps } from "../router.js";
 import { computerContext } from "../routes/shared.js";
-import { assertNameFreeWhereAvailable, userAddedAvailability } from "../spaces/name-claims.js";
-import { dismissMcpServerApprovals } from "./mcp-approval.js";
+import { userAddedAvailability } from "../spaces/name-claims.js";
 import type { McpSecretMaterial } from "./mcp-material.js";
 import { legacyMcpArgs } from "./mcp-material.js";
 
@@ -51,7 +51,7 @@ export function mcpServerDto(
     createdAt: Date;
     updatedAt: Date;
   },
-  oauth: McpOAuthSummary = { status: "none", clientId: null, credential: true },
+  oauth: McpOAuthSummary,
 ): McpServer {
   const keysOf = (value: unknown) =>
     value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
@@ -73,7 +73,14 @@ export function mcpServerDto(
     installId: row.installId ?? null,
     // A lone OAuth generation marker keeps a secret row without holding a credential.
     hasSecret: row.secretId !== null && oauth.credential,
-    oauthStatus: oauth.status,
+    // A successful remote probe with a saved bearer token needs no OAuth grant.
+    oauthStatus:
+      oauth.status === "reconnect" &&
+      oauth.hasBearerToken &&
+      row.transport !== "stdio" &&
+      row.healthStatus === "ok"
+        ? "none"
+        : oauth.status,
     oauthClientId: oauth.clientId,
     enabled: row.enabled,
     verbatimResults: row.verbatimResults ?? false,
@@ -209,11 +216,7 @@ export function mcpCredentialRecords(
   return parsed.headers && parsed.env ? { headers: parsed.headers, env: parsed.env } : null;
 }
 
-export function createMcpServers(
-  deps: RouterDeps,
-  onboardingDeps: Parameters<typeof dismissMcpServerApprovals>[0],
-  mcpOAuth: McpOAuthBroker,
-) {
+export function createMcpServers(deps: RouterDeps, mcpOAuth: McpOAuthBroker) {
   const mcpAwaitsOAuth = async (server: McpServerRow, actor: Actor, oauth: McpOAuthSummary) => {
     if (oauth.status === "connected") return false;
     const secret = server.secretId
@@ -278,18 +281,6 @@ export function createMcpServers(
     void probeMcpServer(row, actor);
     return display;
   };
-  const removeMcpServerInTransaction = async (
-    tx: Prisma.TransactionClient,
-    actor: Actor,
-    server: { id: string; secretId: string | null },
-  ) => {
-    const painted = await dismissMcpServerApprovals(onboardingDeps, actor, server.id, tx);
-    await tx.mcpServer.delete({ where: { id: server.id } });
-    if (server.secretId) {
-      await tx.secret.deleteMany({ where: { id: server.secretId, ...itemSecretIn(actor) } });
-    }
-    return painted;
-  };
   const prepareMcpServer = async (actor: Actor, input: McpServerConfigInput) => {
     await assertMcpRemoteEndpoint("endpoint" in input ? input.endpoint : null, deps);
     if (input.transport === "stdio") {
@@ -308,7 +299,7 @@ export function createMcpServers(
     input: McpServerConfigInput,
     stored: Awaited<ReturnType<typeof prepareMcpServer>>,
     // What the user adds reaches all their spaces and agents; an import stays with its agent.
-    options: { everywhere?: boolean } = {},
+    options: { everywhere?: boolean; allBots?: boolean } = {},
   ) => {
     if (options.everywhere)
       await assertNameFreeWhereAvailable(
@@ -334,7 +325,7 @@ export function createMcpServers(
         spaceId: actor.spaceId,
         userId: actor.userId,
         allSpaces: options.everywhere ?? false,
-        allBots: options.everywhere ?? false,
+        allBots: options.allBots ?? options.everywhere ?? false,
         slug: input.slug,
         name: input.name,
         description: input.description,

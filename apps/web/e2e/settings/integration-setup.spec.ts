@@ -80,3 +80,20 @@ test("ordinary accounts can add personal MCP connections without server setup", 
   await expect(page.getByRole("button", { name: "Connected", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "personal-mcp-without-server-admin");
 });
+
+test("GitHub is discoverable without a managed app catalog", async ({ page }, testInfo) => {
+  await signup(page, `direct-mcp-${Date.now()}@rakazo.test`, "password12", "Direct MCP");
+  await completeOnboarding(page);
+  await page.route("**/rpc/connections/catalog", (route) => route.fulfill({ json: { json: [] } }));
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Integrations" })
+    .getByRole("textbox", { name: "Search apps" })
+    .fill("GitHub");
+  const github = page.getByRole("button", { name: "Add GitHub", exact: true });
+  await expect(github).toBeVisible();
+  await captureScreenshot(page, testInfo, "integrations-github-search");
+  await github.click();
+  await expect(page.getByLabel("Personal access token", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "integrations-github-connect");
+});

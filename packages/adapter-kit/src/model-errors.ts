@@ -109,6 +109,8 @@ export function isModelCredentialRejected(error: unknown): boolean {
 
 /** A provider's sign-in service answers 400 `request_failed` when it asks the client to retry. */
 export function isSignInRetryRequest(error: unknown): boolean {
+  if (error instanceof Error && (error as { code?: unknown }).code === "request_failed")
+    return true;
   return /"error"\s*:\s*"request_failed"/.test(
     error instanceof Error ? error.message : String(error),
   );

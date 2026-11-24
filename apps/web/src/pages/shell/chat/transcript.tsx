@@ -10,6 +10,7 @@ import type {
 } from "@rakazo/contracts";
 import type { ChildBotBlock, FoldedTranscript } from "@rakazo/core";
 import {
+  continuedSenderMessageIds,
   expandPeerReplies,
   groupVoiceChats,
   isPeerReceiptBlocks,
@@ -59,8 +60,11 @@ import { useEventListener } from "../../../lib/use-event-listener";
 import type { ImportSetupTarget } from "../bots/import-setup-card";
 import { isEditableTarget } from "../shell-shortcuts";
 import { TimeSeparator, UnreadDivider } from "./chat-context";
+import type { GalleryImage } from "./image-gallery";
+import { galleryImageKey, ImageGalleryProvider } from "./image-gallery";
 import { MessageView } from "./message-view";
 import { QuoteSelectionButton } from "./quote-selection-button";
+import { useReplyAnnouncement } from "./use-reply-announcement";
 
 /** Bubbles stop at a readable line length instead of stretching with wide windows. */
 export function bubbleFrameWidth(role: ThreadMessage["role"]) {
@@ -71,6 +75,7 @@ export function bubbleFrameWidth(role: ThreadMessage["role"]) {
 
 /** Rows drawn in the frame a chat opens; the rest mount right after without blocking input. */
 const FIRST_FRAME_ROWS = 20;
+const PAGE_PREVIEW_SCROLL = "[data-page-preview-scroll]";
 
 export const Transcript = memo(function Transcript({
   scrollRef,
@@ -114,6 +119,7 @@ export const Transcript = memo(function Transcript({
   onOpenComputer,
   onReleaseComputer,
   onOpenImportSetup,
+  onOpenAgentImport,
   rpc,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
@@ -173,6 +179,7 @@ export const Transcript = memo(function Transcript({
     reason: ComputerReleaseReason,
   ) => Promise<void>;
   onOpenImportSetup?: (target: ImportSetupTarget) => void;
+  onOpenAgentImport?: () => void;
   rpc: ReturnType<typeof createSpaceRpc>;
 }) {
   const { t } = useLingui();
@@ -185,6 +192,9 @@ export const Transcript = memo(function Transcript({
   const jumpScrolling = useRef(false);
   const autoScrolling = useRef(false);
   const lastScrollTop = useRef<number | null>(null);
+  // Where the chat stood when an upward wheel started over a Page preview, until we know which
+  // of the two it scrolled.
+  const previewWheelTop = useRef<number | null>(null);
   // The fallback that ends a smooth jump to the latest message when no scroll reaches the end.
   const [autoScrollFallback, setAutoScrollFallback] = useState<{ ms: number } | null>(null);
   const jumpButtonRef = useRef<HTMLButtonElement>(null);
@@ -203,10 +213,32 @@ export const Transcript = memo(function Transcript({
     () => expandPeerReplies(transcript, expandedPeerMarkers),
     [transcript, expandedPeerMarkers],
   );
+  const announcement = useReplyAnnouncement(
+    messages,
+    (message) =>
+      (message.botId ? (peerBot(message.botId)?.name ?? memberName?.(message.botId)) : undefined) ??
+      t`Bot`,
+  );
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
+  // One entry per picture, in message order, so the lightbox can walk the chat's images.
+  const galleryImages = useMemo(() => {
+    const seen = new Set<string>();
+    const images: GalleryImage[] = [];
+    for (const message of messages) {
+      for (const block of message.blocks) {
+        if (block.kind !== "image") continue;
+        const image = { artifactId: block.artifactId, name: block.name, target: artifactTarget };
+        const key = galleryImageKey(image);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        images.push(image);
+      }
+    }
+    return images;
+  }, [messages, artifactTarget]);
   const committedMentions = useRef(new Map<string, ChildBotBlock[]>());
   const mentionView = useMemo(() => {
     const view = projectBotMentions(messages);
@@ -279,8 +311,9 @@ export const Transcript = memo(function Transcript({
       item.kind === "voiceChat" || messageHasVisibleBlocks(item.message.blocks, showToolActivity),
   );
   const shownItems = showTail ? items.slice(-FIRST_FRAME_ROWS) : items;
+  const continuedSenderIds = continuedSenderMessageIds(shownItems, separatorIds, unreadDividerId);
   const workingLabel =
-    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Working…`);
+    liveActivityLine(messages) ?? (workingRoutine ? t`Running ${workingRoutine}…` : t`Thinking…`);
   const [quoteDraft, setQuoteDraft] = useState<{
     message: ThreadMessage;
     text: string;
@@ -414,8 +447,9 @@ export const Transcript = memo(function Transcript({
   useEventListener(document, "selectionchange", () => {
     if (!selectingWithMouse.current) evaluateSelection();
   });
-  useEventListener(document, "keydown", (event) => {
-    if (event.key === "Escape") setQuoteDraft(null);
+  // On window, so a handler on document (the phone drawer closing) consumes the key first.
+  useEventListener(window, "keydown", (event) => {
+    if (event.key === "Escape" && !event.defaultPrevented) setQuoteDraft(null);
   });
   // A drag that ends outside the window never fires document mouseup; reset
   // the flag on blur so keyboard selections keep working afterwards.
@@ -425,6 +459,7 @@ export const Transcript = memo(function Transcript({
   const snapToEnd = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
+    previewWheelTop.current = null;
     following.current = true;
     autoScrolling.current = false;
     setAtEnd(true);
@@ -435,6 +470,7 @@ export const Transcript = memo(function Transcript({
     const element = scrollRef.current;
     if (!element) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    previewWheelTop.current = null;
     following.current = true;
     messagesBeforeReply.current = null;
     heldAt.current = null;
@@ -476,6 +512,7 @@ export const Transcript = memo(function Transcript({
     );
     if (!element || !row) return;
     scrolledJump.current = scrollRequest.nonce;
+    previewWheelTop.current = null;
     following.current = false;
     messagesBeforeReply.current = null;
     autoScrolling.current = false;
@@ -563,233 +600,261 @@ export const Transcript = memo(function Transcript({
     });
   }, [onLoadOlder, scrollRef]);
 
+  function pauseFollowing(scrollTop: number) {
+    previewWheelTop.current = null;
+    lastScrollTop.current = scrollTop;
+    autoScrolling.current = false;
+    following.current = false;
+    messagesBeforeReply.current = null;
+    heldAt.current = null;
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1">
-      <div
-        ref={scrollRef}
-        data-testid="transcript"
-        onPointerDown={(event) => {
-          lastScrollTop.current = event.currentTarget.scrollTop;
-          autoScrolling.current = false;
-          following.current = false;
-          messagesBeforeReply.current = null;
-          heldAt.current = null;
-        }}
-        onTouchStart={(event) => {
-          lastScrollTop.current = event.currentTarget.scrollTop;
-          autoScrolling.current = false;
-          following.current = false;
-          messagesBeforeReply.current = null;
-          heldAt.current = null;
-        }}
-        onScrollEnd={() => {
-          followIfNearEnd();
-          if (jumpScrolling.current) endJumpScroll();
-        }}
-        onWheel={(event) => {
-          if (event.deltaY < 0) {
-            lastScrollTop.current = event.currentTarget.scrollTop;
-            autoScrolling.current = false;
-            following.current = false;
-            messagesBeforeReply.current = null;
-            heldAt.current = null;
-          }
-        }}
-        onScroll={(event) => {
-          const scrolledDown = transcriptMovedDown(
-            lastScrollTop.current,
-            event.currentTarget.scrollTop,
-          );
-          lastScrollTop.current = event.currentTarget.scrollTop;
-          const nearEnd = transcriptIsNearEnd(event.currentTarget);
-          const held = isHeld(event.currentTarget, heldAt.current);
-          setAtEnd(nearEnd && !held);
-          // A jump scroll owns the viewport until its animation settles; its
-          // own near-end crossings must not re-arm tail-following.
-          if (jumpScrolling.current || held) return;
-          if (nearEnd) {
-            if (scrolledDown) following.current = true;
-            if (autoScrolling.current) {
-              autoScrolling.current = false;
-              setAutoScrollFallback(null);
+      <ImageGalleryProvider images={galleryImages}>
+        <div
+          ref={scrollRef}
+          data-testid="transcript"
+          onPointerDown={(event) => {
+            // A native scrollbar drag on a Page preview scrolls only the preview.
+            if (event.target instanceof Element && event.target.matches(PAGE_PREVIEW_SCROLL))
+              return;
+            pauseFollowing(event.currentTarget.scrollTop);
+          }}
+          onTouchStart={(event) => pauseFollowing(event.currentTarget.scrollTop)}
+          onScrollEnd={() => {
+            previewWheelTop.current = null;
+            followIfNearEnd();
+            if (jumpScrolling.current) endJumpScroll();
+          }}
+          onWheel={(event) => {
+            previewWheelTop.current = null;
+            if (event.deltaY >= 0) return;
+            const top = event.currentTarget.scrollTop;
+            if (event.target instanceof Element && event.target.closest(PAGE_PREVIEW_SCROLL)) {
+              // The preview may take this wheel, and a passive wheel event can arrive after the
+              // browser has moved either one. Pause only once the chat itself moves up.
+              previewWheelTop.current = lastScrollTop.current ?? top;
+              return;
             }
-          } else if (!autoScrolling.current) {
-            following.current = false;
+            pauseFollowing(top);
+          }}
+          onScrollCapture={(event) => {
+            const wheelTop = previewWheelTop.current;
+            if (
+              wheelTop !== null &&
+              event.currentTarget.scrollTop >= wheelTop &&
+              event.target instanceof Element &&
+              event.target.matches(PAGE_PREVIEW_SCROLL)
+            ) {
+              // The preview took the wheel, so a later layout shift in the chat is not the reader.
+              previewWheelTop.current = null;
+            }
+          }}
+          onScroll={(event) => {
+            const top = event.currentTarget.scrollTop;
+            const scrolledDown = transcriptMovedDown(lastScrollTop.current, top);
+            const wheelTop = previewWheelTop.current;
+            if (wheelTop !== null && top < wheelTop) pauseFollowing(top);
+            else {
+              lastScrollTop.current = top;
+              previewWheelTop.current = null;
+            }
+            const nearEnd = transcriptIsNearEnd(event.currentTarget);
+            const held = isHeld(event.currentTarget, heldAt.current);
+            setAtEnd(nearEnd && !held);
+            // A jump scroll owns the viewport until its animation settles; its
+            // own near-end crossings must not re-arm tail-following.
+            if (jumpScrolling.current || held) return;
+            if (nearEnd) {
+              if (scrolledDown) following.current = true;
+              if (autoScrolling.current) {
+                autoScrolling.current = false;
+                setAutoScrollFallback(null);
+              }
+            } else if (!autoScrolling.current) {
+              following.current = false;
+            }
+          }}
+          className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-(--chat-top-clearance) scroll-pb-7 pt-(--chat-top-clearance) pb-12 md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
+          style={
+            userBubble
+              ? ({
+                  "--chat-user": userBubble.background,
+                  "--chat-user-foreground": userBubble.foreground,
+                } as CSSProperties)
+              : undefined
           }
-        }}
-        className={`rk-scroll isolate flex min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto scroll-pt-16 scroll-pb-7 pt-20 pb-12 md:pt-[84px] md:pb-13 ${TRANSCRIPT_CONTENT_PADDING}`}
-        style={
-          userBubble
-            ? ({
-                "--chat-user": userBubble.background,
-                "--chat-user-foreground": userBubble.foreground,
-              } as CSSProperties)
-            : undefined
-        }
-      >
-        {olderCursor != null && !showTail ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={loadingOlder}
-            onClick={() => void loadOlder()}
-            aria-label={t`Load earlier messages`}
-            className="self-center text-muted-foreground"
-          >
-            {loadingOlder ? <Spinner aria-label={t`Loading…`} /> : null}
-            {t`Load earlier messages`}
-          </Button>
-        ) : null}
-        {shownItems.map((item) => {
-          if (item.kind === "voiceChat") {
+        >
+          {olderCursor != null && !showTail ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={loadingOlder}
+              onClick={() => void loadOlder()}
+              aria-label={t`Load earlier messages`}
+              className="self-center text-muted-foreground"
+            >
+              {loadingOlder ? <Spinner aria-label={t`Loading…`} /> : null}
+              {t`Load earlier messages`}
+            </Button>
+          ) : null}
+          {shownItems.map((item) => {
+            if (item.kind === "voiceChat") {
+              return (
+                <div key={item.key}>
+                  {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
+                    <TimeSeparator
+                      createdAt={item.messages[0].createdAt}
+                      locale={i18n.locale || "en"}
+                    />
+                  ) : null}
+                  {voiceChatHoldsMessage(item, unreadDividerId) ? (
+                    <UnreadDivider
+                      afterSeparator={Boolean(
+                        item.messages[0] && separatorIds.has(item.messages[0].id),
+                      )}
+                    />
+                  ) : null}
+                  <VoiceChatCard
+                    group={item}
+                    revealMessageId={scrollRequest?.messageId}
+                    onCallBack={onCallBack}
+                  />
+                </div>
+              );
+            }
+            const message = item.message;
+            const peerReceipt = isPeerReceiptBlocks(message.blocks);
+            const messageReactions = reactionView.reactions.get(message.id);
             return (
-              <div key={item.key}>
-                {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
-                  <TimeSeparator
-                    createdAt={item.messages[0].createdAt}
-                    locale={i18n.locale || "en"}
-                  />
+              <Fragment key={message.id}>
+                {separatorIds.has(message.id) ? (
+                  <TimeSeparator createdAt={message.createdAt} locale={i18n.locale || "en"} />
                 ) : null}
-                {voiceChatHoldsMessage(item, unreadDividerId) ? (
-                  <UnreadDivider
-                    afterSeparator={Boolean(
-                      item.messages[0] && separatorIds.has(item.messages[0].id),
-                    )}
-                  />
+                {message.id === unreadDividerId ? (
+                  <UnreadDivider afterSeparator={separatorIds.has(message.id)} />
                 ) : null}
-                <VoiceChatCard
-                  group={item}
-                  revealMessageId={scrollRequest?.messageId}
-                  onCallBack={onCallBack}
-                />
-              </div>
-            );
-          }
-          const message = item.message;
-          const peerReceipt = isPeerReceiptBlocks(message.blocks);
-          const messageReactions = reactionView.reactions.get(message.id);
-          return (
-            <Fragment key={message.id}>
-              {separatorIds.has(message.id) ? (
-                <TimeSeparator createdAt={message.createdAt} locale={i18n.locale || "en"} />
-              ) : null}
-              {message.id === unreadDividerId ? (
-                <UnreadDivider afterSeparator={separatorIds.has(message.id)} />
-              ) : null}
-              <div
-                data-message-id={message.id}
-                className={peerReceipt ? "relative" : "group/message relative hover:z-[1]"}
-              >
                 <div
-                  className={
-                    peerReceipt
-                      ? undefined
-                      : `relative flex ${message.role === "user" ? "justify-end" : "justify-start"}`
-                  }
+                  data-message-id={message.id}
+                  className={peerReceipt ? "relative" : "group/message relative hover:z-[1]"}
                 >
                   <div
-                    data-testid={peerReceipt ? undefined : "message-bubble-frame"}
                     className={
                       peerReceipt
                         ? undefined
-                        : message.blocks.some(
-                              (block) =>
-                                block.kind === "ask" ||
-                                block.kind === "mcp_approval" ||
-                                block.kind === "tool_question",
-                            )
-                          ? "relative w-full min-w-0 max-w-xl"
-                          : `relative ${
-                              message.blocks.some(
-                                (block) =>
-                                  block.kind === "app_connect" ||
-                                  block.kind === "page" ||
-                                  block.kind === "computer" ||
-                                  block.kind === "routine_event",
-                              ) || pageView.pages.has(message.id)
-                                ? "w-full"
-                                : "w-fit"
-                            } min-w-0 ${bubbleFrameWidth(message.role)}`
+                        : `relative flex ${message.role === "user" ? "justify-end" : "justify-start"}`
                     }
                   >
-                    <MessageView
-                      artifactTarget={artifactTarget}
-                      message={message}
-                      separateAnswers={separateAnswers.get(message.id)}
-                      meId={meId}
-                      markedUnread={message.id === markedUnreadMessageId}
-                      mentions={mentionView.mentions.get(message.id)}
-                      pages={pageView.pages.get(message.id)}
-                      isPageSuperseded={pageView.isSuperseded}
-                      canAnswer={answerableAskIds.has(message.id)}
-                      canDismiss={dismissableAskIds.has(message.id)}
-                      onOpenBot={onOpenBot}
-                      onOpenPeerMessages={onOpenPeerMessages}
-                      peerExchange={exchanges.lines.get(message.id)}
-                      onAnswer={onAnswer}
-                      speakerName={
+                    <div
+                      data-testid={peerReceipt ? undefined : "message-bubble-frame"}
+                      className={
                         peerReceipt
                           ? undefined
-                          : message.role === "bot"
-                            ? memberName?.(message.botId)
+                          : message.blocks.some(
+                                (block) =>
+                                  block.kind === "ask" ||
+                                  block.kind === "mcp_approval" ||
+                                  block.kind === "tool_question",
+                              )
+                            ? "relative w-full min-w-0 max-w-[min(calc(100%_-_8rem),36rem)] [@media(hover:none)]:max-w-xl"
+                            : `relative ${
+                                message.blocks.some(
+                                  (block) =>
+                                    block.kind === "app_connect" ||
+                                    block.kind === "page" ||
+                                    block.kind === "computer" ||
+                                    block.kind === "routine_event",
+                                ) || pageView.pages.has(message.id)
+                                  ? "w-full"
+                                  : "w-fit"
+                              } min-w-0 ${bubbleFrameWidth(message.role)}`
+                      }
+                    >
+                      <MessageView
+                        artifactTarget={artifactTarget}
+                        message={message}
+                        separateAnswers={separateAnswers.get(message.id)}
+                        meId={meId}
+                        markedUnread={message.id === markedUnreadMessageId}
+                        mentions={mentionView.mentions.get(message.id)}
+                        pages={pageView.pages.get(message.id)}
+                        isPageSuperseded={pageView.isSuperseded}
+                        canAnswer={answerableAskIds.has(message.id)}
+                        canDismiss={dismissableAskIds.has(message.id)}
+                        onOpenBot={onOpenBot}
+                        onOpenPeerMessages={onOpenPeerMessages}
+                        peerExchange={exchanges.lines.get(message.id)}
+                        hideSenderLabel={continuedSenderIds.has(message.id)}
+                        onAnswer={onAnswer}
+                        speakerName={
+                          peerReceipt
+                            ? undefined
+                            : message.role === "bot"
+                              ? memberName?.(message.botId)
+                              : undefined
+                        }
+                        memberName={memberName}
+                        peerBot={peerBot}
+                        replyParent={
+                          message.replyToMessageId
+                            ? messageById.get(message.replyToMessageId)
                             : undefined
-                      }
-                      memberName={memberName}
-                      peerBot={peerBot}
-                      replyParent={
-                        message.replyToMessageId
-                          ? messageById.get(message.replyToMessageId)
-                          : undefined
-                      }
-                      onJumpToMessage={jumpToMessage}
-                      onRefresh={onRefresh}
-                      onBotChanged={onBotChanged}
-                      onAddRoutine={onAddRoutine}
-                      voiceReady={voiceReady}
-                      speaking={speakingMessageId === message.id}
-                      callHoldsSpeaker={callHoldsSpeaker}
-                      onSpeak={onSpeak}
-                      onOpenComputer={onOpenComputer}
-                      onReleaseComputer={onReleaseComputer}
-                      onOpenImportSetup={onOpenImportSetup}
-                      rpc={rpc}
-                      showToolActivity={showToolActivity}
-                      onReply={onReply}
-                      onMarkUnread={onMarkUnread}
-                      onReact={onReact}
-                    />
+                        }
+                        onJumpToMessage={jumpToMessage}
+                        onRefresh={onRefresh}
+                        onBotChanged={onBotChanged}
+                        onAddRoutine={onAddRoutine}
+                        voiceReady={voiceReady}
+                        speaking={speakingMessageId === message.id}
+                        callHoldsSpeaker={callHoldsSpeaker}
+                        onSpeak={onSpeak}
+                        onOpenComputer={onOpenComputer}
+                        onReleaseComputer={onReleaseComputer}
+                        onOpenImportSetup={onOpenImportSetup}
+                        onOpenAgentImport={onOpenAgentImport}
+                        rpc={rpc}
+                        showToolActivity={showToolActivity}
+                        onReply={onReply}
+                        onMarkUnread={onMarkUnread}
+                        onReact={onReact}
+                      />
+                    </div>
                   </div>
+                  {!peerReceipt && messageReactions ? (
+                    <div
+                      data-testid="message-reactions"
+                      className={cn(
+                        "mt-1 flex flex-wrap gap-1",
+                        message.role === "user" && "justify-end",
+                      )}
+                    >
+                      {[...messageReactions].map(([emoji, count]) => (
+                        <span
+                          key={emoji}
+                          className="rounded-full border border-border bg-muted px-2 py-0.5 text-label"
+                        >
+                          {emoji}
+                          {count > 1 ? ` ${count}` : ""}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
-                {!peerReceipt && messageReactions ? (
-                  <div
-                    data-testid="message-reactions"
-                    className={cn(
-                      "mt-1 flex flex-wrap gap-1",
-                      message.role === "user" && "justify-end",
-                    )}
-                  >
-                    {[...messageReactions].map(([emoji, count]) => (
-                      <span
-                        key={emoji}
-                        className="rounded-full border border-border bg-muted px-2 py-0.5 text-label"
-                      >
-                        {emoji}
-                        {count > 1 ? ` ${count}` : ""}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </Fragment>
-          );
-        })}
-        {running &&
-        !messages.some(
-          (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
-        ) ? (
-          <ActiveBotGlyph bots={workingBots} label={workingLabel} />
-        ) : null}
-      </div>
+              </Fragment>
+            );
+          })}
+          {running &&
+          !messages.some(
+            (message) => message.id.startsWith("progress:") && liveMessageComposing(message.blocks),
+          ) ? (
+            <ActiveBotGlyph bots={workingBots} label={workingLabel} />
+          ) : null}
+        </div>
+      </ImageGalleryProvider>
+      <span role="status" data-testid="reply-announcement" className="sr-only">
+        {announcement}
+      </span>
       {quoteDraft ? <QuoteSelectionButton range={quoteDraft.range} onQuote={applyQuote} /> : null}
       <Button
         ref={jumpButtonRef}

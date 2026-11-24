@@ -121,6 +121,10 @@ export class EncryptedSecretStore extends SecretChanges implements SecretStore {
     // no AAD. Keep them readable so an upgrade does not strand credentials;
     // every subsequent write uses the stronger versioned format above.
     const buf = Buffer.from(ciphertext, "base64");
+    // Too short for its fixed parts: malformed, not a cipher error to retry.
+    if (buf.length < IV_BYTES + TAG_BYTES) {
+      throw new Error("Encrypted secret is malformed");
+    }
     const iv = buf.subarray(0, IV_BYTES);
     const tag = buf.subarray(IV_BYTES, IV_BYTES + TAG_BYTES);
     const enc = buf.subarray(IV_BYTES + TAG_BYTES);

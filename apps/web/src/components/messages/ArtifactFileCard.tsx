@@ -87,7 +87,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
         <button
           type="button"
           onClick={() => void startDownload()}
-          className="rounded-2xl bg-card px-4 py-3 text-left text-body text-foreground hover:bg-accent"
+          className="rounded-2xl bg-card px-4 py-3 text-start text-body text-foreground hover:bg-accent"
         >
           <div className="font-medium">{props.name}</div>
           <div className="mt-1 flex gap-2 text-muted-foreground">
@@ -103,13 +103,13 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
   return (
     <>
       <div>
-        <BuiCard className="flex min-w-[280px] overflow-hidden text-left text-foreground">
+        <BuiCard className="flex min-w-[280px] overflow-hidden text-start text-foreground">
           <button
             ref={previewButton}
             type="button"
             aria-label={t`Preview ${props.name}`}
             onClick={() => setPreviewOpen(true)}
-            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left hover:bg-accent"
+            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-start hover:bg-accent"
           >
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-muted text-foreground">
               {props.mimeType === "text/html" ? (
@@ -130,7 +130,7 @@ export function ArtifactFileCard(props: ArtifactFileCardProps) {
               type="button"
               aria-label={t`Download ${props.name}`}
               onClick={() => void startDownload()}
-              className="grid w-14 shrink-0 place-items-center border-l border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="grid w-14 shrink-0 place-items-center border-s border-border text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <Download size={19} strokeWidth={1.8} />
             </button>
@@ -421,7 +421,7 @@ export function VideoPreview({ bytes, name }: { bytes: Uint8Array; name: string 
 
 function DownloadError({ message }: { message: string }) {
   return (
-    <div role="alert" className="mt-2 text-left text-body-sm text-destructive">
+    <div role="alert" className="mt-2 text-start text-body-sm text-destructive">
       {message}
     </div>
   );

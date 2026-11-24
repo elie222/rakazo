@@ -122,10 +122,12 @@ export function createJobReconciler(
     reconcileMediaVideos?: () => Promise<void>;
     reconcileModelCredits?: () => Promise<void>;
     reconcileRoutineRetryNotices?: () => Promise<void>;
+    reconcileEndedRoutines?: () => Promise<void>;
     reconcileStrategicInitiatives?: () => Promise<void>;
     reconcileSecurityEventRetention?: () => Promise<void>;
     reconcileAuditLog?: () => Promise<void>;
     reconcileChatHistoryRetention?: () => Promise<void>;
+    reconcileNativeCalendarRetention?: () => Promise<void>;
     reconcileHomeStorage?: () => Promise<void>;
     reconcileIdleComputers?: () => Promise<void>;
     reconcileDeadJobs?: () => Promise<void>;
@@ -168,10 +170,12 @@ export function createJobReconciler(
     deps.reconcileModelCredits,
     deps.reconcileComputerUpdates,
     deps.reconcileRoutineRetryNotices,
+    deps.reconcileEndedRoutines,
     deps.reconcileStrategicInitiatives,
     deps.reconcileSecurityEventRetention,
     deps.reconcileAuditLog,
     deps.reconcileChatHistoryRetention,
+    deps.reconcileNativeCalendarRetention,
     deps.reconcileHomeStorage,
     deps.reconcileIdleComputers,
     deps.reconcileDeadJobs,

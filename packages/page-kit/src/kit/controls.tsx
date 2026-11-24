@@ -271,8 +271,10 @@ export function Select({
 }) {
   const id = useId();
   const items = optionsOf(options);
-  const current = value === undefined || value === null ? "" : String(value);
+  const current = value === undefined || value === null ? undefined : String(value);
   const chosen = items.some((item) => item.value === current);
+  // An empty string can be a real choice, so the placeholder needs its own value.
+  const placeholderValue = `${id}placeholder`;
   return (
     <div className="rk-field" data-inline="true">
       {label ? (
@@ -283,14 +285,14 @@ export function Select({
       <span className="rk-select">
         <select
           id={id}
-          value={chosen ? current : ""}
+          value={chosen ? current : placeholderValue}
           disabled={disabled === true}
           data-empty={!chosen || undefined}
           aria-label={label ? undefined : placeholder}
           onChange={(event) => onChange?.(event.target.value)}
         >
           {!chosen ? (
-            <option value="" disabled>
+            <option value={placeholderValue} disabled>
               {placeholder ?? ""}
             </option>
           ) : null}
@@ -314,12 +316,14 @@ export function Input({
   onChange,
   placeholder,
   type = "text",
+  min,
 }: {
   label?: string;
   value?: string | number;
   onChange?: (value: string) => void;
   placeholder?: string;
   type?: "text" | "number" | "search";
+  min?: number;
 }) {
   const id = useId();
   return (
@@ -333,7 +337,11 @@ export function Input({
         id={id}
         className="rk-input"
         type={type}
-        inputMode={type === "number" ? "decimal" : undefined}
+        min={type === "number" ? min : undefined}
+        // The phone decimal pad has no minus key, so only a field that can't go negative gets it.
+        inputMode={
+          type === "number" && min !== undefined && Number(min) >= 0 ? "decimal" : undefined
+        }
         value={value === undefined || value === null ? "" : String(value)}
         placeholder={placeholder}
         aria-label={label ? undefined : placeholder}

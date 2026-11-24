@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AccountSecurity } from "@rakazo/contracts";
 import { identityConfirmationProviders } from "@rakazo/contracts";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Modal,
   Platform,
@@ -47,6 +47,7 @@ export function useAccountDeletion({
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const busy = useRef(false);
   const disabled =
     pending ||
     (security?.hasPassword ? !password : !ssoReauthenticated && (!codeSent || !password.trim()));
@@ -57,6 +58,9 @@ export function useAccountDeletion({
   }
 
   async function run(action: () => Promise<void>) {
+    // One operation at a time, even before the render that shows `pending`.
+    if (busy.current) return;
+    busy.current = true;
     setPending(true);
     setError(null);
     try {
@@ -64,6 +68,7 @@ export function useAccountDeletion({
     } catch (err) {
       setError(errorText(err, t`Could not continue`));
     } finally {
+      busy.current = false;
       setPending(false);
     }
   }
@@ -77,7 +82,9 @@ export function useAccountDeletion({
   }
 
   async function request() {
-    if (pending) return;
+    if (pending || busy.current) return;
+    busy.current = true;
+    setPending(true);
     setError(null);
     try {
       const value = await fetchAccountSecurity();
@@ -92,6 +99,9 @@ export function useAccountDeletion({
     } catch (err) {
       setError(errorText(err, t`Could not continue`));
       return;
+    } finally {
+      busy.current = false;
+      setPending(false);
     }
 
     const prompted = promptAccountDeletion({
@@ -108,7 +118,8 @@ export function useAccountDeletion({
   }
 
   async function submit(value: string, hasPassword = security?.hasPassword === true) {
-    if ((!value && !ssoReauthenticated) || pending) return;
+    if ((!value && !ssoReauthenticated) || pending || busy.current) return;
+    busy.current = true;
     setPending(true);
     setError(null);
     try {
@@ -136,6 +147,7 @@ export function useAccountDeletion({
     } catch (err) {
       setError(errorText(err, t`Could not delete account`));
     } finally {
+      busy.current = false;
       setPending(false);
     }
   }

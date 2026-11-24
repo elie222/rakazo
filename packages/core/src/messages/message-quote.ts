@@ -1,5 +1,5 @@
 import type { MessageBlock, ReplyPreview } from "@rakazo/contracts";
-import { droppedTableHtmlText, truncateReplyQuote } from "@rakazo/contracts";
+import { droppedTableHtmlText, linkLabel, truncateReplyQuote } from "@rakazo/contracts";
 import { toText } from "hast-util-to-text";
 import { toHast } from "mdast-util-to-hast";
 import remarkGfm from "remark-gfm";
@@ -18,7 +18,7 @@ const markdownParser = unified().use(remarkParse).use(remarkGfm);
 
 export { MAX_QUOTABLE_SOURCE_LENGTH } from "./message-replies.js";
 
-type MdastNode = { type?: string; value?: string; children?: MdastNode[] };
+type MdastNode = { type?: string; value?: string; url?: string; children?: MdastNode[] };
 
 /* The web renderer salvages <br> and <img alt> text inside table cells
    (preserveSkippedTableText in @rakazo/chat-ui). Both sides share
@@ -37,16 +37,30 @@ function salvageSkippedTableHtml(node: MdastNode, insideCell = false): void {
   });
 }
 
+/* Web and mobile draw a bare URL as a short label (`docs.example.com/guide`), so that is the
+   text a selection holds. linkLabel is the same rule the renderers use. */
+function shortenBareLinks(node: MdastNode): void {
+  const [only] = node.children ?? [];
+  if (node.type === "link" && node.url && only?.type === "text" && node.children?.length === 1) {
+    only.value = linkLabel(only.value ?? "", node.url);
+  }
+  for (const child of node.children ?? []) shortenBareLinks(child);
+}
+
 type NormalizedText = {
   text: string;
   starts: number[];
   ends: number[];
 };
 
-/** Render Markdown to the text exposed by the web renderer, without UI chrome. */
-export function visibleTextFromMarkdown(markdown: string): string {
+/**
+ * Render Markdown to the text exposed by the web renderer, without UI chrome.
+ * `shortLinks` shows bare URLs as the labels the apps draw; the default keeps the address.
+ */
+export function visibleTextFromMarkdown(markdown: string, shortLinks = false): string {
   const mdast = markdownParser.parse(markdown);
   salvageSkippedTableHtml(mdast as MdastNode);
+  if (shortLinks) shortenBareLinks(mdast as MdastNode);
   return toText(toHast(mdast));
 }
 
@@ -112,19 +126,24 @@ export function deriveMessageQuote(
   }
 
   for (const block of textBlocks) {
-    const visible = (
-      format === "markdown" ? visibleTextFromMarkdown(block.text) : block.text
-    ).normalize("NFC");
-    const canonical = normalizeWithOffsets(visible);
-    const match = canonical.text.indexOf(hint);
-    if (match < 0) continue;
+    // A selection holds the label the apps draw for a bare URL; the address itself still counts.
+    const forms =
+      format === "markdown"
+        ? [visibleTextFromMarkdown(block.text, true), visibleTextFromMarkdown(block.text)]
+        : [block.text];
+    for (const form of new Set(forms)) {
+      const visible = form.normalize("NFC");
+      const canonical = normalizeWithOffsets(visible);
+      const match = canonical.text.indexOf(hint);
+      if (match < 0) continue;
 
-    const start = canonical.starts[match];
-    const end = canonical.ends[match + hint.length - 1];
-    if (start === undefined || end === undefined) continue;
-    // The cleaned slice can exceed the cap when the hint collapsed whitespace
-    // runs; cap rather than drop, matching capture-time truncation.
-    return truncateReplyQuote(cleanVisibleExcerpt(visible.slice(start, end)));
+      const start = canonical.starts[match];
+      const end = canonical.ends[match + hint.length - 1];
+      if (start === undefined || end === undefined) continue;
+      // The cleaned slice can exceed the cap when the hint collapsed whitespace
+      // runs; cap rather than drop, matching capture-time truncation.
+      return truncateReplyQuote(cleanVisibleExcerpt(visible.slice(start, end)));
+    }
   }
   return undefined;
 }
