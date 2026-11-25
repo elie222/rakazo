@@ -56,6 +56,14 @@ export function markExpectedFailure(): void {
   enrichLogContext({ "error.expected": true });
 }
 
+/**
+ * The handler caught this failure and answers it itself, so nothing throws to the request log.
+ * The request's completion line then carries the failure.
+ */
+export function markRequestFailure(error: unknown): void {
+  enrichLogContext({ error });
+}
+
 function matchedRoute(path: string, routePath: string): string {
   if (routePath && routePath !== "/*") return routePath;
   return path;
