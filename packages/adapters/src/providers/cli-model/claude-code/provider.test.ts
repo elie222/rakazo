@@ -286,7 +286,7 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
     expect(cli.read().cwdEntries).toEqual([]);
   });
 
-  it("continues the CLI's session with only what is new, and removes the session it left", async () => {
+  it("continues the CLI's session from before the last reply, and removes the session it left", async () => {
     const config = mkdtempSync(join(tmpdir(), "rakazo-claude-config-"));
     vi.stubEnv("CLAUDE_CONFIG_DIR", config);
     try {
@@ -307,10 +307,25 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       const value = (flag: string) => args[args.indexOf(flag) + 1];
 
       expect(value("--resume")).toBe(firstSession);
-      expect(value("--resume-session-at")).toBe("reply-2");
+      // The reply is sent again, so the CLI's refusals to run its tool calls stay out.
+      expect(value("--resume-session-at")).toBe("before-reply-2");
       expect(args).toContain("--fork-session");
       expect(value("--session-id")).not.toBe(firstSession);
       expect(frames).toEqual([
+        {
+          type: "assistant",
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_1",
+                name: "mcp__rakazo__lookup",
+                input: { city: "Taipei" },
+              },
+            ],
+          },
+        },
         {
           type: "user",
           message: {
@@ -336,18 +351,23 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
   });
 
   it("replays the whole conversation when the CLI cannot continue its session", async () => {
-    fakeClaude("tool");
-    const reply = (await run(hello)).message;
-    const cli = fakeClaude("lost-session");
-    const { message } = await run({
-      ...hello,
-      messages: [...hello.messages, reply, { role: "user", content: "Thanks", timestamp: 3 }],
-    });
+    vi.stubEnv("CLAUDE_CONFIG_DIR", mkdtempSync(join(tmpdir(), "rakazo-claude-config-")));
+    try {
+      fakeClaude("tool");
+      const reply = (await run(hello)).message;
+      const cli = fakeClaude("lost-session");
+      const { message } = await run({
+        ...hello,
+        messages: [...hello.messages, reply, { role: "user", content: "Thanks", timestamp: 3 }],
+      });
 
-    expect(message.stopReason).toBe("stop");
-    expect(cli.resumed()).toBe(true);
-    expect(cli.read().args).not.toContain("--resume");
-    expect(cli.read().frames).toHaveLength(3);
+      expect(message.stopReason).toBe("stop");
+      expect(cli.resumed()).toBe(true);
+      expect(cli.read().args).not.toContain("--resume");
+      expect(cli.read().frames).toHaveLength(3);
+    } finally {
+      vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
+    }
   });
 
   it("does not launch the model after cancellation during file setup", async () => {

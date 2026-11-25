@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
-import { readdir, rm, stat } from "node:fs/promises";
+import { readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { bestEffort } from "@rakazo/logging";
 
 /**
@@ -10,15 +10,17 @@ import { bestEffort } from "@rakazo/logging";
  * request and keeps them only in its saved session. Replaying Rakazo's transcript drops them, so
  * every step's prompt would differ from the step before and nothing past the system prompt would
  * be read from the prompt cache. Each step therefore continues the CLI's own session from where
- * the previous step left it, and sends only what is new.
+ * the previous step left it, and sends only the reply and what came after it. The session is
+ * continued from just before the reply: after a tool call the CLI saves its own refusal to run
+ * it (one per call, between the calls), and none of that may stay in the conversation.
  *
  * A session lives on this machine and in this process's memory: a step that finds none here (a
  * restart, another process, an edited transcript) replays the whole transcript as a new session.
  */
 export interface SavedSession {
   id: string;
-  /** The CLI's id for the reply the session ends with; anything the CLI added after it is dropped. */
-  replyId: string;
+  /** The CLI's id for its last entry before the reply; the reply and the rest are sent again. */
+  resumeAt: string;
   /** The CLI's config dir and working folder, which decide where its session files live. */
   configDir: string;
   cwd: string;
@@ -43,22 +45,26 @@ export function transcriptHashes(seed: unknown, messages: unknown[]): string[] {
   });
 }
 
-/** The session holding the longest prefix of this transcript, removed so only one step uses it. */
+/**
+ * The session whose reply is latest in this transcript, removed so only one step uses it. `held`
+ * is the number of frames before that reply, which the session already holds.
+ */
 export function takeSession(
   hashes: string[],
   isReply: (index: number) => boolean,
 ): { session: SavedSession; held: number; key: string } | undefined {
-  // The last frame is the one to answer, so a session must end before it.
+  // The last frame is the one to answer, so a session's reply comes before it.
   for (let index = hashes.length - 2; index >= 0; index -= 1) {
     if (!isReply(index)) continue;
-    const session = sessions.get(hashes[index]!);
+    const key = hashes[index]!;
+    const session = sessions.get(key);
     if (!session) continue;
-    sessions.delete(hashes[index]!);
+    sessions.delete(key);
     if (Date.now() - session.savedAt > SESSION_IDLE_MS) {
       forgetSessionFiles(session);
-      return undefined;
+      continue;
     }
-    return { session, held: index + 1, key: hashes[index]! };
+    return { session, held: index, key };
   }
   return undefined;
 }
@@ -110,17 +116,38 @@ async function findProjectFolder(session: { id: string; configDir: string }) {
   return undefined;
 }
 
+type SessionPlace = Pick<SavedSession, "id" | "configDir" | "cwd">;
+
+async function sessionFolder(session: SessionPlace): Promise<string | undefined> {
+  const key = JSON.stringify([session.configDir, session.cwd]);
+  const found = projectFolders.get(key) ?? (await findProjectFolder(session));
+  if (found) projectFolders.set(key, found);
+  return found;
+}
+
+/** The CLI's id for the entry its session saved just before this one, if the session has both. */
+export async function entryBefore(session: SessionPlace, entry: string) {
+  const folder = await sessionFolder(session);
+  if (!folder) return undefined;
+  const lines = (await readFile(join(folder, `${session.id}.jsonl`), "utf8")).split("\n");
+  for (const line of lines) {
+    if (!line.includes(entry)) continue;
+    const saved = JSON.parse(line) as { uuid?: unknown; parentUuid?: unknown };
+    if (saved.uuid === entry)
+      return typeof saved.parentUuid === "string" ? saved.parentUuid : undefined;
+  }
+  return undefined;
+}
+
 /** Removes a session Rakazo no longer continues, so the CLI's sessions do not pile up. */
-export function forgetSessionFiles(session: Omit<SavedSession, "replyId" | "savedAt">): void {
+export function forgetSessionFiles(session: SessionPlace): void {
   void bestEffort(
     "Remove a finished Claude Code session",
     (async () => {
-      const key = JSON.stringify([session.configDir, session.cwd]);
-      const found = projectFolders.get(key) ?? (await findProjectFolder(session));
-      if (!found) return;
-      projectFolders.set(key, found);
-      await rm(join(found, `${session.id}.jsonl`), { force: true });
-      await rm(join(found, session.id), { recursive: true, force: true });
+      const folder = await sessionFolder(session);
+      if (!folder) return;
+      await rm(join(folder, `${session.id}.jsonl`), { force: true });
+      await rm(join(folder, session.id), { recursive: true, force: true });
     })(),
   );
 }
@@ -163,8 +190,11 @@ export const tokenConfigFolder = privateFolder("rakazo-claude-code-config", fals
 /** Where the CLI keeps its sign-in and sessions unless CLAUDE_CONFIG_DIR says otherwise. */
 const CLI_HOME_FOLDER = ".claude";
 
-/** The config dir the CLI started with this environment uses. Only its sessions are touched. */
-export function cliConfigDir(childEnv: Record<string, string>): string {
+/**
+ * The config dir the CLI started with this environment and working folder uses. Only its
+ * sessions are touched.
+ */
+export function cliConfigDir(childEnv: Record<string, string>, cwd: string): string {
   const home = childEnv.HOME ?? childEnv.USERPROFILE ?? "";
-  return childEnv.CLAUDE_CONFIG_DIR ?? join(home, CLI_HOME_FOLDER);
+  return resolve(cwd, childEnv.CLAUDE_CONFIG_DIR ?? join(home, CLI_HOME_FOLDER));
 }

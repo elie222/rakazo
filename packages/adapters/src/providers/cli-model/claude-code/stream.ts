@@ -41,6 +41,7 @@ import {
 import type { SavedSession } from "./sessions.js";
 import {
   cliConfigDir,
+  entryBefore,
   forgetSessionFiles,
   saveSession,
   takeSession,
@@ -458,7 +459,7 @@ export function streamClaudeCode(
         maxTokens ? { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxTokens) } : {},
         tokenConfigFolder,
       );
-      const configDir = cliConfigDir(env);
+      const configDir = cliConfigDir(env, cwd);
       place = { configDir, cwd };
       const idleMs = modelStreamIdleTimeoutMs();
 
@@ -479,9 +480,9 @@ export function streamClaudeCode(
                     "--resume",
                     resume.session.id,
                     "--fork-session",
-                    // Drops what the CLI added after the reply, such as refusing the tool call.
+                    // Before the previous reply, which is sent again without the CLI's refusals.
                     "--resume-session-at",
-                    resume.session.replyId,
+                    resume.session.resumeAt,
                   ]
                 : []),
             ],
@@ -524,20 +525,21 @@ export function streamClaudeCode(
             stream.push({ type: "start", partial: output });
           };
           let messageComplete = false;
-          /** The CLI's id for its last saved part of the reply, where the next step continues. */
+          /** The CLI's id for the first part of the reply it saved. */
           let replyId: string | undefined;
-          const finish = () => {
+          /** The session holds this reply from `resumeAt` on, where the next step continues. */
+          const finish = (resumeAt?: string) => {
             start();
             if (output.stopReason === "error") {
               stream.push({ type: "error", reason: "error", error: output });
             } else {
               const content = assistantBlocks(output);
-              if (replyId && content.length) {
+              if (resumeAt && content.length) {
                 const reply = { role: "assistant", content };
                 saved = sessionId;
                 saveSession(transcriptHashes(seed, [...messages, reply]).at(-1)!, {
                   id: sessionId,
-                  replyId,
+                  resumeAt,
                   configDir,
                   cwd,
                   savedAt: Date.now(),
@@ -564,12 +566,16 @@ export function streamClaudeCode(
               if (event.error || message.error) {
                 throw apiError(event.error ?? message.error, textOf(message.content));
               }
-              if (typeof event.uuid === "string") replyId = event.uuid;
+              if (typeof event.uuid === "string") replyId ??= event.uuid;
               continue;
             }
             if (event.type === "result") {
               // After a tool call the CLI refuses to run it and stops at its turn limit.
-              if (event.is_error && !(messageComplete && output.stopReason === "toolUse")) {
+              const turnLimit =
+                messageComplete &&
+                output.stopReason === "toolUse" &&
+                event.subtype === "error_max_turns";
+              if (event.is_error && !turnLimit) {
                 const detail =
                   typeof event.result === "string"
                     ? event.result
@@ -579,11 +585,20 @@ export function streamClaudeCode(
                 throw apiError(undefined, detail, event.api_error_status);
               }
               if (!messageComplete) throw new Error("Claude Code finished without a reply.");
-              finish();
+              const saving = { id: sessionId, configDir, cwd };
+              finish(
+                replyId &&
+                  (await bestEffort(
+                    "Find where the Claude Code session continues",
+                    entryBefore(saving, replyId),
+                  )),
+              );
               return;
             }
             if (event.type !== "stream_event") continue;
             answered = true;
+            // The reply is complete; a CLI that went on is not answering this request.
+            if (messageComplete) continue;
             const native = (event.event ?? {}) as Record<string, unknown>;
             switch (native.type) {
               case "message_start": {

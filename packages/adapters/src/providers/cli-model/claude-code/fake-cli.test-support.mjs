@@ -59,7 +59,12 @@ async function chat() {
   const folder = join(process.env.CLAUDE_CONFIG_DIR ?? "", "projects", "-rakazo");
   if (process.env.CLAUDE_CONFIG_DIR?.startsWith(tmpdir())) {
     mkdirSync(folder, { recursive: true });
-    writeFileSync(join(folder, `${sessionId}.jsonl`), "");
+    // Each reply below is saved after an entry of the CLI's own, where a resume continues.
+    const entries = [1, 2].map((n) => ({ uuid: `reply-${n}`, parentUuid: `before-reply-${n}` }));
+    writeFileSync(
+      join(folder, `${sessionId}.jsonl`),
+      entries.map((entry) => JSON.stringify(entry)).join("\n"),
+    );
   }
   if (scenario === "slow-reply") await new Promise((resolve) => setTimeout(resolve, 300));
   const tools = await inventory();
