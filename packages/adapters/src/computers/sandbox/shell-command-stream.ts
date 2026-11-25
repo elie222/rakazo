@@ -160,11 +160,30 @@ class BoundedStreamBuffer {
   }
 
   headCutRedactedSuffix(): number {
-    return this.head === undefined ? 0 : this.effectiveHeadRedactedSuffix();
+    if (this.head === undefined) return 0;
+    const trailing = this.effectiveHeadRedactedSuffix();
+    if (trailing <= 0 || this.head.length === 0) return 0;
+    const ranges = redactedRanges(this.head, this.secrets);
+    const endCut = safeCutBefore(
+      this.head,
+      mergeTrailingRedactedRange(
+        ranges,
+        Math.max(0, this.head.length - trailing),
+        this.head.length,
+      ),
+    );
+    return this.head.length - endCut;
   }
 
   tailCutRedactedPrefix(): number {
-    return this.head === undefined ? 0 : this.effectiveTailRedactedPrefix();
+    if (this.head === undefined) return 0;
+    const leading = this.effectiveTailRedactedPrefix();
+    if (leading <= 0 || this.tail.length === 0) return 0;
+    const ranges = redactedRanges(this.tail, this.secrets);
+    return safeCutAfter(
+      this.tail,
+      mergeLeadingRedactedRange(ranges, Math.min(leading, this.tail.length))[0]![1],
+    );
   }
 
   append(chunk: string): void {

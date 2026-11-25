@@ -492,7 +492,12 @@ async function readContainerFileSpooled(
             }
             if (cleanedUp) return;
             if (bytesRead === 0) {
-              await cleanupStream();
+              try {
+                await cleanupStream();
+              } catch (closeError) {
+                errorStream(ctrl, closeError);
+                return;
+              }
               if (signal?.aborted) {
                 errorStream(ctrl, signal.reason ?? new Error("file read cancelled"));
                 return;
@@ -507,8 +512,12 @@ async function readContainerFileSpooled(
             if (!streamSettled) ctrl.enqueue(buffer.subarray(0, bytesRead));
           } catch (error) {
             const wasCancelled = cleanedUp;
-            await cleanupStream();
-            if (!wasCancelled) errorStream(ctrl, error);
+            try {
+              await cleanupStream();
+            } finally {
+              if (wasCancelled) markSettled();
+              else errorStream(ctrl, error);
+            }
           }
         },
         async cancel() {

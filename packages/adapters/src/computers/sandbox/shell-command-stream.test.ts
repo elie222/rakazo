@@ -857,6 +857,43 @@ describe("observeShellCommand", () => {
     expect(observed.result.stderr).toContain("SELF_OVERLAP_OK");
   });
 
+  it("uses the expanded cut mask when a same-stream secret reaches the stdout/stderr boundary", async () => {
+    const cutTail = "CUT_TAIL_MARKER_";
+    const cutSecret = `CUT_HEAD_${cutTail}`;
+    const tailFiller = "b".repeat(63_970);
+    const crossPrefix = "CROSS_PRE_";
+    const crossStderr = "CROSS_STDERR_SECRET";
+    const crossSecret = `${crossPrefix}${crossStderr}`;
+    // Overlaps cutTail inside stdoutTail and runs to the end of stdoutTail, so maskSegment expands
+    // stdout's leading cut mask all the way across crossPrefix.
+    const sameStreamBridgeSecret = `MARKER_${tailFiller}${crossPrefix}`;
+    const secrets: string[] = [];
+    const registerGate = deferred();
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield {
+          type: "stdout" as const,
+          data: `${"p".repeat(160_000)}CUT_HEAD_${cutTail}${tailFiller}${crossPrefix}`,
+        };
+        await registerGate.promise;
+        yield { type: "stderr" as const, data: `${crossStderr}\nBRIDGE_DONE\n` };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets,
+        onOutput: (snapshot) => {
+          if (secrets.length === 0 && snapshot.stdout.includes("characters omitted")) {
+            secrets.push(cutSecret, sameStreamBridgeSecret, crossSecret);
+            registerGate.resolve();
+          }
+        },
+      },
+    );
+    expect(observed.result.stdout).not.toContain(crossPrefix);
+    expect(observed.result.stderr).not.toContain(crossStderr);
+    expect(observed.result.stderr).toContain("BRIDGE_DONE");
+  });
+
   it("throttles live onOutput snapshots when onOutputIntervalMs is set", async () => {
     const gate = deferred();
     const seen: string[] = [];
