@@ -45,7 +45,6 @@ import {
   sessionKey,
   takeReplyElsewhere,
 } from "./acp-sessions.js";
-import { startToolServer } from "./acp-tool-server.js";
 import {
   conversationBlock,
   historyLine,
@@ -347,7 +346,8 @@ async function runAcpTurn(
     };
 
     const toolServer = agentTools.length
-      ? await startToolServer(
+      ? // The MCP server code loads only for a turn that serves tools, never at startup.
+        await (await import("./acp-tool-server.js")).startToolServer(
           ACP_TOOL_SERVER,
           agentTools.map((tool) => ({
             name: tool.name,
