@@ -2,10 +2,10 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { PageSectionAnchor } from "@rakazo/contracts";
 import type { PageReviewSections } from "@rakazo/core";
-import { pageReviewContent, pageReviewSections } from "@rakazo/core";
+import { pageReviewContent, pageReviewSections, pageStateRequest } from "@rakazo/core";
 import { queryOptions } from "@tanstack/react-query";
 import { useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
 import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
@@ -16,6 +16,7 @@ import { useScreenHeader } from "../lib/navigation/screen-header";
 import { PageLoadFailure } from "../lib/pages/page-load-failure";
 import { PageReviewComments } from "../lib/pages/page-review-comments";
 import { usePageReviewSignals } from "../lib/pages/page-review-reads";
+import { usePageStateSaver } from "../lib/pages/page-state";
 import { pageDocument, pageMessage } from "../lib/pages/pages";
 import { targetRpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
@@ -48,6 +49,13 @@ function Review({ pageId }: { pageId: string }) {
     draft: draft.isError ? undefined : draft.data,
     reported: anchors,
   });
+  const readerState = draftId ? undefined : page?.readerState;
+  const savedState = useRef(readerState);
+  savedState.current = readerState;
+  const stateSaver = usePageStateSaver(pageId, {
+    target: ACCOUNT_SETTINGS,
+    read: read.queryKey,
+  });
   const apiBase = currentApiBase();
   const runtimeError = t`This page couldn't be shown.`;
   const document = useScreenQuery(
@@ -70,6 +78,7 @@ function Review({ pageId }: { pageId: string }) {
           review: !draftId,
           reviewAnchor: revision?.anchor.section,
           reviewAnchorOccurrence: revision?.anchor.sectionOccurrence,
+          state: savedState.current,
         }),
     },
     { enabled: shown !== undefined },
@@ -163,6 +172,11 @@ function Review({ pageId }: { pageId: string }) {
             {errorText(problem)}
           </Text>
         ) : null}
+        {!problem && stateSaver.failed && readerState ? (
+          <Text accessibilityRole="alert" style={[styles.banner, { color: tokens.destructive }]}>
+            {t`Your changes aren't saved. Check your connection.`}
+          </Text>
+        ) : null}
         {page.version !== page.currentVersion && !draftId ? (
           <Text
             style={[styles.banner, { color: tokens.mutedForeground }]}
@@ -176,7 +190,10 @@ function Review({ pageId }: { pageId: string }) {
               draftId
                 ? undefined
                 : (raw) => {
-                    const sections = pageReviewSections(pageMessage(raw));
+                    const message = pageMessage(raw);
+                    const values = readerState ? pageStateRequest(message) : null;
+                    if (values) stateSaver.save(values);
+                    const sections = pageReviewSections(message);
                     if (sections) setAnchors({ version: page.version, sections });
                   }
             }

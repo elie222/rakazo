@@ -28,6 +28,7 @@ model User {
   pages          Page[]
   pageGrants PageGrant[]
   pageComments PageComment[]
+  pageReaderStates PageReaderState[]
   id                          String                       @id
   name                        String
   email                       String
@@ -2155,6 +2156,7 @@ model Page {
   versions       PageVersion[]
   grants         PageGrant[]
   comments       PageComment[]
+  readerStates   PageReaderState[]
   images         PageImage[]
 
   @@index([spaceId, userId, updatedAt])
@@ -2211,6 +2213,21 @@ model PageGrant {
   @@unique([pageId, recipientEmail])
   @@index([userId, pageId])
   @@map("page_grants")
+}
+
+model PageReaderState {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId   String
+  values    Json
+  updatedAt DateTime @updatedAt
+
+  @@unique([pageId, userId])
+  @@index([userId])
+  @@map("page_reader_states")
 }
 
 model PageComment {

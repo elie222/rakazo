@@ -18,6 +18,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { usePageStateSaver } from "../../lib/pages/page-state";
 import { useMedia, usePageDocument, useReviewedPageContent } from "../../lib/pages/pages";
 import { followStream } from "../../lib/query/follow-stream";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
@@ -77,6 +78,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
     draft: draft.isError ? undefined : draft.data,
     reported: anchors,
   });
+  const readerState = draftId ? undefined : page?.readerState;
   const preview = usePageDocument(
     useReviewedPageContent(pageId, shown),
     "card",
@@ -84,7 +86,9 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
     0,
     !draftId,
     revision?.anchor,
+    readerState,
   );
+  const stateSaver = usePageStateSaver(pageId, read.queryKey);
   const publish = useSave({
     save: (requestId: string, rpc) => rpc.pageReviews.publish({ pageId, requestId }),
     stale: [
@@ -108,6 +112,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
       }}
       title={page?.title ?? ""}
       document={preview.document}
+      onSaveState={readerState ? stateSaver.save : undefined}
       onSections={
         page && !draftId ? (sections) => setAnchors({ version: page.version, sections }) : undefined
       }
@@ -167,8 +172,12 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
           />
         ) : null
       }
-      renameError={
-        draftId && publish.input === draftId && publish.error ? errorText(publish.error) : null
+      titleError={
+        draftId && publish.input === draftId && publish.error
+          ? errorText(publish.error)
+          : stateSaver.failed && readerState
+            ? t`Your changes aren't saved. Check your connection.`
+            : null
       }
     />
   );

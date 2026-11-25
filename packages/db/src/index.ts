@@ -55,6 +55,7 @@ export * from "./models/model-roles.js";
 export * from "./models/voice-credentials.js";
 export * from "./pages/page-collaboration.js";
 export * from "./pages/page-images.js";
+export * from "./pages/page-reader-state.js";
 export * from "./runs/cancel-runs.js";
 export * from "./runs/chat-holding-runs.js";
 export * from "./runs/expire-stuck-run.js";

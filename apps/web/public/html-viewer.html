@@ -17,7 +17,7 @@ function guard() {
 }
 addEventListener("message", (event) => {
   const preview = document.getElementById("preview");
-  // A page asks the app to open a link, offer a reply, copy text or make room for its height; only those pass up.
+  // A page asks the app to open a link, offer a reply, copy text, save what the reader set or make room for its height; only those pass up.
   if (event.source === preview.contentWindow && parent !== window) {
     const data = event.data;
     // A click or key in the page also activates this shell, which the page cannot fake; the guard
@@ -37,6 +37,8 @@ addEventListener("message", (event) => {
       parent.postMessage({ type: data.type, text: data.text.slice(0, 300), gesture: fresh }, "*");
     } else if (data && data.type === "rakazo-page:copy" && typeof data.id === "string" && typeof data.text === "string") {
       parent.postMessage({ type: data.type, id: data.id, text: data.text, gesture: fresh }, "*");
+    } else if (data && data.type === "rakazo-page:state" && data.values && typeof data.values === "object") {
+      parent.postMessage({ type: data.type, values: data.values }, "*");
     } else if (data && data.type === "rakazo-page:height" && Number.isFinite(data.height)) {
       const dimensions = { type: data.type, height: data.height };
       if (Number.isFinite(data.scrollHeight) && data.scrollHeight >= 0) {

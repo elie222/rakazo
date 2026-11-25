@@ -14,6 +14,7 @@ import { ErrorBoundary, ErrorPanel, ErrorTitle } from "./kit/boundary.js";
 import { helpers, kit } from "./kit/index.js";
 import { PageLanguage } from "./kit/labels.js";
 import { setPageImages } from "./kit/media.js";
+import { startPageState } from "./kit/page-state.js";
 import { PAGE_STYLES } from "./kit/styles.js";
 
 /** What the host's boot script passes to `RakazoPage.mount`; `code` comes from `pageViewerCode`. */
@@ -26,6 +27,7 @@ type PageBoot = {
   review?: boolean;
   reviewAnchor?: string;
   reviewAnchorOccurrence?: number;
+  state?: unknown;
 };
 
 type PageFactory = (exports: { default?: unknown }, ...globals: unknown[]) => void;
@@ -189,6 +191,7 @@ function mount(boot: PageBoot) {
     document.getElementById("root") ?? document.body.appendChild(document.createElement("div"));
   reportHeight(host);
   if (boot.review) reportSections(host, boot.reviewAnchor, boot.reviewAnchorOccurrence);
+  startPageState(boot.state);
   const root = createRoot(host);
   let Page: ComponentType;
   try {

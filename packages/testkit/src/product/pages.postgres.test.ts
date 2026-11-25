@@ -10,7 +10,13 @@ import {
   ScriptedAgentRuntime,
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
-import type { AiConsentStatus, PageDetail, PageSummary, ThreadSnapshot } from "@rakazo/contracts";
+import type {
+  AiConsentStatus,
+  PageDetail,
+  PageReview,
+  PageSummary,
+  ThreadSnapshot,
+} from "@rakazo/contracts";
 import { SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { deletePageShareSecrets, pageRevisionPendingCutoff } from "@rakazo/db";
@@ -330,6 +336,7 @@ describePages("pages", () => {
       version: 2,
       owner: false,
       canRequestRevision: true,
+      readerState: {},
     });
 
     const { id: commentId } = await rpc<{ id: string }>(
@@ -811,6 +818,76 @@ describePages("pages", () => {
       });
       expect(result?.status).toBe("ready");
     });
+  });
+
+  it("keeps each reader's own saved values across edits and shows the bot only its user's", async () => {
+    const readerEmail = `reader-${stamp}@example.test`;
+    const owner = await signup(app, `state-owner-${stamp}@example.test`, "Packer");
+    const reader = await signup(app, readerEmail, "Reader");
+    const outsider = await signup(app, `state-outsider-${stamp}@example.test`, "Outsider");
+    const bot = await createBot(app, owner, "Packing bot");
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Packing", source: page("Pack") })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    const input = { pageId };
+
+    expect((await rpc<PageDetail>(app, owner, "pages/get", input)).readerState).toEqual({});
+    await rpc(app, owner, "pageReviews/saveState", {
+      ...input,
+      values: { packed: { passport: true }, note: "Charger" },
+    });
+    await rpc(app, owner, "pageReviews/saveState", { ...input, values: { note: "Adapter" } });
+
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ pageId, source: page("Pack more") })}`,
+    });
+    const saved = { packed: { passport: true }, note: "Adapter" };
+    expect((await rpc<PageDetail>(app, owner, "pages/get", input)).readerState).toEqual(saved);
+    expect(
+      (await rpc<PageDetail>(app, owner, "pages/get", { ...input, version: 1 })).readerState,
+    ).toBeUndefined();
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ pageId })}`,
+    });
+    expect(await lastResult(bot.id)).toMatchObject({ readerState: saved });
+
+    await rpc(app, owner, "pages/setVisibility", { ...input, visibility: "people" });
+    await db().user.update({
+      where: { id: (await me(app, reader)).id },
+      data: { emailVerified: true },
+    });
+    await rpc(app, owner, "pageReviews/grant", { ...input, email: readerEmail });
+    expect((await rpc<PageReview>(app, reader, "pageReviews/get", input)).readerState).toEqual({});
+    await rpc(app, reader, "pageReviews/saveState", { ...input, values: { note: "Mine" } });
+    expect((await rpc<PageReview>(app, reader, "pageReviews/get", input)).readerState).toEqual({
+      note: "Mine",
+    });
+    expect((await rpc<PageReview>(app, owner, "pageReviews/get", input)).readerState).toEqual(
+      saved,
+    );
+    expect(
+      (await raw(app, outsider, "pageReviews/saveState", { ...input, values: { note: "x" } }))
+        .status,
+    ).toBe(404);
+
+    const filler = (prefix: string) =>
+      Object.fromEntries(
+        Array.from({ length: 40 }, (_, index) => [`${prefix}${index}`, "x".repeat(1600)]),
+      );
+    await rpc(app, owner, "pageReviews/saveState", { ...input, values: filler("n") });
+    await rpc(app, owner, "pageReviews/saveState", { ...input, values: filler("m") });
+    const kept = (await rpc<PageDetail>(app, owner, "pages/get", input)).readerState!;
+    expect(kept).toMatchObject(filler("m"));
+    expect(kept).not.toHaveProperty("note");
+    expect(
+      (
+        await raw(app, owner, "pageReviews/saveState", {
+          ...input,
+          values: { note: "x".repeat(70_000) },
+        })
+      ).status,
+    ).toBe(400);
   });
 
   it("saves, edits and guards pages through the bot's save_page", async () => {

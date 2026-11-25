@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import type { PageComment } from "@rakazo/contracts";
+import type { PageComment, PageDetail } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -145,6 +145,43 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   expect(heatmapColors).toHaveLength(2);
   expect(new Set(heatmapColors).size).toBe(2);
   await captureScreenshot(page, testInfo, "page-calendar-two-columns");
+});
+
+test("a reader's ticks and notes stay on the page after it reopens", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-state-${Date.now()}@rakazo.test`, "password12", "Packer");
+  await completeOnboarding(page);
+  const title = "Lisbon packing list";
+  const source = `function Trip() {
+    const [notes, setNotes] = usePageState("notes", "");
+    return <Page title="Lisbon packing list" summary="Four nights, carry-on only.">
+      <Section heading="Documents"><Checklist saveAs="documents" items={[
+        { text: "Passport", done: true },
+        { text: "Boarding pass on phone", meta: "Check in opens Thursday" },
+        { text: "Travel insurance card" }
+      ]} /></Section>
+      <Section heading="Notes"><Input label="Anything else" value={notes} onChange={setNotes} placeholder="Add a note" /></Section>
+    </Page>;
+  }
+  export default Trip;`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const pageId = new URL(page.url()).searchParams.get("page")!;
+  let frame = pageFrame(page, title);
+  await frame.getByText("Boarding pass on phone").click();
+  await frame.getByLabel("Anything else").fill("Adapter for EU plugs");
+  await expect
+    .poll(async () => (await rpc<PageDetail>(page, "pages/get", { pageId })).readerState)
+    .toEqual({ documents: { "Boarding pass on phone": true }, notes: "Adapter for EU plugs" });
+
+  await page.reload();
+  frame = pageFrame(page, title);
+  await expect(frame.getByRole("checkbox", { name: "Boarding pass on phone" })).toBeChecked();
+  await expect(frame.getByRole("checkbox", { name: "Travel insurance card" })).not.toBeChecked();
+  await expect(frame.getByLabel("Anything else")).toHaveValue("Adapter for EU plugs");
+  await captureScreenshot(page, testInfo, "page-saved-checklist");
 });
 
 test("a day calendar fits a phone-width page while a week calendar scrolls", async ({

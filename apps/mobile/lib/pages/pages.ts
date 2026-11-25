@@ -1,4 +1,4 @@
-import type { PageDetail, PageImages } from "@rakazo/contracts";
+import type { PageDetail, PageImages, PageState } from "@rakazo/contracts";
 import type { PageShown } from "@rakazo/core";
 import { isServerUnreachable, pageViewerDocument } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
@@ -202,6 +202,7 @@ export async function pageDocument(
     review?: boolean;
     reviewAnchor?: string;
     reviewAnchorOccurrence?: number;
+    state?: PageState;
   } = {},
 ): Promise<string> {
   const [runtime, images] = await Promise.all([

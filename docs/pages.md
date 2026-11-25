@@ -18,6 +18,10 @@ pixels wide or tall and kept with the page's files, like a chat file: under `DAT
 is, including shared links, review and PDF, and is removed with the page. A page holds up to 24
 pictures.
 
+Ticks and notes you add on a page stay there for you, on every device. Each person a page is
+shared with keeps their own, and the bot can read yours when you ask about them. On a page opened
+from a link, they last until it reloads.
+
 ## Find your pages
 
 On web and desktop, select the bot or group name at the top of the chat to open its panel.

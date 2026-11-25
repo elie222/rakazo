@@ -1,12 +1,18 @@
 import { useLingui } from "@lingui/react/macro";
 import { useNativeLinkConfirm } from "@rakazo/chat-ui/native";
 import type { PageDetail } from "@rakazo/contracts";
-import { pageCopyRequest, pageCopyResult, pageLinkRequest, pageReplyText } from "@rakazo/core";
+import {
+  pageCopyRequest,
+  pageCopyResult,
+  pageLinkRequest,
+  pageReplyText,
+  pageStateRequest,
+} from "@rakazo/core";
 import { webTokensForAppearance } from "@rakazo/ui-tokens";
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SandboxedHtmlPreview } from "../components/media/sandboxed-html-preview";
 import { NativeActionButton } from "../components/native/native-action-button";
@@ -14,6 +20,7 @@ import { currentApiBase } from "../lib/api/api";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native/native";
 import { HEADER_CONTROL_SIZE } from "../lib/native/native-controls";
 import { PageLoadFailure } from "../lib/pages/page-load-failure";
+import { usePageStateSaver } from "../lib/pages/page-state";
 import {
   getLatestPage,
   offerPageReply,
@@ -66,7 +73,7 @@ export default function PageScreen() {
           { ...page, pageId: page.id },
           theme,
           t`This page couldn't be shown.`,
-          { reply: pageChat(page) !== null },
+          { reply: pageChat(page) !== null, state: page.readerState },
         );
         if (!active) return;
         setLoaded({ status: "ready", page, document });
@@ -84,8 +91,17 @@ export default function PageScreen() {
   // and the page can't fake one.
   const tapStart = useRef<ReturnType<typeof pageTapStart>>(null);
   const tappedAt = useRef<number | null>(null);
+  const stateSaver = usePageStateSaver(pageId);
+  // A page still on screen while another loads saves nothing under the new page.
+  const saving =
+    loaded.status === "ready" && loaded.page.id === pageId && loaded.page.readerState !== undefined;
   const receive = useCallback(
     (data: string, answer: (message: object) => void) => {
+      const values = saving ? pageStateRequest(pageMessage(data)) : null;
+      if (values) {
+        stateSaver.save(values);
+        return;
+      }
       if (!pageActionAllowed(tappedAt.current, Date.now())) return;
       const message = pageMessage(data) as { type?: unknown; text?: unknown } | null;
       const reply = message?.type === "rakazo-page:reply" ? pageReplyText(message.text) : null;
@@ -115,7 +131,7 @@ export default function PageScreen() {
           .then((ok) => answer(pageCopyResult(copy.id, ok !== false)));
       }
     },
-    [openLink, loaded, navigation, router],
+    [openLink, loaded, navigation, router, saving, stateSaver],
   );
 
   return (
@@ -159,6 +175,21 @@ export default function PageScreen() {
           <ActivityIndicator color={tokens.mutedForeground} />
         </View>
       )}
+      {saving && stateSaver.failed ? (
+        <Text
+          accessibilityRole="alert"
+          style={[
+            styles.saveFailed,
+            {
+              top: insets.top + HEADER_CONTROL_SIZE + 10,
+              color: tokens.destructive,
+              backgroundColor: pageBackground,
+            },
+          ]}
+        >
+          {t`Your changes aren't saved. Check your connection.`}
+        </Text>
+      ) : null}
       <View pointerEvents="box-none" style={[styles.controls, { top: insets.top + 6 }]}>
         <NativeActionButton
           accessibilityLabel={t`Close`}
@@ -201,6 +232,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   actions: { flexDirection: "row", gap: 8 },
+  saveFailed: {
+    position: "absolute",
+    alignSelf: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: "hidden",
+    textAlign: "center",
+    fontSize: 13,
+  },
   round: {
     width: HEADER_CONTROL_SIZE,
     minHeight: HEADER_CONTROL_SIZE,

@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { usePageStateSaver } from "../../lib/pages/page-state";
 import type { PageSession } from "../../lib/pages/pages";
 import {
   PAGE_PARAM,
@@ -66,8 +67,17 @@ function OpenPage({
     ...queries.pages.get.queryOptions({ input: { pageId: shownId } }),
     enabled: pageId !== null,
   });
+  const savedState = pageId === null ? undefined : page.data?.readerState;
   const content = useReviewedPageContent(shownId, page.data);
-  const viewer = usePageDocument(content, sheet ? "background" : "card", true, DOCK_CLEARANCE);
+  const viewer = usePageDocument(
+    content,
+    sheet ? "background" : "card",
+    true,
+    DOCK_CLEARANCE,
+    false,
+    undefined,
+    savedState,
+  );
   const [shareOpen, setShareOpen] = useState(false);
   const link = useQuery({
     ...queries.pages.get.queryOptions({ input: { pageId: shownId, link: true } }),
@@ -102,6 +112,10 @@ function OpenPage({
     stale: reads,
     onFailed: reconcile,
   });
+  const readerState = usePageStateSaver(
+    shownId,
+    queries.pages.get.queryKey({ input: { pageId: shownId } }),
+  );
   const visibility = useSave({
     save: (visibility: PageVisibility, rpc) =>
       rpc.pages.setVisibility({ pageId: shownId, visibility }),
@@ -158,7 +172,13 @@ function OpenPage({
           />
         ) : null
       }
-      renameError={rename.error ? t`Could not rename this page. Try again.` : null}
+      titleError={
+        rename.error
+          ? t`Could not rename this page. Try again.`
+          : readerState.failed
+            ? t`Your changes aren't saved. Check your connection.`
+            : null
+      }
       onRename={
         rename.pending || !data
           ? undefined
@@ -168,6 +188,7 @@ function OpenPage({
       }
       composer={<div ref={setDockNode} />}
       onReply={session.offerReply}
+      onSaveState={savedState ? readerState.save : undefined}
       share={
         data ? (
           <>

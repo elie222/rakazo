@@ -11,6 +11,8 @@ import {
   pageImageNames,
   pageImagesNamedIn,
   pageVersionImages,
+  readPageState,
+  runAsSystem,
   signalPage,
   signalPageUsers,
 } from "@rakazo/db";
@@ -278,13 +280,18 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   if (page && !hasSource && !hasEdits && !title && !hasImages) {
     // The stored source may hold outside text an earlier run put in the page, so reading it
     // taints this run like any other outside content; saves only confirm this run's own write.
+    const readerState = await runAsSystem("read the user's saved page values", () =>
+      readPageState(deps.prisma, page.id, ctx.run.userId),
+    );
     await markReadOutsideContent(ctx, current);
+    if (Object.keys(readerState).length) await markReadOutsideContent(ctx, readerState);
     return {
       pageId: page.id,
       version: page.currentVersion,
       title: page.title,
       ...pageSharingHint(page.visibility),
       source: current,
+      ...(Object.keys(readerState).length ? { readerState } : {}),
       ...(Object.keys(previousImages).length ? { images: Object.keys(previousImages) } : {}),
     };
   }

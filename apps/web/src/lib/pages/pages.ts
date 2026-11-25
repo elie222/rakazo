@@ -4,6 +4,7 @@ import type {
   PageImageSource,
   PageImages,
   PageSectionAnchor,
+  PageState,
 } from "@rakazo/contracts";
 import { PAGE_RUNTIME_PATH, pageReply, pageReplyText, pageViewerDocument } from "@rakazo/core";
 import type { QueryKey } from "@tanstack/react-query";
@@ -141,6 +142,7 @@ export function usePageDocument(
   bottomInset = 0,
   review = false,
   reviewAnchor?: PageSectionAnchor,
+  state?: PageState,
 ): { document: string | null; failed: boolean; retry: () => void } {
   const { t, i18n } = useLingui();
   const theme = useAppTheme();
@@ -150,6 +152,8 @@ export function usePageDocument(
   // Fetched again on every mount; the browser revalidates the server's no-cache runtime.
   const runtime = useQuery({ queryKey: ["page-runtime"], queryFn: fetchPageRuntime });
   const errorTitle = t`This page couldn't be shown.`;
+  const savedState = useRef(state);
+  savedState.current = state;
   const code = content?.code;
   const images = usePageImages(content);
   const viewerDocument = useMemo(
@@ -170,6 +174,7 @@ export function usePageDocument(
             reviewAnchor: reviewAnchor?.section,
             reviewAnchorOccurrence: reviewAnchor?.sectionOccurrence,
             lang: i18n.locale,
+            state: savedState.current,
           }),
     [
       runtime.data,
