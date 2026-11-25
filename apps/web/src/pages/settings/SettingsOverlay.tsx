@@ -47,6 +47,7 @@ import { MessagingSettingsPanel } from "./MessagingSettingsPanel";
 import type { OrganizationPage } from "./OrganizationSettingsPanel";
 import { OrganizationOptionsMenu, OrganizationSettingsPanel } from "./OrganizationSettingsPanel";
 import { PaymentWalletSettingsPanel } from "./PaymentWalletSettingsPanel";
+import { RealtimeCallSettingsSection } from "./RealtimeCallSettings";
 import { SpaceSettingsPanel } from "./SpaceSettingsPanel";
 import { SpacesSettingsPanel } from "./SpacesSettingsPanel";
 import { useSettingsNavItems } from "./settings-nav";
@@ -514,6 +515,7 @@ export function SettingsOverlay({
                       onBusyChange={setVoiceBusy}
                     />
                   ) : null}
+                  {section === "voice" ? <RealtimeCallSettingsSection /> : null}
                 </div>
               </div>
             </SpaceRpcProvider>

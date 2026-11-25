@@ -172,8 +172,8 @@ export function startCall(call: {
   botName: string;
   botColor?: string;
   botAvatarSet?: BotAvatarSet;
-  transcribe?: boolean;
   classic?: boolean;
+  transcribe?: boolean;
   autoLanguage?: boolean;
   /** The bot called and the user picked up: no ringing, and the bot speaks first. */
   answered?: { callId: string; opening: string };

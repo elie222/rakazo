@@ -41,7 +41,6 @@ import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
 import { useSpaceQueries } from "../../lib/query/query";
 import { useBoundSpaceId, useSpaceRpc } from "../../lib/query/space-rpc";
 import { errorText } from "../../lib/query/user-error";
-import { RealtimeCallSettingsSection } from "./RealtimeCallSettings";
 import { VoiceModelConnectionActions } from "./voice-model-connection-actions";
 
 export function VoiceSettingsOverlay({
@@ -848,7 +847,6 @@ export function VoiceSettingsOverlay({
                   />
                 )}
               </Field>
-              {scope === "account" ? <RealtimeCallSettingsSection /> : null}
               {selected.speechModel ? (
                 <Field className="mt-6">
                   <FieldLabel htmlFor={speechModelId}>

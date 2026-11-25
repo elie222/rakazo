@@ -54,6 +54,12 @@ To switch languages during a call, turn on **Detect call language automatically*
 transcription provider instead of the device or browser recognizer and asks before sharing audio.
 Supported languages and any charges depend on the provider.
 
+Bots can call you too: ask "call me at 5 to go over the day", or a bot may call when you've missed
+the same reminder several times. You'll see that the bot is calling you; answer or **Decline**. A
+missed call shows **Call back** in the chat.
+
+## Realtime calls
+
 With a personal OpenAI voice connection, **Settings → Voice → Realtime calls** lets you choose a
 model for calls you start from web or desktop. It works whichever provider reads replies aloud.
 The choice follows your account. Once a model is chosen you can also set the call voice, the
@@ -69,10 +75,6 @@ provider. During the call the model can search and read older messages of the sa
 that need the bot's skills, tools or other memory run through its normal chat and keep its
 approval settings. If the connection is unavailable, you can continue with a standard call.
 Realtime usage is billed on the OpenAI account whose voice connection you chose.
-
-Bots can call you too: ask "call me at 5 to go over the day", or a bot may call when you've missed
-the same reminder several times. You'll see that the bot is calling you; answer or **Decline**. A
-missed call shows **Call back** in the chat.
 
 ## On mobile
 

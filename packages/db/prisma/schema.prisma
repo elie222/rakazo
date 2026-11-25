@@ -53,10 +53,10 @@ model User {
   composerModelPicker          Boolean?
   streamReplies                Boolean?
   notificationSounds           Boolean                       @default(false)
-  /// Realtime call settings (provider-neutral JSON). Null keeps the standard call.
-  realtimeCall                 Json?
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
+  /// Realtime call settings (provider-neutral JSON). Null keeps the standard call.
+  realtimeCall                 Json?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
   /// emails then follow the language of the browser that asked for them.
   locale                      String?

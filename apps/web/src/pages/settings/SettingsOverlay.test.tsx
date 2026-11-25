@@ -106,6 +106,9 @@ vi.mock("../model-settings/ModelSettingsOverlay", () => ({
   ModelSettingsOverlay: recordScope("models"),
 }));
 vi.mock("./VoiceSettingsOverlay", () => ({ VoiceSettingsOverlay: recordScope("voice") }));
+vi.mock("./RealtimeCallSettings", () => ({
+  RealtimeCallSettingsSection: () => <section data-testid="realtime-call-settings" />,
+}));
 vi.mock("../../components/settings/ApprovalRulesSettings", () => ({
   ApprovalRulesSettings: recordScope("confirmations"),
 }));
@@ -402,6 +405,21 @@ it("says what a page is for only where its name does not", async () => {
     );
   } finally {
     await voice.cleanup();
+  }
+});
+
+it("puts the realtime call settings on the Voice page and nowhere else", async () => {
+  const voice = await render({ section: "voice" });
+  try {
+    expect(voice.container.querySelector('[data-testid="realtime-call-settings"]')).not.toBeNull();
+  } finally {
+    await voice.cleanup();
+  }
+  const general = await render({ section: "general" });
+  try {
+    expect(general.container.querySelector('[data-testid="realtime-call-settings"]')).toBeNull();
+  } finally {
+    await general.cleanup();
   }
 });
 
