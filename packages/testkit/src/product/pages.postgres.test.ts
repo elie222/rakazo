@@ -987,7 +987,6 @@ describePages("pages", () => {
       [1, "Weekly KPIs"],
     ]);
     const second = await rpc<PageDetail>(app, cookie, "pages/get", { pageId, version: 2 });
-    // Read back compiled for the viewer.
     expect(second.code).toMatch(/React\.createElement\(Page, \{ title: "Second".*"43"/s);
     expect(second).toMatchObject({ version: 2, currentVersion: 3, title: "KPIs", botId: bot.id });
 

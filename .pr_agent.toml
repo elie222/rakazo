@@ -2,6 +2,9 @@
 [github_app]
 handle_push_trigger = true
 
+[review_agent]
+issues_user_guidelines = "Do not request comments that restate code, tests, or schema fields. Request a comment only when you can name a missing contract or constraint the code cannot express and explain why it matters."
+
 [review_agent.comments_routing]
 action_required = "both"
 remediation_recommended = "summary"

@@ -89,7 +89,6 @@ import { createReferrals } from "./referrals.js";
 import { trialOutcome } from "./trial-outcome.js";
 
 export { TRIAL_DAYS };
-/** An invited organization's first trial. */
 export const INVITED_TRIAL_DAYS = INVITED_TRIAL_WEEKS * 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
 
@@ -172,7 +171,6 @@ export function createBillingService(deps: {
   const { prisma, provider } = deps;
   const appUrl = `${deps.webOrigin}/app`;
   const returnUrl = `${deps.webOrigin}${BILLING_RETURN_PATH}`;
-  /** A mobile checkout returns through the API either way, which hands back to the app. */
   const mobileReturnUrl = `${returnUrl}?client=mobile`;
   const modelCredits = provider.describe().capabilities.modelCredits === true;
   const referrals = createReferrals(deps);
@@ -236,7 +234,6 @@ export function createBillingService(deps: {
     await pull(account.customerId);
   }
 
-  /** Reads the provider's subscription and credit purchases into the account. */
   async function pull(customerId: string): Promise<void> {
     if (modelCredits && provider.listCreditPurchases) {
       const account = await prisma.billingAccount.findUnique({ where: { customerId } });

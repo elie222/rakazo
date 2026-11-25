@@ -929,11 +929,9 @@ describe("space computer limit enforcement", () => {
     mocks.docker.listContainers.mockImplementation(
       async (opts?: { filters?: { label?: string[] } }) => {
         const labels = opts?.filters?.label ?? [];
-        // For findBotContainer check
         if (labels.some((l: string) => l.startsWith("rakazo.botId="))) {
           return [];
         }
-        // For countSpaceContainers
         return [
           { Id: "c1", Labels: { "rakazo.managed": "true", "rakazo.spaceId": "space-1" } },
           { Id: "c2", Labels: { "rakazo.managed": "true", "rakazo.spaceId": "space-1" } },

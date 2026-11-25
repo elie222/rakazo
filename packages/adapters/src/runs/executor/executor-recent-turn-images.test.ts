@@ -615,7 +615,6 @@ describe("recent turn images follow model vision", () => {
 
   it("does not read or configure backups for scripted runs", async () => {
     const { prisma, request } = await runWithModel(TEXT_ONLY_MODEL, undefined, false, true);
-    // Only the main model itself is read.
     expect(prisma.userModelRoleChoice.findMany).toHaveBeenCalledTimes(1);
     expect(request.fallbackModels).toEqual([]);
     expect(request.resolveFallbackModel).toBeUndefined();

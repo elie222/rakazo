@@ -100,8 +100,6 @@ export function withItem(
     : [...list, saved];
 }
 
-// ---- Editing ----
-
 export type ApiAuthType = "bearer" | "header" | "basic";
 
 /** Everything the editor collects. Protected values live only in the editor's state. */

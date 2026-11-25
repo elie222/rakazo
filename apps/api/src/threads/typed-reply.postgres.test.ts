@@ -530,7 +530,6 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       const message = await system.message.findFirstOrThrow({
         where: { threadId: target.threadId, seq: result.seq },
       });
-      // Send as file stores the picture as a file the routine can list and copy.
       expect(message.blocks).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ kind: "file", artifactId: artifact.id }),
