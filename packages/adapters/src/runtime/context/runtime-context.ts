@@ -176,6 +176,12 @@ export interface RuntimeContextDecision {
   truncatedToolResults: number;
   observedReuse: boolean | null;
 }
+export type WatchDeliveryState = { full: true } | { full: false; texts: string[] };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 /** Applies one shared free context policy immediately before every model call.
  * Original history is untrusted evidence. Only in-memory hashes track cache timing.
  */
@@ -186,8 +192,8 @@ export function createRuntimeContextPolicy(
     cacheTracker?: ContextCacheTracker;
     imageTokens?: ContextBudget["imageTokens"];
     credentialScope?: string;
-    /** Run-scoped first-delivery map shared across model switches and context resizes. */
-    shortenedResults?: Map<string, Message>;
+    /** Run-scoped accepted watch-check deliveries shared across model policy switches. */
+    watchDeliveries?: Map<string, WatchDeliveryState>;
   } = {},
 ) {
   const cache = options.cacheTracker ?? sharedCacheTracker;
@@ -244,8 +250,9 @@ export function createRuntimeContextPolicy(
     return reserve;
   }
   let sent: SentTranscript | undefined;
-  // Only remember shortening actually sent, never speculative rebuild candidates.
-  const shortenedResults = options.shortenedResults ?? new Map<string, Message>();
+  // Only remember shortening actually sent within this policy, never across model switches.
+  const shortenedResults = new Map<string, Message>();
+  let pendingWatchDeliveries: Array<readonly [string, string | "full"]> = [];
   const hashes = new WeakMap<Message, string>();
   function hash(message: Message): string {
     let value = hashes.get(message);
@@ -718,6 +725,75 @@ export function createRuntimeContextPolicy(
     }
     return length;
   }
+  function withWatchDeliveryProvenance(ctx: Context, messages: Message[]): Message[] {
+    const originalResults = new Map(
+      ctx.messages.flatMap((message) =>
+        message.role === "toolResult" ? [[message.toolCallId, message] as const] : [],
+      ),
+    );
+    pendingWatchDeliveries = [];
+    let changed = false;
+    const annotated = messages.map((message) => {
+      if (message.role !== "toolResult") return message;
+      const details = isRecord(message.details) ? message.details : undefined;
+      if (!details || !("routines" in details)) return message;
+      const original = originalResults.get(message.toolCallId);
+      const key = hash(original ?? message);
+      const currentText = text(message);
+      const originalText = original ? text(original) : currentText;
+      const existingBeforeUse =
+        typeof details.contextBeforeUseText === "string" ? details.contextBeforeUseText : undefined;
+      if (currentText.length >= originalText.length && existingBeforeUse === undefined) {
+        pendingWatchDeliveries.push([key, "full"]);
+        return message;
+      }
+      if (existingBeforeUse !== undefined) {
+        pendingWatchDeliveries.push([key, existingBeforeUse]);
+        if (currentText !== existingBeforeUse) pendingWatchDeliveries.push([key, currentText]);
+      } else {
+        pendingWatchDeliveries.push([key, currentText]);
+      }
+      const prior = options.watchDeliveries?.get(key);
+      if (!prior || prior.full || prior.texts.length === 0) return message;
+      if (existingBeforeUse === undefined) {
+        changed = true;
+        return {
+          ...message,
+          details: {
+            ...details,
+            contextBeforeUseText: prior.texts[0]!,
+            ...(prior.texts.length > 1 ? { contextDeliveredTexts: [...prior.texts] } : {}),
+          },
+        };
+      }
+      const extras = prior.texts.filter((entry) => entry !== existingBeforeUse);
+      if (extras.length > 0) {
+        const currentDelivered = Array.isArray(details.contextDeliveredTexts)
+          ? details.contextDeliveredTexts.filter(
+              (entry): entry is string => typeof entry === "string",
+            )
+          : [];
+        const merged = [existingBeforeUse, ...extras, ...currentDelivered].filter(
+          (entry, index, list) => list.indexOf(entry) === index,
+        );
+        if (
+          merged.length !== currentDelivered.length ||
+          merged.some((entry, index) => currentDelivered[index] !== entry)
+        ) {
+          changed = true;
+          return {
+            ...message,
+            details: {
+              ...details,
+              contextDeliveredTexts: merged,
+            },
+          };
+        }
+      }
+      return message;
+    });
+    return changed ? annotated : messages;
+  }
   return {
     /**
      * Each model call in a run gets the transcript the previous call was sent, byte for byte,
@@ -766,6 +842,7 @@ export function createRuntimeContextPolicy(
             );
       }
       if (previous && appended && append) {
+        const annotated = withWatchDeliveryProvenance(ctx, appended);
         const projection = [
           ...previous.projection,
           ...ctx.messages.slice(previous.source.length).map((message) => ({ hash: hash(message) })),
@@ -773,16 +850,16 @@ export function createRuntimeContextPolicy(
         sent = {
           ...previous,
           source,
-          messages: appended,
+          messages: annotated,
           projection,
           appends: previous.appends + 1,
         };
-        return commit({ ...ctx, messages: appended }, built, projection, model, {
-          droppedMessages: Math.max(0, ctx.messages.length - appended.length),
+        return commit({ ...ctx, messages: annotated }, built, projection, model, {
+          droppedMessages: Math.max(0, ctx.messages.length - annotated.length),
           truncatedToolResults: previous.truncatedToolResults,
         });
       }
-      const messages = previous
+      const rawMessages = previous
         ? withoutThinkingFrom(
             built.context.messages,
             previous.head === head
@@ -790,9 +867,10 @@ export function createRuntimeContextPolicy(
               : 0,
           )
         : built.context.messages;
-      const projection = messages.map((message) => ({
+      const messages = withWatchDeliveryProvenance(ctx, rawMessages);
+      const projection = messages.map((message, index) => ({
         hash: hash(message),
-        ...(message === built.navigation?.message
+        ...(built.navigation && rawMessages[index] === built.navigation.message
           ? { catalogIds: built.navigation.catalogIds }
           : {}),
       }));
@@ -824,6 +902,27 @@ export function createRuntimeContextPolicy(
         projection,
         model,
       );
+    },
+    /** Publish watch-check delivery provenance once the provider completes the prepared request. */
+    commitDelivery() {
+      if (!options.watchDeliveries || pendingWatchDeliveries.length === 0) {
+        pendingWatchDeliveries = [];
+        return;
+      }
+      for (const [key, value] of pendingWatchDeliveries) {
+        if (value === "full") {
+          options.watchDeliveries.set(key, { full: true });
+          continue;
+        }
+        const existing = options.watchDeliveries.get(key);
+        if (existing?.full) continue;
+        if (!existing) {
+          options.watchDeliveries.set(key, { full: false, texts: [value] });
+        } else if (!existing.texts.includes(value)) {
+          existing.texts.push(value);
+        }
+      }
+      pendingWatchDeliveries = [];
     },
     onUsage(usage: AgentUsage | null | undefined) {
       if (!pending) return;

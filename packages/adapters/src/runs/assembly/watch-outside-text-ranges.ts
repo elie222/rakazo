@@ -444,9 +444,16 @@ function visibleRangesInCandidate(
 export function extractVisibleWatchPartsFromPlainTextBeforeUse(
   savedText: string,
   details: unknown,
+  options?: { allowAfterUseOnly?: boolean },
 ): WatchTextPart[][] | undefined {
   const beforeMarker = `\n${OMITTED_TEXT_BEFORE_USE}\n`;
-  if (!savedText.includes(beforeMarker)) return undefined;
+  const afterMarker = `\n${OMITTED_AFTER_USE}\n`;
+  if (
+    !savedText.includes(beforeMarker) &&
+    !(options?.allowAfterUseOnly && savedText.includes(afterMarker))
+  ) {
+    return undefined;
+  }
   try {
     const raw = JSON.stringify(details);
     if (!raw) return undefined;

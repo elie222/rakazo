@@ -477,6 +477,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function extractVisibleWatchChecksFromDeliveredText(
+  deliveredText: string,
+  cleanDetails: Record<string, unknown>,
+  allowAfterUseOnly: boolean,
+): unknown[] | undefined {
+  try {
+    const parsed: unknown = JSON.parse(deliveredText);
+    if (isRecord(parsed)) {
+      return parseWatchChecksFromToolMessageContent([{ type: "text", text: deliveredText }])
+        .extracted;
+    }
+  } catch {
+    // Plain-text cut; fall through to visible-fragment decoding.
+  }
+  const partGroups = extractVisibleWatchPartsFromPlainTextBeforeUse(deliveredText, cleanDetails, {
+    allowAfterUseOnly,
+  });
+  return partGroups !== undefined ? formatPlainTextBeforeUseGroups(partGroups) : undefined;
+}
+
 /** Extract watch-check outside text from a saved `schedule_list` or `task_catalog` toolResult. */
 export function watchChecksFromToolResultMessage(
   message: {
@@ -496,31 +516,51 @@ export function watchChecksFromToolResultMessage(
           hasWatchOutsideContent((routine as { lastCheck?: unknown }).lastCheck),
       );
       if (!hasChecks) return [];
+      const savedText = toolMessageTexts(message.content).join("\n");
       // If `selectContext` shortened the result before first use, preserve that exact first
-      // delivery across any later after-use compaction (both structured JSON and plain-text cuts).
+      // delivery (plus any additional visible text from later accepted deliveries) across
+      // after-use compaction without restoring omitted regions from raw `details`.
       if (typeof detailsObj.contextBeforeUseText === "string") {
-        const { contextBeforeUseText, ...cleanDetails } = detailsObj;
-        try {
-          const parsedBeforeUse: unknown = JSON.parse(contextBeforeUseText);
-          if (
-            parsedBeforeUse &&
-            typeof parsedBeforeUse === "object" &&
-            !Array.isArray(parsedBeforeUse)
-          ) {
-            return parseWatchChecksFromToolMessageContent([
-              { type: "text", text: contextBeforeUseText },
-            ]).extracted;
-          }
-        } catch {
-          // Plain-text before-use cut; fall through to visible-fragment decoding.
-        }
-        const partGroups = extractVisibleWatchPartsFromPlainTextBeforeUse(
+        const {
+          contextBeforeUseText,
+          contextDeliveredTexts: rawDeliveredTexts,
+          ...cleanDetails
+        } = detailsObj;
+        const collected: unknown[] = [];
+        let matchedAny = false;
+        const firstExtracted = extractVisibleWatchChecksFromDeliveredText(
           contextBeforeUseText,
           cleanDetails,
+          false,
         );
-        if (partGroups !== undefined) return formatPlainTextBeforeUseGroups(partGroups);
+        if (firstExtracted !== undefined) {
+          matchedAny = true;
+          collected.push(...firstExtracted);
+        }
+        const extraTexts = new Set<string>();
+        if (Array.isArray(rawDeliveredTexts)) {
+          for (const entry of rawDeliveredTexts) {
+            if (typeof entry === "string" && entry && entry !== contextBeforeUseText) {
+              extraTexts.add(entry);
+            }
+          }
+        }
+        if (savedText && savedText !== contextBeforeUseText) {
+          extraTexts.add(savedText);
+        }
+        for (const extraText of extraTexts) {
+          const extraExtracted = extractVisibleWatchChecksFromDeliveredText(
+            extraText,
+            cleanDetails,
+            true,
+          );
+          if (extraExtracted !== undefined) {
+            matchedAny = true;
+            collected.push(...extraExtracted);
+          }
+        }
+        if (matchedAny) return dedupeItems(collected);
       }
-      const savedText = toolMessageTexts(message.content).join("\n");
       if (savedText) {
         try {
           const parsedSaved: unknown = JSON.parse(savedText);

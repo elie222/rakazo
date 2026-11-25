@@ -710,6 +710,95 @@ describe("Pi usage accounting", () => {
       }),
     );
   });
+  it("calls onDeliveryAccepted only when the provider completes without error", async () => {
+    const onAccepted = vi.fn();
+    const okStream = observedPiStream(
+      builtinModels(),
+      model,
+      { messages: [] },
+      {
+        apiKey: "fake-fixture-key",
+        fetch: async () =>
+          new Response(sse({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }), {
+            headers: { "content-type": "text/event-stream" },
+          }),
+      },
+      vi.fn(),
+      undefined,
+      undefined,
+      { onDeliveryAccepted: onAccepted },
+    );
+    for await (const _event of okStream) {
+    }
+    expect(onAccepted).toHaveBeenCalledOnce();
+
+    const onRejectedAccepted = vi.fn();
+    const rejectedStream = observedPiStream(
+      builtinModels(),
+      model,
+      { messages: [] },
+      { apiKey: "fake-fixture-key" },
+      vi.fn(),
+      {
+        beforeCall: () => {
+          throw new Error("Quota limit reached");
+        },
+        afterCall: vi.fn(),
+      },
+      undefined,
+      { onDeliveryAccepted: onRejectedAccepted },
+    );
+    for await (const _event of rejectedStream) {
+    }
+    expect(onRejectedAccepted).not.toHaveBeenCalled();
+
+    const onErrorAccepted = vi.fn();
+    const errorModels = {
+      streamSimple: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: "error",
+            reason: "error",
+            error: {
+              role: "assistant",
+              content: [],
+              api: model.api,
+              provider: model.provider,
+              model: model.id,
+              usage: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                totalTokens: 0,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+              },
+              stopReason: "error",
+              errorMessage: "Provider rejected request",
+              timestamp: 1,
+            },
+          };
+        },
+        result: async () => {
+          throw new Error("Provider rejected request");
+        },
+      }),
+    } as unknown as Models;
+    const errStream = observedPiStream(
+      errorModels,
+      model,
+      { messages: [] },
+      {},
+      vi.fn(),
+      undefined,
+      undefined,
+      { onDeliveryAccepted: onErrorAccepted },
+    );
+    for await (const _event of errStream) {
+    }
+    expect(onErrorAccepted).not.toHaveBeenCalled();
+  });
+
   it("prepares context before budget reservation and provider execution", async () => {
     const beforeCall = vi.fn((_call: { inputTokensEstimate: number }) => "reservation");
     const onUsage = vi.fn(() => {

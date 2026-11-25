@@ -53,7 +53,7 @@ import {
   withoutSavedMeetingResult,
 } from "../../runs/turn/turn-checkpoint.js";
 import { neutralizeSpeakerLabels } from "../context/history-speakers.js";
-import type { RuntimeContextDecision } from "../context/runtime-context.js";
+import type { RuntimeContextDecision, WatchDeliveryState } from "../context/runtime-context.js";
 import { createRuntimeContextPolicy } from "../context/runtime-context.js";
 import type { RejectedProviderRequest } from "../provider-request-shape.js";
 import { attachRejectedRequests, rejectedRequestsOf } from "../provider-request-shape.js";
@@ -431,19 +431,18 @@ export class PiAgentRuntime implements AgentRuntime {
           }
         }
 
-        // Keep first-delivery tool-result snapshots across model switches and context resizes
-        // so later after-use compaction never restores content omitted before first use.
-        const runShortenedResults = new Map<string, Message>();
+        // Share accepted watch-check deliveries across model switches so later compaction keeps provenance.
+        const runWatchDeliveries = new Map<string, WatchDeliveryState>();
         let contextPolicy = createRuntimeContextPolicy(request, context, {
           credentialScope: apiKey,
           imageTokens: estimatePiImageTokens,
-          shortenedResults: runShortenedResults,
+          watchDeliveries: runWatchDeliveries,
         });
         const contextPolicyFor = (target: RuntimeModelTarget, speculative = false) =>
           createRuntimeContextPolicy({ ...request, model: target.config }, context, {
             credentialScope: target.credentials?.accessToken ?? target.apiKey,
             imageTokens: estimatePiImageTokens,
-            shortenedResults: speculative ? new Map(runShortenedResults) : runShortenedResults,
+            ...(speculative ? {} : { watchDeliveries: runWatchDeliveries }),
           });
         let sentContext: { context: Context; sourceLength: number } | undefined;
         const prepareContext = (ctx: Context, m: Model<Api>) => {
@@ -456,6 +455,7 @@ export class PiAgentRuntime implements AgentRuntime {
           prepareContext,
           imageTokens: estimatePiImageTokens,
           recordUsage: request.onUsage,
+          onDeliveryAccepted: () => contextPolicy.commitDelivery(),
           onUsage: (usage: AgentUsage) => {
             contextPolicy.onUsage(usage);
             const decision = contextPolicy.getDecision();
