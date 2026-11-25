@@ -186,6 +186,8 @@ export function createRuntimeContextPolicy(
     cacheTracker?: ContextCacheTracker;
     imageTokens?: ContextBudget["imageTokens"];
     credentialScope?: string;
+    /** Run-scoped first-delivery map shared across model switches and context resizes. */
+    shortenedResults?: Map<string, Message>;
   } = {},
 ) {
   const cache = options.cacheTracker ?? sharedCacheTracker;
@@ -243,7 +245,7 @@ export function createRuntimeContextPolicy(
   }
   let sent: SentTranscript | undefined;
   // Only remember shortening actually sent, never speculative rebuild candidates.
-  const shortenedResults = new Map<string, Message>();
+  const shortenedResults = options.shortenedResults ?? new Map<string, Message>();
   const hashes = new WeakMap<Message, string>();
   function hash(message: Message): string {
     let value = hashes.get(message);

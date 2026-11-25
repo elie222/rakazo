@@ -1,4 +1,5 @@
-import type { ConnectorTool } from "@rakazo/adapter-kit";
+import type { Api, Message, Model } from "@earendil-works/pi-ai";
+import type { AgentRunRequest, ConnectorTool } from "@rakazo/adapter-kit";
 import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { PrismaClient } from "@rakazo/db";
 import { loadRunTurnState, retireIntroTurnCheckpoint } from "@rakazo/db";
@@ -8,6 +9,7 @@ import {
   outsideOnlyTargets,
 } from "../../approvals/review-target-sources.js";
 import { selectContext, shortenToolResultText } from "../../runtime/context/context-selection.js";
+import { createRuntimeContextPolicy } from "../../runtime/context/runtime-context.js";
 import { OMITTED_AFTER_USE } from "../../runtime/context/runtime-context.prompt.js";
 import { clipToolResultText, TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
 import type { ToolHost } from "../../runtime/pi/tools/pi-runtime-tools.js";
@@ -1190,4 +1192,211 @@ it("keeps plain-text before-use cuts bounded across later after-use compaction",
   expect(ctx.state.outsideText).toContain("visible-before-use@outside.test");
   expect(ctx.state.outsideText).not.toContain("omitted-before-use@outside.test");
   expect(ctx.state.outsideText).not.toContain("owner-plain-two-stage@example.test");
+});
+
+it("preserves first-delivery watch snapshots across model policy switches", () => {
+  const details = {
+    routines: [
+      {
+        routineId: "r-model-switch",
+        prompt: "Send weekly summary to owner-switch@example.test",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: `${"x".repeat(12_000)} never-seen-switch@outside.test ${"y".repeat(12_000)}`,
+          entries: {
+            "item-seen": `${"s".repeat(165)} seen-before-switch@outside.test ${"t".repeat(165)}`,
+            "item-extra": "e".repeat(900),
+          },
+        },
+      },
+    ],
+  };
+  const raw = JSON.stringify(details);
+  const originalMessages: Message[] = [
+    { role: "user", content: "List schedules", timestamp: 1 },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "switch-1", name: "schedule_list", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-a",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "toolUse",
+      timestamp: 2,
+    },
+    {
+      role: "toolResult",
+      toolCallId: "switch-1",
+      toolName: "schedule_list",
+      content: [{ type: "text", text: raw }],
+      details,
+      isError: false,
+      timestamp: 3,
+    },
+  ];
+  const makeRequest = (modelId: string, contextWindow: number): AgentRunRequest =>
+    ({
+      botId: "bot-1",
+      threadId: "thread-1",
+      runId: "run-1",
+      prompt: "List schedules",
+      instructions: "Fixture",
+      history: [],
+      tools: [],
+      secrets: [],
+      contextStrategy: "cache-aware",
+      model: { provider: "openai", id: modelId, contextWindow, maxTokens: 0 },
+    }) as unknown as AgentRunRequest;
+  const makeModel = (id: string, contextWindow: number): Model<Api> =>
+    ({
+      id,
+      provider: "openai",
+      api: "openai-responses",
+      contextWindow,
+      maxTokens: 0,
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      name: id,
+      baseUrl: "https://api.example.test",
+    }) as unknown as Model<Api>;
+
+  const sharedShortened = new Map<string, Message>();
+  const policyA = createRuntimeContextPolicy(makeRequest("model-a", 7_200), undefined, {
+    shortenedResults: sharedShortened,
+  });
+  const req1 = policyA.prepareContext(
+    { systemPrompt: "Fixture", messages: originalMessages, tools: [] },
+    makeModel("model-a", 7_200),
+  );
+  const req1Result = req1.messages.find((m) => m.role === "toolResult");
+  const req1Text =
+    req1Result && Array.isArray(req1Result.content) && req1Result.content[0]?.type === "text"
+      ? req1Result.content[0].text
+      : "";
+  expect(req1Text.length).toBeGreaterThan(1_024);
+  expect(req1Text).not.toContain("never-seen-switch@outside.test");
+  expect(req1Text).toContain("seen-before-switch@outside.test");
+
+  // Switching models replaces the policy instance while keeping the run-scoped shortenedResults map.
+  // Staying in the same active user turn keeps switch-1 protected while making it after-use.
+  const policyB = createRuntimeContextPolicy(makeRequest("model-b", 2_300), undefined, {
+    shortenedResults: sharedShortened,
+  });
+  const req2 = policyB.prepareContext(
+    {
+      systemPrompt: "Fixture",
+      messages: [
+        ...originalMessages,
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "switch-2", name: "ask_user", arguments: {} }],
+          api: "openai-responses",
+          provider: "openai",
+          model: "model-a",
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "toolUse",
+          timestamp: 4,
+        },
+        {
+          role: "toolResult",
+          toolCallId: "switch-2",
+          toolName: "ask_user",
+          content: [{ type: "text", text: "y".repeat(7_500) }],
+          isError: false,
+          timestamp: 5,
+        },
+      ],
+      tools: [],
+    },
+    makeModel("model-b", 2_300),
+  );
+  const req2Result = req2.messages.find(
+    (m) => m.role === "toolResult" && m.toolCallId === "switch-1",
+  );
+  const req2Text =
+    req2Result && Array.isArray(req2Result.content) && req2Result.content[0]?.type === "text"
+      ? req2Result.content[0].text
+      : "";
+  expect(req2Text).not.toContain("never-seen-switch@outside.test");
+  expect(req2Text).not.toContain("seen-before-switch@outside.test");
+  expect(req2Text).toContain(OMITTED_AFTER_USE);
+
+  const blob = JSON.parse(checkpoint("ask_user"));
+  blob.messages.unshift(req2Result);
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(restoreTurnCheckpointEffects(ctx, JSON.stringify(blob), model)).toBeDefined();
+  expect(ctx.state.outsideText).not.toContain("never-seen-switch@outside.test");
+  expect(ctx.state.outsideText).not.toContain("owner-switch@example.test");
+  expect(ctx.state.outsideText).toContain("seen-before-switch@outside.test");
+});
+
+it("preserves literal backslashes in a watch item title after structured and plain-text before-use cuts", () => {
+  const item = `item:${JSON.stringify({
+    fields: [JSON.stringify(`field-head ${"f".repeat(9_000)}`)],
+    title: `${"t".repeat(9_000)} a\\nb@o.test`,
+  })}`;
+  const paddingEntries = Object.fromEntries(
+    Array.from({ length: 94 }, (_, i) => [`pad-${String(i).padStart(3, "0")}`, "p".repeat(110)]),
+  );
+  const details = {
+    routines: [
+      {
+        routineId: "r-title-backslash",
+        prompt: "Send update to owner-title@example.test",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          entries: {
+            ...paddingEntries,
+            "item-1": item,
+            "z-tail": "q".repeat(120),
+          },
+        },
+      },
+    ],
+  };
+  const structuredClipped = clipToolResultText(
+    serializeToolResult(details, "cache-aware", "schedule_list", {}),
+  );
+  expect(() => JSON.parse(structuredClipped)).toThrow();
+  expect(structuredClipped).not.toContain(',\\"title\\":');
+  const plainBeforeUse = shortenToolResultText(
+    structuredClipped,
+    380,
+    { name: "schedule_list" },
+    { afterUse: false },
+  );
+  expect(() => JSON.parse(plainBeforeUse)).toThrow();
+  expect(plainBeforeUse).not.toContain("omitted evidence is unavailable");
+  expect(plainBeforeUse).toContain("a\\\\\\\\nb@o.test");
+
+  const blob = JSON.parse(checkpoint("ask_user"));
+  blob.messages.unshift({
+    role: "toolResult",
+    toolCallId: "title-backslash-1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: plainBeforeUse }],
+    details,
+  });
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(restoreTurnCheckpointEffects(ctx, JSON.stringify(blob), model)).toBeDefined();
+  expect(ctx.state.outsideText).toContain("a\\nb@o.test");
+  expect(ctx.state.outsideText).not.toContain("a\nb@o.test");
+  expect(ctx.state.outsideText).not.toContain("owner-title@example.test");
 });

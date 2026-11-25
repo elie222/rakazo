@@ -245,15 +245,16 @@ function pushJsonStringInRanges(
     if (!decoded.trim()) continue;
     if (isEntryValue && rawValue.startsWith(WATCH_ITEM_SIGNATURE)) {
       const titleSplit = rawValue.lastIndexOf(',"title":');
+      const boundary = titleSplit !== -1 ? titleSplit : omissionMarkerIndex(rawValue);
       if (
-        titleSplit !== -1 &&
+        boundary !== -1 &&
         !decoded.includes(',"title":') &&
         omissionMarkerIndex(decoded) === -1
       ) {
-        const encodedTitleOffset = JSON.stringify(rawValue.slice(0, titleSplit)).length - 1;
+        const encodedBoundaryOffset = JSON.stringify(rawValue.slice(0, boundary)).length - 1;
         parts.push({
           text: decoded,
-          itemSlice: innerStart >= encodedTitleOffset ? "title" : "fields",
+          itemSlice: innerStart >= encodedBoundaryOffset ? "title" : "fields",
         });
       } else {
         parts.push({ text: decoded, itemSlice: "fields" });

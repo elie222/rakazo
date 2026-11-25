@@ -431,14 +431,19 @@ export class PiAgentRuntime implements AgentRuntime {
           }
         }
 
+        // Keep first-delivery tool-result snapshots across model switches and context resizes
+        // so later after-use compaction never restores content omitted before first use.
+        const runShortenedResults = new Map<string, Message>();
         let contextPolicy = createRuntimeContextPolicy(request, context, {
           credentialScope: apiKey,
           imageTokens: estimatePiImageTokens,
+          shortenedResults: runShortenedResults,
         });
-        const contextPolicyFor = (target: RuntimeModelTarget) =>
+        const contextPolicyFor = (target: RuntimeModelTarget, speculative = false) =>
           createRuntimeContextPolicy({ ...request, model: target.config }, context, {
             credentialScope: target.credentials?.accessToken ?? target.apiKey,
             imageTokens: estimatePiImageTokens,
+            shortenedResults: speculative ? new Map(runShortenedResults) : runShortenedResults,
           });
         let sentContext: { context: Context; sourceLength: number } | undefined;
         const prepareContext = (ctx: Context, m: Model<Api>) => {
@@ -552,7 +557,7 @@ export class PiAgentRuntime implements AgentRuntime {
           // turn is added as on each call, so the backup is judged on what it would be sent.
           prepareForTarget: (target, ctx) => ({
             ...ctx,
-            ...withLeadingUser(contextPolicyFor(target).prepareContext(ctx, target.model)),
+            ...withLeadingUser(contextPolicyFor(target, true).prepareContext(ctx, target.model)),
           }),
           onSwitch: async (target) => {
             await request.onModelChange?.(target.config.provider, target.config.id);
