@@ -173,9 +173,13 @@ export async function replayExistingSend(
   if (!clientNonce) return null;
   const message = await findSendReceipt(deps.prisma, threadId, clientNonce);
   if (!message) return null;
-  // Legacy messages saved before shared spaces have authorUserId null and keep replaying.
+  // Ordinary sends saved before shared spaces have authorUserId null and keep replaying.
+  // Strict card answers always record their author, so missing or foreign authors fail closed.
+  const wrongAuthor = strictAnswer
+    ? message.authorUserId !== authorUserId
+    : Boolean(message.authorUserId && message.authorUserId !== authorUserId);
   if (
-    (message.authorUserId && message.authorUserId !== authorUserId) ||
+    wrongAuthor ||
     (strictAnswer && !(await answeredSameCard(deps.prisma, threadId, message, strictAnswer)))
   ) {
     throw new ClientError("CONFLICT", "This message nonce is already in use.");

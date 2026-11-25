@@ -327,17 +327,44 @@ describe("model setup gate", () => {
       savedStrictReceiptAuthorUserId: null,
       modelLookupError: new SecretStoreUnavailableError(),
     });
-    const legacyReplayed = await call(legacy.handler, legacy.actor, "threads/answerQuestion", {
+    const legacyConflict = await call(legacy.handler, legacy.actor, "threads/answerQuestion", {
       botId: "bot-1",
       text: "Kyoto",
       replyToMessageId: "ask-1",
       clientNonce: "nonce-legacy",
     });
-    expect(legacyReplayed.status).toBe(200);
-    await expect(legacyReplayed.json()).resolves.toMatchObject({
-      json: { runId: "run-saved", taskId: "task-saved", seq: 7 },
+    expect(legacyConflict.status).toBe(409);
+    await expect(legacyConflict.json()).resolves.toMatchObject({
+      json: expect.objectContaining({ code: "CONFLICT" }),
     });
+    expect(legacy.jobs.enqueue).not.toHaveBeenCalled();
+    expect(legacy.events.notify).not.toHaveBeenCalled();
     expect(legacy.prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
+
+    const teaching = modelGateDeps({
+      agentRuntime: "pi",
+      savedStrictReceipt: true,
+      modelLookupError: new SecretStoreUnavailableError(),
+    });
+    vi.mocked(teaching.prisma.taughtSkill.findFirst).mockResolvedValue({ id: "skill-1" } as never);
+    const blockedDuringTeaching = await call(
+      teaching.handler,
+      teaching.actor,
+      "threads/answerQuestion",
+      {
+        botId: "bot-1",
+        text: "Kyoto",
+        replyToMessageId: "ask-1",
+        clientNonce: "nonce-saved",
+      },
+    );
+    expect(blockedDuringTeaching.status).toBe(409);
+    await expect(blockedDuringTeaching.json()).resolves.toMatchObject({
+      json: expect.objectContaining({ message: "Stop teaching first" }),
+    });
+    expect(teaching.jobs.enqueue).not.toHaveBeenCalled();
+    expect(teaching.events.notify).not.toHaveBeenCalled();
+    expect(teaching.prisma.userModelPreference.findFirst).not.toHaveBeenCalled();
 
     const fresh = modelGateDeps({
       agentRuntime: "pi",

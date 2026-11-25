@@ -147,6 +147,9 @@ export function threadsRoutes(ctx: RouterContext) {
   ) => {
     const target = await resolveThreadTarget(deps.prisma, actor, input);
     const releaseTakeover = takeoverReleaser(deps, actor, target);
+    if (target.kind === "bot") {
+      await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
+    }
     // Strict card answers replay any saved receipt before checking model setup so a retry
     // after a lost HTTP response still returns its receipt if model lookup is unavailable.
     if (input.answersQuestion) {
@@ -169,9 +172,6 @@ export function threadsRoutes(ctx: RouterContext) {
       !(await botsRunOwnModels(deps, actor, sendTargetBotIds(target, input, replied)));
     if (noModel && (input.answersQuestion || !isStopMessage(input))) {
       throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
-    }
-    if (target.kind === "bot") {
-      await assertTeachingSendAllowed(deps.prisma, actor.spaceId, target.botId);
     }
     const confirmingImages =
       input.imageHandling === "confirm" && Boolean(input.artifactIds?.length);

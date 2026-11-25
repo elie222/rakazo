@@ -3507,12 +3507,8 @@ describe("sendThreadMessage", () => {
           noModel: true,
         },
       ),
-    ).resolves.toMatchObject({
-      runId: "run-saved",
-      taskId: "task-saved",
-      seq: 7,
-      runIds: ["run-saved"],
-    });
+    ).rejects.toMatchObject({ kind: "CONFLICT" });
+    expect(legacyEnqueue).not.toHaveBeenCalled();
     expect(legacyPrisma.$transaction).not.toHaveBeenCalled();
 
     const freshPrisma = {
