@@ -250,13 +250,15 @@ PI_DEFAULT_CREDENTIALS=host
 PI_DEFAULT_MODEL=<a model the CLI offers>
 ```
 
-If the model id is not one the CLI offers, the run's error lists the ones it does. The CLI runs with
-a home folder of Rakazo's own in place of `~/.gemini`, linked only to the files it keeps its
-sign-in in, so your Antigravity hooks, MCP servers, skills and other settings stay out of the
-bot's turns. A sign-in the CLI saves there when it refreshes is replaced by the link again before
-the next turn, so signing out or switching accounts with `agy` reaches your bots. Screen and computer use, and images people send, are not available to bots on
-Antigravity yet. Usage counts against your Google plan, and Rakazo shows no cost for these runs.
-Your use is covered by [Google's Antigravity terms](https://antigravity.google/terms).
+The CLI runs with a home folder of Rakazo's own in place of `~/.gemini`, linked only to the files
+it keeps its sign-in in, so your Antigravity hooks, MCP servers, skills and other settings stay out
+of the bot's turns. A sign-in the CLI saves there when it refreshes is replaced by the link again
+before the next turn, so signing out or switching accounts with `agy` reaches your bots.
+
+If the model id is not one the CLI offers, the run's error lists the ones it does. Screen and
+computer use, and images people send, are not available to bots on Antigravity yet. Usage counts
+against your Google plan, and Rakazo shows no cost for these runs. Your use is covered by
+[Google's Antigravity terms](https://antigravity.google/terms).
 
 ## Ollama Cloud
 
