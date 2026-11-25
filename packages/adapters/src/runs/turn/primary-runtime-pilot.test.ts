@@ -139,7 +139,15 @@ it("builds a fresh group request from the exact source, with no history, reply q
         },
       },
     },
-    select: { id: true, threadId: true, botId: true, runId: true, clientNonce: true, blocks: true },
+    select: {
+      id: true,
+      threadId: true,
+      seq: true,
+      botId: true,
+      runId: true,
+      clientNonce: true,
+      blocks: true,
+    },
   });
   await expect(
     pilotGroupRequest(prisma as never, {
@@ -158,10 +166,52 @@ it("builds a fresh group request from the exact source, with no history, reply q
   await expect(pilotGroupRequest(prisma as never, input)).rejects.toThrow("addressed text");
 });
 
+it("loads scoped continuity only after the current owner message is validated", async () => {
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", run.botId);
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", run.botId);
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_CONTINUITY_BOT_IDS", "");
+  const prisma = {
+    message: {
+      findFirst: vi.fn().mockResolvedValue({
+        seq: 17,
+        blocks: [{ kind: "text", text: "Current request" }],
+      }),
+    },
+    run: { findMany: vi.fn().mockResolvedValue([]) },
+  };
+  const input = {
+    run: {
+      ...run,
+      id: "now",
+      userId: "owner",
+      spaceId: "space",
+      threadId: "thread",
+      sourceMessageId: "current",
+    },
+    thread: { id: "thread", botId: null, groupId: "group", externalConversationId: null },
+    model,
+    onUsage: undefined,
+    redactions: [],
+  };
+  await expect(pilotGroupRequest(prisma as never, input)).resolves.toMatchObject({ history: [] });
+  expect(prisma.run.findMany).not.toHaveBeenCalled();
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_CONTINUITY_BOT_IDS", run.botId);
+  await expect(pilotGroupRequest(prisma as never, input)).resolves.toMatchObject({ history: [] });
+  expect(prisma.run.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: expect.objectContaining({
+        modelCredentialId: "key-a",
+        sourceMessage: expect.objectContaining({ seq: { lt: 17 } }),
+      }),
+    }),
+  );
+});
+
 it("projects only a genuine first handoff after rechecking the live sender and origin", async () => {
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", run.botId);
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", run.botId);
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_HANDOFF_BOT_IDS", run.botId);
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_CONTINUITY_BOT_IDS", run.botId);
   const input = {
     run: {
       ...run,

@@ -5,6 +5,7 @@ import { redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { readMessageBlocks } from "@rakazo/db";
 import { nativeTextRuntime } from "../../providers/agent-runtime/claude/descriptor.js";
+import { primaryGroupHistory } from "./primary-group-continuity.js";
 
 /** Deployment-owned allowlist. No user-supplied executable, environment or vendor fork. */
 export function pilotRuntimeForBot(botId: string, environment = process.env): string | undefined {
@@ -202,7 +203,7 @@ export function pilotConversation(
   return { prompt, history };
 }
 
-/** A group pilot turn never receives the normal group's history or instructions. */
+/** No ambient group history or instructions; only independently opted-in owner mentions can replay. */
 export async function pilotGroupRequest(
   prisma: Pick<PrismaClient, "message" | "run">,
   input: {
@@ -214,6 +215,9 @@ export async function pilotGroupRequest(
       threadId: string;
       sourceMessageId: string | null;
       primaryRuntime: string;
+      modelProvider: string | null;
+      modelId: string | null;
+      modelCredentialId: string | null;
       trigger: string;
       routineId: string | null;
     };
@@ -267,7 +271,15 @@ export async function pilotGroupRequest(
         },
       },
     },
-    select: { id: true, threadId: true, botId: true, runId: true, clientNonce: true, blocks: true },
+    select: {
+      id: true,
+      threadId: true,
+      seq: true,
+      botId: true,
+      runId: true,
+      clientNonce: true,
+      blocks: true,
+    },
   });
   if (!source) throw error();
   const { blocks, intact } = readMessageBlocks(source);
@@ -301,6 +313,20 @@ export async function pilotGroupRequest(
     prompt = block.text;
   }
   if (!prompt.trim()) throw error();
+  const continuity = process.env.PRIMARY_RUNTIME_PILOT_GROUP_CONTINUITY_BOT_IDS?.split(",").some(
+    (id) => id.trim() === run.botId,
+  );
+  const history =
+    !handoff && continuity && run.modelProvider && run.modelId && run.modelCredentialId
+      ? await primaryGroupHistory(prisma, {
+          ...run,
+          modelProvider: run.modelProvider,
+          modelId: run.modelId,
+          modelCredentialId: run.modelCredentialId,
+          beforeSeq: source.seq,
+          redactions,
+        })
+      : [];
   return {
     botId: run.botId,
     threadId: run.threadId,
@@ -308,7 +334,7 @@ export async function pilotGroupRequest(
     sourceMessageId: run.sourceMessageId,
     prompt: redactSecrets(prompt, redactions),
     instructions: "",
-    history: [],
+    history,
     tools: [],
     model,
     onUsage,
