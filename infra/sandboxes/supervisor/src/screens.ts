@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import { getLogger } from "@rakazo/logging";
 import type Docker from "dockerode";
 import { screenPorts } from "./computer-spec.js";
-import { teamScreenLimit } from "./context.js";
+import { docker, teamScreenLimit } from "./context.js";
 import { runContainerCommand } from "./exec.js";
 import { managedContainer } from "./identity.js";
-import { withComputerScreenLock } from "./locks.js";
 import { rejoinComputerNetwork } from "./networks.js";
 import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
   browserProfilePathForScreen,
   clearComputerScreenRegistry,
+  completeWarmReleasedScreen,
   currentComputerScreens,
   ensureScreenCommand,
   interactiveScreenCommand,
@@ -19,14 +19,93 @@ import {
   releaseAssignedScreen,
   resetManagedScreensCommand,
   retryFailedScreenTeardown,
+  SCREEN_IDLE_MS,
+  screenIsIdle,
   screenRecentlyEnsured,
   stopExtraScreenCommand,
   teardownReleasedScreen,
+  withKeyedLock,
 } from "./supervisor-logic.js";
 
 export const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 // Container start time each screen registry was built under; see currentComputerScreens.
 export const computerScreenBoots = new Map<string, string>();
+const computerScreenLocks = new Map<string, Promise<unknown>>();
+const idleScreenTimers = new Map<string, Map<string, ReturnType<typeof setTimeout>>>();
+
+// Serialize screen claim/release/cancel for one computer so a restart-orphan
+// cancel cannot race a replacement claim and kill the newer Chromium session.
+// A section that changed the registry ends by arming one timer per idle screen.
+export async function withComputerScreenLock<T>(
+  computerId: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  return withKeyedLock(computerScreenLocks, computerId, async () => {
+    try {
+      return await task();
+    } finally {
+      armIdleScreenTimers(computerId);
+    }
+  });
+}
+
+function armIdleScreenTimers(computerId: string) {
+  for (const timer of idleScreenTimers.get(computerId)?.values() ?? []) clearTimeout(timer);
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  for (const [screenKey, slot] of computerScreens.get(computerId) ?? []) {
+    if (!screenIsIdle(slot)) continue;
+    const timer = setTimeout(
+      () => void closeIdleScreen(computerId, screenKey),
+      Math.max(0, slot.idleAt + SCREEN_IDLE_MS - Date.now()),
+    );
+    timer.unref();
+    timers.set(screenKey, timer);
+  }
+  if (timers.size === 0) idleScreenTimers.delete(computerId);
+  else idleScreenTimers.set(computerId, timers);
+}
+
+async function closeIdleScreen(computerId: string, screenKey: string) {
+  await withComputerScreenLock(computerId, async () => {
+    const container = docker.getContainer(computerId);
+    let info: Docker.ContainerInspectInfo | undefined;
+    try {
+      info = await container.inspect();
+    } catch (error) {
+      if ((error as { statusCode?: number })?.statusCode !== 404) {
+        postponeIdleScreen(computerId, screenKey, error);
+        return;
+      }
+    }
+    // A stopped or removed computer has no screen processes left to stop.
+    if (!info?.State.Running) {
+      clearComputerScreenRegistry(computerScreens, computerScreenBoots, computerId);
+      return;
+    }
+    const assigned = currentComputerScreens(
+      computerScreens,
+      computerScreenBoots,
+      computerId,
+      info.State.StartedAt,
+    );
+    const slot = assigned?.get(screenKey);
+    if (!assigned || !screenIsIdle(slot) || Date.now() < slot.idleAt + SCREEN_IDLE_MS) return;
+    releaseAssignedScreen(assigned, screenKey);
+    await teardownReleasedScreen(assigned, screenKey, slot.index, () =>
+      runContainerCommand(container, ["bash", "-c", stopExtraScreenCommand(slot.index, screenKey)]),
+    ).catch((error) => postponeIdleScreen(computerId, screenKey, error));
+  });
+}
+
+/** A close that failed keeps the screen reserved for its bot and idle from now, to be tried again later. */
+function postponeIdleScreen(computerId: string, screenKey: string, error: unknown) {
+  getLogger().error("computer idle screen failed to close", error);
+  const assigned = computerScreens.get(computerId);
+  const slot = assigned?.get(screenKey);
+  if (!assigned || !slot) return;
+  if (slot.releasing) completeWarmReleasedScreen(assigned, screenKey, slot.index, Date.now());
+  else slot.idleAt = Date.now();
+}
 
 export async function managedScreen(
   id: string,

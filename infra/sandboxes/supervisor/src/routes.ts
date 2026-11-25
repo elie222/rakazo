@@ -69,7 +69,7 @@ import {
   isRakazoContainer,
   managedContainer,
 } from "./identity.js";
-import { withBotLifecycleLock, withComputerScreenLock, withSpaceComputerLock } from "./locks.js";
+import { withBotLifecycleLock, withSpaceComputerLock } from "./locks.js";
 import {
   computerNetworkName,
   ensureBotNetwork,
@@ -87,6 +87,7 @@ import {
   ensureManagedScreen,
   managedScreen,
   setInteractiveScreen,
+  withComputerScreenLock,
 } from "./screens.js";
 import {
   assertRequestIdentity,
@@ -948,6 +949,7 @@ app.post("/computers/:id/screen-mode", async (c) => {
           } else {
             delete slot.controlled;
             delete slot.controlToken;
+            if (slot.idleAt !== undefined) slot.idleAt = Date.now();
           }
         }
       }
