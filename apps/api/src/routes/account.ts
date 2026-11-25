@@ -45,6 +45,7 @@ import {
   newestVoiceCredentialOrder,
   Prisma,
   pageChangesScope,
+  readEffectiveApprovalRules,
   removeApprovalRule,
   runAsSystem,
   runAsTenant,
@@ -60,7 +61,6 @@ import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../auth/
 import { requireAdmin } from "../auth/admins.js";
 import type { BillingService } from "../billing/billing.js";
 import {
-  accountVoiceCatalog,
   disconnectVoiceCredential,
   effectiveVoiceStatus,
   loadDefaultVoiceCredential,
@@ -71,11 +71,11 @@ import {
   toVoiceStatus,
   updateVoiceSpeechModel,
   voiceContext,
-  voiceCredentialHasKey,
   voiceCredentialServer,
   voiceProviderFor,
   withVoiceConnection,
 } from "../calls/voice.js";
+import { accountVoiceCatalog, voiceCredentialLink } from "../calls/voice-model-connection.js";
 import {
   recordCreditsChoice,
   recordSignInStep,
@@ -89,9 +89,13 @@ const ROSTER_CHANGED = Symbol("roster changed");
 const ORGANIZATIONS_CHANGED = Symbol("organizations changed");
 
 const SIGNAL_FAILURE_HOLD_MS = 30_000;
+const defaultAutoReviewPreference = { enabled: true, skipApprovals: false };
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
+  const preferencesChanged = (userId: string) =>
+    deps.events.publishSpaceChange?.(accountPreferencesChangesScope(userId), "preferences");
+
   return {
     aiConsent: {
       status: authed.aiConsent.status.handler(({ context, input }) =>
@@ -245,11 +249,7 @@ export function accountRoutes(ctx: RouterContext) {
             data,
           });
         }
-        if (input.chatPreferences !== undefined)
-          await deps.events.publishSpaceChange?.(
-            accountPreferencesChangesScope(userId),
-            "preferences",
-          );
+        if (input.chatPreferences !== undefined) await preferencesChanged(userId);
         if (botAvatarSet !== undefined) {
           // Every bot of this user not pinned to another set follows the new default, in every
           // space they own bots in, announced like any edit so other devices redraw it.
@@ -337,20 +337,34 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     approvalRules: {
+      effective: authed.approvalRules.effective.handler(async ({ context }) => {
+        const { target, rules, preference } = await readEffectiveApprovalRules(
+          deps.prisma,
+          context.actor,
+        );
+        return {
+          target,
+          rules: rules.map(approvalRuleDto),
+          mode: approvalModeFromPreference(preference ?? defaultAutoReviewPreference),
+        };
+      }),
       list: authed.approvalRules.list.handler(async ({ context, input }) => {
         const rows = await listApprovalRules(deps.prisma, context.actor, input?.scope);
         return rows.map(approvalRuleDto);
       }),
       set: authed.approvalRules.set.handler(async ({ context, input }) => {
-        const { scope, ...rule } = input;
-        return approvalRuleDto(
-          await deps.prisma.$transaction((tx) => saveApprovalRule(tx, context.actor, rule, scope)),
+        const { scope, expectedTarget, ...rule } = input;
+        const saved = await deps.prisma.$transaction((tx) =>
+          saveApprovalRule(tx, context.actor, rule, scope, expectedTarget),
         );
+        await preferencesChanged(context.actor.userId);
+        return approvalRuleDto(saved);
       }),
       remove: authed.approvalRules.remove.handler(async ({ context, input }) => {
         await deps.prisma.$transaction((tx) =>
-          removeApprovalRule(tx, context.actor, input.id, input.scope),
+          removeApprovalRule(tx, context.actor, input.id, input.scope, input.expectedTarget),
         );
+        await preferencesChanged(context.actor.userId);
         return { ok: true as const };
       }),
     },
@@ -393,10 +407,11 @@ export function accountRoutes(ctx: RouterContext) {
             input.mode
               ? approvalPreferenceFromMode(input.mode)
               : { enabled: input.enabled, skipApprovals: input.skipApprovals },
-            { enabled: true, skipApprovals: false },
+            defaultAutoReviewPreference,
             input.scope,
           ),
         );
+        await preferencesChanged(context.actor.userId);
         return loadAutoReviewSettings(deps, context.actor, input.scope);
       }),
     },
@@ -638,7 +653,7 @@ export function accountRoutes(ctx: RouterContext) {
               voiceId: preference?.voiceId ?? "",
               speechModel: preference?.speechModel ?? "",
               server: await voiceCredentialServer(deps, context.actor, row),
-              hasKey: await voiceCredentialHasKey(deps, context.actor, row),
+              ...(await voiceCredentialLink(deps, context.actor, row)),
             });
           }),
         );
@@ -647,6 +662,7 @@ export function accountRoutes(ctx: RouterContext) {
         persistVoiceCredential(deps, context.actor, {
           provider: input.provider,
           plaintext: input.apiKey,
+          modelCredentialId: input.modelCredentialId,
           voiceId: input.voiceId,
           speechModel: input.speechModel,
           baseUrl: input.baseUrl,
@@ -759,10 +775,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
     ),
     findAutoReviewPreference(deps.prisma, actor, scope),
   ]);
-  const stored = {
-    enabled: preference?.enabled ?? true,
-    skipApprovals: preference?.skipApprovals ?? false,
-  };
+  const stored = preference ?? defaultAutoReviewPreference;
   const settings = { ...stored, mode: approvalModeFromPreference(stored) };
   const deploymentChecker = role.primarySource === "deployment" ? role.primary : null;
   const memberChoices = [

@@ -7,6 +7,7 @@ import { act, Children, createElement, createRef, isValidElement, useMemo } from
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setComposerEnterToSendPreference } from "../../lib/composer/composer-enter-to-send-preference";
 import { settleComposer } from "../../lib/thread/send/thread-feedback";
 import { useThreadMentionCatalog } from "../../lib/thread/thread-mention-catalog";
 import type { ThreadComposerHandle } from "./thread-composer";
@@ -194,6 +195,44 @@ vi.mock("react-native", () => {
     },
   };
 });
+vi.mock("expo", () => ({
+  requireOptionalNativeModule: () => ({}),
+  requireNativeView:
+    () =>
+    ({
+      children,
+      enterEnabled,
+      commandEnterEnabled,
+      pickerOpen,
+      onHardwareKey,
+    }: {
+      children: ReactNode;
+      enterEnabled: boolean;
+      commandEnterEnabled: boolean;
+      pickerOpen: boolean;
+      onHardwareKey: (event: { nativeEvent: { key: string } }) => void;
+    }) =>
+      createElement(
+        "div",
+        null,
+        children,
+        ["Enter", "CommandEnter", "ArrowDown", "Escape"].map((key) =>
+          createElement("button", {
+            key,
+            type: "button",
+            "aria-label": `Hardware ${key}`,
+            disabled: !(key === "Enter"
+              ? enterEnabled
+              : key === "CommandEnter"
+                ? commandEnterEnabled
+                : pickerOpen),
+            onClick: () => onHardwareKey({ nativeEvent: { key } }),
+          }),
+        ),
+      ),
+}));
+vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn() }));
+
 vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({ children }: { children?: ReactNode }) => children,
 }));
@@ -866,6 +905,118 @@ describe("thread composer isolation", () => {
     select(0);
     expect(field().value).toBe("@Helper ");
     expect(composer.current!.snapshot().mentions).toEqual([bot]);
+  });
+
+  it("sends a draft on hardware Enter", () => {
+    type("A message");
+
+    press("Hardware Enter");
+
+    expect(props.send).toHaveBeenCalledOnce();
+  });
+
+  it("consumes hardware Enter without changing an empty draft when Enter sends", () => {
+    const enter = container.querySelector<HTMLButtonElement>('button[aria-label="Hardware Enter"]');
+    expect(enter?.disabled).toBe(false);
+
+    press("Hardware Enter");
+
+    expect(composer.current!.snapshot().promptText).toBe("");
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("honors the hardware Enter toggle", async () => {
+    await act(() => setComposerEnterToSendPreference(false));
+    try {
+      type("A message");
+
+      press("Hardware Enter");
+
+      expect(props.send).not.toHaveBeenCalled();
+    } finally {
+      await act(() => setComposerEnterToSendPreference(true));
+    }
+  });
+
+  it("sends with Command+Enter when the Enter toggle is off", async () => {
+    await act(() => setComposerEnterToSendPreference(false));
+    try {
+      type("A message");
+
+      press("Hardware CommandEnter");
+
+      expect(props.send).toHaveBeenCalledOnce();
+    } finally {
+      await act(() => setComposerEnterToSendPreference(true));
+    }
+  });
+
+  it("inserts a newline on software Enter", () => {
+    type("First line");
+    act(() => input.key({ nativeEvent: { key: "Enter" } }));
+    type("First line\nSecond line");
+
+    expect(composer.current!.snapshot().promptText).toBe("First line\nSecond line");
+    expect(props.send).not.toHaveBeenCalled();
+  });
+
+  it("sends on Command+Enter with a mention picker open", () => {
+    type("Ask @He");
+
+    press("Hardware CommandEnter");
+
+    expect(props.send).toHaveBeenCalledOnce();
+    expect(composer.current!.snapshot().mentions).toEqual([]);
+  });
+
+  it("completes a mention before a later Enter sends the draft", () => {
+    type("Ask @He");
+    press("Hardware Enter");
+    expect(composer.current!.snapshot().mentions).toEqual([bot]);
+    expect(props.send).not.toHaveBeenCalled();
+
+    press("Hardware Enter");
+    expect(props.send).toHaveBeenCalledOnce();
+  });
+
+  it("selects the highlighted skill even with Enter to send disabled", async () => {
+    await act(() => setComposerEnterToSendPreference(false));
+    try {
+      const other = { ...skill, id: "skill-2", name: "Drawing" };
+      render({ agentSkills: [other, skill] });
+      type("/");
+      press("Hardware ArrowDown");
+      press("Hardware ArrowDown");
+
+      press("Hardware Enter");
+
+      expect(composer.current!.snapshot().skill).toEqual(skill);
+      expect(props.send).not.toHaveBeenCalled();
+    } finally {
+      await act(() => setComposerEnterToSendPreference(true));
+    }
+  });
+
+  it("keeps the keyboard highlight when a delayed selection reports the same query", () => {
+    const other = { ...skill, id: "skill-2", name: "Drawing" };
+    render({ agentSkills: [other, skill] });
+    type("/");
+    press("Hardware ArrowDown");
+    press("Hardware ArrowDown");
+
+    select(1, 1);
+    press("Hardware Enter");
+
+    expect(composer.current!.snapshot().skill).toEqual(skill);
+  });
+
+  it("dismisses the picker with Escape and keeps the draft", () => {
+    type("Ask @He");
+
+    press("Hardware Escape");
+
+    expect(container.querySelector('[data-testid="mention-picker"]')).toBeNull();
+    expect(composer.current!.snapshot().promptText).toBe("Ask @He");
   });
 
   it("types 20 characters without rendering the parent and sends the latest ref snapshot", () => {

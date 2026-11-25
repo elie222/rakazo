@@ -5,7 +5,7 @@ import type {
   MemoryReadRequest,
   MemorySnapshot,
 } from "@rakazo/adapter-kit";
-import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
+import { MemoryRevisionConflictError, TransientModelError } from "@rakazo/adapter-kit";
 import {
   legacyScopedToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -257,11 +257,13 @@ function fixture(runId = "run-1") {
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const enqueue = vi.fn(async (_job: BackgroundJob) => undefined);
   let calls: ToolCall[] = [];
+  let modelError: Error | undefined;
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
     for (const call of calls) {
       const result = await request.executeTool!(call.name, call.args, call.executionId);
       results.push(result);
     }
+    if (modelError) throw modelError;
     yield { type: "done" as const, text: "Done" };
   });
   const executor = createRunExecutor({
@@ -315,6 +317,11 @@ function fixture(runId = "run-1") {
     setCalls(next: ToolCall[]) {
       calls = next;
     },
+    async failFromModel() {
+      modelError = new TransientModelError("Model overloaded");
+      await executor.continueRun(run.id, "worker-1");
+      return finalizeRun;
+    },
     async run() {
       run.status = "queued";
       await executor.continueRun(run.id, "worker-1");
@@ -324,6 +331,27 @@ function fixture(runId = "run-1") {
     },
   };
 }
+
+describe("retrying a failed typed reply", () => {
+  it("offers a fresh reply when the first model call fails before any tool", async () => {
+    const finalize = await fixture().failFromModel();
+    expect(finalize).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "failed", retryable: true }),
+    );
+  });
+
+  it("does not offer a fresh reply after a tool has already written data", async () => {
+    const f = fixture();
+    f.setCalls([
+      { name: "scratchpad_add", args: { title: "follow up with design" }, executionId: "call-1" },
+    ]);
+    const finalize = await f.failFromModel();
+    expect(f.scratchpadRows).toHaveLength(1);
+    expect(finalize).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "failed", retryable: false }),
+    );
+  });
+});
 
 describe("mutating tool effect idempotency keys", () => {
   it.each(["generate_image", "generate_video"] as const)(

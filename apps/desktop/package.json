@@ -19,8 +19,6 @@
     "release": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --publish never"
   },
   "dependencies": {
-    "@rakazo/contracts": "workspace:*",
-    "@rakazo/logging": "workspace:*",
     "@sentry/electron": "8.3.0",
     "electron-updater": "6.8.12",
     "koffi": "3.3.7"
@@ -28,7 +26,9 @@
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@rakazo/adapters": "workspace:*",
+    "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
+    "@rakazo/logging": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "electron": "45.2.3",
     "electron-builder": "26.18.1",
@@ -39,6 +39,14 @@
   },
   "build": {
     "appId": "dev.rakazo.desktop",
+    "protocols": [
+      {
+        "name": "Rakazo",
+        "schemes": [
+          "rakazo"
+        ]
+      }
+    ],
     "directories": {
       "output": "out",
       "buildResources": "assets"

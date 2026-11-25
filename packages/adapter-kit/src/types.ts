@@ -1288,9 +1288,25 @@ export interface MessagingCapabilities {
   files?: boolean;
 }
 
+/**
+ * What one platform accepts outbound. The platform that owns a limit declares it here, so shared
+ * code never branches on a provider id.
+ */
+export interface MessagingOutbound {
+  /** Renders the app's markdown as this platform's own formatting. */
+  markdown?: boolean;
+  /** Splits a body longer than the platform's limit into the payloads it accepts. */
+  split?(body: string): string[];
+  /** Largest attachment accepted in one message; a larger one is refused before sending. */
+  attachmentLimitBytes?: number;
+  /** Shows an image this size or smaller inline as a photo, for these content types. */
+  photo?: { maxBytes: number; types: ReadonlySet<string> };
+}
+
 /** One messaging platform behind the chat surface (sendblue, slack, …). */
 export interface MessagingPlatformDescriptor {
   provider: string;
+  outbound?: MessagingOutbound;
   capabilities: MessagingCapabilities;
   /** The line people message to reach this deployment (a phone number), when it has one. */
   address?: string;

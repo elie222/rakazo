@@ -39,12 +39,10 @@ export class InstalledMessagingSurface implements MessagingSurface {
     };
   }
   platforms() {
+    const { provider, capabilities, outbound } = this.provider;
     return [
-      ...(this.fallback?.platforms().filter((p) => p.provider !== this.provider.provider) ?? []),
-      {
-        provider: this.provider.provider,
-        capabilities: this.provider.capabilities,
-      },
+      ...(this.fallback?.platforms().filter((p) => p.provider !== provider) ?? []),
+      { provider, capabilities, ...(outbound ? { outbound } : {}) },
     ];
   }
   async resolveAddresses(signal?: AbortSignal): Promise<Record<string, string>> {
