@@ -8,6 +8,10 @@ import type {
 import { bestEffort } from "@rakazo/logging";
 import type { MediaModelList } from "../media/media-models.js";
 import {
+  ANTIGRAVITY_CLI_CREDENTIAL_SOURCE,
+  ANTIGRAVITY_CLI_PROVIDER_ID,
+} from "../providers/agent-cli/antigravity/provider-id.js";
+import {
   OPENCODE_CLI_CREDENTIAL_SOURCE,
   OPENCODE_CLI_PROVIDER_ID,
 } from "../providers/agent-cli/opencode/provider-id.js";
@@ -230,6 +234,9 @@ export const modelProviders = {
   },
   [OPENCODE_CLI_PROVIDER_ID]: {
     hostCredentials: { source: OPENCODE_CLI_CREDENTIAL_SOURCE, resolvedAtRequest: true },
+  },
+  [ANTIGRAVITY_CLI_PROVIDER_ID]: {
+    hostCredentials: { source: ANTIGRAVITY_CLI_CREDENTIAL_SOURCE, resolvedAtRequest: true },
   },
 } satisfies Record<string, ModelProviderDefinition>;
 
