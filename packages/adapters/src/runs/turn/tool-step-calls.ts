@@ -184,7 +184,7 @@ function cleanToolText(text: string, secrets: string[]): string {
   });
   const sanitizeDecoded = (value: string) => sanitizeSensitiveText(redactSecrets(value, secrets));
   const sanitizePlain = (value: string) => sanitizeSensitiveText(redactSecrets(value, secretForms));
-  const cleaned = redactJsonStringsAndPlainText(text, sanitizeDecoded, sanitizePlain);
+  const cleaned = redactJsonStringsAndPlainText(text, sanitizeDecoded, sanitizePlain, secrets);
   return redactCredentialJsonFields(cleaned);
 }
 
@@ -371,6 +371,7 @@ function redactStoredPrompt(text: string, secrets: string[]): string {
       body,
       (value) => redactSecrets(value, promptForms),
       (value) => redactSecrets(value, quoteSecretForms),
+      promptForms,
     );
     return cleaned === body ? body : cleaned.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
   };

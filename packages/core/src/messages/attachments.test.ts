@@ -1006,6 +1006,36 @@ describe("tool step history", () => {
       safe: 'prefix"kept',
       secret: "[redacted]",
     });
+
+    const numericAndPrefixed = blocksToAgentHistorySegments(
+      [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Lookup",
+              tool: "lookup",
+              count: 2,
+              calls: [
+                { result: "731428" },
+                { result: 'Log prefix: {"safe":"prefix\\"kept","secret":"prefix\\\\"}' },
+              ],
+            },
+          ],
+        },
+      ] as unknown as MessageBlock[],
+      secretRedactor(["731428", "prefix\\"]),
+    );
+    const extraCalls =
+      numericAndPrefixed[0] && "steps" in numericAndPrefixed[0]
+        ? numericAndPrefixed[0].steps[0]?.calls
+        : undefined;
+    expect(extraCalls?.[0]?.result).toBe("[redacted]");
+    const embeddedJson = extraCalls?.[1]?.result?.replace(/^Log prefix: /, "") ?? "";
+    expect(JSON.parse(embeddedJson)).toEqual({
+      safe: 'prefix"kept',
+      secret: "[redacted]",
+    });
   });
 
   it("ignores fractional step counts and non-string ask action labels in flat history", () => {

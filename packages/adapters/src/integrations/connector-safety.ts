@@ -40,7 +40,7 @@ export function sanitizeConnectorError(
     redactSecrets(value, secrets)
       .replace(/Bearer\s+(?:"[^"\r\n]*"?|'[^'\r\n]*'?|[^\s"',;&}]+)/gi, "Bearer [redacted]")
       .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
-  const cleaned = redactJsonStringsAndPlainText(message, sanitizeDecoded, sanitizePlain);
+  const cleaned = redactJsonStringsAndPlainText(message, sanitizeDecoded, sanitizePlain, secrets);
   const maxChars = options?.maxChars ?? 2_000;
   return Number.isFinite(maxChars) ? sliceWellFormed(cleaned, maxChars) : cleaned;
 }

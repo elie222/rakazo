@@ -316,6 +316,29 @@ describe("tool step outcomes", () => {
       [semicolonSecret],
     )!;
     expect(failedBearer).toBe("Authorization: Bearer [redacted]");
+
+    const labelQuotedSecret = 'fixture: "opaque-123"';
+    expect(
+      keptToolResult(
+        {
+          ...base,
+          result: { content: [{ type: "text", text: `Rejected value ${labelQuotedSecret}` }] },
+        },
+        [labelQuotedSecret],
+      ),
+    ).toBe("Rejected value [redacted]");
+
+    expect(
+      keptToolResult(
+        {
+          ...base,
+          result: {
+            content: [{ type: "text", text: '"s\\u00e9cret-123"\n"done"\n"s\\u00e9cret-123"' }],
+          },
+        },
+        ["sécret-123"],
+      ),
+    ).toBe('"[redacted]"\n"done"\n"[redacted]"');
   });
 
   it("replays tool calls only to runs the owner started themselves, failing closed", () => {

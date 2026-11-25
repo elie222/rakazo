@@ -126,5 +126,16 @@ describe("sanitizeConnectorError", () => {
       safe: 'prefix"kept',
       secret: "[redacted]",
     });
+
+    const labelQuotedSecret = 'fixture: "opaque-123"';
+    expect(
+      sanitizeConnectorError(new Error(`Rejected value ${labelQuotedSecret}`), [labelQuotedSecret]),
+    ).toBe("Rejected value [redacted]");
+
+    expect(
+      sanitizeConnectorError(new Error('"s\\u00e9cret-123"\n"done"\n"s\\u00e9cret-123"'), [
+        "sécret-123",
+      ]),
+    ).toBe('"[redacted]"\n"done"\n"[redacted]"');
   });
 });

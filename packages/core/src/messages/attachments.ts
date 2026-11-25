@@ -10,6 +10,7 @@ import {
 import { askOptionLetter, isQuestionAskBlock } from "../asks/ask-kind.js";
 import { sliceWellFormed } from "../primitives/utf8.js";
 import { isApprovalAskBlock, isSecretAskBlock } from "../runs/action-approval.js";
+import { createSecretMatcher } from "./secret-matcher.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {
@@ -396,15 +397,47 @@ function findUnescapedQuotes(line: string): number[] {
   return quotes;
 }
 
+function replaceJsonSegmentTokens(
+  chunk: string,
+  redact: (text: string) => string,
+  leadingQuote = false,
+): string {
+  let out = "";
+  let cursor = 0;
+  for (const match of chunk.matchAll(JSON_VALUE_TOKEN)) {
+    const index = match.index ?? 0;
+    const token = match[0];
+    const end = index + token.length;
+    if (token.startsWith('"')) {
+      if (
+        !precedesJsonStringToken(chunk, index, leadingQuote) ||
+        !followsJsonStringToken(chunk, end, isClosedJsonStringToken(token))
+      ) {
+        continue;
+      }
+      if (index > cursor) out += redact(chunk.slice(cursor, index));
+      out += redactSingleJsonStringToken(token, redact, redact);
+      cursor = end;
+      continue;
+    }
+    const replaced = redactJsonValueToken(token, index, chunk, redact);
+    if (replaced !== token) {
+      if (index > cursor) out += redact(chunk.slice(cursor, index));
+      out += replaced;
+      cursor = end;
+    }
+  }
+  if (cursor < chunk.length) out += redact(chunk.slice(cursor));
+  return out;
+}
+
 function redactJsonSegment(
   segment: string,
   afterOmission: boolean,
   redact: (text: string) => string,
 ): string {
-  const replaceTokens = (chunk: string) =>
-    chunk.replace(JSON_VALUE_TOKEN, (token, offset: number, source: string) =>
-      redactJsonValueToken(token, offset, source, redact),
-    );
+  const replaceTokens = (chunk: string, leadingQuote = false) =>
+    replaceJsonSegmentTokens(chunk, redact, leadingQuote);
   if (afterOmission) {
     const lineBreak = segment.search(/[\r\n]/);
     const firstLine = lineBreak >= 0 ? segment.slice(0, lineBreak) : segment;
@@ -412,7 +445,7 @@ function redactJsonSegment(
     const firstQuotes = findUnescapedQuotes(firstLine);
     // Cutting between the two backslashes of a trailing `\\"` leaves `\"` right before a delimiter.
     if (/^\\"\s*(?:[,}\]:]|$)/.test(firstLine) && firstQuotes.length % 2 === 0) {
-      return `\\"${replaceTokens(segment.slice(2))}`;
+      return `\\"${replaceTokens(segment.slice(2), true)}`;
     }
     if (firstQuotes.length > 0) {
       const firstQuote = firstQuotes[0]!;
@@ -426,7 +459,7 @@ function redactJsonSegment(
         return (
           redactJsonTailPrefix(beforeFirst, redact) +
           '"' +
-          replaceTokens(segment.slice(firstQuote + 1))
+          replaceTokens(segment.slice(firstQuote + 1), true)
         );
       }
     } else if (firstLine.includes("\\")) {
@@ -446,12 +479,18 @@ function redactJsonStringTokens(raw: string, redact: (text: string) => string): 
 
 const JSON_STRING_LITERAL_TOKEN = /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))/g;
 
-function precedesJsonStringToken(raw: string, index: number): boolean {
+function precedesJsonStringToken(raw: string, index: number, leadingQuote = false): boolean {
   let prev = index - 1;
-  while (prev >= 0 && isJsonWhitespace(raw[prev])) prev -= 1;
-  if (prev < 0) return true;
+  while (prev >= 0 && (raw[prev] === " " || raw[prev] === "\t")) prev -= 1;
+  if (prev < 0 || raw[prev] === "\n" || raw[prev] === "\r") return true;
   const ch = raw[prev];
-  return ch === "{" || ch === "[" || ch === "," || ch === ":";
+  if (ch === "{" || ch === "[" || ch === ",") return true;
+  if (ch !== ":") return false;
+  // In JSON, `:` precedes a string value only after a quoted property key (`"key": "val"`),
+  // never after an unquoted diagnostic label such as `fixture: "opaque-123"`.
+  prev -= 1;
+  while (prev >= 0 && isJsonWhitespace(raw[prev])) prev -= 1;
+  return prev < 0 ? leadingQuote : raw[prev] === '"';
 }
 
 function isClosedJsonStringToken(token: string): boolean {
@@ -466,10 +505,27 @@ function isClosedJsonStringToken(token: string): boolean {
 function followsJsonStringToken(raw: string, end: number, closed: boolean): boolean {
   if (!closed) return true;
   let next = end;
-  while (next < raw.length && isJsonWhitespace(raw[next])) next += 1;
-  if (next >= raw.length) return true;
+  while (next < raw.length && (raw[next] === " " || raw[next] === "\t")) next += 1;
+  if (next >= raw.length || raw[next] === "\n" || raw[next] === "\r") return true;
   const ch = raw[next];
   return ch === ":" || ch === "," || ch === "}" || ch === "]";
+}
+
+function overlapsSortedRange(
+  ranges: ReadonlyArray<readonly [number, number]>,
+  start: number,
+  end: number,
+): boolean {
+  let lo = 0;
+  let hi = ranges.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    const [rStart, rEnd] = ranges[mid]!;
+    if (rEnd <= start) lo = mid + 1;
+    else if (rStart >= end) hi = mid - 1;
+    else return true;
+  }
+  return false;
 }
 
 /**
@@ -480,19 +536,27 @@ export function redactJsonStringsAndPlainText(
   raw: string,
   redactString: (text: string) => string,
   redactPlain: (text: string) => string = redactString,
+  wholeSecrets?: readonly string[],
 ): string {
   if (!raw.includes('"')) return redactPlain(raw);
+  const quoteSecrets = wholeSecrets?.filter((value) => value.includes('"')) ?? [];
+  const quoteMatches = quoteSecrets.length > 0 ? createSecretMatcher(quoteSecrets).ranges(raw) : [];
   let out = "";
   let cursor = 0;
   for (const match of raw.matchAll(JSON_STRING_LITERAL_TOKEN)) {
     const index = match.index ?? 0;
     const token = match[0];
     const end = index + token.length;
-    // Plain diagnostics such as `Bearer "secret"` or `Error: "a"b"` do not sit between JSON
-    // structural delimiters; keep them in plain text so exact and pattern redactors see them whole.
+    const closed = isClosedJsonStringToken(token);
+    // Plain diagnostics such as `Bearer "secret"`, `fixture: "opaque-123"`, or `Error: "a"b"` do
+    // not sit between JSON structural delimiters, and a registered secret crossing a quote must
+    // stay intact in `redactPlain`.
     if (
       !precedesJsonStringToken(raw, index) ||
-      !followsJsonStringToken(raw, end, isClosedJsonStringToken(token))
+      !followsJsonStringToken(raw, end, closed) ||
+      (quoteMatches.length > 0 &&
+        (overlapsSortedRange(quoteMatches, index, index + 1) ||
+          (closed && overlapsSortedRange(quoteMatches, end - 1, end))))
     ) {
       continue;
     }
@@ -505,13 +569,7 @@ export function redactJsonStringsAndPlainText(
 }
 
 export function redactJsonText(raw: string, redact: (text: string) => string): string {
-  const tokenized = redactJsonStringTokens(raw, redact);
-  try {
-    JSON.parse(tokenized);
-    return tokenized;
-  } catch {
-    return redact(tokenized);
-  }
+  return redactJsonStringTokens(raw, redact);
 }
 
 /**
