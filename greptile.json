@@ -1,4 +1,3 @@
 {
-  "labels": ["review:greptile"],
-  "autoReview": ["open", "push"]
+  "labels": ["review:greptile"]
 }
