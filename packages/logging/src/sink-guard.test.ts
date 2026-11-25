@@ -1,9 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { guardedFlush, guardedWrite, logSinkHealth, reportSinkError } from "./sink-guard.js";
+import type * as SinkGuard from "./sink-guard.js";
+
+let guardedFlush: typeof SinkGuard.guardedFlush;
+let guardedWrite: typeof SinkGuard.guardedWrite;
+let logSinkHealth: typeof SinkGuard.logSinkHealth;
+let reportSinkError: typeof SinkGuard.reportSinkError;
 
 let now = Date.UTC(2026, 0, 1);
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.resetModules();
+  ({ guardedFlush, guardedWrite, logSinkHealth, reportSinkError } = await import(
+    "./sink-guard.js"
+  ));
   now += 30_000;
   vi.spyOn(Date, "now").mockReturnValue(now);
 });
