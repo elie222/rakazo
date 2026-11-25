@@ -509,6 +509,8 @@ async function runAcpTurn(
     }
     if (violation) throw violation;
     const stopReason = response.stopReason;
+    // The CLI did the model work whatever the stop, so its usage is recorded first.
+    await reportUsage(request, descriptor, response.usage, push);
     if (stopReason === "refusal") throw new Error(`${descriptor.label} refused to answer.`);
     if (stopReason === "max_tokens" || stopReason === "max_turn_requests") {
       throw new Error(`${descriptor.label} reached its output limit before it finished.`);
@@ -517,7 +519,8 @@ async function runAcpTurn(
     if (stopReason !== "end_turn" && !(stopReason === "cancelled" && cancelled)) {
       throw new Error(`${descriptor.label} stopped the turn before it finished.`);
     }
-    await reportUsage(request, descriptor, response.usage, push);
+    // A call the CLI was cancelled during still settles its result, which may carry the reply.
+    await toolsDone;
     // The same endings as a turn in the runtime this one wraps.
     const ending = toolBudget.exceeded
       ? toolCallBudgetExceededMessage(toolBudget.limit)
@@ -744,6 +747,11 @@ function turnText(
     lines.push(historyLine(speaker, content));
   }
   if (request.sourceMessageId) session.seen.add(request.sourceMessageId);
+  // As with ids: only summaries and recall still in this turn's history can come up again.
+  const inContext = new Set(
+    request.history.filter((item) => !item.id).map((item) => contentHash(item.content.trim())),
+  );
+  for (const hash of session.context) if (!inContext.has(hash)) session.context.delete(hash);
   // Only ids still in the chat's history window can come up again, so the rest are let go.
   const inWindow = new Set(request.history.map((item) => item.id).filter(Boolean));
   for (const id of session.seen) {
