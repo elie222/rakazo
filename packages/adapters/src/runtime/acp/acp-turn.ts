@@ -30,11 +30,15 @@ function unsentImages(
   id: string,
   images: readonly AgentInputImage[],
 ): AgentInputImage[] {
-  const sent = session.imaged.get(id) ?? new Set<string>();
+  const sent = session.imaged.get(id) ?? new Map<string, number>();
+  // The same photo attached twice is two images, so copies are counted.
+  const seen = new Map<string, number>();
   const unsent = images.filter((image) => {
     const hash = createHash("sha256").update(image.data).digest("hex");
-    if (sent.has(hash)) return false;
-    sent.add(hash);
+    const copy = (seen.get(hash) ?? 0) + 1;
+    seen.set(hash, copy);
+    if (copy <= (sent.get(hash) ?? 0)) return false;
+    sent.set(hash, copy);
     return true;
   });
   if (sent.size) session.imaged.set(id, sent);

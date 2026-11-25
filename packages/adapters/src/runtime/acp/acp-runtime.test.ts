@@ -684,6 +684,18 @@ describe("acpAgentRuntime", () => {
       }
     });
 
+    it("sends the same photo attached twice as two images", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const photo = { name: "p.png", mimeType: "image/png" as const, data: new Uint8Array([3]) };
+
+      await collect(runtime, request({ sourceMessageId: "m1", currentTurnImages: [photo, photo] }));
+
+      const prompt = requests("session/prompt")[0]?.params as { prompt: Array<{ type: string }> };
+      expect(prompt.prompt.filter((block) => block.type === "image")).toHaveLength(2);
+    });
+
     it("does not resend a message's photos when a paused run resumes", async () => {
       const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
         accessCheck: allowed,
