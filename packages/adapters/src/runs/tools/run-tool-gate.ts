@@ -404,7 +404,7 @@ export async function gateToolCall(
     if (approvedEffectKey) {
       const closed = await denyApprovedEffect(deps, run, approvedEffectKey, reason, message);
       if (closed && ctx.state.effects.deniedKeys) {
-        (await ctx.state.effects.deniedKeys).add(approvedEffectKey);
+        (await ctx.state.effects.deniedKeys).set(approvedEffectKey, false);
       }
     }
     await auditToolCall(ctx, name, "denied", { reason });
@@ -477,12 +477,26 @@ export async function gateToolCall(
     siteGate !== "new" &&
     nextApprovedTool !== name &&
     !approvedEffectKey;
-  const readOnlyDeniedKey =
+  const readOnlyDeniedKeys =
     READ_ONLY_AGENT_TOOLS.has(name) && nextApprovedTool !== name && !approvedEffectKey
-      ? await loadDeniedEffectKeys(ctx).then((keys) =>
-          findDeniedReadOnlyEffectKey(keys, effectKey, baseEffectKey),
-        )
+      ? await loadDeniedEffectKeys(ctx)
       : undefined;
+  const readOnlyDeniedKey = readOnlyDeniedKeys
+    ? findDeniedReadOnlyEffectKey(readOnlyDeniedKeys, effectKey, baseEffectKey)
+    : undefined;
+  let recordEffectKey = readOnlyDeniedKey ?? effectKey;
+  if (
+    readOnlyDeniedKeys &&
+    !readOnlyDeniedKey &&
+    !readOnlyEligible &&
+    plan === "allow" &&
+    readOnlyDeniedKeys.get(recordEffectKey) === true
+  ) {
+    do {
+      const nextOcc = nextMutatingEffectOccurrence(ctx, replayEffectToolName, args, executionId);
+      recordEffectKey = toolEffectIdempotencyKey(runId, replayEffectToolName, args, nextOcc);
+    } while (readOnlyDeniedKeys.get(recordEffectKey) === true);
+  }
   const applied =
     readOnlyEligible && !readOnlyDeniedKey
       ? undefined
@@ -490,7 +504,7 @@ export async function gateToolCall(
           deps,
           run,
           replayEffectToolName,
-          readOnlyDeniedKey ?? effectKey,
+          recordEffectKey,
           effectRequest,
           executionId,
           ctx.state.effects.consumedIds,
@@ -536,7 +550,7 @@ export async function gateToolCall(
       data: { status: "denied", result: { refused: "repeat" } },
     });
     if (ctx.state.effects.deniedKeys) {
-      (await ctx.state.effects.deniedKeys).add(effectKey);
+      (await ctx.state.effects.deniedKeys).set(recordEffectKey, false);
     }
     return { result: refusal("action_denied_repeat", DENIED_ACTION_ERROR) };
   }
@@ -606,7 +620,7 @@ export async function gateToolCall(
     executionId,
     observer,
     connectorCall,
-    effectKey,
+    effectKey: recordEffectKey,
     applied,
     nextApprovedTool,
     bypassApproval: gateDecision === "allow" && gated,
@@ -716,15 +730,16 @@ function isExpiredDeniedResult(id: string, result: unknown): boolean {
 }
 
 function findDeniedReadOnlyEffectKey(
-  keys: ReadonlySet<string>,
+  keys: ReadonlyMap<string, boolean>,
   effectKey: string,
   baseEffectKey: string,
 ): string | undefined {
-  if (keys.has(effectKey)) return effectKey;
+  if (keys.get(effectKey) === false) return effectKey;
   let bestKey: string | undefined;
   let bestOccurrence = -1;
   const occurrencePrefix = `${baseEffectKey}:`;
-  for (const key of keys) {
+  for (const [key, expired] of keys) {
+    if (expired) continue;
     if (key === baseEffectKey) {
       if (bestOccurrence < 0) {
         bestKey = key;
@@ -744,7 +759,7 @@ function findDeniedReadOnlyEffectKey(
   return bestKey;
 }
 
-function loadDeniedEffectKeys(ctx: RunContext): Promise<Set<string>> {
+function loadDeniedEffectKeys(ctx: RunContext): Promise<Map<string, boolean>> {
   const cached = ctx.state.effects.deniedKeys;
   if (cached) return cached;
   const pending = ctx.deps.prisma.externalEffect?.findMany
@@ -753,18 +768,17 @@ function loadDeniedEffectKeys(ctx: RunContext): Promise<Set<string>> {
           where: { runId: ctx.runId, status: "denied" },
           select: { id: true, idempotencyKey: true, result: true },
         })
-        .then((rows) => {
-          const keys = new Set<string>();
-          for (const row of rows) {
-            if (!isExpiredDeniedResult(row.id, row.result)) keys.add(row.idempotencyKey);
-          }
-          return keys;
-        })
+        .then(
+          (rows) =>
+            new Map(
+              rows.map((row) => [row.idempotencyKey, isExpiredDeniedResult(row.id, row.result)]),
+            ),
+        )
         .catch((error) => {
           ctx.state.effects.deniedKeys = undefined;
           throw error;
         })
-    : Promise.resolve(new Set<string>());
+    : Promise.resolve(new Map<string, boolean>());
   ctx.state.effects.deniedKeys = pending;
   return pending;
 }

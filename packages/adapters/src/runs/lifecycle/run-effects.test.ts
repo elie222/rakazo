@@ -498,6 +498,37 @@ describe("denyApprovedEffect", () => {
     expect(f.deleteManySecret).not.toHaveBeenCalled();
   });
 
+  it("rejects malformed credentialSaved result JSON and keeps the login effect and secrets intact", async () => {
+    const malformedResult: Effect = {
+      ...effect("run-1:tool:login-malformed", "run-1"),
+      id: "eff-login-malformed",
+      kind: "request_secret",
+      request: {
+        credential: { name: "site_login", origin: "https://site.test", auth: { type: "login" } },
+      },
+      status: "approved",
+      result: { credentialSaved: "bad" },
+      createdAt: new Date("2026-11-24T12:00:00Z"),
+    };
+    const f = fixture([malformedResult]);
+
+    const error = await denyApprovedEffect(
+      f.deps,
+      scope,
+      "run-1:tool:login-malformed",
+      "rule",
+      "blocked",
+    ).then(
+      () => undefined,
+      (failure: unknown) => failure,
+    );
+
+    expect(error).toBeInstanceOf(JsonColumnMismatchError);
+    expect((error as JsonColumnMismatchError).row.column).toBe("result");
+    expect(malformedResult.status).toBe("approved");
+    expect(f.deleteManySecret).not.toHaveBeenCalled();
+  });
+
   it("refuses to deny an approved effect from a superseded attempt", async () => {
     const approved: Effect = {
       ...effect("run-1:tool:k1", "run-1"),

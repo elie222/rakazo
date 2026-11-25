@@ -6781,4 +6781,43 @@ describe("closing denied approved effects", () => {
     expect(f.results).toHaveLength(1);
     expect(f.results[0]).toMatchObject({ results: [{ title: "Sunny" }] });
   });
+
+  it("runs an allowed web_fetch to a new site under a fresh occurrence when its earlier approval expired", async () => {
+    const args = { url: "https://fresh.example.test/page" };
+    const expiredKey = approvalEffectKey("run-1", "web_fetch", args);
+    const f = fixture({
+      name: "web_fetch",
+      builtin: true,
+      skipApprovals: true,
+    });
+    f.web.fetchResult = {
+      ...f.web.fetchResult,
+      url: args.url,
+      title: "Fresh",
+      text: "Hello from fresh",
+    };
+    f.effects.push({
+      id: "effect-fetch-expired",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "web_fetch",
+      request: args,
+      idempotencyKey: expiredKey,
+      status: "denied",
+      result: APPROVAL_EXPIRED_RESULT,
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.results).toHaveLength(1);
+    expect(f.results[0]).toMatchObject({ title: "Fresh", text: "Hello from fresh" });
+    expect(f.effects[0]).toMatchObject({
+      id: "effect-fetch-expired",
+      status: "denied",
+      result: APPROVAL_EXPIRED_RESULT,
+    });
+    expect(f.effects).toHaveLength(2);
+    expect(f.effects[1]).toMatchObject({ status: "completed" });
+    expect(f.effects[1]?.idempotencyKey).not.toBe(expiredKey);
+  });
 });
