@@ -40,7 +40,7 @@ reverse proxy is the safer option.
 Tailscale can put the published-images or Compose stack behind HTTPS with a certificate phones
 trust, without opening any port. Only devices on your tailnet can reach it. Turn on MagicDNS and
 HTTPS certificates for your tailnet in the Tailscale admin console, create an auth key, and add
-to `.env`:
+to `.env` (or the Docker panel's environment variables):
 
 ```bash
 COMPOSE_PROFILES=tailscale
@@ -60,8 +60,8 @@ Compose file and env-file options as your install. The `tailscale` service joins
 its own device and serves the web app there; leave `RAKAZO_WEB_BIND` at `127.0.0.1`. The first
 HTTPS request can take a few seconds while the certificate is issued.
 
-On the phone, turn on Tailscale, tap **Use a custom server** and enter
-`https://rakazo.<tailnet>.ts.net`, with no port or path.
+On the phone, turn on Tailscale, tap **Use a custom server** and enter your `WEB_ORIGIN`, with no
+port or path.
 
 If Tailscale already runs on the host, `tailscale serve --bg 5173` does the same without the
 profile; use the host's name (`<machine>.<tailnet>.ts.net`) in the settings above, and your
