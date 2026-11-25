@@ -233,16 +233,18 @@ class Tabs:
 
     def begin(self) -> None:
         """Close a flood of tabs opened since the last call and the tabs beyond MAX_TABS, before the
-        call picks its tab."""
+        call picks its tab. Only its first tab list can fail it."""
         tabs = page_tabs(self.port)
-        if self.known is not None:
-            # The tab in front of those the last call left, or else the tab in front, which stays.
-            keep = next((tab.get("id") for tab in tabs if tab.get("id") in self.known),
-                        tabs[0].get("id") if tabs else None)
-            # Kept as known, so the end of the call does not name it as new.
-            self.known.add(keep)
-            tabs = self.close_flood(tabs, self.known, keep)
-        self.start = {tab.get("id") for tab in self.trim(tabs)}
+        self.start = {tab.get("id") for tab in tabs}
+        with contextlib.suppress(Exception):
+            if self.known is not None:
+                # The tab in front of those the last call left, or else the tab in front, which stays.
+                keep = next((tab.get("id") for tab in tabs if tab.get("id") in self.known),
+                            tabs[0].get("id") if tabs else None)
+                # Kept as known, so the end of the call does not name it as new.
+                self.known.add(keep)
+                tabs = self.close_flood(tabs, self.known, keep)
+            self.trim(tabs)
 
     def end(self, own: str, ours: str | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
         """The tabs now, the ones opened since the last call (or, for a browser started again, every

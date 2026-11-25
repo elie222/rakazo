@@ -1820,6 +1820,21 @@ class NewTabTest(unittest.TestCase):
                                          "Closed the 5 tabs in the background longest, to keep at most 8 tabs open.")
         self.assertEqual((result["ok"], chromium.closed), (True, [f"r{index}" for index in range(11, 6, -1)]))
 
+    def test_a_tab_list_that_fails_after_tabs_closed_still_lets_the_call_say_so(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        listings = iter([False, True])
+
+        def listing(_port=None):
+            if next(listings, False):
+                raise OSError("no answer")
+            return FakeTabs.list(chromium)
+
+        chromium.list = listing
+        result, _, _ = self.run_call(chromium, {"ok": True, "title": "Report", "tree": "", "elements": []})
+        self.assertEqual(chromium.closed, [f"r{index}" for index in range(11, 6, -1)])
+        self.assertTrue(result["note"].startswith("Closed the 5 tabs in the background longest, to keep at most 8 "
+                                                  "tabs open. "))
+
     def test_a_tab_list_that_fails_leaves_the_result_as_it_is(self):
         reports = {"ok": True, "title": "Report", "tree": "", "elements": []}
         with patch.object(helper.Tabs, "end", side_effect=OSError("read-only")):
