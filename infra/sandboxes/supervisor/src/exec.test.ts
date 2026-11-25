@@ -552,7 +552,39 @@ describe("POST /computers/:id/exec streaming", () => {
     abortStream.end();
     const abortOutcome = await abortOutcomePromise;
     expect(abortOutcome.kind).toBe("stream");
+    if (abortOutcome.kind !== "stream") return;
+    const abortReader = abortOutcome.body.getReader();
+    // Drain the initial '{"content":"' chunk so the next read invokes pull().
+    await abortReader.read();
+    const pendingRead = abortReader.read();
     abortController.abort(new Error("client disconnected"));
+    await expect(pendingRead).rejects.toThrow("client disconnected");
+    await vi.waitFor(async () => {
+      const remaining = (await readdir(tmpdir())).filter(
+        (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),
+      );
+      expect(remaining).toEqual([]);
+    });
+
+    // Also verify aborting before any reader attaches unlinks the spool without body.cancel().
+    const unconsumedStream = new PassThrough();
+    const unconsumedAbort = new AbortController();
+    const unconsumedContainer = {
+      exec: vi.fn(async () => ({
+        start: async () => unconsumedStream,
+        inspect: async () => ({ ExitCode: 0 }),
+      })),
+    } as unknown as Docker.Container;
+    const unconsumedPromise = readContainerFile(unconsumedContainer, "/home/rakazo/ok.bin", {
+      maxBytes: 6,
+      signal: unconsumedAbort.signal,
+    });
+    await vi.waitFor(() => expect(unconsumedContainer.exec).toHaveBeenCalledOnce());
+    unconsumedStream.write(frame(1, part1));
+    unconsumedStream.end();
+    const unconsumedOutcome = await unconsumedPromise;
+    expect(unconsumedOutcome.kind).toBe("stream");
+    unconsumedAbort.abort(new Error("client disconnected early"));
     await vi.waitFor(async () => {
       const remaining = (await readdir(tmpdir())).filter(
         (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),

@@ -429,9 +429,19 @@ async function readContainerFileSpooled(
     let readHandle: FileHandle | undefined;
     let opening: Promise<FileHandle> | undefined;
     let activeRead: Promise<unknown> | undefined;
+    let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let streamSettled = false;
     let cleanedUp = false;
     let cleanupPromise: Promise<void> | undefined;
     const onBodyAbort = () => {
+      if (!streamSettled && bodyController) {
+        streamSettled = true;
+        try {
+          bodyController.error(signal?.reason ?? new Error("file read cancelled"));
+        } catch {
+          // Stream may already be closed or cancelled.
+        }
+      }
       void bestEffort("cleanup spooled file read", cleanupStream());
     };
     const cleanupStream = () => {
@@ -472,13 +482,17 @@ async function readContainerFileSpooled(
     const body = new ReadableStream<Uint8Array>(
       {
         start(ctrl) {
+          bodyController = ctrl;
           ctrl.enqueue(encoder.encode('{"content":"'));
         },
         async pull(ctrl) {
           try {
             if (signal?.aborted) {
               await cleanupStream();
-              ctrl.error(signal.reason ?? new Error("file read cancelled"));
+              if (!streamSettled) {
+                streamSettled = true;
+                ctrl.error(signal.reason ?? new Error("file read cancelled"));
+              }
               return;
             }
             if (cleanedUp) return;
@@ -506,18 +520,25 @@ async function readContainerFileSpooled(
             if (cleanedUp) return;
             if (bytesRead === 0) {
               await cleanupStream();
-              ctrl.enqueue(encoder.encode('"}'));
-              ctrl.close();
+              if (!streamSettled) {
+                streamSettled = true;
+                ctrl.enqueue(encoder.encode('"}'));
+                ctrl.close();
+              }
               return;
             }
-            ctrl.enqueue(buffer.subarray(0, bytesRead));
+            if (!streamSettled) ctrl.enqueue(buffer.subarray(0, bytesRead));
           } catch (error) {
             const wasCancelled = cleanedUp;
             await cleanupStream();
-            if (!wasCancelled) ctrl.error(error);
+            if (!wasCancelled && !streamSettled) {
+              streamSettled = true;
+              ctrl.error(error);
+            }
           }
         },
         async cancel() {
+          streamSettled = true;
           await cleanupStream();
         },
       },
