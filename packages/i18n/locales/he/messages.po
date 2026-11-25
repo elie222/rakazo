@@ -80,11 +80,6 @@ msgstr "{0} (עד {ATTACHMENT_MAX_COUNT} קבצים מצורפים)"
 msgid "{0} (over {1})"
 msgstr "{0} (מעל {1})"
 
-#. placeholder {0}: preset.n
-#: apps/web/src/lib/routines/cron.ts
-msgid "{0} {unitLabel}"
-msgstr "{0} {unitLabel}"
-
 #. placeholder {0}: block.name
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "{0} connection"
@@ -141,6 +136,12 @@ msgstr "{0} MB"
 msgid "{0} occurrences"
 msgstr "{0} מופעים"
 
+#. placeholder {0}: usd(media.leftCents / 100)
+#. placeholder {1}: usd(media.limitCents / 100)
+#: apps/web/src/components/billing/PlanUsage.tsx
+msgid "{0} of {1} left"
+msgstr "נותרו {0} מתוך {1}"
+
 #. placeholder {0}: sender.name
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "{0} rollup hours"
@@ -155,6 +156,13 @@ msgstr "{0} TB"
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 msgid "{0}, paused until you turn it on"
 msgstr "{0}, מושהית עד להפעלה"
+
+#. placeholder {0}: dayLabel(point.date)
+#. placeholder {1}: number(point.totalTokens)
+#. placeholder {2}: cost(point.costUsd)
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "{0}: {1} tokens, {2}"
+msgstr "{0}: {1} טוקנים, {2}"
 
 #. placeholder {0}: Math.round(used)
 #: apps/web/src/components/billing/PlanUsage.tsx
@@ -171,7 +179,7 @@ msgstr "{agent} הוזמן אל {group}"
 msgid "{agent} was invited to a group"
 msgstr "{agent} הוזמן לקבוצה"
 
-#: apps/web/src/lib/billing/billing.ts
+#: packages/i18n/src/billing.ts
 msgid "{amount} / {period}"
 msgstr "{amount} / {period}"
 
@@ -228,10 +236,6 @@ msgstr "כאן {bot}. היי {name}."
 msgid "{botCount, plural, one {Delete {name} and its # bot?} other {Delete {name} and its # bots?}}"
 msgstr "{botCount, plural, one {למחוק את {name} ואת הבוט שלו?} other {למחוק את {name} ואת # הבוטים שלו?}}"
 
-#: apps/web/src/pages/shell/computers/computer-view.tsx
-msgid "{botName}’s computer"
-msgstr "המחשב של {botName}"
-
 #: apps/mobile/app/(settings)/account.tsx
 msgid "{calls} calls, {tokens} tokens"
 msgstr "{calls} קריאות, {tokens} טוקנים"
@@ -243,6 +247,10 @@ msgstr "{channel} {id}"
 #: apps/mobile/lib/platform/app-version.ts
 msgid "{channel} {id}, {date}"
 msgstr "{channel} {id}, {date}"
+
+#: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
+msgid "{chatCount, plural, one {# chat} other {# chats}}"
+msgstr "{chatCount, plural, one {צ׳אט אחד} two {# צ׳אטים} other {# צ׳אטים}}"
 
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "{commandVariable} is reserved and cannot be used as a command variable. Choose another name."
@@ -285,11 +293,11 @@ msgstr "{count, plural, one {להעביר # בוט לברירת המחדל של 
 msgid "{count} agents working"
 msgstr "{count} סוכנים עובדים"
 
-#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/components/integrations/connected-apps.tsx
 msgid "{count} connectors"
 msgstr "{count} חיבורים"
 
-#: apps/web/src/lib/billing/billing.ts
+#: packages/i18n/src/billing.ts
 msgid "{count} days"
 msgstr "{count} ימים"
 
@@ -302,8 +310,9 @@ msgstr "{count} קבצים"
 msgid "{count} free months earned"
 msgstr "הרווחת {count} חודשים חינם"
 
-#: apps/web/src/lib/billing/billing.ts
-msgid "{count} months"
+#. js-lingui-explicit-id
+#: packages/i18n/src/billing.ts
+msgid "/RQB8K"
 msgstr "{count} חודשים"
 
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -328,31 +337,25 @@ msgstr "{count} כלים"
 msgid "{count} unread"
 msgstr "{count} לא נקראו"
 
-#: apps/web/src/lib/billing/billing.ts
+#: packages/i18n/src/billing.ts
 msgid "{count} weeks"
 msgstr "{count} שבועות"
 
-#: apps/web/src/lib/billing/billing.ts
+#: packages/i18n/src/billing.ts
 msgid "{count} years"
 msgstr "{count} שנים"
 
-#: apps/mobile/lib/inbox/activity.ts
+#: packages/i18n/src/activity.ts
 msgid "{count}d ago"
 msgstr "לפני {count} ימים"
 
-#: apps/mobile/lib/inbox/activity.ts
+#: packages/i18n/src/activity.ts
 msgid "{count}h ago"
 msgstr "לפני {count} שע׳"
 
-#: apps/mobile/lib/inbox/activity.ts
+#: packages/i18n/src/activity.ts
 msgid "{count}m ago"
 msgstr "לפני {count} דק׳"
-
-#. placeholder {0}: number(point.totalTokens)
-#. placeholder {1}: cost(point.costUsd)
-#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
-msgid "{day}: {0} tokens, {1}"
-msgstr "{day}: {0} טוקנים, {1}"
 
 #: apps/mobile/app/paywall.tsx
 msgid "{days} days free"
@@ -366,25 +369,17 @@ msgstr "{days} ימים בחינם, ואז {price} / חודש. אפשר לבטל
 msgid "{days} days free, then {price} / year. Cancel anytime."
 msgstr "{days} ימים בחינם, ואז {price} / שנה. אפשר לבטל בכל עת."
 
-#: apps/web/src/lib/locale/relative-time.ts
-msgid "{days}d ago"
-msgstr "לפני {days} ימים"
-
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "{from} messaged {to}"
 msgstr "{from} שלח הודעה אל {to}"
 
-#: apps/mobile/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "{from} to {to}"
 msgstr "{from} עד {to}"
 
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "{from}–{to} of {total} rows"
 msgstr "{from}–{to} מתוך {total} שורות"
-
-#: apps/web/src/lib/routines/cron.ts
-msgid "{fromName} to {toName}"
-msgstr "מ-{fromName} עד {toName}"
 
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "{header}, column {index}"
@@ -406,10 +401,6 @@ msgstr "{hours} שעות מחשב לבוטים בחודש"
 msgid "{hours} bot computer hours/month at Standard size · Up to {size}"
 msgstr "{hours} שעות מחשב לבוטים בחודש בגודל רגיל · עד {size}"
 
-#: apps/web/src/lib/locale/relative-time.ts
-msgid "{hours}h ago"
-msgstr "לפני {hours} שע׳"
-
 #: apps/web/src/pages/auth/Invite.tsx
 #: apps/web/src/pages/auth/JoinOrganization.tsx
 msgid "{inviterName} invited you"
@@ -427,20 +418,15 @@ msgstr "{label}, למטה"
 msgid "{label}, empty"
 msgstr "{label}, ריק"
 
-#. placeholder {0}: base.name
-#: apps/web/src/components/billing/ModelCredits.tsx
-msgid "{memoryGb} GB of RAM and {usage}× the computer time of {0}. Time counts only while your bot uses its computer."
-msgstr "{memoryGb} GB של RAM ופי {usage} מזמן המחשב של {0}. הזמן נספר רק כשהבוט משתמש במחשב שלו."
-
-#: apps/web/src/lib/locale/relative-time.ts
-msgid "{minutes}m ago"
-msgstr "לפני {minutes} דק׳"
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{left} of {limit} left"
+msgstr "נותרו {left} מתוך {limit}"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
 msgstr "{moved, plural, one {# בוט משתמש עכשיו בברירת המחדל של המרחב.} two {# בוטים משתמשים עכשיו בברירת המחדל של המרחב.} other {# בוטים משתמשים עכשיו בברירת המחדל של המרחב.}}"
 
-#: apps/mobile/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "{n} {unit}"
 msgstr "{n} {unit}"
 
@@ -478,13 +464,11 @@ msgstr "{name} (סוג לא נתמך)"
 msgid "{name} {part}"
 msgstr "{name} {part}"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/lib/activity-list-filters.ts
+#: packages/i18n/src/activity.ts
 msgid "{name} asked"
 msgstr "בקשה מאת {name}"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/lib/activity-list-filters.ts
+#: packages/i18n/src/activity.ts
 msgid "{name} asked: {text}"
 msgstr "בקשה מאת {name}: {text}"
 
@@ -528,7 +512,7 @@ msgstr "{name}, כבויה"
 msgid "{name}, On"
 msgstr "{name}, פעילה"
 
-#: apps/mobile/lib/computers/computer.ts
+#: packages/i18n/src/computer-usage.ts
 msgid "{name}’s computer"
 msgstr "המחשב של {name}"
 
@@ -779,6 +763,12 @@ msgstr "{vcpus} vCPU, {memoryGb} GB, {hours} שעות מחשב בחודש"
 msgid "@{0}"
 msgstr "@{0}"
 
+#. placeholder {0}: mention.name
+#. placeholder {1}: mention.subtitle
+#: apps/web/src/pages/shell/composer/composer-parts.tsx
+msgid "@{0}, {1}"
+msgstr "@{0}, {1}"
+
 #: apps/mobile/components/composer/thread-composer.tsx
 msgid "@{name}"
 msgstr "@{name}"
@@ -881,11 +871,11 @@ msgstr "**יום חמישי**\n"
 "- גשם קל אחרי 16:00\n"
 "- שתי כתבות על הנושאים שבמעקב שלך"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "/ month"
 msgstr "/ חודש"
 
-#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/components/integrations/connected-apps.tsx
 msgid "1 connector"
 msgstr "חיבור אחד"
 
@@ -912,8 +902,8 @@ msgid "1 unread"
 msgstr "1 לא נקראה"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
-msgid "2. Enter this code at {host}"
-msgstr "2. יש להזין את הקוד הזה ב-{host}"
+msgid "2. Get a sign-in code"
+msgstr "2. קבלת קוד התחברות"
 
 #: apps/mobile/lib/inbox/inbox-swipe.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -927,10 +917,6 @@ msgstr "30 ימים"
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "7 days"
 msgstr "7 ימים"
-
-#: apps/web/src/components/billing/ModelCredits.tsx
-msgid "A {times}× more powerful computer for your bot"
-msgstr "מחשב חזק פי {times} לבוט שלך"
 
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 msgid "A bit of everything"
@@ -949,6 +935,10 @@ msgstr "לוח קנבן של כרטיסים שהבוטים שלך יכולים �
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 msgid "A model approves routine actions and asks you about the rest."
 msgstr "מודל מאשר פעולות שגרתיות ושואל אותך לגבי השאר."
+
+#: apps/web/src/pages/shell/host-computer-prompt.tsx
+msgid "A sandbox limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
+msgstr "ארגז חול מגביל את הגישה למחשב שלך לאבטחה נוספת. שימוש ב{hostLabel} מאפשר לבוטים לעבוד עם הקבצים והכלים המקומיים שלך."
 
 #: apps/mobile/lib/bots/bot-template-copy.ts
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
@@ -1024,8 +1014,8 @@ msgid "Accounts"
 msgstr "חשבונות"
 
 #. placeholder {0}: bot.name
-#. placeholder {0}: group.spaceName
 #. placeholder {0}: page.title
+#. placeholder {0}: section.name
 #: apps/web/src/components/pages/PagesList.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -1041,10 +1031,6 @@ msgstr "פעולות עבור {label}"
 #: apps/web/src/pages/shell/sidebar/archived-chats.tsx
 msgid "Actions for {name}"
 msgstr "פעולות עבור {name}"
-
-#: apps/web/src/pages/shell/shell-dialogs.tsx
-msgid "Actions for space"
-msgstr "פעולות למרחב"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
@@ -1073,10 +1059,8 @@ msgstr "יומן פעילות"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/page-share.tsx
-#: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
-#: apps/web/src/components/messages/SecretAskCard.tsx
 #: apps/web/src/components/pages/PagePeople.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 #: apps/web/src/pages/plugins/domain-search.tsx
@@ -1138,7 +1122,7 @@ msgstr "יש להוסיף פקודת stdio."
 msgid "Add a trigger to run this routine."
 msgstr "יש להוסיף טריגר כדי להריץ את הרוטינה הזו."
 
-#: apps/mobile/lib/calls/call-session.ts
+#: apps/mobile/lib/calls/call-deps.ts
 #: apps/mobile/lib/thread/thread-voice.ts
 msgid "Add a voice provider in Voice settings."
 msgstr "יש להוסיף ספק קול בהגדרות הקול."
@@ -1290,6 +1274,7 @@ msgstr "נוסף"
 #: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/skills.tsx
+#: apps/mobile/components/integrations/integration-catalog-search.tsx
 #: apps/mobile/components/integrations/integration-plugins.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/plugins/parts.tsx
@@ -1330,6 +1315,7 @@ msgstr "מה יתווסף"
 msgid "Admin"
 msgstr "מנהל"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
@@ -1375,7 +1361,7 @@ msgstr "מודלי AI"
 msgid "All"
 msgstr "הכול"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "All {credit} goes to model usage."
 msgstr "כל {credit} הולכים לשימוש במודלים."
 
@@ -1383,6 +1369,7 @@ msgstr "כל {credit} הולכים לשימוש במודלים."
 msgid "All {price} goes to model usage."
 msgstr "כל ה-{price} הולכים לשימוש במודלים."
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/integrations/agent-access.tsx
@@ -1447,11 +1434,11 @@ msgstr "לאפשר תקשורת בין בוטים ממרחבים שונים"
 msgid "Allow in this space"
 msgstr "לאפשר במרחב הזה"
 
-#: apps/mobile/lib/calls/call-session.ts
+#: apps/mobile/lib/voice/voice-clip.ts
 msgid "Allow microphone access to call a bot."
 msgstr "יש לאפשר גישה למיקרופון כדי להתקשר לבוט."
 
-#: apps/mobile/lib/calls/call-session.ts
+#: apps/mobile/lib/voice/voice-clip.ts
 msgid "Allow microphone access to dictate."
 msgstr "יש לאפשר גישה למיקרופון כדי להכתיב."
 
@@ -1575,8 +1562,7 @@ msgstr "ועוד {more}"
 msgid "Android blocked notifications."
 msgstr "Android חסם את ההתראות."
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/lib/activity-list-filters.ts
+#: packages/i18n/src/activity.ts
 msgid "Another agent"
 msgstr "סוכן אחר"
 
@@ -1653,6 +1639,7 @@ msgstr "כל מי שיש לו את הקישור"
 #: apps/web/src/lib/models/localized-provider-hint.ts
 #: apps/web/src/pages/model-settings/compatible-key-field.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
+#: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "API key"
@@ -1702,6 +1689,11 @@ msgstr "ייכנס לתוקף בהפעלה הבאה."
 msgid "Apply"
 msgstr "החלה"
 
+#: apps/mobile/lib/cards/ask-action-label.ts
+#: apps/web/src/components/messages/AskCard.tsx
+msgid "Apply now"
+msgstr "להחיל עכשיו"
+
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
 msgstr "גבולות אישור"
@@ -1744,8 +1736,8 @@ msgstr "אושר"
 msgid "Approving…"
 msgstr "מאשר…"
 
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/components/integrations/connected-apps.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Apps"
 msgstr "אפליקציות"
@@ -1820,12 +1812,7 @@ msgstr "שואל רק לפני רכישות ולפני השימוש הראשון
 msgid "Asleep"
 msgstr "במצב שינה"
 
-#. placeholder {0}: preset.time
-#: apps/web/src/lib/routines/cron.ts
-msgid "at {0}"
-msgstr "בשעה {0}"
-
-#: apps/mobile/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "at {time}"
 msgstr "בשעה {time}"
 
@@ -1863,6 +1850,7 @@ msgstr "אימות"
 msgid "Authenticator key"
 msgstr "מפתח מאמת"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Authorization parameters (optional)"
 msgstr "פרמטרים להרשאה (אופציונלי)"
@@ -1994,6 +1982,7 @@ msgstr "Basic auth ({username})"
 msgid "Bearer"
 msgstr "Bearer"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
@@ -2003,6 +1992,10 @@ msgstr "Bearer"
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "Bearer token (optional)"
+msgstr "Bearer token (אופציונלי)"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -2018,7 +2011,7 @@ msgid "Billing address"
 msgstr "כתובת לחיוב"
 
 #: apps/mobile/app/paywall.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/PlanControls.tsx
 msgid "Billing period"
 msgstr "תקופת חיוב"
 
@@ -2072,18 +2065,17 @@ msgstr "בוט"
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/components/thread/thread-rows.tsx
 #: apps/mobile/components/thread/thread-screen.tsx
-#: apps/mobile/lib/bots/identity-display.ts
 #: apps/mobile/lib/search/search-sheet.ts
 #: apps/mobile/lib/thread/thread-voice.ts
-#: apps/web/src/lib/bots/identity-display.ts
 #: apps/web/src/pages/integrations/IntegrationSetup.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
-#: apps/web/src/pages/Shell.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
 #: apps/web/src/pages/shell/chat/transcript.tsx
-#: apps/web/src/pages/space/SpaceSearch.tsx
+#: apps/web/src/pages/shell/composer/chat-composer-area.tsx
+#: packages/i18n/src/identity-display.ts
+#: packages/i18n/src/search.ts
 msgid "Bot"
 msgstr "בוט"
 
@@ -2145,6 +2137,7 @@ msgstr "המודל של הבוט"
 msgid "Both"
 msgstr "שניהם"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemAccess.tsx
@@ -2152,7 +2145,7 @@ msgstr "שניהם"
 msgid "Bots"
 msgstr "בוטים"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Bots and browser automation"
 msgstr "בוטים ואוטומציה של דפדפן"
 
@@ -2208,6 +2201,10 @@ msgstr "מובנה"
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Button “{button}” · read from the page, not checked"
 msgstr "הכפתור “{button}” · נקרא מהדף, לא נבדק"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Cached"
+msgstr "במטמון"
 
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 msgid "Calendar options"
@@ -2293,6 +2290,7 @@ msgstr "לא ניתן לקרוא תמונות"
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/(settings)/general.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/organization-members.tsx
@@ -2319,7 +2317,6 @@ msgstr "לא ניתן לקרוא תמונות"
 #: apps/mobile/app/space-members.tsx
 #: apps/mobile/components/bots/profile-edit-dialog.tsx
 #: apps/mobile/components/cards/AskActions.tsx
-#: apps/mobile/components/cards/secret-ask-sheet.tsx
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/mobile/components/computers/computer-maintenance-actions.tsx
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
@@ -2398,9 +2395,8 @@ msgid "cancelled"
 msgstr "בוטל"
 
 #: apps/mobile/components/thread/message-bubble.tsx
-#: apps/mobile/lib/inbox/activity.ts
 #: apps/web/src/components/messages/AskCard.tsx
-#: apps/web/src/pages/space/ActivityList.tsx
+#: packages/i18n/src/activity.ts
 msgid "Cancelled"
 msgstr "בוטל"
 
@@ -2436,6 +2432,11 @@ msgstr "כרטיסים"
 #: apps/mobile/app/(settings)/integrations.tsx
 msgid "Category"
 msgstr "קטגוריה"
+
+#. placeholder {0}: titles[role]
+#: apps/web/src/pages/model-settings/media-model-settings.tsx
+msgid "Change {0}"
+msgstr "שינוי {0}"
 
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 msgid "Change {name}"
@@ -2497,6 +2498,10 @@ msgstr "פרטי הצ׳אט"
 msgid "Chat from {name}"
 msgstr "צ׳אט מ-{name}"
 
+#: apps/web/src/pages/shell/sidebar/archived-chats.tsx
+msgid "Chat restored, but the list could not refresh."
+msgstr "הצ׳אט שוחזר, אבל לא ניתן היה לרענן את הרשימה."
+
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/bot-settings.tsx
 msgid "Chat settings"
@@ -2520,9 +2525,8 @@ msgstr "שיחה עם הבוטים שלך מאפליקציות אחרות."
 msgid "ChatGPT subscription"
 msgstr "מנוי ChatGPT"
 
-#: apps/mobile/lib/bots/identity-display.ts
-#: apps/web/src/lib/bots/identity-display.ts
 #: apps/web/src/pages/shell/app-rail.tsx
+#: packages/i18n/src/identity-display.ts
 msgid "Chats"
 msgstr "צ׳אטים"
 
@@ -2572,6 +2576,7 @@ msgstr "בודק את הגדרות המחשב…"
 msgid "Checking connection…"
 msgstr "בודק חיבור…"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/server.tsx
 #: apps/web/src/components/computers/ComputersUnavailableHint.tsx
 #: apps/web/src/components/DesktopUpdates.tsx
@@ -2588,6 +2593,7 @@ msgid "Choose a bot shape, color, or upload an image"
 msgstr "בחירת צורה או צבע לבוט, או העלאת תמונה"
 
 #: apps/mobile/app/(settings)/models.tsx
+#: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Choose a model"
@@ -2627,7 +2633,7 @@ msgstr "בחירת קובץ"
 msgid "Choose folder"
 msgstr "בחירת תיקייה"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 #: apps/web/src/components/billing/SubscriptionGate.tsx
 msgid "Choose how to use Rakazo"
 msgstr "בחירת אופן השימוש ב-Rakazo"
@@ -2646,6 +2652,7 @@ msgstr "בחירת אפשרות הצטרפות משתפת את התמלילים 
 msgid "Chosen bots"
 msgstr "בוטים נבחרים"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 msgid "Chosen bots"
 msgstr "בוטים נבחרים"
@@ -2751,7 +2758,7 @@ msgstr "סגירת המחשב"
 msgid "Close image"
 msgstr "סגירת התמונה"
 
-#: apps/web/src/pages/shell/chat/message-cards.tsx
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Close image preview"
 msgstr "סגירת התצוגה המקדימה של התמונה"
 
@@ -2900,8 +2907,8 @@ msgstr "פעולות לתגובה"
 msgid "Comments"
 msgstr "תגובות"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/use-catalog-browse.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Communication"
 msgstr "תקשורת"
 
@@ -2996,11 +3003,6 @@ msgstr "המחשבים זמינים. אפשר לטעון מחדש או לפתו�
 msgid "Computers are off on this server."
 msgstr "המחשבים כבויים בשרת הזה."
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/plugin-browse.tsx
-msgid "Configure a plugin catalog on the server to connect apps."
-msgstr "כדי לחבר אפליקציות, יש להגדיר קטלוג תוספים בשרת."
-
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Confirm delete"
 msgstr "אישור מחיקה"
@@ -3024,6 +3026,7 @@ msgstr "אישור ההסרה"
 #: apps/mobile/app/(settings)/messaging.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/voice.tsx
+#: apps/mobile/components/integrations/connected-apps.tsx
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
 #: apps/mobile/components/models/model-picker-list.tsx
 #: apps/mobile/lib/cards/app-connect.ts
@@ -3050,6 +3053,7 @@ msgstr "חיבור {0}"
 msgid "Connect {app}"
 msgstr "חיבור {app}"
 
+#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/components/cards/AppConnectCard.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
@@ -3112,7 +3116,7 @@ msgstr "חיבור שרת MCP {name}"
 msgid "Connect memory provider"
 msgstr "חיבור ספק זיכרון"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Connect my own"
 msgstr "חיבור משלי"
 
@@ -3133,9 +3137,13 @@ msgstr "חברו את ה-AI שלכם"
 msgid "Connect your own API key in Models or choose Rakazo credits in Billing."
 msgstr "חבר מפתח API משלך במודלים או בחר בקרדיטים של Rakazo בחיוב."
 
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
+msgid "Connected"
+msgstr "מחובר"
+
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/computers.tsx
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/lib/cards/app-connect.ts
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
@@ -3143,7 +3151,6 @@ msgstr "חבר מפתח API משלך במודלים או בחר בקרדיטים
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/integrations/McpOAuthCallback.tsx
-#: apps/web/src/pages/plugins/parts.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
@@ -3191,8 +3198,8 @@ msgstr "חיבור"
 msgid "Connection not found"
 msgstr "החיבור לא נמצא"
 
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/components/integrations/use-connection-actions.ts
 msgid "Connection pending"
 msgstr "החיבור בהמתנה"
 
@@ -3308,7 +3315,6 @@ msgstr "שיחות, שמות, זיכרונות, חיפושים ומזהי בוט
 msgid "Copied"
 msgstr "הועתק"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Copied, open again"
 msgstr "הועתק, פתיחה מחדש"
@@ -3363,6 +3369,10 @@ msgstr "העתקת מקור הדיאגרמה"
 msgid "Copy invite link"
 msgstr "העתקת קישור ההזמנה"
 
+#: apps/mobile/components/thread/routine-event-row.tsx
+msgid "Copy key"
+msgstr "העתקת המפתח"
+
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
 #: apps/web/src/components/pages/PublicPageShell.tsx
@@ -3383,6 +3393,10 @@ msgstr "העתקת קישור לסקירה"
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "Copy rows"
 msgstr "העתקת שורות"
+
+#: apps/mobile/components/thread/routine-event-row.tsx
+msgid "Copy URL"
+msgstr "העתקת ה-URL"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Cost"
@@ -3406,7 +3420,7 @@ msgstr "לא ניתן להוסיף את החבר"
 msgid "Could not add skills"
 msgstr "לא ניתן להוסיף מיומנויות"
 
-#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/components/integrations/use-custom-source-form.ts
 msgid "Could not add source"
 msgstr "לא ניתן להוסיף את המקור"
 
@@ -3517,10 +3531,10 @@ msgstr "לא ניתן להשלים את OAuth"
 msgid "Could not complete the update. Try again."
 msgstr "לא ניתן להשלים את העדכון. אפשר לנסות שוב."
 
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
+#: apps/mobile/components/integrations/use-connection-actions.ts
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
 #: apps/web/src/pages/integrations/SlackInstallCallback.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
@@ -3569,11 +3583,15 @@ msgstr "לא ניתן להתחבר למסך המחשב"
 #: apps/web/src/components/settings/TrustedLinkSitesSettings.tsx
 #: apps/web/src/lib/auth/account-security.ts
 #: apps/web/src/lib/auth/sso-flow.ts
-#: apps/web/src/lib/query/user-error.ts
 #: apps/web/src/pages/auth/Auth.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
+#: packages/i18n/src/user-error.ts
 msgid "Could not continue"
 msgstr "לא ניתן להמשיך"
+
+#: apps/mobile/lib/auth/use-subscription-sign-in.ts
+msgid "Could not copy the code. Try again."
+msgstr "לא ניתן היה להעתיק את הקוד. אפשר לנסות שוב."
 
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/pages.tsx
@@ -3634,6 +3652,7 @@ msgstr "לא ניתן למחוק את הבוט"
 msgid "Could not delete group"
 msgstr "לא ניתן למחוק את הקבוצה"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Could not delete MCP server"
 msgstr "לא ניתן למחוק את שרת ה-MCP"
@@ -3728,6 +3747,14 @@ msgstr "לא ניתן להוריד את {0}. אפשר לנסות שוב."
 msgid "Could not download {name}. Try again."
 msgstr "לא ניתן להוריד את {name}. אפשר לנסות שוב."
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Could not download image"
+msgstr "לא ניתן להוריד את התמונה"
+
+#: apps/mobile/app/artifact.tsx
+msgid "Could not download this artifact"
+msgstr "לא ניתן להוריד את התוצר הזה"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Could not enable tools"
@@ -3776,6 +3803,7 @@ msgid "Could not leave space"
 msgstr "לא ניתן לצאת מהמרחב"
 
 #: apps/mobile/app/(settings)/computers.tsx
+#: apps/mobile/components/ui/app-error-boundary.tsx
 #: apps/mobile/lib/account/user-devices.ts
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/components/computers/CloudComputerSizes.tsx
@@ -3867,18 +3895,26 @@ msgstr "לא ניתן לטעון את הקבוצה"
 msgid "Could not load image"
 msgstr "לא ניתן לטעון את התמונה"
 
+#: apps/web/src/components/integrations/skills-dialog.tsx
+msgid "Could not load installed skill packs."
+msgstr "לא ניתן היה לטעון את חבילות המיומנויות המותקנות."
+
 #: apps/mobile/app/(settings)/integrations.tsx
-#: apps/mobile/lib/integrations/integrations-cache.ts
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load integrations"
 msgstr "לא ניתן לטעון את האינטגרציות"
 
 #: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load MCP servers"
 msgstr "לא ניתן לטעון את שרתי ה-MCP"
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Could not load MCP servers."
+msgstr "לא ניתן לטעון את שרתי ה-MCP."
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/space-members.tsx
@@ -3899,6 +3935,7 @@ msgstr "לא ניתן לטעון את הזיכרון"
 #: apps/mobile/app/bot-model.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/chat-model.tsx
+#: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
 msgid "Could not load model settings"
 msgstr "לא ניתן לטעון את הגדרות המודל"
@@ -4005,7 +4042,7 @@ msgid "Could not move the ticket"
 msgstr "לא ניתן להעביר את הכרטיס"
 
 #: apps/mobile/app/paywall.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 #: apps/web/src/pages/auth/Paywall.tsx
 #: apps/web/src/pages/onboarding/use-onboarding-model.ts
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
@@ -4030,9 +4067,17 @@ msgstr "לא ניתן לפתוח את התמונה"
 msgid "Could not open message"
 msgstr "לא ניתן לפתוח את ההודעה"
 
+#: apps/mobile/app/(settings)/model-connection.tsx
+msgid "Could not open security settings. Try again."
+msgstr "לא ניתן היה לפתוח את הגדרות האבטחה. אפשר לנסות שוב."
+
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 msgid "Could not open the bot"
 msgstr "לא ניתן לפתוח את הבוט"
+
+#: apps/mobile/lib/auth/use-subscription-sign-in.ts
+msgid "Could not open the sign-in page. Try again."
+msgstr "לא ניתן היה לפתוח את דף ההתחברות. אפשר לנסות שוב."
 
 #: apps/mobile/app/meeting-transcript.tsx
 msgid "Could not open the transcript"
@@ -4080,9 +4125,9 @@ msgstr "לא ניתן להגיע לשרת הזה"
 #: apps/web/src/components/account/PasskeySettings.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
 #: apps/web/src/lib/computers/computer-sandbox.ts
-#: apps/web/src/lib/query/user-error.ts
 #: apps/web/src/pages/auth/Auth.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
+#: packages/i18n/src/user-error.ts
 msgid "Could not reach the server"
 msgstr "אין גישה לשרת"
 
@@ -4138,7 +4183,7 @@ msgstr "לא ניתן להסיר את הכלל"
 msgid "Could not remove skills"
 msgstr "לא ניתן להסיר את המיומנויות"
 
-#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/components/integrations/use-custom-source-form.ts
 msgid "Could not remove source"
 msgstr "לא ניתן להסיר את המקור"
 
@@ -4154,7 +4199,7 @@ msgstr "לא ניתן להסיר את הפריט"
 msgid "Could not remove the server"
 msgstr "לא ניתן להסיר את השרת"
 
-#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/components/integrations/use-connection-actions.ts
 #: apps/web/src/pages/model-settings/providers-section.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Could not rename connection"
@@ -4191,12 +4236,16 @@ msgstr "לא ניתן לאפס את הסיסמה"
 msgid "Could not restore bot"
 msgstr "לא ניתן לשחזר את הבוט"
 
+#: apps/web/src/pages/shell/sidebar/archived-chats.tsx
+msgid "Could not restore chat. Try again."
+msgstr "לא ניתן היה לשחזר את הצ׳אט. כדאי לנסות שוב."
+
 #: apps/mobile/components/computers/computer-home-versions.tsx
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Could not restore files"
 msgstr "לא ניתן לשחזר את הקבצים"
 
-#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/components/integrations/use-connection-actions.ts
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Could not revoke connection"
 msgstr "לא ניתן לבטל את החיבור"
@@ -4212,10 +4261,12 @@ msgstr "לא ניתן להריץ את הרוטינה"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/labs.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
+#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -4247,11 +4298,13 @@ msgstr "לא ניתן לשמור את הגדרות המחשב"
 msgid "Could not save group"
 msgstr "לא ניתן לשמור את הקבוצה"
 
+#: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/onboarding/use-onboarding-model.ts
 msgid "Could not save model"
 msgstr "לא ניתן לשמור את המודל"
 
 #: apps/mobile/app/(settings)/model-settings.tsx
+#: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Could not save model settings"
 msgstr "לא ניתן לשמור את הגדרות המודל"
@@ -4379,6 +4432,8 @@ msgstr "לא ניתן היה להציג את פרטי הגישה"
 msgid "Could not show the item"
 msgstr "לא ניתן להציג את הפריט"
 
+#: apps/mobile/components/thread/routine-event-row.tsx
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
 msgid "Could not show the webhook key"
 msgstr "לא ניתן היה להציג את מפתח ה-webhook"
@@ -4403,7 +4458,7 @@ msgstr "לא ניתן להקריא"
 msgid "Could not speak that."
 msgstr "לא ניתן להקריא את זה."
 
-#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/components/integrations/use-connection-actions.ts
 msgid "Could not start MCP OAuth"
 msgstr "לא ניתן להתחיל OAuth של MCP"
 
@@ -4418,6 +4473,10 @@ msgstr "לא ניתן להתחיל את ההתחברות"
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Could not start teaching"
 msgstr "לא ניתן להתחיל לימוד"
+
+#: apps/mobile/lib/thread/thread-voice.ts
+msgid "Could not start the call"
+msgstr "לא ניתן להתחיל את השיחה"
 
 #: apps/mobile/components/cards/AskActions.tsx
 msgid "Could not submit answer"
@@ -4453,6 +4512,7 @@ msgstr "לא ניתן לעבור בין מרחבים"
 msgid "Could not take control"
 msgstr "לא ניתן להשתלט"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Could not test MCP server"
 msgstr "לא ניתן לבדוק את שרת ה-MCP"
@@ -4461,8 +4521,8 @@ msgstr "לא ניתן לבדוק את שרת ה-MCP"
 msgid "Could not transcribe that recording."
 msgstr "לא ניתן לתמלל את ההקלטה."
 
-#: apps/mobile/lib/calls/call-session.ts
 #: apps/mobile/lib/composer/composer-dictation.ts
+#: apps/mobile/lib/voice/voice-clip.ts
 msgid "Could not transcribe that."
 msgstr "לא ניתן לתמלל את זה."
 
@@ -4564,8 +4624,8 @@ msgid "Couldn't load your wallet"
 msgstr "לא ניתן לטעון את הארנק"
 
 #: apps/mobile/components/thread/thread-error-notice.tsx
-msgid "Couldn't refresh — showing the last loaded messages."
-msgstr "לא ניתן לרענן — מוצגות ההודעות האחרונות שנטענו."
+msgid "Couldn't refresh. Showing the last loaded messages."
+msgstr "הרענון נכשל. מוצגות ההודעות האחרונות שנטענו."
 
 #: apps/mobile/app/computer.tsx
 msgid "Couldn't start the computer"
@@ -4620,6 +4680,11 @@ msgstr "מדינה"
 #: apps/web/src/pages/space/Board.tsx
 msgid "Create"
 msgstr "יצירה"
+
+#: apps/mobile/components/integrations/add-custom-integration.tsx
+#: apps/web/src/pages/plugins/source-form.tsx
+msgid "Create a personal access token"
+msgstr "יצירת טוקן גישה אישי"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -4699,14 +4764,14 @@ msgstr "פרטי הגישה מוצפנים ולעולם לא נשלחים למו
 msgid "Credentials: {names}"
 msgstr "פרטי גישה: {names}"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/PlanControls.tsx
 msgid "Credit amount"
 msgstr "סכום הקרדיט"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 #: apps/web/src/components/billing/PlanUsage.tsx
 msgid "Credits"
 msgstr "קרדיטים"
@@ -4715,8 +4780,7 @@ msgstr "קרדיטים"
 msgid "Credits ($)"
 msgstr "קרדיטים ($)"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Cron"
 msgstr "Cron"
 
@@ -4745,7 +4809,7 @@ msgstr "סיסמה נוכחית"
 msgid "Current plan"
 msgstr "התוכנית הנוכחית"
 
-#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/components/integrations/use-custom-source-form.ts
 msgid "Custom connector"
 msgstr "חיבור מותאם"
 
@@ -4767,7 +4831,6 @@ msgstr "שרת מותאם {host}"
 msgid "Customer support"
 msgstr "תמיכת לקוחות"
 
-#: apps/mobile/app/(settings)/space.tsx
 #: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
 msgid "Customize"
 msgstr "התאמה אישית"
@@ -4800,8 +4863,11 @@ msgstr "מעקב יומי אחר עבודה שלא הושלמה"
 msgid "Dark"
 msgstr "כהה"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/use-catalog-browse.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
+msgid "Data"
+msgstr "נתונים"
+
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Data"
 msgstr "נתונים"
@@ -4810,9 +4876,12 @@ msgstr "נתונים"
 msgid "Date range"
 msgstr "טווח תאריכים"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/billing/billing.ts
-#: apps/web/src/lib/routines/cron.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/billing.ts
+msgid "/ITcnz"
+msgstr "יום"
+
+#: packages/i18n/src/cron.ts
 msgid "day"
 msgstr "יום"
 
@@ -4825,8 +4894,7 @@ msgid "Day-to-day work"
 msgstr "עבודה יומיומית"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "days"
 msgstr "ימים"
 
@@ -4850,6 +4918,7 @@ msgstr "נדחה"
 #: apps/mobile/components/bots/bot-look-picker.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
+#: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
@@ -4871,6 +4940,10 @@ msgstr "ברירת מחדל ({defaultLabel})"
 msgid "Default ({level})"
 msgstr "ברירת מחדל ({level})"
 
+#: apps/web/src/pages/model-settings/deployment-model-settings.tsx
+msgid "Default for everyone"
+msgstr "ברירת מחדל לכולם"
+
 #: apps/web/src/pages/shell/bots/agent-import-plan.tsx
 msgid "Default from Hermes"
 msgstr "ברירת מחדל של Hermes"
@@ -4883,6 +4956,7 @@ msgstr "ברירת מחדל של OpenClaw"
 msgid "Default scope"
 msgstr "היקף ברירת מחדל"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/organization.tsx
 #: apps/mobile/app/(settings)/profile.tsx
@@ -4958,6 +5032,7 @@ msgstr "למחוק את {name} ואת {count} הבוטים שלו?"
 msgid "Delete {name} and its bot?"
 msgstr "למחוק את {name} ואת הבוט שלו?"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
@@ -5004,7 +5079,6 @@ msgstr "מחיקת המקטע"
 
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 #: apps/web/src/pages/settings/SpaceSettingsPanel.tsx
-#: apps/web/src/pages/shell/shell-dialogs.tsx
 msgid "Delete space"
 msgstr "מחיקת המרחב"
 
@@ -5092,8 +5166,8 @@ msgstr "דחייה"
 msgid "Description"
 msgstr "תיאור"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/use-catalog-browse.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Design"
 msgstr "עיצוב"
 
@@ -5115,10 +5189,10 @@ msgstr "עדכון לאפליקציית הדסקטופ"
 msgid "Details"
 msgstr "פרטים"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/use-catalog-browse.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Developer"
-msgstr "מפתחים"
+msgstr "פיתוח"
 
 #: apps/mobile/app/bot-settings.tsx
 msgid "Device voice"
@@ -5161,8 +5235,8 @@ msgstr "לא נקלט."
 msgid "Disable a tool"
 msgstr "השבתת כלי"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/parts.tsx
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Disabled"
 msgstr "מושבת"
 
@@ -5174,6 +5248,7 @@ msgstr "הרוטינה \"{name}\" הושבתה"
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/web/src/components/messages/OutgoingDraftCard.tsx
+#: apps/web/src/pages/routines/RoutineEditor.tsx
 msgid "Discard"
 msgstr "ביטול"
 
@@ -5184,6 +5259,10 @@ msgstr "לבטל את השינויים?"
 #: apps/web/src/pages/shell/composer/hold-to-talk.tsx
 msgid "Discard recording"
 msgstr "מחיקת ההקלטה"
+
+#: apps/web/src/pages/routines/RoutineEditor.tsx
+msgid "Discard unsaved changes?"
+msgstr "לבטל את השינויים שלא נשמרו?"
 
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
 #: apps/web/src/components/messages/OutgoingDraftCard.tsx
@@ -5263,7 +5342,6 @@ msgstr "מנתק…"
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
-#: apps/web/src/components/vault/VaultItemEditor.tsx
 #: apps/web/src/pages/shell/chat/message-cards.tsx
 #: apps/web/src/pages/shell/computers/computer-panel.tsx
 msgid "Dismiss"
@@ -5272,6 +5350,12 @@ msgstr "סגירה"
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Dismiss error"
 msgstr "סגירת השגיאה"
+
+#: apps/mobile/components/cards/secret-ask-sheet.tsx
+#: apps/mobile/components/vault/vault-item-editor.tsx
+#: apps/web/src/components/vault/VaultItemEditor.tsx
+msgid "Dismiss request"
+msgstr "דחיית הבקשה"
 
 #: apps/mobile/components/thread/ask-block.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
@@ -5288,14 +5372,6 @@ msgstr "נסגר. אפשר להתחבר מחדש בכל עת מהגדרות MCP.
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 msgid "Display name"
 msgstr "שם תצוגה"
-
-#: apps/web/src/pages/shell/host-computer-prompt.tsx
-msgid "Docker"
-msgstr "Docker"
-
-#: apps/web/src/pages/shell/host-computer-prompt.tsx
-msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
-msgstr "Docker מגביל את הגישה למחשב לאבטחה נוספת. שימוש ב-{hostLabel} מאפשר לבוטים לעבוד עם הקבצים והכלים המקומיים."
 
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Docs"
@@ -5316,9 +5392,9 @@ msgstr "אין חשבון?"
 #: apps/mobile/components/cards/ImportSetupCard.tsx
 #: apps/mobile/components/messages/select-text-sheet.tsx
 #: apps/mobile/components/thread/ask-block.tsx
+#: apps/mobile/components/thread/routine-event-row.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/mobile/lib/board/board.ts
-#: apps/mobile/lib/inbox/activity.ts
 #: apps/web/src/components/computers/ComputerCard.tsx
 #: apps/web/src/components/messages/ToolActivityDisclosure.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
@@ -5326,8 +5402,8 @@ msgstr "אין חשבון?"
 #: apps/web/src/components/vault/VaultImport.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 #: apps/web/src/pages/shell/bots/import-setup-card.tsx
-#: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/ticket-status.ts
+#: packages/i18n/src/activity.ts
 msgid "Done"
 msgstr "הושלם"
 
@@ -5340,6 +5416,7 @@ msgstr "למטה"
 msgid "Downgrade at renewal"
 msgstr "שנמוך בחידוש"
 
+#: apps/mobile/app/artifact.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
 #: apps/web/src/pages/space/KnowledgeSection.tsx
 msgid "Download"
@@ -5350,6 +5427,7 @@ msgstr "הורדה"
 msgid "Download {0}"
 msgstr "הורדת {0}"
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
 #: apps/web/src/components/messages/ArtifactFileCard.tsx
 msgid "Download {name}"
 msgstr "הורדת {name}"
@@ -5454,8 +5532,7 @@ msgstr "אימייל"
 msgid "Email address"
 msgstr "כתובת אימייל"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Email is not allowed to register"
 msgstr "האימייל הזה לא מורשה להירשם"
 
@@ -5464,8 +5541,7 @@ msgstr "האימייל הזה לא מורשה להירשם"
 msgid "Email me a code"
 msgstr "שליחת קוד באימייל"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Email verification required"
 msgstr "נדרש אימות אימייל"
 
@@ -5495,7 +5571,7 @@ msgstr "מזהה משתמש קצה"
 msgid "Ends"
 msgstr "מסתיים"
 
-#: apps/web/src/lib/billing/billing.ts
+#: packages/i18n/src/billing.ts
 msgid "Ends {day}"
 msgstr "מסתיים ב-{day}"
 
@@ -5503,8 +5579,7 @@ msgstr "מסתיים ב-{day}"
 msgid "Enjoying Rakazo?"
 msgstr "נהנים מ-Rakazo?"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Enter a password"
 msgstr "יש להזין סיסמה"
 
@@ -5512,8 +5587,7 @@ msgstr "יש להזין סיסמה"
 msgid "Enter a server URL"
 msgstr "יש להזין כתובת שרת"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Enter a valid email"
 msgstr "יש להזין אימייל תקין"
 
@@ -5551,7 +5625,6 @@ msgstr "יש להזין כתובת URL של HTTPS"
 msgid "Enter each site as an HTTPS address a login can be saved for."
 msgstr "יש להזין כל אתר ככתובת HTTPS שאפשר לשמור עבורה פרטי התחברות."
 
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
 msgid "Enter this code at {host}"
 msgstr "יש להזין את הקוד הזה ב-{host}"
@@ -5580,28 +5653,16 @@ msgstr "Escape"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
+#: packages/i18n/src/cron.ts
 msgid "Every"
 msgstr "כל"
 
-#. placeholder {0}: names[0] ?? ""
-#: apps/web/src/lib/routines/cron.ts
-msgid "Every {0}"
-msgstr "כל {0}"
-
-#. placeholder {0}: names.slice(0, -1).join(", ")
-#. placeholder {1}: names.at(-1) ?? ""
-#: apps/web/src/lib/routines/cron.ts
-msgid "Every {0} and {1}"
-msgstr "כל {0} ו-{1}"
-
-#: apps/mobile/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Every {day}"
 msgstr "כל {day}"
 
-#: apps/mobile/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Every {days} and {last}"
 msgstr "כל {days} ו-{last}"
 
@@ -5609,12 +5670,11 @@ msgstr "כל {days} ו-{last}"
 msgid "every {intervalAmountSelect} {intervalUnitSelect}"
 msgstr "כל {intervalAmountSelect} {intervalUnitSelect}"
 
-#: apps/mobile/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "every {n} {unit}"
 msgstr "כל {n} {unit}"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Every {n} hours at :{minute}"
 msgstr "כל {n} שעות בדקה {minute}"
 
@@ -5623,23 +5683,18 @@ msgid "Every bot in this space reads these notes and keeps them up to date."
 msgstr "כל הבוטים במרחב הזה קוראים את ההערות האלה ומעדכנים אותן."
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
-#: apps/mobile/lib/routines/cron.ts
 #: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Every day"
 msgstr "כל יום"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
-#: apps/mobile/lib/routines/cron.ts
 #: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Every hour"
 msgstr "כל שעה"
 
-#. placeholder {0}: String(minute).padStart(2, "0")
-#: apps/web/src/lib/routines/cron.ts
-msgid "Every hour at :{0}"
-msgstr "כל שעה בדקה {0}"
-
-#: apps/mobile/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Every hour at :{minute}"
 msgstr "כל שעה בדקה {minute}"
 
@@ -5649,8 +5704,8 @@ msgid "Every message"
 msgstr "כל הודעה"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
-#: apps/mobile/lib/routines/cron.ts
 #: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Every Monday"
 msgstr "כל יום שני"
 
@@ -5662,11 +5717,6 @@ msgstr "כל מי שכאן רואה את הצ׳אטים, הבוטים והזיכ
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Everyone in this bot's space can read the chats it gets from {app}."
 msgstr "כל מי שבמרחב של הבוט הזה יכול לקרוא את הצ׳אטים שהוא מקבל מ-{app}."
-
-#. placeholder {0}: first.name
-#: apps/web/src/components/billing/ModelCredits.tsx
-msgid "Everything in {0}"
-msgstr "כל מה שיש ב-{0}"
 
 #: apps/mobile/app/new-group.tsx
 msgid "Ex: Project Falcon"
@@ -5753,12 +5803,7 @@ msgstr "חיצוני"
 msgid "External conversation"
 msgstr "שיחה חיצונית"
 
-#: apps/mobile/lib/models/thinking-level.ts
-msgid "Extra high"
-msgstr "גבוה מאוד"
-
-#. js-lingui-explicit-id
-#: apps/web/src/lib/models/model-catalog.ts
+#: packages/i18n/src/thinking-level.ts
 msgid "Extra high"
 msgstr "גבוה מאוד"
 
@@ -5776,9 +5821,8 @@ msgid "failed"
 msgstr "נכשל"
 
 #: apps/mobile/components/thread/special-message-card.tsx
-#: apps/mobile/lib/inbox/activity.ts
 #: apps/web/src/components/messages/SubagentCard.tsx
-#: apps/web/src/pages/space/ActivityList.tsx
+#: packages/i18n/src/activity.ts
 msgid "Failed"
 msgstr "נכשל"
 
@@ -5806,10 +5850,9 @@ msgid "Fields to compare (optional)"
 msgstr "שדות להשוואה (אופציונלי)"
 
 #: apps/mobile/components/thread/message-bubble.tsx
-#: apps/mobile/lib/search/search-sheet.ts
 #: apps/mobile/lib/thread/send/thread-attachments.ts
 #: apps/web/src/pages/integrations/McpServerForm.tsx
-#: apps/web/src/pages/space/SpaceSearch.tsx
+#: packages/i18n/src/search.ts
 msgid "File"
 msgstr "קובץ"
 
@@ -5847,10 +5890,10 @@ msgstr "סינון לפי היוצר"
 msgid "Filters"
 msgstr "מסננים"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/use-catalog-browse.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Finance"
-msgstr "פיננסים"
+msgstr "כספים"
 
 #: apps/web/src/components/pages/PagesList.tsx
 msgid "Find a page"
@@ -5867,8 +5910,8 @@ msgstr "חיפוש בצ׳אט"
 msgid "Finding…"
 msgstr "מחפש…"
 
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/components/integrations/use-connection-actions.ts
 msgid "Finish connecting in the browser, then refresh this page."
 msgstr "יש להשלים את החיבור בדפדפן ואז לרענן את הדף."
 
@@ -5905,7 +5948,7 @@ msgid "Forgot password?"
 msgstr "שכחת סיסמה?"
 
 #: apps/mobile/app/paywall.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Free"
 msgstr "חינם"
 
@@ -5933,8 +5976,7 @@ msgstr "חינם עד"
 msgid "Free until {date}"
 msgstr "חינם עד {date}"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Friday"
 msgstr "יום שישי"
 
@@ -5947,8 +5989,8 @@ msgstr "מתאריך"
 msgid "From {0}"
 msgstr "מ-{0}"
 
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/skills.tsx
+#: apps/mobile/components/integrations/use-custom-source-form.ts
 #: apps/web/src/components/integrations/skills-dialog.tsx
 #: apps/web/src/pages/plugins/add-menu.tsx
 #: apps/web/src/pages/plugins/github-import.tsx
@@ -6066,14 +6108,13 @@ msgstr "נקודת קצה של GraphQL"
 #: apps/mobile/components/inbox/inbox-activity.tsx
 #: apps/mobile/components/thread/header/chat-header-title.tsx
 #: apps/mobile/components/thread/thread-screen.tsx
-#: apps/mobile/lib/bots/identity-display.ts
 #: apps/mobile/lib/search/search-sheet.ts
 #: apps/mobile/lib/thread/send/thread-send.ts
-#: apps/web/src/lib/bots/identity-display.ts
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 #: apps/web/src/pages/shell/chat/chat-header.tsx
 #: apps/web/src/pages/shell/side-panel.tsx
-#: apps/web/src/pages/space/SpaceSearch.tsx
+#: packages/i18n/src/identity-display.ts
+#: packages/i18n/src/search.ts
 msgid "Group"
 msgstr "קבוצה"
 
@@ -6125,6 +6166,7 @@ msgstr "יש לנתק את השיחה ואז להזין את הקוד שעל ה�
 msgid "Haptics"
 msgstr "משוב רטט"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Header"
 msgstr "Header"
@@ -6137,6 +6179,7 @@ msgstr "Header \"{header}\""
 msgid "Header {name}"
 msgstr "כותרת {name}"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/integrations/header-rows-editor.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/models/ModelHeadersEditor.tsx
@@ -6146,6 +6189,7 @@ msgstr "כותרת {name}"
 msgid "Header name"
 msgstr "שם ה-header"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/integrations/header-rows-editor.tsx
 #: apps/web/src/components/models/ModelHeadersEditor.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
@@ -6192,6 +6236,10 @@ msgstr "מוסתר"
 msgid "Hide"
 msgstr "הסתרה"
 
+#: apps/mobile/components/vault/login-fields-editor.tsx
+msgid "Hide {field}"
+msgstr "הסתרת {field}"
+
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Hide {label}"
 msgstr "הסתרת {label}"
@@ -6221,16 +6269,15 @@ msgstr "הסתרת התמליל"
 msgid "Hide transcript: {title}, {duration}"
 msgstr "הסתרת התמליל: {title}, {duration}"
 
-#: apps/mobile/lib/models/thinking-level.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Hide webhook key"
+msgstr "הסתרת מפתח ה-webhook"
+
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/space/ticket-priority.ts
+#: packages/i18n/src/thinking-level.ts
 msgid "High"
 msgstr "גבוהה"
-
-#. js-lingui-explicit-id
-#: apps/web/src/lib/models/model-catalog.ts
-msgid "High"
-msgstr "גבוה"
 
 #: apps/web/src/pages/shell/composer/hold-to-talk.tsx
 msgid "Hold to talk"
@@ -6245,16 +6292,14 @@ msgstr "לחיצה ארוכה לדיבור, שחרור לשליחה"
 msgid "Home"
 msgstr "בית"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "hour"
 msgstr "שעה"
 
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
+#: packages/i18n/src/cron.ts
 msgid "hours"
 msgstr "שעות"
 
@@ -6342,14 +6387,23 @@ msgstr "תמונה"
 msgid "Image input is not configured for this model."
 msgstr "קלט תמונה לא מוגדר עבור המודל הזה."
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Image input is not configured for this model."
 msgstr "קלט תמונה לא מוגדר עבור המודל הזה."
+
+#: apps/mobile/components/models/media-model-settings.tsx
+#: apps/web/src/pages/model-settings/media-model-settings.tsx
+msgid "Image model"
+msgstr "מודל תמונות"
 
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "אזור העלאת תמונה"
+
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/billing/PlanUsage.tsx
+msgid "Images and video"
+msgstr "תמונות ווידאו"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
@@ -6360,6 +6414,8 @@ msgstr "ייבוא"
 #: apps/web/src/components/settings/AccountDataSettings.tsx
 #: apps/web/src/pages/shell/bots/agent-import-dialog.tsx
 #: apps/web/src/pages/shell/bots/agent-import.tsx
+#: apps/web/src/pages/shell/bots/bot-picker.tsx
+#: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "Import an agent"
 msgstr "ייבוא סוכן"
 
@@ -6392,6 +6448,14 @@ msgstr "בפגישה"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "In this bot"
 msgstr "בבוט הזה"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "In use"
+msgstr "בשימוש"
+
+#: apps/mobile/app/(settings)/model-connection.tsx
+msgid "In your browser, sign in and paste this code when asked. Then return to Rakazo."
+msgstr "בדפדפן, יש להתחבר ולהדביק את הקוד הזה כשתתבקש. לאחר מכן לחזור אל Rakazo."
 
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
 msgid "Inactive"
@@ -6502,8 +6566,7 @@ msgstr "גודל המרווח"
 msgid "Interval unit"
 msgstr "יחידת המרווח"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Invalid code"
 msgstr "קוד לא תקין"
 
@@ -6540,8 +6603,7 @@ msgstr "הזמנת חברים"
 msgid "Invite link"
 msgstr "קישור הזמנה"
 
-#: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
-#: apps/web/src/components/spaces/SpaceMembersSettings.tsx
+#: apps/web/src/lib/spaces/use-copy-invite-link.ts
 msgid "Invite link copied"
 msgstr "קישור ההזמנה הועתק"
 
@@ -6560,8 +6622,8 @@ msgid "Isolated"
 msgstr "מבודד"
 
 #: apps/web/src/pages/space/Artifacts.tsx
-msgid "Isolated preview — no access to your account"
-msgstr "תצוגה מקדימה מבודדת — ללא גישה לחשבון"
+msgid "Isolated preview: no access to your account"
+msgstr "תצוגה מקדימה מבודדת: ללא גישה לחשבון שלך"
 
 #: apps/mobile/app/new-space.tsx
 msgid "It could not be opened. Try again from the sidebar."
@@ -6638,8 +6700,7 @@ msgstr "מעבר לאחרונות, הודעות חדשות"
 msgid "Jump to replied message: {excerpt}"
 msgstr "מעבר להודעה שנענתה: {excerpt}"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/lib/locale/relative-time.ts
+#: packages/i18n/src/activity.ts
 msgid "just now"
 msgstr "הרגע"
 
@@ -6662,6 +6723,7 @@ msgstr "השארה בטקסט"
 msgid "Keep memories"
 msgstr "שמירת הזיכרונות"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr "שמירת תוצאות כלים במלואן"
@@ -6790,8 +6852,7 @@ msgstr "בהיר"
 msgid "Limit"
 msgstr "מגבלה"
 
-#: apps/mobile/lib/search/search-sheet.ts
-#: apps/web/src/pages/space/SpaceSearch.tsx
+#: packages/i18n/src/search.ts
 msgid "Link"
 msgstr "קישור"
 
@@ -6889,6 +6950,10 @@ msgstr "טוען הגדרות זיכרון…"
 msgid "Loading model catalog…"
 msgstr "טוען קטלוג מודלים…"
 
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Loading model name…"
+msgstr "טוען את שם המודל…"
+
 #: apps/web/src/components/pages/PageNotice.tsx
 msgid "Loading page…"
 msgstr "טוען עמוד…"
@@ -6921,6 +6986,7 @@ msgstr "טוען ספקי קול…"
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/bot-templates.tsx
 #: apps/mobile/app/(settings)/computers.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -6994,14 +7060,9 @@ msgstr "לחיצה ארוכה להצמדה, להעברה או להשתקת הת�
 msgid "Looks like it contains a key"
 msgstr "נראה שמכיל מפתח"
 
-#: apps/mobile/lib/models/thinking-level.ts
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/pages/space/ticket-priority.ts
-msgid "Low"
-msgstr "נמוך"
-
-#. js-lingui-explicit-id
-#: apps/web/src/lib/models/model-catalog.ts
+#: packages/i18n/src/thinking-level.ts
 msgid "Low"
 msgstr "נמוך"
 
@@ -7031,12 +7092,11 @@ msgid "Make member"
 msgstr "הפיכה לחבר"
 
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
-#: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Manage"
 msgstr "ניהול"
 
 #. placeholder {0}: option.name
-#: apps/web/src/pages/settings/SettingsOverlay.tsx
+#: apps/web/src/pages/settings/SpacesSettingsPanel.tsx
 msgid "Manage {0}"
 msgstr "ניהול {0}"
 
@@ -7067,6 +7127,11 @@ msgstr "ניהול בוטים אחרים"
 msgid "Manage provider"
 msgstr "ניהול ספק"
 
+#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Managed apps haven’t been enabled on this server."
+msgstr "אפליקציות מנוהלות לא הופעלו בשרת הזה."
+
 #: apps/web/src/pages/plugins/domain-search.tsx
 msgid "Manual"
 msgstr "ידני"
@@ -7094,17 +7159,12 @@ msgstr "סימון כלא נקראה"
 msgid "Markdown table"
 msgstr "טבלת Markdown"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/use-catalog-browse.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Marketing"
 msgstr "שיווק"
 
-#: apps/mobile/lib/models/thinking-level.ts
-msgid "Max"
-msgstr "מקסימלי"
-
-#. js-lingui-explicit-id
-#: apps/web/src/lib/models/model-catalog.ts
+#: packages/i18n/src/thinking-level.ts
 msgid "Max"
 msgstr "מקסימלי"
 
@@ -7131,7 +7191,7 @@ msgstr "מספר הטוקנים המרבי בפלט חייב להיות נמוך
 msgid "MCP endpoint"
 msgstr "נקודת קצה של MCP"
 
-#: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/components/integrations/use-custom-source-form.ts
 #: apps/web/src/pages/plugins/add-menu.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "MCP server"
@@ -7142,13 +7202,8 @@ msgstr "שרת MCP"
 msgid "MCP servers"
 msgstr "שרתי MCP"
 
-#: apps/mobile/lib/models/thinking-level.ts
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
-msgid "Medium"
-msgstr "בינוני"
-
-#. js-lingui-explicit-id
-#: apps/web/src/lib/models/model-catalog.ts
+#: packages/i18n/src/thinking-level.ts
 msgid "Medium"
 msgstr "בינוני"
 
@@ -7180,16 +7235,15 @@ msgstr "קישור לפגישה"
 msgid "Meetings"
 msgstr "פגישות"
 
-#: apps/mobile/lib/bots/identity-display.ts
-#: apps/web/src/lib/bots/identity-display.ts
+#: packages/i18n/src/identity-display.ts
 msgid "Member"
 msgstr "חבר"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/(settings)/organization.tsx
+#: apps/mobile/app/(settings)/spaces.tsx
 #: apps/mobile/app/space-members.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
@@ -7244,12 +7298,11 @@ msgid "Mentions: {mentions}"
 msgstr "מזכיר: {mentions}"
 
 #: apps/mobile/components/cards/OutgoingDraftCard.tsx
-#: apps/mobile/lib/search/search-sheet.ts
 #: apps/mobile/lib/thread/thread-message-text.ts
 #: apps/web/src/components/messages/OutgoingDraftCard.tsx
 #: apps/web/src/pages/shell/chat/chat-shared.ts
 #: apps/web/src/pages/shell/composer/composer.tsx
-#: apps/web/src/pages/space/SpaceSearch.tsx
+#: packages/i18n/src/search.ts
 msgid "Message"
 msgstr "הודעה"
 
@@ -7266,10 +7319,21 @@ msgstr "הודעה אל {activeName}"
 msgid "Message {name}"
 msgstr "הודעה אל {name}"
 
-#. placeholder {0}: [speakerName, when].filter(Boolean).join(" ")
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
-msgid "Message actions, {0}"
-msgstr "פעולות להודעה, {0}"
+msgid "Message actions"
+msgstr "פעולות על ההודעה"
+
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+msgid "Message actions, {speakerName}"
+msgstr "פעולות על ההודעה, {speakerName}"
+
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+msgid "Message actions, {speakerName}, {when}"
+msgstr "פעולות על ההודעה, {speakerName}, {when}"
+
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+msgid "Message actions, {when}"
+msgstr "פעולות על ההודעה, {when}"
 
 #: apps/web/src/pages/shell/composer/composer.tsx
 msgid "Message composer"
@@ -7286,8 +7350,7 @@ msgstr "אירוע הודעה"
 msgid "Message from {peer}"
 msgstr "הודעה מ-{peer}"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/lib/activity-list-filters.ts
+#: packages/i18n/src/activity.ts
 msgid "Message from another agent"
 msgstr "הודעה מסוכן אחר"
 
@@ -7325,12 +7388,7 @@ msgstr "הודעות"
 msgid "Microphone failed"
 msgstr "המיקרופון נכשל"
 
-#: apps/mobile/lib/models/thinking-level.ts
-msgid "Minimal"
-msgstr "מינימלי"
-
-#. js-lingui-explicit-id
-#: apps/web/src/lib/models/model-catalog.ts
+#: packages/i18n/src/thinking-level.ts
 msgid "Minimal"
 msgstr "מינימלי"
 
@@ -7346,15 +7404,13 @@ msgstr "מזעור הבוטים"
 msgid "Minimize call"
 msgstr "מזעור השיחה"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "minute"
 msgstr "דקה"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
+#: packages/i18n/src/cron.ts
 msgid "minutes"
 msgstr "דקות"
 
@@ -7374,6 +7430,7 @@ msgstr "מצב"
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
+#: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
@@ -7388,6 +7445,10 @@ msgstr "מודל"
 #: apps/web/src/pages/onboarding/model-step.tsx
 msgid "Model id"
 msgstr "מזהה מודל"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Model name unavailable"
+msgstr "שם המודל לא זמין"
 
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
@@ -7423,7 +7484,7 @@ msgstr "מודל: {model}, {detail}"
 msgid "Models"
 msgstr "מודלים"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Models at provider cost"
 msgstr "מודלים במחיר הספק"
 
@@ -7432,28 +7493,27 @@ msgstr "מודלים במחיר הספק"
 msgid "Models from server"
 msgstr "מודלים מהשרת"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Monday"
 msgstr "יום שני"
 
-#: apps/web/src/lib/billing/billing.ts
+#: packages/i18n/src/billing.ts
 msgid "month"
 msgstr "חודש"
 
 #: apps/mobile/app/(settings)/account.tsx
 #: apps/mobile/app/(settings)/spending-limit.tsx
 #: apps/mobile/app/paywall.tsx
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/PlanControls.tsx
 #: apps/web/src/components/billing/PlanUsage.tsx
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Monthly"
 msgstr "חודשי"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/PlanControls.tsx
 msgid "Monthly credits"
 msgstr "קרדיטים חודשיים"
 
@@ -7496,6 +7556,10 @@ msgstr "תדריך בוקר"
 msgid "Move down"
 msgstr "הזזה למטה"
 
+#: apps/web/src/components/messages/AskCard.tsx
+msgid "Move from another assistant"
+msgstr "מעבר מעוזר אחר"
+
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 msgid "Move them to your shared memory."
 msgstr "אפשר להעביר אותם לזיכרון המשותף."
@@ -7526,6 +7590,7 @@ msgstr "מושתק"
 msgid "My computers"
 msgstr "המחשבים שלי"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/organization.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/group-settings.tsx
@@ -7584,6 +7649,11 @@ msgstr "יש לתת שם לרוטינה."
 msgid "Name your Bot"
 msgstr "שם לבוט"
 
+#: apps/mobile/app/(settings)/voice.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
+msgid "Names and terms (optional)"
+msgstr "שמות ומונחים (אופציונלי)"
+
 #: apps/web/src/lib/chat/roster-status.ts
 msgid "Needs an answer"
 msgstr "ממתין לתשובה"
@@ -7593,11 +7663,13 @@ msgstr "ממתין לתשובה"
 msgid "Needs an email address"
 msgstr "נדרשת כתובת אימייל"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/mobile/lib/api/user-error.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
+msgid "Needs an OAuth client ID"
+msgstr "נדרש מזהה לקוח OAuth"
+
 #: apps/web/src/components/integrations/McpServerHealthLine.tsx
-#: apps/web/src/lib/query/user-error.ts
-#: apps/web/src/pages/plugins/parts.tsx
+#: packages/i18n/src/user-error.ts
 msgid "Needs an OAuth client ID"
 msgstr "נדרש מזהה לקוח OAuth"
 
@@ -7609,18 +7681,16 @@ msgstr "נדרש מזהה לקוח OAuth"
 msgid "Needs attention"
 msgstr "דורש תשומת לב"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/pages/space/ActivityList.tsx
+#: packages/i18n/src/activity.ts
 msgid "Needs input"
 msgstr "ממתין לקלט"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/parts.tsx
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Needs sign-in"
 msgstr "נדרשת התחברות"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/pages/space/ActivityList.tsx
+#: packages/i18n/src/activity.ts
 msgid "Needs takeover"
 msgstr "נדרשת השתלטות"
 
@@ -7650,6 +7720,10 @@ msgstr "חדש"
 #: apps/web/src/components/vault/VaultSettings.tsx
 msgid "New API key"
 msgstr "מפתח API חדש"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "New bearer token"
+msgstr "Bearer token חדש"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
@@ -7686,6 +7760,10 @@ msgstr "קבוצה חדשה"
 msgid "New group chat"
 msgstr "צ'אט קבוצתי חדש"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "New header value"
+msgstr "ערך header חדש"
+
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
 msgstr "פריט חדש"
@@ -7719,7 +7797,9 @@ msgid "New password"
 msgstr "סיסמה חדשה"
 
 #: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/(settings)/spaces.tsx
 #: apps/mobile/lib/inbox/create-chooser.ts
+#: apps/web/src/pages/settings/SpacesSettingsPanel.tsx
 #: apps/web/src/pages/shell/bots/bot-picker.tsx
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "New private space"
@@ -7764,6 +7844,10 @@ msgstr "התגובות החדשות ביותר"
 #: apps/mobile/app/new-group.tsx
 msgid "Next"
 msgstr "הבא"
+
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "Next image"
+msgstr "התמונה הבאה"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Next match"
@@ -7854,8 +7938,13 @@ msgstr "כבר לא פעיל"
 #: apps/mobile/app/(settings)/approval-rule-add.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 #: apps/web/src/components/vault/VaultSettings.tsx
+#: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "No matches"
 msgstr "אין תוצאות"
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "No matches in your current catalogs."
+msgstr "אין תוצאות בקטלוגים הנוכחיים שלך."
 
 #: apps/mobile/app/artifacts.tsx
 #: apps/web/src/pages/space/Artifacts.tsx
@@ -7920,10 +8009,6 @@ msgstr "אין מחשבים מצומדים"
 #: packages/i18n/src/vault.ts
 msgid "No password"
 msgstr "אין סיסמה"
-
-#: apps/web/src/components/billing/ModelCredits.tsx
-msgid "No plan or key? Use credits"
-msgstr "אין תוכנית או מפתח? אפשר להשתמש בקרדיטים"
 
 #: apps/mobile/app/artifact.tsx
 #: apps/mobile/components/media/video-preview.tsx
@@ -8048,8 +8133,8 @@ msgstr "לא נוספו: {list}"
 msgid "Not checked yet"
 msgstr "טרם נבדק"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/parts.tsx
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Not connected"
 msgstr "לא מחובר"
 
@@ -8094,6 +8179,10 @@ msgstr "לא עכשיו"
 msgid "Not on an HTTPS site"
 msgstr "לא באתר HTTPS"
 
+#: apps/web/src/pages/plugins/source-form.tsx
+msgid "Not reviewed by Rakazo. Only add it if you trust this address."
+msgstr "לא נבדק על ידי Rakazo. יש להוסיף רק אם הכתובת הזו מהימנה."
+
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
 msgid "Not saved"
@@ -8124,9 +8213,12 @@ msgstr "לא נתמך ב-Rakazo"
 msgid "Not used by Rakazo"
 msgstr "לא בשימוש ב-Rakazo"
 
-#: apps/mobile/app/(settings)/integrations.tsx
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
+msgid "Not working"
+msgstr "לא עובד"
+
 #: apps/web/src/components/integrations/McpServerHealthLine.tsx
-#: apps/web/src/pages/plugins/parts.tsx
 msgid "Not working"
 msgstr "לא עובד"
 
@@ -8171,10 +8263,16 @@ msgstr "OAuth"
 msgid "OAuth authorization was cancelled."
 msgstr "הרשאת OAuth בוטלה."
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "OAuth client"
+msgstr "לקוח OAuth"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "OAuth client ID (optional)"
 msgstr "מזהה לקוח OAuth (אופציונלי)"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "OAuth client secret (optional)"
 msgstr "סוד לקוח OAuth (אופציונלי)"
@@ -8182,6 +8280,10 @@ msgstr "סוד לקוח OAuth (אופציונלי)"
 #: apps/web/src/pages/integrations/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "חיבור OAuth נכשל"
+
+#: packages/i18n/src/thinking-level.ts
+msgid "Off"
+msgstr "כבוי"
 
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
@@ -8206,17 +8308,11 @@ msgstr "בשיחה עם {name}"
 msgid "On a schedule"
 msgstr "לפי תזמון"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "on day {day} at {time}"
 msgstr "ביום {day} בשעה {time}"
 
-#. placeholder {0}: preset.time
-#: apps/web/src/lib/routines/cron.ts
-msgid "on the 1st at {0}"
-msgstr "ב-1 לחודש בשעה {0}"
-
-#: apps/mobile/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "on the 1st at {time}"
 msgstr "ב-1 לחודש בשעה {time}"
 
@@ -8225,8 +8321,7 @@ msgstr "ב-1 לחודש בשעה {time}"
 msgid "On the button"
 msgstr "על הכפתור"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "One-time"
 msgstr "חד-פעמי"
 
@@ -8251,6 +8346,8 @@ msgstr "יש להזין רק קוד ש-{host} שלח לך."
 msgid "Only me"
 msgstr "רק אני"
 
+#: apps/mobile/components/thread/routine-event-row.tsx
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
 msgid "Only the bot's creator can see its webhook key."
 msgstr "רק יוצר הבוט יכול לראות את מפתח ה-webhook שלו."
@@ -8372,6 +8469,10 @@ msgstr "פתיחת ההגדרות"
 msgid "Open Voice"
 msgstr "פתיחת הגדרות קול"
 
+#: apps/web/src/pages/shell/chat/use-read-aloud.ts
+msgid "Open Voice settings"
+msgstr "פתיחת הגדרות הקול"
+
 #: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Open work"
@@ -8485,13 +8586,12 @@ msgstr "מחשב משלו"
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/app/space-members.tsx
-#: apps/mobile/lib/bots/identity-display.ts
 #: apps/web/src/components/pages/SharePopover.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
 #: apps/web/src/components/spaces/SpaceMembersSettings.tsx
-#: apps/web/src/lib/bots/identity-display.ts
 #: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
+#: packages/i18n/src/identity-display.ts
 msgid "Owner"
 msgstr "בעלים"
 
@@ -8597,11 +8697,7 @@ msgstr "מפתחות גישה"
 msgid "Password"
 msgstr "סיסמה"
 
-#: apps/web/src/lib/query/user-error.ts
-msgid "Password must be {MAX_PASSWORD_LENGTH} characters or fewer"
-msgstr "הסיסמה יכולה להכיל עד {MAX_PASSWORD_LENGTH} תווים"
-
-#: apps/mobile/lib/api/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Password must be {max} characters or fewer"
 msgstr "הסיסמה צריכה להכיל עד {max} תווים"
 
@@ -8610,8 +8706,7 @@ msgstr "הסיסמה צריכה להכיל עד {max} תווים"
 msgid "Password recovery is not configured for this server"
 msgstr "שחזור סיסמה לא הוגדר בשרת הזה"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Password sign-in is turned off on this server"
 msgstr "התחברות באמצעות סיסמה מושבתת בשרת הזה"
 
@@ -8701,6 +8796,11 @@ msgstr "פרסונה"
 msgid "Personal"
 msgstr "אישי"
 
+#: apps/mobile/components/integrations/add-custom-integration.tsx
+#: apps/web/src/pages/plugins/source-form.tsx
+msgid "Personal access token"
+msgstr "טוקן גישה אישי"
+
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemDetail.tsx
@@ -8752,7 +8852,7 @@ msgstr "הצמדה"
 #: apps/mobile/app/pages.tsx
 #: apps/mobile/lib/inbox/inbox-spaces.ts
 #: apps/web/src/components/pages/PagesList.tsx
-#: apps/web/src/pages/Shell.tsx
+#: apps/web/src/pages/shell/sidebar/use-sidebar-view.ts
 msgid "Pinned"
 msgstr "מוצמדים"
 
@@ -8852,8 +8952,12 @@ msgid "Preview draft"
 msgstr "תצוגה מקדימה של הטיוטה"
 
 #: apps/web/src/pages/space/Artifacts.tsx
-msgid "Preview isn't available for this file type — download it to view it."
-msgstr "תצוגה מקדימה אינה זמינה לסוג הקובץ הזה — אפשר להוריד אותו כדי לצפות בו."
+msgid "Preview isn't available for this file type. Download it to view it."
+msgstr "אין תצוגה מקדימה לסוג הקובץ הזה. יש להוריד אותו כדי לצפות בו."
+
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "Previous image"
+msgstr "התמונה הקודמת"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -8901,8 +9005,8 @@ msgstr "מחשב פרטי"
 msgid "Private workspace with its own bots and groups."
 msgstr "סביבת עבודה פרטית עם בוטים וקבוצות משלה."
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/use-catalog-browse.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Productivity"
 msgstr "פרודוקטיביות"
 
@@ -8932,11 +9036,16 @@ msgid "Protocol"
 msgstr "פרוטוקול"
 
 #: apps/mobile/app/(settings)/voice.tsx
+#: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Provider"
 msgstr "ספק"
+
+#: apps/mobile/components/models/model-role-settings.tsx
+msgid "Provider connected. Choose a model."
+msgstr "הספק חובר. עכשיו צריך לבחור מודל."
 
 #: apps/mobile/components/cards/run-error-sheet.tsx
 msgid "Provider message"
@@ -8946,6 +9055,10 @@ msgstr "הודעת הספק"
 #: apps/web/src/pages/model-settings/providers-section.tsx
 msgid "Providers"
 msgstr "ספקים"
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Public MCP directory"
+msgstr "מדריך MCP ציבורי"
 
 #: apps/mobile/lib/api/endpoint.ts
 msgid "Public servers need https://. HTTP only works on your local network."
@@ -8973,8 +9086,7 @@ msgstr "שימו את הבוטים שלכם לעבודה"
 msgid "Questions, approvals, takeover"
 msgstr "שאלות, אישורים, השתלטות"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/pages/space/ActivityList.tsx
+#: packages/i18n/src/activity.ts
 msgid "Queued"
 msgstr "בתור"
 
@@ -9100,9 +9212,9 @@ msgstr "שרתים אחרונים"
 msgid "Recommended"
 msgstr "מומלץ"
 
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/voice.tsx
+#: apps/mobile/components/integrations/connected-apps.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Reconnect"
@@ -9184,8 +9296,8 @@ msgstr "השחזור מחזיר את סביבת העבודה האחרונה שנ
 msgid "Recreating the computer"
 msgstr "יוצר מחדש את המחשב"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/use-catalog-browse.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Recruiting & HR"
 msgstr "גיוס ומשאבי אנוש"
 
@@ -9193,6 +9305,7 @@ msgstr "גיוס ומשאבי אנוש"
 msgid "Redirect URI"
 msgstr "כתובת הפניה (Redirect URI)"
 
+#: apps/mobile/app/board.tsx
 #: apps/web/src/App.tsx
 #: apps/web/src/components/ErrorBoundary.tsx
 msgid "Refresh"
@@ -9217,8 +9330,7 @@ msgstr "מרענן…"
 msgid "Region"
 msgstr "אזור"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Registration is closed"
 msgstr "ההרשמה סגורה"
 
@@ -9250,7 +9362,6 @@ msgstr "שרת MCP מרוחק"
 
 #: apps/mobile/app/(settings)/approvals.tsx
 #: apps/mobile/app/(settings)/computers.tsx
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/profile.tsx
@@ -9258,6 +9369,7 @@ msgstr "שרת MCP מרוחק"
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/mobile/app/server.tsx
 #: apps/mobile/app/space-members.tsx
+#: apps/mobile/components/integrations/connected-apps.tsx
 #: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/mobile/components/vault/login-fields-editor.tsx
@@ -9408,8 +9520,8 @@ msgstr "הסרת ה-webhook"
 msgid "Removes everyone you added"
 msgstr "מסיר את כל מי שהוספת"
 
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
+#: apps/mobile/components/integrations/connected-apps.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/plugins/manage-view.tsx
@@ -9447,10 +9559,11 @@ msgstr "חידוש התוכנית"
 msgid "Renews"
 msgstr "מתחדש"
 
-#: apps/web/src/lib/billing/billing.ts
+#: packages/i18n/src/billing.ts
 msgid "Renews {day}"
 msgstr "מתחדש ב-{day}"
 
+#: apps/mobile/components/bots/bot-context-cards.tsx
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 #: apps/web/src/pages/space/ScratchpadSection.tsx
@@ -9524,8 +9637,7 @@ msgstr "תשובה ל-{replyName}"
 msgid "Report unchanged checks"
 msgstr "דיווח על בדיקות ללא שינויים"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Request a new code"
 msgstr "יש לבקש קוד חדש"
 
@@ -9690,6 +9802,7 @@ msgstr "חידוש ההתראות"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -9697,6 +9810,7 @@ msgstr "חידוש ההתראות"
 #: apps/mobile/app/(settings)/skill.tsx
 #: apps/mobile/app/(settings)/skills.tsx
 #: apps/mobile/app/sign-in.tsx
+#: apps/mobile/components/integrations/connected-apps.tsx
 #: apps/mobile/components/integrations/integration-plugins.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/mobile/components/settings/approval-settings-rows.tsx
@@ -9791,12 +9905,10 @@ msgstr "החלפת מפתח"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/routine.tsx
-#: apps/mobile/lib/bots/identity-display.ts
-#: apps/mobile/lib/search/search-sheet.ts
-#: apps/web/src/lib/bots/identity-display.ts
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
-#: apps/web/src/pages/space/SpaceSearch.tsx
+#: packages/i18n/src/identity-display.ts
+#: packages/i18n/src/search.ts
 msgid "Routine"
 msgstr "רוטינה"
 
@@ -9860,10 +9972,9 @@ msgstr "פועל"
 
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/components/thread/special-message-card.tsx
-#: apps/mobile/lib/inbox/activity.ts
 #: apps/web/src/components/messages/SubagentCard.tsx
 #: apps/web/src/pages/routines/RoutineList.tsx
-#: apps/web/src/pages/space/ActivityList.tsx
+#: packages/i18n/src/activity.ts
 msgid "Running"
 msgstr "פועל"
 
@@ -9887,8 +9998,8 @@ msgstr "הרצות"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr "רץ כשהבוט הזה מקבל הודעה מאומתת מהספק הזה."
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/use-catalog-browse.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Sales & CRM"
 msgstr "מכירות ו-CRM"
 
@@ -9905,11 +10016,20 @@ msgstr "כמו {botName}"
 msgid "Same as main model"
 msgstr "כמו המודל הראשי"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: apps/mobile/app/(settings)/space.tsx
+#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
+msgid "Same as your account"
+msgstr "כמו בחשבון שלך"
+
+#: apps/web/src/pages/shell/host-computer-prompt.tsx
+msgid "Sandbox"
+msgstr "ארגז חול"
+
+#: packages/i18n/src/cron.ts
 msgid "Saturday"
 msgstr "שבת"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-settings.tsx
@@ -9939,6 +10059,7 @@ msgstr "שבת"
 #: apps/web/src/components/teach/SkillDraftCard.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
+#: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
@@ -9952,6 +10073,7 @@ msgstr "שבת"
 msgid "Save"
 msgstr "שמירה"
 
+#: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Save and sign in"
 msgstr "שמירה והתחברות"
@@ -9978,6 +10100,7 @@ msgstr "שמירה בכספת"
 #: apps/web/src/components/messages/SecretAskCard.tsx
 #: apps/web/src/components/models/ProviderSettingsForm.tsx
 #: apps/web/src/components/teach/SkillDraftCard.tsx
+#: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "Saved"
 msgstr "נשמר"
@@ -9989,6 +10112,11 @@ msgstr "{name} נשמר מקומית"
 #: apps/web/src/components/computers/ComputerHomeVersions.tsx
 msgid "Saved at"
 msgstr "מועד השמירה"
+
+#: apps/mobile/app/artifact.tsx
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Saved to Photos"
+msgstr "נשמר בתמונות"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -10017,7 +10145,6 @@ msgstr "נשמר, אבל השרת הזה ממלא פרטי התחברות רק �
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-settings.tsx
-#: apps/mobile/lib/auth/use-subscription-sign-in.ts
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/use-model-settings.ts
 msgid "Saved."
@@ -10066,7 +10193,7 @@ msgstr "ההפעלה המתוזמנת מתעכבת"
 msgid "Scheduled"
 msgstr "מתוזמן"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Scheduled routines"
 msgstr "רוטינות מתוזמנות"
 
@@ -10074,6 +10201,7 @@ msgstr "רוטינות מתוזמנות"
 msgid "Scheduled tasks"
 msgstr "משימות מתוזמנות"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Scopes (optional)"
 msgstr "היקפים (אופציונלי)"
@@ -10137,10 +10265,6 @@ msgstr "חיפוש לפי דומיין"
 msgid "Search integrations.sh"
 msgstr "חיפוש ב-integrations.sh"
 
-#: apps/web/src/pages/plugins/plugin-browse.tsx
-msgid "Search MCP servers for “{query}”"
-msgstr "חיפוש „{query}” בשרתי MCP"
-
 #: apps/web/src/components/models/FoundModelPicker.tsx
 #: apps/web/src/pages/model-settings/compatible-model-fields.tsx
 #: apps/web/src/pages/model-settings/provider-page.tsx
@@ -10150,8 +10274,12 @@ msgid "Search models"
 msgstr "חיפוש מודלים"
 
 #: apps/mobile/components/integrations/integration-catalog-search.tsx
-msgid "Search more apps"
-msgstr "חיפוש אפליקציות נוספות"
+msgid "Search public MCP directory"
+msgstr "חיפוש במדריך ה-MCP הציבורי"
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Search public MCP directory for “{term}”"
+msgstr "חיפוש “{term}” במדריך ה-MCP הציבורי"
 
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
 msgid "Search runs"
@@ -10178,6 +10306,7 @@ msgstr "חיפוש: {0}"
 
 #: apps/mobile/app/search.tsx
 #: apps/web/src/pages/plugins/domain-search.tsx
+#: apps/web/src/pages/plugins/plugin-browse.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
 msgid "Searching…"
 msgstr "מחפש…"
@@ -10209,8 +10338,8 @@ msgstr "אזורים"
 msgid "Security"
 msgstr "אבטחה"
 
-#: apps/mobile/app/(settings)/integrations.tsx
-#: apps/web/src/pages/plugins/use-catalog-browse.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/plugin-catalog.ts
 msgid "Security & Ops"
 msgstr "אבטחה ותפעול"
 
@@ -10317,6 +10446,7 @@ msgid "Sent"
 msgstr "נשלח"
 
 #: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/server.tsx
 msgid "Server"
 msgstr "שרת"
@@ -10329,6 +10459,7 @@ msgstr "אינטגרציות שרת"
 msgid "Server name"
 msgstr "שם השרת"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
@@ -10356,10 +10487,20 @@ msgstr "הגדרה"
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 #: apps/web/src/pages/shell/keyboard-shortcuts-dialog.tsx
-#: apps/web/src/pages/shell/shell-dialogs.tsx
 #: apps/web/src/pages/shell/sidebar/sidebar-footer.tsx
 msgid "Settings"
 msgstr "הגדרות"
+
+#. placeholder {0}: group.spaceName
+#: apps/web/src/pages/shell/sidebar/sidebar-roster.tsx
+msgid "Settings for {0}"
+msgstr "הגדרות עבור {0}"
+
+#: apps/mobile/app/(settings)/space.tsx
+#: apps/mobile/app/(settings)/spaces.tsx
+#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
+msgid "Settings for this Space"
+msgstr "הגדרות למרחב הזה"
 
 #: apps/mobile/components/cards/change-undo.tsx
 #: apps/web/src/components/messages/AskCard.tsx
@@ -10473,6 +10614,15 @@ msgstr "משותף עם אורחים"
 msgid "Show"
 msgstr "הצגה"
 
+#. placeholder {0}: image.name
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "Show {0}"
+msgstr "הצגת {0}"
+
+#: apps/mobile/components/vault/login-fields-editor.tsx
+msgid "Show {field}"
+msgstr "הצגת {field}"
+
 #: apps/mobile/components/thread/message-bubble.tsx
 msgid "Show {label}"
 msgstr "הצגת {label}"
@@ -10538,15 +10688,20 @@ msgstr "הצגת תמליל"
 msgid "Show transcript: {title}, {duration}"
 msgstr "הצגת התמליל: {title}, {duration}"
 
+#: apps/mobile/components/thread/routine-event-row.tsx
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Show webhook key"
+msgstr "הצגת מפתח ה-webhook"
+
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sidebar density"
 msgstr "צפיפות סרגל הצד"
 
-#: apps/mobile/app/(settings)/integrations.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/inbox/inbox-error-state.tsx
+#: apps/mobile/components/integrations/connected-apps.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/lib/models/localized-provider-hint.ts
 #: apps/web/src/pages/auth/Auth.tsx
@@ -10560,14 +10715,13 @@ msgstr "התחברות"
 #: apps/mobile/components/models/model-providers.tsx
 #: apps/mobile/components/settings/account-deletion.tsx
 #: apps/mobile/components/vault/confirm-identity.tsx
-#: apps/mobile/lib/api/user-error.ts
 #: apps/mobile/lib/auth/passkey.ts
 #: apps/web/src/components/account/AccountAccess.tsx
 #: apps/web/src/components/account/ConfirmIdentityDialog.tsx
 #: apps/web/src/lib/auth/passkeys.ts
-#: apps/web/src/lib/query/user-error.ts
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/model-settings/providers-section.tsx
+#: packages/i18n/src/user-error.ts
 msgid "Sign in again"
 msgstr "התחברות מחדש"
 
@@ -10588,8 +10742,7 @@ msgstr "יש להתחבר ב-{host} ואז להדביק כאן את הקוד ש�
 msgid "Sign in to Rakazo"
 msgstr "התחברות ל-Rakazo"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Sign in to your account, then link this provider in settings"
 msgstr "יש להתחבר לחשבון שלך ואז לקשר את הספק הזה בהגדרות"
 
@@ -10800,13 +10953,13 @@ msgstr "משהו השתבש. אפשר לנסות שוב."
 #: apps/mobile/app/page-share.tsx
 #: apps/mobile/components/calls/IncomingCall.tsx
 #: apps/mobile/lib/api/api.ts
-#: apps/mobile/lib/api/user-error.ts
-#: apps/mobile/lib/calls/call-session.ts
+#: apps/mobile/lib/api/verified-scope.ts
+#: apps/mobile/lib/calls/call-deps.ts
 #: apps/mobile/lib/calls/incoming-calls.ts
 #: apps/mobile/lib/query/query.ts
 #: apps/mobile/lib/settings/approval-settings.ts
 #: apps/web/src/App.tsx
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Something went wrong. Try again."
 msgstr "משהו השתבש. אפשר לנסות שוב."
 
@@ -10840,9 +10993,8 @@ msgid "Sorts new email and drafts the replies"
 msgstr "ממיין אימיילים חדשים ומנסח טיוטות לתשובות"
 
 #: apps/mobile/app/(settings)/_layout.tsx
-#: apps/mobile/lib/bots/identity-display.ts
-#: apps/web/src/lib/bots/identity-display.ts
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
+#: packages/i18n/src/identity-display.ts
 msgid "Space"
 msgstr "מרחב"
 
@@ -10867,9 +11019,16 @@ msgstr "ברירת המחדל של המרחב"
 msgid "Space limit reached"
 msgstr "הגעת למגבלת המרחב"
 
-#: apps/web/src/pages/settings/SettingsOverlay.tsx
+#: apps/mobile/app/(settings)/_layout.tsx
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/pages/settings/settings-nav.ts
 msgid "Spaces"
 msgstr "מרחבים"
+
+#: apps/mobile/app/(settings)/spaces.tsx
+#: apps/web/src/pages/settings/settings-nav.ts
+msgid "Spaces keep work apart. Bots, chats, memory and computers never cross between them."
+msgstr "מרחבים מפרידים בין עבודות. בוטים, צ׳אטים, זיכרון ומחשבים אף פעם לא עוברים ביניהם."
 
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/web/src/components/spaces/OrganizationMembersSettings.tsx
@@ -10915,8 +11074,7 @@ msgstr "מגבלת הוצאות"
 msgid "SSO"
 msgstr "SSO"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "SSO is temporarily unavailable. Try again."
 msgstr "SSO אינו זמין כרגע. אפשר לנסות שוב."
 
@@ -10937,11 +11095,7 @@ msgstr "כוכב ב-GitHub"
 msgid "Start"
 msgstr "הפעלה"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
-msgid "Start {name} trial"
-msgstr "התחלת תקופת ניסיון של {name}"
-
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
 msgstr "התחלת תקופת ניסיון חינם של {trialDays} ימים"
@@ -10980,23 +11134,19 @@ msgstr "התחלת שימוש ב-Rakazo"
 msgid "Start your plan now?"
 msgstr "להתחיל את התוכנית עכשיו?"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/pages/routines/RoutineRunHistory.tsx
+#: packages/i18n/src/activity.ts
 msgid "Started {count}d late"
 msgstr "{count, plural, one {התחיל באיחור של יום} other {התחיל באיחור של # ימים}}"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/pages/routines/RoutineRunHistory.tsx
+#: packages/i18n/src/activity.ts
 msgid "Started {count}h late"
 msgstr "התחיל באיחור של {count} שע׳"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/pages/routines/RoutineRunHistory.tsx
+#: packages/i18n/src/activity.ts
 msgid "Started {count}m late"
 msgstr "התחיל באיחור של {count} דק׳"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/pages/space/ActivityList.tsx
+#: packages/i18n/src/activity.ts
 msgid "Starting"
 msgstr "מתחיל"
 
@@ -11012,6 +11162,7 @@ msgstr "מתחיל…"
 msgid "State or region"
 msgstr "מחוז או אזור"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/cards/run-error-sheet.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/board-views.tsx
@@ -11050,8 +11201,7 @@ msgstr "הפסקת ההקראה"
 msgid "Stop teaching"
 msgstr "הפסקת הלימוד"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Stop the computer first."
 msgstr "יש לעצור קודם את המחשב."
 
@@ -11075,8 +11225,7 @@ msgid "Stream replies"
 msgstr "הזרמת תשובות"
 
 #: apps/mobile/components/thread/special-message-card.tsx
-#: apps/mobile/lib/bots/identity-display.ts
-#: apps/web/src/lib/bots/identity-display.ts
+#: packages/i18n/src/identity-display.ts
 msgid "subagent"
 msgstr "סוכן משנה"
 
@@ -11096,6 +11245,7 @@ msgid "Submit a plugin"
 msgstr "הגשת תוסף"
 
 #: apps/mobile/app/paywall.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Subscribe"
@@ -11109,17 +11259,17 @@ msgstr "הרשמה ב-{annualPrice} / שנה"
 msgid "Subscribe for {price} / month"
 msgstr "הרשמה במחיר {price} לחודש"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
-msgid "Subscribe to {name}"
-msgstr "הרשמה למנוי {name}"
-
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Subscribe to credits"
 msgstr "הרשמה למנוי לקרדיטים"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Subscribe with your own AI"
 msgstr "הרשמה למנוי עם ה-AI שלך"
+
+#: apps/mobile/lib/auth/use-subscription-sign-in.ts
+msgid "Subscription connected."
+msgstr "המינוי חובר."
 
 #: apps/web/src/pages/auth/Paywall.tsx
 msgid "Subscription required"
@@ -11133,8 +11283,7 @@ msgstr "סיכומים"
 msgid "Summaries and facts"
 msgstr "סיכומים ועובדות"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Sunday"
 msgstr "יום ראשון"
 
@@ -11151,11 +11300,6 @@ msgstr "תמיכה ב-Rakazo"
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Supports images"
 msgstr "תומך בתמונות"
-
-#: apps/mobile/app/(settings)/model-settings.tsx
-#: apps/web/src/pages/model-settings/model-settings-panel.tsx
-msgid "Supports thinking"
-msgstr "תומך בחשיבה"
 
 #. Switches the account's timezone to this device's
 #: apps/mobile/app/(settings)/billing.tsx
@@ -11240,7 +11384,7 @@ msgstr "יעד"
 msgid "Teach a task"
 msgstr "לימוד משימה"
 
-#: apps/web/src/pages/Shell.tsx
+#: apps/web/src/pages/shell/composer/chat-composer-area.tsx
 msgid "Teaching in progress. Stop teaching before sending a new message."
 msgstr "לימוד בתהליך. יש להפסיק את הלימוד לפני שליחת הודעה חדשה."
 
@@ -11249,8 +11393,6 @@ msgstr "לימוד בתהליך. יש להפסיק את הלימוד לפני ש
 msgid "Team"
 msgstr "צוות"
 
-#: apps/mobile/lib/computers/computer.ts
-#: apps/web/src/pages/shell/computers/computer-view.tsx
 #: packages/i18n/src/computer-usage.ts
 msgid "Team Computer"
 msgstr "מחשב הצוות"
@@ -11284,6 +11426,7 @@ msgstr "תנאים"
 msgid "Test"
 msgstr "בדיקה"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "בדיקת חיבור"
@@ -11479,10 +11622,12 @@ msgstr "לא ניתן לקרוא את ההגדרות השמורות. יש להס
 msgid "They get {weeks} weeks free."
 msgstr "הם מקבלים {weeks} שבועות בחינם."
 
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/chat-model.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/web/src/components/call/CallCard.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
@@ -11499,13 +11644,16 @@ msgstr "חשיבה: {0}"
 msgid "Thinking: {level}"
 msgstr "חשיבה: {level}"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: apps/mobile/components/thread/thread-screen.tsx
+#: apps/web/src/pages/shell/chat/transcript.tsx
+msgid "Thinking…"
+msgstr "חושב…"
+
+#: packages/i18n/src/user-error.ts
 msgid "This account is deactivated"
 msgstr "החשבון הזה הושבת"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "This app needs its own sign-in setup to connect."
 msgstr "האפליקציה הזו צריכה הגדרת התחברות משלה כדי להתחבר."
 
@@ -11551,10 +11699,9 @@ msgstr "הדפדפן הזה לא מזהה מתי מפסיקים לדבר. אפש
 msgid "This browser has no on-device dictation. Connect a voice provider with transcription, or use Chrome / the desktop app."
 msgstr "בדפדפן הזה אין הכתבה במכשיר. אפשר לחבר ספק קול עם תמלול, או להשתמש ב-Chrome / באפליקציית הדסקטופ."
 
-#: apps/mobile/lib/api/user-error.ts
 #: apps/mobile/lib/calls/incoming-calls.ts
 #: apps/web/src/components/call/IncomingCall.tsx
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "This call is no longer ringing."
 msgstr "השיחה הזו כבר לא מצלצלת."
 
@@ -11665,8 +11812,7 @@ msgstr "ה-Mac הזה"
 msgid "This model cannot read images. Choose a model that supports images."
 msgstr "המודל הזה לא יכול לקרוא תמונות. בחרו מודל שתומך בתמונות."
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "This model cannot read images. Choose a model that supports images."
 msgstr "המודל הזה לא יכול לקרוא תמונות. בחרו מודל שתומך בתמונות."
 
@@ -11793,6 +11939,10 @@ msgid "This subscription sign-in is not available in Rakazo yet. Use a deploymen
 msgstr "התחברות עם המנוי הזה עדיין לא זמינה ב-Rakazo. אפשר להשתמש בפרטי גישה של ההתקנה או לבחור ספק אחר."
 
 #: apps/mobile/app/(settings)/bot-template.tsx
+msgid "This template is no longer available."
+msgstr "התבנית הזו כבר לא זמינה."
+
+#: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/web/src/components/bot-templates/bot-templates-dialog.tsx
 msgid "This template was just updated. Check it again."
 msgstr "התבנית הזו עודכנה עכשיו. כדאי לבדוק אותה שוב."
@@ -11807,8 +11957,7 @@ msgstr "השבוע"
 msgid "Thread"
 msgstr "שרשור"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Thursday"
 msgstr "יום חמישי"
 
@@ -11976,6 +12125,15 @@ msgstr "תשובת התמלול גדולה מדי."
 msgid "Transcription server URL"
 msgstr "כתובת שרת התמלול"
 
+#: apps/mobile/app/(settings)/voice.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
+msgid "Transcription vocabulary"
+msgstr "אוצר מילים לתמלול"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "Transport"
+msgstr "תעבורה"
+
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "Treat like a person"
@@ -11985,9 +12143,10 @@ msgstr "התייחסות כמו לאדם"
 msgid "Trial"
 msgstr "תקופת ניסיון"
 
-#: apps/web/src/lib/billing/billing.ts
-msgid "Trial ends {day}"
-msgstr "תקופת הניסיון מסתיימת {day}"
+#. js-lingui-explicit-id
+#: packages/i18n/src/billing.ts
+msgid "Nlt+k3"
+msgstr "תקופת הניסיון מסתיימת ב-{day}"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
@@ -12062,8 +12221,7 @@ msgstr "לנסות שוב"
 msgid "Try again."
 msgstr "כדאי לנסות שוב."
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Tuesday"
 msgstr "יום שלישי"
 
@@ -12103,8 +12261,8 @@ msgstr "יש להקליד תשובה"
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
 #: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
 #: apps/mobile/lib/inbox/inbox-spaces.ts
-#: apps/web/src/pages/Shell.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
+#: apps/web/src/pages/shell/sidebar/use-sidebar-view.ts
 msgid "Unassigned"
 msgstr "ללא שיוך"
 
@@ -12126,6 +12284,10 @@ msgstr "יחידה"
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Unlink"
 msgstr "ביטול קישור"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Unlisted model"
+msgstr "מודל שאינו ברשימה"
 
 #: apps/mobile/components/calls/CallCard.tsx
 #: apps/web/src/components/call/CallCard.tsx
@@ -12184,10 +12346,6 @@ msgstr "למעלה"
 msgid "Up to {limit} sites."
 msgstr "עד {limit} אתרים."
 
-#: apps/web/src/components/billing/ModelCredits.tsx
-msgid "Up to {times}× the vCPUs"
-msgstr "עד פי {times} vCPU"
-
 #: packages/i18n/src/computer-usage.ts
 msgid "Up to {vcpus} vCPU and {memoryGb} GB, {hours} Standard computer hours a month"
 msgstr "עד {vcpus} vCPU ו-{memoryGb} GB, {hours} שעות מחשב רגילות בחודש"
@@ -12212,13 +12370,11 @@ msgstr "עדכון"
 msgid "Update failed"
 msgstr "העדכון נכשל"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/lib/activity-list-filters.ts
+#: packages/i18n/src/activity.ts
 msgid "Update from {name}"
 msgstr "עדכון מאת {name}"
 
-#: apps/mobile/lib/inbox/activity.ts
-#: apps/web/src/lib/activity-list-filters.ts
+#: packages/i18n/src/activity.ts
 msgid "Update from {name}: {text}"
 msgstr "עדכון מאת {name}: {text}"
 
@@ -12347,8 +12503,15 @@ msgstr "שימוש בשרת מותאם"
 msgid "Use a found model"
 msgstr "שימוש במודל שנמצא"
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
+msgid "Use account settings"
+msgstr "שימוש בהגדרות החשבון"
+
+#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
+msgid "Use account settings for {label}"
+msgstr "שימוש בהגדרות החשבון עבור {label}"
+
+#: packages/i18n/src/user-error.ts
 msgid "Use an account with the same email address"
 msgstr "יש להשתמש בחשבון עם אותה כתובת אימייל"
 
@@ -12359,14 +12522,6 @@ msgstr "יש להשתמש בכתובת http או https"
 #: apps/mobile/app/server.tsx
 msgid "Use default server"
 msgstr "שימוש בשרת ברירת המחדל"
-
-#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
-msgid "Use defaults"
-msgstr "שימוש בברירות המחדל"
-
-#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
-msgid "Use defaults for {label}"
-msgstr "שימוש בברירות המחדל עבור {label}"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -12389,6 +12544,11 @@ msgstr "השתמשו באותיות, ספרות, נקודות, מקפים או �
 #: apps/web/src/pages/model-settings/space-bots-model.tsx
 msgid "Use main model"
 msgstr "שימוש במודל הראשי"
+
+#: apps/mobile/app/routine.tsx
+#: apps/web/src/pages/routines/routine-editor/model-settings.tsx
+msgid "Use my computer"
+msgstr "שימוש במחשב שלי"
 
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Use my subscription or API key"
@@ -12515,6 +12675,11 @@ msgstr "גרסה"
 msgid "Versions"
 msgstr "גרסאות"
 
+#: apps/mobile/components/models/media-model-settings.tsx
+#: apps/web/src/pages/model-settings/media-model-settings.tsx
+msgid "Video model"
+msgstr "מודל וידאו"
+
 #: apps/mobile/components/integrations/integration-plugins.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "View all"
@@ -12603,7 +12768,7 @@ msgstr "הער"
 msgid "Wallet"
 msgstr "ארנק"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Web, desktop and mobile"
 msgstr "ווב, דסקטופ ומובייל"
 
@@ -12617,23 +12782,21 @@ msgstr "אפליקציות ווב, דסקטופ ומובייל"
 msgid "Webhook"
 msgstr "Webhook"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Wednesday"
 msgstr "יום רביעי"
 
-#: apps/web/src/lib/billing/billing.ts
+#: packages/i18n/src/billing.ts
 msgid "week"
 msgstr "שבוע"
 
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
-#: apps/mobile/lib/routines/cron.ts
 #: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Weekdays"
 msgstr "שני עד שישי"
 
-#: apps/mobile/lib/routines/cron.ts
-#: apps/web/src/lib/routines/cron.ts
+#: packages/i18n/src/cron.ts
 msgid "Weekends"
 msgstr "סופי שבוע"
 
@@ -12814,11 +12977,9 @@ msgstr "הוראות עבודה"
 #: apps/mobile/app/sign-in.tsx
 #: apps/mobile/components/inbox/inbox-rows.tsx
 #: apps/mobile/components/integrations/integration-detail.tsx
-#: apps/mobile/components/thread/thread-screen.tsx
 #: apps/web/src/components/messages/ToolActivityDisclosure.tsx
 #: apps/web/src/lib/chat/roster-status.ts
 #: apps/web/src/pages/auth/Auth.tsx
-#: apps/web/src/pages/shell/chat/transcript.tsx
 msgid "Working…"
 msgstr "עובד…"
 
@@ -12827,12 +12988,8 @@ msgstr "עובד…"
 msgid "Works with"
 msgstr "עובד עם"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
-msgid "Works with your ChatGPT or Claude plan, or an API key."
-msgstr "עובד עם תוכנית ChatGPT או Claude שלך, או עם מפתח API."
-
 #: apps/mobile/app/paywall.tsx
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Works with your ChatGPT or Claude plan."
 msgstr "עובד עם המינוי שלך ל-ChatGPT או ל-Claude."
 
@@ -12849,11 +13006,11 @@ msgstr "כתיבת תגובה"
 msgid "Write what this routine should do."
 msgstr "יש לכתוב מה הרוטינה הזו צריכה לעשות."
 
-#: apps/web/src/lib/billing/billing.ts
+#: packages/i18n/src/billing.ts
 msgid "year"
 msgstr "שנה"
 
-#: apps/web/src/components/billing/ModelCredits.tsx
+#: apps/web/src/components/billing/PlanControls.tsx
 msgid "Yearly"
 msgstr "שנתי"
 
@@ -12875,8 +13032,8 @@ msgstr "אתמול"
 #: apps/mobile/components/thread/thread-screen.tsx
 #: apps/web/src/components/pages/SharePopover.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
-#: apps/web/src/pages/Shell.tsx
 #: apps/web/src/pages/shell/chat/message-view.tsx
+#: apps/web/src/pages/shell/composer/chat-composer-area.tsx
 #: apps/web/src/pages/shell/sidebar/shell-sidebar.tsx
 msgid "You"
 msgstr "אני"
@@ -12946,7 +13103,7 @@ msgid "Your card was not charged"
 msgstr "הכרטיס שלך לא חויב"
 
 #: apps/mobile/app/computer.tsx
-#: apps/web/src/pages/Shell.tsx
+#: apps/web/src/pages/shell/computers/use-computer-controls.tsx
 msgid "Your computer's disk is nearly full. Free up space by removing build output and caches you no longer need."
 msgstr "הדיסק של המחשב כמעט מלא. פנה מקום על ידי מחיקת תוצרי בנייה ומטמונים שכבר לא נחוצים."
 
@@ -12958,10 +13115,6 @@ msgstr "הנתונים שלך"
 #: apps/web/src/components/bot-templates/bot-template-copy.ts
 msgid "Your day at a glance, every weekday morning"
 msgstr "היום שלך במבט אחד, בכל בוקר של יום עבודה"
-
-#: apps/web/src/pages/settings/SpaceSettingOverrides.tsx
-msgid "Your defaults"
-msgstr "ברירות המחדל שלך"
 
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
@@ -13040,6 +13193,7 @@ msgstr "המיומנויות שלך"
 
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/paywall.tsx
+#: apps/web/src/components/billing/CreditChoice.tsx
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr "המנוי או מפתח ה-API שלך"
@@ -13059,13 +13213,16 @@ msgstr "תקופת הניסיון תסתיים והכרטיס שלך יחויב 
 msgid "Your trial's computer hours are used up."
 msgstr "שעות המחשב של תקופת הניסיון נוצלו במלואן."
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#. js-lingui-explicit-id
+#: packages/i18n/src/vault.ts
+msgid "Your Vault is full. Remove items you no longer need, then try again."
+msgstr "הכספת שלך מלאה. יש להסיר פריטים שכבר אין בהם צורך ולנסות שוב."
+
+#: packages/i18n/src/user-error.ts
 msgid "Your voice provider is out of credit."
 msgstr "לספק הקול שלך נגמר הקרדיט."
 
-#: apps/mobile/lib/api/user-error.ts
-#: apps/web/src/lib/query/user-error.ts
+#: packages/i18n/src/user-error.ts
 msgid "Your voice provider key was rejected."
 msgstr "ספק הקול שלך דחה את המפתח."
 

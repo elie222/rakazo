@@ -1,7 +1,9 @@
+export * from "./account/account-deletion.js";
 export * from "./account/account-export.js";
 export * from "./account/account-status.js";
 export * from "./account/audit-events.js";
 export * from "./account/bootstrap-user.js";
+export * from "./account/chat-preferences.js";
 export * from "./account/product-email-sends.js";
 export * from "./account/security-events.js";
 export * from "./account/sessions.js";
@@ -10,6 +12,7 @@ export * from "./artifacts/board.js";
 export * from "./artifacts/board-live.js";
 export * from "./artifacts/page-shares.js";
 export * from "./billing/billing.js";
+export * from "./billing/media-charges.js";
 export * from "./billing/model-credit-cap.js";
 export * from "./billing/model-credits.js";
 export * from "./billing/provider-transactions.js";

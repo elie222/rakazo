@@ -56,15 +56,18 @@ export function SubscriptionSignInSteps({
           status: oauth ? "complete" : "current",
           title: setup.label,
           description: (
-            <a
-              href={setup.url}
-              target="_blank"
-              rel="noreferrer"
-              className={buttonVariants({ variant: "outline", className: "mt-2" })}
-            >
-              <Trans>Open settings</Trans>
-              <ArrowUpRight aria-hidden="true" />
-            </a>
+            <>
+              {setup.note ? <span className="block">{setup.note}</span> : null}
+              <a
+                href={setup.url}
+                target="_blank"
+                rel="noreferrer"
+                className={buttonVariants({ variant: "outline", className: "mt-2" })}
+              >
+                <Trans>Open settings</Trans>
+                <ArrowUpRight aria-hidden="true" />
+              </a>
+            </>
           ),
         },
       ]

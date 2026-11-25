@@ -4,6 +4,7 @@ import type { Actor, SpaceNavigation } from "@rakazo/contracts";
 import type { createGroupRepos, createRepos, PrismaClient } from "@rakazo/db";
 import {
   acceptSpaceInvite,
+  accountPreferencesChangesScope,
   addSpaceMember,
   cancelSpaceInvites,
   createExternalConversationRepos,
@@ -64,9 +65,21 @@ export function spacesRoutes(ctx: RouterContext) {
       overrides: authed.spaceSettings.overrides.handler(({ context }) =>
         spaceSettingOverrides(deps.prisma, context.actor),
       ),
-      setOverride: authed.spaceSettings.setOverride.handler(({ context, input }) =>
-        setSpaceSettingOverride(deps.prisma, context.actor, input.setting, input.enabled),
-      ),
+      setOverride: authed.spaceSettings.setOverride.handler(async ({ context, input }) => {
+        const updated = await setSpaceSettingOverride(
+          deps.prisma,
+          context.actor,
+          input.setting,
+          input.enabled,
+        );
+        if (input.setting === "confirmations") {
+          await deps.events.publishSpaceChange?.(
+            accountPreferencesChangesScope(context.actor.userId),
+            "preferences",
+          );
+        }
+        return updated;
+      }),
     },
     spaces: {
       list: authed.spaces.list.handler(async ({ context }) =>

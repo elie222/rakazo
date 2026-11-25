@@ -14,6 +14,7 @@ const stackToken = "ab".repeat(32);
 it.skipIf(!databaseUrl).each([
   { sandboxProvider: "docker", nativeToken: true, expected: true },
   { sandboxProvider: "docker", nativeToken: false, expected: false },
+  { sandboxProvider: "local-vm", nativeToken: true, expected: true },
   { sandboxProvider: "fake", nativeToken: true, expected: false },
 ])("exposes native host choice only on a managed Docker instance (%j)", async (fixture) => {
   const dataDir = await mkdtemp(join(tmpdir(), "rakazo-host-choice-"));

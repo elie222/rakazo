@@ -2,7 +2,7 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { LoginFieldInput } from "@rakazo/contracts";
 import { normalizeOneTimeCode, vaultKind } from "@rakazo/contracts";
-import { isQuestionAskBlock, isSecretAskBlock } from "@rakazo/core";
+import { isQuestionAskBlock, isSecretAskBlock, siteHost } from "@rakazo/core";
 import { secretAnswerErrorText } from "@rakazo/i18n/vault";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useRef, useState } from "react";
@@ -11,7 +11,7 @@ import type { MobileMessage } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { plainAskTitle } from "../../lib/cards/ask-title";
 import { useMobileTokens } from "../../lib/native/native";
-import { secretDestinationLabel, siteHost } from "../../lib/vault/secret-destination";
+import { secretDestinationLabel } from "../../lib/vault/secret-destination";
 import { secretFieldTraits } from "../../lib/vault/secret-field-traits";
 import { vaultKindSymbol } from "../../lib/vault/vault";
 import { SecretAskSheet } from "../cards/secret-ask-sheet";
@@ -59,7 +59,7 @@ export function AskBlock({
   const secretInput = isSecretAskBlock(ask);
   const loginInput = secretInput && ask.credential?.auth.type === "login";
   const itemType = secretInput ? ask.credential?.auth.type : undefined;
-  // A login, card or contact is filled in a sheet; the card itself is one compact row.
+  // A login, card or contact is filled in a sheet.
   const sheetInput = itemType === "login" || itemType === "card" || itemType === "contact";
   // A login, credential or code is for the run's user, so only they can fill one in; others see
   // the card without fields or buttons.
@@ -130,6 +130,13 @@ export function AskBlock({
     const closeSheet = () => {
       if (session === sheetSession.current) setSheetOpen(false);
     };
+    // Turned down from inside the sheet, which shows its own failure.
+    const dismissFromSheet = canDismiss
+      ? async () => {
+          await onDismiss();
+          setDismissed(true);
+        }
+      : undefined;
     return (
       <View style={[askRowStyles.card, { backgroundColor: tokens.card }]}>
         <View style={askRowStyles.row}>
@@ -140,64 +147,44 @@ export function AskBlock({
             <NativeSymbol ios={symbol.ios} android={symbol.android as never} size={17} />
           </VaultTile>
           <View style={askRowStyles.text}>
-            <Text
-              {...actionProps}
-              numberOfLines={2}
-              style={{ color: tokens.foreground, ...typeScale.cardTitle }}
-            >
+            <Text {...actionProps} style={{ color: tokens.foreground, ...typeScale.cardTitle }}>
               {title}
             </Text>
             {destination ? (
-              <Text
-                numberOfLines={1}
-                style={{ color: tokens.mutedForeground, ...typeScale.secondary }}
-              >
+              <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }}>
                 {destination}
               </Text>
             ) : null}
           </View>
-          {answered ? (
-            <View style={askRowStyles.done}>
-              {dismissed || ask.dismissed ? null : (
-                <NativeSymbol
-                  ios="checkmark"
-                  android="checkmark"
-                  size={14}
-                  color={tokens.mutedForeground}
-                />
-              )}
-              <Text
-                style={{
-                  color: tokens.mutedForeground,
-                  ...typeScale.secondary,
-                  fontWeight: fontWeight.medium,
-                }}
-              >
-                {answeredLabel}
-              </Text>
-            </View>
-          ) : canAnswer && !ownerOnly ? (
-            <NativeActionButton
-              label={t`Add`}
-              disabled={submitting}
-              fill={false}
-              prominence="secondary"
-              size="compact"
-              onPress={openSheet}
-            />
-          ) : null}
         </View>
-        {!answered && canAnswer && !ownerOnly && canDismiss ? (
-          <View style={askInputStyles.buttons}>
-            <NativeActionButton
-              label={t`Dismiss`}
-              disabled={submitting}
-              fill={false}
-              prominence="plain"
-              size="compact"
-              onPress={() => void dismiss()}
-            />
+        {answered ? (
+          <View style={askRowStyles.done}>
+            {dismissed || ask.dismissed ? null : (
+              <NativeSymbol
+                ios="checkmark"
+                android="checkmark"
+                size={14}
+                color={tokens.mutedForeground}
+              />
+            )}
+            <Text
+              style={{
+                color: tokens.mutedForeground,
+                ...typeScale.secondary,
+                fontWeight: fontWeight.medium,
+              }}
+            >
+              {answeredLabel}
+            </Text>
           </View>
+        ) : canAnswer && !ownerOnly ? (
+          <NativeActionButton
+            label={t`Continue`}
+            disabled={submitting}
+            fill={false}
+            style={askRowStyles.action}
+            onPress={openSheet}
+          />
         ) : null}
         {!answered && !canAnswer ? (
           <Text style={{ color: tokens.mutedForeground, ...typeScale.caption }}>
@@ -217,6 +204,7 @@ export function AskBlock({
             pending={canAnswer && !answered && !ownerOnly}
             onClose={closeSheet}
             loginFields={ask.loginFields}
+            onDismiss={dismissFromSheet}
             onSave={async (fields, remember) => {
               if (remember) await onAnswer("", fields);
               else await onAnswer("", fields, false);
@@ -232,6 +220,7 @@ export function AskBlock({
             ask
             title={title}
             onClose={closeSheet}
+            onDismiss={dismissFromSheet}
             onSave={async ({ value }) => {
               if (value === undefined) throw new Error("No value");
               await onAnswer(value);
@@ -256,7 +245,6 @@ export function AskBlock({
     >
       <Text
         {...actionProps}
-        numberOfLines={secretInput ? 2 : undefined}
         style={{
           color: answeredQuestion ? tokens.mutedForeground : tokens.foreground,
           ...typeScale.cardTitle,
@@ -317,24 +305,22 @@ export function AskBlock({
             ]}
           />
           <View style={askInputStyles.buttons}>
-            <NativeActionButton
-              label={submitLabel}
-              disabled={incomplete}
-              busy={submitting}
-              fill={secretInput}
-              style={secretInput ? askInputStyles.button : undefined}
-              onPress={() => void submit()}
-            />
             {secretInput && canDismiss ? (
               <NativeActionButton
                 label={t`Dismiss`}
                 disabled={submitting}
-                fill={secretInput}
-                style={secretInput ? askInputStyles.button : undefined}
-                prominence="secondary"
+                fill={false}
+                prominence="quiet"
                 onPress={() => void dismiss()}
               />
             ) : null}
+            <NativeActionButton
+              label={submitLabel}
+              disabled={incomplete}
+              busy={submitting}
+              fill={false}
+              onPress={() => void submit()}
+            />
           </View>
         </>
       ) : (
@@ -351,10 +337,11 @@ export function AskBlock({
 
 const askRowStyles = StyleSheet.create({
   card: { width: "100%", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
-  row: { flexDirection: "row", alignItems: "center", gap: 12 },
+  row: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   tile: { width: 34, height: 34, borderRadius: 9, alignItems: "center", justifyContent: "center" },
   text: { flex: 1, gap: 2 },
-  done: { flexDirection: "row", alignItems: "center", gap: 4 },
+  done: { alignSelf: "flex-end", flexDirection: "row", alignItems: "center", gap: 4 },
+  action: { alignSelf: "flex-end" },
 });
 
 const askInputStyles = StyleSheet.create({
@@ -365,16 +352,12 @@ const askInputStyles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
   },
-  button: {
-    flex: 1,
-    minWidth: 100,
-  },
   // Wraps at large text sizes so neither button is pushed off the card.
   buttons: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "flex-start",
+    justifyContent: "flex-end",
     alignItems: "center",
-    gap: 6,
+    gap: 12,
   },
 });

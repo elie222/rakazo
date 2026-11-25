@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type {
   AnalyticsModelSignInStep,
+  ModelCredential,
   ModelOAuthBegin,
   ModelSignInCancelReason,
   SettingsScope,
@@ -37,8 +38,8 @@ export type ModelOAuthSignInBegin = {
  * guards so cancel-and-retry cannot drop a newer callback.
  */
 export function useModelOAuthSignIn(options: {
-  /** `credentialId` is the connection the sign-in saved. */
-  onFinished: (controller: AbortController, credentialId: string) => void | Promise<void>;
+  /** `saved` is the connection the sign-in saved, with the model it runs. */
+  onFinished: (controller: AbortController, saved: ModelCredential) => void | Promise<void>;
   onError: (message: string) => void;
   onClearError?: () => void;
 }) {
@@ -105,7 +106,7 @@ export function useModelOAuthSignIn(options: {
     // Keep post-connect UI work outside the OAuth try/catch so a refresh failure
     // is not reported as a failed sign-in (finishOAuth already persisted).
     try {
-      await onFinishedRef.current(controller, saved.id);
+      await onFinishedRef.current(controller, saved);
     } catch (err) {
       if (controller.signal.aborted) return;
       onErrorRef.current(errorText(err, "Connected, but could not refresh"));

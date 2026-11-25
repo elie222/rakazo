@@ -383,9 +383,11 @@ it.each([0, 1])("refreshes history scope on resumed computer request %i", async 
   expect(fake.stream).toHaveBeenCalledTimes(2);
   for (const [index, [, context]] of fake.stream.mock.calls.entries()) {
     const search = getCurrentTools(context.messages).find((tool) => tool.name === "search_history");
-    expect(search?.parameters).toMatchObject({
-      properties: { scope: { enum: index < arrival ? ["this_chat", "my_chats"] : ["this_chat"] } },
-    });
+    if (index < arrival)
+      expect(search?.parameters).toMatchObject({
+        properties: { scope: { enum: ["this_chat", "my_chats"] } },
+      });
+    else expect(search?.parameters).not.toHaveProperty("properties.scope");
   }
 });
 

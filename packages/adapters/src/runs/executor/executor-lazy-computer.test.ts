@@ -224,7 +224,7 @@ async function runRoutine(
     connection: { findMany: vi.fn(async () => []) },
     userModelPreference: { findFirst: vi.fn(async () => null) },
     secret: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
-    userModelCredential: { findFirst: vi.fn(async () => null) },
+    userModelCredential: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",
@@ -234,7 +234,7 @@ async function runRoutine(
     taughtSkill: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     externalEffect: { findMany: vi.fn(async () => []) },
     artifact: {
       findMany: vi.fn(async () =>

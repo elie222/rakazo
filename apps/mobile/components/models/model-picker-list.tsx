@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { useTimeout } from "@rakazo/chat-ui/hooks";
+import { useListSearch, useTimeout } from "@rakazo/chat-ui/hooks";
 import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import { groupModelChoices, modelChoiceSearchText, modelMark } from "@rakazo/core";
@@ -29,7 +29,6 @@ import { useContentBottomInset } from "../../lib/layout/content-bottom-inset";
 import { useFloatingHeaderInset } from "../../lib/layout/floating-header";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { useListSearch } from "../../lib/search/use-list-search";
 import { SettingsLabel, SettingsRow } from "../settings/settings-group";
 import { ListSearchInput } from "../ui/list-search-input";
 import { Checkmark } from "../ui/row-accessories";

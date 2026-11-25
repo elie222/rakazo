@@ -12,6 +12,7 @@ import type {
 } from "@kubernetes/client-node";
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import { COMPUTER_CACHE_ENV } from "@rakazo/core/node/desktop-runtime";
+import { bestEffort } from "@rakazo/logging";
 import type { RawExecEvent } from "../../../computers/sandbox/exec-computer.js";
 import {
   RawExecChannel,
@@ -134,23 +135,34 @@ export class KubernetesSandboxProvider extends ImageComputerSandbox {
     }
 
     let fresh = false;
-    if (!pod) {
-      try {
-        await (await this.clients()).core.createNamespacedPod({
-          namespace: this.namespace,
-          body: this.pod(podName, request.botId),
-        });
-        fresh = true;
-      } catch (error) {
-        if (!isApiStatus(error, 409)) throw error;
-        const existing = await this.readPod(podName, context.signal);
-        if (existing?.metadata?.labels?.[BOT_ID_LABEL] !== request.botId) {
-          throw new Error(`Kubernetes pod ${podName} belongs to another bot`);
+    try {
+      if (!pod) {
+        try {
+          await this.request(context.signal, (core, options) =>
+            core.createNamespacedPod(
+              { namespace: this.namespace, body: this.pod(podName, request.botId) },
+              options,
+            ),
+          );
+          fresh = true;
+        } catch (error) {
+          if (!isApiStatus(error, 409)) {
+            // A failed request can still have created the pod. Reconcile independently of
+            // run cancellation so an accepted create enters the normal failed-start cleanup.
+            const accepted = await bestEffort(
+              "reconcile a failed Kubernetes pod create",
+              this.readPod(podName, AbortSignal.timeout(REQUEST_TIMEOUT_MS)),
+            );
+            fresh = accepted?.metadata?.labels?.[BOT_ID_LABEL] === request.botId;
+            throw error;
+          }
+          const existing = await this.readPod(podName, context.signal);
+          if (existing?.metadata?.labels?.[BOT_ID_LABEL] !== request.botId) {
+            throw new Error(`Kubernetes pod ${podName} belongs to another bot`);
+          }
         }
       }
-    }
 
-    try {
       await this.waitForReady(podName, context.signal);
     } catch (error) {
       if (fresh) {

@@ -82,6 +82,10 @@ function linePath(
   return path;
 }
 
+/** A value with no finite neighbour draws no line segment, so it needs a dot to show. */
+const isolated = (values: (number | undefined)[], index: number) =>
+  !finite(values[index - 1]) && !finite(values[index + 1]);
+
 /**
  * A trend over labelled points. One series gets an area fill; extra `lines` add series with
  * dots, `secondary` adds a grey comparison, and `annotations` pin notes to points.
@@ -234,14 +238,22 @@ export function LineChart({
           )}
           {area ? <path className="rk-line-area" d={area} /> : null}
           {comparison ? (
-            <path className="rk-line-secondary" d={linePath(comparison.values, x, y)} />
+            <g style={{ "--rk-series": "var(--rk-other)" } as CSSProperties}>
+              <path className="rk-line-secondary" d={linePath(comparison.values, x, y)} />
+              {comparison.values.map((value, index) => {
+                if (!finite(value) || !isolated(comparison.values, index)) return null;
+                return (
+                  <circle key={index} className="rk-line-dot" cx={x(index)} cy={y(value)} r={3.5} />
+                );
+              })}
+            </g>
           ) : null}
           {series.map((s, index) => (
             <g key={index} style={{ "--rk-series": seriesColor(index) } as CSSProperties}>
               <path className="rk-line rk-draw" pathLength={1} d={linePath(s.values, x, y)} />
               {s.values.map((v, i) => {
-                // A point with no neighbour draws no line, so it gets a dot; one alone, its value.
-                const alone = !finite(s.values[i - 1]) && !finite(s.values[i + 1]);
+                // An isolated point gets a dot; the only point also gets its value.
+                const alone = isolated(s.values, i);
                 if (!finite(v) || !(multi || alone)) return null;
                 const only = alone && series.length === 1 && s.values.filter(finite).length === 1;
                 return (

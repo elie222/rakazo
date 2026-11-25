@@ -139,10 +139,12 @@ async function modelTurnRequest(
   const {
     agentSkillsLine,
     botDirectory,
-    historicalContext,
+    hasHistoricalContext,
     pluginLine,
     prompt,
     runtimeHistory,
+    resumeHistoryMessageIds,
+    resumeAnswerReplyContexts,
     taskPrompt,
     taughtSkillsLine,
     turnCheckpoint,
@@ -158,9 +160,12 @@ async function modelTurnRequest(
   const { ctx } = turn;
   const { script, state } = turn.ctx;
   const { effects } = turn.ctx.state;
-  const offersHistory =
-    !scripted && tools.some((tool) => tool.name === "search_history" && !tool.route);
-  let myChatsAvailable = offersHistory && (await historyMyChatsAvailable(ctx));
+  // Outside text claimed earlier in the run, or arriving as steering, revokes my_chats.
+  const liveHistoryScope =
+    !scripted &&
+    ctx.source.myChatsAllowed &&
+    tools.some((tool) => tool.name === "search_history" && !tool.route);
+  let myChatsAvailable = liveHistoryScope && (await historyMyChatsAvailable(ctx));
   // The scripted runtime interprets the prompt as fixture commands.
   const currentTurnDataInPrompt =
     !scripted && (run.trigger === "user" || run.trigger === "follow_up");
@@ -222,10 +227,11 @@ async function modelTurnRequest(
       redactedScratchpadContext,
       currentTurnDataInPrompt,
       redactedTicketContext: ticketContext ? redactSecrets(ticketContext, runSecrets) : undefined,
-      hasHistoricalContext: historicalContext.length > 0,
+      hasHistoricalContext,
       // A background helper is not offered the history tools, so it gets no guidance on them.
       historyRetrievalEnabled:
         contextStrategy !== "current" && tools.some((tool) => tool.name === "search_history"),
+      historyMyChats: liveHistoryScope ? myChatsAvailable : ctx.source.myChatsAllowed,
       computerInstruction,
       pageBrowserAllowed,
       taskCatalogInstruction,
@@ -263,7 +269,7 @@ async function modelTurnRequest(
         !turnBlocks?.some((block) => block.kind === "image" && block.imageHandling === "confirm"),
     ),
     tools,
-    getBuiltinToolDeclarations: offersHistory
+    getBuiltinToolDeclarations: liveHistoryScope
       ? () => (myChatsAvailable ? undefined : thisChatHistoryDeclaration)
       : undefined,
     unavailableToolReasons,
@@ -334,6 +340,7 @@ async function modelTurnRequest(
       effects.pendingTurnCheckpoints.set(executionId, capture);
     },
     resumeToolResult: {
+      historyMessageIds: resumeHistoryMessageIds,
       content: [{ type: "text", text: takeoverResume?.promptNote ?? taskPrompt }],
     },
     script,
@@ -387,6 +394,7 @@ async function modelTurnRequest(
         {
           messageId: currentTurnMessage?.id,
           hasImages: Boolean(currentTurnImages?.length),
+          resumeAnswerReplyContexts,
         },
       );
       if (steering.length && myChatsAvailable)

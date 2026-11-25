@@ -2,12 +2,8 @@ import { randomUUID } from "node:crypto";
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerActionRequest,
   ComputerFileEntry,
-  ComputerInput,
-  ComputerObservation,
   ComputerRef,
-  ControlLeaseRef,
   PortableFile,
   ProcessEvent,
   SandboxProvider,
@@ -23,14 +19,20 @@ import { bestEffort, getLogger } from "@rakazo/logging";
 import { installPageBrowserCommand, privatePageInput } from "../../browser/page-browser-install.js";
 import { shouldSkipPortableWorkspaceFile } from "../../storage/workspace-save-policy.js";
 import { sandboxIdleMs } from "../computer-idle.js";
-import { PortableFileBatcher } from "../computer-workspace.js";
+import { writePortableFilesInBatches } from "../computer-workspace.js";
+import { PAGE_BROWSER_INTERRUPTED } from "../screens/computer-screens.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
   workspaceCwd,
   workspacePath,
 } from "../screens/computer-support.js";
-import { LinuxDesktop, onBotScreen, PREPARE_LINUX_DESKTOP } from "../screens/linux-desktop.js";
+import {
+  LinuxDesktop,
+  LinuxDesktopSandbox,
+  onBotScreen,
+  PREPARE_LINUX_DESKTOP,
+} from "../screens/linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import {
   isSandboxGoneError,
@@ -153,12 +155,12 @@ function isTemplateMissingError(error: unknown): boolean {
   return error instanceof Error && (statusCode(error) === 404 || /^404:/.test(error.message));
 }
 
-export class RemoteDesktopSandboxProvider implements SandboxProvider {
+export class RemoteDesktopSandboxProvider extends LinuxDesktopSandbox implements SandboxProvider {
   billsWhileRunning(): boolean {
     return true;
   }
 
-  private readonly desktops = new LinuxDesktop({
+  protected readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: "/home/user",
       workspaceDir: REMOTE_WORKSPACE,
@@ -197,6 +199,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       pageBrowser?: boolean;
     },
   ) {
+    super();
     // Bots are offered page tools only where these computers install them.
     if (config.pageBrowser)
       this.pageBrowser = (computer, request, context) =>
@@ -473,7 +476,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
         if (isSandboxGoneError(error) || unsafeStop) throw error;
         context.signal.throwIfAborted();
         // The bot gets the page tools' own failure, never the provider's error text.
-        throw new Error("Page browser unavailable or interrupted");
+        throw new Error(PAGE_BROWSER_INTERRUPTED);
       }
       context.signal.throwIfAborted();
       return { code: result.exitCode, stdout: result.stdout };
@@ -524,7 +527,7 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     yield { type: "exit", code: result.exitCode };
   }
 
-  async connectScreen(
+  override async connectScreen(
     computer: ComputerRef,
     request: ScreenRequest,
     context: AdapterContext,
@@ -534,7 +537,11 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
       await this.desktops.connectScreen(computer, request, context),
     );
   }
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
+  override async connectTerminal(
+    computer: ComputerRef,
+    request: TerminalRequest,
+    context: AdapterContext,
+  ) {
     return this.withTrafficAccess(
       computer,
       await this.desktops.connectTerminal(computer, request, context),
@@ -550,28 +557,6 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     const token = this.boxes.get(sandboxId(computer))?.trafficAccessToken;
     if (!token) return session;
     return { ...session, headers: { [header]: token } };
-  }
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ): Promise<void> {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
-  }
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ): Promise<void> {
-    return this.desktops.sendInput(computer, input, context);
-  }
-  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    return this.desktops.observe(computer, context);
-  }
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
   }
 
   async listFiles(
@@ -642,23 +627,10 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     context: AdapterContext,
   ): Promise<void> {
     await this.desktops.stopBrowsers(computer, context);
-    const batcher = new PortableFileBatcher<PortableFile>(32, (file) => file.content.byteLength);
-    const flush = async (batch: PortableFile[]) => {
-      if (!batch.length) return;
-      await this.use(computer, (desktop) => writeRemoteFiles(desktop, batch, context));
-    };
-    for await (const file of files) {
-      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      const full = batcher.add(file);
-      if (full) await flush(full);
-    }
-    await flush(batcher.take());
+    await writePortableFilesInBatches(files, 32, (batch) =>
+      this.use(computer, (desktop) => writeRemoteFiles(desktop, batch, context)),
+    );
     // Imported browser profiles remain dormant until their owning bot needs a desktop.
-  }
-
-  async snapshot(computer: ComputerRef, _context: AdapterContext) {
-    const observation = await this.observe(computer, _context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
   }
 
   async keepAlive(computer: ComputerRef): Promise<void> {
@@ -673,10 +645,6 @@ export class RemoteDesktopSandboxProvider implements SandboxProvider {
     // throws when it is gone or the key no longer works.
     this.lastTouchedAt.delete(sandboxId(computer));
     await this.box(computer);
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    return this.desktops.releaseScreen(computer, context);
   }
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {

@@ -21,7 +21,7 @@ import {
 } from "@rakazo/ui-web/components/ui/table";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
 import { usageModelKey, usageModelLabels } from "./usage-model-labels";
 
@@ -49,7 +49,19 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   });
 
   const catalogQuery = useQuery(queries.models.list.queryOptions());
-  const catalog = catalogQuery.data ?? NO_CATALOG;
+  // Image and video models are not chat models, so their names come from the media lists.
+  const { data: media } = useQuery(queries.models.media.queryOptions({ input: {} }));
+  const catalog = useMemo(
+    () => [
+      ...(catalogQuery.data ?? NO_CATALOG),
+      ...(media ? [...media.image.options, ...media.video.options] : []).map((option) => ({
+        provider: option.provider,
+        id: option.modelId,
+        label: option.label,
+      })),
+    ],
+    [catalogQuery.data, media],
+  );
   const fallbackLabel =
     catalogQuery.data !== undefined
       ? t`Unlisted model`
@@ -74,6 +86,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const fresh = isPlaceholderData || isError ? undefined : data;
   const bots = data?.bots ?? (selectedBot ? [selectedBot] : []);
   const models = fresh?.models ?? [];
+  const routines = fresh?.routines?.some((row) => row.id) ? fresh.routines : [];
   const overTime = fresh?.overTime ?? [];
   const monthly = fresh?.overTimeUnit === "month";
   const totals = fresh?.totals;
@@ -88,6 +101,15 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   }, [data, isPlaceholderData, botId, modelKey, modelOptions]);
 
   const maxTokens = Math.max(1, ...overTime.map((p) => p.totalTokens ?? 0));
+  const dayLabel = (date: string) =>
+    new Date(`${date}T00:00:00Z`).toLocaleDateString(
+      i18n.locale,
+      monthly
+        ? { month: "short", year: "numeric", timeZone: "UTC" }
+        : { month: "short", day: "numeric", timeZone: "UTC" },
+    );
+  const every = overTime.length <= 8;
+  const axisPoints = every ? overTime : [overTime.at(0), overTime.at(-1)].filter((p) => p != null);
 
   return (
     <div
@@ -166,7 +188,10 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
       <dl className="grid grid-cols-3 gap-3">
         {[
           { label: t`Runs`, value: number(totals?.runs) },
-          { label: t`Tokens`, value: number(totals?.totalTokens) },
+          {
+            label: t`Tokens`,
+            value: `${number(totals?.totalTokens)}${totals?.tokensPartial ? "+" : ""}`,
+          },
           { label: t`Cost`, value: cost(totals?.costUsd) },
         ].map((stat) => (
           <div key={stat.label} className="rounded-xl border border-border px-4 py-3">
@@ -183,8 +208,8 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           <SectionHeading variant="label" className="mb-3">
             <Trans>Usage over time</Trans>
           </SectionHeading>
-          <div className="flex h-28 items-end gap-1">
-            {overTime.map((point, index) => {
+          <div data-testid="usage-bars" className="flex h-24 items-end gap-1">
+            {overTime.map((point) => {
               const unknown = point.totalTokens == null;
               const value = point.totalTokens ?? 0;
               const height = unknown
@@ -192,34 +217,40 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                 : value === 0
                   ? 0
                   : Math.max(4, Math.round((value / maxTokens) * 100));
-              const day = new Date(`${point.date}T00:00:00Z`).toLocaleDateString(
-                i18n.locale,
-                monthly
-                  ? { month: "short", year: "numeric", timeZone: "UTC" }
-                  : { month: "short", day: "numeric", timeZone: "UTC" },
-              );
-              const labelled = overTime.length <= 8 || index === 0 || index === overTime.length - 1;
-              const label = t`${day}: ${number(point.totalTokens)} tokens, ${cost(point.costUsd)}`;
+              const label = t`${dayLabel(point.date)}: ${number(point.totalTokens)} tokens, ${cost(point.costUsd)}`;
               return (
                 <Tooltip key={point.date}>
                   <TooltipTrigger
                     aria-label={label}
-                    className="flex h-full min-w-0 flex-1 flex-col items-center gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+                    className="flex h-full min-w-0 flex-1 items-end rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
                   >
-                    <span className="flex w-full flex-1 items-end">
-                      <span
-                        className={`w-full rounded-sm ${unknown ? "bg-muted" : "bg-foreground/70"}`}
-                        style={{ height: `${height}%` }}
-                      />
-                    </span>
-                    <span className="w-full truncate text-center text-caption text-muted-foreground">
-                      {labelled ? day : null}
-                    </span>
+                    <span
+                      className={`w-full rounded-sm ${unknown ? "bg-muted" : "bg-foreground/70"}`}
+                      style={{ height: `${height}%` }}
+                    />
                   </TooltipTrigger>
                   <TooltipContent>{label}</TooltipContent>
                 </Tooltip>
               );
             })}
+          </div>
+          <div
+            data-testid="usage-axis"
+            aria-hidden="true"
+            className={`mt-1 flex text-caption text-muted-foreground ${every ? "gap-1" : "justify-between"}`}
+          >
+            {axisPoints.map((point, index) => (
+              <span
+                key={point.date}
+                className={
+                  every
+                    ? "min-w-0 flex-1 truncate text-center"
+                    : `whitespace-nowrap ${index === 0 ? "text-start" : "text-end"}`
+                }
+              >
+                {dayLabel(point.date)}
+              </span>
+            ))}
           </div>
         </div>
       ) : null}
@@ -237,6 +268,9 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                 </TableHead>
                 <TableHead className="text-right text-muted-foreground">
                   <Trans>Input</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Cached</Trans>
                 </TableHead>
                 <TableHead className="text-right text-muted-foreground">
                   <Trans>Output</Trans>
@@ -267,6 +301,9 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
                       {number(row.inputTokens)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
+                      {number(row.cachedTokens)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
                       {number(row.outputTokens)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
@@ -289,6 +326,48 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           <Trans>No usage for this selection.</Trans>
         </p>
       )}
+
+      {routines.length > 0 ? (
+        <div className="rounded-xl border border-border px-2">
+          <Table className="text-body">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-muted-foreground">
+                  <Trans>Routine</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Runs</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Tokens</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Cost</Trans>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {routines.map((row) => (
+                <TableRow key={row.id ?? "none"} className="hover:bg-transparent">
+                  <TableCell>
+                    <div className="text-foreground">
+                      {row.id ? row.name : <Trans>Chats and other work</Trans>}
+                    </div>
+                    {row.botName ? (
+                      <div className="text-label text-muted-foreground">{row.botName}</div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{number(row.runs)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.totalTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
     </div>
   );
 }

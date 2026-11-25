@@ -1,23 +1,14 @@
+import type { MessagingOutbound } from "@rakazo/adapter-kit";
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
+import { inboundOrigin } from "../ingress/ingress-factory.js";
 import { larkMessaging } from "../providers/messaging/lark/lark-messaging.js";
 import { photonMessaging } from "../providers/messaging/photon/photon-messaging.js";
 import { sendblueMessaging } from "../providers/messaging/sendblue/sendblue-messaging.js";
-import {
-  SLACK_MARKDOWN_LIMIT,
-  slackMessaging,
-  slackPayloads,
-} from "../providers/messaging/slack/slack-messaging.js";
+import { slackMessaging } from "../providers/messaging/slack/slack-messaging.js";
 import { teamsMessaging } from "../providers/messaging/teams/teams-messaging.js";
-import {
-  telegramMessaging,
-  telegramPayloads,
-} from "../providers/messaging/telegram/telegram-messaging.js";
-import {
-  whatsappMessaging,
-  whatsappPayloads,
-} from "../providers/messaging/whatsapp/whatsapp-messaging.js";
+import { telegramMessaging } from "../providers/messaging/telegram/telegram-messaging.js";
+import { whatsappMessaging } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
-import { splitMarkdown } from "./markdown-split.js";
 import type {
   MessagingEnvBindings,
   MessagingEnvValues,
@@ -52,8 +43,10 @@ type PlatformValues = UnionToIntersection<
  * roots. A platform mounts when every setting it requires is present.
  */
 export type MessagingEnvironmentValues = {
-  /** Public API origin; vendors that push delivery status call back here. */
+  /** The app's own API origin, for redirects a signed-in browser follows. */
   apiUrl?: string | undefined;
+  /** The origin vendors that push delivery status call back to: the published one, else API_URL. */
+  inboundOrigin?: string | undefined;
 } & { [K in keyof PlatformValues]?: PlatformValues[K] | undefined };
 
 const definitions = Object.values(messagingPlatforms) as MessagingPlatformDefinition[];
@@ -62,7 +55,10 @@ const definitions = Object.values(messagingPlatforms) as MessagingPlatformDefini
 export function messagingEnvFromProcess(
   env: Record<string, string | undefined>,
 ): MessagingEnvironmentValues {
-  const values: Record<string, unknown> = { apiUrl: clean(env.API_URL) };
+  const values: Record<string, unknown> = {
+    apiUrl: clean(env.API_URL),
+    inboundOrigin: inboundOrigin(env) ?? clean(env.API_URL),
+  };
   for (const definition of definitions) {
     for (const [option, binding] of Object.entries(definition.env)) {
       values[option] = "read" in binding ? binding.read(env) : clean(env[binding.name]);
@@ -90,7 +86,7 @@ export function messagingPlatformsFromEnv(
   options: MessagingMountOptions = {},
 ): MessagingPlatform[] {
   const values = env as MessagingEnvValues<MessagingEnvBindings>;
-  const context = { ...options, apiUrl: env.apiUrl };
+  const context = { ...options, inboundOrigin: env.inboundOrigin };
   const platforms: MessagingPlatform[] = [];
   for (const definition of definitions) {
     const defaultMounted = requiredSettings(definition.env).every((option) => values[option]);
@@ -125,20 +121,11 @@ export function isMessagingSurfaceEnabled(
   return options.openSignup ? options.deploymentModelConfigured : true;
 }
 
-/** WhatsApp and Telegram both cap a text message at 4096 UTF-16 units. */
-const MESSAGE_PART_LIMIT = 4096;
-
-/** Split before enqueueing so retries only resend the parts that failed. */
-export function splitOutboundBody(provider: string, body: string): string[] {
+/**
+ * Split before enqueueing so retries only resend the parts that failed. The platform that owns
+ * the limit does the splitting; a platform that declares none sends the body whole.
+ */
+export function splitOutboundBody(outbound: MessagingOutbound | undefined, body: string): string[] {
   if (!body.trim()) return [];
-  if (provider === "slack") {
-    return splitMarkdown(body, { limit: SLACK_MARKDOWN_LIMIT, sent: slackPayloads });
-  }
-  const sent =
-    provider === "whatsapp"
-      ? whatsappPayloads
-      : provider === "telegram" || provider.startsWith("telegram-")
-        ? telegramPayloads
-        : undefined;
-  return sent ? splitMarkdown(body, { limit: MESSAGE_PART_LIMIT, sent }) : [body];
+  return outbound?.split?.(body) ?? [body];
 }

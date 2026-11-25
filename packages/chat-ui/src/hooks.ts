@@ -1,3 +1,5 @@
+import type { ListSearchOptions } from "@rakazo/core";
+import { listSearch } from "@rakazo/core";
 import { useEffect, useEffectEvent, useState } from "react";
 
 /**
@@ -23,4 +25,10 @@ export function useNow(ms: number | null): number {
     return () => clearInterval(timer);
   }, [ms]);
   return now;
+}
+
+/** A list filtered by a search box's query, with the query state the box binds to. */
+export function useListSearch<T>(items: readonly T[], options: ListSearchOptions<T>) {
+  const [query, setQuery] = useState("");
+  return { query, setQuery, ...listSearch(items, query, options) };
 }

@@ -185,7 +185,11 @@ describe("paused turn context", () => {
                 name: "ask_user",
                 arguments: { question: "Which fixture?", options: ["One", "Two"] },
               },
-              { id: "tail", name: "remember", arguments: { content: "Fixture fact" } },
+              {
+                id: "tail",
+                name: "remember",
+                arguments: { operations: [{ action: "add", content: "Fixture fact" }] },
+              },
             ],
           },
         },
@@ -214,7 +218,7 @@ describe("paused turn context", () => {
     try {
       const paused = await collect(new PiAgentRuntime().run({ ...request, claimSteering }));
       expect(executed).not.toHaveBeenCalled();
-      expect(paused.filter((event) => event.type === "progress")).toHaveLength(1);
+      expect(paused.filter((event) => event.type === "progress" && event.text)).toHaveLength(1);
       expect(claimSteering).toHaveBeenCalledTimes(1);
       expect(paused).not.toContainEqual(expect.objectContaining({ type: "steered" }));
       const saved = capture!();

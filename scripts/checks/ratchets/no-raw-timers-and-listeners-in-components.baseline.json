@@ -5,7 +5,6 @@
   "apps/mobile/components/calls/CallCard.tsx": 1,
   "apps/mobile/lib/bots/avatar-life.tsx": 1,
   "apps/mobile/lib/composer/composer-dictation.ts": 1,
-  "apps/mobile/lib/query/foreground-poll.ts": 1,
   "apps/mobile/lib/thread/scroll/thread-list-scroll.ts": 1,
   "apps/mobile/lib/thread/thread-sync.ts": 2,
   "apps/web/src/components/call/IncomingCall.tsx": 1,

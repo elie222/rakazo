@@ -67,7 +67,7 @@ for (const platform of ["darwin", "linux"]) {
     const host = platform === "darwin" ? "this Mac" : "this computer";
     await expect(
       dialog.getByText(
-        `Docker limits access to your computer for added security. Using ${host} lets bots work with your local files and tools.`,
+        `A sandbox limits access to your computer for added security. Using ${host} lets bots work with your local files and tools.`,
       ),
     ).toBeVisible();
     await expect(
@@ -75,7 +75,7 @@ for (const platform of ["darwin", "linux"]) {
         "Local access lets bots run commands without asking. Avoid it on shared or public servers.",
       ),
     ).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Docker", exact: true })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Sandbox", exact: true })).toBeVisible();
     await expect(dialog.getByRole("button", { name: `Use ${host}` })).toBeVisible();
     await captureScreenshot(page, testInfo, `host-computer-choice-${platform}`);
     let updates = 0;
@@ -228,6 +228,6 @@ test("a saved host choice closes when refreshing the profile fails", async ({ pa
   await page.reload();
   const dialog = page.getByRole("dialog", { name: "Where should bots run?" });
   await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Docker", exact: true }).click();
+  await dialog.getByRole("button", { name: "Sandbox", exact: true }).click();
   await expect(dialog).toBeHidden();
 });

@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   connect: vi.fn(),
   skills: vi.fn(),
   skill: vi.fn(),
+  favicon: vi.fn(),
 }));
 // One space, so no "Available in" choice appears.
 vi.mock("./space-availability", () => ({
@@ -31,7 +32,10 @@ vi.mock("../../lib/query/rpc", () => ({
 }));
 vi.mock("../../lib/integrations/mcp-connect", () => ({ connectMcpOauth: api.connect }));
 vi.mock("@rakazo/chat-ui/web", () => ({
-  useLinkFavicon: () => ({ icon: null, unusable: () => undefined }),
+  useLinkFavicon: (site: string) => {
+    api.favicon(site);
+    return { icon: null, unusable: () => undefined };
+  },
 }));
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
@@ -417,6 +421,77 @@ describe("integration fallback icons", () => {
       [...container.querySelectorAll("img")].map((image) => image.getAttribute("src")),
     ).toEqual([logo, logo, logo]);
   });
+
+  it("waits for catalog icons to enter view before requesting artwork or a favicon", async () => {
+    let onIntersection!: IntersectionObserverCallback;
+    const disconnect = vi.fn();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = disconnect;
+
+        constructor(callback: IntersectionObserverCallback) {
+          onIntersection = callback;
+        }
+      },
+    );
+    const connectorLogo = "https://example.test/connector.png";
+    const pluginLogo = "https://example.test/plugin.png";
+    const site = "https://plugin.example.test";
+    try {
+      await act(async () =>
+        root.render(
+          <>
+            <ConnectorIcon name="Connector" logo={connectorLogo} />
+            <PluginRow
+              name="Plugin"
+              logo={pluginLogo}
+              description=""
+              installed={false}
+              onOpen={vi.fn()}
+            />
+            <PluginRow
+              name="Fallback"
+              site={site}
+              description=""
+              installed={false}
+              onOpen={vi.fn()}
+            />
+          </>,
+        ),
+      );
+      const [connector, plugin, fallback] = [...container.querySelectorAll(".place-items-center")];
+      if (!connector || !plugin || !fallback) throw new Error("Missing catalog icon placeholders");
+      expect(container.querySelectorAll("img")).toHaveLength(0);
+      expect(api.favicon).not.toHaveBeenCalledWith(site);
+      const intersect = async (target: Element, isIntersecting: boolean) =>
+        act(async () =>
+          onIntersection(
+            [{ target, isIntersecting } as IntersectionObserverEntry],
+            {} as IntersectionObserver,
+          ),
+        );
+      await intersect(connector, true);
+      await intersect(plugin, false);
+      expect([...container.querySelectorAll("img")].map((image) => image.src)).toEqual([
+        connectorLogo,
+      ]);
+      await intersect(plugin, true);
+      expect([...container.querySelectorAll("img")].map((image) => image.src)).toEqual([
+        connectorLogo,
+        pluginLogo,
+      ]);
+      expect(api.favicon).not.toHaveBeenCalledWith(site);
+      await intersect(fallback, true);
+      expect(api.favicon).toHaveBeenCalledWith(site);
+      expect(disconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("names each Added button after its standalone plugin without changing the visible text", async () => {
     await act(async () =>
       root.render(

@@ -655,7 +655,7 @@ function renderGalleryFigure(
         </figure>`;
 }
 
-function isPlaywrightRun(value: unknown): value is PlaywrightRun {
+export function isPlaywrightRun(value: unknown): value is PlaywrightRun {
   if (!value || typeof value !== "object") return false;
 
   const run = value as Partial<PlaywrightRun>;

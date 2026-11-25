@@ -99,6 +99,7 @@ pnpm dev
 打开终端打印的地址，默认是 `http://127.0.0.1:5173`。`pnpm dev` 会先准备数据库并应用迁移。
 开发服务运行时，可用 `pnpm --filter @rakazo/desktop dev` 启动桌面端，并选择“现有实例”。
 桌面端的“这台电脑”选项会自行安装镜像版服务，默认使用 `45173` 端口，与开发服务不同。
+该服务只监听回环地址，手机无法连接；见[桌面端“这台电脑”服务（英文）](../self-host-clients.md#desktop-this-computer-servers)。
 
 在 WSL 中开发时，将仓库和 `data` 放在 Linux 文件系统中，例如 `~/rakazo`，并以普通用户运行。
 宿主机运行的监督服务会让机器人容器使用该用户的 UID/GID。
@@ -137,7 +138,7 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml \
 - [升级](./self-host-upgrading.md)
 - [受限网络与镜像下载](./self-host-restricted-network.md)
 - [无影云电脑](../wuying-computers.zh-CN.md)
-- [配置](./self-host-configuration.md)、[密钥清单](./self-host-secrets.md)、[账号与登录](./self-host-accounts.md)、[工具集成](./self-host-integrations.md)
+- [配置](./self-host-configuration.md)、[密钥清单](./self-host-secrets.md)、[账号与登录](./self-host-accounts.md)（含[设置团队](../self-host-accounts.md#set-up-a-team)）、[工具集成](./self-host-integrations.md)
 - [存储与加密](../self-host-storage.md)、[日志与监控](../self-host-observability.md)、[客户端](../self-host-clients.md)（英文）
 
 ## 报告问题

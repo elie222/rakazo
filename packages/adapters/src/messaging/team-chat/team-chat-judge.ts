@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunModel, AgentRuntime, SecretStore } from "@rakazo/adapter-kit";
-import { redactSecrets } from "@rakazo/core";
+import { redactSecrets, savedThinkingLevel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { findModelCredential, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -10,6 +10,10 @@ import {
 } from "../../model-credits/offerings.js";
 import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
+import {
+  loadAdminDeploymentModelKey,
+  matchingAdminDeploymentModel,
+} from "../../models/deployment-model.js";
 import {
   persistRefreshedModelCredential,
   refreshStoredModelCredential,
@@ -280,9 +284,18 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         provider,
         modelId,
       );
+      const admin =
+        !hosted &&
+        !pinned &&
+        !mainModel &&
+        matchingAdminDeploymentModel(settings, provider, modelId);
       const apiKey =
         material?.apiKey ??
-        (provider === this.deps.deploymentProvider ? this.deps.deploymentModelKey : undefined);
+        (admin
+          ? await loadAdminDeploymentModelKey(this.deps.secrets, admin.cipher)
+          : provider === this.deps.deploymentProvider
+            ? this.deps.deploymentModelKey
+            : undefined);
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
         : undefined;
@@ -326,6 +339,11 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         ? { contextWindow: modelSettings.contextWindow }
         : {}),
       ...(modelSettings.reasoning !== undefined ? { reasoning: modelSettings.reasoning } : {}),
+      thinkingLevel: savedThinkingLevel(
+        modelSettings.thinkingLevel,
+        { modelId: credential.defaultModel, thinkingLevel: credential.thinkingLevel },
+        modelId,
+      ),
     };
     const context = parsed.kind === "oauth" ? {} : { cacheCapabilities: parsed.cacheCapabilities };
     if (parsed.kind === "oauth") {

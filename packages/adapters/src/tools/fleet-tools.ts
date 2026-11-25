@@ -42,6 +42,7 @@ import { asRecord } from "../integrations/connector-http.js";
 import { resolveModelChoice } from "../models/model-choice.js";
 import type { BotModelChangeDeps } from "../models/model-selection.js";
 import { validateBotModelChange } from "../models/model-selection.js";
+import { routineEndInZone } from "../routines/routine-end.js";
 import {
   hasRoutineEvents,
   NO_ROUTINE_EVENTS,
@@ -59,8 +60,10 @@ import {
   isScheduleValueProvided,
   resolveScheduleTiming,
   scheduleTimingArgs,
+  toolRoutineEnd,
   userTimeZone,
 } from "./schedule-tools.js";
+import { describeRoutineTiming } from "./schedule-update-view.js";
 
 /** The fleet writes resolved up front so an approval card can show what will run. */
 export type FleetApprovalToolName = Exclude<
@@ -362,6 +365,17 @@ async function prepareChildRoutine(
   const resolved = eventsOnly ? undefined : resolveScheduleTiming(timing, timezone);
   if (resolved && !resolved.ok) return refuse(resolved.error);
   if (asksEvents && resolved?.oneShot) return refuse("A one-time schedule takes no events (on).");
+  const end = toolRoutineEnd(
+    isScheduleValueProvided(args.endAt) ? String(args.endAt) : undefined,
+    timezone,
+    {
+      crons: resolved ? [resolved.cron] : [],
+      watch: null,
+      nextRunAt: resolved?.nextRunAt ?? null,
+      events: asksEvents,
+    },
+  );
+  if ("error" in end) return refuse(end.error);
 
   const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
@@ -407,6 +421,7 @@ async function prepareChildRoutine(
                 ? { startAt: resolved.nextRunAt.toISOString() }
                 : {}),
             },
+      ...(end.endsAt ? { endAt: end.endsAt.toISOString() } : {}),
       ...(hasRoutineEvents(checked.events) ? { on: events } : {}),
     },
     summary: {
@@ -419,6 +434,7 @@ async function prepareChildRoutine(
                 ? `Runs at ${when}`
                 : `Repeats ${singleLine(resolved.cron)}, next at ${when}`,
             ]),
+        ...(end.endsAt ? [`Ends ${formatTime(end.endsAt, timezone)}`] : []),
         ...eventLine,
         `Prompt: ${prompt}`,
       ],
@@ -989,6 +1005,7 @@ export async function createChildRoutine(
   const pinnedTimezone = canonical.timezoneFromAccount === true ? undefined : timezone;
   const replayTimezone =
     pinnedTimezone === undefined ? await userTimeZone(deps.prisma, run.userId) : pinnedTimezone;
+  const endAt = text(canonical.endAt);
   const existing = await deps.prisma.routine.findFirst({
     where: {
       spaceId: run.spaceId,
@@ -1001,6 +1018,7 @@ export async function createChildRoutine(
       crons: { equals: cron ? [cron] : [] },
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
+      endsAt: endAt ? routineEndInZone(new Date(endAt), timezone, replayTimezone) : null,
       // The identical routine has the approved events too, so a retry returns it instead of a
       // twin. A bot links one chat app, so any chat event on it is the approved one.
       webhookEnabled: on?.webhook === true,
@@ -1017,6 +1035,8 @@ export async function createChildRoutine(
       githubEnabled: true,
       messageProvider: true,
       emailSenders: true,
+      timezone: true,
+      endsAt: true,
     },
   });
   const target = { botId: child.id, botName: singleLine(child.name) };
@@ -1028,6 +1048,7 @@ export async function createChildRoutine(
       cron: existing.crons[0],
       nextRunAt: existing.nextRunAt?.toISOString() ?? null,
       oneShot: Boolean(runAt),
+      ...(existing.endsAt ? { endAt: describeRoutineTiming(existing).endAt } : {}),
       ...eventsResult(existing),
       ...target,
     };
@@ -1043,6 +1064,7 @@ export async function createChildRoutine(
     ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
     ...(on ? { on } : {}),
+    ...(endAt ? { endAt, endTimezone: timezone } : {}),
   });
   return "error" in created ? created : { ...created, ...target };
 }

@@ -14,6 +14,11 @@
       "development": "./src/best-effort.ts",
       "default": "./src/best-effort.ts"
     },
+    "./console-logger": {
+      "types": "./src/console-logger.ts",
+      "development": "./src/console-logger.ts",
+      "default": "./src/console-logger.ts"
+    },
     "./hono": {
       "types": "./src/hono.ts",
       "development": "./src/hono.ts",
@@ -32,7 +37,7 @@
     "./monitoring": "./src/monitoring.ts"
   },
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. packages/logging/src"
   },
   "dependencies": {

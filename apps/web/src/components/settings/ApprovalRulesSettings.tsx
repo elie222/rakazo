@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import type {
   ActionApprovalRule,
   ActionAutoReviewSettings,
@@ -33,7 +34,6 @@ import { useRef, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 import { errorText } from "../../lib/query/user-error";
-import { useListSearch } from "../../lib/use-list-search";
 import { SpendingLimitSettings } from "../billing/SpendingLimitSettings";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
 

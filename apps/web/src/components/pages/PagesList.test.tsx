@@ -9,6 +9,7 @@ const rename = vi.hoisted(() => vi.fn());
 const pageItems = vi.hoisted(() => ({
   current: [] as { id: string; title: string; updatedAt: string }[],
 }));
+const pageRead = vi.hoisted(() => ({ isError: false, isPending: false, refetch: vi.fn() }));
 const page = (index: number) => ({
   id: `page-${index}`,
   title: `Plan ${index}`,
@@ -28,7 +29,15 @@ vi.mock("../../lib/pages/page-actions", () => ({
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({}),
   useMutation: () => ({ mutate: rename, reset: vi.fn() }),
-  useInfiniteQuery: () => ({ data: { pages: [{ items: pageItems.current }] } }),
+  useInfiniteQuery: () => ({
+    data:
+      pageRead.isError || pageRead.isPending
+        ? undefined
+        : { pages: [{ items: pageItems.current }] },
+    isError: pageRead.isError,
+    isPending: pageRead.isPending,
+    refetch: pageRead.refetch,
+  }),
 }));
 vi.mock("@rakazo/ui-web", async (importActual) => ({
   ...(await importActual<object>()),
@@ -42,6 +51,8 @@ vi.mock("@rakazo/ui-web", async (importActual) => ({
   ),
 }));
 beforeEach(() => {
+  pageRead.isError = false;
+  pageRead.isPending = false;
   pageItems.current = [{ id: "page-1", title: "Plan", updatedAt: new Date().toISOString() }];
 });
 afterEach(() => {
@@ -89,6 +100,57 @@ it.each([
     if (keyboard.key === "Enter")
       expect(rename).toHaveBeenCalledWith({ pageId: "page-1", title: "计划" });
     else expect(rename).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("keeps the search field editable after a failed search and distinguishes no matches", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  pageItems.current = Array.from({ length: 8 }, (_, i) => page(i));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+  const show = () => act(async () => root.render(<PagesList botId="bot-1" />));
+  const input = () => host.querySelector<HTMLInputElement>('input[type="search"]');
+  const type = (value: string) =>
+    act(async () => {
+      const field = input()!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+  try {
+    await show();
+    const field = input();
+    field!.focus();
+    await type("old search");
+    pageRead.isError = true;
+    await show();
+
+    expect(input()).toBe(field);
+    expect(document.activeElement).toBe(field);
+    expect(input()!.value).toBe("old search");
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Couldn't load pages.");
+    expect(host.textContent).not.toContain("No pages match");
+    await act(async () => {
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Try again")!
+        .click();
+    });
+    expect(pageRead.refetch).toHaveBeenCalledOnce();
+
+    // A new term after the failure has no earlier results to show while it loads.
+    pageRead.isError = false;
+    pageRead.isPending = true;
+    await type("new search");
+    expect(input()).toBe(field);
+    expect(input()!.value).toBe("new search");
+    expect(host.textContent).not.toContain("No pages match");
+    pageItems.current = [];
+    pageRead.isPending = false;
+    await show();
+    expect(host.textContent).toContain("No pages match");
+    expect(host.querySelector('[role="alert"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
   }

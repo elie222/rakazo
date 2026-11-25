@@ -17,6 +17,7 @@ export const FR_MESSAGES: Record<string, string> = {
   Redo: "Rétablir",
   Cut: "Couper",
   Copy: "Copier",
+  "Copy Link Address": "Copier l’adresse du lien",
   Paste: "Coller",
   "Paste and Match Style": "Coller et adapter le style",
   Delete: "Supprimer",

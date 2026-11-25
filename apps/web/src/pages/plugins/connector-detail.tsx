@@ -1,10 +1,11 @@
-import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import { Trans, useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
-import { appToolLabel, catalogItemAccounts, catalogItemKey } from "@rakazo/core";
-import { Badge, Button, Disclosure, Input } from "@rakazo/ui-web";
+import { catalogItemAccounts, catalogItemKey } from "@rakazo/core";
+import { Button, Input, Spinner } from "@rakazo/ui-web";
 import { ChevronLeft, Plus } from "lucide-react";
 import { ChatAppLink } from "./parts";
+import { ToolPermissions } from "./tool-permissions";
 import type { PluginConnections } from "./use-plugin-connections";
 
 /** A connected app's page: its accounts, adding another, its tools, and uninstalling it. */
@@ -27,6 +28,7 @@ export function ConnectorDetail({
     setLabelDrafts,
     tools,
     toolsLoading,
+    toolsFailed,
     connect,
     revokeAccount,
     uninstall,
@@ -36,7 +38,6 @@ export function ConnectorDetail({
   const key = catalogItemKey(item);
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
-  const toolCount = tools.length;
 
   return (
     <div data-testid="connection-detail" className="space-y-5">
@@ -128,32 +129,16 @@ export function ConnectorDetail({
         </Button>
       </section>
 
-      {toolsLoading || tools.length > 0 ? (
-        <Disclosure
-          data-testid="connection-tools"
-          className="px-2"
-          summaryClassName="text-body-sm text-muted-foreground"
-          summary={
-            toolsLoading ? (
-              <Trans>Tools</Trans>
-            ) : (
-              <Plural value={toolCount} one="# tool" other="# tools" />
-            )
-          }
-        >
-          <div className="flex flex-wrap gap-1.5 pt-3">
-            {tools.map((tool) => (
-              <Badge
-                key={tool.name}
-                variant="secondary"
-                className="h-6 px-2.5 text-label font-normal"
-                title={tool.description || undefined}
-              >
-                {appToolLabel(tool.name, item.slug)}
-              </Badge>
-            ))}
-          </div>
-        </Disclosure>
+      {toolsFailed ? (
+        <p role="alert" className="px-2 text-body-sm text-destructive">
+          <Trans>Could not load permissions</Trans>
+        </p>
+      ) : toolsLoading ? (
+        <div className="px-2 text-muted-foreground">
+          <Spinner aria-label={t`Loading tool permissions…`} />
+        </div>
+      ) : tools.length > 0 ? (
+        <ToolPermissions tools={tools} slug={item.slug} />
       ) : null}
 
       {item.chatApp && onOpenChatApp ? (

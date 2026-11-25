@@ -169,8 +169,8 @@ function databaseLines(database: DiagnosticsInput["database"]): string[] {
 function assignmentProblems(assignment: DiagnosticsAssignment, bot: DiagnosticsBot): string[] {
   const { server } = assignment;
   const problems: string[] = [];
+  // A member can let any bot in the Space use their own server, so the bot's maker may differ.
   if (assignment.spaceId !== bot.spaceId) problems.push("space differs from bot");
-  if (assignment.userId !== bot.userId) problems.push("user differs from bot");
   if (server.userId !== assignment.userId) problems.push("user differs from server");
   if (
     server.spaceId !== assignment.spaceId &&

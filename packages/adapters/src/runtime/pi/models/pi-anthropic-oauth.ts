@@ -1,7 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { AuthInteraction, OAuthCredential } from "@earendil-works/pi-ai";
-import { ResponseTooLargeError } from "@rakazo/core";
-import { readBodyCapped, withAbort } from "../../../web/web-ssrf.js";
+import { readResponseWithin } from "@rakazo/core";
 
 const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
@@ -108,26 +107,12 @@ export function createManualAnthropicOAuthLogin(options: ManualAnthropicOAuthOpt
 }
 
 async function readTokenResponse(response: Response, signal: AbortSignal): Promise<unknown> {
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (Number.isFinite(declared) && declared > MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES) {
-    const cancel = response.body?.cancel() ?? Promise.resolve();
-    await withAbort(
-      cancel.catch(() => undefined),
-      signal,
-    ).catch(() => undefined);
-    throw new ResponseTooLargeError("Anthropic token exchange response is too large.");
-  }
-  try {
-    const bytes = await readBodyCapped(response, MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES, signal);
-    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-  } catch (error) {
-    if (error instanceof ResponseTooLargeError) {
-      throw new ResponseTooLargeError("Anthropic token exchange response is too large.", {
-        cause: error,
-      });
-    }
-    throw error;
-  }
+  const bytes = await readResponseWithin(response, {
+    maxBytes: MAX_ANTHROPIC_TOKEN_RESPONSE_BYTES,
+    tooLargeMessage: "Anthropic token exchange response is too large.",
+    signal,
+  });
+  return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
 }
 
 function parseAuthorizationInput(input: string): { code?: string; state?: string } {

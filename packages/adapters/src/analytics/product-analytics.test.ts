@@ -41,11 +41,11 @@ describe("content-free product analytics", () => {
     const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     const analytics = createProductAnalytics(env, fetch)!;
     analytics.capture("internal-user-id", { name: "signed_in" }, undefined, {
-      "plan-layout": "tiers",
+      "fixture-test": "variant",
     });
     await analytics.flush();
     const body = JSON.parse(fetch.mock.calls[0]![1].body);
-    expect(body.batch[0].properties["$feature/plan-layout"]).toBe("tiers");
+    expect(body.batch[0].properties["$feature/fixture-test"]).toBe("variant");
   });
 
   it("only exports an allowlisted event and a pseudonymous identity", async () => {

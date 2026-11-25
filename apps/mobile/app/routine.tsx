@@ -3,11 +3,16 @@ import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import {
+  cronFromPreset,
   defaultCronPreset,
+  defaultRoutineEndDay,
   draftFromRoutine,
   emptyRoutineDraft,
+  formatRoutineEnd,
   isOneShotRoutineCrons,
+  routineCanEnd,
   routineCopy,
+  wallClock,
 } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +21,7 @@ import { useBotEmail } from "../components/bots/bot-email";
 import { GlassIconButton } from "../components/native/glass-icon-button";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { RoutineEmailTrigger } from "../components/routines/routine-email-trigger";
+import { RoutineEndDate } from "../components/routines/routine-end-date";
 import { RoutineScheduleEditor } from "../components/routines/routine-schedule-editor";
 import {
   SettingsGroup,
@@ -26,17 +32,18 @@ import {
 } from "../components/settings/settings-group";
 import { GrowingTextInput } from "../components/ui/growing-text-input";
 import { MenuPickerMenu } from "../components/ui/menu-picker";
-import { rpc } from "../lib/api/api";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
-import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
+import { useDateLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
+import { useSave } from "../lib/query/query";
 import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/routines/routine";
 import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
   routineDraftChanged,
+  routineDraftEventTriggered,
   routineSaveRequest,
   routineScheduleLocked,
   routineWithDraftTriggers,
@@ -167,34 +174,25 @@ function RoutineView({
 }) {
   const tokens = useMobileTokens();
   const { t } = useLingui();
-  const locale = useUiLocale();
+  const dateLocale = useDateLocale();
   const router = useRouter();
-  const [running, setRunning] = useState(false);
+  const testRun = useSave({
+    save: (_, send) => send("routines/testRun", { routineId: routine.id }),
+    onFailed: (cause) => Alert.alert(t`Could not run routine`, errorText(cause, t`Try again.`)),
+  });
   const triggers = routineTriggerRows(routine, deviceTimeZone());
   const nextRun =
     !routine.active || !routine.nextRunAt
       ? null
       : routine.scheduleDelayed
         ? t`Schedule delayed`
-        : new Date(routine.nextRunAt).toLocaleString(dateLocaleForUi(locale), {
+        : new Date(routine.nextRunAt).toLocaleString(dateLocale, {
             weekday: "short",
             month: "short",
             day: "numeric",
             hour: "numeric",
             minute: "2-digit",
           });
-
-  async function testRun() {
-    if (running) return;
-    setRunning(true);
-    try {
-      await rpc("routines/testRun", { routineId: routine.id });
-    } catch (cause) {
-      Alert.alert(t`Could not run routine`, errorText(cause, t`Try again.`));
-    } finally {
-      setRunning(false);
-    }
-  }
 
   return (
     <>
@@ -215,8 +213,8 @@ function RoutineView({
                     type: "button" as const,
                     label: t`Run now`,
                     icon: { type: "sfSymbol" as const, name: "play" },
-                    disabled: running,
-                    onPress: () => void testRun(),
+                    disabled: testRun.pending,
+                    onPress: () => testRun.run(),
                   },
                 ],
               }
@@ -226,8 +224,8 @@ function RoutineView({
                     accessibilityLabel={t`Run now`}
                     ios="play"
                     android="play"
-                    disabled={running}
-                    onPress={() => void testRun()}
+                    disabled={testRun.pending}
+                    onPress={() => testRun.run()}
                   />
                 ),
               }),
@@ -271,6 +269,13 @@ function RoutineView({
           <SettingsRow key={trigger} title={trigger} />
         ))}
         {nextRun ? <SettingsRow key="next" title={t`Next run`} value={nextRun} /> : null}
+        {routine.endsAt ? (
+          <SettingsRow
+            key="ends"
+            title={t`Ends`}
+            value={formatRoutineEnd(routine.endsAt, routine.timezone, dateLocale)}
+          />
+        ) : null}
       </SettingsGroup>
       <SettingsGroup>
         <SettingsRow
@@ -359,6 +364,11 @@ function RoutineEditor({
   const source = base ?? template;
   const kept = source ? routineWithDraftTriggers(source, draft) : null;
   const webTriggers = kept ? routineWebTriggers(kept) : [];
+  const draftCrons = draft.schedules.map(cronFromPreset);
+  const repeats =
+    !locked &&
+    routineCanEnd(draftCrons, Boolean(kept?.watch), routineDraftEventTriggered(draft, source));
+  const zone = draft.timezone ?? deviceTimeZone() ?? "UTC";
 
   // On Android, back leaves the form for the routine instead of leaving the routine.
   useEffect(() => {
@@ -377,7 +387,7 @@ function RoutineEditor({
 
   async function save() {
     if (busy.current) return;
-    const timezone = base?.timezone ?? deviceTimeZone() ?? "UTC";
+    const timezone = deviceTimeZone() ?? "UTC";
     const request = routineSaveRequest(draft, base, botId, timezone, template);
     if ("error" in request) {
       setSaveError(
@@ -568,6 +578,14 @@ function RoutineEditor({
               ))}
             </SettingsGroup>
           ) : null}
+          {repeats ? (
+            <RoutineEndDate
+              endsOn={draft.endsOn}
+              today={wallClock(new Date(), zone).slice(0, 10)}
+              firstDay={defaultRoutineEndDay(draftCrons, zone)}
+              onChange={(endsOn) => update({ endsOn })}
+            />
+          ) : null}
           {locked ? null : (
             <SettingsGroup>
               {/* A change trigger checks on its own interval, so it never shares a schedule. */}
@@ -586,7 +604,8 @@ function RoutineEditor({
                   accessibilityRole="button"
                   tinted
                   title={t`Add email trigger`}
-                  onPress={() => update({ emailSenders: "owner" })}
+                  // An email trigger's bot never gets the owner's computer.
+                  onPress={() => update({ emailSenders: "owner", useComputer: undefined })}
                 />
               ) : null}
             </SettingsGroup>
@@ -602,6 +621,17 @@ function RoutineEditor({
           onChange={(emailSenders) => update({ emailSenders })}
           onRemove={() => update({ emailSenders: null })}
         />
+      ) : null}
+      {/* Only the owner, with a computer paired, sees it; a watch's runs never get the computer. */}
+      {base?.useComputer !== undefined && !base.inChat && !kept?.watch && !draft.emailSenders ? (
+        <SettingsGroup>
+          <SettingsSwitch
+            key="computer"
+            label={t`Use my computer`}
+            value={draft.useComputer ?? base.useComputer}
+            onChange={(useComputer) => update({ useComputer })}
+          />
+        </SettingsGroup>
       ) : null}
       {base ? (
         <SettingsGroup>

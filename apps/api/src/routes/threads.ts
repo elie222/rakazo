@@ -34,7 +34,6 @@ import {
   touchGroupUpdatedAt,
   withTransactionRetry,
 } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
 import { HANG_UP_PROMPT } from "../bots/hidden-turns.prompt.js";
 import { assertTeachingSendAllowed } from "../bots/taught-skills.js";
 import { answerComputerRequest } from "../computers/computer-control.js";
@@ -59,6 +58,7 @@ import {
   setThreadSnooze,
   setThreadUnreadState,
 } from "../threads/thread-read-state.js";
+import { retryThreadRun } from "../threads/thread-retry.js";
 import { threadSnapshot } from "../threads/thread-snapshot.js";
 import { isStopMessage, stopThreadRuns } from "../threads/thread-stop.js";
 import type { ThreadTarget } from "../threads/thread-target.js";
@@ -225,8 +225,20 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         const peerRunCache = new Map<string, Promise<boolean>>();
         const backgroundRunCache = new Map<string, Promise<boolean>>();
-        const events = withHeartbeats(context, (signal) =>
-          deps.events.follow(target.threadId, input.cursor, signal),
+        // Filter before the event becomes a frame. A dropped peer or background event still
+        // re-checks the session, and it must not restart the silence window.
+        const events = withHeartbeats(
+          context,
+          (signal) => deps.events.follow(target.threadId, input.cursor, signal),
+          async (event) => {
+            if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
+              return shouldForwardPeerThreadEvent(event);
+            }
+            if (await isBackgroundRun(deps.prisma, event.runId, backgroundRunCache)) {
+              return shouldForwardBackgroundThreadEvent(event);
+            }
+            return true;
+          },
         );
         for await (const event of events) {
           if (event === HEARTBEAT) {
@@ -242,11 +254,6 @@ export function threadsRoutes(ctx: RouterContext) {
               payload: {},
             };
             continue;
-          }
-          if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
-            if (!shouldForwardPeerThreadEvent(event)) continue;
-          } else if (await isBackgroundRun(deps.prisma, event.runId, backgroundRunCache)) {
-            if (!shouldForwardBackgroundThreadEvent(event)) continue;
           }
           yield event;
         }
@@ -352,9 +359,7 @@ export function threadsRoutes(ctx: RouterContext) {
           takeoverReleaser(deps, context.actor, target),
         );
         if (result.eventSeq != null) {
-          await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {
-            getLogger().error("thread reaction realtime notification", error);
-          });
+          await deps.events.notify(target.threadId, result.eventSeq);
         }
         return { ok: true as const, runIds: result.runIds };
       }),
@@ -362,6 +367,11 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await stopThreadRuns(deps, context.actor, target);
         return { ok: true as const };
+      }),
+      retry: authed.threads.retry.handler(async ({ context, input }) => {
+        const { actor } = context;
+        const target = await resolveThreadTarget(deps.prisma, actor, input);
+        return retryThreadRun(deps, actor, target, input.runId);
       }),
       stopHelper: authed.threads.stopHelper.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
@@ -506,9 +516,7 @@ export function threadsRoutes(ctx: RouterContext) {
             { name: "message_sent", trigger: "follow_up" },
             { id: committed.message.id, at: committed.message.createdAt },
           );
-          await deps.events.notify(target.threadId, committed.eventSeq).catch((error) => {
-            getLogger().error("group follow-up realtime notification", error);
-          });
+          await deps.events.notify(target.threadId, committed.eventSeq);
           if (committed.runId) {
             await wakeRun(deps.jobs, committed.runId);
           }
@@ -640,9 +648,7 @@ export function threadsRoutes(ctx: RouterContext) {
             return null;
           });
         if (!committed) return { ok: true as const };
-        await deps.events.notify(threadId, committed.eventSeq).catch((error) => {
-          getLogger().error("call end realtime notification", error);
-        });
+        await deps.events.notify(threadId, committed.eventSeq);
         await wakeRun(deps.jobs, committed.runId);
         return { ok: true as const };
       }),
@@ -687,11 +693,7 @@ export function threadsRoutes(ctx: RouterContext) {
         });
         // The call waiting on this card hears it through the thread's events, wherever it runs.
         // The answer is saved: a missed signal only delays it to the waiting call's re-read.
-        if (committed)
-          await bestEffort(
-            "tool question notify",
-            deps.events.notify(committed.threadId, committed.seq),
-          );
+        if (committed) await deps.events.notify(committed.threadId, committed.seq);
         return { ok: true as const };
       }),
       markRead: authed.threads.markRead.handler(async ({ context, input }) => {

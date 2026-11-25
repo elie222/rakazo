@@ -72,6 +72,7 @@ import {
   isNpxCommand,
   parseNpxLaunch,
 } from "./mcp-package-installer.js";
+import { reportExpiredMcpSignIn } from "./mcp-reconnect-card.js";
 import type { McpServerHealthUpdate } from "./mcp-server-health.js";
 import { needsMcpOAuthClient, recordMcpServerHealth } from "./mcp-server-health.js";
 import { mcpToolAllowed } from "./mcp-tool-permissions.js";
@@ -254,8 +255,9 @@ export type McpConnectorOptions = {
   stdioEnabled?: boolean;
   allowedCommands?: string[];
   network?: RemoteTransportDependencies;
-  /** Audit sink for failed discovery. Without it the log line stays the only trace. */
-  events?: Pick<ThreadEvents, "append">;
+  /** Audit sink for failed discovery. Without it the log line stays the only trace. With
+   * `notify`, an expired sign-in also leaves its authorization card in the run's chat. */
+  events?: Pick<ThreadEvents, "append"> & Partial<Pick<ThreadEvents, "notify">>;
   allowPrivateEndpoint?: boolean;
   /** Where `npx` packages are installed; see `defaultMcpPackagesRoot`. */
   packagesDir?: string;
@@ -637,6 +639,14 @@ export class McpConnector implements ConnectorProvider {
             startedAt,
             secrets,
           );
+          // Only the bot's own assignment: the card's Authorize re-approves it.
+          if ("botId" in assignment)
+            await reportExpiredMcpSignIn(
+              { prisma: this.prisma, events: this.options.events },
+              context,
+              server,
+              error,
+            );
           return [unavailableTool(assignment.server, reason)];
         }
       }),
@@ -1267,7 +1277,9 @@ export class McpConnector implements ConnectorProvider {
           const tokens = await provider?.tokens();
           const expiresAt = accessTokenExpiresAt(material.oauth);
           if (!tokens || (expiresAt !== undefined && Date.now() >= expiresAt))
-            throw new McpReauthorizationRequiredError(server.id);
+            throw provider?.renewalPending
+              ? new McpConnectFailure("MCP sign-in could not be renewed yet", "unreachable")
+              : new McpReauthorizationRequiredError(server.id);
           values = {
             access_token: tokens.access_token,
             refresh_token: tokens.refresh_token,

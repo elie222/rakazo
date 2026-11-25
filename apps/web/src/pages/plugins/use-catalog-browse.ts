@@ -1,18 +1,17 @@
-import { useLingui } from "@lingui/react/macro";
 import type { ConnectionCatalogItem, PluginMarketplaceEntry } from "@rakazo/contracts";
-import type { PluginCategory } from "@rakazo/core";
 import {
+  browsablePlugins,
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
-  catalogItemKey,
   filterConnectionCatalogItems,
+  filterPluginBrands,
+  filterPlugins,
   integrationCatalogsReady,
-  managedAppFor,
-  matchesPluginQuery,
   matchesWordPrefixes,
-  OTHER_PLUGINS,
-  PLUGIN_CATEGORIES,
+  pluginBrands,
+  pluginCategories,
 } from "@rakazo/core";
+import { pluginCategoryLabel } from "@rakazo/i18n/plugin-catalog";
 import { useMemo, useState } from "react";
 import type { PluginConnections } from "./use-plugin-connections";
 
@@ -36,7 +35,6 @@ export function useCatalogBrowse({
   loadError: string | null;
   pluginCatalog: PluginConnections["pluginCatalog"];
 }) {
-  const { t } = useLingui();
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [category, setCategory] = useState<string | null>(null);
@@ -63,57 +61,18 @@ export function useCatalogBrowse({
     pluginsLoaded: pluginCatalog.isSuccess,
     pluginsUnavailable: !!pluginCatalog.data?.unavailableRegistries.length,
   });
-  // One row per brand: a plugin for a managed app lends that app its skills instead of being
-  // listed again. Skill packs with nothing to connect belong to Skills, not here.
-  const { plugins, pluginForApp } = useMemo(() => {
-    const forApp = new Map<string, PluginMarketplaceEntry>();
-    const listed: PluginMarketplaceEntry[] = [];
-    for (const entry of catalogEntries) {
-      const app = managedAppFor(entry, catalog);
-      if (app) {
-        if (entry.skillCount && !forApp.has(catalogItemKey(app)))
-          forApp.set(catalogItemKey(app), entry);
-      } else if (entry.hasConnector) listed.push(entry);
-    }
-    return { plugins: listed, pluginForApp: forApp };
-  }, [catalog, catalogEntries]);
-  const categoryLabels: Record<PluginCategory, string> = {
-    productivity: t`Productivity`,
-    communication: t`Communication`,
-    sales: t`Sales & CRM`,
-    marketing: t`Marketing`,
-    finance: t`Finance`,
-    people: t`Recruiting & HR`,
-    design: t`Design`,
-    code: t`Developer`,
-    data: t`Data`,
-    ops: t`Security & Ops`,
-  };
-  const categoryLabel = (name: string) => categoryLabels[name as PluginCategory] ?? name;
-  // Managed apps standing in for a plugin keep that plugin's category, so a category lists them too.
-  const mergedBrands = catalog.flatMap((item) => {
-    const entry = pluginForApp.get(catalogItemKey(item));
-    return entry ? [{ item, entry }] : [];
-  });
-  const categories: string[] = PLUGIN_CATEGORIES.filter(
-    (name) =>
-      plugins.some((entry) => entry.category === name) ||
-      mergedBrands.some(({ entry }) => entry.category === name),
+  const { plugins, pluginForApp } = useMemo(
+    () => browsablePlugins(catalogEntries, catalog),
+    [catalog, catalogEntries],
   );
-  const brandMatches = category
-    ? mergedBrands.filter(
-        ({ item, entry }) =>
-          entry.category === (category === OTHER_PLUGINS ? null : category) &&
-          (matchesWordPrefixes(item.name, query) ||
-            matchesPluginQuery(entry, query, categoryLabel(entry.category ?? ""))),
-      )
-    : [];
+  const mergedBrands = pluginBrands(catalog, pluginForApp);
+  const categories: string[] = pluginCategories([
+    ...plugins,
+    ...mergedBrands.map(({ entry }) => entry),
+  ]);
+  const brandMatches = filterPluginBrands(mergedBrands, query, category, pluginCategoryLabel);
   const searching = query.trim().length > 0;
-  const pluginMatches = plugins.filter(
-    (entry) =>
-      (!category || entry.category === (category === OTHER_PLUGINS ? null : category)) &&
-      matchesPluginQuery(entry, query, entry.category ? categoryLabel(entry.category) : ""),
-  );
+  const pluginMatches = filterPlugins(plugins, query, category, pluginCategoryLabel);
 
   return {
     query,
@@ -134,7 +93,7 @@ export function useCatalogBrowse({
     catalogsReady,
     plugins,
     pluginForApp,
-    categoryLabel,
+    categoryLabel: pluginCategoryLabel,
     categories,
     brandMatches,
     searching,

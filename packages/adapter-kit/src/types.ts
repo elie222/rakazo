@@ -312,6 +312,8 @@ export interface SandboxKindCapabilities {
   maxFileBytes?: number;
   /** The provider confirms machine size for size-based allowance accounting. */
   sizedUsage?: boolean;
+  /** On the desktop app's own server, the person may give bots the host machine instead. */
+  offersHostComputer?: boolean;
 }
 
 export interface SandboxCapabilities {
@@ -771,7 +773,11 @@ export interface AgentRunRequest {
    */
   yieldSignal?: AbortSignal;
   /** Human answer or takeover outcome for the pending interaction. Never secret input. */
-  resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
+  resumeToolResult?: {
+    content: Array<{ type: "text"; text: string }>;
+    /** History rows fully represented by the restored turn and its human answer. */
+    historyMessageIds?: string[];
+  };
   script?: ScriptedTurn[];
   /**
    * FYI bot-message wakes and scheduled routines may finish with no text.
@@ -1163,6 +1169,7 @@ export type SecretCleanupKind =
   | "secret_tables"
   | "messaging_installation"
   | "deployment_computer_provider"
+  | "deployment_model"
   | "purchase_request"
   | "purchase_card"
   | "purchase_token"
@@ -1283,9 +1290,25 @@ export interface MessagingCapabilities {
   files?: boolean;
 }
 
+/**
+ * What one platform accepts outbound. The platform that owns a limit declares it here, so shared
+ * code never branches on a provider id.
+ */
+export interface MessagingOutbound {
+  /** Renders the app's markdown as this platform's own formatting. */
+  markdown?: boolean;
+  /** Splits a body longer than the platform's limit into the payloads it accepts. */
+  split?(body: string): string[];
+  /** Largest attachment accepted in one message; a larger one is refused before sending. */
+  attachmentLimitBytes?: number;
+  /** Shows an image this size or smaller inline as a photo, for these content types. */
+  photo?: { maxBytes: number; types: ReadonlySet<string> };
+}
+
 /** One messaging platform behind the chat surface (sendblue, slack, …). */
 export interface MessagingPlatformDescriptor {
   provider: string;
+  outbound?: MessagingOutbound;
   capabilities: MessagingCapabilities;
   /** The line people message to reach this deployment (a phone number), when it has one. */
   address?: string;
@@ -1458,6 +1481,8 @@ export interface WebFetchResult {
   title: string;
   text: string;
   truncated: boolean;
+  /** The URL served a picture rather than a page: its raw bytes, with `text` left empty. */
+  image?: Uint8Array;
 }
 
 /** Page-level browser on the bot computer (DOM refs), not a hosted browser vendor. */
@@ -1841,6 +1866,22 @@ export interface BillingPlanPayment {
   reversed: boolean;
 }
 
+export interface BillingInvoiceRefund {
+  invoiceId: string;
+  /** The number on the customer's receipt; null when the provider gave the invoice none. */
+  invoiceNumber: string | null;
+  /** When the invoice was created, as an ISO timestamp. */
+  createdAt: string;
+  /** The id the provider's credit purchases list the invoice's payment under; read on a preview. */
+  creditPurchaseId: string;
+  amountMinor: number;
+  currency: string;
+  state: "refundable" | "pending" | "succeeded";
+  refundId?: string;
+  /** What the refund returns, once there is one; it can be less than the charge. */
+  refundedMinor?: number;
+}
+
 export interface BillingCreditCheckoutRequest {
   customerId: string;
   amountCents: number;
@@ -1872,7 +1913,10 @@ export interface BillingSubscriptionSnapshot {
   currentPeriodEndsAt: Date | null;
   cancelAtPeriodEnd: boolean;
   endedAt: Date | null;
-  /** When the latest invoice was settled, if it billed anything: a trial's free invoice is no payment. */
+  /**
+   * When the latest invoice was settled, if it billed anything: a trial's free invoice is no
+   * payment. For a subscription that no longer grants access, its first paid invoice counts too.
+   */
   paidAt?: Date;
   /** The flat own-key plan, which grants access without credits. */
   byokPlan?: boolean;

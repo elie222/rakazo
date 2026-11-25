@@ -227,7 +227,9 @@ ${script}`;
       const trustedFiles = [
         "package.json",
         "scripts/publish-playwright-report.sh",
+        "scripts/publish-playwright-history.sh",
         "packages/testkit/src/screenshots/generate-playwright-report-dashboard.ts",
+        "packages/testkit/src/screenshots/update-playwright-history.ts",
         "packages/testkit/src/screenshots/build-playwright-pr-screenshot-comment.ts",
         "packages/testkit/src/screenshots/playwright-report-dashboard.ts",
         "packages/testkit/src/screenshots/playwright-pr-screenshot-comment.ts",
@@ -309,6 +311,8 @@ else:
         PLAYWRIGHT_PR_NUMBER: isPr ? "42" : "",
         PLAYWRIGHT_REPOSITORY_URL: "https://example.invalid/project",
         PLAYWRIGHT_PUBLISH_REPORT: String(!isPr),
+        // Pull requests leave the shared history to the serialized history job.
+        PLAYWRIGHT_UPDATE_HISTORY: String(!isPr),
         PLAYWRIGHT_REPORT_DIR: path.join(artifacts, "playwright-report"),
         PLAYWRIGHT_TEST_RESULTS_DIR: path.join(artifacts, "apps/web/test-results"),
         FAKE_STORAGE: storage,
@@ -333,8 +337,13 @@ else:
           screenshot,
         );
       }
+      const outputs = readFileSync(env.GITHUB_OUTPUT, "utf8");
+      const entry = JSON.parse(outputs.match(/^history_entry=(.*)$/m)?.[1] ?? "null");
+      expect(entry).toMatchObject({ id: "200", attempt: 1, sha: "a".repeat(40) });
+      expect(existsSync(path.join(published, "history.json"))).toBe(!isPr);
+      expect(existsSync(path.join(published, "index.html"))).toBe(!isPr);
       if (isPr) {
-        expect(readFileSync(env.GITHUB_OUTPUT, "utf8")).toContain("latest_pr_run=true");
+        expect(entry.pullRequestNumber).toBe(42);
         const changedFiles = path.join(root, "changed-files.jsonl");
         write(changedFiles, `${JSON.stringify({ filename: "apps/web/src/example.tsx" })}\n`);
         const comment = execFileSync(

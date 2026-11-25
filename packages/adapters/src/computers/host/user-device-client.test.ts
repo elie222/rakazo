@@ -254,7 +254,7 @@ describe("user device client", () => {
         request: { method: "provision", botId: "bot" },
       }),
     );
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await until(() => answer !== undefined);
     client!.cancelAll();
     await until(() => received.some((frame) => frame.id === "long" && "error" in frame.frame));
     await until(() => received.some((frame) => frame.id === "wait"));

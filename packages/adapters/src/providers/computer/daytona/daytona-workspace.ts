@@ -1,11 +1,12 @@
 import type { AdapterContext, PortableFile, WorkspaceExportLimits } from "@rakazo/adapter-kit";
 import { WorkspaceTooLargeError } from "@rakazo/adapter-kit";
-import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import { batchesOf } from "../../../computers/computer-workspace.js";
 import {
   normalizeWorkspacePath,
   workspacePath,
 } from "../../../computers/screens/computer-support.js";
 import { shouldSkipPortableWorkspaceFile } from "../../../storage/workspace-save-policy.js";
+import { daytonaRateLimitError } from "./daytona-rate-limit.js";
 import type { DaytonaSandbox } from "./daytona-sandbox.js";
 
 export function isDaytonaExecutable(mode: string, permissions: string): boolean {
@@ -40,7 +41,7 @@ export async function* walkDaytonaWorkspace(
     if (counted.files > limits.maxFiles) throw new WorkspaceTooLargeError("files");
     if (counted.bytes > limits.maxBytes) throw new WorkspaceTooLargeError("bytes");
   }
-  for (const entries of daytonaExportBatches(files)) {
+  for (const entries of batchesOf(files, 8, (file) => file.entry.size)) {
     const batch = await Promise.all(
       entries.map(async ({ entry, relative }) => {
         const content = await downloadDaytonaFile(sandbox, root, relative);
@@ -67,6 +68,8 @@ async function listDaytonaFolder(sandbox: DaytonaSandbox, root: string, director
   try {
     return await sandbox.fs.listFiles(workspacePath(root, directory));
   } catch (error) {
+    const limited = await daytonaRateLimitError(error);
+    if (limited) throw limited;
     if (directory && (await isVanishedEntry(sandbox, root, error))) return undefined;
     throw error;
   }
@@ -77,6 +80,8 @@ async function downloadDaytonaFile(sandbox: DaytonaSandbox, root: string, relati
   try {
     return await sandbox.fs.downloadFile(workspacePath(root, relative));
   } catch (error) {
+    const limited = await daytonaRateLimitError(error);
+    if (limited) throw limited;
     if (await isVanishedEntry(sandbox, root, error)) return undefined;
     throw error;
   }
@@ -99,16 +104,4 @@ async function isVanishedEntry(
     throw error;
   }
   return true;
-}
-
-function daytonaExportBatches<T extends { entry: { size: number } }>(files: readonly T[]): T[][] {
-  const batches: T[][] = [];
-  const batcher = new PortableFileBatcher<T>(8, (file) => file.entry.size);
-  for (const file of files) {
-    const full = batcher.add(file);
-    if (full?.length) batches.push(full);
-  }
-  const last = batcher.take();
-  if (last.length) batches.push(last);
-  return batches;
 }

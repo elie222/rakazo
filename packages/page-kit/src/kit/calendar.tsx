@@ -447,6 +447,6 @@ export const CALENDAR_CSS = `
 .rk-cal-event[data-done] .rk-cal-event-title{text-decoration:line-through}
 .rk-cal-now{position:absolute;left:-4px;right:0;height:2px;margin-top:-1px;background:var(--rk-danger);z-index:1}
 .rk-cal-now::before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--rk-danger)}
-@media (max-width:640px){.rk-cal-more-word{display:none}.rk-cal{padding:12px}.rk-cal-month td{height:56px}.rk-cal-day{padding:4px 2px}.rk-cal-heads,.rk-cal-columns{min-width:448px}.rk-cal-timed .rk-cal-body{min-width:508px}.rk-cal-timed{overflow-x:auto}}
+@media (max-width:640px){.rk-cal-more-word{display:none}.rk-cal{padding:12px}.rk-cal-month td{height:56px}.rk-cal-day{padding:4px 2px}.rk-cal-week .rk-cal-heads,.rk-cal-week .rk-cal-columns{min-width:448px}.rk-cal-timed{overflow-x:auto}}
 @media print{.rk-cal{break-inside:avoid;overflow:visible}}
 `;

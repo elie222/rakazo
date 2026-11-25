@@ -1,7 +1,8 @@
 import { ph, t } from "@lingui/core/macro";
 import type { Routine } from "@rakazo/contracts";
-import { formatCron } from "@rakazo/core";
-import { cronLabels } from "./cron";
+import { formatCron, formatRoutineEnd } from "@rakazo/core";
+import { cronLabels } from "@rakazo/i18n/cron";
+import { dateLocaleForUi, getActiveUiLocale } from "../i18n/i18n";
 
 /** Triggers set up on web. Mobile lists them and can remove them, but not add or edit them. */
 export type RoutineWebTrigger = "webhookEnabled" | "githubEnabled" | "messageProvider" | "watch";
@@ -37,10 +38,14 @@ export function routineTriggerNames(routine: Routine): string[] {
 }
 
 function routineTriggers(routine: Routine): string {
-  const labels = cronLabels();
+  const labels = cronLabels(getActiveUiLocale());
+  const end = routine.endsAt
+    ? formatRoutineEnd(routine.endsAt, routine.timezone, dateLocaleForUi())
+    : null;
   return [
     ...routine.crons.map((cron) => formatCron(cron, labels)),
     ...routineTriggerNames(routine),
+    ...(end ? [t`until ${end}`] : []),
   ].join(", ");
 }
 
@@ -52,7 +57,7 @@ function routineSchedule(routine: Routine, zone: string | undefined): string {
 
 /** One line per trigger for a routine's detail; schedules name their zone when it isn't the device's. */
 export function routineTriggerRows(routine: Routine, deviceTimeZone: string | undefined): string[] {
-  const labels = cronLabels();
+  const labels = cronLabels(getActiveUiLocale());
   const zone = routine.timezone === deviceTimeZone ? "" : ` (${routine.timezone})`;
   return [
     ...routine.crons.map((cron) => `${formatCron(cron, labels)}${zone}`),

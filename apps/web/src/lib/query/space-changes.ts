@@ -11,6 +11,13 @@ type Procedure = {
 }[keyof RpcClient & string];
 
 const READS: Record<ReadChangeKind, readonly Procedure[]> = {
+  deploymentModel: [],
+  preferences: [
+    ["approvalRules", "list"],
+    ["approvalRules", "effective"],
+    ["autoReview", "get"],
+    ["spaceSettings", "overrides"],
+  ],
   runs: [
     ["runs", "list"],
     ["routines", "history"],
@@ -42,8 +49,12 @@ export const isReadChangeKind = (kind: string): kind is ReadChangeKind =>
 export function spaceChanged(kind: ReadChangeKind, client = queryClient): Promise<void> {
   const procedures = READS[kind].map((procedure) => procedure.join("."));
   const filters: QueryFilters = {
-    predicate: ({ queryKey: [path] }) =>
-      Array.isArray(path) && procedures.includes(path.slice(-2).join(".")),
+    predicate: ({ queryKey: [path] }) => {
+      if (!Array.isArray(path)) return false;
+      if (kind === "deploymentModel") return path[2] === "me" || path[2] === "models";
+      if (kind === "preferences" && path[2] === "me") return true;
+      return procedures.includes(path.slice(-2).join("."));
+    },
   };
   return refreshQueriesAfterSignal(client, filters);
 }

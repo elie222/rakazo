@@ -23,7 +23,7 @@ export function CloudAgentCard({
     <Card size="sm" className="w-80 max-w-full" data-testid="cloud-agent-card">
       <CardContent className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-3">
-          <span className="font-medium" dir="auto">
+          <span className="min-w-0 font-medium wrap-anywhere" dir="auto">
             {block.title}
           </span>
           <Badge
@@ -54,7 +54,7 @@ export function CloudAgentCard({
             <Trans>Pull request</Trans>
           </span>
         ) : block.branch ? (
-          <span className="text-muted-foreground" dir="auto">
+          <span className="wrap-anywhere text-muted-foreground" dir="auto">
             {block.branch}
           </span>
         ) : null}
