@@ -1045,10 +1045,12 @@ services:
       TS_HOSTNAME: ${TAILSCALE_HOSTNAME:-rakazo}
       TS_STATE_DIR: /var/lib/tailscale
       TS_USERSPACE: "true"
-      TS_SERVE_CONFIG: /config/serve.json
-    configs:
-      - source: tailscale-serve
-        target: /config/serve.json
+      TS_SERVE_CONFIG: /tmp/serve.json
+      RAKAZO_SERVE_CONFIG: '{"TCP": {"443": {"HTTPS": true}}, "Web": {"$${TS_CERT_DOMAIN}:443": {"Handlers": {"/": {"Proxy": "http://web:5173"}}}}}'
+    entrypoint:
+      - /bin/sh
+      - -c
+      - printf "%s" "$$RAKAZO_SERVE_CONFIG" > /tmp/serve.json && exec /usr/local/bin/containerboot
     volumes:
       - tailscale-state:/var/lib/tailscale
     networks:
@@ -1125,11 +1127,6 @@ services:
       - secrets-worker:/services/worker
       - secrets-web:/services/web
       - secrets-supervisor:/services/supervisor
-configs:
-  tailscale-serve:
-    content: |
-      {"TCP": {"443": {"HTTPS": true}},
-       "Web": {"$${TS_CERT_DOMAIN}:443": {"Handlers": {"/": {"Proxy": "http://web:5173"}}}}}
 volumes:
   ingress:
   tailscale-ingress-state:
