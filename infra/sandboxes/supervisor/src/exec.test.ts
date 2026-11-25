@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { access, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { Duplex, PassThrough, Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
@@ -11,7 +11,8 @@ import { createDockerStreamDemuxer } from "./supervisor-logic.js";
 const mock = vi.hoisted(() => ({
   exec: vi.fn(),
   inspect: vi.fn(),
-  onNextClose: undefined as (() => Promise<void>) | undefined,
+  onNextWrite: undefined as ((filePath: string) => Promise<void>) | undefined,
+  onNextClose: undefined as ((close: () => Promise<void>) => Promise<void>) | undefined,
 }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -19,14 +20,26 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     ...actual,
     open: async (...args: Parameters<typeof actual.open>) => {
       const handle = await actual.open(...args);
-      const hook = mock.onNextClose;
-      if (!hook) return handle;
-      mock.onNextClose = undefined;
-      const origClose = handle.close.bind(handle);
-      handle.close = async () => {
-        await hook();
-        return origClose();
-      };
+      const writeHook = mock.onNextWrite;
+      if (writeHook) {
+        mock.onNextWrite = undefined;
+        const filePath = String(args[0]);
+        const origWrite = handle.write.bind(handle);
+        let checked = false;
+        handle.write = (async (...writeArgs: Parameters<typeof origWrite>) => {
+          if (!checked) {
+            checked = true;
+            await writeHook(filePath);
+          }
+          return origWrite(...writeArgs);
+        }) as typeof handle.write;
+      }
+      const closeHook = mock.onNextClose;
+      if (closeHook) {
+        mock.onNextClose = undefined;
+        const origClose = handle.close.bind(handle);
+        handle.close = async () => closeHook(origClose);
+      }
       return handle;
     },
   };
@@ -505,7 +518,8 @@ describe("POST /computers/:id/exec streaming", () => {
 
     // 1. Legacy spooled HEAD read unlinks immediately and closes its spool handle on cancel.
     let headHandleClosed = false;
-    mock.onNextClose = async () => {
+    mock.onNextClose = async (close) => {
+      await close();
       headHandleClosed = true;
     };
     const legacyStream = new PassThrough();
@@ -561,9 +575,15 @@ describe("POST /computers/:id/exec streaming", () => {
     expect(await directHead.text()).toBe("");
     expect(destroy).toHaveBeenCalled();
 
-    // 3. Spool path is already unlinked while open, and aborting closes the handle without body.cancel().
+    // 3. Spool path is unlinked before the first write, and aborting closes the handle without body.cancel().
+    let unlinkedBeforeFirstWrite = false;
+    mock.onNextWrite = async (filePath) => {
+      await expect(access(filePath)).rejects.toMatchObject({ code: "ENOENT" });
+      unlinkedBeforeFirstWrite = true;
+    };
     let abortHandleClosed = false;
-    mock.onNextClose = async () => {
+    mock.onNextClose = async (close) => {
+      await close();
       abortHandleClosed = true;
     };
     const abortStream = new PassThrough();
@@ -584,12 +604,7 @@ describe("POST /computers/:id/exec streaming", () => {
     const abortOutcome = await abortOutcomePromise;
     expect(abortOutcome.kind).toBe("stream");
     if (abortOutcome.kind !== "stream") return;
-    // Even before reading or aborting, no named spool file remains in tmpdir.
-    expect(
-      (await readdir(tmpdir())).filter(
-        (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),
-      ),
-    ).toEqual([]);
+    expect(unlinkedBeforeFirstWrite).toBe(true);
     const abortReader = abortOutcome.body.getReader();
     // Drain the initial '{"content":"' chunk so the next read invokes pull().
     await abortReader.read();
@@ -600,7 +615,8 @@ describe("POST /computers/:id/exec streaming", () => {
 
     // Also verify aborting before any reader attaches closes the spool handle without body.cancel().
     let unconsumedHandleClosed = false;
-    mock.onNextClose = async () => {
+    mock.onNextClose = async (close) => {
+      await close();
       unconsumedHandleClosed = true;
     };
     const unconsumedStream = new PassThrough();
@@ -627,9 +643,12 @@ describe("POST /computers/:id/exec streaming", () => {
     // 4. Aborting while EOF spool close() is held rejects the pending read before cleanup resumes.
     const closeStarted = deferred();
     const closeGate = deferred();
-    mock.onNextClose = async () => {
+    let eofHandleClosed = false;
+    mock.onNextClose = async (close) => {
       closeStarted.resolve();
       await closeGate.promise;
+      await close();
+      eofHandleClosed = true;
     };
     try {
       const eofStream = new PassThrough();
@@ -675,17 +694,14 @@ describe("POST /computers/:id/exec streaming", () => {
         expect(outcome.error).toBeInstanceOf(Error);
         expect((outcome.error as Error).message).toBe("aborted during eof cleanup");
       }
+      expect(eofHandleClosed).toBe(false);
       closeGate.resolve();
+      await vi.waitFor(() => expect(eofHandleClosed).toBe(true));
     } finally {
+      mock.onNextWrite = undefined;
       mock.onNextClose = undefined;
       closeGate.resolve();
     }
-    await vi.waitFor(async () => {
-      const remaining = (await readdir(tmpdir())).filter(
-        (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),
-      );
-      expect(remaining).toEqual([]);
-    });
   });
 
   it("caps writeContainerFile diagnostics after demultiplexing without corrupting frames", async () => {

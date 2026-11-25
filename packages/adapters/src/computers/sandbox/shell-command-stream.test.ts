@@ -806,6 +806,57 @@ describe("observeShellCommand", () => {
     }
   });
 
+  it("withholds shorter self-overlapping secret continuations on compacted live snapshots", async () => {
+    const cutTail = "CUT_TAIL_MARKER_";
+    const cutSecret = `CUT_HEAD_${cutTail}`;
+    const tailFiller = "m".repeat(63_974);
+    // Secret starts with self-overlapping "ABAB"; stdout ends with "ABABAB", so the longest prefix
+    // match is "ABAB" (4 chars) while the shorter match "AB" (2 chars) continues into stderr.
+    const selfOverlapPart1 = "AB_SELF_OVERLAP_P1_";
+    const selfOverlapPart2 = "SELF_OVERLAP_P2";
+    const selfOverlapSecret = `AB${selfOverlapPart1}${selfOverlapPart2}`;
+    const maskWidenerSecret = `AD_${cutTail}${tailFiller}ABABABNEVER_EMITTED`;
+    const secrets: string[] = [];
+    const registerGate = deferred();
+    const part2Gate = deferred();
+    const liveSnapshots: Array<{ stdout: string; stderr: string }> = [];
+    let stage = 0;
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield {
+          type: "stdout" as const,
+          data: `${"p".repeat(160_000)}CUT_HEAD_${cutTail}${tailFiller}ABABAB`,
+        };
+        await registerGate.promise;
+        yield { type: "stderr" as const, data: selfOverlapPart1 };
+        await part2Gate.promise;
+        yield { type: "stderr" as const, data: `${selfOverlapPart2}\nSELF_OVERLAP_OK\n` };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets,
+        onOutput: (snapshot) => {
+          if (stage === 0 && snapshot.stdout.includes("characters omitted")) {
+            stage = 1;
+            secrets.push(cutSecret, maskWidenerSecret, selfOverlapSecret);
+            registerGate.resolve();
+            return;
+          }
+          if (stage === 1) {
+            stage = 2;
+            liveSnapshots.push(snapshot);
+            part2Gate.resolve();
+          }
+        },
+      },
+    );
+    expect(liveSnapshots).toHaveLength(1);
+    expect(liveSnapshots[0]!.stderr).not.toContain(selfOverlapPart1);
+    expect(observed.result.stderr).not.toContain(selfOverlapPart1);
+    expect(observed.result.stderr).not.toContain(selfOverlapPart2);
+    expect(observed.result.stderr).toContain("SELF_OVERLAP_OK");
+  });
+
   it("throttles live onOutput snapshots when onOutputIntervalMs is set", async () => {
     const gate = deferred();
     const seen: string[] = [];

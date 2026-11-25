@@ -538,8 +538,9 @@ export async function readContainerFile(
   target: string,
   options: { maxBytes?: number; signal?: AbortSignal; signalMidStreamOverflow?: boolean } = {},
 ): Promise<ReadContainerFileOutcome> {
-  // Older adapters during a rolling deploy expect HTTP 413 even if a file grows after reads start;
-  // spool bounded legacy reads to disk so status is decided before headers without buffering in RAM.
+  // compat-shim(after v0.16.0): older adapters during a rolling deploy expect HTTP 413 even if a
+  // file grows after reads start; spool bounded legacy reads to disk until all callers send
+  // overflow=marker.
   if (!options.signalMidStreamOverflow && options.maxBytes !== undefined) {
     return readContainerFileSpooled(container, target, options.maxBytes, options.signal);
   }

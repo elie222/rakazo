@@ -407,16 +407,10 @@ function collectSpanningMatches(
   return spans;
 }
 
-function secretContinuationLen(text: string, secret: string, offset: number): number {
-  const limit = Math.min(text.length, secret.length - offset);
-  let size = 0;
-  while (size < limit && text.charCodeAt(size) === secret.charCodeAt(offset + size)) size += 1;
-  return size;
-}
-
 /**
- * For every index `pos` in `[0, haystack.length)` where `positions[pos] === 1`, calls
- * `onContinuation(pos, len)` with `len = longest common prefix of needle and haystack.slice(pos)`,
+ * For every index `pos` in `[0, Math.min(haystack.length, positions.length))` where
+ * `positions[pos] === 1`, calls `onContinuation(pos, len)` with
+ * `len = longest common prefix of needle and haystack.slice(pos)`,
  * in O(needle.length + haystack.length) time with zero string concatenation.
  */
 function scanContinuationLengths(
@@ -426,7 +420,8 @@ function scanContinuationLengths(
   onContinuation: (pos: number, len: number) => void,
 ): void {
   const n = Math.min(needle.length, haystack.length);
-  if (n === 0) return;
+  const scanLimit = Math.min(haystack.length, positions.length);
+  if (n === 0 || scanLimit === 0) return;
   const z = new Int32Array(n);
   let l = 0;
   let r = 0;
@@ -441,7 +436,7 @@ function scanContinuationLengths(
   }
   l = 0;
   r = 0;
-  for (let i = 0; i < haystack.length; i += 1) {
+  for (let i = 0; i < scanLimit; i += 1) {
     let k = i < r ? Math.min(r - i, z[i - l]!) : 0;
     while (
       k < n &&
@@ -543,11 +538,23 @@ function redactCompactedStreams(
         if (withholdPartial) {
           for (const secret of secrets) {
             if (secret.length < 2) continue;
-            const prefixLen = secretPrefixSuffixLength(stdoutTail, secret);
-            if (prefixLen <= 0) continue;
-            const suffixLen =
-              stderrHead.length > 0 ? secretContinuationLen(stderrHead, secret, prefixLen) : 0;
-            edges.push({ prefixLen, suffixLen, fromStderrCut: false });
+            const maxPrefix = Math.min(stdoutTail.length, secret.length - 1);
+            const validPrefixes = secretPrefixSuffixBorders(stdoutTail, secret, maxPrefix);
+            let longestPrefix = 0;
+            for (let len = maxPrefix; len >= 1; len -= 1) {
+              if (validPrefixes[len]) {
+                longestPrefix = len;
+                break;
+              }
+            }
+            if (longestPrefix <= 0) continue;
+            let maxCont = 0;
+            if (stderrHead.length > 0) {
+              scanContinuationLengths(stderrHead, secret, validPrefixes, (_pos, len) => {
+                if (len > maxCont) maxCont = len;
+              });
+            }
+            edges.push({ prefixLen: longestPrefix, suffixLen: maxCont, fromStderrCut: false });
           }
         }
         let grew = true;
