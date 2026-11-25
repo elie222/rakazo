@@ -77,14 +77,14 @@ const SELF_HOSTED_PLAN: PricingPlan = {
   action: { label: "Self-hosting guide", href: SELF_HOST_GUIDE_PATH },
 };
 
+const STANDARD_YEARLY =
+  STANDARD_ANNUAL_CENTS === null ? undefined : yearlyPrice(STANDARD_ANNUAL_CENTS);
+
 const OWN_MODEL_PLAN: PricingPlan = {
   name: "Your model",
   price: STANDARD.monthlyPriceCents === null ? "Free" : `${dollars(STANDARD.monthlyPriceCents)}/mo`,
-  note:
-    STANDARD.annualPriceCents === null
-      ? undefined
-      : `${dollars(STANDARD.annualPriceCents / 12)}/mo billed yearly`,
-  yearly: STANDARD_ANNUAL_CENTS === null ? undefined : yearlyPrice(STANDARD_ANNUAL_CENTS),
+  note: STANDARD_YEARLY && `${STANDARD_YEARLY.price} billed yearly`,
+  yearly: STANDARD_YEARLY,
   features: [
     "Hosted by us",
     "Claude, ChatGPT, or any API key",
