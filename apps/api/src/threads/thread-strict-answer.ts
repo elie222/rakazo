@@ -44,6 +44,22 @@ export function parseMessageBlocks(message: { id: string; blocks: unknown }) {
   return { blocks, intact: read.intact && blocks.length === read.blocks.length };
 }
 
+/**
+ * The run a reply to a question card targets (or null when the card has no run).
+ * A bot message that lost entries may have lost its question, so it still targets only itself.
+ */
+export function repliedQuestionTarget(
+  reply: { role: string; runId: string | null },
+  blocks: readonly MessageBlock[],
+  intact: boolean,
+): string | null | undefined {
+  if (reply.role !== "bot") return undefined;
+  if (!intact || blocks.some((block) => block.kind === "ask" && isQuestionAskBlock(block))) {
+    return reply.runId;
+  }
+  return undefined;
+}
+
 export function validateStrictAnswerInput(input: {
   answersQuestion?: true;
   replyToMessageId?: string;

@@ -2148,15 +2148,28 @@ describe("sendThreadMessage", () => {
     },
   );
 
-  it.each(["bot", "group"] as const)(
-    "does not resume a different waiting run when replying to an answered question card (%s)",
-    async (kind) => {
+  it.each([
+    { kind: "bot" as const, answeredRunId: "run-done", label: "different waiting run (bot)" },
+    { kind: "group" as const, answeredRunId: "run-done", label: "different waiting run (group)" },
+    {
+      kind: "bot" as const,
+      answeredRunId: "run-waiting-1",
+      label: "newer question from the same run (bot)",
+    },
+    {
+      kind: "group" as const,
+      answeredRunId: "run-waiting-1",
+      label: "newer question from the same run (group)",
+    },
+  ])(
+    "does not answer or retire a $label when replying to an answered question card",
+    async ({ kind, answeredRunId }) => {
       const answeredAsk = {
         id: "ask-answered",
         role: "bot",
         botId: "bot-1",
         authorUserId: null,
-        runId: "run-done",
+        runId: answeredRunId,
         blocks: [{ kind: "ask", text: "Old question?", status: "answered", answer: "Rome" }],
       };
       const waitingAsk = {

@@ -660,4 +660,56 @@ describe("current image send admission", () => {
       textOnly.send(undefined, "confirm", { replyToMessageId: "ask-answered" }),
     ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
   });
+
+  it("checks the replied pending run model during image admission after an intervening message", async () => {
+    const pendingAsk = {
+      id: "ask-pending",
+      seq: 1,
+      role: "bot",
+      botId: "bot-1",
+      authorUserId: null,
+      runId: "run-waiting",
+      blocks: [{ kind: "ask", text: "Which photo?", status: "pending" }],
+    };
+    const intervening = {
+      id: "msg-intervening",
+      seq: 2,
+      role: "user",
+      botId: null,
+      authorUserId: "user-1",
+      runId: null,
+      blocks: [{ kind: "text", text: "One moment" }],
+      replyToMessageId: null,
+    };
+
+    const { tx, send } = fixture();
+    tx.bot.findFirst.mockResolvedValue({
+      id: "bot-1",
+      modelProvider: "openrouter",
+      modelId: "openai/gpt-4o",
+    });
+    tx.message.findFirst = vi.fn(async ({ where }: { where: { id?: string } }) =>
+      where.id === "ask-pending" ? pendingAsk : intervening,
+    ) as never;
+    tx.message.findMany = vi.fn().mockResolvedValue([pendingAsk]) as never;
+    tx.run.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "run-waiting",
+          taskId: "task-waiting",
+          status: "waiting_input",
+          userId: "user-1",
+          trigger: "user",
+          modelProvider: "openrouter",
+          modelId: "deepseek/deepseek-v4-pro",
+          modelPinned: true,
+        },
+      ] as never)
+      .mockResolvedValue([]);
+
+    await expect(
+      send(undefined, "confirm", { text: "Here it is", replyToMessageId: "ask-pending" }),
+    ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
+    expect(tx.message.create).not.toHaveBeenCalled();
+  });
 });

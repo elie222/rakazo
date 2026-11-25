@@ -13,7 +13,6 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   callIdFromClientNonce,
   isConversationalRun,
-  isQuestionAskBlock,
   MODEL_REQUIRED_SEND_ERROR,
   memberMessageAlerts,
   mentionedGroupBotIds,
@@ -60,6 +59,7 @@ import {
   QuestionAlreadyAnsweredError,
   RUNS_NEEDING_CONTINUE,
   replayExistingSend,
+  repliedQuestionTarget,
   sendResult,
   validateStrictAnswerInput,
 } from "./thread-strict-answer.js";
@@ -354,11 +354,12 @@ async function assertImageRecipients(
     botId: string;
     runs: Array<ImageAdmissionRun & { id: string; userId: string }>;
     imageAdmission: Parameters<typeof assertThreadImageInput>[5];
+    replyToMessageId?: string;
     repliedQuestionRunId?: string | null;
   },
 ) {
   if (!attachmentBlocks.some((block) => block.kind === "image")) return;
-  const { botId, runs, repliedQuestionRunId } = recipient;
+  const { botId, runs, replyToMessageId, repliedQuestionRunId } = recipient;
   const answered = [];
   for (const run of runs.filter(
     (run) =>
@@ -372,6 +373,8 @@ async function assertImageRecipients(
       runId: run.id,
       answeredByUserId: actor.userId,
       answer: text ?? "",
+      ...(replyToMessageId ? { replyToMessageId } : {}),
+      ...(repliedQuestionRunId !== undefined ? { messageId: replyToMessageId } : {}),
     });
     if (eligible) answered.push(run);
   }
@@ -494,15 +497,8 @@ export async function sendThreadMessage(
           if (reply.role === "bot" && reply.botId) repliedBotId = reply.botId;
           const { blocks: replyBlocks, intact: replyIntact } = parseMessageBlocks(reply);
           replyPreview = null;
-          // A card that lost entries may have lost its question, so the reply still targets only its run.
-          if (reply.role === "bot" && !replyIntact) repliedQuestionRunId = reply.runId;
+          repliedQuestionRunId = repliedQuestionTarget(reply, replyBlocks, replyIntact);
           if (replyBlocks.length > 0) {
-            if (
-              reply.role === "bot" &&
-              replyBlocks.some((block) => block.kind === "ask" && isQuestionAskBlock(block))
-            ) {
-              repliedQuestionRunId = reply.runId;
-            }
             replyPreview = messageReplyPreview(
               replyBlocks,
               reply.role as ReplyPreview["role"],
@@ -543,6 +539,7 @@ export async function sendThreadMessage(
         answer: input.text ?? "",
         beforeMessageSeq: message.seq,
         ...(replyToMessageId ? { replyToMessageId } : {}),
+        ...(repliedQuestionRunId !== undefined ? { messageId: replyToMessageId } : {}),
         answerMessageId: message.id,
       });
       const targetedQuestionRun = (
@@ -603,6 +600,7 @@ export async function sendThreadMessage(
             botId: target.botId,
             runs: activeRuns,
             imageAdmission: deps.imageAdmission,
+            replyToMessageId,
             repliedQuestionRunId,
           });
         }
@@ -663,7 +661,7 @@ export async function sendThreadMessage(
               })
             )
               answered.push({ ...run, status: "queued" });
-            else
+            else if (repliedQuestionRunId === undefined)
               await retireWaitingQuestionInTransaction(tx, {
                 ...composerAnswerInput(message),
                 botId: target.botId,
@@ -852,7 +850,10 @@ export async function sendThreadMessage(
         },
       });
       // A plain message while members wait on the user answers the latest question only.
-      const asking = namesNobody ? latestWaitingRun(activeRuns) : undefined;
+      const asking =
+        namesNobody && repliedQuestionRunId === undefined
+          ? latestWaitingRun(activeRuns)
+          : undefined;
       if (asking) {
         targetBotIds = [asking.botId];
         namesNobody = false;
@@ -864,6 +865,7 @@ export async function sendThreadMessage(
             botId,
             runs: activeRuns.filter((run) => run.botId === botId),
             imageAdmission: deps.imageAdmission,
+            replyToMessageId,
             repliedQuestionRunId,
           });
         }
@@ -972,7 +974,7 @@ export async function sendThreadMessage(
               const queuedForBot = answeredByBotId.get(run.botId) ?? [];
               queuedForBot.push({ ...run, status: "queued" });
               answeredByBotId.set(run.botId, queuedForBot);
-            } else {
+            } else if (repliedQuestionRunId === undefined) {
               await retireWaitingQuestionInTransaction(tx, {
                 ...composerAnswerInput(message),
                 botId: run.botId,
