@@ -133,6 +133,39 @@ describe("built-in tool bridge", () => {
     );
   });
 
+  it("reports unavailable built-in reasons in find_tool without leaking prototype keys", () => {
+    const { deferred } = partitionTools(
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger: "routine",
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+      }),
+    );
+    const reason = "schedule_update is not available in routine runs.";
+    const reasons = { schedule_update: reason, render_plot: "stale reason" };
+
+    const onlyUnavailable = findTools(deferred, { names: ["schedule_update"] }, reasons);
+    expect(onlyUnavailable).toEqual({
+      tools: [],
+      unavailable: { schedule_update: reason },
+    });
+
+    const mixed = findTools(
+      deferred,
+      { names: ["render_plot", "schedule_update", "nope", "toString"] },
+      reasons,
+    );
+    expect(mixed.tools.map((tool) => tool.name)).toEqual(["render_plot"]);
+    expect(mixed.unavailable).toEqual({ schedule_update: reason });
+    expect(mixed.unknown).toEqual(["nope", "toString"]);
+    expect(mixed).not.toHaveProperty("hint");
+
+    const byQuery = findTools(deferred, { query: "SCHEDULE_UPDATE" }, reasons);
+    expect(byQuery.unavailable).toEqual({ schedule_update: reason });
+  });
+
   it("shows the real tool as activity", () => {
     expect(
       describeToolActivity(USE_TOOL, { name: "create_space", arguments: { name: "Finance" } }),

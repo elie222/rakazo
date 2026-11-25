@@ -1284,6 +1284,92 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("forwards unavailableToolReasons to find_tool", async () => {
+    const reason = "schedule_update is not available in routine runs.";
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    fakeAgentState.invoke = {
+      name: "find_tool",
+      args: { names: ["schedule_update"] },
+    };
+
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "update the routine",
+        instructions: "",
+        history: [],
+        tools: [updateBotTool, scheduleCancelTool],
+        unavailableToolReasons: { schedule_update: reason },
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+
+    const expected = {
+      tools: [],
+      unavailable: { schedule_update: reason },
+    };
+    const result = fakeAgentState.toolResult as {
+      content: Array<{ type: string; text: string }>;
+      details: Record<string, unknown>;
+    };
+    expect(result.details).toEqual(expected);
+    expect(JSON.parse(result.content[0]!.text)).toEqual(expected);
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("ignores prototype keys when looking up unavailableToolReasons in use_tool", async () => {
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "toString", arguments: {} },
+    };
+
+    const runProto = async () => {
+      for await (const _event of new PiAgentRuntime().run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "r",
+          prompt: "call prototype name",
+          instructions: "",
+          history: [],
+          tools: [updateBotTool, scheduleCancelTool],
+          unavailableToolReasons: {
+            schedule_update: "schedule_update is not available in routine runs.",
+          },
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        {
+          operationId: "2",
+          traceId: "2",
+          spaceId: "w",
+          userId: "u",
+          signal: new AbortController().signal,
+        },
+      )) {
+        // Exhaust the runtime event stream so tool execution completes.
+      }
+    };
+
+    await expect(runProto()).rejects.toThrow(
+      "toString is not available. Use a name find_tool lists.",
+    );
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
   it("keeps remember's shared flag through argument preparation", async () => {
     const remember = builtinAgentTools.find((tool) => tool.name === "remember")!;
     await new PiAgentRuntime()

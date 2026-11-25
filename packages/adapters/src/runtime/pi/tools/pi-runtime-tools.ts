@@ -32,7 +32,11 @@ import {
   oneTimeCodeArgument,
 } from "../../../secrets/bot-secrets.js";
 import { FIND_TOOL, USE_TOOL } from "../../../tools/builtin.tool-definition.js";
-import { findTools, partitionTools } from "../../../tools/builtin-tool-bridge.js";
+import {
+  findTools,
+  partitionTools,
+  unavailableToolReason,
+} from "../../../tools/builtin-tool-bridge.js";
 import { SCHEDULE_TOOL_NAMES } from "../../../tools/schedule-tools.js";
 import { positiveIntegerArg } from "../../../tools/workspace-file-tools.js";
 import { shortenToolResultText } from "../../context/context-selection.js";
@@ -129,7 +133,7 @@ function useToolAgentTool(
           response: host.modelResponses,
         });
         throw new Error(
-          host.request.unavailableToolReasons?.[name] ??
+          unavailableToolReason(host.request.unavailableToolReasons, name) ??
             `${name} is not available. Use a name find_tool lists.`,
         );
       }
@@ -649,7 +653,7 @@ function toAgentTool(
                   host.computerModeAllowed && !host.computerModeAllowed()
                     ? deferred.filter((candidate) => !COMPUTER_MODE_TOOLS.has(candidate.name))
                     : deferred;
-                const found = findTools(findable, args);
+                const found = findTools(findable, args, host.request.unavailableToolReasons);
                 return {
                   content: [{ type: "text", text: JSON.stringify(found) }],
                   details: found,

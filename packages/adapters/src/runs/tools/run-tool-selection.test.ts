@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { agentConnectionTools } from "../../tools/builtin.tool-definition.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
   selectBuiltinToolsForRun,
@@ -6,6 +7,10 @@ import {
 } from "./run-tool-selection.js";
 
 const none: { name: string }[] = [];
+const knownBuiltins = new Set([
+  ...BUILTIN_AGENT_TOOL_NAMES,
+  ...agentConnectionTools.map((tool) => tool.name),
+]);
 
 describe("unavailableBuiltinToolReasons", () => {
   it("explains a group thread's missing message_bot and points to handoff_to_bot", () => {
@@ -35,14 +40,55 @@ describe("unavailableBuiltinToolReasons", () => {
   });
 
   it("explains a background run's dropped messaging and media tools", () => {
-    const reasons = unavailableBuiltinToolReasons({ groupId: null, trigger: "tickets" }, none);
+    const reasons = unavailableBuiltinToolReasons({ groupId: null, trigger: "tickets" }, [
+      { name: "ticket_comment" },
+    ]);
 
     expect(reasons.message_bot).toBe(
       "message_bot is not available in a background run. Report through ticket_comment instead.",
     );
+    expect(reasons.message_agent).toBe(
+      "message_agent is not available in a background run. Report through ticket_comment instead.",
+    );
     expect(reasons.generate_image).toBe(
       "generate_image is not available in a background run. Report through ticket_comment instead.",
     );
+  });
+
+  it("does not point to ticket_comment when the background run was not offered it", () => {
+    const reasons = unavailableBuiltinToolReasons(
+      { groupId: null, trigger: "tickets", disabledBuiltinTools: ["ticket_comment"] },
+      none,
+    );
+
+    expect(reasons.message_bot).toBe("message_bot is not available in a background run.");
+    expect(reasons.message_agent).toBe("message_agent is not available in a background run.");
+    expect(reasons.ticket_comment).toBe("ticket_comment is turned off for this bot.");
+  });
+
+  it("explains routine-hidden schedule_update without masking disabled or offered tools", () => {
+    const routineReasons = unavailableBuiltinToolReasons(
+      { groupId: null, trigger: "routine" },
+      none,
+    );
+
+    expect(routineReasons.schedule_update).toBe(
+      "schedule_update is not available in routine runs.",
+    );
+    expect(routineReasons).not.toHaveProperty("schedule_create");
+    expect(routineReasons).not.toHaveProperty("schedule_list");
+    expect(routineReasons).not.toHaveProperty("schedule_cancel");
+
+    const disabledInRoutine = unavailableBuiltinToolReasons(
+      { groupId: null, trigger: "routine", disabledBuiltinTools: ["schedule_update"] },
+      none,
+    );
+    expect(disabledInRoutine.schedule_update).toBe("schedule_update is turned off for this bot.");
+
+    const offeredInRoutine = unavailableBuiltinToolReasons({ groupId: null, trigger: "routine" }, [
+      { name: "schedule_update" },
+    ]);
+    expect(offeredInRoutine).not.toHaveProperty("schedule_update");
   });
 
   it("explains a tool the bot turned off", () => {
@@ -82,7 +128,7 @@ describe("unavailableBuiltinToolReasons", () => {
     );
 
     expect(reasons).not.toHaveProperty("not_a_tool");
-    for (const name of Object.keys(reasons)) expect(BUILTIN_AGENT_TOOL_NAMES.has(name)).toBe(true);
+    for (const name of Object.keys(reasons)) expect(knownBuiltins.has(name)).toBe(true);
   });
 });
 
