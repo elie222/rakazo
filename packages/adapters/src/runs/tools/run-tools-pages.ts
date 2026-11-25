@@ -100,6 +100,11 @@ async function listPages(ctx: RunContext) {
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
     take: PAGE_LIST_MAX_LIMIT,
   });
+  if (pages.length)
+    await markReadOutsideContent(
+      ctx,
+      pages.map((page) => page.title),
+    );
   return {
     pages: pages.map((page) => ({
       pageId: page.id,

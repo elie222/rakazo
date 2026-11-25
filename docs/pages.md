@@ -8,8 +8,7 @@ dashboard, a status board or a report. Ask for one in chat:
 
 The page appears as a card in the chat. Open it to see it full screen, with the chat below so you
 can ask for changes. The bot edits the same page rather than making a new one, so a
-[routine](./routines.md) can keep it up to date. Ask the bot which pages it has made: it can list
-them, which also lets it find a page long after the chat that made it.
+[routine](./routines.md) can keep it up to date.
 
 Pages can show pictures: images the bot generated, files from the chat or its computer, and
 images from the web. The bot fetches a web image only from a site it could already fetch from in

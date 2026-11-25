@@ -230,6 +230,7 @@ describe("listing pages", () => {
         { pageId: "page-1", title: "Plan", updatedAt: "2026-11-01T00:00:00.000Z" },
       ],
     });
+    expect((ctx as { state: { tainted: boolean } }).state.tainted).toBe(true);
   });
 
   it("adds the group's pages in a group chat", async () => {
@@ -243,6 +244,7 @@ describe("listing pages", () => {
   it("answers an empty list when the bot has no pages", async () => {
     const { ctx } = listing([]);
     expect(await pageTools.save_page!(ctx, call({ list: true }))).toEqual({ pages: [] });
+    expect((ctx as { state: { tainted: boolean } }).state.tainted).toBe(false);
   });
 });
 
