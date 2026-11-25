@@ -18,6 +18,18 @@ export function publicTaskStatus(runStatus: string | undefined): TaskStatus {
   return (runStatus && RUN_TASK_STATUS[runStatus]) || "working";
 }
 
+/** A pending integration question still inside its deadline; past it, the answer is refused. */
+function openToolQuestion(
+  block: MessageBlock,
+): block is Extract<MessageBlock, { kind: "tool_question" }> {
+  return (
+    block.kind === "tool_question" &&
+    block.status === "pending" &&
+    Boolean(block.question?.message) &&
+    Date.parse(block.expiresAt) > Date.now()
+  );
+}
+
 function questionOf(block: MessageBlock): string | null {
   if (
     block.kind === "ask" &&
@@ -28,8 +40,7 @@ function questionOf(block: MessageBlock): string | null {
   )
     return block.text;
   // An integration's question waits on the person while the run itself still reads as running.
-  if (block.kind === "tool_question" && block.status === "pending" && block.question?.message)
-    return block.question.message;
+  if (openToolQuestion(block)) return block.question.message;
   if (block.kind === "choice" && !block.answerId && Array.isArray(block.options)) {
     const options = block.options.map((option) => `${option.letter}. ${option.label}`);
     return [block.question, ...options].join("\n");
@@ -57,7 +68,7 @@ export function publicTaskView(task: TaskRow, runs: RunRow[], replies: ReplyRow[
   }
   const toolQuestion = replies
     .flatMap((reply) => storedMessageBlocks(reply))
-    .some((block) => block.kind === "tool_question" && block.status === "pending");
+    .some(openToolQuestion);
   const status = runStatus === "working" && toolQuestion ? "needs_input" : runStatus;
   // A new reply changes the task even when its run row does not.
   const updatedAt = [

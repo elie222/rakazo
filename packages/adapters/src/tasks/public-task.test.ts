@@ -47,6 +47,7 @@ describe("publicTaskView", () => {
             {
               kind: "tool_question",
               status: "pending",
+              expiresAt: "2999-01-01T00:00:00.000Z",
               question: { source: "Calendar", message: "Which calendar?", fields: [] },
             },
           ],
@@ -54,6 +55,24 @@ describe("publicTaskView", () => {
       ],
     );
     expect(view).toMatchObject({ status: "needs_input", question: "Which calendar?" });
+    const expired = publicTaskView(
+      task,
+      [{ status: "running", updatedAt: at }],
+      [
+        {
+          id: "m1",
+          blocks: [
+            {
+              kind: "tool_question",
+              status: "pending",
+              expiresAt: "2000-01-01T00:00:00.000Z",
+              question: { source: "Calendar", message: "Which calendar?", fields: [] },
+            },
+          ],
+        },
+      ],
+    );
+    expect(expired).toMatchObject({ status: "working", question: null });
   });
 
   it("moves updated_at forward when a reply arrives", () => {

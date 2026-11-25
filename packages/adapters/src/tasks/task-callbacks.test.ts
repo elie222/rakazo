@@ -106,7 +106,7 @@ describe("task callbacks", () => {
     const expected = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
     expect(request!.headers.get("x-rakazo-signature")).toBe(`t=${timestamp},v1=${expected}`);
     expect(update).toHaveBeenCalledWith({
-      where: { id: "callback-1", url },
+      where: { id: "callback-1", url, issuerKeyId: "key-1" },
       data: { deliveredAt: now, deliveredRunId: "run-1", deliveredStatus: "completed" },
     });
   });

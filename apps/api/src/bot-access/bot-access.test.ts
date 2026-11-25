@@ -55,6 +55,7 @@ function setup(
     ["task-1", { url: "https://hooks.example.test/a", issuerKeyId: "key-first" }],
   ]);
   const enqueueIn = vi.fn(async () => undefined);
+  const enqueue = vi.fn(async () => undefined);
   const prisma = {
     $transaction: async (work: (tx: unknown) => unknown) => work(prisma),
     taskCallback: {
@@ -104,7 +105,7 @@ function setup(
     prisma,
     auth: { verifyApiKey: vi.fn(async () => verified) },
     router: router as unknown as BotAccessDeps["router"],
-    jobs: { enqueueIn },
+    jobs: { enqueue, enqueueIn },
     taskCallbackRootKey: "root",
   });
   const caller = { userId: "user-1", email: "user@rakazo.test", keyId: "key-1" };
@@ -216,6 +217,16 @@ describe("bot access", () => {
       expect.anything(),
       expect.objectContaining({ name: "task.callback", payload: { taskId: "task-next" } }),
     );
+  });
+
+  it("leaves a joined task's own callback address alone", async () => {
+    const { access, caller, callbacks } = setup(undefined, "task-next");
+    callbacks.set("task-next", { url: "https://hooks.example.test/b", issuerKeyId: "key-other" });
+    await access.sendToTask(caller, "task-1", "Keep going");
+    expect(callbacks.get("task-next")).toEqual({
+      url: "https://hooks.example.test/b",
+      issuerKeyId: "key-other",
+    });
   });
 
   it("reads only the person's own tasks", async () => {

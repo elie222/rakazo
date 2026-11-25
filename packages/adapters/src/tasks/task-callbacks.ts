@@ -142,9 +142,9 @@ export async function deliverTaskCallback(
   if (task.status === "needs_input") await recheck();
   if (callback.deliveredRunId !== latestRun.id || callback.deliveredStatus !== state) {
     await post(callback, task, `${taskId}:${latestRun.id}:${state}`);
-    // Only the address it was sent to is marked; a changed address still gets this state.
+    // Only the address and key it was sent with are marked; a changed one still gets this state.
     await deps.prisma.taskCallback.updateMany({
-      where: { id: callback.id, url: callback.url },
+      where: { id: callback.id, url: callback.url, issuerKeyId: callback.issuerKeyId },
       data: { deliveredAt: now, deliveredRunId: latestRun.id, deliveredStatus: state },
     });
   }

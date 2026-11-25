@@ -79,7 +79,7 @@ export type BotAccessDeps = {
   prisma: PrismaClient;
   auth: Pick<Auth, "verifyApiKey">;
   router: ReturnType<typeof createRouter>;
-  jobs: Pick<JobPublisher, "enqueueIn">;
+  jobs: Pick<JobPublisher, "enqueue" | "enqueueIn">;
   /** Derives each callback's signing secret; see `taskCallbackRootKey`. */
   taskCallbackRootKey: string;
 };
@@ -309,14 +309,24 @@ export function createBotAccess(deps: BotAccessDeps) {
   async function sendToTask(caller: KeyCaller, taskId: string, text: string) {
     const { actor, botId } = await taskActor(caller, taskId);
     const sent = await send(caller, actor, botId, text);
-    const callback = await runAsTenant(actor, () =>
-      prisma.taskCallback.findUnique({
-        where: { taskId },
-        select: { url: true, issuerKeyId: true },
-      }),
+    const [callback, joined] = await runAsTenant(actor, () =>
+      Promise.all(
+        [taskId, sent.taskId].map((id) =>
+          prisma.taskCallback.findUnique({
+            where: { taskId: id },
+            select: { url: true, issuerKeyId: true },
+          }),
+        ),
+      ),
     );
-    // Signed as before, with the key that asked for the first callback.
-    if (callback) await watchTask(callback.issuerKeyId, actor, sent.taskId, callback.url);
+    if (callback && sent.taskId === taskId) {
+      // The same task goes on: its callback checks again now.
+      await deps.jobs.enqueue(taskCallbackJob(taskId, new Date()));
+    } else if (callback && !joined) {
+      // A new task, signed as before with the key that asked for the first callback. A task
+      // that already reports somewhere keeps its own address.
+      await watchTask(callback.issuerKeyId, actor, sent.taskId, callback.url);
+    }
     return { task: await readTask(actor, sent.taskId), actor, cursor: sent.cursor };
   }
 
