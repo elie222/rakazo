@@ -28,7 +28,7 @@ import {
 } from "../../runtime/context/history-compaction.js";
 import { returnHelperOutcome } from "../../tasks/background-helpers.js";
 import type { RunContext } from "../assembly/run-context.js";
-import { redactBlocks } from "../assembly/run-messages.js";
+import { redactBlocks, redactTranscript } from "../assembly/run-messages.js";
 import {
   completionMessageSegments,
   emptyDelegatedToolTurnShouldFail,
@@ -150,6 +150,11 @@ export async function completeRun(ctx: RunContext) {
     outcome: "completed",
     blocks,
     markUnread: !groupSilentEnd && marksUnread,
+    // Only a reply that holds the whole turn stands for it; earlier messages of this run would
+    // sit between the turn's prompt and the reply.
+    ...(reply.transcript && blocks.length > 0 && !reply.publishedMidTurnUserMessage
+      ? { transcript: redactTranscript(reply.transcript, ctx.secrets) }
+      : {}),
   });
   if (!completed) return;
   ctx.stopHeartbeatAfterCompletion();

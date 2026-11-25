@@ -462,6 +462,12 @@ export type ToolStepCall = z.infer<typeof ToolStepCallSchema>;
  */
 export const ToolHistorySchema = z.object({
   steps: z.array(z.object({ tool: z.string(), calls: z.array(ToolStepCallSchema) }).nullable()),
+  /**
+   * The turn this reply ended, exactly as the model was sent it and answered (opaque, written by
+   * the runtime), so the bot's next turn can send it unchanged and the provider can reuse it
+   * from its prompt cache.
+   */
+  transcript: z.string().optional(),
 });
 export type ToolHistory = z.infer<typeof ToolHistorySchema>;
 /** A step as a run replays it: what the UI shows, with its tool and kept calls when it has them. */

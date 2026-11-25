@@ -15,6 +15,7 @@ import {
   toolNotAvailableNote,
 } from "../context/history-replay.prompt.js";
 import { neutralizeSpeakerLabels } from "../context/history-speakers.js";
+import { readTurnTranscript } from "./pi-runtime-transcript.js";
 import { normalizeAgentToolName } from "./tools/pi-runtime-tools.js";
 
 export function toPiImages(images: AgentRunRequest["currentTurnImages"]) {
@@ -270,6 +271,46 @@ function replayedToolReply(
   return messages;
 }
 
+/**
+ * Earlier turns stored as they were sent, by the index of the reply that ended each, with the
+ * indexes of the messages it stands for. A turn replays this way only when those messages sit
+ * right before its reply, so nothing sent since is lost or repeated, and only with tools offered
+ * when it holds tool calls.
+ */
+function storedTurns(prior: AgentRunRequest["history"], toolsOffered: boolean) {
+  const turns = new Map<number, Message[]>();
+  const covered = new Set<number>();
+  for (const [index, entry] of prior.entries()) {
+    if (entry.role !== "assistant" || entry.speaker || !entry.transcript) continue;
+    const turn = readTurnTranscript(entry.transcript);
+    if (!turn) continue;
+    if (
+      !toolsOffered &&
+      turn.messages.some(
+        (message) =>
+          message.role === "toolResult" ||
+          (message.role === "assistant" &&
+            message.content.some((part) => part.type === "toolCall")),
+      )
+    )
+      continue;
+    const first = index - turn.represents.length;
+    if (first < 0) continue;
+    const before = prior.slice(first, index);
+    const ids = new Set(turn.represents);
+    if (
+      ids.size !== before.length ||
+      !before.every(
+        (message, offset) => message.id && ids.has(message.id) && !covered.has(first + offset),
+      )
+    )
+      continue;
+    for (let at = first; at <= index; at += 1) covered.add(at);
+    turns.set(index, turn.messages);
+  }
+  return { turns, covered };
+}
+
 /** What the model reads for a message by someone other than this bot or the human of a direct chat. */
 export function speakerText(speaker: string, text: string): string {
   return `[${speaker}]: ${neutralizeSpeakerLabels(text)}`;
@@ -310,7 +351,8 @@ export function toHistory(
     duplicatePromptIndex < 0
       ? history
       : history.filter((_, index) => index !== duplicatePromptIndex);
-  return prior.flatMap((m): HistoryMessage[] => {
+  const stored = storedTurns(prior, offered.size > 0);
+  return prior.flatMap((m, index): HistoryMessage[] => {
     const created = m.createdAt ? Date.parse(m.createdAt) : Number.NaN;
     const common = {
       timestamp: Number.isNaN(created) ? 0 : created,
@@ -318,6 +360,11 @@ export function toHistory(
       rakazoMessageId: m.id,
       rakazoCreatedAt: m.createdAt,
     };
+    const turn = stored.turns.get(index);
+    // The whole turn goes in under its reply, as sent: its prompt with that turn's notes, each
+    // step's calls and results, and the reply.
+    if (turn) return turn.map((message) => ({ ...message, ...common }) as HistoryMessage);
+    if (stored.covered.has(index)) return [];
     if (m.role === "assistant" && !m.speaker) {
       if (offered.size > 0 && m.segments && replaysAsToolCalls(m.segments))
         return replayedToolReply(m, m.segments, common, offered, deferred);

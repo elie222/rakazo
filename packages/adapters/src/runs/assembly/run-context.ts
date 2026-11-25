@@ -161,6 +161,8 @@ export interface ReplyState {
   assistantTurnBreakPending: boolean;
   /** Replaced whenever a secret is added, so streamed progress hides it too. */
   redactor: ReturnType<typeof createStreamingRedactor>;
+  /** The runtime's record of the turn as sent, stored with the final reply. */
+  transcript?: string;
 }
 
 export interface ApprovalState {

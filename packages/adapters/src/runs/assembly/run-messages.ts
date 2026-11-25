@@ -53,6 +53,12 @@ function redactedArguments(json: string, secrets: string[]): string {
   }
 }
 
+/** The runtime's turn record with the run's secrets redacted wherever they appear, still valid JSON. */
+export function redactTranscript(transcript: string, secrets: string[]): string {
+  if (secrets.length === 0) return transcript;
+  return JSON.stringify(redactConnectorPayload(JSON.parse(transcript), secrets));
+}
+
 export function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[] {
   return blocks.map((block) => {
     if (block.kind === "text") {

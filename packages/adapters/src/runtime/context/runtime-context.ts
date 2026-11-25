@@ -12,7 +12,7 @@ import {
 } from "../pi/pi-runtime-limits.js";
 import { withoutThinkingFrom } from "../thinking-signatures.js";
 import { imagePartCount, normalizedImageLimit, pruneForRebuild } from "./context-pruning.js";
-import type { CacheRequest, ContextBudget } from "./context-selection.js";
+import type { CacheRequest, ContextBudget, ContextMessage } from "./context-selection.js";
 import {
   ContextBudgetError,
   ContextCacheTracker,
@@ -61,6 +61,19 @@ const REBUILD_MAX_STALE_IMAGES = 8;
 const REBUILD_HEADROOM = 0.25;
 /** Stale tokens that justify a rebuild when the provider's prompt cache is declared off. */
 const UNCACHED_REBUILD_MIN_SAVED_TOKENS = 3_000;
+/**
+ * Where kept history may start: about one stored person's message in four, picked by its id, so
+ * every request picks the same ones and the start moves only every few exchanges.
+ */
+function historyAnchor(message: ContextMessage): boolean {
+  const id = (message as ContextMessage & OriginalMetadata).rakazoMessageId;
+  return (
+    message.role === "user" &&
+    typeof id === "string" &&
+    createHash("sha256").update(id).digest()[0]! % 4 === 0
+  );
+}
+
 /** Short earlier history is kept whole, instead of snapshots, when it fits this many tokens. */
 const SHORT_HISTORY_MAX_TOKENS = 16_384;
 /** With snapshots, the latest messages are still replayed whole. */
@@ -587,7 +600,9 @@ export function createRuntimeContextPolicy(
       // Eight exchanges is a floor: a request often depends on a decision made before them
       // without sounding like a question about the past, so the bot never thinks to search.
       ...(strategy === "retrieval"
-        ? { earlier: { before: currentIndex, tokens: shortHistoryAllowance } }
+        ? {
+            earlier: { before: currentIndex, tokens: shortHistoryAllowance, anchor: historyAnchor },
+          }
         : {}),
     };
     const retained = shortenOlderResults(true);
