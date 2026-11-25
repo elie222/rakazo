@@ -60,12 +60,16 @@ export const openCodeAgent: AcpAgentDescriptor = {
     // agents and instruction files stay out of the bot's turn.
     const configDir = join(files, "config");
     await mkdir(configDir, { mode: 0o700 });
+    // Its global config is found under the config home too, so that is an empty one as well.
+    const configHome = join(files, "config-home");
+    await mkdir(configHome, { mode: 0o700 });
     return {
       args: ["acp"],
       env: {
         ...env,
         OPENCODE_CONFIG: config,
         OPENCODE_CONFIG_DIR: configDir,
+        XDG_CONFIG_HOME: configHome,
         OPENCODE_DISABLE_PROJECT_CONFIG: "1",
         OPENCODE_DISABLE_CLAUDE_CODE: "1",
         OPENCODE_DISABLE_AUTOUPDATE: "1",

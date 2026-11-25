@@ -404,6 +404,17 @@ describe("acpAgentRuntime", () => {
     expect(text).toBe("Nothing to add.");
   });
 
+  it("gives a helper its answer in the done event", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+
+    const { events } = await collect(
+      runtime,
+      request({ tools: [], usageOperationKind: "setup", prompt: "check" }),
+    );
+
+    expect(events.at(-1)).toEqual({ type: "done", text: "ok" });
+  });
+
   it("reports the agent's error answer", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
 

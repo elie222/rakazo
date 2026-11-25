@@ -173,10 +173,12 @@ async function runAcpTurn(
   if (refusal) throw new Error(refusal);
   signal.throwIfAborted();
 
-  // A helper call (a summary, a check, a page revision) is not a chat turn: it gets a session of
-  // its own that is deleted afterwards, and leaves the chat's session alone.
+  // A helper call (a summary, a check, a page revision, a meeting answer) is not a chat turn: it
+  // gets a session of its own that is deleted afterwards, and leaves the chat's session alone.
+  // Chat turns are answers or background helper runs, and always have tools.
   const oneShot =
-    request.usageOperationKind !== "answer" && request.usageOperationKind !== "subagent";
+    request.tools.length === 0 ||
+    (request.usageOperationKind !== "answer" && request.usageOperationKind !== "subagent");
   const key = sessionKey(descriptor.id, request.botId, request.threadId);
   const cwd = join(
     agentFolder(),
@@ -520,7 +522,8 @@ async function runAcpTurn(
     replied = true;
     // So the chat's session can tell its own replies from those written elsewhere.
     if (replyText.trim()) current.replies.add(contentHash(replyText.trim()));
-    push({ type: "done" });
+    // Helpers read the answer from here.
+    push(replyText.trim() ? { type: "done", text: replyText } : { type: "done" });
   } catch (error) {
     if (error instanceof TurnAborted || (signal.aborted && !violation)) {
       // Stopped before the CLI said anything about the new message: it may never have received

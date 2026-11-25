@@ -34,6 +34,7 @@ describe("openCodeAgent", () => {
     // The operator's own config folder (plugins, MCP servers, instructions) is swapped for an
     // empty one; their sign-in lives elsewhere and is untouched.
     expect(readdirSync(launch.env.OPENCODE_CONFIG_DIR!)).toEqual([]);
+    expect(readdirSync(launch.env.XDG_CONFIG_HOME!)).toEqual([]);
     const config = JSON.parse(readFileSync(launch.env.OPENCODE_CONFIG!, "utf8"));
     const permission = { "*": "deny", "rakazo_*": "allow" };
     expect(config).toMatchObject({
