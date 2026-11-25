@@ -18,6 +18,7 @@ function dollars(cents: number) {
 }
 
 const STANDARD = BYOK_TIERS.standard;
+const STANDARD_ANNUAL_CENTS = byokTierPriceCents("standard", "year");
 
 export type PricingPlan = {
   name: string;
@@ -83,7 +84,7 @@ const OWN_MODEL_PLAN: PricingPlan = {
     STANDARD.annualPriceCents === null
       ? undefined
       : `${dollars(STANDARD.annualPriceCents / 12)}/mo billed yearly`,
-  yearly: STANDARD.annualPriceCents === null ? undefined : yearlyPrice(STANDARD.annualPriceCents),
+  yearly: STANDARD_ANNUAL_CENTS === null ? undefined : yearlyPrice(STANDARD_ANNUAL_CENTS),
   features: [
     "Hosted by us",
     "Claude, ChatGPT, or any API key",
