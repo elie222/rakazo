@@ -699,7 +699,7 @@ describe("acpAgentRuntime", () => {
       expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
     });
 
-    it("sends a message's further images once they can be read", async () => {
+    it("sends a message's other images once they can be read, whatever their order", async () => {
       const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
         accessCheck: allowed,
       });
@@ -708,7 +708,8 @@ describe("acpAgentRuntime", () => {
       const second = { name: "b.png", mimeType: "image/png" as const, data: new Uint8Array([2]) };
       const message = { id: "m1", role: "user" as const, content: "Two photos" };
 
-      await collect(runtime, request({ threadId, history: [{ ...message, images: [first] }] }));
+      // Only the second photo could be read on the first turn.
+      await collect(runtime, request({ threadId, history: [{ ...message, images: [second] }] }));
       await collect(
         runtime,
         request({ threadId, prompt: "next", history: [{ ...message, images: [first, second] }] }),
@@ -719,7 +720,7 @@ describe("acpAgentRuntime", () => {
       };
       expect(
         prompt.prompt.filter((block) => block.type === "image").map((block) => block.data),
-      ).toEqual(["Ag=="]);
+      ).toEqual(["AQ=="]);
     });
 
     it("sends an earlier message's image once it can be read", async () => {

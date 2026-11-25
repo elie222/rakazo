@@ -21,6 +21,26 @@ function speakerOf(item: AgentRunRequest["history"][number]): string {
   return item.speaker ?? (own ? OWN_SPEAKER : item.role === "system" ? "Note" : PERSON_SPEAKER);
 }
 
+/**
+ * The images of a message the session has not been sent yet, recorded as sent from now on. Known
+ * by their bytes, so one that loads later is sent whatever its place among the message's images.
+ */
+function unsentImages(
+  session: AgentSession,
+  id: string,
+  images: readonly AgentInputImage[],
+): AgentInputImage[] {
+  const sent = session.imaged.get(id) ?? new Set<string>();
+  const unsent = images.filter((image) => {
+    const hash = createHash("sha256").update(image.data).digest("hex");
+    if (sent.has(hash)) return false;
+    sent.add(hash);
+    return true;
+  });
+  if (sent.size) session.imaged.set(id, sent);
+  return unsent;
+}
+
 export function contentHash(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
@@ -46,13 +66,9 @@ export function turnText(
     if (item.id) {
       if (session.seen.has(item.id)) {
         // An image that could not be read when the session first saw its message comes now.
-        const sent = session.imaged.get(item.id) ?? 0;
-        if (withImages && item.images && item.images.length > sent) {
-          session.imaged.set(item.id, item.images.length);
-          late.push({
-            line: historyLine(speakerOf(item), content),
-            images: item.images.slice(sent),
-          });
+        const unsent = withImages ? unsentImages(session, item.id, item.images ?? []) : [];
+        if (unsent.length) {
+          late.push({ line: historyLine(speakerOf(item), content), images: unsent });
         }
         continue;
       }
@@ -60,7 +76,7 @@ export function turnText(
       // The session wrote this reply itself, unless a turn running beside it did.
       if (own && !fresh && (!includeOwn || session.replies.has(contentHash(content)))) {
         // Its images (a screenshot of its own step) were the session's tool results already.
-        session.imaged.set(item.id, item.images?.length ?? 0);
+        unsentImages(session, item.id, item.images ?? []);
         continue;
       }
     } else {
@@ -104,17 +120,14 @@ export function turnText(
   // Only images actually sent count as sent: an entry cut from a new session's history sends its
   // image later, once it is the session's.
   if (withImages) {
-    for (const { id, images } of kept)
-      if (id && images.length) session.imaged.set(id, images.length);
+    for (const { id, images } of kept) if (id) unsentImages(session, id, images);
   }
   // A run that resumes after a pause repeats its message; photos the session already has stay out.
-  const sentWithMessage = request.sourceMessageId
-    ? (session.imaged.get(request.sourceMessageId) ?? 0)
-    : 0;
-  const newImages = (request.currentTurnImages ?? []).slice(sentWithMessage);
-  if (withImages && request.sourceMessageId && newImages.length) {
-    session.imaged.set(request.sourceMessageId, sentWithMessage + newImages.length);
-  }
+  const newImages = request.sourceMessageId
+    ? withImages
+      ? unsentImages(session, request.sourceMessageId, request.currentTurnImages ?? [])
+      : (request.currentTurnImages ?? [])
+    : (request.currentTurnImages ?? []);
   const message = request.promptSpeaker
     ? historyLine(request.promptSpeaker, request.prompt)
     : request.prompt;
