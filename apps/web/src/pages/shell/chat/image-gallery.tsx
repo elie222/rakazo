@@ -3,15 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import { Button, cn, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { ReactNode } from "react";
-import {
-  createContext,
-  Fragment,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { useArtifactImage } from "../../../lib/pages/use-artifact-image";
 import { useEventListener } from "../../../lib/use-event-listener";
@@ -50,7 +42,7 @@ export function MessageImageRow({ images }: { images: GalleryImage[] }) {
   const rest = images.length - 2;
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   return (
-    <Fragment>
+    <>
       <div
         ref={row}
         className={cn("flex max-w-full gap-2", shown.length > 2 ? "w-[32.5rem]" : "w-[21.5rem]")}
@@ -90,7 +82,7 @@ export function MessageImageRow({ images }: { images: GalleryImage[] }) {
           onClose={() => setSelectedKey(null)}
         />
       ) : null}
-    </Fragment>
+    </>
   );
 }
 
@@ -257,7 +249,7 @@ export function ImageLightbox({
             <X strokeWidth={1.8} />
           </DialogClose>
           {single ? null : (
-            <Fragment>
+            <>
               <Button
                 variant="floating"
                 size="icon-lg"
@@ -276,7 +268,7 @@ export function ImageLightbox({
               >
                 <ChevronRight strokeWidth={1.8} />
               </Button>
-            </Fragment>
+            </>
           )}
         </div>
         {single ? null : (

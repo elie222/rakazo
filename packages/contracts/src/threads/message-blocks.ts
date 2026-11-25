@@ -471,26 +471,21 @@ export type HistoryToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][
 };
 
 /**
- * The consecutive run of image blocks starting at `index`, when `index` is the first of the run;
- * otherwise null. A lone image yields a one-element run, so callers decide rendering by length.
- * Shared by web and mobile so the "consecutive pictures form one group" rule lives in one place.
+ * The run of consecutive pictures that starts at `index`, or null when `index` is not a picture or
+ * not the first of its run. A lone picture is a run of one. Web and mobile both group a message's
+ * pictures by it; `isPicture` narrows which image blocks a client draws as pictures.
  */
 export function consecutiveImageRun<T extends { kind: string }>(
   items: readonly T[],
   index: number,
-): T[] | null {
-  if (index < 0 || index >= items.length) return null;
-  const current = items[index];
-  if (current?.kind !== "image") return null;
-  if (index > 0) {
-    const prev = items[index - 1];
-    if (prev && prev.kind === "image") return null;
-  }
-  const run: T[] = [];
-  for (let i = index; i < items.length; i++) {
-    const item = items[i];
-    if (item?.kind !== "image") break;
-    run.push(item);
-  }
-  return run;
+  isPicture: (item: T) => boolean = () => true,
+): Extract<T, { kind: "image" }>[] | null {
+  const pictureAt = (at: number) => {
+    const item = items[at];
+    return item?.kind === "image" && isPicture(item);
+  };
+  if (!pictureAt(index) || pictureAt(index - 1)) return null;
+  let end = index + 1;
+  while (pictureAt(end)) end += 1;
+  return items.slice(index, end) as Extract<T, { kind: "image" }>[];
 }

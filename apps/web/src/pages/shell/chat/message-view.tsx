@@ -575,7 +575,7 @@ export const MessageView = memo(function MessageView({
             return (
               <div
                 key={i}
-                className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 {pictures.length === 1 ? (
                   <ArtifactImage

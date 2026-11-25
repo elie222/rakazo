@@ -12,38 +12,25 @@ export type AttachmentGroup =
   | { kind: "pictures"; pictures: InlineImageBlock[] };
 
 /**
- * The message's attachments in order, with consecutive pictures gathered into one group so the
- * bubble draws them as one stack instead of one under another.
+ * The message's attachments in order, with each run of consecutive inline pictures gathered into
+ * one group so the bubble draws them as one stack. A lone picture stays single.
  */
 export function attachmentGroups(blocks: readonly MessageBlock[]): AttachmentGroup[] {
   const groups: AttachmentGroup[] = [];
-  let index = 0;
-  while (index < blocks.length) {
-    const block = blocks[index]!;
-    if (block.kind !== "image" && block.kind !== "file") {
-      index += 1;
-      continue;
+  blocks.forEach((block, index) => {
+    if (block.kind !== "image" && block.kind !== "file") return;
+    if (!isInlineImageBlock(block)) {
+      groups.push({ kind: "single", attachment: block, index });
+      return;
     }
-    const attachment = block as AttachmentBlock;
-    if (attachment.kind === "image" && isInlineImageBlock(attachment)) {
-      const run = consecutiveImageRun(blocks, index);
-      const pictures: InlineImageBlock[] = [];
-      if (run) {
-        for (const next of run) {
-          if (!isInlineImageBlock(next as AttachmentBlock)) break;
-          pictures.push(next as InlineImageBlock);
-        }
-      }
-      if (pictures.length > 1) {
-        groups.push({ kind: "pictures", pictures });
-        index += pictures.length;
-        continue;
-      }
-      // Only one inline picture collected (or none): fall through to single,
-      // advancing by one so the remaining pictures start their own group/single.
-    }
-    groups.push({ kind: "single", attachment, index });
-    index += 1;
-  }
+    // The later pictures of a run are drawn with its first.
+    const run = consecutiveImageRun(blocks, index, isInlineImageBlock);
+    if (!run) return;
+    groups.push(
+      run.length > 1
+        ? { kind: "pictures", pictures: run }
+        : { kind: "single", attachment: block, index },
+    );
+  });
   return groups;
 }

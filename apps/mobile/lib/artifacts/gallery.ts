@@ -1,17 +1,8 @@
-/** One picture of the message that opened the viewer. */
-export type GalleryPicture = {
-  artifactId: string;
-  name: string;
-  mimeType: string;
-};
-
 /**
  * The pictures of the message that opened the viewer, read back from the route. A group of one,
  * a broken payload or a picture without a name opens the picture alone.
  */
-export function galleryPictures(
-  value: string | string[] | undefined,
-): GalleryPicture[] | undefined {
+export function galleryPictures(value: string | string[] | undefined) {
   const raw = Array.isArray(value) ? value[0] : value;
   if (!raw) return undefined;
   try {

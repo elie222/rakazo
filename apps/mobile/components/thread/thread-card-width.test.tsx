@@ -152,33 +152,26 @@ vi.mock("../media/inline-image-attachment", () => ({
   ),
 }));
 vi.mock("../media/image-attachment-deck", () => ({
-  MessagePictureStack: ({
-    pictures,
-    onPreview,
+  ImageAttachmentDeck: ({
+    images,
+    onOpen,
   }: {
-    pictures: { artifactId: string; name: string; mimeType: string }[];
-    onPreview: (target: unknown, gallery: unknown[]) => void;
-  }) => (
-    <button
-      type="button"
-      aria-label={pictures.map((picture) => picture.name).join(" ")}
-      onClick={() => {
-        const images = pictures.map(({ artifactId, name, mimeType }) => ({
-          artifactId,
-          name,
-          mimeType,
-        }));
-        onPreview(images[0], images);
-      }}
-    />
-  ),
-  ImageAttachmentDeck: ({ images, onOpen }: { images: { name: string }[]; onOpen: () => void }) => (
-    <button
-      type="button"
-      aria-label={images.map((image) => image.name).join(" ")}
-      onClick={onOpen}
-    />
-  ),
+    images: { artifactId: string; name: string; mimeType: string }[];
+    onOpen: (image: unknown, images: unknown[]) => void;
+  }) => {
+    const gallery = images.map(({ artifactId, name, mimeType }) => ({
+      artifactId,
+      name,
+      mimeType,
+    }));
+    return (
+      <button
+        type="button"
+        aria-label={images.map((image) => image.name).join(" ")}
+        onClick={() => onOpen(gallery[0], gallery)}
+      />
+    );
+  },
 }));
 vi.mock("../cards/change-undo", () => ({
   ChangeUndo: () => null,

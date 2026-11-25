@@ -11,6 +11,7 @@ import { ImageAttachmentDeck } from "./image-attachment-deck";
 const recordPressable = vi.hoisted(() => vi.fn<(props: PressableProps) => void>());
 
 vi.mock("react-native", () => ({
+  ActivityIndicator: () => null,
   Pressable: (props: { children?: ReactNode }) => {
     recordPressable(props as PressableProps);
     return createElement("div", null, props.children);
@@ -73,12 +74,6 @@ it("stacks a message's pictures behind one another and says how many there are",
   expect(deck?.accessibilityLabel).toBe("Open photo 3 of 3");
   act(() => deck?.onPress?.({} as never));
   expect(onOpen).toHaveBeenCalledTimes(1);
-});
-
-it("names the pictures where a reader hears them", async () => {
-  const { container } = await render([pictures[0]!]);
-  expect(container.textContent).toContain("1 image");
-  expect(recordPressable.mock.calls.at(0)?.[0]?.accessibilityLabel).toBe("Open photo 1 of 1");
 });
 
 it("shows the file name of a picture that could not load", async () => {

@@ -13,42 +13,8 @@ import {
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
 import { imageArtifactPreview } from "../../lib/artifacts/artifact-open";
-import type { InlineImageBlock } from "../../lib/messages/attachment-groups";
 import { NativeSymbol } from "../native/native-symbol";
-
-export type DeckImage = {
-  artifactId: string;
-  name: string;
-  mimeType: string;
-};
-
-/** A run of one message's pictures, taken straight from the message's blocks. */
-export function MessagePictureStack({
-  threadTarget,
-  pictures,
-  onPreview,
-  actionProps,
-}: {
-  threadTarget: MobileArtifactTarget;
-  pictures: InlineImageBlock[];
-  onPreview: (target: DeckImage, gallery?: DeckImage[]) => void;
-  actionProps?: Record<string, unknown>;
-}) {
-  const { t } = useLingui();
-  const images = pictures.map((picture) => ({
-    artifactId: picture.artifactId!,
-    name: picture.name ?? t`Image`,
-    mimeType: picture.mimeType ?? "image/png",
-  }));
-  return (
-    <ImageAttachmentDeck
-      threadTarget={threadTarget}
-      images={images}
-      onOpen={(image) => onPreview(image, images)}
-      actionProps={actionProps}
-    />
-  );
-}
+import type { ImageArtifactPreviewTarget } from "./image-artifact-viewer";
 
 /** How far each card behind the first one peeks out, and how far it leans. */
 const PEEK = 12;
@@ -66,8 +32,8 @@ export function ImageAttachmentDeck({
   actionProps,
 }: {
   threadTarget: MobileArtifactTarget;
-  images: DeckImage[];
-  onOpen: (image: DeckImage, images: DeckImage[]) => void;
+  images: readonly ImageArtifactPreviewTarget[];
+  onOpen: (image: ImageArtifactPreviewTarget, images: ImageArtifactPreviewTarget[]) => void;
   actionProps?: Record<string, unknown>;
 }) {
   const { t } = useLingui();
@@ -75,7 +41,8 @@ export function ImageAttachmentDeck({
   const { width: windowWidth } = useWindowDimensions();
   const width = Math.min(Math.round(windowWidth * 0.62), 320);
   const height = Math.round(width * 1.5);
-  const shown = images.slice(0, MAX_CARDS);
+  const gallery = images.map(({ artifactId, name, mimeType }) => ({ artifactId, name, mimeType }));
+  const shown = gallery.slice(0, MAX_CARDS);
   const behind = shown.length - 1;
 
   return (
@@ -89,7 +56,7 @@ export function ImageAttachmentDeck({
               key={`${image.artifactId}-${index}`}
               accessibilityRole="imagebutton"
               accessibilityLabel={t`Open photo ${index + 1} of ${images.length}`}
-              onPress={() => onOpen(image, images)}
+              onPress={() => onOpen(image, gallery)}
               {...(actionProps ?? {})}
               style={[
                 styles.card,
@@ -131,9 +98,10 @@ function DeckCard({
   labelColor,
 }: {
   target: MobileArtifactTarget;
-  image: DeckImage;
+  image: ImageArtifactPreviewTarget;
   labelColor: string;
 }) {
+  const { t } = useLingui();
   const [state, setState] = useState<{ uri: string } | null>(null);
   const [failed, setFailed] = useState(false);
   const targetBotId = "botId" in target ? target.botId : undefined;
@@ -157,18 +125,15 @@ function DeckCard({
     };
   }, [targetBotId, targetGroupId, image.artifactId, image.mimeType]);
 
-  if (failed) {
-    return (
-      <Text numberOfLines={3} style={[styles.failed, { color: labelColor }]}>
-        {image.name}
-      </Text>
-    );
-  }
   if (!state) {
     return (
-      <View style={[styles.filling, { backgroundColor: mobileTokens().muted }]}>
-        <Text style={[styles.failed, { color: labelColor }]}>🖼 {image.name}</Text>
-        <Text style={[styles.failed, { color: labelColor }]}>Loading…</Text>
+      <View>
+        <Text numberOfLines={3} style={[styles.label, { color: labelColor }]}>
+          🖼 {image.name}
+        </Text>
+        {failed ? null : (
+          <ActivityIndicator color={labelColor} accessibilityLabel={t`Loading image…`} />
+        )}
       </View>
     );
   }
@@ -198,5 +163,5 @@ const styles = StyleSheet.create({
   filling: { width: "100%", height: "100%" },
   caption: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 2 },
   captionText: { fontSize: 13 },
-  failed: { fontSize: 13, padding: 12 },
+  label: { fontSize: 13, padding: 12 },
 });

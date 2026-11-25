@@ -57,8 +57,7 @@ import { RoutineApprovalDetail } from "../cards/routine-approval-detail";
 import { ToolQuestionCard } from "../cards/ToolQuestionCard";
 import { AttachmentFile } from "../media/attachment-file";
 import { AudioAttachment } from "../media/audio-attachment";
-import type { ImageArtifactPreviewTarget } from "../media/image-artifact-viewer";
-import { MessagePictureStack } from "../media/image-attachment-deck";
+import { ImageAttachmentDeck } from "../media/image-attachment-deck";
 import { InlineImageAttachment } from "../media/inline-image-attachment";
 import { MessageMentions } from "../messages/bot-mention";
 import { MessageCaption } from "../messages/message-caption";
@@ -279,7 +278,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onChoiceDismissed?: (question: string) => void;
   /** Opens a file the app can show; other types go to the share sheet. */
   onPreviewFile: (artifactId: string) => void;
-  onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
+  onPreviewImage: MessageRowActions["previewImage"];
   peerExchange?: PeerExchange;
   onOpenPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
   actionProps: MessageActionProps;
@@ -653,11 +652,11 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         ) : null}
         {attachmentGroups(message.blocks).map((group) =>
           group.kind === "pictures" ? (
-            <MessagePictureStack
+            <ImageAttachmentDeck
               key={`stack-${group.pictures[0]?.artifactId}`}
               threadTarget={artifactTarget}
-              pictures={group.pictures}
-              onPreview={onPreviewImage}
+              images={group.pictures}
+              onOpen={onPreviewImage}
               actionProps={actionProps}
             />
           ) : (
