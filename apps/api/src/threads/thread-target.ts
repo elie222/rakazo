@@ -48,6 +48,8 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { ArrivalCopyDeps, ArrivalFile } from "../attachments/arrival-copy.js";
+import { startArrivalCopy } from "../attachments/arrival-copy.js";
 import {
   buildSendPrompt,
   buildUserMessageBlocks,
@@ -493,6 +495,8 @@ export async function sendThreadMessage(
     analytics?: ProductAnalytics;
     sandbox: SandboxProvider;
     notifications?: NotificationProvider;
+    /** Copies a file sent to one bot into its computer, when that is on. */
+    arrivalCopy?: ArrivalCopyDeps;
   },
   actor: Actor,
   target: ThreadTarget,
@@ -529,6 +533,8 @@ export async function sendThreadMessage(
     throw new ORPCError("BAD_REQUEST", { message: "replyQuote requires replyToMessageId." });
   }
 
+  /** The files of a send to one bot, as the committed send resolved them. */
+  let sentFiles: ArrivalFile[] = [];
   const commit = () =>
     deps.prisma.$transaction(async (tx) => {
       // A Space being deleted takes no new turns; its lock comes before the group and thread rows.
@@ -632,6 +638,7 @@ export async function sendThreadMessage(
           target.botId,
           input.artifactIds,
         );
+        sentFiles = artifacts;
         const connectorNames = await resolveOwnedConnectorDisplayNames(
           tx,
           actor,
@@ -1126,6 +1133,14 @@ export async function sendThreadMessage(
     throw error;
   });
   if ("replay" in committed) return committed.replay;
+  if (deps.arrivalCopy && target.kind === "bot" && sentFiles.length) {
+    // Not awaited: the send never waits on the copy.
+    startArrivalCopy(
+      deps.arrivalCopy,
+      { botId: target.botId, spaceId: actor.spaceId, userId: actor.userId },
+      sentFiles,
+    );
+  }
   deps.analytics?.capture(
     actor.userId,
     { name: "message_sent", trigger: "user" },

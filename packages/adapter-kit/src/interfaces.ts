@@ -512,11 +512,31 @@ export interface AgentHomeStore {
     options?: { maxBytes?: number },
   ): Promise<string>;
   writeFile(botId: string, path: string, content: string, context: AdapterContext): Promise<void>;
+  /** Creates a new file; rejects with an `EEXIST` error when the path is taken. */
+  writeBinaryFile(
+    botId: string,
+    path: string,
+    content: Uint8Array,
+    context: AdapterContext,
+  ): Promise<void>;
   list(
     botId: string,
     path: string,
     context: AdapterContext,
   ): Promise<Array<{ path: string; kind: "file" | "dir"; size: number }>>;
+  /**
+   * Deletes the given files, which must all be under `root` (a folder of the home; others are
+   * refused), skipping links, folders and paths not there, then the folders under `root` this
+   * leaves empty. Stops between files once `options.signal` aborts. Returns how many it deleted;
+   * what was deleted stays deleted.
+   */
+  removeFiles(
+    botId: string,
+    paths: readonly string[],
+    root: string,
+    context: AdapterContext,
+    options?: { signal?: AbortSignal },
+  ): Promise<number>;
 }
 
 /**

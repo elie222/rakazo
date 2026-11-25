@@ -4,7 +4,7 @@ import { attachmentComputerPath } from "@rakazo/core";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboundAttachmentUnavailableError } from "../messaging/inbound-attachments.js";
 import type { DownloadBudget } from "../messaging/intake/download-budget.js";
 import { createDownloadBudget } from "../messaging/intake/download-budget.js";
@@ -1014,5 +1014,159 @@ describe("a reply's kept screenshot", () => {
       expect(query.where).toMatchObject({
         mimeType: { notIn: expect.arrayContaining(["image/png;profile=step-screenshot"]) },
       });
+  });
+});
+
+describe("the computer path stored when a file arrives", () => {
+  const readable = { names: "readable", folders: "month" } as const;
+  // 16:49 in Jerusalem, two hours ahead of UTC in November.
+  const arrival = new Date("2026-11-18T14:49:30.000Z");
+  const pathClash = () =>
+    Object.assign(new Error("Unique constraint failed"), {
+      code: "P2002",
+      meta: {
+        driverAdapterError: {
+          cause: {
+            kind: "UniqueConstraintViolation",
+            constraint: { index: "artifacts_space_computer_path_key" },
+          },
+        },
+      },
+    });
+
+  const dana = { name: "Dana", timezone: "Asia/Jerusalem" };
+
+  function setup(user: { name: string; timezone: string | null } = dana) {
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "artifact-1",
+      runId: null,
+      description: null,
+      createdAt: new Date(0),
+      ...data,
+    }));
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      artifact: { findFirst: vi.fn().mockResolvedValue(null), create },
+    };
+    const findUnique = vi.fn().mockResolvedValue(user);
+    const transaction = vi.fn(async (fn: (t: unknown) => Promise<unknown>) => fn(tx));
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      prisma: {
+        artifact: { findFirst: vi.fn().mockResolvedValue(null) },
+        user: { findUnique },
+        $transaction: transaction,
+      } as unknown as PrismaClient,
+      artifacts: {
+        put: vi.fn().mockResolvedValue({ id: "blob-1" }),
+        remove,
+      } as unknown as ArtifactStore,
+    };
+    const paths = () => create.mock.calls.map(([{ data }]) => data.computerPath);
+    return { deps, create, findUnique, transaction, remove, paths };
+  }
+  const upload = (deps: Parameters<typeof createOwnedArtifact>[0]) =>
+    createOwnedArtifact(deps, actor, {
+      botId: "bot-1",
+      name: "photo.png",
+      mimeType: "image/png",
+      contentBase64: Buffer.from("png").toString("base64"),
+    });
+  const inbound = (
+    deps: Parameters<typeof storeInboundAttachment>[0],
+    name: string,
+    mimeType: string,
+    sender?: string,
+  ) =>
+    storeInboundAttachment(deps, actor, {
+      botId: "bot-1",
+      attachment: { name, mimeType, fetch: async () => new Uint8Array([1]) },
+      clientNonce: "nonce-1",
+      sender,
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(arrival);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("stores no path, and looks nothing up, with the default id names", async () => {
+    const { deps, findUnique, paths } = setup();
+    await upload(deps);
+    await inbound(deps, "photo.png", "image/png", "+972 50 555 0100");
+    expect(paths()).toEqual([null, null]);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it("names an upload by date, uploader and file name in the uploader's time zone", async () => {
+    const { deps, create, paths } = setup();
+    const stored = await upload({ ...deps, attachmentNaming: readable });
+    expect(paths()).toEqual(["attachments/2026/11/2026-11-18_1649_Dana_photo.png"]);
+    expect(create.mock.calls[0]?.[0].data.createdAt).toEqual(arrival);
+    expect(stored.createdAt).toBe(arrival.toISOString());
+  });
+
+  it("leaves the sender out for an uploader with a blank name", async () => {
+    const { deps, paths } = setup({ name: "  ", timezone: "Asia/Jerusalem" });
+    await upload({ ...deps, attachmentNaming: readable });
+    expect(paths()).toEqual(["attachments/2026/11/2026-11-18_1649_photo.png"]);
+  });
+
+  it("dates a file in UTC for an account without a time zone", async () => {
+    const { deps, paths } = setup({ name: "Dana", timezone: null });
+    await upload({ ...deps, attachmentNaming: readable });
+    expect(paths()).toEqual(["attachments/2026/11/2026-11-18_1449_Dana_photo.png"]);
+  });
+
+  it("names a chat-app file by its cleaned sender", async () => {
+    const { deps, paths } = setup();
+    await inbound(
+      { ...deps, attachmentNaming: readable },
+      "photo.png",
+      "image/png",
+      ' "+972 50 555 0100"\n',
+    );
+    expect(paths()).toEqual(["attachments/2026/11/2026-11-18_1649_+972 50 555 0100_photo.png"]);
+  });
+
+  it("tries the next name in a new transaction when a path is taken", async () => {
+    const { deps, create, transaction, paths } = setup();
+    create.mockRejectedValueOnce(pathClash()).mockRejectedValueOnce(pathClash());
+    await inbound({ ...deps, attachmentNaming: readable }, "video.mp4", "video/mp4", "Noa");
+    expect(paths()).toEqual([
+      "attachments/2026/11/2026-11-18_1649_Noa_video.mp4",
+      "attachments/2026/11/2026-11-18_1649_Noa_video-2.mp4",
+      "attachments/2026/11/2026-11-18_1649_Noa_video-3.mp4",
+    ]);
+    expect(transaction).toHaveBeenCalledTimes(3);
+  });
+
+  it("stores the file with no stored path after 20 taken paths, so it keeps its id path", async () => {
+    const { deps, create, remove, paths } = setup();
+    for (let taken = 0; taken < 20; taken += 1) create.mockRejectedValueOnce(pathClash());
+    const stored = await inbound(
+      { ...deps, attachmentNaming: readable },
+      "video.mp4",
+      "video/mp4",
+      "Noa",
+    );
+    expect(create).toHaveBeenCalledTimes(21);
+    expect(paths()[19]).toBe("attachments/2026/11/2026-11-18_1649_Noa_video-20.mp4");
+    expect(paths()[20]).toBeNull();
+    expect(stored.computerPath).toBeNull();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("removes the stored file when creating the row fails for another reason", async () => {
+    const { deps, create, remove } = setup();
+    create.mockRejectedValue(new Error("database down"));
+    await expect(
+      inbound({ ...deps, attachmentNaming: readable }, "video.mp4", "video/mp4", "Noa"),
+    ).rejects.toThrow("database down");
+    expect(create).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledWith("blob-1", expect.anything());
   });
 });

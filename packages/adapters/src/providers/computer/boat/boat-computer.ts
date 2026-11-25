@@ -26,6 +26,7 @@ export const boatComputer: ComputerProviderDefinition = {
     storedHomeIsBackup: false,
     readStoppedFiles: true,
     sizedUsage: true,
+    sleepStopsMachine: false,
   },
   env: {
     boatApiKey: { name: "BOAT_API_KEY", required: true },

@@ -18,7 +18,7 @@ import {
   stepScreenshotMimeType,
 } from "@rakazo/contracts";
 import {
-  attachmentComputerPath,
+  attachmentComputerPathFor,
   attachmentStoredName,
   inferAttachmentMimeType,
   messageBlockForArtifact,
@@ -31,9 +31,13 @@ import {
   withTransactionRetry,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { resolveBotWorkspacePath } from "../computers/screens/computer-support.js";
+import {
+  normalizeWorkspacePath,
+  resolveBotWorkspacePath,
+} from "../computers/screens/computer-support.js";
 
 export type MaterializedThreadFile = {
+  artifactId: string;
   name: string;
   mimeType: string;
   size: number;
@@ -162,13 +166,14 @@ async function attachedArtifacts(
 }
 
 function threadFileMetadata(
-  row: Pick<Artifact, "id" | "name" | "mimeType" | "size">,
+  row: Pick<Artifact, "id" | "name" | "mimeType" | "size" | "computerPath">,
 ): MaterializedThreadFile {
   return {
+    artifactId: row.id,
     name: row.name,
     mimeType: row.mimeType,
     size: row.size,
-    path: attachmentComputerPath(row.id, row.mimeType),
+    path: attachmentComputerPathFor(row),
   };
 }
 
@@ -212,10 +217,38 @@ export async function materializeCurrentTurnFiles(
   return materializeThreadFiles(deps, blocks, input, false);
 }
 
+/**
+ * Whether the computer already has the file at that path, from a folder listing so the file is
+ * never read back. With `size` the copy must be the same size; without it any file counts, which
+ * keeps an edited copy. A folder not there yet, or a listing that fails, is "not there": the
+ * copy then writes the file.
+ */
+async function computerHoldsFile(
+  sandbox: SandboxProvider,
+  computer: ComputerRef,
+  context: AdapterContext,
+  file: { workspacePath: string; size?: number },
+): Promise<boolean> {
+  try {
+    const wanted = normalizeWorkspacePath(file.workspacePath);
+    const directory = path.posix.dirname(wanted);
+    const entries = await sandbox.listFiles(computer, directory === "." ? "" : directory, context);
+    return entries.some(
+      (entry) =>
+        entry.kind === "file" &&
+        (file.size === undefined || entry.size === file.size) &&
+        normalizeWorkspacePath(entry.path) === wanted,
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function materializeThreadFiles(
   deps: Parameters<typeof materializeCurrentTurnFiles>[0],
   blocks: MessageBlock[] | undefined,
   input: Parameters<typeof materializeCurrentTurnFiles>[2],
+  /** Keep a copy already on the computer whatever its size: the bot may have edited it. */
   preserveExisting: boolean,
 ): Promise<MaterializedThreadFile[]> {
   // Images seen inline for vision are not on disk, so they are copied too; otherwise a bot can
@@ -234,12 +267,14 @@ async function materializeThreadFiles(
       input.context.botId,
       metadata.path,
     );
-    const exists = preserveExisting
-      ? await deps.sandbox.readFile(await input.computer(), workspacePath, input.context).then(
-          () => true,
-          () => false,
-        )
-      : false;
+    // The arrival copy writes only files with a stored path, so a current-turn file without one
+    // is written as before, with no listing.
+    const exists =
+      (preserveExisting || row.computerPath != null) &&
+      (await computerHoldsFile(deps.sandbox, await input.computer(), input.context, {
+        workspacePath,
+        size: preserveExisting ? undefined : row.size,
+      }));
     if (!exists) {
       const bytes = await deps.artifacts.get(row.storageKey, input.context);
       if (bytes.byteLength > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)) {
@@ -306,12 +341,10 @@ export function createEarlierFileQueue(limit = EARLIER_FILES_PENDING) {
       pending = [];
       return taken;
     },
-    /** Record which taken files reached the computer, by the paths the copy returned. */
+    /** Record which taken files reached the computer, by the artifact ids the copy returned. */
     copiedTo(taken: ReadonlyArray<FileBlock>, files: ReadonlyArray<MaterializedThreadFile>) {
-      const paths = new Set(files.map((file) => file.path));
-      for (const file of taken)
-        if (paths.has(attachmentComputerPath(file.artifactId, file.mimeType)))
-          copied.add(file.artifactId);
+      const ids = new Set(files.map((file) => file.artifactId));
+      for (const file of taken) if (ids.has(file.artifactId)) copied.add(file.artifactId);
     },
     /** A newly started computer has none of the earlier copies. */
     computerStarted() {

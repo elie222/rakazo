@@ -15,6 +15,7 @@ const UNDECLARED_KIND_CAPABILITIES: SandboxKindCapabilities = {
   serverHomeMount: "never",
   serverOwnsStoredTeamHome: false,
   storedHomeIsBackup: false,
+  sleepStopsMachine: false,
 };
 
 /**

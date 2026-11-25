@@ -37,11 +37,11 @@ import {
   checkpointAndStopComputer,
   isTeamBotFolderName,
   removeComputerWorkspaceDirectories,
+  serverOwnsTeamHome,
   teamBrowserProfileName,
   withCleanupDeadline,
 } from "../computers/computer-workspace.js";
 import { isSandboxGoneError } from "../computers/sandbox/sandbox-errors.js";
-import { sandboxKindCapabilities } from "../computers/sandbox/sandbox-kind-capabilities.js";
 import { BrowserStoppedReleaseError } from "../computers/screens/computer-screens.js";
 import { toComputerRef } from "../computers/screens/computer-support.js";
 import type { MeetingService } from "../meetings/meeting-service.js";
@@ -843,15 +843,6 @@ async function sharedTeamComputer(
   return computer;
 }
 
-/**
- * Whether only the server writes this computer's stored home. A computer that can mount the
- * server's home directory, and is set up to, writes it itself.
- */
-function serverOwnsTeamHome(sandbox: SandboxProvider, kind: string) {
-  const { serverOwnsStoredTeamHome, serverHomeMount } = sandboxKindCapabilities(kind);
-  if (!serverOwnsStoredTeamHome) return false;
-  return !(serverHomeMount === "optional" && sandbox.describe().capabilities.persistentHome);
-}
 // The bot is already deleted; whatever this misses is removed when the computer next boots.
 const LIVE_CLEANUP_BUDGET_MS = 10_000;
 

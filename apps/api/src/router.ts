@@ -12,6 +12,7 @@ import type {
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
 import type {
+  AttachmentNaming,
   CloudAgentConnection,
   CodexLiveCatalog,
   ConnectorRegistry,
@@ -41,6 +42,7 @@ import type {
 import type { Auth } from "@rakazo/auth";
 import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { ArrivalCopyDeps } from "./attachments/arrival-copy.js";
 import type { BillingService } from "./billing/billing.js";
 import type { VoiceDeps } from "./calls/voice.js";
 import type { AppEnv } from "./env.js";
@@ -131,6 +133,8 @@ export interface RouterDeps {
   pluginRepoFetcher?: PluginRepoFetcher;
   pluginMarketplaceRead?: PluginTextReader;
   artifacts: ArtifactStore;
+  /** Copies a file sent to one bot into its computer, when that is on. */
+  arrivalCopy?: ArrivalCopyDeps;
   dataDir: string;
   messagingInstallations?: MessagingInstallations;
   /** Sends replies to the chat apps people message from; absent without one. */
@@ -161,6 +165,7 @@ export interface RouterDeps {
     phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;
     maxAttachmentsPerMessage?: number;
+    attachmentNaming?: AttachmentNaming;
     agentRuntime: string;
     teamChatJudgeProvider?: string;
     teamChatJudgeModel?: string;
@@ -228,6 +233,7 @@ export function routerEnv(env: AppEnv): RouterDeps["env"] {
     adminEmails: env.adminEmails,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
     maxAttachmentsPerMessage: env.maxAttachmentsPerMessage,
+    attachmentNaming: env.attachmentNaming,
     agentRuntime: env.agentRuntime,
     defaultProvider: env.defaultProvider,
     defaultModel: env.defaultModel,

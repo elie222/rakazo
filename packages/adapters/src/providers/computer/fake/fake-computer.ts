@@ -11,6 +11,7 @@ export const fakeComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: false,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   async create() {
     const { FakeSandboxProvider } = await import("./fake-sandbox.js");
