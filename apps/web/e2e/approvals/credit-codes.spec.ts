@@ -10,10 +10,10 @@ test("an account owner redeems a credit code from a link", async ({ page }, test
     await route.fulfill({ json: { json: { creditCents: 1000 } } });
   });
 
-  await page.goto("/redeem/SPRING-PROMO-27");
-  await expect(page.getByLabel("Code")).toHaveValue("SPRING-PROMO-27");
+  await page.goto("/redeem/GIFT-7QK2M9XA");
+  await expect(page.getByLabel("Code")).toHaveValue("GIFT-7QK2M9XA");
   await captureScreenshot(page, testInfo, "redeem-credit-code");
   await page.getByRole("button", { name: "Redeem" }).click();
   await expect(page.getByRole("heading", { name: "$10 in credits added" })).toBeVisible();
-  expect(redeemed).toEqual([{ code: "SPRING-PROMO-27" }]);
+  expect(redeemed).toEqual([{ code: "GIFT-7QK2M9XA" }]);
 });

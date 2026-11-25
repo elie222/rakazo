@@ -74,7 +74,7 @@ dbTests("access grants", () => {
   });
 
   it("redeems a credit code once per account, up to its limit of accounts", async () => {
-    const code = { code: `SPRING-${process.pid}-${Date.now()}`, creditCents: 1000, maxClaims: 2 };
+    const code = { code: `GIFT-${process.pid}-${Date.now()}`, creditCents: 1000, maxClaims: 2 };
     const first = await signUp("redeem-first");
     await service.redeemCreditCode(first, code);
     await expect(service.status(first)).resolves.toMatchObject({ balanceUsd: 10 });

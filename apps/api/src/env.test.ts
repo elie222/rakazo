@@ -29,15 +29,15 @@ describe("loadEnv", () => {
 
   it("reads credit codes case-insensitively, with an optional account limit", () => {
     expect(
-      loadEnv({ ...base, CREDIT_CODES: "spring-ugc:10, LAUNCH2027:2.50:100" }).creditCodes,
+      loadEnv({ ...base, CREDIT_CODES: "gift-code:10, LAUNCH2027:2.50:100" }).creditCodes,
     ).toEqual(
       new Map([
-        ["SPRING-UGC", { code: "SPRING-UGC", creditCents: 1000, maxClaims: null }],
+        ["GIFT-CODE", { code: "GIFT-CODE", creditCents: 1000, maxClaims: null }],
         ["LAUNCH2027", { code: "LAUNCH2027", creditCents: 250, maxClaims: 100 }],
       ]),
     );
   });
-  it.each(["SHORT:10", "SPRING-UGC:0", "SPRING-UGC:10:0", "SPRING-UGC:10,spring-ugc:5"])(
+  it.each(["SHORT:10", "GIFT-CODE:0", "GIFT-CODE:10:0", "GIFT-CODE:10,gift-code:5"])(
     "rejects credit codes %s",
     (value) => {
       expect(() => loadEnv({ ...base, CREDIT_CODES: value })).toThrow("CREDIT_CODES");
