@@ -94,5 +94,10 @@ describe("sanitizeConnectorError", () => {
       quotedSecret,
     ]);
     expect(acrossQuotes).toBe("Invalid value [redacted] in arg");
+
+    const quotedBearer = sanitizeConnectorError(
+      new Error("Authorization: Bearer \"quoted-tok-1\" and Bearer 'quoted-tok-2'"),
+    );
+    expect(quotedBearer).toBe("Authorization: Bearer [redacted] and Bearer [redacted]");
   });
 });

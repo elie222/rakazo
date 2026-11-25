@@ -249,25 +249,6 @@ export function blocksToAgentHistoryText(
 /** A reply in order, with its tool steps apart from the text around them. */
 export type AgentHistorySegment = { text: string } | { steps: HistoryToolStep[] };
 
-export function redactJsonValue(value: unknown, redact: (text: string) => string): unknown {
-  if (typeof value === "string") return redact(value);
-  if (typeof value === "number") {
-    const text = String(value);
-    const redacted = redact(text);
-    return redacted === text ? value : redacted;
-  }
-  if (Array.isArray(value)) return value.map((item) => redactJsonValue(item, redact));
-  if (value && typeof value === "object") {
-    // Use a null-prototype object so a "__proto__" key stays an own data property on stringify.
-    const out = Object.create(null) as Record<string, unknown>;
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      out[redact(key)] = redactJsonValue(item, redact);
-    }
-    return out;
-  }
-  return value;
-}
-
 const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
 const JSON_VALUE_TOKEN =
   /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
@@ -465,6 +446,14 @@ function redactJsonStringTokens(raw: string, redact: (text: string) => string): 
 
 const JSON_STRING_LITERAL_TOKEN = /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))/g;
 
+function precedesJsonStringToken(raw: string, index: number): boolean {
+  let prev = index - 1;
+  while (prev >= 0 && isJsonWhitespace(raw[prev])) prev -= 1;
+  if (prev < 0) return true;
+  const ch = raw[prev];
+  return ch === "{" || ch === "[" || ch === "," || ch === ":";
+}
+
 /**
  * Redact JSON string tokens after decoding them and apply `redactPlain` only to non-string text
  * between tokens, so pattern redactors never consume JSON quotes, escapes, or sibling fields.
@@ -479,6 +468,9 @@ export function redactJsonStringsAndPlainText(
   let cursor = 0;
   for (const match of raw.matchAll(JSON_STRING_LITERAL_TOKEN)) {
     const index = match.index ?? 0;
+    // Plain diagnostics such as `Bearer "secret"` put quotes after a word rather than a JSON
+    // structural delimiter; keep those with surrounding text so plain-text patterns still match.
+    if (!precedesJsonStringToken(raw, index)) continue;
     if (index > cursor) out += redactPlain(raw.slice(cursor, index));
     const token = match[0];
     out += redactSingleJsonStringToken(token, redactString, redactPlain);

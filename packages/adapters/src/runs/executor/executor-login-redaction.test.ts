@@ -54,6 +54,8 @@ async function runAfterFill(
     compactedSummary?: string;
     teammates?: Array<{ id: string; name: string; description?: string | null }>;
     replyQuote?: string;
+    earlierHistoryReplyQuote?: string;
+    sharedSpaceMemberName?: string;
   } = {},
 ) {
   const run = {
@@ -143,6 +145,7 @@ async function runAfterFill(
   let capturedRequest:
     | {
         prompt?: string;
+        promptSpeaker?: string;
         instructions?: string;
         history?: unknown[];
         executeTool?: ExecuteTool;
@@ -150,6 +153,7 @@ async function runAfterFill(
     | undefined;
   const runtimeRun = vi.fn(async function* (request: {
     prompt?: string;
+    promptSpeaker?: string;
     instructions?: string;
     history?: unknown[];
     executeTool?: ExecuteTool;
@@ -167,7 +171,28 @@ async function runAfterFill(
     userActionAutoReviewPreference: { findUnique: vi.fn(async () => ({ enabled: false })) },
     actionAutoReviewPreference: { findUnique: vi.fn(async () => ({ enabled: false })) },
     space: { findUnique: vi.fn(async () => null) },
-    spaceMember: { findUnique: async () => ({ id: "member-1" }) },
+    spaceMember: {
+      findUnique: async () => ({ id: "member-1" }),
+      findMany: vi.fn(async () =>
+        options.sharedSpaceMemberName
+          ? [
+              { userId: run.userId, member: { user: { name: options.sharedSpaceMemberName } } },
+              { userId: "user-2", member: { user: { name: "Teammate" } } },
+            ]
+          : [],
+      ),
+    },
+    ...(options.sharedSpaceMemberName
+      ? {
+          user: {
+            findUnique: vi.fn(async () => null),
+            findMany: vi.fn(async () => [
+              { id: run.userId, name: options.sharedSpaceMemberName },
+              { id: "user-2", name: "Teammate" },
+            ]),
+          },
+        }
+      : {}),
     $transaction: vi.fn(async (write: (tx: unknown) => unknown) => write(prisma)),
     $queryRaw: vi.fn(async () => []),
     run: {
@@ -217,6 +242,7 @@ async function runAfterFill(
         historyCompactionSummary: options.compactedSummary ?? null,
         historyCompactedUpToSeq: options.compactedSummary ? 3 : null,
         nextMessageSeq: 4,
+        ...(options.sharedSpaceMemberName ? { space: { _count: { memberships: 2 } } } : {}),
       })),
     },
     ...(options.scratchpadNotes
@@ -238,7 +264,33 @@ async function runAfterFill(
         }
       : {}),
     message: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async ({ where }: { where?: { blocks?: unknown } } = {}) =>
+        !where?.blocks && options.earlierHistoryReplyQuote
+          ? [
+              {
+                id: "msg-history-reply",
+                threadId: run.threadId,
+                seq: 4,
+                role: "user",
+                botId: null,
+                authorUserId: run.userId,
+                clientNonce: null,
+                createdAt: new Date("2026-11-25T10:30:00Z"),
+                blocks: [{ kind: "text", text: "Earlier follow up" }],
+                steeringMessages: [],
+                replyToMessageId: "msg-target",
+                replyQuote: options.earlierHistoryReplyQuote,
+                replyTo: {
+                  id: "msg-target",
+                  threadId: run.threadId,
+                  role: "assistant",
+                  botId: run.botId,
+                  blocks: [{ kind: "text", text: "Original message" }],
+                },
+              },
+            ]
+          : [],
+      ),
       findFirst: vi.fn(async () =>
         options.replyQuote
           ? {
@@ -412,7 +464,7 @@ describe("command variables in a later run", () => {
       }),
     ]);
   });
-  it("redacts model-start secrets containing XML characters from memory, scratchpad, rosters, reply quotes, and compacted summary", async () => {
+  it("redacts model-start secrets containing XML characters from memory, scratchpad, rosters, reply quotes, speaker labels, and compacted summary", async () => {
     const modelSecret = "model<api&key>99";
     const { capturedRequest } = await runAfterFill([], {
       trigger: "user",
@@ -428,11 +480,15 @@ describe("command variables in a later run", () => {
         },
       ],
       replyQuote: `Quoted ${modelSecret}`,
+      earlierHistoryReplyQuote: `History quoted ${modelSecret}`,
+      sharedSpaceMemberName: `Owner ${modelSecret}`,
     });
     expect(capturedRequest).toBeDefined();
     expect(capturedRequest?.prompt).toContain("Saved memory token [redacted]");
     expect(capturedRequest?.prompt).toContain("Saved scratchpad token [redacted]");
     expect(capturedRequest?.prompt).toContain("Quoted [redacted]");
+    expect(capturedRequest?.prompt).toContain("Owner (redacted)");
+    expect(capturedRequest?.promptSpeaker).toBe("Owner (redacted)");
     expect(capturedRequest?.prompt).not.toContain("model&lt;");
     expect(capturedRequest?.prompt).not.toContain("model\\u003c");
     expect(capturedRequest?.prompt).not.toContain("api&amp;key");
@@ -442,8 +498,12 @@ describe("command variables in a later run", () => {
     expect(capturedRequest?.instructions).not.toContain("api&amp;key");
     const serializedHistory = JSON.stringify(capturedRequest?.history ?? []);
     expect(serializedHistory).toContain("Prior summary token [redacted]");
+    expect(serializedHistory).toContain("History quoted [redacted]");
+    expect(serializedHistory).toContain('"speaker":"Owner (redacted)"');
     expect(serializedHistory).not.toContain("model&lt;");
+    expect(serializedHistory).not.toContain("model\\u003c");
     expect(serializedHistory).not.toContain("api&amp;key");
+    expect(serializedHistory).not.toContain(modelSecret);
   });
 });
 

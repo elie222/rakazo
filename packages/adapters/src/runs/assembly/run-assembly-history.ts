@@ -38,11 +38,13 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
     parts.records;
   // Group threads and spaces several people share: who wrote each message, so the model can
   // tell the bots and the people apart. A personal space's direct chat stays plain turns.
+  const redact = (value: string) => redactSecrets(value, hold.secrets);
   const people = await loadSpacePeople(
     deps.prisma,
     thread.space?._count.memberships ?? 0,
     run.userId,
     messages,
+    redact,
   );
   const speakers = await loadThreadSpeakers(
     deps.prisma,
@@ -50,6 +52,7 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
     { spaceId: run.spaceId, bot },
     messages,
     people,
+    redact,
   );
   const threadContext = threadContextForRun(
     run.trigger,
@@ -57,7 +60,6 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
       messages: [...messages].reverse().map((m) => {
         const speaker = historySpeaker(speakers, m);
         // In a group, turns from several speakers are joined, so no line may pose as a label.
-        const redact = (value: string) => redactSecrets(value, hold.secrets);
         const neutral = (value: string) => (speakers ? neutralizeSpeakerLabels(value) : value);
         const text = neutral(messageToAgentHistoryText(m, redact));
         const partial = isPartialReplyClientNonce(m.clientNonce);
