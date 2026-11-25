@@ -74,7 +74,6 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
       <label htmlFor={htmlFor}>{children}</label>
     ),
     FieldDescription: Container,
-    Disclosure: Container,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     OptionSelect,
     SwitchField,
