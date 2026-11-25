@@ -208,7 +208,7 @@ export function keepToolStepResult(
 export function historyReplaysOutsideContent(history: AgentRunRequest["history"]): boolean {
   return history.some(
     (entry) =>
-      turnTranscriptResults(entry.transcript).length > 0 ||
+      Boolean(turnTranscriptResults(entry.transcript)?.length) ||
       entry.segments?.some(
         (segment) =>
           "steps" in segment &&
@@ -221,19 +221,20 @@ export function historyReplaysOutsideContent(history: AgentRunRequest["history"]
 
 /** The kept results replayed history hands the model, oldest first. */
 export function historyToolResults(history: AgentRunRequest["history"]): unknown[] {
-  return history.flatMap((entry) =>
-    // A stored turn replays its results whole, so those are what the model reads.
-    entry.transcript
-      ? turnTranscriptResults(entry.transcript)
-      : (entry.segments ?? []).flatMap((segment) =>
-          "steps" in segment
-            ? segment.steps.flatMap((step) =>
-                (step.calls ?? []).flatMap((call) =>
-                  call.result === undefined ? [] : [call.result],
-                ),
-              )
-            : [],
-        ),
+  return history.flatMap(
+    (entry) =>
+      // A stored turn replays its results whole, so those are what the model reads. One that
+      // cannot be read replays from the reply's kept results.
+      turnTranscriptResults(entry.transcript) ??
+      (entry.segments ?? []).flatMap((segment) =>
+        "steps" in segment
+          ? segment.steps.flatMap((step) =>
+              (step.calls ?? []).flatMap((call) =>
+                call.result === undefined ? [] : [call.result],
+              ),
+            )
+          : [],
+      ),
   );
 }
 

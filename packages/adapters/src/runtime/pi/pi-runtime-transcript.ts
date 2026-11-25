@@ -110,26 +110,34 @@ const StoredTurnSchema = z.object({
   prompt: z.object({ at: z.number().int().nonnegative(), id: z.string() }).optional(),
 });
 
+type StoredTurn = Pick<TurnTranscript, "represents" | "messages" | "prompt">;
+
+/** Records already read, so one run's several readers parse each once and warn once. */
+const read = new Map<string, StoredTurn | undefined>();
+const READ_CACHE_SIZE = 256;
+
 /** A stored turn's messages and the history it stands for, or none when it cannot be read. */
-export function readTurnTranscript(
-  serialized: string | undefined,
-): Pick<TurnTranscript, "represents" | "messages" | "prompt"> | undefined {
+export function readTurnTranscript(serialized: string | undefined): StoredTurn | undefined {
   if (!serialized) return undefined;
+  if (read.has(serialized)) return read.get(serialized);
   let parsed: ReturnType<typeof StoredTurnSchema.safeParse> | undefined;
   try {
     parsed = StoredTurnSchema.safeParse(JSON.parse(serialized));
   } catch {
     parsed = undefined;
   }
-  if (parsed?.success)
-    return {
-      represents: parsed.data.represents,
-      messages: parsed.data.messages as unknown as Message[],
-      ...(parsed.data.prompt ? { prompt: parsed.data.prompt } : {}),
-    };
+  const turn = parsed?.success
+    ? {
+        represents: parsed.data.represents,
+        messages: parsed.data.messages as unknown as Message[],
+        ...(parsed.data.prompt ? { prompt: parsed.data.prompt } : {}),
+      }
+    : undefined;
   // The turn is rebuilt from its reply instead, as before records were kept.
-  getLogger().warn("Stored turn transcript could not be read; replaying from the reply");
-  return undefined;
+  if (!turn) getLogger().warn("Stored turn transcript could not be read; replaying from the reply");
+  if (read.size >= READ_CACHE_SIZE) read.delete(read.keys().next().value!);
+  read.set(serialized, turn);
+  return turn;
 }
 
 /** Where a text sits in a stored turn, so each can be treated as its kind is elsewhere. */
@@ -201,9 +209,12 @@ export function turnToolNames(
   );
 }
 
-/** The text of every tool result a stored turn hands the model, oldest first. */
-export function turnTranscriptResults(serialized: string | undefined): string[] {
-  return (readTurnTranscript(serialized)?.messages ?? []).flatMap((message) =>
+/**
+ * The text of every tool result a stored turn hands the model, oldest first, or none when it
+ * cannot be read (the turn then replays from its reply).
+ */
+export function turnTranscriptResults(serialized: string | undefined): string[] | undefined {
+  return readTurnTranscript(serialized)?.messages.flatMap((message) =>
     message.role === "toolResult"
       ? message.content.flatMap((part) => (part.type === "text" ? [part.text] : []))
       : [],
