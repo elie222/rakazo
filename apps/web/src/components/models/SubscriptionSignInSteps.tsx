@@ -24,7 +24,6 @@ export function SubscriptionSignInSteps({
   onPasteCodeChange,
   onSubmitCode,
   onPageOpened,
-  startVariant,
 }: {
   oauth: ModelOAuthBegin | null;
   setup: ModelCatalogEntry["signInSetup"];
@@ -41,11 +40,10 @@ export function SubscriptionSignInSteps({
   onPasteCodeChange: (code: string) => void;
   onSubmitCode: () => void;
   onPageOpened: () => void;
-  startVariant?: "outline" | "text";
 }) {
   const { t } = useLingui();
   const start = (
-    <Button variant={startVariant} className="mt-2" disabled={disabled} onClick={onStart}>
+    <Button className="mt-2" disabled={disabled} onClick={onStart}>
       {starting ? <Trans>Starting…</Trans> : startLabel}
     </Button>
   );

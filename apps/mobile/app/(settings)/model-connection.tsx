@@ -594,7 +594,7 @@ export default function ModelConnection() {
       <>
         {subscriptionSignIn &&
         signInSetup &&
-        (!selected?.alternativeSignIn || oauth?.mode === "device-code") &&
+        !(oauth && oauth.provider === selected?.alternativeSignIn?.provider) &&
         (oauth || credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
           <SettingsGroup>
             <SettingsRow
@@ -680,36 +680,32 @@ export default function ModelConnection() {
             </View>
           ) : credential?.authKind !== "oauth" || credential.reconnectRequired ? (
             <>
-              {selected?.alternativeSignIn ? (
-                <NativeActionButton
-                  disabled={busy}
-                  fill
-                  label={selected.alternativeSignIn.loginLabel}
-                  onPress={() => void startSubscriptionSignIn(selected.alternativeSignIn)}
-                  prominence="primary"
-                  style={{ marginTop: 12 }}
-                />
-              ) : null}
               <NativeActionButton
                 disabled={busy}
                 fill
                 label={
                   oauthPending
                     ? t`Starting…`
-                    : selected?.alternativeSignIn
-                      ? t`Use device code`
-                      : credential?.authKind === "oauth"
-                        ? t`Sign in again`
-                        : signInSetup
-                          ? t`2. Get a sign-in code`
-                          : (selected.oauthLabel ?? t`Sign in`)
+                    : credential?.authKind === "oauth"
+                      ? t`Sign in again`
+                      : signInSetup
+                        ? t`2. Get a sign-in code`
+                        : (selected.oauthLabel ?? t`Sign in`)
                 }
                 onPress={() => void startSubscriptionSignIn()}
-                prominence={
-                  selected?.alternativeSignIn ? "secondary" : signInSetup ? "primary" : "secondary"
-                }
+                prominence={signInSetup ? "primary" : "secondary"}
                 style={{ marginTop: 12 }}
               />
+              {selected?.alternativeSignIn ? (
+                <NativeActionButton
+                  disabled={busy}
+                  fill
+                  label={selected.alternativeSignIn.loginLabel}
+                  onPress={() => void startSubscriptionSignIn(selected.alternativeSignIn)}
+                  prominence="secondary"
+                  style={{ marginTop: 12 }}
+                />
+              ) : null}
             </>
           ) : null
         ) : null}

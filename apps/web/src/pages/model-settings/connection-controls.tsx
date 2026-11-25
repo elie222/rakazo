@@ -103,22 +103,15 @@ export function ConnectionControls({
     <>
       {subscriptionSignIn && (credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
         <div className="mt-5 first:mt-0">
-          {selected?.alternativeSignIn && !oauth ? (
-            <Button disabled={busy} onClick={() => beginSelectedSubscriptionSignIn(true)}>
-              {selected.alternativeSignIn.loginLabel}
-            </Button>
-          ) : null}
           <SubscriptionSignInSteps
             oauth={oauth}
             setup={
-              selected?.alternativeSignIn && oauth?.mode !== "device-code"
+              oauth && oauth.provider === selected?.alternativeSignIn?.provider
                 ? undefined
                 : selected?.signInSetup
             }
             startLabel={
-              selected?.alternativeSignIn ? (
-                <Trans>Use device code</Trans>
-              ) : credential?.authKind === "oauth" ? (
+              credential?.authKind === "oauth" ? (
                 <Trans>Sign in again</Trans>
               ) : (
                 (selected?.oauthLabel ?? t`Sign in`)
@@ -139,8 +132,19 @@ export function ConnectionControls({
             onPasteCodeChange={setPasteCode}
             onSubmitCode={() => void submitOAuthCode()}
             onPageOpened={() => reportSignInStep("page_opened")}
-            startVariant={selected?.alternativeSignIn ? "text" : undefined}
           />
+          {selected?.alternativeSignIn && !oauth ? (
+            <div>
+              <Button
+                variant="outline"
+                className="mt-2"
+                disabled={busy}
+                onClick={() => beginSelectedSubscriptionSignIn(true)}
+              >
+                {selected.alternativeSignIn.loginLabel}
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
