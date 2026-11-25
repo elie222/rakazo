@@ -5,6 +5,7 @@ import {
   isDeletableMemoryDocument,
   MEMORY_INDEX_PATH,
 } from "@rakazo/contracts";
+import { redactSecrets } from "@rakazo/core";
 import { readHistory, searchHistory } from "@rakazo/db";
 import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import { stampMemoryEntry, userMemoryDate } from "../../memory/memory-expiry.js";
@@ -105,12 +106,16 @@ export const memoryTools: ToolHandlers = {
     const { args } = call;
     const parsed = RememberInputSchema.safeParse(args);
     if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
+    const secrets = ctx.secrets ?? [];
     const today = await userMemoryDate(deps.prisma, run.userId, deps.now?.() ?? new Date());
-    const operations = parsed.data.operations.map((operation) =>
-      operation.action !== "remove" && operation.content?.trim()
-        ? { ...operation, content: stampMemoryEntry(operation.content, today, operation.until) }
-        : operation,
-    );
+    const operations = parsed.data.operations.map((operation) => {
+      if (operation.action === "remove" || !operation.content?.trim()) return operation;
+      const safeContent = redactSecrets(operation.content, secrets);
+      const safeUntil = operation.until?.trim()
+        ? redactSecrets(operation.until, secrets)
+        : operation.until;
+      return { ...operation, content: stampMemoryEntry(safeContent, today, safeUntil) };
+    });
     const owner = parsed.data.shared
       ? { scope: "user" as const }
       : { scope: "bot" as const, botId: bot.id };
@@ -207,10 +212,11 @@ export const memoryTools: ToolHandlers = {
   async save_memory(ctx, call) {
     const { bot, context } = ctx;
     const { args } = call;
+    const rawContent = String(args.content ?? "");
     return call.finish(
       await ctx.memory.semantic!.save(
         {
-          content: String(args.content ?? ""),
+          content: rawContent.trim() ? redactSecrets(rawContent, ctx.secrets ?? []) : rawContent,
           scope: ctx.memory.scope!,
           botId: bot.id,
           source: { kind: "durable" },

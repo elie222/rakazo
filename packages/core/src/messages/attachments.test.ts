@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import {
   AttachmentValidationError,
@@ -18,6 +19,7 @@ import {
   userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
+import { secretRedactor, withToolHistory } from "./events.js";
 
 describe("attachment helpers", () => {
   it.each([
@@ -681,6 +683,318 @@ describe("tool step history", () => {
 
   it("renders nothing for an empty steps block", () => {
     expect(blocksToAgentHistoryText([{ kind: "steps", steps: [] }])).toBe("");
+  });
+
+  it("redacts raw tool notes, ask option labels, and draft details before whitespace folding, trimming, or escaping", () => {
+    const paddedSecret = "  step&sec\n  <7>val  ";
+    const draftSecret = "tok</draft>secret";
+    const text = blocksToAgentHistoryText(
+      [
+        {
+          kind: "steps",
+          steps: [{ label: "Shell", count: 1, note: `${paddedSecret}  done` }],
+        },
+        {
+          kind: "ask",
+          text: "Send draft?",
+          detail: `Body: ${draftSecret} and </draft> tag`,
+          actions: [{ id: "send", label: `Send ${paddedSecret}` }],
+        },
+      ],
+      secretRedactor([paddedSecret, draftSecret]),
+    );
+
+    expect(text).toContain("- Shell: [redacted] done");
+    expect(text).toContain("A. Send [redacted]");
+    expect(text).toContain("Body: [redacted] and &lt;/draft&gt; tag");
+    expect(text).not.toContain("step&sec");
+    expect(text).not.toContain("<7>val");
+    expect(text).not.toContain("tok</draft>secret");
+    expect(text).not.toContain("tok&lt;/draft&gt;secret");
+  });
+
+  it("does not throw on legacy or malformed stored blocks with missing string fields when redacting", () => {
+    const legacyBlocks = [
+      { kind: "image", artifactId: "a-1", mimeType: "image/png" },
+      { kind: "text" },
+      { kind: "tool_question", status: "expired" },
+      { kind: "ask", text: "Proceed?", status: "answered", answer: "yes", actions: [null] },
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            count: Object.create(null),
+            outcomes: { succeeded: Object.create(null) },
+          },
+        ],
+      },
+    ] as unknown as MessageBlock[];
+
+    expect(blocksToAgentHistoryText(legacyBlocks, secretRedactor([]))).toBe(
+      blocksToAgentHistoryText(legacyBlocks),
+    );
+    expect(blocksToAgentHistoryText(legacyBlocks, secretRedactor([]))).toContain("Answer: yes");
+    expect(blocksToAgentHistoryText(legacyBlocks, secretRedactor([]))).toContain("- Shell");
+  });
+
+  it("redacts text and structured tool steps in blocksToAgentHistorySegments", () => {
+    const secret = "  seg&sec<9>val  ";
+    const jsonSecret = 'line1\n"quoted"\\val';
+    const blocks = [
+      { kind: "text", text: `Before ${secret}` },
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: `Shell ${secret}`,
+            tool: "shell",
+            count: 1,
+            note: `Note ${secret}`,
+            calls: [
+              null,
+              {
+                arguments: `{"cmd":${JSON.stringify(`echo ${secret}`)},"body":${JSON.stringify(jsonSecret)},"pin":987654321,"retries":2,"__proto__":{"keep":true}}`,
+                result: `out=${secret}`,
+              },
+            ],
+          },
+          {
+            label: "Malformed calls",
+            tool: "shell",
+            count: 1,
+            note: 42,
+            calls: "not-an-array",
+          },
+          {
+            label: "Malformed call result",
+            tool: "shell",
+            count: 1,
+            calls: [{ arguments: 123, result: 99 }],
+          },
+        ],
+      },
+      { kind: "text", text: `After ${secret}` },
+    ] as unknown as MessageBlock[];
+
+    const segments = blocksToAgentHistorySegments(
+      blocks,
+      secretRedactor([secret, jsonSecret, "987654321"]),
+    );
+    expect(segments).toEqual([
+      { text: "Before [redacted]" },
+      {
+        steps: [
+          {
+            label: "Shell [redacted]",
+            tool: "shell",
+            count: 1,
+            note: "Note [redacted]",
+            calls: [
+              {
+                arguments:
+                  '{"cmd":"echo [redacted]","body":"[redacted]","pin":"[redacted]","retries":2,"__proto__":{"keep":true}}',
+                result: "out=[redacted]",
+              },
+            ],
+          },
+          {
+            label: "Malformed calls",
+            tool: "shell",
+            count: 1,
+          },
+          {
+            label: "Malformed call result",
+            tool: "shell",
+            count: 1,
+            calls: [{}],
+          },
+        ],
+      },
+      { text: "After [redacted]" },
+    ]);
+  });
+
+  it("redacts JSON-escaped secrets in saved tool results as well as tool arguments", () => {
+    const jsonSecret = 'line1\n"quoted"\\val';
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            tool: "shell",
+            count: 2,
+            calls: [
+              {
+                arguments: JSON.stringify({ cmd: `echo ${jsonSecret}` }),
+                result: JSON.stringify({ stdout: `got ${jsonSecret}`, ok: true }),
+              },
+              {
+                arguments: JSON.stringify(jsonSecret),
+                result: JSON.stringify(`raw ${jsonSecret}`),
+              },
+            ],
+          },
+        ],
+      },
+    ] as unknown as MessageBlock[];
+
+    const segments = blocksToAgentHistorySegments(blocks, secretRedactor([jsonSecret]));
+    expect(segments).toEqual([
+      {
+        steps: [
+          {
+            label: "Shell",
+            tool: "shell",
+            count: 2,
+            calls: [
+              {
+                arguments: '{"cmd":"echo [redacted]"}',
+                result: '{"stdout":"got [redacted]","ok":true}',
+              },
+              {
+                arguments: '"[redacted]"',
+                result: '"raw [redacted]"',
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("redacts JSON-escaped multiline secrets inside truncated JSON tool results", () => {
+    const multilineSecret = 'line1\n"quoted"\\val';
+    const truncated = `{"stdout":${JSON.stringify(`got ${multilineSecret}`)},"rest":"${"x".repeat(40)}… [200 characters not kept]`;
+    const headTailMidString = `{"stdout":"${"a".repeat(30)}\n… [500 characters not kept] …\n${"b".repeat(12)}","tail":${JSON.stringify(`got ${multilineSecret}`)}}`;
+    const headTailInCutValue = `{"stdout":"${"a".repeat(30)}\n… [500 characters not kept] …\n${JSON.stringify(`tail ${multilineSecret}`).slice(1, -1)}"}`;
+    const trailingLoneBackslash = `{"stdout":"got ${JSON.stringify(multilineSecret).slice(1, -1)} tail\\`;
+    const trailingCompleteEscapedBackslash = `{"stdout":"got ${JSON.stringify(multilineSecret).slice(1, -1)}\\\\`;
+    const tailEndingCompleteEscapedBackslash = `{"stdout":"${"a".repeat(30)}\n… [500 characters not kept] …\ngot ${JSON.stringify(multilineSecret).slice(1, -1)}\\\\`;
+    const cutBetweenEscapedBackslashes = `{"stdout":"${"a".repeat(30)}\\\n… [500 characters not kept] …\n\\x ${JSON.stringify(multilineSecret).slice(1, -1)}"}`;
+    const cutBeforeClosingQuote = `{"stdout":"${"a".repeat(30)}\\\n… [500 characters not kept] …\n\\","tail":${JSON.stringify(`got ${multilineSecret}`)}}`;
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Shell",
+            tool: "shell",
+            count: 8,
+            calls: [
+              { arguments: "{}", result: truncated },
+              { arguments: "{}", result: headTailMidString },
+              { arguments: "{}", result: headTailInCutValue },
+              { arguments: "{}", result: trailingLoneBackslash },
+              { arguments: "{}", result: cutBetweenEscapedBackslashes },
+              { arguments: "{}", result: cutBeforeClosingQuote },
+              { arguments: "{}", result: trailingCompleteEscapedBackslash },
+              { arguments: "{}", result: tailEndingCompleteEscapedBackslash },
+            ],
+          },
+        ],
+      },
+    ] as unknown as MessageBlock[];
+
+    const segments = blocksToAgentHistorySegments(blocks, secretRedactor([multilineSecret]));
+    const calls = segments[0] && "steps" in segments[0] ? segments[0].steps[0]?.calls : undefined;
+    expect(calls?.[0]?.result).toContain('"stdout":"got [redacted]"');
+    expect(calls?.[1]?.result).toContain('"tail":"got [redacted]"');
+    expect(calls?.[2]?.result).toContain("tail [redacted]");
+    expect(calls?.[3]?.result).toContain('"stdout":"got [redacted] tail\\');
+    expect(calls?.[4]?.result).toContain('\\x [redacted]"');
+    expect(calls?.[5]?.result).toContain('"tail":"got [redacted]"');
+    expect(calls?.[6]?.result).toContain('"stdout":"got [redacted]\\\\');
+    expect(calls?.[7]?.result).toContain("got [redacted]\\\\");
+    for (const call of calls ?? []) {
+      expect(call.result).not.toContain(multilineSecret);
+      expect(call.result).not.toContain(JSON.stringify(multilineSecret).slice(1, -1));
+    }
+
+    const longDigitTail = `{"a":"head\n… [500 characters not kept] …\n${"1".repeat(50_000)}x","b":"ok"}`;
+    const largeNumericArray = `[${Array.from({ length: 15_000 }, (_, i) => String(i)).join(",")}]`;
+    expectLinearTime(() =>
+      blocksToAgentHistorySegments(
+        [
+          {
+            kind: "steps",
+            steps: [
+              {
+                label: "Shell",
+                tool: "shell",
+                count: 2,
+                calls: [{ result: longDigitTail }, { result: largeNumericArray }],
+              },
+            ],
+          },
+        ] as unknown as MessageBlock[],
+        secretRedactor([multilineSecret]),
+      ),
+    );
+  });
+
+  it("preserves raw JSON tool results verbatim when no secrets match and keeps untouched large integers exact when siblings redact", () => {
+    const raw = '{"invoiceId":9007199254740993}';
+    const withSiblingSecret = '{"invoiceId":9007199254740993,"note":"line1\\nsecret-val"}';
+    const blocks = [
+      {
+        kind: "steps",
+        steps: [
+          {
+            label: "Lookup",
+            tool: "lookup",
+            count: 2,
+            calls: [
+              { arguments: raw, result: raw },
+              { arguments: withSiblingSecret, result: withSiblingSecret },
+            ],
+          },
+        ],
+      },
+    ] as unknown as MessageBlock[];
+
+    const segments = blocksToAgentHistorySegments(blocks, secretRedactor(["line1\nsecret-val"]));
+    expect(segments).toEqual([
+      {
+        steps: [
+          {
+            label: "Lookup",
+            tool: "lookup",
+            count: 2,
+            calls: [
+              { arguments: raw, result: raw },
+              {
+                arguments: '{"invoiceId":9007199254740993,"note":"[redacted]"}',
+                result: '{"invoiceId":9007199254740993,"note":"[redacted]"}',
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("ignores fractional step counts and non-string ask action labels in flat history", () => {
+    const blocks = [
+      { kind: "steps", steps: [{ label: "Shell", count: 1.5 }] },
+      {
+        kind: "ask",
+        text: "Proceed?",
+        status: "answered",
+        answer: "choice-1",
+        actions: [{ id: "choice-1", label: 42 }],
+      },
+    ] as unknown as MessageBlock[];
+
+    expect(blocksToAgentHistoryText(blocks, secretRedactor([]))).toBe(
+      "[tool calls this reply made]\n- Shell\nProceed?\nAnswer: choice-1",
+    );
+  });
+
+  it("ignores malformed non-array steps in withToolHistory", () => {
+    const blocks = [{ kind: "steps", steps: "not-an-array" }] as unknown as MessageBlock[];
+    expect(withToolHistory(blocks, { steps: [{ tool: "shell", calls: [] }] })).toEqual(blocks);
   });
 
   it("splits a reply at its tool steps, in order, rendering the rest as the text form does", () => {

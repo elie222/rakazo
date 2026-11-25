@@ -1,5 +1,6 @@
 import type { HistoryToolStep, RunTrigger } from "@rakazo/contracts";
 import { RUN_TRIGGERS } from "@rakazo/contracts";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { appendToolCallSegment } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
@@ -221,6 +222,51 @@ describe("tool step outcomes", () => {
     expect(result).toBe('{"user":"ana","password":"[redacted]","api_key":"[redacted]"}');
   });
 
+  it("redacts padded and boundary-straddling secrets before trimming or slicing tool results", () => {
+    const paddedSecret = "  res&sec<3>val  ";
+    expect(
+      keptToolResult({ ...base, result: { content: [{ type: "text", text: paddedSecret }] } }, [
+        paddedSecret,
+      ]),
+    ).toBe("[redacted]");
+    expect(
+      keptToolResult({ ...base, result: { content: [{ type: "text", text: "   " }] } }, ["  "]),
+    ).toBeUndefined();
+    expect(
+      keptToolResult(
+        {
+          ...base,
+          result: {
+            content: [{ type: "text", text: `${" ".repeat(1_500)}ok${" ".repeat(1_500)}` }],
+          },
+        },
+        [],
+      ),
+    ).toBe("ok");
+
+    const longSecret = `secret-${"z".repeat(280)}-tail`;
+    const headBoundary = `${"a".repeat(690)}${longSecret}${"b".repeat(800)}`;
+    const boundedResult = keptToolResult(
+      { ...base, result: { content: [{ type: "text", text: headBoundary }] } },
+      [longSecret],
+    )!;
+    expect(boundedResult).not.toContain("secret-zzzz");
+    expect(boundedResult).toContain("[redacted]");
+
+    const multilineSecret = 'line1\n"quoted"\\val';
+    const longJson = JSON.stringify({
+      stdout: `got ${multilineSecret}`,
+      rest: "x".repeat(1_500),
+    });
+    const keptJson = keptToolResult(
+      { ...base, result: { content: [{ type: "text", text: longJson }] } },
+      [multilineSecret],
+    )!;
+    expect(keptJson).toContain('"stdout":"got [redacted]"');
+    expect(keptJson).not.toContain(multilineSecret);
+    expect(keptJson).not.toContain(JSON.stringify(multilineSecret).slice(1, -1));
+  });
+
   it("replays tool calls only to runs the owner started themselves, failing closed", () => {
     const owner = { fromUser: true, nonOwnerChat: false };
     // Every trigger, so a new one must be decided here; any not allowed gets plain step labels.
@@ -391,5 +437,85 @@ describe("tool step outcomes", () => {
     expect(reply.toolStepCalls.get("call-2")).toMatchObject({ image: { artifactId: "shot-1" } });
     expect(reply.toolStepCalls.get("call-1")?.image).toBeUndefined();
     expect(reply.latestScreenshot).toBeUndefined();
+  });
+
+  it("redacts JSON credential fields in linear time without skipping subsequent lines", () => {
+    const withCreds = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: [
+                'note "unpaired',
+                '{"api_key":"fake-key-1","my-token": "fake-tok-2","ok":"keep"}',
+                '{"token":"malformed-trailing-backslash\\',
+                '{"password":"fake-next-line-pass"}',
+                '{"token":"unclosed-quote-before-newline',
+                '{"secret":"fake-after-unclosed"}',
+                '{"api_key":"multiline-secret-line-1',
+                "multiline-secret-continuation-line-2",
+                'multiline-secret-line-3"}',
+                '{"token":"unterminated-multiline-1',
+                "unterminated-multiline-continuation-2",
+                '  "password": "next-field-after-multiline"}',
+                '{"token":"unterminated-before-empty-key',
+                '  "": "keep-empty-key-value", "secret": "after-empty-key"}',
+                '{"token":"unterminated-before-escaped-key',
+                '  "a\\"b": "keep-escaped-key-value", "api_key": "after-escaped-key"}',
+                '{"token":"unterminated-before-next-line-colon',
+                '  "password"',
+                '  : "next-line-colon-pass"}',
+                '{"api_key":"unclosed-eof-line-1',
+                "unclosed-eof-continuation-2",
+              ].join("\n"),
+            },
+          ],
+        },
+      },
+      [],
+    );
+    expect(withCreds).toContain('"api_key":"[redacted]"');
+    expect(withCreds).toContain('"my-token": "[redacted]"');
+    expect(withCreds).toContain('"ok":"keep"');
+    expect(withCreds).not.toContain("malformed-trailing-backslash");
+    expect(withCreds).toContain('"password":"[redacted]"');
+    expect(withCreds).not.toContain("fake-next-line-pass");
+    expect(withCreds).not.toContain("unclosed-quote-before-newline");
+    expect(withCreds).toContain('"secret":"[redacted]"');
+    expect(withCreds).not.toContain("fake-after-unclosed");
+    expect(withCreds).not.toContain("multiline-secret-line-1");
+    expect(withCreds).not.toContain("multiline-secret-continuation-line-2");
+    expect(withCreds).not.toContain("multiline-secret-line-3");
+    expect(withCreds).not.toContain("unterminated-multiline-1");
+    expect(withCreds).not.toContain("unterminated-multiline-continuation-2");
+    expect(withCreds).toContain('"password": "[redacted]"');
+    expect(withCreds).not.toContain("next-field-after-multiline");
+    expect(withCreds).not.toContain("unterminated-before-empty-key");
+    expect(withCreds).toContain('"": "keep-empty-key-value"');
+    expect(withCreds).toContain('"secret": "[redacted]"');
+    expect(withCreds).not.toContain("after-empty-key");
+    expect(withCreds).not.toContain("unterminated-before-escaped-key");
+    expect(withCreds).toContain('"a\\"b": "keep-escaped-key-value"');
+    expect(withCreds).toContain('"api_key": "[redacted]"');
+    expect(withCreds).not.toContain("after-escaped-key");
+    expect(withCreds).not.toContain("unterminated-before-next-line-colon");
+    expect(withCreds).toContain('"password"\n  : "[redacted]"');
+    expect(withCreds).not.toContain("next-line-colon-pass");
+    expect(withCreds).not.toContain("unclosed-eof-line-1");
+    expect(withCreds).not.toContain("unclosed-eof-continuation-2");
+
+    const pathological = `"${"token_".repeat(12_000)}tail`;
+    const repeated = '"token":'.repeat(10_000);
+    const malformedMultiline = '{"token":"bad\\\n'.repeat(5_000);
+    expectLinearTime(() => {
+      keptToolResult({ ...base, result: { content: [{ type: "text", text: pathological }] } }, []);
+      keptToolResult({ ...base, result: { content: [{ type: "text", text: repeated }] } }, []);
+      keptToolResult(
+        { ...base, result: { content: [{ type: "text", text: malformedMultiline }] } },
+        [],
+      );
+    });
   });
 });

@@ -20,6 +20,8 @@ export type BotSecretScope = {
   vault?: SettingsScope;
   /** Set for a bot's run, which sees only the items it may use; the owner reads without one. */
   botId?: string;
+  /** Enforce current Space membership in the credential query itself (prevents departure TOCTOU). */
+  requireMember?: boolean;
 };
 type VaultClient = Pick<PrismaClient, "spaceSettingOverride">;
 
@@ -101,6 +103,13 @@ export async function assertVaultInUse(client: VaultClient, scope: BotSecretScop
 export async function vaultFields(client: VaultClient, scope: BotSecretScope) {
   const target = await settingsTarget(client, scope, "credentials", scope.vault);
   return { userId: scope.userId, spaceId: target === "space" ? scope.spaceId : null };
+}
+
+/** In-query Space membership filter for vault reads that must fail closed on concurrent departure. */
+export function vaultMemberFilter(scope: BotSecretScope) {
+  return scope.requireMember
+    ? { user: { members: { some: { spaceMemberships: { some: { spaceId: scope.spaceId } } } } } }
+    : {};
 }
 
 // Blocked items, and ones chosen for other bots, are still redacted, through

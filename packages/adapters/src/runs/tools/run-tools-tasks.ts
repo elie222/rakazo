@@ -74,6 +74,11 @@ export async function scheduleCreateRefusal(
   return error ? { error } : undefined;
 }
 
+/** Preserve empty or whitespace-only inputs so write-side blank validation stays intact. */
+function redactNonBlank(value: string, secrets: readonly string[]): string {
+  return value.trim() ? redactSecrets(value, secrets) : value;
+}
+
 /** The task catalog, scratchpad, ticket board, schedules and skills. */
 export const taskTools: ToolHandlers = {
   async task_catalog(ctx) {
@@ -96,29 +101,29 @@ export const taskTools: ToolHandlers = {
     });
   },
   async scratchpad_add(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run, bot, secrets = [] } = ctx;
     const { args } = call;
     const created = await addScratchpadItemFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
       userId: run.userId,
-      title: String(args.title ?? ""),
+      title: redactNonBlank(String(args.title ?? ""), secrets),
       status: args.status ? String(args.status) : undefined,
-      notes: args.notes !== undefined ? String(args.notes) : undefined,
+      notes: args.notes !== undefined ? redactNonBlank(String(args.notes), secrets) : undefined,
     });
     return call.finish(created);
   },
   async scratchpad_update(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run, bot, secrets = [] } = ctx;
     const { args } = call;
     const updated = await updateScratchpadItemFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
       userId: run.userId,
       itemId: String(args.itemId ?? ""),
-      title: args.title !== undefined ? String(args.title) : undefined,
+      title: args.title !== undefined ? redactNonBlank(String(args.title), secrets) : undefined,
       status: args.status !== undefined ? String(args.status) : undefined,
-      notes: args.notes !== undefined ? String(args.notes) : undefined,
+      notes: args.notes !== undefined ? redactNonBlank(String(args.notes), secrets) : undefined,
     });
     return call.finish(updated);
   },
@@ -167,22 +172,25 @@ export const taskTools: ToolHandlers = {
     );
   },
   async ticket_create(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run, bot, secrets = [] } = ctx;
     const { args } = call;
     return call.finish(
       await createTicket(deps, {
         spaceId: run.spaceId,
         botId: bot.id,
         userId: run.userId,
-        title: String(args.title ?? ""),
-        description: args.description !== undefined ? String(args.description) : undefined,
+        title: redactNonBlank(String(args.title ?? ""), secrets),
+        description:
+          args.description !== undefined
+            ? redactNonBlank(String(args.description), secrets)
+            : undefined,
         priority: args.priority !== undefined ? String(args.priority) : undefined,
         ownerBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
       }),
     );
   },
   async ticket_update(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run, bot, secrets = [] } = ctx;
     const { args } = call;
     return call.finish(
       await updateTicket(deps, {
@@ -190,8 +198,13 @@ export const taskTools: ToolHandlers = {
         botId: bot.id,
         userId: run.userId,
         id: String(args.id ?? ""),
-        title: args.title !== undefined ? String(args.title) : undefined,
-        description: args.description !== undefined ? String(args.description) : undefined,
+        title: args.title !== undefined ? redactNonBlank(String(args.title), secrets) : undefined,
+        description:
+          args.description !== undefined
+            ? args.description === null
+              ? null
+              : redactNonBlank(String(args.description), secrets)
+            : undefined,
         priority: args.priority !== undefined ? String(args.priority) : undefined,
         status: args.status !== undefined ? String(args.status) : undefined,
         ownerBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
@@ -199,7 +212,7 @@ export const taskTools: ToolHandlers = {
     );
   },
   async ticket_comment(ctx, call) {
-    const { deps, run, bot } = ctx;
+    const { deps, run, bot, secrets = [] } = ctx;
     const { args } = call;
     return call.finish(
       await commentTicket(deps, {
@@ -207,7 +220,7 @@ export const taskTools: ToolHandlers = {
         botId: bot.id,
         userId: run.userId,
         id: String(args.id ?? ""),
-        body: String(args.body ?? ""),
+        body: redactNonBlank(String(args.body ?? ""), secrets),
       }),
     );
   },

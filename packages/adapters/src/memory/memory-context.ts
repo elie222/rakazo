@@ -14,7 +14,7 @@ export async function loadAgentMemoryContext(
   memory: MemoryStore,
   botId: string,
   context: AdapterContext,
-  options: { today?: string; maxBytes?: number } = {},
+  options: { today?: string; maxBytes?: number; redact?: (text: string) => string } = {},
 ): Promise<string | undefined> {
   const stored = await readStoredMemory(memory, botId, context);
   const { today } = options;
@@ -33,6 +33,7 @@ export async function loadAgentMemoryContext(
   return buildAgentMemoryPrompt(
     promptDocuments(stored, options.today),
     options.maxBytes ?? AGENT_MEMORY_MAX_BYTES,
+    options.redact,
   ).text;
 }
 

@@ -27,3 +27,19 @@ export function inboundRoutinePrompts(taskPrompt: string, routines: InboundRouti
     rest = rest.slice(match.block.length);
   }
 }
+
+/**
+ * Character length of the verified leading routine blocks in an inbound task prompt.
+ * Only contiguous blocks from offset 0 matching `routines` count; the trailing payload stays outside.
+ */
+export function inboundRoutinePrefixLength(taskPrompt: string, routines: InboundRoutine[]): number {
+  const blocks = routines
+    .map((routine) => `${inboundRoutineBlock(routine)}\n`)
+    .sort((a, b) => b.length - a.length);
+  let offset = 0;
+  for (;;) {
+    const match = blocks.find((block) => taskPrompt.startsWith(block, offset));
+    if (!match) return offset;
+    offset += match.length;
+  }
+}

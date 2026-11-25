@@ -180,21 +180,29 @@ const TOOL_STEP_LABEL_MAX_CHARS = 80;
  */
 export function toolStepsHistoryText(
   steps: Extract<MessageBlock, { kind: "steps" }>["steps"],
-  { full = false }: { full?: boolean } = {},
+  { full = false, redact }: { full?: boolean; redact?: (text: string) => string } = {},
 ): string {
   // Stored blocks can come from an account import, so skip malformed entries instead of throwing.
   const valid = Array.isArray(steps) ? steps.filter((step) => typeof step?.label === "string") : [];
   if (valid.length === 0) return "";
   const shown = full ? valid : valid.slice(0, TOOL_STEP_MAX_LINES);
   const lines = shown.map((step) => {
+    // Redact raw label and note before whitespace folding, trimming or truncation so
+    // padded or long credentials still match.
+    const rawLabel = redact ? redact(step.label) : step.label;
     const name =
-      !full && step.label.length > TOOL_STEP_LABEL_MAX_CHARS
-        ? `${sliceWellFormed(step.label, TOOL_STEP_LABEL_MAX_CHARS)}…`
-        : step.label;
-    const counted = Number(step.count) > 1 ? `${name} ×${step.count}` : name;
+      !full && rawLabel.length > TOOL_STEP_LABEL_MAX_CHARS
+        ? `${sliceWellFormed(rawLabel, TOOL_STEP_LABEL_MAX_CHARS)}…`
+        : rawLabel;
+    const stepCount =
+      typeof step.count === "number" && Number.isInteger(step.count) && step.count > 0
+        ? step.count
+        : Number.NaN;
+    const counted = stepCount > 1 ? `${name} ×${stepCount}` : name;
     const outcome = toolStepOutcomeText(step);
     const label = outcome ? `${counted} (${outcome})` : counted;
-    const whole = typeof step.note === "string" ? step.note.replace(/\s+/g, " ").trim() : "";
+    const rawNote = typeof step.note === "string" ? (redact ? redact(step.note) : step.note) : "";
+    const whole = rawNote.replace(/\s+/g, " ").trim();
     const note =
       !full && whole.length > TOOL_STEP_NOTE_MAX_CHARS
         ? `${sliceWellFormed(whole, TOOL_STEP_NOTE_MAX_CHARS)}…`
@@ -212,28 +220,253 @@ const TOOL_STEP_OUTCOMES = ["succeeded", "failed", "stopped"] as const;
 /** "succeeded" when every call ended the same way, else "2 succeeded, 1 failed". */
 export function toolStepOutcomeText(step: { count: number; outcomes?: unknown }): string {
   const outcomes = (step.outcomes ?? {}) as Partial<Record<string, unknown>>;
-  if (typeof outcomes !== "object") return "";
+  if (typeof outcomes !== "object" || outcomes === null) return "";
   const counts = TOOL_STEP_OUTCOMES.flatMap((outcome) => {
-    const count = Number(outcomes[outcome]);
-    return Number.isInteger(count) && count > 0 ? [{ outcome, count }] : [];
+    const raw = outcomes[outcome];
+    return typeof raw === "number" && Number.isInteger(raw) && raw > 0
+      ? [{ outcome, count: raw }]
+      : [];
   });
   const [only] = counts;
-  if (counts.length === 1 && only?.count === Number(step.count)) return only.outcome;
+  const stepCount =
+    typeof step.count === "number" && Number.isInteger(step.count) && step.count > 0
+      ? step.count
+      : Number.NaN;
+  if (counts.length === 1 && only?.count === stepCount) return only.outcome;
   return counts.map(({ outcome, count }) => `${count} ${outcome}`).join(", ");
 }
 
-export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
-  return blocks.map(blockHistoryText).filter(Boolean).join("\n");
+export function blocksToAgentHistoryText(
+  blocks: MessageBlock[],
+  redact?: (text: string) => string,
+): string {
+  return blocks
+    .map((block) => blockHistoryText(block, redact))
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** A reply in order, with its tool steps apart from the text around them. */
 export type AgentHistorySegment = { text: string } | { steps: HistoryToolStep[] };
 
+export function redactJsonValue(value: unknown, redact: (text: string) => string): unknown {
+  if (typeof value === "string") return redact(value);
+  if (typeof value === "number") {
+    const text = String(value);
+    const redacted = redact(text);
+    return redacted === text ? value : redacted;
+  }
+  if (Array.isArray(value)) return value.map((item) => redactJsonValue(item, redact));
+  if (value && typeof value === "object") {
+    // Use a null-prototype object so a "__proto__" key stays an own data property on stringify.
+    const out = Object.create(null) as Record<string, unknown>;
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      out[redact(key)] = redactJsonValue(item, redact);
+    }
+    return out;
+  }
+  return value;
+}
+
+const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
+const JSON_VALUE_TOKEN =
+  /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+
+function isJsonOutsidePrefix(text: string): boolean {
+  let index = 0;
+  while (index < text.length) {
+    const ch = text[index]!;
+    if (ch === " " || ch === "\t" || ch === "\r" || ch === "\n" || "{}[],:".includes(ch)) {
+      index += 1;
+      continue;
+    }
+    if (text.startsWith("true", index) || text.startsWith("null", index)) {
+      index += 4;
+      continue;
+    }
+    if (text.startsWith("false", index)) {
+      index += 5;
+      continue;
+    }
+    if (ch === "-" || (ch >= "0" && ch <= "9")) {
+      let next = index + (ch === "-" ? 1 : 0);
+      if (next >= text.length || text[next]! < "0" || text[next]! > "9") return false;
+      while (next < text.length && text[next]! >= "0" && text[next]! <= "9") next += 1;
+      if (text[next] === ".") {
+        next += 1;
+        if (next >= text.length || text[next]! < "0" || text[next]! > "9") return false;
+        while (next < text.length && text[next]! >= "0" && text[next]! <= "9") next += 1;
+      }
+      if (text[next] === "e" || text[next] === "E") {
+        next += 1;
+        if (text[next] === "+" || text[next] === "-") next += 1;
+        if (next >= text.length || text[next]! < "0" || text[next]! > "9") return false;
+        while (next < text.length && text[next]! >= "0" && text[next]! <= "9") next += 1;
+      }
+      index = next;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+function isJsonWhitespace(ch: string | undefined): boolean {
+  return ch === " " || ch === "\t" || ch === "\r" || ch === "\n";
+}
+
+function splitTrailingIncompleteJsonEscape(value: string): { trimmed: string; trailing: string } {
+  const unicodeTail = /u[0-9a-fA-F]{0,3}$/.exec(value);
+  const checkEnd = unicodeTail ? unicodeTail.index : value.length;
+  let slashes = 0;
+  for (let index = checkEnd - 1; index >= 0 && value[index] === "\\"; index -= 1) {
+    slashes += 1;
+  }
+  if (slashes % 2 === 1) {
+    const cut = checkEnd - 1;
+    return { trimmed: value.slice(0, cut), trailing: value.slice(cut) };
+  }
+  return { trimmed: value, trailing: "" };
+}
+
+function redactSingleJsonStringToken(token: string, redact: (text: string) => string): string {
+  try {
+    const decoded: unknown = JSON.parse(token);
+    if (typeof decoded !== "string") return token;
+    const next = redact(decoded);
+    return next === decoded ? token : JSON.stringify(next);
+  } catch {
+    // Truncated trailing string literal in cut-off JSON (including a lone trailing backslash).
+    const { trimmed, trailing: trailingEscape } = splitTrailingIncompleteJsonEscape(token);
+    try {
+      const decoded: unknown = JSON.parse(`${trimmed}"`);
+      if (typeof decoded !== "string") return token;
+      const next = redact(decoded);
+      return next === decoded ? token : `${JSON.stringify(next).slice(0, -1)}${trailingEscape}`;
+    } catch {
+      return token;
+    }
+  }
+}
+
+function redactJsonValueToken(
+  token: string,
+  offset: number,
+  source: string,
+  redact: (text: string) => string,
+): string {
+  if (token.startsWith('"')) return redactSingleJsonStringToken(token, redact);
+  let prev = offset - 1;
+  while (prev >= 0 && isJsonWhitespace(source[prev])) prev -= 1;
+  const prevChar = prev >= 0 ? source[prev] : undefined;
+  if (prevChar !== ":" && prevChar !== "," && prevChar !== "[") return token;
+  let nextIndex = offset + token.length;
+  while (nextIndex < source.length && isJsonWhitespace(source[nextIndex])) nextIndex += 1;
+  const nextChar = nextIndex < source.length ? source[nextIndex] : undefined;
+  if (nextChar !== undefined && nextChar !== "," && nextChar !== "}" && nextChar !== "]") {
+    return token;
+  }
+  const next = redact(token);
+  return next === token ? token : JSON.stringify(next);
+}
+
+function redactJsonTailPrefix(prefix: string, redact: (text: string) => string): string {
+  const { trimmed, trailing: trailingEscape } = splitTrailingIncompleteJsonEscape(prefix);
+  const tryDecode = (lead: string, body: string): string | undefined => {
+    try {
+      const decoded: unknown = JSON.parse(`"${body}"`);
+      if (typeof decoded !== "string") return undefined;
+      const next = redact(decoded);
+      return next === decoded
+        ? prefix
+        : `${lead}${JSON.stringify(next).slice(1, -1)}${trailingEscape}`;
+    } catch {
+      return undefined;
+    }
+  };
+  const direct = tryDecode("", trimmed);
+  if (direct !== undefined) return direct;
+  // Cutting through an escaped backslash (`\\`) can leave an orphaned leading `\` before a
+  // non-escape character; recover past that single backslash and decode the rest of the tail.
+  if (trimmed.startsWith("\\")) {
+    const recovered = tryDecode("\\", trimmed.slice(1));
+    if (recovered !== undefined) return recovered;
+  }
+  return redact(prefix);
+}
+
+function findUnescapedQuotes(line: string): number[] {
+  const quotes: number[] = [];
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === "\\") {
+      index += 1;
+      continue;
+    }
+    if (line[index] === '"') quotes.push(index);
+  }
+  return quotes;
+}
+
+function redactJsonSegment(
+  segment: string,
+  afterOmission: boolean,
+  redact: (text: string) => string,
+): string {
+  const replaceTokens = (chunk: string) =>
+    chunk.replace(JSON_VALUE_TOKEN, (token, offset: number, source: string) =>
+      redactJsonValueToken(token, offset, source, redact),
+    );
+  if (afterOmission) {
+    const lineBreak = segment.search(/[\r\n]/);
+    const firstLine = lineBreak >= 0 ? segment.slice(0, lineBreak) : segment;
+    const restLines = lineBreak >= 0 ? segment.slice(lineBreak) : "";
+    const firstQuotes = findUnescapedQuotes(firstLine);
+    // Cutting between the two backslashes of a trailing `\\"` leaves `\"` right before a delimiter.
+    if (/^\\"\s*(?:[,}\]:]|$)/.test(firstLine) && firstQuotes.length % 2 === 0) {
+      return `\\"${replaceTokens(segment.slice(2))}`;
+    }
+    if (firstQuotes.length > 0) {
+      const firstQuote = firstQuotes[0]!;
+      const beforeFirst = firstLine.slice(0, firstQuote);
+      const afterFirst = segment.slice(firstQuote);
+      const outsideOnly = isJsonOutsidePrefix(beforeFirst);
+      const startsInsideString =
+        (beforeFirst.trim().length > 0 && (!outsideOnly || !/[{[:,]\s*$/.test(beforeFirst))) ||
+        (firstQuotes.length % 2 === 1 && /^"\s*(?:[,}\]:]|$)/.test(afterFirst));
+      if (startsInsideString) {
+        return (
+          redactJsonTailPrefix(beforeFirst, redact) +
+          '"' +
+          replaceTokens(segment.slice(firstQuote + 1))
+        );
+      }
+    } else if (firstLine.includes("\\")) {
+      return redactJsonTailPrefix(firstLine, redact) + replaceTokens(restLines);
+    }
+  }
+  return replaceTokens(segment);
+}
+
+function redactJsonStringTokens(raw: string, redact: (text: string) => string): string {
+  const parts = raw.split(BOUNDED_OMISSION_MARKER);
+  if (parts.length === 1) return redactJsonSegment(raw, false, redact);
+  return parts
+    .map((part, index) => (index % 2 === 1 ? part : redactJsonSegment(part, index > 0, redact)))
+    .join("");
+}
+
+function redactJsonText(raw: string, redact: (text: string) => string): string {
+  return redact(redactJsonStringTokens(raw, redact));
+}
+
 /**
  * The same reply as blocksToAgentHistoryText, split at its tool steps so a runtime can replay
  * them as tool calls. Text between steps is joined as blocksToAgentHistoryText joins it.
  */
-export function blocksToAgentHistorySegments(blocks: MessageBlock[]): AgentHistorySegment[] {
+export function blocksToAgentHistorySegments(
+  blocks: MessageBlock[],
+  redact?: (text: string) => string,
+): AgentHistorySegment[] {
   const segments: AgentHistorySegment[] = [];
   let text: string[] = [];
   const flush = () => {
@@ -244,42 +477,93 @@ export function blocksToAgentHistorySegments(blocks: MessageBlock[]): AgentHisto
     if (block.kind === "steps") {
       // Stored blocks can come from an account import, so skip malformed entries.
       const steps = Array.isArray(block.steps)
-        ? (block.steps as HistoryToolStep[]).filter((step) => typeof step?.label === "string")
+        ? (block.steps as HistoryToolStep[])
+            .filter(
+              (step) => step !== null && typeof step === "object" && typeof step.label === "string",
+            )
+            .map((step) => {
+              const { calls: rawCalls, note: rawNote, count: rawCount, ...rest } = step;
+              const count =
+                typeof rawCount === "number" && Number.isInteger(rawCount) && rawCount > 0
+                  ? rawCount
+                  : 0;
+              const note =
+                typeof rawNote === "string" ? (redact ? redact(rawNote) : rawNote) : undefined;
+              const calls = Array.isArray(rawCalls)
+                ? rawCalls
+                    .filter(
+                      (call): call is NonNullable<HistoryToolStep["calls"]>[number] =>
+                        call !== null && typeof call === "object",
+                    )
+                    .map((call) => {
+                      const { arguments: rawArguments, result: rawResult, ...callRest } = call;
+                      return {
+                        ...callRest,
+                        ...(typeof rawArguments === "string"
+                          ? {
+                              arguments: redact
+                                ? redactJsonText(rawArguments, redact)
+                                : rawArguments,
+                            }
+                          : {}),
+                        ...(typeof rawResult === "string"
+                          ? { result: redact ? redactJsonText(rawResult, redact) : rawResult }
+                          : {}),
+                      };
+                    })
+                : undefined;
+              return {
+                ...rest,
+                label: redact ? redact(step.label) : step.label,
+                count,
+                ...(note !== undefined ? { note } : {}),
+                ...(calls ? { calls } : {}),
+              };
+            })
         : [];
       if (!steps.length) continue;
       flush();
       segments.push({ steps });
       continue;
     }
-    const rendered = blockHistoryText(block);
+    const rendered = blockHistoryText(block, redact);
     if (rendered) text.push(rendered);
   }
   flush();
   return segments;
 }
 
-function blockHistoryText(block: MessageBlock): string {
-  if (block.kind === "text") return block.text;
+function blockHistoryText(block: MessageBlock, redact?: (text: string) => string): string {
+  const clean = (value: unknown): string => {
+    const text = typeof value === "string" ? value : String(value);
+    return redact ? redact(text) : text;
+  };
+  if (block.kind === "text") {
+    return typeof block.text === "string" && redact ? redact(block.text) : block.text;
+  }
   // The tools a reply used, and what the bot wrote before each, are kept out of its text;
   // without them a later turn cannot tell what it already did.
-  if (block.kind === "steps") return toolStepsHistoryText(block.steps);
-  if (block.kind === "chart") return `[chart: ${block.name}]`;
-  if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
-  if (block.kind === "image") return `[image: ${block.name}]`;
+  if (block.kind === "steps") return toolStepsHistoryText(block.steps, { redact });
+  if (block.kind === "chart") return `[chart: ${clean(block.name)}]`;
+  if (block.kind === "app") return `[app: ${clean(block.server)} showed ${clean(block.tool)}]`;
+  if (block.kind === "image") return `[image: ${clean(block.name)}]`;
   // The id lets a later turn, or another chat, update this page instead of making a new one.
   if (block.kind === "page") {
-    return `[page: ${block.title} (pageId ${block.pageId}, version ${block.version})]`;
+    return `[page: ${clean(block.title)} (pageId ${block.pageId}, version ${block.version})]`;
   }
   if (block.kind === "file") {
-    return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
+    return `[file: ${clean(block.name)} (${block.mimeType}, ${block.size} bytes)]`;
   }
   // Keep attribution on peer messages: without it a later turn cannot tell
   // which lines came from another bot rather than the user.
-  if (block.kind === "bot_message_received") return `[from ${block.fromBotName}] ${block.text}`;
-  if (block.kind === "bot_message_sent") return `[to ${block.toBotName}] ${block.text}`;
-  if (block.kind === "channel_message") return `[from ${block.fromLabel}] ${block.text}`;
+  if (block.kind === "bot_message_received")
+    return `[from ${clean(block.fromBotName)}] ${clean(block.text)}`;
+  if (block.kind === "bot_message_sent")
+    return `[to ${clean(block.toBotName)}] ${clean(block.text)}`;
+  if (block.kind === "channel_message")
+    return `[from ${clean(block.fromLabel)}] ${clean(block.text)}`;
   if (block.kind === "handoff") {
-    return `[handoff ${block.fromBotId} -> ${block.toBotId}] ${block.text}`;
+    return `[handoff ${block.fromBotId} -> ${block.toBotId}] ${clean(block.text)}`;
   }
   // Without the answer a later turn sees the question as still open and asks it again.
   if (block.kind === "ask") {
@@ -290,23 +574,37 @@ function blockHistoryText(block: MessageBlock): string {
     // spacing) is escaped, so the bot reads the rest of its draft verbatim (an address
     // like "Ana <ana@example.test>" stays as written).
     const detail =
-      block.detail && !isApprovalAskBlock(block) && !isSecretAskBlock(block)
-        ? `\n<draft>\n${block.detail.replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
+      typeof block.detail === "string" &&
+      block.detail &&
+      !isApprovalAskBlock(block) &&
+      !isSecretAskBlock(block)
+        ? `\n<draft>\n${clean(block.detail).replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
         : "";
     // The card shows its options lettered, and a typed reply like "A and C" refers to them.
     // The import button opens a flow rather than answering, so it is not an option here. A
     // label is kept to one line so it cannot pass for the answer.
+    const validActions = Array.isArray(block.actions)
+      ? block.actions.filter(
+          (action): action is { id: string; label: string } =>
+            action !== null &&
+            typeof action === "object" &&
+            typeof action.id === "string" &&
+            typeof action.label === "string",
+        )
+      : [];
     const options = isQuestionAskBlock(block)
-      ? (block.actions ?? [])
+      ? validActions
           .filter((action) => action.id !== AGENT_IMPORT_ASK_ACTION_ID)
           .map(
-            (action, index) => `\n${askOptionLetter(index)}. ${action.label.replace(/\s+/g, " ")}`,
+            (action, index) =>
+              `\n${askOptionLetter(index)}. ${clean(action.label).replace(/\s+/g, " ")}`,
           )
       : [];
-    const question = `${block.text}${options.join("")}${detail}`;
+    const question = `${clean(block.text)}${options.join("")}${detail}`;
     if (block.status !== "answered" || !block.answer) return question;
-    const choice = block.actions?.find((action) => action.id === block.answer);
-    return `${question}\nAnswer: ${choice?.label ?? block.answer}`;
+    const choice = validActions.find((action) => action.id === block.answer);
+    const answerText = choice ? choice.label : block.answer;
+    return `${question}\nAnswer: ${clean(answerText)}`;
   }
   // The bot needs the outcome of its own call: a missed call is its cue to follow up.
   if (block.kind === "call_request") {
@@ -316,7 +614,7 @@ function blockHistoryText(block: MessageBlock): string {
       declined: "the user declined it",
       missed: "the user did not answer",
     }[block.status];
-    return `[you called the user about: ${block.reason}; ${outcome}]${block.status === "answered" ? `\n${block.opening}` : ""}`;
+    return `[you called the user about: ${clean(block.reason)}; ${outcome}]${block.status === "answered" ? `\n${clean(block.opening)}` : ""}`;
   }
   // Whether the person answered a tool's question, never what was asked or sent: the question
   // is the server's own text and the answer went to the server.
@@ -327,9 +625,9 @@ function blockHistoryText(block: MessageBlock): string {
       declined: "the user declined",
       expired: "the user did not answer",
     }[block.status];
-    return `[${block.question.source} asked the user a question during a tool call; ${outcome}]`;
+    return `[${clean(block.question?.source)} asked the user a question during a tool call; ${outcome}]`;
   }
-  if ("text" in block && typeof block.text === "string") return block.text;
+  if ("text" in block && typeof block.text === "string") return clean(block.text);
   return "";
 }
 

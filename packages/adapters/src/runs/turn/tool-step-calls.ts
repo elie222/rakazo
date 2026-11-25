@@ -31,37 +31,170 @@ const ARGUMENT_DEPTH_MAX = 8;
 /** Stands in for an image a call returned; replay says what the bot wrote after seeing it. */
 export const IMAGE_NOT_KEPT = "[image not kept]";
 
-/**
- * Text bounded to `max` characters, keeping its start and end (where a command's output usually
- * ends with what matters) and saying how much was left out, so it never reads as unfinished.
- * Secrets are redacted in each kept part, with a margin so one cut at the edge is still caught.
- */
-/** A JSON field whose name says it holds a credential, with its string value. */
-const CREDENTIAL_FIELD =
-  /("[\w-]*(?:api[_-]?key|token|password|passwd|secret|authorization|credential)[\w-]*"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
-
-function cleanToolText(text: string, secrets: string[]): string {
-  return sanitizeSensitiveText(redactSecrets(text, secrets)).replace(
-    CREDENTIAL_FIELD,
-    '$1"[redacted]"',
-  );
-}
-
 const notKept = (chars: number) => `\n… [${chars} characters not kept] …\n`;
 
 /** The largest a saved result gets: its kept text and the note of what was left out. */
 export const TOOL_CALL_SAVED_TEXT_MAX_CHARS =
   TOOL_CALL_TEXT_MAX_CHARS + notKept(Number.MAX_SAFE_INTEGER).length;
 
-export function bounded(text: string, max: number, secrets: string[] = []): string {
-  const clean = (part: string) => cleanToolText(part, secrets);
-  if (text.length <= max) return clean(text);
-  const margin = 200;
+/** Keyword match inside an ASCII identifier key (`[\w-]+`). */
+const CREDENTIAL_KEY_NAME =
+  /(?:api[_-]?key|token|password|passwd|secret|authorization|credential)/i;
+
+function isCredentialKeyChar(ch: string): boolean {
+  const code = ch.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    code === 95 ||
+    code === 45
+  );
+}
+
+/**
+ * True when `lineStart` opens a new JSON property line (e.g. `  "token":` or `}, "token":`).
+ * Inspects only the current line, so calling it once per physical newline keeps scanning linear.
+ */
+function isJsonPropertyLineStart(text: string, lineStart: number): boolean {
+  let pos = lineStart;
+  while (pos < text.length) {
+    const ch = text[pos]!;
+    if (ch === " " || ch === "\t" || ch === "}" || ch === "]" || ch === "," || ch === "{") {
+      pos += 1;
+      continue;
+    }
+    break;
+  }
+  if (pos >= text.length || text[pos] !== '"') return false;
+  let keyEnd = pos + 1;
+  while (keyEnd < text.length) {
+    const ch = text[keyEnd]!;
+    if (ch === '"') break;
+    if (ch === "\n" || ch === "\r") return false;
+    if (ch === "\\") {
+      if (keyEnd + 1 >= text.length || text[keyEnd + 1] === "\n" || text[keyEnd + 1] === "\r") {
+        return false;
+      }
+      keyEnd += 2;
+      continue;
+    }
+    keyEnd += 1;
+  }
+  if (keyEnd >= text.length || text[keyEnd] !== '"') return false;
+  let colonPos = keyEnd + 1;
+  while (
+    colonPos < text.length &&
+    (text[colonPos] === " " ||
+      text[colonPos] === "\t" ||
+      text[colonPos] === "\r" ||
+      text[colonPos] === "\n")
+  ) {
+    colonPos += 1;
+  }
+  return colonPos < text.length && text[colonPos] === ":";
+}
+
+function scanJsonStringEnd(
+  text: string,
+  openQuote: number,
+): { end: number; fragmentEnd: number; nextIndex: number } {
+  for (let index = openQuote + 1; index < text.length; index += 1) {
+    const ch = text[index]!;
+    if (ch === "\n" || ch === "\r") {
+      const nextLineStart = ch === "\r" && text[index + 1] === "\n" ? index + 2 : index + 1;
+      if (isJsonPropertyLineStart(text, nextLineStart)) {
+        return { end: -1, fragmentEnd: index, nextIndex: nextLineStart };
+      }
+      if (nextLineStart > index + 1) index += 1;
+      continue;
+    }
+    if (ch === "\\") {
+      const next = text[index + 1];
+      if (next === undefined) return { end: -1, fragmentEnd: text.length, nextIndex: text.length };
+      if (next === "\n" || next === "\r") {
+        const nextLineStart = next === "\r" && text[index + 2] === "\n" ? index + 3 : index + 2;
+        if (isJsonPropertyLineStart(text, nextLineStart)) {
+          return { end: -1, fragmentEnd: index + 1, nextIndex: nextLineStart };
+        }
+        index = nextLineStart - 1;
+        continue;
+      }
+      index += 1;
+      continue;
+    }
+    if (ch === '"') return { end: index, fragmentEnd: index + 1, nextIndex: index + 1 };
+  }
+  return { end: -1, fragmentEnd: text.length, nextIndex: text.length };
+}
+
+/** Linear-time replacement for JSON fields whose key name indicates a credential string value. */
+function redactCredentialJsonFields(text: string): string {
+  if (!text.includes('"')) return text;
+  let cursor = 0;
+  let out = "";
+  let index = 0;
+  while (index < text.length) {
+    const openKey = text.indexOf('"', index);
+    if (openKey < 0) break;
+    let pos = openKey + 1;
+    while (pos < text.length && isCredentialKeyChar(text[pos]!)) pos += 1;
+    if (pos >= text.length) break;
+    if (text[pos] !== '"') {
+      index = pos;
+      continue;
+    }
+    const closeKey = pos;
+    const keyName = text.slice(openKey + 1, closeKey);
+    if (!CREDENTIAL_KEY_NAME.test(keyName)) {
+      index = closeKey;
+      continue;
+    }
+    pos = closeKey + 1;
+    while (pos < text.length && /\s/.test(text[pos]!)) pos += 1;
+    if (text[pos] !== ":") {
+      index = pos;
+      continue;
+    }
+    pos += 1;
+    while (pos < text.length && /\s/.test(text[pos]!)) pos += 1;
+    if (text[pos] !== '"') {
+      index = pos;
+      continue;
+    }
+    const scanned = scanJsonStringEnd(text, pos);
+    out += `${text.slice(cursor, pos)}"[redacted]"`;
+    cursor = scanned.fragmentEnd;
+    index = scanned.nextIndex;
+  }
+  return cursor === 0 ? text : out + text.slice(cursor);
+}
+
+function cleanToolText(text: string, secrets: string[]): string {
+  const secretForms = secrets.flatMap((value) => {
+    if (!value) return [];
+    const encoded = JSON.stringify(value).slice(1, -1);
+    return [value, encoded, encoded.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")];
+  });
+  return redactCredentialJsonFields(sanitizeSensitiveText(redactSecrets(text, secretForms)));
+}
+
+function truncateBounded(cleaned: string, max: number): string {
+  if (cleaned.length <= max) return cleaned;
   const headLength = Math.floor(max * 0.7);
   const tailLength = max - headLength;
-  const head = clean(text.slice(0, headLength + margin)).slice(0, headLength);
-  const tail = clean(text.slice(-(tailLength + margin))).slice(-tailLength);
-  return `${head}${notKept(text.length - max)}${tail}`;
+  const head = cleaned.slice(0, headLength);
+  const tail = cleaned.slice(-tailLength);
+  return `${head}${notKept(cleaned.length - max)}${tail}`;
+}
+
+/**
+ * Text bounded to `max` characters, keeping its start and end (where a command's output usually
+ * ends with what matters) and saying how much was left out, so it never reads as unfinished.
+ * Secrets are redacted before slicing, so a value cut at the edge is still caught.
+ */
+export function bounded(text: string, max: number, secrets: string[] = []): string {
+  return truncateBounded(cleanToolText(text, secrets), max);
 }
 
 function keptArgument(value: unknown, depth: number, secrets: string[]): unknown {
@@ -122,8 +255,9 @@ export function keptToolResult(
       .filter(Boolean)
       .join("\n");
   }
-  const whole = text.trim();
-  return whole ? bounded(whole, max, secrets) : undefined;
+  if (!text.trim()) return undefined;
+  const cleaned = cleanToolText(text, secrets).trim();
+  return cleaned ? truncateBounded(cleaned, max) : undefined;
 }
 
 /**

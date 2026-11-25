@@ -501,12 +501,14 @@ export function withToolHistory(
   if (!history) return [...blocks];
   let index = 0;
   return blocks.map((block) =>
-    block.kind === "steps"
+    block.kind === "steps" && Array.isArray(block.steps)
       ? {
           ...block,
           steps: block.steps.map((step): HistoryToolStep => {
             const kept = history.steps[index++];
-            return kept ? { ...step, tool: kept.tool, calls: kept.calls } : step;
+            return kept && step !== null && typeof step === "object"
+              ? { ...step, tool: kept.tool, calls: kept.calls }
+              : step;
           }),
         }
       : block,
@@ -727,6 +729,16 @@ export function redactSecrets(value: string, secrets: readonly string[]): string
     offset = end;
   }
   return output + value.slice(offset);
+}
+
+/**
+ * A single-string redaction function for `secrets`. Redact many strings with the same secrets
+ * through one result: the values are snapshotted once and the matcher for them is reused across
+ * calls, and the returned function keeps no other state.
+ */
+export function secretRedactor(secrets: Iterable<string>): (text: string) => string {
+  const values = [...secrets];
+  return (text: string) => redactSecrets(text, values);
 }
 
 /** Redacts `text` as the continuation of `before`, so a value split across the two is hidden too. */
