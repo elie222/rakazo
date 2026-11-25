@@ -20,6 +20,20 @@ vi.mock("dockerode", () => ({
   },
 }));
 
+const headers = {
+  authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+  "content-type": "application/json",
+  "x-rakazo-bot-id": "bot",
+  "x-rakazo-space-id": "space",
+};
+const forkFailure = "bash: line 12: fork: Resource temporarily unavailable\n";
+const managed = {
+  Config: {
+    Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+  },
+  State: { Running: true },
+};
+
 /** One frame of the stream Docker sends back for a command, carrying `text` as its stderr. */
 function stderrFrame(text: string) {
   const header = Buffer.alloc(8);
@@ -36,42 +50,84 @@ describe("failed computer requests", () => {
   it("says on the request's log line why it failed", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-sandbox-supervisor", sinks: [sink] }));
-    const stderr = "bash: line 12: fork: Resource temporarily unavailable\n";
-    mock.inspect.mockResolvedValue({
-      Config: {
-        Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
-      },
-      State: { Running: true },
-    });
+    mock.inspect.mockResolvedValue(managed);
     mock.exec.mockImplementation(async () => ({
-      start: async () => Readable.from([stderrFrame(stderr)]),
+      start: async () => Readable.from([stderrFrame(forkFailure)]),
       inspect: async () => ({ ExitCode: 1 }),
     }));
     mock.stats.mockResolvedValue({ pids_stats: {}, memory_stats: {} });
 
     const response = await supervisorApp.request("/computers/computer/screen-mode", {
       method: "POST",
-      headers: {
-        authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
-        "content-type": "application/json",
-        "x-rakazo-bot-id": "bot",
-        "x-rakazo-space-id": "space",
-      },
+      headers,
       body: JSON.stringify({ interactive: false }),
     });
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: stderr });
+    expect(await response.json()).toEqual({ error: forkFailure });
     expect(sink.events).toEqual([
       expect.objectContaining({
         level: "warn",
         message: "http.request.completed",
         "http.route": "/computers/:id/screen-mode",
         "http.status": 400,
-        error: expect.objectContaining({ message: stderr }),
+        error: expect.objectContaining({ message: forkFailure }),
       }),
     ]);
   });
+
+  it.each([
+    {
+      route: "/computers/:id/browser",
+      body: { command: "snapshot" },
+      outcome: "error",
+      reason: forkFailure,
+      arrange: () => {
+        mock.inspect.mockResolvedValue(managed);
+        mock.exec.mockImplementation(async () => ({
+          start: async () => Readable.from([stderrFrame(forkFailure)]),
+          inspect: async () => ({ ExitCode: 1 }),
+        }));
+      },
+    },
+    {
+      route: "/computers/:id/exec",
+      body: { argv: [] },
+      outcome: "stderr",
+      reason: "no such container",
+      arrange: () => {
+        mock.inspect.mockRejectedValue(
+          Object.assign(new Error("no such container"), { statusCode: 404 }),
+        );
+      },
+    },
+  ])(
+    "warns with the failure on the line of a $route request that answers 200",
+    async ({ route, body, outcome, reason, arrange }) => {
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "rakazo-sandbox-supervisor", sinks: [sink] }));
+      arrange();
+      mock.stats.mockResolvedValue({ pids_stats: {}, memory_stats: {} });
+
+      const response = await supervisorApp.request(route.replace(":id", "computer"), {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      expect(response.status).toBe(200);
+      const answered = (await response.json()) as Record<string, unknown>;
+      expect(answered[outcome]).toBe(reason);
+      expect(sink.events).toEqual([
+        expect.objectContaining({
+          level: "warn",
+          "http.route": route,
+          "http.status": 200,
+          error: expect.objectContaining({ message: reason }),
+        }),
+      ]);
+    },
+  );
 
   it("keeps only the start of an error too long for one line", () => {
     const sink = createTestSink();
