@@ -100,6 +100,8 @@ describe("searchSupermemory", () => {
           memory: "User prefers British English",
           similarity: 0.9,
           updatedAt: "2026-11-01T00:00:00.000Z",
+          id: "mem_fake",
+          containerTag: "rakazo:bot-123",
         },
       ],
     });
@@ -144,7 +146,9 @@ describe("searchSupermemory", () => {
 
     expect(result).toEqual({
       ok: true,
-      results: [{ memory: "Older decision: use Postgres.", similarity: 0 }],
+      results: [
+        { memory: "Older decision: use Postgres.", similarity: 0, containerTag: "rakazo:bot-123" },
+      ],
     });
     vi.unstubAllGlobals();
   });
@@ -164,7 +168,10 @@ describe("searchSupermemory", () => {
 
     const result = await searchSupermemory("anything", "rakazo:bot-123", config);
 
-    expect(result).toEqual({ ok: true, results: [{ memory: "kept", similarity: 0 }] });
+    expect(result).toEqual({
+      ok: true,
+      results: [{ memory: "kept", similarity: 0, containerTag: "rakazo:bot-123" }],
+    });
     vi.unstubAllGlobals();
   });
 
@@ -249,11 +256,30 @@ describe("searchSupermemoryContainers", () => {
     ).resolves.toEqual({
       ok: true,
       results: [
-        { memory: "private", similarity: 0.9 },
-        { memory: "shared", similarity: 0.7 },
+        { memory: "private", similarity: 0.9, containerTag: "rakazo:bot-1" },
+        { memory: "shared", similarity: 0.7, containerTag: "rakazo:workspace:ws-1" },
       ],
     });
     vi.unstubAllGlobals();
+  });
+
+  it("keeps a fact's best score while citing the copy that has an id", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json({ results: [{ memory: "tea", similarity: 0.9 }] }))
+        .mockResolvedValueOnce(
+          Response.json({ results: [{ id: "mem_b", memory: "tea", similarity: 0.4 }] }),
+        ),
+    );
+
+    await expect(
+      searchSupermemoryContainers("query", ["rakazo:workspace:ws-1", "rakazo:bot-1"], config),
+    ).resolves.toEqual({
+      ok: true,
+      results: [{ id: "mem_b", memory: "tea", similarity: 0.9, containerTag: "rakazo:bot-1" }],
+    });
   });
 });
 
@@ -414,7 +440,9 @@ describe("private-host transport", () => {
   // A finished Response from a stub hides this: the dispatcher close waits for
   // the body, and the caller cannot read that body until close returns.
   it("reads a body that arrives after the response headers", async () => {
-    const payload = JSON.stringify({ results: [{ memory: "late", similarity: 1 }] });
+    const payload = JSON.stringify({
+      results: [{ memory: "late", similarity: 1, containerTag: "fake:tag" }],
+    });
     const server = createServer((request, response) => {
       request.resume();
       response.writeHead(200, { "content-type": "application/json" });
@@ -436,7 +464,10 @@ describe("private-host transport", () => {
           undefined,
           AbortSignal.timeout(2_000),
         ),
-      ).resolves.toEqual({ ok: true, results: [{ memory: "late", similarity: 1 }] });
+      ).resolves.toEqual({
+        ok: true,
+        results: [{ memory: "late", similarity: 1, containerTag: "fake:tag" }],
+      });
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

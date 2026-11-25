@@ -26,6 +26,9 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import { SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Adapter } from "chat";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SlackInstallProvider } from "../providers/messaging/slack/slack-install-provider.js";
+import { telegramOutbound } from "../providers/messaging/telegram/telegram-messaging.js";
+import { whatsappOutbound } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
 import { userProgressClientNonce } from "../runs/lifecycle/user-progress.js";
 import { ChatSdkMessagingSurface, MessagingSendError } from "./chat-sdk-surface.js";
 import { InstalledMessagingSurface } from "./installed-messaging-surface.js";
@@ -518,6 +521,18 @@ const PLATFORMS: MessagingPlatformDescriptor[] = [
   { provider: "sendblue", capabilities: { direct: true, groups: true, receipt: "typing" } },
   {
     provider: "telegram",
+    outbound: telegramOutbound,
+    capabilities: { direct: true, groups: false, receipt: null, files: true },
+  },
+  // A named Telegram mount shares its adapter's facts, and WhatsApp declares its own.
+  {
+    provider: "telegram-work",
+    outbound: telegramOutbound,
+    capabilities: { direct: true, groups: false, receipt: null, files: true },
+  },
+  {
+    provider: "whatsapp",
+    outbound: whatsappOutbound,
     capabilities: { direct: true, groups: false, receipt: null, files: true },
   },
 ];
@@ -556,7 +571,7 @@ function createSurface() {
 
 const bytes = (storageKey: string) => new TextEncoder().encode(storageKey);
 
-function setup(options: { messaging?: MessagingSurface } = {}) {
+function setup(options: { messaging?: MessagingSurface; webOrigin?: string } = {}) {
   const world = createWorld();
   const jobs = createJobs();
   const prisma = createPrisma(world, jobs);
@@ -578,6 +593,7 @@ function setup(options: { messaging?: MessagingSurface } = {}) {
     events: events as unknown as MessagingDeliveryDeps["events"],
     jobs,
     artifacts,
+    webOrigin: options.webOrigin,
   });
   return {
     ...surface,
@@ -1067,6 +1083,31 @@ describe("deliverRun to a 1:1 chat", () => {
     await t.delivery.deliverRun("run-1");
 
     expect(bodies(t)).toEqual([`Send the email to Sam?\n${CHAT_APP_ASK_NOTE}`]);
+  });
+
+  it("links a pending approval to its bot's chat in the app when the web origin is set", async () => {
+    const t = setup({ webOrigin: "https://app.example.test" });
+    addRun(t.world, {
+      status: "waiting_input",
+      replies: [
+        {
+          id: "ask-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Run this command?",
+              detail: "rm -rf ~/projects/old",
+              approvalEffectId: "effect-1",
+              status: "pending",
+            },
+          ],
+        },
+      ],
+    });
+    await t.delivery.deliverRun("run-1");
+    const [body] = bodies(t);
+    expect(body).toBe("Run this command?\nAnswer in the app: https://app.example.test/app/bot-1");
+    expect(body).not.toContain("rm -rf");
   });
 
   it("keeps an approval's detail in the app and skips a question its ended run cannot use", async () => {
@@ -2584,6 +2625,47 @@ describe("conversation order", () => {
       ["msg:m-1:3", part("c"), "sent"],
     ]);
     expect(t.world.outbound.every((row) => row.sourceMessageId === "m-1")).toBe(true);
+  });
+
+  it("splits a long reply before sending it through a Slack workspace install", async () => {
+    const { messaging, sendToThread } = createSurface();
+    const provider: MessagingInstallProvider = new SlackInstallProvider({
+      clientId: "fake-client",
+      clientSecret: "fake-secret",
+      signingSecret: "fake-signing-secret",
+      redirectUri: "https://example.test/callback",
+    });
+    vi.spyOn(provider, "surface").mockReturnValue(messaging);
+    const installation = {
+      id: "install-1",
+      provider: "slack",
+      workspaceId: "team-1",
+      workspaceName: "Test workspace",
+      spaceId: "ws-1",
+      userId: "user-1",
+      botId: "bot-1",
+      credential: "fake-token",
+    };
+    const installed = new InstalledMessagingSurface(
+      {
+        get: vi.fn(),
+        getById: vi.fn(async () => installation),
+        removeWorkspace: vi.fn(),
+      },
+      provider,
+    );
+    const t = setup({ messaging: installed });
+    linkProvider(t.world, {
+      provider: "slack",
+      address: "team-1:U1",
+      dmThreadId: "slack~install-1:D1:",
+    });
+    const paragraphs = ["a".repeat(8_000), "b".repeat(8_000)];
+    addRun(t.world, { replies: [text("m-1", paragraphs.join("\n\n"))] });
+
+    await t.delivery.deliverRun("run-1");
+
+    expect(sendToThread.mock.calls.map(([request]) => request.body)).toEqual(paragraphs);
   });
 
   it("adds no parts to a reply the previous release split at other points", async () => {

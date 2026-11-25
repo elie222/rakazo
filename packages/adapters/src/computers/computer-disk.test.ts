@@ -75,11 +75,16 @@ describe("computer disk", () => {
     );
     expect(diskNoteInstruction({ diskUsedBytes: null, diskFreeBytes: null })).toBe(undefined);
     expect(diskNoteInstruction({ diskUsedBytes: 72n * GiB, diskFreeBytes: 8n * GiB })).toBe(
-      "The computer's disk is 90% full (9 GB free). Free space by removing build output and caches you no longer need, or tell the user.",
+      "The computer's disk is almost full. Free space by removing build output and caches you no longer need, or tell the user.",
     );
-    expect(
-      diskNoteInstruction({ diskUsedBytes: 80n * GiB, diskFreeBytes: 500_000_000n }),
-    ).toContain("100% full (500 MB free)");
+  });
+
+  it("keeps the note identical while the disk stays full, so cached prompts stay valid", () => {
+    const note = diskNoteInstruction({ diskUsedBytes: 85n * GiB, diskFreeBytes: 15n * GiB });
+    expect(diskNoteInstruction({ diskUsedBytes: 86n * GiB, diskFreeBytes: 14n * GiB })).toBe(note);
+    expect(diskNoteInstruction({ diskUsedBytes: 80n * GiB, diskFreeBytes: 500_000_000n })).toBe(
+      note,
+    );
   });
 
   it("re-arms a hidden warning once the disk has room again", () => {

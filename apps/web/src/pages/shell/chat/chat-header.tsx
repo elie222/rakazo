@@ -49,7 +49,7 @@ export function ChatHeader({
   return (
     <div
       data-testid="chat-header"
-      className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 py-3 md:px-[22px] [&_button]:pointer-events-auto"
+      className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-2 px-3 pt-2 pb-3 md:px-[22px] [&_button]:pointer-events-auto"
     >
       <div className="flex items-center">
         {macChrome ? <WindowChrome className="md:hidden" /> : null}

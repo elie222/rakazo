@@ -29,6 +29,7 @@ import type {
 import { HOST_SCREEN_MAX_ACTIONS, hostScreenAction } from "../../computers/screens/host-screen.js";
 import { ROUTINE_WATCH_NOTE_START } from "../../routines/routine-watch.prompt.js";
 import type { RunContext } from "../assembly/run-context.js";
+import { isRunTaintedBeyondOwnComputer } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 
 export {
@@ -56,12 +57,13 @@ export type UserComputerAccess = { routines: boolean; ownBots: boolean };
 export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = { routines: false, ownBots: false };
 
 /**
- * Whose own computer this run may reach: the person whose message started it, when they own the
- * bot. With the server's switches on, also their own bot's scheduled routine, and a message from
- * another of their bots when `ownBotChain` says the chain behind it started with them (see
- * botChainFromOwner), neither in a group chat. A routine that watches something hands the run text
- * someone else may have written, so it reaches no one's; nor do webhooks, channels, helpers and
- * other people's messages.
+ * Whose own computer this run may reach: the bot owner's, when their own message started it or it
+ * is one of their routines they let use it (see routineRunUsesOwnerComputer). With the server's
+ * switches on, also their own bot's scheduled routine, and a message from another of their bots
+ * when `ownBotChain` says the chain behind it started with them (see botChainFromOwner), neither in
+ * a group chat. A routine that watches something hands the run text someone else may have written,
+ * so it reaches no one's through the switch; nor do webhooks, channels, helpers and other people's
+ * messages.
  */
 export function userComputerOwner(input: {
   trigger: string;
@@ -74,15 +76,18 @@ export function userComputerOwner(input: {
   groupThread: boolean;
   /** The run's routine watches something, or is gone. */
   routineWatches: boolean;
+  /** The owner turned on "Use my computer" for this routine, and its run still qualifies. */
+  ownerComputerRoutine: boolean;
 }): string | undefined {
   if (input.messagingChannelRun || input.runUserId !== input.botUserId) return undefined;
   const reachable =
     input.trigger === "user" || input.trigger === "follow_up"
       ? input.sourceRole === "user"
-      : !input.groupThread &&
-        (input.trigger === "routine"
-          ? input.access.routines && !input.routineWatches
-          : input.trigger === "bot_message" && input.access.ownBots && input.ownBotChain);
+      : (input.trigger === "routine" && input.ownerComputerRoutine) ||
+        (!input.groupThread &&
+          (input.trigger === "routine"
+            ? input.access.routines && !input.routineWatches
+            : input.trigger === "bot_message" && input.access.ownBots && input.ownBotChain));
   return reachable ? input.runUserId : undefined;
 }
 
@@ -199,7 +204,9 @@ export async function botChainFromOwner(
  * choose "Allow in this space"; Never ask runs it, since pairing was consent, and a block refuses it. These tools run
  * only in the user's own runs (see userComputerOwner), so any effect of them past "intended" in
  * this space traces back to that approval. Removing every paired computer ends it, so pairing again
- * asks again. Screen control is approved per app.
+ * asks again. Screen control is approved per app. A routine runs unattended, so once it has read
+ * outside content, such as a fetched page, every call asks again whatever the mode or earlier
+ * approvals. The owner's own computer output does not count, so a routine can take several steps.
  */
 export async function userComputerGate(
   ctx: RunContext,
@@ -209,6 +216,7 @@ export async function userComputerGate(
   mode: ApprovalMode,
 ): Promise<"deny" | "allow" | "ask"> {
   if (blocked) return "deny";
+  if (ctx.run.trigger === "routine" && (await isRunTaintedBeyondOwnComputer(ctx))) return "ask";
   // Pairing the desktop was the owner's consent; Never ask does not ask again.
   if (mode === "never") return "allow";
   const { deps, run } = ctx;

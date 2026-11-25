@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdapterContext, AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
@@ -10,7 +10,13 @@ import {
   ScriptedAgentRuntime,
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
-import type { AiConsentStatus, PageDetail, PageSummary, ThreadSnapshot } from "@rakazo/contracts";
+import type {
+  AiConsentStatus,
+  PageDetail,
+  PageReview,
+  PageSummary,
+  ThreadSnapshot,
+} from "@rakazo/contracts";
 import { SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { deletePageShareSecrets, pageRevisionPendingCutoff } from "@rakazo/db";
@@ -54,11 +60,13 @@ describePages("pages", () => {
     }
   }
 
+  const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-pages-"));
+
   beforeAll(async () => {
     const { createApp } = await import("@rakazo/api/app");
     const handles = await createApp({
       databaseUrl: process.env.DATABASE_URL!,
-      dataDir: mkdtempSync(path.join(tmpdir(), "rakazo-pages-")),
+      dataDir,
       sandboxProvider: "fake",
       agentRuntime: "scripted",
       modelConnectionFetch: createModelConnectionFixtureFetch(listPiCatalog()),
@@ -120,6 +128,104 @@ describePages("pages", () => {
     });
     return effect?.result as Record<string, unknown> | undefined;
   };
+
+  it("serves a page's pictures only to readers of a version that shows them", async () => {
+    const reviewerEmail = `picture-reviewer-${stamp}@example.test`;
+    const owner = await signup(app, `picture-owner-${stamp}@example.test`, "Author");
+    const reviewer = await signup(app, reviewerEmail, "Reviewer");
+    const outsider = await signup(app, `picture-outsider-${stamp}@example.test`, "Outsider");
+    await db().user.update({
+      where: { id: (await me(app, reviewer)).id },
+      data: { emailVerified: true },
+    });
+    const bot = await createBot(app, owner, "Picture bot");
+    const upload = (name: string, contentBase64: string) =>
+      rpc<{ id: string }>(app, owner, "artifacts/create", {
+        botId: bot.id,
+        name,
+        mimeType: "image/png",
+        contentBase64,
+      });
+    const black = await upload(
+      "black.png",
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    );
+    const orange = await upload(
+      "orange.png",
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+    );
+    const pictured = (name: string) =>
+      `const App = () => (\n  <Page title="Trip">\n    <Image src="image:${name}" alt="${name}" />\n  </Page>\n);\nexport default App;\n`;
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Trip", source: pictured("hotel"), images: { hotel: black.id } })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ pageId, source: pictured("beach"), images: { beach: orange.id } })}`,
+    });
+    const first = (await rpc<PageDetail>(app, owner, "pages/get", { pageId, version: 1 })).images;
+    const second = (await rpc<PageDetail>(app, owner, "pages/get", { pageId })).images;
+    expect(Object.keys(first)).toEqual(["hotel"]);
+    expect(Object.keys(second)).toEqual(["beach"]);
+    const hotel = { pageId, version: 1, imageId: first.hotel! };
+    const beach = { pageId, version: 2, imageId: second.beach! };
+    expect(await rpc(app, owner, "pageReviews/image", hotel)).toEqual({
+      src: expect.stringMatching(/^data:image\/webp;base64,/),
+    });
+    expect((await raw(app, owner, "pageReviews/image", { ...hotel, version: 2 })).status).toBe(404);
+    expect((await raw(app, outsider, "pageReviews/image", beach)).status).toBe(404);
+    const { shareUrl } = await rpc<{ shareUrl: string }>(app, owner, "pages/setVisibility", {
+      pageId,
+      visibility: "link",
+    });
+    const sharedImage = (imageId: string) =>
+      app.request(`${SHARED_PAGE_PATH_PREFIX}${shareUrl.slice(-43)}/images/${imageId}`);
+    const opened = await sharedImage(beach.imageId);
+    expect(opened.status).toBe(200);
+    expect(opened.headers.get("cache-control")).toBe("no-store");
+    expect((await sharedImage(hotel.imageId)).status).toBe(404);
+
+    await rpc(app, owner, "pages/setVisibility", { pageId, visibility: "people" });
+    expect((await sharedImage(beach.imageId)).status).toBe(404);
+    const grant = await rpc<{ id: string }>(app, owner, "pageReviews/grant", {
+      pageId,
+      email: reviewerEmail,
+    });
+    expect((await rpc(app, reviewer, "pageReviews/image", beach)) as unknown).toMatchObject({
+      src: expect.any(String),
+    });
+    expect((await raw(app, reviewer, "pageReviews/image", hotel)).status).toBe(404);
+    await rpc(app, owner, "pageReviews/revoke", { pageId, grantId: grant.id });
+    expect((await raw(app, reviewer, "pageReviews/image", beach)).status).toBe(404);
+  });
+
+  it("keeps one file per picture a page shows and removes it with the page", async () => {
+    const owner = await signup(app, `picture-files-${stamp}@example.test`, "Author");
+    const bot = await createBot(app, owner, "Picture file bot");
+    const photo = await rpc<{ id: string }>(app, owner, "artifacts/create", {
+      botId: bot.id,
+      name: "black.png",
+      mimeType: "image/png",
+      contentBase64:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    });
+    const source = `const App = () => (\n  <Page title="Trip">\n    <Image src="image:hotel" alt="hotel" />\n  </Page>\n);\nexport default App;\n`;
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Trip", source, images: { hotel: photo.id } })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ pageId, source: `${source}// again\n`, images: { hotel: photo.id } })}`,
+    });
+    const stored = await db().pageImage.findMany({ where: { pageId } });
+    expect(stored).toHaveLength(1);
+    const file = path.join(dataDir, "artifacts", stored[0]!.spaceId, stored[0]!.storageKey);
+    expect(existsSync(file)).toBe(true);
+    expect(readdirSync(path.dirname(file))).toHaveLength(2);
+
+    await rpc(app, owner, "pages/remove", { pageId });
+    expect(existsSync(file)).toBe(false);
+  });
 
   it("grants only the page, keeps review history and publishes an isolated draft only with the owner", async () => {
     const reviewerEmail = `reviewer-${stamp}@example.test`;
@@ -225,10 +331,12 @@ describePages("pages", () => {
       id: pageId,
       title,
       code: pageViewerCode(page("Ready for review")),
+      images: {},
       currentVersion: 2,
       version: 2,
       owner: false,
       canRequestRevision: true,
+      readerState: {},
     });
 
     const { id: commentId } = await rpc<{ id: string }>(
@@ -287,6 +395,7 @@ describePages("pages", () => {
     expect(ready.id).not.toBe(failed.id);
     expect(await rpc(app, owner, "pageReviews/draft", reviewedDraft)).toEqual({
       code: pageViewerCode(draftSource),
+      images: {},
     });
     expect(revisionCalls).toHaveBeenCalledTimes(2);
     const request = revisionCalls.mock.calls[1]![0];
@@ -711,6 +820,76 @@ describePages("pages", () => {
     });
   });
 
+  it("keeps each reader's own saved values across edits and shows the bot only its user's", async () => {
+    const readerEmail = `reader-${stamp}@example.test`;
+    const owner = await signup(app, `state-owner-${stamp}@example.test`, "Packer");
+    const reader = await signup(app, readerEmail, "Reader");
+    const outsider = await signup(app, `state-outsider-${stamp}@example.test`, "Outsider");
+    const bot = await createBot(app, owner, "Packing bot");
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ title: "Packing", source: page("Pack") })}`,
+    });
+    const { pageId } = (await lastResult(bot.id)) as { pageId: string };
+    const input = { pageId };
+
+    expect((await rpc<PageDetail>(app, owner, "pages/get", input)).readerState).toEqual({});
+    await rpc(app, owner, "pageReviews/saveState", {
+      ...input,
+      values: { packed: { passport: true }, note: "Charger" },
+    });
+    await rpc(app, owner, "pageReviews/saveState", { ...input, values: { note: "Adapter" } });
+
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ pageId, source: page("Pack more") })}`,
+    });
+    const saved = { packed: { passport: true }, note: "Adapter" };
+    expect((await rpc<PageDetail>(app, owner, "pages/get", input)).readerState).toEqual(saved);
+    expect(
+      (await rpc<PageDetail>(app, owner, "pages/get", { ...input, version: 1 })).readerState,
+    ).toBeUndefined();
+    await sendAndWait(app, owner, bot.id, {
+      text: `call save_page with ${JSON.stringify({ pageId })}`,
+    });
+    expect(await lastResult(bot.id)).toMatchObject({ readerState: saved });
+
+    await rpc(app, owner, "pages/setVisibility", { ...input, visibility: "people" });
+    await db().user.update({
+      where: { id: (await me(app, reader)).id },
+      data: { emailVerified: true },
+    });
+    await rpc(app, owner, "pageReviews/grant", { ...input, email: readerEmail });
+    expect((await rpc<PageReview>(app, reader, "pageReviews/get", input)).readerState).toEqual({});
+    await rpc(app, reader, "pageReviews/saveState", { ...input, values: { note: "Mine" } });
+    expect((await rpc<PageReview>(app, reader, "pageReviews/get", input)).readerState).toEqual({
+      note: "Mine",
+    });
+    expect((await rpc<PageReview>(app, owner, "pageReviews/get", input)).readerState).toEqual(
+      saved,
+    );
+    expect(
+      (await raw(app, outsider, "pageReviews/saveState", { ...input, values: { note: "x" } }))
+        .status,
+    ).toBe(404);
+
+    const filler = (prefix: string) =>
+      Object.fromEntries(
+        Array.from({ length: 40 }, (_, index) => [`${prefix}${index}`, "x".repeat(1600)]),
+      );
+    await rpc(app, owner, "pageReviews/saveState", { ...input, values: filler("n") });
+    await rpc(app, owner, "pageReviews/saveState", { ...input, values: filler("m") });
+    const kept = (await rpc<PageDetail>(app, owner, "pages/get", input)).readerState!;
+    expect(kept).toMatchObject(filler("m"));
+    expect(kept).not.toHaveProperty("note");
+    expect(
+      (
+        await raw(app, owner, "pageReviews/saveState", {
+          ...input,
+          values: { note: "x".repeat(70_000) },
+        })
+      ).status,
+    ).toBe(400);
+  });
+
   it("saves, edits and guards pages through the bot's save_page", async () => {
     const cookie = await signup(app, `pages-${stamp}@rakazo.test`, "Page Owner");
     const bot = await createBot(app, cookie, "Reporter");
@@ -1046,6 +1225,7 @@ describePages("pages", () => {
     expect(await opened.json()).toEqual({
       title: "Q3 plan",
       code: expect.stringMatching(/React\.createElement\(Page, \{ title: "Middle"/),
+      images: {},
       version: 1,
       updatedAt: expect.any(String),
     });

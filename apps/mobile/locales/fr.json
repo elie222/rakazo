@@ -1,0 +1,11 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Rakazo utilise l’appareil photo pour que vous puissiez joindre des photos à un message destiné à un bot.",
+    "NSPhotoLibraryUsageDescription": "Rakazo utilise votre photothèque pour que vous puissiez joindre des images à un message destiné à un bot.",
+    "NSPhotoLibraryAddUsageDescription": "Rakazo enregistre dans votre photothèque les photos et vidéos que vous téléchargez depuis les Artefacts.",
+    "NSLocalNetworkUsageDescription": "Rakazo se connecte à un serveur Rakazo auto-hébergé sur votre réseau local.",
+    "NSMicrophoneUsageDescription": "Rakazo utilise le micro pour les appels vocaux avec vos bots.",
+    "NSSpeechRecognitionUsageDescription": "Rakazo transforme votre voix en messages pendant les appels vocaux.",
+    "NSFaceIDUsageDescription": "Autorisez Rakazo à utiliser Face ID."
+  }
+}

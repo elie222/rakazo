@@ -1,8 +1,19 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
-import { cronFromPreset, isOneShotRoutineCrons } from "@rakazo/core";
-import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
+import { cronFromPreset, isOneShotRoutineCrons, routineCanEnd, wallClock } from "@rakazo/core";
+import {
+  Button,
+  Field,
+  FieldLabel,
+  Input,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+  Switch,
+  Textarea,
+} from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, X } from "lucide-react";
 import { useId, useState } from "react";
@@ -10,7 +21,11 @@ import { useIdentityConfirmation } from "../../components/account/ConfirmIdentit
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useSpaceQueries } from "../../lib/query/query";
 import type { RoutineDraftState } from "../../lib/routines/routine-draft";
-import { routineDraftDirty, routineNeedsOneShotArm } from "../../lib/routines/routine-draft";
+import {
+  routineDraftDirty,
+  routineDraftEventTriggered,
+  routineNeedsOneShotArm,
+} from "../../lib/routines/routine-draft";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
 import { RoutineOwnerNote } from "./routine-editor/access-note";
@@ -109,8 +124,13 @@ export function RoutineEditor({
   const canTest = Boolean(editing) && !saving && !running;
   // Only the owner changes another member's routine; anyone may still turn it on or off.
   const readOnly = editing?.editable === false;
-  const needsOneShotArm =
-    editing != null && routineNeedsOneShotArm(editing, draft.schedules.map(cronFromPreset));
+  const draftCrons = draft.schedules.map(cronFromPreset);
+  const needsOneShotArm = editing != null && routineNeedsOneShotArm(editing, draftCrons);
+  const repeats = routineCanEnd(
+    draftCrons,
+    draft.watch !== null,
+    routineDraftEventTriggered(draft),
+  );
 
   return (
     <div>
@@ -204,7 +224,12 @@ export function RoutineEditor({
           <div className="flex items-center gap-2">
             <Trans>When to run</Trans>
             <span className="text-label text-muted-foreground/70">{timezone}</span>
-            <RoutineModelSettings draft={draft} onChange={onChange} fieldId={fieldId} />
+            <RoutineModelSettings
+              draft={draft}
+              onChange={onChange}
+              fieldId={fieldId}
+              computerOffered={editing?.useComputer !== undefined}
+            />
           </div>
 
           <div className="mt-2 space-y-2">
@@ -279,6 +304,34 @@ export function RoutineEditor({
                 onChange={(emailSenders) => onChange({ ...draft, emailSenders })}
                 onRemove={() => onChange({ ...draft, emailSenders: null })}
               />
+            ) : null}
+
+            {repeats ? (
+              <Field>
+                <FieldLabel htmlFor={`${fieldId}-ends`} className="font-normal">
+                  <Trans>Ends</Trans>
+                </FieldLabel>
+                <InputGroup>
+                  <InputGroupInput
+                    id={`${fieldId}-ends`}
+                    type="date"
+                    value={draft.endsOn}
+                    min={wallClock(new Date(), timezone).slice(0, 10)}
+                    onChange={(e) => onChange({ ...draft, endsOn: e.target.value })}
+                  />
+                  {draft.endsOn && !readOnly ? (
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton
+                        size="icon-sm"
+                        aria-label={t`Remove end date`}
+                        onClick={() => onChange({ ...draft, endsOn: "" })}
+                      >
+                        <X />
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  ) : null}
+                </InputGroup>
+              </Field>
             ) : null}
 
             {needsOneShotArm ? (

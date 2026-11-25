@@ -28,6 +28,7 @@ model User {
   pages          Page[]
   pageGrants PageGrant[]
   pageComments PageComment[]
+  pageReaderStates PageReaderState[]
   id                          String                       @id
   name                        String
   email                       String
@@ -51,6 +52,7 @@ model User {
   /// Null lets each client keep its previous device preference.
   composerModelPicker          Boolean?
   streamReplies                Boolean?
+  notificationSounds           Boolean                       @default(false)
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
@@ -491,6 +493,7 @@ model Organization {
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
   computerAllowanceGrants ComputerAllowanceGrant[]
+  mediaCharges MediaCharge[]
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
@@ -597,6 +600,22 @@ model ComputerAllowanceGrant {
 
   @@index([organizationId, createdAt])
   @@map("computer_allowance_grants")
+}
+
+/// Hosted image and video generation an organization spent its monthly media balance on. Kept
+/// apart from the run that spent it, so deleting a bot or Space does not give the balance back.
+model MediaCharge {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// The generation charged, as `media:<external effect id>`; unique so a retry charges once.
+  source         String       @unique
+  kind           String
+  amountMicros   Int
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("media_charges")
 }
 
 model PluginSubmission {
@@ -1344,7 +1363,7 @@ model Run {
   sourceMessage        Message?          @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   routineId            String?
   routine              Routine?          @relation(fields: [routineId], references: [id], onDelete: SetNull)
-  // The failed routine run this run retries. Unique, so a run is retried at most once.
+  // The failed run this run retries. Unique, so a run is retried at most once.
   retryOfRunId         String?           @unique
   // Durable retry schedule; null means runnable immediately when queued.
   wakeAt               DateTime?
@@ -1613,6 +1632,11 @@ model Routine {
   /// Runs as a turn in its chat, with the whole conversation, waiting while the bot is busy there.
   /// Otherwise it runs on time alongside other work, with its recent results and the chat's last messages.
   inChat         Boolean   @default(false)
+  /// While set, a run may use the owner's own computer if its prompt hashes to this (see
+  /// routineRunUsesOwnerComputer). Only the owner sets it, in the app. A database trigger clears it
+  /// when the prompt, owner or bot changes, or it starts running in its chat or watching, and
+  /// another when the owner pairs or unpairs a computer.
+  computerPromptHash String?
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?
@@ -1627,6 +1651,7 @@ model Routine {
   watchState     Json?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
+  endsAt         DateTime?
   /// Runs in a row the model provider refused for the account; each one spaces out the schedule.
   accountFailures Int      @default(0)
   /// When failing runs last paused it; only runs after this count toward the next pause.
@@ -1639,6 +1664,7 @@ model Routine {
 
   @@index([active, nextRunAt])
   @@index([spaceId, botId])
+  // routines_ends_at_idx (routines with an end) is raw SQL: Prisma cannot express partial indexes.
   @@map("routines")
 }
 
@@ -2130,6 +2156,8 @@ model Page {
   versions       PageVersion[]
   grants         PageGrant[]
   comments       PageComment[]
+  readerStates   PageReaderState[]
+  images         PageImage[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2146,10 +2174,29 @@ model PageVersion {
   source    String
   /// The source compiled for the viewer when it was saved, so reads never run the compiler.
   code      String
+  images    Json?
   createdAt DateTime @default(now())
 
   @@unique([pageId, version])
   @@map("page_versions")
+}
+
+model PageImage {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  spaceId   String
+  hash      String
+  mimeType  String
+  width     Int
+  height    Int
+  size      Int
+  /// Where the artifact store keeps the bytes, as for a chat file.
+  storageKey String
+  createdAt DateTime @default(now())
+
+  @@unique([pageId, hash])
+  @@map("page_images")
 }
 
 model PageGrant {
@@ -2166,6 +2213,21 @@ model PageGrant {
   @@unique([pageId, recipientEmail])
   @@index([userId, pageId])
   @@map("page_grants")
+}
+
+model PageReaderState {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId   String
+  values    Json
+  updatedAt DateTime @updatedAt
+
+  @@unique([pageId, userId])
+  @@index([userId])
+  @@map("page_reader_states")
 }
 
 model PageComment {

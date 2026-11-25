@@ -16,5 +16,7 @@ export function routineEventLabel({ change, name }: RoutineEventBlock): string {
       return t`Disabled routine "${name}"`;
     case "deleted":
       return t`Deleted routine "${name}"`;
+    case "ended":
+      return t`Routine "${name}" ended`;
   }
 }

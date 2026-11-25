@@ -5,6 +5,8 @@
 #   pr-digest --watch [PR]    poll until checks settle, a check newly fails, or
 #                             an unseen review finding arrives; then digest
 #   pr-digest --all [PR]      re-print findings already shown once
+#   pr-digest --all-checks    with --watch, also wait for checks the base does
+#                             not require (Web E2E)
 #   pr-digest --logs JOB_ID   failing CI log, stripped of timestamp noise
 #   pr-digest --reply ID BODY reply to a review comment thread
 #
@@ -159,6 +161,7 @@ commit_statuses() {
 # The checks the base branch requires, as a JSON array, or empty when none are
 # named or they cannot be read.
 REQUIRED=""
+ALL_CHECKS=0
 required_checks() {
   local branch
   REQUIRED=""
@@ -172,19 +175,24 @@ required_checks() {
 # an agent wait, though a failure in one is still reported. Otherwise every
 # check run, pending status and unfinished workflow counts.
 pending_count() {
+  local required=0 all=0
   if [ -n "$REQUIRED" ]; then
-    jq -n --argjson req "$REQUIRED" --argjson runs "$1" --argjson statuses "$2" '
+    # With --all-checks the count below covers running checks, so only missing ones count here.
+    required=$(jq -n --argjson req "$REQUIRED" --argjson runs "$1" --argjson statuses "$2" \
+      --argjson missing_only "$ALL_CHECKS" '
       [$req[] as $c
        | ([$runs[] | select(.name == $c)]) as $r
        | ([$statuses[] | select(.context == $c)]) as $s
        | select(($r | length) + ($s | length) == 0
-                or ($r | any(.status != "completed"))
-                or ($s | any(.state == "pending")))] | length'
-  else
-    echo $(( $(jq '[.[] | select(.status != "completed")] | length' <<<"$1") +
-             $(jq '[.[] | select(.state == "pending")] | length' <<<"$2") +
-             $(jq '[.[] | select(.status != "completed")] | length' <<<"$3") ))
+                or ($missing_only == 0 and (($r | any(.status != "completed"))
+                                            or ($s | any(.state == "pending")))))] | length')
   fi
+  if [ -z "$REQUIRED" ] || [ "$ALL_CHECKS" = 1 ]; then
+    all=$(( $(jq '[.[] | select(.status != "completed")] | length' <<<"$1") +
+            $(jq '[.[] | select(.state == "pending")] | length' <<<"$2") +
+            $(jq '[.[] | select(.status != "completed")] | length' <<<"$3") ))
+  fi
+  echo $((required + all))
 }
 
 # gh pr view, with gh's hint banner dropped from stderr but its errors kept.
@@ -526,6 +534,7 @@ main() {
     case $1 in
       --watch) watch=1 ;;
       --all) SHOW_ALL=1 ;;
+      --all-checks) ALL_CHECKS=1 ;;
       --logs)
         shift
         command -v perl >/dev/null || die "perl not found"

@@ -1,11 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ChatPreferencesPatch } from "@rakazo/contracts";
+import type { AccountChatPreferencesPatch } from "@rakazo/contracts";
 import { APP_LOCALE_LABELS } from "@rakazo/core";
 import * as Notifications from "expo-notifications";
 import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Alert, AppState, Platform, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { supportsComposerHardwareEnter } from "../../components/composer/composer-keyboard";
 import { NativeSegmentedControl } from "../../components/native/native-segmented-control";
 import {
   SettingsGroup,
@@ -23,6 +24,10 @@ import {
   getCachedAppearancePreference,
   setAppearancePreference,
 } from "../../lib/appearance/appearance";
+import {
+  setComposerEnterToSendPreference,
+  useComposerHardwareEnterPreference,
+} from "../../lib/composer/composer-enter-to-send-preference";
 import {
   getCachedComposerModelPicker,
   setComposerModelPicker,
@@ -88,7 +93,7 @@ export default function General() {
   });
   const chatSave = useSave({
     target: ACCOUNT_SETTINGS,
-    save: async (chatPreferences: ChatPreferencesPatch, send) => {
+    save: async (chatPreferences: AccountChatPreferencesPatch, send) => {
       queryClient.setQueryData(
         meRead.queryKey,
         await send("preferences/update", { chatPreferences }),
@@ -98,6 +103,7 @@ export default function General() {
     onFailed: () => Alert.alert(t`Could not save`),
   });
   const appearance = getCachedAppearancePreference();
+  const enterToSend = useComposerHardwareEnterPreference();
   const chatSaveDisabled = loadingAccount || chatSave.pending;
   const deviceStreamReplies = useSyncExternalStore(
     subscribeResponseStreaming,
@@ -213,6 +219,16 @@ export default function General() {
     notificationQueue.current.update(next);
   }
 
+  const soundSwitch =
+    me?.chatPreferences?.notificationSounds === undefined ? null : (
+      <SettingsSwitch
+        label={t`Sound for alerts that need attention`}
+        value={me.chatPreferences.notificationSounds}
+        disabled={chatSaveDisabled}
+        onChange={(notificationSounds) => chatSave.run({ notificationSounds })}
+      />
+    );
+
   function updateBotStyle(botAvatarSet: MobileMe["botAvatarSet"] | "") {
     if (me && botAvatarSet) botStyle.run(botAvatarSet);
   }
@@ -309,6 +325,7 @@ export default function General() {
                 void updateNotifications({ ...notifications, needsAttention })
               }
             />
+            {soundSwitch}
             {hasLiveUpdateSettings() ? (
               <SettingsRow
                 accessibilityRole="button"
@@ -322,6 +339,10 @@ export default function General() {
               title={t`Notification settings`}
             />
             {notificationError ? <Text style={styles.error}>{notificationError}</Text> : null}
+          </SettingsGroup>
+        ) : soundSwitch ? (
+          <SettingsGroup accessibilityLabel={t`Notifications`} label={t`Notifications`}>
+            {soundSwitch}
           </SettingsGroup>
         ) : null}
 
@@ -344,6 +365,14 @@ export default function General() {
               else void setComposerModelPicker(checked);
             }}
           />
+          {supportsComposerHardwareEnter ? (
+            <SettingsSwitch
+              label={t`Send with Enter`}
+              detail={t`Hardware keyboard`}
+              value={enterToSend}
+              onChange={(checked) => void setComposerEnterToSendPreference(checked)}
+            />
+          ) : null}
           <SettingsSwitch
             label={t`Load web images automatically`}
             value={loadRemoteImages}

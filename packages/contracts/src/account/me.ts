@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { BotSchema, BotSectionSchema } from "../bots/bot.js";
+import { BotSectionSchema, ListedBotSchema } from "../bots/bot.js";
 import { BotAvatarSetSchema } from "../bots/bot-avatar.js";
 import { NavLinkSchema } from "../clients/nav-links.js";
 import { Id } from "../ids.js";
@@ -8,7 +8,7 @@ import { RoutineSchema } from "../routines/routine.js";
 import { GroupSchema } from "../spaces/groups.js";
 import { SpaceSchema } from "../spaces/space.js";
 import { ThreadSnapshotSchema } from "../threads/thread.js";
-import { AvatarStyleSchema, ChatPreferencesSchema } from "./preferences.js";
+import { AccountChatPreferencesSchema, AvatarStyleSchema } from "./preferences.js";
 
 export const MeSchema = z.object({
   meetingsEnabled: z.boolean().optional(),
@@ -51,7 +51,7 @@ export const MeSchema = z.object({
   /** The icon set new and unpinned bots wear. Absent from servers that predate it. */
   botAvatarSet: BotAvatarSetSchema.optional(),
   /** Absent from servers that predate account-level chat preferences. */
-  chatPreferences: ChatPreferencesSchema.optional(),
+  chatPreferences: AccountChatPreferencesSchema.optional(),
   /**
    * The user's IANA timezone, or null when unset (bots then see UTC only).
    * Absent from servers that predate it.
@@ -94,10 +94,10 @@ export function signupSurveyAsksTeamSize(use: SignupSurvey["use"]): boolean {
 
 export const AppBootstrapSchema = z.object({
   me: MeSchema,
-  bots: z.array(BotSchema),
+  bots: z.array(ListedBotSchema),
   groups: z.array(GroupSchema),
   botSections: z.array(BotSectionSchema),
-  archivedBots: z.array(BotSchema),
+  archivedBots: z.array(ListedBotSchema),
   archivedGroups: z.array(GroupSchema),
   thread: ThreadSnapshotSchema.nullable(),
   routines: z.array(RoutineSchema),

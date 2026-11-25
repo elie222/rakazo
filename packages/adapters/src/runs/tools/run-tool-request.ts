@@ -1,6 +1,6 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { approvalCardExpires, redactSecrets } from "@rakazo/core";
 import { runLoginKind } from "@rakazo/db";
 import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import type { TerminatingToolResult } from "../../approvals/approval-effect.js";
@@ -35,6 +35,7 @@ import {
   purchaseApprovalOf,
   purchaseCardSummary,
 } from "../../payments/purchase-gate.js";
+import { routineRunUsesOwnerComputer } from "../../routines/routine-owner-computer.js";
 import { reachesManagedRoutines } from "../../routines/routine-target.js";
 import { canonicalToolEvents } from "../../routines/routine-triggers.js";
 import { listVaultItems } from "../../secrets/bot-secrets.js";
@@ -71,7 +72,7 @@ import { fleetPrepareDeps } from "../turn/run-model.js";
 import { refusal } from "../turn/tool-refusal.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
 import { holdSharedPageSave } from "./run-tools-pages.js";
-import { scheduleCreateRefusal } from "./run-tools-tasks.js";
+import { scheduleCreateRefusal, scheduleUpdatePreview } from "./run-tools-tasks.js";
 import {
   NO_USER_COMPUTER_ACCESS,
   USER_COMPUTER_TOOLS,
@@ -396,6 +397,17 @@ async function askingLoginUse(
   return approved;
 }
 
+function archivesItself(
+  bot: { id: string; name: string },
+  name: string,
+  args: Record<string, unknown>,
+) {
+  if (name !== "archive_bot") return false;
+  const botId = args.bot_id || args.botId;
+  if (botId) return String(botId) === bot.id;
+  return String(args.confirm_name ?? args.confirmName ?? "").trim() === bot.name;
+}
+
 /**
  * Check bot-management and instruction-proposal preconditions, and canonicalize the
  * requests whose approval card shows resolved names. Updates the request in place.
@@ -407,6 +419,9 @@ export async function prepareToolRequest(
   const { deps, run, bot } = ctx;
   const { name, executionId, nextApprovedTool } = request;
   let { args } = request;
+  // A bot that archived itself only finishes its reply; retrying its own archive still reconciles.
+  if ((ctx.state.selfArchived || bot.archivedAt) && !archivesItself(bot, name, args))
+    return refusal("bot_archived", "You are archived, so no more tools can run. Send your reply.");
   if (
     (SCHEDULE_TOOL_NAMES.has(name) || SKILL_TOOL_NAMES.has(name) || name === "remove_mcp_server") &&
     (ctx.source.messagingChannelRun ||
@@ -433,6 +448,15 @@ export async function prepareToolRequest(
       );
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
+    // Turning the switch off or editing the routine mid-run ends its use of the computer.
+    if (
+      ctx.source.ownerComputerRoutine &&
+      !(await routineRunUsesOwnerComputer(deps.prisma, ctx.run))
+    )
+      return refusal(
+        "user_computer_unavailable",
+        "The user's computer is not available in this run.",
+      );
     // Webhooks reach no one's computer, including through a run they were handed to. Routines
     // don't either, unless the server lets the owner's routines reach it.
     if (
@@ -491,11 +515,21 @@ export async function prepareToolRequest(
           ? "Bot management is off for this bot, so it reaches only its own routines."
           : "This tool is disabled for this bot.",
       );
-    if (!ctx.source.ownerStartedRun)
+    const unattended = !ctx.source.ownerStartedRun && approvalCardExpires(run.trigger);
+    if (!ctx.source.ownerStartedRun && !unattended)
       return refusal("run_not_owner_started", "Bot management tools need a run you started.");
-    // Text from a channel or webhook may have asked for it, so it goes through the approval mode,
-    // and an Always allow rule saved for calls the owner asked for does not skip it.
-    if (fleetWrite && (await ctx.trust.receivedOutsideMessage())) {
+    // Text from a channel or webhook, or whatever started a run nobody is watching, may have asked
+    // for it, so it goes through the approval mode, and an Always allow rule saved for calls the
+    // owner asked for does not skip it.
+    // Reading another bot's instructions or routine prompts waits too: a run nobody is watching
+    // may answer a bot from another Space.
+    const readsPrivateText =
+      unattended &&
+      ((name === "list_fleet" && argumentGiven(args.bot_id)) || name === "schedule_list");
+    if (
+      readsPrivateText ||
+      (fleetWrite && (unattended || (await ctx.trust.receivedOutsideMessage())))
+    ) {
       request.heldForApproval = true;
       request.ignoresAllowRules = true;
     }
@@ -507,6 +541,11 @@ export async function prepareToolRequest(
       const { bot_id: _id, bot_name: _name, ...rest } = args;
       args = target.id === bot.id ? rest : { ...rest, bot_id: target.id, bot_name: target.name };
     }
+  }
+  // Only a persisted approval may supply the before-values the save checks against.
+  if (name === "schedule_update" && nextApprovedTool !== name) {
+    const { expected: _modelExpected, ...given } = args;
+    args = given;
   }
   if (name === "update_bot" && argumentGiven(args.bot_id)) {
     // An approved replay runs the stored request, whose settings were checked before the card.
@@ -694,6 +733,14 @@ export async function prepareToolRequest(
   return undefined;
 }
 
+/** Prepare the review and persist its before-values only in the request replayed after approval. */
+export async function prepareScheduleUpdateApproval(ctx: RunContext, request: ToolRequest) {
+  const prepared = await scheduleUpdatePreview(ctx, request.args);
+  if ("error" in prepared) return refusal("schedule_update_refused", prepared.error);
+  request.fleetSummary = prepared.summary;
+  if (prepared.pinned) request.effectRequest = { ...request.args, expected: prepared.pinned };
+}
+
 /** What the model is told when a press could not be checked for a payment, so nothing was pressed. */
 function uncheckedPress(why: UncheckedPress): { error: string } {
   switch (why) {
@@ -771,7 +818,8 @@ async function currentModelNames(
 
 /**
  * `update_bot` on this bot itself. Under Never ask instructions are written at once; otherwise
- * they go through approval like any other action, and runs someone else started cannot change them.
+ * they go through approval like any other action, and runs someone else started cannot change
+ * them, except a run nobody is watching, whose owner answers its card.
  */
 async function prepareOwnBotUpdate(
   ctx: RunContext,
@@ -838,13 +886,22 @@ async function prepareOwnBotUpdate(
   if (args.memoryScope === "shared")
     return refusal("owner_only_settings", "Only the owner can share your memory, in Settings.");
   const unguarded = await neverAsks(ctx);
+  // A run nobody is watching asks its owner on a card that expires unanswered.
+  const unattended = !ctx.source.ownerStartedRun && approvalCardExpires(run.trigger);
   if (OWNER_SETTINGS.some((key) => argumentGiven(args[key]))) {
-    if (isSubagentToolExecution(executionId) || (!unguarded && !ctx.source.ownerStartedRun))
+    if (
+      isSubagentToolExecution(executionId) ||
+      (!unguarded && !ctx.source.ownerStartedRun && !unattended)
+    )
       return refusal(
         "owner_only_model_settings",
         "Only the owner can change your settings, from their own chat.",
       );
     request.settingsChange = true;
+    if (unattended) {
+      request.heldForApproval = true;
+      request.ignoresAllowRules = true;
+    }
   }
   if (!argumentGiven(args.instructions)) return undefined;
   if (isSubagentToolExecution(executionId))
@@ -860,8 +917,9 @@ async function prepareOwnBotUpdate(
   request.args = { ...args, instructions };
   if (unguarded) return undefined;
   // A run someone else started acts with their authority, and its card is theirs to answer. A new
-  // bot's first run sets the instructions its creator asked for.
-  if (run.trigger !== "created" && !ctx.source.ownerStartedRun)
+  // bot's first run sets the instructions its creator asked for, and the owner answers the card of
+  // a run nobody is watching.
+  if (run.trigger !== "created" && !ctx.source.ownerStartedRun && !unattended)
     return refusal(
       "instructions_run_not_owner_started",
       "Instruction changes are blocked for runs someone else started.",
@@ -884,5 +942,6 @@ async function prepareOwnBotUpdate(
     previousInstructionsFromBaseline: true,
   };
   request.heldForApproval = true;
+  if (unattended) request.ignoresAllowRules = true;
   return undefined;
 }

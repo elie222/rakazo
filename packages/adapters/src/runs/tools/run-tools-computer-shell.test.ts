@@ -41,6 +41,7 @@ function setup(stream: AsyncIterable<ProcessEvent>) {
     thread: { id: "thread-1" },
     context: {},
     secrets: ["hunter2"],
+    tools: { offered: [{ name: "shell" }, { name: "browser_snapshot" }] },
     computer: {
       mode: "personal",
       graphical: false,
@@ -112,5 +113,17 @@ describe("shell Activity events", () => {
     await vi.advanceTimersByTimeAsync(2_000);
     expect(events.map((event) => event.status)).toEqual(["running", "running", "done"]);
     expect(events.at(-1)).toEqual({ status: "done", exitCode: 0, output: "hello\n" });
+  });
+
+  it("tells a command that found no display to open the bot's screen with an offered tool", async () => {
+    async function* stream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: "Error: Can't open display: \n" };
+      yield { type: "exit", code: 1 };
+    }
+    const { ctx, call } = setup(stream());
+    await expect(shell(ctx, call)).resolves.toMatchObject({
+      code: 1,
+      notice: expect.stringContaining("Call browser_snapshot to open it"),
+    });
   });
 });

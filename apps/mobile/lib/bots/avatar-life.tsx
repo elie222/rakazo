@@ -9,11 +9,12 @@ import type {
 import {
   AVATAR_POKE_SECONDS,
   AVATAR_POKES,
-  AVATAR_REST_POSE,
   AVATAR_SETTLE_MS,
+  AVATAR_SHARED_WINDOW_SECONDS,
   avatarClipPool,
-  avatarSchedule,
   avatarSchedulePose,
+  avatarSharedSchedule,
+  avatarSharedTimeMs,
 } from "@rakazo/core";
 import type { ReactNode } from "react";
 import {
@@ -117,33 +118,35 @@ export function useAvatarOnScreen(): boolean {
   return focused && foreground && rowVisible;
 }
 
-/** A clock long enough to never wrap while an avatar moves. */
+/** A run of the clock, far longer than the stretch it is started again after. */
 const LIFE_RUN_SECONDS = 24 * 60 * 60;
 /** How long motion takes to ease in and out of the still picture. */
 export const AWAKE_MS = 600;
 /** The spring that turns the face into the typing dots and back: quick, barely overshooting. */
 export const MORPH_SPRING = { duration: 520, dampingRatio: 0.8 } as const;
-/** The timeline is rebuilt this long before it runs out. */
-const SCHEDULE_MARGIN_S = 5;
 
-/**
- * The clip clock as the JS thread knows it: where it started and when (ms), or where it
- * stopped. The JS thread's read of a running animation can lag behind its frames.
- */
-type ClockMirror = { base: number; since: number | null };
-function clockNow({ base, since }: ClockMirror): number {
-  return since === null ? base : base + (performance.now() - since) / 1000;
+/** The shared avatar clock in seconds, which the UI thread's clock follows. */
+function sharedSeconds(): number {
+  return avatarSharedTimeMs() / 1000;
+}
+
+function untilNextStretchMs(): number {
+  const window = AVATAR_SHARED_WINDOW_SECONDS * 1000;
+  return window - (avatarSharedTimeMs() % window) + 1;
 }
 
 /**
  * Everything a moving avatar needs on the UI thread: a seconds clock, its 0–1 wake-up,
- * the clip timeline for its state, the typing-dots morph and the current tap poke.
+ * the clip timeline for its state, the typing-dots morph and the current tap poke. The
+ * clock and timeline come from the shared avatar clock and the bot, so every copy of one
+ * bot's avatar plays the same clip at the same moment.
  */
 export function useLife(
   state: AvatarLifeState,
   clock: AvatarClock,
   size: number,
   mode: AvatarMotionMode,
+  identity: string,
 ) {
   const seconds = useSharedValue(0);
   const awake = useSharedValue(0);
@@ -154,7 +157,6 @@ export function useLife(
   const schedule = useSharedValue<AvatarSegment[]>([]);
   const poke = useSharedValue<AvatarPoke | null>(null);
   const pokeProgress = useSharedValue(1);
-  const mirror = useRef<ClockMirror>({ base: 0, since: null });
   const moving = clock !== "still";
   const pool = avatarClipPool(state, size, mode);
   useEffect(() => {
@@ -166,39 +168,43 @@ export function useLife(
   useEffect(() => {
     morph.value = withSpring(dots ? 1 : 0, MORPH_SPRING);
   }, [dots, morph]);
+  // Counts the stretches this avatar has planned and how long until the next begins, so
+  // the timer is armed once a stretch, not on every render.
+  const [stretch, setStretch] = useState(() => ({ count: 0, wait: untilNextStretchMs() }));
+  // Whether a timeline was planned before, kept through a brief stop (a lazy avatar is
+  // still for a render before it settles), so the next one eases from the pose on screen.
+  // After a long stop that pose is stale, but `awake` eases in from the still picture.
+  const planned = useRef(false);
   useEffect(() => {
     if (!moving) return;
-    // The JS thread sets where the clock starts, so it can tell the time without reading it.
-    const start = clockNow(mirror.current);
-    mirror.current = { base: start, since: performance.now() };
-    seconds.value = start;
-    seconds.value = withTiming(start + LIFE_RUN_SECONDS, {
+    const now = sharedSeconds();
+    // Easing in also finishes a bridge a new stretch would otherwise cut short; when the
+    // pose on screen already matches the shared one, the timeline carries straight on.
+    const from = planned.current ? avatarSchedulePose(schedule.value, now) : undefined;
+    planned.current = true;
+    // The timeline covers this stretch and the next.
+    schedule.value = avatarSharedSchedule(pool, identity, now, from);
+    // The UI thread's clock starts again from the shared clock with each plan, so it never
+    // runs out or drifts from the timeline however long the avatar stays on screen. A new
+    // timing replaces the running one; the clock stops only when the avatar does.
+    seconds.value = now;
+    seconds.value = withTiming(now + LIFE_RUN_SECONDS, {
       duration: LIFE_RUN_SECONDS * 1000,
       easing: Easing.linear,
       // The clock only ever drives blinks under Reduce Motion; it must keep ticking.
       reduceMotion: ReduceMotion.Never,
     });
-    return () => {
-      cancelAnimation(seconds);
-      mirror.current = { base: clockNow(mirror.current), since: null };
-    };
-  }, [moving, seconds]);
+  }, [moving, pool, identity, schedule, seconds, stretch.count]);
   useEffect(() => {
-    if (!moving) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const plan = () => {
-      // Pick up from wherever the head is now, as the next clip's bridge.
-      const now = clockNow(mirror.current);
-      const pose = schedule.value.length ? avatarSchedulePose(schedule.value, now) : undefined;
-      const next = avatarSchedule(pool, now, pose ?? AVATAR_REST_POSE, Math.random);
-      schedule.value = next;
-      const last = next[next.length - 1];
-      const remaining = last ? last.start + last.duration - now : 0;
-      timer = setTimeout(plan, Math.max(remaining - SCHEDULE_MARGIN_S, 1) * 1000);
-    };
-    plan();
-    return () => clearTimeout(timer);
-  }, [moving, pool, schedule]);
+    if (moving) return () => cancelAnimation(seconds);
+  }, [moving, seconds]);
+  // A wait worked out before the avatar started moving may be off, but it is never longer
+  // than a stretch and the timeline already covers the next one, so nothing runs out.
+  useTimeout(
+    () => setStretch(({ count }) => ({ count: count + 1, wait: untilNextStretchMs() })),
+    moving ? stretch.wait : null,
+    stretch.count,
+  );
   return { seconds, awake, morph, schedule, poke, pokeProgress };
 }
 

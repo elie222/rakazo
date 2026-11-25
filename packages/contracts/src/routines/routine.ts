@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { TimeZoneSchema } from "../account/preferences.js";
-import { Id, ThinkingLevelSchema } from "../ids.js";
+import { Id, IsoDate, ThinkingLevelSchema } from "../ids.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 
 /**
@@ -73,6 +73,7 @@ export const RoutineSchema = z.object({
   watchState: RoutineWatchStateSchema.nullable(),
   lastRunAt: z.string().nullable(),
   nextRunAt: z.string().nullable(),
+  endsAt: z.string().nullable().default(null),
   /** Computed by the server; absent on older servers. Not a worker-health diagnosis. */
   scheduleDelayed: z.boolean().optional(),
   createdAt: z.string(),
@@ -86,6 +87,11 @@ export const RoutineSchema = z.object({
    * the viewer, never an id. Null when that member is no longer in the Space; absent on older servers.
    */
   runsAs: z.object({ name: z.string(), isViewer: z.boolean() }).nullable().optional(),
+  /**
+   * Whether its runs may use the viewer's own paired computer. Present only when the viewer owns
+   * the routine and its bot and has a computer paired, so only they see the switch.
+   */
+  useComputer: z.boolean().optional(),
 });
 export type Routine = z.infer<typeof RoutineSchema>;
 
@@ -115,6 +121,7 @@ export const CreateRoutineInput = z
     modelId: z.string().trim().min(1).max(200).nullable().default(null),
     thinkingLevel: ThinkingLevelSchema.nullable().default(null),
     watch: RoutineWatchSchema.nullable().default(null),
+    endsAt: IsoDate.nullable().default(null),
   })
   .superRefine((value, ctx) => {
     routineModelIssues(value, ctx);

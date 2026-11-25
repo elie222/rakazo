@@ -72,8 +72,12 @@ PRD="$(git rev-parse --show-toplevel)/.agents/skills/pr-watch/pr-digest"
    that newly failed, or every check run, commit status and workflow run on the
    exact head SHA terminal. Then it prints the digest. You are re-invoked when it exits.
    When the base branch names required checks, only those hold it back; optional
-   ones (image validation, code scanning) never make you wait, though a failure
-   in one is still reported.
+   ones (Web E2E, image validation, code scanning) never make you wait, though a
+   failure in one is still reported and a failure your change caused is yours to fix.
+   Web E2E is optional on purpose: most changes cannot break it. Add
+   `--all-checks` to wait for it too only when the change could plausibly break a
+   browser flow, such as a web UI change, a change to the E2E specs or fixtures,
+   or a change to the auth or chat paths every flow goes through.
    It exits 0 on every verdict, so a finished watch is never a failure: read its
    `VERDICT` line. Polling is cheap: unchanged reads are conditional requests that
    GitHub does not count against the rate limit, and if the limit runs out the
