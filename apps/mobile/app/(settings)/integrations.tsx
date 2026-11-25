@@ -85,7 +85,6 @@ export default function Integrations() {
     setLabelDrafts({});
   }
   const detailKey = openApp?.spaceId === spaceId ? openApp : null;
-  const [toolsOpen, setToolsOpen] = useState(true);
 
   const catalogRead = rpcQuery("connections/catalog");
   const listRead = rpcQuery("connections/list");
@@ -151,7 +150,7 @@ export default function Integrations() {
         ? "partial"
         : "ready";
   const tools = toolsQuery.data ?? [];
-  const toolsLoading = Boolean(detailKey) && toolsQuery.isLoading;
+  const toolsFailed = Boolean(detailKey) && toolsQuery.isError;
 
   function refresh() {
     for (const screenQuery of screenQueries) void screenQuery.refetch({ cancelRefetch: false });
@@ -308,7 +307,6 @@ export default function Integrations() {
 
   function openDetail(item: ConnectionCatalogItem) {
     resetFailures();
-    setToolsOpen(true);
     setOpenApp({ connectorId: item.connectorId, slug: item.slug, spaceId: selectedSpaceId() });
   }
 
@@ -529,9 +527,8 @@ export default function Integrations() {
                 labelDrafts={labelDrafts}
                 setLabelDrafts={setLabelDrafts}
                 tools={tools}
-                toolsLoading={toolsLoading}
-                toolsOpen={toolsOpen}
-                setToolsOpen={setToolsOpen}
+                toolsLoading={toolsQuery.isLoading}
+                toolsFailed={toolsFailed}
                 onBack={() => closeDetail()}
                 onUninstall={() => uninstall(detailItem)}
                 onRename={renameAccount}

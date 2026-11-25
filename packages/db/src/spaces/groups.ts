@@ -9,6 +9,7 @@ import {
 import type { Prisma, PrismaClient } from "../database/client.js";
 import { IsolationError } from "../database/scope.js";
 import { withTransactionRetry } from "../database/transaction-retry.js";
+import { pageImageStorageKeys } from "../pages/page-images.js";
 import { cancelRunsInTransaction, conversationRunsWhere } from "../runs/cancel-runs.js";
 import { transientRunEventsWhere } from "../threads/events.js";
 import { withNewestThreadMessages } from "../threads/preview-messages.js";
@@ -673,6 +674,7 @@ export function createGroupRepos(prisma: PrismaClient) {
             })
           : [];
         const pageShareSecrets = await deletePageShareSecrets(tx, { groupId });
+        const pageImageKeys = await pageImageStorageKeys(tx, { groupId });
         await tx.chatGroup.delete({ where: { id: groupId } });
         return {
           contextBotId,
@@ -685,7 +687,10 @@ export function createGroupRepos(prisma: PrismaClient) {
                 ],
               }
             : undefined,
-          artifactStorageKeys: group.artifacts.map((artifact) => artifact.storageKey),
+          artifactStorageKeys: [
+            ...group.artifacts.map((artifact) => artifact.storageKey),
+            ...pageImageKeys,
+          ],
           cancelledRunIds: runIds,
           computers: targets,
           pageShareSecrets,

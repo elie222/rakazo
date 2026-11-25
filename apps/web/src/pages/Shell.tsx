@@ -207,7 +207,6 @@ function SpaceShell() {
     searchQuery: search.query,
     now: snoozeNow,
   });
-
   const { inGroup, routeChat, active, activeGroup, activeBotId, activeGroupId, userBubble } =
     useActiveChat({ botId, groupId, startChat, bots, groups, now: snoozeNow });
   const selectBot = useCallback(
@@ -244,6 +243,7 @@ function SpaceShell() {
       rpc,
       activeBotId,
       activeGroupId,
+      notificationSounds: me?.chatPreferences?.notificationSounds,
       openChat: (alert) => {
         setMobileSidebarOpen(false);
         navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);

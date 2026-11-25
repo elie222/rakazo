@@ -290,6 +290,11 @@ export function contentRoutes(ctx: RouterContext) {
         };
         type TimeRow = Omit<TotalsRow, "runs"> & { bucket: string };
         type BotRow = TotalsRow & { botId: string; name: string | null; deleted: boolean };
+        type RoutineRow = TotalsRow & {
+          routineId: string | null;
+          name: string | null;
+          botName: string | null;
+        };
 
         const toNum = (v: bigint | number | null | undefined) =>
           v == null ? 0 : typeof v === "bigint" ? Number(v) : v;
@@ -306,9 +311,9 @@ export function contentRoutes(ctx: RouterContext) {
           costUsd: toNullableFloat(row.costUsd, Boolean(row.costComplete)),
         });
 
-        const totalsSelect = Prisma.sql`
-          COUNT(*)::bigint AS "modelCalls",
-          COUNT(DISTINCT COALESCE(u."parentRunId", u."runId")) FILTER (WHERE COALESCE(u."parentRunId", u."runId") IS NOT NULL)::bigint AS runs,
+        const usageRunId = Prisma.sql`COALESCE(u."parentRunId", u."runId")`;
+        const usageMeasures = Prisma.sql`
+          COUNT(*) AS "modelCalls",
           SUM(u."inputTokens")::double precision AS "inputTokens",
           BOOL_AND(u."inputTokens" IS NOT NULL OR ${isMedia}) AS "inputComplete",
           SUM(u."outputTokens")::double precision AS "outputTokens",
@@ -319,7 +324,9 @@ export function contentRoutes(ctx: RouterContext) {
           BOOL_AND(u."costUsd" IS NOT NULL) AS "costComplete"
         `;
 
-        const [totalsRows, modelRows, timeRows, botRows, modelOptionRows] =
+        const totalsSelect = Prisma.sql`COUNT(DISTINCT ${usageRunId}) AS runs, ${usageMeasures}`;
+
+        const [totalsRows, modelRows, timeRows, botRows, modelOptionRows, routineRows] =
           await deps.prisma.$transaction(
             (tx) =>
               Promise.all([
@@ -380,6 +387,42 @@ export function contentRoutes(ctx: RouterContext) {
               ${rangeFilter}
             GROUP BY u.provider, u.model
             ORDER BY COALESCE(SUM(u."totalTokens"), 0) DESC, COUNT(*) DESC
+          `),
+                // Aggregate selected calls once per run before walking its delegation chain.
+                tx.$queryRaw<RoutineRow[]>(Prisma.sql`
+            WITH RECURSIVE usage_by_run AS (
+              SELECT ${usageRunId} AS "runId", ${usageMeasures}
+              FROM usage_records u
+              WHERE u."spaceId" = ${where.spaceId} AND u."userId" = ${where.userId} AND u."fundingSource" = 'customer'
+                ${rangeFilter} ${modelFilter} ${botFilter}
+              GROUP BY 1
+            ), chain AS (
+              SELECT u."runId", r."routineId", r."delegatedFromRunId", 0 AS depth
+              FROM usage_by_run u
+              JOIN runs r ON r.id = u."runId" AND r."spaceId" = ${where.spaceId} AND r."userId" = ${where.userId}
+              UNION ALL
+              SELECT chain."runId", r."routineId", r."delegatedFromRunId", chain.depth + 1
+              FROM chain
+              JOIN runs r ON r.id = chain."delegatedFromRunId" AND r."spaceId" = ${where.spaceId} AND r."userId" = ${where.userId}
+              WHERE chain."routineId" IS NULL AND chain.depth < 16
+            )
+            SELECT ro.id AS "routineId", ro.name, b.name AS "botName",
+              COUNT(u."runId") AS runs,
+              SUM(u."modelCalls")::bigint AS "modelCalls",
+              SUM(u."inputTokens") AS "inputTokens",
+              BOOL_AND(u."inputComplete") AS "inputComplete",
+              SUM(u."outputTokens") AS "outputTokens",
+              BOOL_AND(u."outputComplete") AS "outputComplete",
+              SUM(u."totalTokens") AS "totalTokens",
+              BOOL_AND(u."totalComplete") AS "totalComplete",
+              SUM(u."costUsd") AS "costUsd",
+              BOOL_AND(u."costComplete") AS "costComplete"
+            FROM usage_by_run u
+            LEFT JOIN chain c ON c."runId" = u."runId" AND c."routineId" IS NOT NULL
+            LEFT JOIN routines ro ON ro.id = c."routineId" AND ro."spaceId" = ${where.spaceId}
+            LEFT JOIN bots b ON b.id = ro."botId" AND b."spaceId" = ${where.spaceId}
+            GROUP BY ro.id, ro.name, b.name
+            ORDER BY ro.id IS NULL, COALESCE(SUM(u."totalTokens"), 0) DESC, SUM(u."modelCalls") DESC, ro.id
           `),
               ]),
             { isolationLevel: "RepeatableRead" },
@@ -502,6 +545,12 @@ export function contentRoutes(ctx: RouterContext) {
               costUsd: t.costUsd,
             };
           }),
+          routines: routineRows.map((row) => ({
+            id: row.routineId,
+            name: row.name,
+            botName: row.botName,
+            ...totalsOf(row),
+          })),
           overTimeUnit,
           overTime,
           bots: botRows.map((row) => ({

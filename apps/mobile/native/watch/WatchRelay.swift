@@ -22,6 +22,9 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   private var upload: (id: UUID, next: Int, audio: Data)?
   /// Where each chat's last read left off, so a wait hears only what came after it.
   private var cursors: [String: Int] = [:]
+  /// Small avatar copies of the listed chats, kept with a fingerprint of the picture they came
+  /// from, so reloads skip decoding.
+  private var avatars: [String: (source: Int, data: Data?)] = [:]
   private var waiting: Task<Bool, Error>?
 
   private enum Change: String { case chat, roster, space, sessionUnavailable, sessionReady }
@@ -101,6 +104,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     chats = []
     upload = nil
     cursors = [:]
+    avatars = [:]
     waiting?.cancel()
   }
 
@@ -230,13 +234,17 @@ final class WatchRelay: NSObject, WCSessionDelegate {
             preview: String(entry.preview?.prefix(100) ?? ""), updatedAt: entry.updatedAt)
           if let color = entry.color {
             row.color = watchColor(color)
-            if let avatar = watchAvatar(color), avatar.count <= avatarBudget {
+            // Once the budget is spent, no further picture would fit, so skip decoding them.
+            if avatarBudget >= 1_500, let avatar = cachedAvatar(entry.id, color),
+              avatar.count <= avatarBudget
+            {
               avatarBudget -= avatar.count
               row.avatar = avatar
             }
           }
           return row
         }
+      avatars = avatars.filter { id, _ in rows.contains { $0.id == id } }
       let bots = sorted.filter { $0.0 == .bot }.prefix(100).map {
         WatchBot(id: $0.1.id, name: String($0.1.name.prefix(60)), color: $0.1.color.flatMap(watchColor))
       }
@@ -394,6 +402,15 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     else { return nil }
     let digits = value[match].dropFirst()
     return "#" + (digits.count == 3 ? digits.map { "\($0)\($0)" }.joined() : String(digits))
+  }
+
+  private func cachedAvatar(_ id: String, _ value: String) -> Data? {
+    // Hashing is seeded per process, which is fine for an in-memory cache.
+    let source = value.hashValue
+    if let cached = avatars[id], cached.source == source { return cached.data }
+    let data = watchAvatar(value)
+    avatars[id] = (source, data)
+    return data
   }
 
   /// A small copy of a picture avatar; drawn avatars show as their color on the watch.

@@ -41,6 +41,25 @@ async function addScheduleTrigger(page: Page, freq: string) {
   await page.getByRole("menuitem", { name: freq, exact: true }).click();
 }
 
+test("a routine row spells out several daily run times", async ({ page }, testInfo) => {
+  await signup(page, `routine-times-${Date.now()}@rakazo.test`, "password12", "Routine Times");
+  await completeOnboarding(page);
+  await rpc<Routine>(page, "routines/create", {
+    botId: activeBotId(page),
+    name: "Daily report",
+    prompt: "Prepare the report.",
+    crons: ["0 9,17 * * *"],
+    timezone: "UTC",
+    active: true,
+  });
+
+  await page.reload();
+  await openBotPanel(page);
+  const row = page.getByRole("button", { name: /Daily report/ });
+  await expect(row).toContainText("Every day at 9:00 AM and 5:00 PM");
+  await captureScreenshot(page, testInfo, "routine-multiple-daily-times");
+});
+
 test("a delayed schedule is visible only while the routine is active", async ({
   page,
 }, testInfo) => {

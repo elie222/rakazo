@@ -690,6 +690,21 @@ describe("render_plot", () => {
     expect(searchChartCatalog(undefined)).toHaveLength(CHART_CATALOG.length);
   });
 
+  it("rasterizes different ASCII plot titles as distinct glyphs", async () => {
+    const { default: sharp } = await import("sharp");
+    const document = dom();
+    const titleBlock = async (title: string) => {
+      const svg = renderPlotSpecToSvg({ title, marks: [{ type: "frame" }] }, undefined, document);
+      const png = await plotSvgToPng(svg);
+      return sharp(png).extract({ left: 0, top: 0, width: 64, height: 48 }).raw().toBuffer();
+    };
+    const one = await titleBlock("1");
+    const eight = await titleBlock("8");
+    expect(one.some((channel) => channel !== 255)).toBe(true);
+    expect(eight.some((channel) => channel !== 255)).toBe(true);
+    expect(one.equals(eight)).toBe(false);
+  });
+
   it("rasterizes to a fully opaque PNG (no transparent background)", async () => {
     const { plotSvgToPng } = await import("./plot-tool.js");
     const svg = renderPlotSpecToSvg(

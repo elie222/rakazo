@@ -20,6 +20,7 @@ import {
 import type { ActionApprovalRule } from "@rakazo/core";
 import {
   connectorKindFromToolName,
+  connectorToolApprovalIdentity,
   isAbandonedRequest,
   redactSecrets,
   watchToolRefusal,
@@ -757,11 +758,12 @@ async function readTool(
   if (!resolved) {
     throw new RoutineWatchError(`No connected integration has a tool named ${toolName}.`);
   }
+  const approval = connectorToolApprovalIdentity(resolved.tool.name, resolved.tool.route);
   const refusal = watchToolRefusal({
-    toolName: resolved.tool.route?.connectionId ? resolved.tool.route.toolName : resolved.tool.name,
-    toolAliases: [resolved.tool.name],
+    toolName: approval.name,
+    toolAliases: approval.aliases,
     connectorKind: connectorKindFromToolName(
-      resolved.tool.route?.connectionId ? resolved.tool.route.toolName : resolved.tool.name,
+      approval.name,
       ctx.connectedConnections?.map((row) => row.externalId),
     ),
     readOnly: declaredRead(resolved.tool),

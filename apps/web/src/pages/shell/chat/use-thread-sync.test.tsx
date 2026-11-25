@@ -140,6 +140,45 @@ it.each([false, true])(
   },
 );
 
+it("reads the group snapshot when a retry is queued", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const snapshot = {
+    threadId: "thread-1",
+    groupId: "group-1",
+    cursor: 1,
+    messages: [],
+    run: null,
+  } as unknown as ThreadSnapshot;
+  const queued = { ...snapshot, cursor: 2 };
+  const get = vi.fn(async () => queued);
+  const commitSnapshot = vi.fn();
+  const input = syncInput({ inGroup: true, get, commitSnapshot });
+  function Probe() {
+    useThreadSync(input);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+  const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+  await act(async () => {
+    subscription.onEvent(
+      {
+        id: "event-2",
+        type: "thread.meta",
+        threadId: snapshot.threadId,
+        spaceId: "space-1",
+        botId: "bot-1",
+        seq: 2,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        payload: { retryQueued: true },
+      },
+      snapshot,
+    );
+  });
+  expect(commitSnapshot).toHaveBeenCalledWith(queued);
+  act(() => root.unmount());
+});
+
 it.each([false, true])(
   "refreshes a group computer unless this tab initiated it: %s",
   async (own) => {

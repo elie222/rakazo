@@ -73,6 +73,7 @@ import {
   shellQuote,
   workspaceCwd,
   workspacePath,
+  workspaceRelativePath,
 } from "../../../computers/screens/computer-support.js";
 import {
   LinuxDesktop,
@@ -587,7 +588,7 @@ export class BoatSandboxProvider extends LinuxDesktopSandbox implements SandboxP
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeWorkspacePath(directory);
+    const relative = workspaceRelativePath(BOAT_WORKSPACE, directory);
     const result = await this.runCommand(
       this.target(computer),
       listBoatFilesCommand(workspacePath(BOAT_WORKSPACE, relative)),

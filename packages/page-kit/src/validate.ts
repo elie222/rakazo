@@ -45,6 +45,7 @@ const REACT_HOOKS: ReadonlySet<string> = new Set([
   "useInsertionEffect",
   "useLayoutEffect",
   "useMemo",
+  "usePageState",
   "useReducer",
   "useRef",
   "useSource",
@@ -103,6 +104,16 @@ export function checkPageSource(source: string): PageSourceCheck {
     const iconOf =
       token.type === TokenType.string ? iconTarget(tokens, index, source, tag) : undefined;
     if (iconOf !== undefined) icons.push({ name: text.slice(1, -1), line, tag: iconOf });
+    if (
+      token.type === TokenType.string &&
+      /^[a-z]/.test(tag) &&
+      text.slice(1).startsWith("image:") &&
+      PICTURE_ATTRIBUTES.has(attributeOf(tokens, index, source))
+    ) {
+      warnings.push(
+        `line ${line}: <${tag}> does not load "${text.slice(1, -1)}"; only kit components resolve image: names, so use <Image src="${text.slice(1, -1)}" />.`,
+      );
+    }
     if (token.type === TokenType._import) {
       const problem = importProblem(tokens, index, source);
       if (problem) errors.push(`line ${line}: ${problem}`);
@@ -316,6 +327,19 @@ function iconTarget(
 function unknownIconMessage(name: string): string {
   const close = closeIconNames(name);
   return `no kit icon is named "${name}", and an unknown icon draws nothing.${close.length ? ` Did you mean ${close.map((icon) => `"${icon}"`).join(", ")}?` : " Pick one from the icon list in the guide."}`;
+}
+
+// Attributes a plain element loads a picture from.
+const PICTURE_ATTRIBUTES = new Set(["src", "poster", "href"]);
+
+/** The attribute a string is the value of, written name="x" or name={"x"}; "" otherwise. */
+function attributeOf(tokens: Tokens, index: number, source: string): string {
+  const braced =
+    tokens[index - 1]?.type === TokenType.braceL && tokens[index + 1]?.type === TokenType.braceR;
+  const at = braced ? index - 1 : index;
+  if (!isJsxAttributeValue(tokens, at)) return "";
+  const name = tokens[at - 2]!;
+  return source.slice(name.start, name.end);
 }
 
 function isJsxAttributeValue(tokens: Tokens, index: number): boolean {

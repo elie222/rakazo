@@ -13,6 +13,7 @@ export function ThreadErrorNotice({
   resetAt,
   onDetails,
   action,
+  retry,
 }: {
   error: string | null;
   summary: string | null;
@@ -20,6 +21,8 @@ export function ThreadErrorNotice({
   onDetails?: () => void;
   /** The one action that fixes the failure. */
   action?: { label: string; onPress: () => void } | null;
+  /** Runs the failed reply again. */
+  retry?: { onPress: () => void; busy: boolean } | null;
 }) {
   const { t } = useLingui();
   const dateLocale = useDateLocale();
@@ -36,7 +39,7 @@ export function ThreadErrorNotice({
           }).format(resetAt),
         })}.`
       : null;
-  const hasBody = (summary && error) || upcomingReset || action || (summary && onDetails);
+  const hasBody = (summary && error) || upcomingReset || action || retry || (summary && onDetails);
   return (
     <View
       accessibilityRole="alert"
@@ -67,7 +70,11 @@ export function ThreadErrorNotice({
           {upcomingReset ? (
             <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{upcomingReset}</Text>
           ) : null}
-          {action ? <RunErrorAction label={action.label} onPress={action.onPress} /> : null}
+          {action ? (
+            <RunErrorAction label={action.label} onPress={action.onPress} />
+          ) : retry ? (
+            <RunErrorAction label={t`Try again`} onPress={retry.onPress} busy={retry.busy} />
+          ) : null}
           {summary && onDetails ? (
             <RunErrorTextAction label={t`Details`} onPress={onDetails} />
           ) : null}

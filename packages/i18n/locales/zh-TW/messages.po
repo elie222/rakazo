@@ -330,10 +330,6 @@ msgstr "{count} 個需要處理"
 msgid "{count} on"
 msgstr "{count} 個已開啟"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
-msgid "{count} tools"
-msgstr "{count} 個工具"
-
 #: apps/mobile/components/inbox/unread-jump-overlay.tsx
 msgid "{count} unread"
 msgstr "{count} 條未讀"
@@ -516,6 +512,16 @@ msgstr "{name}，開啟"
 #: packages/i18n/src/computer-usage.ts
 msgid "{name}’s computer"
 msgstr "{name} 的電腦"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "{names} and {more} more may stop until you reconnect."
+msgstr "{names} 及另外 {more} 項可能會停止，直到你重新連線。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "{names} may stop until you reconnect."
+msgstr "{names} 可能會停止，直到你重新連線。"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{owner}'s {peer} wants to connect to {agent}"
@@ -743,7 +749,6 @@ msgid "{title}, saved as {savedAs}"
 msgstr "{title}，儲存為 {savedAs}"
 
 #: apps/web/src/components/messages/ToolActivityDisclosure.tsx
-#: apps/web/src/pages/plugins/connector-detail.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# 個工具} other {# 個工具}}"
 
@@ -765,12 +770,11 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: mention.name
-#. placeholder {1}: mention.subtitle
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
-msgid "@{0}, {1}"
-msgstr "@{0}，{1}"
+msgid "@{0}, {details}"
+msgstr "@{0}，{details}"
 
-#: apps/mobile/components/composer/thread-composer.tsx
+#: apps/mobile/components/composer/composer-mention-picker.tsx
 msgid "@{name}"
 msgstr "@{name}"
 
@@ -894,10 +898,6 @@ msgstr "1 小時"
 msgid "1 space"
 msgstr "1 個空間"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
-msgid "1 tool"
-msgstr "1 個工具"
-
 #: apps/mobile/components/inbox/unread-jump-overlay.tsx
 msgid "1 unread"
 msgstr "1 條未讀"
@@ -978,7 +978,6 @@ msgstr "存取權杖（選填）"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/paywall.tsx
-#: apps/mobile/components/inbox/inbox-footer.tsx
 #: apps/mobile/components/inbox/inbox-header.tsx
 #: apps/mobile/lib/inbox/use-inbox-header.ts
 #: apps/web/src/components/account/AccountMenu.tsx
@@ -1036,6 +1035,7 @@ msgstr "{name} 的操作"
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Active"
 msgstr "啟用"
 
@@ -1165,7 +1165,6 @@ msgid "Add credits"
 msgstr "加值"
 
 #: apps/mobile/app/(settings)/integrations.tsx
-#: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/add-menu.tsx
 msgid "Add custom"
 msgstr "新增自訂項目"
@@ -1413,10 +1412,12 @@ msgid "Allow"
 msgstr "允許"
 
 #: apps/mobile/app/(settings)/messaging.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/AiDataConsentDialog.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Allow"
 msgstr "允許"
@@ -1507,6 +1508,10 @@ msgstr "一律允許"
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Always allow {site}"
 msgstr "一律允許 {site}"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Always allow routine updates"
+msgstr "一律允許更新例行任務"
 
 #: apps/mobile/lib/cards/ask-action-label.ts
 #: apps/web/src/components/messages/AskCard.tsx
@@ -1717,6 +1722,10 @@ msgstr "核准"
 msgid "Approve"
 msgstr "核准"
 
+#: packages/i18n/src/routine-approval.ts
+msgid "Approve once"
+msgstr "核准一次"
+
 #: apps/mobile/lib/calls/call-session.ts
 #: apps/web/src/lib/calls/call-session.ts
 msgid "Approve or deny it on screen."
@@ -1778,8 +1787,10 @@ msgstr "成品"
 msgid "Artifacts"
 msgstr "成品"
 
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/mobile/components/settings/approval-settings-rows.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Ask"
 msgstr "詢問"
 
@@ -1816,6 +1827,10 @@ msgstr "休眠中"
 #: packages/i18n/src/cron.ts
 msgid "at {time}"
 msgstr "{time}"
+
+#: packages/i18n/src/cron.ts
+msgid "at {times} and {last}"
+msgstr "{times}和{last}"
 
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "at {timeSelect}"
@@ -2021,7 +2036,9 @@ msgstr "帳單週期"
 msgid "Block"
 msgstr "封鎖"
 
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Block"
 msgstr "封鎖"
 
@@ -2149,6 +2166,11 @@ msgstr "機器人"
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Bots and browser automation"
 msgstr "機器人與瀏覽器自動化"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Bots and routines that rely on this connection may stop."
+msgstr "依賴此連線的機器人和例行任務可能會停止。"
 
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 msgid "Bots and their own chats stay."
@@ -2293,7 +2315,6 @@ msgstr "無法讀取影像"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/profile.tsx
@@ -2339,6 +2360,7 @@ msgstr "無法讀取影像"
 #: apps/mobile/lib/dialogs/text-prompt.ts
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/mobile/lib/thread/send/unsent-send-warning.ts
 #: apps/mobile/lib/thread/thread-voice.ts
@@ -2530,6 +2552,10 @@ msgstr "ChatGPT 訂閱"
 #: packages/i18n/src/identity-display.ts
 msgid "Chats"
 msgstr "聊天"
+
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Chats and other work"
+msgstr "聊天與其他工作"
 
 #: apps/web/src/components/computers/ComputersUnavailableHint.tsx
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
@@ -2888,11 +2914,6 @@ msgstr "命令"
 msgid "Command menu"
 msgstr "命令選單"
 
-#: apps/mobile/lib/vault/secret-destination.ts
-#: apps/web/src/components/messages/SecretAskCard.tsx
-msgid "Command variable"
-msgstr "命令變數"
-
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 #: apps/web/src/pages/space/Board.tsx
@@ -3084,6 +3105,11 @@ msgstr "執行機器人前，請先在設定中連接模型。"
 msgid "Connect a voice provider first."
 msgstr "請先連線語音供應商。"
 
+#: apps/mobile/lib/calls/call-language-preference.ts
+#: apps/web/src/lib/calls/dictation.ts
+msgid "Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings."
+msgstr "請連接支援轉錄的語音供應商，或在語音設定中關閉自動語言偵測。"
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "Connect API key"
@@ -3211,6 +3237,7 @@ msgstr "與 {0} 的連線仍在等待。可以關閉此視窗稍後再看。"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Connector"
 msgstr "連接器"
 
@@ -3756,6 +3783,10 @@ msgstr "無法下載圖片"
 msgid "Could not download this artifact"
 msgstr "無法下載此成品"
 
+#: apps/mobile/components/bots/bot-profile-menu.tsx
+msgid "Could not duplicate bot"
+msgstr "無法複製機器人"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "Could not enable tools"
@@ -3944,6 +3975,13 @@ msgstr "無法載入模型設定"
 #: apps/mobile/app/pages.tsx
 msgid "Could not load pages."
 msgstr "無法載入頁面。"
+
+#: apps/mobile/components/integrations/integration-detail.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/connector-detail.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Could not load permissions"
+msgstr "無法載入權限"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Could not load permissions."
@@ -4310,6 +4348,11 @@ msgstr "無法儲存模型"
 msgid "Could not save model settings"
 msgstr "無法儲存模型設定"
 
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Could not save permission"
+msgstr "無法儲存權限"
+
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
 msgid "Could not save routine"
@@ -4526,6 +4569,10 @@ msgstr "無法轉錄這段錄音。"
 #: apps/mobile/lib/voice/voice-clip.ts
 msgid "Could not transcribe that."
 msgstr "無法轉錄。"
+
+#: apps/web/src/pages/shell/composer/use-composer-actions.ts
+msgid "Could not try again"
+msgstr "無法重試"
 
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Could not update"
@@ -4906,6 +4953,7 @@ msgstr "天"
 #: apps/web/src/components/call/IncomingCall.tsx
 #: apps/web/src/components/messages/ToolQuestionCard.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Decline"
 msgstr "拒絕"
 
@@ -4917,11 +4965,13 @@ msgstr "已拒絕"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-look-picker.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 #: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Default"
@@ -5190,6 +5240,11 @@ msgstr "桌面版更新"
 msgid "Details"
 msgstr "詳細資訊"
 
+#: apps/mobile/app/(settings)/voice.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
+msgid "Detect call language automatically"
+msgstr "自動偵測通話語言"
+
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Developer"
@@ -5276,6 +5331,7 @@ msgstr "已捨棄"
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/app/meeting-calendar.tsx
 #: apps/mobile/components/models/model-providers.tsx
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
@@ -5289,9 +5345,8 @@ msgstr "中斷"
 msgid "Disconnect {disconnectName}?"
 msgstr "要中斷 {disconnectName} 的連線嗎？"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/wallet.tsx
-#: apps/mobile/components/models/model-providers.tsx
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 msgid "Disconnect {name}?"
 msgstr "中斷與 {name} 的連線？"
@@ -5461,6 +5516,7 @@ msgstr "技能草稿"
 msgid "Drag, drop, or paste an image"
 msgstr "拖放或貼上圖片"
 
+#: apps/mobile/components/bots/bot-profile-menu.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "Duplicate"
 msgstr "複製"
@@ -5564,11 +5620,18 @@ msgstr "已啟用的模型"
 msgid "Enabled routine \"{name}\""
 msgstr "已啟用例行任務「{name}」"
 
+#: apps/mobile/components/routines/routine-end-date.tsx
+msgid "End date"
+msgstr "結束日期"
+
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
 msgstr "終端使用者 ID"
 
 #: apps/mobile/app/(settings)/billing.tsx
+#: apps/mobile/app/routine.tsx
+#: apps/mobile/components/routines/routine-end-date.tsx
+#: apps/web/src/pages/routines/RoutineEditor.tsx
 msgid "Ends"
 msgstr "結束於"
 
@@ -6167,6 +6230,10 @@ msgstr "請結束通話，再輸入螢幕上的驗證碼。"
 msgid "Haptics"
 msgstr "觸覺回饋"
 
+#: apps/mobile/app/(settings)/general.tsx
+msgid "Hardware keyboard"
+msgstr "實體鍵盤"
+
 #: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Header"
@@ -6449,6 +6516,10 @@ msgstr "會議中"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "In this bot"
 msgstr "此機器人中"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "In this chat"
+msgstr "在此聊天中"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "In use"
@@ -6968,8 +7039,9 @@ msgid "Loading preview…"
 msgstr "正在載入預覽…"
 
 #: apps/mobile/components/integrations/integration-detail.tsx
-msgid "Loading tools…"
-msgstr "正在載入工具…"
+#: apps/web/src/pages/plugins/connector-detail.tsx
+msgid "Loading tool permissions…"
+msgstr "正在載入工具權限…"
 
 #: apps/mobile/app/meeting-transcript.tsx
 #: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
@@ -7543,6 +7615,11 @@ msgstr "更多"
 msgid "More actions"
 msgstr "更多操作"
 
+#: apps/mobile/components/cards/AskActions.tsx
+#: apps/web/src/components/messages/AskCard.tsx
+msgid "More approval options"
+msgstr "更多核准選項"
+
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "更多應用程式"
@@ -7566,7 +7643,7 @@ msgid "Move them to your shared memory."
 msgstr "把它們移到共享記憶。"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/lib/board/board-list.ios.tsx
 #: apps/mobile/lib/board/board-list.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -7619,6 +7696,7 @@ msgstr "我的電腦"
 #: apps/web/src/pages/shell/bots/create-bot-dialog.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Name"
 msgstr "名稱"
 
@@ -7765,6 +7843,10 @@ msgstr "新增群組聊天"
 msgid "New header value"
 msgstr "新的標頭值"
 
+#: packages/i18n/src/routine-approval.ts
+msgid "New instructions"
+msgstr "新指令"
+
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
 msgstr "新項目"
@@ -7813,7 +7895,7 @@ msgid "New routine"
 msgstr "新增例行任務"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -7863,6 +7945,7 @@ msgid "Next page"
 msgstr "下一頁"
 
 #: apps/mobile/app/routine.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Next run"
 msgstr "下次執行"
 
@@ -8080,10 +8163,6 @@ msgstr "尚無工作項目"
 msgid "No tickets yet."
 msgstr "還沒有工單。"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
-msgid "No tools available."
-msgstr "尚無可用工具。"
-
 #: apps/web/src/pages/routines/RoutineList.tsx
 msgid "No trigger"
 msgstr "無觸發器"
@@ -8110,6 +8189,7 @@ msgstr "找不到網站欄和密碼欄。"
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 #: apps/web/src/components/messages/ToolQuestionCard.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "None"
 msgstr "無"
 
@@ -8334,6 +8414,11 @@ msgstr "單次購買，額度不會到期。"
 msgid "Only {name} can change this routine."
 msgstr "只有 {name} 可以變更此例行任務。"
 
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Only Block rules apply in Never ask."
+msgstr "在「永不詢問」模式下，只有「封鎖」規則有效。"
+
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
 msgstr "僅輸入 {codeHost} 傳給你的驗證碼。"
@@ -8520,8 +8605,10 @@ msgstr "{app} 選項"
 msgid "Or connect an API key"
 msgstr "或連線 API 金鑰"
 
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Or paste an API key"
 msgstr "或貼上 API 金鑰"
 
@@ -8563,6 +8650,16 @@ msgstr "OTA {id}"
 #: apps/mobile/lib/platform/app-version.ts
 msgid "OTA {id}, {date}"
 msgstr "OTA {id}，{date}"
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Other actions"
+msgstr "其他操作"
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Other approval rules still apply."
+msgstr "其他核准規則仍然有效。"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Other computers"
@@ -8764,6 +8861,7 @@ msgstr "暫停 {name}"
 #: apps/mobile/lib/routines/routine.ts
 #: apps/web/src/pages/routines/RoutineList.tsx
 #: apps/web/src/pages/shell/bots/import-status.ts
+#: packages/i18n/src/routine-approval.ts
 msgid "Paused"
 msgstr "已暫停"
 
@@ -8956,9 +9054,18 @@ msgstr "預覽草稿"
 msgid "Preview isn't available for this file type. Download it to view it."
 msgstr "此檔案類型無法預覽。請下載後檢視。"
 
+#: apps/web/src/components/pages/PageCard.tsx
+msgid "Preview of {title}"
+msgstr "{title} 的預覽"
+
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Previous image"
 msgstr "上一張圖片"
+
+#: apps/mobile/components/cards/routine-approval-detail.tsx
+#: apps/web/src/components/messages/RoutineApprovalDetail.tsx
+msgid "Previous instructions"
+msgstr "先前的指令"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -8971,6 +9078,10 @@ msgstr "上一頁"
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Previous settings sections"
 msgstr "上一組設定區段"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Previously: {value}"
+msgstr "先前：{value}"
 
 #: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
@@ -9154,6 +9265,11 @@ msgstr "要讀取提醒事項嗎？"
 msgid "Read replies aloud"
 msgstr "朗讀回覆"
 
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Reads"
+msgstr "讀取"
+
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Ready"
 msgstr "就緒"
@@ -9230,6 +9346,21 @@ msgstr "重新連線 OAuth"
 #: apps/web/src/components/computers/ComputerUpdateProgress.tsx
 msgid "Reconnecting"
 msgstr "正在重新連線"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Reconnecting will not restore saved model choices that use this connection."
+msgstr "重新連線不會還原使用此連線的已儲存模型選擇。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Reconnecting will not restore the main model choice or other choices that use this connection."
+msgstr "重新連線不會還原使用此連線的主模型選擇或其他選擇。"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Reconnecting will not restore the main model choice that uses this connection."
+msgstr "重新連線不會還原使用此連線的主模型選擇。"
 
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Recording may have started, but the view could not refresh"
@@ -9468,6 +9599,10 @@ msgstr "移除變化觸發器"
 msgid "Remove email trigger"
 msgstr "移除電子郵件觸發條件"
 
+#: apps/web/src/pages/routines/RoutineEditor.tsx
+msgid "Remove end date"
+msgstr "移除結束日期"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
@@ -9540,8 +9675,8 @@ msgid "Rename"
 msgstr "重新命名"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -9793,7 +9928,7 @@ msgid "Restoring…"
 msgstr "正在還原…"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 msgid "Resume notifications"
 msgstr "恢復通知"
 
@@ -9907,11 +10042,18 @@ msgstr "輪換金鑰"
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+#: apps/web/src/pages/shell/composer/composer-parts.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
 #: packages/i18n/src/identity-display.ts
 #: packages/i18n/src/search.ts
 msgid "Routine"
 msgstr "例行任務"
+
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Routine \"{name}\" ended"
+msgstr "例行任務「{name}」已結束"
 
 #: apps/mobile/app/routine.tsx
 msgid "Routine link is incomplete"
@@ -10183,6 +10325,10 @@ msgstr "正在儲存…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "回答是或否，或一句話說明。"
 
+#: packages/i18n/src/routine-approval.ts
+msgid "Schedule"
+msgstr "排程"
+
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/lib/routines/routine.ts
 #: apps/web/src/pages/routines/RoutineEditor.tsx
@@ -10427,10 +10573,12 @@ msgstr "將此提示詞傳送給 {assistantName}"
 msgid "Send this prompt to your assistant"
 msgstr "將此提示詞傳送給你的助理"
 
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Send with Enter"
 msgstr "按 Enter 傳送"
 
+#: apps/mobile/components/cards/AskActions.tsx
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
@@ -10445,6 +10593,10 @@ msgstr "正在傳送…"
 #: apps/web/src/components/messages/ToolQuestionCard.tsx
 msgid "Sent"
 msgstr "已傳送"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Separately from this chat"
+msgstr "獨立於此聊天"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/mcp-server.tsx
@@ -10482,6 +10634,7 @@ msgstr "設定"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/calls/CallCard.tsx
+#: apps/mobile/components/inbox/inbox-footer.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 #: apps/web/src/components/call/CallCard.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
@@ -10801,7 +10954,7 @@ msgid "Signing out deletes unsent messages."
 msgstr "登出將刪除未傳送的訊息。"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 msgid "Silence notifications"
 msgstr "靜音通知"
 
@@ -10910,7 +11063,7 @@ msgid "Slide up to lock"
 msgstr "向上滑動以鎖定"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "Snooze"
 msgstr "延後"
@@ -11168,6 +11321,7 @@ msgstr "州或地區"
 #: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Status"
 msgstr "狀態"
 
@@ -11884,8 +12038,7 @@ msgstr "將永久刪除全部訊息並停止目前工作。聊天仍可使用。
 msgid "This removes every message and stops current work. The bot, computer, memory, and routines are kept."
 msgstr "這將刪除所有訊息並停止目前工作。機器人、電腦、記憶和例行任務會保留。"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/mobile/components/models/model-providers.tsx
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "This removes the connection from every space."
 msgstr "這將從每個空間移除該連線。"
@@ -11970,6 +12123,10 @@ msgstr "工單"
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "時間"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Time zone"
+msgstr "時區"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Timezone"
@@ -12060,9 +12217,12 @@ msgstr "工具參數必須是 JSON"
 msgid "Tool name"
 msgstr "工具名稱"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Tool permissions"
+msgstr "工具權限"
+
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
-#: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "工具"
@@ -12175,6 +12335,7 @@ msgstr "受信任的網站"
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/mobile/components/routines/routine-run-history.tsx
 #: apps/mobile/components/thread/failed-send-bubble.tsx
+#: apps/mobile/components/thread/thread-error-notice.tsx
 #: apps/mobile/components/ui/app-error-boundary.tsx
 #: apps/mobile/lib/pages/page-load-failure.tsx
 #: apps/web/src/components/pages/PageNotice.tsx
@@ -12184,6 +12345,7 @@ msgstr "受信任的網站"
 #: apps/web/src/pages/onboarding/first-bot.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/SharedPage.tsx
+#: apps/web/src/pages/shell/composer/composer-error.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
@@ -12260,7 +12422,7 @@ msgid "Type your answer"
 msgstr "輸入你的回答"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/lib/inbox/inbox-spaces.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/sidebar/use-sidebar-view.ts
@@ -12317,7 +12479,7 @@ msgid "Unsent messages"
 msgstr "未傳送訊息"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/sidebar/snoozed-chats.tsx
 msgid "Unsnooze"
@@ -12332,6 +12494,11 @@ msgstr "取消延後 {0}"
 #: apps/web/src/pages/shell/composer/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
 msgstr "不支援的檔案類型：{0}"
+
+#: apps/mobile/lib/routines/routine.ts
+#: apps/web/src/pages/routines/RoutineList.tsx
+msgid "until {end}"
+msgstr "直到 {end}"
 
 #: apps/mobile/app/meeting-calendar.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
@@ -12480,6 +12647,11 @@ msgstr "使用 {0}"
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Use {hostLabel}"
 msgstr "使用 {hostLabel}"
+
+#: apps/mobile/components/models/voice-model-connection-actions.tsx
+#: apps/web/src/pages/settings/voice-model-connection-actions.tsx
+msgid "Use {label}"
+msgstr "使用 {label}"
 
 #: apps/mobile/lib/dialogs/text-prompt.ts
 msgid "Use {maxLength} characters or fewer"
@@ -12907,6 +13079,10 @@ msgstr "何時執行"
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "When to use"
 msgstr "何時使用"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Where it runs"
+msgstr "執行位置"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Where should bots run?"
