@@ -52,14 +52,14 @@ export async function commitConsumedRunSecret<TResult, TFailed>(input: {
 /**
  * When a completed request_secret effect still has a run-secret row, decide whether
  * that row is a crash leftover (same OTP, do not resubmit) or a newer replacement.
- * The value is taken before the result is stored, so a leftover was always entered before the
- * request completed; one entered in the same millisecond is a replacement.
+ * Equal millisecond timestamps cannot prove the secret arrived after completion,
+ * so only strictly newer rows are treated as replacements.
  */
 export function resolveCompletedSecretLeftover(input: {
   secretCreatedAt: Date;
   effectUpdatedAt: Date;
 }): "drop_leftover" | "consume_replacement" {
-  return input.secretCreatedAt.getTime() < input.effectUpdatedAt.getTime()
+  return input.secretCreatedAt.getTime() <= input.effectUpdatedAt.getTime()
     ? "drop_leftover"
     : "consume_replacement";
 }

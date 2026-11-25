@@ -279,10 +279,10 @@ describe("resolveCompletedSecretLeftover", () => {
     ).toBe("drop_leftover");
   });
 
-  it("consumes an OTP entered in the millisecond the effect completed", () => {
+  it("drops a leftover OTP created at the same timestamp as effect completion", () => {
     const at = new Date("2026-08-27T12:00:05.000Z");
     expect(resolveCompletedSecretLeftover({ secretCreatedAt: at, effectUpdatedAt: at })).toBe(
-      "consume_replacement",
+      "drop_leftover",
     );
   });
 

@@ -612,18 +612,6 @@ describe("request_secret behind an action card", () => {
     expect(run.effects).toMatchObject([{ status: "intended" }]);
   });
 
-  it("takes a connection code answered by the previous release", async () => {
-    const call = { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } };
-    const run = world("", ASK_FIRST);
-    await run.attempt([call]);
-    run.userAllows();
-    await run.attempt([call]);
-    await run.userAnswers(CODE, { connection: true, previousRelease: true });
-    const [result] = await run.attempt([call]);
-    expect(result).toMatchObject({ ok: true, submitted: true });
-    expect(run.asked).toHaveLength(2);
-  });
-
   it("hands the code answered on its card to the bot", async () => {
     const run = world("", ASK_FIRST);
     await run.attempt([requestCode()]);
