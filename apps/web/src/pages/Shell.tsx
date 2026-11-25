@@ -16,7 +16,6 @@ import { ComputerUpdateProgress } from "../components/computers/ComputerUpdatePr
 import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
 import { authClient } from "../lib/auth/auth";
-import { peekBootstrapSeed } from "../lib/bootstrap";
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
 import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
@@ -24,13 +23,7 @@ import { desktopBridge } from "../lib/platform/desktop";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
 import { chatPreferencesQuery, useChatPreferences } from "../lib/preferences/chat-preferences";
-import {
-  lastChatKey,
-  lastChatOf,
-  queryClient,
-  spaceQueries,
-  spaceSeedKey,
-} from "../lib/query/query";
+import { queryClient, spaceQueries } from "../lib/query/query";
 import type { RpcClient } from "../lib/query/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
 import { SpaceRpcProvider } from "../lib/query/space-rpc";
@@ -74,7 +67,12 @@ import { useSidebarScroll } from "./shell/sidebar/use-sidebar-scroll";
 import { useSidebarSearch } from "./shell/sidebar/use-sidebar-search";
 import { useSidebarView } from "./shell/sidebar/use-sidebar-view";
 import { useSnoozeClock } from "./shell/sidebar/use-snooze-clock";
-import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/sidebar/use-space-roster";
+import {
+  useRosterDrop,
+  useSpaceBootstrap,
+  useSpaceRoster,
+  useSpaceRosterSeed,
+} from "./shell/sidebar/use-space-roster";
 import { useSpaceEpoch } from "./shell/space-switch";
 import { TimezonePrompt, withSavedTimezone } from "./shell/timezone-prompt";
 import { useActiveChat } from "./shell/use-active-chat";
@@ -108,15 +106,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
   const userId = session.data?.user.id;
   // Held from the first render, so Cmd/Ctrl+N works before the sidebar has data.
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  // A revisited space, or the shell reopened from another page, starts from what it showed
-  // last time while its fresh bootstrap loads.
-  const [{ seed, startChat }] = useState(() => {
-    const primed = peekBootstrapSeed(botId);
-    if (primed) return { seed: primed, startChat: undefined };
-    const cached = queryClient.getQueryData(spaceSeedKey(userId ?? null, shellSpaceId));
-    const lastChat = queryClient.getQueryData(lastChatKey(userId ?? null, shellSpaceId));
-    return { seed: cached, startChat: botId || groupId ? undefined : lastChatOf(cached, lastChat) };
-  });
+  const { seed, startChat } = useSpaceRosterSeed(userId ?? null, shellSpaceId, botId, groupId);
   const {
     navigate,
     navigationRevision,
