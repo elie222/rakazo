@@ -180,18 +180,23 @@ function prefixTable(pattern: string): Int32Array {
   return fail;
 }
 
-/** Returns whether non-empty `value` occurs in `text` using KMP in O(text.length) time and memory. */
-function containsKmp(text: string, value: string): boolean {
-  const fail = prefixTable(value);
+/** Finds the end offset of the next occurrence of non-empty `value` in `text`, or `-1` if none. */
+function nextKmpMatch(
+  text: string,
+  value: string,
+  fail: Int32Array,
+  startIndex: number,
+  initialMatched: number,
+): number {
   const length = value.length;
-  let matched = 0;
-  for (let index = 0; index < text.length; index += 1) {
+  let matched = initialMatched;
+  for (let index = startIndex; index < text.length; index += 1) {
     const code = text.charCodeAt(index);
     while (matched > 0 && value.charCodeAt(matched) !== code) matched = fail[matched - 1]!;
     if (value.charCodeAt(matched) === code) matched += 1;
-    if (matched === length) return true;
+    if (matched === length) return index + 1;
   }
-  return false;
+  return -1;
 }
 
 /** Records every KMP match of non-empty `value` from `(startIndex, initialMatched)` into `starts`/`ends`. */
@@ -205,21 +210,18 @@ function recordKmpMatches(
   ends: Int32Array | undefined,
 ): [Int32Array | undefined, Int32Array | undefined] {
   const length = value.length;
-  let matched = initialMatched;
   let nextStarts = starts;
   let nextEnds = ends;
-  for (let index = startIndex; index < text.length; index += 1) {
-    const code = text.charCodeAt(index);
-    while (matched > 0 && value.charCodeAt(matched) !== code) matched = fail[matched - 1]!;
-    if (value.charCodeAt(matched) === code) matched += 1;
-    if (matched === length) {
-      nextStarts ??= new Int32Array(text.length + 1);
-      nextEnds ??= new Int32Array(text.length + 1);
-      const start = index + 1 - length;
-      nextStarts[start] = nextStarts[start]! + 1;
-      nextEnds[index + 1] = nextEnds[index + 1]! + 1;
-      matched = fail[matched - 1]!;
-    }
+  for (
+    let end = nextKmpMatch(text, value, fail, startIndex, initialMatched);
+    end !== -1;
+    end = nextKmpMatch(text, value, fail, end, fail[length - 1]!)
+  ) {
+    nextStarts ??= new Int32Array(text.length + 1);
+    nextEnds ??= new Int32Array(text.length + 1);
+    const start = end - length;
+    nextStarts[start] = nextStarts[start]! + 1;
+    nextEnds[end] = nextEnds[end]! + 1;
   }
   return [nextStarts, nextEnds];
 }
@@ -286,7 +288,7 @@ function scanningMatcher(values: readonly string[]): SecretMatcher {
         if (length > text.length) continue;
         if (length <= NATIVE_SCAN_MAX_LENGTH) {
           if (text.includes(value)) return true;
-        } else if (containsKmp(text, value)) {
+        } else if (nextKmpMatch(text, value, prefixTable(value), 0, 0) !== -1) {
           return true;
         }
       }
