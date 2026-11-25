@@ -174,7 +174,13 @@ describe("acpAgentRuntime", () => {
     expect(start.env.PATH).toBe(process.env.PATH);
     expect(start.env.OPENROUTER_API_KEY).toBeUndefined();
     expect(start.env.DATABASE_URL).toBeUndefined();
-    // The client offers the agent no files or terminal of its own.
+  });
+
+  it("offers the agent no files or terminal of its own", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+
+    await collect(runtime, request());
+
     expect(requests("initialize")[0]?.params).toMatchObject({
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
     });
@@ -359,6 +365,25 @@ describe("acpAgentRuntime", () => {
     expect(error).toBeDefined();
     expect(requests("session/delete")).toHaveLength(1);
     expect(requests("session/resume")).toHaveLength(1);
+  });
+
+  it("moves a turn the agent failed to the person's backup model", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+    const onModelChange = vi.fn(async () => {});
+
+    const { text, error } = await collect(
+      runtime,
+      request({
+        prompt: "fail",
+        fallbackModels: [{ provider: "openrouter", id: "some/backup" }],
+        resolveFallbackModel: async (provider, id) => ({ provider, id }),
+        onModelChange,
+      }),
+    );
+
+    expect(error).toBeUndefined();
+    expect(text).toBe("from the fallback");
+    expect(onModelChange).toHaveBeenCalledWith("openrouter", "some/backup");
   });
 
   it("reports the agent's error answer", async () => {

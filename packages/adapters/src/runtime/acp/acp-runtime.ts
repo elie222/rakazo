@@ -86,7 +86,7 @@ export function acpAgentRuntime(
   options: AcpAgentRuntimeOptions = {},
 ): AgentRuntime {
   const running = new Map<string, AbortController>();
-  return {
+  const runtime: AgentRuntime = {
     describe: () => fallback.describe(),
     async abort(runId) {
       running.get(runId)?.abort();
@@ -107,17 +107,53 @@ export function acpAgentRuntime(
         () => queue.close(),
         (error: unknown) => queue.fail(error instanceof Error ? error : new Error(String(error))),
       );
+      let started = false;
+      let failure: unknown;
       try {
-        yield* queue.iterate();
+        for await (const event of queue.iterate()) {
+          started = true;
+          yield event;
+        }
+      } catch (error) {
+        failure = error;
       } finally {
         // The consumer stops reading at a pause or a stop; the CLI goes with it.
         controller.abort();
         await turn;
         if (running.get(request.runId) === controller) running.delete(request.runId);
       }
+      if (failure === undefined) return;
+      // A turn the CLI failed before it produced anything moves to the person's backup model,
+      // as a failed model call does in the runtime this one wraps. Using its own tools is not a
+      // model failure.
+      const [backup, ...rest] = request.fallbackModels ?? [];
+      if (
+        started ||
+        context?.signal?.aborted ||
+        failure instanceof OwnToolUseError ||
+        !backup ||
+        !request.resolveFallbackModel
+      ) {
+        throw failure;
+      }
+      getLogger().warn("The agent CLI failed; trying the backup model", {
+        agent: descriptor.id,
+        error: failure instanceof Error ? failure.message : String(failure),
+      });
+      const model = await request.resolveFallbackModel(
+        backup.provider,
+        backup.id,
+        backup.connectionId,
+      );
+      await request.onModelChange?.(model.provider, model.id);
+      yield* runtime.run({ ...request, model, fallbackModels: rest }, context);
     },
   };
+  return runtime;
 }
+
+/** The CLI used a tool of its own, which Rakazo keeps off. */
+class OwnToolUseError extends Error {}
 
 class TurnAborted extends Error {}
 
@@ -234,7 +270,7 @@ async function runAcpTurn(
     };
 
     const refuse = (reason: string) => {
-      violation ??= new Error(
+      violation ??= new OwnToolUseError(
         `${descriptor.label} tried to use its own tools (${reason}), which Rakazo keeps off. The turn was stopped.`,
       );
       cancelTurn();
@@ -463,7 +499,7 @@ async function runAcpTurn(
     }
     // A failed turn may have left the session short of what it was sent, so the next turn
     // starts over from the chat. A helper never used the chat's session.
-    if (ownsChatSession) forgetSession(key);
+    if (ownsChatSession && sentPrompt) forgetSession(key);
     if (violation) throw violation;
     if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
       throw new Error(descriptor.notInstalled);

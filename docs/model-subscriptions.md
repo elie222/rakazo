@@ -38,7 +38,11 @@ bot's workflow.
 
 **OpenCode Zen / pay-as-you-go** uses the **OpenCode** provider instead. Connect its API key;
 usage comes from your OpenCode credit balance rather than Go's allowance. Its free-tier chat
-models require the OpenCode app and are not offered in Rakazo. See [OpenCode's model documentation](https://opencode.ai/docs/console/models/).
+models require the OpenCode app and are not offered as a connection. See [OpenCode's model documentation](https://opencode.ai/docs/console/models/).
+
+If you run Rakazo from a source checkout for yourself, your bots can also run through the official
+[OpenCode CLI](./self-host-models.md#opencode-cli), which reaches its free models and the plans you
+sign in to there.
 
 ## Other subscriptions
 
