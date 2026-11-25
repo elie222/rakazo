@@ -326,6 +326,10 @@ export function Gallery({
     });
     setCurrent(index);
   };
+  const focusPhoto = (index: number) =>
+    track.current
+      ?.querySelectorAll<HTMLButtonElement>(".rk-zoom")
+      [index]?.focus({ preventScroll: true });
   return (
     <section
       className="rk-gallery"
@@ -345,11 +349,7 @@ export function Gallery({
             const step = (event.key === "ArrowRight" ? 1 : -1) * side(event.currentTarget);
             const next = Math.min(items.length - 1, Math.max(0, current + step));
             show(next);
-            if (event.target !== event.currentTarget) {
-              event.currentTarget
-                .querySelectorAll<HTMLButtonElement>(".rk-zoom")
-                [next]?.focus({ preventScroll: true });
-            }
+            if (event.target !== event.currentTarget) focusPhoto(next);
           }
         }}
         onScroll={(event) => {
@@ -399,7 +399,11 @@ export function Gallery({
                 data-way={way}
                 tabIndex={-1}
                 aria-label={words.t(way === "next" ? "nextPhoto" : "previousPhoto")}
-                onClick={() => show(current + step)}
+                onClick={() => {
+                  const next = current + step;
+                  show(next);
+                  if (next === 0 || next === items.length - 1) focusPhoto(next);
+                }}
               >
                 <svg viewBox="0 0 16 16" aria-hidden="true">
                   <path d={way === "next" ? "M6 3.5 10.5 8 6 12.5" : "M10 3.5 5.5 8 10 12.5"} />

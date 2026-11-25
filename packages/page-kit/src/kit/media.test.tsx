@@ -195,6 +195,14 @@ describe("media", () => {
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Enlarge B");
   });
 
+  it("hands focus to the photo when the arrow used leaves at the end", () => {
+    render(<Gallery photos={["A", "B"].map((alt) => ({ src: PNG, alt }))} />);
+    const next = q<HTMLButtonElement>('button[aria-label="Next photo"]')!;
+    next.focus();
+    click(next);
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Enlarge B");
+  });
+
   it("steps through a gallery with arrows that leave at either end", () => {
     render(<Gallery photos={["A", "B", "C"].map((alt) => ({ src: PNG, alt }))} />);
     const arrows = () => all(".rk-gallery-arrow").map((arrow) => arrow.getAttribute("aria-label"));
