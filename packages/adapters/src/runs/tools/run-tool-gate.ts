@@ -406,11 +406,8 @@ export async function gateToolCall(
         : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`;
     if (approvedEffectKey) {
       const closed = await denyApprovedEffect(deps, run, approvedEffectKey, reason, message);
-      if (closed) {
-        if (ctx.state.effects.deniedKeys) {
-          (await ctx.state.effects.deniedKeys).set(approvedEffectKey, false);
-        }
-        ctx.trust.refreshEffectTrust?.();
+      if (closed && ctx.state.effects.deniedKeys) {
+        (await ctx.state.effects.deniedKeys).set(approvedEffectKey, false);
       }
     }
     await auditToolCall(ctx, name, "denied", { reason });
@@ -707,17 +704,11 @@ export async function gateToolCall(
   // Past the gate: this destination is now one the run was given. A search result's exact
   // URL trusts only that URL, never the rest of its site, and a URL Auto Review passed (judged on
   // what that URL carries) trusts nothing beyond itself: the site's next URL is judged again.
-  if (fetchSite && siteGate === "new" && !passedByReview) {
-    if (ctx.trust.trustSite) await ctx.trust.trustSite(fetchSite);
-    else (await ctx.trust.loadTrustedSites()).add(fetchSite);
-  }
+  if (fetchSite && siteGate === "new" && !passedByReview)
+    (await ctx.trust.loadTrustedSites()).add(fetchSite);
   if (viaConnector) {
-    if (ctx.trust.trustConnectors) {
-      await ctx.trust.trustConnectors(connectorTrusts);
-    } else {
-      const trusted = await ctx.trust.loadTrustedConnectors();
-      for (const trust of connectorTrusts) trusted.add(trust);
-    }
+    const trusted = await ctx.trust.loadTrustedConnectors();
+    for (const trust of connectorTrusts) trusted.add(trust);
   }
   return { call };
 }

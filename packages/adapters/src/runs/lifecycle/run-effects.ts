@@ -33,8 +33,8 @@ import { APPROVAL_CONTINUATION_LEAD } from "../assembly/approval-continuation.pr
 import { runLeaseFor } from "../assembly/run-messages.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 
-/** Effects that got past the approval gate: approved, allowed by a rule or review, or run. */
-export const PASSED_EFFECT_STATUSES = ["approved", "executing", "uncertain", "completed"];
+/** Effects that passed the approval gate and started or finished running. Pending approvals stay out until their replay passes current policy. */
+export const PASSED_EFFECT_STATUSES = ["executing", "uncertain", "completed"];
 
 export const APPROVED_EFFECT_REPLAY_ORDER = [{ createdAt: "asc" as const }, { id: "asc" as const }];
 

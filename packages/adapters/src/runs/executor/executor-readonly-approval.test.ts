@@ -6460,13 +6460,17 @@ describe("closing denied approved effects", () => {
     expect(f.fetchedUrls).toEqual([]);
   });
 
-  it("does not keep site trust from a policy-denied approved effect for later calls in the same attempt", async () => {
+  it("does not keep site trust from a policy-denied approved effect for later or parallel calls in the same attempt", async () => {
+    reviewMock.mockClear();
+    reviewMock.mockResolvedValue({ decision: "ask", reason: "Check site", model: "mock" });
     const blockedUrl = "https://blocked-site.example.test/pay";
     const secondUrl = "https://blocked-site.example.test/other";
     const key = approvalEffectKey("run-1", "paid_request", { url: blockedUrl });
     const f = fixture({
       name: "paid_request",
       builtin: true,
+      autoReview: true,
+      parallelCalls: true,
       rules: [{ effect: "deny", matchKind: "tool", matchValue: "paid_request" }],
     });
     f.effects.push({
@@ -6489,6 +6493,7 @@ describe("closing denied approved effects", () => {
       result: { refused: "rule", error: expect.stringContaining("blocked in this space") },
     });
     expect(f.results[0]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+    expect(reviewMock).toHaveBeenCalledTimes(1);
     expect(f.pauseRunForInput).toHaveBeenCalledTimes(1);
     expect(f.fetchedUrls).toEqual([]);
   });

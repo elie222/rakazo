@@ -241,7 +241,6 @@ export function createRunTrustLoaders(
     })();
     return earlierOwnerMessagesPromise;
   };
-  const sessionTrustedSites = new Set<string>();
   let trustedSitesPromise: Promise<Set<string>> | undefined;
   const loadTrustedSites = () => {
     trustedSitesPromise ??= deps.prisma.externalEffect
@@ -255,7 +254,6 @@ export function createRunTrustLoaders(
       })
       .then(async (rows) => {
         const sites = sitesInText(await loadOwnerWords());
-        for (const site of sessionTrustedSites) sites.add(site);
         for (const row of rows) {
           // Auto Review passed that one URL on what it carried; the owner never gave the site.
           if (row.reviewDecision === "pass") continue;
@@ -264,17 +262,8 @@ export function createRunTrustLoaders(
           if (site) sites.add(site);
         }
         return sites;
-      })
-      .catch((error) => {
-        trustedSitesPromise = undefined;
-        throw error;
       });
     return trustedSitesPromise;
-  };
-  const trustSite = async (site: string) => {
-    sessionTrustedSites.add(site);
-    const pending = trustedSitesPromise;
-    if (pending) (await pending).add(site);
   };
   const routineNamesNewSite = async (prompt: string) => {
     const trusted = await loadTrustedSites();
@@ -283,7 +272,6 @@ export function createRunTrustLoaders(
       (site) => !trusted.has(site) && !siteAlwaysAllowed(rules, site),
     );
   };
-  const sessionTrustedConnectors = new Set<string>();
   let trustedConnectorsPromise: Promise<Set<string>> | undefined;
   const loadTrustedConnectors = () => {
     const providers = connectedPlugins.map((plugin) => plugin.provider);
@@ -292,39 +280,23 @@ export function createRunTrustLoaders(
         where: { runId, status: { in: PASSED_EFFECT_STATUSES } },
         select: { kind: true, request: true, batchActions: true },
       })
-      .then((rows) => {
-        const connectors = new Set(sessionTrustedConnectors);
-        for (const row of rows) {
-          if (BUILTIN_AGENT_TOOL_NAMES.has(row.kind)) continue;
-          for (const key of connectorTrustKeys(
-            storedBatchActions(row.batchActions),
-            boundDirectApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route ??
-              catalogApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route,
-            connectorKindFromToolName(row.kind, providers),
-            providers,
-          )) {
-            connectors.add(key);
-          }
-        }
-        return connectors;
-      })
-      .catch((error) => {
-        trustedConnectorsPromise = undefined;
-        throw error;
-      });
+      .then(
+        (rows) =>
+          new Set(
+            rows
+              .filter((row) => !BUILTIN_AGENT_TOOL_NAMES.has(row.kind))
+              .flatMap((row) =>
+                connectorTrustKeys(
+                  storedBatchActions(row.batchActions),
+                  boundDirectApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route ??
+                    catalogApprovalDetails(row.request, CATALOG_APPROVAL_TOOL)?.route,
+                  connectorKindFromToolName(row.kind, providers),
+                  providers,
+                ),
+              ),
+          ),
+      );
     return trustedConnectorsPromise;
-  };
-  const trustConnectors = async (keys: readonly string[]) => {
-    for (const key of keys) sessionTrustedConnectors.add(key);
-    const pending = trustedConnectorsPromise;
-    if (pending) {
-      const trusted = await pending;
-      for (const key of keys) trusted.add(key);
-    }
-  };
-  const refreshEffectTrust = () => {
-    trustedSitesPromise = undefined;
-    trustedConnectorsPromise = undefined;
   };
   // Channel and webhook text this run took in mid-turn is not the owner's. Rows queued
   // before origins were recorded are recognized by their channel message.
@@ -349,11 +321,8 @@ export function createRunTrustLoaders(
     loadOwnerWords,
     loadEarlierOwnerMessages,
     loadTrustedSites,
-    trustSite,
     routineNamesNewSite,
     loadTrustedConnectors,
-    trustConnectors,
-    refreshEffectTrust,
     receivedOutsideMessage,
   };
 }
