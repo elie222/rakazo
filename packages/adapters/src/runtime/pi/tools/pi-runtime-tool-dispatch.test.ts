@@ -1284,6 +1284,38 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("keeps remember's shared flag through argument preparation", async () => {
+    const remember = builtinAgentTools.find((tool) => tool.name === "remember")!;
+    await new PiAgentRuntime()
+      .run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "r",
+          prompt: "remember this for every bot",
+          instructions: "",
+          history: [],
+          tools: [remember],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool: vi.fn(async () => ({ ok: true })),
+        },
+        {
+          operationId: "1",
+          traceId: "1",
+          spaceId: "w",
+          userId: "u",
+          signal: new AbortController().signal,
+        },
+      )
+      [Symbol.asyncIterator]()
+      .next();
+    const prepare = fakeAgentState.tools.find((tool) => tool.name === "remember")!
+      .prepareArguments!;
+    const operations = [{ action: "add", content: "Invoices go to Dana." }];
+
+    expect(prepare({ shared: true, operations })).toEqual({ shared: true, operations });
+  });
+
   it("runs schedule tools, remember and request_secret sequentially", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const runtime = new PiAgentRuntime();

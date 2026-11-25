@@ -165,9 +165,9 @@ describe("memory outcome grading", () => {
   });
 
   it("checks which memory each part of a Space-wide rule landed in", () => {
-    const own = "# Assistant\n\nDrafts the Monday client update.\n";
+    const own = "# Assistant\n\nDrafts the Monday client update from UPD-7.\n";
     const rule = "Client emails only from hello@northpine.example, never on weekends.\n";
-    const shared = "# Team\n\nInvoices over 500 euros need Dana's approval.\n";
+    const shared = "# Team\n\nInvoices over 500 euros need dana@northpine.example.\n";
     expect(failed("shared-rule", { ...evidence(own), sharedMemory: shared + rule })).toEqual([]);
     expect(failed("shared-rule", { ...evidence(own + rule), sharedMemory: shared })).toEqual([
       "rule-shared",
