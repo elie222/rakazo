@@ -337,6 +337,100 @@ describe("schedule tools on another bot's routines", () => {
     expect(findBots).toHaveBeenCalledOnce();
   });
 
+  it("clears restoredPending when settling an archived-bot intended receipt via prior name match", async () => {
+    const executionId = JSON.stringify(["pi-tool", "main", "call-archived"]);
+    const archivedKey = toolEffectIdempotencyKey("run-1", "schedule_list", {
+      bot_id: "archived-bot",
+    });
+    const stalePendingKey = toolEffectIdempotencyKey("run-1", "schedule_list", {
+      bot_id: "vanished-bot",
+    });
+    const effectRow = {
+      id: "eff-archived",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "schedule_list",
+      idempotencyKey: archivedKey,
+      status: "intended",
+      request: { bot_id: "archived-bot", bot_name: "Helper" },
+      result: null as unknown,
+      createdAt: new Date("2026-11-25T10:00:00Z"),
+    };
+    const ctx = {
+      deps: {
+        prisma: {
+          run: { findUnique: vi.fn(async () => ({ status: "running" })) },
+          bot: {
+            findUnique: vi.fn(async () => ({ fleetManagement: true })),
+            findMany: vi.fn(async ({ where }: { where: { id?: string; name?: string } }) =>
+              [{ id: "replacement-bot", name: "Helper", thread: { id: "c-t" } }].filter((row) =>
+                where.id ? row.id === where.id : row.name === where.name,
+              ),
+            ),
+          },
+          externalEffect: {
+            findUnique: vi.fn(async () => null),
+            findMany: vi.fn(async () => [effectRow]),
+            updateMany: vi.fn(
+              async ({
+                where,
+                data,
+              }: {
+                where: { id: string; status: string };
+                data: { status: string; result: unknown };
+              }) => {
+                if (where.id === effectRow.id && where.status === effectRow.status) {
+                  effectRow.status = data.status;
+                  effectRow.result = data.result;
+                  return { count: 1 };
+                }
+                return { count: 0 };
+              },
+            ),
+          },
+          steeringMessage: { findFirst: vi.fn(async () => null) },
+        },
+      },
+      run: { id: "run-1", spaceId: "space-1", trigger: "user" },
+      runId: "run-1",
+      bot: { id: "bot-1", name: "Manager" },
+      fleetRun: { spaceId: "space-1", userId: "user-1", botId: "bot-1" },
+      thread: { id: "thread-1", groupId: null },
+      source: { ownerStartedRun: true },
+      state: {
+        tainted: false,
+        effects: {
+          consumedIds: new Set<string>(),
+          counts: new Map<string, number>(),
+          occurrences: [] as Array<{
+            executionId: string;
+            fingerprint: string;
+            occurrence: number;
+          }>,
+          restoredPending: { executionId, fingerprint: stalePendingKey, occurrence: 0 },
+        },
+      },
+      trust: { receivedOutsideMessage: async () => false },
+    };
+    const request = {
+      name: "schedule_list",
+      args: { bot_name: "Helper" },
+      executionId,
+      effectRequest: { bot_name: "Helper" },
+      replayEffectToolName: "schedule_list",
+      heldForApproval: false,
+      ignoresAllowRules: false,
+    } as never;
+
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toEqual({
+      error: expect.stringContaining("archived-bot"),
+    });
+    expect(effectRow.status).toBe("completed");
+    expect(ctx.state.effects.consumedIds.has("eff-archived")).toBe(true);
+    expect(ctx.state.effects.counts.get(archivedKey)).toBe(1);
+    expect(ctx.state.effects.restoredPending).toBeUndefined();
+  });
+
   it("reconciles a previous-release managed routine effect whose key included bot_name", async () => {
     const prevKey = toolEffectIdempotencyKey("run-1", "schedule_cancel", {
       bot_id: "child",

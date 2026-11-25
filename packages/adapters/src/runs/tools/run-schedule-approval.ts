@@ -758,6 +758,9 @@ function consumeEffectReceipt(
   const effects = ctx.state?.effects;
   if (!effects) return;
   effects.consumedIds.add(effect.id);
+  if (effects.restoredPending?.executionId === executionId) {
+    effects.restoredPending = undefined;
+  }
   const parts = modernEffectKeyParts(effect.idempotencyKey, ctx.runId, kind);
   const fingerprint = parts ? parts.fingerprint : effect.idempotencyKey;
   const occurrence = parts ? parts.occurrence : 0;
