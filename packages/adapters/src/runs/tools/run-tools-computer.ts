@@ -701,7 +701,7 @@ export const computerTools: ToolHandlers = {
                 stdoutOverlap = "";
                 stderrOverlap = "";
               } else {
-                const tail = combined.slice(-NO_DISPLAY_OVERLAP_CHARS);
+                const tail = trimNoDisplayOverlap(combined);
                 if (event.type === "stdout") stdoutOverlap = tail;
                 else stderrOverlap = tail;
               }
@@ -882,17 +882,30 @@ const NO_DISPLAY_OUTPUT =
   /\b(?:can'?t|cannot|could not|unable to) (?:open|connect to) (?:the )?(?:X )?display\b|\bmissing X server\b|\bno \$DISPLAY\b/i;
 const NO_DISPLAY_OVERLAP_CHARS = 64;
 
+function isAsciiWordChar(code: number): boolean {
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    code === 95
+  );
+}
+
 function trimTrailingWordChars(text: string): string {
   let end = text.length;
-  while (end > 0) {
-    const code = text.charCodeAt(end - 1);
-    const isWord =
-      (code >= 48 && code <= 57) ||
-      (code >= 65 && code <= 90) ||
-      (code >= 97 && code <= 122) ||
-      code === 95;
-    if (!isWord) break;
+  while (end > 0 && isAsciiWordChar(text.charCodeAt(end - 1))) {
     end -= 1;
   }
   return end === text.length ? text : text.slice(0, end);
+}
+
+function trimNoDisplayOverlap(text: string): string {
+  if (text.length <= NO_DISPLAY_OVERLAP_CHARS) return text;
+  const cut = text.length - NO_DISPLAY_OVERLAP_CHARS;
+  const tail = text.slice(cut);
+  // Keep a leading word character when the slice cuts inside a word so `\b` cannot fire on a dropped prefix.
+  if (isAsciiWordChar(text.charCodeAt(cut - 1)) && isAsciiWordChar(text.charCodeAt(cut))) {
+    return `a${tail}`;
+  }
+  return tail;
 }

@@ -3,6 +3,7 @@ import type { FileHandle } from "node:fs/promises";
 import { open, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { bestEffort } from "@rakazo/logging";
 import type Docker from "dockerode";
 import type { z } from "zod";
 import type { computerActionSchema } from "./supervisor-logic.js";
@@ -430,9 +431,13 @@ async function readContainerFileSpooled(
     let activeRead: Promise<unknown> | undefined;
     let cleanedUp = false;
     let cleanupPromise: Promise<void> | undefined;
+    const onBodyAbort = () => {
+      void bestEffort("cleanup spooled file read", cleanupStream());
+    };
     const cleanupStream = () => {
       if (!cleanupPromise) {
         cleanedUp = true;
+        signal?.removeEventListener("abort", onBodyAbort);
         cleanupPromise = (async () => {
           const pendingOpen = opening;
           if (pendingOpen) {
@@ -471,12 +476,12 @@ async function readContainerFileSpooled(
         },
         async pull(ctrl) {
           try {
-            if (cleanedUp) return;
             if (signal?.aborted) {
               await cleanupStream();
               ctrl.error(signal.reason ?? new Error("file read cancelled"));
               return;
             }
+            if (cleanedUp) return;
             if (!readHandle) {
               const op = open(filePath, "r");
               opening = op;
@@ -518,6 +523,8 @@ async function readContainerFileSpooled(
       },
       { highWaterMark: 1 },
     );
+    signal?.addEventListener("abort", onBodyAbort, { once: true });
+    if (signal?.aborted) onBodyAbort();
     handedOff = true;
     return { kind: "stream", body };
   } finally {

@@ -533,6 +533,32 @@ describe("POST /computers/:id/exec streaming", () => {
     expect(directHead.status).toBe(200);
     expect(await directHead.text()).toBe("");
     expect(destroy).toHaveBeenCalled();
+
+    // 3. Aborting the request signal after handoff unlinks the legacy spool even without body.cancel().
+    const abortStream = new PassThrough();
+    const abortController = new AbortController();
+    const abortContainer = {
+      exec: vi.fn(async () => ({
+        start: async () => abortStream,
+        inspect: async () => ({ ExitCode: 0 }),
+      })),
+    } as unknown as Docker.Container;
+    const abortOutcomePromise = readContainerFile(abortContainer, "/home/rakazo/ok.bin", {
+      maxBytes: 6,
+      signal: abortController.signal,
+    });
+    await vi.waitFor(() => expect(abortContainer.exec).toHaveBeenCalledOnce());
+    abortStream.write(frame(1, part1));
+    abortStream.end();
+    const abortOutcome = await abortOutcomePromise;
+    expect(abortOutcome.kind).toBe("stream");
+    abortController.abort(new Error("client disconnected"));
+    await vi.waitFor(async () => {
+      const remaining = (await readdir(tmpdir())).filter(
+        (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),
+      );
+      expect(remaining).toEqual([]);
+    });
   });
 
   it("caps writeContainerFile diagnostics after demultiplexing without corrupting frames", async () => {

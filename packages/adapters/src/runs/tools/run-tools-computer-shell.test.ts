@@ -184,6 +184,19 @@ describe("shell Activity events", () => {
     expect(compactedResult.code).toBe(1);
     expect(compactedResult.stderr).toContain("Unable to open display\n[...");
     expect(compactedResult.notice).toBeUndefined();
+
+    // Overlap slicing dropping a leading word character (`xCannot open display:`) must not trigger on exit.
+    async function* leftBoundaryStream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: `xCannot open display:${" ".repeat(44)}` };
+      yield { type: "exit", code: 1 };
+    }
+    const leftBoundary = setup(leftBoundaryStream());
+    const leftResult = (await shell(leftBoundary.ctx, leftBoundary.call)) as {
+      code: number;
+      notice?: string;
+    };
+    expect(leftResult.code).toBe(1);
+    expect(leftResult.notice).toBeUndefined();
   });
 
   it("serializes live running writes so slow appends never pile up concurrently", async () => {
