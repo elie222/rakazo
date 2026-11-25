@@ -36,6 +36,10 @@ export function usePageStateSaver(
   }, [foreground, retry]);
   return {
     save: queue.save,
-    failed: saver.error !== null && !saver.pending && pageStateRetryable(saver.error),
+    failed:
+      saver.error !== null &&
+      !saver.pending &&
+      saver.input?.pageId === pageId &&
+      pageStateRetryable(saver.error),
   };
 }

@@ -20,7 +20,11 @@ export function usePageStateSaver(pageId: string, read: QueryKey) {
     },
     onFailed: (error, input) => queue.failed(input, error),
   });
-  const failed = saver.error !== null && !saver.pending && pageStateRetryable(saver.error);
+  const failed =
+    saver.error !== null &&
+    !saver.pending &&
+    saver.input?.pageId === pageId &&
+    pageStateRetryable(saver.error);
   useEventListener(failed ? window : null, "focus", queue.retry);
   useEventListener(failed ? window : null, "online", queue.retry);
   return { save: queue.save, failed };
