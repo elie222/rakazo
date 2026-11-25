@@ -1033,6 +1033,28 @@ services:
     depends_on:
       api:
         condition: service_healthy
+  tailscale:
+    image: ${TAILSCALE_IMAGE:-tailscale/tailscale:v1.94.2@sha256:95e528798bebe75f39b10e74e7051cf51188ee615934f232ba7ad06a3390ffa1}
+    profiles:
+      - tailscale
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TS_AUTHKEY: ${TAILSCALE_AUTH_KEY:-}
+      TS_HOSTNAME: ${TAILSCALE_HOSTNAME:-rakazo}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_SERVE_CONFIG: /config/serve.json
+    configs:
+      - source: tailscale-serve
+        target: /config/serve.json
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    networks:
+      - app
+    depends_on:
+      - web
   secrets:
     image: ${BUSYBOX_IMAGE:-busybox:1}
     command:
@@ -1103,9 +1125,15 @@ services:
       - secrets-worker:/services/worker
       - secrets-web:/services/web
       - secrets-supervisor:/services/supervisor
+configs:
+  tailscale-serve:
+    content: |
+      {"TCP": {"443": {"HTTPS": true}},
+       "Web": {"$${TS_CERT_DOMAIN}:443": {"Handlers": {"/": {"Proxy": "http://web:5173"}}}}}
 volumes:
   ingress:
   tailscale-ingress-state:
+  tailscale-state:
   pgdata:
   appdata:
   webassets:

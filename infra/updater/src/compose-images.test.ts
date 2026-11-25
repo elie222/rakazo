@@ -62,6 +62,7 @@ describe("the images compose file", () => {
       "migrate",
       "postgres",
       "supervisor",
+      "tailscale",
       "tailscale-ingress",
       "updater",
       "web",
