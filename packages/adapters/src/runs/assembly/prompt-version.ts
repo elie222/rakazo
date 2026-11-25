@@ -12,6 +12,7 @@ import { CONTEXT_POLICY_SETTINGS } from "../../runtime/context/runtime-context.j
 import { HISTORY_FORMAT_VERSION } from "../../runtime/pi/pi-runtime-history.js";
 import { TASK_CATALOG_GUIDANCE } from "../../tasks/task-catalog.prompt.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
+import { attachFileWithScreenshot } from "../../tools/builtin-computer.tool-definition.js";
 import { searchHistoryThisChat } from "../../tools/builtin-memory.tool-definition.js";
 import { messageToAgentHistoryText } from "./reply-context.js";
 import {
@@ -48,7 +49,7 @@ export function promptVersionParts() {
         : promptSourceVersion(fileURLToPath(new URL("../../../../../", import.meta.url))),
     historyFormat: HISTORY_FORMAT_VERSION,
     context: CONTEXT_POLICY_SETTINGS,
-    tools: [...builtinAgentTools, searchHistoryThisChat].map((tool) => [
+    tools: [...builtinAgentTools, searchHistoryThisChat, attachFileWithScreenshot].map((tool) => [
       tool.name,
       tool.description,
       tool.inputSchema,
