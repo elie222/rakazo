@@ -760,19 +760,16 @@ describe("botChainFromOwner", () => {
     await expect(c.check(all, undefined, "bot-sender")).resolves.toBe(true);
   });
 
-  it("refuses a chain from a chat-app wake, an unmarked or misplaced delivery, or a group", async () => {
+  it.each([
+    { refuses: "an unmarked delivery (a chat-app wake)", marked: false },
+    { refuses: "a delivery in another thread", threadId: "thread-9" },
+    { refuses: "a sender in a group chat", sender: { groupId: "g1" } },
+    { refuses: "another person's sender", sender: { userId: "user-2" } },
+    { refuses: "a sender with no source", sender: { sourceMessageId: null } },
+  ])("refuses a chain that started at $refuses", async ({ marked = true, threadId, sender }) => {
     const c = chain();
-    c.eventDelivery("src-1", false);
-    c.fromSender({ trigger: "webhook", sourceMessageId: "src-1" });
-    await expect(c.check(all)).resolves.toBe(false);
-    c.eventDelivery("src-1", true, "thread-9");
-    await expect(c.check(all)).resolves.toBe(false);
-    c.eventDelivery("src-1");
-    c.fromSender({ trigger: "webhook", sourceMessageId: "src-1", groupId: "g1" });
-    await expect(c.check(all)).resolves.toBe(false);
-    c.fromSender({ trigger: "webhook", sourceMessageId: "src-1", userId: "user-2" });
-    await expect(c.check(all)).resolves.toBe(false);
-    c.fromSender({ trigger: "webhook", sourceMessageId: null });
+    c.eventDelivery("src-1", marked, threadId);
+    c.fromSender({ trigger: "webhook", sourceMessageId: "src-1", ...sender });
     await expect(c.check(all)).resolves.toBe(false);
   });
 
