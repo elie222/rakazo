@@ -794,12 +794,18 @@ async function reportUsage(
     totalTokens: count("totalTokens"),
     costUsd: null,
   };
-  if (request.onUsage) {
-    await request.onUsage(event);
-    push({ ...event, accounted: true });
-  } else {
+  if (!request.onUsage) {
     push(event);
+    return;
   }
+  try {
+    await request.onUsage(event);
+  } catch (error) {
+    // As in the runtime this one wraps: the consumer records it instead, and the turn did run.
+    push(event);
+    throw error;
+  }
+  push({ ...event, accounted: true });
 }
 
 function toolHost(
