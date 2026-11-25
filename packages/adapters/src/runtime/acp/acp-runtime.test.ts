@@ -706,8 +706,12 @@ describe("acpAgentRuntime", () => {
         }),
       );
 
-      const prompt = requests("session/prompt")[1]?.params as { prompt: unknown[] };
+      const prompt = requests("session/prompt")[1]?.params as {
+        prompt: Array<{ type: string; text?: string; data?: string }>;
+      };
       expect(prompt.prompt).toContainEqual({ type: "image", mimeType: "image/png", data: "BAU=" });
+      // On its own, it is still named as an earlier message's image.
+      expect(prompt.prompt.at(-1)?.text).toContain("1. From [User]: Look at this");
     });
   });
 

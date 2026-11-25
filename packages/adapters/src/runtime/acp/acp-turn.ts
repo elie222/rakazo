@@ -140,7 +140,9 @@ export function turnText(
   for (const { line, images } of late) attach(images, line);
   text(message);
   attach(request.currentTurnImages ?? []);
-  // Images from more than one message are named, since a CLI may show them apart from the text.
-  if (new Set(sources).size > 1) text(imageList(sources));
+  // An image from an earlier message is named, since a CLI may show images apart from the text and
+  // the model would take it for the new message's.
+  const newImage = imageSource(undefined);
+  if (sources.some((source) => source !== newImage)) text(imageList(sources));
   return { blocks, leftOut };
 }
