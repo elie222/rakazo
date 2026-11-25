@@ -601,6 +601,30 @@ describe("acpAgentRuntime", () => {
       expect(prompt.prompt).toContainEqual({ type: "image", mimeType: "image/png", data: "AQID" });
     });
 
+    it("does not send a message's images again once it is in the history", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const images = [{ name: "p.png", mimeType: "image/png" as const, data: new Uint8Array([1]) }];
+
+      await collect(
+        runtime,
+        request({ threadId, sourceMessageId: "m1", prompt: "Look", currentTurnImages: images }),
+      );
+      await collect(
+        runtime,
+        request({
+          threadId,
+          prompt: "next",
+          history: [{ id: "m1", role: "user", content: "Look", images }],
+        }),
+      );
+
+      const prompt = requests("session/prompt")[1]?.params as { prompt: Array<{ type: string }> };
+      expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
+    });
+
     it("sends an earlier message's image once it can be read", async () => {
       const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
         accessCheck: allowed,

@@ -765,7 +765,7 @@ function turnText(
   fresh: boolean,
   includeOwn: boolean,
 ): { text: string; images: AgentInputImage[] } {
-  const lines: Array<{ line: string; images: readonly AgentInputImage[] }> = [];
+  const lines: Array<{ line: string; images: readonly AgentInputImage[]; id?: string }> = [];
   const late: AgentInputImage[] = [];
   for (const item of request.history) {
     const content = item.content.trim();
@@ -781,7 +781,6 @@ function turnText(
         }
         continue;
       }
-      if (item.images?.length) session.imaged.add(item.id);
       session.seen.add(item.id);
       // The session wrote this reply itself, unless a turn running beside it did.
       if (own && !fresh && (!includeOwn || session.replies.has(contentHash(content)))) continue;
@@ -792,7 +791,7 @@ function turnText(
     }
     const speaker =
       item.speaker ?? (own ? OWN_SPEAKER : item.role === "system" ? "Note" : PERSON_SPEAKER);
-    lines.push({ line: historyLine(speaker, content), images: item.images ?? [] });
+    lines.push({ line: historyLine(speaker, content), images: item.images ?? [], id: item.id });
   }
   if (request.sourceMessageId) session.seen.add(request.sourceMessageId);
   // As with ids: only summaries and recall still in this turn's history can come up again.
@@ -818,6 +817,12 @@ function turnText(
       start >= 0 && start === lines.length - 1
         ? [{ ...lines[start]!, line: `…${lines[start]!.line.slice(-SEED_CHARS)}` }]
         : lines.slice(start + 1);
+  }
+  // Only images actually sent count as sent: an entry cut from a new session's history sends its
+  // image later, once it is the session's.
+  for (const { id, images } of kept) if (id && images.length) session.imaged.add(id);
+  if (request.sourceMessageId && request.currentTurnImages?.length) {
+    session.imaged.add(request.sourceMessageId);
   }
   const message = request.promptSpeaker
     ? historyLine(request.promptSpeaker, request.prompt)
