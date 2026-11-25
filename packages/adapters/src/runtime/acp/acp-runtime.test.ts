@@ -684,6 +684,44 @@ describe("acpAgentRuntime", () => {
       }
     });
 
+    it("does not resend a message's photos when a paused run resumes", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const photo = { name: "p.png", mimeType: "image/png" as const, data: new Uint8Array([7]) };
+      const run = { threadId, sourceMessageId: "m1", currentTurnImages: [photo] };
+
+      await collect(runtime, request({ ...run, prompt: "Look" }));
+      await collect(runtime, request({ ...run, prompt: "Look, the person approved" }));
+
+      const prompt = requests("session/prompt")[1]?.params as { prompt: Array<{ type: string }> };
+      expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
+    });
+
+    it("sends a message's further images once they can be read", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const first = { name: "a.png", mimeType: "image/png" as const, data: new Uint8Array([1]) };
+      const second = { name: "b.png", mimeType: "image/png" as const, data: new Uint8Array([2]) };
+      const message = { id: "m1", role: "user" as const, content: "Two photos" };
+
+      await collect(runtime, request({ threadId, history: [{ ...message, images: [first] }] }));
+      await collect(
+        runtime,
+        request({ threadId, prompt: "next", history: [{ ...message, images: [first, second] }] }),
+      );
+
+      const prompt = requests("session/prompt")[1]?.params as {
+        prompt: Array<{ type: string; data?: string }>;
+      };
+      expect(
+        prompt.prompt.filter((block) => block.type === "image").map((block) => block.data),
+      ).toEqual(["Ag=="]);
+    });
+
     it("sends an earlier message's image once it can be read", async () => {
       const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
         accessCheck: allowed,

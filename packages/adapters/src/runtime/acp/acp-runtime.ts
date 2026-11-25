@@ -468,7 +468,7 @@ async function runAcpTurn(
       id: activeSessionId,
       cwd,
       seen: new Set(),
-      imaged: new Set(),
+      imaged: new Map(),
       context: new Set(),
       replies: new Set(),
       usedAt: Date.now(),

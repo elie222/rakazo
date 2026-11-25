@@ -46,9 +46,13 @@ export function turnText(
     if (item.id) {
       if (session.seen.has(item.id)) {
         // An image that could not be read when the session first saw its message comes now.
-        if (withImages && item.images?.length && !session.imaged.has(item.id)) {
-          session.imaged.add(item.id);
-          late.push({ line: historyLine(speakerOf(item), content), images: item.images });
+        const sent = session.imaged.get(item.id) ?? 0;
+        if (withImages && item.images && item.images.length > sent) {
+          session.imaged.set(item.id, item.images.length);
+          late.push({
+            line: historyLine(speakerOf(item), content),
+            images: item.images.slice(sent),
+          });
         }
         continue;
       }
@@ -56,7 +60,7 @@ export function turnText(
       // The session wrote this reply itself, unless a turn running beside it did.
       if (own && !fresh && (!includeOwn || session.replies.has(contentHash(content)))) {
         // Its images (a screenshot of its own step) were the session's tool results already.
-        session.imaged.add(item.id);
+        session.imaged.set(item.id, item.images?.length ?? 0);
         continue;
       }
     } else {
@@ -81,7 +85,9 @@ export function turnText(
   for (const id of session.seen) {
     if (!inWindow.has(id) && id !== request.sourceMessageId) session.seen.delete(id);
   }
-  for (const id of session.imaged) if (!inWindow.has(id)) session.imaged.delete(id);
+  for (const id of session.imaged.keys()) {
+    if (!inWindow.has(id) && id !== request.sourceMessageId) session.imaged.delete(id);
+  }
   let kept = lines;
   if (fresh) {
     // The newest messages that fit; the newest one is kept, shortened, even when it alone does not.
@@ -98,10 +104,16 @@ export function turnText(
   // Only images actually sent count as sent: an entry cut from a new session's history sends its
   // image later, once it is the session's.
   if (withImages) {
-    for (const { id, images } of kept) if (id && images.length) session.imaged.add(id);
-    if (request.sourceMessageId && request.currentTurnImages?.length) {
-      session.imaged.add(request.sourceMessageId);
-    }
+    for (const { id, images } of kept)
+      if (id && images.length) session.imaged.set(id, images.length);
+  }
+  // A run that resumes after a pause repeats its message; photos the session already has stay out.
+  const sentWithMessage = request.sourceMessageId
+    ? (session.imaged.get(request.sourceMessageId) ?? 0)
+    : 0;
+  const newImages = (request.currentTurnImages ?? []).slice(sentWithMessage);
+  if (withImages && request.sourceMessageId && newImages.length) {
+    session.imaged.set(request.sourceMessageId, sentWithMessage + newImages.length);
   }
   const message = request.promptSpeaker
     ? historyLine(request.promptSpeaker, request.prompt)
@@ -139,7 +151,7 @@ export function turnText(
   }
   for (const { line, images } of late) attach(images, line);
   text(message);
-  attach(request.currentTurnImages ?? []);
+  attach(newImages);
   // An image from an earlier message is named, since a CLI may show images apart from the text and
   // the model would take it for the new message's.
   const newImage = imageSource(undefined);
