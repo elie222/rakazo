@@ -206,6 +206,16 @@ export function accountRoutes(ctx: RouterContext) {
         await requireBilling(deps).claimReferral(context.actor, input.code);
         return { ok: true as const };
       }),
+      redeemCreditCode: authed.billing.redeemCreditCode.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        const code = billing.modelCreditsEnabled
+          ? deps.env.creditCodes?.get(input.code.toUpperCase())
+          : undefined;
+        if (!code)
+          throw new ClientError("NOT_FOUND", "That code isn't valid", "CREDIT_CODE_INVALID");
+        await billing.redeemCreditCode(context.actor, code);
+        return { creditCents: code.creditCents };
+      }),
     },
     accessGrants: {
       list: authed.accessGrants.list.handler(async ({ context }) => {

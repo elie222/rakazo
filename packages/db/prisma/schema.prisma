@@ -566,8 +566,11 @@ model AccessGrant {
   organizationId String?
   appliedAt      DateTime?
   revokedAt      DateTime?
+  /// The credit code the account redeemed for this grant; each account redeems a code once.
+  code           String?
   createdAt      DateTime  @default(now())
 
+  @@unique([code, email])
   @@index([email])
   @@index([createdAt])
   @@map("access_grants")

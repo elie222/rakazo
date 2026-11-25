@@ -4,3 +4,13 @@ handle_push_trigger = true
 
 [review_agent]
 issues_user_guidelines = "Do not request comments that restate code, tests, or schema fields. Request a comment only when you can name a missing contract or constraint the code cannot express and explain why it matters."
+
+[review_agent.comments_routing]
+action_required = "both"
+remediation_recommended = "summary"
+informational = "drop"
+
+[review_agent_ux]
+finding_overflow_count = 1
+show_daily_tips = false
+show_comment_footer = false
