@@ -47,6 +47,24 @@ function agentHostId(): Promise<string> {
   return hostIdCache.id;
 }
 
+/** The OAuth `error` code of a refused exchange (RFC 6749 §5.2), such as `invalid_grant`, when the body has one. */
+async function tokenErrorCode(
+  response: Response,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  try {
+    const bytes = await readResponseWithin(response, {
+      maxBytes: MAX_TOKEN_RESPONSE_BYTES,
+      tooLargeMessage: "ChatGPT token error is too large.",
+      signal,
+    });
+    const error = (JSON.parse(new TextDecoder().decode(bytes)) as { error?: unknown }).error;
+    return typeof error === "string" && /^[a-z_]{1,64}$/.test(error) ? error : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The browser callback is pasted into Rakazo; the verifier is stored for an API process hand-off. */
 export function createManualOpenAIOAuthLogin(options: Options = {}) {
   const request = options.fetch ?? fetch;
@@ -114,8 +132,12 @@ export function createManualOpenAIOAuthLogin(options: Options = {}) {
       }),
       signal,
     });
-    if (!response.ok)
-      throw new Error(`ChatGPT token exchange failed (${response.status}). Start sign-in again.`);
+    if (!response.ok) {
+      const reason = await tokenErrorCode(response, signal);
+      throw new Error(
+        `ChatGPT token exchange failed (${response.status}${reason ? ` ${reason}` : ""}). Start sign-in again.`,
+      );
+    }
     const bytes = await readResponseWithin(response, {
       maxBytes: MAX_TOKEN_RESPONSE_BYTES,
       tooLargeMessage: "ChatGPT token response is too large.",

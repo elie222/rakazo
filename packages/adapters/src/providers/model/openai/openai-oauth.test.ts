@@ -127,6 +127,12 @@ describe("manual ChatGPT browser sign-in", () => {
     expect(credential.scopes).toContain("chatgpt.tokens.use.direct");
   });
 
+  it("names the OAuth error of a refused exchange", async () => {
+    await expect(
+      signInWith(Response.json({ error: "invalid_grant" }, { status: 400 })),
+    ).rejects.toThrow("ChatGPT token exchange failed (400 invalid_grant). Start sign-in again.");
+  });
+
   it("reports a token response that is not JSON as invalid", async () => {
     await expect(signInWith(new Response("<html>bad gateway</html>"))).rejects.toThrow(
       "ChatGPT token response is invalid.",

@@ -154,6 +154,8 @@ export function useSubscriptionSignIn({
     const savedModelId = saved.modelId ?? selected?.id ?? modelId;
     if (await finishConnecting(savedModelId, saved.id, saved.provider)) return;
     if (saved.provider === selected?.alternativeSignIn?.provider) {
+      // The saved connection belongs to another provider, so go back to the list that shows it.
+      publishFeedback("connection", { notice: t`Subscription connected.` });
       onAlternativeSaved();
       return;
     }
