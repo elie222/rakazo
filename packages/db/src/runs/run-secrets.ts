@@ -7,6 +7,24 @@ export function runSecretKind(runId: string): string {
   return `run-secret:${runId}`;
 }
 
+/**
+ * What a code or connection card's answer records on the request it approves: the run secret it
+ * stored, so that value answers only that request.
+ */
+export function answeredRunSecretResult(secretId: string): { answeredSecretId: string } {
+  return { answeredSecretId: secretId };
+}
+
+/** The run secret a card's answer recorded on this request, if one did. */
+export function answeredRunSecretId(result: unknown): string | undefined {
+  return result &&
+    typeof result === "object" &&
+    "answeredSecretId" in result &&
+    typeof result.answeredSecretId === "string"
+    ? result.answeredSecretId
+    : undefined;
+}
+
 /** A login card answered with "Save to Vault" off, kept for this run only under its name. */
 export function runLoginKind(runId: string, name: string): string {
   return `run-login:${runId}:${name}`;

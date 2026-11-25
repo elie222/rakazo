@@ -34,7 +34,7 @@ import type { Prisma, PrismaClient } from "../database/client.js";
 import { JsonObject, readJsonColumn } from "../database/json-column.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "../database/transaction-retry.js";
 import { contentEncryptionOf } from "../encryption/content-encryption.js";
-import { deleteRunSecretsInTransaction } from "../runs/run-secrets.js";
+import { answeredRunSecretResult, deleteRunSecretsInTransaction } from "../runs/run-secrets.js";
 import {
   RUN_TURN_CHECKPOINT_KIND,
   retireIntroTurnCheckpoint,
@@ -162,6 +162,7 @@ export interface RunSecretWriter {
     input: AnswerRunInput,
     commit: (writer: RunSecretWriter) => Promise<T>,
   ): Promise<T>;
+  /** Returns the id of the value the run now holds for the card; none for one saved to the Vault. */
   store(input: {
     botId: string;
     credential?: BotSecretDestination;
@@ -174,7 +175,7 @@ export interface RunSecretWriter {
     spaceId: string;
     plaintext: string;
     tx: Prisma.TransactionClient;
-  }): Promise<void>;
+  }): Promise<string | undefined>;
 }
 
 /**
@@ -482,7 +483,7 @@ async function commitAnswerRunInput(
       select: { id: true },
     });
   } else if (secretAsk) {
-    await runSecretWriter!.store({
+    const heldSecretId = await runSecretWriter!.store({
       botId: run.botId,
       credential: pendingAsk.credential,
       oneTimeCode: pendingAsk.oneTimeCode,
@@ -502,7 +503,13 @@ async function commitAnswerRunInput(
       },
       data: {
         status: "approved",
-        ...(pendingAsk.credential ? { result: { credentialSaved: pendingAsk.credential } } : {}),
+        // The run's value is bound to the request this answer approves, so no other request or
+        // later retry takes it as its own answer.
+        ...(pendingAsk.credential
+          ? { result: { credentialSaved: pendingAsk.credential } }
+          : heldSecretId
+            ? { result: answeredRunSecretResult(heldSecretId) }
+            : {}),
       },
     });
   } else {

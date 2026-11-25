@@ -3305,7 +3305,8 @@ describe("answerRunInput approvals", () => {
     { name: "example_api", origin: "https://api.example.test", auth: { type: "bearer" } },
   ])("stores secret asks without writing plaintext to the task prompt (%j)", async (credential) => {
     const fanout = new TestFanout();
-    const store = vi.fn().mockResolvedValue(undefined);
+    // A value the run holds has an id; one saved to the Vault has none.
+    const store = vi.fn().mockResolvedValue(credential ? undefined : "run-secret-1");
     const tx = {
       $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
       message: {
@@ -3382,7 +3383,7 @@ describe("answerRunInput approvals", () => {
       },
       data: {
         status: "approved",
-        ...(credential ? { result: { credentialSaved: credential } } : {}),
+        result: credential ? { credentialSaved: credential } : { answeredSecretId: "run-secret-1" },
       },
     });
     expect(tx.message.update).toHaveBeenCalledWith({

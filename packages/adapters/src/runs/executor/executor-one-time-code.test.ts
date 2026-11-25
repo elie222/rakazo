@@ -1,5 +1,5 @@
 import type { ComputerRef } from "@rakazo/adapter-kit";
-import { runCodeKind } from "@rakazo/db";
+import { answeredRunSecretResult, runCodeKind, runSecretKind } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
 import { encodeRunCode } from "../../secrets/bot-secrets.js";
@@ -285,20 +285,27 @@ function world(printed = "", rules: Row[] = [], connection: Row = CONNECTION) {
     return results;
   }
 
-  /** The user answers the open card: the effect is approved and the code waits for the page. */
-  async function userAnswers(code = CODE) {
-    for (const effect of effects) if (effect.status === "intended") effect.status = "approved";
+  /**
+   * The user answers the open card: the effect is approved, recording the value it holds, and the
+   * code waits for the page. `previousRelease` approves as the release before did, recording none.
+   */
+  async function userAnswers(code = CODE, { connection = false, previousRelease = false } = {}) {
     const stored = await secretStore.put(
-      encodeRunCode(ORIGIN, code),
+      connection ? code : encodeRunCode(ORIGIN, code),
       { ...scope, operationId: "run-1", traceId: "run-1", signal: new AbortController().signal },
       { ephemeral: true },
     );
+    for (const effect of effects) {
+      if (effect.status !== "intended") continue;
+      effect.status = "approved";
+      if (!previousRelease) effect.result = answeredRunSecretResult(stored.id);
+    }
     secrets.push({
       ...stored,
       createdAt: new Date(),
       userId: scope.userId,
       spaceId: scope.spaceId,
-      kind: runCodeKind("run-1"),
+      kind: connection ? runSecretKind("run-1") : runCodeKind("run-1"),
     });
   }
 
@@ -514,6 +521,54 @@ describe("request_secret behind an action card", () => {
     expect(result).toMatchObject({ details: { secret: "paused" } });
     expect(run.asked[1]!.blocks[0]).toMatchObject({ oneTimeCode: { origin: ORIGIN } });
     expect(run.secrets).toEqual([]);
+  });
+
+  it.each([
+    ["a code", requestCode(), {}],
+    [
+      "a connection code",
+      { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } },
+      { connection: true },
+    ],
+  ])("takes %s answered in the millisecond the request was made", async (_name, call, kind) => {
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    run.userAllows();
+    await run.attempt([call]);
+    await run.userAnswers(CODE, kind);
+    run.secrets[0]!.createdAt = run.effects[0]!.createdAt;
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ ok: true, submitted: true });
+    expect(run.asked).toHaveLength(2);
+    expect(run.effects).toMatchObject([{ status: "completed" }]);
+  });
+
+  it("never takes a connection code an earlier card left once the request waits again", async () => {
+    const call = { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } };
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    run.userAllows();
+    // A value no card answered for this request is still held, and the request waits again, as
+    // if an attempt stopped between handing back the claim and dropping that value.
+    await run.userAnswers(CODE, { connection: true });
+    run.effects[0]!.status = "intended";
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({ input: "secret", status: "pending" });
+    expect(run.secrets).toEqual([]);
+    expect(run.effects).toMatchObject([{ status: "intended" }]);
+  });
+
+  it("takes a connection code answered by the previous release", async () => {
+    const call = { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } };
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    run.userAllows();
+    await run.attempt([call]);
+    await run.userAnswers(CODE, { connection: true, previousRelease: true });
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ ok: true, submitted: true });
+    expect(run.asked).toHaveLength(2);
   });
 
   it("hands the code answered on its card to the bot", async () => {
