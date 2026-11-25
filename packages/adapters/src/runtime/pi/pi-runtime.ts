@@ -345,10 +345,11 @@ export class PiAgentRuntime implements AgentRuntime {
         );
         seenSteeringIds.push(...initialSteering.map((item) => item.id));
         // The history messages this turn's transcript stands for: its prompt and its steering.
-        const turnMessageIds = [
+        // A steering continuation's source is also one of its steering messages.
+        const turnMessageIds = new Set([
           ...(request.sourceMessageId ? [request.sourceMessageId] : []),
           ...initialSteering.map((item) => item.messageId),
-        ];
+        ]);
         // A computer-mode checkpoint was written by the computer model; keep its thinking.
         const restored = request.turnCheckpoint
           ? restoreTurnCheckpoint(
@@ -764,7 +765,7 @@ export class PiAgentRuntime implements AgentRuntime {
             seenSteeringIds.push(...steering.map((item) => item.id));
             for (const item of steering) {
               representedHistoryIds.add(item.messageId);
-              turnMessageIds.push(item.messageId);
+              turnMessageIds.add(item.messageId);
             }
             if (steering.some((item) => item.images?.length && !item.imageFileFallback))
               hasCurrentImages = true;
@@ -1356,7 +1357,7 @@ export class PiAgentRuntime implements AgentRuntime {
             : captureTurnTranscript(
                 sentContext?.context.messages,
                 terminalMessage,
-                turnMessageIds,
+                [...turnMessageIds],
                 request.sourceMessageId ?? undefined,
               );
           if (transcript) request.onTranscript(transcript);

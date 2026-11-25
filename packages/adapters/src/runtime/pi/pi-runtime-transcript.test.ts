@@ -253,6 +253,16 @@ describe("stored turn safety", () => {
     expect(kept).not.toContain('"abc"');
   });
 
+  it("drops reasoning that had to be cleaned, since its signature no longer matches", () => {
+    const thought = turn("fetch_page", "Page text").replace(
+      '"content":[{"type":"text","text":"Done."}]',
+      '"content":[{"type":"thinking","thinking":"key sk-live-1","thinkingSignature":"sig"},{"type":"text","text":"Done."}]',
+    );
+    const kept = keptTurnTranscript(thought, ["sk-live-1"]);
+    expect(kept).toContain("Done.");
+    expect(kept).not.toContain("sig");
+  });
+
   it("hands Auto Review and taint the whole results a stored turn replays", () => {
     const history: AgentRunRequest["history"] = [
       {

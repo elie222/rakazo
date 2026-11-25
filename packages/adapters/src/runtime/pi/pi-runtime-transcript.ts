@@ -22,6 +22,8 @@ interface TurnTranscript {
 /** Larger turns are replayed from the stored reply instead; history is read on every run. */
 const MAX_TRANSCRIPT_CHARS = 256_000;
 
+type Part = Exclude<Message["content"], string>[number];
+
 type Tagged = Message & { rakazoHistory?: true; rakazoMessageId?: string };
 
 function isRecall(message: Tagged): boolean {
@@ -164,18 +166,18 @@ export function mapTurnTranscript(
       return { ...message, content: change(message.content, kind) } as Message;
     return {
       ...message,
-      content: message.content.map((part) =>
-        part.type === "text"
-          ? { ...part, text: change(part.text, kind) }
-          : part.type === "thinking"
-            ? { ...part, thinking: change(part.thinking, kind) }
-            : part.type === "toolCall"
-              ? {
-                  ...part,
-                  arguments: deep(changeArguments(part.arguments)) as typeof part.arguments,
-                }
-              : part,
-      ),
+      content: (message.content as Part[]).flatMap((part): Part[] => {
+        if (part.type === "text") return [{ ...part, text: change(part.text, kind) }];
+        // Reasoning is signed as written: one that had to change goes, rather than be rejected
+        // on every later turn.
+        if (part.type === "thinking")
+          return change(part.thinking, kind) === part.thinking ? [part] : [];
+        if (part.type === "toolCall")
+          return [
+            { ...part, arguments: deep(changeArguments(part.arguments)) as typeof part.arguments },
+          ];
+        return [part];
+      }),
     } as Message;
   });
   return JSON.stringify({ ...turn, version: 1, messages });
