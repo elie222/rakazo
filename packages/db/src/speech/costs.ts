@@ -20,7 +20,10 @@ export interface SpeechPrice {
  * organization's Spaces since the period began counts.
  */
 export async function remainingSpeechAllowance(
-  prisma: Pick<PrismaClient, "space" | "deploymentSettings" | "organization" | "speechCost">,
+  prisma: Pick<
+    PrismaClient,
+    "space" | "deploymentSettings" | "organization" | "accessGrant" | "speechCost"
+  >,
   spaceId: string,
   now = new Date(),
 ): Promise<bigint | null> {
