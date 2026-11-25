@@ -313,7 +313,7 @@ export const conversationTools: ConnectorTool[] = [
   },
   {
     name: "remember",
-    description: `Edit your memory. Each entry is one short declarative fact, not an instruction to yourself; task progress, one-off details and promises do not belong. Operations apply all or none, and the ${BOT_MEMORY_MAX_BYTES / 1024} KB limit counts only the result, so one call can make room and add.`,
+    description: `Edit your memory. Each entry is one lasting fact in a short plain sentence, not an instruction to yourself. Record a decision as it now stands, not a dated log of who approved what when; when memory holds such a log, replace all of it with the current state; keep long approved text in a file and its path here. Open loops such as waiting for a reply, task progress, one-off details and promises do not belong; the lasting result of finished work, such as where it was saved, does. Operations apply all or none, and the ${BOT_MEMORY_MAX_BYTES / 1024} KB limit counts only the result, so one call can make room and add: remove what ended or is outdated, merge duplicates, rewrite dated histories as how things now stand, or move detail to a file, rather than abbreviating.`,
     inputSchema: z.toJSONSchema(RememberInputSchema, { io: "input" }),
   },
   {
