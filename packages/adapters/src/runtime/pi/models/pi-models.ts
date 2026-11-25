@@ -56,6 +56,7 @@ export type PiCatalogEntry = {
   authHint?: string;
   subscription: boolean;
   signIn?: ModelOAuthSignInMode;
+  alternativeSignIn?: ModelCatalogEntry["alternativeSignIn"];
   signInSetup?: ModelCatalogEntry["signInSetup"];
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
@@ -300,6 +301,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
           provider.id === OPENAI_COMPATIBLE_PROVIDER_ID ? "Custom server" : signInMeta?.hint,
         subscription,
         signIn: signInMeta?.mode,
+        alternativeSignIn: definition?.alternativeSignIn,
         signInSetup: signInMeta?.setup,
         reasoning: Boolean(model.reasoning),
         thinkingLevels,

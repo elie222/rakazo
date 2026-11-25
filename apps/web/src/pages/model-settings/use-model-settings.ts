@@ -144,7 +144,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       // A new account's later saves update it rather than adding another.
       setCredentialId(saved.id);
       // A new subscription can save a stronger model than the one the form showed.
-      await refresh({ modelId: saved.modelId });
+      await refresh({ modelId: saved.modelId, provider: saved.provider });
       const started = oauthChoiceRef.current;
       oauthChoiceRef.current = null;
       if (started)
@@ -170,10 +170,12 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     keepForm = false,
     reuse = false,
     modelId: savedModelId,
+    provider: savedProvider,
   }: {
     keepForm?: boolean;
     reuse?: boolean;
     modelId?: string;
+    provider?: string;
   } = {}) {
     const refreshRevision = ++refreshRevisionRef.current;
     const selectionRevision = keepForm ? -1 : selectionRevisionRef.current;
@@ -183,7 +185,14 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       fetchFresh(queryClient, meQuery, { reuse }),
     ]);
     if (refreshRevision !== refreshRevisionRef.current) return undefined;
-    applyLoaded(nextCatalog, nextCredentials, nextMe, selectionRevision, savedModelId);
+    applyLoaded(
+      nextCatalog,
+      nextCredentials,
+      nextMe,
+      selectionRevision,
+      savedModelId,
+      savedProvider,
+    );
     return nextCredentials;
   }
 
@@ -194,11 +203,14 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     nextMe: Me,
     selectionRevision: number,
     savedModelId?: string,
+    savedProvider?: string,
   ) {
     const nextProvider =
-      provider && nextCatalog.some((entry) => entry.provider === provider)
-        ? provider
-        : (nextMe.defaultProvider ?? nextCatalog[0]?.provider ?? "");
+      savedProvider && nextCatalog.some((entry) => entry.provider === savedProvider)
+        ? savedProvider
+        : provider && nextCatalog.some((entry) => entry.provider === provider)
+          ? provider
+          : (nextMe.defaultProvider ?? nextCatalog[0]?.provider ?? "");
     const nextCredential = credentialIdRef.current
       ? nextCredentials.find((entry) => entry.id === credentialIdRef.current)
       : undefined;
@@ -445,24 +457,30 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     onClose();
   }
 
-  function beginSelectedSubscriptionSignIn() {
+  function beginSelectedSubscriptionSignIn(alternative = false) {
     if (!selected) return;
+    const method = alternative ? selected.alternativeSignIn : undefined;
     setNotice(null);
     const intent = intentRef.current;
     oauthChoiceRef.current = {
-      choice: { provider: selected.provider, modelId: selected.id },
+      choice: {
+        provider: method?.provider ?? selected.provider,
+        modelId: method?.modelId ?? selected.id,
+      },
       intent,
     };
     void startSubscriptionSignIn({
-      provider: selected.provider,
-      credentialId: credential?.id ?? null,
-      modelId: selected.id,
+      provider: method?.provider ?? selected.provider,
+      credentialId: method ? null : (credential?.id ?? null),
+      modelId: method?.modelId ?? selected.id,
       makeDefault: intent?.makeDefault ?? false,
       scope,
-      thinkingLevel: clampCatalogThinkingLevel(
-        thinkingLevel,
-        selected.thinkingLevels,
-      ) as ThinkingLevel | null,
+      thinkingLevel: method
+        ? null
+        : (clampCatalogThinkingLevel(
+            thinkingLevel,
+            selected.thinkingLevels,
+          ) as ThinkingLevel | null),
       label: selected.providerName ?? selected.provider,
     });
   }

@@ -33,7 +33,12 @@ type SubscriptionSignInOptions = {
   onSaved?: (credential: MobileModelCredential) => void;
   modelId: string;
   load: (preferred: { modelId?: string }) => Promise<unknown>;
-  finishConnecting: (connectedModelId: string, connectedCredentialId: string) => Promise<boolean>;
+  finishConnecting: (
+    connectedModelId: string,
+    connectedCredentialId: string,
+    connectedProvider?: string,
+  ) => Promise<boolean>;
+  onAlternativeSaved: () => void;
   publishFeedback: (
     anchor: "connection",
     next: { error?: string | null; notice?: string | null },
@@ -54,6 +59,7 @@ export function useSubscriptionSignIn({
   modelId,
   load,
   finishConnecting,
+  onAlternativeSaved,
   publishFeedback,
   clearFeedback,
 }: SubscriptionSignInOptions) {
@@ -143,13 +149,19 @@ export function useSubscriptionSignIn({
     setOauth(null);
     // A new subscription can save a stronger model than the one the form showed.
     const savedModelId = saved.modelId ?? selected?.id ?? modelId;
-    if (await finishConnecting(savedModelId, saved.id)) return;
+    if (await finishConnecting(savedModelId, saved.id, saved.provider)) return;
+    if (saved.provider !== selected?.provider) {
+      onAlternativeSaved();
+      return;
+    }
     await load({ modelId: savedModelId });
     if (controller.signal.aborted) return;
     publishFeedback("connection", { notice: t`Subscription connected.` });
   }
 
-  async function startSubscriptionSignIn() {
+  async function startSubscriptionSignIn(
+    alternative?: NonNullable<MobileModel["alternativeSignIn"]>,
+  ) {
     if (!selected) return;
     clearFeedback();
     setOauthPending(true);
@@ -160,16 +172,18 @@ export function useSubscriptionSignIn({
       const started = await rpc(
         "models/beginOAuth",
         {
-          provider: selected.provider,
-          modelId: selected.id,
-          thinkingLevel: clampCatalogThinkingLevel(
-            thinkingLevel,
-            selected.thinkingLevels,
-          ) as ThinkingLevel | null,
+          provider: alternative?.provider ?? selected.provider,
+          modelId: alternative?.modelId ?? selected.id,
+          thinkingLevel: alternative
+            ? null
+            : (clampCatalogThinkingLevel(
+                thinkingLevel,
+                selected.thinkingLevels,
+              ) as ThinkingLevel | null),
           makeDefault,
           scope,
           label: selected.providerName ?? selected.provider,
-          credentialId: credentialIdRef.current,
+          credentialId: alternative ? null : credentialIdRef.current,
           codePage: true,
           ...analyticsClient(),
         },

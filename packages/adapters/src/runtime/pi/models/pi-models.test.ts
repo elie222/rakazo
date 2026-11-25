@@ -269,6 +269,12 @@ describe("Pi model catalog", () => {
         oauthLabel: "Sign in with ChatGPT",
         subscription: true,
         signIn: "device-code",
+        alternativeSignIn: {
+          provider: "openai",
+          modelId: "gpt-6.1-sol",
+          mode: "auth-url",
+          loginLabel: "Sign in in browser",
+        },
       });
     }
     const openai = catalog.filter((entry) => entry.provider === "openai");
@@ -278,8 +284,8 @@ describe("Pi model catalog", () => {
         providerName: "OpenAI",
         auth: "both",
         subscription: true,
-        signIn: "auth-url",
       });
+      expect(entry.signIn).toBeUndefined();
     }
     const azure = catalog.filter((entry) => entry.provider === "azure");
     expect(azure.length).toBeGreaterThan(0);
@@ -350,13 +356,11 @@ describe("Pi model catalog", () => {
     expect(scriptedCatalogEntry.provider).toBe("scripted");
   });
 
-  it("offers browser sign-in for the OpenAI Responses subscription", () => {
-    const openai = listPiCatalog().find((entry) => entry.provider === "openai");
-    expect(openai).toMatchObject({
-      auth: "both",
-      subscription: true,
-      signIn: "auth-url",
-      oauthLabel: "Sign in with ChatGPT",
+  it("offers browser sign-in within ChatGPT subscription", () => {
+    const codex = listPiCatalog().find((entry) => entry.provider === "openai-codex");
+    expect(codex).toMatchObject({
+      subscriptionName: "ChatGPT subscription",
+      alternativeSignIn: { provider: "openai", mode: "auth-url" },
     });
   });
 

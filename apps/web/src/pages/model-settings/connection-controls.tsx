@@ -103,11 +103,22 @@ export function ConnectionControls({
     <>
       {subscriptionSignIn && (credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
         <div className="mt-5 first:mt-0">
+          {selected?.alternativeSignIn && !oauth ? (
+            <Button disabled={busy} onClick={() => beginSelectedSubscriptionSignIn(true)}>
+              {selected.alternativeSignIn.loginLabel}
+            </Button>
+          ) : null}
           <SubscriptionSignInSteps
             oauth={oauth}
-            setup={selected?.signInSetup}
+            setup={
+              selected?.alternativeSignIn && oauth?.mode !== "device-code"
+                ? undefined
+                : selected?.signInSetup
+            }
             startLabel={
-              credential?.authKind === "oauth" ? (
+              selected?.alternativeSignIn ? (
+                <Trans>Use device code</Trans>
+              ) : credential?.authKind === "oauth" ? (
                 <Trans>Sign in again</Trans>
               ) : (
                 (selected?.oauthLabel ?? t`Sign in`)
@@ -118,7 +129,9 @@ export function ConnectionControls({
             onStart={() => beginSelectedSubscriptionSignIn()}
             onRestart={() => {
               cancelOAuthAttempt("replaced");
-              beginSelectedSubscriptionSignIn();
+              beginSelectedSubscriptionSignIn(
+                oauth?.provider === selected?.alternativeSignIn?.provider,
+              );
             }}
             codeCopied={codeCopied}
             onCopyCode={copyOAuthCode}
@@ -126,6 +139,7 @@ export function ConnectionControls({
             onPasteCodeChange={setPasteCode}
             onSubmitCode={() => void submitOAuthCode()}
             onPageOpened={() => reportSignInStep("page_opened")}
+            startVariant={selected?.alternativeSignIn ? "text" : undefined}
           />
         </div>
       ) : null}

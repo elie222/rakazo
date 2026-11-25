@@ -245,6 +245,7 @@ export default function ModelConnection() {
     modelId,
     load,
     finishConnecting: finishSaved,
+    onAlternativeSaved: () => router.back(),
     publishFeedback,
     clearFeedback,
   });
@@ -459,10 +460,11 @@ export default function ModelConnection() {
   async function finishConnecting(
     connectedModelId: string,
     connectedCredentialId: string,
+    connectedProvider = provider,
   ): Promise<boolean> {
     if (!request?.onConnected || !connectedModelId) return false;
     const next = await request.onConnected({
-      provider,
+      provider: connectedProvider,
       modelId: connectedModelId,
       credentialId: connectedCredentialId,
     });
@@ -475,8 +477,10 @@ export default function ModelConnection() {
   async function finishSaved(
     connectedModelId: string,
     connectedCredentialId: string,
+    connectedProvider = provider,
   ): Promise<boolean> {
-    if (!request?.onSaved) return finishConnecting(connectedModelId, connectedCredentialId);
+    if (!request?.onSaved)
+      return finishConnecting(connectedModelId, connectedCredentialId, connectedProvider);
     if (modelConnectionRequest(requestId) !== request) return true;
     request.onSaved(connectedCredentialId);
     router.back();
@@ -589,6 +593,7 @@ export default function ModelConnection() {
       <>
         {subscriptionSignIn &&
         signInSetup &&
+        (!selected?.alternativeSignIn || oauth?.mode === "device-code") &&
         (oauth || credential?.authKind !== "oauth" || credential.reconnectRequired) ? (
           <SettingsGroup>
             <SettingsRow
@@ -662,29 +667,49 @@ export default function ModelConnection() {
                 label={oauth.mode === "device-code" ? t`Get a new code` : t`Start over`}
                 onPress={() => {
                   cancelOAuth("replaced");
-                  void startSubscriptionSignIn();
+                  void startSubscriptionSignIn(
+                    oauth.provider === selected?.alternativeSignIn?.provider
+                      ? selected.alternativeSignIn
+                      : undefined,
+                  );
                 }}
                 prominence="secondary"
                 style={{ marginTop: 12 }}
               />
             </View>
           ) : credential?.authKind !== "oauth" || credential.reconnectRequired ? (
-            <NativeActionButton
-              disabled={busy}
-              fill
-              label={
-                oauthPending
-                  ? t`Starting…`
-                  : credential?.authKind === "oauth"
-                    ? t`Sign in again`
-                    : signInSetup
-                      ? t`2. Get a sign-in code`
-                      : (selected.oauthLabel ?? t`Sign in`)
-              }
-              onPress={() => void startSubscriptionSignIn()}
-              prominence={signInSetup ? "primary" : "secondary"}
-              style={{ marginTop: 12 }}
-            />
+            <>
+              {selected?.alternativeSignIn ? (
+                <NativeActionButton
+                  disabled={busy}
+                  fill
+                  label={selected.alternativeSignIn.loginLabel}
+                  onPress={() => void startSubscriptionSignIn(selected.alternativeSignIn)}
+                  prominence="primary"
+                  style={{ marginTop: 12 }}
+                />
+              ) : null}
+              <NativeActionButton
+                disabled={busy}
+                fill
+                label={
+                  oauthPending
+                    ? t`Starting…`
+                    : selected?.alternativeSignIn
+                      ? t`Use device code`
+                      : credential?.authKind === "oauth"
+                        ? t`Sign in again`
+                        : signInSetup
+                          ? t`2. Get a sign-in code`
+                          : (selected.oauthLabel ?? t`Sign in`)
+                }
+                onPress={() => void startSubscriptionSignIn()}
+                prominence={
+                  selected?.alternativeSignIn ? "secondary" : signInSetup ? "primary" : "secondary"
+                }
+                style={{ marginTop: 12 }}
+              />
+            </>
           ) : null
         ) : null}
         {acceptsKey || needsRouting ? (

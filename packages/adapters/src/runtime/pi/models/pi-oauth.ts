@@ -32,7 +32,12 @@ export const ANTHROPIC_OAUTH_PROVIDER = "anthropic";
 /** Providers Rakazo offers a subscription sign-in for, by id. */
 export const SUBSCRIPTION_SIGN_IN_PROVIDERS = Object.fromEntries(
   Object.entries(modelProviders as Record<string, ModelProviderDefinition>).flatMap(
-    ([id, { signIn }]) => (signIn ? [[id, signIn]] : []),
+    ([id, { signIn, alternativeSignIn }]) => [
+      ...(signIn ? [[id, signIn]] : []),
+      ...(alternativeSignIn
+        ? [[alternativeSignIn.provider, { mode: alternativeSignIn.mode }]]
+        : []),
+    ],
   ),
 ) as Record<string, NonNullable<ModelProviderDefinition["signIn"]>>;
 

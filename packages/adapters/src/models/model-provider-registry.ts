@@ -63,6 +63,7 @@ export interface ModelProviderDefinition {
     /** A setting the account must turn on first, or the provider refuses the sign-in. */
     setup?: ModelCatalogEntry["signInSetup"];
   };
+  alternativeSignIn?: NonNullable<ModelCatalogEntry["alternativeSignIn"]>;
   /** Ids each connection supplies to route its requests. */
   routingFields?: ModelRoutingField[];
   /** A connection can ask that requests only reach endpoints that keep no prompts or replies. */
@@ -124,18 +125,18 @@ export const modelProviders = {
         note: "Workspace accounts need an admin to turn this on.",
       },
     },
+    alternativeSignIn: {
+      provider: "openai",
+      modelId: "gpt-6.1-sol",
+      mode: "auth-url",
+      loginLabel: "Sign in in browser",
+    },
   },
   openai: {
     recommendedModel: "gpt-6-luna",
     subscriptionName: subscriptionNames.codex.message,
     subscriptionNameId: subscriptionNames.codex.id,
     subscriptionModel: { id: "gpt-6.1-sol", thinkingLevel: "low" },
-    signIn: {
-      mode: "auth-url",
-      loginLabel: "Sign in with ChatGPT",
-      hint: "ChatGPT subscription / API key",
-      billing: "Uses your ChatGPT subscription or OpenAI API key. Rakazo does not pay.",
-    },
     media: {
       images: openAIImages,
       create: ({ apiKey, imageModel }) =>

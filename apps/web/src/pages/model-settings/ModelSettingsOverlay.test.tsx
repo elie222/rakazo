@@ -1658,6 +1658,48 @@ it.each([
   },
 );
 
+it("starts browser sign-in from the ChatGPT subscription page", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-codex", "fixture-model"));
+  models.list.mockResolvedValue([
+    {
+      provider: "openai-codex",
+      providerName: "OpenAI Codex",
+      subscriptionName: "ChatGPT subscription",
+      id: "fixture-model",
+      label: "Fixture model",
+      billing: "Subscription",
+      auth: "oauth",
+      signIn: "device-code",
+      alternativeSignIn: {
+        provider: "openai",
+        modelId: "gpt-6.1-sol",
+        mode: "auth-url",
+        loginLabel: "Sign in in browser",
+      },
+    },
+  ]);
+  models.credentials.mockResolvedValue([]);
+  models.beginOAuth.mockResolvedValue({
+    mode: "auth-url",
+    loginId: "browser-login",
+    provider: "openai",
+    verificationUri: "https://auth.example.test/authorize",
+    expiresInSeconds: 900,
+  });
+  models.cancelOAuth.mockResolvedValue({ ok: true });
+  const view = await renderSettings();
+  try {
+    await pick("Change Main model", "ChatGPT subscription");
+    await click(buttons(view.container, "Sign in in browser")[0]);
+    expect(models.beginOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "openai", modelId: "gpt-6.1-sol", credentialId: null }),
+      expect.anything(),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("folds the key form behind Or paste an API key once a subscription is signed in", async () => {
   vi.mocked(rpc.me).mockResolvedValue(account("anthropic", "claude-fixture"));
   models.list.mockResolvedValue([
