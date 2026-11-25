@@ -49,8 +49,8 @@ export async function startToolServer(
     return server;
   };
   const http = createServer((request, response) => {
-    if (new URL(request.url ?? "/", "http://localhost").pathname !== "/mcp")
-      return void response.writeHead(404).end();
+    // Compared as text: a malformed request target must not throw before the token is checked.
+    if ((request.url ?? "").split("?")[0] !== "/mcp") return void response.writeHead(404).end();
     if (!authorized(request.headers.authorization))
       return void response
         .writeHead(401, { "www-authenticate": 'Bearer error="invalid_token"' })

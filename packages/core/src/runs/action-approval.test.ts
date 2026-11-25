@@ -82,7 +82,6 @@ describe("toolRequiresApproval", () => {
     // The wallet owner approves every purchase on the provider's side.
     expect(toolRequiresApproval("request_purchase", false)).toBe(false);
     expect(toolRequiresApproval("purchase_status", false)).toBe(false);
-    expect(toolRequiresExplicitApproval("save_shared_memory")).toBe(false);
     expect(toolRequiresExplicitApproval("archive_bot")).toBe(false);
   });
 
@@ -94,7 +93,6 @@ describe("toolRequiresApproval", () => {
       "write_file",
       "shell",
       "remember",
-      "save_shared_memory",
       "spawn_bot",
       "run_subagent",
     ]) {
@@ -257,7 +255,6 @@ it("gates built-ins that change something only in runs outside text started", ()
     expect(outsideRunToolRequiresApproval("webhook", name)).toBe(true);
     expect(outsideRunToolRequiresApproval("user", name)).toBe(false);
   }
-  expect(outsideRunToolRequiresApproval("webhook", "save_shared_memory")).toBe(true);
   expect(outsideRunToolRequiresApproval("webhook", "add_mcp_server")).toBe(true);
   for (const name of ["read_file", "computer_observe", "message_user", "ask_user"]) {
     expect(outsideRunToolRequiresApproval("webhook", name)).toBe(false);
@@ -1028,7 +1025,7 @@ describe("savedContextWriteNeedsReview", () => {
   const readOutside = async () => true;
   const readNothing = async () => false;
 
-  it.each(["remember", "save_memory", "save_shared_memory", "skill_create", "skill_update"])(
+  it.each(["remember", "save_memory", "skill_create", "skill_update"])(
     "reviews %s only once outside content entered the run",
     async (name) => {
       await expect(savedContextWriteNeedsReview(name, readOutside)).resolves.toBe(true);

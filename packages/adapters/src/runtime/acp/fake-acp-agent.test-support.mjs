@@ -113,6 +113,19 @@ async function prompt(params) {
     content: { type: "text", text: "hmm" },
   });
   if (text.includes("silent")) return { stopReason: "end_turn" };
+  // Rakazo's continuation after an approval: call the approved request as listed, as a model would.
+  const approved = text.includes("approved the exact tool request")
+    ? /^(\w+): (\{.*\})$/m.exec(text)
+    : null;
+  if (approved) {
+    const result = await callTool(sessionId, approved[1], JSON.parse(approved[2]));
+    record({ type: "tool_result", result });
+    update(sessionId, {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: `Done: ${result.content[0].text}` },
+    });
+    return { stopReason: "end_turn" };
+  }
   if (text.includes("weather")) {
     update(sessionId, {
       sessionUpdate: "agent_message_chunk",

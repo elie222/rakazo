@@ -45,7 +45,6 @@ import {
   sessionKey,
   takeReplyElsewhere,
 } from "./acp-sessions.js";
-import { startToolServer } from "./acp-tool-server.js";
 import {
   conversationBlock,
   historyLine,
@@ -349,7 +348,8 @@ async function runAcpTurn(
     };
 
     const toolServer = agentTools.length
-      ? await startToolServer(
+      ? // The MCP server code loads only for a turn that serves tools, never at startup.
+        await (await import("./acp-tool-server.js")).startToolServer(
           ACP_TOOL_SERVER,
           agentTools.map((tool) => ({
             name: tool.name,
@@ -519,15 +519,23 @@ async function runAcpTurn(
     }
     if (violation) throw violation;
     const stopReason = response.stopReason;
+    // The CLI did the model work whatever the stop, so its usage is recorded first.
+    await reportUsage(request, descriptor, response.usage, push);
     if (stopReason === "refusal") throw new Error(`${descriptor.label} refused to answer.`);
-    if (stopReason === "max_tokens" || stopReason === "max_turn_requests") {
+    if (stopReason === "max_tokens") {
       throw new Error(`${descriptor.label} reached its output limit before it finished.`);
+    }
+    if (stopReason === "max_turn_requests") {
+      throw new Error(
+        `${descriptor.label} reached its limit of steps in one turn before it finished.`,
+      );
     }
     // Only a finished turn, or one Rakazo cancelled itself, is complete.
     if (stopReason !== "end_turn" && !(stopReason === "cancelled" && cancelled)) {
       throw new Error(`${descriptor.label} stopped the turn before it finished.`);
     }
-    await reportUsage(request, descriptor, response.usage, push);
+    // A call the CLI was cancelled during still settles its result, which may carry the reply.
+    await toolsDone;
     // The same endings as a turn in the runtime this one wraps.
     const ending = toolBudget.exceeded
       ? toolCallBudgetExceededMessage(toolBudget.limit)
@@ -594,10 +602,7 @@ async function runAcpTurn(
         if (!cancelled) connection.notify("session/cancel", { sessionId });
         const grace = new AbortController();
         const settled = await Promise.race([
-          inFlight.then(
-            (response) => response,
-            () => undefined,
-          ),
+          bestEffort("Settle the agent CLI's cancelled prompt", inFlight),
           abortableDelay(CANCEL_GRACE_MS, grace.signal),
         ]);
         grace.abort();
@@ -617,7 +622,9 @@ async function runAcpTurn(
           "Remove the agent CLI's helper session",
           connection.request(endSession, { sessionId }),
         );
-        await Promise.race([ending, abortableDelay(CANCEL_GRACE_MS)]);
+        const waited = new AbortController();
+        await Promise.race([ending, abortableDelay(CANCEL_GRACE_MS, waited.signal)]);
+        waited.abort();
       }
       connection.stop();
     }
@@ -760,6 +767,11 @@ function turnText(
     lines.push(historyLine(speaker, content));
   }
   if (request.sourceMessageId) session.seen.add(request.sourceMessageId);
+  // As with ids: only summaries and recall still in this turn's history can come up again.
+  const inContext = new Set(
+    request.history.filter((item) => !item.id).map((item) => contentHash(item.content.trim())),
+  );
+  for (const hash of session.context) if (!inContext.has(hash)) session.context.delete(hash);
   // Only ids still in the chat's history window can come up again, so the rest are let go.
   const inWindow = new Set(request.history.map((item) => item.id).filter(Boolean));
   for (const id of session.seen) {

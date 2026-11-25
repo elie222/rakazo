@@ -246,6 +246,22 @@ describe("checkPageSource", () => {
     });
   });
 
+  it("warns when a plain element loads an image: name only kit components resolve", () => {
+    const result = checkPageSource(
+      page(
+        'const App = () => <Page title="t">\n<img src="image:harbour" alt="image: harbour" />\n<img src={"image:quay"} />\n<Image src="image:harbour" />\n</Page>;',
+      ),
+    );
+    expect(result).toEqual({
+      ok: true,
+      code: expect.any(String),
+      warnings: [
+        'line 2: <img> does not load "image:harbour"; only kit components resolve image: names, so use <Image src="image:harbour" />.',
+        'line 3: <img> does not load "image:quay"; only kit components resolve image: names, so use <Image src="image:quay" />.',
+      ],
+    });
+  });
+
   it("leaves the icon props of the page's own components alone", () => {
     expect(
       checkPageSource(

@@ -315,7 +315,6 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "request_secret",
   "save_memory",
   "save_page",
-  "save_shared_memory",
   "delete_shared_memory",
   "schedule_cancel",
   "schedule_create",
@@ -353,7 +352,7 @@ export function connectorReadRequiresApproval(input: {
   return input.tainted && !input.connectorTrusted;
 }
 
-const MEMORY_WRITE_TOOLS = new Set(["remember", "save_memory", "save_shared_memory"]);
+const MEMORY_WRITE_TOOLS = new Set(["remember", "save_memory"]);
 const SKILL_WRITE_TOOLS = new Set(["skill_create", "skill_update"]);
 
 /**

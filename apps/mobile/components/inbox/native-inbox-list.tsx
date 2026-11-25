@@ -23,6 +23,8 @@ export type NativeInboxListProps<Item> = {
   /** Unread and attention counts by row, for the pills that jump to rows out of view. */
   signals: readonly InboxSignal[];
   showJumpPills: boolean;
+  /** Room for a bottom toolbar over the list, so the last rows scroll clear of it. */
+  bottomBar?: number;
 };
 
 /** iOS only: other platforms keep the FlatList inbox. */
