@@ -1,9 +1,9 @@
 import { apiKey } from "@better-auth/api-key";
+import { API_KEY_NAME_LIMIT } from "@rakazo/contracts";
 import type { BetterAuthPlugin } from "better-auth";
 
 /** Marks a Rakazo key in logs and secret scanners. */
 export const API_KEY_PREFIX = "rkz_";
-export const API_KEY_NAME_MAX_LENGTH = 64;
 /** Requests one key may make in a window; a key that runs out waits for the window to pass. */
 export const API_KEY_RATE_LIMIT = { timeWindow: 60_000, maxRequests: 60 } as const;
 
@@ -15,7 +15,7 @@ export function apiKeys(): BetterAuthPlugin {
   return apiKey({
     defaultPrefix: API_KEY_PREFIX,
     requireName: true,
-    maximumNameLength: API_KEY_NAME_MAX_LENGTH,
+    maximumNameLength: API_KEY_NAME_LIMIT,
     enableSessionForAPIKeys: false,
     rateLimit: { enabled: true, ...API_KEY_RATE_LIMIT },
     schema: { apikey: { modelName: "apiKey" } },
@@ -46,4 +46,29 @@ export function verifiedApiKey(result: VerifyResult): VerifiedApiKey {
     };
   }
   return { ok: false, reason: "invalid" };
+}
+
+/** The plugin's server endpoints; the plugin is registered as a plain BetterAuthPlugin. */
+type ApiKeyEndpoints = {
+  createApiKey: (input: { body: { userId: string; name: string } }) => Promise<unknown>;
+  verifyApiKey: (input: { body: { key: string } }) => Promise<VerifyResult>;
+};
+
+/** What the rest of the server does with keys, through the auth library's own endpoints. */
+export function apiKeyMethods(api: object) {
+  const endpoints = api as ApiKeyEndpoints;
+  return {
+    /** A new key for the account; its plaintext is in the result and nowhere else. */
+    createApiKey: async (userId: string, name: string) =>
+      (await endpoints.createApiKey({ body: { userId, name } })) as {
+        id: string;
+        key: string;
+        name: string;
+        start: string | null;
+        createdAt: Date;
+      },
+    /** Checks a presented key and counts it against the key's rate limit. */
+    verifyApiKey: async (key: string): Promise<VerifiedApiKey> =>
+      verifiedApiKey(await endpoints.verifyApiKey({ body: { key } })),
+  };
 }

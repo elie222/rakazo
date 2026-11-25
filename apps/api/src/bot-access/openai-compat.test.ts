@@ -52,8 +52,15 @@ describe("OpenAI-compatible chat", () => {
         },
       ]),
     ).toBe("Watch r/news\nfor launches");
-    expect(latestUserText([{ role: "system", content: "only a system message" }])).toBeNull();
-    expect(latestUserText([{ role: "user", content: "   " }])).toBeNull();
+    expect(() => latestUserText([{ role: "system", content: "only a system message" }])).toThrow(
+      "include a user message with text",
+    );
+    expect(() => latestUserText([{ role: "user", content: "   " }])).toThrow(
+      "include a user message with text",
+    );
+    expect(() => latestUserText([{ role: "user", content: "a".repeat(100_001) }])).toThrow(
+      "longer than",
+    );
   });
 
   it("answers in the chat.completion shape, with the question the bot asked", () => {

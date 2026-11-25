@@ -52,7 +52,8 @@ for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.
 the model it is set to. Streaming sends each reply as the bot posts it. The response carries an
 `x-rakazo-task-id` header, so a long turn can be followed with the task API below. A request that
 does not stream returns once the turn settles, or after 15 minutes with what the bot has said so
-far; the bot keeps working either way. Token counts are reported as zero.
+far; the bot keeps working either way. A turn that fails or is cancelled answers with an error, as
+the last event of a stream. Token counts are reported as zero.
 
 ## Tasks
 

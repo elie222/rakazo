@@ -1,5 +1,6 @@
 import type { PublicBot, PublicTask } from "@rakazo/contracts";
 import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import * as z from "zod";
 
 const ContentPart = z.looseObject({ type: z.string(), text: z.string().optional() });
@@ -24,18 +25,24 @@ export type ChatCompletionRequest = z.infer<typeof ChatCompletionRequestSchema>;
  * The new message for the bot. Rakazo keeps each bot's conversation itself, so only the last user
  * message is sent; the history and system messages a client repeats are already in the chat.
  */
-export function latestUserText(messages: ChatCompletionRequest["messages"]): string | null {
+export function latestUserText(messages: ChatCompletionRequest["messages"]): string {
   const message = messages.findLast((entry) => entry.role === "user");
   const content = message?.content;
-  const text =
+  const text = (
     typeof content === "string"
       ? content
       : (content ?? [])
           .filter((part) => part.type === "text" && part.text)
           .map((part) => part.text)
-          .join("\n");
-  const trimmed = text.trim();
-  return trimmed && trimmed.length <= THREAD_MESSAGE_TEXT_MAX_LENGTH ? trimmed : null;
+          .join("\n")
+  ).trim();
+  if (!text) throw new ClientError("BAD_REQUEST", "messages: include a user message with text");
+  if (text.length > THREAD_MESSAGE_TEXT_MAX_LENGTH)
+    throw new ClientError(
+      "BAD_REQUEST",
+      `messages: the last user message is longer than ${THREAD_MESSAGE_TEXT_MAX_LENGTH} characters`,
+    );
+  return text;
 }
 
 /** What the assistant says for a task: its replies, then any question it is waiting on. */

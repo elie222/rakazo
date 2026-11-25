@@ -2,7 +2,7 @@ import * as z from "zod";
 import { Id } from "../ids.js";
 import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "../threads/thread.js";
 
-/** Matches the auth library's own name limit for keys. */
+/** The longest key name; the auth library's plugin is configured with it too. */
 export const API_KEY_NAME_LIMIT = 64;
 
 export const ApiKeySchema = z.object({

@@ -28,8 +28,9 @@ const NON_STREAMING_WAIT_MS = 15 * 60_000;
 type Answer = { status: number; body: unknown; retryAfterSeconds?: number };
 
 async function readJson<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
-  const body: unknown = await c.req.json().catch(() => {
-    throw new ClientError("BAD_REQUEST", "Send a JSON body");
+  const body: unknown = await c.req.json().catch((error: unknown) => {
+    if (error instanceof SyntaxError) throw new ClientError("BAD_REQUEST", "Send a JSON body");
+    throw error;
   });
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -79,8 +80,9 @@ const SSE_HEADERS = {
  * stream stops, and a failure after the headers are sent ends it with an error event.
  */
 function eventStream(
-  signal: AbortSignal,
+  request: AbortSignal,
   produce: (
+    signal: AbortSignal,
     send: (data: unknown, event?: string) => void,
     ping: () => void,
     done: () => void,
@@ -89,6 +91,9 @@ function eventStream(
   extraHeaders: Record<string, string> = {},
 ): Response {
   const encoder = new TextEncoder();
+  // Ends the producer when the request goes or the reader cancels the body, whichever is first.
+  const reader = new AbortController();
+  const signal = AbortSignal.any([request, reader.signal]);
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       const write = (text: string) => {
@@ -98,6 +103,7 @@ function eventStream(
         write(`${event ? `event: ${event}\n` : ""}data: ${JSON.stringify(data)}\n\n`);
       try {
         await produce(
+          signal,
           send,
           () => write(": keep-alive\n\n"),
           () => write("data: [DONE]\n\n"),
@@ -108,8 +114,11 @@ function eventStream(
           onFailure(send);
         }
       } finally {
-        controller.close();
+        if (!signal.aborted) controller.close();
       }
+    },
+    cancel() {
+      reader.abort();
     },
   });
   return new Response(body, { headers: { ...SSE_HEADERS, ...extraHeaders } });
@@ -139,7 +148,6 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
     withCaller(access, openAiError, async (c, caller) => {
       const request = await readJson(c, ChatCompletionRequestSchema);
       const text = latestUserText(request.messages);
-      if (!text) throw new ClientError("BAD_REQUEST", "messages: include a user message with text");
       const started = await access.createTask(caller, { bot: request.model, text });
       const created = Math.floor(Date.now() / 1000);
       const headers = { "x-rakazo-task-id": started.task.id };
@@ -151,14 +159,14 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
           NON_STREAMING_WAIT_MS,
           c.req.raw.signal,
         );
-        if ((task.status === "failed" || task.status === "cancelled") && !taskAnswer(task))
+        // A turn that ended badly is an error even when it said something first.
+        if (task.status === "failed" || task.status === "cancelled")
           return c.json(openAiError(502, task.error ?? "The bot stopped"), 502, headers);
         return c.json(chatCompletion(task, request.model, created), 200, headers);
       }
-      const signal = c.req.raw.signal;
       return eventStream(
-        signal,
-        async (send, ping, done) => {
+        c.req.raw.signal,
+        async (signal, send, ping, done) => {
           send(chatCompletionChunk(started.task, request.model, created, { role: "assistant" }));
           let sent = "";
           let last: PublicTask = started.task;
@@ -174,7 +182,9 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
               send(chatCompletionChunk(task, request.model, created, { content }));
             }
           }
-          if (taskSettled(last.status))
+          if (last.status === "failed" || last.status === "cancelled")
+            send(openAiError(502, last.error ?? "The bot stopped"));
+          else if (taskSettled(last.status))
             send(chatCompletionChunk(last, request.model, created, {}, "stop"));
           done();
         },
@@ -215,10 +225,9 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
     "/api/v1/tasks/:id/events",
     withCaller(access, taskError, async (c, caller) => {
       const started = await access.getTask(caller, taskIdParam(c));
-      const signal = c.req.raw.signal;
       return eventStream(
-        signal,
-        async (send, ping) => {
+        c.req.raw.signal,
+        async (signal, send, ping) => {
           for await (const task of access.followTask(caller, started, signal)) {
             if (task) send(task, "task");
             else ping();
