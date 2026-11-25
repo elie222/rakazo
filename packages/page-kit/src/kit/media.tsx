@@ -378,6 +378,30 @@ export function Gallery({
       {zoomed ? (
         <Lightbox src={zoomed.src} alt={zoomed.alt} onClose={() => setZoomed(undefined)} />
       ) : null}
+      {items.length > 1
+        ? (
+            [
+              ["previous", -1, current > 0],
+              ["next", 1, current < items.length - 1],
+            ] as const
+          ).map(([way, step, shown]) =>
+            shown ? (
+              <button
+                key={way}
+                type="button"
+                className="rk-gallery-arrow"
+                data-way={way}
+                tabIndex={-1}
+                aria-label={words.t(way === "next" ? "nextPhoto" : "previousPhoto")}
+                onClick={() => show(current + step)}
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d={way === "next" ? "M6 3.5 10.5 8 6 12.5" : "M10 3.5 5.5 8 10 12.5"} />
+                </svg>
+              </button>
+            ) : null,
+          )
+        : null}
       {items.length > 1 ? (
         <div className="rk-gallery-dots">
           {items.map((_, index) => (
@@ -943,6 +967,12 @@ export const MEDIA_CSS = `
 .rk-gallery-slide .rk-picture{height:100%;border-radius:0}
 .rk-gallery-slide>.rk-zoom{height:100%;border-radius:0}
 .rk-gallery-slide>.rk-zoom:focus-visible{outline-offset:-2px}
+.rk-gallery-arrow{position:absolute;top:50%;display:none;place-items:center;width:32px;height:32px;margin-top:-16px;padding:0;border:0;border-radius:9999px;background:${pageKitPalette.shared.onDeepTone};color:${pageKitPalette.shared.onTone};box-shadow:0 1px 3px ${pageKitPalette.shared.dotShadow};cursor:pointer;opacity:0;transition:opacity .14s}
+.rk-gallery-arrow[data-way="previous"]{inset-inline-start:10px}
+.rk-gallery-arrow[data-way="next"]{inset-inline-end:10px}
+.rk-gallery-arrow svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+[dir="rtl"] .rk-gallery-arrow svg{transform:scaleX(-1)}
+@media (hover:hover){.rk-gallery-arrow{display:grid}.rk-gallery:hover .rk-gallery-arrow{opacity:.92}.rk-gallery .rk-gallery-arrow:hover{opacity:1}}
 .rk-gallery-dots{position:absolute;left:0;right:0;bottom:3px;display:flex;justify-content:center}
 .rk-gallery-dots button{appearance:none;display:grid;place-items:center;width:24px;height:24px;margin:0 -6px;padding:0;border:0;background:none;cursor:pointer}
 .rk-gallery-dots button::before{content:"";width:6px;height:6px;border-radius:6px;background:${pageKitPalette.shared.onDeepTone};opacity:.5;box-shadow:0 1px 3px ${pageKitPalette.shared.dotShadow};transition:opacity .14s,width .2s}
@@ -1011,6 +1041,6 @@ a.rk-product-row:focus-visible{outline:2px solid var(--ring);outline-offset:-2px
 .rk-card-carousel{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;margin:-18px -1rem -30px;padding:18px 1rem 30px;scroll-padding:0 1rem}
 .rk-card-carousel>.rk-card-cell{flex:none;width:78%;scroll-snap-align:start}
 }
-@media (prefers-reduced-motion:reduce){.rk-lightbox{animation:none}.rk-picture,.rk-picture img,.rk-gallery-dots button::before{transition:none}.rk-gallery-track{scroll-behavior:auto}}
+@media (prefers-reduced-motion:reduce){.rk-lightbox{animation:none}.rk-picture,.rk-picture img,.rk-gallery-dots button::before,.rk-gallery-arrow{transition:none}.rk-gallery-track{scroll-behavior:auto}}
 @media print{:root,[data-theme]{--rk-surface:${pageKitPalette.light.cardSurface};--rk-card-shadow:none}.rk-card,.rk-product-rows li,.rk-figure,.rk-watch{break-inside:avoid}.rk-gallery-dots,.rk-card-action{display:none}.rk-strip,.rk-card-carousel{flex-wrap:wrap;overflow:visible}}
 `;

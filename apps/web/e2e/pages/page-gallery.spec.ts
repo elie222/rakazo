@@ -111,5 +111,23 @@ for (const { lang, label, next, previous } of [
       await expect.poll(() => shown(track)).toBe("Second");
       await expectMarked(page, 1);
     });
+
+    test("arrows on hover sit on the side they lead to and step the photos", async ({ page }) => {
+      const track = await openGallery(page, lang);
+      const arrow = (way: string) => page.locator(`.rk-gallery-arrow[data-way="${way}"]`);
+      await track.hover();
+      await expect(arrow("previous")).toHaveCount(0);
+      const box = (await track.boundingBox())!;
+      const nextBox = (await arrow("next").boundingBox())!;
+      expect(nextBox.x > box.x + box.width / 2).toBe(lang !== "he");
+      await arrow("next").click();
+      await expect.poll(() => shown(track)).toBe("Second");
+      await arrow("next").click();
+      await expect.poll(() => shown(track)).toBe("Third");
+      await expect(arrow("next")).toHaveCount(0);
+      await arrow("previous").click();
+      await expect.poll(() => shown(track)).toBe("Second");
+      await expectMarked(page, 1);
+    });
   });
 }

@@ -185,6 +185,20 @@ describe("media", () => {
     expect(q('[role="dialog"]')?.getAttribute("aria-label")).toBe("Pool");
   });
 
+  it("steps through a gallery with arrows that leave at either end", () => {
+    render(<Gallery photos={["A", "B", "C"].map((alt) => ({ src: PNG, alt }))} />);
+    const arrows = () => all(".rk-gallery-arrow").map((arrow) => arrow.getAttribute("aria-label"));
+    const current = () => all("button[aria-current]").map((dot) => dot.getAttribute("aria-label"));
+    expect(arrows()).toEqual(["Next photo"]);
+    click(q('button[aria-label="Next photo"]'));
+    click(q('button[aria-label="Next photo"]'));
+    expect(current()).toEqual(["Show photo 3"]);
+    expect(arrows()).toEqual(["Previous photo"]);
+    click(q('button[aria-label="Previous photo"]'));
+    expect(current()).toEqual(["Show photo 2"]);
+    expect(arrows()).toEqual(["Previous photo", "Next photo"]);
+  });
+
   it("keeps a photo marked when the gallery loses the one that was shown", () => {
     const photos = (count: number) =>
       Array.from({ length: count }, (_, index) => ({ src: PNG, alt: `P${index}` }));

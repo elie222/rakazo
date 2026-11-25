@@ -52,6 +52,8 @@ export const de: Messages = {
   photos: { one: "{count} Foto", other: "{count} Fotos" },
   slideOf: "{n} von {total}",
   showPhoto: "Foto {n} anzeigen",
+  previousPhoto: "Vorheriges Foto",
+  nextPhoto: "Nächstes Foto",
   view: "Ansehen",
   viewTitle: "{title} ansehen",
   rated: "Bewertet mit {rating} von 5",
