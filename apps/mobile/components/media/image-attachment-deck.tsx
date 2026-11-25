@@ -72,7 +72,7 @@ export function ImageAttachmentDeck({
 
   return (
     <View style={styles.group}>
-      <View style={{ width: width + PEEK * behind, height: height + PEEK * behind }}>
+      <View style={{ width: width + PEEK * behind + 24, height: height + PEEK * behind + 24 }}>
         {shown
           .map((image, index) => ({ image, index }))
           .reverse()
@@ -102,7 +102,7 @@ export function ImageAttachmentDeck({
             </Pressable>
           ))}
       </View>
-      <View style={styles.caption}>
+      <View style={[styles.caption, { marginTop: 4 }]}>
         <NativeSymbol
           ios="photo.on.rectangle"
           android="images-outline"

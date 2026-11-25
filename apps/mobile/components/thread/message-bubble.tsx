@@ -651,7 +651,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             ) : null}
           </View>
         ) : null}
-        {attachmentGroups(attachments).map((group) =>
+        {attachmentGroups(message.blocks).map((group) =>
           group.kind === "pictures" ? (
             <MessagePictureStack
               key={`stack-${group.pictures[0]?.artifactId}`}

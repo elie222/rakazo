@@ -15,13 +15,18 @@ export type AttachmentGroup =
  * The message's attachments in order, with consecutive pictures gathered into one group so the
  * bubble draws them as one stack instead of one under another.
  */
-export function attachmentGroups(attachments: AttachmentBlock[]): AttachmentGroup[] {
+export function attachmentGroups(blocks: readonly MessageBlock[]): AttachmentGroup[] {
   const groups: AttachmentGroup[] = [];
-  for (const [index, attachment] of attachments.entries()) {
+  let index = 0;
+  while (index < blocks.length) {
+    const block = blocks[index];
+    if (block.kind !== "image" && block.kind !== "file") {
+      index += 1;
+      continue;
+    }
+    const attachment = block as AttachmentBlock;
     if (attachment.kind === "image" && isInlineImageBlock(attachment)) {
-      const previous = attachments[index - 1];
-      if (previous && isInlineImageBlock(previous)) continue;
-      const run = consecutiveImageRun(attachments, index);
+      const run = consecutiveImageRun(blocks, index);
       const pictures: InlineImageBlock[] = [];
       if (run) {
         for (const next of run) {
@@ -31,10 +36,12 @@ export function attachmentGroups(attachments: AttachmentBlock[]): AttachmentGrou
       }
       if (pictures.length > 1) {
         groups.push({ kind: "pictures", pictures });
+        index += run ? run.length : 1;
         continue;
       }
     }
     groups.push({ kind: "single", attachment, index });
+    index += 1;
   }
   return groups;
 }

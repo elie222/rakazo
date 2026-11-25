@@ -480,12 +480,17 @@ export function consecutiveImageRun<T extends { kind: string }>(
   index: number,
 ): T[] | null {
   if (index < 0 || index >= items.length) return null;
-  if (items[index].kind !== "image") return null;
-  if (index > 0 && items[index - 1].kind === "image") return null;
+  const current = items[index];
+  if (current?.kind !== "image") return null;
+  if (index > 0) {
+    const prev = items[index - 1];
+    if (prev && prev.kind === "image") return null;
+  }
   const run: T[] = [];
   for (let i = index; i < items.length; i++) {
-    if (items[i].kind !== "image") break;
-    run.push(items[i]);
+    const item = items[i];
+    if (item?.kind !== "image") break;
+    run.push(item);
   }
   return run;
 }
