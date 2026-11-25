@@ -713,7 +713,7 @@ async function selectModel(
   const values = flattenValues(choice.options);
   if (values.length && !values.includes(modelId)) {
     throw new Error(
-      `${descriptor.label} on this server has no model "${modelId}". Set PI_DEFAULT_MODEL to one of: ${values.slice(0, 20).join(", ")}.`,
+      `${descriptor.label} on this server has no model "${modelId}". Set PI_DEFAULT_MODEL to one of: ${values.slice(0, 20).join(", ")}${values.length > 20 ? `, and ${values.length - 20} more the CLI lists` : ""}.`,
     );
   }
   await step(
