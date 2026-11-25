@@ -225,10 +225,11 @@ describe("executor tool effect ownership", () => {
     expect(f.create).toHaveBeenCalledTimes(1);
   });
   it("keeps the legacy reconciliation linear across a long run's calls", async () => {
-    // Sized so serializing every stored request on every call, as reading the history before
-    // testing the key would do, runs far past the bound rather than merely close to it.
-    const calls = 800;
-    const request = { payload: "x".repeat(4096) };
+    // Sized so the key-first scan stays far under the bound on a slow runner, while serializing
+    // every stored request on every call, as reading the history before testing the key would
+    // do, runs far past it rather than merely close to it.
+    const calls = 300;
+    const request = { payload: "x".repeat(128 * 1024) };
     const modern = (index: number) => `one:write_fixture:${index.toString(16).padStart(64, "0")}`;
     const f = fixture(
       Array.from({ length: calls }, (_, index) => ({
