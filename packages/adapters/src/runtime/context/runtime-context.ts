@@ -176,10 +176,27 @@ export interface RuntimeContextDecision {
   truncatedToolResults: number;
   observedReuse: boolean | null;
 }
-export type WatchDeliveryState = { full: true } | { full: false; texts: string[] };
+export type WatchDeliveryState =
+  | {
+      full: true;
+      fullText: string;
+      details: Record<string, unknown>;
+      toolCallId: string;
+    }
+  | {
+      full: false;
+      texts: string[];
+      details: Record<string, unknown>;
+      toolCallId: string;
+    };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function cleanWatchDetails(details: Record<string, unknown>): Record<string, unknown> {
+  const { contextBeforeUseText: _beforeUse, contextDeliveredTexts: _delivered, ...clean } = details;
+  return clean;
 }
 
 /** Applies one shared free context policy immediately before every model call.
@@ -252,7 +269,7 @@ export function createRuntimeContextPolicy(
   let sent: SentTranscript | undefined;
   // Only remember shortening actually sent within this policy, never across model switches.
   const shortenedResults = new Map<string, Message>();
-  let pendingWatchDeliveries: Array<readonly [string, string | "full"]> = [];
+  let pendingWatchDeliveries: Array<{ key: string; state: WatchDeliveryState }> = [];
   const hashes = new WeakMap<Message, string>();
   function hash(message: Message): string {
     let value = hashes.get(message);
@@ -739,28 +756,60 @@ export function createRuntimeContextPolicy(
       if (!details || !("routines" in details)) return message;
       const original = originalResults.get(message.toolCallId);
       const key = hash(original ?? message);
+      const clean = cleanWatchDetails(details);
       const currentText = text(message);
       const originalText = original ? text(original) : currentText;
       const existingBeforeUse =
         typeof details.contextBeforeUseText === "string" ? details.contextBeforeUseText : undefined;
       if (currentText.length >= originalText.length && existingBeforeUse === undefined) {
-        pendingWatchDeliveries.push([key, "full"]);
+        pendingWatchDeliveries.push({
+          key,
+          state: {
+            full: true,
+            fullText: currentText,
+            details: clean,
+            toolCallId: message.toolCallId,
+          },
+        });
         return message;
       }
-      if (existingBeforeUse !== undefined) {
-        pendingWatchDeliveries.push([key, existingBeforeUse]);
-        if (currentText !== existingBeforeUse) pendingWatchDeliveries.push([key, currentText]);
-      } else {
-        pendingWatchDeliveries.push([key, currentText]);
-      }
       const prior = options.watchDeliveries?.get(key);
-      if (!prior || prior.full || prior.texts.length === 0) return message;
+      if (prior?.full) {
+        pendingWatchDeliveries.push({ key, state: prior });
+        if (existingBeforeUse === prior.fullText && !("contextDeliveredTexts" in details)) {
+          return message;
+        }
+        changed = true;
+        return {
+          ...message,
+          details: {
+            ...clean,
+            contextBeforeUseText: prior.fullText,
+          },
+        };
+      }
+      const pendingTexts =
+        existingBeforeUse !== undefined
+          ? currentText !== existingBeforeUse
+            ? [existingBeforeUse, currentText]
+            : [existingBeforeUse]
+          : [currentText];
+      pendingWatchDeliveries.push({
+        key,
+        state: {
+          full: false,
+          texts: pendingTexts,
+          details: clean,
+          toolCallId: message.toolCallId,
+        },
+      });
+      if (!prior || prior.texts.length === 0) return message;
       if (existingBeforeUse === undefined) {
         changed = true;
         return {
           ...message,
           details: {
-            ...details,
+            ...clean,
             contextBeforeUseText: prior.texts[0]!,
             ...(prior.texts.length > 1 ? { contextDeliveredTexts: [...prior.texts] } : {}),
           },
@@ -784,7 +833,8 @@ export function createRuntimeContextPolicy(
           return {
             ...message,
             details: {
-              ...details,
+              ...clean,
+              contextBeforeUseText: existingBeforeUse,
               contextDeliveredTexts: merged,
             },
           };
@@ -909,17 +959,19 @@ export function createRuntimeContextPolicy(
         pendingWatchDeliveries = [];
         return;
       }
-      for (const [key, value] of pendingWatchDeliveries) {
-        if (value === "full") {
-          options.watchDeliveries.set(key, { full: true });
+      for (const { key, state } of pendingWatchDeliveries) {
+        if (state.full) {
+          options.watchDeliveries.set(key, state);
           continue;
         }
         const existing = options.watchDeliveries.get(key);
         if (existing?.full) continue;
         if (!existing) {
-          options.watchDeliveries.set(key, { full: false, texts: [value] });
-        } else if (!existing.texts.includes(value)) {
-          existing.texts.push(value);
+          options.watchDeliveries.set(key, { ...state, texts: [...state.texts] });
+        } else {
+          for (const value of state.texts) {
+            if (!existing.texts.includes(value)) existing.texts.push(value);
+          }
         }
       }
       pendingWatchDeliveries = [];

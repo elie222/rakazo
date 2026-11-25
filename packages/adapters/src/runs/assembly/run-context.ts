@@ -604,6 +604,16 @@ export function restoreTurnCheckpointEffects(
   const effects = ctx.state.effects;
   try {
     const saved = restoreTurnCheckpoint(turnCheckpoint, model);
+    if (Array.isArray(saved.watchOutsideText)) {
+      const restoredWatch = saved.watchOutsideText.filter(
+        (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+      );
+      if (restoredWatch.length > 0) {
+        ctx.state.tainted = true;
+        ctx.state.taintedBeyondOwnComputer = true;
+        ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, restoredWatch);
+      }
+    }
     // The saved turn's tool results are outside content this run already read.
     // Resolve deferred `use_tool` call IDs in transcript order so a later call reusing an ID
     // cannot overwrite an earlier `task_catalog` or `schedule_list` mapping.

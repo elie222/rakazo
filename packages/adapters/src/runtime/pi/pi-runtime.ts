@@ -831,6 +831,10 @@ export class PiAgentRuntime implements AgentRuntime {
             systemPrompt,
             representedHistoryIds,
             foundConnectorTools: host.foundConnectorTools,
+            watchDeliveries: runWatchDeliveries,
+            priorWatchOutsideText: restored?.watchOutsideText,
+            restoredMessages: restored?.messages,
+            contextStrategy: request.contextStrategy,
           });
         host.captureCheckpoint = async (toolCallId, executionId) => {
           if (!request.onCheckpoint) return;

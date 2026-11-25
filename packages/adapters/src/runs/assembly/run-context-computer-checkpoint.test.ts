@@ -8,10 +8,12 @@ import {
   MAX_OUTSIDE_TEXT_CHARS,
   outsideOnlyTargets,
 } from "../../approvals/review-target-sources.js";
+import { estimateModelContextTokens } from "../../models/model-context.js";
 import { selectContext, shortenToolResultText } from "../../runtime/context/context-selection.js";
 import type { WatchDeliveryState } from "../../runtime/context/runtime-context.js";
 import { createRuntimeContextPolicy } from "../../runtime/context/runtime-context.js";
 import { OMITTED_AFTER_USE } from "../../runtime/context/runtime-context.prompt.js";
+import { buildTurnCheckpoint } from "../../runtime/pi/pi-runtime-checkpoint.js";
 import { clipToolResultText, TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
 import type { ToolHost } from "../../runtime/pi/tools/pi-runtime-tools.js";
 import {
@@ -1742,4 +1744,320 @@ it("unions visible watch targets from a wider after-use delivery without restori
   expect(ctx.state.outsideText).toContain("seen-by-b@outside.test");
   expect(ctx.state.outsideText).not.toContain("never-seen@outside.test");
   expect(ctx.state.outsideText).not.toContain("owner-union@example.test");
+});
+
+it("preserves a fully accepted watch delivery when a narrower backup cuts it again", () => {
+  const details = {
+    routines: [
+      {
+        routineId: "r-full-then-narrow",
+        prompt: "Send update to owner-full-narrow@example.test",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: `${"a".repeat(3_500)} seen-by-backup-1@outside.test ${"b".repeat(3_500)}`,
+        },
+      },
+    ],
+  };
+  const raw = JSON.stringify(details);
+  const emptyUsage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+  const baseMessages: Message[] = [
+    { role: "user", content: "List schedules", timestamp: 1 },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "fn-1", name: "schedule_list", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-a",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 2,
+    },
+    {
+      role: "toolResult",
+      toolCallId: "fn-1",
+      toolName: "schedule_list",
+      content: [{ type: "text", text: raw }],
+      details,
+      isError: false,
+      timestamp: 3,
+    },
+  ];
+  const makeRequest = (modelId: string, contextWindow: number): AgentRunRequest =>
+    ({
+      botId: "bot-1",
+      threadId: "thread-1",
+      runId: "run-1",
+      prompt: "List schedules",
+      instructions: "Fixture",
+      history: [],
+      tools: [],
+      secrets: [],
+      contextStrategy: "cache-aware",
+      model: { provider: "openai", id: modelId, contextWindow, maxTokens: 0 },
+    }) as unknown as AgentRunRequest;
+  const makeModel = (id: string, contextWindow: number): Model<Api> =>
+    ({
+      id,
+      provider: "openai",
+      api: "openai-responses",
+      contextWindow,
+      maxTokens: 0,
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      name: id,
+      baseUrl: "https://api.example.test",
+    }) as unknown as Model<Api>;
+
+  const watchDeliveries = new Map<string, WatchDeliveryState>();
+  // Primary (narrow) cuts before use and completes.
+  const primary = createRuntimeContextPolicy(makeRequest("model-a", 1_500), undefined, {
+    watchDeliveries,
+  });
+  primary.prepareContext(
+    { systemPrompt: "Fixture", messages: baseMessages, tools: [] },
+    makeModel("model-a", 1_500),
+  );
+  primary.commitDelivery();
+
+  // First backup (large) completes with the full watch result.
+  const backup1 = createRuntimeContextPolicy(makeRequest("model-b", 16_000), undefined, {
+    watchDeliveries,
+  });
+  const backup1Req = backup1.prepareContext(
+    { systemPrompt: "Fixture", messages: baseMessages, tools: [] },
+    makeModel("model-b", 16_000),
+  );
+  const backup1Result = backup1Req.messages.find((m) => m.role === "toolResult");
+  expect(
+    backup1Result &&
+      Array.isArray(backup1Result.content) &&
+      backup1Result.content[0]?.type === "text"
+      ? backup1Result.content[0].text
+      : "",
+  ).toContain("seen-by-backup-1@outside.test");
+  backup1.commitDelivery();
+
+  // Second backup (narrow) cuts the result before use again before pausing on ask_user.
+  const backup2 = createRuntimeContextPolicy(makeRequest("model-c", 1_500), undefined, {
+    watchDeliveries,
+  });
+  const backup2Req = backup2.prepareContext(
+    { systemPrompt: "Fixture", messages: baseMessages, tools: [] },
+    makeModel("model-c", 1_500),
+  );
+  const backup2Result = backup2Req.messages.find((m) => m.role === "toolResult");
+  const backup2Text =
+    backup2Result &&
+    Array.isArray(backup2Result.content) &&
+    backup2Result.content[0]?.type === "text"
+      ? backup2Result.content[0].text
+      : "";
+  expect(backup2Text).not.toContain("seen-by-backup-1@outside.test");
+
+  const blob = JSON.parse(checkpoint("ask_user"));
+  blob.messages.unshift(backup2Result);
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(restoreTurnCheckpointEffects(ctx, JSON.stringify(blob), model)).toBeDefined();
+  expect(ctx.state.outsideText).toContain("seen-by-backup-1@outside.test");
+  expect(ctx.state.outsideText).not.toContain("owner-full-narrow@example.test");
+});
+
+it("retains accepted watch provenance in checkpoints when context selection drops the watch result and ignores provenance in token estimates", () => {
+  const details = {
+    routines: [
+      {
+        routineId: "r-dropped-watch",
+        prompt: "Send update to owner-dropped@example.test",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: `${"d".repeat(4_000)} dropped-watch-target@outside.test ${"e".repeat(4_000)}`,
+        },
+      },
+    ],
+  };
+  const raw = JSON.stringify(details);
+  const emptyUsage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+  const watchResultMsg: Message = {
+    role: "toolResult",
+    toolCallId: "drop-1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: raw }],
+    details,
+    isError: false,
+    timestamp: 3,
+  };
+  const fullStateMessages: Message[] = [
+    { role: "user", content: "List schedules", timestamp: 1 },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "drop-1", name: "schedule_list", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-a",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 2,
+    },
+    watchResultMsg,
+  ];
+  const makeRequest = (modelId: string, contextWindow: number): AgentRunRequest =>
+    ({
+      botId: "bot-1",
+      threadId: "thread-1",
+      runId: "run-1",
+      prompt: "List schedules",
+      instructions: "Fixture",
+      history: [],
+      tools: [],
+      secrets: [],
+      contextStrategy: "cache-aware",
+      model: { provider: "openai", id: modelId, contextWindow, maxTokens: 0 },
+    }) as unknown as AgentRunRequest;
+  const makeModel = (id: string, contextWindow: number): Model<Api> =>
+    ({
+      id,
+      provider: "openai",
+      api: "openai-responses",
+      contextWindow,
+      maxTokens: 0,
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      name: id,
+      baseUrl: "https://api.example.test",
+    }) as unknown as Model<Api>;
+
+  const watchDeliveries = new Map<string, WatchDeliveryState>();
+  const primary = createRuntimeContextPolicy(makeRequest("model-a", 16_000), undefined, {
+    watchDeliveries,
+  });
+  primary.prepareContext(
+    { systemPrompt: "Fixture", messages: fullStateMessages, tools: [] },
+    makeModel("model-a", 16_000),
+  );
+  primary.commitDelivery();
+
+  // Token estimates must ignore internal watch provenance metadata on details.
+  const withoutProvenance = {
+    systemPrompt: "Fixture",
+    messages: [watchResultMsg],
+    tools: [],
+  };
+  const withProvenance = {
+    systemPrompt: "Fixture",
+    messages: [
+      {
+        ...watchResultMsg,
+        details: {
+          ...details,
+          contextBeforeUseText: raw,
+          contextDeliveredTexts: [raw, "x".repeat(4_000)],
+        },
+      },
+    ],
+    tools: [],
+  };
+  expect(estimateModelContextTokens(withProvenance)).toBe(
+    estimateModelContextTokens(withoutProvenance),
+  );
+
+  // Backup drops the watch toolResult from sentContext and pauses on ask_user.
+  const askAssistant: Message = {
+    role: "assistant",
+    content: [{ type: "toolCall", id: "ask-drop", name: "ask_user", arguments: {} }],
+    api: "openai-responses",
+    provider: "openai",
+    model: "model-b",
+    usage: emptyUsage,
+    stopReason: "toolUse",
+    timestamp: 6,
+  };
+  const droppedContextMessages: Message[] = [
+    { role: "user", content: "Continue", timestamp: 4 },
+    {
+      role: "toolResult",
+      toolCallId: "read-after",
+      toolName: "read_file",
+      content: [{ type: "text", text: "r".repeat(6_000) }],
+      isError: false,
+      timestamp: 5,
+    },
+  ];
+  const savedCheckpoint = buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages: droppedContextMessages, tools: [] },
+      sourceLength: 5,
+    },
+    stateMessages: [...fullStateMessages, ...droppedContextMessages, askAssistant],
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "ask-drop",
+    toolCallCount: 2,
+    mainModelConfig: { provider: "openai", id: "model-b" },
+    provider: "openai",
+    modelId: "model-b",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries,
+  });
+  expect(
+    savedCheckpoint.messages.some((m) => m.role === "toolResult" && m.toolCallId === "drop-1"),
+  ).toBe(false);
+  expect(savedCheckpoint.watchOutsideText?.join("\n")).toContain(
+    "dropped-watch-target@outside.test",
+  );
+  expect(savedCheckpoint.watchOutsideText?.join("\n")).not.toContain("owner-dropped@example.test");
+
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.tainted = false;
+  ctx.state.taintedBeyondOwnComputer = false;
+  ctx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(ctx, JSON.stringify(savedCheckpoint), {
+      provider: "openai",
+      id: "model-b",
+    }),
+  ).toBeDefined();
+  expect(ctx.state.tainted).toBe(true);
+  expect(ctx.state.taintedBeyondOwnComputer).toBe(true);
+  expect(ctx.state.outsideText).toContain("dropped-watch-target@outside.test");
+  expect(ctx.state.outsideText).not.toContain("owner-dropped@example.test");
+
+  // A subsequent checkpoint after resume carries priorWatchOutsideText forward.
+  const secondCheckpoint = buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages: droppedContextMessages, tools: [] },
+      sourceLength: 2,
+    },
+    stateMessages: [...droppedContextMessages, askAssistant],
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "ask-drop",
+    toolCallCount: 3,
+    mainModelConfig: { provider: "openai", id: "model-b" },
+    provider: "openai",
+    modelId: "model-b",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries: new Map(),
+    priorWatchOutsideText: savedCheckpoint.watchOutsideText,
+  });
+  expect(secondCheckpoint.watchOutsideText).toEqual(savedCheckpoint.watchOutsideText);
 });

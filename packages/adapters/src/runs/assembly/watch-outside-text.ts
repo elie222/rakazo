@@ -494,7 +494,34 @@ function extractVisibleWatchChecksFromDeliveredText(
   const partGroups = extractVisibleWatchPartsFromPlainTextBeforeUse(deliveredText, cleanDetails, {
     allowAfterUseOnly,
   });
-  return partGroups !== undefined ? formatPlainTextBeforeUseGroups(partGroups) : undefined;
+  if (partGroups !== undefined) return formatPlainTextBeforeUseGroups(partGroups);
+  // A previously accepted full delivery clipped at TOOL_RESULT_TEXT_LIMIT is non-JSON without
+  // a context omission marker; decode its exact clipped watch checks directly.
+  const routines = Array.isArray(cleanDetails.routines) ? cleanDetails.routines : undefined;
+  if (routines) {
+    try {
+      const raw = JSON.stringify(cleanDetails);
+      if (raw.length > TOOL_RESULT_TEXT_LIMIT) {
+        if (deliveredText === clipToolResultText(raw)) {
+          return storedWatchCheckOutsideContent(routines, "current", {
+            name: "schedule_list",
+            payload: cleanDetails,
+          });
+        }
+        if (
+          deliveredText === clipToolResultText(shortenToolResultText(raw, TOOL_RESULT_TEXT_LIMIT))
+        ) {
+          return storedWatchCheckOutsideContent(routines, DEFAULT_CONTEXT_STRATEGY, {
+            name: "schedule_list",
+            payload: cleanDetails,
+          });
+        }
+      }
+    } catch {
+      // Fall through when cleanDetails cannot be serialized.
+    }
+  }
+  return undefined;
 }
 
 /** Extract watch-check outside text from a saved `schedule_list` or `task_catalog` toolResult. */

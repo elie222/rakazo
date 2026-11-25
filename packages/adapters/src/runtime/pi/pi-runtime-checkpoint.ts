@@ -1,12 +1,18 @@
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Context, Message } from "@earendil-works/pi-ai";
-import type { AgentRunModel } from "@rakazo/adapter-kit";
+import type { AgentContextStrategy, AgentRunModel } from "@rakazo/adapter-kit";
+import { watchChecksFromToolResultMessage } from "../../runs/assembly/watch-outside-text.js";
 import type { ComputerModeCheckpoint, TurnCheckpoint } from "../../runs/turn/turn-checkpoint.js";
 import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "../../runs/turn/turn-checkpoint.js";
+import type { WatchDeliveryState } from "../context/runtime-context.js";
 import { computerSelection } from "./tools/pi-runtime-computer-mode.js";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
 export const ANSWERED_ON_RESUME = new Set(["ask_user", "request_takeover"]);
 
@@ -53,6 +59,10 @@ export function buildTurnCheckpoint(input: {
   systemPrompt: string;
   representedHistoryIds: ReadonlySet<string>;
   foundConnectorTools?: ReadonlyMap<string, string>;
+  watchDeliveries?: ReadonlyMap<string, WatchDeliveryState>;
+  priorWatchOutsideText?: readonly string[];
+  restoredMessages?: readonly Message[];
+  contextStrategy?: AgentContextStrategy;
 }): TurnCheckpoint {
   const messages = input.sentContext
     ? [
@@ -60,6 +70,64 @@ export function buildTurnCheckpoint(input: {
         ...input.stateMessages.slice(input.sentContext.sourceLength),
       ]
     : [...input.stateMessages];
+  const retainedWatch = messages.filter(
+    (message): message is Extract<AgentMessage, { role: "toolResult" }> =>
+      message.role === "toolResult" && isRecord(message.details) && "routines" in message.details,
+  );
+  const isRetained = (toolCallId: string, routines: unknown) =>
+    retainedWatch.some(
+      (message) =>
+        message.toolCallId === toolCallId &&
+        isRecord(message.details) &&
+        message.details.routines === routines,
+    );
+  const droppedWatchOutside: string[] = [
+    ...(input.priorWatchOutsideText ?? []).filter((entry) => entry.trim().length > 0),
+  ];
+  const coveredDropped: Array<{ toolCallId: string; routines: unknown }> = [];
+  if (input.watchDeliveries) {
+    for (const entry of input.watchDeliveries.values()) {
+      if (isRetained(entry.toolCallId, entry.details.routines)) continue;
+      coveredDropped.push({ toolCallId: entry.toolCallId, routines: entry.details.routines });
+      const synthetic = entry.full
+        ? {
+            details: { ...entry.details, contextBeforeUseText: entry.fullText },
+            content: [{ type: "text", text: entry.fullText }],
+          }
+        : {
+            details: {
+              ...entry.details,
+              ...(entry.texts[0] !== undefined ? { contextBeforeUseText: entry.texts[0] } : {}),
+              ...(entry.texts.length > 1 ? { contextDeliveredTexts: entry.texts } : {}),
+            },
+            content: [{ type: "text", text: entry.texts[0] ?? "" }],
+          };
+      for (const item of watchChecksFromToolResultMessage(synthetic, input.contextStrategy)) {
+        const value = typeof item === "string" ? item : JSON.stringify(item);
+        if (value.trim()) droppedWatchOutside.push(value);
+      }
+    }
+  }
+  if (input.restoredMessages) {
+    for (const message of input.restoredMessages) {
+      if (message.role !== "toolResult") continue;
+      const details = message.details;
+      if (!isRecord(details) || !("routines" in details)) continue;
+      if (isRetained(message.toolCallId, details.routines)) continue;
+      if (
+        coveredDropped.some(
+          (entry) => entry.toolCallId === message.toolCallId && entry.routines === details.routines,
+        )
+      ) {
+        continue;
+      }
+      for (const item of watchChecksFromToolResultMessage(message, input.contextStrategy)) {
+        const value = typeof item === "string" ? item : JSON.stringify(item);
+        if (value.trim()) droppedWatchOutside.push(value);
+      }
+    }
+  }
+  const watchOutsideText = [...new Set(droppedWatchOutside)];
   const assistant = messages.findLast((message) => message.role === "assistant");
   const sequential =
     input.restoringCalls ||
@@ -101,6 +169,7 @@ export function buildTurnCheckpoint(input: {
     ...(input.foundConnectorTools?.size
       ? { foundConnectorTools: [...input.foundConnectorTools] }
       : {}),
+    ...(watchOutsideText.length > 0 ? { watchOutsideText } : {}),
   };
 }
 

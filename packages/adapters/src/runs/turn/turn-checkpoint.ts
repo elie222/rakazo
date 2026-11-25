@@ -43,6 +43,8 @@ export interface TurnCheckpoint {
   reply?: unknown;
   /** Only explicit sequential checkpoints guarantee an unstarted tail. */
   executionMode?: "parallel" | "sequential";
+  /** Watch-check outside text accepted in this turn whose toolResult was later dropped from context. */
+  watchOutsideText?: string[];
 }
 
 export function serializeTurnCheckpoint(checkpoint: TurnCheckpoint): string {
