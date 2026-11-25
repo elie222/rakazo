@@ -248,10 +248,10 @@ export const PinnedTiles = memo(function PinnedTiles({
   const { i18n } = useLingui();
   const styles = useThemedStyles(createInboxStyles);
   const selectedId = useContext(SelectedChatContext);
-  // Three tiles share the row, so a narrow pane shrinks the avatars instead of overlapping them.
+  // Three tiles share the row and each avatar fills its tile, up to a cap for wide panes.
   const [rowWidth, setRowWidth] = useState(0);
   const tileWidth = rowWidth > 0 ? Math.floor((rowWidth - 16) / 3) : undefined;
-  const avatarSize = tileWidth ? Math.min(84, tileWidth - 8) : 84;
+  const avatarSize = tileWidth ? Math.min(PINNED_AVATAR_MAX, tileWidth - 12) : PINNED_AVATAR_MAX;
   return (
     <View
       style={styles.pinnedTiles}
@@ -351,6 +351,8 @@ function PinnedName({ chat, name }: { chat: PinnedChat; name: string }) {
     </Text>
   );
 }
+
+const PINNED_AVATAR_MAX = 120;
 
 // The iOS row menu opens on a long press; a press handler without onLongPress would still open the
 // chat when the finger lifts.

@@ -74,7 +74,10 @@ export async function readServerBundle(input: {
   const raw = await readFile(path.join(input.resourcesPath, SERVER_BUNDLE_FILE), "utf8").catch(
     () => null,
   );
-  if (raw === null) return null;
+  return raw === null ? null : parseServerBundle(raw);
+}
+
+function parseServerBundle(raw: string): ServerBundle | null {
   try {
     const { url, sha256, size, version } = JSON.parse(raw) as Record<string, unknown>;
     if (
@@ -92,6 +95,29 @@ export async function readServerBundle(input: {
     // An unreadable descriptor means no bundle, like a build that has none.
   }
   return null;
+}
+
+/**
+ * The descriptor the release of `version` publishes beside its bundle, found the way the current
+ * bundle's address names its own release (`…/v<version>/<archive>`). Null when there is none.
+ */
+export async function fetchServerBundle(
+  deps: Pick<RuntimeDeps, "fetch" | "signal">,
+  current: ServerBundle,
+  version: string,
+): Promise<ServerBundle | null> {
+  const url = current.download ? new URL(current.download.url) : null;
+  const parts = url?.pathname.split("/") ?? [];
+  if (url === null || parts.at(-2) !== `v${current.version}` || !/^[\w.-]+$/.test(version)) {
+    return null;
+  }
+  url.pathname = [...parts.slice(0, -2), `v${version}`, SERVER_BUNDLE_FILE].join("/");
+  const response = await deps.fetch(url.toString(), { signal: deps.signal });
+  if (!response.ok) {
+    throw new DownloadError(`${SERVER_BUNDLE_FILE} answered HTTP ${response.status}`);
+  }
+  const bundle = parseServerBundle(await response.text());
+  return bundle?.version === version ? bundle : null;
 }
 
 /** Marks a fully unpacked runtime directory; one without it is removed and unpacked again. */
@@ -191,9 +217,11 @@ async function installVersion(
   unpack: (archive: string, into: string) => Promise<void>,
 ): Promise<string> {
   const target = path.join(deps.dir, name);
-  if ((await readFile(path.join(target, COMPLETE_MARKER), "utf8").catch(() => null)) !== null) {
-    return target;
-  }
+  // The marker holds the hash it was unpacked from, so a bundle fetched ahead of an update is
+  // used only when the updated app's own pin matches it. Older builds left it empty.
+  const pin = "sha256" in source ? source.sha256 : "";
+  const marker = await readFile(path.join(target, COMPLETE_MARKER), "utf8").catch(() => null);
+  if (marker === "" || marker === pin) return target;
   await mkdir(path.join(deps.dir, "downloads"), { recursive: true, mode: 0o700 });
   const scratch = path.join(deps.dir, `.${name}.${randomUUID()}`);
   let archive: string;
@@ -214,7 +242,7 @@ async function installVersion(
     await mkdir(scratch, { mode: 0o700 });
     deps.onLine(`Unpacking ${name}`);
     await unpack(archive, scratch);
-    await writeFile(path.join(scratch, COMPLETE_MARKER), "");
+    await writeFile(path.join(scratch, COMPLETE_MARKER), pin);
     await rm(target, { recursive: true, force: true });
     await rename(scratch, target);
     return target;
