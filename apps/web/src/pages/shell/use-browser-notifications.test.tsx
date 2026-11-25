@@ -82,7 +82,9 @@ const bots = [{ id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot];
 const groups: Array<{ id: string; snoozedUntil?: string | null }> = [{ id: "group-g" }];
 const roster = { changed: vi.fn() };
 
-function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
+type HarnessProps = { botId?: string; groupId?: string; notificationSounds?: boolean };
+
+function Harness({ botId, groupId, notificationSounds }: HarnessProps) {
   hook = useBrowserNotifications(
     noBots,
     { current: bots },
@@ -91,6 +93,7 @@ function Harness({ botId, groupId }: { botId?: string; groupId?: string }) {
       activeBotId: { current: botId },
       activeGroupId: { current: groupId },
       openChat,
+      notificationSounds,
       meId: "user-1",
       groupsRef: { current: groups },
       roster,
@@ -116,7 +119,7 @@ async function flush() {
   });
 }
 
-async function open(chat: { botId?: string; groupId?: string }) {
+async function open(chat: HarnessProps) {
   act(() => root.render(<Harness {...chat} />));
   await flush();
 }
@@ -168,6 +171,31 @@ afterEach(() => {
 });
 
 describe("useBrowserNotifications chat alerts", () => {
+  it("keeps desktop alerts silent by default", async () => {
+    vi.stubGlobal("rakazoDesktop", {});
+    await open({ botId: "bot-a" });
+    await send({ kind: "help" });
+    expect(FakeNotification.shown[0]?.options.silent).toBe(true);
+  });
+
+  it("plays only desktop attention alerts after the preference changes", async () => {
+    vi.stubGlobal("rakazoDesktop", {});
+    await open({ botId: "bot-a" });
+    await open({ botId: "bot-a", notificationSounds: true });
+    await send({ kind: "completion" });
+    await send({ kind: "takeover" });
+    expect(FakeNotification.shown.map(({ options }) => options.silent)).toEqual([true, false]);
+    expect(streams).toHaveLength(1);
+  });
+
+  it("lets the server alert sound for a backgrounded desktop's open chat", async () => {
+    vi.stubGlobal("rakazoDesktop", {});
+    visible = false;
+    await open({ botId: "bot-b", notificationSounds: true });
+    await send({ kind: "failure" });
+    expect(FakeNotification.shown[0]?.options).toMatchObject({ silent: false, tag: "thread-b" });
+  });
+
   it("alerts for every kind in another chat while the app is focused", async () => {
     await open({ botId: "bot-a" });
     await send({});

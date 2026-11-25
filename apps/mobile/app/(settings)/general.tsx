@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { ChatPreferencesPatch } from "@rakazo/contracts";
+import type { AccountChatPreferencesPatch } from "@rakazo/contracts";
 import { APP_LOCALE_LABELS } from "@rakazo/core";
 import * as Notifications from "expo-notifications";
 import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
@@ -93,7 +93,7 @@ export default function General() {
   });
   const chatSave = useSave({
     target: ACCOUNT_SETTINGS,
-    save: async (chatPreferences: ChatPreferencesPatch, send) => {
+    save: async (chatPreferences: AccountChatPreferencesPatch, send) => {
       queryClient.setQueryData(
         meRead.queryKey,
         await send("preferences/update", { chatPreferences }),
@@ -219,6 +219,16 @@ export default function General() {
     notificationQueue.current.update(next);
   }
 
+  const soundSwitch =
+    me?.chatPreferences?.notificationSounds === undefined ? null : (
+      <SettingsSwitch
+        label={t`Sound for alerts that need attention`}
+        value={me.chatPreferences.notificationSounds}
+        disabled={chatSaveDisabled}
+        onChange={(notificationSounds) => chatSave.run({ notificationSounds })}
+      />
+    );
+
   function updateBotStyle(botAvatarSet: MobileMe["botAvatarSet"] | "") {
     if (me && botAvatarSet) botStyle.run(botAvatarSet);
   }
@@ -315,6 +325,7 @@ export default function General() {
                 void updateNotifications({ ...notifications, needsAttention })
               }
             />
+            {soundSwitch}
             {hasLiveUpdateSettings() ? (
               <SettingsRow
                 accessibilityRole="button"
@@ -328,6 +339,10 @@ export default function General() {
               title={t`Notification settings`}
             />
             {notificationError ? <Text style={styles.error}>{notificationError}</Text> : null}
+          </SettingsGroup>
+        ) : soundSwitch ? (
+          <SettingsGroup accessibilityLabel={t`Notifications`} label={t`Notifications`}>
+            {soundSwitch}
           </SettingsGroup>
         ) : null}
 
