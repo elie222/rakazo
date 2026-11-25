@@ -181,6 +181,9 @@ async function handle(message) {
         },
       };
     case "session/new": {
+      if (params._meta?.fake?.signedOut) {
+        throw Object.assign(new Error("Authentication required"), { code: -32000 });
+      }
       const sessionId = `ses-${randomUUID()}`;
       servers.set(sessionId, params.mcpServers[0]);
       appendFileSync(sessionsFile, `${sessionId}\n`);

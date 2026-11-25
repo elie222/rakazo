@@ -446,6 +446,41 @@ describe("acpAgentRuntime", () => {
     expect(error?.message).toBe("Fake agent error: Model is overloaded");
   });
 
+  it("sends the descriptor's session settings with every session request", async () => {
+    const runtime = acpAgentRuntime(
+      fallback,
+      descriptor({
+        sessionMeta: ({ instructions, toolServer }) => ({ fake: { instructions, toolServer } }),
+      }),
+      { accessCheck: allowed },
+    );
+    const threadId = `thread-${randomUUID()}`;
+
+    await collect(runtime, request({ threadId }));
+    await collect(runtime, request({ threadId, prompt: "again" }));
+
+    const meta = { fake: { instructions: "You are Pip.", toolServer: "rakazo" } };
+    expect(requests("session/new")[0]?.params).toMatchObject({ _meta: meta });
+    expect(requests("session/resume")[0]?.params).toMatchObject({ _meta: meta });
+  });
+
+  it("says how to sign the agent in when it is signed out", async () => {
+    const runtime = acpAgentRuntime(
+      fallback,
+      descriptor({
+        signIn: "Sign in with fake login.",
+        sessionMeta: () => ({ fake: { signedOut: true } }),
+      }),
+      { accessCheck: allowed },
+    );
+
+    const { error } = await collect(runtime, request());
+
+    expect(error?.message).toBe(
+      "Fake agent API error (401): Fake agent on this server is not signed in. Sign in with fake login.",
+    );
+  });
+
   it("refuses to run when the personal CLI gate refuses", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), {
       accessCheck: async () => "Only one account.",

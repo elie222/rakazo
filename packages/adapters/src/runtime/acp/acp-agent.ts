@@ -11,6 +11,8 @@ export interface AcpAgentDescriptor {
   command: string;
   /** Shown when the command is not on PATH. */
   notInstalled: string;
+  /** How the operator signs the CLI in, shown when it says it is not signed in. */
+  signIn?: string;
   /**
    * How one turn starts the CLI: with every one of its own tools, settings, instruction files and
    * plugins off, the tool server's tools allowed, and Rakazo's instructions as its system prompt.
@@ -22,6 +24,11 @@ export interface AcpAgentDescriptor {
     toolServer: string;
     env: Record<string, string>;
   }): Promise<{ args: string[]; env: Record<string, string> }>;
+  /**
+   * The `_meta` every session request carries, for a CLI that takes its settings (its own tools
+   * off, Rakazo's instructions as its system prompt) per session instead of at launch.
+   */
+  sessionMeta?(input: { instructions: string; toolServer?: string }): Record<string, unknown>;
   /** The name the CLI reports a call to one of the tool server's tools under. */
   toolCallName(toolServer: string, tool: string): string;
   /**

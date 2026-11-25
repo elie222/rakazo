@@ -233,6 +233,41 @@ The CLI runs in a private working folder with an allowlisted environment: API ke
 secrets are never passed to it. Only the deployment model runs on OpenCode; it is not offered as a
 connection in **Settings → Models**.
 
+## Antigravity CLI
+
+A server that only you use can run its bots through Google's official Antigravity CLI (`agy`), so
+a Google plan that covers Antigravity works for your bots. For each turn Rakazo starts `agy acp`
+on the server and talks to it over the Agent Client Protocol, as described for
+[OpenCode](#opencode-cli): the CLI runs the bot's turn with Rakazo's tools and approvals, and
+Rakazo keeps the chat and memory. Every session turns off all of the CLI's built-in tools, and a
+turn in which it tries to use one is stopped. The CLI adds the bot's instructions to its own
+system prompt rather than replacing it. Rakazo never reads or refreshes your Google sign-in.
+
+What it needs:
+
+- The API and worker running from a source checkout on your own computer, as the same OS user as
+  the CLI. As with OpenCode, this is only for your own machine.
+- `agy` on that user's `PATH`, signed in once in a terminal as that user with `agy acp --login`.
+  Rakazo finds that sign-in in the default `~/.gemini`, so leave `GEMINI_HOME` unset when you sign
+  in.
+- One account on the server, as with the other CLI routes.
+
+```env
+PI_DEFAULT_PROVIDER=antigravity-cli
+PI_DEFAULT_CREDENTIALS=host
+PI_DEFAULT_MODEL=<a model the CLI offers>
+```
+
+The CLI runs with a home folder of Rakazo's own in place of `~/.gemini`, linked only to the files
+it keeps its sign-in in, so your Antigravity hooks, MCP servers, skills and other settings stay out
+of the bot's turns. A sign-in the CLI saves there when it refreshes is replaced by the link again
+before the next turn, so signing out or switching accounts with `agy` reaches your bots.
+
+If the model id is not one the CLI offers, the run's error lists the ones it does. Screen and
+computer use, and images people send, are not available to bots on Antigravity yet. Usage counts
+against your Google plan, and Rakazo shows no cost for these runs. Your use is covered by
+[Google's Antigravity terms](https://antigravity.google/terms).
+
 ## Ollama Cloud
 
 In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then choose a model from the list that loads. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`. `RAKAZO_MODEL_PROVIDER_ALLOWLIST` without `ollama-cloud` removes the preset, and with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` its host exemption too; see [Limiting model providers](#limiting-model-providers).
