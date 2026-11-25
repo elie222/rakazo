@@ -7,12 +7,18 @@ import type {
   SandboxProvider,
   SecretStore,
 } from "@rakazo/adapter-kit";
-import type { MessagingDelivery, MessagingInstallations, TeamChat } from "@rakazo/adapters";
+import type {
+  AttachmentNaming,
+  MessagingDelivery,
+  MessagingInstallations,
+  TeamChat,
+} from "@rakazo/adapters";
 import { applyMessagingOutboundStatus, createMessagingTeamChatHistory } from "@rakazo/adapters";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { provisionMessagingIdentity, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { Hono } from "hono";
+import type { ArrivalCopyDeps } from "../attachments/arrival-copy.js";
 import { transcribeInboundVoice } from "../calls/voice.js";
 import { storeInboundAttachment } from "../content/artifacts.js";
 import type { AppEnv } from "../env.js";
@@ -39,6 +45,7 @@ export async function startMessagingRuntime({
   sandbox,
   secrets,
   artifacts,
+  arrivalCopy,
   env,
   messaging,
   messagingInstallations,
@@ -52,6 +59,7 @@ export async function startMessagingRuntime({
   sandbox: SandboxProvider;
   secrets: SecretStore;
   artifacts: ArtifactStore;
+  arrivalCopy: ArrivalCopyDeps;
   env: AppEnv;
   messaging: MessagingSurface;
   messagingInstallations: MessagingInstallations | undefined;
@@ -66,6 +74,7 @@ export async function startMessagingRuntime({
     prisma,
     artifacts,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
+    attachmentNaming: env.attachmentNaming,
   });
   const inboundDeps = {
     prisma,
@@ -77,6 +86,7 @@ export async function startMessagingRuntime({
     openSignup: env.messagingOpenSignup,
     acknowledge: receipts.acknowledge,
     storeAttachment: stores.direct,
+    arrivalCopy,
     transcribe: ({ spaceId, userId, audio, mimeType, signal }) =>
       transcribeInboundVoice(
         {
@@ -208,6 +218,7 @@ export function createInboundAttachmentStores(deps: {
   prisma: PrismaClient;
   artifacts: ArtifactStore;
   maxUploadSizeBytes: number;
+  attachmentNaming?: AttachmentNaming;
 }): { direct: InboundAttachmentStore; teamChat: InboundAttachmentStore } {
   const downloadBudget = createDownloadBudget(DOWNLOAD_BUDGET_FILES * deps.maxUploadSizeBytes);
   const store =

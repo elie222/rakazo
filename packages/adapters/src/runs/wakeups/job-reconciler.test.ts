@@ -138,6 +138,27 @@ describe("createJobReconciler", () => {
     expect(leadership.release).toHaveBeenCalledOnce();
   });
 
+  it("runs the file cleanups as housekeeping beside the scans", async () => {
+    const prisma = fakePrisma([], [{ id: "routine-due", nextRunAt: new Date() }]);
+    const { jobs, enqueue } = publisher();
+    const reconcileAttachmentCopies = vi.fn(async () => undefined);
+    const reconcileOriginalFiles = vi.fn(async () => undefined);
+    const reconciler = createJobReconciler({
+      prisma,
+      jobs,
+      reconcileAttachmentCopies,
+      reconcileOriginalFiles,
+    });
+
+    await reconciler.reconcileOnce();
+    await flush();
+
+    expect(reconcileAttachmentCopies).toHaveBeenCalledOnce();
+    expect(reconcileOriginalFiles).toHaveBeenCalledOnce();
+    expect(enqueue.mock.calls.filter(([job]) => job.name === "routine.wakeup")).toHaveLength(1);
+    await reconciler.stop();
+  });
+
   it("runs the chat delivery sweep on every pass, beside the scans", async () => {
     const prisma = fakePrisma([], [{ id: "routine-due", nextRunAt: new Date() }]);
     const { jobs, enqueue } = publisher();

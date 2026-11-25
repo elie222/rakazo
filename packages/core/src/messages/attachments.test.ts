@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AttachmentValidationError,
   artifactTypeLabel,
+  attachmentComputerPathFor,
   attachmentExtensionForMimeType,
   attachmentStoredName,
   attachmentsForBot,
@@ -12,12 +13,55 @@ import {
   inferAttachmentMimeType,
   isStaticPng,
   normalizeVoiceTranscript,
+  ownExtensionForMimeType,
   PNG_ANIMATION_HEADER_BYTES,
   promptTextForAttachments,
   toolStepsHistoryText,
   userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
+
+describe("ownExtensionForMimeType", () => {
+  it.each([
+    ["IMG_1234.JPEG", "image/jpeg", ".JPEG"],
+    ["IMG_1234.jpeg", "image/jpeg", ".jpeg"],
+    ["clip.MOV", "video/quicktime", ".MOV"],
+    ["notes.markdown", "text/markdown", ".markdown"],
+    ["scan.png", "image/jpeg", ""],
+    ["photo", "image/jpeg", ""],
+    ["a.constructor", "image/jpeg", ""],
+  ])("finds %s's own extension for %s", (name, mimeType, extension) => {
+    expect(ownExtensionForMimeType(name, mimeType)).toBe(extension);
+  });
+
+  it("recognizes the canonical extension", () => {
+    for (const mimeType of ["image/png", "video/mp4", "application/pdf", "text/html"])
+      expect(
+        ownExtensionForMimeType(`a${attachmentExtensionForMimeType(mimeType)}`, mimeType),
+      ).toBe(attachmentExtensionForMimeType(mimeType));
+  });
+});
+
+describe("attachmentComputerPathFor", () => {
+  it("keeps the id path for a row without a stored path", () => {
+    expect(attachmentComputerPathFor({ id: "a1", mimeType: "image/png", computerPath: null })).toBe(
+      "attachments/a1.png",
+    );
+    expect(attachmentComputerPathFor({ id: "a1", mimeType: "image/png" })).toBe(
+      "attachments/a1.png",
+    );
+  });
+
+  it("uses the path stored when the file arrived", () => {
+    expect(
+      attachmentComputerPathFor({
+        id: "a1",
+        mimeType: "image/png",
+        computerPath: "attachments/2026/11/2026-11-18_1649_Dana_photo.png",
+      }),
+    ).toBe("attachments/2026/11/2026-11-18_1649_Dana_photo.png");
+  });
+});
 
 describe("attachment helpers", () => {
   it.each([

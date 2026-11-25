@@ -13,6 +13,7 @@ export const desktopComputer: ComputerProviderDefinition = {
     serverOwnsStoredTeamHome: false,
     storedHomeIsBackup: true,
     maxFileBytes: HOST_COMPUTER_TRANSFER_MAX_FILE_BYTES,
+    sleepStopsMachine: false,
   },
   async create(opts) {
     const { assertHostCommandsAllowed, DesktopSandboxProvider } = await import(

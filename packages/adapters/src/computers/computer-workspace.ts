@@ -123,6 +123,16 @@ const FREE_DISK_CHECK_BYTES = 256 * 1024 * 1024;
 /** Disk a file costs beyond its contents, so many small files still trigger the check. */
 const FILE_DISK_OVERHEAD_BYTES = 4096;
 
+/**
+ * Whether only the server writes this computer's stored home. A computer that can mount the
+ * server's home directory, and is set up to, writes it itself.
+ */
+export function serverOwnsTeamHome(sandbox: SandboxProvider, kind: string) {
+  const { serverOwnsStoredTeamHome, serverHomeMount } = sandboxKindCapabilities(kind);
+  if (!serverOwnsStoredTeamHome) return false;
+  return !(serverHomeMount === "optional" && sandbox.describe().capabilities.persistentHome);
+}
+
 /** The computer already reads and writes the server's home directory, so there is nothing to copy. */
 async function homeIsMounted(
   home: AgentHomeStore,

@@ -37,6 +37,7 @@ describe("startMessagingRuntime", () => {
       sandbox: {} as never,
       secrets: {} as never,
       artifacts: {} as never,
+      arrivalCopy: {} as never,
       env: { maxUploadSizeBytes: 10, messagingOpenSignup: false } as never,
       messaging: messaging as never,
       messagingInstallations: undefined,

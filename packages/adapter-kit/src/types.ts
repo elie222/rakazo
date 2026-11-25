@@ -307,6 +307,12 @@ export interface SandboxKindCapabilities {
   serverOwnsStoredTeamHome: boolean;
   /** The computer works in a copy on a host that outlives it; the stored home only backs it up. */
   storedHomeIsBackup: boolean;
+  /**
+   * Asleep, the computer's machine is stopped, with no process left in it, rather than paused
+   * with its processes frozen until it resumes. True only where it was verified that the
+   * provider's sleep stops the machine; false means it is not relied on.
+   */
+  sleepStopsMachine: boolean;
   /** The provider can read the disk of a stopped sandbox without starting it. */
   readStoppedFiles?: boolean;
   /** Largest file one transfer can carry, when the provider's transport is tighter than the server's limit. */

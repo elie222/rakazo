@@ -12,6 +12,7 @@ export const incusComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   env: {
     incusUrl: { name: "INCUS_SANDBOX_URL", required: true },

@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
-import type { BackgroundJob, QueuedAhead } from "@rakazo/adapter-kit";
+import type {
+  AgentHomeStore,
+  ArtifactStore,
+  BackgroundJob,
+  QueuedAhead,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import {
   MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS,
   MESSAGING_INBOUND_SETTLE_MAX_ATTEMPTS,
@@ -16,6 +22,8 @@ import { deferred, flush } from "@rakazo/core/test-async";
 import { decryptText, SendClaimLostError, SpaceDeletionInProgressError } from "@rakazo/db";
 import type { Mock } from "vitest";
 import { describe, expect, it, vi } from "vitest";
+import type { CopyAttachment } from "../attachments/arrival-copy.js";
+import { createArrivalCopy } from "../attachments/arrival-copy.js";
 import { storeInboundAttachment } from "../content/artifacts.js";
 import {
   DIRECT_ATTACHMENT_ATTEMPTS,
@@ -24,6 +32,7 @@ import {
   SHUTDOWN_DOWNLOAD_GRACE_MS,
   SHUTDOWN_HANDOFF_MARGIN_MS,
 } from "./intake/limits.js";
+import { createSenderQueue } from "./intake/sender-queue.js";
 import type { MessagingInboundDeps } from "./messaging-inbound.js";
 import {
   createMessagingInboundHandler,
@@ -620,6 +629,27 @@ describe("createMessagingInboundHandler DM routing", () => {
     expect(deps.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
     );
+  });
+
+  // The sender's display label, else their raw id.
+  it.each([
+    { fromLabel: "Dana Levi", sender: "Dana Levi" },
+    { fromLabel: null, sender: "+15551111111" },
+    { fromLabel: "  ", sender: "+15551111111" },
+  ])("names a DM's file by its sender ($sender)", async ({ fromLabel, sender }) => {
+    const storeAttachment = vi.fn(
+      async ({ attachment }: { attachment: { name: string; mimeType: string } }) => ({
+        id: "artifact-1",
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 42,
+      }),
+    );
+    const deps = createDeps({ storeAttachment });
+    await createMessagingInboundHandler(deps)({ ...photoEvent, fromLabel });
+    await settled(deps);
+
+    expect(storeAttachment).toHaveBeenCalledWith(expect.objectContaining({ sender }));
   });
 
   it("delivers a caption alongside the stored attachment", async () => {
@@ -1281,6 +1311,125 @@ describe("createMessagingInboundHandler DM routing", () => {
         ],
       }),
     );
+  });
+
+  describe("copies on arrival", () => {
+    const PATH = "attachments/2026-11-17_1912_Dana_photo.jpg";
+    const bytes = new Uint8Array([7, 8, 9]);
+    const storeWithBytes = () =>
+      vi.fn<NonNullable<MessagingInboundDeps["storeAttachment"]>>(async ({ attachment }) => ({
+        id: attachment.name,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: 3,
+        computerPath: PATH,
+        bytes,
+      }));
+    const promptOf = (deps: ReturnType<typeof createDeps>, call = 0) =>
+      (deps.sendUserMessage.mock.calls[call]![0] as { prompt: string }).prompt;
+    /** Copies on, with each copy handled by `copy`. */
+    const copying = (deps: ReturnType<typeof createDeps>, copy: CopyAttachment) => {
+      vi.mocked(deps.prisma.bot.findUnique).mockResolvedValue({
+        computerId: "computer-1",
+      } as never);
+      deps.arrivalCopy = {
+        prisma: deps.prisma,
+        artifacts: {} as ArtifactStore,
+        enabled: true,
+        copy,
+        queue: createSenderQueue(),
+      };
+    };
+
+    it("copies each file to its stored path before the bot gets the message", async () => {
+      const deps = createDeps({ storeAttachment: storeWithBytes() });
+      const copy = vi.fn<CopyAttachment>(async () => ({ copied: `bots/bot-1/${PATH}` }));
+      copying(deps, copy);
+
+      await createMessagingInboundHandler(deps)({ ...photoEvent, content: "look" });
+      await settled(deps);
+
+      expect(copy).toHaveBeenCalledExactlyOnceWith(
+        { bot: { id: "bot-1", computerId: "computer-1" }, path: PATH, bytes },
+        expect.objectContaining({ spaceId: "ws-1", userId: "user-1", botId: "bot-1" }),
+      );
+      expect(copy.mock.invocationCallOrder[0]).toBeLessThan(
+        deps.sendUserMessage.mock.invocationCallOrder[0]!,
+      );
+      expect(deps.sendUserMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          blocks: [
+            { kind: "text", text: "look" },
+            { kind: "image", artifactId: "photo.jpg", mimeType: "image/jpeg", name: "photo.jpg" },
+          ],
+        }),
+      );
+      expect(promptOf(deps)).not.toContain("[saved to");
+    });
+
+    it("posts the message when a file was skipped or failed to copy", async () => {
+      const storeAttachment = storeWithBytes();
+      const deps = createDeps({ storeAttachment });
+      const copy = vi
+        .fn<CopyAttachment>()
+        .mockResolvedValueOnce({ skipped: "home_not_reachable" })
+        .mockRejectedValueOnce(new Error("computer unreachable"));
+      copying(deps, copy);
+
+      await createMessagingInboundHandler(deps)({
+        ...photoEvent,
+        attachments: [
+          ...photoEvent.attachments,
+          { name: "clip.mov", mimeType: "video/quicktime", size: 3, fetch: async () => bytes },
+        ],
+      });
+      await settled(deps);
+
+      expect(copy).toHaveBeenCalledTimes(2);
+      expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+      expect(deps.recordIn).not.toHaveBeenCalled();
+    });
+
+    it("writes nothing into the computer when copies are off", async () => {
+      const deps = createDeps({ storeAttachment: storeWithBytes() });
+      const writeFile = vi.fn();
+      const writeBinaryFile = vi.fn();
+      deps.arrivalCopy = createArrivalCopy({
+        prisma: deps.prisma,
+        artifacts: {} as ArtifactStore,
+        home: { writeBinaryFile } as unknown as AgentHomeStore,
+        sandbox: { writeFile } as unknown as SandboxProvider,
+        env: { copyAttachmentsOnArrival: false },
+      });
+
+      await createMessagingInboundHandler(deps)(photoEvent);
+      await settled(deps);
+
+      expect(deps.sendUserMessage).toHaveBeenCalledOnce();
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(writeBinaryFile).not.toHaveBeenCalled();
+    });
+
+    it("copies into one computer one file at a time", async () => {
+      const deps = createDeps({ storeAttachment: storeWithBytes() });
+      const first = deferred<{ copied: string }>();
+      const copy = vi
+        .fn<CopyAttachment>()
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValueOnce({ skipped: "already_there" });
+      copying(deps, copy);
+      const handle = createMessagingInboundHandler(deps);
+
+      await handle(photoEvent);
+      await handle({ ...photoEvent, handle: "handle-2" });
+      await vi.waitFor(() => expect(copy).toHaveBeenCalledOnce());
+      await flush();
+      expect(copy).toHaveBeenCalledOnce();
+
+      first.resolve({ copied: `bots/bot-1/${PATH}` });
+      await settled(deps, 2);
+      expect(copy).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("records and then cancels the settle job", async () => {

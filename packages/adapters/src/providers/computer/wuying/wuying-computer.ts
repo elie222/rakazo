@@ -11,6 +11,7 @@ export const wuyingComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: false,
     storedHomeIsBackup: true,
+    sleepStopsMachine: false,
   },
   env: {
     wuyingAccessKeyId: { name: "WUYING_ACCESS_KEY_ID", required: true },

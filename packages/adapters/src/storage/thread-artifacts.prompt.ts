@@ -1,4 +1,4 @@
-import type { MaterializedThreadFile } from "./thread-artifacts.js";
+import type { MaterializedThreadFile, UnavailableThreadFile } from "./thread-artifacts.js";
 
 function fileLine(file: MaterializedThreadFile): string {
   return `- ${JSON.stringify(file.name)} (${file.mimeType}, ${file.size} bytes): ${JSON.stringify(file.path)}`;
@@ -12,10 +12,16 @@ export function currentTurnFilesInstruction(files: readonly MaterializedThreadFi
   ].join("\n");
 }
 
-export function recentThreadFilesInstruction(files: readonly MaterializedThreadFile[]): string {
+export function recentThreadFilesInstruction(
+  files: ReadonlyArray<MaterializedThreadFile | UnavailableThreadFile>,
+): string {
   if (!files.length) return "";
   return [
-    "Files attached earlier in this conversation are also on your computer:",
-    ...files.map(fileLine),
+    "Files attached earlier in this conversation, with their paths on your computer:",
+    ...files.map((file) =>
+      "unavailable" in file
+        ? `- ${JSON.stringify(file.name)}: no longer available`
+        : fileLine(file),
+    ),
   ].join("\n");
 }

@@ -12,6 +12,7 @@ export const daytonaComputer: ComputerProviderDefinition = {
     serverHomeMount: "never",
     serverOwnsStoredTeamHome: true,
     storedHomeIsBackup: false,
+    sleepStopsMachine: false,
   },
   env: {
     daytonaApiKey: { name: "DAYTONA_API_KEY", read: raw, required: true },

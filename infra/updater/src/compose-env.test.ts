@@ -106,6 +106,14 @@ const INDIRECT = {
     // core/secrets-guard.ts resolves these by name.
     "SANDBOX_SUPERVISOR_TOKEN",
     "MEETING_SIGNING_KEY",
+    // attachment-path.ts and files-cleanup-settings.ts read these by name through small helpers.
+    "ATTACHMENT_COPY_NAMES",
+    "ATTACHMENT_COPY_FOLDERS",
+    "FILES_CLEANUP_ATTACHMENTS",
+    "FILES_CLEANUP_RECEIVED",
+    "FILES_CLEANUP_CREATED",
+    "FILES_CLEANUP_MAX_AGE_DAYS",
+    "FILES_CLEANUP_INTERVAL_HOURS",
     // pi-local-provider.ts reads these through a small helper.
     "RAKAZO_LOCAL_CONTEXT_WINDOW",
     "RAKAZO_LOCAL_MAX_TOKENS",

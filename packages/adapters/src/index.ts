@@ -40,6 +40,9 @@ export * from "./cloud-agents/cloud-agent-provider-env.js";
 export * from "./cloud-agents/cloud-agent-service.js";
 export * from "./cloud-agents/cloud-agent-tools.js";
 export * from "./cloud-agents/cloud-agent-tools-select.js";
+export * from "./computers/attachment-copies/copy-attachment.js";
+export * from "./computers/attachment-copies/files-cleanup-settings.js";
+export * from "./computers/attachment-copies/prune-attachment-copies.js";
 export * from "./computers/bot-computer-switch.js";
 export * from "./computers/computer-disk.js";
 export * from "./computers/computer-idle.js";
@@ -309,9 +312,18 @@ export * from "./secrets/wrapped-env.js";
 export * from "./server/server-foundation.js";
 export * from "./storage/artifact-store-factory.js";
 export * from "./storage/artifacts.js";
+export type { AttachmentNaming } from "./storage/attachment-path.js";
+export {
+  ATTACHMENT_NAME_PATTERN,
+  attachmentNamingFromEnv,
+  attachmentPath,
+  copyAttachmentsOnArrivalFromEnv,
+} from "./storage/attachment-path.js";
+export * from "./storage/delete-artifact-family.js";
 export * from "./storage/home.js";
 export * from "./storage/home-object-store.js";
 export { ObjectStorageUnavailableError } from "./storage/object-storage-common.js";
+export * from "./storage/prune-original-files.js";
 export * from "./storage/storage-migration.js";
 export { workspaceSaveLimits } from "./storage/workspace-save-policy.js";
 export { returnHelperOutcome, startBackgroundHelper } from "./tasks/background-helpers.js";

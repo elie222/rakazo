@@ -18,12 +18,14 @@ import {
   contentKeyProviderFromEnv,
   createAgentHomeStore,
   createArtifactStore,
+  createAttachmentCopiesPruner,
   createCloudAgentConnection,
   createConnectorRuntime,
   createDeadJobPruner,
   createLifecycleEmailSender,
   createMediaGenerationProvider,
   createMeetingServices,
+  createOriginalFilesPruner,
   createPaymentWalletProvider,
   createPostgresReconciliationLeadership,
   createPushDelivery,
@@ -35,6 +37,7 @@ import {
   createTicketChangeNotifier,
   drainRuns,
   emailProviderConfigFromEnv,
+  filesCleanupSettings,
   GraphileJobPublisher,
   homeStorageSweeper,
   InMemoryJobQueue,
@@ -119,6 +122,8 @@ async function main() {
   const env = runRuntimeEnvFromProcess(process.env);
   // Read per request by model connections; refuse a bad value at boot like the API does.
   openAiCompatAllowPublicHosts();
+  // Read once, so a value that is not understood stops the start.
+  const cleanupSettings = filesCleanupSettings(process.env);
   const boardEvents = createBoardEvents(realtime);
   const runtime =
     process.env.AGENT_RUNTIME === "scripted"
@@ -295,6 +300,17 @@ async function main() {
             executor.notifyRoutineRetryAttemptsExhausted(runId),
           ),
       reconcileHomeStorage: homeStorageSweeper(home),
+      reconcileAttachmentCopies: createAttachmentCopiesPruner({
+        prisma,
+        home,
+        sandbox,
+        settings: cleanupSettings,
+      }),
+      reconcileOriginalFiles: createOriginalFilesPruner({
+        prisma,
+        artifacts,
+        settings: cleanupSettings,
+      }),
       reconcileDeadJobs: inMemoryJobs ? undefined : createDeadJobPruner(pool),
     },
     { messagingDelivery, teamChat },

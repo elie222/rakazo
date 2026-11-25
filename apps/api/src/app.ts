@@ -104,6 +104,7 @@ import { finishStalledOrganizationDeletions } from "./account/account-deletion.j
 import { mountAccountExportRoute } from "./account/account-export.js";
 import { mountAccountImportRoute } from "./account/account-import.js";
 import { mountAuditExportRoute } from "./account/audit-export.js";
+import { createArrivalCopy } from "./attachments/arrival-copy.js";
 import { mountAuthCapabilities } from "./auth/auth-capabilities.js";
 import {
   authLibraryLogger,
@@ -123,7 +124,7 @@ import { mountVoiceHttpRoutes } from "./calls/voice.js";
 import { homeRetentionSweep } from "./computers/home-retention.js";
 import { localSignupAdmitter, mountLocalComputerHost } from "./computers/local-settings.js";
 import { mountScreenTarget } from "./computers/screen-proxy.js";
-import { storeInboundAttachment } from "./content/artifacts.js";
+import { inboundAttachmentStore } from "./content/artifacts.js";
 import { mountSharedPages } from "./content/shared-pages.js";
 import { apiEmail, emailErrorLogger } from "./email/email.js";
 import { mountEmailInboundRoute } from "./email/email-inbound.js";
@@ -344,6 +345,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   const home = createAgentHomeStore(env.dataDir, prisma, process.env, env.workspaceSaveLimits);
   void home.removeStaleStaging().catch((error) => getLogger().error("home staging cleanup", error));
   const artifacts = createArtifactStore(env.dataDir, prisma);
+  const arrivalCopy = createArrivalCopy({ prisma, artifacts, home, sandbox, env });
   const memory = new MarkdownMemoryStore(prisma);
   const { messaging, installations: messagingInstallations } = messagingOverride
     ? { messaging: messagingOverride, installations: undefined }
@@ -723,6 +725,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     // The scripted runtime never calls a provider, so neither does its connect.
     modelConnectionCheck: env.agentRuntime === "pi" ? verifyModelServesAgents : undefined,
     artifacts,
+    arrivalCopy,
     email,
     onEmailError,
     dataDir: env.dataDir,
@@ -884,12 +887,8 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       events,
       jobs,
       ...env.inboundEmail,
-      storeAttachment: ({ spaceId, userId, ...input }) =>
-        storeInboundAttachment(
-          { prisma, artifacts, maxUploadSizeBytes: env.maxUploadSizeBytes },
-          { spaceId, userId },
-          input,
-        ),
+      arrivalCopy,
+      storeAttachment: inboundAttachmentStore({ prisma, artifacts }, env),
     });
   }
   if (billing && billingProvider) {
@@ -910,6 +909,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
           sandbox,
           secrets,
           artifacts,
+          arrivalCopy,
           env,
           messaging,
           messagingInstallations,

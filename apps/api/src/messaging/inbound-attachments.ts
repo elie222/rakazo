@@ -4,7 +4,14 @@ import { isAttachmentAudioMimeType } from "@rakazo/contracts";
 import { AttachmentValidationError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 
-type InboundArtifact = { id: string; name: string; mimeType: string; size: number };
+type InboundArtifact = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  /** The file's path in the bot's computer, when it was given a readable name. */
+  computerPath?: string | null;
+};
 
 /**
  * Why a file never reached the bot, in plain words: refused for its size or type, tried and
@@ -36,6 +43,8 @@ export type InboundAttachmentStore = (input: {
   downloadDeadline?: number;
   downloadTimeoutMs?: number;
   attempts?: number;
+  /** Who sent the file; it names the file's copy in the bot's computer. */
+  sender?: string;
 }) => Promise<
   InboundArtifact & {
     /** Downloaded content; absent when a replayed delivery returned a stored row. */
@@ -48,7 +57,7 @@ export type InboundAttachmentStore = (input: {
  * `[file: name (unavailable)]` lines, which say why (`(unavailable: too large)`) with
  * `reasons`; the sender controls the name, so it is sanitized before it can reach a prompt.
  * The store enforces the download deadline itself, after looking up a file a replayed
- * delivery already saved. Only audio keeps its bytes.
+ * delivery already saved. Only audio keeps its bytes; `onStored` sees every downloaded file's.
  */
 export async function storeInboundAttachments(
   store: InboundAttachmentStore | undefined,
@@ -60,12 +69,15 @@ export async function storeInboundAttachments(
     downloadDeadline?: number;
     downloadTimeoutMs?: number;
     attempts?: number;
+    sender?: string;
     reasons?: boolean;
+    /** Called with each downloaded file before the next one is fetched; it must not throw. */
+    onStored?: (artifact: InboundArtifact, bytes: Uint8Array) => Promise<void>;
   },
 ) {
   const stored: Array<{ artifact: InboundArtifact; bytes: Uint8Array | undefined }> = [];
   const unavailable: string[] = [];
-  const { downloadDeadline, downloadTimeoutMs, attempts } = options;
+  const { downloadDeadline, downloadTimeoutMs, attempts, sender } = options;
   for (const [index, attachment] of attachments.entries()) {
     const label = (reason: UnavailableReason) =>
       unavailableFileLine(attachment.name, options.reasons ? reason : undefined);
@@ -74,6 +86,7 @@ export async function storeInboundAttachments(
       unavailable.push(label("not received"));
       continue;
     }
+    let downloaded: { artifact: InboundArtifact; bytes: Uint8Array } | undefined;
     try {
       const { bytes, ...artifact } = await store({
         spaceId: owner.spaceId,
@@ -84,11 +97,13 @@ export async function storeInboundAttachments(
         ...(downloadDeadline !== undefined ? { downloadDeadline } : {}),
         ...(downloadTimeoutMs !== undefined ? { downloadTimeoutMs } : {}),
         ...(attempts !== undefined ? { attempts } : {}),
+        ...(sender !== undefined ? { sender } : {}),
       });
       stored.push({
         artifact,
         bytes: isAttachmentAudioMimeType(artifact.mimeType) ? bytes : undefined,
       });
+      if (bytes) downloaded = { artifact, bytes };
     } catch (error) {
       getLogger().warn("inbound attachment was not stored", {
         reason: error instanceof Error ? error.message : String(error),
@@ -99,6 +114,7 @@ export async function storeInboundAttachments(
         ),
       );
     }
+    if (downloaded) await options.onStored?.(downloaded.artifact, downloaded.bytes);
   }
   return { stored, unavailable };
 }

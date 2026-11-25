@@ -592,6 +592,7 @@ describe("TeamChatBridge.receive", () => {
     );
     expect(files).toEqual([
       {
+        artifactId: "document-1",
         name: "report.pdf",
         mimeType: "application/pdf",
         size: 3,
@@ -633,6 +634,7 @@ describe("TeamChatBridge.receive", () => {
         userId: "owner-1",
         botId: "bot-1",
         clientNonce: teamChatAttachmentNonce(target.externalMessageId, 0),
+        sender: "Ada",
       }),
     );
     expect(chat.transcripts()).toEqual([
