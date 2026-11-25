@@ -310,6 +310,7 @@ export function Gallery({
     .slice(0, GALLERY_MAX);
   const track = useRef<HTMLDivElement>(null);
   const [chosen, setCurrent] = useState(0);
+  const [zoomed, setZoomed] = useState<{ src: string; alt: string }>();
   if (items.length === 0) return null;
   // Fewer photos on a later render keep the last one marked rather than none.
   const current = Math.min(chosen, items.length - 1);
@@ -360,10 +361,23 @@ export function Gallery({
             aria-roledescription="slide"
             aria-label={words.t("slideOf", { n: index + 1, total: items.length })}
           >
-            <Picture src={photo.src} alt={photo.alt} />
+            <button
+              type="button"
+              className="rk-zoom"
+              tabIndex={index === current ? 0 : -1}
+              aria-label={
+                photo.alt ? words.t("enlarge", { name: photo.alt }) : words.t("enlargeImage")
+              }
+              onClick={() => setZoomed(photo)}
+            >
+              <Picture src={photo.src} alt={photo.alt} style={{ height: "100%" }} />
+            </button>
           </figure>
         ))}
       </div>
+      {zoomed ? (
+        <Lightbox src={zoomed.src} alt={zoomed.alt} onClose={() => setZoomed(undefined)} />
+      ) : null}
       {items.length > 1 ? (
         <div className="rk-gallery-dots">
           {items.map((_, index) => (
@@ -927,6 +941,8 @@ export const MEDIA_CSS = `
 .rk-gallery-track::-webkit-scrollbar{display:none}
 .rk-gallery-slide{margin:0;flex:none;width:100%;height:100%;scroll-snap-align:start}
 .rk-gallery-slide .rk-picture{height:100%;border-radius:0}
+.rk-gallery-slide>.rk-zoom{height:100%;border-radius:0}
+.rk-gallery-slide>.rk-zoom:focus-visible{outline-offset:-2px}
 .rk-gallery-dots{position:absolute;left:0;right:0;bottom:3px;display:flex;justify-content:center}
 .rk-gallery-dots button{appearance:none;display:grid;place-items:center;width:24px;height:24px;margin:0 -6px;padding:0;border:0;background:none;cursor:pointer}
 .rk-gallery-dots button::before{content:"";width:6px;height:6px;border-radius:6px;background:${pageKitPalette.shared.onDeepTone};opacity:.5;box-shadow:0 1px 3px ${pageKitPalette.shared.dotShadow};transition:opacity .14s,width .2s}

@@ -172,6 +172,19 @@ describe("media", () => {
     render(<Gallery photos={[]} />);
   });
 
+  it("enlarges the gallery photo that was clicked", () => {
+    render(
+      <Gallery
+        photos={[
+          { src: PNG, alt: "Lobby" },
+          { src: PNG, alt: "Pool" },
+        ]}
+      />,
+    );
+    click(q('button[aria-label="Enlarge Pool"]'));
+    expect(q('[role="dialog"]')?.getAttribute("aria-label")).toBe("Pool");
+  });
+
   it("keeps a photo marked when the gallery loses the one that was shown", () => {
     const photos = (count: number) =>
       Array.from({ length: count }, (_, index) => ({ src: PNG, alt: `P${index}` }));
