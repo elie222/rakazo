@@ -438,7 +438,6 @@ app.post("/computers/:id/exec", async (c) => {
     layout = screenIndex === undefined ? undefined : screenPorts(screenIndex);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logRequestFailure(error);
     return c.json({ stdout: "", stderr: message, code: 1 }, 200);
   }
   const encoder = new TextEncoder();
@@ -712,7 +711,6 @@ app.post("/computers/:id/browser", async (c) => {
     return c.json(JSON.parse(result.stdout));
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    logRequestFailure(error);
     return c.json({
       ok: false,
       fallback: "computer_act",
