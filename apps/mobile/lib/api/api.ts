@@ -784,6 +784,18 @@ async function request(
       const error = parsed.json as
         | { message?: unknown; code?: unknown; data?: unknown }
         | undefined;
+      if (
+        proc === "threads/answerQuestion" &&
+        res.status === 404 &&
+        !(
+          error &&
+          typeof error === "object" &&
+          (typeof error.code === "string" ||
+            (typeof error.message === "string" && error.message.trim().length > 0))
+        )
+      ) {
+        throw new Error(t`Update your server to type a custom answer.`);
+      }
       const message = errorText(typeof error?.message === "string" ? error.message : "");
       const unauthorized = res.status === 401;
       // Without a Space header a 401 means the server no longer accepts the

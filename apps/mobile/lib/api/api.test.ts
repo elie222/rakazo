@@ -409,6 +409,48 @@ describe("mobile API requests", () => {
     );
   });
 
+  it("asks to update a server from before typed card answers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request) =>
+        new URL(String(url)).pathname === "/rpc/aiConsent/status"
+          ? jsonResponse({
+              json: { scope: "account-space", version: "2026-09-14", recipients: [] },
+            })
+          : new Response("404 Not Found", { status: 404 }),
+      ),
+    );
+    await expect(
+      rpc("threads/answerQuestion", {
+        botId: "bot-1",
+        text: "stop",
+        replyToMessageId: "msg-1",
+        clientNonce: "nonce-1",
+      }),
+    ).rejects.toThrow(new Error("Update your server to type a custom answer."));
+  });
+
+  it("preserves structured 404 errors on typed card answers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request) =>
+        new URL(String(url)).pathname === "/rpc/aiConsent/status"
+          ? jsonResponse({
+              json: { scope: "account-space", version: "2026-09-14", recipients: [] },
+            })
+          : rpcErrorResponse(404, "NOT_FOUND", "Bot does not exist"),
+      ),
+    );
+    await expect(
+      rpc("threads/answerQuestion", {
+        botId: "missing",
+        text: "custom",
+        replyToMessageId: "msg-1",
+        clientNonce: "nonce-1",
+      }),
+    ).rejects.toThrow(new Error("Bot does not exist"));
+  });
+
   it("shows the server's message instead of the procedure name", async () => {
     vi.stubGlobal(
       "fetch",
