@@ -455,7 +455,6 @@ it.each(["space switch", "keyboard dismiss"] as const)(
     }
     const focus = vi.spyOn(container.querySelector("input")!, "focus");
     await act(async () => row("Team, Group").click());
-    // A second tap must not start another attempt while the first is pending.
     await act(async () => row("Scout, Bot").click());
     expect(state.selectSpace).toHaveBeenCalledOnce();
     await act(async () =>

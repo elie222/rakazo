@@ -12,7 +12,6 @@ async function accountZone(page: Page) {
 async function openWithAccountIn(page: Page, prefix: string, zone: string) {
   await signup(page, `${prefix}-${Date.now()}@rakazo.test`, "password12", "Traveller");
   await completeOnboarding(page);
-  // A new account takes the browser's zone without asking.
   await expect.poll(() => accountZone(page)).toBe("Asia/Tokyo");
   await expect(page.getByTestId("timezone-prompt")).toHaveCount(0);
   await rpc(page, "preferences/update", { timezone: zone });

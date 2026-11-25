@@ -213,7 +213,6 @@ export async function finishThreadStop(
     await deps.events.notify(target.threadId, eventSeq);
   }
   if (runIds.length > 0) await deps.events.publishSpaceChange?.(actor.spaceId, "runs");
-  // Settle each stopped helper's card now rather than at the next reconciliation.
   for (const helper of stoppedHelpers) {
     await returnHelperOutcome(deps, helper, { status: "stopped", text: "" }).catch((error) => {
       getLogger().error("stopped helper card", error);

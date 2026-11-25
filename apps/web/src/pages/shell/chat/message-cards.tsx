@@ -18,6 +18,7 @@ import { rpc } from "../../../lib/query/rpc";
 import type { ErrorDetails } from "../../../lib/query/user-error";
 import { errorDetails, errorText } from "../../../lib/query/user-error";
 import { useEventListener } from "../../../lib/use-event-listener";
+import { useNearViewport } from "../../../lib/use-near-viewport";
 import { galleryImageKey, ImageLightbox, useOpenImage } from "./image-gallery";
 
 export function ChoiceCard({
@@ -525,29 +526,10 @@ export function ArtifactImage({
   name: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [visible, setVisible] = useState(false);
   const container = useRef<HTMLDivElement>(null);
+  const visible = useNearViewport(container);
   const src = useArtifactImage(target, artifactId, visible);
   const openImage = useOpenImage();
-
-  useEffect(() => {
-    const element = container.current;
-    if (!element || typeof IntersectionObserver === "undefined") {
-      setVisible(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "320px" },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
 
   return (
     <div ref={container}>

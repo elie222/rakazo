@@ -1,4 +1,4 @@
-import { MEMORY_REVISION_CONFLICT_ERROR, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
+import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import { HistoryReadInputSchema, HistorySearchInputSchema } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { memoryTools, withoutBlankFields } from "./run-tools-memory.js";
@@ -57,38 +57,6 @@ it.each(["Provider-generated context", ""])(
     expect(ctx.state.tainted).toBe(Boolean(text));
   },
 );
-
-describe("saving shared memory over a newer revision", () => {
-  const save = (failure: Error) => {
-    const finish = vi.fn((result: unknown) => result);
-    const ctx = {
-      runId: "run-1",
-      thread: { id: "thread-1" },
-      context: {},
-      deps: {
-        memory: {
-          read: vi.fn(async () => ({ documents: [{ revision: 1 }] })),
-          commit: vi.fn().mockRejectedValue(failure),
-        },
-      },
-    };
-    return memoryTools.save_shared_memory!(
-      ctx as never,
-      { args: { path: "team.md", content: "new" }, finish } as never,
-    );
-  };
-
-  it("tells the bot to read again", async () => {
-    await expect(save(new MemoryRevisionConflictError())).resolves.toEqual({
-      error: MEMORY_REVISION_CONFLICT_ERROR,
-    });
-  });
-
-  it("lets another failure through, even one quoting the conflict", async () => {
-    const failure = new Error(MEMORY_REVISION_CONFLICT_ERROR);
-    await expect(save(failure)).rejects.toBe(failure);
-  });
-});
 
 describe("deleting a shared memory document", () => {
   const del = (path: string, documents: Array<{ id: string; path: string }>, removed = true) => {
@@ -182,6 +150,28 @@ describe("remembering in another private memory document", () => {
         content: "# User\n- Lives in Berlin (saved 2026-03-06)\n- Likes tea\n",
         expectedRevision: 3,
       }),
+      {},
+    );
+  });
+
+  it("edits the Space's shared memory again after a concurrent save", async () => {
+    const { memory, result } = remember(
+      { shared: true, operations: [{ action: "add", content: "Invoices go to Dana." }] },
+      [{ path: "MEMORY.md", content: "# Team\n", revision: 2 }],
+    );
+    memory.commit.mockRejectedValueOnce(new MemoryRevisionConflictError());
+    await expect(result).resolves.toEqual({ ok: true });
+    expect(memory.read).toHaveBeenCalledWith({ scope: "user", path: "MEMORY.md" }, {});
+    expect(memory.commit).toHaveBeenCalledTimes(2);
+    expect(memory.commit).toHaveBeenLastCalledWith(
+      {
+        scope: "user",
+        path: "MEMORY.md",
+        content: "# Team\nInvoices go to Dana. (saved 2026-03-06)\n",
+        expectedRevision: 2,
+        sourceRunId: "run-1",
+        sourceThreadId: "thread-1",
+      },
       {},
     );
   });

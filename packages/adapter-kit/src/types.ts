@@ -1,6 +1,7 @@
 import type {
   BillingCancellationReason,
   ByokTier,
+  ChatAlert,
   ComputerSize,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
@@ -734,6 +735,11 @@ export interface AgentRunRequest {
     segments?: Array<{ text: string } | { steps: HistoryToolStep[] }>;
     /** Images attached to this message, hydrated only for recent user turns. */
     images?: AgentInputImage[];
+    /**
+     * On this bot's own reply: the `transcript` its turn's `done` event carried. A runtime that
+     * wrote it replays the turn from it, so the request starts as the earlier one did.
+     */
+    transcript?: string;
   }>;
   currentTurnImages?: AgentInputImage[];
   /** A confirmed image belongs to this run, including a resumed waiting-input reply. */
@@ -793,6 +799,11 @@ export interface AgentRunRequest {
   ) => Promise<unknown>;
   /** Called after a tool returns; implementations must not persist raw result contents. */
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
+  /**
+   * Called before `done` with an opaque record of the turn as the model was sent it and answered.
+   * Stored with the reply and handed back as that reply's history `transcript`, never shown.
+   */
+  onTranscript?: (transcript: string) => void;
   /** Atomically claim durable user steering at the runtime's next safe turn boundary. */
   claimSteering?: (seenIds: string[]) => Promise<AgentSteeringMessage[]>;
   /**
@@ -1251,7 +1262,7 @@ export interface NotificationMessage {
    * than Android's 96px limit, when one fits the payload budget.
    */
   sender?: { botId: string; name: string; avatar?: string; avatarLarge?: string };
-  kind: "completion" | "failure" | "help" | "takeover";
+  kind: ChatAlert["kind"];
   title: string;
   body: string;
   botId: string;

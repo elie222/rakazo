@@ -14,7 +14,7 @@ A page is JSX source whose default export is a React component. It renders in an
 - Exactly one \`export default\` (your top component). Helper components and data objects in the same file are fine.
 - Do not name your own component after a kit component (Page, Status, Table, Rows...): it replaces the kit's in the whole file, so using that kit component inside it renders itself forever, and the check refuses it. Call it StatusPage, BotTable and so on.
 - Gather data first and keep it in one object at the top. Write figures already formatted ("$12,400", "4.8%") and write plain characters, not HTML escapes ("<800ms", not "&lt;800ms").
-- Plain HTML and SVG elements (div, span, svg, path, rect, circle, text, linearGradient, animate...) with style={{...}} are allowed for custom visuals; take colours from useTheme() so they match both themes. script, style, iframe, object, embed and foreignObject are not allowed, and handlers are functions, never strings. Images are data: URIs only.
+- Plain HTML and SVG elements (div, span, svg, path, rect, circle, text, linearGradient, animate...) with style={{...}} are allowed for custom visuals; take colours from useTheme() so they match both themes. script, style, iframe, object, embed and foreignObject are not allowed, and handlers are functions, never strings. Pictures go through kit components as "image:<name>" or data: URIs (see Media).
 - Save with save_page {title, source}. To change it later, pass the pageId you got back with edits [{find, replace}] (all apply or none do) or the whole new source; pass only pageId to read the current source.
 
 ## Design rules
@@ -31,7 +31,7 @@ A page is JSX source whose default export is a React component. It renders in an
 ## Recipes
 - Dashboard (width "wide"): Section with a Segmented period switch in actions -> Metrics -> Grid of two charts -> Table with toned Status cells -> Callout with the takeaway.
 - Report or research dossier: TableOfContents -> Callout summary (lead + tone) -> numbered Sections, each a short Text plus a Table, Bars or BulletList -> Quote for primary evidence -> ProsCons for trade-offs -> Divider -> LinkCards (numbered) of sources -> Footnote for method notes.
-- Tracker: Metrics of progress -> Checklist or Rows with Status -> Steps for what is next -> Properties for owners and dates.
+- Tracker: Metrics of progress -> Checklist (with saveAs when the reader ticks it off) or Rows with Status -> Steps for what is next -> Properties for owners and dates.
 - Plan: Callout with the goal -> Steps or a Diagram of the phases -> Table of milestones with Status -> NumberedList of open questions.
 - Long reference: TableOfContents -> collapsible Sections (collapsible, defaultOpen for the first) so the reader opens what they need.
 
@@ -67,7 +67,7 @@ Names: ${ICON_LIST}.
 - Properties {items: [{label, value, icon?}]}: label and value pairs; value may be a Status.
 - Status {tone?}: a short status word in a tinted pill, e.g. <Status tone="success">Shipped</Status>; tone "neutral" or none is grey.
 - Rows {rows: [{title, lead?, detail?, meta?, status?: {label, tone}, icon?}]}: a list; lead sits in a narrow column before the title, the status follows the title in its tone, meta sits at the right.
-- Steps {steps: [{title, detail?, icon?}]}: a numbered sequence. Checklist {items: [{text, done, meta?}]}: read-only progress.
+- Steps {steps: [{title, detail?, icon?}]}: a numbered sequence. Checklist {items: [{text, done, meta?, id?}], saveAs?}: progress. With saveAs (a usePageState key) the reader ticks items and the ticks are saved; done is where each starts.
 - Table {columns: string[], rows: cell[][], align?: ("auto" | "start" | "end" | "center")[], emphasis?: column, sortable?: boolean}: a cell is text, a number, {text, tone?} or a Status. Figures and single short words align to the end. Wide tables scroll sideways; long ones get a filter box and a sticky header; sortable makes headers sort.
 
 ### Charts
@@ -88,16 +88,16 @@ LineChart, Columns, ColumnSeries, Scatter, Heatmap and CalendarHeatmap show exac
 
 ### Controls
 - Segmented {options: (string | {value, label, count?})[], value, onChange}: tabs for switching views. Wraps onto more lines; the chosen tab always shows.
-Keep each control's value in useState. A control placed straight in a Section or Grid is compact; inside your own element it is full size.
+Keep each control's value in useState, or in usePageState when the reader should find it again next time. A control placed straight in a Section or Grid is compact; inside your own element it is full size.
 - Button {label, onClick, variant?: "quiet" | "primary", disabled?}: one primary per group.
 - Select {label?, options: [{value, label}], value, onChange, placeholder?, disabled?}. Input {label?, value, onChange, placeholder?, type?: "text" | "number" | "search", min?: number}. Set min={0} on a number that can't go negative.
-- Toggle {label, value, onChange, disabled?}. Checkbox {label, value}: shows a recorded yes or no; the reader cannot change it, so things the reader ticks off are Toggles. A number the reader steps (servings, quantity) is a row of Button "−", the value and Button "+". Input has no Enter or submit event: act on onChange, or put a Button beside it.
+- Toggle {label, value, onChange, disabled?}. Checkbox {label, value}: shows a recorded yes or no; the reader cannot change it, so a list the reader ticks off is a Checklist with saveAs. A number the reader steps (servings, quantity) is a row of Button "−", the value and Button "+". Input has no Enter or submit event: act on onChange, or put a Button beside it.
 - LinkButton {label, href, variant?: "button" | "text"} and TextLink {href, children}: web or mail links, opened by the app.
 - CopyButton {label, text?, copiedLabel?}: copies text (else the label) and shows "Copied"; where copying is blocked it shows the text to select. For your own copy buttons call copyText(text), which resolves true once copied; navigator.clipboard is blocked in pages.
 - ReplyButton {label, reply?}: puts reply (or the label), up to 300 characters, in the chat's message box for the reader to send. It is inactive where there is no chat, such as a shared page.
 
 ### Media
-Pictures, sound and video must be embedded as data: URIs (a blob: the page makes itself also works for sound and video); web addresses never load and the component is left out.
+Give each picture (a web image, a generated image, a chat or computer file) a name in save_page images and write "image:<name>" in full wherever a picture goes: src, image, photos, poster. Sound and video must be data: URIs (or a blob: the page makes itself). Web addresses never load and the component is left out.
 - Image {src, alt, caption?, fit?: "cover" | "contain", width?, height?, ratio?: number | "16/9"}: click to enlarge.
 - Gallery {photos: [{src, alt}], height?}: up to 8 photos the reader swipes or steps through.
 - PhotoStrip {items: [{image, alt?, title?, price?, note?, href?}], tileWidth?, imageHeight?}: a sideways row of small cards.
@@ -118,6 +118,7 @@ Dates are "YYYY-MM-DD"; times are hours as numbers (13.5 is 1:30 PM). Mark an ev
 ### Helpers
 - useTheme(): the current theme as values for custom elements: {kind, bg {base, subtle, elevated}, text {primary, secondary, tertiary, accent, success, warning, danger, ...Deep}, fill, border, font, weight, radius, motion, dataviz {categorical, sequential, diverging, other, negative}}. It follows the reader's light or dark mode.
 - computeDAGLayout(nodes, edges, {direction?}): the Diagram's layout, for drawing your own flow.
+- usePageState(key, initial): useState the app keeps for each reader across reloads and devices, for notes, answers and choices. Give each a fixed key unique on the page (letters, digits, - _ . :; up to 64). Edits keep saved values: one replaces initial only while its type matches, so rename the key to start over. Up to 64 KB per reader; on a shared link it lasts until reload.
 - useSource(id): reads a snapshot declared in a comment that opens the file: "/* page-sources" on the first line, then a JSON object such as {"sales": {"snapshot": {...}, "asOf": "2026-10-30"}}, then "*/". useSource returns {value, asOf, fresh, updating}; nothing refreshes live yet, so fresh is always false. SourceStamp also takes a hand-written {asOf}.
 
 ## Example

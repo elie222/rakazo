@@ -2,6 +2,12 @@
 reviews:
   # No "review skipped" comment on the PRs CodeRabbit sits out.
   review_status: false
+  path_instructions:
+    - path: "**/*"
+      instructions: >-
+        Do not request comments that restate code, tests, or schema fields.
+        Request a comment only when you can name a missing contract or constraint
+        the code cannot express and explain why it matters.
   # Qodo is the default reviewer; CodeRabbit only reviews PRs labeled
   # review:cr (see .github/workflows/review-bot.yml).
   auto_review:

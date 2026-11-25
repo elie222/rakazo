@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
-import { act, createElement } from "react";
+import { act, createElement, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import type { PressableProps } from "react-native";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -93,3 +93,36 @@ it.each(["failed", "ready"] as const)(
     }
   },
 );
+
+it("hides a previous preview in the first commit for a different artifact", async () => {
+  const pending = deferred<Awaited<ReturnType<typeof imageArtifactPreview>>>();
+  vi.mocked(imageArtifactPreview)
+    .mockResolvedValueOnce({ uri: "file:///first.png", size: { width: 50, height: 40 } })
+    .mockReturnValueOnce(pending.promise);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const previewVisibleOnCommit = vi.fn();
+  function Attachment({ artifactId }: { artifactId: string }) {
+    useLayoutEffect(() => {
+      previewVisibleOnCommit(container.querySelector("[data-preview]") !== null);
+    }, [artifactId]);
+    return (
+      <InlineImageAttachment
+        threadTarget={{ botId: "bot-1" }}
+        artifactId={artifactId}
+        name={`${artifactId}.png`}
+        mimeType="image/png"
+        onOpen={() => undefined}
+        labelColor="token-foreground"
+      />
+    );
+  }
+  try {
+    await act(async () => root.render(<Attachment artifactId="first" />));
+    expect(container.querySelector("[data-preview]")).not.toBeNull();
+    await act(async () => root.render(<Attachment artifactId="second" />));
+    expect(previewVisibleOnCommit).toHaveBeenLastCalledWith(false);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

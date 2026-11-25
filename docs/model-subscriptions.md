@@ -38,14 +38,20 @@ bot's workflow.
 
 **OpenCode Zen / pay-as-you-go** uses the **OpenCode** provider instead. Connect its API key;
 usage comes from your OpenCode credit balance rather than Go's allowance. Its free-tier chat
-models require the OpenCode app and are not offered in Rakazo. See [OpenCode's model documentation](https://opencode.ai/docs/console/models/).
+models require the OpenCode app and are not offered as a connection. See [OpenCode's model documentation](https://opencode.ai/docs/console/models/).
+
+If you run Rakazo from a source checkout for yourself, your bots can also run through the official
+[OpenCode CLI](./self-host-models.md#opencode-cli), which reaches its free models and the plans you
+sign in to there.
 
 ## Other subscriptions
 
 Check the exact plan before connecting or buying it:
 
 - **Gemini:** API keys use the Gemini API's own [billing tiers and limits](https://ai.google.dev/gemini-api/docs/billing).
-  Do not assume a Google AI app subscription funds API requests.
+  Do not assume a Google AI app subscription funds API requests. If you run Rakazo from a source
+  checkout for yourself, a Google plan that covers Antigravity can run your bots through the official
+  [Antigravity CLI](./self-host-models.md#antigravity-cli).
 - **Kimi:** Code membership and Moonshot's general API have different keys, endpoints, and billing.
   Check the [Kimi account documentation](https://www.kimi.ai/help/kimi-code/faq) for your plan.
 - **Copilot, Grok, and other coding plans:** check the provider's current terms, eligible clients,

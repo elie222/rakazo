@@ -85,6 +85,9 @@ const AdminAccessPage = lazyComponent(() =>
 const NavLinkPage = lazyComponent(() =>
   import("./pages/NavLinkPage").then((module) => module.NavLinkPage),
 );
+const RedeemPage = lazyComponent(() =>
+  import("./pages/auth/Redeem").then((module) => module.RedeemPage),
+);
 const InvitePage = lazyComponent(() =>
   import("./pages/auth/Invite").then((module) => module.InvitePage),
 );
@@ -314,6 +317,19 @@ function SessionApp() {
                     <InvitePage />
                   ) : (
                     <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
+                  )
+                }
+              />
+              <Route
+                path="/redeem/:code?"
+                element={
+                  user ? (
+                    <RedeemPage key={pathname} />
+                  ) : (
+                    <Navigate
+                      to={`${hasSignedInBefore() ? "/sign-in" : "/sign-up"}?next=${encodeURIComponent(pathname)}`}
+                      replace
+                    />
                   )
                 }
               />

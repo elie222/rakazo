@@ -1,6 +1,6 @@
-import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { cliEnv, stopProcessTree } from "../../../cli-models/cli-process.js";
 
 /**
  * Runs the official `claude` executable found on the server's PATH, exactly as installed. Rakazo
@@ -12,60 +12,6 @@ export const CLAUDE_CODE_COMMAND = "claude";
 
 /** The oldest CLI whose stream-json history replay and tool switches this bridge relies on. */
 export const CLAUDE_CODE_MIN_VERSION = "2.1.280";
-
-/** What the CLI needs to find its own sign-in, reach the network and run; nothing else. */
-const PASSTHROUGH_ENV = new Set([
-  "PATH",
-  "HOME",
-  "USER",
-  "LOGNAME",
-  "SHELL",
-  "LANG",
-  "LANGUAGE",
-  "LC_ALL",
-  "LC_COLLATE",
-  "LC_CTYPE",
-  "LC_MESSAGES",
-  "LC_MONETARY",
-  "LC_NUMERIC",
-  "LC_TIME",
-  "LC_ADDRESS",
-  "LC_IDENTIFICATION",
-  "LC_MEASUREMENT",
-  "LC_NAME",
-  "LC_PAPER",
-  "LC_TELEPHONE",
-  "TZ",
-  "TMPDIR",
-  "XDG_CONFIG_HOME",
-  "XDG_RUNTIME_DIR",
-  // Set only by an operator who keeps the CLI's sign-in somewhere other than its default.
-  "CLAUDE_CONFIG_DIR",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-  "NODE_EXTRA_CA_CERTS",
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-  // Windows essentials.
-  "Path",
-  "PATHEXT",
-  "SYSTEMROOT",
-  "SystemRoot",
-  "WINDIR",
-  "COMSPEC",
-  "TEMP",
-  "TMP",
-  "USERPROFILE",
-  "HOMEDRIVE",
-  "HOMEPATH",
-  "APPDATA",
-  "LOCALAPPDATA",
-  "PROGRAMDATA",
-]);
 
 /**
  * The CLI's own headless sign-in. Passed through, unread, only when the operator sets
@@ -94,37 +40,19 @@ const BRIDGE_ENV = {
 export function claudeCodeEnv(
   source: NodeJS.ProcessEnv = process.env,
   extra: Record<string, string> = {},
-  emptyConfigDir?: string,
+  emptyConfigDir?: () => string,
 ): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (value !== undefined && PASSTHROUGH_ENV.has(key)) {
-      env[key] = value;
-    }
-  }
+  // Set only by an operator who keeps the CLI's sign-in somewhere other than its default.
+  const env = cliEnv(source, ["CLAUDE_CONFIG_DIR"]);
   const token =
     source.RAKAZO_CLAUDE_CODE_SETUP_TOKEN === "1" ? source[OPT_IN_TOKEN_NAME] : undefined;
   if (!token) return { ...env, ...BRIDGE_ENV, ...extra };
-  // The token needs no stored profile, and the CLI tells the model the profile's email.
+  // The token needs no stored profile, and the CLI tells the model the profile's email, so each
+  // turn gets a new config dir with none.
   const config: Record<string, string> = emptyConfigDir
-    ? { CLAUDE_CONFIG_DIR: emptyConfigDir }
+    ? { CLAUDE_CONFIG_DIR: emptyConfigDir() }
     : {};
   return { ...env, [OPT_IN_TOKEN_NAME]: token, ...config, ...BRIDGE_ENV, ...extra };
-}
-
-const stoppedProcesses = new WeakSet<ChildProcess>();
-
-/** The CLI owns no persistent state; stop its group immediately after the model turn. */
-function stopProcessTree(child: ChildProcess): void {
-  if (stoppedProcesses.has(child)) return;
-  stoppedProcesses.add(child);
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  try {
-    if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
-    else child.kill("SIGKILL");
-  } catch {
-    // Already gone.
-  }
 }
 
 export interface ClaudeCodeProcess {
