@@ -203,7 +203,6 @@ export interface AppEnv extends MessagingEnvironmentValues {
   demoAccount?: { email: string; password: string } | null;
 }
 
-/** Overrides win key by key inside `sandboxOptions`, so a partial one keeps the rest of the environment's. */
 /** The server switches that let runs besides the owner's own chats reach their paired computer. */
 export function userComputerAccess(env: AppEnv) {
   return {
@@ -214,6 +213,7 @@ export function userComputerAccess(env: AppEnv) {
   };
 }
 
+/** Overrides win key by key inside `sandboxOptions`, so a partial one keeps the rest of the environment's. */
 export function withEnvOverrides(env: AppEnv, overrides: Partial<AppEnv>): AppEnv {
   return {
     ...env,
