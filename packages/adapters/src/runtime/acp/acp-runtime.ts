@@ -12,7 +12,7 @@ import type {
   AgentRuntime,
   AgentRuntimeEvent,
 } from "@rakazo/adapter-kit";
-import { abortableDelay } from "@rakazo/core";
+import { abortableDelay, pollUntil } from "@rakazo/core";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { cliEnv, privateFolder } from "../../cli-models/cli-process.js";
 import type { PersonalCliAccessCheck } from "../../cli-models/personal-access.js";
@@ -143,8 +143,10 @@ async function runAcpTurn(
   let sessionId: string | undefined;
   let cancelled = false;
   /** The prompt the CLI is still answering, if the turn ends before it does. */
-  let inFlight: Promise<unknown> | undefined;
+  let inFlight: Promise<Update> | undefined;
   let violation: Error | undefined;
+  /** How the CLI removes a session, where it can. */
+  let endSession: string | undefined;
   const cancelTurn = () => {
     if (cancelled || !connection || !sessionId) return;
     cancelled = true;
@@ -306,6 +308,11 @@ async function runAcpTurn(
     }
     const capabilities = (init.agentCapabilities ?? {}) as Update;
     const sessionCapabilities = (capabilities.sessionCapabilities ?? {}) as Update;
+    endSession = sessionCapabilities.delete
+      ? "session/delete"
+      : sessionCapabilities.close
+        ? "session/close"
+        : undefined;
 
     // A session continues where the CLI can resume or load it; otherwise the chat starts over.
     let session =
@@ -389,25 +396,12 @@ async function runAcpTurn(
       throw new Error(`${descriptor.label} stopped the turn before it finished.`);
     }
     await reportUsage(request, descriptor, response.usage, push);
-    if (oneShot) {
-      const end = sessionCapabilities.delete
-        ? "session/delete"
-        : sessionCapabilities.close
-          ? "session/close"
-          : undefined;
-      if (end) {
-        await bestEffort(
-          "Remove the agent CLI's helper session",
-          step(agent.request(end, { sessionId: activeSessionId })),
-        );
-      }
-    }
     push({ type: "done" });
   } catch (error) {
     if (error instanceof TurnAborted || (signal.aborted && !violation)) return;
     // A failed turn may have left the session short of what it was sent, so the next turn
-    // starts over from the chat.
-    forgetSession(key);
+    // starts over from the chat. A helper never used the chat's session.
+    if (!oneShot) forgetSession(key);
     if (violation) throw violation;
     if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
       throw new Error(descriptor.notInstalled);
@@ -423,14 +417,27 @@ async function runAcpTurn(
       if (inFlight && sessionId) {
         if (!cancelled) connection.notify("session/cancel", { sessionId });
         const grace = new AbortController();
-        await Promise.race([
+        const settled = await Promise.race([
           inFlight.then(
-            () => undefined,
+            (response) => response,
             () => undefined,
           ),
           abortableDelay(CANCEL_GRACE_MS, grace.signal),
         ]);
         grace.abort();
+        // The CLI did the model work even when the turn ended at a pause or a stop.
+        await bestEffort(
+          "Record the agent CLI's usage",
+          reportUsage(request, descriptor, (settled as Update | undefined)?.usage, push),
+        );
+      }
+      // A helper's session is removed however its turn ended.
+      if (oneShot && sessionId && endSession) {
+        const ending = bestEffort(
+          "Remove the agent CLI's helper session",
+          connection.request(endSession, { sessionId }),
+        );
+        await Promise.race([ending, abortableDelay(CANCEL_GRACE_MS)]);
       }
       connection.stop();
     }
@@ -451,8 +458,29 @@ async function awaitStep<T>(
   activity: () => { quiet: boolean; since: number },
 ): Promise<T> {
   const idleMs = modelStreamIdleTimeoutMs();
-  let timer: NodeJS.Timeout | undefined;
+  const done = new AbortController();
   let onAbort: (() => void) | undefined;
+  // A long silence while no tool is running means the CLI is stuck. The watch ends with the step.
+  const stalled =
+    idleMs > 0
+      ? pollUntil(
+          () => {
+            if (done.signal.aborted) return true;
+            const { quiet, since } = activity();
+            return quiet && Date.now() - since > idleMs;
+          },
+          {
+            intervalMs: Math.min(1_000, idleMs),
+            timeoutMs: Number.POSITIVE_INFINITY,
+            waitingFor: "the agent CLI to go quiet",
+          },
+        ).then(() => {
+          if (!done.signal.aborted) {
+            throw new Error(`${descriptor.label} stopped responding. Try again.`);
+          }
+          return new Promise<never>(() => {});
+        })
+      : new Promise<never>(() => {});
   try {
     return await Promise.race([
       work,
@@ -466,26 +494,15 @@ async function awaitStep<T>(
                 `${descriptor.label} ${reason.message} before it finished.${stderr ? ` ${stderr}` : ""}`,
               );
       }),
+      stalled,
       new Promise<never>((_, reject) => {
         onAbort = () => reject(new TurnAborted());
         if (signal.aborted) onAbort();
         signal.addEventListener("abort", onAbort, { once: true });
-        if (idleMs > 0) {
-          timer = setInterval(
-            () => {
-              const { quiet, since } = activity();
-              if (quiet && Date.now() - since > idleMs) {
-                reject(new Error(`${descriptor.label} stopped responding. Try again.`));
-              }
-            },
-            Math.min(1_000, idleMs),
-          );
-          timer.unref();
-        }
       }),
     ]);
   } finally {
-    clearInterval(timer);
+    done.abort();
     if (onAbort) signal.removeEventListener("abort", onAbort);
   }
 }

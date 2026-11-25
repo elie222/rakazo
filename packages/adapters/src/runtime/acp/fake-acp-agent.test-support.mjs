@@ -7,6 +7,7 @@
 //   "permission"  asks permission to run a tool of its own
 //   "fail"        answers the prompt with an error
 // anything else gets the reply "ok".
+import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -164,7 +165,7 @@ async function handle(message) {
         },
       };
     case "session/new": {
-      const sessionId = `ses-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const sessionId = `ses-${randomUUID()}`;
       servers.set(sessionId, params.mcpServers[0]);
       appendFileSync(sessionsFile, `${sessionId}\n`);
       return { sessionId, configOptions: [modelOption("fake/default")] };

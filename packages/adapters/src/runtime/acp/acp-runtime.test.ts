@@ -303,6 +303,19 @@ describe("acpAgentRuntime", () => {
     expect(requests("session/delete")).toHaveLength(1);
   });
 
+  it("removes a failed helper's session and keeps the chat's", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+    const threadId = `thread-${randomUUID()}`;
+    await collect(runtime, request({ threadId }));
+
+    const { error } = await collect(runtime, request({ threadId, tools: [], prompt: "fail" }));
+    await collect(runtime, request({ threadId, prompt: "next" }));
+
+    expect(error).toBeDefined();
+    expect(requests("session/delete")).toHaveLength(1);
+    expect(requests("session/resume")).toHaveLength(1);
+  });
+
   it("reports the agent's error answer", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
 

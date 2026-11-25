@@ -5,6 +5,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { getLogger } from "@rakazo/logging";
 
 export interface ToolServerTool {
   name: string;
@@ -68,7 +69,8 @@ export async function startToolServer(
     server
       .connect(transport)
       .then(() => transport.handleRequest(request, response))
-      .catch(() => {
+      .catch((error: unknown) => {
+        getLogger().warn("The agent CLI's tool endpoint failed a request", { error });
         if (!response.headersSent) response.writeHead(500).end();
       });
   });
