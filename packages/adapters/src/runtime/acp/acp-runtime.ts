@@ -18,6 +18,7 @@ import { isTerminatingReplyResult, terminatingReplyText } from "../../approvals/
 import { cliEnv, privateFolder } from "../../cli-models/cli-process.js";
 import type { PersonalCliAccessCheck } from "../../cli-models/personal-access.js";
 import { deliverFinishedShells } from "../../computers/sandbox/shell-command-stream.js";
+import { agentCliModelSeesImages } from "../../models/model-vision.js";
 import { sanitizeSensitiveText } from "../pi/pi-runtime-errors.js";
 import { modelStreamIdleTimeoutMs } from "../pi/pi-runtime-limits.js";
 import { createRuntimeModels } from "../pi/pi-runtime-models.js";
@@ -225,11 +226,14 @@ async function runAcpTurn(
   const includeOwnReplies = ownsChatSession && takeReplyElsewhere(key);
   const disposable = !ownsChatSession;
   const known = ownsChatSession ? findSession(key) : undefined;
+  // The model the CLI runs must see images too: a separate computer-use model, which a run may also
+  // have, is not one this runtime switches to.
+  const seesImages = agentCliModelSeesImages(descriptor, request.model.id);
   try {
     const host = toolHost(request, context, signal, push, cancelTurn, toolBudget);
     const agentTools = toAgentTools(
       request.tools.filter(
-        (tool) => !(descriptor.acceptsImages ? MODE_SWITCH_TOOLS : SCREEN_TOOLS).has(tool.name),
+        (tool) => !(seesImages ? MODE_SWITCH_TOOLS : SCREEN_TOOLS).has(tool.name),
       ),
       host,
     );
@@ -474,13 +478,7 @@ async function runAcpTurn(
       usedAt: Date.now(),
     };
     const takesImages = Boolean((capabilities.promptCapabilities as Update | undefined)?.image);
-    const turn = turnText(
-      request,
-      current,
-      fresh,
-      includeOwnReplies,
-      Boolean(descriptor.acceptsImages) && takesImages,
-    );
+    const turn = turnText(request, current, fresh, includeOwnReplies, seesImages && takesImages);
     if (turn.leftOut) {
       getLogger().warn("The agent CLI does not take images; the message's images were left out", {
         agent: descriptor.id,
