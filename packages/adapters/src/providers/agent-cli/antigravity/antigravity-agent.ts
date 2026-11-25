@@ -57,7 +57,7 @@ export const antigravityAgent: AcpAgentDescriptor = {
   sessionMeta: ({ instructions, toolServer }) => ({
     antigravity: {
       enabledTools: [],
-      eagerMcpServers: [toolServer],
+      eagerMcpServers: toolServer ? [toolServer] : [],
       systemPrompt: { append: instructions },
     },
   }),

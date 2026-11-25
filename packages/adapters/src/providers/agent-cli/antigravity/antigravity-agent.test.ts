@@ -25,6 +25,10 @@ describe("antigravityAgent", () => {
         systemPrompt: { append: "You are Pip." },
       },
     });
+    // A turn without tools has no tool server for the CLI to load.
+    expect(antigravityAgent.sessionMeta?.({ instructions: "You are Pip." })).toMatchObject({
+      antigravity: { eagerMcpServers: [] },
+    });
   });
 
   it("starts the CLI with a home of its own that links only the operator's sign-in", async () => {

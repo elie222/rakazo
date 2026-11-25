@@ -28,7 +28,7 @@ export interface AcpAgentDescriptor {
    * The `_meta` every session request carries, for a CLI that takes its settings (its own tools
    * off, Rakazo's instructions as its system prompt) per session instead of at launch.
    */
-  sessionMeta?(input: { instructions: string; toolServer: string }): Record<string, unknown>;
+  sessionMeta?(input: { instructions: string; toolServer?: string }): Record<string, unknown>;
   /** The name the CLI reports a call to one of the tool server's tools under. */
   toolCallName(toolServer: string, tool: string): string;
   /**

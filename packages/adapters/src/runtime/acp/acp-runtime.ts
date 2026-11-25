@@ -423,7 +423,8 @@ async function runAcpTurn(
 
     const sessionMeta = descriptor.sessionMeta?.({
       instructions: request.instructions || fallbackSystemPrompt(false),
-      toolServer: ACP_TOOL_SERVER,
+      // Named only when this turn has one, so the CLI never looks for a server it was not given.
+      ...(toolServer ? { toolServer: ACP_TOOL_SERVER } : {}),
     });
     const sessionParams = sessionMeta ? { _meta: sessionMeta } : {};
     // A session continues where the CLI can resume or load it; otherwise the chat starts over.
