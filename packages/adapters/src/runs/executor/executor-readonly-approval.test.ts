@@ -6534,4 +6534,108 @@ describe("closing denied approved effects", () => {
     expect(storedSecrets).toHaveLength(1);
     expect(storedSecrets[0]?.id).toBe("sec-earlier-code");
   });
+
+  it("does not let a denied request_secret consume a newer run secret after the deny rule is removed", async () => {
+    const args = { connectionId: "conn-1" };
+    const key = approvalEffectKey("run-1", "request_secret", args);
+    const f = fixture({
+      name: "request_secret",
+      builtin: true,
+    });
+    const storedSecrets = [
+      {
+        id: "sec-newer",
+        userId: f.storedRun.userId,
+        spaceId: f.storedRun.spaceId,
+        kind: runSecretKind("run-1"),
+        ciphertext: "newer-card-answer",
+        createdAt: new Date("2026-11-24T12:10:00Z"),
+      },
+    ];
+    Object.assign(f.prisma.secret, {
+      findFirst: vi.fn(
+        async ({ where }: { where: { userId?: string; spaceId?: string; kind?: string } }) =>
+          storedSecrets.find(
+            (row) =>
+              (where.userId === undefined || row.userId === where.userId) &&
+              (where.spaceId === undefined || row.spaceId === where.spaceId) &&
+              (where.kind === undefined || row.kind === where.kind),
+          ) ?? null,
+      ),
+      delete: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const index = storedSecrets.findIndex((row) => row.id === where.id);
+        if (index >= 0) storedSecrets.splice(index, 1);
+      }),
+    });
+    f.effects.push({
+      id: "effect-secret-denied",
+      runId: "run-1",
+      spaceId: f.storedRun.spaceId,
+      kind: "request_secret",
+      request: args,
+      idempotencyKey: key,
+      status: "denied",
+      result: { refused: "rule", error: "request_secret is blocked in this space." },
+      createdAt: new Date("2026-11-24T12:00:00Z"),
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.results).toHaveLength(1);
+    expect(f.results[0]).toMatchObject({ error: "request_secret is blocked in this space." });
+    expect(storedSecrets).toHaveLength(1);
+    expect(storedSecrets[0]?.id).toBe("sec-newer");
+  });
+
+  it("refuses repeated user-denied read-only calls in the same attempt after the approval rule is removed", async () => {
+    const args = { query: "weather today" };
+    const key = approvalEffectKey("run-1", "web_search", args);
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+    });
+    f.web.searchHits = [{ title: "Sunny", url: "https://example.test", snippet: "" }];
+    f.effects.push({
+      id: "effect-readonly-user-denied",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "web_search",
+      request: args,
+      idempotencyKey: key,
+      status: "denied",
+    });
+    f.setCalls([
+      { args, executionId: "call-1" },
+      { args, executionId: "call-2" },
+    ]);
+    await f.run();
+
+    expect(f.results).toHaveLength(2);
+    expect(f.results[0]).toEqual({ error: DENIED_ACTION_ERROR });
+    expect(f.results[1]).toEqual({ error: DENIED_ACTION_ERROR });
+    expect(f.results[1]).not.toHaveProperty("results");
+  });
+
+  it("loads denied effect keys at most once per attempt across repeated read-only calls", async () => {
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+    });
+    f.web.searchHits = [{ title: "Sunny", url: "https://example.test", snippet: "" }];
+    const findMany = f.prisma.externalEffect.findMany as ReturnType<typeof vi.fn>;
+    findMany.mockClear();
+    f.setCalls([
+      { args: { query: "first" }, executionId: "call-1" },
+      { args: { query: "second" }, executionId: "call-2" },
+      { args: { query: "third" }, executionId: "call-3" },
+    ]);
+    await f.run();
+
+    expect(f.results).toHaveLength(3);
+    const deniedLookups = findMany.mock.calls.filter(
+      ([query]) =>
+        (query as { where?: { status?: unknown } } | undefined)?.where?.status === "denied",
+    );
+    expect(deniedLookups).toHaveLength(1);
+  });
 });

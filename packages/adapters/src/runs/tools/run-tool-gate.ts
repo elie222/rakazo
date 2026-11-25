@@ -68,7 +68,6 @@ import {
   claimEffect,
   completeEffect,
   denyApprovedEffect,
-  findRecordedEffect,
   recordEffect,
   uncertainEffectError,
 } from "../lifecycle/run-effects.js";
@@ -404,7 +403,12 @@ export async function gateToolCall(
       approvalResolved.decision === "deny"
         ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
         : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`;
-    if (approvedEffectKey) await denyApprovedEffect(deps, run, approvedEffectKey, reason, message);
+    if (approvedEffectKey) {
+      await denyApprovedEffect(deps, run, approvedEffectKey, reason, message);
+      if (ctx.state.effects.deniedKeys) {
+        (await ctx.state.effects.deniedKeys).add(approvedEffectKey);
+      }
+    }
     await auditToolCall(ctx, name, "denied", { reason });
     return {
       result: refusal("approval_denied", message),
@@ -467,13 +471,18 @@ export async function gateToolCall(
   // Connector read-only hints must not bypass approval, review, or replay decisions.
   // A fetch to a new site is gated like any action, so it needs an effect to approve.
   // A read-only tool with a saved denied effect still reconciles its refusal even if the rule is removed.
-  const applied =
+  const baseEffectKey = approvalEffectKey(runId, replayEffectToolName, args);
+  const readOnlyEligible =
     READ_ONLY_AGENT_TOOLS.has(name) &&
     plan === "allow" &&
     siteGate !== "new" &&
     nextApprovedTool !== name &&
-    !approvedEffectKey &&
-    (await findRecordedEffect(deps, effectKey))?.status !== "denied"
+    !approvedEffectKey;
+  const readOnlyDenied = readOnlyEligible
+    ? await loadDeniedEffectKeys(ctx).then((keys) => keys.has(effectKey) || keys.has(baseEffectKey))
+    : false;
+  const applied =
+    readOnlyEligible && !readOnlyDenied
       ? undefined
       : await recordEffect(
           deps,
@@ -524,6 +533,9 @@ export async function gateToolCall(
       where: { id: applied.effect.id, status: "intended" },
       data: { status: "denied", result: { refused: "repeat" } },
     });
+    if (ctx.state.effects.deniedKeys) {
+      (await ctx.state.effects.deniedKeys).add(effectKey);
+    }
     return { result: refusal("action_denied_repeat", DENIED_ACTION_ERROR) };
   }
 
@@ -613,7 +625,7 @@ export async function gateToolCall(
 
   if (applied?.duplicate && duplicateGate) {
     if (duplicateGate.action === "return") {
-      if (name === "request_secret") {
+      if (name === "request_secret" && applied.effect.status === "completed") {
         const replacementSecret = await deps.prisma.secret.findFirst({
           where: {
             spaceId: run.spaceId,
@@ -694,6 +706,25 @@ export async function gateToolCall(
     for (const trust of connectorTrusts) trusted.add(trust);
   }
   return { call };
+}
+
+function loadDeniedEffectKeys(ctx: RunContext): Promise<Set<string>> {
+  const cached = ctx.state.effects.deniedKeys;
+  if (cached) return cached;
+  const pending = ctx.deps.prisma.externalEffect?.findMany
+    ? ctx.deps.prisma.externalEffect
+        .findMany({
+          where: { runId: ctx.runId, status: "denied" },
+          select: { idempotencyKey: true },
+        })
+        .then((rows) => new Set(rows.map((row) => row.idempotencyKey)))
+        .catch((error) => {
+          ctx.state.effects.deniedKeys = undefined;
+          throw error;
+        })
+    : Promise.resolve(new Set<string>());
+  ctx.state.effects.deniedKeys = pending;
+  return pending;
 }
 
 function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {

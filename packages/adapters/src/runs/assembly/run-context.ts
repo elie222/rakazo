@@ -181,6 +181,8 @@ export interface EffectState {
   /** Turn snapshots captured before each tool call, by execution id. */
   pendingTurnCheckpoints: Map<string, () => string>;
   storedTurnCheckpoint: boolean;
+  /** Denied effect keys loaded once per attempt to avoid per-call lookups on read-only tools. */
+  deniedKeys?: Promise<Set<string>>;
 }
 
 export interface ScreenState {

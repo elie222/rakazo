@@ -8,10 +8,12 @@ import type { Prisma } from "@rakazo/db";
 import {
   assertRunCanWriteHistory,
   RUN_TURN_CHECKPOINT_KIND,
+  readJsonColumn,
   runCodeKind,
   runLoginKind,
   runSecretKind,
 } from "@rakazo/db";
+import { z } from "zod";
 import {
   boundDirectApprovalDetails,
   catalogApprovalConnectorId,
@@ -344,48 +346,45 @@ export function uncertainEffectError(toolName: string): Error {
   );
 }
 
-/** Look up an already recorded effect by idempotency key without creating a row. */
-export async function findRecordedEffect(
-  deps: ExecutorDeps,
-  idempotencyKey: string,
-): Promise<{ status: string; request: unknown } | null> {
-  if (!deps.prisma.externalEffect?.findUnique) return null;
-  return deps.prisma.externalEffect.findUnique({
-    where: { idempotencyKey },
-    select: { status: true, request: true },
-  });
-}
+const RequestSecretPayloadSchema = z.record(z.string(), z.unknown()).nullable();
 
-function savedLoginSecretName(result: unknown): string | undefined {
-  if (!result || typeof result !== "object" || !("credentialSaved" in result)) return undefined;
-  const saved = (result as { credentialSaved?: unknown }).credentialSaved;
-  if (!saved || typeof saved !== "object") return undefined;
-  const { name, auth } = saved as { name?: unknown; auth?: unknown };
-  if (
-    typeof name !== "string" ||
-    !name ||
-    !auth ||
-    typeof auth !== "object" ||
-    (auth as { type?: unknown }).type !== "login"
-  ) {
-    return undefined;
-  }
-  return name;
-}
+const SavedCredentialResultSchema = z
+  .object({
+    credentialSaved: z
+      .object({
+        name: z.string().min(1),
+        auth: z.object({ type: z.string() }),
+      })
+      .optional(),
+  })
+  .nullable();
 
 function pendingRequestSecretKind(
   runId: string,
-  request: unknown,
-  result: unknown,
+  effect: { id: string; request: unknown; result: unknown },
 ): string | undefined {
-  if (!request || typeof request !== "object") return runSecretKind(runId);
-  const resolved = resolveRequestSecretDestination(request as Record<string, unknown>);
+  const request = readJsonColumn(
+    RequestSecretPayloadSchema,
+    effect.request,
+    { table: "external_effects", column: "request", id: effect.id },
+    { fallback: null },
+  );
+  if (!request) return undefined;
+  const resolved = resolveRequestSecretDestination(request);
   if (resolved.oneTimeCodeOrigin) return runCodeKind(runId);
   if (resolved.destination) {
-    const loginName = savedLoginSecretName(result);
-    return loginName ? runLoginKind(runId, loginName) : undefined;
+    if (effect.result == null) return undefined;
+    const saved = readJsonColumn(
+      SavedCredentialResultSchema,
+      effect.result,
+      { table: "external_effects", column: "result", id: effect.id },
+      { fallback: null },
+    );
+    return saved?.credentialSaved?.auth.type === "login"
+      ? runLoginKind(runId, saved.credentialSaved.name)
+      : undefined;
   }
-  return runSecretKind(runId);
+  return resolved.connectionId ? runSecretKind(runId) : undefined;
 }
 
 /**
@@ -416,9 +415,7 @@ export async function denyApprovedEffect(
     });
     if (!existing || existing.runId !== run.id || existing.status !== "approved") return;
     const secretKind =
-      existing.kind === "request_secret"
-        ? pendingRequestSecretKind(run.id, existing.request, existing.result)
-        : undefined;
+      existing.kind === "request_secret" ? pendingRequestSecretKind(run.id, existing) : undefined;
     const createdAt = existing.createdAt;
     const updated = await tx.externalEffect.updateMany({
       where: { id: existing.id, status: "approved" },

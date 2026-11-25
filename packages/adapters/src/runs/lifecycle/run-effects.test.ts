@@ -457,6 +457,39 @@ describe("denyApprovedEffect", () => {
     expect(f.deleteManySecret).not.toHaveBeenCalled();
   });
 
+  it("does not delete generic run secrets when closing a non-login credential or malformed request_secret", async () => {
+    const bearer: Effect = {
+      ...effect("run-1:tool:bearer", "run-1"),
+      id: "eff-bearer",
+      kind: "request_secret",
+      request: {
+        credential: { name: "api_key", origin: "https://api.test", auth: { type: "bearer" } },
+      },
+      status: "approved",
+      result: {
+        credentialSaved: { name: "api_key", origin: "https://api.test", auth: { type: "bearer" } },
+      },
+      createdAt: new Date("2026-11-24T12:00:00Z"),
+    };
+    const malformed: Effect = {
+      ...effect("run-1:tool:malformed", "run-1"),
+      id: "eff-malformed",
+      kind: "request_secret",
+      request: "not-an-object",
+      status: "approved",
+      result: undefined,
+      createdAt: new Date("2026-11-24T12:00:00Z"),
+    };
+    const f = fixture([bearer, malformed]);
+
+    await denyApprovedEffect(f.deps, scope, "run-1:tool:bearer", "rule", "blocked");
+    await denyApprovedEffect(f.deps, scope, "run-1:tool:malformed", "rule", "blocked");
+
+    expect(bearer.status).toBe("denied");
+    expect(malformed.status).toBe("denied");
+    expect(f.deleteManySecret).not.toHaveBeenCalled();
+  });
+
   it("refuses to deny an approved effect from a superseded attempt", async () => {
     const approved: Effect = {
       ...effect("run-1:tool:k1", "run-1"),
