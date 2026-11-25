@@ -606,7 +606,9 @@ async function runAcpTurn(
           "Remove the agent CLI's helper session",
           connection.request(endSession, { sessionId }),
         );
-        await Promise.race([ending, abortableDelay(CANCEL_GRACE_MS)]);
+        const waited = new AbortController();
+        await Promise.race([ending, abortableDelay(CANCEL_GRACE_MS, waited.signal)]);
+        waited.abort();
       }
       connection.stop();
     }
