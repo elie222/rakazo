@@ -292,5 +292,22 @@ describe("stored turn safety", () => {
     expect(JSON.stringify(toHistory(history, "", undefined, new Set(["other"])))).not.toContain(
       "Page text",
     );
+    const bridged = history.map((entry) =>
+      entry.transcript
+        ? {
+            ...entry,
+            transcript: entry.transcript
+              .replaceAll('"fetch_page"', '"use_tool"')
+              .replace('{"token":"abc"}', '{"name":"fetch_page","arguments":{}}'),
+          }
+        : entry,
+    );
+    const offered = new Set(["use_tool"]);
+    expect(
+      JSON.stringify(toHistory(bridged, "", undefined, offered, new Set(["fetch_page"]))),
+    ).toContain("Page text");
+    expect(JSON.stringify(toHistory(bridged, "", undefined, offered, new Set()))).not.toContain(
+      "Page text",
+    );
   });
 });
