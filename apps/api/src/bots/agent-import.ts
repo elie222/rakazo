@@ -14,6 +14,7 @@ import type {
   AgentImportErrorReason,
   AgentImportFile,
   AgentImportLeftover,
+  AgentImportManyInput,
   AgentImportMemoryDestination,
   AgentImportNeed,
   AgentImportPlan,
@@ -27,6 +28,7 @@ import type {
   MessageBlock,
 } from "@rakazo/contracts";
 import {
+  BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   CreateRoutineInput,
   isValidTimeZone,
@@ -35,6 +37,9 @@ import {
 import type { RoutineTriggersAvailable, SkillFiles } from "@rakazo/core";
 import {
   agentImportLeftoverMessages,
+  agentImportSelection,
+  agentImportUncheckedByDefault,
+  ClientError,
   combineImportedInstructions,
   looksLikeCredential,
   messagingProviderName,
@@ -401,6 +406,51 @@ export async function createImportedBot<PreparedKey>(
     signal,
   );
   return written.bot;
+}
+
+/**
+ * One after another, so each takes a name the ones before it left free. Each gets what a
+ * review ticks by default; one refused does not stop the rest.
+ */
+export async function createImportedBots<PreparedKey>(
+  services: AgentImportServices<PreparedKey>,
+  actor: Actor,
+  input: AgentImportManyInput,
+  signal?: AbortSignal,
+): Promise<({ bot: Bot } | { error: string })[]> {
+  const results: ({ bot: Bot } | { error: string })[] = [];
+  for (const { importKey, files } of input.agents) {
+    signal?.throwIfAborted();
+    try {
+      const request = { files, includeSecrets: false, skillFiles: {} };
+      const built = await buildPlan(services as AgentImportServices, actor, request);
+      const { plan } = built;
+      const written = await writeImportedBot(
+        services,
+        actor,
+        {
+          importKey,
+          // The suggested name changes once this bot takes it, so a retry is known by its files.
+          digest: requestDigest({ files }),
+          name: plan.suggestedName,
+          description: plan.suggestedDescription.trim().slice(0, BOT_DESCRIPTION_MAX_LENGTH),
+          computerMode: "team",
+          selection: agentImportSelection(plan, {
+            unchecked: new Set(agentImportUncheckedByDefault(plan)),
+            destinations: {},
+            modelUsable: plan.model?.status === "ready",
+          }),
+          build: async () => built,
+        },
+        signal,
+      );
+      results.push({ bot: written.bot });
+    } catch (error) {
+      if (!(error instanceof ORPCError || error instanceof ClientError)) throw error;
+      results.push({ error: error.message });
+    }
+  }
+  return results;
 }
 
 /** A bot to create from a plan: an import's files or a template build it. */

@@ -78,6 +78,7 @@ export {
   readGrokBotExportJson,
 } from "./grok-bot.js";
 export { bundledSkillNames } from "./hermes.js";
+export { agentImportSelection, agentImportUncheckedByDefault } from "./selection.js";
 export type { AgentImportReader, SkillFiles } from "./types.js";
 export { agentImportLeftoverMessages, renameSkillMd } from "./types.js";
 

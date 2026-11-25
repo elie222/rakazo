@@ -15,16 +15,23 @@ import { AGENT_DOCUMENT_MAX_BYTES } from "../../../lib/bots/agent-document";
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
-  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+  return {
+    useLingui: () => ({ t }),
+    Trans: ({ children }: { children: ReactNode }) => children,
+    Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
+      (value === 1 ? one : other).replace("#", String(value)),
+  };
 });
 
 const importPreview = vi.fn();
 const importCreate = vi.fn();
+const importMany = vi.fn();
 vi.mock("../../../lib/query/rpc", () => ({
   rpc: {
     bots: {
       importPreview: (input: unknown) => importPreview(input),
       importCreate: (input: unknown) => importCreate(input),
+      importMany: (input: unknown) => importMany(input),
     },
   },
 }));
@@ -80,6 +87,7 @@ function field<T extends Element>(selector: string) {
 beforeEach(() => {
   importPreview.mockReset();
   importCreate.mockReset();
+  importMany.mockReset();
   i18n.load("en", {});
   i18n.activate("en");
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -499,8 +507,11 @@ describe("a plain-HTTP LAN server, where crypto.randomUUID is missing", () => {
 });
 
 describe("a Grok Bot reply with several Bots", () => {
-  it("asks which Bot, and forgets the choice on Back", async () => {
-    await open("Grok Bot");
+  async function paste() {
+    await open(
+      "Grok Bot",
+      <AgentImportForm onClose={noop} onCreated={(bot) => created.push(bot.name)} />,
+    );
     const grok = container!.querySelector('[data-testid="agent-import-grok"]')!;
     const reply = grok.querySelector<HTMLTextAreaElement>("textarea")!;
     await act(async () => {
@@ -510,20 +521,67 @@ describe("a Grok Bot reply with several Bots", () => {
           bots: [
             { name: "Bramble", memories: ["A"] },
             { name: "Wren", memories: ["B"] },
+            { name: "Finch", memories: ["C"] },
           ],
         }),
       );
       reply.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await act(async () =>
-      [...grok.querySelectorAll("button")].find((item) => item.textContent === "Continue")!.click(),
+    await press("Continue");
+    return grok;
+  }
+  const created: string[] = [];
+  beforeEach(() => {
+    created.length = 0;
+  });
+  const boxes = () => [
+    ...container!.querySelectorAll('[data-testid="agent-import-grok-bots"] [role="checkbox"]'),
+  ];
+  const sent = () =>
+    (importMany.mock.calls.at(-1)![0] as { agents: { files: { content: string }[] }[] }).agents.map(
+      (agent) =>
+        (JSON.parse(agent.files[0]!.content) as { bots: { name: string }[] }).bots[0]!.name,
     );
-    expect(grok.textContent).toContain("Which Bot?");
-    expect(importPreview).not.toHaveBeenCalled();
+  const bot = (name: string) => ({ bot: { id: name, name } as Bot });
 
+  it("imports only the ticked Bots in one request, then opens the first", async () => {
+    await paste();
+    expect(boxes()).toHaveLength(3);
+    expect(importPreview).not.toHaveBeenCalled();
+    await act(async () => (boxes()[1] as HTMLElement).click());
+    importMany.mockResolvedValue([bot("Bramble"), bot("Finch")]);
+    await press("Import 2 Bots");
+    expect(sent()).toEqual(["Bramble", "Finch"]);
+    expect(created).toEqual(["Bramble"]);
+  });
+
+  it("keeps the list after a refusal, and imports again only what is left", async () => {
+    await paste();
+    importMany.mockResolvedValue([bot("Bramble"), { error: "Too long" }, bot("Finch")]);
+    await press("Import 3 Bots");
+    expect(created).toEqual([]);
+    expect(container!.textContent).toContain("Too long");
+    expect(boxes()).toHaveLength(1);
+
+    importMany.mockResolvedValue([bot("Wren")]);
+    await press("Import 1 Bot");
+    expect(sent()).toEqual(["Wren"]);
+    expect(created).toEqual(["Bramble"]);
+  });
+
+  it("reviews one Bot on its own", async () => {
+    importPreview.mockResolvedValue(plan);
+    await paste();
+    await press("Review Wren");
+    expect(importPreview).toHaveBeenCalledTimes(1);
+    expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
+  });
+
+  it("forgets the Bots on Back", async () => {
+    await paste();
     await press("Back");
     await press("Grok Bot");
-    expect(container!.textContent).not.toContain("Which Bot?");
+    expect(boxes()).toHaveLength(0);
   });
 });
 

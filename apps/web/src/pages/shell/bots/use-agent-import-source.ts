@@ -15,6 +15,7 @@ import {
   AGENT_IMPORT_NOT_FOUND,
   AgentImportArchiveError,
   agentImportSkillFiles,
+  agentImportUncheckedByDefault,
   agentImportUpload,
   chooseAgentImportFiles,
   combineImportedInstructions,
@@ -22,7 +23,6 @@ import {
   GrokBotExportError,
   grokBotExportJson,
   hasAgentImportSecrets,
-  looksLikeCredential,
   newClientId,
   openAgentImportArchive,
   parseGrokBotExport,
@@ -34,6 +34,20 @@ import { rpc } from "../../../lib/query/rpc";
 import { errorText } from "../../../lib/query/user-error";
 
 export type AgentImportSource = ReturnType<typeof useAgentImportSource>;
+
+/** A chosen file's text, or each JSON file inside a .zip of exports. */
+async function grokExportTexts(file: File): Promise<string[]> {
+  if (!file.name.toLowerCase().endsWith(".zip")) return [await file.text()];
+  const archive = openAgentImportArchive(new Uint8Array(await file.arrayBuffer()));
+  return archive.paths
+    .filter((path) => {
+      const name = path.split("/").at(-1) ?? "";
+      return (
+        name.toLowerCase().endsWith(".json") && !name.startsWith(".") && !path.includes("__MACOSX/")
+      );
+    })
+    .map((path) => archive.read(path));
+}
 
 /**
  * Reads a folder, backup, or agent document on this device, previews what it would import, and
@@ -100,22 +114,7 @@ export function useAgentImportSource() {
       if (read !== latestRead.current) return;
       setFiles(next);
       setIncludeSecrets(secrets);
-      // Everything starts ticked but the untouched defaults the source wrote. Routines arrive
-      // paused, and the bot asks before it uses an MCP server.
-      const flagged = [
-        // A skill joins the library every bot shares, and an export is text someone else or
-        // a model wrote: one that carries code or files comes over only when it is ticked.
-        ...found.skills.filter((item) =>
-          item.warnings.some((warning) => warning === "runs_code" || warning === "bundled_files"),
-        ),
-        ...found.instructions.filter((item) => item.stock),
-        ...found.memory.filter((item) => item.stock),
-        // Key-looking text reaches a bot only when the user ticks it.
-        ...[...found.instructions, ...found.memory, ...found.skills].filter(
-          (item) => item.containsKey,
-        ),
-        ...found.routines.filter((item) => looksLikeCredential(item.content)),
-      ].map((item) => item.id);
+      const flagged = agentImportUncheckedByDefault(found);
       if (keepChoices && plan) {
         // Turning the API key opt-in on or off keeps every choice; only new items get defaults.
         const known = new Set(
@@ -331,7 +330,7 @@ export function useAgentImportSource() {
       return;
     }
     try {
-      const texts = await Promise.all(chosen.map((file) => file.text()));
+      const texts = (await Promise.all(chosen.map(grokExportTexts))).flat();
       if (read !== latestRead.current) return;
       const parts = texts.flatMap((text) => parseGrokBotExport(text).map(grokBotExportJson));
       await previewGrokReply(parts.join("\n\n"), read);
@@ -425,8 +424,6 @@ export function useAgentImportSource() {
     previewGrokBot,
     pickGrokFiles,
     stopReading,
-    selectedInstructions,
-    chosen,
     modelUsable,
     tooLong,
     ready,
