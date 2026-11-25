@@ -72,7 +72,7 @@ describe("openCodeAgent", () => {
     expect(modelAcceptsImageInput(OPENCODE_CLI_PROVIDER_ID, "opencode/big-pickle")).toBe(true);
   });
 
-    it("is a deployment model the operator configures with the CLI's own sign-in", () => {
+  it("is a deployment model the operator configures with the CLI's own sign-in", () => {
     const model = resolveDeploymentModel({
       PI_DEFAULT_PROVIDER: OPENCODE_CLI_PROVIDER_ID,
       PI_DEFAULT_CREDENTIALS: "host",
