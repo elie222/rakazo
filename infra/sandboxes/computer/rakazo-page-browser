@@ -189,10 +189,10 @@ def front_tab(port: int) -> tuple[str, str]:
 
 # A page may open tabs: a pop-up, a link to a new tab, or a report it opens once it has made it.
 # agent-browser follows a tab that opens in front, so the bot is told. More than MAX_NEW_TABS at once
-# is a flood, not a report: they are closed, and the bot's own tab is in front again. Of the tabs pages
-# opened, at most MAX_OPENED_TABS stay open; the ones longest out of sight are closed first.
+# is a flood, not a report: they are closed, and the bot's own tab is in front again. At most MAX_TABS
+# stay open, whoever opened them; the ones longest out of sight are closed first.
 MAX_NEW_TABS = 3
-MAX_OPENED_TABS = 8
+MAX_TABS = 8
 # agent-browser stops answering for good when the tab its session reads is closed under it, so the
 # session moves to a tab that stays before any is closed. Closing tabs, moving the session and reading
 # the bot's tab again share one deadline per step, so a flood never holds a call much longer.
@@ -220,24 +220,24 @@ class Tabs:
                 last = json.load(file)
             # A browser started again has new tabs only, and may have restored the person's own.
             self.known: set[Any] | None = set(last["tabs"]) if last["browser"] == browser_id else None
-            self.opened: list[Any] = list(last.get("opened") or []) if self.known is not None else []
         except (OSError, ValueError, TypeError, KeyError, AttributeError):
-            self.known, self.opened = None, []
+            self.known = None
         self.closed = self.trimmed = 0
         self.start: set[Any] = set()
         self.deadline: float | None = None
 
     def begin(self) -> None:
-        """Close a flood of tabs opened since the last call, before the call picks its tab."""
+        """Close a flood of tabs opened since the last call and the tabs beyond MAX_TABS, before the
+        call picks its tab."""
         tabs = page_tabs(self.port)
         if self.known is not None:
             # The tab in front of those the last call left, or else the tab in front, which stays.
             keep = next((tab.get("id") for tab in tabs if tab.get("id") in self.known),
                         tabs[0].get("id") if tabs else None)
-            # Kept as known, so it is not counted as page-opened and trimmed later.
+            # Kept as known, so the end of the call does not name it as new.
             self.known.add(keep)
             tabs = self.close_flood(tabs, self.known, keep)
-        self.start = {tab.get("id") for tab in tabs}
+        self.start = {tab.get("id") for tab in self.trim(tabs)}
 
     def end(self, own: str, ours: str | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
         """The tabs now, the ones opened since the last call (or, for a browser started again, every
@@ -248,10 +248,7 @@ class Tabs:
         tabs = self.close_flood(tabs, self.start | {own}, own)
         before = self.known if self.known is not None else {own}
         opened = [tab for tab in tabs if tab.get("id") not in before and tab.get("id") != ours]
-        if self.known is not None:
-            ids = {tab.get("id") for tab in tabs}
-            self.opened = [tab for tab in self.opened if tab in ids] + [tab.get("id") for tab in opened]
-            tabs = self.trim(tabs, own)
+        tabs = self.trim(tabs, own)
         flooded = self.closed > closed
         if flooded:
             with contextlib.suppress(OSError):
@@ -264,7 +261,7 @@ class Tabs:
         # Written whole, then moved into place: a reader never sees half of it.
         temporary = f"{self.path}.{os.getpid()}"
         with open(temporary, "w", encoding="utf-8") as file:
-            json.dump({"browser": self.browser_id, "tabs": [tab.get("id") for tab in tabs], "opened": self.opened}, file)
+            json.dump({"browser": self.browser_id, "tabs": [tab.get("id") for tab in tabs]}, file)
         os.replace(temporary, self.path)
         return tabs, opened, flooded
 
@@ -291,25 +288,23 @@ class Tabs:
         self.closed += len(self.close(new, own))
         return page_tabs(self.port)
 
-    def trim(self, tabs: list[dict[str, Any]], own: str) -> list[dict[str, Any]]:
-        """Close the tabs pages opened beyond MAX_OPENED_TABS, longest out of sight first. Tabs no page
-        opened, such as the person's own, are left alone."""
-        by_sight = [tab.get("id") for tab in tabs if tab.get("id") in self.opened and tab.get("id") != own]
-        extra = by_sight[MAX_OPENED_TABS:]
+    def trim(self, tabs: list[dict[str, Any]], own: Any = None) -> list[dict[str, Any]]:
+        """Close the tabs beyond MAX_TABS, longest out of sight first. The tab in front and the call's
+        own tab stay."""
+        extra = [tab.get("id") for tab in reversed(tabs[1:]) if tab.get("id") != own][:max(0, len(tabs) - MAX_TABS)]
         if not extra:
             return tabs
         # The tab in front stays, as the oldest out of sight go: the session stays on it.
         closed = self.close(extra, tabs[0].get("id"))
         self.trimmed += len(closed)
-        self.opened = [tab for tab in self.opened if tab not in closed]
         return page_tabs(self.port)
 
     def note(self, tabs: list[dict[str, Any]], opened: list[dict[str, Any]], shown_url: Any) -> str | None:
         closed = (f"The page opened {self.closed} tabs at once, more than {MAX_NEW_TABS}, so they were closed."
                   if self.closed else None)
         trimmed = None if not self.trimmed else (
-            f"Closed the oldest tab a page had opened, to keep at most {MAX_OPENED_TABS}." if self.trimmed == 1
-            else f"Closed the {self.trimmed} oldest tabs pages had opened, to keep at most {MAX_OPENED_TABS}.")
+            f"Closed the tab in the background longest, to keep at most {MAX_TABS} tabs open." if self.trimmed == 1
+            else f"Closed the {self.trimmed} tabs in the background longest, to keep at most {MAX_TABS} tabs open.")
         return " ".join(filter(None, [closed, trimmed, tab_note(opened, tabs, shown_url)])) or None
 
 
