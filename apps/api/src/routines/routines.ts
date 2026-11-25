@@ -74,6 +74,7 @@ export function routineRowData(actor: Actor, input: CreateRoutineInput, nextRunA
     thinkingLevel: input.thinkingLevel,
     ...(input.watch ? { watch: input.watch as Prisma.InputJsonValue } : {}),
     nextRunAt,
+    endsAt: input.endsAt ? new Date(input.endsAt) : null,
   };
 }
 
@@ -110,6 +111,7 @@ export function mapRoutine(row: {
   watchState: unknown;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
+  endsAt: Date | null;
   createdAt: Date;
 }): Routine {
   return {
@@ -133,6 +135,7 @@ export function mapRoutine(row: {
     watchState: parseRoutineWatchState(row.watchState),
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
+    endsAt: row.endsAt?.toISOString() ?? null,
     scheduleDelayed: routineScheduleDelayed({
       active: row.active,
       nextRunAt: row.nextRunAt?.getTime() ?? null,

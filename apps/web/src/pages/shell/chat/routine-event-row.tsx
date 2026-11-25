@@ -15,7 +15,7 @@ import { InboundKeyRows } from "../../routines/routine-editor/trigger-cards";
 
 type RoutineEventBlock = Extract<MessageBlock, { kind: "routine_event" }>;
 
-/** The one-line chat row for a routine that was created, changed, switched on or off, or deleted. */
+/** The one-line chat row for a routine that was created, changed, switched on or off, deleted or ended. */
 export function RoutineEventRow({
   block,
   botId,
@@ -34,6 +34,7 @@ export function RoutineEventRow({
     enabled: t`Enabled routine "${name}"`,
     disabled: t`Disabled routine "${name}"`,
     deleted: t`Deleted routine "${name}"`,
+    ended: t`Routine "${name}" ended`,
   }[block.change];
   const text = (
     <span dir="auto" className="min-w-0 break-words text-center">

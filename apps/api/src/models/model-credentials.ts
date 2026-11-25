@@ -6,6 +6,7 @@ import {
   buildModelConnectPlaintext,
   CHATGPT_OAUTH_PROVIDER,
   codexLiveListsModel,
+  compatibleEndpointPreset,
   compatibleThinkingLevels,
   dataRetentionForConnect,
   defaultCatalogModelId,
@@ -16,6 +17,7 @@ import {
   modelCredentialDto,
   parseModelSecret,
   prepareAllowedThinkingLevels as prepareModelThinkingLevels,
+  probeOpenAiCompatibleModelDetails,
   providerCatalogCache,
   releaseRoutineBackoffs,
   resolveCodexOAuthDefaultModel,
@@ -505,14 +507,28 @@ export function createModelConnector(deps: RouterDeps, codexCatalog: CodexLiveCa
           }
         }
       }
-      plaintext = buildModelConnectPlaintext(input, previousPlaintext, {
-        omitVisionModelIds,
-        allowPrivateEndpoint: mayUsePrivateEndpoint(deps),
-      });
+      const options = { omitVisionModelIds, allowPrivateEndpoint: mayUsePrivateEndpoint(deps) };
+      plaintext = buildModelConnectPlaintext(input, previousPlaintext, options);
       if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
         const saved = parseModelSecret(plaintext);
         if (saved.kind === "openai_compatible") {
           await verifyOpenAiCompatibleApiKey(saved, deps.modelConnectionFetch, signal);
+          const preset = compatibleEndpointPreset(saved.baseUrl);
+          // Without an answer, the connection keeps what the list said before.
+          const listedModels = await bestEffort(
+            "read the model list's details",
+            probeOpenAiCompatibleModelDetails(
+              saved,
+              preset ? deps.modelConnectionFetch : undefined,
+              signal,
+              { allowPrivate: options.allowPrivateEndpoint, catalogProbe: preset !== undefined },
+            ),
+          );
+          if (listedModels)
+            plaintext = buildModelConnectPlaintext(input, previousPlaintext, {
+              ...options,
+              listedModels,
+            });
         }
       }
       const saved = parseModelSecret(plaintext);

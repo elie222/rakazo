@@ -13,6 +13,7 @@
     "./cron": "./src/cron.ts",
     "./identity-display": "./src/identity-display.ts",
     "./meeting": "./src/meeting.ts",
+    "./model-disconnect": "./src/model-disconnect.ts",
     "./model-provider": "./src/model-provider.ts",
     "./page-review": "./src/page-review.ts",
     "./plugin-catalog": "./src/plugin-catalog.ts",

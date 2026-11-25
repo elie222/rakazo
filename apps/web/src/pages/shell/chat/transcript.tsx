@@ -75,6 +75,7 @@ export function bubbleFrameWidth(role: ThreadMessage["role"]) {
 
 /** Rows drawn in the frame a chat opens; the rest mount right after without blocking input. */
 const FIRST_FRAME_ROWS = 20;
+const PAGE_PREVIEW_SCROLL = "[data-page-preview-scroll]";
 
 export const Transcript = memo(function Transcript({
   scrollRef,
@@ -191,6 +192,9 @@ export const Transcript = memo(function Transcript({
   const jumpScrolling = useRef(false);
   const autoScrolling = useRef(false);
   const lastScrollTop = useRef<number | null>(null);
+  // Where the chat stood when an upward wheel started over a Page preview, until we know which
+  // of the two it scrolled.
+  const previewWheelTop = useRef<number | null>(null);
   // The fallback that ends a smooth jump to the latest message when no scroll reaches the end.
   const [autoScrollFallback, setAutoScrollFallback] = useState<{ ms: number } | null>(null);
   const jumpButtonRef = useRef<HTMLButtonElement>(null);
@@ -455,6 +459,7 @@ export const Transcript = memo(function Transcript({
   const snapToEnd = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
+    previewWheelTop.current = null;
     following.current = true;
     autoScrolling.current = false;
     setAtEnd(true);
@@ -465,6 +470,7 @@ export const Transcript = memo(function Transcript({
     const element = scrollRef.current;
     if (!element) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    previewWheelTop.current = null;
     following.current = true;
     messagesBeforeReply.current = null;
     heldAt.current = null;
@@ -506,6 +512,7 @@ export const Transcript = memo(function Transcript({
     );
     if (!element || !row) return;
     scrolledJump.current = scrollRequest.nonce;
+    previewWheelTop.current = null;
     following.current = false;
     messagesBeforeReply.current = null;
     autoScrolling.current = false;
@@ -593,6 +600,15 @@ export const Transcript = memo(function Transcript({
     });
   }, [onLoadOlder, scrollRef]);
 
+  function pauseFollowing(scrollTop: number) {
+    previewWheelTop.current = null;
+    lastScrollTop.current = scrollTop;
+    autoScrolling.current = false;
+    following.current = false;
+    messagesBeforeReply.current = null;
+    heldAt.current = null;
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1">
       <ImageGalleryProvider images={galleryImages}>
@@ -600,38 +616,50 @@ export const Transcript = memo(function Transcript({
           ref={scrollRef}
           data-testid="transcript"
           onPointerDown={(event) => {
-            lastScrollTop.current = event.currentTarget.scrollTop;
-            autoScrolling.current = false;
-            following.current = false;
-            messagesBeforeReply.current = null;
-            heldAt.current = null;
+            // A native scrollbar drag on a Page preview scrolls only the preview.
+            if (event.target instanceof Element && event.target.matches(PAGE_PREVIEW_SCROLL))
+              return;
+            pauseFollowing(event.currentTarget.scrollTop);
           }}
-          onTouchStart={(event) => {
-            lastScrollTop.current = event.currentTarget.scrollTop;
-            autoScrolling.current = false;
-            following.current = false;
-            messagesBeforeReply.current = null;
-            heldAt.current = null;
-          }}
+          onTouchStart={(event) => pauseFollowing(event.currentTarget.scrollTop)}
           onScrollEnd={() => {
+            previewWheelTop.current = null;
             followIfNearEnd();
             if (jumpScrolling.current) endJumpScroll();
           }}
           onWheel={(event) => {
-            if (event.deltaY < 0) {
-              lastScrollTop.current = event.currentTarget.scrollTop;
-              autoScrolling.current = false;
-              following.current = false;
-              messagesBeforeReply.current = null;
-              heldAt.current = null;
+            previewWheelTop.current = null;
+            if (event.deltaY >= 0) return;
+            const top = event.currentTarget.scrollTop;
+            if (event.target instanceof Element && event.target.closest(PAGE_PREVIEW_SCROLL)) {
+              // The preview may take this wheel, and a passive wheel event can arrive after the
+              // browser has moved either one. Pause only once the chat itself moves up.
+              previewWheelTop.current = lastScrollTop.current ?? top;
+              return;
+            }
+            pauseFollowing(top);
+          }}
+          onScrollCapture={(event) => {
+            const wheelTop = previewWheelTop.current;
+            if (
+              wheelTop !== null &&
+              event.currentTarget.scrollTop >= wheelTop &&
+              event.target instanceof Element &&
+              event.target.matches(PAGE_PREVIEW_SCROLL)
+            ) {
+              // The preview took the wheel, so a later layout shift in the chat is not the reader.
+              previewWheelTop.current = null;
             }
           }}
           onScroll={(event) => {
-            const scrolledDown = transcriptMovedDown(
-              lastScrollTop.current,
-              event.currentTarget.scrollTop,
-            );
-            lastScrollTop.current = event.currentTarget.scrollTop;
+            const top = event.currentTarget.scrollTop;
+            const scrolledDown = transcriptMovedDown(lastScrollTop.current, top);
+            const wheelTop = previewWheelTop.current;
+            if (wheelTop !== null && top < wheelTop) pauseFollowing(top);
+            else {
+              lastScrollTop.current = top;
+              previewWheelTop.current = null;
+            }
             const nearEnd = transcriptIsNearEnd(event.currentTarget);
             const held = isHeld(event.currentTarget, heldAt.current);
             setAtEnd(nearEnd && !held);

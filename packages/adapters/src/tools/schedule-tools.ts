@@ -22,6 +22,14 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { Prisma, runAsSystemInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import {
+  newRoutineEnd,
+  routineEndError,
+  routineEnded,
+  routineEndFromText,
+  routineEndInZone,
+  runBeforeEnd,
+} from "../routines/routine-end.js";
 import { postRoutineNotice, routineEditChange, routineEdited } from "../routines/routine-notice.js";
 import type { RoutineEvents } from "../routines/routine-triggers.js";
 import {
@@ -274,6 +282,19 @@ function nowIn(timezone: string): string {
   return `It is now ${localDateTime(now, timezone) ?? now.toISOString()} in ${timezone}.`;
 }
 
+function withNow(error: string, timezone: string): string {
+  return `${error} ${nowIn(timezone)}`;
+}
+
+export function toolRoutineEnd(
+  value: string | undefined,
+  timezone: string,
+  timing: Parameters<typeof newRoutineEnd>[2],
+): { endsAt: Date | null } | { error: string } {
+  const end = newRoutineEnd(value, timezone, timing);
+  return "error" in end ? { error: withNow(end.error, timezone) } : end;
+}
+
 function validateRepeatingCron(cron: string): string | null {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return "cron must be a 5-field cron expression.";
@@ -452,6 +473,7 @@ export async function changeUserTimezone(
           nextRunAt: true,
           active: true,
           watch: true,
+          endsAt: true,
         },
       });
       for (const routine of routines) movedSpaces.add(routine.spaceId);
@@ -460,7 +482,11 @@ export async function changeUserTimezone(
       const relabeled: string[] = [];
       for (const routine of routines) {
         const nextRunAt = nextRunAtAfterTimezoneMove(routine, timezone);
-        if (nextRunAt?.getTime() === routine.nextRunAt?.getTime()) {
+        const endsAt = routineEndInZone(routine.endsAt, routine.timezone, timezone);
+        if (
+          nextRunAt?.getTime() === routine.nextRunAt?.getTime() &&
+          endsAt?.getTime() === routine.endsAt?.getTime()
+        ) {
           relabeled.push(routine.id);
           continue;
         }
@@ -473,7 +499,7 @@ export async function changeUserTimezone(
             timezone: user.timezone,
             nextRunAt: routine.nextRunAt,
           },
-          data: { timezone, nextRunAt },
+          data: { timezone, nextRunAt, endsAt },
         });
         if (count === 1 && routine.active && nextRunAt) {
           woken.push({ id: routine.id, nextRunAt });
@@ -513,11 +539,13 @@ function nextRunAtAfterTimezoneMove(
     nextRunAt: Date | null;
     active: boolean;
     watch: unknown;
+    endsAt: Date | null;
   },
   timezone: string,
 ): Date | null {
   if (
     !routine.active ||
+    routineEnded(routine) ||
     routine.watch != null ||
     isOneShotRoutineCrons(routine.crons) ||
     routine.crons.length === 0
@@ -598,6 +626,8 @@ export async function createScheduleFromTool(
     schedule: Record<string, unknown>;
     /** The tool's `on`: events that start the routine besides its timing, or instead of it. */
     on?: unknown;
+    endAt?: string;
+    endTimezone?: string;
   },
 ) {
   const routineBotId = input.target?.botId ?? input.botId;
@@ -640,12 +670,17 @@ export async function createScheduleFromTool(
   }
   // The timing is checked again at the insert, in the zone it is saved in; checking it here
   // first means a routine that cannot be saved makes no key.
-  if (!eventsOnly && (events.webhookEnabled || events.githubEnabled)) {
-    const timing = resolveScheduleTiming(
-      input.schedule,
-      input.timezone ?? (await userTimeZone(deps.prisma, input.userId)),
-    );
-    if (!timing.ok) return { error: timing.error };
+  if ((events.webhookEnabled || events.githubEnabled) && (!eventsOnly || input.endAt)) {
+    const zone = input.timezone ?? (await userTimeZone(deps.prisma, input.userId));
+    const timing = eventsOnly ? null : resolveScheduleTiming(input.schedule, zone);
+    if (timing && !timing.ok) return { error: timing.error };
+    const end = toolRoutineEnd(input.endAt, zone, {
+      crons: timing?.ok ? [timing.cron] : [],
+      watch: null,
+      nextRunAt: timing?.ok ? timing.nextRunAt : null,
+      events: true,
+    });
+    if ("error" in end) return end;
   }
   const keyError = await ensureWebhookKey(
     deps,
@@ -661,6 +696,17 @@ export async function createScheduleFromTool(
       ? { ok: true, cron: "", nextRunAt: new Date(0), oneShot: false }
       : resolveScheduleTiming(input.schedule, timezone);
     if (!resolved.ok) return { error: resolved.error } as const;
+    const endAt =
+      input.endAt && input.endTimezone
+        ? routineEndInZone(new Date(input.endAt), input.endTimezone, timezone)?.toISOString()
+        : input.endAt;
+    const end = toolRoutineEnd(endAt, timezone, {
+      crons: eventsOnly ? [] : [resolved.cron],
+      watch: null,
+      nextRunAt: eventsOnly ? null : resolved.nextRunAt,
+      events: hasRoutineEvents(events),
+    });
+    if ("error" in end) return { error: end.error } as const;
     wakeAt = eventsOnly ? undefined : resolved.nextRunAt;
     return client.routine.create({
       data: {
@@ -677,6 +723,7 @@ export async function createScheduleFromTool(
         active: true,
         ...events,
         nextRunAt: eventsOnly ? null : resolved.nextRunAt,
+        endsAt: end.endsAt,
       },
     });
   };
@@ -746,6 +793,7 @@ export function scheduleCreateFields(args: Record<string, unknown>) {
     timezone: args.timezone ? String(args.timezone) : undefined,
     schedule: compactScheduleInput({ ...scheduleTimingArgs(args), watch: args.watch }),
     on: isScheduleValueProvided(args.on) ? args.on : undefined,
+    endAt: isScheduleValueProvided(args.endAt) ? String(args.endAt) : undefined,
   };
 }
 
@@ -777,20 +825,29 @@ export async function scheduleCreateError(
     oneShot: ONE_SHOT_FIELDS.some((field) => isScheduleValueProvided(input.schedule[field])),
   });
   if ("error" in events) return events.error;
+  const timezone = async () => input.timezone ?? (await userTimeZone(prisma, input.userId));
+  const endError = async (timing: { crons: string[]; watch: unknown; nextRunAt: Date | null }) => {
+    if (input.endAt === undefined) return undefined;
+    const zone = await timezone();
+    const end = toolRoutineEnd(input.endAt, zone, {
+      ...timing,
+      events: hasRoutineEvents(events.events),
+    });
+    return "error" in end ? end.error : undefined;
+  };
   if (input.schedule.watch !== undefined) {
     const parsed = scheduleWatch(input.schedule);
-    return parsed.success ? undefined : parsed.error;
+    if (!parsed.success) return parsed.error;
+    return endError({ crons: [], watch: parsed.data, nextRunAt: firstWatchCheck() });
   }
   if (hasRoutineEvents(events.events) && !hasScheduleTiming(input.schedule)) {
     return isScheduleValueProvided(input.schedule.startAt)
       ? "startAt is only for repeating schedules."
-      : undefined;
+      : endError({ crons: [], watch: null, nextRunAt: null });
   }
-  const resolved = resolveScheduleTiming(
-    input.schedule,
-    input.timezone ?? (await userTimeZone(prisma, input.userId)),
-  );
-  return resolved.ok ? undefined : resolved.error;
+  const resolved = resolveScheduleTiming(input.schedule, await timezone());
+  if (!resolved.ok) return resolved.error;
+  return endError({ crons: [resolved.cron], watch: null, nextRunAt: resolved.nextRunAt });
 }
 
 /** The watch of a `schedule_create` call, which takes no other timing. */
@@ -838,6 +895,7 @@ async function createWatchFromTool(
     timezone?: string;
     schedule: Record<string, unknown>;
     events: RoutineEvents;
+    endAt?: string;
   },
 ) {
   const parsed = scheduleWatch(input.schedule);
@@ -853,13 +911,30 @@ async function createWatchFromTool(
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Invalid change trigger." };
   }
+  const nextRunAt = firstWatchCheck();
+  if ((input.events.webhookEnabled || input.events.githubEnabled) && input.endAt) {
+    const zone = input.timezone ?? (await userTimeZone(deps.prisma, input.userId));
+    const end = toolRoutineEnd(input.endAt, zone, {
+      crons: [],
+      watch: parsed.data,
+      nextRunAt,
+      events: true,
+    });
+    if ("error" in end) return end;
+  }
   const keyError = await ensureWebhookKey(deps, input, input.events);
   if (keyError) return { error: keyError };
-  const nextRunAt = firstWatchCheck();
   // As with a timed routine, a defaulted zone is read under a share lock in the same
   // transaction as the insert, so a zone change cannot cross the creation.
-  const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) =>
-    client.routine.create({
+  const insertWatch = (client: Pick<Prisma.TransactionClient, "routine">, timezone: string) => {
+    const end = toolRoutineEnd(input.endAt, timezone, {
+      crons: [],
+      watch: parsed.data,
+      nextRunAt,
+      events: hasRoutineEvents(input.events),
+    });
+    if ("error" in end) return { error: end.error } as const;
+    return client.routine.create({
       data: {
         spaceId: input.spaceId,
         botId: input.botId,
@@ -874,8 +949,10 @@ async function createWatchFromTool(
         watch: parsed.data as Prisma.InputJsonValue,
         ...input.events,
         nextRunAt,
+        endsAt: end.endsAt,
       },
     });
+  };
   const row =
     input.timezone !== undefined
       ? await insertWatch(deps.prisma, input.timezone)
@@ -883,6 +960,7 @@ async function createWatchFromTool(
           const timezone = await sharedAccountZone(tx, input.userId);
           return insertWatch(tx, timezone);
         });
+  if ("error" in row) return { error: row.error };
   try {
     await deps.jobs.enqueue(routineWakeupJob(row.id, nextRunAt));
   } catch {
@@ -916,6 +994,7 @@ async function createWatchFromTool(
     routineId: row.id,
     name: row.name,
     watch: parsed.data,
+    ...(row.endsAt ? { endAt: describeRoutineTiming(row).endAt } : {}),
     note: `Takes a first reading now, then checks every ${parsed.data.everyMinutes} minutes and runs only when it changes.`,
     ...eventsResult(input.events),
   };
@@ -1023,6 +1102,7 @@ export async function updateScheduleFromTool(
     everyMinutes?: unknown;
     /** Replaces the routine's events; an empty object removes them. */
     on?: unknown;
+    endAt?: string;
     /**
      * The name and prompt an approval was shown against, each only when the call edits that
      * field. A row that moved since then conflicts instead of being overwritten, like an
@@ -1078,6 +1158,7 @@ export async function updateScheduleFromTool(
       input.inChat !== undefined ||
       input.timezone !== undefined ||
       input.on !== undefined ||
+      input.endAt !== undefined ||
       input.everyMinutes !== undefined ||
       Object.values(input.schedule).some(isScheduleValueProvided))
   ) {
@@ -1095,6 +1176,13 @@ export async function updateScheduleFromTool(
     }
     timezone = parsed.data;
   }
+  const end = routineEndFromText(input.endAt, timezone);
+  if ("error" in end) return end;
+  const endsAt =
+    end.endsAt === undefined
+      ? routineEndInZone(existing.endsAt, existing.timezone, timezone)
+      : end.endsAt;
+  const endChanged = endsAt?.getTime() !== existing.endsAt?.getTime();
   const hasTiming = SCHEDULE_TIMING_FIELDS.some((field) =>
     isScheduleValueProvided(input.schedule[field]),
   );
@@ -1116,7 +1204,8 @@ export async function updateScheduleFromTool(
     prompt === undefined &&
     inChat === undefined &&
     input.active === undefined &&
-    input.on === undefined
+    input.on === undefined &&
+    input.endAt === undefined
   ) {
     return { error: "Nothing to update." };
   }
@@ -1156,16 +1245,24 @@ export async function updateScheduleFromTool(
     if (!resolved.ok) return { error: resolved.error };
     crons = [resolved.cron];
     nextRunAt = carried ?? resolved.nextRunAt;
+    if (routineEnded(existing)) nextRunAt = runBeforeEnd(nextRunAt, endsAt);
   } else if (active && watchChanged) {
     nextRunAt = firstWatchCheck();
-  } else if (active && !(existing.active && existing.nextRunAt)) {
+  } else if (
+    active &&
+    !(existing.active && existing.nextRunAt) &&
+    (!routineEnded(existing) || endChanged)
+  ) {
     // Resuming: a watch checks right away, a repeat picks its next occurrence from now.
     if (existing.watch != null) nextRunAt = firstWatchCheck();
     else if (oneShot) {
       if (!existing.nextRunAt || existing.nextRunAt.getTime() <= Date.now()) {
         return { error: "This one-time schedule has no time left; give a new runAt." };
       }
-    } else nextRunAt = nextCronDateAcross(crons, new Date(), timezone);
+    } else {
+      const next = nextCronDateAcross(crons, new Date(), timezone);
+      nextRunAt = routineEnded(existing) ? runBeforeEnd(next, endsAt) : next;
+    }
   }
   if (!active) nextRunAt = null;
 
@@ -1191,9 +1288,17 @@ export async function updateScheduleFromTool(
   if (crons.length === 0 && existing.watch == null && !hasRoutineEvents(events)) {
     return { error: "A routine needs a schedule or an event. Cancel it instead." };
   }
+  const endError = routineEndError(
+    { endsAt, crons, watch: existing.watch, nextRunAt, events: hasRoutineEvents(events) },
+    {
+      end: end.endsAt !== undefined && endChanged,
+      nextRun: endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),
+    },
+  );
+  if (endError) return { error: withNow(endError, timezone) };
   const eventsChanged =
     JSON.stringify(routineEventsView(events)) !== JSON.stringify(routineEventsView(existing));
-  const timing = describeRoutineTiming({ crons, timezone, nextRunAt });
+  const timing = describeRoutineTiming({ crons, timezone, nextRunAt, endsAt });
   const result = {
     ok: true as const,
     routineId: existing.id,
@@ -1248,6 +1353,7 @@ export async function updateScheduleFromTool(
   const timingChanged =
     retime ||
     watchChanged ||
+    endChanged ||
     active !== existing.active ||
     nextRunAt?.getTime() !== existing.nextRunAt?.getTime();
 
@@ -1275,6 +1381,7 @@ export async function updateScheduleFromTool(
       ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
       ...(watchChanged && watch ? { watch: watch as Prisma.InputJsonValue } : {}),
       ...(eventsChanged ? events : {}),
+      ...(endChanged ? { endsAt } : {}),
     },
   });
   if (count === 0) {
@@ -1310,6 +1417,7 @@ export async function updateScheduleFromTool(
     ...(timingChanged ? { crons, timezone, active, nextRunAt } : {}),
     ...(watchChanged ? { watch } : {}),
     ...(eventsChanged ? events : {}),
+    endsAt,
   };
   if (routineEdited(existing, saved)) {
     await postRoutineNotice(deps, {

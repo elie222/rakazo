@@ -313,12 +313,6 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@rakazo/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@rakazo/logging':
-        specifier: workspace:*
-        version: link:../../packages/logging
       '@sentry/electron':
         specifier: 8.3.0
         version: 8.3.0(@babel/core@7.29.13(supports-color@8.1.1))
@@ -335,9 +329,15 @@ importers:
       '@rakazo/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
+      '@rakazo/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@rakazo/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rakazo/logging':
+        specifier: workspace:*
+        version: link:../../packages/logging
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../../packages/ui-tokens
@@ -781,7 +781,7 @@ importers:
         version: 3.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.0)
       astro:
         specifier: 7.4.7
-        version: 7.4.7(@azure/storage-blob@12.34.0(supports-color@8.1.1))(@types/node@24.19.2)(@vercel/functions@3.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1)
+        version: 7.4.7(@azure/identity@4.14.1(supports-color@8.1.1))(@azure/storage-blob@12.34.0(supports-color@8.1.1))(@types/node@24.19.2)(@vercel/functions@3.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1)
       posthog-js:
         specifier: 1.445.3
         version: 1.445.3(@types/react@19.3.0)(react@19.3.1)
@@ -1071,9 +1071,6 @@ importers:
       sharp:
         specifier: 0.35.5
         version: 0.35.5(@types/node@24.19.2)
-      shell-quote:
-        specifier: 1.12.0
-        version: 1.12.0
       typebox:
         specifier: 1.4.6
         version: 1.4.6
@@ -1111,6 +1108,9 @@ importers:
       fast-check:
         specifier: 4.10.2
         version: 4.10.2
+      shell-quote:
+        specifier: 1.12.0
+        version: 1.12.0
       typescript:
         specifier: 7.0.2
         version: 7.0.2
@@ -1434,6 +1434,9 @@ importers:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
+      lucide-react:
+        specifier: 1.70.0
+        version: 1.70.0(@types/react@19.3.0)(react@19.3.1)
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -20440,7 +20443,7 @@ snapshots:
 
   astral-regex@2.0.0: {}
 
-  astro@7.4.7(@azure/storage-blob@12.34.0(supports-color@8.1.1))(@types/node@24.19.2)(@vercel/functions@3.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1):
+  astro@7.4.7(@azure/identity@4.14.1(supports-color@8.1.1))(@azure/storage-blob@12.34.0(supports-color@8.1.1))(@types/node@24.19.2)(@vercel/functions@3.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1):
     dependencies:
       '@astrojs/compiler-rs': 0.5.2
       '@astrojs/internal-helpers': 0.13.1
@@ -20487,7 +20490,7 @@ snapshots:
       tinyps: 0.5.2
       ultrahtml: 1.7.0
       unifont: 1.0.3
-      unstorage: 1.17.6(@azure/storage-blob@12.34.0(supports-color@8.1.1))(@vercel/functions@3.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.0))
+      unstorage: 1.17.6(@azure/identity@4.14.1(supports-color@8.1.1))(@azure/storage-blob@12.34.0(supports-color@8.1.1))(@vercel/functions@3.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.0))
       verkit: 0.5.0
       vite: 8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1)
       vitefu: 1.1.3(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -27519,7 +27522,7 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unstorage@1.17.6(@azure/storage-blob@12.34.0(supports-color@8.1.1))(@vercel/functions@3.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.0)):
+  unstorage@1.17.6(@azure/identity@4.14.1(supports-color@8.1.1))(@azure/storage-blob@12.34.0(supports-color@8.1.1))(@vercel/functions@3.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.0)):
     dependencies:
       anymatch: 3.1.3
       chokidar: 5.0.0
@@ -27530,6 +27533,7 @@ snapshots:
       ofetch: 1.5.1
       ufo: 1.6.4
     optionalDependencies:
+      '@azure/identity': 4.14.1(supports-color@8.1.1)
       '@azure/storage-blob': 12.34.0(supports-color@8.1.1)
       '@vercel/functions': 3.11.0(@aws-sdk/credential-provider-web-identity@3.972.88)(ws@8.22.0)
 

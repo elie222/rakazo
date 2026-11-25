@@ -86,6 +86,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const fresh = isPlaceholderData || isError ? undefined : data;
   const bots = data?.bots ?? (selectedBot ? [selectedBot] : []);
   const models = fresh?.models ?? [];
+  const routines = fresh?.routines?.some((row) => row.id) ? fresh.routines : [];
   const overTime = fresh?.overTime ?? [];
   const monthly = fresh?.overTimeUnit === "month";
   const totals = fresh?.totals;
@@ -325,6 +326,48 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           <Trans>No usage for this selection.</Trans>
         </p>
       )}
+
+      {routines.length > 0 ? (
+        <div className="rounded-xl border border-border px-2">
+          <Table className="text-body">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-muted-foreground">
+                  <Trans>Routine</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Runs</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Tokens</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Cost</Trans>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {routines.map((row) => (
+                <TableRow key={row.id ?? "none"} className="hover:bg-transparent">
+                  <TableCell>
+                    <div className="text-foreground">
+                      {row.id ? row.name : <Trans>Chats and other work</Trans>}
+                    </div>
+                    {row.botName ? (
+                      <div className="text-label text-muted-foreground">{row.botName}</div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{number(row.runs)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.totalTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
     </div>
   );
 }

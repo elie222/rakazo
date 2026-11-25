@@ -36,6 +36,11 @@ describe("cronLabels", () => {
     expect(formatCron("15 */2 * * *", cronLabels("es"))).toBe("Every 2 hours at :15");
   });
 
+  it("localizes each clock in a list of run times", () => {
+    i18n.activate("en");
+    expect(formatCron("0 9,17 * * 1-5", cronLabels("es"))).toBe("Weekdays at 9:00 and 17:00");
+  });
+
   it("translates schedules into Chinese as one interval phrase", () => {
     expect(formatCron("0 8 * * 1-5", labelsIn("zh-CN"))).toBe("工作日 8:00");
     const traditional = labelsIn("zh-TW");

@@ -164,6 +164,13 @@ describe("server image publish workflow", () => {
     }
   });
 
+  it("deploys a queued main revision only while it is still main's head", () => {
+    const [check, ...rest] = ci.jobs["deploy-production"]?.steps ?? [];
+    expect(check?.id).toBe("head");
+    expect(check?.run).toContain('"$head" == "$GITHUB_SHA"');
+    for (const step of rest) expect(step.if).toBe("steps.head.outputs.current == 'true'");
+  });
+
   it("lets only the newest waiting main revision replace a queued one, never a running one", () => {
     const locks = [
       suites.jobs["static-checks"],
