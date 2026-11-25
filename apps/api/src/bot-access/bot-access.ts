@@ -13,6 +13,9 @@ import { clientErrorStatus } from "../client-error-status.js";
 import type { createRouter } from "../router.js";
 import { handleRpcError } from "../rpc-errors.js";
 
+/** Live task streams and waits one key may hold open in one process. */
+export const MAX_OPEN_FOLLOWS_PER_KEY = 20;
+
 /** The person a request's API key acts for. */
 export type KeyCaller = { userId: string; email: string; keyId: string };
 
@@ -83,6 +86,13 @@ export type BotAccessDeps = {
  */
 export function createBotAccess(deps: BotAccessDeps) {
   const { prisma } = deps;
+  // Live follows each key holds in this process; each one listens and rechecks its key.
+  const openFollows = new Map<string, number>();
+  const releaseFollow = (keyId: string) => {
+    const open = (openFollows.get(keyId) ?? 1) - 1;
+    if (open > 0) openFollows.set(keyId, open);
+    else openFollows.delete(keyId);
+  };
 
   async function authenticate(headers: Headers): Promise<KeyCaller> {
     const key = presentedApiKey(headers);
@@ -313,10 +323,16 @@ export function createBotAccess(deps: BotAccessDeps) {
     let last = start.task;
     yield last;
     if (taskSettled(last.status)) return;
-    const events = await client(caller, start.actor, signal).threads.subscribe({
-      botId: last.bot_id,
-      cursor: start.cursor,
-    });
+    const open = openFollows.get(caller.keyId) ?? 0;
+    if (open >= MAX_OPEN_FOLLOWS_PER_KEY)
+      throw new ClientError("TOO_MANY_REQUESTS", "Too many open streams for this API key");
+    openFollows.set(caller.keyId, open + 1);
+    const events = await client(caller, start.actor, signal)
+      .threads.subscribe({ botId: last.bot_id, cursor: start.cursor })
+      .catch((error: unknown) => {
+        releaseFollow(caller.keyId);
+        throw error;
+      });
     try {
       for await (const event of events) {
         if (event.type === "heartbeat") {
@@ -331,6 +347,7 @@ export function createBotAccess(deps: BotAccessDeps) {
         if (taskSettled(last.status)) return;
       }
     } finally {
+      releaseFollow(caller.keyId);
       await events.return?.();
     }
   }

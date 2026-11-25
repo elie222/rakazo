@@ -102,7 +102,7 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "bots") {
     const bots = await client.bots();
     if (values.json) stdout.write(`${JSON.stringify(bots, null, 2)}\n`);
-    else for (const bot of bots) stdout.write(`${bot.id}  ${bot.name}  (${bot.owned_by})\n`);
+    else for (const bot of bots) stdout.write(`${bot.name}  (${bot.owned_by})  ${bot.id}\n`);
     return 0;
   }
   if (command === "chat") {
