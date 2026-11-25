@@ -1,0 +1,70 @@
+import { mkdir, symlink } from "node:fs/promises";
+import { join } from "node:path";
+import { privateFolder } from "../../../cli-models/cli-process.js";
+import type { AcpAgentDescriptor } from "../../../runtime/acp/acp-agent.js";
+import { ANTIGRAVITY_CLI_PROVIDER_ID } from "./provider-id.js";
+
+/** The CLI's own folder inside its home, which holds its sessions and, off macOS, its sign-in. */
+const ACP_FOLDER = "antigravity-acp";
+
+/**
+ * What the CLI's own folder needs from the operator's to stay signed in: the sign-in it saved
+ * (macOS keeps it in the keychain instead) and the settings that say which sign-in it uses. Only
+ * linked, never read.
+ */
+const SIGN_IN_FILES = ["acp_token.json", "acp_business_token.json", "settings.json"];
+
+/**
+ * The CLI's home for bots: a private folder of Rakazo's in place of `~/.gemini`, so the operator's
+ * hooks, MCP servers, skills and shared settings stay out of the bot's turn. It lasts across turns
+ * because the CLI keeps its sessions there.
+ */
+const botHome = privateFolder("rakazo-antigravity-home", false);
+
+async function linkSignIn(home: string, operatorHome: string): Promise<void> {
+  const own = join(home, ACP_FOLDER);
+  await mkdir(own, { recursive: true, mode: 0o700 });
+  for (const name of SIGN_IN_FILES) {
+    try {
+      await symlink(join(operatorHome, ACP_FOLDER, name), join(own, name));
+    } catch (error) {
+      // Linked before, or a file the CLI has since written in its place (a refreshed sign-in).
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  }
+}
+
+/**
+ * The CLI runs `agy acp`, as installed. Rakazo never signs it in or reads its sign-in: the operator
+ * signs in once with `agy acp --login`. Every session turns off all of the CLI's built-in tools,
+ * loads Rakazo's tool server up front so its calls carry the server's name, and adds Rakazo's
+ * instructions to the CLI's system prompt, which is as far as the CLI lets a client change it.
+ */
+export const antigravityAgent: AcpAgentDescriptor = {
+  id: ANTIGRAVITY_CLI_PROVIDER_ID,
+  label: "Antigravity",
+  command: "agy",
+  notInstalled:
+    "The Antigravity CLI is not installed on this server. Install it for the user that runs the Rakazo worker.",
+  signIn: "Run `agy acp --login` in a terminal as the user that runs the Rakazo worker.",
+  async launch({ env }) {
+    const home = botHome();
+    await linkSignIn(home, join(env.HOME ?? "", ".gemini"));
+    return { args: ["acp"], env: { ...env, GEMINI_HOME: home } };
+  },
+  sessionMeta: ({ instructions, toolServer }) => ({
+    antigravity: {
+      enabledTools: [],
+      eagerMcpServers: [toolServer],
+      systemPrompt: { append: instructions },
+    },
+  }),
+  toolCallName: (toolServer, tool) => `${toolServer}_${tool}`,
+  // The CLI names a call in its first update's title, prefixed with its MCP server's name.
+  reportedToolName: (update) =>
+    typeof update.name === "string"
+      ? update.name
+      : update.sessionUpdate === "tool_call" && typeof update.title === "string"
+        ? update.title
+        : undefined,
+};

@@ -49,7 +49,9 @@ sign in to there.
 Check the exact plan before connecting or buying it:
 
 - **Gemini:** API keys use the Gemini API's own [billing tiers and limits](https://ai.google.dev/gemini-api/docs/billing).
-  Do not assume a Google AI app subscription funds API requests.
+  Do not assume a Google AI app subscription funds API requests. If you run Rakazo from a source
+  checkout for yourself, a Google plan that covers Antigravity can run your bots through the official
+  [Antigravity CLI](./self-host-models.md#antigravity-cli).
 - **Kimi:** Code membership and Moonshot's general API have different keys, endpoints, and billing.
   Check the [Kimi account documentation](https://www.kimi.ai/help/kimi-code/faq) for your plan.
 - **Copilot, Grok, and other coding plans:** check the provider's current terms, eligible clients,

@@ -1,4 +1,5 @@
 import type { AgentRuntime } from "@rakazo/adapter-kit";
+import { antigravityAgent } from "../providers/agent-cli/antigravity/antigravity-agent.js";
 import { openCodeAgent } from "../providers/agent-cli/opencode/opencode-agent.js";
 import {
   CLAUDE_CODE_PROVIDER_ID,
@@ -25,6 +26,8 @@ const routes: Record<string, PersonalCliRoute> = {
   },
   [openCodeAgent.id]: (_modelId, accessCheck) => (runtime) =>
     acpAgentRuntime(runtime, openCodeAgent, { accessCheck }),
+  [antigravityAgent.id]: (_modelId, accessCheck) => (runtime) =>
+    acpAgentRuntime(runtime, antigravityAgent, { accessCheck }),
 };
 
 /**

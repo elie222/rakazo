@@ -64,6 +64,8 @@ const UNSUPPORTED_TOOLS = new Set([
   "leave_computer_mode",
 ]);
 
+/** The Agent Client Protocol's error code for a request that needs the agent signed in. */
+const AUTH_REQUIRED = -32000;
 /** JSON-RPC's invalid-params code, which agents answer an unknown session id with. */
 const INVALID_PARAMS = -32602;
 /** The ACP protocol version this client speaks. */
@@ -419,12 +421,17 @@ async function runAcpTurn(
         ? "session/close"
         : undefined;
 
+    const sessionMeta = descriptor.sessionMeta?.({
+      instructions: request.instructions || fallbackSystemPrompt(false),
+      toolServer: ACP_TOOL_SERVER,
+    });
+    const sessionParams = sessionMeta ? { _meta: sessionMeta } : {};
     // A session continues where the CLI can resume or load it; otherwise the chat starts over.
     let session =
       known && (sessionCapabilities.resume || capabilities.loadSession) ? known : undefined;
     let opened: Update | undefined;
     if (session) {
-      const resume = { sessionId: session.id, cwd: session.cwd, mcpServers };
+      const resume = { sessionId: session.id, cwd: session.cwd, mcpServers, ...sessionParams };
       try {
         if (sessionCapabilities.resume) {
           opened = await step(agent.request<Update>("session/resume", resume));
@@ -448,7 +455,9 @@ async function runAcpTurn(
     }
     if (known && !session) forgetSession(key);
     if (!session) {
-      opened = await step(agent.request<Update>("session/new", { cwd, mcpServers }));
+      opened = await step(
+        agent.request<Update>("session/new", { cwd, mcpServers, ...sessionParams }),
+      );
       if (typeof opened.sessionId !== "string") {
         throw new Error(`${descriptor.label} did not start a session.`);
       }
@@ -561,6 +570,12 @@ async function runAcpTurn(
     if (violation) throw violation;
     if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
       throw new Error(descriptor.notInstalled);
+    }
+    if (error instanceof AcpRequestError && error.code === AUTH_REQUIRED) {
+      // Shaped like a provider's 401 so the run's error is shown as a sign-in problem.
+      throw new Error(
+        `${descriptor.label} API error (401): ${descriptor.label} on this server is not signed in.${descriptor.signIn ? ` ${descriptor.signIn}` : ""}`,
+      );
     }
     if (error instanceof AcpRequestError) {
       throw new Error(`${descriptor.label} error: ${sanitizeSensitiveText(error.message)}`);
@@ -690,7 +705,7 @@ async function selectModel(
   const values = flattenValues(choice.options);
   if (values.length && !values.includes(modelId)) {
     throw new Error(
-      `${descriptor.label} on this server has no model "${modelId}". Set PI_DEFAULT_MODEL to one it lists.`,
+      `${descriptor.label} on this server has no model "${modelId}". Set PI_DEFAULT_MODEL to one of: ${values.slice(0, 20).join(", ")}.`,
     );
   }
   await step(
