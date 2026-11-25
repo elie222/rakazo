@@ -13,12 +13,13 @@ import { selectCloudAgentTools } from "../../cloud-agents/cloud-agent-tools-sele
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { selectMemoryTools } from "../../memory/memory-tools.js";
 import { filterImageReturningComputerTools } from "../../models/model-vision.js";
-import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
+import { agentConnectionTools, builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import { shellDescription } from "../../tools/builtin-computer.tool-definition.js";
 import { searchHistoryThisChat } from "../../tools/builtin-memory.tool-definition.js";
 import {
   filterBuiltinToolsForRun,
   filterBuiltinToolsForThread,
+  ROUTINE_RUN_HIDDEN_TOOLS,
   SCHEDULE_TOOL_NAMES,
 } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
@@ -27,6 +28,7 @@ import {
   createdRunToolUnavailableReason,
   disabledBuiltinToolUnavailableReason,
   groupMessageBotUnavailableReason,
+  routineRunToolUnavailableReason,
 } from "./run-tool-selection.prompt.js";
 import { USER_COMPUTER_SCREEN_TOOLS, USER_COMPUTER_TOOLS } from "./run-tools-user-computer.js";
 
@@ -83,6 +85,10 @@ const PAID_SERVICE_TOOL_NAMES = new Set(["service_search", "service_call"]);
 const PURCHASE_TOOL_NAMES = new Set(["request_purchase", "purchase_status", "paid_request"]);
 
 export const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
+const BUILTIN_REASON_TOOL_NAMES: ReadonlySet<string> = new Set([
+  ...BUILTIN_AGENT_TOOL_NAMES,
+  ...agentConnectionTools.map((tool) => tool.name),
+]);
 
 const FLEET_TOOL_NAMES_SET: ReadonlySet<string> = new Set(FLEET_TOOL_NAMES);
 
@@ -298,8 +304,9 @@ function withShellScreenTool<T extends { name: string; description?: string }>(t
 }
 
 /**
- * Why each built-in this run was not offered is unavailable, for the model's use_tool error.
- * The first matching reason wins; a built-in dropped for another reason gets none.
+ * Why each built-in this run was not offered is unavailable, for the model's find_tool and
+ * use_tool responses. The first matching reason wins; a built-in dropped for another reason gets
+ * none.
  */
 export function unavailableBuiltinToolReasons(
   options: {
@@ -312,7 +319,7 @@ export function unavailableBuiltinToolReasons(
   const offeredNames = new Set(offered.map((tool) => tool.name));
   const disabled = disabledBuiltinToolSet(options.disabledBuiltinTools);
   const reasons: Record<string, string> = {};
-  for (const name of BUILTIN_AGENT_TOOL_NAMES) {
+  for (const name of BUILTIN_REASON_TOOL_NAMES) {
     if (offeredNames.has(name)) continue;
     if (options.trigger === "created" && !CREATED_RUN_TOOL_NAMES.has(name)) {
       reasons[name] = createdRunToolUnavailableReason(name);
@@ -321,7 +328,9 @@ export function unavailableBuiltinToolReasons(
     } else if (options.groupId && name === "message_bot") {
       reasons[name] = groupMessageBotUnavailableReason(offeredNames.has("handoff_to_bot"));
     } else if (isBackgroundRunTrigger(options.trigger) && BACKGROUND_DROPPED_TOOL_NAMES.has(name)) {
-      reasons[name] = backgroundRunToolUnavailableReason(name);
+      reasons[name] = backgroundRunToolUnavailableReason(name, offeredNames.has("ticket_comment"));
+    } else if (options.trigger === "routine" && ROUTINE_RUN_HIDDEN_TOOLS.has(name)) {
+      reasons[name] = routineRunToolUnavailableReason(name);
     }
   }
   return reasons;
