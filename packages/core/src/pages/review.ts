@@ -1,25 +1,30 @@
-import type { PageComment, PageReview, PageSectionAnchor } from "@rakazo/contracts";
+import type { PageComment, PageImages, PageReview, PageSectionAnchor } from "@rakazo/contracts";
 import { newClientId } from "../primitives/client-id.js";
 
 type PageCommentDraft = Pick<PageComment, "version" | "body"> & PageSectionAnchor;
 export type PageCommentSubmission = PageCommentDraft & { submissionId: string };
 export type PageReviewSections = { version: number; sections: PageSectionAnchor[] };
+export type PageShown = { code: string; images: PageImages; version: number };
 
 export function pageReviewContent({
   page,
   showingDraft,
-  draftCode,
+  draft,
   reported,
 }: {
   page: PageReview | undefined;
   showingDraft: boolean;
-  draftCode?: string;
+  draft?: { code: string; images: PageImages };
   reported?: PageReviewSections;
-}) {
-  if (!page) return { code: undefined, sections: [] };
-  if (showingDraft) return { code: page.owner ? draftCode : undefined, sections: [] };
+}): { shown: PageShown | undefined; sections: PageSectionAnchor[] } {
+  if (!page) return { shown: undefined, sections: [] };
+  if (showingDraft)
+    return {
+      shown: page.owner && draft ? { ...draft, version: page.version } : undefined,
+      sections: [],
+    };
   return {
-    code: page.code,
+    shown: { code: page.code, images: page.images, version: page.version },
     sections: reported?.version === page.version ? reported.sections : [],
   };
 }

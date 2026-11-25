@@ -142,6 +142,9 @@ describe("desktop release workflow", () => {
     expect(workflow).toContain(
       'test -s "release-artifacts/rakazo-server-darwin-arm64-$RELEASE_VERSION.tar.xz"',
     );
+    // The previous release finds the next bundle through this asset, beside the archive.
+    expect(workflow).toContain("apps/desktop/out/server-bundle.json");
+    expect(workflow).toContain("test -s release-artifacts/server-bundle.json");
   });
 
   it("publishes only a complete stable, upgrade-only feed", () => {

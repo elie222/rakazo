@@ -335,6 +335,20 @@ export async function runTrial(
           content: scenario.botMemory,
         });
       }
+      if (scenario.sharedMemory) {
+        const documents = await rpc<Array<{ id: string; path: string }>>(
+          app,
+          cookie,
+          "memory/list",
+          { scope: "user" },
+        );
+        const index = documents.find((document) => document.path === "MEMORY.md");
+        if (!index) throw new EvalFailure("harness", "The Space has no shared MEMORY.md to seed");
+        await rpc(app, cookie, "memory/update", {
+          documentId: index.id,
+          content: scenario.sharedMemory,
+        });
+      }
       for (const [path, content] of Object.entries(scenario.botMemoryDocuments ?? {}))
         await prisma.memoryDocument.create({
           data: { ...persistedBot, botId, scope: "bot", path, content },
@@ -1244,6 +1258,12 @@ export async function runTrial(
     const memories = await rpc<Array<{ content: string }>>(handles.app, cookie, "memory/list", {
       botId,
     });
+    const sharedMemories = await rpc<Array<{ content: string }>>(
+      handles.app,
+      cookie,
+      "memory/list",
+      { scope: "user" },
+    );
     const routines = await prisma.routine.findMany({
       where: { botId },
       select: { name: true, prompt: true, crons: true, active: true, inChat: true },
@@ -1302,6 +1322,7 @@ export async function runTrial(
       routines,
       routinesCreated,
       memory: memories.map((m) => m.content).join("\n"),
+      sharedMemory: sharedMemories.map((m) => m.content).join("\n"),
       approvalPending,
       clarificationPending,
       pendingApproval,

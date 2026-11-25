@@ -173,6 +173,49 @@ describe("agent memory context", () => {
     );
   });
 
+  it("moves ended shared entries to the Space's own archive", async () => {
+    const shared = [
+      document(
+        "shared",
+        "MEMORY.md",
+        "Invoices go to Dana. (saved 2026-03-01)\nNo client sends this week. (saved 2026-03-05, ends 2026-03-09)\n",
+        3,
+        "2026-03-05T12:00:00.000Z",
+      ),
+      document("shared-archive", "ARCHIVE.md", "Old team rule.\n", 1, "2026-01-03T12:00:00.000Z"),
+    ];
+    const read = vi.fn(async ({ scope }: { scope: "bot" | "user" }) =>
+      snapshot(scope === "user" ? shared : []),
+    );
+    const store = storeWith(read);
+
+    const result = await loadAgentMemoryContext(store, "bot-1", context, { today: "2026-03-20" });
+
+    expect(result).toContain("Invoices go to Dana.");
+    expect(result).not.toContain("No client sends");
+    expect(result).not.toContain("Old team rule");
+    expect(store.commit).toHaveBeenNthCalledWith(
+      1,
+      {
+        scope: "user",
+        path: "ARCHIVE.md",
+        content: "Old team rule.\nNo client sends this week. (saved 2026-03-05, ends 2026-03-09)\n",
+        expectedRevision: 1,
+      },
+      context,
+    );
+    expect(store.commit).toHaveBeenNthCalledWith(
+      2,
+      {
+        scope: "user",
+        path: "MEMORY.md",
+        content: "Invoices go to Dana. (saved 2026-03-01)\n",
+        expectedRevision: 3,
+      },
+      context,
+    );
+  });
+
   it("omits the memory block when neither scope has documents", async () => {
     const read = vi.fn(async () => snapshot([]));
 
@@ -331,7 +374,7 @@ describe("memory prompt budget", () => {
     const { text } = buildAgentMemoryPrompt([doc("bot", "MEMORY.md", "x".repeat(3700), 1, OLD)]);
 
     expect(text).toContain(
-      "(revision 1, 3700 of 4096 bytes, nearly full: any add must remove or shorten entries in the same remember call)",
+      "(revision 1, 3700 of 4096 bytes, nearly full: make room in the same remember call by removing what ended or is outdated, merging duplicates and rewriting dated histories as how things now stand, never by abbreviating)",
     );
   });
 

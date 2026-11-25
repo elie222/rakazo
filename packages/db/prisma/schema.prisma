@@ -28,6 +28,7 @@ model User {
   pages          Page[]
   pageGrants PageGrant[]
   pageComments PageComment[]
+  pageReaderStates PageReaderState[]
   id                          String                       @id
   name                        String
   email                       String
@@ -51,6 +52,7 @@ model User {
   /// Null lets each client keep its previous device preference.
   composerModelPicker          Boolean?
   streamReplies                Boolean?
+  notificationSounds           Boolean                       @default(false)
   /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
   timezone                    String?
   /// The app language last chosen, such as "es" or "pt-BR". Null until an app reports it;
@@ -2154,6 +2156,8 @@ model Page {
   versions       PageVersion[]
   grants         PageGrant[]
   comments       PageComment[]
+  readerStates   PageReaderState[]
+  images         PageImage[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2170,10 +2174,29 @@ model PageVersion {
   source    String
   /// The source compiled for the viewer when it was saved, so reads never run the compiler.
   code      String
+  images    Json?
   createdAt DateTime @default(now())
 
   @@unique([pageId, version])
   @@map("page_versions")
+}
+
+model PageImage {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  spaceId   String
+  hash      String
+  mimeType  String
+  width     Int
+  height    Int
+  size      Int
+  /// Where the artifact store keeps the bytes, as for a chat file.
+  storageKey String
+  createdAt DateTime @default(now())
+
+  @@unique([pageId, hash])
+  @@map("page_images")
 }
 
 model PageGrant {
@@ -2190,6 +2213,21 @@ model PageGrant {
   @@unique([pageId, recipientEmail])
   @@index([userId, pageId])
   @@map("page_grants")
+}
+
+model PageReaderState {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId   String
+  values    Json
+  updatedAt DateTime @updatedAt
+
+  @@unique([pageId, userId])
+  @@index([userId])
+  @@map("page_reader_states")
 }
 
 model PageComment {

@@ -392,104 +392,60 @@ describe("ScriptedAgentRuntime executionIds", () => {
   });
 });
 
-describe("inferScript save_shared_memory", () => {
-  it("saves shared memory from the prompt", () => {
-    expect(inferScript("save shared memory MEMORY.md with: Printing jobs go to Clyde.")).toEqual([
-      {
-        assistant: "saving that to shared memory.",
-        toolCalls: [
-          {
-            name: "save_shared_memory",
-            args: { path: "MEMORY.md", content: "Printing jobs go to Clyde." },
+describe("inferScript shared memory", () => {
+  const saving = (content: string, path?: string) => [
+    {
+      assistant: "saving that to shared memory.",
+      toolCalls: [
+        {
+          name: "remember",
+          args: {
+            shared: true,
+            ...(path ? { path } : {}),
+            operations: [{ action: "add", content }],
           },
-        ],
-        complete: true,
-      },
-    ]);
+        },
+      ],
+      complete: true,
+    },
+  ];
+
+  it("adds to shared memory from the prompt", () => {
+    expect(inferScript("save shared memory MEMORY.md with: Printing jobs go to Clyde.")).toEqual(
+      saving("Printing jobs go to Clyde.", "MEMORY.md"),
+    );
   });
 
   it("uses an explicit named path", () => {
-    expect(inferScript("save shared memory named ROUTING.md with: Route print jobs.")).toEqual([
-      {
-        assistant: "saving that to shared memory.",
-        toolCalls: [
-          {
-            name: "save_shared_memory",
-            args: { path: "ROUTING.md", content: "Route print jobs." },
-          },
-        ],
-        complete: true,
-      },
-    ]);
+    expect(inferScript("save shared memory named ROUTING.md with: Route print jobs.")).toEqual(
+      saving("Route print jobs.", "ROUTING.md"),
+    );
   });
 
-  it("defaults the path when none is given", () => {
-    expect(inferScript("save shared memory with: Team facts")).toEqual([
-      {
-        assistant: "saving that to shared memory.",
-        toolCalls: [
-          {
-            name: "save_shared_memory",
-            args: { path: "MEMORY.md", content: "Team facts" },
-          },
-        ],
-        complete: true,
-      },
-    ]);
+  it("leaves the path to the index when none is given", () => {
+    expect(inferScript("save shared memory with: Team facts")).toEqual(saving("Team facts"));
   });
 
   it("beats write_file when the payload mentions notes", () => {
-    const script = inferScript("write shared memory MEMORY.md with: Keep notes concise.");
-    expect(script?.[0]?.toolCalls?.[0]?.name).toBe("save_shared_memory");
-    expect(script?.[0]?.toolCalls?.[0]?.args).toEqual({
-      path: "MEMORY.md",
-      content: "Keep notes concise.",
-    });
+    expect(inferScript("write shared memory MEMORY.md with: Keep notes concise.")).toEqual(
+      saving("Keep notes concise.", "MEMORY.md"),
+    );
   });
 
   it("accepts write shared memory file <path>", () => {
-    expect(inferScript("write shared memory file ROUTING.md with: Keep notes concise.")).toEqual([
-      {
-        assistant: "saving that to shared memory.",
-        toolCalls: [
-          {
-            name: "save_shared_memory",
-            args: { path: "ROUTING.md", content: "Keep notes concise." },
-          },
-        ],
-        complete: true,
-      },
-    ]);
+    expect(inferScript("write shared memory file ROUTING.md with: Keep notes concise.")).toEqual(
+      saving("Keep notes concise.", "ROUTING.md"),
+    );
   });
 
   it("accepts with without a colon", () => {
-    expect(inferScript("save shared memory with Team facts")).toEqual([
-      {
-        assistant: "saving that to shared memory.",
-        toolCalls: [
-          {
-            name: "save_shared_memory",
-            args: { path: "MEMORY.md", content: "Team facts" },
-          },
-        ],
-        complete: true,
-      },
-    ]);
+    expect(inferScript("save shared memory with Team facts")).toEqual(saving("Team facts"));
   });
 
   it("does not take named paths from the content body", () => {
-    expect(inferScript("save shared memory ROUTING.md with: Team named Alice.")).toEqual([
-      {
-        assistant: "saving that to shared memory.",
-        toolCalls: [
-          {
-            name: "save_shared_memory",
-            args: { path: "ROUTING.md", content: "Team named Alice." },
-          },
-        ],
-        complete: true,
-      },
-    ]);
+    expect(inferScript("save shared memory ROUTING.md with: Team named Alice.")).toEqual(
+      saving("Team named Alice.", "ROUTING.md"),
+    );
   });
 });
 

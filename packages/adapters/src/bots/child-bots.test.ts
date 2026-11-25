@@ -394,6 +394,7 @@ describe("destroyBot", () => {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
+        pageImage: { findMany: vi.fn().mockResolvedValue([]) },
         page: {
           updateMany: vi.fn().mockResolvedValue({ count: 0 }),
           deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -463,6 +464,7 @@ describe("destroyBot", () => {
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
         artifact: { findMany: findArtifacts, deleteMany: deleteArtifacts },
+        pageImage: { findMany: vi.fn().mockResolvedValue([]) },
         page: {
           updateMany: vi.fn().mockResolvedValue({ count: 0 }),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -554,6 +556,7 @@ describe("destroyBot", () => {
       callback({
         $queryRaw: vi.fn().mockResolvedValue([]),
         artifact: { findMany: vi.fn(), deleteMany: vi.fn() },
+        pageImage: { findMany: vi.fn().mockResolvedValue([]) },
         page: {
           updateMany: vi.fn().mockResolvedValue({ count: 0 }),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -615,6 +618,7 @@ describe("destroyBot", () => {
           findMany: vi.fn().mockResolvedValue([]),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         },
+        pageImage: { findMany: vi.fn().mockResolvedValue([]) },
         page: {
           updateMany: vi.fn().mockResolvedValue({ count: 0 }),
           deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -791,6 +795,7 @@ describe("destroyBot", () => {
             findMany: vi.fn().mockResolvedValue([]),
             deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
           },
+          pageImage: { findMany: vi.fn().mockResolvedValue([]) },
           page: {
             updateMany: vi.fn().mockResolvedValue({ count: 0 }),
             deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -984,6 +989,7 @@ describe("destroyBot", () => {
             findMany: vi.fn().mockResolvedValue([]),
             deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
           },
+          pageImage: { findMany: vi.fn().mockResolvedValue([]) },
           page: {
             updateMany: vi.fn().mockResolvedValue({ count: 0 }),
             deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -2925,6 +2931,7 @@ function deletionPrisma(team: { id: string }) {
         findMany: vi.fn().mockResolvedValue([]),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
+      pageImage: { findMany: vi.fn().mockResolvedValue([]) },
       page: {
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),

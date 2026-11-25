@@ -40,7 +40,12 @@ function PagePreview({
   useEffect(() => {
     if (!detail) return;
     let active = true;
-    void pageDocument(currentApiBase(), detail.code, theme, t`This page couldn't be shown.`)
+    void pageDocument(
+      currentApiBase(),
+      { ...detail, pageId: detail.id },
+      theme,
+      t`This page couldn't be shown.`,
+    )
       .then((html) => {
         if (!active) return;
         setDocument(html);

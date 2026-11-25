@@ -115,7 +115,7 @@ import {
 } from "./this-computer/local-stack.js";
 import type { ServerBundle } from "./this-computer/mac-runtime.js";
 import { nativeStackEligible, readServerBundle } from "./this-computer/mac-runtime.js";
-import { NativeStackController } from "./this-computer/native-stack.js";
+import { NativeStackController, prefetchForUpdate } from "./this-computer/native-stack.js";
 import {
   StackStopMenuAvailability,
   stopStackLeftBehind,
@@ -590,6 +590,7 @@ app.whenReady().then(async () => {
       : undefined,
   );
   followUpdateState(() => installApplicationMenu());
+  desktop.desktopUpdater.subscribe((update) => prefetchForUpdate(desktop.localStack, update));
   const screenDriver = screenDriverRelease(process.platform);
   const screenPermissions: ScreenPermissionApi = {
     isTrustedAccessibilityClient: (prompt) =>
@@ -785,6 +786,7 @@ app.whenReady().then(async () => {
       prepareHostComputer(userDataDir, bundle === null ? "docker" : "native", hostScreen),
     );
     desktop.localStack = bundle === null ? dockerStack() : nativeStack(bundle, moving);
+    prefetchForUpdate(desktop.localStack, desktop.desktopUpdater.state());
   };
   // Setup can read the Docker controller's idle state while the move choice is pending.
   // Opening or starting the local stack waits for that choice before preparing the bridge.
