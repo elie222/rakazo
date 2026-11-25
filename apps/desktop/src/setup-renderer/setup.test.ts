@@ -31,7 +31,7 @@ const setupBody = readFileSync(path.join(srcDir, "setup.html"), "utf8").match(
 const setupScript = readFileSync(path.join(srcDir, "setup.js"), "utf8");
 
 function stackState(phase: DesktopLocalStackState["phase"]): DesktopLocalStackState {
-  return { phase, message: null, output: [], layerBytes: {}, imageTag: "v0.0.0" };
+  return { phase, message: null, output: [], layerBytes: {}, layerTotals: {}, imageTag: "v0.0.0" };
 }
 
 function element<T extends HTMLElement>(id: string): T {
@@ -655,6 +655,20 @@ describe("setup", () => {
       await flush();
       expect(element("stack-detail").textContent).toBe(template.replace("{size}", size));
     }
+  });
+
+  it("measures downloads of a known size against their total and leaves unsized ones out", async () => {
+    const ui = await boot(null, ENGLISH);
+    selectMode("new");
+    submitForm();
+    ui.startResult.resolve({
+      ...stackState("pulling"),
+      layerBytes: { server: 5e6, runtime: 0, database: 3e8 },
+      layerTotals: { server: 9.7e7, runtime: 2e7 },
+    });
+    await flush();
+    expect(element("stack-detail").textContent).toBe("5 MB of 117 MB");
+    expect(element("stack-progress").getAttribute("aria-valuenow")).toBe("22.6");
   });
 
   it("renders Polish setup controls and interpolates connection and download status", async () => {

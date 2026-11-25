@@ -115,7 +115,7 @@ export interface RuntimeDeps {
   fetch: Fetch;
   env: Record<string, string>;
   signal: AbortSignal;
-  onBytes: (name: string, bytes: number) => void;
+  onBytes: (name: string, bytes: number, total: number) => void;
   onLine: (line: string) => void;
 }
 
@@ -130,6 +130,7 @@ export async function downloadVerified(
   destination: string,
 ): Promise<void> {
   const partial = `${destination}.${randomUUID()}.partial`;
+  deps.onBytes(name, 0, pinned.size);
   try {
     const response = await deps
       .fetch(pinned.url, { signal: deps.signal })
@@ -145,7 +146,7 @@ export async function downloadVerified(
       bytes += chunk.length;
       if (bytes > pinned.size) throw new DownloadError(`${name} is larger than expected`);
       hash.update(chunk);
-      deps.onBytes(name, bytes);
+      deps.onBytes(name, bytes, pinned.size);
       return chunk;
     });
     await pipeline(counted, createWriteStream(partial, { mode: 0o600 }), {
