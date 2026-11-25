@@ -1,4 +1,4 @@
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger, runWithLogContext } from "@rakazo/logging";
 import type Docker from "dockerode";
 
 /** A computer whose every command fails costs one reading in this time. */
@@ -14,8 +14,16 @@ export function warnNearLimits(container: Docker.Container): void {
   const now = Date.now();
   const last = lastReadingAt.get(container.id);
   if (last !== undefined && now - last < READING_INTERVAL_MS) return;
+  for (const [id, at] of lastReadingAt) {
+    if (now - at >= READING_INTERVAL_MS) lastReadingAt.delete(id);
+  }
   lastReadingAt.set(container.id, now);
-  void bestEffort("read a computer's resource limits", reportNearLimits(container));
+  // The reading describes the computer, so it does not repeat the failure of the request that
+  // triggered it.
+  void bestEffort(
+    "read a computer's resource limits",
+    runWithLogContext({ error: undefined }, () => reportNearLimits(container)),
+  );
 }
 
 async function reportNearLimits(container: Docker.Container): Promise<void> {
@@ -29,11 +37,10 @@ async function reportNearLimits(container: Docker.Container): Promise<void> {
       "pids.limit": pids.limit,
     });
   // The kernel frees idle file cache before it kills a process for memory, so it is not counted.
+  // Docker names it total_inactive_file on cgroup v1 and inactive_file on cgroup v2.
   const memory = stats.memory_stats;
-  const resident = nearLimit(
-    (memory.usage ?? 0) - (memory.stats?.inactive_file ?? 0),
-    memory.limit,
-  );
+  const idleFileCache = memory.stats?.total_inactive_file ?? memory.stats?.inactive_file ?? 0;
+  const resident = nearLimit((memory.usage ?? 0) - idleFileCache, memory.limit);
   if (resident)
     log.warn("computer.memory_near_limit", {
       "container.id": container.id,
