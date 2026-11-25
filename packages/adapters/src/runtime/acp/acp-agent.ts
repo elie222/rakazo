@@ -9,8 +9,6 @@ export interface AcpAgentDescriptor {
   label: string;
   /** The executable on the server's PATH. */
   command: string;
-  /** Environment names, beyond the shared allowlist, where the CLI keeps its own sign-in. */
-  ownEnv?: readonly string[];
   /** Shown when the command is not on PATH. */
   notInstalled: string;
   /**
@@ -31,4 +29,9 @@ export interface AcpAgentDescriptor {
    * other than the protocol's `name` field. Undefined when the update names no tool.
    */
   reportedToolName?(update: Record<string, unknown>): string | undefined;
+  /**
+   * Whether an error answering a resume means the CLI has no such session, where it says so in a
+   * way other than the protocol's invalid-params answer.
+   */
+  isMissingSession?(error: { code: number; message: string; data?: unknown }): boolean;
 }

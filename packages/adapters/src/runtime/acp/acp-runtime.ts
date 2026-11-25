@@ -64,6 +64,8 @@ const UNSUPPORTED_TOOLS = new Set([
   "leave_computer_mode",
 ]);
 
+/** JSON-RPC's invalid-params code, which agents answer an unknown session id with. */
+const INVALID_PARAMS = -32602;
 /** The ACP protocol version this client speaks. */
 const PROTOCOL_VERSION = 1;
 /** How many of its own replies a session remembers, to tell them from replies written elsewhere. */
@@ -362,7 +364,7 @@ async function runAcpTurn(
       files,
       instructions: request.instructions || fallbackSystemPrompt(false),
       toolServer: ACP_TOOL_SERVER,
-      env: cliEnv(process.env, descriptor.ownEnv),
+      env: cliEnv(process.env),
     });
     signal.throwIfAborted();
     const agent = startAcpAgent(
@@ -434,7 +436,7 @@ async function runAcpTurn(
         sessionId = session.id;
       } catch (error) {
         // The CLI no longer has the session; anything else ends the turn.
-        if (!(error instanceof AcpRequestError)) throw error;
+        if (!isMissingSession(error, descriptor)) throw error;
         getLogger().warn("The agent CLI could not continue its session; starting a new one", {
           agent: descriptor.id,
           error: error.message,
@@ -874,4 +876,20 @@ function toolResult(result: AgentToolResult<unknown>, finishedShells?: string): 
 
 function contentHash(text: string): string {
   return createHash("sha256").update(text).digest("hex");
+}
+
+/**
+ * Whether the CLI refused a resume because it has no such session: the protocol's invalid-params
+ * answer, or a message saying so. Any other error is not a reason to drop the session.
+ */
+function isMissingSession(
+  error: unknown,
+  descriptor: AcpAgentDescriptor,
+): error is AcpRequestError {
+  return (
+    error instanceof AcpRequestError &&
+    (error.code === INVALID_PARAMS ||
+      /not\s*found|no such session|unknown session/i.test(error.message) ||
+      descriptor.isMissingSession?.(error) === true)
+  );
 }

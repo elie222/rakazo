@@ -77,6 +77,12 @@ export const openCodeAgent: AcpAgentDescriptor = {
     };
   },
   toolCallName: (toolServer, tool) => `${toolServer}_${tool}`,
+  // Before 2.0, OpenCode answers a resume of a session it no longer has with a session error.
+  isMissingSession: ({ code, data }) =>
+    code === -32603 &&
+    typeof data === "object" &&
+    data !== null &&
+    (data as { service?: unknown }).service === "session",
   // Before 2.0, OpenCode names the tool only in the first update's title.
   reportedToolName: (update) =>
     typeof update.name === "string"

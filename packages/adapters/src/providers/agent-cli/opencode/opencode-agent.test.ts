@@ -54,6 +54,19 @@ describe("openCodeAgent", () => {
     ).toBeUndefined();
   });
 
+  it("recognizes older releases' answer for a session they no longer have", () => {
+    expect(
+      openCodeAgent.isMissingSession?.({
+        code: -32603,
+        message: "Internal error: OpenCode service failure",
+        data: { service: "session" },
+      }),
+    ).toBe(true);
+    expect(
+      openCodeAgent.isMissingSession?.({ code: -32603, message: "Internal error", data: {} }),
+    ).toBe(false);
+  });
+
   it("is a deployment model the operator configures with the CLI's own sign-in", () => {
     const model = resolveDeploymentModel({
       PI_DEFAULT_PROVIDER: OPENCODE_CLI_PROVIDER_ID,
