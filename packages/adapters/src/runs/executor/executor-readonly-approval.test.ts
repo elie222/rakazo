@@ -6,7 +6,7 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { MEMORY_REVISION_CONFLICT_ERROR, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
-import type { ModelRoleSettings, SpendingLimit } from "@rakazo/contracts";
+import type { ModelRoleSettings, ReplyMode, SpendingLimit } from "@rakazo/contracts";
 import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
@@ -123,11 +123,13 @@ function fixture({
   deploymentLabs,
   inbox = false,
   textBeforeCalls,
+  replyMode = "chat",
 }: {
   /** The bot has an email address on this server. */
   inbox?: boolean;
   /** Text the model writes before its tool calls. */
   textBeforeCalls?: string;
+  replyMode?: ReplyMode;
   /** Labs on for the whole deployment, such as the ticket board. */
   deploymentLabs?: string[];
   /** The Space's semantic memory provider; none by default. */
@@ -395,6 +397,7 @@ function fixture({
         modelId: null,
         thinkingLevel: null,
         autoSpeak: false,
+        replyMode,
         disabledBuiltinTools,
         fleetManagement,
         computerId: "computer-1",
@@ -932,6 +935,30 @@ describe("text written before an approval card", () => {
     expect(f.prisma.message.create.mock.invocationCallOrder[0]).toBeLessThan(
       f.pauseRunForInput.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it("keeps messages-mode working text private and carries it into the resumed turn", async () => {
+    const text = "I will update the notes file.";
+    const f = fixture({
+      name: "write_file",
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "write_file" }],
+      replyMode: "messages",
+      textBeforeCalls: text,
+    });
+    f.pauseWithTurnCheckpoint("call-1", {
+      version: 1,
+      systemPrompt: "You are Assistant.",
+      pendingToolCallId: "call-1",
+      executionMode: "sequential",
+      messages: [],
+    });
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.prisma.message.create).not.toHaveBeenCalled();
+    expect(f.turnCheckpoints).toHaveLength(1);
+    expect(JSON.parse(f.turnCheckpoints[0]!.result)).toMatchObject({
+      reply: { currentTextSegment: text },
+    });
   });
 });
 

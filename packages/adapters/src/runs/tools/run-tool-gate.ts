@@ -778,9 +778,10 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
     // Another worker owns the run now; exit without leaving a local pause card.
     return pauseForApproval(ctx);
   }
-  // Post what the bot wrote before the card now, as a question does: held into the
-  // resumed reply, it was drawn below the card and read as the answer to it.
-  await publishNarrationBeforeAsk(ctx);
+  if (ctx.replyMode === "chat") {
+    // Keep narration above the card so it reads as context for the approval.
+    await publishNarrationBeforeAsk(ctx);
+  }
   await ctx.computer.checkpoint.flush();
   await persistTurnCheckpoint(ctx, executionId);
   await ctx.settleRunningHelpers();
