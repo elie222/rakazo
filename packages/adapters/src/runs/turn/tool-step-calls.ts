@@ -1,7 +1,12 @@
 import type { AgentRunRequest, AgentToolCompletion } from "@rakazo/adapter-kit";
 import type { ToolStepCall } from "@rakazo/contracts";
 import { storedImageMimeType } from "@rakazo/contracts";
-import { redactJsonStringsAndPlainText, redactSecrets, sliceWellFormed } from "@rakazo/core";
+import {
+  escapePromptData,
+  redactJsonStringsAndPlainText,
+  redactSecrets,
+  sliceWellFormed,
+} from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "../../approvals/auto-review.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
@@ -312,6 +317,94 @@ export function runReplaysToolHistory(
   }
 }
 
+const REPLY_TARGET_TAGS = [
+  { open: "<reply_target>", close: "</reply_target>" },
+  { open: "<reaction_target>", close: "</reaction_target>" },
+] as const;
+
+/**
+ * Redact known secrets in a stored turn's prompt, decoding JSON strings inside `<reply_target>` /
+ * `<reaction_target>` blocks while preserving their `\u003c`/`\u003e` framing, and matching
+ * XML-escaped secrets in recalled memory or framed prompt sections.
+ */
+function redactStoredPrompt(text: string, secrets: string[]): string {
+  if (secrets.length === 0 || !text) return text;
+  const promptForms = secrets.flatMap((value) => {
+    if (!value) return [];
+    const xmlEscaped = escapePromptData(value);
+    return xmlEscaped === value ? [value] : [value, xmlEscaped];
+  });
+  const quoteSecretForms = secrets.flatMap((value) => {
+    if (!value) return [];
+    const encoded = JSON.stringify(value).slice(1, -1);
+    const xmlEscaped = escapePromptData(value);
+    return [
+      value,
+      xmlEscaped,
+      encoded,
+      encoded.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e"),
+    ];
+  });
+  const redactOutside = (chunk: string) => redactSecrets(chunk, promptForms);
+  const redactQuoteBody = (body: string) => {
+    const cleaned = redactSecrets(
+      redactJsonStringsAndPlainText(
+        body,
+        (value) => redactSecrets(value, promptForms),
+        (value) => redactSecrets(value, quoteSecretForms),
+      ),
+      quoteSecretForms,
+    );
+    return cleaned === body ? body : cleaned.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
+  };
+  let out = "";
+  let cursor = 0;
+  const exhausted = [false, false];
+  const cachedClose = [-1, -1];
+  while (cursor < text.length) {
+    let nextIndex = -1;
+    let nextTagIndex = -1;
+    for (let i = 0; i < REPLY_TARGET_TAGS.length; i += 1) {
+      if (exhausted[i]) continue;
+      const at = text.indexOf(REPLY_TARGET_TAGS[i]!.open, cursor);
+      if (at === -1) {
+        exhausted[i] = true;
+        continue;
+      }
+      if (nextIndex === -1 || at < nextIndex) {
+        nextIndex = at;
+        nextTagIndex = i;
+      }
+    }
+    if (nextIndex === -1 || nextTagIndex === -1) {
+      out += redactOutside(text.slice(cursor));
+      break;
+    }
+    const tag = REPLY_TARGET_TAGS[nextTagIndex]!;
+    const bodyStart = nextIndex + tag.open.length;
+    if (cachedClose[nextTagIndex]! < bodyStart) {
+      cachedClose[nextTagIndex] = text.indexOf(tag.close, bodyStart);
+    }
+    const closeIndex = cachedClose[nextTagIndex]!;
+    if (closeIndex === -1) {
+      exhausted[nextTagIndex] = true;
+      out += redactOutside(text.slice(cursor, bodyStart));
+      cursor = bodyStart;
+      continue;
+    }
+    const innerOpen = text.indexOf(tag.open, bodyStart);
+    if (innerOpen !== -1 && innerOpen < closeIndex) {
+      out += redactOutside(text.slice(cursor, innerOpen));
+      cursor = innerOpen;
+      continue;
+    }
+    out += redactOutside(text.slice(cursor, nextIndex));
+    out += tag.open + redactQuoteBody(text.slice(bodyStart, closeIndex)) + tag.close;
+    cursor = closeIndex + tag.close.length;
+  }
+  return out;
+}
+
 /**
  * The runtime's record of a turn as the reply keeps it: tool arguments and results cleaned as
  * kept calls are, the run's secrets redacted everywhere, and none for a turn that used a tool
@@ -323,7 +416,9 @@ export function keptTurnTranscript(transcript: string, secrets: string[]): strin
     (text, kind) =>
       kind === "arguments" || kind === "result"
         ? cleanToolText(text, secrets)
-        : redactSecrets(text, secrets),
+        : kind === "prompt"
+          ? redactStoredPrompt(text, secrets)
+          : redactSecrets(text, secrets),
     (name) => !SECRET_TOOL.test(name),
     (args) => redactToolArgsForReview(args, secrets),
   );

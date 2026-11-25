@@ -43,10 +43,9 @@ function replyContext(
   const wholePage = isPageCardMessage(messageBlocks(target));
   const rawExcerpt =
     !emoji && !wholePage && typeof source.replyQuote === "string" ? source.replyQuote : undefined;
-  const excerpt =
-    rawExcerpt && rawExcerpt.trim()
-      ? (redact ? redact(rawExcerpt) : rawExcerpt).trim() || undefined
-      : undefined;
+  const excerpt = rawExcerpt?.trim()
+    ? (redact ? redact(rawExcerpt) : rawExcerpt).trim() || undefined
+    : undefined;
   const targetPayload = excerpt
     ? { quotedText: truncateReplyQuote(excerpt) }
     : (() => {
