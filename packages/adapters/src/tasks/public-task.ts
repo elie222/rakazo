@@ -39,7 +39,7 @@ function questionOf(block: MessageBlock): string | null {
 
 type TaskRow = { id: string; botId: string; createdAt: Date; updatedAt: Date };
 type RunRow = { status: string; updatedAt: Date };
-type ReplyRow = { id: string; blocks: unknown };
+type ReplyRow = { id: string; blocks: unknown; createdAt?: Date };
 
 /** What the public API says about a task: its newest run's state and the bot's replies. */
 export function publicTaskView(task: TaskRow, runs: RunRow[], replies: ReplyRow[]): PublicTask {
@@ -59,9 +59,12 @@ export function publicTaskView(task: TaskRow, runs: RunRow[], replies: ReplyRow[
     .flatMap((reply) => storedMessageBlocks(reply))
     .some((block) => block.kind === "tool_question" && block.status === "pending");
   const status = runStatus === "working" && toolQuestion ? "needs_input" : runStatus;
-  const updatedAt = [task.updatedAt, ...runs.map((run) => run.updatedAt)].reduce((a, b) =>
-    b > a ? b : a,
-  );
+  // A new reply changes the task even when its run row does not.
+  const updatedAt = [
+    task.updatedAt,
+    ...runs.map((run) => run.updatedAt),
+    ...replies.flatMap((reply) => (reply.createdAt ? [reply.createdAt] : [])),
+  ].reduce((a, b) => (b > a ? b : a));
   return {
     id: task.id,
     object: "task",
@@ -100,7 +103,7 @@ export async function readPublicTask(
   const replies = await prisma.message.findMany({
     where: { runId: { in: task.runs.map((run) => run.id) }, role: "bot" },
     orderBy: { seq: "asc" },
-    select: { id: true, blocks: true },
+    select: { id: true, blocks: true, createdAt: true },
   });
   return publicTaskView(task, task.runs, replies);
 }

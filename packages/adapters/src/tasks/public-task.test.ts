@@ -56,6 +56,15 @@ describe("publicTaskView", () => {
     expect(view).toMatchObject({ status: "needs_input", question: "Which calendar?" });
   });
 
+  it("moves updated_at forward when a reply arrives", () => {
+    const view = publicTaskView(
+      task,
+      [{ status: "running", updatedAt: at }],
+      [{ id: "m1", blocks: [{ kind: "text", text: "More" }], createdAt: later }],
+    );
+    expect(view.updated_at).toBe(later.toISOString());
+  });
+
   it("reads past a stored block missing its fields", () => {
     const view = publicTaskView(
       task,

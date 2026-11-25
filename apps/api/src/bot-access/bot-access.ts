@@ -276,7 +276,8 @@ export function createBotAccess(deps: BotAccessDeps) {
             userId: actor.userId,
             issuerKeyId: keyId,
           },
-          update: { url, issuerKeyId: keyId },
+          // A new address or key starts fresh, so its receiver hears the current state too.
+          update: { url, issuerKeyId: keyId, deliveredRunId: null, deliveredStatus: null },
         });
         await deps.jobs.enqueueIn(tx, taskCallbackJob(taskId, new Date()));
       }),
