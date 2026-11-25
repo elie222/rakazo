@@ -33,7 +33,7 @@ export default function ImageScreen() {
           name: first(params.name),
           mimeType: first(params.mimeType) || "image/png",
         }}
-        gallery={galleryPictures(params.gallery)}
+        gallery={galleryPictures(first(params.gallery))}
         onClose={() => router.back()}
       />
     </SafeAreaProvider>

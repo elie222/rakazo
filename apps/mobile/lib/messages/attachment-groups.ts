@@ -2,14 +2,14 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { consecutiveImageRun } from "@rakazo/contracts";
 import { isInlineImageBlock } from "./inline-image";
 
-export type InlineImageBlock = Extract<MessageBlock, { kind: "image" }>;
+type InlineImageBlock = Extract<MessageBlock, { kind: "image" }>;
 
 /** The blocks a bubble draws as attachments: pictures and files. */
-export type AttachmentBlock = InlineImageBlock | Extract<MessageBlock, { kind: "file" }>;
+type AttachmentBlock = InlineImageBlock | Extract<MessageBlock, { kind: "file" }>;
 
-export type AttachmentGroup =
+type AttachmentGroup =
   | { kind: "single"; attachment: AttachmentBlock; index: number }
-  | { kind: "pictures"; pictures: InlineImageBlock[] };
+  | { kind: "pictures"; pictures: InlineImageBlock[]; index: number };
 
 /**
  * The message's attachments in order, with each run of consecutive inline pictures gathered into
@@ -28,7 +28,7 @@ export function attachmentGroups(blocks: readonly MessageBlock[]): AttachmentGro
     if (!run) return;
     groups.push(
       run.length > 1
-        ? { kind: "pictures", pictures: run }
+        ? { kind: "pictures", pictures: run, index }
         : { kind: "single", attachment: block, index },
     );
   });

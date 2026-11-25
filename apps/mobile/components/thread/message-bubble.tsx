@@ -246,6 +246,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onChoiceDismissed,
   onPreviewFile,
   onPreviewImage,
+  imageStackMaxWidth,
   peerExchange,
   onOpenPeerChat,
   actionProps,
@@ -279,6 +280,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   /** Opens a file the app can show; other types go to the share sheet. */
   onPreviewFile: (artifactId: string) => void;
   onPreviewImage: MessageRowActions["previewImage"];
+  imageStackMaxWidth?: number;
   peerExchange?: PeerExchange;
   onOpenPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
   actionProps: MessageActionProps;
@@ -287,7 +289,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = withUserBubble(mobileTokens(), userBubble);
-  const { t, i18n } = useLingui();
+  const { t } = useLingui();
   const [peerExpanded, setPeerExpanded] = useState(false);
   const outgoing = message.role === "user" && !authorName;
   const showSpeaker = !hideSenderLabel && (showBotSenderName || Boolean(authorName));
@@ -598,9 +600,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       </View>
     );
   }
-  const attachments = message.blocks.filter(
-    (block) => block.kind === "image" || block.kind === "file",
-  );
+  const attachments = attachmentGroups(message.blocks);
   const caption = message.blocks
     .flatMap((block) => {
       if (block.kind === "channel_message" && block.text) {
@@ -618,7 +618,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         : authorName;
     const speakerColor =
       message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
-    const hasInlineImages = attachments.some(isInlineImageBlock);
+    const hasInlineImages = attachments.some(
+      (group) => group.kind === "pictures" || isInlineImageBlock(group.attachment),
+    );
     const bubbleStyle = {
       maxWidth: "100%",
       borderRadius: 20,
@@ -650,14 +652,15 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             ) : null}
           </View>
         ) : null}
-        {attachmentGroups(message.blocks).map((group) =>
+        {attachments.map((group) =>
           group.kind === "pictures" ? (
             <ImageAttachmentDeck
-              key={`stack-${group.pictures[0]?.artifactId}`}
+              key={`stack-${group.index}`}
               threadTarget={artifactTarget}
               images={group.pictures}
               onOpen={onPreviewImage}
               actionProps={actionProps}
+              maxWidth={imageStackMaxWidth}
             />
           ) : (
             <View
@@ -723,7 +726,6 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                 <AttachmentFile
                   attachment={group.attachment}
                   target={artifactTarget}
-                  locale={i18n.locale}
                   color={outgoing ? tokens.chatUserForeground : tokens.foreground}
                   secondaryColor={outgoing ? tokens.chatUserForeground : tokens.mutedForeground}
                   pressableProps={actionProps}

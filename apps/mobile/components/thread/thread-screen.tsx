@@ -479,9 +479,17 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       router.push({
         pathname: "/image",
         params: {
-          ...target,
+          artifactId: target.artifactId,
+          name: target.name,
+          mimeType: target.mimeType,
           ...(groupId ? { groupId } : { botId }),
-          ...(gallery && gallery.length > 1 ? { gallery: JSON.stringify(gallery) } : {}),
+          ...(gallery
+            ? {
+                gallery: JSON.stringify(
+                  gallery.map(({ artifactId, name, mimeType }) => ({ artifactId, name, mimeType })),
+                ),
+              }
+            : {}),
         },
       }),
     jump: (messageId) => {

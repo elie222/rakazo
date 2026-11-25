@@ -40,49 +40,35 @@ export function MessageImageRow({ images }: { images: GalleryImage[] }) {
   const visible = useNearViewport(row);
   const shown = images.slice(0, 3);
   const rest = images.length - 2;
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   return (
-    <>
-      <div
-        ref={row}
-        className={cn("flex max-w-full gap-2", shown.length > 2 ? "w-[32.5rem]" : "w-[21.5rem]")}
-      >
-        {shown.map((image, position) => {
-          const counts = images.length > 3 && position === shown.length - 1;
-          return (
-            <button
-              key={`${galleryImageKey(image)}-${position}`}
-              type="button"
-              aria-label={
-                counts
-                  ? t`${plural(images.length, { one: "Show all # picture", other: "Show all # pictures" })}`
-                  : t`Show ${image.name}`
-              }
-              onClick={() => {
-                if (openImage) openImage(image);
-                else setSelectedKey(galleryImageKey(image));
-              }}
-              className="relative aspect-[2/3] min-w-0 shrink basis-[10.5rem] overflow-hidden rounded-xl"
-            >
-              <TileImage image={image} name={counts ? "" : image.name} visible={visible} />
-              {counts ? (
-                <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-heading1 font-medium text-white tabular-nums">
-                  {`+${rest}`}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
-      {selectedKey && !openImage ? (
-        <ImageLightbox
-          images={images}
-          selectedKey={selectedKey}
-          onSelect={setSelectedKey}
-          onClose={() => setSelectedKey(null)}
-        />
-      ) : null}
-    </>
+    <div
+      ref={row}
+      className={cn("flex max-w-full gap-2", shown.length > 2 ? "w-[32.5rem]" : "w-[21.5rem]")}
+    >
+      {shown.map((image, position) => {
+        const counts = images.length > 3 && position === shown.length - 1;
+        return (
+          <button
+            key={`${galleryImageKey(image)}-${position}`}
+            type="button"
+            aria-label={
+              counts
+                ? t`${plural(images.length, { one: "Show all # picture", other: "Show all # pictures" })}`
+                : t`Show ${image.name}`
+            }
+            onClick={() => openImage?.(image)}
+            className="relative aspect-[2/3] min-w-0 shrink basis-[10.5rem] overflow-hidden rounded-xl bg-muted"
+          >
+            <TileImage image={image} name={counts ? "" : image.name} visible={visible} />
+            {counts ? (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-heading1 font-medium text-white tabular-nums">
+                {`+${rest}`}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -104,7 +90,7 @@ function TileImage({
       </span>
     );
   }
-  return <img src={src} alt={name} loading="lazy" className="size-full object-cover" />;
+  return <img src={src} alt={name} loading="lazy" className="size-full object-contain" />;
 }
 
 /** Holds the chat's images and the one lightbox they all open in, in message order. */
@@ -176,7 +162,7 @@ function LightboxPicture({ image }: { image: GalleryImage }) {
     <img
       src={src}
       alt={image.name}
-      className="size-full max-w-[calc(100%-6rem)] cursor-zoom-out object-contain"
+      className="max-h-full max-w-[calc(100%-6rem)] cursor-zoom-out rounded-xl object-contain"
     />
   ) : (
     <div className="size-40 rounded-xl bg-muted" />
@@ -234,7 +220,7 @@ export function ImageLightbox({
         onClick={(event) => {
           if (!(event.target as Element).closest("button")) onClose();
         }}
-        className="flex h-[min(92vh,60rem)] w-[min(96vw,72rem)] max-w-none flex-col gap-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-none"
+        className="flex h-[min(88vh,52rem)] w-[min(94vw,60rem)] max-w-none flex-col gap-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-none"
       >
         <DialogTitle className="sr-only">{current.name}</DialogTitle>
         <div className="relative flex min-h-0 flex-1 items-center justify-center">

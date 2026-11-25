@@ -10,11 +10,9 @@ import { openMobileArtifact } from "../../lib/artifacts/artifact-open";
 
 type FileBlock = Extract<MessageBlock, { kind: "file" }>;
 
-/** A file the message carries: its name, its size, and the viewer or share sheet it opens. */
 export function AttachmentFile({
   attachment,
   target,
-  locale,
   color,
   secondaryColor,
   pressableProps,
@@ -22,31 +20,27 @@ export function AttachmentFile({
 }: {
   attachment: FileBlock;
   target: MobileArtifactTarget;
-  locale: string;
   color: string;
   secondaryColor: string;
   pressableProps?: Omit<ComponentProps<typeof Pressable>, "onPress" | "children">;
   onPreviewFile: (artifactId: string) => void;
 }) {
-  const { t } = useLingui();
-  const size = formatFileSize(attachment.size, locale);
+  const { i18n, t } = useLingui();
+  const { artifactId, mimeType, name = t`File` } = attachment;
+  const size = formatFileSize(attachment.size, i18n.locale);
+  const open = () => {
+    if (!artifactId) return;
+    if (artifactPreviewKind(mimeType ?? "") !== "none") {
+      onPreviewFile(artifactId);
+      return;
+    }
+    void openMobileArtifact(target, artifactId, name, mimeType ?? "text/plain").catch((error) =>
+      Alert.alert(t`Could not open file`, errorText(error, t`Try again.`)),
+    );
+  };
   return (
-    <Pressable
-      {...pressableProps}
-      onPress={() =>
-        attachment.artifactId
-          ? artifactPreviewKind(attachment.mimeType ?? "") !== "none"
-            ? onPreviewFile(attachment.artifactId)
-            : void openMobileArtifact(
-                target,
-                attachment.artifactId,
-                attachment.name ?? t`File`,
-                attachment.mimeType ?? "text/plain",
-              ).catch((err) => Alert.alert(t`Could not open file`, errorText(err, t`Try again.`)))
-          : undefined
-      }
-    >
-      <Text style={{ color, fontSize: 15 }}>📎 {attachment.name ?? t`File`}</Text>
+    <Pressable {...pressableProps} onPress={open}>
+      <Text style={{ color, fontSize: 15 }}>📎 {name}</Text>
       {size ? (
         <Text style={{ color: secondaryColor, marginTop: 4, fontSize: 13 }}>{size}</Text>
       ) : null}

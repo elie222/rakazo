@@ -1,6 +1,6 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { useEffect, useState } from "react";
+import type { PressableProps } from "react-native";
 import {
   ActivityIndicator,
   Image,
@@ -12,9 +12,9 @@ import {
 } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
-import { imageArtifactPreview } from "../../lib/artifacts/artifact-open";
+import type { ImageArtifactPreviewTarget } from "../../lib/artifacts/gallery";
 import { NativeSymbol } from "../native/native-symbol";
-import type { ImageArtifactPreviewTarget } from "./image-artifact-viewer";
+import { useImagePreview } from "./use-image-preview";
 
 /** How far each card behind the first one peeks out, and how far it leans. */
 const PEEK = 12;
@@ -30,24 +30,31 @@ export function ImageAttachmentDeck({
   images,
   onOpen,
   actionProps,
+  maxWidth = Number.POSITIVE_INFINITY,
 }: {
   threadTarget: MobileArtifactTarget;
   images: readonly ImageArtifactPreviewTarget[];
-  onOpen: (image: ImageArtifactPreviewTarget, images: ImageArtifactPreviewTarget[]) => void;
-  actionProps?: Record<string, unknown>;
+  onOpen: (
+    image: ImageArtifactPreviewTarget,
+    images: readonly ImageArtifactPreviewTarget[],
+  ) => void;
+  actionProps?: Pick<
+    PressableProps,
+    "onLongPress" | "accessibilityActions" | "onAccessibilityAction"
+  >;
+  maxWidth?: number;
 }) {
   const { t } = useLingui();
   const tokens = mobileTokens();
   const { width: windowWidth } = useWindowDimensions();
-  const width = Math.min(Math.round(windowWidth * 0.5), 240);
+  const shown = images.slice(0, MAX_CARDS);
+  const stackPadding = PEEK * (shown.length - 1) + 24;
+  const width = Math.max(1, Math.min(Math.round(windowWidth * 0.5), 240, maxWidth - stackPadding));
   const height = Math.round(width * 1.5);
-  const gallery = images.map(({ artifactId, name, mimeType }) => ({ artifactId, name, mimeType }));
-  const shown = gallery.slice(0, MAX_CARDS);
-  const behind = shown.length - 1;
 
   return (
     <View style={styles.group}>
-      <View style={{ width: width + PEEK * behind + 24, height: height + PEEK * behind + 24 }}>
+      <View style={{ width: width + stackPadding, height: height + stackPadding }}>
         {shown
           .map((image, index) => ({ image, index }))
           .reverse()
@@ -56,8 +63,8 @@ export function ImageAttachmentDeck({
               key={`${image.artifactId}-${index}`}
               accessibilityRole="imagebutton"
               accessibilityLabel={t`Open photo ${index + 1} of ${images.length}`}
-              onPress={() => onOpen(image, gallery)}
-              {...(actionProps ?? {})}
+              onPress={() => onOpen(image, images)}
+              {...actionProps}
               style={[
                 styles.card,
                 {
@@ -102,36 +109,15 @@ function DeckCard({
   labelColor: string;
 }) {
   const { t } = useLingui();
-  const [state, setState] = useState<{ uri: string } | null>(null);
-  const [failed, setFailed] = useState(false);
-  const targetBotId = "botId" in target ? target.botId : undefined;
-  const targetGroupId = "groupId" in target ? target.groupId : undefined;
+  const { preview } = useImagePreview(target, image.artifactId, image.mimeType);
 
-  useEffect(() => {
-    let cancelled = false;
-    setState(null);
-    setFailed(false);
-    const request: MobileArtifactTarget =
-      targetBotId !== undefined ? { botId: targetBotId } : { groupId: targetGroupId! };
-    imageArtifactPreview(request, image.artifactId, image.mimeType)
-      .then(({ uri }) => {
-        if (!cancelled) setState({ uri });
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [targetBotId, targetGroupId, image.artifactId, image.mimeType]);
-
-  if (!state) {
+  if (preview.status !== "ready") {
     return (
       <View>
         <Text numberOfLines={3} style={[styles.label, { color: labelColor }]}>
           🖼 {image.name}
         </Text>
-        {failed ? null : (
+        {preview.status === "error" ? null : (
           <ActivityIndicator color={labelColor} accessibilityLabel={t`Loading image…`} />
         )}
       </View>
@@ -139,7 +125,7 @@ function DeckCard({
   }
   return (
     <Image
-      source={{ uri: state.uri }}
+      source={{ uri: preview.uri }}
       resizeMode="cover"
       style={styles.filling}
       accessibilityIgnoresInvertColors

@@ -17,22 +17,15 @@ import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { downloadArtifactToDevice } from "../../lib/artifacts/artifact-download";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
-import {
-  imageArtifactPreview,
-  imageArtifactUri,
-  shareLocalFile,
-} from "../../lib/artifacts/artifact-open";
+import { imageArtifactUri, shareLocalFile } from "../../lib/artifacts/artifact-open";
+import type { ImageArtifactPreviewTarget } from "../../lib/artifacts/gallery";
 import { imageDismissBackdropOpacity, shouldDismissImage } from "../../lib/messages/image-dismiss";
 import type { ImageSize } from "../../lib/messages/inline-image";
 import { fitImageSize } from "../../lib/messages/inline-image";
 import { iosAtLeast } from "../../lib/native/native-controls";
 import { GlassIconButton } from "../native/glass-icon-button";
 
-export type ImageArtifactPreviewTarget = {
-  artifactId: string;
-  name: string;
-  mimeType: string;
-};
+import { useImagePreview } from "./use-image-preview";
 
 const HEADER_HEIGHT = 54;
 const MIN_SCALE = 1;
@@ -247,13 +240,10 @@ export function ImageArtifactViewer({
       ["transparent", tokens.background],
     ),
   }));
-  const pictures = gallery && gallery.length > 1 ? gallery : [target];
-  const [at, setAt] = useState(() =>
-    Math.max(
-      0,
-      pictures.findIndex((picture) => picture.artifactId === target.artifactId),
-    ),
-  );
+  const initialIndex =
+    gallery?.findIndex((picture) => picture.artifactId === target.artifactId) ?? -1;
+  const pictures = initialIndex >= 0 && gallery ? gallery : [target];
+  const [at, setAt] = useState(Math.max(0, initialIndex));
   const current = pictures[at] ?? target;
   const step = (delta: number) =>
     setAt((index) => (index + delta + pictures.length) % pictures.length);
@@ -264,55 +254,31 @@ export function ImageArtifactViewer({
       closed.current = true;
     };
   }, []);
-  const downloadingArtifactId = useRef<string | null>(null);
+  const downloading = useRef(new Set<string>());
   const close = () => {
     if (closed.current) return;
     closed.current = true;
     onClose();
   };
   const [box, setBox] = useState<ImageSize | null>(null);
-  const [state, setState] = useState<
-    | { status: "loading" }
-    | { status: "ready"; uri: string; natural: ImageSize }
-    | { status: "error"; message: string }
-  >({ status: "loading" });
-  const targetBotId = "botId" in threadTarget ? threadTarget.botId : undefined;
-  const targetGroupId = "groupId" in threadTarget ? threadTarget.groupId : undefined;
-  const requestTarget = (): MobileArtifactTarget =>
-    targetBotId !== undefined ? { botId: targetBotId } : { groupId: targetGroupId! };
-  const fail = (error: unknown) =>
-    setState({
-      status: "error",
-      message: errorText(error, t`Could not load image`),
-    });
-
-  useEffect(() => {
-    let cancelled = false;
-    setState({ status: "loading" });
-    void imageArtifactPreview(requestTarget(), current.artifactId, current.mimeType)
-      .then(({ uri, size }) => {
-        if (!cancelled) setState({ status: "ready", uri, natural: size });
-      })
-      .catch((error) => {
-        if (!cancelled) fail(error);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // The request target is derived from the two ids below.
-  }, [targetBotId, targetGroupId, current.artifactId, current.mimeType]);
+  const { preview, recordError } = useImagePreview(
+    threadTarget,
+    current.artifactId,
+    current.mimeType,
+  );
 
   // Re-resolve the file before sharing: it re-downloads when the OS purged the cache since load.
   const share = () =>
-    void imageArtifactUri(requestTarget(), current.artifactId, current.mimeType)
+    void imageArtifactUri(threadTarget, current.artifactId, current.mimeType)
       .then((uri) => shareLocalFile(uri, current.mimeType, current.name))
       .catch((error) => Alert.alert(t`Could not share image`, errorText(error, t`Try again.`)));
 
   const download = async () => {
-    if (downloadingArtifactId.current === current.artifactId) return;
-    downloadingArtifactId.current = current.artifactId;
+    const { artifactId } = current;
+    if (downloading.current.has(artifactId)) return;
+    downloading.current.add(artifactId);
     try {
-      const uri = await imageArtifactUri(requestTarget(), current.artifactId, current.mimeType);
+      const uri = await imageArtifactUri(threadTarget, artifactId, current.mimeType);
       if (closed.current) return;
       const result = await downloadArtifactToDevice(uri, current.mimeType, current.name);
       if (result === "saved" && !closed.current) Alert.alert(t`Saved to Photos`);
@@ -320,7 +286,7 @@ export function ImageArtifactViewer({
       if (!closed.current)
         Alert.alert(t`Could not download image`, errorText(error, t`Try again.`));
     } finally {
-      downloadingArtifactId.current = null;
+      downloading.current.delete(artifactId);
     }
   };
 
@@ -387,18 +353,20 @@ export function ImageArtifactViewer({
           );
         }}
       >
-        {state.status === "ready" && box ? (
+        {preview.status === "ready" && box ? (
           <ZoomableImage
             key={current.artifactId}
-            uri={state.uri}
-            displayed={fitImageSize(state.natural, box.width, box.height)}
+            uri={preview.uri}
+            displayed={fitImageSize(preview.size, box.width, box.height)}
             box={box}
             onClose={close}
             dismissY={dismissY}
-            onError={() => fail(new Error(t`Could not load image`))}
+            onError={() => recordError(new Error(t`Could not load image`))}
           />
-        ) : state.status === "error" ? (
-          <Text style={[styles.message, { color: tokens.mutedForeground }]}>{state.message}</Text>
+        ) : preview.status === "error" ? (
+          <Text style={[styles.message, { color: tokens.mutedForeground }]}>
+            {errorText(preview.error, t`Could not load image`)}
+          </Text>
         ) : (
           <ActivityIndicator
             color={tokens.mutedForeground}

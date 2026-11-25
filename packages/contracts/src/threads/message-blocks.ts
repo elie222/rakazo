@@ -479,13 +479,16 @@ export function consecutiveImageRun<T extends { kind: string }>(
   items: readonly T[],
   index: number,
   isPicture: (item: T) => boolean = () => true,
-): Extract<T, { kind: "image" }>[] | null {
-  const pictureAt = (at: number) => {
+): (T & { kind: "image" })[] | null {
+  const matches = (item: T | undefined): item is T & { kind: "image" } =>
+    item?.kind === "image" && isPicture(item);
+  const first = items[index];
+  if (!matches(first) || matches(items[index - 1])) return null;
+  const pictures = [first];
+  for (let at = index + 1; at < items.length; at += 1) {
     const item = items[at];
-    return item?.kind === "image" && isPicture(item);
-  };
-  if (!pictureAt(index) || pictureAt(index - 1)) return null;
-  let end = index + 1;
-  while (pictureAt(end)) end += 1;
-  return items.slice(index, end) as Extract<T, { kind: "image" }>[];
+    if (!matches(item)) break;
+    pictures.push(item);
+  }
+  return pictures;
 }
