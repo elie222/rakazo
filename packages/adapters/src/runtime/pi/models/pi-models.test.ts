@@ -282,8 +282,9 @@ describe("Pi model catalog", () => {
     for (const entry of openai) {
       expect(entry).toMatchObject({
         providerName: "OpenAI",
-        auth: "both",
-        subscription: true,
+        auth: "api-key",
+        subscription: false,
+        billing: "Uses your OpenAI API key. Rakazo does not pay for model usage.",
       });
       expect(entry.signIn).toBeUndefined();
     }

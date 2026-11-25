@@ -242,6 +242,14 @@ export function modelProviderDefinition(id: string): ModelProviderDefinition | u
     : undefined;
 }
 
+/** A provider whose sign-in is offered only on another provider's page, so its own entry takes a key. */
+export function signsInOnlyElsewhere(id: string): boolean {
+  if (modelProviderDefinition(id)?.signIn) return false;
+  return Object.values(modelProviders as Record<string, ModelProviderDefinition>).some(
+    (definition) => definition.alternativeSignIn?.provider === id,
+  );
+}
+
 async function googleKeyWasRejected(response: Response): Promise<boolean> {
   const reader = response.body?.getReader();
   if (!reader) return false;

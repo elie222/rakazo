@@ -815,7 +815,9 @@ test("a pasted-code sign-in opens its page from a click and then takes the code"
   await page.getByRole("button", { name: "Sign in with Claude" }).click();
   const open = page.getByRole("link", { name: "Open auth.example.test" });
   await expect(open).toHaveAttribute("href", "https://auth.example.test/oauth/authorize?state=e2e");
-  await expect(page.getByRole("textbox", { name: "Code from auth.example.test" })).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Code or callback URL from auth.example.test" }),
+  ).toBeVisible();
   // A grey Continue still shows there is a step after signing in.
   const next = page.getByRole("button", { name: "Continue" });
   await expect(next).toBeVisible();

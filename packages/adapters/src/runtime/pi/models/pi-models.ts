@@ -28,7 +28,10 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "../../../models/model-provider-allowlist.js";
-import { modelProviderDefinition } from "../../../models/model-provider-registry.js";
+import {
+  modelProviderDefinition,
+  signsInOnlyElsewhere,
+} from "../../../models/model-provider-registry.js";
 import { MODEL_CONNECT_TIMEOUT_MS } from "../pi-runtime-limits.js";
 import { maximumModelCallCost } from "../usage/pi-usage.js";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
@@ -260,7 +263,9 @@ function buildPiCatalog(): PiCatalogEntry[] {
     const definition = modelProviderDefinition(provider.id);
     const providerName = definition?.displayName ?? provider.name;
     const apiKey = Boolean(provider.auth.apiKey);
-    const oauthAuth = loadProviderOAuth(provider.id);
+    const oauthAuth = signsInOnlyElsewhere(provider.id)
+      ? undefined
+      : loadProviderOAuth(provider.id);
     const oauth = Boolean(oauthAuth);
     const auth: PiCatalogAuth = apiKey && oauth ? "both" : oauth ? "oauth" : "api-key";
     const signInMeta = definition?.signIn;
