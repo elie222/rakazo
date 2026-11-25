@@ -93,17 +93,18 @@ export function captureTurnTranscript(
   return serialized.length > MAX_TRANSCRIPT_CHARS ? undefined : serialized;
 }
 
+const Parts = z.array(z.object({ type: z.string() }).passthrough());
+
 const StoredTurnSchema = z.object({
   version: z.literal(1),
   represents: z.array(z.string()),
   messages: z
     .array(
-      z
-        .object({
-          role: z.enum(["user", "assistant", "toolResult"]),
-          content: z.union([z.string(), z.array(z.record(z.string(), z.unknown()))]),
-        })
-        .passthrough(),
+      z.union([
+        // Only a person's turn can be plain text; the model's and a tool's are lists of parts.
+        z.object({ role: z.literal("user"), content: z.union([z.string(), Parts]) }).passthrough(),
+        z.object({ role: z.enum(["assistant", "toolResult"]), content: Parts }).passthrough(),
+      ]),
     )
     .min(1),
   prompt: z.object({ at: z.number().int().nonnegative(), id: z.string() }).optional(),
