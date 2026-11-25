@@ -165,7 +165,7 @@ export const MEMORY_JUDGE_CALIBRATION = [
   {
     input: judgeInput(
       "dense-full",
-      "# Assistant\n\nOperations lead at Halvorsen Logistics. Manager: Tomás Ortega. Time zone Europe/Lisbon.\nBrisa Pharma deliveries need a temperature log PDF.\nNever use Cargoexpress Iberia.\nLeave 2026-12-21 to 2027-01-02.\nBrisa Pharma weekly report: Thursdays by 16:00 Lisbon to qa@brisa-pharma.example, cc Lucía; list deliveries outside 2-8 °C (lane, drop, time); flag carriers with 2+ excursions.\n",
+      "# Assistant\n\nOperations lead at Halvorsen Logistics. Manager: Tomás Ortega. Time zone Europe/Lisbon.\nBrisa Pharma deliveries need a temperature log PDF.\nNever use Cargoexpress Iberia.\nLeave 2026-12-21 to 2027-01-02.\nBrisa Pharma weekly report goes to qa@brisa-pharma.example every Thursday by 16:00 Lisbon time, copying Lucía. It lists each delivery whose temperature log left 2-8 °C, with lane, drop and time out of range, and flags any carrier with more than one excursion that week.\n",
     ),
     pass: true,
   },
