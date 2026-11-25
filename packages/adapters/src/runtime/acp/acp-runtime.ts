@@ -8,6 +8,7 @@ import { validateToolArguments } from "@earendil-works/pi-ai";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type {
   AdapterContext,
+  AgentInputImage,
   AgentRunRequest,
   AgentRuntime,
   AgentRuntimeEvent,
@@ -56,12 +57,12 @@ import {
 /** The MCP server name the CLI sees Rakazo's tools under. */
 export const ACP_TOOL_SERVER = "rakazo";
 
-/** Screen work needs computer mode, which a CLI-run bot does not have yet. */
-const UNSUPPORTED_TOOLS = new Set([
-  ...COMPUTER_MODE_TOOLS,
-  "enter_computer_mode",
-  "leave_computer_mode",
-]);
+/**
+ * A CLI-run bot has one model, the CLI's, so there is no separate computer mode to switch into:
+ * a CLI that passes images on gets the screen tools directly, and one that does not gets none.
+ */
+const MODE_SWITCH_TOOLS = new Set(["enter_computer_mode", "leave_computer_mode"]);
+const SCREEN_TOOLS = new Set([...COMPUTER_MODE_TOOLS, ...MODE_SWITCH_TOOLS]);
 
 /** The Agent Client Protocol's error code for a request that needs the agent signed in. */
 const AUTH_REQUIRED = -32000;
@@ -235,7 +236,9 @@ async function runAcpTurn(
   try {
     const host = toolHost(request, context, signal, push, cancelTurn, toolBudget);
     const agentTools = toAgentTools(
-      request.tools.filter((tool) => !UNSUPPORTED_TOOLS.has(tool.name)),
+      request.tools.filter(
+        (tool) => !(descriptor.acceptsImages ? MODE_SWITCH_TOOLS : SCREEN_TOOLS).has(tool.name),
+      ),
       host,
     );
     const byName = new Map(agentTools.map((tool) => [tool.name, tool]));
@@ -477,17 +480,28 @@ async function runAcpTurn(
       replies: new Set(),
       usedAt: Date.now(),
     };
-    const promptText = turnText(request, current, fresh, includeOwnReplies);
+    const turn = turnText(request, current, fresh, includeOwnReplies);
+    const images =
+      descriptor.acceptsImages && (capabilities.promptCapabilities as Update | undefined)?.image
+        ? turn.images
+        : [];
     current.usedAt = Date.now();
     if (ownsChatSession) {
       keepSession(key, current);
       cachedSession = true;
     }
 
-    const send = async (text: string) => {
+    const send = async (text: string, attached: readonly AgentInputImage[] = []) => {
       const prompting = agent.request<Update>("session/prompt", {
         sessionId: activeSessionId,
-        prompt: [{ type: "text", text }],
+        prompt: [
+          { type: "text", text },
+          ...attached.map((image) => ({
+            type: "image",
+            mimeType: image.mimeType,
+            data: Buffer.from(image.data).toString("base64"),
+          })),
+        ],
       });
       inFlight = prompting;
       sentPrompt = true;
@@ -500,7 +514,7 @@ async function runAcpTurn(
         if (inFlight === prompting) inFlight = undefined;
       }
     };
-    let response = await send(promptText);
+    let response = await send(turn.text, images);
     // Shell commands still running when the CLI ended its turn report back, as between steps.
     while (!violation && !cancelled && host.pendingShells.length) {
       let finished: string | undefined;
@@ -745,8 +759,8 @@ function turnText(
   session: AgentSession,
   fresh: boolean,
   includeOwn: boolean,
-): string {
-  const lines: string[] = [];
+): { text: string; images: AgentInputImage[] } {
+  const lines: Array<{ line: string; images: readonly AgentInputImage[] }> = [];
   for (const item of request.history) {
     const content = item.content.trim();
     // The new message itself goes last, as the prompt.
@@ -764,7 +778,7 @@ function turnText(
     }
     const speaker =
       item.speaker ?? (own ? OWN_SPEAKER : item.role === "system" ? "Note" : PERSON_SPEAKER);
-    lines.push(historyLine(speaker, content));
+    lines.push({ line: historyLine(speaker, content), images: item.images ?? [] });
   }
   if (request.sourceMessageId) session.seen.add(request.sourceMessageId);
   // As with ids: only summaries and recall still in this turn's history can come up again.
@@ -781,19 +795,31 @@ function turnText(
   if (fresh) {
     // The newest messages that fit; the newest one is kept, shortened, even when it alone does not.
     let size = 0;
-    const start = lines.findLastIndex((line) => {
+    const start = lines.findLastIndex(({ line }) => {
       size += line.length;
       return size > SEED_CHARS;
     });
     kept =
       start >= 0 && start === lines.length - 1
-        ? [`…${lines[start]!.slice(-SEED_CHARS)}`]
+        ? [{ ...lines[start]!, line: `…${lines[start]!.line.slice(-SEED_CHARS)}` }]
         : lines.slice(start + 1);
   }
   const message = request.promptSpeaker
     ? historyLine(request.promptSpeaker, request.prompt)
     : request.prompt;
-  return [conversationBlock(kept, fresh), message].filter(Boolean).join("\n\n");
+  return {
+    text: [
+      conversationBlock(
+        kept.map(({ line }) => line),
+        fresh,
+      ),
+      message,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    // Images go with the messages they came with, the new message's last.
+    images: [...kept.flatMap(({ images }) => images), ...(request.currentTurnImages ?? [])],
+  };
 }
 
 /** Usage is reported only when the CLI gives it; the plan pays, so its cost is unknown. */

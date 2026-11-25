@@ -1,6 +1,4 @@
 import type { AgentRuntime } from "@rakazo/adapter-kit";
-import { antigravityAgent } from "../providers/agent-cli/antigravity/antigravity-agent.js";
-import { openCodeAgent } from "../providers/agent-cli/opencode/opencode-agent.js";
 import {
   CLAUDE_CODE_PROVIDER_ID,
   registerClaudeCodeProvider,
@@ -8,6 +6,7 @@ import {
 import { acpAgentRuntime } from "../runtime/acp/acp-runtime.js";
 import { createRuntimeModels } from "../runtime/pi/pi-runtime-models.js";
 import { withRuntimeModels } from "../runtime/pi/pi-runtime-scope.js";
+import { agentCli } from "./agent-clis.js";
 import type { PersonalCliAccessCheck } from "./personal-access.js";
 
 type PersonalCliRoute = (
@@ -24,10 +23,6 @@ const routes: Record<string, PersonalCliRoute> = {
     const models = registerClaudeCodeProvider(createRuntimeModels(), { modelId, accessCheck });
     return (runtime) => withRuntimeModels(runtime, models);
   },
-  [openCodeAgent.id]: (_modelId, accessCheck) => (runtime) =>
-    acpAgentRuntime(runtime, openCodeAgent, { accessCheck }),
-  [antigravityAgent.id]: (_modelId, accessCheck) => (runtime) =>
-    acpAgentRuntime(runtime, antigravityAgent, { accessCheck }),
 };
 
 /**
@@ -39,5 +34,9 @@ export function personalCliRuntime(
   modelId: string,
   accessCheck: PersonalCliAccessCheck,
 ): ((runtime: AgentRuntime) => AgentRuntime) | undefined {
-  return Object.hasOwn(routes, provider) ? routes[provider]!(modelId, accessCheck) : undefined;
+  if (Object.hasOwn(routes, provider)) return routes[provider]!(modelId, accessCheck);
+  const descriptor = agentCli(provider);
+  return descriptor
+    ? (runtime) => acpAgentRuntime(runtime, descriptor, { accessCheck })
+    : undefined;
 }

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { hostCredentialSource, resolveDeploymentModel } from "../../../models/deployment-model.js";
+import { modelAcceptsImageInput } from "../../../models/model-vision.js";
 import { openCodeAgent } from "./opencode-agent.js";
 import { OPENCODE_CLI_PROVIDER_ID } from "./provider-id.js";
 
@@ -67,7 +68,11 @@ describe("openCodeAgent", () => {
     ).toBe(false);
   });
 
-  it("is a deployment model the operator configures with the CLI's own sign-in", () => {
+  it("lets its bots see screenshots and the images people send", () => {
+    expect(modelAcceptsImageInput(OPENCODE_CLI_PROVIDER_ID, "opencode/big-pickle")).toBe(true);
+  });
+
+    it("is a deployment model the operator configures with the CLI's own sign-in", () => {
     const model = resolveDeploymentModel({
       PI_DEFAULT_PROVIDER: OPENCODE_CLI_PROVIDER_ID,
       PI_DEFAULT_CREDENTIALS: "host",

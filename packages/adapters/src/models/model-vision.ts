@@ -1,6 +1,7 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { canonicalPiProviderId } from "@rakazo/contracts";
+import { agentCli, agentCliModel } from "../cli-models/agent-clis.js";
 import {
   CLAUDE_CODE_PROVIDER_ID,
   claudeCodeModel,
@@ -81,9 +82,9 @@ function catalogModels(): Models {
 
 function visionModel(provider: string, id: string) {
   const models = catalogModels();
-  return provider === CLAUDE_CODE_PROVIDER_ID
-    ? claudeCodeModel(id, models)
-    : models.getModel(provider, id);
+  if (provider === CLAUDE_CODE_PROVIDER_ID) return claudeCodeModel(id, models);
+  const cli = agentCli(provider);
+  return cli ? agentCliModel(cli, id) : models.getModel(provider, id);
 }
 
 /**

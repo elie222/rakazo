@@ -502,6 +502,135 @@ describe("acpAgentRuntime", () => {
     expect(error?.message).toBe("Fake agent is not installed.");
   });
 
+  describe("on a CLI that passes images on", () => {
+    const SCREEN_TOOLS: ConnectorTool[] = [
+      {
+        name: "computer_observe",
+        description: "Take a screenshot.",
+        inputSchema: { type: "object", properties: {} },
+        readOnly: true,
+      },
+      {
+        name: "enter_computer_mode",
+        description: "Switch to the computer model.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "request_takeover",
+        description: "Ask the person to take over the screen.",
+        inputSchema: { type: "object", properties: { reason: { type: "string" } } },
+      },
+    ];
+    const screenshot = {
+      kind: "agent_tool_result",
+      content: [
+        { type: "text", text: "The screen." },
+        { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+      ],
+    };
+
+    it("offers the screen tools and returns screenshots as images", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+
+      await collect(
+        runtime,
+        request({
+          prompt: "weather",
+          tools: [...TOOLS, ...SCREEN_TOOLS],
+          executeTool: vi.fn(async () => screenshot),
+        }),
+      );
+
+      // One model, so there is no computer mode to switch into.
+      expect(recorded().find((event) => event.type === "tools")?.names).toEqual([
+        "computer_observe",
+        "get_weather",
+        "request_takeover",
+        "send_note",
+      ]);
+      expect(recorded().find((event) => event.type === "tool_result")?.result).toMatchObject({
+        content: [
+          { type: "text", text: "The screen." },
+          { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+        ],
+      });
+    });
+
+    it("pauses for a takeover and continues the same session afterwards", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const tools = [...TOOLS, ...SCREEN_TOOLS];
+
+      const paused = await collect(runtime, request({ threadId, prompt: "takeover", tools }));
+      await collect(
+        runtime,
+        request({ threadId, prompt: "The user finished on the computer.", tools }),
+      );
+
+      expect(paused.events).toContainEqual(
+        expect.objectContaining({ type: "takeover", reason: "Log in for me" }),
+      );
+      expect(paused.events.at(-1)?.type).toBe("done");
+      expect(
+        recorded().some(
+          (event) => event.type === "notification" && event.method === "session/cancel",
+        ),
+      ).toBe(true);
+      expect(requests("session/resume")).toHaveLength(1);
+    });
+
+    it("sends the images people attach with their message", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+
+      await collect(
+        runtime,
+        request({
+          currentTurnImages: [
+            { name: "photo.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) },
+          ],
+        }),
+      );
+
+      const prompt = requests("session/prompt")[0]?.params as { prompt: unknown[] };
+      expect(prompt.prompt).toContainEqual({ type: "image", mimeType: "image/png", data: "AQID" });
+    });
+  });
+
+  it("keeps screen tools and images from a CLI that does not pass images on", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+
+    await collect(
+      runtime,
+      request({
+        prompt: "weather",
+        tools: [
+          ...TOOLS,
+          {
+            name: "computer_observe",
+            description: "Take a screenshot.",
+            inputSchema: { type: "object", properties: {} },
+          },
+        ],
+        currentTurnImages: [
+          { name: "photo.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) },
+        ],
+      }),
+    );
+
+    expect(recorded().find((event) => event.type === "tools")?.names).toEqual([
+      "get_weather",
+      "send_note",
+    ]);
+    const prompt = requests("session/prompt")[0]?.params as { prompt: Array<{ type: string }> };
+    expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
+  });
+
   it("leaves every other model to the runtime it wraps", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
 
