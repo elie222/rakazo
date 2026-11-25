@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   composerSlashOptions,
@@ -144,6 +144,30 @@ describe("truncateSlashDescription", () => {
 
   it("counts emoji as one code point with a custom limit", () => {
     expect(truncateSlashDescription("😀😀😀😀😀", 4)).toBe("😀😀😀…");
+  });
+
+  it.each(["👍🏽", "🇨🇦", "👩‍💻", "e\u0301"])("keeps %s whole at the cutoff", (grapheme) => {
+    const codePointCount = Array.from(grapheme).length;
+    const text = `ab${grapheme}cd`;
+    expect(truncateSlashDescription(text, codePointCount + 2)).toBe("ab…");
+    expect(truncateSlashDescription(text, codePointCount + 3)).toBe(`ab${grapheme}…`);
+    expect(truncateSlashDescription(`ab${grapheme}`, codePointCount + 2)).toBe(`ab${grapheme}`);
+  });
+
+  it("respects a budget with room for at most the ellipsis", () => {
+    expect(truncateSlashDescription("text", 0)).toBe("");
+    expect(truncateSlashDescription("👍🏽", 1)).toBe("…");
+    expect(truncateSlashDescription("a", 1)).toBe("a");
+  });
+
+  it("keeps the code point limit and whole graphemes without Intl.Segmenter", () => {
+    vi.stubGlobal("Intl", Object.create(Intl, { Segmenter: { value: undefined } }));
+    try {
+      expect(truncateSlashDescription("每週進度👍🏽報告", 6)).toBe("每週進度…");
+      expect(truncateSlashDescription("每週進度👍🏽報告", 7)).toBe("每週進度👍🏽…");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("normalizes whitespace and trims before the ellipsis", () => {

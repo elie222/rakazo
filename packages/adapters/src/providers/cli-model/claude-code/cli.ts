@@ -5,7 +5,8 @@ import { createInterface } from "node:readline";
 /**
  * Runs the official `claude` executable found on the server's PATH, exactly as installed. Rakazo
  * never signs it in, never reads its sign-in, and never passes it a key: the operator signs in
- * once with `claude auth login`, and every model request is the CLI's own.
+ * once with `claude auth login`, or opts in to the CLI's own headless token below, and every
+ * model request is the CLI's own.
  */
 export const CLAUDE_CODE_COMMAND = "claude";
 
@@ -67,6 +68,12 @@ const PASSTHROUGH_ENV = new Set([
 ]);
 
 /**
+ * The CLI's own headless sign-in. Passed through, unread, only when the operator sets
+ * RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1 for a server whose CLI cannot sign in interactively.
+ */
+const OPT_IN_TOKEN_NAME = "CLAUDE_CODE_OAUTH_TOKEN";
+
+/**
  * Documented CLI settings. Rakazo owns the conversation, its compaction, memory and instructions,
  * so the CLI keeps none of its own, and every Rakazo tool is listed to the model up front.
  */
@@ -81,11 +88,13 @@ const BRIDGE_ENV = {
 
 /**
  * The child's whole environment, built from an allowlist. API keys, OAuth tokens and every other
- * server secret stay out, so the CLI can only use the sign-in its operator made.
+ * server secret stay out, so the CLI can only use the sign-in its operator made (with the opt-in,
+ * that includes the CLI's own token).
  */
 export function claudeCodeEnv(
   source: NodeJS.ProcessEnv = process.env,
   extra: Record<string, string> = {},
+  emptyConfigDir?: string,
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(source)) {
@@ -93,7 +102,14 @@ export function claudeCodeEnv(
       env[key] = value;
     }
   }
-  return { ...env, ...BRIDGE_ENV, ...extra };
+  const token =
+    source.RAKAZO_CLAUDE_CODE_SETUP_TOKEN === "1" ? source[OPT_IN_TOKEN_NAME] : undefined;
+  if (!token) return { ...env, ...BRIDGE_ENV, ...extra };
+  // The token needs no stored profile, and the CLI tells the model the profile's email.
+  const config: Record<string, string> = emptyConfigDir
+    ? { CLAUDE_CONFIG_DIR: emptyConfigDir }
+    : {};
+  return { ...env, [OPT_IN_TOKEN_NAME]: token, ...config, ...BRIDGE_ENV, ...extra };
 }
 
 const stoppedProcesses = new WeakSet<ChildProcess>();

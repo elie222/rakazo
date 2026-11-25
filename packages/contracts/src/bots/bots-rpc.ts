@@ -24,6 +24,7 @@ import {
   BotSectionName,
   BotSectionSchema,
   CreateBotInput,
+  ListedBotSchema,
   ReorderBotsInput,
   UpdateBotInput,
 } from "./bot.js";
@@ -53,8 +54,8 @@ import {
 
 export const botsRpc = {
   bots: {
-    list: oc.output(z.array(BotSchema)),
-    listArchived: oc.output(z.array(BotSchema)),
+    list: oc.output(z.array(ListedBotSchema)),
+    listArchived: oc.output(z.array(ListedBotSchema)),
     get: oc.input(botId).output(BotSchema),
     create: oc.input(CreateBotInput).output(BotSchema),
     importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
@@ -102,7 +103,10 @@ export const botsRpc = {
         webhookConfigured: z.literal(true),
       }),
     ),
-    revealWebhookSecret: oc.input(botId).output(z.object({ secret: z.string() })),
+    revealWebhookSecret: oc
+      .input(botId)
+      // `url` is set when the deployment publishes its webhooks at a public address.
+      .output(z.object({ secret: z.string(), url: z.string().optional() })),
   },
   botSections: {
     list: oc.output(z.array(BotSectionSchema)),

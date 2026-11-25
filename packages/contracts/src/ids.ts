@@ -35,6 +35,9 @@ export const ThinkingLevelSchema = z.enum([
 ]);
 export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
 
+/** The effort a thinking model runs at when nothing chose one. */
+export const DEFAULT_THINKING_LEVEL = "medium" satisfies ThinkingLevel;
+
 /** How a bot talks to people while it works: its written text, or only the messages it sends. */
 export const ReplyModeSchema = z.enum(["chat", "messages"]);
 export type ReplyMode = z.infer<typeof ReplyModeSchema>;

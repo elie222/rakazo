@@ -12,21 +12,22 @@ import type {
   RakazoDesktopDevice,
 } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
-import type { BrowserWindow, Session } from "electron";
+import type { Session } from "electron";
 import {
   app,
+  BrowserWindow,
   clipboard,
   desktopCapturer,
   dialog,
   nativeImage,
   net,
   powerMonitor,
-  safeStorage,
   session,
   shell,
   systemPreferences,
 } from "electron";
 import { createBrowserAuthHandlers } from "./auth/browser-auth.js";
+import { chooseLinuxKeyring, deviceTokenCipher } from "./auth/device-token-cipher.js";
 import { associatedPasskeyRpIds } from "./auth/passkeys.js";
 import { installSessionPermissions } from "./auth/session-permissions.js";
 import { createUserDeviceAccess, deviceName } from "./auth/user-device.js";
@@ -53,7 +54,12 @@ import {
   writeSetup,
   writeUiLocale,
 } from "./setup/setup-store.js";
-import { destroySetupWindow, registerSetupIpc, showSetupWindow } from "./setup/setup-window.js";
+import {
+  destroySetupWindow,
+  isSetupSaveInProgress,
+  registerSetupIpc,
+  showSetupWindow,
+} from "./setup/setup-window.js";
 import { createBadgeHandler } from "./system/badge.js";
 import { createClipboardHandler } from "./system/clipboard.js";
 import {
@@ -116,6 +122,7 @@ import {
 } from "./this-computer/stop-local-stack.js";
 import type { ElectronAutoUpdater } from "./updates/auto-update.js";
 import { DesktopUpdateController } from "./updates/auto-update.js";
+import { installedBundleVersion } from "./updates/installed-version.js";
 import { verifyDownloadedLinuxUpdate } from "./updates/linux-update-signature.js";
 import { applicationMenuInstaller, followUpdateState, installUpdate } from "./windows/app-menu.js";
 import { createAppOpener } from "./windows/app-opener.js";
@@ -130,7 +137,8 @@ import {
   resolveSessionForTarget,
   ServerUnavailable,
 } from "./windows/app-window.js";
-import { revealSecondInstanceWindow, secondInstanceWindow } from "./windows/second-instance.js";
+import { DEEP_LINK_SCHEME } from "./windows/deep-link.js";
+import { registerDeepLinkHandlers } from "./windows/second-instance.js";
 import { registerWindowControls } from "./windows/window-controls.js";
 import { isMcpOAuthServerId, mcpOAuthPartition } from "./windows/window-open.js";
 
@@ -151,9 +159,11 @@ const updaterEnvironment = {
   packaged: app.isPackaged && existsSync(path.join(process.resourcesPath, "app-update.yml")),
   version: app.getVersion(),
   disabled: process.env.RAKAZO_DISABLE_AUTO_UPDATE === "1",
+  installedVersion: process.platform === "darwin" ? installedBundleVersion : undefined,
 };
 let hostScreen: HostScreen | undefined;
 markOnce("rk:main:module-evaluated");
+chooseLinuxKeyring();
 if (PERFORMANCE_USER_DATA) {
   app.setPath("userData", PERFORMANCE_USER_DATA);
   app.setPath("sessionData", path.join(PERFORMANCE_USER_DATA, "session"));
@@ -452,16 +462,6 @@ function syncHostComputerAccess() {
   void desktop.userDevices?.select(remoteServerOrigin()).catch(() => undefined);
   installApplicationMenu();
 }
-function deviceTokenCipher() {
-  return {
-    // Linux without a keyring falls back to a fixed key; keep the token off disk there.
-    available: async () =>
-      (await safeStorage.isAsyncEncryptionAvailable()) &&
-      !(process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text"),
-    encrypt: (value: string) => safeStorage.encryptStringAsync(value),
-    decrypt: async (value: Buffer) => (await safeStorage.decryptStringAsync(value)).result,
-  };
-}
 /** Drop the previous app window after the new server is opened and persisted. */
 function commitPendingAppSwitch() {
   syncHostComputerAccess();
@@ -542,20 +542,32 @@ async function recoverFromCrashedSave(
   showSetupWindow(message);
   return message;
 }
+function reopenAppWindow() {
+  if (desktop.currentTargetUrl === null) {
+    showSetupWindow(desktop.setupError);
+    return;
+  }
+  void appOpener.open(desktop.currentTargetUrl).then((opened) => {
+    if (!opened) return;
+    commitPendingAppSwitch();
+    deepLinks?.applyPending();
+  });
+}
+
 // A second launch on Linux/Windows would rerun host-computer setup, overwrite
 // the saved token and restart the local stack under the running instance.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
-if (!hasSingleInstanceLock) {
-  app.quit();
-} else {
-  app.on("second-instance", () => {
-    const win = secondInstanceWindow(desktop.setupWindow, desktop.mainWindow);
-    if (win === null) return;
-    revealSecondInstanceWindow(win);
-  });
-}
+const deepLinks = hasSingleInstanceLock
+  ? registerDeepLinkHandlers(app, {
+      initialArgv: process.argv,
+      isOpening: () => appOpener.busy() || isSetupSaveInProgress(),
+      reopen: reopenAppWindow,
+    })
+  : undefined;
+if (!hasSingleInstanceLock) app.quit();
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
+  if (app.isPackaged) app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
   installSessionPermissions(session.defaultSession, permissionTarget);
   const userDataDir = app.getPath("userData");
   startDesktopLocale(
@@ -904,28 +916,17 @@ app.whenReady().then(async () => {
         rebuildMenu: () => installApplicationMenu(),
       }),
     settleLocalStack,
+    onAppReady: () => deepLinks?.applyPending(),
   });
 
+  const openInitialServer = async (url: string) => {
+    if (!(await appOpener.open(url))) return;
+    commitPendingAppSwitch();
+    destroySetupWindow();
+  };
+
   // Register before startup awaits so macOS dock clicks during probe/open are handled.
-  app.on("activate", () => {
-    if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
-      desktop.setupWindow.show();
-      desktop.setupWindow.focus();
-      return;
-    }
-    if (desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed()) {
-      clearTimeout(desktop.warmWindowTimer);
-      desktop.mainWindow.show();
-      desktop.mainWindow.focus();
-      return;
-    }
-    if (appOpener.busy()) return;
-    if (desktop.currentTargetUrl === null) showSetupWindow(desktop.setupError);
-    else
-      void appOpener.open(desktop.currentTargetUrl).then((opened) => {
-        if (opened) commitPendingAppSwitch();
-      });
-  });
+  deepLinks?.registerActivate();
 
   if (target.kind === "setup") {
     showSetupWindow();
@@ -934,10 +935,7 @@ app.whenReady().then(async () => {
     const managedStackReady =
       managedUrl !== null ? await desktop.localStack.matchesDesiredStack() : false;
     if (managedStackReady && managedUrl !== null) {
-      if (await appOpener.open(managedUrl)) {
-        commitPendingAppSwitch();
-        destroySetupWindow();
-      }
+      await openInitialServer(managedUrl);
     } else {
       // Missing, stale, foreign, or owned by another process: reconcile the
       // app-managed stack before any API or computer traffic is allowed.
@@ -947,10 +945,7 @@ app.whenReady().then(async () => {
   } else if (target.source !== "env") {
     const reachability = await probeServer(target.url, undefined, desktop.currentSetup?.headers);
     if (reachability.ok) {
-      if (await appOpener.open(target.url)) {
-        commitPendingAppSwitch();
-        destroySetupWindow();
-      }
+      await openInitialServer(target.url);
     } else {
       // An unreachable first-launch Cloud lands in setup, where the other servers are.
       showSetupWindow(
@@ -962,11 +957,9 @@ app.whenReady().then(async () => {
       );
     }
   } else {
-    if (await appOpener.open(target.url)) {
-      commitPendingAppSwitch();
-      destroySetupWindow();
-    }
+    await openInitialServer(target.url);
   }
+  deepLinks?.finishStartup();
 });
 app.on("window-all-closed", () => {
   // A hidden session probe (defaultSessionHasOriginData) can be the only window
@@ -979,6 +972,15 @@ app.on("quit", (_event, exitCode) => {
 });
 app.on("before-quit", (event) => {
   desktop.quitting = true;
+  // A ready update is staged before quitting; the updater quits again once it is.
+  const installing = desktop.desktopUpdater?.installBeforeQuit();
+  if (installing) {
+    event.preventDefault();
+    // Staging takes a few seconds; the app should look closed meanwhile.
+    for (const window of BrowserWindow.getAllWindows()) window.hide();
+    void installing.then(() => app.quit());
+    return;
+  }
   // Server processes this app runs itself stop with it; quit again once they have.
   if (desktop.localStack instanceof NativeStackController && desktop.localStack.hasProcesses()) {
     event.preventDefault();

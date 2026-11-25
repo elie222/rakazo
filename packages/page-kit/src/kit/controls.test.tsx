@@ -307,6 +307,39 @@ describe("controls", () => {
     ]);
   });
 
+  it("distinguishes the select placeholder from a real empty value", () => {
+    const onChange = vi.fn();
+    const options = [
+      { value: "", label: "All regions" },
+      { value: "eu", label: "Europe" },
+    ];
+    const props = { options, placeholder: "Choose a region", onChange };
+    const view = render(<Select {...props} />);
+    const select = q<HTMLSelectElement>("select")!;
+    const placeholder = select.selectedOptions[0]!;
+    expect(placeholder.textContent).toBe("Choose a region");
+    expect(placeholder.disabled).toBe(true);
+    expect(options.map((option) => option.value)).not.toContain(placeholder.value);
+
+    const choose = (value: string) =>
+      act(() => {
+        select.value = value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    choose("");
+    expect(onChange).toHaveBeenLastCalledWith("");
+
+    view.rerender(<Select {...props} value="" />);
+    expect(select.selectedOptions[0]!.textContent).toBe("All regions");
+    expect(select.selectedOptions[0]!.disabled).toBe(false);
+
+    view.rerender(<Select {...props} value="missing" />);
+    expect(select.selectedOptions[0]!.textContent).toBe("Choose a region");
+    expect(select.options).toHaveLength(options.length + 1);
+    choose("eu");
+    expect(onChange).toHaveBeenLastCalledWith("eu");
+  });
+
   it("shows a select's placeholder until a listed value is chosen and reports the choice", () => {
     const onChange = vi.fn();
     const view = render(

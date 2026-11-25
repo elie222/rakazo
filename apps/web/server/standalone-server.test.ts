@@ -1,11 +1,12 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { USER_DEVICE_CONNECT_PATH } from "@rakazo/contracts";
 import { afterEach, describe, expect, it } from "vitest";
-import { createWebServer } from "./standalone-server.js";
+import { createWebServer, isEntrypoint } from "./standalone-server.js";
 
 const cleanup: (() => Promise<void>)[] = [];
 const apiRequests: string[] = [];
@@ -218,4 +219,18 @@ describe("standalone web server", () => {
     ).resolves.toBe(404);
     expect(apiRequests).toEqual([]);
   });
+});
+
+it("starts when its install folder is reached through a symlink", async () => {
+  const real = await realpath(await mkdtemp(path.join(tmpdir(), "rakazo-standalone-entry-")));
+  cleanup.push(() => rm(real, { recursive: true, force: true }));
+  const entry = path.join(real, "dist-server", "index.js");
+  await mkdir(path.dirname(entry));
+  await writeFile(entry, "");
+  const link = `${real}-link`;
+  await symlink(real, link);
+  cleanup.push(() => rm(link, { force: true }));
+
+  const moduleUrl = pathToFileURL(entry).href;
+  expect(isEntrypoint(path.join(link, "dist-server", "index.js"), moduleUrl)).toBe(true);
 });

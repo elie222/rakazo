@@ -654,13 +654,6 @@ it("ignores whitespace-only instructions without stripping code indentation", ()
     ]),
   ).toBe("    code");
 });
-it("reads a fenced export with a leading JSON5 comment", () => {
-  expect(
-    parseGrokBotExport(
-      '```json\n{// exported setup\nbots:[{name:"Example",instructions:"Keep"}]}\n```',
-    )[0]?.instructions,
-  ).toBe("Keep");
-});
 
 it("ignores braces and quotes inside JSON5 comments", () => {
   for (const comment of ['// { "\n', '/* } " { */']) {

@@ -9,11 +9,22 @@ const state = vi.hoisted(() => ({
   remove: vi.fn(),
   // The iOS app group container; null on Android and on iOS builds without the extension.
   container: null as { uri: string; files: string[] } | null,
+  containerGroup: "group.com.rakazo.app",
+  iosAppGroup: undefined as string | undefined,
 }));
 vi.mock("react-native", () => ({
   Platform: {
     get OS() {
       return state.os;
+    },
+  },
+}));
+vi.mock("expo-constants", () => ({
+  default: {
+    get expoConfig() {
+      return {
+        extra: state.iosAppGroup === undefined ? {} : { iosAppGroup: state.iosAppGroup },
+      };
     },
   },
 }));
@@ -53,7 +64,7 @@ vi.mock("expo-file-system", () => {
         const container = state.container;
         if (!container) return {};
         return {
-          "group.com.rakazo.app": {
+          [state.containerGroup]: {
             uri: container.uri,
             list: () => container.files.map((name) => new File(`${container.uri}${name}`)),
           },
@@ -78,6 +89,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   state.os = "android";
   state.container = null;
+  state.containerGroup = "group.com.rakazo.app";
+  state.iosAppGroup = undefined;
   cancelIncomingShare();
   state.payloads = [];
   vi.clearAllMocks();
@@ -115,6 +128,16 @@ describe("incoming share", () => {
     receiveIncomingShare(true, false);
     expect(take()).toBeNull();
     expect(hasIncomingShare()).toBe(true);
+  });
+  it("can undo a stalled choice and leave the share available to pick again", () => {
+    state.payloads = [{ value: "https://example.com/a", shareType: "url" }];
+    receiveIncomingShare(true, false);
+    const releaseChoice = chooseIncomingShareThread("bot");
+    expect(releaseChoice).toBeTypeOf("function");
+    releaseChoice?.();
+    expect(take()).toBeNull();
+    chooseIncomingShareThread("other");
+    expect(takeIncomingShare("other")?.text).toBe("https://example.com/a");
   });
   it("cancel clears and prevents a failed in-flight import reviving it", () => {
     receive();
@@ -269,5 +292,13 @@ describe("incoming share on iOS", () => {
     state.container!.files = ["in-flight.png"];
     receiveIos(["new.png"]);
     expect(state.remove).not.toHaveBeenCalled();
+  });
+  it("uses the build's configured app group when extra.iosAppGroup is set", () => {
+    state.iosAppGroup = "group.com.example.rakazo";
+    state.containerGroup = "group.com.example.rakazo";
+    state.container!.files = ["old.png", "new.png"];
+    receiveIos(["new.png"], true);
+    expect(state.remove.mock.calls).toEqual([[`${GROUP}old.png`]]);
+    expect(take()?.files.map((file) => file.name)).toEqual(["new.png"]);
   });
 });

@@ -145,10 +145,17 @@ space or owner mismatch that keeps the server's tools from that bot.
 
 ## Apps and connectors
 
-Plugins use [Composio](https://composio.dev) when `COMPOSIO_API_KEY` is set. Pipedream is an
-alternative managed connector provider: set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`,
-`PIPEDREAM_PROJECT_ID` and `PIPEDREAM_ENVIRONMENT` (`development` or `production`). Set them on the
-API and worker.
+To offer a larger managed app catalog in Integrations, set a [Composio](https://composio.dev)
+Platform project key as `COMPOSIO_API_KEY` on the API and worker. Pipedream is another managed
+connector provider. Set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, `PIPEDREAM_PROJECT_ID`
+and `PIPEDREAM_ENVIRONMENT` (`development` or `production`) on both services. Recreate the
+services with the updated environment. People authorize their individual apps from Integrations.
+
+People can also bring a personal tool gateway as an MCP connection. The built-in **Executor**
+option uses browser sign-in and exposes the apps the person has configured in their Executor
+organization. [Composio Connect](https://docs.composio.dev/docs/composio-connect) offers a separate
+personal MCP connection at `https://connect.composio.dev/mcp`. It supports browser sign-in for
+compatible MCP clients and a consumer key for header-based clients.
 
 A call on a shared mailbox is refused when the Outlook sign-in does not request the matching
 `.Shared` permission, and a connection made through Composio's default Outlook setup has been seen
@@ -161,7 +168,8 @@ before the change must disconnect and reconnect Outlook.
 
 `INTEGRATIONS_CATALOG_URL` points API connector search at an
 [integrations.sh](https://integrations.sh/)-compatible catalog, such as a mirror you host. Give the
-base URL; Rakazo appends `api/search`.
+base URL. Rakazo appends `api/search`. With the setting unset, **Search public MCP directory** can still
+search the public directory on demand. Each service handles its own authorization.
 
 ## Messaging apps
 

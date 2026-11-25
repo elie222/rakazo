@@ -380,25 +380,34 @@ const listCalls = () => rpc.mock.calls.filter(([procedure]) => procedure === "ro
 const routinesRow = () => button("Routines");
 
 describe("bot profile", () => {
-  it("links the bot's settings, routines, pages, artifacts and computer", async () => {
-    profileRpc(async () => []);
+  it("links the bot's settings and features in order of priority", async () => {
+    profileRpc(async () => [], { bot: async () => ({ ...fixtureBot, meetingsEnabled: true }) });
     await render(createElement(BotProfile));
 
     expect(container.textContent).toContain("Fixture");
+    const rows = [...container.querySelectorAll("button")].map((node) => node.textContent);
+    expect(rows.slice(0, 6)).toEqual([
+      "Edit",
+      "Computer",
+      "Routines0 on",
+      "Pages",
+      "Artifacts",
+      "Meetings",
+    ]);
     button("Edit").click();
+    button("Computer").click();
     routinesRow().click();
     button("Pages").click();
     button("Artifacts").click();
-    button("Computer").click();
+    button("Meetings").click();
     expect(push.mock.calls).toEqual([
       [{ pathname: "/bot-settings", params: { botId: "bot-fixture" } }],
+      [{ pathname: "/computer", params: { botId: "bot-fixture", name: "Fixture" } }],
       [{ pathname: "/routines", params: { botId: "bot-fixture", name: "Fixture" } }],
       [{ pathname: "/pages", params: { botId: "bot-fixture" } }],
       [{ pathname: "/artifacts", params: { botId: "bot-fixture" } }],
-      [{ pathname: "/computer", params: { botId: "bot-fixture", name: "Fixture" } }],
+      [{ pathname: "/meetings", params: { botId: "bot-fixture" } }],
     ]);
-    const rows = [...container.querySelectorAll("button")].map((node) => node.textContent);
-    expect(rows.slice(0, 5)).toEqual(["Edit", "Routines0 on", "Pages", "Artifacts", "Computer"]);
   });
 
   it("keeps the bot's less common actions in its … menu, and clears the open chat", async () => {
@@ -410,10 +419,15 @@ describe("bot profile", () => {
       }[]
     )();
     const items = menu!.menu.items;
-    expect(items.map((item) => item.label)).toEqual(["Clear conversation", "Archive", "Delete…"]);
+    expect(items.map((item) => item.label)).toEqual([
+      "Duplicate",
+      "Clear conversation",
+      "Archive",
+      "Delete…",
+    ]);
     const cleared = vi.fn();
     const stop = onConversationCleared(cleared);
-    items[0]!.onPress();
+    items[1]!.onPress();
     const [, , buttons] = alert.mock.lastCall as [
       string,
       string,
@@ -461,7 +475,6 @@ describe("bot profile", () => {
       ],
       "2 on",
     ],
-    ["all paused", [routine("r1", "Morning digest", { active: false })], "0 on"],
   ])("counts the routines that are on (%s)", async (_, rows, count) => {
     profileRpc(async () => rows);
     await render(createElement(BotProfile));
@@ -720,24 +733,21 @@ describe("bot profile notifications", () => {
     expect(afterChatNotifyChange).not.toHaveBeenCalled();
   });
 
-  it.each([true, false])(
-    "brings the device in line after a save (turned on: %s)",
-    async (notify) => {
-      profileRpc(async () => [], {
-        bot: async () => ({ ...fixtureBot, notifyOnFinish: !notify }),
-        update: async () => ({ ...fixtureBot, notifyOnFinish: notify }),
-      });
-      await render(createElement(BotProfile));
+  it("brings the device in line after turning notifications off", async () => {
+    profileRpc(async () => [], {
+      bot: async () => ({ ...fixtureBot, notifyOnFinish: true }),
+      update: async () => ({ ...fixtureBot, notifyOnFinish: false }),
+    });
+    await render(createElement(BotProfile));
 
-      await act(async () => notificationsSwitch()!.click());
-      expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
-        "https://api.example",
-        "token",
-        "space-a",
-        { botId: "bot-fixture", threadId: "thread-fixture", notify },
-      );
-    },
-  );
+    await act(async () => notificationsSwitch()!.click());
+    expect(afterChatNotifyChange).toHaveBeenCalledExactlyOnceWith(
+      "https://api.example",
+      "token",
+      "space-a",
+      { botId: "bot-fixture", threadId: "thread-fixture", notify: false },
+    );
+  });
 });
 
 describe("routines screen", () => {

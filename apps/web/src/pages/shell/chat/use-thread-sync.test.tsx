@@ -34,7 +34,7 @@ function syncInput({
   bot = { status: "idle", threadStatus: "idle" },
 }: {
   inGroup: boolean;
-  get: () => Promise<ThreadSnapshot>;
+  get: (input: unknown, options?: { signal?: AbortSignal }) => Promise<ThreadSnapshot>;
   refreshBots?: () => Promise<void>;
   commitSnapshot: (next: ThreadSnapshot | null) => void;
   bot?: { status: string; threadStatus?: string };
@@ -139,6 +139,45 @@ it.each([false, true])(
     expect(subscription.signal.aborted).toBe(true);
   },
 );
+
+it("reads the group snapshot when a retry is queued", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const snapshot = {
+    threadId: "thread-1",
+    groupId: "group-1",
+    cursor: 1,
+    messages: [],
+    run: null,
+  } as unknown as ThreadSnapshot;
+  const queued = { ...snapshot, cursor: 2 };
+  const get = vi.fn(async () => queued);
+  const commitSnapshot = vi.fn();
+  const input = syncInput({ inGroup: true, get, commitSnapshot });
+  function Probe() {
+    useThreadSync(input);
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(createElement(Probe)));
+  const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+  await act(async () => {
+    subscription.onEvent(
+      {
+        id: "event-2",
+        type: "thread.meta",
+        threadId: snapshot.threadId,
+        spaceId: "space-1",
+        botId: "bot-1",
+        seq: 2,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        payload: { retryQueued: true },
+      },
+      snapshot,
+    );
+  });
+  expect(commitSnapshot).toHaveBeenCalledWith(queued);
+  act(() => root.unmount());
+});
 
 it.each([false, true])(
   "refreshes a group computer unless this tab initiated it: %s",
@@ -270,6 +309,39 @@ it("reconciles a shared computer's own grant without reading the screen again", 
   expect(input.computerState.refreshComputerScreen).not.toHaveBeenCalled();
   act(() => root.unmount());
 });
+
+it.each([false, true])(
+  "gives the first read no deadline but leaving the chat, in a group: %s",
+  async (inGroup) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const snapshot = {
+      threadId: "thread-1",
+      cursor: 1,
+      messages: [],
+      run: null,
+    } as unknown as ThreadSnapshot;
+    const read = deferred<ThreadSnapshot>();
+    const get = vi.fn((_input: unknown, _options?: { signal?: AbortSignal }) => read.promise);
+    const commitSnapshot = vi.fn();
+    const input = syncInput({ inGroup, get, commitSnapshot });
+    function Probe() {
+      useThreadSync(input);
+      return null;
+    }
+    const root = createRoot(document.createElement("div"));
+    await act(async () => root.render(createElement(Probe)));
+    const subscription = vi.mocked(runThreadSubscription).mock.calls[0]![0];
+    const loaded = subscription.loadInitial();
+    // A slow link must not cut the read short: only leaving the chat cancels it.
+    expect(get.mock.calls[0]![1]?.signal).toBe(subscription.signal);
+    read.resolve(snapshot);
+    await act(async () => {
+      await expect(loaded).resolves.toBe(snapshot);
+    });
+    expect(commitSnapshot).toHaveBeenCalledWith(snapshot);
+    act(() => root.unmount());
+  },
+);
 
 it("leaves the screen to a caller that reads it itself", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

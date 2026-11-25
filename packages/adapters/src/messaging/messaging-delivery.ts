@@ -16,8 +16,8 @@ import {
 } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import {
+  BOT_MESSAGE_MAX_HOPS,
   botMessageHopExhausted,
-  botMessageMaxHops,
   chatAppAskText,
   chatAppTakeoverText,
   nextBotMessageHop,
@@ -166,6 +166,8 @@ export interface MessagingDeliveryDeps {
   artifacts: Pick<ArtifactStore, "get">;
   /** The process's database outage streak; defaults to the shared one. */
   outage?: DatabaseOutage;
+  /** The web app's origin, so an ask sent to a chat app links to its bot's chat. */
+  webOrigin?: string | undefined;
 }
 
 type IdentityRow = {
@@ -198,6 +200,10 @@ export class MessagingDelivery {
 
   constructor(private readonly deps: MessagingDeliveryDeps) {
     this.outage = deps.outage ?? databaseOutage;
+  }
+
+  private platformFor(provider: string) {
+    return this.deps.messaging.platforms().find((platform) => platform.provider === provider);
   }
 
   /**
@@ -955,9 +961,7 @@ export class MessagingDelivery {
       where: { runId: run.id, role: "bot" },
       orderBy: { seq: "asc" },
     });
-    const sendsFiles = this.deps.messaging
-      .platforms()
-      .some((platform) => platform.provider === identity.provider && platform.capabilities.files);
+    const platform = this.platformFor(identity.provider);
     const linkedPages = linkedPageIds(messages);
     // A run that ended, such as one cancelled or expired while it waited, leaves its question
     // pending with nothing to resume, so the chat app is not asked it.
@@ -965,8 +969,11 @@ export class MessagingDelivery {
     const rowsByMessage = messages.map((message) => {
       const body = extractText(onlyAsks ? askBlocks(message) : message.blocks, linkedPages, {
         asks,
+        appUrl:
+          this.deps.webOrigin &&
+          new URL(`/app/${encodeURIComponent(run.botId)}`, this.deps.webOrigin).href,
       });
-      const parts = body ? splitOutboundBody(identity.provider, body) : [];
+      const parts = body ? splitOutboundBody(platform?.outbound, body) : [];
       return {
         parts: parts.map((part, index) => ({
           idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
@@ -975,15 +982,16 @@ export class MessagingDelivery {
           body: part,
           sourceMessageId: message.id,
         })),
-        files: (sendsFiles && !onlyAsks ? extractArtifactIds(message.blocks) : []).map(
-          (artifactId) => ({
-            idempotencyKey: `msg:${message.id}:file:${artifactId}`,
-            kind: "dm",
-            identityId: identity.id,
-            body: "",
-            sourceMessageId: message.id,
-          }),
-        ),
+        files: (platform?.capabilities.files && !onlyAsks
+          ? extractArtifactIds(message.blocks)
+          : []
+        ).map((artifactId) => ({
+          idempotencyKey: `msg:${message.id}:file:${artifactId}`,
+          kind: "dm",
+          identityId: identity.id,
+          body: "",
+          sourceMessageId: message.id,
+        })),
       };
     });
     const sends = (reply: ReplyRows) => reply.parts.length + reply.files.length > 0;
@@ -1074,10 +1082,11 @@ export class MessagingDelivery {
     // One row per platform-sized part, like the DM path: the adapter truncates an oversized body
     // instead of failing, which would drop the reply's tail.
     const lane = { identityId: null, threadId: channel.threadId };
+    const outbound = this.platformFor(identity.provider)?.outbound;
     await this.recordReplies(
       lane,
       messages.map(({ message, text }) => ({
-        parts: splitOutboundBody(identity.provider, `${fromLabel}: ${text}`).map((part, index) => ({
+        parts: splitOutboundBody(outbound, `${fromLabel}: ${text}`).map((part, index) => ({
           idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
           kind: "group",
           threadId: channel.threadId,
@@ -1325,8 +1334,7 @@ export class MessagingDelivery {
     const { prisma } = this.deps;
     let current: string | null = sourceMessageId;
     const visited = new Set<string>();
-    const maxHops = botMessageMaxHops();
-    for (let depth = 0; current && depth <= maxHops; depth += 1) {
+    for (let depth = 0; current && depth <= BOT_MESSAGE_MAX_HOPS; depth += 1) {
       const source = await prisma.message.findUnique({
         where: { id: current },
         select: { replyTo: { select: { runId: true } } },
@@ -1509,7 +1517,7 @@ function linkedPageIds(messages: readonly { blocks: unknown }[]): Set<string> {
 function extractText(
   blocks: unknown,
   linkedPages: ReadonlySet<string>,
-  options: { asks?: boolean } = {},
+  options: { asks?: boolean; appUrl?: string | undefined } = {},
 ): string {
   if (!Array.isArray(blocks)) return "";
   return blocks
@@ -1518,7 +1526,7 @@ function extractText(
         if (block?.kind === "text" && typeof block.text === "string")
           return [pageLinksAsTitles(block.text)];
         if (options.asks && block?.kind === "ask") {
-          const ask = chatAppAskText(block as MessageBlock);
+          const ask = chatAppAskText(block as MessageBlock, options.appUrl);
           return ask ? [ask] : [];
         }
         if (options.asks && block?.kind === "computer") {

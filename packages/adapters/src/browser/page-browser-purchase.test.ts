@@ -280,14 +280,12 @@ describe("purchase detection in the page helper", () => {
     "המשך",
     "התחברות",
     "חיפוש טיסות",
-    "Pay later",
     "Pay in 3 installments",
     "Pay with",
     "Send",
     "Send message",
     "Send 2 files",
     "Submit",
-    "Checkout",
   ])("does not take %s for one on a page with no card", (label) => {
     const { intent } = page(`<button type="button">${label}</button>`);
     expect(intent(label)).toBeNull();

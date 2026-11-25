@@ -24,6 +24,7 @@ function routine(partial: Partial<Routine>): Routine {
     watchState: null,
     lastRunAt: null,
     nextRunAt: null,
+    endsAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     ...partial,
   };
@@ -63,6 +64,16 @@ describe("routineTriggerRows", () => {
 });
 
 describe("routineRowDetail", () => {
+  it("says until when the routine ends", () => {
+    const year = new Date().getUTCFullYear();
+    expect(
+      routineRowDetail(
+        routine({ crons: ["30 8 * * 1-5"], endsAt: `${year}-11-30T23:59:59.999Z` }),
+        "UTC",
+      ),
+    ).toBe("Weekdays at 8:30 AM, until Nov 30");
+  });
+
   it("shows the schedule without Active or the device's own time zone", () => {
     expect(routineRowDetail(routine({ crons: ["30 8 * * 1-5"] }), "UTC")).toBe(
       "Weekdays at 8:30 AM",

@@ -57,7 +57,6 @@ import {
   startServerFoundation,
   UserDevices,
   userDeviceForwardSecret,
-  webOriginFromEnv,
   withHostComputerScreen,
   withRunWorker,
 } from "@rakazo/adapters";
@@ -217,7 +216,7 @@ async function main() {
     prisma,
     jobs,
     events,
-    webOrigin: webOriginFromEnv(process.env),
+    webOrigin: env.webOrigin,
   });
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
     pageRevisionRuntime: new PiAgentRuntime(),

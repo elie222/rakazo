@@ -17,6 +17,15 @@ const context: AdapterContext = {
 
 type Provider = "telegram" | "whatsapp";
 
+const mountedPlatforms = messagingPlatformsFromEnv({
+  telegramBotToken: "test-token",
+  telegramWebhookSecret: "test-webhook-secret",
+  whatsappAccessToken: "test-token",
+  whatsappPhoneNumberId: "123",
+  whatsappAppSecret: "test-secret",
+  whatsappVerifyToken: "test-verify",
+});
+
 const THREAD: Record<Provider, string> = {
   telegram: "telegram:123",
   whatsapp: "whatsapp:123:15551234567",
@@ -59,17 +68,9 @@ async function deliver(provider: Provider, body: string): Promise<string[]> {
       });
     }),
   );
-  const surface = new ChatSdkMessagingSurface(
-    messagingPlatformsFromEnv({
-      telegramBotToken: "test-token",
-      telegramWebhookSecret: "test-webhook-secret",
-      whatsappAccessToken: "test-token",
-      whatsappPhoneNumberId: "123",
-      whatsappAppSecret: "test-secret",
-      whatsappVerifyToken: "test-verify",
-    }),
-  );
-  for (const part of splitOutboundBody(provider, body)) {
+  const surface = new ChatSdkMessagingSurface(mountedPlatforms);
+  const outbound = mountedPlatforms.find((platform) => platform.provider === provider)?.outbound;
+  for (const part of splitOutboundBody(outbound, body)) {
     await surface.sendToThread({ threadId: THREAD[provider], body: part }, context);
   }
   return sends;
@@ -233,8 +234,9 @@ describe.each<Provider>(["telegram", "whatsapp"])("a long %s reply's parts", (pr
   });
 
   it("sends nothing for a reply of only white space", () => {
-    expect(splitOutboundBody(provider, " \n\t ".repeat(2000))).toEqual([]);
-    expect(splitOutboundBody(provider, " ")).toEqual([]);
+    const outbound = mountedPlatforms.find((platform) => platform.provider === provider)?.outbound;
+    expect(splitOutboundBody(outbound, " \n\t ".repeat(2000))).toEqual([]);
+    expect(splitOutboundBody(outbound, " ")).toEqual([]);
   });
 
   it("ends parts between words", async () => {

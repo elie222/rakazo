@@ -41,6 +41,7 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
+import { retry } from "@rakazo/core";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -93,7 +94,12 @@ import {
   nextPoll,
 } from "./boat-client.js";
 import { BOAT_MACHINE_TYPES, boatComputerSize } from "./boat-computer.js";
-import { BoatApiError, boatResumeInProgress, boatSdk } from "./boat-errors.js";
+import {
+  BoatApiError,
+  boatResumeInProgress,
+  boatRetryableRefusal,
+  boatSdk,
+} from "./boat-errors.js";
 import { readBoatStoppedFile } from "./boat-stopped-file.js";
 
 const DISPLAY_START = 20;
@@ -106,6 +112,7 @@ const BOAT_COMMAND_ENV = "/home/user/.rakazo-command-env";
 const BOAT_ARCHIVE_PREFIX = "/tmp/rakazo-workspace-archive-";
 const BOAT_READY_TIMEOUT_MS = 5 * 60_000;
 const BOAT_RECOVER_POLL_MAX_MS = 15_000;
+const BOAT_RESTORE_RETRY_MS = 1_000;
 /** The output of a finished detached command keeps at most this much of each stream's end. */
 const BOAT_COMMAND_TAIL_BYTES = 1_000_000;
 const BOAT_API_COMMAND_TIMEOUT_SECONDS = 600;
@@ -900,20 +907,30 @@ export class BoatSandboxProvider extends LinuxDesktopSandbox implements SandboxP
    * Boat archives a sandbox by itself when its TTL runs out, and then refuses work with
    * `sandbox_not_ready` without running it; a machine that stopped underneath it answers
    * `machine_not_running`, and one still waking answers `sandbox_resuming`. Wake or recover
-   * it and try once more.
+   * it and try once more. A sandbox that just started can refuse work it never ran while it
+   * restores its disk; that work is sent again until it becomes ready.
    */
   private async whenRunnable<Result>(
     sandbox: BoatTarget,
     signal: AbortSignal | undefined,
     call: () => Promise<Result>,
   ): Promise<Result> {
+    const deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
+    const send = () =>
+      retry(call, {
+        attempts: Number.POSITIVE_INFINITY,
+        delayMs: BOAT_RESTORE_RETRY_MS,
+        signal,
+        retryable: (error) =>
+          !notRunning(error) && boatRetryableRefusal(error) && Date.now() < deadline,
+      });
     try {
-      return await call();
+      return await send();
     } catch (error) {
       if (!notRunning(error)) throw error;
       await this.wake(sandbox, signal);
       try {
-        return await call();
+        return await send();
       } catch (retryError) {
         // Boat reported the machine up, then refused again; a later attempt finds it settled.
         if (notRunning(retryError)) throw new SandboxUnavailableError({ cause: retryError });

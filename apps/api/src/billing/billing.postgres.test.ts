@@ -231,7 +231,7 @@ describePostgres("billing service (PostgreSQL)", () => {
     expect(emulator.checkouts.get(customerId)?.trialDays).toBeUndefined();
   });
 
-  it("cancels the subscriptions of organizations a deleted owner held", async () => {
+  it("cancels subscriptions only for organizations that go with a deleted account", async () => {
     const { customerId } = (await billingAccountForOrganization(prisma, organizationId))!;
     emulator.completeCheckout(customerId, "active");
     await billing.sync(customerId);
@@ -240,7 +240,17 @@ describePostgres("billing service (PostgreSQL)", () => {
     await billing.cancelForDeletedUser(memberId);
     await expect(billing.status(owner)).resolves.toMatchObject({ access: true });
 
-    await billing.cancelForDeletedUser(ownerId);
+    const membership = { id: `m-${memberId}` };
+    try {
+      await prisma.member.update({ where: membership, data: { role: "owner" } });
+      await billing.cancelForDeletedUser(ownerId);
+      await expect(billing.status(member)).resolves.toMatchObject({ access: true });
+
+      await prisma.member.update({ where: membership, data: { role: "guest" } });
+      await billing.cancelForDeletedUser(ownerId);
+    } finally {
+      await prisma.member.update({ where: membership, data: { role: "member" } });
+    }
     await expect(billing.status(owner)).resolves.toMatchObject({
       access: false,
       state: "canceled",

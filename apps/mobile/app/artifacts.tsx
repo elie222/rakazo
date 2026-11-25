@@ -29,6 +29,7 @@ import type { MobileBot } from "../lib/api/mobile-types";
 import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
+import { isMediaArtifact, mediaArtifactGallery } from "../lib/artifacts/artifact-gallery";
 import type { MobileArtifactSummary } from "../lib/artifacts/artifacts";
 import {
   listSpaceArtifacts,
@@ -41,10 +42,12 @@ import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useThemedStyles } from "../lib/native/native";
 import { rpcQuery } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
+import { useBackToSettings } from "../lib/settings/back-to-settings";
 
 const PAGE_SIZE = 30;
 
 export default function ArtifactsScreen() {
+  useBackToSettings();
   const sideInsets = useSideInsets();
   const navigation = useNavigation();
   const router = useRouter();
@@ -256,6 +259,11 @@ export default function ArtifactsScreen() {
     if (!queryActive) return items;
     return items.filter((item) => matchesArtifactQuery(item, query));
   }, [items, query, queryActive]);
+  const mediaGallery = useMemo(() => mediaArtifactGallery(filtered ?? []), [filtered]);
+  const mediaGalleryParam = useMemo(
+    () => (mediaGallery.length > 1 ? JSON.stringify(mediaGallery) : undefined),
+    [mediaGallery],
+  );
   const botsById = useMemo(() => new Map((bots ?? []).map((bot) => [bot.id, bot])), [bots]);
 
   useEffect(() => {
@@ -421,7 +429,17 @@ export default function ArtifactsScreen() {
           <ArtifactRow
             item={item}
             bot={activeBotId === null && item.botId ? botsById.get(item.botId) : undefined}
-            onPress={() => router.push({ pathname: "/artifact", params: { artifactId: item.id } })}
+            onPress={() =>
+              router.push({
+                pathname: "/artifact",
+                params: {
+                  artifactId: item.id,
+                  ...(mediaGalleryParam && isMediaArtifact(item)
+                    ? { gallery: mediaGalleryParam }
+                    : {}),
+                },
+              })
+            }
             onLongPress={() => confirmDelete(item)}
           />
         )}

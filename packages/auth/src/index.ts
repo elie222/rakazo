@@ -12,6 +12,7 @@ import {
   isMessagingEmail,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
+  parseEnvFlag,
   partnerClickFromHeaders,
   signupAttributionFromHeaders,
   signupPolicyFromEnv,
@@ -19,8 +20,8 @@ import {
 import type { PrismaClient, SecurityEventType } from "@rakazo/db";
 import {
   bootstrapUserSpace,
+  clearAccountIdentity,
   OwnedOrganizationHasMembersError,
-  personalOrganizationIds,
   recordSecurityEvent,
   SpaceDeletionInProgressError,
 } from "@rakazo/db";
@@ -82,6 +83,7 @@ export type { HomeDeletionReason } from "./home-deletion-email.js";
 export { homeDeletionEmail } from "./home-deletion-email.js";
 export { modelConnectionEmail } from "./model-connection-email.js";
 export type { OidcConfig } from "./oidc.js";
+export { oidcAuthorizationParams } from "./oidc.js";
 export {
   organizationInvitationEmail,
   spaceInvitationEmail,
@@ -176,11 +178,17 @@ const ACCOUNT_EVENT_PATHS: Record<string, SecurityEventType> = {
   "/passkey/delete-passkey": "auth.passkey.removed",
 };
 
-/** Shared across API processes. Off outside production so tests can sign in freely. */
-export function authRateLimitOptions(nodeEnv = process.env.NODE_ENV) {
+/**
+ * Shared across API processes. Off outside production so tests can sign in freely, unless
+ * `AUTH_RATE_LIMIT_ENABLED` says otherwise.
+ */
+export function authRateLimitOptions(
+  nodeEnv = process.env.NODE_ENV,
+  override = process.env.AUTH_RATE_LIMIT_ENABLED,
+) {
   const rule = { window: 15 * 60, max: 10 };
   return {
-    enabled: nodeEnv === "production",
+    enabled: parseEnvFlag("AUTH_RATE_LIMIT_ENABLED", override, nodeEnv === "production"),
     storage: "database" as const,
     customRules: {
       ...Object.fromEntries(CREDENTIAL_PATHS.map((path) => [path, rule])),
@@ -464,19 +472,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               throw new APIError("CONFLICT", { message: error.message });
             throw error;
           }
-          const organizationIds = await personalOrganizationIds(prisma, user.id);
-
-          await prisma.$transaction(async (tx) => {
-            // Messaging identities are deliberately FK-free, so clear them
-            // here or the unique address would point at a deleted bot forever.
-            await tx.messagingIdentity.deleteMany({
-              where: { userId: user.id },
-            });
-            await tx.passkey.deleteMany({ where: { userId: user.id } });
-            await tx.organization.deleteMany({
-              where: { id: { in: organizationIds } },
-            });
-          });
+          await prisma.$transaction((tx) => clearAccountIdentity(tx, user.id));
         },
         afterDelete: async (user) => {
           await recordSecurityEvent({ type: "auth.account.deleted", userId: user.id });

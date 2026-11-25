@@ -20,6 +20,7 @@ import {
 import type { ActionApprovalRule } from "@rakazo/core";
 import {
   connectorKindFromToolName,
+  connectorToolApprovalIdentity,
   isAbandonedRequest,
   redactSecrets,
   watchToolRefusal,
@@ -51,6 +52,7 @@ import {
 import { recordVaultItemUse } from "../secrets/vault/vault-activity.js";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
 import { fetchSafeHttpRequest } from "../web/web-ssrf.js";
+import { endWatchPastItsEnd } from "./routine-end.js";
 import { ROUTINE_WATCH_NOTE_START, routineWatchNote } from "./routine-watch.prompt.js";
 import { resolveWatchArgs } from "./routine-watch-args.js";
 
@@ -756,11 +758,12 @@ async function readTool(
   if (!resolved) {
     throw new RoutineWatchError(`No connected integration has a tool named ${toolName}.`);
   }
+  const approval = connectorToolApprovalIdentity(resolved.tool.name, resolved.tool.route);
   const refusal = watchToolRefusal({
-    toolName: resolved.tool.route?.connectionId ? resolved.tool.route.toolName : resolved.tool.name,
-    toolAliases: [resolved.tool.name],
+    toolName: approval.name,
+    toolAliases: approval.aliases,
     connectorKind: connectorKindFromToolName(
-      resolved.tool.route?.connectionId ? resolved.tool.route.toolName : resolved.tool.name,
+      approval.name,
       ctx.connectedConnections?.map((row) => row.externalId),
     ),
     readOnly: declaredRead(resolved.tool),
@@ -854,7 +857,11 @@ export type RoutineWatchTickDeps = RoutineWatchDeps & {
   jobs: JobPublisher;
 };
 
-type TickRoutine = RoutineWatchTarget & { name: string };
+type TickRoutine = RoutineWatchTarget & {
+  name: string;
+  threadId?: string | null;
+  endsAt?: Date | null;
+};
 
 export type RoutineWatchTick =
   | { run: false }
@@ -947,7 +954,7 @@ export async function tickRoutineWatch(
         spaceId: routine.spaceId,
         ...target,
         role: "bot",
-        text: `I paused the **${routine.name}** routine because its change check failed: ${reason}\n\nTell me how to fix it, or turn the routine back on once it's sorted.`,
+        text: `I paused the **${routine.name}** routine because its change check failed: ${reason}\n\nReply here and I'll help fix it.`,
       });
     }
     return { run: false };
@@ -964,6 +971,7 @@ export async function tickRoutineWatch(
       note: routineWatchNote(describeRoutineWatch(watch), outcome.state.detail),
     };
   }
+  if (await endWatchPastItsEnd(deps, routine, nextRunAt, scheduledAt)) return { run: false };
   const claimed = await deps.prisma.routine.updateMany({
     where: { id: routine.id, userId: routine.userId, active: true, nextRunAt: scheduledAt },
     data: { nextRunAt, watchState: outcome.state },
@@ -986,7 +994,7 @@ export async function tickRoutineWatch(
 
 /** A line in the routine's thread without a model run. */
 export async function postRoutineWatchMessage(
-  deps: Pick<RoutineWatchDeps, "prisma" | "events">,
+  deps: { prisma: PrismaClient; events: Pick<ThreadEvents, "notify"> },
   input: {
     spaceId: string;
     threadId: string;

@@ -224,8 +224,11 @@ export function useIdentityConfirmation() {
     setOpen(false);
   }, []);
   useEffect(() => () => settle.current?.(false), []);
+  /** Closes a confirmation still on screen, as if the person had dismissed it. */
+  const cancel = useCallback(() => onDone(false), [onDone]);
   return {
     withIdentityConfirmation,
+    cancel,
     identityDialog: <ConfirmIdentityDialog open={open} onDone={onDone} />,
   };
 }

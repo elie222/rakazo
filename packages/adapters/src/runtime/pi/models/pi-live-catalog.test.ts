@@ -10,6 +10,7 @@ import {
   liveCatalogEntry,
   ProviderCatalogCache,
   providerLiveCatalogsForSpace,
+  savedCatalogSelections,
 } from "./pi-live-catalog.js";
 import { isChatModelId } from "./pi-live-model.js";
 import { listPiCatalog } from "./pi-models.js";
@@ -38,8 +39,41 @@ afterEach(() => {
 });
 
 describe("live catalog merge and execution", () => {
+  it("keeps saved models when another connection disappears during the catalog read", async () => {
+    const prisma = {
+      userModelCredential: {
+        findMany: vi.fn().mockResolvedValue([
+          { provider: "openai", userPreferences: [] },
+          {
+            provider: "openai",
+            userPreferences: [{ modelId: "gpt-saved" }, { modelId: null }],
+          },
+        ]),
+      },
+      userModelPreference: {
+        findMany: vi.fn().mockResolvedValue([{ modelId: "gpt-detached", credential: undefined }]),
+      },
+      bot: { findMany: vi.fn().mockResolvedValue([]) },
+      routine: { findMany: vi.fn().mockResolvedValue([]) },
+      userModelRoleChoice: { findMany: vi.fn().mockResolvedValue([]) },
+      spaceModelRoleChoice: { findMany: vi.fn().mockResolvedValue([]) },
+      deploymentSettings: { findFirst: vi.fn().mockResolvedValue(null) },
+    };
+
+    await expect(
+      savedCatalogSelections(
+        prisma as unknown as Parameters<typeof savedCatalogSelections>[0],
+        "user-test",
+      ),
+    ).resolves.toEqual(new Set(["openai:gpt-saved"]));
+    expect(prisma.userModelCredential.findMany).toHaveBeenCalledWith({
+      where: { userId: "user-test" },
+      select: { provider: true, userPreferences: { select: { modelId: true } } },
+    });
+  });
+
   it("recomputes recommendations for live IDs instead of inheriting a sibling's flag", () => {
-    expect(liveCatalogEntry("openai-codex", "gpt-6-luna")?.recommended).toBe(true);
+    expect(liveCatalogEntry("openai-codex", "gpt-6.1-sol")?.recommended).toBe(true);
     expect(liveCatalogEntry("openai-codex", "gpt-future-chat")?.recommended).toBe(false);
   });
 

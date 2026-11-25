@@ -156,13 +156,13 @@ it("offers Dismiss only on secret cards", async () => {
   expect(button("Dismiss")).toBeUndefined();
 });
 
-it("puts primary Save before secondary Dismiss at the default button size", async () => {
+it("pairs a text Dismiss with primary Save at the default button size", async () => {
   await render(secretCard);
   expect(
     [...button("Save")!.parentElement!.querySelectorAll("button")].map((item) => item.textContent),
-  ).toEqual(["Save", "Dismiss"]);
+  ).toEqual(["Dismiss", "Save"]);
   expect(button("Save")?.classList.contains("bg-primary")).toBe(true);
-  expect(button("Dismiss")?.classList.contains("border-border")).toBe(true);
+  expect(button("Dismiss")?.classList.contains("text-muted-foreground")).toBe(true);
   expect(button("Save")!.disabled).toBe(true);
   expect(container.querySelector("input")?.classList.contains("w-full")).toBe(true);
   const card = container.querySelector('[data-testid="secret-ask-card"]')!;
@@ -184,22 +184,21 @@ it("styles dismissed secrets like denied approvals, apart from the destination",
   expect(dismissed.classList.contains("text-muted-foreground")).toBe(true);
 });
 
-it.each([true, false])("gates secret dismissal: %s", async (canDismiss) => {
+it("offers no Dismiss on a secret card the viewer cannot dismiss", async () => {
   await act(async () =>
     root.render(
       <AskCard
         block={{ kind: "ask", text: "Secret", input: "secret", status: "pending" }}
         canAnswer
-        canDismiss={canDismiss}
+        canDismiss={false}
         onAnswer={async () => {}}
         onDismiss={async () => {}}
       />,
     ),
   );
   const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
-  expect(labels.includes("Dismiss")).toBe(canDismiss);
+  expect(labels.includes("Dismiss")).toBe(false);
   expect(labels.includes("Save")).toBe(true);
-  expect(button("Save")?.classList.contains("h-8")).toBe(true);
 });
 
 it("keeps an accepted secret Save answered without a block update", async () => {

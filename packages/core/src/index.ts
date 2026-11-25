@@ -26,6 +26,7 @@ export * from "./avatars/logo-avatar-traits.js";
 export * from "./avatars/notification-avatar.js";
 export * from "./billing/spending.js";
 export * from "./billing/subscription.js";
+export * from "./bots/bot-chat-route.js";
 export * from "./bots/bot-look.js";
 export * from "./bots/bot-mentions.js";
 export * from "./bots/bot-messages.js";
@@ -72,6 +73,7 @@ export * from "./integrations/featured-connectors.js";
 export * from "./integrations/integration-catalog.js";
 export * from "./integrations/mcp.js";
 export * from "./integrations/mcp-app.js";
+export * from "./integrations/mcp-server-update.js";
 export * from "./integrations/plugin-catalog.js";
 export * from "./integrations/vault.js";
 export * from "./locale/device-timezone.js";
@@ -129,9 +131,11 @@ export * from "./primitives/retry-policy.js";
 export * from "./primitives/search.js";
 export {
   formatShortHistoryDate,
+  isEndOfZonedDay,
   validTimezoneOrUtc,
   wallClock,
   zonedDateTime,
+  zonedEndDateTime,
 } from "./primitives/time.js";
 export * from "./primitives/user-error.js";
 export * from "./primitives/utf8.js";

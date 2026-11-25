@@ -39,6 +39,8 @@ import type {
 } from "@rakazo/contracts";
 import {
   BotSecretAuth,
+  botInboundPath,
+  botInboundUrl,
   noneSkipped,
   resolveBotAvatarSet,
   VaultPolicy,
@@ -339,8 +341,7 @@ export function botsRoutes(ctx: RouterContext) {
         repos.listBots(context.actor, { archived: true }),
       ),
       get: authed.bots.get.handler(async ({ context, input }) => {
-        const found = (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId);
-        if (!found) throw new IsolationError();
+        const found = await repos.getBotView(context.actor, input.botId);
         return { ...found, meetingsEnabled: await deps.meetings?.visible(context.actor, found.id) };
       }),
       create: authed.bots.create.handler(async ({ context, input }) => {
@@ -507,10 +508,7 @@ export function botsRoutes(ctx: RouterContext) {
         for (const setting of changedBotSettings(existing, input)) {
           deps.analytics?.capture(context.actor.userId, { name: "bot_setting_changed", setting });
         }
-        const bots = await repos.listBots(context.actor);
-        const bot = bots.find((b) => b.id === input.botId);
-        if (!bot) throw new IsolationError();
-        return bot;
+        return repos.getBotView(context.actor, input.botId);
       }),
       restoreInstructions: authed.bots.restoreInstructions.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
@@ -526,7 +524,7 @@ export function botsRoutes(ctx: RouterContext) {
           expectedInstructions: input.expectedInstructions,
           instructionRestore: { versionId: input.versionId, undo: input.undo },
         });
-        return (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId)!;
+        return repos.getBotView(context.actor, input.botId);
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
         const { bot, switched } = await switchBotComputer(
@@ -622,7 +620,7 @@ export function botsRoutes(ctx: RouterContext) {
         if (!plaintext) throw new ClientError("NOT_FOUND", "Not Found");
         return {
           secret: plaintext,
-          path: `/api/v1/bots/${bot.id}/webhook`,
+          path: botInboundPath(bot.id, "webhook"),
           webhookConfigured: true as const,
         };
       }),
@@ -659,7 +657,8 @@ export function botsRoutes(ctx: RouterContext) {
           spaceId: context.actor.spaceId,
           metadata: { procedure: "bots.revealWebhookSecret", kind: "webhook", botId: bot.id },
         });
-        return { secret };
+        const origin = deps.env.publishedInboundOrigin;
+        return origin ? { secret, url: botInboundUrl(origin, bot.id, "webhook") } : { secret };
       }),
     },
     groups: {

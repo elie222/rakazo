@@ -6,7 +6,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { RoutineList } from "./RoutineList";
+import { RoutineList, routineTriggerSummary } from "./RoutineList";
 
 vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({
@@ -39,6 +39,7 @@ function routine(index: number): Routine {
     watchState: null,
     lastRunAt: null,
     nextRunAt: null,
+    endsAt: null,
     createdAt: "2026-10-01T00:00:00.000Z",
   };
 }
@@ -139,4 +140,11 @@ it("names a routine's owner only when it is another member's", async () => {
       (node) => node.textContent,
     ),
   ).toEqual(["Dana"]);
+});
+
+it("says until when a routine ends", () => {
+  const year = new Date().getUTCFullYear();
+  expect(routineTriggerSummary({ ...routine(1), endsAt: `${year}-11-30T23:59:59.999Z` })).toBe(
+    "Every day at 9:00 AM, until Nov 30",
+  );
 });
