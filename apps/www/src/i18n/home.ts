@@ -1081,7 +1081,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "Otwarty kod źródłowy",
-      copy: "Licencja Apache-2.0. Uruchom Rakazo i dostosuj kod do swoich potrzeb.",
+      copy: "Licencja Apache-2.0, bezpłatna także do użytku komercyjnego. Uruchom Rakazo i dostosuj kod do swoich potrzeb.",
       starOnGithub: "Dodaj gwiazdkę na GitHubie",
       readTheDocs: "Przeczytaj dokumentację",
       cloudTitle: "Chmura",
@@ -1259,7 +1259,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "Open source",
-      copy: "Apache-2.0. Run it, change it, make it yours.",
+      copy: "Apache-2.0, free for commercial use. Run it, change it, make it yours.",
       starOnGithub: "Star on GitHub",
       readTheDocs: "Read the docs",
       cloudTitle: "Cloud",
@@ -1449,7 +1449,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "Open Source",
-      copy: "Apache-2.0. Selbst betreiben, ändern und anpassen.",
+      copy: "Apache-2.0, auch kommerziell kostenlos nutzbar. Selbst betreiben, ändern und anpassen.",
       starOnGithub: "Auf GitHub mit Stern markieren",
       readTheDocs: "Docs lesen",
       cloudTitle: "Cloud",
@@ -1621,7 +1621,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "오픈소스",
-      copy: "Apache-2.0. 직접 실행하고 원하는 대로 수정하세요.",
+      copy: "Apache-2.0, 상업적 용도로도 무료입니다. 직접 실행하고 원하는 대로 수정하세요.",
       starOnGithub: "GitHub에서 Star",
       readTheDocs: "문서 읽기",
       cloudTitle: "Cloud",
@@ -1784,7 +1784,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "开源",
-      copy: "Apache-2.0。自由运行、修改，按需定制。",
+      copy: "Apache-2.0，可免费商用。自由运行、修改，按需定制。",
       starOnGithub: "在 GitHub 上点星",
       readTheDocs: "阅读文档",
       cloudTitle: "云端",
@@ -1960,7 +1960,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "オープンソース",
-      copy: "Apache-2.0。自由に実行し、変更して、自分のものに。",
+      copy: "Apache-2.0、商用利用も無料。自由に実行し、変更して、自分のものに。",
       starOnGithub: "GitHub で Star する",
       readTheDocs: "ドキュメントを読む",
       cloudTitle: "クラウド",
@@ -2144,7 +2144,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "Código abierto",
-      copy: "Apache-2.0. Ejecútalo, modifícalo, hazlo tuyo.",
+      copy: "Apache-2.0, gratis para uso comercial. Ejecútalo, modifícalo, hazlo tuyo.",
       starOnGithub: "Dar una estrella en GitHub",
       readTheDocs: "Leer la documentación",
       cloudTitle: "Cloud",
@@ -2334,7 +2334,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "Open source",
-      copy: "Apache-2.0. Exécutez-le, modifiez-le, appropriez-le-vous.",
+      copy: "Apache-2.0, gratuit pour un usage commercial. Exécutez-le, modifiez-le, appropriez-le-vous.",
       starOnGithub: "Ajouter une étoile sur GitHub",
       readTheDocs: "Lire la documentation",
       cloudTitle: "Cloud",
@@ -2521,7 +2521,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "Código aberto",
-      copy: "Apache-2.0. Rode, modifique, deixe do seu jeito.",
+      copy: "Apache-2.0, gratuito para uso comercial. Rode, modifique, deixe do seu jeito.",
       starOnGithub: "Dar estrela no GitHub",
       readTheDocs: "Ler a documentação",
       cloudTitle: "Cloud",
@@ -2705,7 +2705,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "Open source",
-      copy: "Apache-2.0. Draai het, pas het aan, maak het je eigen.",
+      copy: "Apache-2.0, gratis voor commercieel gebruik. Draai het, pas het aan, maak het je eigen.",
       starOnGithub: "Ster geven op GitHub",
       readTheDocs: "Lees de docs",
       cloudTitle: "Cloud",
@@ -2889,7 +2889,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "Открытый исходный код",
-      copy: "Apache-2.0. Запускайте, меняйте, настраивайте под себя.",
+      copy: "Apache-2.0, бесплатно и для коммерческого использования. Запускайте, меняйте, настраивайте под себя.",
       starOnGithub: "Поставить звезду на GitHub",
       readTheDocs: "Читать документацию",
       cloudTitle: "Облако",
@@ -3073,7 +3073,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "Açık kaynak",
-      copy: "Apache-2.0. Çalıştırın, değiştirin, size göre uyarlayın.",
+      copy: "Apache-2.0, ticari kullanım için de ücretsiz. Çalıştırın, değiştirin, size göre uyarlayın.",
       starOnGithub: "GitHub'da yıldız verin",
       readTheDocs: "Belgeleri okuyun",
       cloudTitle: "Bulut",
@@ -3250,7 +3250,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "קוד פתוח",
-      copy: "Apache-2.0. אפשר להריץ, לשנות ולהתאים לעצמך.",
+      copy: "Apache-2.0, חינם גם לשימוש מסחרי. אפשר להריץ, לשנות ולהתאים לעצמך.",
       starOnGithub: "סימון בכוכב ב-GitHub",
       readTheDocs: "לקריאת התיעוד",
       cloudTitle: "ענן",
@@ -3433,7 +3433,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "ओपन सोर्स",
-      copy: "Apache-2.0. इसे चलाएं, बदलें, अपने हिसाब से बनाएं।",
+      copy: "Apache-2.0, व्यावसायिक उपयोग के लिए भी मुफ़्त। इसे चलाएं, बदलें, अपने हिसाब से बनाएं।",
       starOnGithub: "GitHub पर स्टार करें",
       readTheDocs: "दस्तावेज़ पढ़ें",
       cloudTitle: "क्लाउड",
@@ -3596,7 +3596,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     openSource: {
       heading: "開源",
-      copy: "Apache-2.0。自由執行、修改，打造成你要的樣子。",
+      copy: "Apache-2.0，可免費商用。自由執行、修改，打造成你要的樣子。",
       starOnGithub: "在 GitHub 上加星號",
       readTheDocs: "閱讀說明文件",
       cloudTitle: "雲端",

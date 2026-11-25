@@ -443,6 +443,25 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   margin-top: 14px;
 }
 
+.hero__platforms {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 20px;
+  margin-top: 18px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.hero__platforms a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.hero__platforms a:hover {
+  color: var(--ink);
+}
+
 .setup-copy {
   display: inline-flex;
   min-height: 42px;
