@@ -290,12 +290,16 @@ class Tabs:
 
     def trim(self, tabs: list[dict[str, Any]], own: Any = None) -> list[dict[str, Any]]:
         """Close the tabs beyond MAX_TABS, longest out of sight first. The tab in front and the call's
-        own tab stay."""
+        own tab stay, and nothing closes until the session has moved to the tab in front."""
         extra = [tab.get("id") for tab in reversed(tabs[1:]) if tab.get("id") != own][:max(0, len(tabs) - MAX_TABS)]
         if not extra:
             return tabs
-        # The tab in front stays, as the oldest out of sight go: the session stays on it.
-        closed = self.close(extra, tabs[0].get("id"))
+        try:
+            self.select(tabs[0].get("id"))
+        except (OSError, RuntimeError):
+            # Left for a call that can move the session: one of these closed under it stops it answering.
+            return tabs
+        closed = self.close(extra, None)
         self.trimmed += len(closed)
         return page_tabs(self.port)
 
@@ -2679,6 +2683,7 @@ def run(argv: list[str]) -> int:
     connected = False
     opened = False
     page: PageBrowser | None = None
+    tabs: Tabs | None = None
     try:
         if command == "purchase_check":
             # No browser running, no tab open, or one of Chromium's own pages: nothing on it can be bought.
@@ -2700,7 +2705,6 @@ def run(argv: list[str]) -> int:
         version = wait_for_cdp(port)
         connected = True
         browser = AgentBrowser(port)
-        tabs: Tabs | None = None
         # Best effort here and below: a tab list that fails leaves the call as it was. A purchase check
         # presses nothing, so it leaves the tabs and what they have opened to the next call.
         if command != "purchase_check":
@@ -2811,7 +2815,8 @@ def run(argv: list[str]) -> int:
         dialog = page.dialog() if page and command != "purchase_check" else None
         failure = page.dialog_result(dialog, {}) if page and dialog else {
             "ok": False, "error": str(exc), "fallback": "computer_act", "uncertain": command == "act" and connected}
-        print(json.dumps({**failure, **({"downloads": saved} if saved else {})}))
+        note = tabs.note([], [], "") if tabs else None
+        print(json.dumps({**failure, **({"note": note} if note else {}), **({"downloads": saved} if saved else {})}))
         return 0
     finally:
         if page:

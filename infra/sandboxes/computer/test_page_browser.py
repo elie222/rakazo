@@ -1770,14 +1770,24 @@ class NewTabTest(unittest.TestCase):
                           opens=[f"p{index}" for index in range(5)])
         self.assertEqual(chromium.closed, [])
 
-    def test_a_call_that_cannot_reach_its_page_still_closes_the_tabs_beyond_eight(self):
+    def test_a_call_that_cannot_reach_its_page_still_closes_the_tabs_beyond_eight_and_says_so(self):
         chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
-        result, reads, _ = self.run_call(chromium, {}, unreachable=RuntimeError(helper.NO_ANSWER))
+        # The session moves to the tab in front; then the call's own move to its tab fails.
+        result, reads, _ = self.run_call(chromium, {}, unreachable=[None, RuntimeError(helper.NO_ANSWER)])
         self.assertEqual(result, {"ok": False, "error": helper.NO_ANSWER, "fallback": "computer_act",
-                                  "uncertain": False})
+                                  "uncertain": False,
+                                  "note": "Closed the 5 tabs in the background longest, to keep at most 8 tabs open."})
         self.assertEqual(reads, [])
         self.assertEqual((chromium.ids, chromium.closed),
                          (["own", *(f"r{index}" for index in range(7))], [f"r{index}" for index in range(11, 6, -1)]))
+
+    def test_the_tabs_beyond_eight_stay_while_the_session_cannot_move_to_the_tab_in_front(self):
+        chromium = FakeTabs(*(f"r{index}" for index in range(10)))
+        tabs = helper.Tabs(self.home, 9222, "browser-1", Mock(side_effect=RuntimeError(helper.NO_ANSWER)))
+        with patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            self.assertEqual([tab["id"] for tab in tabs.trim(chromium.list())], chromium.ids)
+        self.assertEqual((chromium.closed, tabs.note([], [], "")), ([], None))
 
     def test_a_tab_list_that_fails_leaves_the_result_as_it_is(self):
         reports = {"ok": True, "title": "Report", "tree": "", "elements": []}
