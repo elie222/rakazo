@@ -522,49 +522,54 @@ function redactCompactedStreams(
           });
         }
       }
-      // Collect ordinary spanning secrets from the raw boundary before applying any cut mask so
-      // masking one secret cannot hide the boundary text needed to detect an overlapping secret.
+      // Collect ordinary spanning secrets and live partial prefixes from the raw boundary before
+      // applying any cut mask so masking one secret cannot hide the boundary text needed to detect
+      // another, regardless of secret registration order.
       const stdoutTailPrefix = stdout.compacted ? stdout.tailCutRedactedPrefix() : 0;
       const stderrHeadSuffix = stderr.compacted ? stderr.headCutRedactedSuffix() : 0;
       const hasCutMask =
         stdoutTrailing > 0 || stderrLeading > 0 || stdoutTailPrefix > 0 || stderrHeadSuffix > 0;
-      if (stderrHead.length > 0 && hasCutMask) {
-        const rawSpans = collectSpanningMatches(stdoutTail, stderrHead, secrets);
+      if (hasCutMask) {
+        const edges: Array<{ prefixLen: number; suffixLen: number; fromStderrCut: boolean }> = [];
+        if (stderrHead.length > 0) {
+          for (const { maxPrefixLen, maxSuffixLen } of collectSpanningMatches(
+            stdoutTail,
+            stderrHead,
+            secrets,
+          )) {
+            edges.push({ prefixLen: maxPrefixLen, suffixLen: maxSuffixLen, fromStderrCut: true });
+          }
+        }
+        if (withholdPartial) {
+          for (const secret of secrets) {
+            if (secret.length < 2) continue;
+            const prefixLen = secretPrefixSuffixLength(stdoutTail, secret);
+            if (prefixLen <= 0) continue;
+            const suffixLen =
+              stderrHead.length > 0 ? secretContinuationLen(stderrHead, secret, prefixLen) : 0;
+            edges.push({ prefixLen, suffixLen, fromStderrCut: false });
+          }
+        }
         let grew = true;
         while (grew) {
           grew = false;
-          for (const { maxPrefixLen, maxSuffixLen } of rawSpans) {
+          for (const { prefixLen, suffixLen, fromStderrCut } of edges) {
             const touchesMask =
               stdoutTrailing > 0 ||
               stderrLeading > 0 ||
-              (stdoutTailPrefix > 0 && stdoutTailPrefix > stdoutTail.length - maxPrefixLen) ||
-              (stderrHeadSuffix > 0 && stderrHeadSuffix > stderrHead.length - maxSuffixLen);
+              (stdoutTailPrefix > 0 && stdoutTailPrefix > stdoutTail.length - prefixLen) ||
+              (fromStderrCut &&
+                stderrHeadSuffix > 0 &&
+                stderrHeadSuffix > stderrHead.length - suffixLen);
             if (!touchesMask) continue;
-            if (maxPrefixLen > stdoutTrailing) {
-              stdoutTrailing = maxPrefixLen;
+            if (prefixLen > stdoutTrailing) {
+              stdoutTrailing = prefixLen;
               grew = true;
             }
-            if (maxSuffixLen > stderrLeading) {
-              stderrLeading = maxSuffixLen;
+            if (suffixLen > stderrLeading) {
+              stderrLeading = suffixLen;
               grew = true;
             }
-          }
-        }
-      }
-      if (withholdPartial && (stdoutTrailing > 0 || stderrLeading > 0 || stdoutTailPrefix > 0)) {
-        for (const secret of secrets) {
-          if (secret.length < 2) continue;
-          const prefixLen = secretPrefixSuffixLength(stdoutTail, secret);
-          if (prefixLen <= 0) continue;
-          const touchesMask =
-            stdoutTrailing > 0 ||
-            stderrLeading > 0 ||
-            (stdoutTailPrefix > 0 && stdoutTailPrefix > stdoutTail.length - prefixLen);
-          if (!touchesMask) continue;
-          stdoutTrailing = Math.max(stdoutTrailing, prefixLen);
-          if (stderrHead.length > 0) {
-            const cont = secretContinuationLen(stderrHead, secret, prefixLen);
-            if (cont > 0) stderrLeading = Math.max(stderrLeading, cont);
           }
         }
       }

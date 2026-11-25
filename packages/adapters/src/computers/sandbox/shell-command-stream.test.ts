@@ -702,6 +702,72 @@ describe("observeShellCommand", () => {
     expect(liveObserved.result.stderr).not.toContain(liveStderrPart2);
     expect(liveObserved.result.stderr).toContain("LIVE_DONE");
 
+    // Live boundary withholding and spanning redaction must be independent of secret registration
+    // order when one secret touches stdout's cut mask and expands stdoutTrailing over another.
+    const cutTail = "CUT_TAIL_MARKER_";
+    const cutSecret = `CUT_HEAD_${cutTail}`;
+    const tailFiller = "m".repeat(63_972);
+    const outsidePrefix = "OUT_PRE_";
+    const outsideStderrPart1 = "OUT_STDERR_P1_";
+    const outsideStderrPart2 = "OUT_STDERR_P2";
+    const outsideSecret = `${outsidePrefix}${outsideStderrPart1}${outsideStderrPart2}`;
+    const overlappingPrefixSecret = `AD_${cutTail}${tailFiller}${outsidePrefix}NEVER_EMITTED`;
+    for (const orderedSecrets of [
+      [cutSecret, outsideSecret, overlappingPrefixSecret],
+      [cutSecret, overlappingPrefixSecret, outsideSecret],
+    ]) {
+      const orderSecrets: string[] = [];
+      const orderRegisterGate = deferred();
+      const orderPart2Gate = deferred();
+      const orderExitGate = deferred();
+      const orderLiveSnapshots: Array<{ stdout: string; stderr: string }> = [];
+      let stage = 0;
+      const orderObserved = await observeShellCommand(
+        (async function* () {
+          yield {
+            type: "stdout" as const,
+            data: `${"p".repeat(160_000)}CUT_HEAD_${cutTail}${tailFiller}${outsidePrefix}`,
+          };
+          await orderRegisterGate.promise;
+          yield { type: "stderr" as const, data: outsideStderrPart1 };
+          await orderPart2Gate.promise;
+          yield { type: "stderr" as const, data: `${outsideStderrPart2}\nORDER_DONE\n` };
+          await orderExitGate.promise;
+          yield { type: "exit" as const, code: 0 };
+        })(),
+        {
+          secrets: orderSecrets,
+          onOutput: (snapshot) => {
+            if (stage === 0 && snapshot.stdout.includes("characters omitted")) {
+              stage = 1;
+              orderSecrets.push(...orderedSecrets);
+              orderRegisterGate.resolve();
+              return;
+            }
+            if (stage === 1) {
+              stage = 2;
+              orderLiveSnapshots.push(snapshot);
+              orderPart2Gate.resolve();
+              return;
+            }
+            if (stage === 2) {
+              stage = 3;
+              orderLiveSnapshots.push(snapshot);
+              orderExitGate.resolve();
+            }
+          },
+        },
+      );
+      expect(orderLiveSnapshots).toHaveLength(2);
+      for (const snap of orderLiveSnapshots) {
+        expect(snap.stderr).not.toContain(outsideStderrPart1);
+        expect(snap.stderr).not.toContain(outsideStderrPart2);
+      }
+      expect(orderObserved.result.stderr).not.toContain(outsideStderrPart1);
+      expect(orderObserved.result.stderr).not.toContain(outsideStderrPart2);
+      expect(orderObserved.result.stderr).toContain("ORDER_DONE");
+    }
+
     // Repeated 16 KiB spanning secret over a compacted boundary stays linear via KMP.
     // Late secret (90,001 chars) exceeds retained stderr head (64,000 + 16,383 = 80,383), so the
     // compacted cut activates collectSpanningMatches on the 16 KiB secret and expands stdoutTrailing
