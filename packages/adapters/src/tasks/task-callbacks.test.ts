@@ -15,7 +15,12 @@ const url = "https://hooks.example.test/rakazo";
 
 function setup(
   runStatus: string,
-  { answer = 204, delivered = {} as { runId?: string; status?: string } } = {},
+  {
+    answer = 204,
+    delivered = {} as { runId?: string; status?: string },
+    keyActive = true,
+    member = true,
+  } = {},
 ) {
   const update = vi.fn(async () => ({ count: 1 }));
   const prisma = {
@@ -26,6 +31,7 @@ function setup(
         url,
         userId: "user-1",
         spaceId: "space-1",
+        apiKeyId: "key-1",
         deliveredRunId: delivered.runId ?? null,
         deliveredStatus: delivered.status ?? null,
         deliveredAt: null,
@@ -43,6 +49,8 @@ function setup(
       })),
     },
     run: { findFirst: vi.fn(async () => ({ id: "run-1", createdAt: now })) },
+    apiKey: { findFirst: vi.fn(async () => (keyActive ? { id: "key-1" } : null)) },
+    spaceMember: { findFirst: vi.fn(async () => (member ? { userId: "user-1" } : null)) },
     message: {
       findMany: vi.fn(async () => [{ id: "m1", blocks: [{ kind: "text", text: "Done" }] }]),
     },
@@ -120,6 +128,15 @@ describe("task callbacks", () => {
       id: `task-1:run-1:needs_input@${now.toISOString()}`,
     });
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "task.callback" }));
+  });
+
+  it("stops for good once the key is revoked or the person left the Space", async () => {
+    for (const lost of [{ keyActive: false }, { member: false }]) {
+      const { deliver, enqueue, requests } = setup("completed", lost);
+      await deliver();
+      expect(requests).toEqual([]);
+      expect(enqueue).not.toHaveBeenCalled();
+    }
   });
 
   it("leaves a refused delivery for the queue to retry", async () => {

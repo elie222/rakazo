@@ -1367,6 +1367,9 @@ model TaskCallback {
   task            Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
   spaceId         String
   userId          String
+  /// The key that asked for it; a revoked key's callbacks stop. No foreign key, so deleting a
+  /// key leaves the row to be skipped rather than deleted mid-delivery.
+  apiKeyId        String
   url             String
   /// The run and task status last sent, so each settled state is sent once.
   deliveredRunId  String?

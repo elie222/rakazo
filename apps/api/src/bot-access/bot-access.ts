@@ -260,13 +260,19 @@ export function createBotAccess(deps: BotAccessDeps) {
    * Reports a task to `url`; the job commits with the row, so a stopped process loses nothing. It
    * looks at once, since a turn may have ended before the row existed for its end to find.
    */
-  async function watchTask(actor: Actor, taskId: string, url: string) {
+  async function watchTask(caller: KeyCaller, actor: Actor, taskId: string, url: string) {
     await runAsTenant(actor, () =>
       prisma.$transaction(async (tx) => {
         await tx.taskCallback.upsert({
           where: { taskId },
-          create: { taskId, url, spaceId: actor.spaceId, userId: actor.userId },
-          update: { url },
+          create: {
+            taskId,
+            url,
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            apiKeyId: caller.keyId,
+          },
+          update: { url, apiKeyId: caller.keyId },
         });
         await deps.jobs.enqueueIn(tx, taskCallbackJob(taskId, new Date()));
       }),
@@ -280,7 +286,7 @@ export function createBotAccess(deps: BotAccessDeps) {
     if (input.callbackUrl) await assertCallbackUrl(input.callbackUrl);
     const bot = await resolveBot(caller, input.bot);
     const { taskId, cursor } = await send(caller, bot.actor, bot.id, input.text);
-    if (input.callbackUrl) await watchTask(bot.actor, taskId, input.callbackUrl);
+    if (input.callbackUrl) await watchTask(caller, bot.actor, taskId, input.callbackUrl);
     return {
       task: await readTask(bot.actor, taskId),
       actor: bot.actor,
@@ -301,7 +307,7 @@ export function createBotAccess(deps: BotAccessDeps) {
     const callback = await runAsTenant(actor, () =>
       prisma.taskCallback.findUnique({ where: { taskId }, select: { url: true } }),
     );
-    if (callback) await watchTask(actor, sent.taskId, callback.url);
+    if (callback) await watchTask(caller, actor, sent.taskId, callback.url);
     return { task: await readTask(actor, sent.taskId), actor, cursor: sent.cursor };
   }
 

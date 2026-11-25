@@ -1,10 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { ApiKey, CreatedApiKey } from "@rakazo/contracts";
 import { API_KEY_NAME_LIMIT, isIdentityConfirmationRequired } from "@rakazo/contracts";
-import { Button, Input } from "@rakazo/ui-web";
+import { Button, Field, FieldGroup, FieldLabel, Input } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Copy, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
@@ -28,6 +28,7 @@ function ApiKeysList() {
   const queries = useSpaceQueries();
   const keys = useQuery(queries.apiKeys.list.queryOptions());
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
+  const nameId = useId();
   const [naming, setNaming] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedApiKey | null>(null);
   const [deleting, setDeleting] = useState<ApiKey | null>(null);
@@ -72,27 +73,34 @@ function ApiKeysList() {
       >
         {naming !== null ? (
           <form
-            className="mt-2 flex items-center gap-2"
+            className="mt-2"
             onSubmit={(event) => {
               event.preventDefault();
               if (naming.trim()) create.run(naming.trim());
             }}
           >
-            <Input
-              aria-label={t`Key name`}
-              placeholder={t`Name`}
-              value={naming}
-              maxLength={API_KEY_NAME_LIMIT}
-              autoFocus
-              onChange={(event) => setNaming(event.target.value)}
-              className="flex-1"
-            />
-            <Button type="submit" size="sm" disabled={create.pending || !naming.trim()}>
-              <Trans>Create</Trans>
-            </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setNaming(null)}>
-              <Trans>Cancel</Trans>
-            </Button>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor={nameId}>
+                  <Trans>Key name</Trans>
+                </FieldLabel>
+                <Input
+                  id={nameId}
+                  value={naming}
+                  maxLength={API_KEY_NAME_LIMIT}
+                  autoFocus
+                  onChange={(event) => setNaming(event.target.value)}
+                />
+              </Field>
+              <Field orientation="horizontal">
+                <Button type="submit" size="sm" disabled={create.pending || !naming.trim()}>
+                  <Trans>Create</Trans>
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setNaming(null)}>
+                  <Trans>Cancel</Trans>
+                </Button>
+              </Field>
+            </FieldGroup>
           </form>
         ) : null}
         {created ? <NewKey created={created} /> : null}

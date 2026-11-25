@@ -57,6 +57,23 @@ describe("createClient", () => {
     expect(() => createClient({ url: "http://localhost:5173", key: "rkz_key" })).not.toThrow();
   });
 
+  it("fails a reply whose stream ends before it finishes", async () => {
+    const client = createClient(
+      config,
+      async () =>
+        new Response(
+          streamOf(`data: ${JSON.stringify({ choices: [{ delta: { content: "Hel" } }] })}\n\n`),
+        ),
+    );
+    const parts: string[] = [];
+    await expect(
+      (async () => {
+        for await (const part of client.chat("Scout", "hi")) parts.push(part);
+      })(),
+    ).rejects.toThrow("stopped before it finished");
+    expect(parts).toEqual(["Hel"]);
+  });
+
   it("reports the server's error message", async () => {
     const client = createClient(config, async () =>
       Response.json({ error: { message: "Invalid API key" } }, { status: 401 }),

@@ -27,6 +27,11 @@ vi.mock("@rakazo/ui-web", () => ({
     ...props
   }: ComponentProps<"button"> & { variant?: string; size?: string }) => <button {...props} />,
   Input: (props: ComponentProps<"input">) => <input {...props} />,
+  Field: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  FieldGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  FieldLabel: ({ htmlFor, children }: { htmlFor: string; children: ReactNode }) => (
+    <label htmlFor={htmlFor}>{children}</label>
+  ),
   useCopyText: () => [false, () => undefined],
 }));
 vi.mock("../account/ConfirmIdentityDialog", () => ({

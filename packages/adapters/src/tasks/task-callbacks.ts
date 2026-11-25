@@ -111,7 +111,24 @@ export async function deliverTaskCallback(
       select: { id: true, createdAt: true },
     }),
   ]);
-  if (!task || !latestRun) return;
+  // Output goes only where the person still could read it themselves: their key, their account
+  // and their place in the Space all still stand. Otherwise the callback stops for good.
+  const [key, member] = await Promise.all([
+    deps.prisma.apiKey.findFirst({
+      where: {
+        id: callback.apiKeyId,
+        referenceId: callback.userId,
+        enabled: { not: false },
+        user: { deactivatedAt: null },
+      },
+      select: { id: true },
+    }),
+    deps.prisma.spaceMember.findFirst({
+      where: { userId: callback.userId, spaceId: callback.spaceId },
+      select: { userId: true },
+    }),
+  ]);
+  if (!task || !latestRun || !key || !member) return;
   const recheck = async () => {
     if (now.getTime() - latestRun.createdAt.getTime() < TASK_CALLBACK_GIVE_UP_MS)
       await deps.jobs.enqueue(

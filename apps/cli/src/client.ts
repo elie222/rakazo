@@ -82,6 +82,7 @@ export function createClient(config: CliConfig, fetchImpl: typeof fetch = fetch)
         const content = chunk.choices?.[0]?.delta?.content;
         if (content) yield content;
       }
+      throw new ApiError(502, "The reply stopped before it finished");
     },
   };
 }

@@ -87,7 +87,10 @@ function eventStream(
     ping: () => void,
     done: () => void,
   ) => Promise<void>,
-  onFailure: (send: (data: unknown, event?: string) => void, message: string) => void,
+  onFailure: (
+    send: (data: unknown, event?: string) => void,
+    failure: { status: number; message: string },
+  ) => void,
   extraHeaders: Record<string, string> = {},
 ): Response {
   const encoder = new TextEncoder();
@@ -112,7 +115,7 @@ function eventStream(
         if (!signal.aborted) {
           const failure = publicApiFailure(error);
           if (!failure) getLogger().error("public API stream failed", error);
-          onFailure(send, failure?.message ?? "The stream stopped");
+          onFailure(send, failure ?? { status: 500, message: "The stream stopped" });
         }
       } finally {
         if (!signal.aborted) controller.close();
@@ -189,7 +192,7 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
             send(chatCompletionChunk(last, request.model, created, {}, "stop"));
           done();
         },
-        (send, message) => send(openAiError(500, message)),
+        (send, failure) => send(openAiError(failure.status, failure.message)),
         headers,
       );
     }),
@@ -234,7 +237,7 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
             else ping();
           }
         },
-        (send, message) => send(taskError(500, message), "error"),
+        (send, failure) => send(taskError(failure.status, failure.message), "error"),
       );
     }),
   );
