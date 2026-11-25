@@ -98,7 +98,8 @@ export function startAcpAgent(
   child.stdin.on("error", inputClosed);
   child.stdin.once("close", inputClosed);
   child.once("error", (error) => endConnection(error));
-  child.once("close", (code, signal) =>
+  // `exit` comes as soon as the process ends, before its pipes close, so its code is what's reported.
+  child.once("exit", (code, signal) =>
     endConnection(new Error(`exited (${signal ?? `exit code ${code ?? "unknown"}`})`)),
   );
 

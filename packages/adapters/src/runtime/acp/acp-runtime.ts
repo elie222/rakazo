@@ -66,6 +66,8 @@ const UNSUPPORTED_TOOLS = new Set([
 
 /** The ACP protocol version this client speaks. */
 const PROTOCOL_VERSION = 1;
+/** How many of its own replies a session remembers, to tell them from replies written elsewhere. */
+const MAX_REMEMBERED_REPLIES = 200;
 /** How much of the chat a new session is given, newest first, in characters. */
 const SEED_CHARS = 32_000;
 /** How long a turn that ends early waits for the CLI to settle its cancelled prompt. */
@@ -529,7 +531,13 @@ async function runAcpTurn(
     }
     replied = true;
     // So the chat's session can tell its own replies from those written elsewhere.
-    if (replyText.trim()) current.replies.add(contentHash(replyText.trim()));
+    if (replyText.trim()) {
+      current.replies.add(contentHash(replyText.trim()));
+      // The newest replies are the ones the chat's history still holds.
+      while (current.replies.size > MAX_REMEMBERED_REPLIES) {
+        current.replies.delete(current.replies.values().next().value!);
+      }
+    }
     // Helpers read the answer from here.
     push(replyText.trim() ? { type: "done", text: replyText } : { type: "done" });
   } catch (error) {
@@ -734,6 +742,11 @@ function turnText(
     lines.push(historyLine(speaker, content));
   }
   if (request.sourceMessageId) session.seen.add(request.sourceMessageId);
+  // Only ids still in the chat's history window can come up again, so the rest are let go.
+  const inWindow = new Set(request.history.map((item) => item.id).filter(Boolean));
+  for (const id of session.seen) {
+    if (!inWindow.has(id) && id !== request.sourceMessageId) session.seen.delete(id);
+  }
   let kept = lines;
   if (fresh) {
     // The newest messages that fit; the newest one is kept, shortened, even when it alone does not.
