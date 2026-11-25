@@ -1,7 +1,15 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { useEffect, useState } from "react";
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
 import { imageArtifactPreview } from "../../lib/artifacts/artifact-open";
@@ -156,7 +164,14 @@ function DeckCard({
       </Text>
     );
   }
-  if (!state) return <View style={styles.filling} />;
+  if (!state) {
+    return (
+      <View style={[styles.filling, { backgroundColor: mobileTokens().muted }]}>
+        <Text style={[styles.failed, { color: labelColor }]}>🖼 {image.name}</Text>
+        <Text style={[styles.failed, { color: labelColor }]}>Loading…</Text>
+      </View>
+    );
+  }
   return (
     <Image
       source={{ uri: state.uri }}

@@ -19,7 +19,7 @@ export function attachmentGroups(blocks: readonly MessageBlock[]): AttachmentGro
   const groups: AttachmentGroup[] = [];
   let index = 0;
   while (index < blocks.length) {
-    const block = blocks[index];
+    const block = blocks[index]!;
     if (block.kind !== "image" && block.kind !== "file") {
       index += 1;
       continue;
@@ -36,9 +36,11 @@ export function attachmentGroups(blocks: readonly MessageBlock[]): AttachmentGro
       }
       if (pictures.length > 1) {
         groups.push({ kind: "pictures", pictures });
-        index += run ? run.length : 1;
+        index += pictures.length;
         continue;
       }
+      // Only one inline picture collected (or none): fall through to single,
+      // advancing by one so the remaining pictures start their own group/single.
     }
     groups.push({ kind: "single", attachment, index });
     index += 1;
