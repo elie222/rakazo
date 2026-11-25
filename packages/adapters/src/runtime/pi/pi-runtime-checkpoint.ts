@@ -84,28 +84,8 @@ export function buildTurnCheckpoint(input: {
   const droppedWatchOutside: string[] = [
     ...(input.priorWatchOutsideText ?? []).filter((entry) => entry.trim().length > 0),
   ];
-  if (input.watchDeliveries) {
-    for (const entry of input.watchDeliveries.values()) {
-      if (isRetained(entry.toolCallId, entry.details.routines)) continue;
-      const synthetic = entry.full
-        ? {
-            details: { ...entry.details, contextBeforeUseText: entry.fullText },
-            content: [{ type: "text", text: entry.fullText }],
-          }
-        : {
-            details: {
-              ...entry.details,
-              ...(entry.texts[0] !== undefined ? { contextBeforeUseText: entry.texts[0] } : {}),
-              ...(entry.texts.length > 1 ? { contextDeliveredTexts: entry.texts } : {}),
-            },
-            content: [{ type: "text", text: entry.texts[0] ?? "" }],
-          };
-      for (const item of watchChecksFromToolResultMessage(synthetic, input.contextStrategy)) {
-        const value = typeof item === "string" ? item : JSON.stringify(item);
-        if (value.trim()) droppedWatchOutside.push(value);
-      }
-    }
-  }
+  // Collect in chronological delivery order (prior dropped -> earlier restored -> current attempt)
+  // so bounded outsideText retention (`MAX_OUTSIDE_TEXT_CHARS`) keeps the newest watch evidence.
   if (input.restoredMessages) {
     // Only results before the paused assistant turn in the restored checkpoint were actually
     // delivered to an earlier model; trailing sibling results await their first delivery.
@@ -128,7 +108,6 @@ export function buildTurnCheckpoint(input: {
           retained.details.routines === details.routines,
       );
       if (!retainedMatch) {
-        // Always union with any narrower delivery recorded during the resumed attempt.
         droppedWatchOutside.push(...restoredItems);
         continue;
       }
@@ -142,7 +121,34 @@ export function buildTurnCheckpoint(input: {
       }
     }
   }
-  const watchOutsideText = [...new Set(droppedWatchOutside)];
+  if (input.watchDeliveries) {
+    for (const entry of input.watchDeliveries.values()) {
+      if (isRetained(entry.toolCallId, entry.details.routines)) continue;
+      const synthetic = entry.full
+        ? {
+            details: { ...entry.details, contextBeforeUseText: entry.fullText },
+            content: [{ type: "text", text: entry.fullText }],
+          }
+        : {
+            details: {
+              ...entry.details,
+              ...(entry.texts[0] !== undefined ? { contextBeforeUseText: entry.texts[0] } : {}),
+              ...(entry.texts.length > 1 ? { contextDeliveredTexts: entry.texts } : {}),
+            },
+            content: [{ type: "text", text: entry.texts[0] ?? "" }],
+          };
+      for (const item of watchChecksFromToolResultMessage(synthetic, input.contextStrategy)) {
+        const value = typeof item === "string" ? item : JSON.stringify(item);
+        if (value.trim()) droppedWatchOutside.push(value);
+      }
+    }
+  }
+  const seenWatchOutside = new Set<string>();
+  for (const entry of droppedWatchOutside) {
+    seenWatchOutside.delete(entry);
+    seenWatchOutside.add(entry);
+  }
+  const watchOutsideText = [...seenWatchOutside];
   const assistant = messages.findLast((message) => message.role === "assistant");
   const sequential =
     input.restoringCalls ||

@@ -2194,3 +2194,163 @@ it("preserves restored watch targets on a second checkpoint after a resumed atte
     ),
   ).toEqual(["first-attempt-target@outside.test"]);
 });
+
+it("preserves delivery order so older restored watch evidence never evicts a newer target", () => {
+  const emptyUsage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+  // Each older watch result expands to ~220k chars (two together exceed MAX_OUTSIDE_TEXT_CHARS).
+  const olderDetails1 = {
+    routines: [
+      {
+        routineId: "r-old-1",
+        prompt: "Owner prompt 1",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: "é".repeat(220_000),
+        },
+      },
+    ],
+  };
+  const olderDetails2 = {
+    routines: [
+      {
+        routineId: "r-old-2",
+        prompt: "Owner prompt 2",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:01:00.000Z",
+          detail: "ñ".repeat(220_000),
+        },
+      },
+    ],
+  };
+  const newerDetails = {
+    routines: [
+      {
+        routineId: "r-new",
+        prompt: "Owner prompt new",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:05:00.000Z",
+          detail: "Alert newer-watch-target@outside.test",
+        },
+      },
+    ],
+  };
+  const firstCheckpointMessages: Message[] = [
+    { role: "user", content: "Check schedules", timestamp: 1 },
+    {
+      role: "assistant",
+      content: [
+        { type: "toolCall", id: "old-1", name: "schedule_list", arguments: {} },
+        { type: "toolCall", id: "old-2", name: "schedule_list", arguments: {} },
+      ],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-a",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 2,
+    },
+    {
+      role: "toolResult",
+      toolCallId: "old-1",
+      toolName: "schedule_list",
+      content: [{ type: "text", text: JSON.stringify(olderDetails1) }],
+      details: olderDetails1,
+      isError: false,
+      timestamp: 3,
+    },
+    {
+      role: "toolResult",
+      toolCallId: "old-2",
+      toolName: "schedule_list",
+      content: [{ type: "text", text: JSON.stringify(olderDetails2) }],
+      details: olderDetails2,
+      isError: false,
+      timestamp: 4,
+    },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "ask-1", name: "ask_user", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-a",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 5,
+    },
+  ];
+  const newerRaw = JSON.stringify(newerDetails);
+  const resumedDeliveries = new Map<string, WatchDeliveryState>([
+    [
+      "hash-new",
+      {
+        full: true,
+        fullText: newerRaw,
+        details: newerDetails,
+        toolCallId: "new-1",
+      },
+    ],
+  ]);
+  const keptOnBackup: Message[] = [
+    { role: "user", content: "Continue", timestamp: 6 },
+    {
+      role: "toolResult",
+      toolCallId: "read-after",
+      toolName: "read_file",
+      content: [{ type: "text", text: "r".repeat(6_000) }],
+      isError: false,
+      timestamp: 7,
+    },
+  ];
+  const secondAsk: Message = {
+    role: "assistant",
+    content: [{ type: "toolCall", id: "ask-2", name: "ask_user", arguments: {} }],
+    api: "openai-responses",
+    provider: "openai",
+    model: "model-b",
+    usage: emptyUsage,
+    stopReason: "toolUse",
+    timestamp: 8,
+  };
+  const secondCheckpoint = buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages: keptOnBackup, tools: [] },
+      sourceLength: 7,
+    },
+    stateMessages: [...firstCheckpointMessages, ...keptOnBackup, secondAsk],
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "ask-2",
+    toolCallCount: 4,
+    mainModelConfig: { provider: "openai", id: "model-b" },
+    provider: "openai",
+    modelId: "model-b",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries: resumedDeliveries,
+    restoredMessages: firstCheckpointMessages,
+  });
+
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(ctx, JSON.stringify(secondCheckpoint), {
+      provider: "openai",
+      id: "model-b",
+    }),
+  ).toBeDefined();
+  expect(ctx.state.outsideText.length).toBeLessThanOrEqual(MAX_OUTSIDE_TEXT_CHARS);
+  expect(ctx.state.outsideText).toContain("newer-watch-target@outside.test");
+  expect(
+    outsideOnlyTargets(
+      { to: ["newer-watch-target@outside.test"] },
+      { ownerWords: ["Check schedules"], outsideText: ctx.state.outsideText },
+    ),
+  ).toEqual(["newer-watch-target@outside.test"]);
+});
