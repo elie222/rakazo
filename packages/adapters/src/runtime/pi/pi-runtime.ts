@@ -1351,14 +1351,21 @@ export class PiAgentRuntime implements AgentRuntime {
           }
         }
         // A turn that started fresh and ended in the model's own reply is kept as it was sent.
-        if (request.onTranscript && !restored && !budgetExceeded && !terminatedReply) {
+        // Only a turn with its person's message in history can stand in for it there.
+        if (
+          request.onTranscript &&
+          request.sourceMessageId &&
+          !restored &&
+          !budgetExceeded &&
+          !terminatedReply
+        ) {
           const transcript = host.pausePending
             ? undefined
             : captureTurnTranscript(
                 sentContext?.context.messages,
                 terminalMessage,
                 [...turnMessageIds],
-                request.sourceMessageId ?? undefined,
+                request.sourceMessageId,
               );
           if (transcript) request.onTranscript(transcript);
         }

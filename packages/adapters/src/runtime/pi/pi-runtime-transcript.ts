@@ -95,20 +95,45 @@ export function captureTurnTranscript(
   return serialized.length > MAX_TRANSCRIPT_CHARS ? undefined : serialized;
 }
 
-const Parts = z.array(z.object({ type: z.string() }).passthrough());
+/** The parts replay and the providers read, each with the fields they use. */
+const Parts = z.array(
+  z.discriminatedUnion("type", [
+    z.object({ type: z.literal("text"), text: z.string() }).passthrough(),
+    z.object({ type: z.literal("thinking"), thinking: z.string() }).passthrough(),
+    z.object({ type: z.literal("image"), data: z.string(), mimeType: z.string() }).passthrough(),
+    z
+      .object({
+        type: z.literal("toolCall"),
+        id: z.string(),
+        name: z.string(),
+        arguments: z.record(z.string(), z.unknown()),
+      })
+      .passthrough(),
+  ]),
+);
+
+const StoredMessage = z.discriminatedUnion("role", [
+  // Only a person's turn can be plain text; the model's and a tool's are lists of parts.
+  z.object({ role: z.literal("user"), content: z.union([z.string(), Parts]) }).passthrough(),
+  z.object({ role: z.literal("assistant"), content: Parts }).passthrough(),
+  z
+    .object({
+      role: z.literal("toolResult"),
+      toolCallId: z.string(),
+      toolName: z.string(),
+      content: Parts,
+    })
+    .passthrough(),
+]);
 
 const StoredTurnSchema = z.object({
   version: z.literal(1),
   represents: z.array(z.string()),
+  // A turn ends in the model's reply; one that does not is not a turn this runtime wrote.
   messages: z
-    .array(
-      z.union([
-        // Only a person's turn can be plain text; the model's and a tool's are lists of parts.
-        z.object({ role: z.literal("user"), content: z.union([z.string(), Parts]) }).passthrough(),
-        z.object({ role: z.enum(["assistant", "toolResult"]), content: Parts }).passthrough(),
-      ]),
-    )
-    .min(1),
+    .array(StoredMessage)
+    .min(2)
+    .refine((messages) => messages.at(-1)?.role === "assistant"),
   prompt: z.object({ at: z.number().int().nonnegative(), id: z.string() }).optional(),
 });
 
