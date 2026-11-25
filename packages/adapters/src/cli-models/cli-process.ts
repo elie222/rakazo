@@ -2,6 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getLogger } from "@rakazo/logging";
 
 /**
  * What a signed-in CLI needs to find its own sign-in, reach the network and run; nothing else.
@@ -91,8 +92,11 @@ export function stopProcessTree(child: ChildProcess): void {
   try {
     if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
     else child.kill("SIGKILL");
-  } catch {
-    // Already gone.
+  } catch (error) {
+    // Gone already is the usual reason; anything else leaves a process running, so it is logged.
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+      getLogger().warn("A CLI could not be stopped", { pid: child.pid, error });
+    }
   }
 }
 

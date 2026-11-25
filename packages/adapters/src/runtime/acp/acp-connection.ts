@@ -89,8 +89,12 @@ export function startAcpAgent(
   });
   // An agent that stops reading can answer nothing more, even while it keeps running.
   // An exit or a failed start says more, so it goes first when both happen.
-  const inputClosed = () =>
-    setImmediate(() => endConnection(new Error("stopped reading its input")));
+  const inputClosed = (error?: Error) =>
+    setImmediate(() =>
+      endConnection(
+        new Error(`stopped reading its input${error?.message ? ` (${error.message})` : ""}`),
+      ),
+    );
   child.stdin.on("error", inputClosed);
   child.stdin.once("close", inputClosed);
   child.once("error", (error) => endConnection(error));

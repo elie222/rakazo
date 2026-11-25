@@ -173,9 +173,10 @@ async function runAcpTurn(
   if (refusal) throw new Error(refusal);
   signal.throwIfAborted();
 
-  // A request without tools is a helper call (a title, a summary, a check): it gets a session of
+  // A helper call (a summary, a check, a page revision) is not a chat turn: it gets a session of
   // its own that is deleted afterwards, and leaves the chat's session alone.
-  const oneShot = request.tools.length === 0;
+  const oneShot =
+    request.usageOperationKind !== "answer" && request.usageOperationKind !== "subagent";
   const key = sessionKey(descriptor.id, request.botId, request.threadId);
   const cwd = join(
     agentFolder(),
@@ -540,6 +541,8 @@ async function runAcpTurn(
     throw error;
   } finally {
     releaseToolCallBudget(request.runId, false);
+    // A turn that ended before sending its message leaves the note for the next one.
+    if (includeOwnReplies && !sentPrompt) noteReplyElsewhere(key);
     // A turn beside the chat's own wrote a reply its session never saw; the next turn sends it.
     if (!ownsChatSession && !oneShot && replied) noteReplyElsewhere(key);
     if (connection) {

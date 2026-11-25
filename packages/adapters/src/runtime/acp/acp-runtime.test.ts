@@ -67,6 +67,7 @@ function request(overrides: Partial<AgentRunRequest> = {}): AgentRunRequest {
     instructions: "You are Pip.",
     history: [],
     tools: TOOLS,
+    usageOperationKind: "answer",
     model: { provider: "fake-agent", id: "fake/large" },
     executeTool: vi.fn(async (name: string) =>
       name === "send_note" ? approvalPausedToolResult() : { forecast: "sunny" },
@@ -341,12 +342,15 @@ describe("acpAgentRuntime", () => {
     expect(error?.message).toContain("tried to use its own tools (bash)");
   });
 
-  it("runs a request without tools in its own session and deletes it", async () => {
+  it("runs a helper request in its own session and deletes it", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
     const threadId = `thread-${randomUUID()}`;
     await collect(runtime, request({ threadId }));
 
-    const { text } = await collect(runtime, request({ threadId, tools: [], prompt: "a title" }));
+    const { text } = await collect(
+      runtime,
+      request({ threadId, tools: [], usageOperationKind: "setup", prompt: "a title" }),
+    );
 
     expect(text).toBe("ok");
     expect(requests("session/new")).toHaveLength(2);
@@ -359,7 +363,10 @@ describe("acpAgentRuntime", () => {
     const threadId = `thread-${randomUUID()}`;
     await collect(runtime, request({ threadId }));
 
-    const { error } = await collect(runtime, request({ threadId, tools: [], prompt: "fail" }));
+    const { error } = await collect(
+      runtime,
+      request({ threadId, tools: [], usageOperationKind: "setup", prompt: "fail" }),
+    );
     await collect(runtime, request({ threadId, prompt: "next" }));
 
     expect(error).toBeDefined();
