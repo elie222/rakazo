@@ -108,8 +108,13 @@ export async function main(argv: string[]): Promise<number> {
   if (command === "chat") {
     const [bot, ...message] = rest;
     if (!bot || message.length === 0) throw new Error("Usage: rakazo chat <bot> <message>");
-    for await (const text of client.chat(bot, message.join(" "))) stdout.write(text);
-    stdout.write("\n");
+    let reply = "";
+    for await (const text of client.chat(bot, message.join(" "))) {
+      // JSON output waits for the whole reply, so a script reads one object.
+      if (values.json) reply += text;
+      else stdout.write(text);
+    }
+    stdout.write(values.json ? `${JSON.stringify({ reply })}\n` : "\n");
     return 0;
   }
   if (command === "task") {

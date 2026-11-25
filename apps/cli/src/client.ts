@@ -61,7 +61,12 @@ export function createClient(config: CliConfig, fetchImpl: typeof fetch = fetch)
       if (!response.body) return;
       for await (const event of readEvents(response.body)) {
         if (event.event === "task") yield JSON.parse(event.data) as PublicTask;
-        if (event.event === "error") throw new ApiError(500, "The stream stopped");
+        if (event.event === "error") {
+          const { error } = JSON.parse(event.data) as {
+            error?: { status?: number; message?: string };
+          };
+          throw new ApiError(error?.status ?? 500, error?.message ?? "The stream stopped");
+        }
       }
     },
     /** A chat turn's reply as it arrives. */

@@ -74,6 +74,23 @@ describe("createClient", () => {
     expect(parts).toEqual(["Hel"]);
   });
 
+  it("reports a task stream's refusal with its own status", async () => {
+    const client = createClient(
+      config,
+      async () =>
+        new Response(
+          streamOf(
+            `event: error\ndata: ${JSON.stringify({ error: { status: 401, message: "Invalid API key" } })}\n\n`,
+          ),
+        ),
+    );
+    await expect(
+      (async () => {
+        for await (const _ of client.followTask("task-1")) void _;
+      })(),
+    ).rejects.toEqual(new ApiError(401, "Invalid API key"));
+  });
+
   it("reports the server's error message", async () => {
     const client = createClient(config, async () =>
       Response.json({ error: { message: "Invalid API key" } }, { status: 401 }),
