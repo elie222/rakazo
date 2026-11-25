@@ -29,6 +29,23 @@ describe("loadEnv", () => {
     );
   });
 
+  it("reads credit codes case-insensitively, with an optional account limit", () => {
+    expect(
+      loadEnv({ ...base, CREDIT_CODES: "gift-code:10, LAUNCH2027:2.50:100" }).creditCodes,
+    ).toEqual(
+      new Map([
+        ["GIFT-CODE", { code: "GIFT-CODE", creditCents: 1000, maxClaims: null }],
+        ["LAUNCH2027", { code: "LAUNCH2027", creditCents: 250, maxClaims: 100 }],
+      ]),
+    );
+  });
+  it.each(["SHORT:10", "GIFT-CODE:0", "GIFT-CODE:10:0", "GIFT-CODE:10,gift-code:5"])(
+    "rejects credit codes %s",
+    (value) => {
+      expect(() => loadEnv({ ...base, CREDIT_CODES: value })).toThrow("CREDIT_CODES");
+    },
+  );
+
   it("keeps calls off unless explicitly enabled", () => {
     expect(loadEnv(base).phoneCallsEnabled).toBe(false);
     for (const value of ["false", "1", ""]) {
