@@ -1,5 +1,5 @@
 import type { AdapterContext, MemorySnapshot, MemoryStore } from "@rakazo/adapter-kit";
-import { secretRedactor } from "@rakazo/core";
+import { redactSecrets } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import { AGENT_MEMORY_MAX_BYTES, buildAgentMemoryPrompt } from "./memory-context.prompt.js";
@@ -497,7 +497,7 @@ describe("memory prompt escaping", () => {
 
   it("redacts secrets containing &, < or > before escaping delimiters", async () => {
     const secret = "tok&en<1>secret";
-    const redactor = secretRedactor([secret]);
+    const redactor = (text: string) => redactSecrets(text, [secret]);
     const { text } = buildAgentMemoryPrompt(
       [
         {

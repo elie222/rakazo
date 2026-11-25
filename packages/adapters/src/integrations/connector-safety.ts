@@ -42,7 +42,7 @@ export function sanitizeConnectorError(
   const sanitizePlain = (value: string) =>
     redactSecrets(
       value
-        .replace(/Bearer\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s"',;&}]+)/gi, "Bearer [redacted]")
+        .replace(/Bearer\s+(?:"[^"\r\n]*"?|'[^'\r\n]*'?|[^\s"',;&}]+)/gi, "Bearer [redacted]")
         .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]"),
       secrets,
     );

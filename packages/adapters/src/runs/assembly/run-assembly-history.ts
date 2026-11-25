@@ -23,6 +23,7 @@ import { mapTurnTranscript } from "../../runtime/pi/pi-runtime-transcript.js";
 import { loadAgentTicketContext } from "../../tasks/ticket-context.js";
 import type { RunHold } from "../lifecycle/run-attempt.js";
 import { loadCurrentTurnImages } from "../turn/run-turn-images.js";
+import { keptTurnTranscript } from "../turn/tool-step-calls.js";
 import {
   messageToAgentHistorySegments,
   messageToAgentHistoryText,
@@ -90,12 +91,14 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
           m.role === "bot" && !speaker && replaysToolHistory && !partial
             ? messageTranscript(m)
             : undefined;
+        const redactedStored =
+          stored && hold.secrets.length > 0 ? keptTurnTranscript(stored, hold.secrets) : stored;
         const transcript =
-          stored && speakers
-            ? mapTurnTranscript(stored, (value, kind) =>
+          redactedStored && speakers
+            ? mapTurnTranscript(redactedStored, (value, kind) =>
                 kind === "result" || kind === "reply" ? neutral(value) : value,
               )
-            : stored;
+            : redactedStored;
         return {
           id: m.id,
           createdAt: m.createdAt?.toISOString(),

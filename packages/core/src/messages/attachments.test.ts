@@ -19,7 +19,10 @@ import {
   userTurnMessageForRun,
   validateAttachmentMimeType,
 } from "./attachments.js";
-import { secretRedactor, withToolHistory } from "./events.js";
+import { redactSecrets, withToolHistory } from "./events.js";
+
+const secretRedactor = (secrets: readonly string[]) => (text: string) =>
+  redactSecrets(text, secrets);
 
 describe("attachment helpers", () => {
   it.each([

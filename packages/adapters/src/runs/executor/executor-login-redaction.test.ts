@@ -268,6 +268,40 @@ async function runAfterFill(
         !where?.blocks && options.earlierHistoryReplyQuote
           ? [
               {
+                id: "msg-history-bot",
+                threadId: run.threadId,
+                seq: 5,
+                role: "bot",
+                botId: run.botId,
+                authorUserId: null,
+                clientNonce: null,
+                createdAt: new Date("2026-11-25T10:31:00Z"),
+                blocks: [{ kind: "text", text: "Checked" }],
+                steeringMessages: [],
+                toolHistory: JSON.stringify({
+                  steps: [],
+                  transcript: JSON.stringify({
+                    version: 1,
+                    represents: ["msg-history-reply"],
+                    messages: [
+                      { role: "user", content: "Check" },
+                      {
+                        role: "toolResult",
+                        toolCallId: "tc-1",
+                        toolName: "shell",
+                        content: [
+                          {
+                            type: "text",
+                            text: JSON.stringify({ note: options.earlierHistoryReplyQuote }),
+                          },
+                        ],
+                      },
+                      { role: "assistant", content: [{ type: "text", text: "Checked" }] },
+                    ],
+                  }),
+                }),
+              },
+              {
                 id: "msg-history-reply",
                 threadId: run.threadId,
                 seq: 4,
@@ -500,6 +534,11 @@ describe("command variables in a later run", () => {
     expect(serializedHistory).toContain("Prior summary token [redacted]");
     expect(serializedHistory).toContain("History quoted [redacted]");
     expect(serializedHistory).toContain('"speaker":"Owner (redacted)"');
+    const botHistoryEntry = (
+      capturedRequest?.history as Array<{ transcript?: string }> | undefined
+    )?.find((entry) => typeof entry.transcript === "string");
+    expect(botHistoryEntry?.transcript).toContain("History quoted [redacted]");
+    expect(botHistoryEntry?.transcript).not.toContain(modelSecret);
     expect(serializedHistory).not.toContain("model&lt;");
     expect(serializedHistory).not.toContain("model\\u003c");
     expect(serializedHistory).not.toContain("api&amp;key");

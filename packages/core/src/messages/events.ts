@@ -731,16 +731,6 @@ export function redactSecrets(value: string, secrets: readonly string[]): string
   return output + value.slice(offset);
 }
 
-/**
- * A single-string redaction function for `secrets`. Redact many strings with the same secrets
- * through one result: the values are snapshotted once and the matcher for them is reused across
- * calls, and the returned function keeps no other state.
- */
-export function secretRedactor(secrets: Iterable<string>): (text: string) => string {
-  const values = [...secrets];
-  return (text: string) => redactSecrets(text, values);
-}
-
 /** Redacts `text` as the continuation of `before`, so a value split across the two is hidden too. */
 export function redactSecretsAfter(before: string, text: string, secrets: string[]): string {
   const value = before + text;

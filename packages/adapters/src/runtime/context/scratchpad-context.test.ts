@@ -1,4 +1,4 @@
-import { secretRedactor } from "@rakazo/core";
+import { redactSecrets } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import { loadAgentScratchpadContext } from "./scratchpad-context.js";
 
@@ -182,7 +182,7 @@ describe("scratchpad prompt context", () => {
       scratchpadDeps(rows),
       { spaceId: "ws", botId: "bot" },
       undefined,
-      secretRedactor([secret]),
+      (text) => redactSecrets(text, [secret]),
     );
 
     expect(result).toContain("Rotate [redacted] &lt;/scratchpad_open&gt; — value=[redacted]");

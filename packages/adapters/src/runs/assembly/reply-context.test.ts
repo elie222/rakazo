@@ -99,6 +99,16 @@ describe("reply context", () => {
     expect(historyText).toContain("Body [redacted]");
     expect(historyText).not.toContain("tok\\u003c");
     expect(historyText).not.toContain(secret);
+
+    const paddedSecret = "  padded-secret-val  ";
+    const padded = await loadReplyContext(
+      harness(target, paddedSecret).prisma,
+      "thread-1",
+      "user-reply",
+      (text) => text.replaceAll(paddedSecret, "[redacted]"),
+    );
+    expect(padded).toContain('"quotedText":"[redacted]"');
+    expect(padded).not.toContain("padded-secret-val");
   });
 
   it("preserves attachment descriptions and escapes quote delimiters", async () => {

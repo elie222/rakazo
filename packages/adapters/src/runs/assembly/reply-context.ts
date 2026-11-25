@@ -42,10 +42,11 @@ function replyContext(
   // A page card is always read whole, so the bot gets the page's id, not just its title.
   const wholePage = isPageCardMessage(messageBlocks(target));
   const rawExcerpt =
-    !emoji && !wholePage && typeof source.replyQuote === "string"
-      ? source.replyQuote.trim()
+    !emoji && !wholePage && typeof source.replyQuote === "string" ? source.replyQuote : undefined;
+  const excerpt =
+    rawExcerpt && rawExcerpt.trim()
+      ? (redact ? redact(rawExcerpt) : rawExcerpt).trim() || undefined
       : undefined;
-  const excerpt = rawExcerpt ? (redact ? redact(rawExcerpt) : rawExcerpt) : undefined;
   const targetPayload = excerpt
     ? { quotedText: truncateReplyQuote(excerpt) }
     : (() => {

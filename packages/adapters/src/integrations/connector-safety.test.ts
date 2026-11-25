@@ -99,5 +99,10 @@ describe("sanitizeConnectorError", () => {
       new Error("Authorization: Bearer \"quoted-tok-1\" and Bearer 'quoted-tok-2'"),
     );
     expect(quotedBearer).toBe("Authorization: Bearer [redacted] and Bearer [redacted]");
+
+    const clippedQuotedBearer = sanitizeConnectorError(
+      new Error("Authorization: Bearer \"clipped-tok-1\nNext: Bearer 'clipped-tok-2"),
+    );
+    expect(clippedQuotedBearer).toBe("Authorization: Bearer [redacted]\nNext: Bearer [redacted]");
   });
 });

@@ -1,6 +1,6 @@
 import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { secretRedactor } from "../messages/events.js";
+import { redactSecrets } from "../messages/events.js";
 import {
   BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH,
   BOT_MESSAGE_MAX_HOPS,
@@ -445,7 +445,7 @@ describe("group routing metadata", () => {
 
   it("redacts raw directory and roster fields before escaping or truncation", () => {
     const secret = "own&sec<1>\nval";
-    const redact = secretRedactor([secret]);
+    const redact = (text: string) => redactSecrets(text, [secret]);
 
     const dir = renderBotDirectory(
       [{ id: "b_1", name: `Own ${secret}`, description: `Shared ${secret}` }],
