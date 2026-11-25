@@ -298,6 +298,9 @@ export const AgentImportManyInput = z.strictObject({
       if (total > AGENT_IMPORT_MAX_TOTAL_LENGTH) {
         ctx.addIssue({ code: "custom", message: "The files are too large to import." });
       }
+      if (agents.reduce((sum, agent) => sum + agent.files.length, 0) > AGENT_IMPORT_MAX_FILES) {
+        ctx.addIssue({ code: "custom", message: "Too many files to import at once." });
+      }
     }),
 });
 export type AgentImportManyInput = z.infer<typeof AgentImportManyInput>;

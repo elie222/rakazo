@@ -6,9 +6,9 @@ import { AGENT_IMPORT_NOT_FOUND, grokBotExportJson, newClientId } from "@rakazo/
 import { Button, Checkbox, Label } from "@rakazo/ui-web";
 import { Check, ChevronRight } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { agentImportErrorText, grokBotErrorText } from "../../../lib/bots/agent-import-errors";
-import { rpc } from "../../../lib/query/rpc";
+import { useSave } from "../../../lib/query/query";
 import type { GrokBatch } from "./use-agent-import-source";
 
 /** The same localized words a single import shows for this refusal. */
@@ -46,51 +46,55 @@ export function GrokBotPicker({
   onError: (err: unknown) => void;
 }) {
   const { t } = useLingui();
-  const [importing, setImporting] = useState(false);
   const rows = useMemo(() => bots.map((bot) => ({ bot, id: grokBotExportJson(bot) })), [bots]);
   const picked = rows.filter(({ id }) => !batch.unpicked.has(id) && !batch.created.has(id));
   const first = rows.map(({ id }) => batch.created.get(id)).find(Boolean);
-
-  async function importPicked() {
-    const keyFor = (id: string) => {
-      const known = keys.current.get(id);
-      if (known) return known;
-      const key = newClientId();
-      keys.current.set(id, key);
-      return key;
-    };
-    const reasons = new Map<string, string>();
-    const sent = picked.filter(({ id }) => {
-      if (id.length <= GROK_BOT_EXPORT_MAX_LENGTH) return true;
-      reasons.set(id, grokBotErrorText("too_large"));
-      return false;
-    });
-    setImporting(true);
-    onCreatingChange(true);
-    try {
-      const results = sent.length
-        ? await rpc.bots.importMany({
-            agents: sent.map(({ id }) => ({
+  const keyFor = (id: string) => {
+    const known = keys.current.get(id);
+    if (known) return known;
+    const key = newClientId();
+    keys.current.set(id, key);
+    return key;
+  };
+  const importBots = useSave({
+    save: (sent: string[], client) =>
+      sent.length
+        ? client.bots.importMany({
+            agents: sent.map((id) => ({
               importKey: keyFor(id),
               files: [{ path: GROK_BOT_EXPORT_PATH, content: id }],
             })),
           })
-        : [];
+        : Promise.resolve([]),
+    onSaved: (results, sent) => {
+      onCreatingChange(false);
       const created = new Map(batch.created);
+      const reasons = new Map<string, string>();
+      for (const { id } of picked) {
+        if (id.length > GROK_BOT_EXPORT_MAX_LENGTH) reasons.set(id, grokBotErrorText("too_large"));
+      }
       results.forEach((result, index) => {
-        const { id } = sent[index]!;
+        const id = sent[index]!;
         if ("bot" in result) created.set(id, result.bot);
         else reasons.set(id, refusalText(result));
       });
       setBatch((current) => ({ ...current, created, reasons }));
       const made = rows.map(({ id }) => created.get(id)).find(Boolean);
       if (reasons.size === 0 && made) onImported(made);
-    } catch (err) {
-      onError(err);
-    } finally {
-      setImporting(false);
+    },
+    onFailed: (err) => {
       onCreatingChange(false);
-    }
+      onError(err);
+    },
+  });
+  const importing = importBots.pending;
+
+  function importPicked() {
+    if (importing) return;
+    onCreatingChange(true);
+    importBots.run(
+      picked.map(({ id }) => id).filter((id) => id.length <= GROK_BOT_EXPORT_MAX_LENGTH),
+    );
   }
 
   return (
@@ -159,7 +163,7 @@ export function GrokBotPicker({
           <Button
             data-testid="agent-import-grok-import"
             disabled={busy || importing || picked.length === 0}
-            onClick={() => void importPicked()}
+            onClick={importPicked}
           >
             {importing ? (
               <Trans>Importing…</Trans>

@@ -5,12 +5,12 @@ import type { AgentImportPlan, Bot } from "@rakazo/contracts";
 import type * as Core from "@rakazo/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
+import { QueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { AGENT_DOCUMENT_MAX_BYTES } from "../../../lib/bots/agent-document";
+import { createQueryRoot } from "../../../lib/query/query-root.test-support";
 
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -26,15 +26,16 @@ vi.mock("@lingui/react/macro", () => {
 const importPreview = vi.fn();
 const importCreate = vi.fn();
 const importMany = vi.fn();
-vi.mock("../../../lib/query/rpc", () => ({
-  rpc: {
+vi.mock("../../../lib/query/rpc", () => {
+  const rpc = {
     bots: {
       importPreview: (input: unknown) => importPreview(input),
       importCreate: (input: unknown) => importCreate(input),
       importMany: (input: unknown) => importMany(input),
     },
-  },
-}));
+  };
+  return { rpc, rpcForSpace: () => rpc, createSpaceRpc: () => rpc, selectedSpaceId: () => null };
+});
 
 vi.mock("@rakazo/core", async (importOriginal) => ({
   ...(await importOriginal<typeof Core>()),
@@ -50,7 +51,7 @@ vi.mock("@rakazo/core", async (importOriginal) => ({
 
 import { AgentImportForm } from "./agent-import";
 
-let root: Root | null = null;
+let root: ReturnType<typeof createQueryRoot> | null = null;
 let container: HTMLDivElement | null = null;
 
 function press(label: string) {
@@ -71,7 +72,7 @@ function press(label: string) {
 async function open(origin: string, form = <AgentImportForm onClose={noop} onCreated={noop} />) {
   container = document.createElement("div");
   document.body.append(container);
-  root = createRoot(container);
+  root = createQueryRoot(container, new QueryClient());
   await act(async () => {
     root!.render(form);
   });
