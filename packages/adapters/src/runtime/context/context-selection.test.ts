@@ -258,6 +258,19 @@ describe("bounded context selection", () => {
     // A protected summary at the start is not where the current request starts.
     expect(select(100_000, [0])).toEqual(history);
   });
+  it("does not count a note that rides along with an exchange as an exchange", () => {
+    const history = Array.from({ length: 10 }, (_, index) => [
+      user(`note ${index}`),
+      user(`exchange ${index}`),
+    ]).flat();
+    const kept = selectContext(history, {
+      budget,
+      strategy: "retrieval",
+      recentExchanges: 2,
+      notAnExchange: (message) => String(message.content).startsWith("note"),
+    }).messages;
+    expect(kept).toEqual(history.slice(-4));
+  });
   it("starts kept history at an anchor, so it holds while the conversation grows", () => {
     const starts: string[] = [];
     for (let length = 30; length < 50; length += 1) {

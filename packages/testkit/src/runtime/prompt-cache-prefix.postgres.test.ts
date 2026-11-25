@@ -50,6 +50,7 @@ describe.skipIf(!databaseAvailable)("prompt cache prefix across turns", () => {
     const model = await startModelEmulator({ apiKey: fixtureKey, steps });
     const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-cache-prefix-"));
     try {
+      // Loaded only when the suite runs against a database, as the other Postgres journeys do.
       const { createApp } = await import("@rakazo/api/app");
       const result = await runTrial(
         {
