@@ -226,7 +226,7 @@ it("keeps an answered question without repeating the user's reply or leaving ans
   expect(container.querySelector("button")).toBeNull();
 });
 
-it("caps a secret card's title at two lines and leaves question titles whole", async () => {
+it("shows the full login request and site on the card", async () => {
   const login = await render({
     input: "secret",
     purpose: "password",
@@ -237,14 +237,25 @@ it("caps a secret card's title at two lines and leaves question titles whole", a
     },
   });
   expect(login.textContent).toBe(longTitle);
-  expect(login.dataset.lines).toBe("2");
-  expect(container.textContent).toContain("login.example.test");
+  expect(login.dataset.lines).toBeUndefined();
+  expect(state("login.example.test")?.dataset).toBeDefined();
+  expect(state("login.example.test")?.dataset.lines).toBeUndefined();
   expect(container.textContent).not.toContain("https://");
   expect(container.querySelector("input")).toBeNull();
   expect(container.querySelector("button")?.textContent).toBe("Continue");
+});
 
-  expect((await render({ input: "secret", purpose: "otp" })).dataset.lines).toBe("2");
-  expect((await render({})).dataset.lines).toBeUndefined();
+it("shows the full request on an inline credential card", async () => {
+  const text =
+    "Repository access token for example/project (needs permission to read issues, edit files, and open pull requests)";
+  const title = await render({
+    text,
+    input: "secret",
+    purpose: "api_key",
+    credential: { name: "repo-token", origin: "", auth: { type: "command" } },
+  });
+  expect(title.textContent).toBe(text);
+  expect(title.dataset.lines).toBeUndefined();
 });
 
 const loginAsk = {
@@ -423,9 +434,7 @@ it("dismisses an inline secret card without sending a value", async () => {
   const onAnswer = vi.fn(async () => undefined);
   const onDismiss = vi.fn(async () => undefined);
   await render({ input: "secret", purpose: "otp" }, onAnswer, onDismiss);
-  expect(buttons()).toEqual(["Save", "Dismiss"]);
-  expect(button("Save").dataset.prominence).toBe("primary");
-  expect(button("Dismiss").dataset.prominence).toBe("secondary");
+  expect(buttons()).toEqual(["Dismiss", "Save"]);
 
   await act(async () => button("Dismiss").click());
 
@@ -478,7 +487,6 @@ it("keeps Dismiss out of a login card and offers it in the sheet", async () => {
   const onDismiss = vi.fn(async () => undefined);
   await render(loginAsk, onAnswer, onDismiss);
   expect(buttons()).toEqual(["Continue"]);
-  expect(button("Continue").dataset.prominence).toBe("secondary");
   await act(async () => button("Continue").click());
   await act(async () => sheet.onDismiss!());
   expect(onDismiss).toHaveBeenCalledTimes(1);
@@ -532,24 +540,16 @@ for (const input of ["secret", "login"]) {
       return;
     }
     expect(labels.includes("Dismiss")).toBe(canDismiss);
-    const primary = button("Save");
-    expect(primary.style.flex).toBe("1 1 0%");
-    expect(primary.dataset.fill).toBe("true");
-    if (canDismiss) expect(button("Dismiss").style.flex).toBe(primary.style.flex);
     expect(labels.includes("Save")).toBe(true);
   });
 }
 
-it("stretches secret inputs and equal actions, enabling Save only with input", async () => {
+it("stretches the secret field and enables Save only with input", async () => {
   await render({ input: "secret", purpose: "otp" });
   expect(container.firstElementChild?.getAttribute("style")).toContain("width: 100%");
   const input = container.querySelector("input")!;
   expect(input.style.alignSelf).toBe("stretch");
   expect(button("Save").disabled).toBe(true);
-  for (const label of ["Save", "Dismiss"]) {
-    expect(button(label).style.flex).toBe("1 1 0%");
-    expect(button(label).dataset.fill).toBe("true");
-  }
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       input,
@@ -558,7 +558,6 @@ it("stretches secret inputs and equal actions, enabling Save only with input", a
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(button("Save").disabled).toBe(false);
-  expect(button("Save").dataset.prominence).toBe("primary");
 });
 
 it("fills the message column only for secret asks, including answered and login asks", async () => {

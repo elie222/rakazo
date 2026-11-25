@@ -22,6 +22,7 @@ const settingsScreens = new Set([
   "labs",
   "messaging",
   "language",
+  "mcp-server",
   "memory",
   "memory-note",
   "model-settings",
@@ -89,4 +90,21 @@ export function linkScreen(link: string): string {
 /** Whether a link opens a settings page. */
 export function isSettingsLink(link: string): boolean {
   return settingsScreens.has(linkScreen(link));
+}
+
+/** The Settings return marker belongs to navigation inside this app. */
+export function stripSettingsReturn(path: string): string {
+  const queryStart = path.indexOf("?");
+  const hashStart = path.indexOf("#");
+  if (queryStart < 0 || (hashStart >= 0 && hashStart < queryStart)) return path;
+
+  const query = new URLSearchParams(
+    path.slice(queryStart + 1, hashStart < 0 ? undefined : hashStart),
+  );
+  if (!query.has("fromSettings")) return path;
+  query.delete("fromSettings");
+
+  const search = query.toString();
+  const hash = hashStart < 0 ? "" : path.slice(hashStart);
+  return `${path.slice(0, queryStart)}${search ? `?${search}` : ""}${hash}`;
 }

@@ -138,3 +138,75 @@ describe("deleting a shared memory document", () => {
     });
   });
 });
+
+describe("remembering in another private memory document", () => {
+  const remember = (args: Record<string, unknown>, documents: unknown[]) => {
+    const memory = {
+      read: vi.fn(async () => ({ documents })),
+      commit: vi.fn(async () => ({})),
+    };
+    const ctx = {
+      runId: "run-1",
+      run: { userId: "user-1" },
+      bot: { id: "bot-1" },
+      thread: { id: "thread-1" },
+      context: {},
+      deps: {
+        memory,
+        now: () => new Date("2026-03-05T23:30:00Z"),
+        prisma: { user: { findUnique: async () => ({ timezone: "Pacific/Auckland" }) } },
+      },
+    };
+    const result = memoryTools.remember!(
+      ctx as never,
+      { args, finish: (value: unknown) => value } as never,
+    );
+    return { memory, result };
+  };
+
+  it("edits one entry and leaves the rest of the document", async () => {
+    const { memory, result } = remember(
+      {
+        path: "USER.md",
+        operations: [
+          { action: "replace", old_text: "Lives in Paris", content: "- Lives in Berlin" },
+        ],
+      },
+      [{ path: "USER.md", content: "# User\n- Lives in Paris\n- Likes tea\n", revision: 3 }],
+    );
+    await expect(result).resolves.toEqual({ ok: true });
+    expect(memory.read).toHaveBeenCalledWith({ scope: "bot", botId: "bot-1", path: "USER.md" }, {});
+    expect(memory.commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "USER.md",
+        content: "# User\n- Lives in Berlin (saved 2026-03-06)\n- Likes tea\n",
+        expectedRevision: 3,
+      }),
+      {},
+    );
+  });
+
+  it("stamps a temporary entry with its end", async () => {
+    const { memory, result } = remember(
+      {
+        operations: [
+          { action: "add", content: "No visits to the flat.", until: "2026-03-19" },
+          {
+            action: "add",
+            content: "Quote 7 days for delivery.",
+            until: "the courier backlog clears",
+          },
+        ],
+      },
+      [{ path: "MEMORY.md", content: "", revision: 1 }],
+    );
+    await expect(result).resolves.toEqual({ ok: true });
+    expect(memory.commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "No visits to the flat. (saved 2026-03-06, ends 2026-03-19)\nQuote 7 days for delivery. (saved 2026-03-06, ends when the courier backlog clears)\n",
+      }),
+      {},
+    );
+  });
+});

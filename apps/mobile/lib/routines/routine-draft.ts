@@ -1,6 +1,14 @@
 import type { Routine, RpcInput } from "@rakazo/contracts";
 import type { RoutineDraft } from "@rakazo/core";
-import { cronFromPreset, draftFromRoutine, isOneShotRoutineCrons } from "@rakazo/core";
+import {
+  cronFromPreset,
+  draftFromRoutine,
+  isOneShotRoutineCrons,
+  routineCanEnd,
+  routineComputerUpdate,
+  routineDraftEndsAt,
+  routineEndUpdate,
+} from "@rakazo/core";
 import type { RoutineWebTrigger } from "./routine";
 import { routineTriggerNames } from "./routine";
 
@@ -8,7 +16,11 @@ import { routineTriggerNames } from "./routine";
  * The editor's draft. A web-only trigger is left out until the person removes it here, so a
  * draft only ever turns one off.
  */
-export type MobileRoutineDraft = RoutineDraft & Partial<Pick<Routine, RoutineWebTrigger>>;
+export type MobileRoutineDraft = RoutineDraft &
+  Partial<Pick<Routine, RoutineWebTrigger>> & {
+    /** Set once the owner flips "Use my computer"; see Routine.useComputer. */
+    useComputer?: boolean;
+  };
 
 /** The routine as this draft would leave it, for the triggers mobile can only remove. */
 export function routineWithDraftTriggers(routine: Routine, draft: MobileRoutineDraft): Routine {
@@ -19,6 +31,16 @@ export function routineWithDraftTriggers(routine: Routine, draft: MobileRoutineD
     ...(draft.messageProvider === null ? { messageProvider: null } : {}),
     ...(draft.watch === null ? { watch: null } : {}),
   };
+}
+
+export function routineDraftEventTriggered(
+  draft: MobileRoutineDraft,
+  source: Routine | null,
+): boolean {
+  const kept = source ? routineWithDraftTriggers(source, draft) : null;
+  return Boolean(
+    draft.emailSenders || kept?.webhookEnabled || kept?.githubEnabled || kept?.messageProvider,
+  );
 }
 
 /** A one-shot is set up from chat with its run time; its schedule can't change here. */
@@ -38,9 +60,11 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
   const crons = draft.schedules.map(cronFromPreset);
   // A schedule merely opened is not a change, even when the editor would spell it differently.
   const savedCrons = draftFromRoutine(routine).schedules.map(cronFromPreset);
+  const name = draft.name !== routine.name ? draft.name.trim() : undefined;
+  const prompt = draft.prompt !== routine.prompt ? draft.prompt.trim() : undefined;
   return {
-    ...(draft.name !== routine.name ? { name: draft.name.trim() } : {}),
-    ...(draft.prompt !== routine.prompt ? { prompt: draft.prompt.trim() } : {}),
+    ...(name !== undefined ? { name } : {}),
+    ...(prompt !== undefined ? { prompt } : {}),
     ...(!routineScheduleLocked(routine) && !sameCrons(crons, savedCrons) ? { crons } : {}),
     ...(draft.emailSenders !== routine.emailSenders ? { emailSenders: draft.emailSenders } : {}),
     ...(draft.active !== routine.active ? { active: draft.active } : {}),
@@ -48,6 +72,21 @@ function routineChanges(draft: MobileRoutineDraft, routine: Routine) {
     ...(draft.githubEnabled === false && routine.githubEnabled ? { githubEnabled: false } : {}),
     ...(draft.messageProvider === null && routine.messageProvider ? { messageProvider: null } : {}),
     ...(draft.watch === null && routine.watch ? { watch: null } : {}),
+    ...routineEndUpdate(
+      routine,
+      draft.endsOn,
+      routineCanEnd(
+        routineScheduleLocked(routine) ? routine.crons : crons,
+        draft.watch !== null && routine.watch !== null,
+        routineDraftEventTriggered(draft, routine),
+      ),
+    ),
+    ...routineComputerUpdate(routine, {
+      useComputer: draft.useComputer,
+      name: name ?? routine.name,
+      prompt: prompt ?? routine.prompt,
+      eventTriggered: Boolean(draft.emailSenders),
+    }),
   };
 }
 
@@ -75,6 +114,7 @@ export function routineSaveRequest(
   draft: MobileRoutineDraft,
   routine: Routine | null,
   botId: string,
+  /** The device's zone, for a new routine that isn't a copy. */
   timezone: string,
   /**
    * For a new routine started as a copy: the triggers and settings it keeps from it. Not its model,
@@ -95,14 +135,21 @@ export function routineSaveRequest(
     : false;
   if (!crons.length && !draft.emailSenders && !otherTriggers) return { error: "trigger" };
   if (!routine) {
+    const zone = draft.timezone ?? timezone;
+    const endsAt = routineDraftEndsAt(
+      draft.endsOn,
+      routineCanEnd(crons, Boolean(kept?.watch), routineDraftEventTriggered(draft, copyOf)),
+      zone,
+    );
     return {
       create: {
         botId,
         name,
         prompt,
         crons,
-        timezone,
+        timezone: zone,
         active: draft.active,
+        ...(endsAt ? { endsAt } : {}),
         notify: kept?.notify ?? true,
         ...(draft.emailSenders ? { emailSenders: draft.emailSenders } : {}),
         ...(kept

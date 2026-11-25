@@ -2,6 +2,7 @@
 import { ANDROID_APP_STORE_URL } from "@rakazo/contracts/client-build";
 import Button from "./Button.astro";
 import Footer from "./Footer.astro";
+import ProductHuntBadge from "./ProductHuntBadge.astro";
 import GetStartedActions from "./GetStartedActions.astro";
 import Header from "./Header.astro";
 import { LandingBotAvatar } from "./LandingBotAvatar";
@@ -142,6 +143,7 @@ const structuredData = homeStructuredData({
       </script>
 
       <section class="hero">
+        <ProductHuntBadge class="hero__badge" />
         <h1>{copy.hero.heading}</h1>
         <p class="lead">
           {copy.hero.lead}

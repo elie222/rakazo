@@ -359,6 +359,29 @@ const approvals: Scenario = {
     bot([
       {
         kind: "ask",
+        approvalEffectId: "effect-6",
+        text: "Update “Groceries”?",
+        routineUpdate: {
+          changes: [
+            {
+              field: "schedule",
+              before: "Every Monday at 10:00 AM",
+              after: "Every Monday at 11:00 AM",
+            },
+            {
+              field: "prompt",
+              before: "Order the usual groceries",
+              after: "Order the usual groceries\nSkip cheddar when it is out of stock",
+            },
+          ],
+        },
+        status: "pending",
+        actions: approvalActions,
+      },
+    ]),
+    bot([
+      {
+        kind: "ask",
         text: "Instructions updated",
         status: "answered",
         answer: "allow",
@@ -416,10 +439,10 @@ const secrets: Scenario = {
     bot([
       {
         kind: "ask",
-        text: "I need an API key for the analytics service.",
+        text: "Repository access token for example/project (needs permission to read issues, edit files, and open pull requests)",
         input: "secret",
         purpose: "api_key",
-        credential: { name: "ANALYTICS_KEY", origin: "", auth: { type: "command" } },
+        credential: { name: "repo-token", origin: "", auth: { type: "command" } },
         status: "pending",
       },
     ]),

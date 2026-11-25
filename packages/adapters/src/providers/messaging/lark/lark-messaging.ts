@@ -37,6 +37,8 @@ export const larkMessaging = defineMessagingPlatform({
     });
     return {
       provider: "lark",
+      // Lark posts the body as an md block.
+      outbound: { markdown: true },
       capabilities: { direct: true, groups: false, receipt: null, verifiedSender: true },
       adapter,
       postOnce: (threadId, message, idempotencyKey) =>

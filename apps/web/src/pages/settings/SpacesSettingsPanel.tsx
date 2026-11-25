@@ -1,78 +1,44 @@
 import { useLingui } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
-import { Plus } from "lucide-react";
-import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
-import { SpaceMembersSettings } from "../../components/spaces/SpaceMembersSettings";
-import type { SettingsSpace } from "../shell/create-delete-dialogs";
-import { SpaceSettingOverrides } from "./SpaceSettingOverrides";
+import { ChevronRight, Plus } from "lucide-react";
+import { SettingsGroup } from "../../components/settings/SettingsRows";
 
-/**
- * Every Space this person can open. With only one, it is just the app: its members are shown here,
- * and its overrides only when some were customized while there were others.
- */
+/** Every Space this person can open, each by name, even when there is only one. */
 export function SpacesSettingsPanel({
-  space,
   spaces,
   onOpenSpace,
   onNewSpace,
-  onLeft,
-  onClose,
-  onBusyChange,
 }: {
-  /** The Space the app is showing. */
-  space: SettingsSpace | null;
   spaces: { id: string; name: string }[];
   onOpenSpace: (spaceId: string) => void;
   onNewSpace?: () => void;
-  onLeft: (spaceId: string, activeSpaceId: string) => void;
-  onClose: () => void;
-  onBusyChange?: (busy: boolean) => void;
 }) {
   const { t } = useLingui();
-  const newSpace = onNewSpace ? (
-    <Button variant="outline" className="rounded-full" onClick={onNewSpace}>
-      <Plus />
-      {t`New private space`}
-    </Button>
-  ) : null;
-
-  if (spaces.length <= 1) {
-    return (
-      <div className="space-y-8" data-testid="settings-spaces">
-        {space ? (
-          <SpaceMembersSettings
-            space={space}
-            onLeft={(activeSpaceId) => onLeft(space.id, activeSpaceId)}
-          />
-        ) : null}
-        <SpaceSettingOverrides hideUntilCustomized onClose={onClose} onBusyChange={onBusyChange} />
-        {newSpace}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8" data-testid="settings-spaces">
       <SettingsGroup>
         {spaces.map((option) => (
-          <SettingsRow
+          <button
             key={option.id}
-            label={<p className="break-words">{option.name}</p>}
-            control={
-              <Button
-                variant="ghost"
-                size="sm"
-                className="rounded-full"
-                aria-label={t`Manage ${option.name}`}
-                onClick={() => onOpenSpace(option.id)}
-              >
-                {t`Manage`}
-              </Button>
-            }
-          />
+            type="button"
+            aria-label={t`Manage ${option.name}`}
+            className="flex min-h-15 w-full items-center justify-between gap-4 px-4 py-3 text-start first:rounded-t-xl last:rounded-b-xl hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+            onClick={() => onOpenSpace(option.id)}
+          >
+            <span className="min-w-0 break-words text-body text-foreground">{option.name}</span>
+            <ChevronRight
+              aria-hidden="true"
+              className="size-4 shrink-0 text-muted-foreground rtl:rotate-180"
+            />
+          </button>
         ))}
       </SettingsGroup>
-      {newSpace}
+      {onNewSpace ? (
+        <Button variant="outline" className="rounded-full" onClick={onNewSpace}>
+          <Plus />
+          {t`New private space`}
+        </Button>
+      ) : null}
     </div>
   );
 }

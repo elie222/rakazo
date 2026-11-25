@@ -13,6 +13,7 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("../lib/pages/pages", () => ({
+  usePageContent: () => undefined,
   usePageDocument: () => ({ document: null, failed: false, retry: () => undefined }),
 }));
 vi.mock("../components/pages/PublicPageShell", () => ({

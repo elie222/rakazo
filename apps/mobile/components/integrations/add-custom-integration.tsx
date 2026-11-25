@@ -4,7 +4,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { McpSourcePreset } from "@rakazo/contracts";
 import { Text, TextInput, View } from "react-native";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
-import { iosAtLeast } from "../../lib/native/native-controls";
+import type { ScreenHeaderMenuProps } from "../../lib/navigation/screen-header";
 import { openExternalUrl } from "../../lib/platform/open-url";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
@@ -20,33 +20,22 @@ export type AddCustomOption = {
   preset?: McpSourcePreset;
 };
 
-/** The Add custom button before Liquid Glass, which puts it in the header instead. */
-export function AddCustomMenu({
-  options,
-  onSelect,
-}: {
-  options: AddCustomOption[];
-  onSelect: (option: AddCustomOption | undefined) => void;
-}) {
+export function AddCustomMenu({ label, items, onSelect }: ScreenHeaderMenuProps) {
   const styles = useThemedStyles(createIntegrationsStyles);
   const scheme = useResolvedAppearance();
-  const { t } = useLingui();
-  if (iosAtLeast(26)) return null;
   return (
     <MenuView
       colorScheme={scheme}
-      title={t`Add custom`}
-      actions={options.map((option) => ({ id: option.id, title: option.label }))}
-      onPressAction={({ nativeEvent }) =>
-        onSelect(options.find((option) => option.id === nativeEvent.event))
-      }
+      title={label}
+      actions={items.map((item) => ({ id: item.id, title: item.label }))}
+      onPressAction={({ nativeEvent }) => onSelect(nativeEvent.event)}
     >
       {/* A plain view: on Android the menu opens from its own Pressable, which a
           nested Pressable would take the touch from. */}
       <View
         accessible
         accessibilityRole="button"
-        accessibilityLabel={t`Add custom`}
+        accessibilityLabel={label}
         style={styles.addCustom}
       >
         <NativeSymbol ios="plus" android="add" size={20} />

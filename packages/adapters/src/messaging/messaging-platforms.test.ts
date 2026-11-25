@@ -9,10 +9,17 @@ import { parseSendblueStatuses } from "../providers/messaging/sendblue/sendblue-
 import {
   enrichSlackTeamRoom,
   SLACK_MARKDOWN_LIMIT,
+  slackOutbound,
   slackPayloads,
 } from "../providers/messaging/slack/slack-messaging.js";
-import { telegramBotsFromEnv } from "../providers/messaging/telegram/telegram-messaging.js";
-import { parseWhatsAppStatuses } from "../providers/messaging/whatsapp/whatsapp-messaging.js";
+import {
+  telegramBotsFromEnv,
+  telegramOutbound,
+} from "../providers/messaging/telegram/telegram-messaging.js";
+import {
+  parseWhatsAppStatuses,
+  whatsappOutbound,
+} from "../providers/messaging/whatsapp/whatsapp-messaging.js";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
 import type { MessagingEnvironmentValues } from "./messaging-platforms.js";
 import {
@@ -394,6 +401,24 @@ describe("messagingPlatformsFromEnv", () => {
     }
   });
 
+  it("declares which platforms read markdown, split a long body and cap an upload", () => {
+    const mounted = Object.fromEntries(
+      messagingPlatformsFromEnv(fullEnv).map((platform) => [platform.provider, platform]),
+    );
+    const property = (name: "markdown" | "split") =>
+      Object.entries(mounted)
+        .filter(([, platform]) => Boolean(platform.outbound?.[name]))
+        .map(([provider]) => provider)
+        .sort();
+    expect(property("markdown")).toEqual(["lark", "photon", "slack", "telegram", "whatsapp"]);
+    // Only the platforms that own a limit have a splitter, so nothing is split by accident.
+    expect(property("split")).toEqual(["slack", "telegram", "whatsapp"]);
+    expect(mounted.telegram?.outbound?.attachmentLimitBytes).toBe(50_000_000);
+    expect(mounted.telegram?.outbound?.photo?.maxBytes).toBe(10_000_000);
+    // Sendblue sends plain text as one message: it declares no facts at all.
+    expect(mounted.sendblue?.outbound).toBeUndefined();
+  });
+
   it("declares group support, the receipt, file support and sender checks for each platform", () => {
     const platforms = messagingPlatformsFromEnv(fullEnv);
     const capabilities = Object.fromEntries(
@@ -631,16 +656,25 @@ describe("parseWhatsAppStatuses", () => {
 });
 
 describe("splitOutboundBody", () => {
+  // The facts live on the mounted platform, so a named bot inherits its adapter's limits.
+  const mounted = Object.fromEntries(
+    messagingPlatformsFromEnv({
+      ...fullEnv,
+      telegramBots: [{ name: "work", botToken: "tg-work", webhookSecret: "tg-work-secret" }],
+    }).map((platform) => [platform.provider, platform]),
+  );
+
   it.each(["telegram", "telegram-work"])(
     "splits %s replies on paragraph boundaries",
     (provider) => {
+      const outbound = mounted[provider]?.outbound;
       const paragraph = "a".repeat(3000);
-      expect(splitOutboundBody(provider, `${paragraph}\n\n${paragraph}`)).toEqual([
+      expect(splitOutboundBody(outbound, `${paragraph}\n\n${paragraph}`)).toEqual([
         paragraph,
         paragraph,
       ]);
-      expect(splitOutboundBody(provider, "short")).toEqual(["short"]);
-      expect(splitOutboundBody(provider, "a".repeat(4096))).toEqual(["a".repeat(4096)]);
+      expect(splitOutboundBody(outbound, "short")).toEqual(["short"]);
+      expect(splitOutboundBody(outbound, "a".repeat(4096))).toEqual(["a".repeat(4096)]);
     },
   );
 
@@ -650,7 +684,7 @@ describe("splitOutboundBody", () => {
     "😀".repeat(4097),
     "!".repeat(4096),
   ])("preserves the full text without breaking UTF-16 pairs", (body) => {
-    const parts = splitOutboundBody("telegram", body);
+    const parts = splitOutboundBody(telegramOutbound, body);
     expect(parts.length).toBeGreaterThan(1);
     expect(parts.join("")).toBe(body);
     expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
@@ -660,7 +694,7 @@ describe("splitOutboundBody", () => {
     ["a run of emoji one unit off the boundary", `a${"😀".repeat(6000)}`],
     ["an emoji across the first cut", `${"a".repeat(4095)}😀${"b".repeat(4096)}`],
   ])("keeps emoji whole in WhatsApp parts: %s", (_name, body) => {
-    const parts = splitOutboundBody("whatsapp", body);
+    const parts = splitOutboundBody(whatsappOutbound, body);
     expect(parts.length).toBeGreaterThan(1);
     expect(parts.join("")).toBe(body);
     expect(parts.every((part) => part.length <= 4096 && !/[\uD800-\uDFFF]/u.test(part))).toBe(true);
@@ -668,29 +702,31 @@ describe("splitOutboundBody", () => {
 
   it("splits Slack replies at its 12,000-character Markdown limit", () => {
     const paragraph = "a".repeat(8000);
-    expect(splitOutboundBody("slack", `${paragraph}\n\n${paragraph}`)).toEqual([
+    expect(splitOutboundBody(slackOutbound, `${paragraph}\n\n${paragraph}`)).toEqual([
       paragraph,
       paragraph,
     ]);
     const mid = "b".repeat(5000);
-    expect(splitOutboundBody("slack", `${mid}\n\n${mid}`)).toEqual([`${mid}\n\n${mid}`]);
-    expect(splitOutboundBody("slack", "short")).toEqual(["short"]);
+    expect(splitOutboundBody(slackOutbound, `${mid}\n\n${mid}`)).toEqual([`${mid}\n\n${mid}`]);
+    expect(splitOutboundBody(slackOutbound, "short")).toEqual(["short"]);
   });
 
   it("leaves room for the user ids Slack writes in place of @names", () => {
     const line = "@ab ".repeat(2500);
-    const parts = splitOutboundBody("slack", line);
+    const parts = splitOutboundBody(slackOutbound, line);
     expect(parts.length).toBeGreaterThan(1);
     expect(parts.every((part) => slackPayloads(part)[0]!.length <= SLACK_MARKDOWN_LIMIT)).toBe(
       true,
     );
   });
 
-  it("splits WhatsApp replies between paragraphs and leaves other providers unchanged", () => {
+  it("splits WhatsApp replies between paragraphs and leaves a platform without a splitter whole", () => {
     const long = `${"a".repeat(3000)}\n\n${"b".repeat(3000)}`;
-    expect(splitOutboundBody("whatsapp", long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
-    expect(splitOutboundBody("whatsapp", "short")).toEqual(["short"]);
-    expect(splitOutboundBody("sendblue", long)).toEqual([long]);
+    expect(splitOutboundBody(whatsappOutbound, long)).toEqual(["a".repeat(3000), "b".repeat(3000)]);
+    expect(splitOutboundBody(whatsappOutbound, "short")).toEqual(["short"]);
+    // Sendblue declares no limits: it sends the body as one message.
+    expect(mounted.sendblue?.outbound).toBeUndefined();
+    expect(splitOutboundBody(mounted.sendblue?.outbound, long)).toEqual([long]);
   });
 });
 

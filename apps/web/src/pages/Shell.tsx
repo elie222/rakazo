@@ -207,7 +207,6 @@ function SpaceShell() {
     searchQuery: search.query,
     now: snoozeNow,
   });
-
   const { inGroup, routeChat, active, activeGroup, activeBotId, activeGroupId, userBubble } =
     useActiveChat({ botId, groupId, startChat, bots, groups, now: snoozeNow });
   const selectBot = useCallback(
@@ -244,6 +243,7 @@ function SpaceShell() {
       rpc,
       activeBotId,
       activeGroupId,
+      notificationSounds: me?.chatPreferences?.notificationSounds,
       openChat: (alert) => {
         setMobileSidebarOpen(false);
         navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
@@ -258,6 +258,7 @@ function SpaceShell() {
     snapshot,
     callBotId: call?.botId,
     activeBotId,
+    openVoiceSettings: () => openSettings("voice"),
   });
   const read = useChatRead({ rpc, active, groupId, activeGroup, setBots, setGroups });
   // A chat that wakes while it is open is already seen: read it, which ends the snooze.
@@ -804,8 +805,8 @@ function SpaceShell() {
             scrollRef={thread.messageScroll}
             scrollRequest={scrollRequest}
             onScrollRequestHandled={clearScrollRequest}
-            followRequest={composer.sentCount}
             {...view.transcriptProps}
+            {...composer.transcriptProps}
             markedUnreadMessageId={read.markedUnreadMessageId}
             showToolActivity={showToolActivity}
             unreadAfterSeq={read.unreadAfterSeq}

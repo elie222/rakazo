@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunModel, AgentRuntime, SecretStore } from "@rakazo/adapter-kit";
-import { redactSecrets } from "@rakazo/core";
+import { redactSecrets, savedThinkingLevel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { findModelCredential, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -339,6 +339,11 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         ? { contextWindow: modelSettings.contextWindow }
         : {}),
       ...(modelSettings.reasoning !== undefined ? { reasoning: modelSettings.reasoning } : {}),
+      thinkingLevel: savedThinkingLevel(
+        modelSettings.thinkingLevel,
+        { modelId: credential.defaultModel, thinkingLevel: credential.thinkingLevel },
+        modelId,
+      ),
     };
     const context = parsed.kind === "oauth" ? {} : { cacheCapabilities: parsed.cacheCapabilities };
     if (parsed.kind === "oauth") {

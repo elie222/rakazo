@@ -161,3 +161,38 @@ test("an operator usage cap explains the pause without offering a billing upgrad
   await expect(error.getByTestId("composer-error-action")).toBeHidden();
   await captureScreenshot(page, testInfo, "model-credit-usage-cap");
 });
+
+test("a retryable failure offers Try again on the original message", async ({ page }, testInfo) => {
+  await signup(page, `run-retry-${Date.now()}@rakazo.test`, "password12", "Run Retry");
+  await completeOnboarding(page);
+  // The normal failure fixture supplies the run and its sender. Simulate the worker's
+  // eligibility flag so the scripted runtime need not emulate a transient model error.
+  let failedRunId: string | undefined;
+  await page.route("**/rpc/threads/get", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as {
+      json?: { run?: { id: string; status: string; error: string | null; retryable?: boolean } };
+    };
+    const run = body.json?.run;
+    if (run?.status === "failed") {
+      failedRunId = run.id;
+      run.error = "The model provider took too long to respond.";
+      run.retryable = true;
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await page.route("**/rpc/threads/retry", (route) =>
+    route.fulfill({ json: { json: { runId: "retry-run" } } }),
+  );
+  const prompt = "fail this run";
+  await page.getByPlaceholder(/^Message /).fill(prompt);
+  await page.getByRole("button", { name: "Send" }).click();
+  const retry = page.getByTestId("composer-error").getByRole("button", { name: "Try again" });
+  await expect(retry).toBeVisible({ timeout: 30_000 });
+  await captureScreenshot(page, testInfo, "retry-failed-reply");
+  const request = page.waitForRequest("**/rpc/threads/retry");
+  await retry.click();
+  expect((await request).postDataJSON()).toMatchObject({ json: { runId: failedRunId } });
+  await expect(page.getByTestId("composer-error")).toBeHidden();
+  await expect(page.getByText(prompt, { exact: true })).toHaveCount(1);
+});

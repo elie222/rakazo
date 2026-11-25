@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { zonedDateTime } from "./time.js";
+import { isEndOfZonedDay, zonedDateTime, zonedEndDateTime } from "./time.js";
 
 describe("zonedDateTime", () => {
   it("reads a wall-clock time or date without an offset in the timezone", () => {
@@ -64,5 +64,19 @@ describe("zonedDateTime", () => {
     for (const value of ["2026-02-30", "2026-11-02T24:00", "next monday", "", "2026-11-02T10"]) {
       expect(zonedDateTime(value, "UTC")).toBeNull();
     }
+  });
+});
+
+describe("zonedEndDateTime", () => {
+  it("ends a date alone at the last moment of that day in the timezone", () => {
+    const end = zonedEndDateTime("2026-11-30", "America/New_York");
+    expect(end?.toISOString()).toBe("2026-12-01T04:59:59.999Z");
+    expect(end && isEndOfZonedDay(end, "America/New_York")).toBe(true);
+  });
+
+  it("reads a time as zonedDateTime does", () => {
+    const end = zonedEndDateTime("2026-11-30T18:00", "America/New_York");
+    expect(end?.toISOString()).toBe("2026-11-30T23:00:00.000Z");
+    expect(end && isEndOfZonedDay(end, "America/New_York")).toBe(false);
   });
 });

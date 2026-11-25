@@ -2,7 +2,15 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot, Routine, ThinkingLevel, ThreadSnapshot } from "@rakazo/contracts";
 import { isIdentityConfirmationRequired } from "@rakazo/contracts";
-import { cronFromPreset, localTimezone, routineCopy } from "@rakazo/core";
+import {
+  cronFromPreset,
+  localTimezone,
+  routineCanEnd,
+  routineComputerUpdate,
+  routineCopy,
+  routineDraftEndsAt,
+  routineEndUpdate,
+} from "@rakazo/core";
 import type { ComponentProps, Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { REVEAL_MS } from "../../components/vault/VaultItemDetail";
@@ -15,6 +23,7 @@ import type { RoutineDraftState } from "../../lib/routines/routine-draft";
 import {
   draftStateFromRoutine,
   emptyRoutineDraftState,
+  routineDraftEventTriggered,
   routineNeedsOneShotArm,
   watchFromDraft,
 } from "../../lib/routines/routine-draft";
@@ -153,7 +162,7 @@ export function useRoutineEditor({
         draft: routineDraft,
         onChange: setRoutineDraft,
         editing: editingRoutine,
-        timezone: editingRoutine?.timezone ?? timezone ?? localTimezone(),
+        timezone: routineDraft.timezone ?? timezone ?? localTimezone(),
         webhook: {
           path: appBotInboundUrl(inboundOrigin, active.id, "webhook"),
           secret: routineWebhookSecret,
@@ -243,6 +252,11 @@ export function useRoutineEditor({
               });
             }
             const crons = routineDraft.schedules.map(cronFromPreset);
+            const repeats = routineCanEnd(
+              crons,
+              watch !== null,
+              routineDraftEventTriggered(routineDraft),
+            );
             const model = routineDraft.modelKey ? parseModelOptionKey(routineDraft.modelKey) : null;
             const routineModel = {
               modelProvider: model?.provider ?? null,
@@ -267,10 +281,12 @@ export function useRoutineEditor({
                 }
                 runAt = parsed.toISOString();
               }
+              const name = routineDraft.name || t`Routine`;
+              const prompt = routineDraft.prompt || t`Check in.`;
               saved = await rpc.routines.update({
                 routineId: targetRoutine.id,
-                name: routineDraft.name || t`Routine`,
-                prompt: routineDraft.prompt || t`Check in.`,
+                name,
+                prompt,
                 crons,
                 // Send on/off only when this save changes it, so a stale draft cannot undo a
                 // disable made elsewhere since the editor opened.
@@ -285,20 +301,29 @@ export function useRoutineEditor({
                 ...(routineDraft.inChat !== targetRoutine.inChat
                   ? { inChat: routineDraft.inChat }
                   : {}),
+                ...routineComputerUpdate(targetRoutine, {
+                  // The fallback prompt is not text the owner saw, so it is never approved.
+                  useComputer: routineDraft.useComputer && Boolean(routineDraft.prompt),
+                  name,
+                  prompt,
+                  eventTriggered: routineDraftEventTriggered(routineDraft),
+                }),
                 ...(routineModel.modelProvider !== targetRoutine.modelProvider ||
                 routineModel.modelId !== targetRoutine.modelId ||
                 routineModel.thinkingLevel !== targetRoutine.thinkingLevel
                   ? routineModel
                   : {}),
                 ...(runAt ? { runAt } : {}),
+                ...routineEndUpdate(targetRoutine, routineDraft.endsOn, repeats),
               });
             } else {
+              const createTimezone = routineDraft.timezone ?? timezone ?? localTimezone();
               saved = await rpc.routines.create({
                 botId: targetBotId,
                 name: routineDraft.name || t`Routine`,
                 prompt: routineDraft.prompt || t`Check in.`,
                 crons,
-                timezone: timezone ?? localTimezone(),
+                timezone: createTimezone,
                 active: routineDraft.active,
                 notify: true,
                 webhookEnabled: routineDraft.webhookEnabled,
@@ -307,6 +332,7 @@ export function useRoutineEditor({
                 emailSenders: routineDraft.emailSenders,
                 watch,
                 inChat: routineDraft.inChat,
+                endsAt: routineDraftEndsAt(routineDraft.endsOn, repeats, createTimezone),
                 ...routineModel,
               });
             }

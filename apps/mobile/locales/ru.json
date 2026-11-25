@@ -1,0 +1,11 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Rakazo использует камеру, чтобы вы могли прикреплять фото к сообщению для бота.",
+    "NSPhotoLibraryUsageDescription": "Rakazo использует медиатеку, чтобы вы могли прикреплять изображения к сообщению для бота.",
+    "NSPhotoLibraryAddUsageDescription": "Rakazo сохраняет в медиатеку фото и видео, которые вы скачиваете из артефактов.",
+    "NSLocalNetworkUsageDescription": "Rakazo подключается к собственному серверу Rakazo в вашей локальной сети.",
+    "NSMicrophoneUsageDescription": "Rakazo использует микрофон для голосовых звонков с вашими ботами.",
+    "NSSpeechRecognitionUsageDescription": "Rakazo превращает вашу речь в сообщения во время голосовых звонков.",
+    "NSFaceIDUsageDescription": "Разрешите Rakazo использовать Face ID."
+  }
+}

@@ -5,9 +5,13 @@ import {
   findConnectedModelCredential,
   validateConnectedModelChoice,
 } from "@rakazo/adapters";
-import type { Actor } from "@rakazo/contracts";
-import { OPENAI_COMPATIBLE_PROVIDER_ID, usableModelId } from "@rakazo/contracts";
-import { modelRoleTarget, runAsSystem } from "@rakazo/db";
+import type { Actor, ModelDisconnectPreview } from "@rakazo/contracts";
+import {
+  MAX_MODEL_DISCONNECT_NAMES,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+  usableModelId,
+} from "@rakazo/contracts";
+import { modelCredentialProviderFilter, modelRoleTarget, runAsSystem } from "@rakazo/db";
 import type { RouterDeps } from "../router.js";
 
 /**
@@ -136,6 +140,77 @@ export async function assertCompatibleDefaultChange(
     },
     () => true,
   );
+}
+
+export function disconnectedModelChoices(
+  userId: string,
+  provider: ReturnType<typeof modelCredentialProviderFilter>,
+  credentialIds: string[],
+  lastConnection: boolean,
+) {
+  return {
+    userId,
+    provider,
+    OR: [
+      { credentialId: { in: credentialIds } },
+      // Legacy choices without a funding pin ran on the provider's last connection.
+      ...(lastConnection ? [{ credentialId: null, creditOfferingId: null }] : []),
+    ],
+  };
+}
+
+export async function modelDisconnectPreview(
+  deps: RouterDeps,
+  actor: Actor,
+  input: { provider: string; credentialId: string },
+): Promise<ModelDisconnectPreview> {
+  const provider = modelCredentialProviderFilter(input.provider);
+  const connections = await deps.prisma.userModelCredential.findMany({
+    where: { userId: actor.userId, provider },
+    select: { id: true },
+  });
+  if (!connections.some((row) => row.id === input.credentialId)) {
+    return { mainModel: false, otherChoice: false, usedBy: [], usedByTotal: 0 };
+  }
+  const last = connections.length === 1;
+  const roles = disconnectedModelChoices(actor.userId, provider, [input.credentialId], last);
+  const position = { role: true, position: true } as const;
+  // Only the first names are sent, so only those are read; the total is counted.
+  const named = {
+    select: { name: true },
+    orderBy: { name: "asc" },
+    take: MAX_MODEL_DISCONNECT_NAMES,
+  } as const;
+  // The owning member can see their bots and routines across their current Spaces.
+  const pinned = {
+    userId: actor.userId,
+    modelProvider: provider,
+    space: { memberships: { some: { userId: actor.userId } } },
+  };
+  const bots = { ...pinned, archivedAt: null };
+  const routines = { ...pinned, active: true, bot: { archivedAt: null } };
+  // A connection is the account's, so its uses are read in every Space it serves.
+  const [accountRoles, spaceRoles, botNames, routineNames, botCount, routineCount] =
+    await runAsSystem("what disconnecting a model connection takes with it", () =>
+      Promise.all([
+        deps.prisma.userModelRoleChoice.findMany({ where: roles, select: position }),
+        deps.prisma.spaceModelRoleChoice.findMany({ where: roles, select: position }),
+        last ? deps.prisma.bot.findMany({ where: bots, ...named }) : [],
+        last ? deps.prisma.routine.findMany({ where: routines, ...named }) : [],
+        deps.prisma.bot.count({ where: bots }),
+        deps.prisma.routine.count({ where: routines }),
+      ]),
+    );
+  const served = [...accountRoles, ...spaceRoles];
+  const runsMain = (row: { role: string; position: number }) =>
+    row.role === "main" && row.position === 0;
+  const names = [...botNames, ...routineNames].map((row) => row.name);
+  return {
+    mainModel: served.some(runsMain),
+    otherChoice: served.some((row) => !runsMain(row)),
+    usedBy: names.slice(0, MAX_MODEL_DISCONNECT_NAMES),
+    usedByTotal: botCount + routineCount,
+  };
 }
 
 /** A routine may only name a model the space has connected. */
