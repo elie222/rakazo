@@ -246,10 +246,10 @@ describe("checkPageSource", () => {
     });
   });
 
-  it("warns when a plain element is given an image: name only kit components resolve", () => {
+  it("warns when a plain element loads an image: name only kit components resolve", () => {
     const result = checkPageSource(
       page(
-        'const App = () => <Page title="t">\n<img src="image:harbour" />\n<Image src="image:harbour" />\n</Page>;',
+        'const App = () => <Page title="t">\n<img src="image:harbour" alt="image: harbour" />\n<img src={"image:quay"} />\n<Image src="image:harbour" />\n</Page>;',
       ),
     );
     expect(result).toEqual({
@@ -257,6 +257,7 @@ describe("checkPageSource", () => {
       code: expect.any(String),
       warnings: [
         'line 2: <img> does not load "image:harbour"; only kit components resolve image: names, so use <Image src="image:harbour" />.',
+        'line 3: <img> does not load "image:quay"; only kit components resolve image: names, so use <Image src="image:quay" />.',
       ],
     });
   });
