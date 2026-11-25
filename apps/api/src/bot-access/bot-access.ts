@@ -66,6 +66,7 @@ const TASK_EVENTS = new Set([
   "thread.choice",
   "run.started",
   "run.waiting_input",
+  "computer.takeover.requested",
   "run.completed",
   "run.failed",
   "run.cancelled",
@@ -128,11 +129,17 @@ export function createBotAccess(deps: BotAccessDeps) {
       context: {
         actor,
         signal,
-        // A long wait ends when the key is revoked or the person leaves the Space.
+        // A long wait ends when the key is revoked, the account is turned off or the person
+        // leaves the Space.
         stillAuthorized: async () =>
           Boolean(
             (await prisma.apiKey.findFirst({
-              where: { id: caller.keyId, referenceId: caller.userId, enabled: { not: false } },
+              where: {
+                id: caller.keyId,
+                referenceId: caller.userId,
+                enabled: { not: false },
+                user: { deactivatedAt: null },
+              },
               select: { id: true },
             })) && (await memberActor(caller, actor.spaceId)),
           ),

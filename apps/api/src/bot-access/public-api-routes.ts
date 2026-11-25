@@ -1,6 +1,7 @@
 import { taskCallbackRootKey } from "@rakazo/adapters";
 import type { PublicTask } from "@rakazo/contracts";
 import { CreateTaskInputSchema, TaskMessageInputSchema, taskSettled } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import type * as z from "zod";
@@ -26,16 +27,17 @@ const NON_STREAMING_WAIT_MS = 15 * 60_000;
 
 type Answer = { status: number; body: unknown; retryAfterSeconds?: number };
 
-class BadRequest extends Error {}
-
 async function readJson<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
   const body: unknown = await c.req.json().catch(() => {
-    throw new BadRequest("Send a JSON body");
+    throw new ClientError("BAD_REQUEST", "Send a JSON body");
   });
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    throw new BadRequest(issue ? `${issue.path.join(".") || "body"}: ${issue.message}` : "Invalid");
+    throw new ClientError(
+      "BAD_REQUEST",
+      issue ? `${issue.path.join(".") || "body"}: ${issue.message}` : "Invalid",
+    );
   }
   return parsed.data;
 }
@@ -51,17 +53,13 @@ function withCaller(
     try {
       return await handler(c, await access.authenticate(c.req.raw.headers));
     } catch (error) {
-      if (error instanceof BadRequest)
-        answer = { status: 400, body: errorBody(400, error.message) };
-      else {
-        const failure = publicApiFailure(error);
-        if (!failure) throw error;
-        answer = {
-          status: failure.status,
-          body: errorBody(failure.status, failure.message),
-          retryAfterSeconds: failure.retryAfterSeconds,
-        };
-      }
+      const failure = publicApiFailure(error);
+      if (!failure) throw error;
+      answer = {
+        status: failure.status,
+        body: errorBody(failure.status, failure.message),
+        retryAfterSeconds: failure.retryAfterSeconds,
+      };
     }
     return c.json(answer.body, answer.status as 400, {
       ...(answer.status === 401 ? { "www-authenticate": 'Bearer realm="rakazo"' } : {}),
@@ -141,7 +139,7 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
     withCaller(access, openAiError, async (c, caller) => {
       const request = await readJson(c, ChatCompletionRequestSchema);
       const text = latestUserText(request.messages);
-      if (!text) throw new BadRequest("messages: include a user message with text");
+      if (!text) throw new ClientError("BAD_REQUEST", "messages: include a user message with text");
       const started = await access.createTask(caller, { bot: request.model, text });
       const created = Math.floor(Date.now() / 1000);
       const headers = { "x-rakazo-task-id": started.task.id };

@@ -17,7 +17,7 @@ function setup(
   runStatus: string,
   { answer = 204, delivered = {} as { runId?: string; status?: string } } = {},
 ) {
-  const update = vi.fn(async () => ({}));
+  const update = vi.fn(async () => ({ count: 1 }));
   const prisma = {
     taskCallback: {
       findUnique: vi.fn(async () => ({
@@ -31,7 +31,7 @@ function setup(
         deliveredAt: null,
         createdAt: now,
       })),
-      update,
+      updateMany: update,
     },
     task: {
       findFirst: vi.fn(async () => ({
@@ -97,7 +97,7 @@ describe("task callbacks", () => {
     const expected = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
     expect(request!.headers.get("x-rakazo-signature")).toBe(`t=${timestamp},v1=${expected}`);
     expect(update).toHaveBeenCalledWith({
-      where: { id: "callback-1" },
+      where: { id: "callback-1", url },
       data: { deliveredAt: now, deliveredRunId: "run-1", deliveredStatus: "completed" },
     });
   });
@@ -109,6 +109,17 @@ describe("task callbacks", () => {
     const answered = setup("completed", { delivered: { runId: "run-1", status: "needs_input" } });
     await answered.deliver();
     expect(answered.requests).toHaveLength(1);
+  });
+
+  it("sends each question a waiting run asks, and keeps watching it", async () => {
+    const { deliver, enqueue, requests } = setup("waiting_input", {
+      delivered: { runId: "run-1", status: "needs_input@2026-11-25T11:00:00.000Z" },
+    });
+    await deliver();
+    expect(JSON.parse(await requests[0]!.text())).toMatchObject({
+      id: `task-1:run-1:needs_input@${now.toISOString()}`,
+    });
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "task.callback" }));
   });
 
   it("leaves a refused delivery for the queue to retry", async () => {
