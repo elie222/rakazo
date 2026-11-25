@@ -60,6 +60,7 @@
     "screens": [
       "account",
       "computers",
+      "app-permissions",
       "general",
       "profile",
       "change-password",

@@ -16,12 +16,22 @@ name: Settings
     timeout: 3000
 - takeScreenshot: 01-account
 - openLink: "rakazo:///computers"
-- extendedWaitUntil:
-    visible: "No paired computers"
+# The simulator may have registered its own phone, so don't wait for an empty list.
+- scrollUntilVisible:
+    element: "App permissions"
+    direction: DOWN
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 01-computers-empty
+- takeScreenshot: 01-devices
+- tapOn: "App permissions"
+- extendedWaitUntil:
+    visible: "Calendar.*"
+    timeout: 15000
+- assertVisible: "Reminders.*"
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 01-app-permissions
 - openLink: "rakazo:///account"
 - extendedWaitUntil:
     visible: "General"
