@@ -115,11 +115,14 @@ export async function applyAccessGrants(
   }
 }
 
-/** Grants the code's credits to the organization the account owns, once per account. */
+/**
+ * Grants the code's credits to the organization the account owns, once per account, and returns
+ * the organization credited.
+ */
 export async function grantCreditCode(
   prisma: PrismaClient,
   input: { userId: string; organizationId: string; code: CreditCode },
-): Promise<void> {
+): Promise<string> {
   const { code, creditCents, maxClaims } = input.code;
   const user = await prisma.user.findUnique({
     where: { id: input.userId },
@@ -130,7 +133,7 @@ export async function grantCreditCode(
   const email = user.email.toLowerCase();
   const redeemed = await prisma.accessGrant.findUnique({
     where: { code_email: { code, email } },
-    select: { appliedAt: true },
+    select: { appliedAt: true, organizationId: true },
   });
   if (redeemed?.appliedAt)
     throw new ClientError("CONFLICT", "You already redeemed this code", "CREDIT_CODE_REDEEMED");
@@ -148,9 +151,8 @@ export async function grantCreditCode(
       throw new ClientError("CONFLICT", "You already redeemed this code", "CREDIT_CODE_REDEEMED");
     }
   }
-  await applyAccessGrants(prisma, {
-    userId: input.userId,
-    email,
-    organizationId: input.organizationId,
-  });
+  // A saved redemption goes to the organization it was made for.
+  const organizationId = redeemed?.organizationId ?? input.organizationId;
+  await applyAccessGrants(prisma, { userId: input.userId, email, organizationId });
+  return organizationId;
 }

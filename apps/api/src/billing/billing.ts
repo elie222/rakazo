@@ -958,8 +958,12 @@ export function createBillingService(deps: {
 
     async redeemCreditCode(actor, code) {
       const { organizationId } = await managedOrganization(actor);
-      await grantCreditCode(prisma, { userId: actor.userId, organizationId, code });
-      await publishOrganizationChange(prisma, deps.realtime, organizationId);
+      const credited = await grantCreditCode(prisma, {
+        userId: actor.userId,
+        organizationId,
+        code,
+      });
+      await publishOrganizationChange(prisma, deps.realtime, credited);
     },
 
     async cancelForDeletedUser(userId) {
