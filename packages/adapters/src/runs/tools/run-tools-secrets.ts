@@ -1,7 +1,9 @@
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
 import { createStreamingRedactor, displayName, redactSecrets } from "@rakazo/core";
+import type { RunSecretAnswer } from "@rakazo/db";
 import {
-  answeredRunSecretId,
+  Prisma,
+  readRunSecretAnswer,
   runCodeKind,
   runLoginKind,
   runSecretKind,
@@ -57,18 +59,23 @@ import type { ToolHandlers } from "./run-tool-gate.js";
 
 /**
  * Whether a value the run holds answers this request. A card's answer records the value it stored
- * on the request it approves, so a value left from an earlier card never answers a later one.
+ * on the request it answers, and the value is looked up by it, so a value left from an earlier
+ * card never answers a later one.
  */
 function answersRequest(
-  held: { id: string; createdAt?: unknown },
-  request: { status: string; result?: unknown; createdAt?: unknown } | undefined,
+  held: { createdAt?: unknown },
+  applied: { duplicate?: boolean; effect: { status: string; createdAt?: unknown } } | undefined,
+  answer: RunSecretAnswer | undefined,
 ): boolean {
-  if (!request) return true;
-  const bound = answeredRunSecretId(request.result);
-  if (bound) return bound === held.id;
+  if (!applied) return true;
+  if (answer?.kind === "answered") return true;
+  // Allowing the action card is not an answer, nothing can be read from an unknown record, and no
+  // card was shown yet for a request recorded by this call.
+  if ((answer && answer.kind !== "none") || !applied.duplicate) return false;
   // Nothing recorded: the previous release's answer, or a request already completed. An answer
   // approves its request in the same transaction, so a value held for a request still waiting,
   // or entered before the request was made, answered an earlier card.
+  const request = applied.effect;
   return (
     request.status !== "intended" &&
     !(
@@ -242,35 +249,41 @@ export const secretTools: ToolHandlers = {
       }
     }
     const secretKind = codeOrigin ? runCodeKind(runId) : runSecretKind(runId);
-    let storedSecret = await deps.prisma.secret.findFirst({
+    // A completed request's result is what the call returned, not a card's record.
+    const answer =
+      applied && !destination && applied.effect.status !== "completed"
+        ? readRunSecretAnswer(applied.effect)
+        : undefined;
+    const held = await deps.prisma.secret.findFirst({
       where: {
         spaceId: run.spaceId,
         userId: run.userId,
         kind: secretKind,
+        ...(answer?.kind === "answered" ? { id: answer.secretId } : {}),
       },
     });
-    const staleId =
-      storedSecret && !destination && !answersRequest(storedSecret, applied?.effect)
-        ? storedSecret.id
-        : undefined;
+    const stale = held && !destination && !answersRequest(held, applied, answer) ? held : undefined;
+    const storedSecret = stale ? null : held;
+    // A code no card answered for this request is never typed: the next code card replaces it
+    // anyway. Any other value may answer another request still waiting, so it stays.
+    const staleCodeId = stale && codeOrigin ? stale.id : undefined;
     // Action approval authorizes showing the card; it is not a credential submission or an
-    // answer. A credential card's answer returned above. Return the claim to intended so the
-    // card's answer can approve it, and drop a value no card answered for it in the same write.
-    if (call.claimedEffect && (destination || !storedSecret || staleId)) {
+    // answer. A credential card's answer returned above. Return the claim to intended, with no
+    // record, so the card's answer can approve it, and drop a stale code in the same write.
+    if (call.claimedEffect && (destination || !storedSecret)) {
       const released = await deps.prisma.$transaction(async (tx) => {
         const claim = await tx.externalEffect.updateMany({
           where: { id: applied!.effect.id, status: "executing" },
-          data: { status: "intended" },
+          data: { status: "intended", result: Prisma.DbNull },
         });
-        if (claim.count === 1 && staleId) await tx.secret.deleteMany({ where: { id: staleId } });
+        if (claim.count === 1 && staleCodeId)
+          await tx.secret.deleteMany({ where: { id: staleCodeId } });
         return claim.count === 1;
       });
       if (!released) return uncertainEffectResult(name);
       call.claimedEffect = false;
-      if (staleId) storedSecret = null;
-    } else if (staleId) {
-      await deps.prisma.secret.deleteMany({ where: { id: staleId } });
-      storedSecret = null;
+    } else if (staleCodeId) {
+      await deps.prisma.secret.deleteMany({ where: { id: staleCodeId } });
     }
     // A code that cannot be read is no code: ask again.
     const heldCode =
@@ -439,6 +452,7 @@ export const secretTools: ToolHandlers = {
           // The site is the server's words in the title; the bot's own label is plain detail.
           ...(codeOrigin && args.label ? { detail: String(args.label).slice(0, 200) } : {}),
           input: "secret",
+          requestEffectId: recordedForAsk.effect.id,
           ...(destination ? { credential: destination } : {}),
           ...(codeOrigin ? { oneTimeCode: { origin: codeOrigin } } : {}),
           ...(replaces ? { replaces } : {}),

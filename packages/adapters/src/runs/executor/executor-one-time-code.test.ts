@@ -1,5 +1,11 @@
 import type { ComputerRef } from "@rakazo/adapter-kit";
-import { answeredRunSecretResult, runCodeKind, runSecretKind } from "@rakazo/db";
+import {
+  answeredRunSecretResult,
+  Prisma,
+  RUN_SECRET_ACTION_APPROVED,
+  runCodeKind,
+  runSecretKind,
+} from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "../../computers/computer-lifecycle.js";
 import { encodeRunCode } from "../../secrets/bot-secrets.js";
@@ -200,6 +206,10 @@ function world(printed = "", rules: Row[] = [], connection: Row = CONNECTION) {
             secrets.filter((row) => matches(row, where)),
           count: async ({ where }: { where: Row }) =>
             secrets.filter((row) => matches(row, where)).length,
+          delete: async ({ where }: { where: Row }) => {
+            const at = secrets.findIndex((row) => matches(row, where));
+            return at === -1 ? null : secrets.splice(at, 1)[0];
+          },
           deleteMany: async ({ where }: { where: Row }) => {
             const kept = secrets.filter((row) => !matches(row, where));
             const count = secrets.length - kept.length;
@@ -237,7 +247,9 @@ function world(printed = "", rules: Row[] = [], connection: Row = CONNECTION) {
           },
           updateMany: async ({ where, data }: { where: Row; data: Row }) => {
             const rows = effects.filter((row) => matches(row, where));
-            for (const row of rows) Object.assign(row, data);
+            // A JSON column cleared to the database's null reads back as null.
+            const stored = data.result === Prisma.DbNull ? { ...data, result: null } : data;
+            for (const row of rows) Object.assign(row, stored);
             return { count: rows.length };
           },
         },
@@ -286,8 +298,9 @@ function world(printed = "", rules: Row[] = [], connection: Row = CONNECTION) {
   }
 
   /**
-   * The user answers the open card: the effect is approved, recording the value it holds, and the
-   * code waits for the page. `previousRelease` approves as the release before did, recording none.
+   * The user answers the open card: the request it names is approved, recording the value it
+   * holds, and the code waits for the page. `previousRelease` answers as the release before did:
+   * every waiting request is approved and nothing is recorded.
    */
   async function userAnswers(code = CODE, { connection = false, previousRelease = false } = {}) {
     const stored = await secretStore.put(
@@ -295,8 +308,10 @@ function world(printed = "", rules: Row[] = [], connection: Row = CONNECTION) {
       { ...scope, operationId: "run-1", traceId: "run-1", signal: new AbortController().signal },
       { ephemeral: true },
     );
+    const card = asked.at(-1)?.blocks[0];
     for (const effect of effects) {
       if (effect.status !== "intended") continue;
+      if (!previousRelease && card?.requestEffectId && effect.id !== card.requestEffectId) continue;
       effect.status = "approved";
       if (!previousRelease) effect.result = answeredRunSecretResult(stored.id);
     }
@@ -309,9 +324,13 @@ function world(printed = "", rules: Row[] = [], connection: Row = CONNECTION) {
     });
   }
 
-  /** The user allows the action card: the effect is approved, with nothing entered yet. */
+  /** The user allows the action card: the effect is approved, marked as nothing entered yet. */
   function userAllows() {
-    for (const effect of effects) if (effect.status === "intended") effect.status = "approved";
+    for (const effect of effects) {
+      if (effect.status !== "intended") continue;
+      effect.status = "approved";
+      effect.result = RUN_SECRET_ACTION_APPROVED;
+    }
   }
 
   const everythingWritten = () => JSON.stringify([calls, appended, asked, effects]);
@@ -344,6 +363,7 @@ describe("request_secret for a one-time code", () => {
       text: "Code for login.example.test",
       detail: "Verification code",
       input: "secret",
+      requestEffectId: run.effects[0]!.id,
       oneTimeCode: { origin: ORIGIN },
       purpose: "otp",
       status: "pending",
@@ -524,38 +544,41 @@ describe("request_secret behind an action card", () => {
   });
 
   it.each([
-    ["a code", requestCode(), {}],
+    ["a code", requestCode(), { connection: false }],
     [
       "a connection code",
       { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } },
       { connection: true },
     ],
-  ])("takes %s answered in the millisecond the request was made", async (_name, call, kind) => {
-    const run = world("", ASK_FIRST);
-    await run.attempt([call]);
-    run.userAllows();
-    await run.attempt([call]);
-    await run.userAnswers(CODE, kind);
-    run.secrets[0]!.createdAt = run.effects[0]!.createdAt;
-    const [result] = await run.attempt([call]);
-    expect(result).toMatchObject({ ok: true, submitted: true });
-    expect(run.asked).toHaveLength(2);
-    expect(run.effects).toMatchObject([{ status: "completed" }]);
-  });
+  ])(
+    "takes %s the previous release answered in the millisecond the request was made",
+    async (_name, call, kind) => {
+      const run = world("", ASK_FIRST);
+      await run.attempt([call]);
+      run.userAllows();
+      await run.attempt([call]);
+      await run.userAnswers(CODE, { ...kind, previousRelease: true });
+      run.secrets[0]!.createdAt = run.effects[0]!.createdAt;
+      const [result] = await run.attempt([call]);
+      expect(result).toMatchObject({ ok: true, submitted: true });
+      expect(run.asked).toHaveLength(2);
+      expect(run.effects).toMatchObject([{ status: "completed" }]);
+    },
+  );
 
   it("never takes a connection code an earlier card left once the request waits again", async () => {
     const call = { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } };
     const run = world("", ASK_FIRST);
     await run.attempt([call]);
     run.userAllows();
-    // A value no card answered for this request is still held, and the request waits again, as
-    // if an attempt stopped between handing back the claim and dropping that value.
+    // A value no card answered for this request is held, and the request waits again with
+    // nothing recorded, as it does once the action card's claim is handed back.
     await run.userAnswers(CODE, { connection: true });
-    run.effects[0]!.status = "intended";
+    Object.assign(run.effects[0]!, { status: "intended", result: null });
     const [result] = await run.attempt([call]);
     expect(result).toMatchObject({ details: { secret: "paused" } });
     expect(run.asked[1]!.blocks[0]).toMatchObject({ input: "secret", status: "pending" });
-    expect(run.secrets).toEqual([]);
+    expect(run.secrets).toHaveLength(1);
     expect(run.effects).toMatchObject([{ status: "intended" }]);
   });
 
@@ -584,5 +607,71 @@ describe("request_secret behind an action card", () => {
       note: expect.stringContaining("fill_code"),
     });
     expect(run.effects).toMatchObject([{ status: "completed" }]);
+  });
+
+  it("never takes a code an earlier card left in the request's millisecond once the action is allowed", async () => {
+    const run = world("", ASK_FIRST);
+    await run.userAnswers();
+    await run.attempt([requestCode()]);
+    run.secrets[0]!.createdAt = run.effects[0]!.createdAt;
+    run.userAllows();
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({ oneTimeCode: { origin: ORIGIN } });
+    expect(run.secrets).toEqual([]);
+    expect(run.effects).toMatchObject([{ status: "intended", result: null }]);
+  });
+});
+
+describe("request_secret answers", () => {
+  const connectionCode = (label: string) => ({
+    name: "request_secret",
+    args: { label, connectionId: CONNECTION.id },
+  });
+
+  it("gives a card's answer only to the request the card was shown for", async () => {
+    const run = world();
+    // An attempt stopped after recording the first request and before its card was saved.
+    await run.attempt([connectionCode("First")]);
+    run.asked.splice(0);
+    await run.attempt([connectionCode("Second")]);
+    await run.userAnswers(CODE, { connection: true });
+    expect(run.effects).toMatchObject([
+      { status: "intended" },
+      { status: "approved", result: answeredRunSecretResult(String(run.secrets[0]!.id)) },
+    ]);
+    // The approved request is replayed first and takes the answer; the first one asks again.
+    const results = await run.attempt([connectionCode("Second"), connectionCode("First")]);
+    expect(results[0]).toMatchObject({ ok: true, submitted: true });
+    expect(results[1]).toMatchObject({ details: { secret: "paused" } });
+    expect(run.effects).toMatchObject([{ status: "intended" }, { status: "completed" }]);
+    expect(run.asked.at(-1)!.blocks[0]).toMatchObject({ requestEffectId: run.effects[0]!.id });
+  });
+
+  it("asks again when what was recorded for the request cannot be read", async () => {
+    const run = world();
+    await run.attempt([requestCode()]);
+    await run.userAnswers();
+    run.effects[0]!.result = { answeredSecretId: 42 };
+    run.secrets[0]!.createdAt = new Date(Date.now() + 60_000);
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.secrets).toEqual([]);
+    expect(run.asked).toHaveLength(2);
+  });
+
+  it.each([
+    ["denied", { error: expect.stringContaining("denied") }],
+    ["uncertain", { uncertain: true }],
+  ])("returns a %s request as it settled, never taking a newer value", async (status, settled) => {
+    const call = connectionCode("Code");
+    const run = world();
+    await run.attempt([call]);
+    await run.userAnswers(CODE, { connection: true });
+    Object.assign(run.effects[0]!, { status, result: null, updatedAt: new Date(0) });
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject(settled);
+    expect(run.secrets).toHaveLength(1);
+    expect(run.effects[0]).toMatchObject({ status, result: null });
   });
 });

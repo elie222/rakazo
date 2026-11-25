@@ -599,7 +599,9 @@ export async function gateToolCall(
   if (applied?.duplicate) {
     const gate = resolveDuplicateEffectGate(applied.effect, name);
     if (gate.action === "return") {
-      if (name === "request_secret") {
+      // Only a completed request can have a newer value replace what it took; a denied or
+      // uncertain one returns as it settled.
+      if (name === "request_secret" && applied.effect.status === "completed") {
         const replacementSecret = await deps.prisma.secret.findFirst({
           where: {
             spaceId: run.spaceId,

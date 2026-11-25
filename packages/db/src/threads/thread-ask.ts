@@ -30,11 +30,16 @@ import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { recordSecurityEvent } from "../account/security-events.js";
 import { saveApprovalRule, storedBatchActions } from "../bots/approval-settings.js";
 import { expireComputerExecutionLeases } from "../computers/computers.js";
-import type { Prisma, PrismaClient } from "../database/client.js";
+import type { PrismaClient } from "../database/client.js";
+import { Prisma } from "../database/client.js";
 import { JsonObject, readJsonColumn } from "../database/json-column.js";
 import { THREAD_LOCK_TRANSACTION_OPTIONS } from "../database/transaction-retry.js";
 import { contentEncryptionOf } from "../encryption/content-encryption.js";
-import { answeredRunSecretResult, deleteRunSecretsInTransaction } from "../runs/run-secrets.js";
+import {
+  answeredRunSecretResult,
+  deleteRunSecretsInTransaction,
+  RUN_SECRET_ACTION_APPROVED,
+} from "../runs/run-secrets.js";
 import {
   RUN_TURN_CHECKPOINT_KIND,
   retireIntroTurnCheckpoint,
@@ -273,7 +278,10 @@ async function commitAnswerRunInput(
   if (dismissed && (!secretAsk || input.answer)) return null;
   const expired = Boolean(input.expired);
   if (expired && (!approvalAsk || input.answer !== "deny")) return null;
+  // A card names the request it answers; one the previous release showed answers every request
+  // still waiting.
   const secretRequest = {
+    ...(pendingAsk.requestEffectId ? { id: pendingAsk.requestEffectId } : {}),
     runId: input.runId,
     spaceId: input.spaceId,
     kind: "request_secret",
@@ -453,7 +461,13 @@ async function commitAnswerRunInput(
       data: {
         status: allowed ? "approved" : "denied",
         ...(editedDraft ? { request: editedDraft.request as Prisma.InputJsonValue } : {}),
-        ...(expired ? { result: APPROVAL_EXPIRED_RESULT } : {}),
+        // A code or connection request allowed here still waits for its value, and is marked so
+        // that no value held from an earlier card is taken as entered for it.
+        ...(expired
+          ? { result: APPROVAL_EXPIRED_RESULT }
+          : allowed && approvalEffect!.kind === "request_secret"
+            ? { result: RUN_SECRET_ACTION_APPROVED }
+            : {}),
       },
     });
     // "Always" on a card for a request to a site allows that site, never every site the tool can
@@ -495,21 +509,17 @@ async function commitAnswerRunInput(
       tx,
     });
     await tx.externalEffect.updateMany({
-      where: {
-        runId: input.runId,
-        spaceId: input.spaceId,
-        kind: "request_secret",
-        status: "intended",
-      },
+      where: secretRequest,
       data: {
         status: "approved",
-        // The run's value is bound to the request this answer approves, so no other request or
-        // later retry takes it as its own answer.
-        ...(pendingAsk.credential
-          ? { result: { credentialSaved: pendingAsk.credential } }
-          : heldSecretId
-            ? { result: answeredRunSecretResult(heldSecretId) }
-            : {}),
+        // The run's value is bound to the one request this card answers, so no other request or
+        // later retry takes it as its own answer. A card that names no request records nothing,
+        // as the previous release did, so its request is matched by when the value was entered.
+        result: pendingAsk.credential
+          ? { credentialSaved: pendingAsk.credential }
+          : heldSecretId && pendingAsk.requestEffectId
+            ? answeredRunSecretResult(heldSecretId)
+            : Prisma.DbNull,
       },
     });
   } else {

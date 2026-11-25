@@ -1,4 +1,10 @@
+import { z } from "zod";
 import type { Prisma, PrismaClient } from "../database/client.js";
+import {
+  JsonColumnMismatchError,
+  readJsonColumn,
+  reportJsonColumnOnce,
+} from "../database/json-column.js";
 import { readMessageBlocks } from "../threads/message-blocks.js";
 import { clearRunTurnCheckpoints } from "./run-turn-checkpoint.js";
 
@@ -15,14 +21,40 @@ export function answeredRunSecretResult(secretId: string): { answeredSecretId: s
   return { answeredSecretId: secretId };
 }
 
-/** The run secret a card's answer recorded on this request, if one did. */
-export function answeredRunSecretId(result: unknown): string | undefined {
-  return result &&
-    typeof result === "object" &&
-    "answeredSecretId" in result &&
-    typeof result.answeredSecretId === "string"
-    ? result.answeredSecretId
-    : undefined;
+/** What allowing a code or connection request's action card records: approval, with no value. */
+export const RUN_SECRET_ACTION_APPROVED = { actionApproved: true } as const;
+
+const RunSecretAnswerSchema = z.union([
+  z.object({ answeredSecretId: z.string().min(1) }).strict(),
+  z.object({ actionApproved: z.literal(true) }).strict(),
+]);
+
+export type RunSecretAnswer =
+  /** Nothing recorded: no card answered the request yet, or the previous release answered it. */
+  | { kind: "none" }
+  | { kind: "answered"; secretId: string }
+  /** The action card was allowed and no value was entered for it. */
+  | { kind: "action_approved" }
+  /** Something no release records on a waiting request: no value answers it. */
+  | { kind: "unreadable" };
+
+/** What a card recorded on a code or connection request that has not completed. */
+export function readRunSecretAnswer(effect: { id: string; result?: unknown }): RunSecretAnswer {
+  if (effect.result === null || effect.result === undefined) return { kind: "none" };
+  const row = { table: "external_effects", column: "result", id: effect.id };
+  try {
+    const answer = readJsonColumn(RunSecretAnswerSchema, effect.result, row, "reject");
+    return "answeredSecretId" in answer
+      ? { kind: "answered", secretId: answer.answeredSecretId }
+      : { kind: "action_approved" };
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    reportJsonColumnOnce(
+      "A secret request's recorded answer is unreadable; no value answers it",
+      row,
+    );
+    return { kind: "unreadable" };
+  }
 }
 
 /** A login card answered with "Save to Vault" off, kept for this run only under its name. */
