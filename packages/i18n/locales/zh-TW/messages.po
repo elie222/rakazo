@@ -516,12 +516,12 @@ msgstr "{name} 的電腦"
 #. js-lingui-explicit-id
 #: packages/i18n/src/model-disconnect.ts
 msgid "{names} and {more} more may stop until you reconnect."
-msgstr ""
+msgstr "{names} 及另外 {more} 項可能會停止，直到你重新連線。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/model-disconnect.ts
 msgid "{names} may stop until you reconnect."
-msgstr ""
+msgstr "{names} 可能會停止，直到你重新連線。"
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{owner}'s {peer} wants to connect to {agent}"
@@ -772,7 +772,7 @@ msgstr "@{0}"
 #. placeholder {0}: mention.name
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "@{0}, {details}"
-msgstr ""
+msgstr "@{0}，{details}"
 
 #: apps/mobile/components/composer/composer-mention-picker.tsx
 msgid "@{name}"
@@ -1511,7 +1511,7 @@ msgstr "一律允許 {site}"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Always allow routine updates"
-msgstr ""
+msgstr "一律允許更新例行任務"
 
 #: apps/mobile/lib/cards/ask-action-label.ts
 #: apps/web/src/components/messages/AskCard.tsx
@@ -1724,7 +1724,7 @@ msgstr "核准"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Approve once"
-msgstr ""
+msgstr "核准一次"
 
 #: apps/mobile/lib/calls/call-session.ts
 #: apps/web/src/lib/calls/call-session.ts
@@ -1830,7 +1830,7 @@ msgstr "{time}"
 
 #: packages/i18n/src/cron.ts
 msgid "at {times} and {last}"
-msgstr ""
+msgstr "{times}和{last}"
 
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "at {timeSelect}"
@@ -2170,7 +2170,7 @@ msgstr "機器人與瀏覽器自動化"
 #. js-lingui-explicit-id
 #: packages/i18n/src/model-disconnect.ts
 msgid "Bots and routines that rely on this connection may stop."
-msgstr ""
+msgstr "依賴此連線的機器人和例行任務可能會停止。"
 
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 msgid "Bots and their own chats stay."
@@ -2555,7 +2555,7 @@ msgstr "聊天"
 
 #: apps/web/src/pages/settings/UsageSettingsPanel.tsx
 msgid "Chats and other work"
-msgstr ""
+msgstr "聊天與其他工作"
 
 #: apps/web/src/components/computers/ComputersUnavailableHint.tsx
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
@@ -3108,7 +3108,7 @@ msgstr "請先連線語音供應商。"
 #: apps/mobile/lib/calls/call-language-preference.ts
 #: apps/web/src/lib/calls/dictation.ts
 msgid "Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings."
-msgstr ""
+msgstr "請連接支援轉錄的語音供應商，或在語音設定中關閉自動語言偵測。"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
@@ -3785,7 +3785,7 @@ msgstr "無法下載此成品"
 
 #: apps/mobile/components/bots/bot-profile-menu.tsx
 msgid "Could not duplicate bot"
-msgstr ""
+msgstr "無法複製機器人"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3981,7 +3981,7 @@ msgstr "無法載入頁面。"
 #: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Could not load permissions"
-msgstr ""
+msgstr "無法載入權限"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Could not load permissions."
@@ -4351,7 +4351,7 @@ msgstr "無法儲存模型設定"
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Could not save permission"
-msgstr ""
+msgstr "無法儲存權限"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
@@ -4572,7 +4572,7 @@ msgstr "無法轉錄。"
 
 #: apps/web/src/pages/shell/composer/use-composer-actions.ts
 msgid "Could not try again"
-msgstr ""
+msgstr "無法重試"
 
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Could not update"
@@ -5243,7 +5243,7 @@ msgstr "詳細資訊"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Detect call language automatically"
-msgstr ""
+msgstr "自動偵測通話語言"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
@@ -5622,7 +5622,7 @@ msgstr "已啟用例行任務「{name}」"
 
 #: apps/mobile/components/routines/routine-end-date.tsx
 msgid "End date"
-msgstr ""
+msgstr "結束日期"
 
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
@@ -6232,7 +6232,7 @@ msgstr "觸覺回饋"
 
 #: apps/mobile/app/(settings)/general.tsx
 msgid "Hardware keyboard"
-msgstr ""
+msgstr "實體鍵盤"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
@@ -6519,7 +6519,7 @@ msgstr "此機器人中"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "In this chat"
-msgstr ""
+msgstr "在此聊天中"
 
 #: apps/mobile/app/(settings)/mcp-server.tsx
 msgid "In use"
@@ -7041,7 +7041,7 @@ msgstr "正在載入預覽…"
 #: apps/mobile/components/integrations/integration-detail.tsx
 #: apps/web/src/pages/plugins/connector-detail.tsx
 msgid "Loading tool permissions…"
-msgstr ""
+msgstr "正在載入工具權限…"
 
 #: apps/mobile/app/meeting-transcript.tsx
 #: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
@@ -7618,7 +7618,7 @@ msgstr "更多操作"
 #: apps/mobile/components/cards/AskActions.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "More approval options"
-msgstr ""
+msgstr "更多核准選項"
 
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
@@ -7845,7 +7845,7 @@ msgstr "新的標頭值"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "New instructions"
-msgstr ""
+msgstr "新指令"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
@@ -8417,7 +8417,7 @@ msgstr "只有 {name} 可以變更此例行任務。"
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Only Block rules apply in Never ask."
-msgstr ""
+msgstr "在「永不詢問」模式下，只有「封鎖」規則有效。"
 
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
@@ -8654,12 +8654,12 @@ msgstr "OTA {id}，{date}"
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Other actions"
-msgstr ""
+msgstr "其他操作"
 
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Other approval rules still apply."
-msgstr ""
+msgstr "其他核准規則仍然有效。"
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Other computers"
@@ -9056,7 +9056,7 @@ msgstr "此檔案類型無法預覽。請下載後檢視。"
 
 #: apps/web/src/components/pages/PageCard.tsx
 msgid "Preview of {title}"
-msgstr ""
+msgstr "{title} 的預覽"
 
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Previous image"
@@ -9065,7 +9065,7 @@ msgstr "上一張圖片"
 #: apps/mobile/components/cards/routine-approval-detail.tsx
 #: apps/web/src/components/messages/RoutineApprovalDetail.tsx
 msgid "Previous instructions"
-msgstr ""
+msgstr "先前的指令"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -9081,7 +9081,7 @@ msgstr "上一組設定區段"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Previously: {value}"
-msgstr ""
+msgstr "先前：{value}"
 
 #: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
@@ -9268,7 +9268,7 @@ msgstr "朗讀回覆"
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Reads"
-msgstr ""
+msgstr "讀取"
 
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Ready"
@@ -9350,17 +9350,17 @@ msgstr "正在重新連線"
 #. js-lingui-explicit-id
 #: packages/i18n/src/model-disconnect.ts
 msgid "Reconnecting will not restore saved model choices that use this connection."
-msgstr ""
+msgstr "重新連線不會還原使用此連線的已儲存模型選擇。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/model-disconnect.ts
 msgid "Reconnecting will not restore the main model choice or other choices that use this connection."
-msgstr ""
+msgstr "重新連線不會還原使用此連線的主模型選擇或其他選擇。"
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/model-disconnect.ts
 msgid "Reconnecting will not restore the main model choice that uses this connection."
-msgstr ""
+msgstr "重新連線不會還原使用此連線的主模型選擇。"
 
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Recording may have started, but the view could not refresh"
@@ -9601,7 +9601,7 @@ msgstr "移除電子郵件觸發條件"
 
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 msgid "Remove end date"
-msgstr ""
+msgstr "移除結束日期"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -10053,7 +10053,7 @@ msgstr "例行任務"
 #: apps/mobile/lib/messages/routine-event-label.ts
 #: apps/web/src/pages/shell/chat/routine-event-row.tsx
 msgid "Routine \"{name}\" ended"
-msgstr ""
+msgstr "例行任務「{name}」已結束"
 
 #: apps/mobile/app/routine.tsx
 msgid "Routine link is incomplete"
@@ -10327,7 +10327,7 @@ msgstr "回答是或否，或一句話說明。"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Schedule"
-msgstr ""
+msgstr "排程"
 
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/lib/routines/routine.ts
@@ -10596,7 +10596,7 @@ msgstr "已傳送"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Separately from this chat"
-msgstr ""
+msgstr "獨立於此聊天"
 
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/(settings)/mcp-server.tsx
@@ -12126,7 +12126,7 @@ msgstr "時間"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Time zone"
-msgstr ""
+msgstr "時區"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Timezone"
@@ -12220,7 +12220,7 @@ msgstr "工具名稱"
 #: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Tool permissions"
-msgstr ""
+msgstr "工具權限"
 
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
@@ -12498,7 +12498,7 @@ msgstr "不支援的檔案類型：{0}"
 #: apps/mobile/lib/routines/routine.ts
 #: apps/web/src/pages/routines/RoutineList.tsx
 msgid "until {end}"
-msgstr ""
+msgstr "直到 {end}"
 
 #: apps/mobile/app/meeting-calendar.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
@@ -12651,7 +12651,7 @@ msgstr "使用 {hostLabel}"
 #: apps/mobile/components/models/voice-model-connection-actions.tsx
 #: apps/web/src/pages/settings/voice-model-connection-actions.tsx
 msgid "Use {label}"
-msgstr ""
+msgstr "使用 {label}"
 
 #: apps/mobile/lib/dialogs/text-prompt.ts
 msgid "Use {maxLength} characters or fewer"
@@ -13082,7 +13082,7 @@ msgstr "何時使用"
 
 #: packages/i18n/src/routine-approval.ts
 msgid "Where it runs"
-msgstr ""
+msgstr "執行位置"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Where should bots run?"
