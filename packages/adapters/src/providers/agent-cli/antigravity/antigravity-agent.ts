@@ -61,6 +61,7 @@ export const antigravityAgent: AcpAgentDescriptor = {
   id: ANTIGRAVITY_CLI_PROVIDER_ID,
   label: "Antigravity",
   command: "agy",
+  acceptsImages: true,
   notInstalled:
     "The Antigravity CLI is not installed on this server. Install it for the user that runs the Rakazo worker.",
   signIn: "Run `agy acp --login` in a terminal as the user that runs the Rakazo worker.",
