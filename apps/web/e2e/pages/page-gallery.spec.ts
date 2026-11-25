@@ -60,7 +60,6 @@ async function scrollTo(track: Locator, index: number) {
 
 const dots = (page: Page) => page.locator(".rk-gallery-dots button");
 
-/** Exactly one dot is current, and it is this one. */
 async function expectMarked(page: Page, index: number) {
   await expect(page.locator(".rk-gallery-dots button[aria-current]")).toHaveCount(1);
   await expect(dots(page).nth(index)).toHaveAttribute("aria-current", "true");
