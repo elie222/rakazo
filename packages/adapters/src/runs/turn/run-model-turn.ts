@@ -13,6 +13,7 @@ import type { AssembledTurn } from "../assembly/run-assembly.js";
 import {
   botEmailInstruction,
   currentTurnDataPrompt,
+  historyThisChatUpdate,
   runIdentityInstruction,
   userTurnInstructions,
 } from "../assembly/run-instructions.prompt.js";
@@ -271,6 +272,10 @@ async function modelTurnRequest(
     tools,
     getBuiltinToolDeclarations: liveHistoryScope
       ? () => (myChatsAvailable ? undefined : thisChatHistoryDeclaration)
+      : undefined,
+    // The instructions may predate the revocation, including saved ones a resumed turn keeps.
+    getInstructionsUpdate: liveHistoryScope
+      ? (instructions) => (myChatsAvailable ? undefined : historyThisChatUpdate(instructions))
       : undefined,
     unavailableToolReasons,
     // The live array: secrets learned later in the run redact too.

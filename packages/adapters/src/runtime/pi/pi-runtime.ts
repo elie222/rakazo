@@ -8,7 +8,7 @@ import type {
   Message,
   Model,
 } from "@earendil-works/pi-ai";
-import { validateToolArguments } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, validateToolArguments } from "@earendil-works/pi-ai";
 import type {
   AdapterContext,
   AgentRunRequest,
@@ -346,6 +346,11 @@ export class PiAgentRuntime implements AgentRuntime {
         const refreshModelTools = (offered = request.getBuiltinToolDeclarations?.()) => {
           declarations = offered;
           modelTools = modelToolDeclarations(tools, toolsByAgentName, offered);
+        };
+        // A later system message keeps the transcript before it, and so the cached prefix.
+        const instructionsUpdate = (messages: readonly { role: string }[]): Message[] => {
+          const text = request.getInstructionsUpdate?.(getCurrentSystemPrompt(messages));
+          return text ? [{ role: "system", content: text, timestamp: Date.now() }] : [];
         };
         const seenSteeringIds: string[] = [];
         const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
@@ -760,7 +765,9 @@ export class PiAgentRuntime implements AgentRuntime {
                 ? await request.claimSteering([...seenSteeringIds])
                 : [];
             const offered = request.getBuiltinToolDeclarations?.();
-            if (declarations !== offered) refreshModelTools(offered);
+            const offerChanged = declarations !== offered;
+            if (offerChanged) refreshModelTools(offered);
+            const instructions = offerChanged ? instructionsUpdate(turn.context.messages) : [];
             const update =
               computer || modelTools !== tools
                 ? {
@@ -785,7 +792,8 @@ export class PiAgentRuntime implements AgentRuntime {
                   }
                 : undefined;
             switchedMode = false;
-            if (steering.length === 0) return update;
+            if (steering.length === 0)
+              return instructions.length ? { ...update, messages: instructions } : update;
             seenSteeringIds.push(...steering.map((item) => item.id));
             for (const item of steering) representedHistoryIds.add(item.messageId);
             if (steering.some((item) => item.images?.length && !item.imageFileFallback))
@@ -813,7 +821,7 @@ export class PiAgentRuntime implements AgentRuntime {
             // Returned rather than steered: Pi polls its steering queue once per turn before
             // this hook runs, and skips the poll after it when that one found a message, such
             // as a finished shell's output. Returned messages always go into the next request.
-            return { ...update, messages };
+            return { ...update, messages: [...messages, ...instructions] };
           },
           initialState: {
             systemPrompt,
@@ -1225,9 +1233,12 @@ export class PiAgentRuntime implements AgentRuntime {
                 last = agent.state.messages.at(-1);
               }
               toolWorkPendingFinal = true;
+              for (const message of instructionsUpdate(agent.state.messages)) agent.steer(message);
               await agent.continue();
             }
           } else {
+            // Instructions written before Pi claimed the opening steering.
+            for (const message of instructionsUpdate(agent.state.messages)) agent.steer(message);
             // Only the person's messages go under their label; anyone else's is framed by origin.
             await agent.prompt(
               promptWithSteering(

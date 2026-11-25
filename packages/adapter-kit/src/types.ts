@@ -743,6 +743,12 @@ export interface AgentRunRequest {
   tools: ConnectorTool[];
   /** Read the current model-facing definitions. The map changes only when the offer changes. */
   getBuiltinToolDeclarations?: () => ReadonlyMap<string, ConnectorTool> | undefined;
+  /**
+   * A note the instructions in use need because the offer changed after they were written,
+   * or nothing. The runtime adds it as a later system message, leaving the transcript before it
+   * unchanged, and asks again with the note included.
+   */
+  getInstructionsUpdate?: (instructions: string) => string | undefined;
   /** Why each built-in tool this run was not offered is unavailable, keyed by tool name. */
   unavailableToolReasons?: Readonly<Record<string, string>>;
   model: AgentRunModel;

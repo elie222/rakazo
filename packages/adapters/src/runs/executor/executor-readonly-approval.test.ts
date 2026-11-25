@@ -895,6 +895,7 @@ describe("search_history scope guidance", () => {
     const request = f.runtimeRun.mock.calls[0]![0];
     expect(JSON.stringify(searchTool(request))).not.toContain("my_chats");
     expect(request.instructions).not.toContain("my_chats");
+    expect(request.getInstructionsUpdate?.(request.instructions)).toBeUndefined();
   });
 
   it("narrows the live declaration after claiming outside steering", async () => {
@@ -906,13 +907,22 @@ describe("search_history scope guidance", () => {
       ];
     });
     const offers: ConnectorTool[] = [];
+    const notes: (string | undefined)[] = [];
+    let instructions = "";
     f.runtimeRun.mockImplementation(async function* (request) {
-      offers.push({ ...searchTool(request) });
+      const offer = () => {
+        offers.push({ ...searchTool(request) });
+        notes.push(request.getInstructionsUpdate?.(request.instructions));
+      };
+      offer();
       await request.claimSteering!([]);
-      offers.push({ ...searchTool(request) });
+      offer();
       const steering = await request.claimSteering!([]);
-      offers.push({ ...searchTool(request) });
+      offer();
       await request.claimSteering!(steering.map((item) => item.id));
+      instructions = request.instructions;
+      // Asked again with the note in place, it adds no second one.
+      notes.push(request.getInstructionsUpdate?.(`${request.instructions}\n\n${notes[2]}`));
       yield { type: "done", text: "Done" };
     });
     await f.run();
@@ -924,6 +934,13 @@ describe("search_history scope guidance", () => {
       expect(offer.description).toContain("scope my_chats");
     }
     expect(JSON.stringify(offers[2])).not.toContain("my_chats");
+    expect(instructions).toContain("scope my_chats");
+    expect(notes).toEqual([
+      undefined,
+      undefined,
+      expect.stringContaining("only this chat"),
+      undefined,
+    ]);
     expect(f.prisma.steeringMessage.findFirst).toHaveBeenCalledTimes(2);
   });
 });
