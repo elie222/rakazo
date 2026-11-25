@@ -100,6 +100,7 @@ export const KO_MESSAGES: Record<string, string> = {
   "Almost ready…": "거의 완료…",
   "Rakazo is ready.": "Rakazo가 준비되었습니다.",
   "{size} downloaded": "{size} 다운로드됨",
+  "{done} of {total}": "{total} 중 {done}",
   "Connecting…": "연결 중…",
   "Checking…": "확인 중…",
   "Rakazo answered at {url}.": "Rakazo가 {url}에서 응답했습니다.",

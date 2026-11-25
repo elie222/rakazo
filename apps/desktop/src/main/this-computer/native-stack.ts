@@ -516,7 +516,7 @@ export class NativeStackController extends StackLifecycle {
       fetch: this.deps.fetch,
       env: this.baseEnv(),
       signal: AbortSignal.any([signal, installing.signal]),
-      onBytes: (name, bytes) => this.push({ type: "download", name, bytes }),
+      onBytes: (name, bytes, total) => this.push({ type: "download", name, bytes, total }),
       onLine: (line) => this.push({ type: "output", line }),
     };
     const installers = this.deps.installers ?? {};

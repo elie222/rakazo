@@ -107,20 +107,21 @@ describe("downloadVerified", () => {
   const body = new TextEncoder().encode("pinned contents");
 
   it("moves a matching download into place and reports progress", async () => {
-    const progress: number[] = [];
+    const progress: [number, number][] = [];
     const destination = path.join(dir, "file.bin");
     await downloadVerified(
       {
         fetch: bytesFetch(body),
         signal: new AbortController().signal,
-        onBytes: (_, bytes) => progress.push(bytes),
+        onBytes: (_, bytes, total) => progress.push([bytes, total]),
       },
       "file",
       pinnedFor(body),
       destination,
     );
     expect(await readFile(destination, "utf8")).toBe("pinned contents");
-    expect(progress.at(-1)).toBe(body.length);
+    expect(progress[0]).toEqual([0, body.length]);
+    expect(progress.at(-1)).toEqual([body.length, body.length]);
   });
 
   it.each([
