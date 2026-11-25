@@ -445,6 +445,20 @@ it("opens the agent import from a first bot's opening question instead of answer
   expect(button("AParis")).toBeDefined();
 });
 
+it("shows a legacy import card's stored action id as that action's label", async () => {
+  await render({
+    kind: "ask",
+    text: "Where should we start?",
+    status: "answered",
+    answer: AGENT_IMPORT_ASK_ACTION_ID,
+    actions: [{ id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" }],
+  });
+  expect(container.querySelector('[data-testid="ask-answer"]')?.textContent).toBe(
+    "Move from another assistant",
+  );
+  expect(container.textContent).not.toContain(AGENT_IMPORT_ASK_ACTION_ID);
+});
+
 it("announces an answered question's state and marks only the chosen option", async () => {
   await render({
     kind: "ask",

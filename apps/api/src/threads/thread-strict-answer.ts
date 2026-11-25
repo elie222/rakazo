@@ -17,7 +17,6 @@ import {
   IsolationError,
   readJsonColumn,
   readMessageBlocks,
-  storedMessageBlocks,
 } from "@rakazo/db";
 import * as z from "zod";
 
@@ -161,7 +160,7 @@ export async function replayExistingSend(
   // Legacy messages saved before shared spaces have authorUserId null and keep replaying.
   if (
     (message.authorUserId && message.authorUserId !== authorUserId) ||
-    (strictAnswer && !answersSameCard(message, strictAnswer))
+    (strictAnswer && !(await answeredSameCard(deps.prisma, threadId, message, strictAnswer)))
   ) {
     throw new ClientError("CONFLICT", "This message nonce is already in use.");
   }
@@ -211,17 +210,38 @@ export async function replayExistingSend(
   return sendResult(message, runs);
 }
 
-/** A card answer's receipt is the reply to that card with the same answer text. */
-function answersSameCard(
+/**
+ * A card answer's receipt is the message that answered that card: one intact text block with the
+ * same answer, replying to the card, whose ask records it as the answer. An ordinary send with the
+ * same text, or a row that lost entries, never replays as a card answer.
+ */
+async function answeredSameCard(
+  prisma: PrismaClient,
+  threadId: string,
   message: { id: string; blocks: unknown; replyToMessageId: string | null },
   strictAnswer: { replyToMessageId?: string; text?: string },
 ) {
-  const text = storedMessageBlocks(message)
-    .flatMap((block) => (block.kind === "text" ? [block.text] : []))
-    .join("\n")
-    .trim();
-  return (
-    message.replyToMessageId === strictAnswer.replyToMessageId && text === strictAnswer.text?.trim()
+  const { blocks, intact } = parseMessageBlocks(message);
+  const [block] = blocks;
+  if (
+    !intact ||
+    blocks.length !== 1 ||
+    block?.kind !== "text" ||
+    block.text.trim() !== strictAnswer.text?.trim() ||
+    !strictAnswer.replyToMessageId ||
+    message.replyToMessageId !== strictAnswer.replyToMessageId
+  ) {
+    return false;
+  }
+  const card = await prisma.message.findFirst({
+    where: { id: strictAnswer.replyToMessageId, threadId, role: "bot" },
+    select: { id: true, blocks: true },
+  });
+  return Boolean(
+    card &&
+      parseMessageBlocks(card).blocks.some(
+        (entry) => entry.kind === "ask" && entry.answerMessageId === message.id,
+      ),
   );
 }
 

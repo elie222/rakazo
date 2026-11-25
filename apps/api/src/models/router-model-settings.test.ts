@@ -62,10 +62,25 @@ describe("model setup gate", () => {
                     : "user-1",
                 seq: 7,
                 runId: "run-saved",
+                replyToMessageId: "ask-1",
+                blocks: [{ kind: "text", text: "Kyoto" }],
                 sourceRuns: [],
               }
             : null,
         ),
+        // The card the saved answer committed to records it as its answer.
+        findFirst: vi.fn().mockResolvedValue({
+          id: "ask-1",
+          blocks: [
+            {
+              kind: "ask",
+              text: "Which city?",
+              status: "answered",
+              answer: "Kyoto",
+              answerMessageId: "msg-saved",
+            },
+          ],
+        }),
       },
       event: {
         findFirst: vi

@@ -203,13 +203,15 @@ function PromptAskCard({
   const chosenOption =
     answered && displayedAnswer ? resolveAskChoice(displayedAnswer, askActions) : undefined;
   // Typed replies already have their own message; the question must not repeat them.
+  // A legacy import card stored the import action's id, so it shows that action's label.
   const typedAnswer =
     answered &&
+    displayedAnswer &&
     !optionQuestion &&
     !approvalActions &&
     !block.instructionUpdate &&
     displayedAnswer !== "approved"
-      ? displayedAnswer
+      ? selectedAskActionLabel(displayedAnswer, block.actions)
       : undefined;
   async function submitAnswer(value: string, typed = false) {
     const submitValue = value.trim();
@@ -465,7 +467,7 @@ function PromptAskCard({
                   displayedAnswer,
                   Boolean(approvalActions),
                   approvalActions?.find((action) => action.id === displayedAnswer)?.outcome,
-                  askActions,
+                  block.actions,
                 )}
         </div>
       ) : !canAnswer ? (

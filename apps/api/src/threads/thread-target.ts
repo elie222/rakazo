@@ -466,7 +466,8 @@ export async function sendThreadMessage(
       let replyQuote: string | undefined;
       let replyPreview: ReplyPreview | null | undefined;
       let repliedBotId: string | undefined;
-      let repliedQuestionRunId: string | undefined;
+      // The run of the question card this message replies to; null when that card has no run.
+      let repliedQuestionRunId: string | null | undefined;
       if (input.replyToMessageId) {
         const reply = await tx.message.findFirst({
           where: { id: input.replyToMessageId, threadId: target.threadId },
@@ -490,7 +491,7 @@ export async function sendThreadMessage(
           const { blocks: replyBlocks, intact: replyIntact } = parseMessageBlocks(reply);
           replyPreview = null;
           // A card that lost entries may have lost its question, so the reply still targets only its run.
-          if (reply.role === "bot" && !replyIntact) repliedQuestionRunId = reply.runId ?? undefined;
+          if (reply.role === "bot" && !replyIntact) repliedQuestionRunId = reply.runId;
           if (replyBlocks.length > 0) {
             if (
               reply.role === "bot" &&
@@ -499,7 +500,7 @@ export async function sendThreadMessage(
                   block.kind === "ask" && isQuestionAskBlock(block) && block.status !== "answered",
               )
             ) {
-              repliedQuestionRunId = reply.runId ?? undefined;
+              repliedQuestionRunId = reply.runId;
             }
             replyPreview = messageReplyPreview(
               replyBlocks,
@@ -648,10 +649,11 @@ export async function sendThreadMessage(
         } else {
           const targetedRunId = targetedQuestionRun(activeRuns);
           // Someone else's question stays on its card; this message starts the sender's own run.
+          // A reply to a question card answers only that card's run, or none when it cannot.
           for (const run of activeRuns.filter(
             (run) => !stopping && run.status === "waiting_input" && run.userId === actor.userId,
           )) {
-            if (targetedRunId && run.id !== targetedRunId) continue;
+            if (repliedQuestionRunId !== undefined && run.id !== targetedRunId) continue;
             if (
               await answerWaitingRunWithTextInTransaction(tx, {
                 ...composerAnswerInput(message),
@@ -954,7 +956,10 @@ export async function sendThreadMessage(
         for (const run of activeRuns) {
           if (run.status === "waiting_input") {
             // Someone else's question stays on its card; this message starts the sender's own run.
-            if (run.userId !== actor.userId || (targetedRunId && run.id !== targetedRunId))
+            if (
+              run.userId !== actor.userId ||
+              (repliedQuestionRunId !== undefined && run.id !== targetedRunId)
+            )
               continue;
             const answered = await answerWaitingRunWithTextInTransaction(tx, {
               ...composerAnswerInput(message),
