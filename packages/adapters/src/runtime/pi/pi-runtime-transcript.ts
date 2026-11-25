@@ -112,14 +112,9 @@ const StoredTurnSchema = z.object({
 
 type StoredTurn = Pick<TurnTranscript, "represents" | "messages" | "prompt">;
 
-/** Records already read, so one run's several readers parse each once and warn once. */
-const read = new Map<string, StoredTurn | undefined>();
-const READ_CACHE_SIZE = 256;
-
 /** A stored turn's messages and the history it stands for, or none when it cannot be read. */
 export function readTurnTranscript(serialized: string | undefined): StoredTurn | undefined {
   if (!serialized) return undefined;
-  if (read.has(serialized)) return read.get(serialized);
   let parsed: ReturnType<typeof StoredTurnSchema.safeParse> | undefined;
   try {
     parsed = StoredTurnSchema.safeParse(JSON.parse(serialized));
@@ -135,8 +130,6 @@ export function readTurnTranscript(serialized: string | undefined): StoredTurn |
     : undefined;
   // The turn is rebuilt from its reply instead, as before records were kept.
   if (!turn) getLogger().warn("Stored turn transcript could not be read; replaying from the reply");
-  if (read.size >= READ_CACHE_SIZE) read.delete(read.keys().next().value!);
-  read.set(serialized, turn);
   return turn;
 }
 
