@@ -29,6 +29,9 @@ function printTask(task: PublicTask & { callback_secret?: string }, json: boolea
   if (task.question) stdout.write(`\n${task.question}\n`);
 }
 
+/** A task that stopped without finishing, which a script should see as a failure. */
+const ended = (task: PublicTask) => task.status === "failed" || task.status === "cancelled";
+
 /** Follows a task until it settles, reconnecting when a stream ends early. */
 async function waitFor(client: Client, task: PublicTask): Promise<PublicTask> {
   let last = task;
@@ -121,7 +124,7 @@ export async function main(argv: string[]): Promise<number> {
       if (secret && !values.json) stdout.write(`Callback secret: ${secret}\n`);
       const task = values.wait ? await waitFor(client, created) : created;
       printTask(secret ? { ...task, callback_secret: secret } : task, values.json);
-      return task.status === "failed" ? 1 : 0;
+      return ended(task) ? 1 : 0;
     }
     if (sub === "get" && first) {
       printTask(await client.task(first), values.json);
@@ -130,13 +133,13 @@ export async function main(argv: string[]): Promise<number> {
     if (sub === "wait" && first) {
       const task = await waitFor(client, await client.task(first));
       printTask(task, values.json);
-      return task.status === "failed" ? 1 : 0;
+      return ended(task) ? 1 : 0;
     }
     if (sub === "send" && first && words.length) {
       let task = await client.sendToTask(first, words.join(" "));
       if (values.wait) task = await waitFor(client, task);
       printTask(task, values.json);
-      return task.status === "failed" ? 1 : 0;
+      return ended(task) ? 1 : 0;
     }
   }
   stdout.write(USAGE);
