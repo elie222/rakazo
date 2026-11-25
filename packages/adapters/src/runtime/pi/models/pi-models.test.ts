@@ -276,13 +276,10 @@ describe("Pi model catalog", () => {
     for (const entry of openai) {
       expect(entry).toMatchObject({
         providerName: "OpenAI",
-        auth: "api-key",
-        subscription: false,
-        billing: "Uses your OpenAI API key. Rakazo does not pay for model usage.",
+        auth: "both",
+        subscription: true,
+        signIn: "auth-url",
       });
-      expect(entry.oauthLabel).toBeUndefined();
-      expect(entry.signIn).toBeUndefined();
-      expect(entry.authHint).toBeUndefined();
     }
     const azure = catalog.filter((entry) => entry.provider === "azure");
     expect(azure.length).toBeGreaterThan(0);
@@ -351,6 +348,16 @@ describe("Pi model catalog", () => {
       billing: "",
     });
     expect(scriptedCatalogEntry.provider).toBe("scripted");
+  });
+
+  it("offers browser sign-in for the OpenAI Responses subscription", () => {
+    const openai = listPiCatalog().find((entry) => entry.provider === "openai");
+    expect(openai).toMatchObject({
+      auth: "both",
+      subscription: true,
+      signIn: "auth-url",
+      oauthLabel: "Sign in with ChatGPT",
+    });
   });
 
   it("lists DeepSeek API model ids instead of display labels", () => {

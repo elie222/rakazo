@@ -268,8 +268,6 @@ export function codexComputeResidency(accessToken: string | undefined): string |
 }
 
 export function loadProviderOAuth(providerId: string): OAuthAuth | undefined {
-  // pi 1.3 adds ChatGPT OAuth to OpenAI; keep subscription sign-in on Codex.
-  if (providerId === "openai") return undefined;
   return providerCatalog().getProvider(canonicalPiProviderId(providerId))?.auth.oauth;
 }
 

@@ -613,7 +613,7 @@ export default function ModelConnection() {
               {oauth.mode === "auth-url" ? (
                 <>
                   <Text style={styles.secondary}>
-                    {t`Sign in at ${ph({ host: signInHost })}, then paste the code it shows you here.`}
+                    {t`Sign in at ${ph({ host: signInHost })}, then paste the code or callback URL here.`}
                   </Text>
                   <NativeActionButton
                     fill
@@ -622,8 +622,8 @@ export default function ModelConnection() {
                     style={{ marginTop: 12 }}
                   />
                   <TextInput
-                    accessibilityLabel={t`Code from ${ph({ host: signInHost })}`}
-                    placeholder={t`Paste code`}
+                    accessibilityLabel={t`Code or callback URL from ${ph({ host: signInHost })}`}
+                    placeholder={t`Paste code or URL`}
                     placeholderTextColor={native.tertiaryLabel}
                     value={pasteCode}
                     onChangeText={setPasteCode}

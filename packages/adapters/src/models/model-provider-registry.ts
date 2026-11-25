@@ -127,6 +127,15 @@ export const modelProviders = {
   },
   openai: {
     recommendedModel: "gpt-6-luna",
+    subscriptionName: subscriptionNames.codex.message,
+    subscriptionNameId: subscriptionNames.codex.id,
+    subscriptionModel: { id: "gpt-6.1-sol", thinkingLevel: "low" },
+    signIn: {
+      mode: "auth-url",
+      loginLabel: "Sign in with ChatGPT",
+      hint: "ChatGPT subscription / API key",
+      billing: "Uses your ChatGPT subscription or OpenAI API key. Rakazo does not pay.",
+    },
     media: {
       images: openAIImages,
       create: ({ apiKey, imageModel }) =>
