@@ -61,8 +61,12 @@ describe("built-in tool bridge", () => {
     // most used deferred tool, and a lookup before each message cost a step; schedule_create says
     // whether a routine runs in its chat, and takes the events (webhook, Git, chat, email) a
     // routine can start on, saying a Git event needs no connected app; schedule_list reaches a
-    // managed bot's routines; update_bot carries the settings its owner can change.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(36_176);
+    // managed bot's routines; update_bot carries the settings its owner can change;
+    // update_preferences includes the chat model picker and reply streaming; remember takes a
+    // list of operations so one call can make room and add, each with an optional end; shell
+    // says to open the bot's screen when a graphical program finds no display; schedule_create
+    // takes an end date for a repeat or watch, so a limited stretch is one routine.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(37_791);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

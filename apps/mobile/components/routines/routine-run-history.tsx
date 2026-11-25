@@ -5,7 +5,7 @@ import { routineRunLateLabel, runStatusLabel } from "@rakazo/i18n/activity";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator } from "react-native";
-import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { useDateLocale } from "../../lib/i18n/i18n";
 import { native } from "../../lib/native/native";
 import { routineRunDestination, useRoutineRuns } from "../../lib/routines/routine-runs";
 import { RunErrorSheet, useRunError } from "../cards/run-error-sheet";
@@ -92,9 +92,9 @@ function RunRow({
   onPress: (() => void) | undefined;
 }) {
   const { t } = useLingui();
-  const locale = useUiLocale();
+  const dateLocale = useDateLocale();
   const failure = useRunError(error);
-  const title = formatRoutineRunAt(run, dateLocaleForUi(locale));
+  const title = formatRoutineRunAt(run, dateLocale);
   return (
     <SettingsRow
       accessibilityRole={onPress ? "button" : undefined}

@@ -40,7 +40,7 @@ RAKAZO_EXTRA_AUTH_ORIGINS=   # extra origins allowed to sign in and call the API
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
 SCIM_BEARER_TOKEN=        # lets your identity provider add and remove accounts; see self-host-accounts.md
-SANDBOX_PROVIDER=docker   # or none, e2b, novita, daytona, createos, boat. Keep fake only for pnpm test.
+SANDBOX_PROVIDER=docker   # none, docker, e2b, novita, daytona, createos, boat, boxd, instabox, wuying, incus, local-vm, kubernetes, railway; desktop runs commands on this host; keep fake only for pnpm test. Each provider's own keys are in .env.example.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle sleep
@@ -51,7 +51,6 @@ COMPUTER_MAX_ACTIVE_UNBILLED_MS=0 # uptime cap for providers that do not bill wh
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes; values above 3600000 (1 hour) use 3600000
 MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited; any non-integer fails at startup
 RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user length cap; narration stays at 500
-BOT_MESSAGE_MAX_HOPS=6    # bot-to-bot messages one chain may carry before the next is refused
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 NOVITA_API_KEY=           # when SANDBOX_PROVIDER=novita; build its template first
 DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
@@ -113,12 +112,13 @@ callbacks.
 
 ## Feature switches
 
-| Variable               | Default         | Effect                                                                                                                                                  |
-| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TICKET_BOARD_ENABLED` | `false`         | Turns the ticket board on for every account. Otherwise each person turns it on in **Settings → Labs**. Set it on the API and worker.                    |
-| `USER_DEVICES_ENABLED` | on              | `false` stops signed-in desktop apps from letting bots run commands on the user's own computer. Set it on the API and worker.                           |
-| `PI_SESSION_RECORDING` | off             | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
-| `PRIVACY_POLICY_URL`   | Rakazo's policy | The privacy policy linked from the AI data-sharing notice. Set it on the API.                                                                           |
+| Variable                  | Default          | Effect                                                                                                                                                  |
+| ------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TICKET_BOARD_ENABLED`    | `false`          | Turns the ticket board on for every account. Otherwise each person turns it on in **Settings → Labs**. Set it on the API and worker.                    |
+| `USER_DEVICES_ENABLED`    | on               | `false` stops signed-in desktop apps from letting bots run commands on the user's own computer. Set it on the API and worker.                           |
+| `PI_SESSION_RECORDING`    | off              | `true` records agent sessions as JSONL under `DATA_DIR/pi-sessions`. The files are not encrypted, so do not use it on a shared or multi-tenant install. |
+| `PRIVACY_POLICY_URL`      | Rakazo's policy  | The privacy policy linked from the AI data-sharing notice. Set it on the API.                                                                           |
+| `AUTH_RATE_LIMIT_ENABLED` | on in production | Rate-limits sign-in and other credential routes. `true` turns it on for an install that runs without `NODE_ENV=production`. Set it on the API.          |
 
 ## Chat history retention
 

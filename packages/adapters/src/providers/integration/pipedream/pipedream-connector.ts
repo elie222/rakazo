@@ -12,6 +12,7 @@ import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "../../../approvals/approval-effect.js";
 import {
+  connectorAccountRoute,
   resolveAccountToolCall,
   scopeConnectorTools,
 } from "../../../integrations/connector-accounts.js";
@@ -168,10 +169,14 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     ];
   }
 
-  private async allTools(context: AdapterContext): Promise<ConnectorTool[]> {
+  private async allTools(context: AdapterContext, catalogApp?: string): Promise<ConnectorTool[]> {
     const apps =
       context.connectedConnections
-        ?.filter((connection) => connection.connectorId === "pipedream")
+        ?.filter(
+          (connection) =>
+            connection.connectorId === "pipedream" &&
+            (catalogApp === undefined || connection.externalId === catalogApp),
+        )
         .map((connection) => connection.externalId) ?? [];
     if (apps.length === 0) return [];
     const token = await this.token();
@@ -179,36 +184,51 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       [...new Set(apps)].map(async (app) => {
         try {
           const accounts = approvedAccounts(context, app);
-          return (
-            await Promise.all(
-              accounts.map(async (account) => {
-                try {
-                  const tools = await listRemoteMcpTools({
-                    endpoint: MCP_ENDPOINT,
-                    headers: this.mcpHeaders(context, app, account.id, token),
-                    signal: context.signal,
-                    fetch: this.dependencies.fetch,
-                    resolveHostname: this.dependencies.resolveHostname,
-                  });
-                  return scopeConnectorTools(tools, {
-                    id: account.connectionId,
-                    connectorId: "pipedream",
-                    externalId: app,
-                    displayName: account.label,
-                    providerRef: account.id,
-                  });
-                } catch (error) {
-                  getLogger().error(
-                    "pipedream account discovery failed",
-                    sanitizeConnectorError(error),
-                    { "connector.app": app, "connection.id": account.connectionId },
-                  );
-                  return [];
-                }
-              }),
-            )
-          ).flat();
+          const results = await Promise.allSettled(
+            accounts.map(async (account) => {
+              const tools = await listRemoteMcpTools({
+                endpoint: MCP_ENDPOINT,
+                headers: this.mcpHeaders(context, app, account.id, token),
+                signal: context.signal,
+                fetch: this.dependencies.fetch,
+                resolveHostname: this.dependencies.resolveHostname,
+              });
+              const connection = {
+                id: account.connectionId,
+                connectorId: "pipedream",
+                externalId: app,
+                displayName: account.label,
+                providerRef: account.id,
+              };
+              return catalogApp === undefined
+                ? scopeConnectorTools(tools, connection)
+                : tools.map((tool) => ({
+                    ...tool,
+                    route: connectorAccountRoute(tool, connection),
+                  }));
+            }),
+          );
+          if (catalogApp !== undefined) {
+            context.signal.throwIfAborted();
+            const first = results[0];
+            if (
+              first?.status === "rejected" &&
+              results.every((result) => result.status === "rejected")
+            ) {
+              throw first.reason;
+            }
+          }
+          return results.flatMap((result, index) => {
+            if (result.status === "fulfilled") return result.value;
+            getLogger().error(
+              "pipedream account discovery failed",
+              sanitizeConnectorError(result.reason, [token]),
+              { "connector.app": app, "connection.id": accounts[index]?.connectionId },
+            );
+            return [];
+          });
         } catch (error) {
+          if (catalogApp !== undefined) throw new Error(sanitizeConnectorError(error, [token]));
           // A single unavailable app must not hide tools from other connections.
           getLogger().error(
             `pipedream discovery failed for app ${app}:`,
@@ -219,6 +239,10 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       }),
     );
     return groups.flat();
+  }
+
+  async listAppTools(context: AdapterContext, externalId: string): Promise<ConnectorTool[]> {
+    return this.allTools(context, externalId);
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {

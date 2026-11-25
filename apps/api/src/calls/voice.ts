@@ -6,10 +6,9 @@ import {
   isModelConnectionVoiceSecret,
   isSpeechModelId,
   isVoiceProviderId,
-  listVoiceCatalog,
   MAX_SPEAK_CHARS,
   MAX_TRANSCRIBE_BYTES,
-  MODEL_CONNECTION_VOICE_SECRET,
+  modelConnectionVoiceSecret,
   NoVoiceConfigured,
   OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
   openAiCompatibleVoiceServer,
@@ -25,7 +24,6 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
-  findModelCredential,
   findVoiceCredential,
   findVoicePreference,
   IsolationError,
@@ -48,8 +46,9 @@ import { readBoundedBody } from "../http/http-body.js";
 import type { DeploymentVoice } from "../voice/deployment-config.js";
 import { hasDeploymentVoiceConsent } from "../voice/deployment-consent.js";
 import { voiceHttpError } from "../voice/http-errors.js";
-import { withSpeechCost } from "../voice/operator-cost.js";
+import { TRANSCRIBE, withSpeechCost } from "../voice/operator-cost.js";
 import type { SpeechSummarizer } from "./speech-summary.js";
+import { voiceLinkOf } from "./voice-model-connection.js";
 
 export interface VoiceDeps {
   prisma: PrismaClient;
@@ -72,18 +71,6 @@ export async function voiceProviderFor(deps: VoiceDeps, provider: string) {
   return createVoiceProvider(provider, {
     allowPrivateEndpoint: await voiceMayUsePrivateEndpoint(deps, provider),
   });
-}
-
-/** The catalog as this account sees it: `modelConnection` stays only where it has one. */
-export async function accountVoiceCatalog(deps: VoiceDeps, actor: Pick<Actor, "userId">) {
-  const catalog = listVoiceCatalog({ allowPrivateEndpoint: deps.env?.mcpAllowPrivateEndpoint });
-  return Promise.all(
-    catalog.map(async ({ modelConnection, ...entry }) =>
-      modelConnection && (await findModelCredential(deps.prisma, actor, entry.id))
-        ? { ...entry, modelConnection }
-        : entry,
-    ),
-  );
 }
 
 const SPEAK_TIMEOUT_MS = 60_000;
@@ -127,11 +114,13 @@ export function toVoiceCredential(row: {
   server?: ReturnType<typeof openAiCompatibleVoiceServer>;
   /** False when the connection uses the account's model connection instead of a key. */
   hasKey?: boolean;
+  modelCredentialId?: string;
 }): VoiceCredential {
   return {
     id: row.id,
     provider: row.provider,
     hasKey: row.hasKey ?? true,
+    ...(row.modelCredentialId ? { modelCredentialId: row.modelCredentialId } : {}),
     isDefault: row.isDefault,
     voiceId: row.voiceId,
     speechModel: row.speechModel ?? "",
@@ -169,27 +158,6 @@ export async function voiceCredentialServer(
 }
 
 /**
- * Whether a connection stores its own key. Only a provider that can use the account's model
- * connection opens its secret to tell; one that cannot be read counts as a key.
- */
-export async function voiceCredentialHasKey(
-  deps: VoiceDeps,
-  actor: Pick<Actor, "userId">,
-  row: { provider: string; secretId: string },
-) {
-  if (!voiceCatalogEntry(row.provider)?.modelConnection) return true;
-  try {
-    const secret = await deps.prisma.secret.findFirst({
-      where: { id: row.secretId, userId: actor.userId, spaceId: null },
-    });
-    if (!secret) return true;
-    return !isModelConnectionVoiceSecret(await deps.secrets.load(secret.ciphertext, secret.id));
-  } catch {
-    return true;
-  }
-}
-
-/**
  * Another server or speech model has its own voices, so saved voice choices cannot carry
  * over. Only self-hosted connections can change either while keeping the credential.
  */
@@ -217,6 +185,8 @@ export function voiceCredentialPlaintext(input: {
   /** The stored secret for this provider; blank fields keep its key and models. */
   previousPlaintext?: string;
   allowPrivateEndpoint?: boolean;
+  /** With no key, the account's model connection to use; omitted uses the preferred one. */
+  modelCredentialId?: string;
 }): string {
   if (voiceCatalogEntry(input.provider)?.keyless) {
     // The credential row is what selects the provider; it has no key to keep.
@@ -225,7 +195,7 @@ export function voiceCredentialPlaintext(input: {
   if (input.provider !== OPENAI_COMPATIBLE_VOICE_PROVIDER_ID) {
     const key = input.plaintext.trim();
     if (!key && voiceCatalogEntry(input.provider)?.modelConnection) {
-      return MODEL_CONNECTION_VOICE_SECRET;
+      return modelConnectionVoiceSecret(input.modelCredentialId);
     }
     if (key.length < 8) {
       throw new ORPCError("BAD_REQUEST", { message: "Enter an API key." });
@@ -441,6 +411,8 @@ export async function persistVoiceCredential(
   input: {
     provider: string;
     plaintext: string;
+    /** With no key, the account's model connection to use. */
+    modelCredentialId?: string;
     voiceId?: string;
     speechModel?: string;
     baseUrl?: string;
@@ -621,7 +593,7 @@ export async function persistVoiceCredential(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
   );
-  return toVoiceCredential({ ...cred, hasKey: !isModelConnectionVoiceSecret(plaintext) });
+  return toVoiceCredential({ ...cred, ...voiceLinkOf(plaintext) });
 }
 
 export async function disconnectVoiceCredential(
@@ -789,7 +761,8 @@ export async function synthesizeVoice(
     throw new ORPCError("BAD_REQUEST", { message: "That utterance is too long to speak." });
   }
   const provider = await voiceProviderFor(deps, target.cred.provider);
-  return withSpeechCost(deps, { ...actor, callId: input.callId }, target, "synthesize", () =>
+  const speech = { operation: "synthesize" as const, text };
+  return withSpeechCost(deps, { ...actor, callId: input.callId }, target, speech, () =>
     withVoiceConnection(target.cred.provider, target.linked, () =>
       provider.synthesize(
         {
@@ -834,7 +807,7 @@ export async function transcribeVoice(
   if (input.audio.byteLength === 0 || input.audio.byteLength > MAX_TRANSCRIBE_BYTES) {
     throw new ORPCError("BAD_REQUEST", { message: "That recording is empty or too large." });
   }
-  return withSpeechCost(deps, { ...actor, callId: input.callId }, loaded, "transcribe", () =>
+  return withSpeechCost(deps, { ...actor, callId: input.callId }, loaded, TRANSCRIBE, () =>
     withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
       provider.transcribe!(
         {
@@ -886,7 +859,7 @@ export async function transcribeInboundVoice(
   }
   const provider = await voiceProviderFor(deps, loaded.cred.provider);
   if (!provider.transcribe) return null;
-  const { text } = await withSpeechCost(deps, owner, loaded, "transcribe", () =>
+  const { text } = await withSpeechCost(deps, owner, loaded, TRANSCRIBE, () =>
     withVoiceConnection(loaded.cred.provider, loaded.linked, () =>
       provider.transcribe!(
         {
@@ -965,6 +938,9 @@ export function mountVoiceHttpRoutes(
           signal: c.req.raw.signal,
         }),
       );
+      // A silent or unusable clip reaches the client as no words, with no error to report.
+      if (!result.text.trim())
+        getLogger().info("voice transcript empty", { bytes: audio.byteLength });
       return c.json({ text: result.text });
     } catch (error) {
       return voiceHttpError(c, error);

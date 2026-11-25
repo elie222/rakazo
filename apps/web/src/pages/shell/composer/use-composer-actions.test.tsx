@@ -2,14 +2,13 @@
 
 import type { Bot, ComputerStatus, Me, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
-import { flush as flushTimer } from "@rakazo/core/test-async";
+import { deferred, flush as flushTimer } from "@rakazo/core/test-async";
 import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { composerHoldsUnsavedWork } from "../../../lib/composer/composer-draft";
 import type { PageSession } from "../../../lib/pages/pages";
 import { createPageSession } from "../../../lib/pages/pages";
+import { createQueryRoot } from "../../../lib/query/query-root.test-support";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { useComposerActions } from "./use-composer-actions";
 
@@ -20,6 +19,11 @@ vi.mock("@lingui/react/macro", () => {
     parts.reduce((text, part, index) => `${text}${index > 0 ? values[index - 1] : ""}${part}`, "");
   return { useLingui: () => ({ t, i18n: { locale: "en" } }) };
 });
+vi.mock("../../../lib/query/rpc", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/query/rpc")>()),
+  rpcForSpace: () => rpc,
+  createSpaceRpc: () => rpc,
+}));
 vi.mock("../../../lib/composer/prepare-image", () => ({
   canPrepareImage: () => false,
   prepareImage: async (file: File) => file,
@@ -28,13 +32,18 @@ vi.mock("../../../lib/composer/prepare-image", () => ({
 type Rpc = {
   routines: { testRun: ReturnType<typeof vi.fn> };
   artifacts: { create: ReturnType<typeof vi.fn> };
-  threads: { send: ReturnType<typeof vi.fn>; sendWithRoutines: ReturnType<typeof vi.fn> };
+  threads: {
+    get: ReturnType<typeof vi.fn>;
+    send: ReturnType<typeof vi.fn>;
+    sendWithRoutines: ReturnType<typeof vi.fn>;
+    retry: ReturnType<typeof vi.fn>;
+  };
 };
 
 let rpc: Rpc;
 let me: Me | null;
 let navigate: ReturnType<typeof vi.fn>;
-let root: Root;
+let root: ReturnType<typeof createQueryRoot>;
 let latest: ReturnType<typeof useComposerActions>;
 let pageSession: PageSession;
 let activeChat: string;
@@ -114,9 +123,9 @@ beforeEach(() => {
   rpc = {
     routines: { testRun: vi.fn() },
     artifacts: { create: vi.fn() },
-    threads: { send: vi.fn(), sendWithRoutines: vi.fn() },
+    threads: { get: vi.fn(), send: vi.fn(), sendWithRoutines: vi.fn(), retry: vi.fn() },
   };
-  root = createRoot(document.createElement("div"));
+  root = createQueryRoot(document.createElement("div"));
   act(() => root.render(<Harness />));
 });
 
@@ -572,6 +581,141 @@ it("clears a quoted reply re-picked as a fresh object after a thread refresh", a
   expect(latest.replyQuote).toBeNull();
 });
 
+function failedReply(runId: string): ThreadSnapshot {
+  return {
+    run: {
+      id: runId,
+      status: "failed",
+      trigger: "user",
+      userId: "user-1",
+      error: "terminated",
+      retryable: true,
+    },
+  } as ThreadSnapshot;
+}
+
+function pendingRetry() {
+  const retry = deferred<{ runId: string }>();
+  rpc.threads.retry.mockReturnValue(retry.promise);
+  return retry.reject;
+}
+
+it("offers no retry anywhere while one is in flight, then offers another chat's", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  act(() => root.render(<Harness />));
+  const reject = pendingRetry();
+  act(() => void latest.retryRun?.());
+  expect(latest.retryRun).toBeUndefined();
+
+  activeSnapshot = failedReply("run-2");
+  switchChat("bot-2");
+  expect(latest.retryRun).toBeUndefined();
+  reject(new Error("Conflict"));
+  await flush();
+  expect(latest.retryRun).toBeDefined();
+  rpc.threads.retry.mockResolvedValue({ runId: "run-3" });
+  act(() => void latest.retryRun?.());
+  expect(rpc.threads.retry).toHaveBeenLastCalledWith({ botId: "bot-2", runId: "run-2" });
+});
+
+it("drops a late retry error once a newer failure is on screen", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  act(() => root.render(<Harness />));
+  const reject = pendingRetry();
+  act(() => void latest.retryRun?.());
+
+  activeSnapshot = failedReply("run-2");
+  act(() => root.render(<Harness />));
+  reject(new Error("Conflict"));
+  await flush();
+  expect(latest.sendError).toBeNull();
+  expect(latest.displayedRunErrorId).toBe("run-2");
+});
+
+it("shows a retry error for the failure still on screen", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  act(() => root.render(<Harness />));
+  const reject = pendingRetry();
+  act(() => void latest.retryRun?.());
+  reject(new Error("Conflict"));
+  await flush();
+  expect(latest.sendError).toBeTruthy();
+  expect(latest.retryRun).toBeUndefined();
+});
+
+it("holds the retry while a new message is sending", async () => {
+  me = { userId: "user-1" } as Me;
+  activeSnapshot = failedReply("run-1");
+  const send = deferred<unknown>();
+  rpc.threads.send.mockReturnValue(send.promise);
+  act(() => root.render(<Harness />));
+  expect(latest.retryRun).toBeDefined();
+  act(() => void latest.sendMessage("Never mind.", [], "nonce-retry"));
+  await flush();
+  expect(latest.retryRun).toBeUndefined();
+});
+
+it("shows a text send at once and keeps it when the follow-up refresh fails", async () => {
+  const reply = deferred<{ runId: string; taskId: string; seq: number }>();
+  rpc.threads.send.mockReturnValue(reply.promise);
+  activeSnapshot = { threadId: "t-1", messages: [] } as unknown as ThreadSnapshot;
+  refreshThread = () => Promise.reject(new Error("offline"));
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello there", [], "nonce-1");
+  });
+  expect(latest.pendingSends).toEqual([
+    { threadKey: "bot-1", clientNonce: "nonce-1", text: "hello there", afterSeq: 0 },
+  ]);
+  expect(latest.transcriptProps.transcript?.messages.map((message) => message.id)).toEqual([
+    "pending:nonce-1",
+  ]);
+
+  reply.resolve({ runId: "run-1", taskId: "task-1", seq: 7 });
+  await act(async () => void (await sent));
+  await act(flushTimer);
+  // Accepted but not yet in the chat: it stays until the stored message arrives.
+  expect(latest.pendingSends).toEqual([
+    {
+      threadKey: "bot-1",
+      clientNonce: "nonce-1",
+      text: "hello there",
+      afterSeq: 0,
+      acceptedSeq: 7,
+    },
+  ]);
+});
+
+it("keeps every send of a quick run pending", async () => {
+  rpc.threads.send
+    .mockResolvedValueOnce({ runId: "run-1", taskId: "task-1", seq: 1 })
+    .mockResolvedValueOnce({ runId: "run-2", taskId: "task-2", seq: 2 });
+  await act(async () => void (await latest.sendMessage("first", [], "nonce-1")));
+  await act(async () => void (await latest.sendMessage("second", [], "nonce-2")));
+  expect(latest.pendingSends.map((pending) => [pending.text, pending.acceptedSeq])).toEqual([
+    ["first", 1],
+    ["second", 2],
+  ]);
+});
+
+it("drops a text send that fails", async () => {
+  const reply = deferred<never>();
+  rpc.threads.send.mockReturnValue(reply.promise);
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("hello there", [], "nonce-1");
+  });
+  expect(latest.pendingSends.map((pending) => pending.text)).toEqual(["hello there"]);
+
+  reply.reject(new Error("offline"));
+  await act(async () => void (await sent));
+  expect(await sent).toBe(false);
+  expect(latest.pendingSends).toEqual([]);
+});
+
 it("refuses text over the message limit before any request and keeps the draft", async () => {
   rpc.threads.send.mockResolvedValue({ runId: "run-1", taskId: "task-1" });
   let accepted!: boolean;
@@ -581,6 +725,7 @@ it("refuses text over the message limit before any request and keeps the draft",
   expect(accepted).toBe(false);
   expect(rpc.threads.send).not.toHaveBeenCalled();
   expect(latest.sendError).toBe("Messages can be up to 100,000 characters.");
+  expect(latest.pendingSends).toEqual([]);
 
   await act(async () => {
     accepted = await latest.sendMessage("a".repeat(THREAD_MESSAGE_TEXT_MAX_LENGTH), [], "n-2");
@@ -595,7 +740,11 @@ it("sends a card-typed answer through threads.send targeting that ask message wi
   rpc.threads.send.mockResolvedValue({ runId: "run-ask", taskId: "task-ask", seq: 4 });
 
   await act(async () => {
-    await latest.typeAnswerMessage(replyCandidate("ask-1"), "Reykjavik instead", "card-nonce-1");
+    await latest.transcriptProps.onTypeAnswer(
+      replyCandidate("ask-1"),
+      "Reykjavik instead",
+      "card-nonce-1",
+    );
   });
 
   expect(rpc.threads.send).toHaveBeenCalledWith(

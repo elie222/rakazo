@@ -57,6 +57,7 @@ vi.mock("../cards/ComputerCard", () => ({
 vi.mock("./ask-block", () => ({ AskBlock: () => null }));
 vi.mock("../cards/AskActions", () => ({ AskActions: () => null }));
 vi.mock("../cards/AppConnectCard", () => ({ AppConnectCard: () => null }));
+vi.mock("./routine-event-row", () => ({ RoutineEventRows: () => null }));
 vi.mock("../media/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../bots/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../cards/ChoiceCard", () => ({ ChoiceCard: () => null }));

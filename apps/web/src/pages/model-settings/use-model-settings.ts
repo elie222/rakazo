@@ -18,6 +18,7 @@ import {
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
+import { modelDisconnectWarning } from "@rakazo/i18n/model-disconnect";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -139,13 +140,19 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   } = useModelOAuthSignIn({
     onClearError: () => setError(null),
     onError: setError,
-    onFinished: async (_controller, credentialId) => {
+    onFinished: async (_controller, saved) => {
       // A new account's later saves update it rather than adding another.
-      setCredentialId(credentialId);
-      await refresh();
+      setCredentialId(saved.id);
+      // A new subscription can save a stronger model than the one the form showed.
+      await refresh({ modelId: saved.modelId });
       const started = oauthChoiceRef.current;
       oauthChoiceRef.current = null;
-      if (started) await started.intent?.onConnected?.({ ...started.choice, credentialId });
+      if (started)
+        await started.intent?.onConnected?.({
+          ...started.choice,
+          modelId: saved.modelId ?? started.choice.modelId,
+          credentialId: saved.id,
+        });
     },
   });
   const copyOAuthCode = (code: string) => {
@@ -162,9 +169,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   async function refresh({
     keepForm = false,
     reuse = false,
+    modelId: savedModelId,
   }: {
     keepForm?: boolean;
     reuse?: boolean;
+    modelId?: string;
   } = {}) {
     const refreshRevision = ++refreshRevisionRef.current;
     const selectionRevision = keepForm ? -1 : selectionRevisionRef.current;
@@ -174,7 +183,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       fetchFresh(queryClient, meQuery, { reuse }),
     ]);
     if (refreshRevision !== refreshRevisionRef.current) return undefined;
-    applyLoaded(nextCatalog, nextCredentials, nextMe, selectionRevision);
+    applyLoaded(nextCatalog, nextCredentials, nextMe, selectionRevision, savedModelId);
     return nextCredentials;
   }
 
@@ -184,6 +193,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     nextCredentials: typeof credentials,
     nextMe: Me,
     selectionRevision: number,
+    savedModelId?: string,
   ) {
     const nextProvider =
       provider && nextCatalog.some((entry) => entry.provider === provider)
@@ -199,7 +209,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       provider: nextProvider,
       credential: nextCredential,
       defaults: nextMe,
-      current: modelId,
+      current: savedModelId ?? modelId,
     });
     if (selectionRevision === selectionRevisionRef.current) {
       resetOpenAiCompatibleProbe();
@@ -263,6 +273,21 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     ? modelConnectionNames(selectedEntry, credential).connectionName
     : selectedProviderName;
   const disconnectName = selectedConnectionName;
+  // Read when the question opens. A failed read must not keep Disconnect disabled.
+  const disconnectPreview = useQuery({
+    ...queries.models.disconnectPreview.queryOptions({
+      input: { provider: credential?.provider ?? "", credentialId: credential?.id ?? "" },
+    }),
+    enabled: confirmDisconnect && Boolean(credential),
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+  });
+  const disconnectPreviewLoading = confirmDisconnect && disconnectPreview.isFetching;
+  // A read that failed leaves the plain question, never a warning kept from an earlier one.
+  const disconnectWarning = modelDisconnectWarning(
+    disconnectPreview.isError ? null : (disconnectPreview.data ?? null),
+  );
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
@@ -466,6 +491,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     currentEntry,
     disconnectCredential,
     disconnectName,
+    disconnectPreviewLoading,
+    disconnectWarning,
     groups,
     handleClose,
     hostCredentialSource,

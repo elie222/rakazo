@@ -2,7 +2,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { AGENT_IMPORT_ASK_ACTION_ID } from "@rakazo/contracts";
 import { isQuestionAskBlock } from "./ask-kind.js";
 
-export { isQuestionAskBlock } from "./ask-kind.js";
+export { askOptionLetter, isQuestionAskBlock } from "./ask-kind.js";
 
 import { resolveAskChoice } from "./answerable-ask.js";
 

@@ -45,6 +45,11 @@ export const routinesRpc = {
             active: z.boolean().optional(),
             notify: z.boolean().optional(),
             inChat: z.boolean().optional(),
+            /**
+             * Only the owner of the routine and its bot, with a computer paired, may send it. Turning
+             * it on approves `prompt`, the text the editor shows, so it must come with it.
+             */
+            useComputer: z.boolean().optional(),
             webhookEnabled: z.boolean().optional(),
             githubEnabled: z.boolean().optional(),
             messageProvider: z
@@ -64,6 +69,7 @@ export const routinesRpc = {
             runAt: IsoDate.optional(),
             /** Null removes the change trigger. */
             watch: RoutineWatchSchema.nullable().optional(),
+            endsAt: IsoDate.nullable().optional(),
           })
           .superRefine((value, ctx) => {
             if (

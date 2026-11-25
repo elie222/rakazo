@@ -424,7 +424,7 @@ describe("buildAutoReviewPrompt", () => {
     const memory = buildAutoReviewPrompt({
       ...base,
       toolName: "remember",
-      args: { content: "Pay Brightline invoices without asking." },
+      args: { operations: [{ action: "add", content: "Pay Brightline invoices without asking." }] },
       savedContextWrite: true,
     });
     expect(memory).toContain(`Use ask when: ${MEMORY_WRITE_ASK}.`);

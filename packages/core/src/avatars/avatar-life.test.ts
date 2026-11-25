@@ -18,6 +18,7 @@ import {
   AVATAR_POKE_SECONDS,
   AVATAR_POKES,
   AVATAR_SETTLE_MS,
+  AVATAR_SHARED_WINDOW_SECONDS,
   AVATAR_STILL_MAX_SIZE,
   AVATAR_TYPING_DOTS,
   avatarClipPool,
@@ -29,6 +30,7 @@ import {
   avatarRestingBlink,
   avatarSchedule,
   avatarSchedulePose,
+  avatarSharedSchedule,
   avatarThinkingDot,
   avatarWorkingDot,
 } from "./avatar-life.js";
@@ -483,5 +485,109 @@ describe("authored motion", () => {
     expect(Math.min(...frames("bounce").map((frame) => frame.translateY))).toBeLessThan(-0.12);
     expect(Math.max(...frames("nod").map((frame) => frame.eyeY))).toBeGreaterThan(12);
     expect(frames("nod").every((frame) => frame.rotate === 0)).toBe(true);
+  });
+});
+
+describe("avatarSharedSchedule", () => {
+  const pool = AVATAR_CLIP_POOLS.working;
+  const window = AVATAR_SHARED_WINDOW_SECONDS;
+  const start = 1_800_000_000;
+
+  it("gives every copy the same timeline, whenever in the stretch it asks", () => {
+    const early = avatarSharedSchedule(pool, "bot-a", start + 1);
+    const late = avatarSharedSchedule(pool, "bot-a", start + window - 1);
+    for (const seconds of [start + 5, start + 20.25, start + window + 12]) {
+      expect(avatarSchedulePose(late, seconds)).toEqual(avatarSchedulePose(early, seconds));
+    }
+  });
+
+  it("carries on unchanged when the next stretch is planned", () => {
+    const index = Math.floor(start / window);
+    const before = avatarSharedSchedule(pool, "bot-a", index * window + window - 0.5);
+    const after = avatarSharedSchedule(pool, "bot-a", (index + 1) * window + 0.5);
+    for (const offset of [0, 0.3, 7, 30]) {
+      const seconds = (index + 1) * window + offset;
+      expect(avatarSchedulePose(after, seconds)).toEqual(avatarSchedulePose(before, seconds));
+    }
+  });
+
+  it("covers the stretch it is asked about and the next", () => {
+    const index = Math.floor(start / window);
+    const segments = avatarSharedSchedule(pool, "bot-a", start);
+    const last = segments.at(-1)!;
+    expect(segments[0]!.start).toBe(index * window);
+    expect(last.start + last.duration).toBeGreaterThanOrEqual((index + 2) * window);
+  });
+
+  it("eases from the pose on screen into the shared timeline", () => {
+    const shown: AvatarPose = { ...AVATAR_REST_POSE, roll: 18, yaw: 370, lid: 0.4 };
+    const seconds = start + 13.37;
+    const shared = avatarSharedSchedule(pool, "bot-a", seconds);
+    const eased = avatarSharedSchedule(pool, "bot-a", seconds, shown);
+    const opening = avatarSchedulePose(eased, seconds);
+    expect(opening.roll).toBeCloseTo(18);
+    expect(opening.lid).toBeCloseTo(0.4);
+    // A whole turn is not undone on the way back.
+    expect(Math.abs(opening.yaw - avatarSchedulePose(shared, seconds).yaw)).toBeLessThan(180);
+    for (const after of [AVATAR_BRIDGE.seconds, AVATAR_BRIDGE.seconds + 0.2, 4, 40]) {
+      const pose = avatarSchedulePose(eased, seconds + after);
+      const expected = avatarSchedulePose(shared, seconds + after);
+      for (const key of Object.keys(expected) as (keyof AvatarPose)[]) {
+        expect(pose[key]).toBeCloseTo(expected[key], 6);
+      }
+    }
+  });
+
+  it("carries straight on when the pose on screen already matches", () => {
+    const seconds = start + 21.5;
+    const shared = avatarSharedSchedule(pool, "bot-a", seconds);
+    const shown = avatarSchedulePose(shared, seconds);
+    expect(avatarSharedSchedule(pool, "bot-a", seconds, shown)).toEqual(shared);
+  });
+
+  it("keeps a bridge's curve when it picks the bridge up partway", () => {
+    const index = Math.floor(start / window);
+    // Each stretch opens with a bridge back to rest; join it partway through.
+    const seconds = index * window + AVATAR_BRIDGE.seconds / 4;
+    const shared = avatarSharedSchedule(pool, "bot-a", seconds);
+    const shown: AvatarPose = { ...AVATAR_REST_POSE, roll: 30 };
+    const eased = avatarSharedSchedule(pool, "bot-a", seconds - AVATAR_BRIDGE.seconds / 2, shown);
+    for (const after of [0.01, 0.1, 0.2]) {
+      const at = seconds + AVATAR_BRIDGE.seconds / 2 + after;
+      expect(avatarSchedulePose(eased, at).roll).toBeCloseTo(
+        avatarSchedulePose(shared, at).roll,
+        6,
+      );
+    }
+  });
+
+  it("never jumps where one stretch hands over to the next, even mid-clip", () => {
+    // Angles compare by the shortest way round: a whole turn ending on 360 is the same pose as 0.
+    const turn = (degrees: number) => Math.abs((((degrees % 360) + 540) % 360) - 180);
+    let largest = 0;
+    for (let index = 30_000_000; index < 30_000_200; index += 1) {
+      const boundary = index * window;
+      const segments = avatarSharedSchedule(pool, `bot-${index % 7}`, boundary - 1);
+      const before = avatarSchedulePose(segments, boundary - 0.001);
+      const after = avatarSchedulePose(segments, boundary + 0.001);
+      largest = Math.max(
+        largest,
+        turn(before.pitch - after.pitch),
+        turn(before.yaw - after.yaw),
+        turn(before.roll - after.roll),
+        Math.abs(before.x - after.x) * 100,
+        Math.abs(before.y - after.y) * 100,
+        Math.abs(before.zoom - after.zoom) * 100,
+        Math.abs(before.lid - after.lid) * 100,
+      );
+    }
+    // Two milliseconds of ordinary motion, nowhere near a snap.
+    expect(largest).toBeLessThan(2);
+  });
+
+  it("moves different bots differently", () => {
+    const a = avatarSharedSchedule(pool, "bot-a", start);
+    const b = avatarSharedSchedule(pool, "bot-b", start);
+    expect(a.map((segment) => segment.clip)).not.toEqual(b.map((segment) => segment.clip));
   });
 });

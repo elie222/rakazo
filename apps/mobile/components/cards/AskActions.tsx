@@ -1,7 +1,9 @@
+import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
 import type { DraftNonce } from "@rakazo/core";
 import { draftNonce, resolveAskChoice } from "@rakazo/core";
+import { routineApprovalActionLabel } from "@rakazo/i18n/routine-approval";
 import { typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
@@ -18,12 +20,18 @@ import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { AskAction } from "../../lib/cards/ask-action-label";
 import { askActionLabel } from "../../lib/cards/ask-action-label";
-import { native } from "../../lib/native/native";
+import { native, useResolvedAppearance } from "../../lib/native/native";
 import { useInlineInputFocus } from "../../lib/thread/inline-input-focus";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
 
 const styles = StyleSheet.create({
+  more: {
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 44,
+    minHeight: 44,
+  },
   option: {
     alignItems: "center",
     borderRadius: 12,
@@ -54,6 +62,7 @@ export function AskActions({
   site,
   approval,
   instructions,
+  routineUpdate,
   disabled,
   selectedAnswer,
   onAnswer,
@@ -65,6 +74,7 @@ export function AskActions({
   site?: string;
   approval: boolean;
   instructions?: string;
+  routineUpdate?: boolean;
   disabled?: boolean;
   selectedAnswer?: string;
   onAnswer: (answer: string) => Promise<void>;
@@ -95,6 +105,7 @@ export function AskActions({
     notifyInlineInputFocus?.(true);
     return () => notifyInlineInputFocus?.(false);
   }, [inlineAnswerOpen, typedFocused, notifyInlineInputFocus]);
+  const always = routineUpdate && actions.some((action) => action.id === "always");
   const displayActions =
     instructions !== undefined
       ? actions.flatMap((action) =>
@@ -103,6 +114,10 @@ export function AskActions({
             : [action],
         )
       : actions;
+
+  const inlineActions = always
+    ? displayActions.filter((action) => action.id !== "always")
+    : displayActions;
 
   async function submit(answer: string, target: { id?: string; typed?: true }) {
     if (settled || submittingRef.current || submitting) return;
@@ -152,7 +167,7 @@ export function AskActions({
           gap: approval ? 6 : 8,
         }}
       >
-        {displayActions.map((action) => {
+        {inlineActions.map((action) => {
           const emphasized = action.id === "allow" || action.id === "always";
           if (instructions !== undefined)
             return (
@@ -183,7 +198,9 @@ export function AskActions({
                 }
               />
             );
-          const label = askActionLabel(action, { approval, site });
+          const label =
+            (routineUpdate && routineApprovalActionLabel(action.id)) ||
+            askActionLabel(action, { approval, site });
           if (approval)
             return (
               <NativeActionButton
@@ -246,6 +263,13 @@ export function AskActions({
             </Pressable>
           );
         })}
+        {always ? (
+          <RoutineApprovalMenu
+            disabled={settled || submitting}
+            busy={pendingAction?.id === "always"}
+            onApprove={() => void submit("always", { id: "always" })}
+          />
+        ) : null}
       </View>
       {canTypeAnswer ? (
         editing ? (
@@ -317,5 +341,47 @@ export function AskActions({
         )
       ) : null}
     </View>
+  );
+}
+
+function RoutineApprovalMenu({
+  disabled,
+  busy,
+  onApprove,
+}: {
+  disabled: boolean | undefined;
+  busy: boolean;
+  onApprove: () => void;
+}) {
+  const { t } = useLingui();
+  const appearance = useResolvedAppearance();
+  const tokens = mobileTokens();
+  return (
+    <MenuView
+      actions={[
+        {
+          id: "always",
+          title: routineApprovalActionLabel("always") ?? "",
+          attributes: { disabled },
+        },
+      ]}
+      colorScheme={appearance}
+      onPressAction={onApprove}
+    >
+      <View
+        accessible
+        accessibilityRole="button"
+        accessibilityState={{ disabled, busy }}
+        accessibilityLabel={busy ? t`Sending…` : t`More approval options`}
+        style={styles.more}
+      >
+        <NativeSymbol
+          ios="ellipsis"
+          android="ellipsis-horizontal"
+          size={20}
+          color={tokens.foreground}
+        />
+      </View>
+    </MenuView>
   );
 }

@@ -1,6 +1,7 @@
 import type { AdapterContext, ComputerRef, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { DISK_NOTE_INSTRUCTION } from "./computer-disk.prompt.js";
 import { sandboxKindCapabilities } from "./sandbox/sandbox-kind-capabilities.js";
 
 const MEASURE_TIMEOUT_MS = 5_000;
@@ -89,7 +90,5 @@ export function diskUsedPercent(disk: StoredDisk): number | null {
 export function diskNoteInstruction(disk: StoredDisk): string | undefined {
   const percent = diskUsedPercent(disk);
   if (percent === null || percent < DISK_NOTE_PERCENT) return undefined;
-  const free = Number(disk.diskFreeBytes);
-  const size = free >= 1e9 ? `${Math.round(free / 1e9)} GB` : `${Math.round(free / 1e6)} MB`;
-  return `The computer's disk is ${percent}% full (${size} free). Free space by removing build output and caches you no longer need, or tell the user.`;
+  return DISK_NOTE_INSTRUCTION;
 }

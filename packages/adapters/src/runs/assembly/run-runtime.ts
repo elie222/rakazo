@@ -64,9 +64,11 @@ import {
   PipedreamConnector,
   pipedreamConfigFromEnv,
 } from "../../providers/integration/pipedream/pipedream-connector.js";
+import { deleteStrandedEndedRoutines } from "../../routines/routine-end.js";
 import { createStrategicInitiativeReconciler } from "../../routines/strategic-initiative.js";
 import { localModelsApiKey } from "../../runtime/pi/models/pi-local-provider-id.js";
 import type { SecretCleanupDeps } from "../../secrets/secret-cleanup.js";
+import { webOriginFromEnv } from "../../server/server-foundation.js";
 import { workspaceSaveLimits } from "../../storage/workspace-save-policy.js";
 import { createWebProvider } from "../../web/web-provider-factory.js";
 import { auditLogConfig, createAuditLogReconciler } from "../../webhooks/audit-forwarding.js";
@@ -104,6 +106,8 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   workspaceSaveLimits: WorkspaceExportLimits;
   /** Only names a bot's address to it; the API receives the mail. */
   inboundEmailDomain: string | undefined;
+  /** The web app's origin; an ask sent to a chat app links to the bot's chat there. */
+  webOrigin: string;
 }
 
 /** The worker's reading of the run runtime settings, values and defaults as the worker has them. */
@@ -137,6 +141,7 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     workspaceSaveLimits: workspaceSaveLimits(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
+    webOrigin: webOriginFromEnv(source),
   };
 }
 
@@ -272,6 +277,7 @@ export function createRunRuntime(
         events: deps.events,
         jobs: deps.jobs,
         artifacts: deps.artifacts,
+        webOrigin: env.webOrigin,
       })
     : undefined;
   const teamChat = messaging
@@ -441,5 +447,6 @@ export function createRunReconciler(
       { intervalMs: 60_000 },
     ),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
+    reconcileEndedRoutines: () => deleteStrandedEndedRoutines({ prisma, events: deps.events }),
   });
 }

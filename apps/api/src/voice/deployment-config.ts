@@ -2,7 +2,7 @@ import {
   isVoiceProviderId,
   voiceDeploymentConnectionSupported,
   voiceDeploymentModelSupported,
-  voiceDeploymentUsageUnit,
+  voiceTranscriptionUsageUnit,
 } from "@rakazo/adapters";
 import { z } from "zod";
 
@@ -69,15 +69,14 @@ export function deploymentVoiceFromEnv(
     ) {
       throw new Error("Invalid deployment speech configuration");
     }
-    for (const operation of ["synthesize", "transcribe"] as const) {
-      const pricing = config.pricing[operation];
-      const unit = voiceDeploymentUsageUnit(config.provider, pricing.model, operation);
-      if (
-        (unit !== undefined && unit !== pricing.unit) ||
-        ((unit === undefined || unit === "tokens") && config.allowUnmeteredUsage !== true)
-      ) {
-        throw new Error("Invalid deployment speech metering policy");
-      }
+    const { synthesize, transcribe } = config.pricing;
+    const reported = voiceTranscriptionUsageUnit(config.provider, transcribe.model);
+    if (
+      (reported !== undefined && reported !== transcribe.unit) ||
+      ((synthesize.unit !== "characters" || reported === undefined || reported === "tokens") &&
+        config.allowUnmeteredUsage !== true)
+    ) {
+      throw new Error("Invalid deployment speech metering policy");
     }
     return {
       ...config,

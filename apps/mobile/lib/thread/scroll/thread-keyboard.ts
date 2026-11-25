@@ -1,8 +1,7 @@
 import { useTimeout } from "@rakazo/chat-ui/hooks";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   KeyboardController,
-  KeyboardEvents,
   useKeyboardHandler,
   useReanimatedFocusedInput,
 } from "react-native-keyboard-controller";
@@ -16,7 +15,9 @@ export const KEYBOARD_SETTLE_MS = 600;
  * The keyboard's progress for the thread, frame by frame, and whether the screen should avoid it.
  * The keyboard library can miss a hide, which left the composer floating mid-screen over empty
  * space. With nothing focused for longer than a hide takes, the keyboard is down: this lowers the
- * composer and stops avoiding until the keyboard next shows.
+ * composer and stops avoiding until the keyboard next shows or an input takes focus. Android can
+ * report a show only through transition frames, without a will-show event, and sends none at all
+ * when an input focuses while its keyboard is already up, so either signal resumes avoiding.
  */
 export function useThreadKeyboard() {
   const progress = useSharedValue(KeyboardController.isVisible() ? 1 : 0);
@@ -25,6 +26,10 @@ export function useThreadKeyboard() {
 
   useKeyboardHandler(
     {
+      onStart: (event) => {
+        "worklet";
+        if (event.progress > 0) scheduleOnRN(setAvoiding, true);
+      },
       onMove: (event) => {
         "worklet";
         progress.value = event.progress;
@@ -41,11 +46,6 @@ export function useThreadKeyboard() {
     [],
   );
 
-  useEffect(() => {
-    const subscription = KeyboardEvents.addListener("keyboardWillShow", () => setAvoiding(true));
-    return () => subscription.remove();
-  }, []);
-
   useTimeout(
     () => {
       if (progress.value === 0) return;
@@ -59,7 +59,9 @@ export function useThreadKeyboard() {
   useAnimatedReaction(
     () => input.value !== null,
     (current, previous) => {
-      if (current !== previous) scheduleOnRN(setFocused, current);
+      if (current === previous) return;
+      scheduleOnRN(setFocused, current);
+      if (current) scheduleOnRN(setAvoiding, true);
     },
   );
 

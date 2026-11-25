@@ -16,7 +16,11 @@ import BotSettingsScreen from "../../app/bot-settings";
 import { ModelPickerList } from "../../components/models/model-picker-list";
 import { queryClient } from "../query/query";
 import type { ModelConnectionRequest } from "./model-connection-request";
-import { modelConnectionRequest, openModelConnection } from "./model-connection-request";
+import {
+  closeModelConnection,
+  modelConnectionRequest,
+  openModelConnection,
+} from "./model-connection-request";
 import { modelPickerRequest } from "./model-picker-selection";
 
 const mocks = vi.hoisted(() => ({
@@ -49,6 +53,12 @@ const mocks = vi.hoisted(() => ({
   submitOAuthCode: vi.fn(),
   pasteBackSignIn: false,
   rpc: vi.fn(),
+  disconnectPreview: {
+    mainModel: false,
+    otherChoice: false,
+    usedBy: [] as string[],
+    usedByTotal: 0,
+  },
   dismissKeyboard: vi.fn(),
   listProps: {} as Record<string, unknown>,
   params: {} as Record<string, string | undefined>,
@@ -97,6 +107,7 @@ const catalog = Array.from({ length: 11 }, (_, index) => ({
   ...(index === 1 ? { live: true } : {}),
 }));
 
+vi.mock("../platform/app-version", () => ({ analyticsAppVersion: () => undefined }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ bottom: 34 }),
@@ -178,7 +189,17 @@ vi.mock("../api/api", () => ({
         userCode: "FIXTURE",
         expiresInSeconds: 600,
       };
+    if (procedure === "models/finishOAuth")
+      return {
+        id: CREDENTIAL_ID,
+        provider: "openrouter",
+        label: "OpenRouter",
+        modelId: "vendor/model-1",
+        hasKey: false,
+        authKind: "oauth",
+      };
     if (procedure === "models/completeOAuth") return mocks.completeOAuth(options?.signal);
+    if (procedure === "models/disconnectPreview") return mocks.disconnectPreview;
     if (procedure === "bots/update") return mocks.update(input);
     if (procedure === "models/role") {
       const main = (input as { role: string }).role === "main";
@@ -294,6 +315,8 @@ vi.mock("../api/api", () => ({
               : []),
           ]
         : [];
+    if (procedure === "models/media")
+      return { image: { options: [], selected: null }, video: { options: [], selected: null } };
     return [];
   },
 }));
@@ -630,6 +653,10 @@ vi.mock("@expo/ui/community/menu", () => ({
 
 let root: Root;
 let container: HTMLDivElement;
+// The shared level labels read the active catalog.
+i18n.load("en", {});
+i18n.activate("en");
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.reportVisibleRows = true;
@@ -653,6 +680,7 @@ beforeEach(() => {
   mocks.secondConnection = false;
   mocks.backups = [];
   mocks.primary = null;
+  mocks.disconnectPreview = { mainModel: false, otherChoice: false, usedBy: [], usedByTotal: 0 };
   mocks.rpc.mockReset();
   mocks.menus.clear();
   mocks.rowAccessibilityActions.clear();
@@ -850,6 +878,7 @@ async function renderConnection(request: Partial<ModelConnectionRequest> = {}) {
     ...request,
   });
   await renderStack("connection", { requestId });
+  return requestId;
 }
 
 function searchModels(text: string) {
@@ -1028,6 +1057,59 @@ describe("provider connection screen", () => {
     });
     await act(async () => completeSignIn.resolve({ status: "ready" }));
     expect(mocks.rpc).not.toHaveBeenCalledWith("models/finishOAuth", expect.anything());
+  });
+
+  it("hands a finished sign-in to the screen that opened it and returns there", async () => {
+    mocks.connected = false;
+    mocks.subscriptionSignIn = true;
+    mocks.completeOAuth.mockResolvedValueOnce({ status: "ready" });
+    const onSaved = vi.fn();
+    await renderConnection({ onSaved });
+    await act(async () => buttonWithText("Sign in")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/beginOAuth",
+      expect.objectContaining({ provider: "openrouter", credentialId: null, makeDefault: false }),
+    );
+    expect(onSaved).toHaveBeenCalledExactlyOnceWith(CREDENTIAL_ID);
+    expect(mocks.back).toHaveBeenCalledOnce();
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("hands a saved API key to the screen that opened it and returns there", async () => {
+    mocks.connected = false;
+    const onSaved = vi.fn();
+    await renderConnection({ onSaved });
+    editField("API key", "fixture-key");
+    await act(async () => buttonWithText("Connect API key")!.click());
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "models/connect",
+      expect.objectContaining({
+        provider: "openrouter",
+        apiKey: "fixture-key",
+        makeDefault: false,
+      }),
+    );
+    expect(onSaved).toHaveBeenCalledExactlyOnceWith(CREDENTIAL_ID);
+    expect(mocks.back).toHaveBeenCalledOnce();
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("does not return to Voice after its connection request was closed", async () => {
+    mocks.connected = false;
+    const finished = deferred<void>();
+    mocks.rpc.mockImplementation((procedure: string) =>
+      procedure === "models/connect" ? finished.promise : undefined,
+    );
+    const onSaved = vi.fn();
+    const requestId = await renderConnection({ onSaved });
+    editField("API key", "fixture-key");
+    await act(async () => buttonWithText("Connect API key")!.click());
+
+    closeModelConnection(requestId);
+    await act(async () => finished.resolve());
+
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(mocks.back).not.toHaveBeenCalled();
   });
 
   it("opens prerequisites before issuing a code and lets the browser handoff be retried", async () => {
@@ -1575,7 +1657,7 @@ describe("initial model picker scroll", () => {
     });
   });
 
-  it.each(["first", "model-0", "", "missing"])(
+  it.each(["first", "model-0", "missing"])(
     "leaves the initial viewport alone for %s",
     async (key) => {
       await render(key);
@@ -1863,8 +1945,9 @@ describe("several connections for one provider", () => {
     await act(async () =>
       mocks.menus.get("OpenRouter (Work)")!.onPressAction({ nativeEvent: { event: "disconnect" } }),
     );
-    const [title, , choices] = mocks.alert.mock.lastCall!;
+    const [title, message, choices] = mocks.alert.mock.lastCall!;
     expect(title).toBe("Disconnect OpenRouter (Work)?");
+    expect(message).toBe("This removes the connection from every space.");
     await act(async () => choices[1].onPress());
     expect(mocks.rpc).toHaveBeenCalledWith("models/disconnect", {
       provider: "openrouter",
@@ -1937,8 +2020,18 @@ describe("connection screen targets", () => {
     mocks.connected = true;
     mocks.subscriptionSignIn = false;
     await renderConnection();
-    act(() => buttonWithText("Disconnect")!.click());
-    const [, , choices] = mocks.alert.mock.lastCall!;
+    // The question opens once it knows what goes with the connection, and says so.
+    mocks.disconnectPreview = {
+      mainModel: true,
+      otherChoice: false,
+      usedBy: ["Inbox"],
+      usedByTotal: 1,
+    };
+    await act(async () => buttonWithText("Disconnect")!.click());
+    const [, message, choices] = mocks.alert.mock.lastCall!;
+    expect(message).toBe(
+      "This removes the connection from every space.\n\nReconnecting will not restore the main model choice that uses this connection. Inbox may stop until you reconnect.",
+    );
     await act(async () => choices[1].onPress());
     expect(mocks.rpc).toHaveBeenCalledWith("models/disconnect", {
       provider: "openrouter",
