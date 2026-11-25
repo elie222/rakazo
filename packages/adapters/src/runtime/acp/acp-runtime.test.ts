@@ -600,6 +600,32 @@ describe("acpAgentRuntime", () => {
       const prompt = requests("session/prompt")[0]?.params as { prompt: unknown[] };
       expect(prompt.prompt).toContainEqual({ type: "image", mimeType: "image/png", data: "AQID" });
     });
+
+    it("sends an earlier message's image once it can be read", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const message = { id: "m1", role: "user" as const, content: "Look at this" };
+
+      await collect(runtime, request({ threadId, history: [message] }));
+      await collect(
+        runtime,
+        request({
+          threadId,
+          prompt: "next",
+          history: [
+            {
+              ...message,
+              images: [{ name: "p.png", mimeType: "image/png", data: new Uint8Array([4, 5]) }],
+            },
+          ],
+        }),
+      );
+
+      const prompt = requests("session/prompt")[1]?.params as { prompt: unknown[] };
+      expect(prompt.prompt).toContainEqual({ type: "image", mimeType: "image/png", data: "BAU=" });
+    });
   });
 
   it("keeps screen tools and images from a CLI that does not pass images on", async () => {

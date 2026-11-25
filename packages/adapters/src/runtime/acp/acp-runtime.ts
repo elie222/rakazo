@@ -476,15 +476,20 @@ async function runAcpTurn(
       id: activeSessionId,
       cwd,
       seen: new Set(),
+      imaged: new Set(),
       context: new Set(),
       replies: new Set(),
       usedAt: Date.now(),
     };
     const turn = turnText(request, current, fresh, includeOwnReplies);
-    const images =
-      descriptor.acceptsImages && (capabilities.promptCapabilities as Update | undefined)?.image
-        ? turn.images
-        : [];
+    const takesImages = Boolean((capabilities.promptCapabilities as Update | undefined)?.image);
+    const images = descriptor.acceptsImages && takesImages ? turn.images : [];
+    if (turn.images.length && !images.length) {
+      getLogger().warn("The agent CLI does not take images; the message's images were left out", {
+        agent: descriptor.id,
+        images: turn.images.length,
+      });
+    }
     current.usedAt = Date.now();
     if (ownsChatSession) {
       keepSession(key, current);
@@ -761,13 +766,22 @@ function turnText(
   includeOwn: boolean,
 ): { text: string; images: AgentInputImage[] } {
   const lines: Array<{ line: string; images: readonly AgentInputImage[] }> = [];
+  const late: AgentInputImage[] = [];
   for (const item of request.history) {
     const content = item.content.trim();
     // The new message itself goes last, as the prompt.
     if (!content || (item.id && item.id === request.sourceMessageId)) continue;
     const own = item.role === "assistant" && !item.speaker;
     if (item.id) {
-      if (session.seen.has(item.id)) continue;
+      if (session.seen.has(item.id)) {
+        // An image that could not be read when the session first saw its message comes now.
+        if (item.images?.length && !session.imaged.has(item.id)) {
+          session.imaged.add(item.id);
+          late.push(...item.images);
+        }
+        continue;
+      }
+      if (item.images?.length) session.imaged.add(item.id);
       session.seen.add(item.id);
       // The session wrote this reply itself, unless a turn running beside it did.
       if (own && !fresh && (!includeOwn || session.replies.has(contentHash(content)))) continue;
@@ -791,6 +805,7 @@ function turnText(
   for (const id of session.seen) {
     if (!inWindow.has(id) && id !== request.sourceMessageId) session.seen.delete(id);
   }
+  for (const id of session.imaged) if (!inWindow.has(id)) session.imaged.delete(id);
   let kept = lines;
   if (fresh) {
     // The newest messages that fit; the newest one is kept, shortened, even when it alone does not.
@@ -818,7 +833,11 @@ function turnText(
       .filter(Boolean)
       .join("\n\n"),
     // Images go with the messages they came with, the new message's last.
-    images: [...kept.flatMap(({ images }) => images), ...(request.currentTurnImages ?? [])],
+    images: [
+      ...late,
+      ...kept.flatMap(({ images }) => images),
+      ...(request.currentTurnImages ?? []),
+    ],
   };
 }
 

@@ -68,8 +68,13 @@ describe("openCodeAgent", () => {
     ).toBe(false);
   });
 
-  it("lets its bots see screenshots and the images people send", () => {
-    expect(modelAcceptsImageInput(OPENCODE_CLI_PROVIDER_ID, "opencode/big-pickle")).toBe(true);
+  it("lets its bots see images when the model it runs takes them", () => {
+    // A model the catalog knows decides; one it does not is taken at the CLI's word.
+    expect(
+      modelAcceptsImageInput(OPENCODE_CLI_PROVIDER_ID, "openrouter/anthropic/claude-haiku-4.5"),
+    ).toBe(true);
+    expect(modelAcceptsImageInput(OPENCODE_CLI_PROVIDER_ID, "opencode/big-pickle")).toBe(false);
+    expect(modelAcceptsImageInput(OPENCODE_CLI_PROVIDER_ID, "local/some-model")).toBe(true);
   });
 
   it("is a deployment model the operator configures with the CLI's own sign-in", () => {

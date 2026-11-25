@@ -84,7 +84,12 @@ function visionModel(provider: string, id: string) {
   const models = catalogModels();
   if (provider === CLAUDE_CODE_PROVIDER_ID) return claudeCodeModel(id, models);
   const cli = agentCli(provider);
-  return cli ? agentCliModel(cli, id) : models.getModel(provider, id);
+  if (!cli) return models.getModel(provider, id);
+  // A CLI that names models `provider/model` runs ones the catalog may know, which then decides.
+  const slash = id.indexOf("/");
+  const known = slash > 0 ? models.getModel(id.slice(0, slash), id.slice(slash + 1)) : undefined;
+  const model = agentCliModel(cli, id);
+  return known && cli.acceptsImages ? { ...model, input: known.input } : model;
 }
 
 /**

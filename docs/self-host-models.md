@@ -226,8 +226,9 @@ PI_DEFAULT_MODEL=opencode/big-pickle
 Use a model id from `opencode models`. Each chat continues OpenCode's session from its previous
 turn, so OpenCode keeps its context and prompt cache; after a restart, the next turn starts a new
 session with the recent chat. Bots on OpenCode can use their computer's screen and see the images
-people send, through the same tools and approvals as any bot. Choose a model that takes images, or
-OpenCode drops them. Usage counts against your OpenCode plan or provider, and Rakazo shows no cost
+people send, through the same tools and approvals as any bot, when the model OpenCode runs takes
+images. Rakazo goes by its own model list where it knows the model, so a text-only model gets
+neither. Usage counts against your OpenCode plan or provider, and Rakazo shows no cost
 for these runs. Your use of OpenCode and of the models it reaches is covered by their own terms.
 
 The CLI runs in a private working folder with an allowlisted environment: API keys and other server
