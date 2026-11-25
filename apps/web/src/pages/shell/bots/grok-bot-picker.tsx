@@ -2,14 +2,20 @@ import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { GROK_BOT_EXPORT_MAX_LENGTH, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
 import type { GrokBot } from "@rakazo/core";
-import { grokBotExportJson, newClientId } from "@rakazo/core";
+import { AGENT_IMPORT_NOT_FOUND, grokBotExportJson, newClientId } from "@rakazo/core";
 import { Button, Checkbox, Label } from "@rakazo/ui-web";
 import { Check, ChevronRight } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useMemo, useState } from "react";
-import { grokBotErrorText } from "../../../lib/bots/agent-import-errors";
+import { agentImportErrorText, grokBotErrorText } from "../../../lib/bots/agent-import-errors";
 import { rpc } from "../../../lib/query/rpc";
 import type { GrokBatch } from "./use-agent-import-source";
+
+/** The same localized words a single import shows for this refusal. */
+function refusalText(result: { error: string; data?: Record<string, unknown> }): string {
+  if (result.error === AGENT_IMPORT_NOT_FOUND) return grokBotErrorText("not_export");
+  return agentImportErrorText(result) ?? result.error;
+}
 
 /**
  * Every Bot in an export starts ticked and imports in one go with what a review ticks by
@@ -74,7 +80,7 @@ export function GrokBotPicker({
       results.forEach((result, index) => {
         const { id } = sent[index]!;
         if ("bot" in result) created.set(id, result.bot);
-        else reasons.set(id, result.error);
+        else reasons.set(id, refusalText(result));
       });
       setBatch((current) => ({ ...current, created, reasons }));
       const made = rows.map(({ id }) => created.get(id)).find(Boolean);

@@ -62,9 +62,15 @@ export const botsRpc = {
     importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
     importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
     /** In input order; one agent that cannot be created does not stop the others. */
-    importMany: oc
-      .input(AgentImportManyInput)
-      .output(z.array(z.union([z.object({ bot: BotSchema }), z.object({ error: z.string() })]))),
+    importMany: oc.input(AgentImportManyInput).output(
+      z.array(
+        z.union([
+          z.object({ bot: BotSchema }),
+          /** `data` is what the same refusal carries from `importCreate`, such as its reason. */
+          z.object({ error: z.string(), data: z.record(z.string(), z.unknown()).optional() }),
+        ]),
+      ),
+    ),
     importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
     templates: oc.output(z.array(BotTemplateListingSchema)),
     createFromTemplate: oc.input(CreateBotFromTemplateInput).output(CreateBotFromTemplateOutput),

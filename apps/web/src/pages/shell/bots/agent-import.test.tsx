@@ -571,8 +571,14 @@ describe("a Grok Bot reply with several Bots", () => {
 
   it("finishes with what was imported once the refused Bots are unticked", async () => {
     await paste();
-    importMany.mockResolvedValue([bot("Bramble"), { error: "Too long" }, bot("Finch")]);
+    importMany.mockResolvedValue([
+      bot("Bramble"),
+      { error: "Server text", data: { reason: "instructions_too_long" } },
+      bot("Finch"),
+    ]);
     await press("Import 3 Bots");
+    // The refusal reads as it does for one Bot's import.
+    expect(container!.textContent).toContain("Instructions are too long. Untick some files.");
     await act(async () => (boxes()[0] as HTMLElement).click());
     await press("Done");
     expect(created).toEqual(["Bramble"]);

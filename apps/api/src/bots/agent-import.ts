@@ -41,6 +41,7 @@ import {
   agentImportUncheckedByDefault,
   ClientError,
   combineImportedInstructions,
+  isRecord,
   looksLikeCredential,
   messagingProviderName,
   parseAgentImport,
@@ -417,8 +418,8 @@ export async function createImportedBots<PreparedKey>(
   actor: Actor,
   input: AgentImportManyInput,
   signal?: AbortSignal,
-): Promise<({ bot: Bot } | { error: string })[]> {
-  const results: ({ bot: Bot } | { error: string })[] = [];
+): Promise<({ bot: Bot } | { error: string; data?: Record<string, unknown> })[]> {
+  const results: ({ bot: Bot } | { error: string; data?: Record<string, unknown> })[] = [];
   for (const { importKey, files } of input.agents) {
     signal?.throwIfAborted();
     try {
@@ -450,7 +451,8 @@ export async function createImportedBots<PreparedKey>(
       const refusal =
         error instanceof ClientError || (error instanceof ORPCError && error.status < 500);
       if (!refusal) throw error;
-      results.push({ error: error.message });
+      const data = error instanceof ORPCError && isRecord(error.data) ? error.data : undefined;
+      results.push({ error: error.message, ...(data ? { data } : {}) });
     }
   }
   return results;

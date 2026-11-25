@@ -67,7 +67,6 @@ export type {
   RoutineTriggersAvailable,
 } from "./grok-bot.js";
 export {
-  GROK_BOT_EXPORT_PROMPT,
   GROK_BOT_REPLY_MAX_LENGTH,
   GrokBotExportError,
   grokBotExportJson,
@@ -77,6 +76,7 @@ export {
   parseGrokBotExport,
   readGrokBotExportJson,
 } from "./grok-bot.js";
+export { GROK_BOT_EXPORT_PROMPT } from "./grok-bot.prompt.js";
 export { bundledSkillNames } from "./hermes.js";
 export { agentImportSelection, agentImportUncheckedByDefault } from "./selection.js";
 export type { AgentImportReader, SkillFiles } from "./types.js";
