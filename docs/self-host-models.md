@@ -208,8 +208,14 @@ What it needs:
   machine: the official Docker images and hosted servers do not include it.
 - OpenCode on that user's `PATH`. Its free models need no sign-in; for a plan or provider, sign in
   once in a terminal as that user with `opencode auth login`.
-- One account on the server. As with Claude Code, Rakazo refuses OpenCode runs while the server
-  has more than one account or bills for model usage.
+- One account on the server. The CLI's sign-in and plan are one person's, and the CLI runs with
+  that person's access to the computer, so Rakazo refuses OpenCode runs while the server has more
+  than one account (people who only message bots from chat apps do not count) or bills for model
+  usage.
+
+The desktop app's **This computer** server is not covered yet: it has no setting for a
+deployment model, and it looks for commands only in a few standard folders, which do not include
+where OpenCode's own installer puts it. Run from a source checkout instead.
 
 ```env
 PI_DEFAULT_PROVIDER=opencode-cli
@@ -219,8 +225,8 @@ PI_DEFAULT_MODEL=opencode/big-pickle
 
 Use a model id from `opencode models`. Each chat continues OpenCode's session from its previous
 turn, so OpenCode keeps its context and prompt cache; after a restart, the next turn starts a new
-session with the recent chat. Screen and computer use, and images people send, are not available to bots on OpenCode yet.
-Usage counts against your OpenCode plan or provider, and Rakazo shows no cost for these runs. Your
+session with the recent chat. Screen and computer use, and images people send, are not available
+to bots on OpenCode yet. Usage counts against your OpenCode plan or provider, and Rakazo shows no cost for these runs. Your
 use of OpenCode and of the models it reaches is covered by their own terms.
 
 The CLI runs in a private working folder with an allowlisted environment: API keys and other server
