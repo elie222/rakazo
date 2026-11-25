@@ -22,14 +22,6 @@ const MAX_WRITE_ERROR_OUTPUT_BYTES = 64 * 1024;
 const SPOOL_READ_CHUNK_BYTES = 64 * 1024;
 const BASE64_CHUNK_RE = /^[A-Za-z0-9+/=]+$/;
 
-async function unlinkIfPresent(filePath: string): Promise<void> {
-  try {
-    await unlink(filePath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-}
-
 async function writeAll(handle: FileHandle, data: string): Promise<void> {
   const buf = Buffer.from(data, "ascii");
   let offset = 0;
@@ -325,8 +317,7 @@ async function readContainerFileSpooled(
   let failure: unknown;
   let streamControls: { pause: () => void; resume: () => void } | undefined;
   let inFlightWrites = 0;
-  let spoolPath: string | undefined;
-  let writeHandle: FileHandle | undefined;
+  let spoolHandle: FileHandle | undefined;
   let pendingWrite: Promise<void> = Promise.resolve();
   let handedOff = false;
 
@@ -369,11 +360,19 @@ async function readContainerFileSpooled(
             pendingWrite = pendingWrite
               .then(async () => {
                 if (exceededLimit || failure !== undefined || abort.signal.aborted) return;
-                if (!writeHandle) {
-                  spoolPath = path.join(tmpdir(), `rakazo-file-read-${randomUUID()}.b64`);
-                  writeHandle = await open(spoolPath, "wx", 0o600);
+                if (!spoolHandle) {
+                  const spoolPath = path.join(tmpdir(), `rakazo-file-read-${randomUUID()}.b64`);
+                  const handle = await open(spoolPath, "wx+", 0o600);
+                  try {
+                    // Unlink immediately so an abrupt crash or kill cannot leave workspace bytes in tmpdir.
+                    await unlink(spoolPath);
+                  } catch (error) {
+                    await bestEffort("close unlinked spool handle", handle.close());
+                    throw error;
+                  }
+                  spoolHandle = handle;
                 }
-                await writeAll(writeHandle, data);
+                await writeAll(spoolHandle, data);
               })
               .catch((error: unknown) => {
                 stopReading(error);
@@ -398,11 +397,6 @@ async function readContainerFileSpooled(
     }
 
     await pendingWrite;
-    if (writeHandle) {
-      const handle = writeHandle;
-      writeHandle = undefined;
-      await handle.close();
-    }
 
     if (exceededLimit || exitCode === 42) {
       return { kind: "too_large" };
@@ -413,7 +407,7 @@ async function readContainerFileSpooled(
     if (exitCode !== 0) {
       return { kind: "error", stderr };
     }
-    if (!spoolPath) {
+    if (!spoolHandle) {
       return {
         kind: "stream",
         body: new ReadableStream<Uint8Array>({
@@ -425,9 +419,8 @@ async function readContainerFileSpooled(
       };
     }
 
-    const filePath = spoolPath;
-    let readHandle: FileHandle | undefined;
-    let opening: Promise<FileHandle> | undefined;
+    let readHandle: FileHandle | undefined = spoolHandle;
+    let readOffset = 0;
     let activeRead: Promise<unknown> | undefined;
     let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
     let streamSettled = false;
@@ -459,32 +452,17 @@ async function readContainerFileSpooled(
       if (!cleanupPromise) {
         cleanedUp = true;
         cleanupPromise = (async () => {
-          const pendingOpen = opening;
-          if (pendingOpen) {
-            try {
-              const opened = await pendingOpen;
-              if (!readHandle) readHandle = opened;
-            } catch (error) {
-              if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-                // Error is reported by pull(); cleanup still proceeds to remove the spool file.
-              }
-            }
-          }
           const pendingRead = activeRead;
           if (pendingRead) {
             try {
               await pendingRead;
             } catch {
-              // Error is reported by pull(); cleanup still closes the handle and removes the spool file.
+              // Error is reported by pull(); cleanup still closes the handle.
             }
           }
           const handle = readHandle;
           readHandle = undefined;
-          try {
-            await handle?.close();
-          } finally {
-            await unlinkIfPresent(filePath);
-          }
+          await handle?.close();
         })();
       }
       return cleanupPromise;
@@ -502,21 +480,9 @@ async function readContainerFileSpooled(
               errorStream(ctrl, signal.reason ?? new Error("file read cancelled"));
               return;
             }
-            if (cleanedUp) return;
-            if (!readHandle) {
-              const op = open(filePath, "r");
-              opening = op;
-              try {
-                const opened = await op;
-                if (cleanedUp) return;
-                readHandle = opened;
-              } finally {
-                opening = undefined;
-              }
-            }
-            if (cleanedUp) return;
+            if (cleanedUp || !readHandle) return;
             const buffer = Buffer.allocUnsafe(SPOOL_READ_CHUNK_BYTES);
-            const reading = readHandle.read(buffer, 0, buffer.length, null);
+            const reading = readHandle.read(buffer, 0, buffer.length, readOffset);
             activeRead = reading;
             let bytesRead: number;
             try {
@@ -537,6 +503,7 @@ async function readContainerFileSpooled(
               }
               return;
             }
+            readOffset += bytesRead;
             if (!streamSettled) ctrl.enqueue(buffer.subarray(0, bytesRead));
           } catch (error) {
             const wasCancelled = cleanedUp;
@@ -551,19 +518,17 @@ async function readContainerFileSpooled(
       },
       { highWaterMark: 1 },
     );
+    handedOff = true;
+    spoolHandle = undefined;
     signal?.addEventListener("abort", onBodyAbort, { once: true });
     if (signal?.aborted) onBodyAbort();
-    handedOff = true;
     return { kind: "stream", body };
   } finally {
     cleanupCallerAbort();
-    if (writeHandle) {
-      const handle = writeHandle;
-      writeHandle = undefined;
+    if (!handedOff && spoolHandle) {
+      const handle = spoolHandle;
+      spoolHandle = undefined;
       await handle.close();
-    }
-    if (!handedOff && spoolPath) {
-      await unlinkIfPresent(spoolPath);
     }
   }
 }

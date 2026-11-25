@@ -503,7 +503,11 @@ describe("POST /computers/:id/exec streaming", () => {
       (await readdir(tmpdir())).filter((name) => name.startsWith("rakazo-file-read-")),
     );
 
-    // 1. Legacy spooled HEAD read deletes its spool file immediately.
+    // 1. Legacy spooled HEAD read unlinks immediately and closes its spool handle on cancel.
+    let headHandleClosed = false;
+    mock.onNextClose = async () => {
+      headHandleClosed = true;
+    };
     const legacyStream = new PassThrough();
     mock.exec.mockResolvedValueOnce({
       start: async () => legacyStream,
@@ -526,6 +530,7 @@ describe("POST /computers/:id/exec streaming", () => {
     const legacyHead = await legacyHeadPromise;
     expect(legacyHead.status).toBe(200);
     expect(await legacyHead.text()).toBe("");
+    expect(headHandleClosed).toBe(true);
     const afterSpools = (await readdir(tmpdir())).filter(
       (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),
     );
@@ -556,7 +561,11 @@ describe("POST /computers/:id/exec streaming", () => {
     expect(await directHead.text()).toBe("");
     expect(destroy).toHaveBeenCalled();
 
-    // 3. Aborting the request signal after handoff unlinks the legacy spool even without body.cancel().
+    // 3. Spool path is already unlinked while open, and aborting closes the handle without body.cancel().
+    let abortHandleClosed = false;
+    mock.onNextClose = async () => {
+      abortHandleClosed = true;
+    };
     const abortStream = new PassThrough();
     const abortController = new AbortController();
     const abortContainer = {
@@ -575,20 +584,25 @@ describe("POST /computers/:id/exec streaming", () => {
     const abortOutcome = await abortOutcomePromise;
     expect(abortOutcome.kind).toBe("stream");
     if (abortOutcome.kind !== "stream") return;
+    // Even before reading or aborting, no named spool file remains in tmpdir.
+    expect(
+      (await readdir(tmpdir())).filter(
+        (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),
+      ),
+    ).toEqual([]);
     const abortReader = abortOutcome.body.getReader();
     // Drain the initial '{"content":"' chunk so the next read invokes pull().
     await abortReader.read();
     const pendingRead = abortReader.read();
     abortController.abort(new Error("client disconnected"));
     await expect(pendingRead).rejects.toThrow("client disconnected");
-    await vi.waitFor(async () => {
-      const remaining = (await readdir(tmpdir())).filter(
-        (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),
-      );
-      expect(remaining).toEqual([]);
-    });
+    await vi.waitFor(() => expect(abortHandleClosed).toBe(true));
 
-    // Also verify aborting before any reader attaches unlinks the spool without body.cancel().
+    // Also verify aborting before any reader attaches closes the spool handle without body.cancel().
+    let unconsumedHandleClosed = false;
+    mock.onNextClose = async () => {
+      unconsumedHandleClosed = true;
+    };
     const unconsumedStream = new PassThrough();
     const unconsumedAbort = new AbortController();
     const unconsumedContainer = {
@@ -606,37 +620,11 @@ describe("POST /computers/:id/exec streaming", () => {
     unconsumedStream.end();
     const unconsumedOutcome = await unconsumedPromise;
     expect(unconsumedOutcome.kind).toBe("stream");
+    expect(unconsumedHandleClosed).toBe(false);
     unconsumedAbort.abort(new Error("client disconnected early"));
-    await vi.waitFor(async () => {
-      const remaining = (await readdir(tmpdir())).filter(
-        (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),
-      );
-      expect(remaining).toEqual([]);
-    });
+    await vi.waitFor(() => expect(unconsumedHandleClosed).toBe(true));
 
     // 4. Aborting while EOF spool close() is held rejects the pending read before cleanup resumes.
-    const eofStream = new PassThrough();
-    const eofAbort = new AbortController();
-    const eofContainer = {
-      exec: vi.fn(async () => ({
-        start: async () => eofStream,
-        inspect: async () => ({ ExitCode: 0 }),
-      })),
-    } as unknown as Docker.Container;
-    const eofOutcomePromise = readContainerFile(eofContainer, "/home/rakazo/ok.bin", {
-      maxBytes: 6,
-      signal: eofAbort.signal,
-    });
-    await vi.waitFor(() => expect(eofContainer.exec).toHaveBeenCalledOnce());
-    eofStream.write(frame(1, part1));
-    eofStream.end();
-    const eofOutcome = await eofOutcomePromise;
-    expect(eofOutcome.kind).toBe("stream");
-    if (eofOutcome.kind !== "stream") return;
-
-    const eofReader = eofOutcome.body.getReader();
-    await eofReader.read(); // '{"content":"'
-
     const closeStarted = deferred();
     const closeGate = deferred();
     mock.onNextClose = async () => {
@@ -644,7 +632,28 @@ describe("POST /computers/:id/exec streaming", () => {
       await closeGate.promise;
     };
     try {
-      await eofReader.read(); // opens read handle (wrapping close) and returns part1
+      const eofStream = new PassThrough();
+      const eofAbort = new AbortController();
+      const eofContainer = {
+        exec: vi.fn(async () => ({
+          start: async () => eofStream,
+          inspect: async () => ({ ExitCode: 0 }),
+        })),
+      } as unknown as Docker.Container;
+      const eofOutcomePromise = readContainerFile(eofContainer, "/home/rakazo/ok.bin", {
+        maxBytes: 6,
+        signal: eofAbort.signal,
+      });
+      await vi.waitFor(() => expect(eofContainer.exec).toHaveBeenCalledOnce());
+      eofStream.write(frame(1, part1));
+      eofStream.end();
+      const eofOutcome = await eofOutcomePromise;
+      expect(eofOutcome.kind).toBe("stream");
+      if (eofOutcome.kind !== "stream") return;
+
+      const eofReader = eofOutcome.body.getReader();
+      await eofReader.read(); // '{"content":"'
+      await eofReader.read(); // returns part1 from the unlinked spool handle
       const pendingEofRead = eofReader.read();
       await closeStarted.promise;
       let outcome:

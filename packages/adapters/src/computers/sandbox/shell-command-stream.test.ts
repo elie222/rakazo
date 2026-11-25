@@ -702,8 +702,45 @@ describe("observeShellCommand", () => {
     expect(liveObserved.result.stderr).not.toContain(liveStderrPart2);
     expect(liveObserved.result.stderr).toContain("LIVE_DONE");
 
-    // Live boundary withholding and spanning redaction must be independent of secret registration
-    // order when one secret touches stdout's cut mask and expands stdoutTrailing over another.
+    // Repeated 16 KiB spanning secret over a compacted boundary stays linear via KMP.
+    // Late secret (90,001 chars) exceeds retained stderr head (64,000 + 16,383 = 80,383), so the
+    // compacted cut activates collectSpanningMatches on the 16 KiB secret and expands stdoutTrailing
+    // from 9,617 to 16,383 (redacting every 'q' after OUTER_TAG:).
+    const repeatedBoundarySecret = "q".repeat(16_384);
+    const lateLongSecret = "q".repeat(90_001);
+    await expectLinearTime(async () => {
+      const linearGate = deferred();
+      const linearSecrets = [repeatedBoundarySecret];
+      const linearObserved = await observeShellCommand(
+        (async function* () {
+          yield { type: "stdout" as const, data: `OUTER_TAG:${"q".repeat(16_383)}` };
+          yield {
+            type: "stderr" as const,
+            data: `${"q".repeat(90_000)}\n${"x".repeat(300_000)}\nLIN_OK\n`,
+          };
+          await linearGate.promise;
+          // Emit live chunks after compaction so each snapshot exercises collectSpanningMatches.
+          for (let i = 0; i < 55; i += 1) {
+            yield { type: "stderr" as const, data: `tick-${i}\n` };
+          }
+          yield { type: "exit" as const, code: 0 };
+        })(),
+        {
+          secrets: linearSecrets,
+          onOutput: (snapshot) => {
+            if (linearSecrets.length === 1 && snapshot.stderr.includes("characters omitted")) {
+              linearSecrets.push(lateLongSecret);
+              linearGate.resolve();
+            }
+          },
+        },
+      );
+      expect(linearObserved.result.stdout).toBe("OUTER_TAG:[redacted]");
+      expect(linearObserved.result.stderr).toContain("LIN_OK");
+    });
+  });
+
+  it("keeps compacted live boundary redaction independent of secret registration order", async () => {
     const cutTail = "CUT_TAIL_MARKER_";
     const cutSecret = `CUT_HEAD_${cutTail}`;
     const tailFiller = "m".repeat(63_972);
@@ -767,43 +804,6 @@ describe("observeShellCommand", () => {
       expect(orderObserved.result.stderr).not.toContain(outsideStderrPart2);
       expect(orderObserved.result.stderr).toContain("ORDER_DONE");
     }
-
-    // Repeated 16 KiB spanning secret over a compacted boundary stays linear via KMP.
-    // Late secret (90,001 chars) exceeds retained stderr head (64,000 + 16,383 = 80,383), so the
-    // compacted cut activates collectSpanningMatches on the 16 KiB secret and expands stdoutTrailing
-    // from 9,617 to 16,383 (redacting every 'q' after OUTER_TAG:).
-    const repeatedBoundarySecret = "q".repeat(16_384);
-    const lateLongSecret = "q".repeat(90_001);
-    await expectLinearTime(async () => {
-      const linearGate = deferred();
-      const linearSecrets = [repeatedBoundarySecret];
-      const linearObserved = await observeShellCommand(
-        (async function* () {
-          yield { type: "stdout" as const, data: `OUTER_TAG:${"q".repeat(16_383)}` };
-          yield {
-            type: "stderr" as const,
-            data: `${"q".repeat(90_000)}\n${"x".repeat(300_000)}\nLIN_OK\n`,
-          };
-          await linearGate.promise;
-          // Emit live chunks after compaction so each snapshot exercises collectSpanningMatches.
-          for (let i = 0; i < 55; i += 1) {
-            yield { type: "stderr" as const, data: `tick-${i}\n` };
-          }
-          yield { type: "exit" as const, code: 0 };
-        })(),
-        {
-          secrets: linearSecrets,
-          onOutput: (snapshot) => {
-            if (linearSecrets.length === 1 && snapshot.stderr.includes("characters omitted")) {
-              linearSecrets.push(lateLongSecret);
-              linearGate.resolve();
-            }
-          },
-        },
-      );
-      expect(linearObserved.result.stdout).toBe("OUTER_TAG:[redacted]");
-      expect(linearObserved.result.stderr).toContain("LIN_OK");
-    });
   });
 
   it("throttles live onOutput snapshots when onOutputIntervalMs is set", async () => {
