@@ -9,7 +9,7 @@ import { CALENDAR_CSS } from "./calendar.js";
 import { CONTROLS_CSS } from "./controls.js";
 import { DATAVIZ_CSS } from "./dataviz-styles.js";
 import { ICON_CSS } from "./icon.js";
-import { MEDIA_CSS } from "./media.js";
+import { MEDIA_CSS } from "./media-styles.js";
 import { TEXT_KIT_CSS } from "./text.js";
 
 // Print is always light: paper has no dark mode, and shadows print as grey smudges.
