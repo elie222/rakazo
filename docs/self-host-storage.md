@@ -232,6 +232,7 @@ before upload using the space's content key and authenticated segments bound to 
 artifact identity. This applies even with `CONTENT_ENCRYPTION=off`. Metadata and access
 checks remain in Postgres; clients and sandboxes receive neither bucket credentials nor
 public object URLs. Without object storage, artifacts continue using the local volume.
+Pictures shown on pages are stored, encrypted and migrated the same way as other artifacts.
 
 Existing artifact rows continue reading their local files until migrated. Before spreading
 API or worker replicas across machines, migrate files from every original application

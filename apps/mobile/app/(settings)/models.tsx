@@ -9,12 +9,14 @@ import {
 import { isFirstModelConnection, popularModelProvidersFirst } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { isCancelledError, useQuery } from "@tanstack/react-query";
 import type { Href } from "expo-router";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MediaModelSettings } from "../../components/models/media-model-settings";
 import { ModelProviders } from "../../components/models/model-providers";
 import type {
   ConnectableProvider,
@@ -72,6 +74,8 @@ export default function Models() {
   const bots =
     useQuery({ ...rpcQuery("bots/list", undefined, spaceId), enabled: false }, queryClient).data ??
     noBots;
+  const mediaRead = rpcQuery("models/media", { scope: target.scope }, spaceId);
+  const media = useQuery({ ...mediaRead, enabled: false }, queryClient).data ?? null;
   const [loadError, setLoadError] = useState<string | null>(null);
   const openedRef = useRef(false);
   const pickerRequestRef = useRef<string | null>(null);
@@ -102,6 +106,13 @@ export default function Models() {
           fetchFresh(queryClient, rpcQuery("bots/list", undefined, spaceId), { reuse }).catch(
             () => undefined,
           ),
+          // Without it only the image and video model rows are missing.
+          bestEffort(
+            "read the image and video models",
+            fetchFresh(queryClient, rpcQuery("models/media", { scope: target.scope }, spaceId), {
+              reuse,
+            }),
+          ),
         ]);
         setLoadError(null);
       } catch (err) {
@@ -109,7 +120,7 @@ export default function Models() {
         if (!isCancelledError(err)) setLoadError(errorText(err, t`Could not load model settings`));
       }
     },
-    [spaceId, t],
+    [spaceId, target.scope, t],
   );
 
   useFocusEffect(
@@ -330,6 +341,15 @@ export default function Models() {
                 defaultLabel={t`Same as main model`}
               />
             )}
+            {media && !firstConnection ? (
+              <MediaModelSettings
+                view={media}
+                target={target}
+                scope={target.scope}
+                readKey={mediaRead.queryKey}
+                openPicker={pushModelPicker}
+              />
+            ) : null}
             {/* Connections are the account's in every Space, so a Space's override lists only its models. */}
             {target.scope === "account" && !firstConnection ? (
               <ModelProviders

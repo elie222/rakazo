@@ -1,4 +1,6 @@
-import type { SettingsScope } from "@rakazo/contracts";
+import type { EffectiveApprovalTarget, SettingsScope } from "@rakazo/contracts";
+import { APPROVAL_RULES_CHANGED } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import { lockSpaceSettings, settingsTarget } from "../spaces/space-settings.js";
@@ -34,6 +36,44 @@ function confirmationsTarget(prisma: ConfirmationsClient, scope: Scope, requeste
   return settingsTarget(prisma, scope, "confirmations", requested);
 }
 
+class ApprovalRulesChangedError extends ClientError {
+  constructor() {
+    super("CONFLICT", "Approval rules changed. Try again.", APPROVAL_RULES_CHANGED);
+  }
+}
+
+async function approvalRuleWriteTarget(
+  tx: ConfirmationsTx,
+  scope: Scope,
+  requested?: SettingsScope,
+  expected?: EffectiveApprovalTarget,
+) {
+  if (expected && requested !== undefined && requested !== expected.scope) {
+    throw new ApprovalRulesChangedError();
+  }
+  await lockSpaceSettings(tx, scope);
+  const effective = await confirmationsTarget(tx, scope, expected ? undefined : requested);
+  if (expected && (expected.spaceId !== scope.spaceId || expected.scope !== effective)) {
+    throw new ApprovalRulesChangedError();
+  }
+  return effective;
+}
+
+/** Rules and mode come from the same effective copy in one database snapshot. */
+export function readEffectiveApprovalRules(prisma: PrismaClient, actor: Scope) {
+  return prisma.$transaction(
+    async (tx) => {
+      const scope = await confirmationsTarget(tx, actor);
+      const [rules, preference] = await Promise.all([
+        listApprovalRules(tx, actor, scope),
+        findAutoReviewPreference(tx, actor, scope),
+      ]);
+      return { target: { scope, spaceId: actor.spaceId }, rules, preference };
+    },
+    { isolationLevel: "RepeatableRead" },
+  );
+}
+
 export async function listApprovalRules(
   prisma: ConfirmationsClient,
   scope: Scope,
@@ -58,9 +98,9 @@ export async function saveApprovalRule(
   scope: Scope,
   rule: ApprovalRuleInput,
   requested?: SettingsScope,
+  expected?: EffectiveApprovalTarget,
 ) {
-  await lockSpaceSettings(tx, scope);
-  const account = (await confirmationsTarget(tx, scope, requested)) === "account";
+  const account = (await approvalRuleWriteTarget(tx, scope, requested, expected)) === "account";
   const owner = account ? `account:${scope.userId}` : `${scope.spaceId}:${scope.userId}`;
   const value = rule.matchValue.toLowerCase();
   await tx.$queryRaw(Prisma.sql`
@@ -105,15 +145,16 @@ export async function removeApprovalRule(
   scope: Scope,
   id: string,
   requested?: SettingsScope,
+  expected?: EffectiveApprovalTarget,
 ) {
-  await lockSpaceSettings(prisma, scope);
-  if ((await confirmationsTarget(prisma, scope, requested)) === "account") {
-    await prisma.userActionApprovalRule.deleteMany({ where: { id, userId: scope.userId } });
-  } else {
-    await prisma.actionApprovalRule.deleteMany({
-      where: { id, spaceId: scope.spaceId, createdByUserId: scope.userId },
-    });
-  }
+  const target = await approvalRuleWriteTarget(prisma, scope, requested, expected);
+  const { count } =
+    target === "account"
+      ? await prisma.userActionApprovalRule.deleteMany({ where: { id, userId: scope.userId } })
+      : await prisma.actionApprovalRule.deleteMany({
+          where: { id, spaceId: scope.spaceId, createdByUserId: scope.userId },
+        });
+  if (expected && count === 0) throw new ApprovalRulesChangedError();
 }
 
 export async function findAutoReviewPreference(

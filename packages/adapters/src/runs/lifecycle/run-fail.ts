@@ -23,6 +23,7 @@ import {
   backOffRoutineAfterAccountError,
   modelAccountRefusal,
 } from "../../routines/routine-backoff.js";
+import { deleteEndedRoutine } from "../../routines/routine-end.js";
 import { pauseRoutineAfterRepeatedFailures } from "../../routines/routine-failure-pause.js";
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
 import { rejectedRequestsOf } from "../../runtime/provider-request-shape.js";
@@ -164,6 +165,14 @@ export async function failRun(
     leaseFence: ctx.fence,
     outcome: "failed",
     error: message,
+    // A fresh run has fresh tool effect keys. Only offer it when this was the first
+    // attempt and its model failed before any tool could have done work.
+    retryable:
+      run.trigger === "user" &&
+      ctx.fence === 1 &&
+      error instanceof TransientModelError &&
+      !ctx.state.toolStarted &&
+      partialReply.length === 0,
     ...(partialReply.length > 0 ? { partialReply } : {}),
   });
   if (!failed) return;
@@ -236,6 +245,9 @@ export async function failRun(
     );
   }
   const retrying = !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
+  if (run.trigger === "routine" && !failed.continuationRunId && !retrying) {
+    await deleteEndedRoutine(deps, run);
+  }
   // The user's own model connection failing, or a spent allowance, is theirs to fix; a retry
   // still due gets its chance first.
   if (

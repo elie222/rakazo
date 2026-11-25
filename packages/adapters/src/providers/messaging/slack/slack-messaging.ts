@@ -1,9 +1,10 @@
 import { replaceBareMentions } from "@chat-adapter/shared";
-import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
+import type { MessagingInboundMessage, MessagingOutbound } from "@rakazo/adapter-kit";
 import type { Adapter } from "chat";
 import { convertEmojiPlaceholders } from "chat";
 import { boundInboundMarkdown } from "../../../messaging/chat-sdk-surface.js";
 import { lazyChatAdapter } from "../../../messaging/lazy-chat-adapter.js";
+import { splitMarkdown } from "../../../messaging/markdown-split.js";
 import {
   asRecord,
   defineMessagingPlatform,
@@ -45,6 +46,7 @@ export const slackMessaging = defineMessagingPlatform({
     });
     return {
       provider: "slack",
+      outbound: slackOutbound,
       capabilities: { direct: true, groups: true, receipt: "reaction", verifiedSender: true },
       adapter,
       enrichTeamRoom: enrichSlackTeamRoom,
@@ -70,6 +72,12 @@ export function slackPayloads(markdown: string): string[] {
     ),
   ];
 }
+
+/** Slack posts a Markdown part as `markdown_text`, split to stay under its own limit. */
+export const slackOutbound: MessagingOutbound = {
+  markdown: true,
+  split: (body) => splitMarkdown(body, { limit: SLACK_MARKDOWN_LIMIT, sent: slackPayloads }),
+};
 
 /** Slack errors a retry cannot fix: the bot cannot reach the channel or its token is dead. */
 const SLACK_PERMANENT_ERRORS = new Set([

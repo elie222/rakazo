@@ -525,6 +525,65 @@ it("follows later messages to the end once a reply that fit has finished", () =>
   expect(scrollTo).toHaveBeenLastCalledWith({ top: 5_000, behavior: "auto" });
 });
 
+it("keeps following until Page preview input scrolls the transcript", () => {
+  const sent = history();
+  render(baseProps(sent));
+  const { transcript, size, scrollTo } = measuredTranscript({});
+  transcript.scrollTop = size.content - transcript.clientHeight;
+  const preview = document.createElement("div");
+  preview.setAttribute("data-page-preview-scroll", "");
+  preview.scrollTop = 60;
+  const previewBody = preview.appendChild(document.createElement("span"));
+  transcript.appendChild(preview);
+  const wheel = () => {
+    const event = new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -60 });
+    expect(previewBody.dispatchEvent(event)).toBe(true);
+  };
+
+  act(() => {
+    // Chromium can update the preview's position before delivering the passive wheel event.
+    preview.scrollTop = 0;
+    wheel();
+    preview.dispatchEvent(new Event("scroll"));
+    // An unrelated layout adjustment near the tail must not pick up the consumed wheel.
+    transcript.scrollTop -= 10;
+    transcript.dispatchEvent(new Event("scroll"));
+  });
+  const reply = textMessage("new-reply", "bot", "A routine finished");
+  size.content = 1_400;
+  render(baseProps([...sent, reply]));
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_400, behavior: "auto" });
+
+  act(() => {
+    preview.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+  });
+  const next = textMessage("next-reply", "bot", "A new notification");
+  size.content = 1_800;
+  render(baseProps([...sent, reply, next]));
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_800, behavior: "auto" });
+
+  // At the preview's top the next wheel moves the transcript, even within its near-end band.
+  act(() => {
+    transcript.scrollTop = size.content - transcript.clientHeight;
+    transcript.dispatchEvent(new Event("scroll"));
+    transcript.scrollTop -= 20;
+    wheel();
+    transcript.dispatchEvent(new Event("scroll"));
+  });
+  scrollTo.mockClear();
+  size.content = 1_820;
+  const later = [...sent, reply, next, textMessage("last-reply", "bot", "Another update")];
+  render(baseProps(later));
+  expect(scrollTo).not.toHaveBeenCalled();
+
+  act(() => {
+    transcript.dispatchEvent(new Event("scrollend"));
+  });
+  size.content = 1_860;
+  render(baseProps([...later, textMessage("followed-reply", "bot", "Followed update")]));
+  expect(scrollTo).toHaveBeenLastCalledWith({ top: 1_860, behavior: "auto" });
+});
+
 it("lets a tap at a held reply near the end resume following", () => {
   const sent = history();
   render(baseProps(sent));

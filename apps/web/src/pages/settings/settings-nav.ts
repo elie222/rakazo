@@ -41,12 +41,6 @@ export function useSettingsNavItems(available: {
     // Ordered by how many people need each page: the essentials, then optional features, then
     // the account's usage and admin pages.
     { id: "general", label: t`General`, icon: Settings },
-    {
-      id: "spaces",
-      label: t`Spaces`,
-      icon: Layers,
-      description: t`Spaces keep work apart. Bots, chats, memory and computers never cross between them.`,
-    },
     { id: "models", label: t`Models`, icon: Cpu, description: t`Which LLMs your bots use.` },
     {
       id: "confirmations",
@@ -98,6 +92,12 @@ export function useSettingsNavItems(available: {
     ...(available.labs ? [{ id: "labs" as const, label: t`Labs`, icon: FlaskConical }] : []),
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(available.billing ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
+    {
+      id: "spaces",
+      label: t`Spaces`,
+      icon: Layers,
+      description: t`Spaces keep work apart. Bots, chats, memory and computers never cross between them.`,
+    },
     { id: "organization", label: t`Organization`, icon: Building2 },
     ...(available.updates
       ? [{ id: "updates" as const, label: t`Updates`, icon: CloudDownload }]

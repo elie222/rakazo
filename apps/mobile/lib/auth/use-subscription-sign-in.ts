@@ -19,7 +19,7 @@ import {
   finishModelOAuthAttempt,
   waitForModelOAuth,
 } from "../models/model-auth";
-import { analyticsSurface } from "../native/analytics-surface";
+import { analyticsClient } from "../native/analytics-surface";
 import type { SettingsTarget } from "../query/settings-target";
 
 type SubscriptionSignInOptions = {
@@ -171,7 +171,7 @@ export function useSubscriptionSignIn({
           label: selected.providerName ?? selected.provider,
           credentialId: credentialIdRef.current,
           codePage: true,
-          surface: analyticsSurface(),
+          ...analyticsClient(),
         },
         { signal: controller.signal },
       );

@@ -27,6 +27,8 @@ import {
 } from "@rakazo/contracts";
 import type { Dispatcher } from "undici";
 import { Agent } from "undici";
+import type { ListedModelDetails } from "../../../models/endpoints/listed-model-details.js";
+import { listedModelDetails } from "../../../models/endpoints/listed-model-details.js";
 import type { OpenAiCompatibleUrlPolicy } from "../../../models/endpoints/openai-compatible-url.js";
 import {
   assertAllowedOpenAiCompatibleRequestUrl,
@@ -47,6 +49,7 @@ import {
   MODEL_CONNECT_TIMEOUT_MS,
   MODEL_STREAM_AGENT_TIMEOUTS,
   modelConnectTimeoutMs,
+  REASONING_MODEL_MAX_TOKENS,
 } from "../pi-runtime-limits.js";
 import { splitLeadingThinkBlock } from "../stream/pi-think-tags.js";
 import { guardToolCallNames } from "../tools/pi-tool-call-guard.js";
@@ -67,7 +70,7 @@ export function openAiCompatibleVisionModelIds(): ReadonlySet<string> {
 /** Custom endpoints can be aggregators; keep their discovery bounded below pinned catalogs. */
 const MAX_MODELS_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_MODEL_IDS = 4_000;
-/** Pinned catalogs (OpenRouter is ~1 MiB). Custom server URLs stay on the tight caps. */
+/** Pinned catalogs and hosted presets (OpenRouter is ~1 MiB). Custom URLs keep the tight caps. */
 const CATALOG_MAX_MODELS_RESPONSE_BYTES = 8 * 1024 * 1024;
 const CATALOG_MAX_MODEL_IDS = 8_000;
 const MAX_MODEL_ID_LENGTH = 256;
@@ -89,7 +92,8 @@ export function openAiCompatibleModel(
   baseUrl: string,
   reasoning = false,
   acceptsImages = false,
-  maxTokens = DEFAULT_MODEL_MAX_TOKENS,
+  // A thinking model spends its output on thinking too, so it gets the wider default.
+  maxTokens = reasoning ? REASONING_MODEL_MAX_TOKENS : DEFAULT_MODEL_MAX_TOKENS,
   contextWindow = DEFAULT_MODEL_CONTEXT_WINDOW,
   apiProtocol: ModelApiProtocol = "chat-completions",
 ): Model<"openai-completions" | "openai-responses" | "anthropic-messages"> {
@@ -501,7 +505,7 @@ export function prepareOpenAiCompatibleConnect(
 
 export type OpenAiCompatibleModelsResponse = {
   object?: string;
-  data?: Array<{ id?: string }>;
+  data?: Array<{ id?: string; metadata?: { tags?: unknown } }>;
   models?: Array<{ id?: string }>;
   has_more?: boolean;
   last_id?: string | null;
@@ -511,9 +515,16 @@ export type OpenAiCompatibleModelsResponse = {
 const OPENAI_COMPAT_PROBE_HAND_FILL_HINT = "You can still Connect with an explicit model id.";
 
 /** Extracts model ids; valid JSON can still be null or lack a list, which gets the actionable missing-list error. */
+/** DeepInfra lists every model it hosts (image, speech, embedding, ...) and tags chat models. */
+function isTaggedNonChatModel(entry: { id?: string; metadata?: { tags?: unknown } }): boolean {
+  const tags = entry?.metadata?.tags;
+  return Array.isArray(tags) && tags.length > 0 && !tags.includes("chat");
+}
+
 function probeModelIds(
   body: OpenAiCompatibleModelsResponse,
-  opts?: { catalogProbe?: boolean },
+  opts?: { catalogProbe?: boolean; chatOnly?: boolean },
+  details?: Record<string, ListedModelDetails>,
 ): string[] {
   const { maxModelIds } = modelsProbeLimits(opts?.catalogProbe);
   const entries = Array.isArray(body?.data)
@@ -529,11 +540,15 @@ function probeModelIds(
   const ids: string[] = [];
   for (const entry of entries) {
     const id = typeof entry?.id === "string" ? entry.id.trim() : "";
-    if (!id) continue;
+    if (!id || (opts?.chatOnly && isTaggedNonChatModel(entry))) continue;
     if (id.length > MAX_MODEL_ID_LENGTH || ids.length >= maxModelIds) {
       throw new ConnectionSetupError("Model server returned too many or overly long model ids");
     }
     ids.push(id);
+    if (details) {
+      const listed = listedModelDetails(entry);
+      if (Object.keys(listed).length > 0) details[id] = listed;
+    }
   }
   return ids;
 }
@@ -581,18 +596,28 @@ async function readBoundedJson(
   }
 }
 
+/**
+ * Hosted services whose model list answers without a key, by host: an authenticated endpoint on
+ * the same host that refuses a missing or bad key.
+ */
+const KEY_CHECK_URLS: Record<string, string> = {
+  "ollama.com": "https://ollama.com/api/balance",
+  "api.deepinfra.com": "https://api.deepinfra.com/v1/me",
+};
+
 /** Some compatible servers expose their model list without authenticating. */
 export async function verifyOpenAiCompatibleApiKey(
   input: { baseUrl: string; apiKey?: string; headers?: Record<string, string> },
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
 ): Promise<void> {
-  if (new URL(input.baseUrl).hostname !== "ollama.com") return;
+  const checkUrl = KEY_CHECK_URLS[new URL(input.baseUrl).hostname];
+  if (!checkUrl) return;
   if (!input.apiKey?.trim()) throw new ConnectionSetupError(MODEL_KEY_REJECTED_ERROR);
   const safeFetch = createOpenAiCompatibleFetch(fetchImpl);
   let response: Response;
   try {
-    response = await safeFetch("https://ollama.com/api/balance", {
+    response = await safeFetch(checkUrl, {
       headers: { Authorization: `Bearer ${input.apiKey.trim()}` },
       redirect: "error",
       signal: AbortSignal.any([
@@ -638,16 +663,44 @@ function overTransport<T>(call: Promise<T>): Promise<T> {
   });
 }
 
+type OpenAiCompatibleListInput = {
+  baseUrl: string;
+  apiKey?: string;
+  headers?: Record<string, string>;
+  apiProtocol?: ModelApiProtocol;
+};
+type OpenAiCompatibleListOptions = OpenAiCompatibleUrlPolicy & { catalogProbe?: boolean };
+
 export async function probeOpenAiCompatibleModels(
-  input: {
-    baseUrl: string;
-    apiKey?: string;
-    headers?: Record<string, string>;
-    apiProtocol?: ModelApiProtocol;
-  },
+  input: OpenAiCompatibleListInput,
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
-  opts?: OpenAiCompatibleUrlPolicy & { catalogProbe?: boolean },
+  opts?: OpenAiCompatibleListOptions,
+): Promise<string[]> {
+  return listOpenAiCompatibleModels(input, fetchImpl, signal, opts);
+}
+
+/**
+ * What the server's model list says about each model that reports anything. For a connection
+ * being saved, whose key was already checked.
+ */
+export async function probeOpenAiCompatibleModelDetails(
+  input: OpenAiCompatibleListInput,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal,
+  opts?: OpenAiCompatibleListOptions,
+): Promise<Record<string, ListedModelDetails>> {
+  const details: Record<string, ListedModelDetails> = Object.create(null);
+  await listOpenAiCompatibleModels(input, fetchImpl, signal, opts, details);
+  return details;
+}
+
+async function listOpenAiCompatibleModels(
+  input: OpenAiCompatibleListInput,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal,
+  opts?: OpenAiCompatibleListOptions,
+  details?: Record<string, ListedModelDetails>,
 ): Promise<string[]> {
   const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl, opts);
   assertHttpsForKeyedOpenAiCompatibleUrl(
@@ -655,7 +708,7 @@ export async function probeOpenAiCompatibleModels(
     input.apiKey,
     Object.keys(input.headers ?? {}).length > 0,
   );
-  await verifyOpenAiCompatibleApiKey(input, fetchImpl, signal);
+  if (!details) await verifyOpenAiCompatibleApiKey(input, fetchImpl, signal);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
   const merged = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
@@ -695,7 +748,11 @@ export async function probeOpenAiCompatibleModels(
         );
       }
       const body = await overTransport(readBoundedJson(response, opts));
-      const pageIds = probeModelIds(body, opts);
+      const pageIds = probeModelIds(
+        body,
+        { ...opts, chatOnly: baseUrl.hostname === "api.deepinfra.com" },
+        details,
+      );
       if (ids.length + pageIds.length > maxModelIds) {
         throw new ConnectionSetupError("Model server returned too many or overly long model ids");
       }

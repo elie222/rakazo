@@ -20,6 +20,7 @@ import { installPageBrowserCommand, privatePageInput } from "../../browser/page-
 import { shouldSkipPortableWorkspaceFile } from "../../storage/workspace-save-policy.js";
 import { sandboxIdleMs } from "../computer-idle.js";
 import { writePortableFilesInBatches } from "../computer-workspace.js";
+import { PAGE_BROWSER_INTERRUPTED } from "../screens/computer-screens.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
@@ -475,7 +476,7 @@ export class RemoteDesktopSandboxProvider extends LinuxDesktopSandbox implements
         if (isSandboxGoneError(error) || unsafeStop) throw error;
         context.signal.throwIfAborted();
         // The bot gets the page tools' own failure, never the provider's error text.
-        throw new Error("Page browser unavailable or interrupted");
+        throw new Error(PAGE_BROWSER_INTERRUPTED);
       }
       context.signal.throwIfAborted();
       return { code: result.exitCode, stdout: result.stdout };
