@@ -240,6 +240,7 @@ export default function ModelConnection() {
     makeDefault,
     scope: target.scope,
     credentialIdRef,
+    credentials,
     setCredentialId,
     onSaved: adoptSavedCredential,
     modelId,

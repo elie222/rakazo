@@ -1658,7 +1658,7 @@ it.each([
   },
 );
 
-it("starts browser sign-in from the ChatGPT subscription page", async () => {
+it("starts browser sign-in from the ChatGPT subscription page on the saved browser connection", async () => {
   vi.mocked(rpc.me).mockResolvedValue(account("openai-codex", "fixture-model"));
   models.list.mockResolvedValue([
     {
@@ -1678,7 +1678,17 @@ it("starts browser sign-in from the ChatGPT subscription page", async () => {
       },
     },
   ]);
-  models.credentials.mockResolvedValue([]);
+  models.credentials.mockResolvedValue([
+    {
+      id: "cred-browser",
+      provider: "openai",
+      label: "OpenAI",
+      hasKey: true,
+      isDefault: false,
+      modelId: "gpt-6.1-sol",
+      authKind: "oauth",
+    },
+  ]);
   models.beginOAuth.mockResolvedValue({
     mode: "auth-url",
     loginId: "browser-login",
@@ -1692,7 +1702,11 @@ it("starts browser sign-in from the ChatGPT subscription page", async () => {
     await pick("Change Main model", "ChatGPT subscription");
     await click(buttons(view.container, "Sign in in browser")[0]);
     expect(models.beginOAuth).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "openai", modelId: "gpt-6.1-sol", credentialId: null }),
+      expect.objectContaining({
+        provider: "openai",
+        modelId: "gpt-6.1-sol",
+        credentialId: "cred-browser",
+      }),
       expect.anything(),
     );
   } finally {

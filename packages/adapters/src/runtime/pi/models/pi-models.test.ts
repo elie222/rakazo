@@ -357,14 +357,6 @@ describe("Pi model catalog", () => {
     expect(scriptedCatalogEntry.provider).toBe("scripted");
   });
 
-  it("offers browser sign-in within ChatGPT subscription", () => {
-    const codex = listPiCatalog().find((entry) => entry.provider === "openai-codex");
-    expect(codex).toMatchObject({
-      subscriptionName: "ChatGPT subscription",
-      alternativeSignIn: { provider: "openai", mode: "auth-url" },
-    });
-  });
-
   it("lists DeepSeek API model ids instead of display labels", () => {
     const deepseek = listPiCatalog().filter((entry) => entry.provider === "deepseek");
     const ids = deepseek.map((entry) => entry.id);

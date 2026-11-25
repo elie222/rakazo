@@ -29,6 +29,7 @@ type SubscriptionSignInOptions = {
   makeDefault: boolean;
   scope: SettingsTarget["scope"];
   credentialIdRef: RefObject<string | null>;
+  credentials: MobileModelCredential[];
   setCredentialId: (id: string) => void;
   onSaved?: (credential: MobileModelCredential) => void;
   modelId: string;
@@ -54,6 +55,7 @@ export function useSubscriptionSignIn({
   makeDefault,
   scope,
   credentialIdRef,
+  credentials,
   setCredentialId,
   onSaved,
   modelId,
@@ -150,7 +152,7 @@ export function useSubscriptionSignIn({
     // A new subscription can save a stronger model than the one the form showed.
     const savedModelId = saved.modelId ?? selected?.id ?? modelId;
     if (await finishConnecting(savedModelId, saved.id, saved.provider)) return;
-    if (saved.provider !== selected?.provider) {
+    if (saved.provider === selected?.alternativeSignIn?.provider) {
       onAlternativeSaved();
       return;
     }
@@ -183,7 +185,11 @@ export function useSubscriptionSignIn({
           makeDefault,
           scope,
           label: selected.providerName ?? selected.provider,
-          credentialId: alternative ? null : credentialIdRef.current,
+          credentialId: alternative
+            ? (credentials.find(
+                (entry) => entry.provider === alternative.provider && entry.authKind === "oauth",
+              )?.id ?? null)
+            : credentialIdRef.current,
           codePage: true,
           ...analyticsClient(),
         },

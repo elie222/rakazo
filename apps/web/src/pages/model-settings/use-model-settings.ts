@@ -471,7 +471,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     };
     void startSubscriptionSignIn({
       provider: method?.provider ?? selected.provider,
-      credentialId: method ? null : (credential?.id ?? null),
+      credentialId: method
+        ? (credentials.find(
+            (entry) => entry.provider === method.provider && entry.authKind === "oauth",
+          )?.id ?? null)
+        : (credential?.id ?? null),
       modelId: method?.modelId ?? selected.id,
       makeDefault: intent?.makeDefault ?? false,
       scope,
