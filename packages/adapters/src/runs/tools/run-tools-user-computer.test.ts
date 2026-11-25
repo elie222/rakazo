@@ -451,6 +451,8 @@ describe("botChainFromOwner", () => {
     const messages = new Map<string, Message>();
     const runs = new Map<string, SenderRun>();
     const steered = new Map<string, string>();
+    /** Deliveries held while a run was busy, then claimed by it as one batch. */
+    const batched = new Map<string, string[]>();
     const runReads = vi.fn();
     const prisma = {
       message: {
@@ -475,6 +477,10 @@ describe("botChainFromOwner", () => {
           const origin = steered.get(where.runId);
           return origin && where.originTrigger.in.includes(origin) ? { id: "steer-1" } : null;
         },
+        findMany: async ({ where }: { where: { runId: string; originTrigger: string } }) =>
+          where.originTrigger === "webhook"
+            ? (batched.get(where.runId) ?? []).map((id) => ({ message: messages.get(id) ?? null }))
+            : [],
       },
     };
     const ownerMessage = (id: string, blocks: unknown[] = [{ kind: "text", text: "build it" }]) =>
@@ -565,6 +571,7 @@ describe("botChainFromOwner", () => {
     return {
       messages,
       steered,
+      batched,
       runReads,
       ownerMessage,
       ownerChatMessage,
@@ -778,6 +785,17 @@ describe("botChainFromOwner", () => {
     await expect(c.check(all)).resolves.toBe(true);
     c.steered.set("run-1", "routine");
     await expect(c.check({ ...all, routines: false })).resolves.toBe(false);
+  });
+
+  it("refuses a chain whose starting run also took in an unmarked delivery with its batch", async () => {
+    const c = chain();
+    c.eventDelivery("src-1");
+    c.eventDelivery("held-1");
+    c.fromSender({ trigger: "webhook", sourceMessageId: "src-1" });
+    c.batched.set("run-1", ["held-1", "src-1"]);
+    await expect(c.check(all)).resolves.toBe(true);
+    c.eventDelivery("held-1", false);
+    await expect(c.check(all)).resolves.toBe(false);
   });
 });
 

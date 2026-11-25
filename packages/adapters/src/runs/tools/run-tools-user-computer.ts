@@ -220,24 +220,40 @@ export function userComputerBlockingOrigins(access: UserComputerAccess): string[
   return [...(access.routines ? [] : ["routine"]), ...(access.webhookChains ? [] : ["webhook"])];
 }
 
-/**
- * Whether a webhook-triggered run's source is a webhook, Git event or email its bot received, as
- * the delivery marked it, in its own thread. A chat-app wake is not marked.
- */
-async function outsideEventDelivery(
-  prisma: PrismaClient,
-  run: { threadId: string; sourceMessageId: string | null },
-): Promise<boolean> {
-  if (!run.sourceMessageId) return false;
-  const source = await prisma.message.findUnique({
-    where: { id: run.sourceMessageId },
-    select: { id: true, role: true, blocks: true, threadId: true },
-  });
-  if (source?.role !== "user" || source.threadId !== run.threadId) return false;
-  const read = readMessageBlocks(source);
+/** Whether a stored message is a webhook, Git event or email delivery a routine received. */
+function markedDelivery(message: { id: string; role: string; blocks: unknown } | null): boolean {
+  if (message?.role !== "user") return false;
+  const read = readMessageBlocks(message);
   return (
     read.intact &&
     read.blocks.some((block) => block.kind === "delivery" && block.outsideEvent === true)
+  );
+}
+
+/**
+ * Whether a webhook-triggered run took in only webhook, Git event or email deliveries its bot's
+ * routine received, as each delivery marked it: its source, in its own thread, and every delivery
+ * held while the bot was busy and handed to it in the same batch. A chat-app wake is not marked.
+ */
+async function outsideEventDelivery(
+  prisma: PrismaClient,
+  run: { id: string; threadId: string; sourceMessageId: string | null },
+): Promise<boolean> {
+  if (!run.sourceMessageId) return false;
+  const [source, batch] = await Promise.all([
+    prisma.message.findUnique({
+      where: { id: run.sourceMessageId },
+      select: { id: true, role: true, blocks: true, threadId: true },
+    }),
+    prisma.steeringMessage.findMany({
+      where: { runId: run.id, originTrigger: "webhook" },
+      select: { message: { select: { id: true, role: true, blocks: true } } },
+    }),
+  ]);
+  return (
+    source?.threadId === run.threadId &&
+    markedDelivery(source) &&
+    batch.every((item) => markedDelivery(item.message))
   );
 }
 
