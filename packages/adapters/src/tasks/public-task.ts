@@ -100,6 +100,8 @@ export async function readPublicTask(
     },
   });
   if (!task) return null;
+  // Replies are read after the run, so a run that ends between the reads shows as still working
+  // with its last reply, never as ended without it. Its end event reads both again.
   const replies = await prisma.message.findMany({
     where: { runId: { in: task.runs.map((run) => run.id) }, role: "bot" },
     orderBy: { seq: "asc" },
