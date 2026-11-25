@@ -1360,7 +1360,8 @@ model Task {
 }
 
 /// Where to report a task an API caller started each time it settles. Its signing key is derived
-/// from the server's key, the person and the address, so nothing secret is stored.
+/// from the server's key, the API key that asked for it and the address, so nothing secret is
+/// stored and a new API key gets a new signing key.
 model TaskCallback {
   id              String    @id @default(cuid())
   taskId          String    @unique

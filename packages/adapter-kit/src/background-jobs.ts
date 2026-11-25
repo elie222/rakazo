@@ -218,6 +218,8 @@ export function taskCallbackJob(
     payload: { taskId },
     availableAt,
     replaceKey: `task.callback:${taskId}${kind === "recheck" ? ":recheck" : ""}`,
+    // One task's checks run one at a time, so a slower one never posts an older state last.
+    queueName: `task.callback:${taskId}`,
     maxAttempts: TASK_CALLBACK_MAX_ATTEMPTS,
   };
 }
