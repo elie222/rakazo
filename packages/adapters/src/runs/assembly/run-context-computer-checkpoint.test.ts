@@ -180,237 +180,186 @@ it("reports a pinned turn whose pending tool is offline as unavailable, not inco
   expect(restoreTurnCheckpointEffects(fixture(), checkpoint("desktop_run"), model)).toBeUndefined();
 });
 
+function checkpointWithRoutineRead(
+  toolName: "schedule_list" | "task_catalog",
+  id: string,
+  text: string,
+  details?: unknown,
+) {
+  const saved = JSON.parse(checkpoint("ask_user"));
+  saved.messages.unshift(
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id, name: toolName, arguments: {} }],
+    },
+    {
+      role: "toolResult",
+      toolCallId: id,
+      toolName,
+      content: [{ type: "text", text }],
+      ...(details !== undefined ? { details } : {}),
+    },
+  );
+  return JSON.stringify(saved);
+}
+
 it.each(["schedule_list", "task_catalog"] as const)(
   "restores stored watch check text and entry keys from saved %s tool results",
   (toolName) => {
-    const withWatch = JSON.parse(checkpoint("ask_user"));
-    withWatch.messages.unshift(
-      {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "read-1", name: toolName, arguments: {} }],
-      },
-      {
-        role: "toolResult",
-        toolCallId: "read-1",
-        toolName,
-        content: [
+    const saved = checkpointWithRoutineRead(
+      toolName,
+      "read-1",
+      JSON.stringify({
+        routines: [
           {
-            type: "text",
-            text: JSON.stringify({
-              routines: [
-                {
-                  routineId: "r-1",
-                  prompt: "Owner private prompt",
-                  lastCheck: {
-                    checkedAt: "2026-11-25T07:00:00.000Z",
-                    outcome: "changed",
-                    fingerprint: "fp-1",
-                    entries: {
-                      "alice@example.com": 'rakazo:item:{"fields":["open"],"title":"Invoice"}',
-                    },
-                    detail: "1 new item",
-                  },
-                },
-              ],
-            }),
+            routineId: "r-1",
+            prompt: "Owner private prompt",
+            lastCheck: {
+              checkedAt: "2026-11-25T07:00:00.000Z",
+              outcome: "changed",
+              fingerprint: "fp-1",
+              entries: {
+                "alice@example.com": 'item:{"fields":["\\"open\\""],"title":"Invoice"}',
+              },
+              detail: "1 new item",
+            },
           },
         ],
-      },
+      }),
     );
     const ctx = fixture([tool("ask_user")]);
     ctx.state.outsideText = "";
-    expect(restoreTurnCheckpointEffects(ctx, JSON.stringify(withWatch), model)).toBeDefined();
+    expect(restoreTurnCheckpointEffects(ctx, saved, model)).toBeDefined();
     expect(ctx.state.outsideText).toContain("alice@example.com");
     expect(ctx.state.outsideText).toContain("invoice");
     expect(ctx.state.outsideText).not.toContain("owner private prompt");
-
-    const clean = JSON.parse(checkpoint("ask_user"));
-    clean.messages.unshift(
-      {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "read-2", name: toolName, arguments: {} }],
-      },
-      {
-        role: "toolResult",
-        toolCallId: "read-2",
-        toolName,
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              routines: [{ routineId: "r-2", prompt: "Owner private prompt", lastCheck: null }],
-            }),
-          },
-        ],
-      },
-    );
-    const cleanCtx = fixture([tool("ask_user")]);
-    cleanCtx.state.outsideText = "";
-    expect(restoreTurnCheckpointEffects(cleanCtx, JSON.stringify(clean), model)).toBeDefined();
-    expect(cleanCtx.state.outsideText).toBe("");
-
-    const truncated = JSON.parse(checkpoint("ask_user"));
-    truncated.messages.unshift(
-      {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "read-3", name: toolName, arguments: {} }],
-      },
-      {
-        role: "toolResult",
-        toolCallId: "read-3",
-        toolName,
-        content: [
-          {
-            type: "text",
-            text: '{"routines":[{"lastCheck":{"entries":{"bob@example.com":"truncated...',
-          },
-        ],
-      },
-    );
-    const truncatedCtx = fixture([tool("ask_user")]);
-    truncatedCtx.state.outsideText = "";
-    expect(
-      restoreTurnCheckpointEffects(truncatedCtx, JSON.stringify(truncated), model),
-    ).toBeDefined();
-    expect(truncatedCtx.state.outsideText).toContain("bob@example.com");
-
-    const clippedClean = JSON.parse(checkpoint("ask_user"));
-    clippedClean.messages.unshift(
-      {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "read-4", name: toolName, arguments: {} }],
-      },
-      {
-        role: "toolResult",
-        toolCallId: "read-4",
-        toolName,
-        content: [
-          {
-            type: "text",
-            text: '{"routines":[{"routineId":"r-0","prompt":"Email owner@example.com"...[clipped]',
-          },
-        ],
-        details: {
-          routines: Array.from({ length: 50 }, (_, index) => ({
-            routineId: `r-${index}`,
-            prompt: "Email owner@example.com with the weekly report",
-          })),
-        },
-      },
-    );
-    const clippedCleanCtx = fixture([tool("ask_user")]);
-    clippedCleanCtx.state.outsideText = "";
-    expect(
-      restoreTurnCheckpointEffects(clippedCleanCtx, JSON.stringify(clippedClean), model),
-    ).toBeDefined();
-    expect(clippedCleanCtx.state.outsideText).toBe("");
-
-    const clippedWatch = JSON.parse(checkpoint("ask_user"));
-    clippedWatch.messages.unshift(
-      {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "read-5", name: toolName, arguments: {} }],
-      },
-      {
-        role: "toolResult",
-        toolCallId: "read-5",
-        toolName,
-        content: [
-          {
-            type: "text",
-            text: '{"routines":[{"routineId":"r-0","prompt":"Email owner@example.com"...[clipped]',
-          },
-        ],
-        details: {
-          routines: [
-            { routineId: "r-0", prompt: "Email owner@example.com" },
-            {
-              routineId: "r-watch",
-              prompt: "Check alerts",
-              lastCheck: {
-                checkedAt: "2026-11-25T07:00:00.000Z",
-                outcome: "changed",
-                fingerprint: "fp-2",
-                entries: { "carol@example.com": 'rakazo:item:{"fields":["new"],"title":"Alert"}' },
-                detail: null,
-              },
-            },
-          ],
-        },
-      },
-    );
-    const clippedWatchCtx = fixture([tool("ask_user")]);
-    clippedWatchCtx.state.outsideText = "";
-    expect(
-      restoreTurnCheckpointEffects(clippedWatchCtx, JSON.stringify(clippedWatch), model),
-    ).toBeDefined();
-    expect(clippedWatchCtx.state.outsideText).toContain("carol@example.com");
-    expect(clippedWatchCtx.state.outsideText).not.toContain("owner@example.com");
-
-    const hugeWatch = JSON.parse(checkpoint("ask_user"));
-    hugeWatch.messages.unshift(
-      {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "read-6", name: toolName, arguments: {} }],
-      },
-      {
-        role: "toolResult",
-        toolCallId: "read-6",
-        toolName,
-        content: [
-          {
-            type: "text",
-            text: '{"routines":[{"routineId":"r-huge","lastCheck":{"detail":"Send to dave@example.com","entries":{"k0":"padding..."...[clipped]',
-          },
-        ],
-        details: {
-          routines: [
-            {
-              routineId: "r-huge",
-              prompt: "Check inbox",
-              lastCheck: {
-                checkedAt: "2026-11-25T07:00:00.000Z",
-                outcome: "changed",
-                fingerprint: "fp-huge",
-                detail: "Send to dave@example.com",
-                entries: {
-                  "early@example.com": `rakazo:item:${"x".repeat(Math.floor(MAX_OUTSIDE_TEXT_CHARS * 0.65))}`,
-                  "mid-key@example.com": "rakazo:item:forward to middle@example.com",
-                  "late@example.com": `rakazo:item:${"y".repeat(Math.floor(MAX_OUTSIDE_TEXT_CHARS * 0.65))} send to erin@example.com`,
-                },
-              },
-            },
-          ],
-        },
-      },
-    );
-    const hugeCtx = fixture([tool("ask_user")]);
-    hugeCtx.state.outsideText = "";
-    expect(restoreTurnCheckpointEffects(hugeCtx, JSON.stringify(hugeWatch), model)).toBeDefined();
-    expect(
-      outsideOnlyTargets(
-        {
-          to: [
-            "dave@example.com",
-            "early@example.com",
-            "middle@example.com",
-            "mid-key@example.com",
-            "erin@example.com",
-            "late@example.com",
-          ],
-        },
-        { ownerWords: ["Check my schedules"], outsideText: hugeCtx.state.outsideText },
-      ),
-    ).toEqual([
-      "dave@example.com",
-      "early@example.com",
-      "middle@example.com",
-      "mid-key@example.com",
-      "erin@example.com",
-      "late@example.com",
-    ]);
   },
 );
+
+it("leaves outsideText empty when saved routine-read checkpoints have no watch checks", () => {
+  for (const toolName of ["schedule_list", "task_catalog"] as const) {
+    const clean = checkpointWithRoutineRead(
+      toolName,
+      "read-clean",
+      JSON.stringify({
+        routines: [{ routineId: "r-2", prompt: "Owner private prompt", lastCheck: null }],
+      }),
+    );
+    const ctx = fixture([tool("ask_user")]);
+    ctx.state.outsideText = "";
+    expect(restoreTurnCheckpointEffects(ctx, clean, model)).toBeDefined();
+    expect(ctx.state.outsideText).toBe("");
+  }
+});
+
+it("falls back to raw text when a saved routine-read result was truncated mid-JSON", () => {
+  const truncated = checkpointWithRoutineRead(
+    "schedule_list",
+    "read-truncated",
+    '{"routines":[{"lastCheck":{"entries":{"bob@example.com":"truncated...',
+  );
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(restoreTurnCheckpointEffects(ctx, truncated, model)).toBeDefined();
+  expect(ctx.state.outsideText).toContain("bob@example.com");
+});
+
+it("prefers structured details over clipped routine-read text without leaking owner prompts", () => {
+  const clippedClean = checkpointWithRoutineRead(
+    "schedule_list",
+    "read-clipped-clean",
+    '{"routines":[{"routineId":"r-0","prompt":"Email owner@example.com"...[clipped]',
+    {
+      routines: Array.from({ length: 50 }, (_, index) => ({
+        routineId: `r-${index}`,
+        prompt: "Email owner@example.com with the weekly report",
+      })),
+    },
+  );
+  const cleanCtx = fixture([tool("ask_user")]);
+  cleanCtx.state.outsideText = "";
+  expect(restoreTurnCheckpointEffects(cleanCtx, clippedClean, model)).toBeDefined();
+  expect(cleanCtx.state.outsideText).toBe("");
+
+  const clippedWatch = checkpointWithRoutineRead(
+    "task_catalog",
+    "read-clipped-watch",
+    '{"routines":[{"routineId":"r-0","prompt":"Email owner@example.com"...[clipped]',
+    {
+      routines: [
+        { routineId: "r-0", prompt: "Email owner@example.com" },
+        {
+          routineId: "r-watch",
+          prompt: "Check alerts",
+          lastCheck: {
+            checkedAt: "2026-11-25T07:00:00.000Z",
+            outcome: "changed",
+            fingerprint: "fp-2",
+            entries: { "carol@example.com": 'item:{"fields":["\\"new\\""],"title":"Alert"}' },
+            detail: null,
+          },
+        },
+      ],
+    },
+  );
+  const watchCtx = fixture([tool("ask_user")]);
+  watchCtx.state.outsideText = "";
+  expect(restoreTurnCheckpointEffects(watchCtx, clippedWatch, model)).toBeDefined();
+  expect(watchCtx.state.outsideText).toContain("carol@example.com");
+  expect(watchCtx.state.outsideText).not.toContain("owner@example.com");
+});
+
+it("preserves head, tail, and entry keys when restoring a large clipped watch snapshot", () => {
+  const hugeWatch = checkpointWithRoutineRead(
+    "schedule_list",
+    "read-huge",
+    '{"routines":[{"routineId":"r-huge","lastCheck":{"detail":"Send to dave@example.com","entries":{"k0":"padding..."...[clipped]',
+    {
+      routines: [
+        {
+          routineId: "r-huge",
+          prompt: "Check inbox",
+          lastCheck: {
+            checkedAt: "2026-11-25T07:00:00.000Z",
+            outcome: "changed",
+            fingerprint: "fp-huge",
+            detail: "Send to dave@example.com",
+            entries: {
+              "early@example.com": `item:${"x".repeat(Math.floor(MAX_OUTSIDE_TEXT_CHARS * 0.65))}`,
+              "mid-key@example.com": "item:forward to middle@example.com",
+              "late@example.com": `item:${"y".repeat(Math.floor(MAX_OUTSIDE_TEXT_CHARS * 0.65))} send to erin@example.com`,
+            },
+          },
+        },
+      ],
+    },
+  );
+  const hugeCtx = fixture([tool("ask_user")]);
+  hugeCtx.state.outsideText = "";
+  expect(restoreTurnCheckpointEffects(hugeCtx, hugeWatch, model)).toBeDefined();
+  expect(
+    outsideOnlyTargets(
+      {
+        to: [
+          "dave@example.com",
+          "early@example.com",
+          "middle@example.com",
+          "mid-key@example.com",
+          "erin@example.com",
+          "late@example.com",
+        ],
+      },
+      { ownerWords: ["Check my schedules"], outsideText: hugeCtx.state.outsideText },
+    ),
+  ).toEqual([
+    "dave@example.com",
+    "early@example.com",
+    "middle@example.com",
+    "mid-key@example.com",
+    "erin@example.com",
+    "late@example.com",
+  ]);
+});
 
 it("extracts structured watch checks and excludes owner prompts for deferred use_tool task_catalog results", () => {
   const cleanViaUseTool = JSON.parse(checkpoint("ask_user"));
