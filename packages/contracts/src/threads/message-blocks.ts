@@ -469,3 +469,23 @@ export type HistoryToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][
   tool?: string;
   calls?: ToolStepCall[];
 };
+
+/**
+ * The consecutive run of image blocks starting at `index`, when `index` is the first of the run;
+ * otherwise null. A lone image yields a one-element run, so callers decide rendering by length.
+ * Shared by web and mobile so the "consecutive pictures form one group" rule lives in one place.
+ */
+export function consecutiveImageRun<T extends { kind: string }>(
+  items: readonly T[],
+  index: number,
+): T[] | null {
+  if (index < 0 || index >= items.length) return null;
+  if (items[index].kind !== "image") return null;
+  if (index > 0 && items[index - 1].kind === "image") return null;
+  const run: T[] = [];
+  for (let i = index; i < items.length; i++) {
+    if (items[i].kind !== "image") break;
+    run.push(items[i]);
+  }
+  return run;
+}

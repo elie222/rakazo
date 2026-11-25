@@ -78,9 +78,9 @@ export function ImageAttachmentDeck({
           .reverse()
           .map(({ image, index }) => (
             <Pressable
-              key={image.artifactId}
+              key={`${image.artifactId}-${index}`}
               accessibilityRole="imagebutton"
-              accessibilityLabel={t`${plural(images.length, { one: "Open # picture", other: "Open # pictures" })}`}
+              accessibilityLabel={t`Open photo ${index + 1} of ${images.length}`}
               onPress={() => onOpen(image, images)}
               {...(actionProps ?? {})}
               style={[

@@ -9,6 +9,7 @@ import type {
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
+import { consecutiveImageRun } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
@@ -564,16 +565,13 @@ export const MessageView = memo(function MessageView({
           }
           if (block.kind === "image") {
             // A message's pictures sit in one row, so only the first of a run draws it.
-            if (blocks[i - 1]?.kind === "image") return null;
-            const pictures: GalleryImage[] = [];
-            for (const next of blocks.slice(i)) {
-              if (next.kind !== "image") break;
-              pictures.push({
-                artifactId: next.artifactId,
-                name: next.name,
-                target: artifactTarget,
-              });
-            }
+            const run = consecutiveImageRun(blocks, i);
+            if (!run) return null;
+            const pictures: GalleryImage[] = run.map((next) => ({
+              artifactId: next.artifactId,
+              name: next.name,
+              target: artifactTarget,
+            }));
             return (
               <div
                 key={i}

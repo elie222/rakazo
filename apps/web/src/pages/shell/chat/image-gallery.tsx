@@ -3,7 +3,15 @@ import { useLingui } from "@lingui/react/macro";
 import { Button, cn, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  Fragment,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { useArtifactImage } from "../../../lib/pages/use-artifact-image";
 import { useEventListener } from "../../../lib/use-event-listener";
@@ -40,35 +48,49 @@ export function MessageImageRow({ images }: { images: GalleryImage[] }) {
   const visible = useNearViewport(row);
   const shown = images.slice(0, 3);
   const rest = images.length - 2;
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   return (
-    <div
-      ref={row}
-      className={cn("flex max-w-full gap-2", shown.length > 2 ? "w-[32.5rem]" : "w-[21.5rem]")}
-    >
-      {shown.map((image, position) => {
-        const counts = images.length > 3 && position === shown.length - 1;
-        return (
-          <button
-            key={galleryImageKey(image)}
-            type="button"
-            aria-label={
-              counts
-                ? t`${plural(images.length, { one: "Show all # picture", other: "Show all # pictures" })}`
-                : t`Show ${image.name}`
-            }
-            onClick={() => openImage?.(image)}
-            className="relative aspect-[2/3] min-w-0 shrink basis-[10.5rem] overflow-hidden rounded-xl"
-          >
-            <TileImage image={image} name={counts ? "" : image.name} visible={visible} />
-            {counts ? (
-              <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-heading1 font-medium text-white tabular-nums">
-                {`+${rest}`}
-              </span>
-            ) : null}
-          </button>
-        );
-      })}
-    </div>
+    <Fragment>
+      <div
+        ref={row}
+        className={cn("flex max-w-full gap-2", shown.length > 2 ? "w-[32.5rem]" : "w-[21.5rem]")}
+      >
+        {shown.map((image, position) => {
+          const counts = images.length > 3 && position === shown.length - 1;
+          return (
+            <button
+              key={`${galleryImageKey(image)}-${position}`}
+              type="button"
+              aria-label={
+                counts
+                  ? t`${plural(images.length, { one: "Show all # picture", other: "Show all # pictures" })}`
+                  : t`Show ${image.name}`
+              }
+              onClick={() => {
+                if (openImage) openImage(image);
+                else setSelectedKey(galleryImageKey(image));
+              }}
+              className="relative aspect-[2/3] min-w-0 shrink basis-[10.5rem] overflow-hidden rounded-xl"
+            >
+              <TileImage image={image} name={counts ? "" : image.name} visible={visible} />
+              {counts ? (
+                <span className="absolute inset-0 flex items-center justify-center bg-black/50 text-heading1 font-medium text-white tabular-nums">
+                  {`+${rest}`}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      {selectedKey && !openImage ? (
+        <ImageLightbox
+          images={images}
+          selectedKey={selectedKey}
+          onSelect={setSelectedKey}
+          onClose={() => setSelectedKey(null)}
+        />
+      ) : null}
+    </Fragment>
   );
 }
 
@@ -235,7 +257,7 @@ export function ImageLightbox({
             <X strokeWidth={1.8} />
           </DialogClose>
           {single ? null : (
-            <>
+            <Fragment>
               <Button
                 variant="floating"
                 size="icon-lg"
@@ -254,7 +276,7 @@ export function ImageLightbox({
               >
                 <ChevronRight strokeWidth={1.8} />
               </Button>
-            </>
+            </Fragment>
           )}
         </div>
         {single ? null : (
@@ -266,7 +288,7 @@ export function ImageLightbox({
                 if (distance > 3) return null;
                 return (
                   <div
-                    key={galleryImageKey(image)}
+                    key={`${galleryImageKey(image)}-${position}`}
                     className="absolute left-1/2 top-1/2 transition-[transform,opacity] duration-300 ease-out motion-reduce:transition-none"
                     style={{
                       transform: `translate(-50%, -50%) translateX(${offset * 88}px) translateZ(${-distance * 28}px) scale(${1 - distance * 0.2})`,

@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { consecutiveImageRun } from "@rakazo/contracts";
 import { isInlineImageBlock } from "./inline-image";
 
 export type InlineImageBlock = Extract<MessageBlock, { kind: "image" }>;
@@ -20,10 +21,13 @@ export function attachmentGroups(attachments: AttachmentBlock[]): AttachmentGrou
     if (attachment.kind === "image" && isInlineImageBlock(attachment)) {
       const previous = attachments[index - 1];
       if (previous && isInlineImageBlock(previous)) continue;
+      const run = consecutiveImageRun(attachments, index);
       const pictures: InlineImageBlock[] = [];
-      for (const next of attachments.slice(index)) {
-        if (next.kind !== "image" || !isInlineImageBlock(next)) break;
-        pictures.push(next);
+      if (run) {
+        for (const next of run) {
+          if (!isInlineImageBlock(next as AttachmentBlock)) break;
+          pictures.push(next as InlineImageBlock);
+        }
       }
       if (pictures.length > 1) {
         groups.push({ kind: "pictures", pictures });
