@@ -209,6 +209,8 @@ async function runAcpTurn(
   // Two turns of one chat at once (a group chat can run several) must not share a session: the
   // second gets one of its own from the chat history, removed afterwards like a helper's.
   const ownsChatSession = !oneShot && claimSession(key);
+  // Taken as the turn starts: only replies written before then can be in its history.
+  const includeOwnReplies = ownsChatSession && takeReplyElsewhere(key);
   const disposable = !ownsChatSession;
   const known = ownsChatSession ? findSession(key) : undefined;
   try {
@@ -446,12 +448,7 @@ async function runAcpTurn(
       replies: new Set(),
       usedAt: Date.now(),
     };
-    const promptText = turnText(
-      request,
-      current,
-      fresh,
-      ownsChatSession && takeReplyElsewhere(key),
-    );
+    const promptText = turnText(request, current, fresh, includeOwnReplies);
     current.usedAt = Date.now();
     if (ownsChatSession) keepSession(key, current);
 
