@@ -2,10 +2,12 @@ import { execFile, spawn } from "node:child_process";
 import type { Dirent } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { bestEffort } from "@rakazo/logging";
 import { runProcess } from "../cli/process.js";
 import { startIosScreenshotBackend } from "./ios-screenshot-backend.js";
 import { loadIosScreenshotCatalog } from "./ios-screenshot-catalog.js";
@@ -27,9 +29,9 @@ interface SectionResult {
 }
 
 const LOCAL_API_PORT = 3110;
-// Debug builds load JavaScript from this port only.
-const METRO_PORT = 8081;
-const METRO_URL = `http://localhost:${METRO_PORT}`;
+// Debug builds load JavaScript from this port unless told otherwise.
+const DEFAULT_METRO_PORT = 8081;
+const APP_ID = "com.rakazo.app";
 // The local API names this as the web origin, which computer screens load through, as in production.
 const SCREEN_RELAY_PORT = 5180;
 const LOCAL_PASSWORD = "ios-screenshot-password-1234";
@@ -77,13 +79,15 @@ async function main() {
     dataDir: path.join(ROOT, ".tmp", "ios-screenshots-data"),
   });
   const { apiUrl, databaseUrl } = backend;
-  const metro = await startMetro(apiUrl, outDir);
+  const metroPort = await freeMetroPort();
+  const metro = await startMetro(apiUrl, outDir, metroPort);
   const screenRelay = await startScreenRelay(apiUrl, outDir).catch(async (error: unknown) => {
     metro.stop();
     await backend.stop();
     throw error;
   });
   try {
+    await pointAppAtMetro(udid, metroPort);
     await firstLaunch(udid, outDir);
     const fixture = await seedIosScreenshotFixture({
       apiUrl,
@@ -124,6 +128,7 @@ async function main() {
     screenRelay.stop();
     metro.stop();
     await backend.stop();
+    await restoreAppMetro(udid);
   }
   if (publish) console.log(`Published: ${await publishIosGallery(outDir, ROOT)}`);
 }
@@ -260,7 +265,7 @@ async function simulatorUdid() {
  * A debug build loads JavaScript from Metro, and Metro bakes the API address into the bundle.
  * A fresh Metro per run serves exactly the code on disk.
  */
-function startMetro(apiUrl: string, outDir: string) {
+function startMetro(apiUrl: string, outDir: string, port: number) {
   return startServer({
     name: "Metro",
     args: [
@@ -271,18 +276,71 @@ function startMetro(apiUrl: string, outDir: string) {
       "start",
       "--dev-client",
       "--port",
-      String(METRO_PORT),
+      String(port),
       "--localhost",
     ],
-    port: METRO_PORT,
+    port,
     log: path.join(outDir, "metro.log"),
     env: { EXPO_PUBLIC_API_URL: apiUrl, EXPO_NO_TELEMETRY: "1", CI: "1" },
     ready: () =>
-      fetch(`${METRO_URL}/status`).then(
+      fetch(`http://localhost:${port}/status`).then(
         async (response) => (await response.text()).includes("packager-status:running"),
         () => false,
       ),
   });
+}
+
+/**
+ * The first port from 8081 that nothing answers on, so a bundler from another checkout or
+ * another account on this Mac never serves its code to the screenshots.
+ */
+async function freeMetroPort() {
+  for (let port = DEFAULT_METRO_PORT; port < DEFAULT_METRO_PORT + 20; port += 1) {
+    const answered = await fetch(`http://localhost:${port}/status`).then(
+      () => true,
+      () => false,
+    );
+    if (!answered && (await canListen(port))) return port;
+  }
+  throw new Error(`No free port for Metro from ${DEFAULT_METRO_PORT}; stop another bundler.`);
+}
+
+function canListen(port: number) {
+  return new Promise<boolean>((resolve) => {
+    const server = createServer()
+      .once("error", () => resolve(false))
+      .listen(port, "localhost", () => server.close(() => resolve(true)));
+  });
+}
+
+/** Tells the debug build on the simulator which port to load its JavaScript from. */
+function pointAppAtMetro(udid: string, port: number) {
+  return promisify(execFile)("xcrun", [
+    "simctl",
+    "spawn",
+    udid,
+    "defaults",
+    "write",
+    APP_ID,
+    "RCT_jsLocation",
+    `localhost:${port}`,
+  ]);
+}
+
+/** Puts the debug build back on its default port, so later local runs find their own Metro. */
+function restoreAppMetro(udid: string) {
+  return bestEffort(
+    "restore the app's Metro port",
+    promisify(execFile)("xcrun", [
+      "simctl",
+      "spawn",
+      udid,
+      "defaults",
+      "delete",
+      APP_ID,
+      "RCT_jsLocation",
+    ]),
+  );
 }
 
 /** The web dev server relays computer screens, as it does for the web app. */
