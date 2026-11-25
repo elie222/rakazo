@@ -159,6 +159,71 @@ export function createIndexedMatcher(
   };
 }
 
+/**
+ * Longest value scanned with `indexOf` / `includes` before using KMP directly. Up to this length,
+ * native search stays fast with zero allocations on ordinary short secrets and bounded by a small
+ * constant factor per code unit; past it, engines that drop Boyer-Moore can go quadratic on
+ * repetitive near-misses.
+ */
+const NATIVE_SCAN_MAX_LENGTH = 128;
+
+/** Computes the Knuth-Morris-Pratt prefix table for non-empty `pattern`. */
+function prefixTable(pattern: string): Int32Array {
+  const fail = new Int32Array(pattern.length);
+  let matched = 0;
+  for (let index = 1; index < pattern.length; index += 1) {
+    const code = pattern.charCodeAt(index);
+    while (matched > 0 && pattern.charCodeAt(matched) !== code) matched = fail[matched - 1]!;
+    if (pattern.charCodeAt(matched) === code) matched += 1;
+    fail[index] = matched;
+  }
+  return fail;
+}
+
+/** Returns whether non-empty `value` occurs in `text` using KMP in O(text.length) time and memory. */
+function containsKmp(text: string, value: string): boolean {
+  const fail = prefixTable(value);
+  const length = value.length;
+  let matched = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    while (matched > 0 && value.charCodeAt(matched) !== code) matched = fail[matched - 1]!;
+    if (value.charCodeAt(matched) === code) matched += 1;
+    if (matched === length) return true;
+  }
+  return false;
+}
+
+/** Records every KMP match of non-empty `value` from `(startIndex, initialMatched)` into `starts`/`ends`. */
+function recordKmpMatches(
+  text: string,
+  value: string,
+  fail: Int32Array,
+  startIndex: number,
+  initialMatched: number,
+  starts: Int32Array | undefined,
+  ends: Int32Array | undefined,
+): [Int32Array | undefined, Int32Array | undefined] {
+  const length = value.length;
+  let matched = initialMatched;
+  let nextStarts = starts;
+  let nextEnds = ends;
+  for (let index = startIndex; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    while (matched > 0 && value.charCodeAt(matched) !== code) matched = fail[matched - 1]!;
+    if (value.charCodeAt(matched) === code) matched += 1;
+    if (matched === length) {
+      nextStarts ??= new Int32Array(text.length + 1);
+      nextEnds ??= new Int32Array(text.length + 1);
+      const start = index + 1 - length;
+      nextStarts[start] = nextStarts[start]! + 1;
+      nextEnds[index + 1] = nextEnds[index + 1]! + 1;
+      matched = fail[matched - 1]!;
+    }
+  }
+  return [nextStarts, nextEnds];
+}
+
 /** Scans for each value in turn: memory stays at the text's length, time grows with values × text. */
 function scanningMatcher(values: readonly string[]): SecretMatcher {
   const present = values.filter(Boolean);
@@ -170,11 +235,34 @@ function scanningMatcher(values: readonly string[]): SecretMatcher {
       let starts: Int32Array | undefined;
       let ends: Int32Array | undefined;
       for (const value of present) {
-        for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + 1)) {
+        const length = value.length;
+        if (length > text.length) continue;
+        if (length <= NATIVE_SCAN_MAX_LENGTH) {
+          const first = text.indexOf(value);
+          if (first === -1) continue;
           starts ??= new Int32Array(text.length + 1);
           ends ??= new Int32Array(text.length + 1);
-          starts[at] = starts[at]! + 1;
-          ends[at + value.length] = ends[at + value.length]! + 1;
+          starts[first] = starts[first]! + 1;
+          ends[first + length] = ends[first + length]! + 1;
+          const second = text.indexOf(value, first + 1);
+          if (second === -1) continue;
+          starts[second] = starts[second]! + 1;
+          ends[second + length] = ends[second + length]! + 1;
+          if (second + length >= text.length) continue;
+          // Resume KMP right after the second match so repeated overlaps stay linear without
+          // building a prefix table or allocating closures on the common 0- or 1-match path.
+          const fail = prefixTable(value);
+          [starts, ends] = recordKmpMatches(
+            text,
+            value,
+            fail,
+            second + length,
+            fail[length - 1]!,
+            starts,
+            ends,
+          );
+        } else {
+          [starts, ends] = recordKmpMatches(text, value, prefixTable(value), 0, 0, starts, ends);
         }
       }
       if (!starts || !ends) return [];
@@ -193,7 +281,16 @@ function scanningMatcher(values: readonly string[]): SecretMatcher {
       return ranges;
     },
     test(text) {
-      return present.some((value) => text.includes(value));
+      for (const value of present) {
+        const length = value.length;
+        if (length > text.length) continue;
+        if (length <= NATIVE_SCAN_MAX_LENGTH) {
+          if (text.includes(value)) return true;
+        } else if (containsKmp(text, value)) {
+          return true;
+        }
+      }
+      return false;
     },
   };
 }
