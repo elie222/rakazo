@@ -6445,11 +6445,18 @@ describe("closing denied approved effects", () => {
     });
 
     rules.length = 0;
-    f.setCalls([{ args, executionId: "call-1" }]);
+    f.setCalls([
+      { args, executionId: "call-1" },
+      { args, executionId: "call-2" },
+    ]);
     await f.run();
     expect(reviewMock).not.toHaveBeenCalled();
-    expect(f.results).toHaveLength(2);
-    expect(f.results[1]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+    expect(f.results).toHaveLength(3);
+    for (const replay of [f.results[1], f.results[2]]) {
+      expect(replay).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+      expect(String((replay as { error?: string })?.error)).not.toContain("user denied");
+    }
+    expect(f.effects).toHaveLength(1);
     expect(f.fetchedUrls).toEqual([]);
   });
 

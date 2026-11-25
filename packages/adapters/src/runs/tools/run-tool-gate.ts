@@ -471,7 +471,8 @@ export async function gateToolCall(
       : toolEffectIdempotencyKey(runId, replayEffectToolName, args, occurrence));
   // Connector read-only hints must not bypass approval, review, or replay decisions.
   // A fetch to a new site is gated like any action, so it needs an effect to approve.
-  // A read-only tool with a saved denied effect still reconciles its refusal even if the rule is removed.
+  // Any read-only tool with a saved denied effect reconciles its refusal before asking or running
+  // Auto Review, even after the deny rule is removed or the occurrence advances.
   const baseEffectKey = approvalEffectKey(runId, replayEffectToolName, args);
   const readOnlyEligible =
     READ_ONLY_AGENT_TOOLS.has(name) &&
@@ -479,11 +480,12 @@ export async function gateToolCall(
     siteGate !== "new" &&
     nextApprovedTool !== name &&
     !approvedEffectKey;
-  const readOnlyDeniedKey = readOnlyEligible
-    ? await loadDeniedEffectKeys(ctx).then((keys) =>
-        findDeniedReadOnlyEffectKey(keys, effectKey, baseEffectKey),
-      )
-    : undefined;
+  const readOnlyDeniedKey =
+    READ_ONLY_AGENT_TOOLS.has(name) && nextApprovedTool !== name && !approvedEffectKey
+      ? await loadDeniedEffectKeys(ctx).then((keys) =>
+          findDeniedReadOnlyEffectKey(keys, effectKey, baseEffectKey),
+        )
+      : undefined;
   const applied =
     readOnlyEligible && !readOnlyDeniedKey
       ? undefined
