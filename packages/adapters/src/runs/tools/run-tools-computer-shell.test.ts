@@ -165,6 +165,25 @@ describe("shell Activity events", () => {
       code: 1,
       notice: expect.stringContaining("Call browser_snapshot to open it"),
     });
+
+    // Compaction inserting the omission marker between `display` and `Name` must not trigger the notice.
+    const prefix = "Unable to open display";
+    const padBefore = `${"x".repeat(64_000 - prefix.length - 1)} `;
+    async function* compactedSplitWordStream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: `${padBefore}${prefix}Name\n` };
+      yield { type: "stderr", data: "y".repeat(200_000) };
+      yield { type: "exit", code: 1 };
+    }
+    const compacted = setup(compactedSplitWordStream());
+    compacted.ctx.secrets = [];
+    const compactedResult = (await shell(compacted.ctx, compacted.call)) as {
+      code: number;
+      stderr: string;
+      notice?: string;
+    };
+    expect(compactedResult.code).toBe(1);
+    expect(compactedResult.stderr).toContain("Unable to open display\n[...");
+    expect(compactedResult.notice).toBeUndefined();
   });
 
   it("serializes live running writes so slow appends never pile up concurrently", async () => {

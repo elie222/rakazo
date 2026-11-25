@@ -288,6 +288,87 @@ class BoundedStreamBuffer {
   }
 }
 
+function kmpPrefixTable(pattern: string, length = pattern.length): Int32Array {
+  const lps = new Int32Array(length);
+  for (let i = 1, j = 0; i < length; i += 1) {
+    const ch = pattern.charCodeAt(i);
+    while (j > 0 && pattern.charCodeAt(j) !== ch) j = lps[j - 1]!;
+    if (pattern.charCodeAt(j) === ch) j += 1;
+    lps[i] = j;
+  }
+  return lps;
+}
+
+/** Calls `onStart(pos)` for every `pos` in `[minStart, maxStartExclusive)` where `haystack` contains `needle`. */
+function kmpSearchStarts(
+  haystack: string,
+  needle: string,
+  minStart: number,
+  maxStartExclusive: number,
+  onStart: (pos: number) => void,
+): void {
+  const m = needle.length;
+  if (m === 0 || minStart >= maxStartExclusive) return;
+  const end = Math.min(haystack.length, maxStartExclusive + m - 1);
+  if (end - minStart < m) return;
+  const lps = kmpPrefixTable(needle);
+  let j = 0;
+  for (let i = minStart; i < end; i += 1) {
+    const ch = haystack.charCodeAt(i);
+    while (j > 0 && needle.charCodeAt(j) !== ch) j = lps[j - 1]!;
+    if (needle.charCodeAt(j) === ch) j += 1;
+    if (j === m) {
+      const pos = i - m + 1;
+      if (pos >= minStart && pos < maxStartExclusive) onStart(pos);
+      j = lps[j - 1]!;
+    }
+  }
+}
+
+/** Bitmask `mask[len] === 1` for every `1 <= len <= maxLen` where `secret.slice(0, len)` is a suffix of `text`. */
+function secretPrefixSuffixBorders(text: string, secret: string, maxLen: number): Uint8Array {
+  const mask = new Uint8Array(maxLen + 1);
+  const limit = Math.min(maxLen, text.length, secret.length - 1);
+  if (limit <= 0) return mask;
+  const lps = kmpPrefixTable(secret, limit);
+  const start = text.length - limit;
+  let matched = 0;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text.charCodeAt(i);
+    while (matched > 0 && secret.charCodeAt(matched) !== ch) matched = lps[matched - 1]!;
+    if (secret.charCodeAt(matched) === ch) matched += 1;
+  }
+  for (let len = matched; len > 0; len = lps[len - 1]!) {
+    mask[len] = 1;
+  }
+  return mask;
+}
+
+/** Bitmask `mask[len] === 1` for every `1 <= len <= maxLen` where `secret.slice(secret.length - len)` is a prefix of `text`. */
+function secretSuffixPrefixBorders(text: string, secret: string, maxLen: number): Uint8Array {
+  const mask = new Uint8Array(maxLen + 1);
+  const last = secret.length - 1;
+  const limit = Math.min(maxLen, text.length, last);
+  if (limit <= 0) return mask;
+  const lps = new Int32Array(limit);
+  for (let i = 1, j = 0; i < limit; i += 1) {
+    const ch = secret.charCodeAt(last - i);
+    while (j > 0 && secret.charCodeAt(last - j) !== ch) j = lps[j - 1]!;
+    if (secret.charCodeAt(last - j) === ch) j += 1;
+    lps[i] = j;
+  }
+  let matched = 0;
+  for (let i = limit - 1; i >= 0; i -= 1) {
+    const ch = text.charCodeAt(i);
+    while (matched > 0 && secret.charCodeAt(last - matched) !== ch) matched = lps[matched - 1]!;
+    if (secret.charCodeAt(last - matched) === ch) matched += 1;
+  }
+  for (let len = matched; len > 0; len = lps[len - 1]!) {
+    mask[len] = 1;
+  }
+  return mask;
+}
+
 function redactCompactedStreams(
   stdout: BoundedStreamBuffer,
   stderr: BoundedStreamBuffer,
@@ -302,42 +383,40 @@ function redactCompactedStreams(
     if (stdoutTail.length > 0 && stderrHead.length > 0) {
       for (const secret of protectedCutValues(secrets)) {
         if (secret.length < 2) continue;
-        if (stderr.compacted && secret.length > stderrHead.length) {
-          const prefixLen = secretPrefixSuffixLength(stdoutTail, secret);
-          if (
-            prefixLen > 0 &&
-            prefixLen + stderrHead.length < secret.length &&
-            secret.startsWith(stderrHead, prefixLen)
-          ) {
-            stdoutTrailing = Math.max(stdoutTrailing, prefixLen);
-            stderrLeading = stderrHead.length;
-          }
+        const needStdoutScan = stdout.compacted && secret.length > stdoutTail.length;
+        const needStderrScan = stderr.compacted && secret.length > stderrHead.length;
+        const checkBothCompacted =
+          needStdoutScan && needStderrScan && secret.length > stdoutTail.length + stderrHead.length;
+        let stdoutMatchEnds: Uint8Array | undefined;
+        if (needStdoutScan) {
+          const maxSuffix = Math.min(stderrHead.length, secret.length - stdoutTail.length - 1);
+          const validSuffixes = secretSuffixPrefixBorders(stderrHead, secret, maxSuffix);
+          if (checkBothCompacted) stdoutMatchEnds = new Uint8Array(secret.length);
+          kmpSearchStarts(secret, stdoutTail, 1, secret.length - stdoutTail.length, (pos) => {
+            const end = pos + stdoutTail.length;
+            const suffixLen = secret.length - end;
+            if (suffixLen <= maxSuffix && validSuffixes[suffixLen]) {
+              stdoutTrailing = stdoutTail.length;
+              stderrLeading = Math.max(stderrLeading, suffixLen);
+            }
+            if (stdoutMatchEnds && end + stderrHead.length < secret.length) {
+              stdoutMatchEnds[end] = 1;
+            }
+          });
         }
-        if (stdout.compacted && secret.length > stdoutTail.length) {
-          const suffixLen = secretSuffixPrefixLength(stderrHead, secret);
-          if (
-            suffixLen > 0 &&
-            suffixLen + stdoutTail.length < secret.length &&
-            secret.startsWith(stdoutTail, secret.length - suffixLen - stdoutTail.length)
-          ) {
-            stdoutTrailing = stdoutTail.length;
-            stderrLeading = Math.max(stderrLeading, suffixLen);
-          }
-        }
-        if (
-          stdout.compacted &&
-          stderr.compacted &&
-          secret.length > stdoutTail.length + stderrHead.length
-        ) {
-          const pos = secret.indexOf(stdoutTail);
-          if (
-            pos > 0 &&
-            pos + stdoutTail.length + stderrHead.length < secret.length &&
-            secret.startsWith(stderrHead, pos + stdoutTail.length)
-          ) {
-            stdoutTrailing = stdoutTail.length;
-            stderrLeading = stderrHead.length;
-          }
+        if (needStderrScan) {
+          const maxPrefix = Math.min(stdoutTail.length, secret.length - stderrHead.length - 1);
+          const validPrefixes = secretPrefixSuffixBorders(stdoutTail, secret, maxPrefix);
+          kmpSearchStarts(secret, stderrHead, 1, secret.length - stderrHead.length, (pos) => {
+            if (pos <= maxPrefix && validPrefixes[pos]) {
+              stdoutTrailing = Math.max(stdoutTrailing, pos);
+              stderrLeading = stderrHead.length;
+            }
+            if (stdoutMatchEnds?.[pos]) {
+              stdoutTrailing = stdoutTail.length;
+              stderrLeading = stderrHead.length;
+            }
+          });
         }
       }
     }

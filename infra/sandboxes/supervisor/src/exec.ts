@@ -426,17 +426,43 @@ async function readContainerFileSpooled(
 
     const filePath = spoolPath;
     let readHandle: FileHandle | undefined;
+    let opening: Promise<FileHandle> | undefined;
+    let activeRead: Promise<unknown> | undefined;
     let cleanedUp = false;
-    const cleanupStream = async () => {
-      if (cleanedUp) return;
-      cleanedUp = true;
-      const handle = readHandle;
-      readHandle = undefined;
-      try {
-        await handle?.close();
-      } finally {
-        await unlinkIfPresent(filePath);
+    let cleanupPromise: Promise<void> | undefined;
+    const cleanupStream = () => {
+      if (!cleanupPromise) {
+        cleanedUp = true;
+        cleanupPromise = (async () => {
+          const pendingOpen = opening;
+          if (pendingOpen) {
+            try {
+              const opened = await pendingOpen;
+              if (!readHandle) readHandle = opened;
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+                // Error is reported by pull(); cleanup still proceeds to remove the spool file.
+              }
+            }
+          }
+          const pendingRead = activeRead;
+          if (pendingRead) {
+            try {
+              await pendingRead;
+            } catch {
+              // Error is reported by pull(); cleanup still closes the handle and removes the spool file.
+            }
+          }
+          const handle = readHandle;
+          readHandle = undefined;
+          try {
+            await handle?.close();
+          } finally {
+            await unlinkIfPresent(filePath);
+          }
+        })();
       }
+      return cleanupPromise;
     };
     const body = new ReadableStream<Uint8Array>(
       {
@@ -445,14 +471,34 @@ async function readContainerFileSpooled(
         },
         async pull(ctrl) {
           try {
+            if (cleanedUp) return;
             if (signal?.aborted) {
               await cleanupStream();
               ctrl.error(signal.reason ?? new Error("file read cancelled"));
               return;
             }
-            if (!readHandle) readHandle = await open(filePath, "r");
+            if (!readHandle) {
+              const op = open(filePath, "r");
+              opening = op;
+              try {
+                const opened = await op;
+                if (cleanedUp) return;
+                readHandle = opened;
+              } finally {
+                opening = undefined;
+              }
+            }
+            if (cleanedUp) return;
             const buffer = Buffer.allocUnsafe(SPOOL_READ_CHUNK_BYTES);
-            const { bytesRead } = await readHandle.read(buffer, 0, buffer.length, null);
+            const reading = readHandle.read(buffer, 0, buffer.length, null);
+            activeRead = reading;
+            let bytesRead: number;
+            try {
+              ({ bytesRead } = await reading);
+            } finally {
+              activeRead = undefined;
+            }
+            if (cleanedUp) return;
             if (bytesRead === 0) {
               await cleanupStream();
               ctrl.enqueue(encoder.encode('"}'));
@@ -461,8 +507,9 @@ async function readContainerFileSpooled(
             }
             ctrl.enqueue(buffer.subarray(0, bytesRead));
           } catch (error) {
+            const wasCancelled = cleanedUp;
             await cleanupStream();
-            ctrl.error(error);
+            if (!wasCancelled) ctrl.error(error);
           }
         },
         async cancel() {

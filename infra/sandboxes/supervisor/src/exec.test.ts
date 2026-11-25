@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { Duplex, PassThrough, Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import { deferred } from "@rakazo/core/test-async";
@@ -471,6 +473,66 @@ describe("POST /computers/:id/exec streaming", () => {
     const legacyOkResponse = await legacyOkPromise;
     expect(legacyOkResponse.status).toBe(200);
     expect(await legacyOkResponse.json()).toEqual({ content: part1 });
+  });
+
+  it("releases spooled temp files and direct Docker streams on HEAD file reads", async () => {
+    const part1 = Buffer.from("hello ").toString("base64");
+    const beforeSpools = new Set(
+      (await readdir(tmpdir())).filter((name) => name.startsWith("rakazo-file-read-")),
+    );
+
+    // 1. Legacy spooled HEAD read deletes its spool file immediately.
+    const legacyStream = new PassThrough();
+    mock.exec.mockResolvedValueOnce({
+      start: async () => legacyStream,
+      inspect: async () => ({ ExitCode: 0 }),
+    });
+    const legacyHeadPromise = supervisorApp.request(
+      "/computers/computer-3/files?path=ok.bin&mode=read&maxBytes=6",
+      {
+        method: "HEAD",
+        headers: {
+          authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+          "x-rakazo-bot-id": "bot",
+          "x-rakazo-space-id": "space",
+        },
+      },
+    );
+    await vi.waitFor(() => expect(mock.exec).toHaveBeenCalledTimes(1));
+    legacyStream.write(frame(1, part1));
+    legacyStream.end();
+    const legacyHead = await legacyHeadPromise;
+    expect(legacyHead.status).toBe(200);
+    expect(await legacyHead.text()).toBe("");
+    const afterSpools = (await readdir(tmpdir())).filter(
+      (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),
+    );
+    expect(afterSpools).toEqual([]);
+
+    // 2. Direct streaming HEAD read destroys the paused Docker stream instead of leaking it.
+    const directStream = new PassThrough();
+    const destroy = vi.spyOn(directStream, "destroy");
+    mock.exec.mockResolvedValueOnce({
+      start: async () => directStream,
+      inspect: async () => ({ ExitCode: 0 }),
+    });
+    const directHeadPromise = supervisorApp.request(
+      "/computers/computer-3/files?path=ok.bin&mode=read&maxBytes=6&overflow=marker",
+      {
+        method: "HEAD",
+        headers: {
+          authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+          "x-rakazo-bot-id": "bot",
+          "x-rakazo-space-id": "space",
+        },
+      },
+    );
+    await vi.waitFor(() => expect(mock.exec).toHaveBeenCalledTimes(2));
+    directStream.write(frame(1, part1));
+    const directHead = await directHeadPromise;
+    expect(directHead.status).toBe(200);
+    expect(await directHead.text()).toBe("");
+    expect(destroy).toHaveBeenCalled();
   });
 
   it("caps writeContainerFile diagnostics after demultiplexing without corrupting frames", async () => {

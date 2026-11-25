@@ -793,10 +793,7 @@ export const computerTools: ToolHandlers = {
         output: commandOutput(redacted, false).slice(-COMPUTER_COMMAND_OUTPUT_MAX_CHARS),
       });
       const screenTool =
-        redacted.code &&
-        (sawNoDisplay || NO_DISPLAY_OUTPUT.test(`${redacted.stderr}\n${redacted.stdout}`))
-          ? screenOpeningTool(ctx.tools.offered)
-          : undefined;
+        redacted.code && sawNoDisplay ? screenOpeningTool(ctx.tools.offered) : undefined;
       return call.finish(
         screenTool ? { ...redacted, notice: shellNoDisplayNotice(screenTool) } : redacted,
       );

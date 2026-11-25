@@ -569,6 +569,63 @@ describe("observeShellCommand", () => {
     expect(lateRegistered.result.stdout).toContain("[redacted]");
     expect(lateRegistered.result.stderr).toContain("[redacted]");
     expect(lateRegistered.result.stderr).toContain("TAIL_OK");
+
+    // Repeated text: longest overlap ("ABAB") fails while shorter valid border ("AB") matches.
+    const repeatedSecret = `ABAB${"R".repeat(70_000)}END`;
+    const repeatedSecrets: string[] = [];
+    const repeatedGate = deferred();
+    const repeatedObserved = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: "out:ABAB" };
+        yield { type: "stderr" as const, data: `AB${"R".repeat(70_000)}END` };
+        yield { type: "stderr" as const, data: `\n${"n".repeat(250_000)}\nTAIL_REP\n` };
+        await repeatedGate.promise;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: repeatedSecrets,
+        onOutput: (snapshot) => {
+          if (repeatedSecrets.length === 0 && snapshot.stderr.includes("characters omitted")) {
+            repeatedSecrets.push(repeatedSecret);
+            repeatedGate.resolve();
+          }
+        },
+      },
+    );
+    expect(repeatedObserved.result.stdout).toBe("out:AB[redacted]");
+    expect(repeatedObserved.result.stderr).not.toContain("RRRRRR");
+    expect(repeatedObserved.result.stderr).toContain("TAIL_REP");
+
+    // Both streams compacted with repeated middle text: second occurrence aligns with stderr head.
+    const midBlock = `M${"m".repeat(63_999)}`;
+    const headBlock = `Z${"z".repeat(63_999)}`;
+    const bothSecret = `P${midBlock}Y${midBlock}${headBlock}Q`;
+    const bothSecrets: string[] = [];
+    const bothGate = deferred();
+    const bothObserved = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: `${"a".repeat(200_000)}${midBlock}` };
+        yield { type: "stderr" as const, data: `${headBlock}Q\n${"b".repeat(200_000)}\nBOTH_OK\n` };
+        await bothGate.promise;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: bothSecrets,
+        onOutput: (snapshot) => {
+          if (
+            bothSecrets.length === 0 &&
+            snapshot.stdout.includes("characters omitted") &&
+            snapshot.stderr.includes("characters omitted")
+          ) {
+            bothSecrets.push(bothSecret);
+            bothGate.resolve();
+          }
+        },
+      },
+    );
+    expect(bothObserved.result.stdout).not.toContain("mmmmmm");
+    expect(bothObserved.result.stderr).not.toContain("zzzzzz");
+    expect(bothObserved.result.stderr).toContain("BOTH_OK");
   });
 
   it("throttles live onOutput snapshots when onOutputIntervalMs is set", async () => {

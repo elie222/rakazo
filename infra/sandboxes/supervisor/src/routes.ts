@@ -859,6 +859,13 @@ app.get("/computers/:id/files", async (c) => {
       if (outcome.kind === "error") {
         return c.json({ error: outcome.stderr || "file not found" }, 404);
       }
+      if (c.req.method === "HEAD") {
+        await outcome.body.cancel();
+        return new Response(null, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
       return new Response(outcome.body, {
         status: 200,
         headers: { "content-type": "application/json" },
