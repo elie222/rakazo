@@ -39,7 +39,11 @@ export function releaseSession(key: string): void {
 const repliedElsewhere = new Set<string>();
 
 export function noteReplyElsewhere(key: string): void {
+  repliedElsewhere.delete(key);
   repliedElsewhere.add(key);
+  while (repliedElsewhere.size > MAX_SESSIONS) {
+    repliedElsewhere.delete(repliedElsewhere.values().next().value!);
+  }
 }
 
 /** Whether the chat's session lacks replies written elsewhere, clearing the note. */

@@ -586,10 +586,7 @@ async function runAcpTurn(
         if (!cancelled) connection.notify("session/cancel", { sessionId });
         const grace = new AbortController();
         const settled = await Promise.race([
-          inFlight.then(
-            (response) => response,
-            () => undefined,
-          ),
+          bestEffort("Settle the agent CLI's cancelled prompt", inFlight),
           abortableDelay(CANCEL_GRACE_MS, grace.signal),
         ]);
         grace.abort();
