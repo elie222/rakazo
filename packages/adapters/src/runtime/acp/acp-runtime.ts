@@ -194,6 +194,9 @@ async function runAcpTurn(
   let sentPrompt = false;
   let replied = false;
   let replyText = "";
+  /** A session this turn started, and whether the chat kept it; one it did not keep is removed. */
+  let createdSession = false;
+  let cachedSession = false;
   /** The final reply a tool that ends the turn carries. */
   let terminatedReply: string | undefined;
   /** The CLI reported something about the new message, so it has it. */
@@ -435,6 +438,7 @@ async function runAcpTurn(
         throw new Error(`${descriptor.label} did not start a session.`);
       }
       sessionId = opened.sessionId;
+      createdSession = true;
     }
     const activeSessionId = sessionId!;
     await selectModel(agent, activeSessionId, opened, request.model.id, descriptor, step);
@@ -450,7 +454,10 @@ async function runAcpTurn(
     };
     const promptText = turnText(request, current, fresh, includeOwnReplies);
     current.usedAt = Date.now();
-    if (ownsChatSession) keepSession(key, current);
+    if (ownsChatSession) {
+      keepSession(key, current);
+      cachedSession = true;
+    }
 
     const send = async (text: string) => {
       const prompting = agent.request<Update>("session/prompt", {
@@ -554,8 +561,8 @@ async function runAcpTurn(
           reportUsage(request, descriptor, (settled as Update | undefined)?.usage, push),
         );
       }
-      // A helper's or a parallel turn's session is removed however its turn ended.
-      if (disposable && sessionId && endSession) {
+      // A helper's or a parallel turn's session, or one never kept, is removed however the turn ended.
+      if ((disposable || (createdSession && !cachedSession)) && sessionId && endSession) {
         const ending = bestEffort(
           "Remove the agent CLI's helper session",
           connection.request(endSession, { sessionId }),

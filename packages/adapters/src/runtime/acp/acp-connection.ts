@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { getLogger } from "@rakazo/logging";
 import { stopProcessTree } from "../../cli-models/cli-process.js";
+import { sanitizeSensitiveText } from "../pi/pi-runtime-errors.js";
 
 /** A JSON-RPC error the agent answered a request with. */
 export class AcpRequestError extends Error {
@@ -125,8 +126,12 @@ export function startAcpAgent(
       let message: Message;
       try {
         message = JSON.parse(line) as Message;
-      } catch {
+      } catch (error) {
         // Agents log to stdout by mistake now and then; a stray line is not a message.
+        getLogger().warn("The agent CLI printed a line that is not a protocol message", {
+          line: sanitizeSensitiveText(line.slice(0, 200)),
+          error,
+        });
         continue;
       }
       if (!message || typeof message !== "object") continue;
