@@ -22,8 +22,8 @@ Every request adds a message to that chat and starts the bot's turn the way a me
 does, so you can watch and step in from any device. Send only what is new: earlier messages a
 client repeats are already in the chat.
 
-A turn that needs you, such as an approval or a question, waits with status `needs_input`. Answer
-in the app, or send the answer as a follow-up message.
+A turn that needs you, such as an approval or a question, waits with status `needs_input`. Answer a
+question with a follow-up message; approve or decline an action in the app.
 
 ## OpenAI-compatible endpoint
 

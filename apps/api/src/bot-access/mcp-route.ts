@@ -45,6 +45,7 @@ function mcpServer(access: BotAccess, caller: KeyCaller, signal: AbortSignal) {
   );
   server.registerTool("create_task", BOT_ACCESS_TOOLS.create_task, (input) =>
     answer(async () => {
+      if (input.wait_seconds !== 0) access.assertCanFollow(caller);
       const started = await access.createTask(caller, { bot: input.bot, text: input.message });
       return await wait(started, input.wait_seconds);
     }),
@@ -53,9 +54,13 @@ function mcpServer(access: BotAccess, caller: KeyCaller, signal: AbortSignal) {
     answer(async () => await wait(await access.getTask(caller, input.task_id), input.wait_seconds)),
   );
   server.registerTool("send_task_message", BOT_ACCESS_TOOLS.send_task_message, (input) =>
-    answer(async () =>
-      wait(await access.sendToTask(caller, input.task_id, input.message), input.wait_seconds),
-    ),
+    answer(async () => {
+      if (input.wait_seconds !== 0) access.assertCanFollow(caller);
+      return wait(
+        await access.sendToTask(caller, input.task_id, input.message),
+        input.wait_seconds,
+      );
+    }),
   );
   return server;
 }

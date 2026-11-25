@@ -153,6 +153,7 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
     withCaller(access, openAiError, async (c, caller) => {
       const request = await readJson(c, ChatCompletionRequestSchema);
       const text = latestUserText(request.messages);
+      access.assertCanFollow(caller);
       const started = await access.createTask(caller, { bot: request.model, text });
       const created = Math.floor(Date.now() / 1000);
       const headers = { "x-rakazo-task-id": started.task.id };

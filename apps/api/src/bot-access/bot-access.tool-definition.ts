@@ -26,7 +26,7 @@ export const BOT_ACCESS_TOOLS = {
   create_task: {
     title: "Give a bot a task",
     description:
-      "Send a bot a message that starts a task in its chat. Bots keep their own conversation and memory, so send only what is new. Long work keeps running after this returns; check it with get_task. A task with status needs_input is waiting for an answer: reply with send_task_message.",
+      "Send a bot a message that starts a task in its chat. Bots keep their own conversation and memory, so send only what is new. Long work keeps running after this returns; check it with get_task. A task with status needs_input is waiting: answer its question with send_task_message; an approval is answered by the person in the Rakazo app.",
     inputSchema: {
       bot: z.string().trim().min(1).max(200).describe("The bot's id, or its exact name."),
       message: message.describe("What you want the bot to do."),

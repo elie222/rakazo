@@ -93,6 +93,11 @@ export function createBotAccess(deps: BotAccessDeps) {
   const { prisma } = deps;
   // Live follows each key holds in this process; each one listens and rechecks its key.
   const openFollows = new Map<string, number>();
+  /** Checked before a message is sent too, so a refused follow never leaves a turn behind. */
+  const assertCanFollow = (caller: KeyCaller) => {
+    if ((openFollows.get(caller.keyId) ?? 0) >= MAX_OPEN_FOLLOWS_PER_KEY)
+      throw new ClientError("TOO_MANY_REQUESTS", "Too many open streams for this API key");
+  };
   const releaseFollow = (keyId: string) => {
     const open = (openFollows.get(keyId) ?? 1) - 1;
     if (open > 0) openFollows.set(keyId, open);
@@ -329,10 +334,8 @@ export function createBotAccess(deps: BotAccessDeps) {
     let last = start.task;
     yield last;
     if (taskSettled(last.status)) return;
-    const open = openFollows.get(caller.keyId) ?? 0;
-    if (open >= MAX_OPEN_FOLLOWS_PER_KEY)
-      throw new ClientError("TOO_MANY_REQUESTS", "Too many open streams for this API key");
-    openFollows.set(caller.keyId, open + 1);
+    assertCanFollow(caller);
+    openFollows.set(caller.keyId, (openFollows.get(caller.keyId) ?? 0) + 1);
     const events = await client(caller, start.actor, signal)
       .threads.subscribe({ botId: last.bot_id, cursor: start.cursor })
       .catch((error: unknown) => {
@@ -382,6 +385,7 @@ export function createBotAccess(deps: BotAccessDeps) {
   }
 
   return {
+    assertCanFollow,
     authenticate,
     listBots,
     resolveBot,
