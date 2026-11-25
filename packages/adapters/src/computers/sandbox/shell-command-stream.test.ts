@@ -657,32 +657,85 @@ describe("observeShellCommand", () => {
     expect(overlapObserved.result.stderr).not.toContain("KKKKKK");
     expect(overlapObserved.result.stderr).toContain("OVERLAP_OK");
 
+    // Live snapshots withhold a partial stderr continuation of a late-registered secret that
+    // started before stdout's retained tail cut (before the final chunk completes the secret).
+    const livePrefix = "LIVE_COMPACTED_PREFIX_";
+    const liveMiddle = "L".repeat(64_000);
+    const liveStderrPart1 = "PARTIAL_STDERR_FRAG_";
+    const liveStderrPart2 = "FINAL_SECRET_SUFFIX";
+    const liveSecret = `${livePrefix}${liveMiddle}${liveStderrPart1}${liveStderrPart2}`;
+    const liveSecrets: string[] = [];
+    const registerGate = deferred();
+    const finalChunkGate = deferred();
+    const liveSnapshots: Array<{ stdout: string; stderr: string }> = [];
+    const liveObserved = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: `${"o".repeat(200_000)}${livePrefix}${liveMiddle}` };
+        await registerGate.promise;
+        yield { type: "stderr" as const, data: liveStderrPart1 };
+        await finalChunkGate.promise;
+        yield { type: "stderr" as const, data: `${liveStderrPart2}\nLIVE_DONE\n` };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: liveSecrets,
+        onOutput: (snapshot) => {
+          if (liveSecrets.length === 0 && snapshot.stdout.includes("characters omitted")) {
+            liveSecrets.push(liveSecret);
+            registerGate.resolve();
+            return;
+          }
+          if (liveSecrets.length === 1) {
+            liveSnapshots.push(snapshot);
+            finalChunkGate.resolve();
+          }
+        },
+      },
+    );
+    expect(liveSnapshots.length).toBeGreaterThan(0);
+    for (const snap of liveSnapshots) {
+      expect(snap.stdout).not.toContain("LLLLLL");
+      expect(snap.stderr).not.toContain(liveStderrPart1);
+    }
+    expect(liveObserved.result.stdout).not.toContain("LLLLLL");
+    expect(liveObserved.result.stderr).not.toContain(liveStderrPart1);
+    expect(liveObserved.result.stderr).not.toContain(liveStderrPart2);
+    expect(liveObserved.result.stderr).toContain("LIVE_DONE");
+
     // Repeated 16 KiB spanning secret over a compacted boundary stays linear via KMP.
+    // Late secret (90,001 chars) exceeds retained stderr head (64,000 + 16,383 = 80,383), so the
+    // compacted cut activates collectSpanningMatches on the 16 KiB secret and expands stdoutTrailing
+    // from 9,617 to 16,383 (redacting every 'q' after OUTER_TAG:).
     const repeatedBoundarySecret = "q".repeat(16_384);
-    const linearGate = deferred();
-    const linearSecrets = [repeatedBoundarySecret];
+    const lateLongSecret = "q".repeat(90_001);
     await expectLinearTime(async () => {
+      const linearGate = deferred();
+      const linearSecrets = [repeatedBoundarySecret];
       const linearObserved = await observeShellCommand(
         (async function* () {
-          yield { type: "stdout" as const, data: `head:${"q".repeat(16_383)}` };
+          yield { type: "stdout" as const, data: `OUTER_TAG:${"q".repeat(16_383)}` };
           yield {
             type: "stderr" as const,
-            data: `${"q".repeat(16_383)}\n${"x".repeat(250_000)}\nLIN_OK\n`,
+            data: `${"q".repeat(90_000)}\n${"x".repeat(300_000)}\nLIN_OK\n`,
           };
           await linearGate.promise;
+          // Emit live chunks after compaction so each snapshot exercises collectSpanningMatches.
+          for (let i = 0; i < 55; i += 1) {
+            yield { type: "stderr" as const, data: `tick-${i}\n` };
+          }
           yield { type: "exit" as const, code: 0 };
         })(),
         {
           secrets: linearSecrets,
           onOutput: (snapshot) => {
             if (linearSecrets.length === 1 && snapshot.stderr.includes("characters omitted")) {
-              linearSecrets.push(`q${"q".repeat(70_000)}`);
+              linearSecrets.push(lateLongSecret);
               linearGate.resolve();
             }
           },
         },
       );
-      expect(linearObserved.result.stdout).toBe("head:[redacted]");
+      expect(linearObserved.result.stdout).toBe("OUTER_TAG:[redacted]");
       expect(linearObserved.result.stderr).toContain("LIN_OK");
     });
   });

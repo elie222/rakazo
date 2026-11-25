@@ -5,9 +5,9 @@ export function redactShellStreams(
   secrets: string[],
   options?: { withholdPartial?: boolean },
 ): { stdout: string; stderr: string } {
+  let stdout = redactSecrets(snapshot.stdout, secrets);
+  let stderr = redactSecrets(snapshot.stderr, secrets);
   const values = secrets.filter((secret) => secret.length > 0);
-  let stdout = redactSecrets(snapshot.stdout, values);
-  let stderr = redactSecrets(snapshot.stderr, values);
   for (let pass = 0; pass < values.length; pass++) {
     let changed = false;
     for (const secret of values) {

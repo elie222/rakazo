@@ -414,6 +414,50 @@ function secretContinuationLen(text: string, secret: string, offset: number): nu
   return size;
 }
 
+/**
+ * For every index `pos` in `[0, haystack.length)` where `positions[pos] === 1`, calls
+ * `onContinuation(pos, len)` with `len = longest common prefix of needle and haystack.slice(pos)`,
+ * in O(needle.length + haystack.length) time with zero string concatenation.
+ */
+function scanContinuationLengths(
+  needle: string,
+  haystack: string,
+  positions: Uint8Array,
+  onContinuation: (pos: number, len: number) => void,
+): void {
+  const n = Math.min(needle.length, haystack.length);
+  if (n === 0) return;
+  const z = new Int32Array(n);
+  let l = 0;
+  let r = 0;
+  for (let i = 1; i < n; i += 1) {
+    let k = i < r ? Math.min(r - i, z[i - l]!) : 0;
+    while (i + k < n && needle.charCodeAt(k) === needle.charCodeAt(i + k)) k += 1;
+    z[i] = k;
+    if (i + k > r) {
+      l = i;
+      r = i + k;
+    }
+  }
+  l = 0;
+  r = 0;
+  for (let i = 0; i < haystack.length; i += 1) {
+    let k = i < r ? Math.min(r - i, z[i - l]!) : 0;
+    while (
+      k < n &&
+      i + k < haystack.length &&
+      needle.charCodeAt(k) === haystack.charCodeAt(i + k)
+    ) {
+      k += 1;
+    }
+    if (i + k > r) {
+      l = i;
+      r = i + k;
+    }
+    if (positions[i]) onContinuation(i, k);
+  }
+}
+
 function redactCompactedStreams(
   stdout: BoundedStreamBuffer,
   stderr: BoundedStreamBuffer,
@@ -425,18 +469,22 @@ function redactCompactedStreams(
   if (stdout.compacted || stderr.compacted) {
     const stdoutTail = stdout.rawTail();
     const stderrHead = stderr.rawHead();
-    if (stdoutTail.length > 0 && stderrHead.length > 0) {
+    if (stdoutTail.length > 0 && (stderrHead.length > 0 || (withholdPartial && stdout.compacted))) {
       for (const secret of protectedCutValues(secrets)) {
         if (secret.length < 2) continue;
         const needStdoutScan = stdout.compacted && secret.length > stdoutTail.length;
-        const needStderrScan = stderr.compacted && secret.length > stderrHead.length;
+        const needStderrScan =
+          stderr.compacted && stderrHead.length > 0 && secret.length > stderrHead.length;
         const checkBothCompacted =
           needStdoutScan && needStderrScan && secret.length > stdoutTail.length + stderrHead.length;
+        const needLiveContinuation = withholdPartial && needStdoutScan && stderrHead.length > 0;
         let stdoutMatchEnds: Uint8Array | undefined;
         if (needStdoutScan) {
           const maxSuffix = Math.min(stderrHead.length, secret.length - stdoutTail.length - 1);
           const validSuffixes = secretSuffixPrefixBorders(stderrHead, secret, maxSuffix);
-          if (checkBothCompacted) stdoutMatchEnds = new Uint8Array(secret.length);
+          if (checkBothCompacted || needLiveContinuation) {
+            stdoutMatchEnds = new Uint8Array(secret.length);
+          }
           kmpSearchStarts(secret, stdoutTail, 1, secret.length - stdoutTail.length, (pos) => {
             const end = pos + stdoutTail.length;
             const suffixLen = secret.length - end;
@@ -444,10 +492,20 @@ function redactCompactedStreams(
               stdoutTrailing = stdoutTail.length;
               stderrLeading = Math.max(stderrLeading, suffixLen);
             }
-            if (stdoutMatchEnds && end + stderrHead.length < secret.length) {
+            if (withholdPartial) {
+              // An unfinished middle slice of `secret` right after stdout's omission cut may
+              // continue into stderr on a later chunk; withhold it while still running.
+              stdoutTrailing = stdoutTail.length;
+            }
+            if (stdoutMatchEnds && end < secret.length) {
               stdoutMatchEnds[end] = 1;
             }
           });
+          if (needLiveContinuation && stdoutMatchEnds) {
+            scanContinuationLengths(stderrHead, secret, stdoutMatchEnds, (_pos, len) => {
+              if (len > 0) stderrLeading = Math.max(stderrLeading, len);
+            });
+          }
         }
         if (needStderrScan) {
           const maxPrefix = Math.min(stdoutTail.length, secret.length - stderrHead.length - 1);
@@ -457,7 +515,7 @@ function redactCompactedStreams(
               stdoutTrailing = Math.max(stdoutTrailing, pos);
               stderrLeading = stderrHead.length;
             }
-            if (stdoutMatchEnds?.[pos]) {
+            if (checkBothCompacted && stdoutMatchEnds?.[pos]) {
               stdoutTrailing = stdoutTail.length;
               stderrLeading = stderrHead.length;
             }
@@ -468,7 +526,9 @@ function redactCompactedStreams(
       // masking one secret cannot hide the boundary text needed to detect an overlapping secret.
       const stdoutTailPrefix = stdout.compacted ? stdout.tailCutRedactedPrefix() : 0;
       const stderrHeadSuffix = stderr.compacted ? stderr.headCutRedactedSuffix() : 0;
-      if (stdoutTrailing > 0 || stderrLeading > 0 || stdoutTailPrefix > 0 || stderrHeadSuffix > 0) {
+      const hasCutMask =
+        stdoutTrailing > 0 || stderrLeading > 0 || stdoutTailPrefix > 0 || stderrHeadSuffix > 0;
+      if (stderrHead.length > 0 && hasCutMask) {
         const rawSpans = collectSpanningMatches(stdoutTail, stderrHead, secrets);
         let grew = true;
         while (grew) {
@@ -490,15 +550,21 @@ function redactCompactedStreams(
             }
           }
         }
-        if (withholdPartial && (stdoutTrailing > 0 || stderrLeading > 0)) {
-          for (const secret of secrets) {
-            if (secret.length < 2) continue;
-            const prefixLen = secretPrefixSuffixLength(stdoutTail, secret);
-            if (prefixLen > 0) {
-              stdoutTrailing = Math.max(stdoutTrailing, prefixLen);
-              const cont = secretContinuationLen(stderrHead, secret, prefixLen);
-              if (cont > 0) stderrLeading = Math.max(stderrLeading, cont);
-            }
+      }
+      if (withholdPartial && (stdoutTrailing > 0 || stderrLeading > 0 || stdoutTailPrefix > 0)) {
+        for (const secret of secrets) {
+          if (secret.length < 2) continue;
+          const prefixLen = secretPrefixSuffixLength(stdoutTail, secret);
+          if (prefixLen <= 0) continue;
+          const touchesMask =
+            stdoutTrailing > 0 ||
+            stderrLeading > 0 ||
+            (stdoutTailPrefix > 0 && stdoutTailPrefix > stdoutTail.length - prefixLen);
+          if (!touchesMask) continue;
+          stdoutTrailing = Math.max(stdoutTrailing, prefixLen);
+          if (stderrHead.length > 0) {
+            const cont = secretContinuationLen(stderrHead, secret, prefixLen);
+            if (cont > 0) stderrLeading = Math.max(stderrLeading, cont);
           }
         }
       }
