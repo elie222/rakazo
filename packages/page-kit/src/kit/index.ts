@@ -10,6 +10,7 @@ import * as diagram from "./diagram.js";
 import * as icon from "./icon.js";
 import * as layout from "./layout.js";
 import * as media from "./media.js";
+import * as pageState from "./page-state.js";
 import * as text from "./text.js";
 import * as theme from "./theme.js";
 
@@ -23,6 +24,7 @@ const modules = {
   ...icon,
   ...layout,
   ...media,
+  ...pageState,
   ...text,
   ...theme,
 };

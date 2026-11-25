@@ -7,6 +7,7 @@ import { Inline } from "./inline.js";
 import { objectItems } from "./items.js";
 import { useWords } from "./labels.js";
 import { InGrid } from "./layout.js";
+import { usePageState } from "./page-state.js";
 
 export type Tone = "success" | "warning" | "danger" | "accent" | "info" | "neutral";
 
@@ -256,29 +257,59 @@ export function Steps({ steps = [] }: { steps?: Step[] }) {
   );
 }
 
-type ChecklistItem = { text: ReactNode; done?: boolean; meta?: ReactNode };
+type ChecklistItem = { text: ReactNode; done?: boolean; meta?: ReactNode; id?: string };
 
-export function Checklist({ items = [] }: { items?: ChecklistItem[] }) {
+function checklistKeys(items: ChecklistItem[]): string[] {
+  const seen = new Map<string, number>();
+  return items.map((item, index) => {
+    const base =
+      typeof item.id === "string" && item.id
+        ? item.id
+        : typeof item.text === "string" || typeof item.text === "number"
+          ? String(item.text)
+          : String(index);
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    return count === 0 ? base : `${base}#${count + 1}`;
+  });
+}
+
+export function Checklist({ items = [], saveAs }: { items?: ChecklistItem[]; saveAs?: string }) {
+  const tickable = typeof saveAs === "string" && saveAs !== "";
+  const [ticks, setTicks] = usePageState<Record<string, boolean>>(tickable ? saveAs : "", {});
+  const listed = objectItems(items);
+  const keys = checklistKeys(listed);
   return (
-    <ul className="rk-checklist">
-      {objectItems(items).map((item, index) => (
-        <li key={index}>
-          {/* Read-only: it shows recorded progress, the reader cannot tick it. */}
-          <label className="rk-check" data-done={item.done === true}>
-            <input type="checkbox" disabled checked={item.done === true} />
-            <svg className="rk-check-mark" viewBox="0 0 20 20" aria-hidden="true">
-              <circle cx="10" cy="10" r="9" />
-              {item.done === true ? <path d="M6 10.4l2.6 2.6L14 7.6" /> : null}
-            </svg>
-            <span className="rk-check-text">
-              <Inline>{item.text}</Inline>
-            </span>
-          </label>
-          {item.meta != null && item.meta !== "" ? (
-            <div className="rk-check-meta">{item.meta}</div>
-          ) : null}
-        </li>
-      ))}
+    <ul className="rk-checklist" data-tickable={tickable || undefined}>
+      {listed.map((item, index) => {
+        const key = keys[index]!;
+        const done = tickable && typeof ticks[key] === "boolean" ? ticks[key] : item.done === true;
+        return (
+          <li key={index}>
+            <label className="rk-check" data-done={done}>
+              <input
+                type="checkbox"
+                disabled={!tickable}
+                checked={done}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setTicks((current) => ({ ...current, [key]: checked }));
+                }}
+              />
+              <svg className="rk-check-mark" viewBox="0 0 20 20" aria-hidden="true">
+                <circle cx="10" cy="10" r="9" />
+                {done ? <path d="M6 10.4l2.6 2.6L14 7.6" /> : null}
+              </svg>
+              <span className="rk-check-text">
+                <Inline>{item.text}</Inline>
+              </span>
+            </label>
+            {item.meta != null && item.meta !== "" ? (
+              <div className="rk-check-meta">{item.meta}</div>
+            ) : null}
+          </li>
+        );
+      })}
     </ul>
   );
 }

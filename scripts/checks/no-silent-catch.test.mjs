@@ -12,6 +12,9 @@ after(() => rmSync(fixture, { recursive: true }));
 
 const sources = {
   "apps/api/src/run.ts": "void start().catch(() => undefined);\n",
+  "apps/desktop/src/main/auth/user-device.ts": "void save().catch(() => undefined);\n",
+  "apps/desktop/src/preload/preload.cjs": "void bridge().catch(() => undefined);\n",
+  "apps/web/server/forwarded-for.ts": "void close().catch(() => undefined);\n",
   "apps/web/src/pages/Boot.tsx": "void load().catch(() => undefined);\n",
   "apps/mobile/lib/query/query.ts": "void send().catch(() => null);\n",
   "packages/chat-ui/src/hooks.ts": "void read().catch(() => {});\n",
@@ -31,6 +34,9 @@ test("counts a discarded rejection in server and client code, but not in tests",
     Object.fromEntries([...found].map(([file, hits]) => [file, hits.map((hit) => hit.line)])),
     {
       "apps/api/src/run.ts": [1],
+      "apps/desktop/src/main/auth/user-device.ts": [1],
+      "apps/desktop/src/preload/preload.cjs": [1],
+      "apps/web/server/forwarded-for.ts": [1],
       "apps/web/src/pages/Boot.tsx": [1],
       "apps/mobile/lib/query/query.ts": [1],
       "packages/chat-ui/src/hooks.ts": [1],

@@ -1,6 +1,7 @@
 import type {
   BillingCancellationReason,
   ByokTier,
+  ChatAlert,
   ComputerSize,
   CacheCapabilities as ConnectionCacheCapabilities,
   ConnectionCatalogItem,
@@ -1251,7 +1252,7 @@ export interface NotificationMessage {
    * than Android's 96px limit, when one fits the payload budget.
    */
   sender?: { botId: string; name: string; avatar?: string; avatarLarge?: string };
-  kind: "completion" | "failure" | "help" | "takeover";
+  kind: ChatAlert["kind"];
   title: string;
   body: string;
   botId: string;

@@ -233,7 +233,7 @@ export const conversationTools: ConnectorTool[] = [
   {
     name: "save_page",
     description:
-      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once.',
+      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once. A read also returns readerState: what the user set on the page controls that save.',
     inputSchema: {
       type: "object",
       properties: {
@@ -249,6 +249,12 @@ export const conversationTools: ConnectorTool[] = [
             properties: { find: { type: "string" }, replace: { type: "string" } },
             required: ["find", "replace"],
           },
+        },
+        images: {
+          type: "object",
+          description:
+            'Pictures to keep with the page, each shown in the source as "image:<name>". Map each name to an http(s) address, a chat file\'s artifactId or a path on your computer. Later saves keep the ones the source still shows.',
+          additionalProperties: { type: "string" },
         },
       },
     },

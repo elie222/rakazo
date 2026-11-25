@@ -13,9 +13,9 @@ import {
 } from "@rakazo/adapters";
 import type { Actor, Me } from "@rakazo/contracts";
 import {
+  AccountChatPreferencesSchema,
   attachmentMaxBytes,
   attachmentMaxCount,
-  ChatPreferencesSchema,
   canonicalPiProviderId,
   LAB_FEATURES,
   modelCreditsUsd,
@@ -46,6 +46,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
         locale: true,
         botAvatarSet: true,
         ...chatPreferencesSelect,
+        notificationSounds: true,
         labs: true,
         signupSurvey: { select: { userId: true } },
       },
@@ -100,7 +101,7 @@ export async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
       }),
     avatarStyle: "organic",
     botAvatarSet: resolveBotAvatarSet(user.botAvatarSet),
-    chatPreferences: ChatPreferencesSchema.parse(user),
+    chatPreferences: AccountChatPreferencesSchema.parse(user),
     timezone: user.timezone ?? null,
     locale: user.locale ?? null,
     billingEnabled: Boolean(deps.billing),

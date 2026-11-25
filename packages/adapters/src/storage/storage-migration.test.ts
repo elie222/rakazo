@@ -56,6 +56,7 @@ async function artifactFixture() {
       findMany,
       updateMany,
     },
+    pageImage: { findMany: vi.fn(async () => []), updateMany },
   } as unknown as PrismaClient;
   const storage = new MemoryObjectStorage();
   const key = { id: "key-1", spaceId: context.spaceId, version: 1, key: randomBytes(32) };
@@ -86,6 +87,22 @@ it("verifies an artifact before moving its pointer and keeps the local original"
     migrated: 0,
     pending: 0,
   });
+});
+
+it("moves a page's picture the same way as a chat file", async () => {
+  const f = await artifactFixture();
+  f.findMany.mockResolvedValue([]);
+  const { id, storageKey, spaceId, mimeType } = f.row;
+  const picture = { id, storageKey, spaceId, mimeType, page: { userId: context.userId } };
+  (f.prisma.pageImage.findMany as ReturnType<typeof vi.fn>).mockImplementation(
+    async ({ where }: { where: { id?: { gt: string } } }) =>
+      f.row.storageKey.startsWith("object:") || where.id ? [] : [{ ...picture }],
+  );
+  expect(await migrateLocalArtifacts(f.prisma, f.local, f.target)).toEqual({
+    migrated: 1,
+    pending: 0,
+  });
+  expect(await f.target.get(f.row.storageKey, context)).toEqual(new Uint8Array(f.bytes));
 });
 
 it("does not change the pointer when uploaded bytes fail verification", async () => {
