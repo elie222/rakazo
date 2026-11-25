@@ -218,6 +218,8 @@ export function createInboxStyles() {
     },
     spaceTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
     spaceTitle: {
+      // A long name truncates so the caret after it stays in view.
+      flexShrink: 1,
       color: native.secondaryLabel,
       ...typeScale.secondary,
       writingDirection: "auto",

@@ -192,7 +192,9 @@ function SpaceHeading({
                 color={native.secondaryLabel}
               />
             ) : null}
-            <Text style={styles.spaceTitle}>{title}</Text>
+            <Text style={styles.spaceTitle} numberOfLines={1}>
+              {title}
+            </Text>
             <NativeSymbol
               ios="chevron.down"
               android="chevron-down"

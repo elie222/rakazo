@@ -40,7 +40,7 @@ import {
 } from "../components/inbox/inbox-render-item";
 import { CompactRowsContext, SelectedChatContext } from "../components/inbox/inbox-rows";
 import { createInboxStyles } from "../components/inbox/inbox-styles";
-import { InboxToolbar } from "../components/inbox/inbox-toolbar";
+import { INBOX_TOOLBAR_ROOM, InboxToolbar } from "../components/inbox/inbox-toolbar";
 import { NativeInboxList } from "../components/inbox/native-inbox-list";
 import { OrganizationTitleMenu } from "../components/inbox/organization-menu";
 import { PickChatPane } from "../components/inbox/pick-chat-pane";
@@ -461,6 +461,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // Liquid Glass uses the native bar: glass bar items and a native menu.
   // The list beside a chat and the share picker have no navigation bar of their own.
   const nativeHeader = iosAtLeast(26) && !embedded && !onShareSelect;
+  const showToolbar = nativeHeader && ready && hasSession;
   const topBarInset = useTopBarInset();
   const listRef = useRef<FlatList<InboxItem>>(null);
   const jumpSignals = useSyncExternalStore(
@@ -854,7 +855,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
 
   return (
     <View style={styles.screen}>
-      {nativeHeader && ready && hasSession ? <InboxToolbar /> : null}
+      {showToolbar ? <InboxToolbar /> : null}
       {nativeHeader || onShareSelect ? null : (
         <InboxHeader
           embedded={embedded}
@@ -894,6 +895,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                   onRefresh={refreshInbox}
                   signals={jumpSignals}
                   showJumpPills={!onShareSelect && !refreshing && !inboxHasNoChats(rows)}
+                  bottomBar={showToolbar ? INBOX_TOOLBAR_ROOM : 0}
                 />
               ) : (
                 <FlatList<InboxItem>

@@ -1,6 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { Stack, useRouter } from "expo-router";
 
+/** Room the bottom toolbar takes when it sits under the list rather than in the header rail. */
+export const INBOX_TOOLBAR_ROOM = 52;
+
 /** The home screen's bottom toolbar beside the Liquid Glass header: integrations, then account. */
 export function InboxToolbar() {
   const { t } = useLingui();
