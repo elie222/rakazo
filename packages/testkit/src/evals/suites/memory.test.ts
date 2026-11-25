@@ -164,6 +164,22 @@ describe("memory outcome grading", () => {
     );
   });
 
+  it("checks which memory each part of a Space-wide rule landed in", () => {
+    const own = "# Assistant\n\nDrafts the Monday client update.\n";
+    const rule = "Client emails only from hello@northpine.example, never on weekends.\n";
+    const shared = "# Team\n\nInvoices over 500 euros need Dana's approval.\n";
+    expect(failed("shared-rule", { ...evidence(own), sharedMemory: shared + rule })).toEqual([]);
+    expect(failed("shared-rule", { ...evidence(own + rule), sharedMemory: shared })).toEqual([
+      "rule-shared",
+      "rule-not-copied",
+    ]);
+    expect(failed("shared-rule", { ...evidence(""), sharedMemory: rule + own })).toEqual([
+      "role-own",
+      "role-not-shared",
+      "shared-kept",
+    ]);
+  });
+
   it("leaves meaning to a versioned judge with labelled anchors for every rubric", () => {
     for (const c of MEMORY_EVAL_CASES.filter((c) => c.judge)) {
       const input = c.judge?.(evidence("# Assistant\n\n"));
