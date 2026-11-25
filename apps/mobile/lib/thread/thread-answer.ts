@@ -55,7 +55,10 @@ export type ThreadTypeAnswerContext = {
   botId: string | undefined;
   groupId: string | undefined;
   readOnly: boolean;
-  rpc: (proc: "threads/send", body: RpcInput<"threads/send">) => Promise<unknown>;
+  rpc: (
+    proc: "threads/answerQuestion",
+    body: RpcInput<"threads/answerQuestion">,
+  ) => Promise<unknown>;
   isCurrentTarget: (botId: string | undefined, groupId: string | undefined) => boolean;
   isFocused: () => boolean;
   refresh: () => Promise<unknown>;
@@ -63,7 +66,7 @@ export type ThreadTypeAnswerContext = {
   clientNonce?: () => string;
 };
 
-/** Sends a card's typed answer through the composer-answer path targeted at that card. */
+/** Sends a card's typed answer to that card only; an older server refuses it instead of reading it as a message. */
 export async function typeAnswerThreadMessage(
   {
     botId,
@@ -82,11 +85,10 @@ export async function typeAnswerThreadMessage(
 ) {
   if (readOnly || (!botId && !groupId)) return;
   markRead();
-  await rpc("threads/send", {
+  await rpc("threads/answerQuestion", {
     ...(groupId ? { groupId } : { botId }),
     text: answer,
     replyToMessageId: message.id,
-    answersQuestion: true,
     clientNonce: clientNonce ?? defaultClientNonce(),
   });
   // The answer is saved once the server accepts it; a failed refresh only delays the card.

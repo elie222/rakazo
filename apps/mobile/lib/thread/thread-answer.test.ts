@@ -153,7 +153,7 @@ describe("mobile ask answers", () => {
     expect(hapticSuccess).not.toHaveBeenCalled();
   });
 
-  it("sends a card-typed answer through threads/send targeting the ask message", async () => {
+  it("sends a card-typed answer through threads/answerQuestion targeting the ask message", async () => {
     const rpc = vi.fn(async () => undefined as unknown);
     const refresh = vi.fn(async () => undefined);
     const markRead = vi.fn();
@@ -170,11 +170,10 @@ describe("mobile ask answers", () => {
     };
     await typeAnswerThreadMessage(context, { id: "ask-1" }, "Reykjavik instead", "stable-nonce");
     expect(markRead).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith("threads/send", {
+    expect(rpc).toHaveBeenCalledWith("threads/answerQuestion", {
       botId: "bot-1",
       text: "Reykjavik instead",
       replyToMessageId: "ask-1",
-      answersQuestion: true,
       clientNonce: "stable-nonce",
     });
     expect(hapticSuccess).toHaveBeenCalledTimes(1);
@@ -186,11 +185,10 @@ describe("mobile ask answers", () => {
       { id: "ask-older" },
       "Kyoto",
     );
-    expect(rpc).toHaveBeenCalledWith("threads/send", {
+    expect(rpc).toHaveBeenCalledWith("threads/answerQuestion", {
       groupId: "group-1",
       text: "Kyoto",
       replyToMessageId: "ask-older",
-      answersQuestion: true,
       clientNonce: "nonce-1",
     });
 

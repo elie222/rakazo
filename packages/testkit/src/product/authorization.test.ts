@@ -373,6 +373,15 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
       [
+        "threads/answerQuestion",
+        {
+          botId: "missing-bot",
+          text: "Nope",
+          replyToMessageId: "missing-message",
+          clientNonce: "n",
+        },
+      ],
+      [
         "threads/nativeCalendarPending",
         { botId: "missing-bot", deviceKey: "00000000-0000-4000-8000-000000000000" },
       ],
@@ -812,6 +821,15 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/subscribe", { botId: ownerBot.id, cursor: -1 }],
       ["threads/send", { botId: ownerBot.id, text: "intruder message" }],
       ["threads/send", { botId: ownerBot.id, artifactIds: [ownerArtifact.id] }],
+      [
+        "threads/answerQuestion",
+        {
+          botId: ownerBot.id,
+          text: "intruder answer",
+          replyToMessageId: "missing-message",
+          clientNonce: "intruder-answer",
+        },
+      ],
       ["threads/stop", { botId: ownerBot.id }],
       ["threads/stopHelper", { botId: ownerBot.id, messageId: "missing-message" }],
       ["threads/retry", { botId: ownerBot.id, runId: ownerRun.id }],
@@ -881,6 +899,15 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/messages", { groupId: ownerGroup.id, before: 1 }],
       ["threads/subscribe", { groupId: ownerGroup.id, cursor: -1 }],
       ["threads/send", { groupId: ownerGroup.id, text: "intruder group message" }],
+      [
+        "threads/answerQuestion",
+        {
+          groupId: ownerGroup.id,
+          text: "intruder answer",
+          replyToMessageId: "missing-message",
+          clientNonce: "intruder-group-answer",
+        },
+      ],
       ["threads/stop", { groupId: ownerGroup.id }],
       ["threads/followUp", { groupId: ownerGroup.id, text: "intruder follow-up" }],
       ["threads/markRead", { groupId: ownerGroup.id }],

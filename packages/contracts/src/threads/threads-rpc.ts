@@ -23,6 +23,7 @@ import { MessageReactionSchema } from "./reactions.js";
 import { SEARCH_QUERY_MAX_LENGTH, SearchQueryOutputSchema } from "./search.js";
 import { ChatAlertSchema, ThreadMessagePageSchema, ThreadSnapshotSchema } from "./thread.js";
 import {
+  threadAnswerQuestionInput,
   threadSendInput,
   threadSendOutput,
   threadSendWithRoutinesInput,
@@ -57,6 +58,11 @@ export const threadsRpc = {
       .input(threadTarget.safeExtend({ cursor: z.number().int().min(-1) }))
       .output(eventIterator(ProductEventSchema)),
     send: oc.input(threadSendInput).output(threadSendOutput),
+    /**
+     * A typed answer to a question card. A separate procedure, because an API without it must
+     * reject the call rather than read the answer as an ordinary message, such as "stop".
+     */
+    answerQuestion: oc.input(threadAnswerQuestionInput).output(threadSendOutput),
     /**
      * A send that also test-runs the mentioned routines: the message and every run commit
      * together, keyed by the nonce. A separate procedure, because an API without it must

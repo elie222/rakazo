@@ -305,41 +305,35 @@ export function useComposerActions({
     },
     [],
   );
-  /** Sends a card's typed answer through the composer-answer path targeted at that card. */
+  /** Sends a card's typed answer to that card only; an older server refuses it instead of reading it as a message. */
   const typeAnswerMessage = useCallback(
     async (message: ThreadMessage, text: string, clientNonce?: string) => {
       const botId = activeBotId.current;
       const groupId = activeGroupId.current;
       if (!botId && !groupId) return;
       clearReadBoundary();
-      const sent = await rpc.threads.send({
+      const sent = await rpc.threads.answerQuestion({
         ...(groupId ? { groupId } : { botId: botId! }),
         text,
         replyToMessageId: message.id,
-        answersQuestion: true,
         clientNonce: clientNonce ?? newClientId(),
       });
+      // A late answer must not scroll or refresh the chat the user has moved to since.
+      if (groupId ? activeGroupId.current !== groupId : activeBotId.current !== botId) return;
       setSentCount((count) => count + 1);
-      if (sent && botId && activeBotId.current === botId) {
+      if (botId) {
         updateSnapshot((current) =>
           applyThreadSendReceipt(
             current,
-            {
-              botId,
-              runId: sent.runId,
-              taskId: sent.taskId,
-            },
+            { botId, runId: sent.runId, taskId: sent.taskId },
             terminalRunReceipts.current,
           ),
         );
       }
       // The answer is saved; live events can reconcile a failed refresh.
       try {
-        if (groupId && activeGroupId.current === groupId) {
-          await refreshGroupThreadRef.current(groupId);
-        } else if (botId && activeBotId.current === botId) {
-          await refreshThreadRef.current(botId);
-        }
+        if (groupId) await refreshGroupThreadRef.current(groupId);
+        else if (botId) await refreshThreadRef.current(botId);
       } catch {}
     },
     [],

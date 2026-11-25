@@ -35,6 +35,7 @@ type Rpc = {
   threads: {
     get: ReturnType<typeof vi.fn>;
     send: ReturnType<typeof vi.fn>;
+    answerQuestion: ReturnType<typeof vi.fn>;
     sendWithRoutines: ReturnType<typeof vi.fn>;
     retry: ReturnType<typeof vi.fn>;
   };
@@ -123,7 +124,13 @@ beforeEach(() => {
   rpc = {
     routines: { testRun: vi.fn() },
     artifacts: { create: vi.fn() },
-    threads: { get: vi.fn(), send: vi.fn(), sendWithRoutines: vi.fn(), retry: vi.fn() },
+    threads: {
+      get: vi.fn(),
+      send: vi.fn(),
+      answerQuestion: vi.fn(),
+      sendWithRoutines: vi.fn(),
+      retry: vi.fn(),
+    },
   };
   root = createQueryRoot(document.createElement("div"));
   act(() => root.render(<Harness />));
@@ -734,10 +741,10 @@ it("refuses text over the message limit before any request and keeps the draft",
   expect(rpc.threads.send).toHaveBeenCalledTimes(1);
 });
 
-it("sends a card-typed answer through threads.send targeting that ask message without touching composer state", async () => {
+it("sends a card-typed answer through threads.answerQuestion targeting that ask message without touching composer state", async () => {
   const armed = replyCandidate("m-other");
   act(() => latest.setReplyTarget(armed));
-  rpc.threads.send.mockResolvedValue({ runId: "run-ask", taskId: "task-ask", seq: 4 });
+  rpc.threads.answerQuestion.mockResolvedValue({ runId: "run-ask", taskId: "task-ask", seq: 4 });
 
   await act(async () => {
     await latest.transcriptProps.onTypeAnswer(
@@ -747,14 +754,30 @@ it("sends a card-typed answer through threads.send targeting that ask message wi
     );
   });
 
-  expect(rpc.threads.send).toHaveBeenCalledWith(
-    expect.objectContaining({
-      botId: "bot-1",
-      text: "Reykjavik instead",
-      replyToMessageId: "ask-1",
-      answersQuestion: true,
-      clientNonce: "card-nonce-1",
-    }),
-  );
+  expect(rpc.threads.answerQuestion).toHaveBeenCalledWith({
+    botId: "bot-1",
+    text: "Reykjavik instead",
+    replyToMessageId: "ask-1",
+    clientNonce: "card-nonce-1",
+  });
+  expect(rpc.threads.send).not.toHaveBeenCalled();
   expect(latest.replyTarget).toBe(armed);
+  expect(latest.transcriptProps.followRequest).toBe(1);
+});
+
+it("does not scroll or refresh another chat when a typed card answer lands after switching", async () => {
+  const reply = deferred<{ runId: string; taskId: string; seq: number }>();
+  rpc.threads.answerQuestion.mockReturnValue(reply.promise);
+  const refreshed = vi.fn(async () => ({}) as ThreadSnapshot);
+  refreshThread = refreshed;
+  let answered!: Promise<void>;
+  act(() => {
+    answered = latest.transcriptProps.onTypeAnswer(replyCandidate("ask-1"), "Kyoto", "n-1");
+  });
+  switchChat("bot-2");
+
+  reply.resolve({ runId: "run-ask", taskId: "task-ask", seq: 4 });
+  await act(async () => void (await answered));
+  expect(latest.transcriptProps.followRequest).toBe(0);
+  expect(refreshed).not.toHaveBeenCalled();
 });

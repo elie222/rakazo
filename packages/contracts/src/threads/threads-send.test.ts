@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { threadSendInput, threadSendWithRoutinesInput } from "./thread-send.js";
+import { threadAnswerQuestionInput, threadSendInput } from "./thread-send.js";
 
 describe("threads.send input bounds", () => {
   it("requires nonblank text or an attachment", () => {
@@ -22,37 +22,15 @@ describe("threads.send input bounds", () => {
     expect(parsed.success).toBe(false);
   });
 
-  it("requires replyToMessageId and nonblank text when answersQuestion is set", () => {
+  it("requires a reply target, a nonce and nonblank text for a typed card answer", () => {
+    const answer = { botId: "bot-1", text: "Kyoto", replyToMessageId: "ask-1", clientNonce: "n-1" };
+    expect(threadAnswerQuestionInput.safeParse(answer).success).toBe(true);
+    expect(threadAnswerQuestionInput.safeParse({ ...answer, text: "   " }).success).toBe(false);
     expect(
-      threadSendInput.safeParse({ botId: "bot-1", text: "Kyoto", answersQuestion: true }).success,
+      threadAnswerQuestionInput.safeParse({ ...answer, replyToMessageId: undefined }).success,
     ).toBe(false);
-    expect(
-      threadSendInput.safeParse({
-        botId: "bot-1",
-        text: "   ",
-        artifactIds: ["artifact-1"],
-        replyToMessageId: "ask-1",
-        answersQuestion: true,
-      }).success,
-    ).toBe(false);
-    expect(
-      threadSendInput.safeParse({
-        botId: "bot-1",
-        text: "Kyoto",
-        replyToMessageId: "ask-1",
-        answersQuestion: true,
-      }).success,
-    ).toBe(true);
-  });
-
-  it("keeps answersQuestion out of threadSendWithRoutinesInput", () => {
-    expect("answersQuestion" in threadSendWithRoutinesInput.shape).toBe(false);
-    const parsed = threadSendWithRoutinesInput.parse({
-      botId: "bot-1",
-      clientNonce: "nonce-1",
-      routineIds: ["routine-1"],
-      answersQuestion: true,
-    } as Record<string, unknown>);
-    expect("answersQuestion" in parsed).toBe(false);
+    expect(threadAnswerQuestionInput.safeParse({ ...answer, clientNonce: undefined }).success).toBe(
+      false,
+    );
   });
 });

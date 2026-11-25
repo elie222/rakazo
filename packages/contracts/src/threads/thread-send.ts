@@ -48,41 +48,35 @@ const threadSendFields = threadTarget.safeExtend({
   clientNonce: z.string().min(1).max(200).optional(),
 });
 
-export const threadSendInput = threadSendFields
+export const threadSendInput = threadSendFields.superRefine((input, ctx) => {
+  const text = input.text?.trim() ?? "";
+  const artifactIds = input.artifactIds ?? [];
+  if (!text && artifactIds.length === 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Provide text or at least one attachment",
+      path: ["text"],
+    });
+  }
+  if (input.replyQuote && !input.replyToMessageId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "replyQuote requires replyToMessageId",
+      path: ["replyQuote"],
+    });
+  }
+});
+
+/** A typed answer to one pending question card: it answers only that card and never stops work. */
+export const threadAnswerQuestionInput = threadTarget
   .safeExtend({
-    /** Sent from a pending question card: answers only that card, never falls back or stops work. */
-    answersQuestion: z.literal(true).optional(),
+    text: z.string().max(THREAD_MESSAGE_TEXT_MAX_LENGTH),
+    replyToMessageId: Id,
+    clientNonce: z.string().min(1).max(200),
   })
   .superRefine((input, ctx) => {
-    const text = input.text?.trim() ?? "";
-    const artifactIds = input.artifactIds ?? [];
-    if (!text && artifactIds.length === 0) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Provide text or at least one attachment",
-        path: ["text"],
-      });
-    }
-    if (input.replyQuote && !input.replyToMessageId) {
-      ctx.addIssue({
-        code: "custom",
-        message: "replyQuote requires replyToMessageId",
-        path: ["replyQuote"],
-      });
-    }
-    if (input.answersQuestion && !input.replyToMessageId) {
-      ctx.addIssue({
-        code: "custom",
-        message: "answersQuestion requires replyToMessageId",
-        path: ["answersQuestion"],
-      });
-    }
-    if (input.answersQuestion && !text) {
-      ctx.addIssue({
-        code: "custom",
-        message: "answersQuestion requires nonblank text",
-        path: ["text"],
-      });
+    if (!input.text.trim()) {
+      ctx.addIssue({ code: "custom", message: "Provide a nonblank answer", path: ["text"] });
     }
   });
 

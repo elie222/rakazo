@@ -237,11 +237,10 @@ describe("model setup gate", () => {
       savedStrictReceipt: true,
       funding: { creditPurchasesEnabled: true, funding: "byok", balanceUsd: 0 },
     });
-    const replayed = await call(retry.handler, retry.actor, "threads/send", {
+    const replayed = await call(retry.handler, retry.actor, "threads/answerQuestion", {
       botId: "bot-1",
       text: "Kyoto",
       replyToMessageId: "ask-1",
-      answersQuestion: true,
       clientNonce: "nonce-saved",
     });
     expect(replayed.status).toBe(200);
@@ -254,11 +253,10 @@ describe("model setup gate", () => {
       deploymentModelConfigured: true,
       funding: { creditPurchasesEnabled: true, funding: "byok", balanceUsd: 0 },
     });
-    const refused = await call(fresh.handler, fresh.actor, "threads/send", {
+    const refused = await call(fresh.handler, fresh.actor, "threads/answerQuestion", {
       botId: "bot-1",
       text: "stop",
       replyToMessageId: "ask-1",
-      answersQuestion: true,
       clientNonce: "nonce-fresh",
     });
     expect(refused.status).toBe(400);
@@ -273,11 +271,10 @@ describe("model setup gate", () => {
       savedStrictReceipt: true,
       modelLookupError: new SecretStoreUnavailableError(),
     });
-    const replayed = await call(retry.handler, retry.actor, "threads/send", {
+    const replayed = await call(retry.handler, retry.actor, "threads/answerQuestion", {
       botId: "bot-1",
       text: "Kyoto",
       replyToMessageId: "ask-1",
-      answersQuestion: true,
       clientNonce: "nonce-saved",
     });
     expect(replayed.status).toBe(200);
@@ -295,11 +292,10 @@ describe("model setup gate", () => {
       savedStrictReceiptAuthorUserId: "user-2",
       modelLookupError: new SecretStoreUnavailableError(),
     });
-    const conflict = await call(otherMember.handler, otherMember.actor, "threads/send", {
+    const conflict = await call(otherMember.handler, otherMember.actor, "threads/answerQuestion", {
       botId: "bot-1",
       text: "Kyoto",
       replyToMessageId: "ask-1",
-      answersQuestion: true,
       clientNonce: "nonce-saved",
     });
     expect(conflict.status).toBe(409);
@@ -316,11 +312,10 @@ describe("model setup gate", () => {
       savedStrictReceiptAuthorUserId: null,
       modelLookupError: new SecretStoreUnavailableError(),
     });
-    const legacyReplayed = await call(legacy.handler, legacy.actor, "threads/send", {
+    const legacyReplayed = await call(legacy.handler, legacy.actor, "threads/answerQuestion", {
       botId: "bot-1",
       text: "Kyoto",
       replyToMessageId: "ask-1",
-      answersQuestion: true,
       clientNonce: "nonce-legacy",
     });
     expect(legacyReplayed.status).toBe(200);
@@ -333,11 +328,10 @@ describe("model setup gate", () => {
       agentRuntime: "pi",
       modelLookupError: new SecretStoreUnavailableError(),
     });
-    const failed = await call(fresh.handler, fresh.actor, "threads/send", {
+    const failed = await call(fresh.handler, fresh.actor, "threads/answerQuestion", {
       botId: "bot-1",
       text: "Kyoto",
       replyToMessageId: "ask-1",
-      answersQuestion: true,
       clientNonce: "nonce-fresh",
     });
     expect(failed.status).toBe(500);
