@@ -219,7 +219,7 @@ PI_DEFAULT_MODEL=opencode/big-pickle
 
 Use a model id from `opencode models`. Each chat continues OpenCode's session from its previous
 turn, so OpenCode keeps its context and prompt cache; after a restart, the next turn starts a new
-session with the recent chat. Screen and computer use are not available to bots on OpenCode yet.
+session with the recent chat. Screen and computer use, and images people send, are not available to bots on OpenCode yet.
 Usage counts against your OpenCode plan or provider, and Rakazo shows no cost for these runs. Your
 use of OpenCode and of the models it reaches is covered by their own terms.
 

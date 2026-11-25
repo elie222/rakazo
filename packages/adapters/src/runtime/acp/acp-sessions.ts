@@ -19,6 +19,19 @@ const SESSION_IDLE_MS = 7 * 24 * 60 * 60_000;
 const MAX_SESSIONS = 500;
 
 const sessions = new Map<string, AgentSession>();
+/** Chats with a turn running on their session in this process. */
+const busy = new Set<string>();
+
+/** Takes a chat's session for one turn; false when another turn has it. */
+export function claimSession(key: string): boolean {
+  if (busy.has(key)) return false;
+  busy.add(key);
+  return true;
+}
+
+export function releaseSession(key: string): void {
+  busy.delete(key);
+}
 
 export function sessionKey(agent: string, botId: string, threadId: string): string {
   return JSON.stringify([agent, botId, threadId]);

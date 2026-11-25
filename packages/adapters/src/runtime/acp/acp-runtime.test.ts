@@ -239,6 +239,41 @@ describe("acpAgentRuntime", () => {
     expect(second.endsWith("next")).toBe(true);
   });
 
+  it("tells the agent when a tool returned an error", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+
+    await collect(
+      runtime,
+      request({ prompt: "weather", executeTool: vi.fn(async () => ({ error: "No such city" })) }),
+    );
+
+    expect(recorded().find((event) => event.type === "tool_result")?.result).toMatchObject({
+      isError: true,
+    });
+  });
+
+  it("gives a second turn running in the same chat a session of its own", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+    const threadId = `thread-${randomUUID()}`;
+
+    await Promise.all([
+      collect(runtime, request({ threadId, prompt: "weather" })),
+      collect(runtime, request({ threadId, prompt: "hello" })),
+    ]);
+
+    expect(requests("session/new")).toHaveLength(2);
+    expect(requests("session/delete")).toHaveLength(1);
+  });
+
+  it("keeps the newest message when it alone is longer than a new session's history", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+    const long = `start ${"x".repeat(40_000)} end`;
+
+    await collect(runtime, request({ history: [{ id: "m1", role: "user", content: long }] }));
+
+    expect(promptText()).toContain("x end");
+  });
+
   it("starts over from the chat when the agent no longer has the session", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
     const threadId = `thread-${randomUUID()}`;

@@ -16,6 +16,7 @@ import { abortableDelay, pollUntil } from "@rakazo/core";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { cliEnv, privateFolder } from "../../cli-models/cli-process.js";
 import type { PersonalCliAccessCheck } from "../../cli-models/personal-access.js";
+import { deliverFinishedShells } from "../../computers/sandbox/shell-command-stream.js";
 import { sanitizeSensitiveText } from "../pi/pi-runtime-errors.js";
 import { modelStreamIdleTimeoutMs } from "../pi/pi-runtime-limits.js";
 import { createRuntimeModels } from "../pi/pi-runtime-models.js";
@@ -32,7 +33,14 @@ import type { AcpAgentDescriptor } from "./acp-agent.js";
 import type { AcpConnection } from "./acp-connection.js";
 import { AcpRequestError, startAcpAgent } from "./acp-connection.js";
 import type { AgentSession } from "./acp-sessions.js";
-import { findSession, forgetSession, keepSession, sessionKey } from "./acp-sessions.js";
+import {
+  claimSession,
+  findSession,
+  forgetSession,
+  keepSession,
+  releaseSession,
+  sessionKey,
+} from "./acp-sessions.js";
 import { startToolServer } from "./acp-tool-server.js";
 import { conversationBlock, historyLine, OWN_SPEAKER, PERSON_SPEAKER } from "./acp-turn.prompt.js";
 
@@ -129,7 +137,6 @@ async function runAcpTurn(
   // its own that is deleted afterwards, and leaves the chat's session alone.
   const oneShot = request.tools.length === 0;
   const key = sessionKey(descriptor.id, request.botId, request.threadId);
-  const known = oneShot ? undefined : findSession(key);
   const cwd = join(
     agentFolder(),
     createHash("sha256").update(`${descriptor.id}\0${request.botId}`).digest("hex").slice(0, 24),
@@ -152,6 +159,11 @@ async function runAcpTurn(
     cancelled = true;
     connection.notify("session/cancel", { sessionId });
   };
+  // Two turns of one chat at once (a group chat can run several) must not share a session: the
+  // second gets one of its own from the chat history, removed afterwards like a helper's.
+  const ownsChatSession = !oneShot && claimSession(key);
+  const disposable = !ownsChatSession;
+  const known = ownsChatSession ? findSession(key) : undefined;
   try {
     const host = toolHost(request, context, signal, push, cancelTurn, toolBudget);
     const agentTools = toAgentTools(
@@ -185,7 +197,17 @@ async function runAcpTurn(
           name,
           arguments: prepared as never,
         });
-        return toolResult(await tool.execute(id, validated, signal));
+        const result = await tool.execute(id, validated, signal);
+        let finished: string | undefined;
+        await deliverFinishedShells(
+          (text) => {
+            finished = text;
+          },
+          host.pendingShells,
+          { toolResults: [{ toolName: name, details: result?.details }] },
+          signal,
+        );
+        return toolResult(result, finished);
       } catch (error) {
         return errorResult(
           sanitizeSensitiveText(error instanceof Error ? error.message : String(error)),
@@ -362,33 +384,40 @@ async function runAcpTurn(
     };
     const promptText = turnText(request, current, fresh);
     current.usedAt = Date.now();
-    if (!oneShot) keepSession(key, current);
+    if (ownsChatSession) keepSession(key, current);
 
-    const prompt: Update[] = [{ type: "text", text: promptText }];
-    const images = (capabilities.promptCapabilities as Update | undefined)?.image
-      ? (request.currentTurnImages ?? [])
-      : [];
-    for (const image of images) {
-      prompt.push({
-        type: "image",
-        mimeType: image.mimeType,
-        data: Buffer.from(image.data).toString("base64"),
+    const send = async (text: string) => {
+      const prompting = agent.request<Update>("session/prompt", {
+        sessionId: activeSessionId,
+        prompt: [{ type: "text", text }],
       });
+      inFlight = prompting;
+      try {
+        return await step(prompting);
+      } catch (error) {
+        if (violation) throw violation;
+        throw error;
+      } finally {
+        if (inFlight === prompting) inFlight = undefined;
+      }
+    };
+    let response = await send(promptText);
+    // Shell commands still running when the CLI ended its turn report back, as between steps.
+    while (!violation && !cancelled && host.pendingShells.length) {
+      let finished: string | undefined;
+      await deliverFinishedShells(
+        (text) => {
+          finished = text;
+        },
+        host.pendingShells,
+        { toolResults: [] },
+        signal,
+      );
+      if (!finished) break;
+      await reportUsage(request, descriptor, response.usage, push);
+      afterTool = true;
+      response = await send(finished);
     }
-
-    const prompting = agent.request<Update>("session/prompt", {
-      sessionId: activeSessionId,
-      prompt,
-    });
-    inFlight = prompting;
-    let response: Update;
-    try {
-      response = await step(prompting);
-    } catch (error) {
-      if (violation) throw violation;
-      throw error;
-    }
-    inFlight = undefined;
     if (violation) throw violation;
     const stopReason = response.stopReason;
     if (stopReason === "refusal") throw new Error(`${descriptor.label} refused to answer.`);
@@ -401,7 +430,7 @@ async function runAcpTurn(
     if (error instanceof TurnAborted || (signal.aborted && !violation)) return;
     // A failed turn may have left the session short of what it was sent, so the next turn
     // starts over from the chat. A helper never used the chat's session.
-    if (!oneShot) forgetSession(key);
+    if (ownsChatSession) forgetSession(key);
     if (violation) throw violation;
     if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
       throw new Error(descriptor.notInstalled);
@@ -412,6 +441,7 @@ async function runAcpTurn(
     throw error;
   } finally {
     releaseToolCallBudget(request.runId, false);
+    if (ownsChatSession) releaseSession(key);
     if (connection) {
       // Give a cancelled turn a moment to settle so the CLI saves the session cleanly.
       if (inFlight && sessionId) {
@@ -431,8 +461,8 @@ async function runAcpTurn(
           reportUsage(request, descriptor, (settled as Update | undefined)?.usage, push),
         );
       }
-      // A helper's session is removed however its turn ended.
-      if (oneShot && sessionId && endSession) {
+      // A helper's or a parallel turn's session is removed however its turn ended.
+      if (disposable && sessionId && endSession) {
         const ending = bestEffort(
           "Remove the agent CLI's helper session",
           connection.request(endSession, { sessionId }),
@@ -518,7 +548,9 @@ async function selectModel(
 ): Promise<void> {
   const options = Array.isArray(opened?.configOptions) ? (opened.configOptions as Update[]) : [];
   const choice = options.find((option) => option.category === "model" || option.id === "model");
-  if (!choice || choice.currentValue === modelId) return;
+  // Running on whatever the CLI defaults to would spend the plan on a model nobody chose.
+  if (!choice) throw new Error(`${descriptor.label} offers no model choice for its sessions.`);
+  if (choice.currentValue === modelId) return;
   const values = flattenValues(choice.options);
   if (values.length && !values.includes(modelId)) {
     throw new Error(
@@ -572,12 +604,16 @@ function turnText(request: AgentRunRequest, session: AgentSession, fresh: boolea
   if (request.sourceMessageId) session.seen.add(request.sourceMessageId);
   let kept = lines;
   if (fresh) {
+    // The newest messages that fit; the newest one is kept, shortened, even when it alone does not.
     let size = 0;
     const start = lines.findLastIndex((line) => {
       size += line.length;
       return size > SEED_CHARS;
     });
-    kept = lines.slice(start + 1);
+    kept =
+      start >= 0 && start === lines.length - 1
+        ? [`…${lines[start]!.slice(-SEED_CHARS)}`]
+        : lines.slice(start + 1);
   }
   const message = request.promptSpeaker
     ? historyLine(request.promptSpeaker, request.prompt)
@@ -675,7 +711,7 @@ function errorResult(text: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text }] };
 }
 
-function toolResult(result: AgentToolResult<unknown>): CallToolResult {
+function toolResult(result: AgentToolResult<unknown>, finishedShells?: string): CallToolResult {
   const content: CallToolResult["content"] = [];
   for (const part of result?.content ?? []) {
     if (part.type === "text") content.push({ type: "text", text: part.text });
@@ -683,5 +719,10 @@ function toolResult(result: AgentToolResult<unknown>): CallToolResult {
       content.push({ type: "image", data: part.data, mimeType: part.mimeType });
     }
   }
-  return { content: content.length ? content : [{ type: "text", text: "ok" }] };
+  if (finishedShells) content.push({ type: "text", text: finishedShells });
+  const details = result?.details as { error?: unknown; isError?: unknown } | undefined;
+  return {
+    content: content.length ? content : [{ type: "text", text: "ok" }],
+    ...(details?.error != null || details?.isError === true ? { isError: true } : {}),
+  };
 }

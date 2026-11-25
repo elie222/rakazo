@@ -117,6 +117,7 @@ async function prompt(params) {
       content: { type: "text", text: "Checking. " },
     });
     const result = await callTool(sessionId, "get_weather", { city: "Paris" });
+    record({ type: "tool_result", result });
     update(sessionId, {
       sessionUpdate: "agent_message_chunk",
       content: { type: "text", text: `It is ${result.content[0].text}.` },

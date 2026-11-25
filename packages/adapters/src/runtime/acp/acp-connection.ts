@@ -85,8 +85,12 @@ export function startAcpAgent(
       resolve(error);
     };
   });
-  // A broken pipe after the agent exits surfaces as its exit; it must not crash the worker.
-  child.stdin.on("error", () => {});
+  // An agent that stops reading can answer nothing more, even while it keeps running.
+  // An exit or a failed start says more, so it goes first when both happen.
+  const inputClosed = () =>
+    setImmediate(() => endConnection(new Error("stopped reading its input")));
+  child.stdin.on("error", inputClosed);
+  child.stdin.once("close", inputClosed);
   child.once("error", (error) => endConnection(error));
   child.once("close", (code, signal) =>
     endConnection(new Error(`exited (${signal ?? `exit code ${code ?? "unknown"}`})`)),
