@@ -38,3 +38,13 @@ export async function downloadArtifact(
   const bytes = await fetchArtifactBytes(target, artifactId);
   downloadArtifactBytes(name, mimeType, bytes);
 }
+
+/** Saves an artifact under its name, using the type stored on the artifact record. */
+export async function downloadStoredArtifact(
+  target: ArtifactTarget,
+  artifactId: string,
+  name: string,
+): Promise<void> {
+  const artifact = await rpc.artifacts.get({ ...target, artifactId });
+  downloadArtifactBytes(name, artifact.mimeType, decodeArtifactBase64(artifact.contentBase64));
+}
