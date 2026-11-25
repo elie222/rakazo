@@ -591,13 +591,18 @@ export function streamClaudeCode(
               }
               if (!messageComplete) throw new Error("Claude Code finished without a reply.");
               const saving = { id: sessionId, configDir, cwd };
-              finish(
+              const resumeAt =
                 replyId &&
-                  (await bestEffort(
-                    "Find where the Claude Code session continues",
-                    entryBefore(saving, replyId),
-                  )),
-              );
+                (await bestEffort(
+                  "Find where the Claude Code session continues",
+                  entryBefore(saving, replyId),
+                ));
+              if (!resumeAt) {
+                getLogger().warn(
+                  "Claude Code's session could not be found; the next step replays the conversation",
+                );
+              }
+              finish(resumeAt);
               return;
             }
             if (event.type !== "stream_event") continue;
