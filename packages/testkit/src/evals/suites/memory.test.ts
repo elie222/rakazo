@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Evidence } from "../cases.js";
 import { EMPTY_SETTINGS } from "../cases.js";
 import {
+  APPROVAL_HISTORY_SEED,
   DENSE_MEMORY_SEED,
   FULL_MEMORY_SEED,
   MEMORY_EVAL_CASES,
@@ -136,6 +137,29 @@ describe("memory outcome grading", () => {
     const free = BOT_MEMORY_MAX_BYTES - Buffer.byteLength(DENSE_MEMORY_SEED);
     expect(free).toBeGreaterThan(0);
     expect(free).toBeLessThan(250);
+  });
+
+  it("seeds approval history close enough to the cap that the new offer only fits by making room", () => {
+    const free = BOT_MEMORY_MAX_BYTES - Buffer.byteLength(APPROVAL_HISTORY_SEED);
+    expect(free).toBeGreaterThan(0);
+    expect(free).toBeLessThan(120);
+  });
+
+  it("credits an open loop tracked as open work or with a date, never with an event end", () => {
+    const pad = { step: 1, name: "scratchpad_add", args: { title: "Marta's countersignature" } };
+    const dated = (until: string) => ({
+      step: 1,
+      name: "remember",
+      args: { operations: [{ action: "add", content: "Waiting for Marta.", until }] },
+    });
+    expect(failed("open-loop", evidence("", [pad]))).toEqual([]);
+    expect(failed("open-loop", evidence("", [dated("2026-12-02")]))).toEqual([]);
+    expect(failed("open-loop", evidence("", [remember(1, "Waiting for Marta.")]))).toEqual([
+      "loop-tracked",
+    ]);
+    expect(failed("open-loop", evidence("", [pad, dated("Marta signs")]))).toEqual([
+      "no-event-end",
+    ]);
   });
 
   it("requires a full-memory correction in one save", () => {
