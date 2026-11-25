@@ -444,6 +444,7 @@ export async function sendThreadMessage(
     actor.userId,
     input.clientNonce,
     releaseTakeover,
+    input.answersQuestion ? input : undefined,
   );
   if (existing) return existing;
   // Live events carry the call id so a spoken turn joins the call card on first
@@ -486,8 +487,10 @@ export async function sendThreadMessage(
         } else {
           replyToMessageId = input.replyToMessageId;
           if (reply.role === "bot" && reply.botId) repliedBotId = reply.botId;
-          const replyBlocks = parseMessageBlocks(reply);
+          const { blocks: replyBlocks, intact: replyIntact } = parseMessageBlocks(reply);
           replyPreview = null;
+          // A card that lost entries may have lost its question, so the reply still targets only its run.
+          if (reply.role === "bot" && !replyIntact) repliedQuestionRunId = reply.runId ?? undefined;
           if (replyBlocks.length > 0) {
             if (
               reply.role === "bot" &&
@@ -1101,6 +1104,7 @@ export async function sendThreadMessage(
       actor.userId,
       input.clientNonce,
       releaseTakeover,
+      input.answersQuestion ? input : undefined,
     );
     if (winner) return { replay: winner } as const;
     throw error;

@@ -93,6 +93,14 @@ describe("selectedAskActionLabel", () => {
     ).toBe("Seoul");
   });
 
+  it("labels a legacy answer that stored the import action id", () => {
+    expect(
+      selectedAskActionLabel(AGENT_IMPORT_ASK_ACTION_ID, [
+        { id: AGENT_IMPORT_ASK_ACTION_ID, label: "Move from another assistant" },
+      ]),
+    ).toBe("Move from another assistant");
+  });
+
   it("falls back to the answer when an action is unavailable", () => {
     expect(selectedAskActionLabel("custom", undefined)).toBe("custom");
   });

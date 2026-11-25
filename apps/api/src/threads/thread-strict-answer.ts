@@ -12,7 +12,14 @@ import {
   MODEL_REQUIRED_SEND_ERROR,
 } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
-import { eligibleWaitingTextAnswer, IsolationError, storedMessageBlocks } from "@rakazo/db";
+import {
+  eligibleWaitingTextAnswer,
+  IsolationError,
+  readJsonColumn,
+  readMessageBlocks,
+  storedMessageBlocks,
+} from "@rakazo/db";
+import * as z from "zod";
 
 export const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
@@ -26,13 +33,16 @@ export class QuestionAlreadyAnsweredError extends ClientError {
 
 /**
  * Parses stored blocks entry by entry so an unrecognized sibling block from another release
- * cannot hide a valid pending question or reply preview on the same row.
+ * cannot hide a valid pending question or reply preview on the same row. `intact` is false when
+ * any entry was left out, so a reader that decides from a missing block takes the restrictive answer.
  */
-export function parseMessageBlocks(message: { id: string; blocks: unknown }): MessageBlock[] {
-  return storedMessageBlocks(message).flatMap((entry) => {
+export function parseMessageBlocks(message: { id: string; blocks: unknown }) {
+  const read = readMessageBlocks(message);
+  const blocks = read.blocks.flatMap((entry): MessageBlock[] => {
     const parsed = MessageBlockSchema.safeParse(entry);
     return parsed.success ? [parsed.data] : [];
   });
+  return { blocks, intact: read.intact && blocks.length === read.blocks.length };
 }
 
 export function validateStrictAnswerInput(input: {
@@ -75,7 +85,7 @@ export async function loadStrictQuestionRun(
   });
   const pendingQuestion =
     card &&
-    parseMessageBlocks(card).some(
+    parseMessageBlocks(card).blocks.some(
       (block) => block.kind === "ask" && isQuestionAskBlock(block) && block.status !== "answered",
     );
   if (!card?.runId || !pendingQuestion) throw new QuestionAlreadyAnsweredError();
@@ -143,12 +153,16 @@ export async function replayExistingSend(
   authorUserId: string,
   clientNonce: string | undefined,
   releaseTakeover?: (runId: string) => Promise<void>,
+  strictAnswer?: { replyToMessageId?: string; text?: string },
 ) {
   if (!clientNonce) return null;
   const message = await findSendReceipt(deps.prisma, threadId, clientNonce);
   if (!message) return null;
   // Legacy messages saved before shared spaces have authorUserId null and keep replaying.
-  if (message.authorUserId && message.authorUserId !== authorUserId) {
+  if (
+    (message.authorUserId && message.authorUserId !== authorUserId) ||
+    (strictAnswer && !answersSameCard(message, strictAnswer))
+  ) {
     throw new ClientError("CONFLICT", "This message nonce is already in use.");
   }
   const receiptEvent = await deps.prisma.event.findFirst({
@@ -158,9 +172,9 @@ export async function replayExistingSend(
       payload: { path: ["messageId"], equals: message.id },
     },
     orderBy: { seq: "desc" },
-    select: { payload: true },
+    select: { id: true, payload: true },
   });
-  const receiptRunIds = sendEventRunIds(receiptEvent?.payload);
+  const receiptRunIds = receiptEvent ? sendEventRunIds(receiptEvent) : [];
   const receiptRuns = receiptRunIds.length
     ? await deps.prisma.run.findMany({ where: { id: { in: receiptRunIds } } })
     : [];
@@ -197,10 +211,32 @@ export async function replayExistingSend(
   return sendResult(message, runs);
 }
 
-function sendEventRunIds(payload: Prisma.JsonValue | undefined): string[] {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return [];
-  const runIds = (payload as { runIds?: unknown }).runIds;
-  return Array.isArray(runIds) ? runIds.filter((id): id is string => typeof id === "string") : [];
+/** A card answer's receipt is the reply to that card with the same answer text. */
+function answersSameCard(
+  message: { id: string; blocks: unknown; replyToMessageId: string | null },
+  strictAnswer: { replyToMessageId?: string; text?: string },
+) {
+  const text = storedMessageBlocks(message)
+    .flatMap((block) => (block.kind === "text" ? [block.text] : []))
+    .join("\n")
+    .trim();
+  return (
+    message.replyToMessageId === strictAnswer.replyToMessageId && text === strictAnswer.text?.trim()
+  );
+}
+
+const sendEventPayload = z.object({ runIds: z.array(z.string()).optional() });
+
+/** Sends saved before receipts listed their runs fall back to the message's linked runs. */
+function sendEventRunIds(event: { id: string; payload: Prisma.JsonValue }): string[] {
+  return (
+    readJsonColumn(
+      sendEventPayload,
+      event.payload,
+      { table: "events", column: "payload", id: event.id },
+      { fallback: {} },
+    ).runIds ?? []
+  );
 }
 
 export function sendResult(message: { seq: number }, runs: Array<{ id: string; taskId: string }>) {

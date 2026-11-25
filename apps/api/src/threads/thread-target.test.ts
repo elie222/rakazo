@@ -1835,7 +1835,7 @@ describe("sendThreadMessage", () => {
     },
   );
 
-  async function verifyMultiplePrivateQuestionReplies(explicitReply: boolean) {
+  async function verifyMultiplePrivateQuestionReplies(explicitReply: boolean, lostBlocks = false) {
     const waitingAsk = {
       id: "ask-1",
       blocks: [{ kind: "ask", text: "Which city should I use?", status: "pending" }],
@@ -1869,10 +1869,12 @@ describe("sendThreadMessage", () => {
           .mockImplementation(async ({ where }: { where: { runId: string } }) => [
             where.runId === "run-waiting-1" ? waitingAsk : { ...waitingAsk, id: "ask-older" },
           ]),
-        findFirst: vi.fn(async ({ where }: { where: { id?: string } }) =>
+        findFirst: vi.fn(async ({ where }: { where: { id?: string; runId?: string } }) =>
           explicitReply && where.id === "ask-older"
             ? {
                 ...waitingAsk,
+                // Only the send's own reply read (no run filter) sees the lost entries.
+                ...(lostBlocks && !where.runId ? { blocks: ["unreadable"] } : {}),
                 id: "ask-older",
                 role: "bot",
                 botId: "bot-1",
@@ -2018,6 +2020,9 @@ describe("sendThreadMessage", () => {
     "handles multiple private questions (explicit older reply: %s)",
     verifyMultiplePrivateQuestionReplies,
   );
+
+  it("keeps a reply to a card whose blocks lost entries on that card's run", () =>
+    verifyMultiplePrivateQuestionReplies(true, true));
 
   it("replays every answered waiting run from a free-text send receipt", async () => {
     const enqueue = vi.fn().mockResolvedValue(undefined);
@@ -3069,6 +3074,8 @@ describe("sendThreadMessage", () => {
           authorUserId: "user-1",
           seq: 7,
           runId: "run-saved",
+          replyToMessageId: "ask-1",
+          blocks: [{ kind: "text", text: "Kyoto" }],
           sourceRuns: [],
         }),
       },
@@ -3152,13 +3159,18 @@ describe("sendThreadMessage", () => {
     const racePrisma = {
       ...savedPrisma,
       message: {
-        findUnique: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({
-          id: "msg-saved",
-          authorUserId: "user-1",
-          seq: 7,
-          runId: "run-saved",
-          sourceRuns: [],
-        }),
+        findUnique: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            id: "msg-saved",
+            authorUserId: "user-1",
+            seq: 7,
+            runId: "run-saved",
+            replyToMessageId: "ask-1",
+            blocks: [{ kind: "text", text: "Kyoto" }],
+            sourceRuns: [],
+          }),
       },
       $transaction: vi
         .fn()
@@ -3194,6 +3206,8 @@ describe("sendThreadMessage", () => {
           authorUserId: null,
           seq: 7,
           runId: "run-saved",
+          replyToMessageId: "ask-1",
+          blocks: [{ kind: "text", text: "Kyoto" }],
           sourceRuns: [],
         }),
       },
@@ -3260,6 +3274,111 @@ describe("sendThreadMessage", () => {
         error.message === MODEL_REQUIRED_SEND_ERROR,
     );
     expect(freshPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("replays a receipt whose event lists its runs in another shape from the message's own run", async () => {
+    const prisma = {
+      message: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "msg-saved",
+          authorUserId: "user-1",
+          seq: 7,
+          runId: "run-saved",
+          sourceRuns: [],
+        }),
+      },
+      event: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({ id: "event-1", payload: { runIds: "run-other" } })
+          .mockResolvedValueOnce({ seq: 9 }),
+      },
+      run: {
+        findMany: vi.fn(),
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ id: "run-saved", taskId: "task-saved", status: "running" }),
+      },
+      $transaction: vi.fn(),
+    } as unknown as PrismaClient;
+    await expect(
+      sendThreadMessage(
+        {
+          prisma,
+          sandbox: {} as never,
+          events: { notify: vi.fn().mockResolvedValue(undefined) } as never,
+          jobs: { enqueue: vi.fn() } as never,
+        },
+        { spaceId: "workspace-1", userId: "user-1" } as Actor,
+        {
+          kind: "bot",
+          botId: "bot-a",
+          threadId: "thread-1",
+          bot: { computer: null },
+        } as ThreadTarget,
+        { text: "Hello", clientNonce: "nonce-old-event" },
+      ),
+    ).resolves.toMatchObject({ runId: "run-saved", runIds: ["run-saved"] });
+    expect(prisma.run.findMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a strict answer that reuses the nonce of a different send", async () => {
+    const saved = {
+      id: "msg-saved",
+      authorUserId: "user-1",
+      seq: 7,
+      runId: "run-saved",
+      replyToMessageId: "ask-1",
+      blocks: [{ kind: "text", text: "Kyoto" }],
+      sourceRuns: [],
+    };
+    const target = {
+      kind: "bot",
+      botId: "bot-a",
+      threadId: "thread-1",
+      bot: { computer: null },
+    } as ThreadTarget;
+    const send = (prisma: PrismaClient, input: { text: string; replyToMessageId: string }) => {
+      const enqueue = vi.fn();
+      const notify = vi.fn();
+      const result = sendThreadMessage(
+        { prisma, sandbox: {} as never, events: { notify } as never, jobs: { enqueue } as never },
+        { spaceId: "workspace-1", userId: "user-1" } as Actor,
+        target,
+        { ...input, answersQuestion: true, clientNonce: "nonce-reused" },
+      );
+      return { result, enqueue, notify };
+    };
+    for (const input of [
+      { text: "Kyoto", replyToMessageId: "ask-2" },
+      { text: "Osaka", replyToMessageId: "ask-1" },
+    ]) {
+      const prisma = {
+        message: { findUnique: vi.fn().mockResolvedValue(saved) },
+        event: { findFirst: vi.fn() },
+        $transaction: vi.fn(),
+      } as unknown as PrismaClient;
+      const { result, enqueue, notify } = send(prisma, input);
+      await expect(result).rejects.toMatchObject({ kind: "CONFLICT" });
+      expect(prisma.event.findFirst).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+    }
+
+    // The same check holds when the receipt appears only after a nonce collision.
+    const racePrisma = {
+      message: { findUnique: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(saved) },
+      event: { findFirst: vi.fn() },
+      $transaction: vi
+        .fn()
+        .mockRejectedValue(Object.assign(new Error("unique"), { code: "P2002" })),
+    } as unknown as PrismaClient;
+    const race = send(racePrisma, { text: "Kyoto", replyToMessageId: "ask-2" });
+    await expect(race.result).rejects.toMatchObject({ kind: "CONFLICT" });
+    expect(racePrisma.event.findFirst).not.toHaveBeenCalled();
+    expect(race.enqueue).not.toHaveBeenCalled();
   });
 
   it("refuses whitespace-only strict answers before creating a message", async () => {

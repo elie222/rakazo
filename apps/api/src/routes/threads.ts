@@ -156,6 +156,7 @@ export function threadsRoutes(ctx: RouterContext) {
         actor.userId,
         input.clientNonce,
         releaseTakeover,
+        input,
       );
       if (replayed) return replayed;
     }
