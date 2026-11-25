@@ -10,7 +10,7 @@ export const GROK_BOT_EXPORT_PROMPT = `I am moving my Bots to another assistant 
 1. List every Bot here, yourself included, and ask me which to include before you start. Include all of them unless I say otherwise.
 2. Read each Bot's setup from where it is stored (its profile, settings, skills and routines), not from memory, wherever you can read it. Bots usually keep these as files on this computer.
 3. Collect memory. Search your own memory with many varied queries (about me, people, projects, systems, decisions, each recent month) and copy every fact word for word. Ask each other Bot you include, by message, to do the same and send you its memories and facts about me word for word. Wait a reasonable time; do not stop for a Bot that does not answer, and tell me which ones did not.
-4. Write one JSON file per Bot, named grok-bot-export-<bot name>.json (lowercase, spaces as hyphens), each a whole document in exactly this shape with that one Bot in "bots". Put all the files in one .zip and attach it to your reply. If you cannot attach files, reply with each document in its own \`\`\`json code block.
+4. Write one JSON file per Bot, named grok-bot-export-<bot name>.json (lowercase, spaces as hyphens; add the first 8 characters of its ID when two Bots share a name), each a whole document in exactly this shape with that one Bot in "bots". Put all the files in one .zip and attach it to your reply. If you cannot attach files, reply with each document in its own \`\`\`json code block.
 
 {
   "format": "${GROK_BOT_EXPORT_FORMAT}",
@@ -48,5 +48,5 @@ Rules:
 - If you cannot read something, leave it out and tell me what you left out. Never guess or fill it in from memory.
 - Never include passwords, API keys, tokens, webhook secrets, cookies or card numbers.
 - Output valid JSON only, with no comments.
-- If one Bot is too long for one file, split it into several files with the same export_id and name. Keep every skill and routine complete in one part; never split an individual skill or routine.
+- If one Bot is too long for one file, split it into several files with the same export_id and name, ending their file names -part-1, -part-2 and so on. Keep every skill and routine complete in one part; never split an individual skill or routine.
 `;
