@@ -488,7 +488,11 @@ async function runAcpTurn(
     if (violation) throw violation;
     const stopReason = response.stopReason;
     if (stopReason === "refusal") throw new Error(`${descriptor.label} refused to answer.`);
-    if (stopReason === "cancelled" && !cancelled) {
+    if (stopReason === "max_tokens" || stopReason === "max_turn_requests") {
+      throw new Error(`${descriptor.label} reached its output limit before it finished.`);
+    }
+    // Only a finished turn, or one Rakazo cancelled itself, is complete.
+    if (stopReason !== "end_turn" && !(stopReason === "cancelled" && cancelled)) {
       throw new Error(`${descriptor.label} stopped the turn before it finished.`);
     }
     await reportUsage(request, descriptor, response.usage, push);
