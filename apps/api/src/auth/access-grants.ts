@@ -31,6 +31,8 @@ function accessGrantDto(
 
 export async function listAccessGrants(prisma: PrismaClient): Promise<AccessGrant[]> {
   const rows = await prisma.accessGrant.findMany({
+    // Code redemptions are applied as they are made, so only grants an admin wrote are listed.
+    where: { code: null },
     orderBy: { createdAt: "desc" },
     take: LIST_LIMIT,
     include: WITH_CREATOR,

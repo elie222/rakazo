@@ -324,7 +324,7 @@ function SessionApp() {
                 path="/redeem/:code?"
                 element={
                   user ? (
-                    <RedeemPage />
+                    <RedeemPage key={pathname} />
                   ) : (
                     <Navigate
                       to={`${hasSignedInBefore() ? "/sign-in" : "/sign-up"}?next=${encodeURIComponent(pathname)}`}
