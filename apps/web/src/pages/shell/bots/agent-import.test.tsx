@@ -605,6 +605,19 @@ describe("a Grok Bot reply with several Bots", () => {
     ).toBe(key);
   });
 
+  it("creates a reviewed Bot under the key its batch used", async () => {
+    importPreview.mockResolvedValue(plan);
+    await paste();
+    importMany.mockRejectedValue(new Error("server down"));
+    await press("Import 3 Bots");
+    const key = (importMany.mock.calls[0]![0] as { agents: { importKey: string }[] }).agents[1]!
+      .importKey;
+    await press("Review Wren");
+    importCreate.mockResolvedValue({ id: "wren", name: "Wren" });
+    await press("Create");
+    expect((importCreate.mock.calls[0]![0] as { importKey: string }).importKey).toBe(key);
+  });
+
   it("forgets the Bots on Back", async () => {
     await paste();
     await press("Back");

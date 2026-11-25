@@ -300,12 +300,12 @@ export function useAgentImportSource() {
     hasSecretFiles || sourceFiles.some(({ home, content }) => hasAgentImportSecrets(home, content));
 
   /** A pasted reply or one chosen file: no folder, so no secrets or skill siblings. */
-  async function previewOne(read: number, file: AgentImportFile) {
+  async function previewOne(read: number, file: AgentImportFile, key = newClientId()) {
     setSource(null);
     setSourceFiles([]);
     setHasSecretFiles(false);
     setSkillFiles({});
-    importKey.current = newClientId();
+    importKey.current = key;
     await preview(read, [file], { siblings: {} });
   }
 
@@ -341,7 +341,13 @@ export function useAgentImportSource() {
       setBusy(false);
       return;
     }
-    await previewOne(read, { path: GROK_BOT_EXPORT_PATH, content });
+    // The key a batch used or will use for this Bot, so it can never be created twice.
+    let key = grokKeys.current.get(content);
+    if (!key) {
+      key = newClientId();
+      grokKeys.current.set(content, key);
+    }
+    await previewOne(read, { path: GROK_BOT_EXPORT_PATH, content }, key);
   }
 
   async function pickGrokFiles(list: FileList | null) {
