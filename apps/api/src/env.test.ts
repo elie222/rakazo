@@ -12,10 +12,12 @@ const base = {
 };
 
 describe("loadEnv", () => {
-  it("defaults the attachment count to four and accepts configured bounds", () => {
-    expect(loadEnv(base).maxAttachmentsPerMessage).toBe(4);
-    expect(loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: " " }).maxAttachmentsPerMessage).toBe(4);
-    for (const count of [1, 8, 100]) {
+  it("defaults the attachment count to ten and accepts configured bounds", () => {
+    expect(loadEnv(base).maxAttachmentsPerMessage).toBe(10);
+    expect(loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: " " }).maxAttachmentsPerMessage).toBe(
+      10,
+    );
+    for (const count of [1, 4, 8, 100]) {
       expect(
         loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: ` ${count} ` }).maxAttachmentsPerMessage,
       ).toBe(count);
