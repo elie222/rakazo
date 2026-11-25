@@ -11,7 +11,7 @@ import {
   ARTIFACT_DESCRIPTION_MAX_LENGTH,
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_MAX_BYTES,
-  ATTACHMENT_MAX_COUNT,
+  attachmentMaxCount,
   attachmentSizeLabel,
   HISTORY_ATTACHMENTS_PER_RESPONSE,
   MCP_APP_MIME_TYPE,
@@ -261,7 +261,7 @@ async function materializeThreadFiles(
 }
 
 export async function materializeRecentThreadFiles(
-  deps: Parameters<typeof materializeCurrentTurnFiles>[0],
+  deps: Parameters<typeof materializeCurrentTurnFiles>[0] & { maxAttachmentsPerMessage?: number },
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
   input: Parameters<typeof materializeCurrentTurnFiles>[2] & {
@@ -274,7 +274,7 @@ export async function materializeRecentThreadFiles(
     deps,
     recentAttachmentBlocks(history, messages, input),
     { ...input, markWorkspaceDirty: undefined },
-    ATTACHMENT_MAX_COUNT,
+    attachmentMaxCount(deps),
   );
 }
 
@@ -351,7 +351,9 @@ export async function materializeEarlierFiles(
  * copies them with materializeRecentThreadFiles once something first uses the computer.
  */
 export async function listRecentThreadFiles(
-  deps: Pick<Parameters<typeof materializeCurrentTurnFiles>[0], "prisma" | "maxUploadSizeBytes">,
+  deps: Pick<Parameters<typeof materializeCurrentTurnFiles>[0], "prisma" | "maxUploadSizeBytes"> & {
+    maxAttachmentsPerMessage?: number;
+  },
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
   input: {
@@ -370,7 +372,7 @@ export async function listRecentThreadFiles(
       if (!row || row.size > limit) return [];
       return [threadFileMetadata(row)];
     })
-    .slice(0, ATTACHMENT_MAX_COUNT);
+    .slice(0, attachmentMaxCount(deps));
 }
 
 /** The newest attachments across the last `maxTurns` user turns, with or without attachments. */

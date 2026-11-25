@@ -120,7 +120,7 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
     listed += files.length;
   }
   while (Buffer.byteLength(JSON.stringify(response), "utf8") > MAX_RESPONSE_BYTES) {
-    // A message with more files than one upload carries gives up files before any text shrinks.
+    // Keep up to four attachment references per message before shortening text; the rest are pageable.
     const fullest = crowded();
     if (fullest?.attachments && fullest.attachments.length > ATTACHMENT_MAX_COUNT) {
       dropFile(fullest);

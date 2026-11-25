@@ -1,4 +1,4 @@
-import { phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
+import { attachmentCountFromEnv, phoneCallSettings, uploadSizeFromEnv } from "@rakazo/core";
 import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { describe, expect, it } from "vitest";
 import { mcpStdioOptionsFromEnv } from "../../mcp/mcp-connector.js";
@@ -37,6 +37,7 @@ function previousWorkerValues(source: NodeJS.ProcessEnv) {
     deploymentLabs: deploymentLabsFromEnv(source),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    maxAttachmentsPerMessage: attachmentCountFromEnv(source),
     workspaceSaveLimits: workspaceSaveLimits(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
     webOrigin: webOriginFromEnv(source),
@@ -66,6 +67,7 @@ describe("runRuntimeEnvFromProcess", () => {
       PHONE_CALLS_ENABLED: "true",
       PHONE_CALL_RING_SECONDS: "30",
       MAX_UPLOAD_SIZE_MB: "20",
+      MAX_ATTACHMENTS_PER_MESSAGE: "7",
       WORKSPACE_SAVE_MAX_GB: "20",
       INBOUND_EMAIL_DOMAIN: " Bots.Example.Test ",
       TEAM_CHAT_JUDGE_PROVIDER: " openrouter ",
