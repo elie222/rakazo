@@ -48,12 +48,7 @@ import {
   vaultCardUseOf,
   vaultLoginUseOf,
 } from "../../secrets/vault/vault-card-use.js";
-import {
-  isFleetApprovalTool,
-  modelLabel,
-  prepareFleetRequest,
-  resolveBot,
-} from "../../tools/fleet-tools.js";
+import { isFleetApprovalTool, modelLabel, prepareFleetRequest } from "../../tools/fleet-tools.js";
 import { assertConnectorToolArgs, CATALOG_EXECUTE } from "../../tools/lazy-tool-catalog.js";
 import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
@@ -70,6 +65,11 @@ import {
 } from "../lifecycle/run-effects.js";
 import { fleetPrepareDeps } from "../turn/run-model.js";
 import { refusal } from "../turn/tool-refusal.js";
+import {
+  canonicalScheduleCancelSelectorArgs,
+  prepareManagedRoutineTarget,
+  reconcileSelfBotRoutineEffect,
+} from "./run-schedule-approval.js";
 import { BUILTIN_AGENT_TOOL_NAMES, FLEET_WRITE_TOOL_NAMES_SET } from "./run-tool-selection.js";
 import { holdSharedPageSave } from "./run-tools-pages.js";
 import { scheduleCreateRefusal, scheduleUpdatePreview } from "./run-tools-tasks.js";
@@ -83,6 +83,12 @@ export interface ToolRequest {
   connectorCall: ConnectorCall;
   /** The persisted request an approval covers; catalog and bound routes wrap the args. */
   effectRequest: unknown;
+  /** Canonical arguments used to derive the effect idempotency key without volatile display fields. */
+  effectKeyArgs?: Record<string, unknown>;
+  /** Existing effect key matched from a restored checkpoint or prior release before live keying. */
+  reconciledEffectKey?: string;
+  /** Keep a prepared effectRequest (e.g. named self-bot selector) from being overwritten by args. */
+  preserveEffectRequest?: boolean;
   /** The connector tool a catalog call resolved to. */
   resolvedTool: ConnectorTool | undefined;
   catalogRemapped: boolean;
@@ -483,11 +489,33 @@ export async function prepareToolRequest(
   }
   // A bot passing its own id is working on its own routines, which need no bot management. A
   // name may be shared, so it goes through the lookup below.
+  let selfReconciled = false;
   if (reachesManagedRoutines(name, args) && String(args.bot_id ?? "").trim() === bot.id) {
+    const rawSelfArgs = args;
     const { bot_id: _id, bot_name: _name, ...rest } = args;
+    const canonicalRest =
+      name === "schedule_cancel" ? canonicalScheduleCancelSelectorArgs(rest) : rest;
+    if (name === "schedule_cancel") request.effectKeyArgs = canonicalRest;
+    if (nextApprovedTool !== name) {
+      await reconcileSelfBotRoutineEffect(ctx, request, rawSelfArgs, rest, canonicalRest);
+      selfReconciled = true;
+    }
     args = rest;
   }
   const managedRoutines = reachesManagedRoutines(name, args);
+  if (
+    (name === "schedule_cancel" || name === "schedule_list") &&
+    !managedRoutines &&
+    nextApprovedTool !== name
+  ) {
+    const { bot_id: _id, bot_name: _name, ...rest } = args;
+    const canonicalRest =
+      name === "schedule_cancel" ? canonicalScheduleCancelSelectorArgs(rest) : rest;
+    request.effectKeyArgs = canonicalRest;
+    if (!selfReconciled) {
+      await reconcileSelfBotRoutineEffect(ctx, request, args, rest, canonicalRest);
+    }
+  }
   const fleetWrite =
     FLEET_WRITE_TOOL_NAMES_SET.has(name) ||
     name === "archive_bot" ||
@@ -527,12 +555,12 @@ export async function prepareToolRequest(
       request.ignoresAllowRules = true;
     }
     // The card names the bot, and an approved replay acts on its id, not a name another bot
-    // could take by then.
+    // could take by then. Reconcile a restored checkpoint call by its saved effect key once
+    // before resolving live names so a bot rename cannot cause a completed call to run again.
     if (managedRoutines && nextApprovedTool !== name) {
-      const target = await resolveBot(deps.prisma, ctx.fleetRun, args);
-      if ("error" in target) return refusal("bot_management_request_invalid", target.error);
-      const { bot_id: _id, bot_name: _name, ...rest } = args;
-      args = target.id === bot.id ? rest : { ...rest, bot_id: target.id, bot_name: target.name };
+      const resolved = await prepareManagedRoutineTarget(ctx, request, args);
+      if ("error" in resolved) return resolved;
+      args = resolved.args;
     }
   }
   // Only a persisted approval may supply the before-values the save checks against.
@@ -716,22 +744,40 @@ export async function prepareToolRequest(
   }
   request.args = args;
   if (
-    name === "respond_agent_connection" ||
-    name === "update_bot" ||
-    name === "schedule_create" ||
-    name === "schedule_update" ||
-    isFleetApprovalTool(name)
+    !request.reconciledEffectKey &&
+    !request.preserveEffectRequest &&
+    (name === "respond_agent_connection" ||
+      name === "update_bot" ||
+      name === "schedule_create" ||
+      name === "schedule_update" ||
+      name === "schedule_cancel" ||
+      name === "schedule_list" ||
+      isFleetApprovalTool(name))
   )
     request.effectRequest = args;
   return undefined;
 }
 
 /** Prepare the review and persist its before-values only in the request replayed after approval. */
-export async function prepareScheduleUpdateApproval(ctx: RunContext, request: ToolRequest) {
-  const prepared = await scheduleUpdatePreview(ctx, request.args);
+export async function prepareScheduleUpdateApproval(
+  ctx: RunContext,
+  request: ToolRequest,
+  expected?: unknown,
+) {
+  const previewArgs = expected !== undefined ? { ...request.args, expected } : request.args;
+  const prepared = await scheduleUpdatePreview(ctx, previewArgs);
   if ("error" in prepared) return refusal("schedule_update_refused", prepared.error);
   request.fleetSummary = prepared.summary;
-  if (prepared.pinned) request.effectRequest = { ...request.args, expected: prepared.pinned };
+  if (prepared.pinned) {
+    const base =
+      request.preserveEffectRequest &&
+      request.effectRequest &&
+      typeof request.effectRequest === "object" &&
+      !Array.isArray(request.effectRequest)
+        ? (request.effectRequest as Record<string, unknown>)
+        : {};
+    request.effectRequest = { ...base, ...request.args, expected: prepared.pinned };
+  }
 }
 
 /** What the model is told when a press could not be checked for a payment, so nothing was pressed. */

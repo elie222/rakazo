@@ -51,6 +51,7 @@ import {
   watchWithInterval,
 } from "../routines/routine-watch.js";
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
+import { groupNotFoundError, resolveScheduleToCancel } from "./schedule-cancel-target.js";
 import type { ScheduleUnit } from "./schedule-intervals.js";
 import { intervalRangeError } from "./schedule-intervals.js";
 import { describeRoutineTiming, routineChanges } from "./schedule-update-view.js";
@@ -1035,22 +1036,6 @@ const GROUP_LIST_NOTE =
   "inThisChat marks the routines this group chat can change; change the others from the bot's own chat.";
 
 /**
- * Why a group run cannot find a routine. One the bot has outside the group (`where`, without the
- * group's thread) can be changed from the bot's own chat, which reaches all of its routines.
- */
-async function groupNotFoundError(
-  prisma: ScheduleToolDeps["prisma"],
-  where: Prisma.RoutineWhereInput,
-) {
-  const elsewhere = await prisma.routine.findFirst({ where, select: { id: true } });
-  return {
-    error: elsewhere
-      ? "That routine is not this group chat's. Change it from the bot's own chat."
-      : "Schedule not found.",
-  };
-}
-
-/**
  * The pending occurrence a timezone move keeps. A new timezone alone keeps the next run's
  * local time, so a start set for later holds. In a timezone behind, the first run is the
  * first one from when it was due (`startAt` restarts it there), so none is skipped. An
@@ -1445,32 +1430,9 @@ export async function cancelScheduleFromTool(
     name?: string;
   },
 ) {
-  const routineId = input.routineId?.trim();
-  const name = input.name?.trim();
-  if (!routineId && !name) {
-    return { error: "Provide routineId or the exact schedule name to cancel." };
-  }
-
-  const scope = {
-    spaceId: input.spaceId,
-    botId: input.botId,
-    ...(input.threadId ? { threadId: input.threadId } : {}),
-  };
-  if (!routineId && (await deps.prisma.routine.count({ where: { ...scope, name: name! } })) > 1) {
-    return { error: `More than one schedule is named "${name}". Pass routineId instead.` };
-  }
-  const existing = await deps.prisma.routine.findFirst({
-    where: { ...scope, ...(routineId ? { id: routineId } : { name: name! }) },
-  });
-  if (!existing) {
-    return input.threadId
-      ? groupNotFoundError(deps.prisma, {
-          spaceId: input.spaceId,
-          botId: input.botId,
-          ...(routineId ? { id: routineId } : { name: name! }),
-        })
-      : { error: "Schedule not found." };
-  }
+  const resolved = await resolveScheduleToCancel(deps.prisma, input);
+  if ("error" in resolved) return resolved;
+  const { existing, scope } = resolved;
 
   // The scope is part of the delete, so the routine cannot change hands between the read and it.
   const { count } = await deps.prisma.routine.deleteMany({ where: { ...scope, id: existing.id } });

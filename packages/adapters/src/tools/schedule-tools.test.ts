@@ -1059,8 +1059,12 @@ describe("schedule_create with a watch", () => {
 describe("cancelScheduleFromTool", () => {
   it("refuses a name more than one schedule has", async () => {
     const deleteMany = vi.fn();
+    const findMany = vi.fn(async () => [
+      { id: "routine-1", name: "Daily" },
+      { id: "routine-2", name: "Daily" },
+    ]);
     const deps = {
-      prisma: { routine: { count: vi.fn(async () => 2), findFirst: vi.fn(), deleteMany } },
+      prisma: { routine: { findMany, deleteMany } },
       events: { append: vi.fn() },
       jobs: { enqueue: vi.fn(), cancel: vi.fn() },
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];
@@ -1069,15 +1073,19 @@ describe("cancelScheduleFromTool", () => {
     ).resolves.toEqual({
       error: 'More than one schedule is named "Daily". Pass routineId instead.',
     });
+    expect(findMany).toHaveBeenCalledWith({
+      where: { spaceId: "ws-1", botId: "bot-1", name: "Daily" },
+      take: 2,
+    });
     expect(deleteMany).not.toHaveBeenCalled();
   });
 
   it("deletes with the caller's scope and does not cancel the job when the row moved", async () => {
-    const findFirst = vi.fn(async () => ({ id: "routine-1", name: "Daily" }));
+    const findMany = vi.fn(async () => [{ id: "routine-1", name: "Daily" }]);
     const deleteMany = vi.fn(async () => ({ count: 1 }));
     const cancel = vi.fn(async () => undefined);
     const deps = {
-      prisma: { routine: { count: vi.fn(async () => 1), findFirst, deleteMany } },
+      prisma: { routine: { findMany, deleteMany } },
       events: { append: vi.fn(async () => undefined) },
       jobs: { enqueue: vi.fn(async () => undefined), cancel },
     } as unknown as Parameters<typeof cancelScheduleFromTool>[0];

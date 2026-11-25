@@ -113,8 +113,7 @@ describe("routine rows from the schedule tools", () => {
     const deps = {
       prisma: {
         routine: {
-          count: vi.fn(async () => 1),
-          findFirst: vi.fn(async () => ({ id: "routine-1", name: "Daily", threadId: "thread" })),
+          findMany: vi.fn(async () => [{ id: "routine-1", name: "Daily", threadId: "thread" }]),
           deleteMany: vi.fn(async () => ({ count: 1 })),
         },
       },
@@ -132,8 +131,7 @@ describe("routine rows from the schedule tools", () => {
     const deps = {
       prisma: {
         routine: {
-          count: vi.fn(async () => 0),
-          findFirst: vi.fn(async () => null),
+          findMany: vi.fn(async () => []),
           deleteMany: vi.fn(),
         },
       },

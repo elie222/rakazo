@@ -1,5 +1,6 @@
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { REDACTED_MARKER } from "@rakazo/core";
+import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApprovalAskBlock } from "../../approvals/approval-ask.js";
 import { relabelVaultItem, resolveLoginFill, storeBotSecret } from "../../secrets/bot-secrets.js";
@@ -229,6 +230,17 @@ describe("schedule tools on another bot's routines", () => {
     const byName = managedRoutineCall({})("schedule_cancel", { bot_name: "Child", name: "r" });
     await expect(byName.prepared).resolves.toBeUndefined();
     expect(byName.request.args).toEqual({ bot_id: "child", bot_name: "Child", name: "r" });
+    expect(byName.request.effectRequest).toEqual({
+      bot_id: "child",
+      bot_name: "Child",
+      name: "r",
+    });
+    expect(byName.request.effectKeyArgs).toEqual({ bot_id: "child", name: "r" });
+    const listByName = managedRoutineCall({})("schedule_list", { bot_name: "Child" });
+    await expect(listByName.prepared).resolves.toBeUndefined();
+    expect(listByName.request.args).toEqual({ bot_id: "child", bot_name: "Child" });
+    expect(listByName.request.effectRequest).toEqual({ bot_id: "child", bot_name: "Child" });
+    expect(listByName.request.effectKeyArgs).toEqual({ bot_id: "child" });
     const self = managedRoutineCall({ fleetManagement: false })("schedule_update", {
       bot_id: " bot-1 ",
       routineId: "r",
@@ -236,6 +248,152 @@ describe("schedule tools on another bot's routines", () => {
     });
     await expect(self.prepared).resolves.toBeUndefined();
     expect(self.request.args).toEqual({ routineId: "r", active: false });
+  });
+
+  it("reconciles a checkpointed managed routine call by its saved key after the bot is renamed", async () => {
+    const savedKey = "run-1:schedule_cancel:saved-before-rename";
+    const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
+    const findBots = vi.fn(async () => [{ id: "child", name: "Renamed", thread: { id: "c-t" } }]);
+    const findUniqueEffect = vi.fn(async ({ where }: { where: { idempotencyKey: string } }) =>
+      where.idempotencyKey === savedKey
+        ? {
+            id: "eff-saved",
+            runId: "run-1",
+            spaceId: "space-1",
+            kind: "schedule_cancel",
+            idempotencyKey: savedKey,
+            status: "completed",
+            request: { bot_id: "child", bot_name: "OldName", routineId: "r-1", name: "Daily" },
+            result: { ok: true, routineId: "r-1", name: "Daily" },
+          }
+        : null,
+    );
+    const ctx = {
+      deps: {
+        prisma: {
+          bot: {
+            findUnique: vi.fn(async () => ({ fleetManagement: true })),
+            findMany: findBots,
+          },
+          externalEffect: { findUnique: findUniqueEffect },
+          steeringMessage: { findFirst: vi.fn(async () => null) },
+        },
+      },
+      run: { id: "run-1", spaceId: "space-1", trigger: "user" },
+      runId: "run-1",
+      bot: { id: "bot-1", name: "Manager" },
+      fleetRun: { spaceId: "space-1", userId: "user-1", botId: "bot-1" },
+      thread: { id: "thread-1", groupId: null },
+      source: { ownerStartedRun: true },
+      state: {
+        tainted: false,
+        effects: {
+          consumedIds: new Set(),
+          counts: new Map(),
+          occurrences: [{ executionId, fingerprint: savedKey, occurrence: 0 }],
+          restoredPending: { executionId, fingerprint: savedKey, occurrence: 0 },
+        },
+      },
+      trust: { receivedOutsideMessage: async () => false },
+    };
+    const request = {
+      name: "schedule_cancel",
+      args: { bot_id: "child", name: "Daily" },
+      executionId,
+      effectRequest: { bot_id: "child", name: "Daily" },
+      replayEffectToolName: "schedule_cancel",
+      heldForApproval: false,
+      ignoresAllowRules: false,
+    } as never;
+
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    expect((request as { reconciledEffectKey?: string }).reconciledEffectKey).toBe(savedKey);
+    expect(ctx.state.effects.restoredPending).toBeUndefined();
+    expect((request as { args: Record<string, unknown> }).args).toEqual({
+      bot_id: "child",
+      bot_name: "OldName",
+      routineId: "r-1",
+      name: "Daily",
+    });
+    expect(findBots).not.toHaveBeenCalled();
+
+    // A later live call reusing the same provider call ID must not replay the first cancellation.
+    const secondRequest = {
+      name: "schedule_cancel",
+      args: { bot_id: "child", name: "Weekly" },
+      executionId,
+      effectRequest: { bot_id: "child", name: "Weekly" },
+      replayEffectToolName: "schedule_cancel",
+      heldForApproval: false,
+      ignoresAllowRules: false,
+    } as never;
+    await expect(prepareToolRequest(ctx as never, secondRequest)).resolves.toBeUndefined();
+    expect((secondRequest as { reconciledEffectKey?: string }).reconciledEffectKey).toBeUndefined();
+    expect((secondRequest as { args: Record<string, unknown> }).args).toEqual({
+      bot_id: "child",
+      bot_name: "Renamed",
+      name: "Weekly",
+    });
+    expect(findBots).toHaveBeenCalledOnce();
+  });
+
+  it("reconciles a previous-release managed routine effect whose key included bot_name", async () => {
+    const prevKey = toolEffectIdempotencyKey("run-1", "schedule_cancel", {
+      bot_id: "child",
+      bot_name: "Child",
+      name: "Daily",
+    });
+    const executionId = JSON.stringify(["pi-tool", "main", "call-retry"]);
+    const ctx = {
+      deps: {
+        prisma: {
+          bot: {
+            findUnique: vi.fn(async () => ({ fleetManagement: true })),
+            findMany: vi.fn(async () => [{ id: "child", name: "Child", thread: { id: "c-t" } }]),
+          },
+          externalEffect: {
+            findUnique: vi.fn(async ({ where }: { where: { idempotencyKey: string } }) =>
+              where.idempotencyKey === prevKey
+                ? {
+                    id: "eff-prev",
+                    runId: "run-1",
+                    spaceId: "space-1",
+                    kind: "schedule_cancel",
+                    idempotencyKey: prevKey,
+                    status: "completed",
+                    request: { bot_id: "child", bot_name: "Child", name: "Daily" },
+                    result: { ok: true, routineId: "r-old", name: "Daily" },
+                  }
+                : null,
+            ),
+          },
+          steeringMessage: { findFirst: vi.fn(async () => null) },
+        },
+      },
+      run: { id: "run-1", spaceId: "space-1", trigger: "user" },
+      runId: "run-1",
+      bot: { id: "bot-1", name: "Manager" },
+      fleetRun: { spaceId: "space-1", userId: "user-1", botId: "bot-1" },
+      thread: { id: "thread-1", groupId: null },
+      source: { ownerStartedRun: true },
+      state: {
+        tainted: false,
+        effects: { consumedIds: new Set(), counts: new Map(), occurrences: [] },
+      },
+      trust: { receivedOutsideMessage: async () => false },
+    };
+    const request = {
+      name: "schedule_cancel",
+      args: { bot_id: "child", name: "Daily" },
+      executionId,
+      effectRequest: { bot_id: "child", name: "Daily" },
+      replayEffectToolName: "schedule_cancel",
+      heldForApproval: false,
+      ignoresAllowRules: false,
+    } as never;
+
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    expect((request as { reconciledEffectKey?: string }).reconciledEffectKey).toBe(prevKey);
   });
 
   it("holds a change for approval once outside text reached the run, and never a list", async () => {

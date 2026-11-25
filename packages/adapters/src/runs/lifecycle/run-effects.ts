@@ -145,18 +145,19 @@ export function isSubagentToolExecution(executionId: string): boolean {
   return agent !== undefined && agent !== "main";
 }
 
-export async function recordEffect(
-  deps: ExecutorDeps,
-  run: { id: string; spaceId: string; threadId: string; botId: string },
+/** Look up an already-recorded effect across modern, legacy scoped, and request-matched keys. */
+export async function findRecordedEffect(
+  deps: Pick<ExecutorDeps, "prisma">,
+  run: { id: string; spaceId: string },
   kind: string,
   idempotencyKey: string,
-  request: unknown,
+  request?: unknown,
   legacyIdempotencyKey?: string,
   consumedIds?: Set<string>,
-  batchActions?: string[],
+  consumedCounts?: ReadonlyMap<string, number>,
 ) {
   if (kind === RUN_TURN_CHECKPOINT_KIND) throw new Error("Unsupported tool effect kind");
-  const existing = await deps.prisma.externalEffect.findUnique({
+  const existing = await deps.prisma.externalEffect?.findUnique({
     where: { idempotencyKey },
   });
   if (existing?.kind === RUN_TURN_CHECKPOINT_KIND || existing?.status === RUN_TURN_CHECKPOINT_KIND)
@@ -165,33 +166,31 @@ export async function recordEffect(
     throw new Error("Stored tool execution does not belong to this run.");
   }
   if (existing) {
-    consumedIds?.add(existing.id);
-    await deps.events.append({
-      spaceId: run.spaceId,
-      threadId: run.threadId,
-      botId: run.botId,
-      type: "effect.reconciled",
-      runId: run.id,
-      payload: { executionId: idempotencyKey, kind },
-    });
-    return { duplicate: true, effect: existing };
+    return { effect: existing, matchedKey: idempotencyKey, legacy: false };
   }
 
   // Pre-fix rows used bare provider ids or scoped keys that included the
   // ephemeral model tool-call id. Same-id unique lookup still works; a restart
   // with a new id finds the row by run, tool, and request instead.
   let expectedRequest: string | undefined;
-  try {
-    expectedRequest = stableJsonValue(request);
-  } catch {
-    expectedRequest = undefined;
+  if (request !== undefined) {
+    try {
+      expectedRequest = stableJsonValue(request);
+    } catch {
+      expectedRequest = undefined;
+    }
   }
   const rawPiId = legacyIdempotencyKey && legacyPiToolCallId(legacyIdempotencyKey);
   if (rawPiId) {
-    const oldPi = await deps.prisma.externalEffect.findUnique({
+    const oldPi = await deps.prisma.externalEffect?.findUnique({
       where: { idempotencyKey: rawPiId },
     });
-    if (oldPi?.runId === run.id && oldPi.spaceId === run.spaceId) {
+    if (
+      oldPi?.runId === run.id &&
+      oldPi.spaceId === run.spaceId &&
+      !consumedIds?.has(oldPi.id) &&
+      (consumedCounts?.get(oldPi.idempotencyKey) ?? 0) === 0
+    ) {
       // A bare Pi call id does not say which agent owned it. Its outcome is uncertain.
       throw uncertainEffectError(kind);
     }
@@ -208,27 +207,19 @@ export async function recordEffect(
         : undefined;
     for (const candidate of [scopedLegacy, legacyIdempotencyKey]) {
       if (!candidate || candidate === idempotencyKey) continue;
-      const sameIdLegacy = await deps.prisma.externalEffect.findUnique({
+      const sameIdLegacy = await deps.prisma.externalEffect?.findUnique({
         where: { idempotencyKey: candidate },
       });
       if (
         sameIdLegacy &&
         !consumedIds?.has(sameIdLegacy.id) &&
+        (consumedCounts?.get(sameIdLegacy.idempotencyKey) ?? 0) === 0 &&
         sameIdLegacy.runId === run.id &&
         sameIdLegacy.spaceId === run.spaceId &&
         sameIdLegacy.kind === kind &&
         stableJsonValue(sameIdLegacy.request) === expectedRequest
       ) {
-        consumedIds?.add(sameIdLegacy.id);
-        await deps.events.append({
-          spaceId: run.spaceId,
-          threadId: run.threadId,
-          botId: run.botId,
-          type: "effect.reconciled",
-          runId: run.id,
-          payload: { executionId: candidate, kind, legacy: true },
-        });
-        return { duplicate: true, effect: sameIdLegacy };
+        return { effect: sameIdLegacy, matchedKey: candidate, legacy: true };
       }
     }
   }
@@ -236,41 +227,64 @@ export async function recordEffect(
   // Only a pre-fix row can be the answer here, and the modern-key test is a cheap string
   // comparison while `stableJsonValue` serializes the whole stored request. This runs on every
   // tool call, so testing the key first keeps a long run from re-serializing its own history.
+  if (expectedRequest === undefined || !deps.prisma.externalEffect?.findMany) return undefined;
   const prior = await deps.prisma.externalEffect.findMany({
     where: { runId: run.id, spaceId: run.spaceId, kind },
     orderBy: { createdAt: "asc" },
   });
-  const legacy =
-    expectedRequest === undefined
-      ? undefined
-      : prior.find((candidate) => {
-          if (consumedIds?.has(candidate.id)) return false;
-          if (candidate.idempotencyKey === idempotencyKey) return false;
-          if (
-            candidate.runId !== run.id ||
-            candidate.spaceId !== run.spaceId ||
-            candidate.kind !== kind
-          )
-            return false;
-          // Live later occurrences use a new modern key; do not steal an earlier modern row.
-          if (isToolEffectIdempotencyKey(candidate.idempotencyKey, run.id, kind)) return false;
-          try {
-            return stableJsonValue(candidate.request) === expectedRequest;
-          } catch {
-            return false;
-          }
-        });
-  if (legacy) {
-    consumedIds?.add(legacy.id);
+  const legacy = prior.find((candidate) => {
+    if (consumedIds?.has(candidate.id)) return false;
+    if ((consumedCounts?.get(candidate.idempotencyKey) ?? 0) > 0) return false;
+    if (candidate.idempotencyKey === idempotencyKey) return false;
+    if (candidate.runId !== run.id || candidate.spaceId !== run.spaceId || candidate.kind !== kind)
+      return false;
+    // Live later occurrences use a new modern key; do not steal an earlier modern row.
+    if (isToolEffectIdempotencyKey(candidate.idempotencyKey, run.id, kind)) return false;
+    try {
+      return stableJsonValue(candidate.request) === expectedRequest;
+    } catch {
+      return false;
+    }
+  });
+  return legacy ? { effect: legacy, matchedKey: legacy.idempotencyKey, legacy: true } : undefined;
+}
+
+export async function recordEffect(
+  deps: ExecutorDeps,
+  run: { id: string; spaceId: string; threadId: string; botId: string },
+  kind: string,
+  idempotencyKey: string,
+  request: unknown,
+  legacyIdempotencyKey?: string,
+  consumedIds?: Set<string>,
+  batchActions?: string[],
+  consumedCounts?: ReadonlyMap<string, number>,
+) {
+  const existing = await findRecordedEffect(
+    deps,
+    run,
+    kind,
+    idempotencyKey,
+    request,
+    legacyIdempotencyKey,
+    consumedIds,
+    consumedCounts,
+  );
+  if (existing) {
+    consumedIds?.add(existing.effect.id);
     await deps.events.append({
       spaceId: run.spaceId,
       threadId: run.threadId,
       botId: run.botId,
       type: "effect.reconciled",
       runId: run.id,
-      payload: { executionId: legacy.idempotencyKey, kind, legacy: true },
+      payload: {
+        executionId: existing.matchedKey,
+        kind,
+        ...(existing.legacy ? { legacy: true } : {}),
+      },
     });
-    return { duplicate: true, effect: legacy };
+    return { duplicate: true, effect: existing.effect };
   }
 
   const effect = await underRunLease(deps, run.id, (tx) =>
@@ -329,6 +343,45 @@ export async function completeEffect(
       ? (result as { details: unknown }).details
       : result;
   return completeExternalEffect(deps.prisma, effectId, expectedStatus, storedResult as never);
+}
+
+/** Update an `intended` effect's stored request under the active run lease while the run is not waiting for input. */
+export function updateIntendedEffectRequest(
+  deps: ExecutorDeps,
+  runId: string,
+  effectId: string,
+  request: unknown,
+): Promise<boolean> {
+  return underRunLease(deps, runId, async (tx) => {
+    const current = await tx.run?.findUnique({ where: { id: runId }, select: { status: true } });
+    if (current?.status === "waiting_input") return false;
+    const updated = await tx.externalEffect.updateMany({
+      where: { id: effectId, status: "intended" },
+      data: { request: request as never },
+    });
+    return updated.count === 1;
+  });
+}
+
+/** Settle an `intended` effect under the active run lease while the run is not waiting for input. */
+export function completeIntendedEffect(
+  deps: ExecutorDeps,
+  runId: string,
+  effectId: string,
+  result: unknown,
+): Promise<boolean> {
+  return underRunLease(deps, runId, async (tx) => {
+    const current = await tx.run?.findUnique({ where: { id: runId }, select: { status: true } });
+    if (current?.status === "waiting_input") return false;
+    const storedResult =
+      result &&
+      typeof result === "object" &&
+      (result as { kind?: unknown }).kind === "agent_tool_result" &&
+      "details" in result
+        ? (result as { details: unknown }).details
+        : result;
+    return completeExternalEffect(tx, effectId, "intended", storedResult as never);
+  });
 }
 
 export function uncertainEffectError(toolName: string): Error {
