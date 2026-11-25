@@ -432,3 +432,27 @@ it("stops a background helper from its saved running card, never a turn's live o
     messageId: "card-1",
   });
 });
+
+it("draws a reply's pictures in one row instead of one under another", async () => {
+  vi.mocked(rpc.artifacts.get).mockResolvedValue({
+    contentBase64: btoa("image"),
+    mimeType: "image/png",
+  } as never);
+  vi.stubGlobal("URL", {
+    createObjectURL: () => "blob:image",
+    revokeObjectURL: () => undefined,
+  });
+  renderView("bot", [
+    { kind: "image", artifactId: "a", mimeType: "image/png", name: "a.png" },
+    { kind: "image", artifactId: "b", mimeType: "image/png", name: "b.png" },
+    { kind: "image", artifactId: "c", mimeType: "image/png", name: "c.png" },
+  ]);
+  await act(async () => {});
+  const tiles = [...container.querySelectorAll('[aria-label^="Show "]')];
+  expect(tiles.map((tile) => tile.getAttribute("aria-label"))).toEqual([
+    "Show a.png",
+    "Show b.png",
+    "Show c.png",
+  ]);
+  expect(new Set(tiles.map((tile) => tile.parentElement)).size).toBe(1);
+});

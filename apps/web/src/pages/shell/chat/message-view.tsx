@@ -9,6 +9,7 @@ import type {
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
+import { consecutiveImageRun } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
 import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
@@ -47,6 +48,8 @@ import type { ImportSetupTarget } from "../bots/import-setup-card";
 import { ImportSetupCard } from "../bots/import-setup-card";
 import { ReplyLine } from "./chat-context";
 import { FALLBACK_BOT_COLOR, previewMessageText } from "./chat-shared";
+import type { GalleryImage } from "./image-gallery";
+import { MessageImageRow } from "./image-gallery";
 import {
   AppConnectCard,
   ArtifactImage,
@@ -561,16 +564,28 @@ export const MessageView = memo(function MessageView({
             );
           }
           if (block.kind === "image") {
+            // A message's pictures sit in one row, so only the first of a run draws it.
+            const run = consecutiveImageRun(blocks, i);
+            if (!run) return null;
+            const pictures: GalleryImage[] = run.map((next) => ({
+              artifactId: next.artifactId,
+              name: next.name,
+              target: artifactTarget,
+            }));
             return (
               <div
                 key={i}
                 className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <ArtifactImage
-                  target={artifactTarget}
-                  artifactId={block.artifactId}
-                  name={block.name}
-                />
+                {pictures.length === 1 ? (
+                  <ArtifactImage
+                    target={artifactTarget}
+                    artifactId={block.artifactId}
+                    name={block.name}
+                  />
+                ) : (
+                  <MessageImageRow images={pictures} />
+                )}
               </div>
             );
           }

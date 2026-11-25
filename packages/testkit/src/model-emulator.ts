@@ -72,7 +72,7 @@ export async function startModelEmulator(options: {
       response.writeHead(404).end();
       return;
     }
-    // Saving a connection lists the server's models first.
+    // Saving a connection reads the server's model list.
     if (request.method === "GET" && request.url === "/v1/models") {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify({ object: "list", data: [{ id: modelId, object: "model" }] }));

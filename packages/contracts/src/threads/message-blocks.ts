@@ -475,3 +475,26 @@ export type HistoryToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][
   tool?: string;
   calls?: ToolStepCall[];
 };
+
+/**
+ * The run of consecutive pictures that starts at `index`, or null when `index` is not a picture or
+ * not the first of its run. A lone picture is a run of one. Web and mobile both group a message's
+ * pictures by it; `isPicture` narrows which image blocks a client draws as pictures.
+ */
+export function consecutiveImageRun<T extends { kind: string }>(
+  items: readonly T[],
+  index: number,
+  isPicture: (item: T) => boolean = () => true,
+): (T & { kind: "image" })[] | null {
+  const matches = (item: T | undefined): item is T & { kind: "image" } =>
+    item?.kind === "image" && isPicture(item);
+  const first = items[index];
+  if (!matches(first) || matches(items[index - 1])) return null;
+  const pictures = [first];
+  for (let at = index + 1; at < items.length; at += 1) {
+    const item = items[at];
+    if (!matches(item)) break;
+    pictures.push(item);
+  }
+  return pictures;
+}
