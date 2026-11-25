@@ -46,7 +46,13 @@ import {
   takeReplyElsewhere,
 } from "./acp-sessions.js";
 import { startToolServer } from "./acp-tool-server.js";
-import { conversationBlock, historyLine, OWN_SPEAKER, PERSON_SPEAKER } from "./acp-turn.prompt.js";
+import {
+  conversationBlock,
+  historyLine,
+  OWN_SPEAKER,
+  PERSON_SPEAKER,
+  unknownToolText,
+} from "./acp-turn.prompt.js";
 
 /** The MCP server name the CLI sees Rakazo's tools under. */
 export const ACP_TOOL_SERVER = "rakazo";
@@ -200,6 +206,8 @@ async function runAcpTurn(
   /** A session this turn started, and whether the chat kept it; one it did not keep is removed. */
   let createdSession = false;
   let cachedSession = false;
+  /** The chat's session this turn stopped using, which is removed like a helper's. */
+  let droppedSession = false;
   /** The final reply a tool that ends the turn carries. */
   let terminatedReply: string | undefined;
   /** The CLI reported something about the new message, so it has it. */
@@ -248,7 +256,7 @@ async function runAcpTurn(
       args: Record<string, unknown>,
     ): Promise<CallToolResult> => {
       const tool = byName.get(name);
-      if (!tool) return errorResult(`${name} is not one of this turn's tools.`);
+      if (!tool) return errorResult(unknownToolText(name));
       toolsRunning += 1;
       afterTool = true;
       try {
@@ -528,12 +536,18 @@ async function runAcpTurn(
     if (error instanceof TurnAborted || (signal.aborted && !violation)) {
       // Stopped before the CLI said anything about the new message: it may never have received
       // it, so the next turn starts over from the chat rather than skip what it was sent.
-      if (ownsChatSession && sentPrompt && !promptHeard) forgetSession(key);
+      if (ownsChatSession && sentPrompt && !promptHeard) {
+        forgetSession(key);
+        droppedSession = true;
+      }
       return;
     }
     // A failed turn may have left the session short of what it was sent, so the next turn
     // starts over from the chat. A helper never used the chat's session.
-    if (ownsChatSession && sentPrompt) forgetSession(key);
+    if (ownsChatSession && sentPrompt) {
+      forgetSession(key);
+      droppedSession = true;
+    }
     if (violation) throw violation;
     if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
       throw new Error(descriptor.notInstalled);
@@ -568,7 +582,11 @@ async function runAcpTurn(
         );
       }
       // A helper's or a parallel turn's session, or one never kept, is removed however the turn ended.
-      if ((disposable || (createdSession && !cachedSession)) && sessionId && endSession) {
+      if (
+        (disposable || droppedSession || (createdSession && !cachedSession)) &&
+        sessionId &&
+        endSession
+      ) {
         const ending = bestEffort(
           "Remove the agent CLI's helper session",
           connection.request(endSession, { sessionId }),
