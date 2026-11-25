@@ -236,6 +236,19 @@ function expectBefore(first: Element, second: Element) {
   expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 }
 
+it("stays on sign-in without the sign-up switch when a server closed signups", async () => {
+  vi.mocked(passwordResetCapabilities).mockResolvedValue({
+    ...capabilities,
+    registrationOpen: false,
+  });
+  route.mode = "up";
+  await render();
+  // The closed server says so before the first paint of the sign-up form.
+  expect(host.textContent).not.toContain("Create your account");
+  expect(host.textContent).toContain("Sign in to Rakazo");
+  expect(button("Sign up")).toBeUndefined();
+});
+
 it.each(["in", "up"])("offers a provider before the email form in %s mode", async (mode) => {
   route.mode = mode;
   vi.mocked(passwordResetCapabilities).mockResolvedValue({ ...capabilities, sso: exampleSso });
