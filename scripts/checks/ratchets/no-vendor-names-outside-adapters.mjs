@@ -33,8 +33,9 @@ export const exclude = [
 
 // Provider ids that are also ordinary words or name no vendor. A match outside adapters is
 // rarely a vendor reference, so they are not checked: "none", "fake", "desktop" and "local-vm" are plain
-// English, and Docker is the runtime self-hosting itself is built on.
-const UNCHECKED_COMPUTER_IDS = new Set(["none", "fake", "desktop", "docker", "local-vm"]);
+// English, Docker is the runtime self-hosting itself is built on, and "exe" is an executable
+// (`/proc/<pid>/exe`, `EXECUTE`); exe.dev is checked by its domain and SDK below.
+const UNCHECKED_COMPUTER_IDS = new Set(["none", "fake", "desktop", "docker", "local-vm", "exe"]);
 
 // Every computer provider registers its descriptor under its id, so a new one is checked from
 // the pull request that adds it.
@@ -116,6 +117,8 @@ const VENDORS = [
   "keenable",
   "boatdev",
   "insforge",
+  "exe\\.dev",
+  "exedev",
 ];
 
 const names = [...computerProviderIds(), ...VENDORS].join("|");

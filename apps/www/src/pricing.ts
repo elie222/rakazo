@@ -42,6 +42,7 @@ const SANDBOX_PROVIDERS = [
   "CreateOS",
   "Daytona",
   "E2B",
+  "exe.dev",
   "InstaBox",
   "Novita",
   "Railway",

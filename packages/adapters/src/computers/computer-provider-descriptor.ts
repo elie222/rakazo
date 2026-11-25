@@ -56,6 +56,11 @@ export interface SandboxProviderOptions {
   incusCpuLimit?: string;
   incusMemoryLimit?: string;
   incusProcessLimit?: string;
+  exeKey?: string;
+  exeTag?: string;
+  exeComputerImage?: string;
+  exeCpus?: number;
+  exeMemory?: string;
   localVmCli?: string;
   localVmComputerImage?: string;
   localVmCpus?: string;

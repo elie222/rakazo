@@ -40,6 +40,7 @@ const EXPECTED: Record<KnownSandboxKind, Row> = {
   railway: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   kubernetes: [true, true, false, false, DEFAULT_SCREEN, "optional", true, false],
   incus: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
+  exe: [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   "local-vm": [true, true, false, false, DEFAULT_SCREEN, "never", true, false],
   wuying: [false, false, true, false, DEFAULT_SCREEN, "never", false, true],
   desktop: [

@@ -114,6 +114,28 @@ describe("createSandboxProvider", () => {
     ).rejects.toThrow("must use https");
   });
 
+  it("returns the exe.dev provider without contacting exe.dev", async () => {
+    const sandbox = await createSandboxProvider("exe", { exeKey: "exe1.test-token" });
+    expect(sandbox.describe()).toMatchObject({
+      id: "exe",
+      capabilities: { graphical: true, pty: true, persistentHome: false },
+    });
+  });
+
+  it("boots exe.dev as none until its key is set", async () => {
+    const sandbox = await createSandboxProvider("exe", {});
+    expect(sandbox.describe().id).toBe("none");
+    await expect(sandbox.provision({ botId: "b", homePath: "/unused" }, ctx)).rejects.toThrow(
+      /EXE_SANDBOX_KEY/,
+    );
+  });
+
+  it("refuses an exe.dev key it cannot use", async () => {
+    await expect(createSandboxProvider("exe", { exeKey: "not a key" })).rejects.toThrow(
+      "EXE_SANDBOX_KEY",
+    );
+  });
+
   it("returns the Wuying provider without contacting Alibaba Cloud", async () => {
     const sandbox = await createSandboxProvider("wuying", {
       wuyingAccessKeyId: "test-id",
@@ -149,7 +171,7 @@ describe("createSandboxProvider", () => {
 
   it("throws on unknown provider", async () => {
     await expect(createSandboxProvider("bogus", {})).rejects.toThrow(
-      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | wuying | e2b | novita | daytona | createos | boat | boxd | instabox | railway | kubernetes | incus | local-vm | desktop | fake.',
+      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | wuying | e2b | novita | daytona | createos | boat | boxd | instabox | railway | kubernetes | incus | exe | local-vm | desktop | fake.',
     );
   });
 

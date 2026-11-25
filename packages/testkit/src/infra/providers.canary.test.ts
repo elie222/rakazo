@@ -21,6 +21,7 @@ const liveBoat = Boolean(process.env.VERIFY_PROVIDERS && process.env.BOAT_API_KE
 const liveBoxd = Boolean(process.env.VERIFY_PROVIDERS && process.env.BOXD_API_KEY);
 const liveInstabox = Boolean(process.env.VERIFY_PROVIDERS && process.env.INSTABOX_API_KEY);
 const liveCreateos = Boolean(process.env.VERIFY_PROVIDERS && process.env.CREATEOS_SANDBOX_API_KEY);
+const liveExe = Boolean(process.env.VERIFY_PROVIDERS && process.env.EXE_SANDBOX_KEY);
 const livePi = Boolean(process.env.VERIFY_PROVIDERS && process.env.OPENROUTER_API_KEY);
 const livePiApp = Boolean(livePi && process.env.DATABASE_URL);
 
@@ -29,6 +30,7 @@ const describeBoat = liveBoat ? describe : describe.skip;
 const describeBoxd = liveBoxd ? describe : describe.skip;
 const describeInstabox = liveInstabox ? describe : describe.skip;
 const describeCreateos = liveCreateos ? describe : describe.skip;
+const describeExe = liveExe ? describe : describe.skip;
 const describePi = livePi ? describe : describe.skip;
 const describePiApp = livePiApp ? describe : describe.skip;
 
@@ -215,6 +217,80 @@ describeInstabox("live instabox canary", () => {
       await sandbox.destroy(computer, ctx);
     }
   }, 600_000);
+});
+
+describeExe("live exe.dev canary", () => {
+  it("provisions a VM, runs as the image user, serves its screen through the proxy, and deletes the VM on stop", async () => {
+    const sandbox = await createSandboxProvider("exe", {
+      exeKey: process.env.EXE_SANDBOX_KEY,
+      exeTag: process.env.EXE_SANDBOX_TAG,
+      exeComputerImage: process.env.EXE_SANDBOX_COMPUTER_IMAGE,
+    });
+    const ctx = {
+      operationId: "exe-canary",
+      traceId: "exe-canary",
+      spaceId: "exe-canary",
+      userId: "exe-canary",
+      signal: new AbortController().signal,
+    };
+    const run = async (argv: string[]) => {
+      let stdout = "";
+      for await (const event of sandbox.execute(computer, { argv }, ctx)) {
+        if (event.type === "stdout") stdout += event.data;
+        if (event.type === "exit") expect(event.code).toBe(0);
+      }
+      return stdout;
+    };
+    const request = { botId: "exe-canary", homePath: "/unused" };
+    let computer = await sandbox.provision(request, ctx);
+    try {
+      await sandbox.prepare(computer, ctx);
+      expect((await run(["id", "-u"])).trim()).toBe("1000");
+      // Nothing of the image's desktop is left running as root.
+      expect(await run(["bash", "-c", "ps -o user= -C Xvfb,x11vnc,websockify | sort -u"])).toBe(
+        "rakazo\n",
+      );
+      await sandbox.writeFile(
+        computer,
+        { path: "canary.txt", content: new TextEncoder().encode("written") },
+        ctx,
+      );
+      expect(new TextDecoder().decode(await sandbox.readFile(computer, "canary.txt", ctx))).toBe(
+        "written",
+      );
+      expect((await sandbox.observe(computer, ctx)).image.byteLength).toBeGreaterThan(0);
+      const screen = await sandbox.connectScreen(computer, { view: "stream" }, ctx);
+      expect(screen.url).toMatch(/^https:\/\/[^/]+\.exe\.xyz:\d+\/embed\.html/);
+      // The proxy turns away a request without the VM token and lets the token's through.
+      expect((await fetch(screen.url!, { redirect: "manual" })).status).not.toBe(200);
+      expect((await fetch(screen.url!, { headers: screen.headers })).status).toBe(200);
+
+      // The workspace survives a stop because Rakazo saves it; the VM itself is deleted.
+      const workspace: { path: string; content: Uint8Array; executable?: boolean }[] = [];
+      for await (const file of sandbox.exportWorkspace(computer, ctx)) {
+        if ("content" in file) workspace.push(file);
+      }
+      expect(workspace.map((file) => file.path)).toContain("canary.txt");
+      await sandbox.stop(computer, ctx);
+      expect(await sandbox.isRunning?.(computer, ctx)).toBe(false);
+      computer = await sandbox.provision(
+        { ...request, providerRef: computer.providerRef, providerKind: computer.kind },
+        ctx,
+      );
+      expect(computer).toMatchObject({ fresh: true });
+      await sandbox.prepare(computer, ctx);
+      await sandbox.importWorkspace(
+        computer,
+        (async function* () {
+          yield* workspace;
+        })(),
+        ctx,
+      );
+      expect(await run(["cat", "canary.txt"])).toBe("written");
+    } finally {
+      await sandbox.destroy(computer, ctx);
+    }
+  }, 900_000);
 });
 
 describe.skipIf(!process.env.VERIFY_PROVIDERS || !process.env.NOVITA_API_KEY)(

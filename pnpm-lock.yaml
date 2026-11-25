@@ -969,6 +969,9 @@ importers:
       '@earendil-works/pi-telemetry':
         specifier: 1.6.0
         version: 1.6.0
+      '@exedev/sdk':
+        specifier: 0.7.0
+        version: 0.7.0
       '@insforge/instabox-sdk':
         specifier: 0.9.0
         version: 0.9.0
@@ -3150,6 +3153,10 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@exedev/sdk@0.7.0':
+    resolution: {integrity: sha512-w8zhOg74aF2D8dmkNDEhLFaW5u4LvrDq7U8B8hCOhYuhpNQvs7y4EzYddq3UeRSsLloZB+8YoHeRmrGanCGumg==}
+    engines: {node: '>=18'}
 
   '@exodus/bytes@1.16.0':
     resolution: {integrity: sha512-IcpW84uEn3N7ETtNZMlxKhfl6Pec8rUNGOTBtWbK1FKhJxIFAptZyVrvVRVBimAJxJCgc3PxepxkdWWG4DVzfA==}
@@ -15823,6 +15830,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@exedev/sdk@0.7.0': {}
 
   '@exodus/bytes@1.16.0(@noble/hashes@2.3.0)':
     optionalDependencies:

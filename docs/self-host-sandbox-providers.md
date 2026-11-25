@@ -18,6 +18,7 @@ keep their computer. Private Computers count toward `SANDBOX_MAX_COMPUTERS_PER_U
 | One pod per computer on your own cluster                | `SANDBOX_PROVIDER=kubernetes`                                            | API and worker running in the cluster, a namespace and a Role that can create, read, delete and exec into pods                        |
 | One app container per computer on your own Incus server | `SANDBOX_PROVIDER=incus`                                                 | Incus API address, a client certificate restricted to one project, and a route from the API, worker and web to the computers' network |
 | One VM per computer on an Apple silicon Mac             | `SANDBOX_PROVIDER=local-vm`                                              | macOS 26 or newer and Apple's `container` runtime with its system service started                                                     |
+| One VM per computer on exe.dev                          | `SANDBOX_PROVIDER=exe`                                                   | An exe.dev API token or SSH key, best one limited to a tag                                                                            |
 
 Published-images [Compose](../infra/compose/docker-compose.images.yml) defaults to **`docker`**.
 It always starts the supervisor and requires `SANDBOX_SUPERVISOR_TOKEN`, including for `none`
@@ -30,7 +31,7 @@ Set `COMPUTER_SETTINGS_ENABLED=true` on the API to turn this on. Admins can then
 The API supplies the provider's field descriptors and validates values server-side. Credentials are encrypted in the secret store and
 never returned; a blank secret field keeps its saved value for the same provider and destination.
 Changing a URL requires credentials again. **Default** uses `SANDBOX_PROVIDER`.
-Docker, Kubernetes, Incus, desktop, fake, and none remain environment-only. Settings overrides are disabled
+Docker, Kubernetes, Incus, exe.dev, desktop, fake, and none remain environment-only. Settings overrides are disabled
 for desktop and fake deployments.
 
 The account form offers only providers that declare support for account-owned computers.
@@ -381,6 +382,67 @@ allowed by Incus before any ACL rule. The IP filtering options stop
 a computer from spoofing addresses or sending router advertisements to the host. Set
 `INCUS_SANDBOX_PROJECT=rakazo` and the certificate and key from `rakazo.crt` and `rakazo.key`.
 
+## `exe`
+
+Each computer is an [exe.dev](https://exe.dev) VM booted from the published computer image. The
+API and worker use exe.dev's [HTTPS API](https://exe.dev/docs/https-api), through its SDK, to
+create and delete VMs and to run commands in them; screens go through exe.dev's HTTPS proxy, which
+lets in only requests carrying a token for that VM. No supervisor, Docker socket or open port on
+the Rakazo host is involved, so Rakazo itself can run anywhere that reaches `exe.dev` and
+`*.exe.xyz` over HTTPS.
+
+| Variable                     | Default                                | Notes                                                                                                                |
+| ---------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `EXE_SANDBOX_KEY`            | none                                   | An exe.dev API token, or an unencrypted SSH private key on the account; see [the key](#the-key). API and worker only |
+| `EXE_SANDBOX_TAG`            | none                                   | Optional: a tag to give every computer VM                                                                            |
+| `EXE_SANDBOX_COMPUTER_IMAGE` | `ghcr.io/elie222/rakazo/computer:edge` | Pin a release tag or digest in production                                                                            |
+| `EXE_SANDBOX_CPUS`           | exe.dev's default                      | CPUs of each VM                                                                                                      |
+| `EXE_SANDBOX_MEMORY`         | exe.dev's default                      | Memory of each VM, such as `8GB`                                                                                     |
+
+Computers without the key fall back to `none`.
+
+Each start creates a standalone VM (`new --sandbox`) named `rakazo-<16 hex digits>` with the
+comment `rakazo computer for bot <bot id>`; Rakazo never reuses or deletes a VM with another name,
+another bot's comment or, when `EXE_SANDBOX_TAG` is set, without that tag. exe.dev runs the
+image's start command as root, so once a VM is up Rakazo stops it and starts it again as uid 1000
+with no privilege escalation, and runs every command as uid 1000 the same way, the same boundary
+as a Docker computer. VMs are deleted when their computer stops: the saved workspace is the
+persistence boundary, copied in when a computer starts and saved back when it stops, as on Incus.
+Standalone VMs bill by the hour while they exist, so `COMPUTER_MAX_ACTIVE_MS` applies to them as to
+the other hosted providers. The first start pulls the image, which takes a minute or two.
+
+Each VM is isolated from the account's other VMs and reaches the internet. Integrations attached
+to the computers' tag or to all VMs reach them too, and new exe.dev accounts attach the `llm`
+integration to all VMs, so a bot could spend the account's model allowance from its computer;
+attach integrations to other tags to keep them away.
+
+### The key
+
+Give Rakazo a key limited to the commands it runs and to VMs with one tag. exe.dev puts a
+tag-limited key's tag on every VM it creates, so such a key reaches only Rakazo's computers and
+none of the account's other VMs or settings, and `EXE_SANDBOX_TAG` can stay unset. Standalone VMs
+need a plan that includes them.
+
+An API token is one line, which suits a `.env` file. On a computer signed in to exe.dev:
+
+```bash
+ssh exe.dev 'ssh-key generate-api-key --label=rakazo --tag=rakazo --exp=1y --cmds="new,ls,ssh,rm,ssh-key generate-api-key"'
+```
+
+Set `EXE_SANDBOX_KEY` to the `exe1.` token it prints. With a token, Rakazo asks exe.dev for each
+VM's screen token (`ssh-key generate-api-key --vm`), which lasts a day.
+
+An SSH key needs no extra command: Rakazo signs short-lived API tokens and the VMs' screen tokens
+with it.
+
+```bash
+ssh-keygen -t ed25519 -N "" -C rakazo -f rakazo-exe
+ssh exe.dev ssh-key add --tag=rakazo --cmds=new,ls,ssh,rm < rakazo-exe.pub
+```
+
+Set `EXE_SANDBOX_KEY` to the contents of `rakazo-exe`, as they are, with `\n` escapes, or on one
+line (`tr -d '\n' < rakazo-exe`).
+
 ## `local-vm`
 
 Each computer is one lightweight Linux VM on the Mac running Rakazo, started from the published
@@ -472,7 +534,7 @@ the web UI. They require egress to the provider. For air-gapped hosts prefer
 
 A run starts its computer only when it first uses a computer tool. With idle sleep on,
 a computer suspends after `SANDBOX_IDLE_MS` idle. On providers that bill while running
-(E2B, Daytona, Boat, boxd, instabox, CreateOS, Railway), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
+(E2B, Daytona, Boat, boxd, instabox, CreateOS, Railway, exe.dev), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
 (default 2 hours) up in one stretch, even with background work or an open screen, unless
 a run is executing on it, a user is in control of its screen, or a coding agent CLI (Codex,
 Claude Code, OpenCode) wrote its session within the last `SANDBOX_IDLE_MS`. An agent waiting

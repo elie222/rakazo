@@ -115,6 +115,12 @@ describe("resolveSandboxProvider", () => {
       expect(resolveSandboxProvider({ ...configured, [key]: " " })).toBe("none");
   });
 
+  it("keeps exe.dev only when its SSH key is set", () => {
+    const configured = { SANDBOX_PROVIDER: "exe", EXE_SANDBOX_KEY: "exe1.test-key" };
+    expect(resolveSandboxProvider(configured)).toBe("exe");
+    expect(resolveSandboxProvider({ ...configured, EXE_SANDBOX_KEY: " " })).toBe("none");
+  });
+
   it("falls back to none in production when Docker has no supervisor token", () => {
     expect(
       resolveSandboxProvider({
@@ -214,6 +220,24 @@ describe("sandboxProviderOptionsFromEnv", () => {
       incusProcessLimit: "1024",
     });
     expect(sandboxProviderOptionsFromEnv({}).incusServerCert).toBeUndefined();
+  });
+
+  it("loads exe.dev settings", () => {
+    expect(
+      sandboxProviderOptionsFromEnv({
+        EXE_SANDBOX_KEY: "exe1.test-key",
+        EXE_SANDBOX_TAG: "rakazo-computers",
+        EXE_SANDBOX_COMPUTER_IMAGE: "ghcr.io/elie222/rakazo/computer:v1.2.3",
+        EXE_SANDBOX_CPUS: "4",
+        EXE_SANDBOX_MEMORY: "8GB",
+      }),
+    ).toMatchObject({
+      exeKey: "exe1.test-key",
+      exeTag: "rakazo-computers",
+      exeComputerImage: "ghcr.io/elie222/rakazo/computer:v1.2.3",
+      exeCpus: 4,
+      exeMemory: "8GB",
+    });
   });
 
   it("loads the Kubernetes home claim and its pod-affinity target", () => {
