@@ -1,4 +1,4 @@
-import { redactSecrets } from "@rakazo/core";
+import { redactJsonText, redactSecrets, sliceWellFormed } from "@rakazo/core";
 
 export function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   return AbortSignal.any(signals.filter((signal): signal is AbortSignal => Boolean(signal)));
@@ -7,7 +7,14 @@ export function combineSignals(...signals: Array<AbortSignal | undefined>): Abor
 /** The error's message, or for one without (e.g. a happy-eyeballs AggregateError) what its
  * inner errors, cause, name or code say, so a failure never reads as an empty string. */
 function errorMessage(error: unknown, depth = 0): string {
-  if (!(error instanceof Error)) return String(error) || "unknown error";
+  if (!(error instanceof Error)) {
+    if (typeof error === "string") return error || "unknown error";
+    try {
+      return String(error) || "unknown error";
+    } catch {
+      return "unknown error";
+    }
+  }
   if (error.message) return error.message;
   if (depth < 3) {
     const inner = error instanceof AggregateError ? error.errors[0] : error.cause;
@@ -19,14 +26,21 @@ function errorMessage(error: unknown, depth = 0): string {
     : `${error.name} without a message`;
 }
 
-export function sanitizeConnectorError(error: unknown, secrets: string[] = []): string {
+export function sanitizeConnectorError(
+  error: unknown,
+  secrets: string[] = [],
+  options?: { maxChars?: number },
+): string {
   const message = errorMessage(error);
-  return redactSecrets(
-    message
-      .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
-      .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]"),
-    secrets,
-  ).slice(0, 2_000);
+  const patternCleaned = message
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
+  const cleaned =
+    secrets.length > 0
+      ? redactJsonText(patternCleaned, (value) => redactSecrets(value, secrets))
+      : patternCleaned;
+  const maxChars = options?.maxChars ?? 2_000;
+  return Number.isFinite(maxChars) ? sliceWellFormed(cleaned, maxChars) : cleaned;
 }
 
 export function redactConnectorPayload(value: unknown, secrets: string[]): unknown {

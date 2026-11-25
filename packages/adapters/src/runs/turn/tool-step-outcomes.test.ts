@@ -518,4 +518,44 @@ describe("tool step outcomes", () => {
       );
     });
   });
+
+  it("redacts Unicode-escaped JSON secrets under ordinary fields and across error truncation cuts", () => {
+    const secret = "secret-value-99";
+    const escaped = "\\u0073\\u0065cret-value-99";
+    const kept = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [{ type: "text", text: `{"note":"prefix ${escaped} suffix"}` }],
+        },
+      },
+      [secret],
+    );
+    expect(kept).toBe('{"note":"prefix [redacted] suffix"}');
+
+    const pad = "e".repeat(1_990);
+    const errorKept = keptToolResult(
+      {
+        ...base,
+        error: new Error(`{"note":"${pad}${escaped} trailing"}`),
+      },
+      [secret],
+      2_500,
+    );
+    expect(errorKept).toBeDefined();
+    expect(errorKept).not.toContain("secret");
+    expect(errorKept).not.toContain("\\u0073");
+    expect(errorKept).not.toContain("value-99");
+    expect(errorKept).toContain("[redacted]");
+  });
+
+  it("keeps both bounded truncation edges well-formed UTF-16 across surrogate pairs", () => {
+    const pair = "😀";
+    // Length 110 with surrogate pairs straddling both head (70% of 40 = 28) and tail (12) cuts.
+    const text = `a${pair.repeat(14)}${"m".repeat(52)}${pair.repeat(7)}z`;
+    const cut = keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, [], 40);
+    expect(cut).toBeDefined();
+    expect(Buffer.from(cut!, "utf8").toString("utf8")).toBe(cut);
+    expect(cut).toContain("characters not kept");
+  });
 });

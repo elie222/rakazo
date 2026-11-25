@@ -455,7 +455,7 @@ function redactJsonStringTokens(raw: string, redact: (text: string) => string): 
     .join("");
 }
 
-function redactJsonText(raw: string, redact: (text: string) => string): string {
+export function redactJsonText(raw: string, redact: (text: string) => string): string {
   return redact(redactJsonStringTokens(raw, redact));
 }
 
@@ -474,6 +474,7 @@ export function blocksToAgentHistorySegments(
     text = [];
   };
   for (const block of blocks) {
+    if (!block || typeof block !== "object") continue;
     if (block.kind === "steps") {
       // Stored blocks can come from an account import, so skip malformed entries.
       const steps = Array.isArray(block.steps)
@@ -533,13 +534,20 @@ export function blocksToAgentHistorySegments(
   return segments;
 }
 
+function safeHistoryText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return "";
+}
+
 function blockHistoryText(block: MessageBlock, redact?: (text: string) => string): string {
+  if (!block || typeof block !== "object") return "";
   const clean = (value: unknown): string => {
-    const text = typeof value === "string" ? value : String(value);
+    const text = safeHistoryText(value);
     return redact ? redact(text) : text;
   };
   if (block.kind === "text") {
-    return typeof block.text === "string" && redact ? redact(block.text) : block.text;
+    return clean(block.text);
   }
   // The tools a reply used, and what the bot wrote before each, are kept out of its text;
   // without them a later turn cannot tell what it already did.
@@ -549,10 +557,10 @@ function blockHistoryText(block: MessageBlock, redact?: (text: string) => string
   if (block.kind === "image") return `[image: ${clean(block.name)}]`;
   // The id lets a later turn, or another chat, update this page instead of making a new one.
   if (block.kind === "page") {
-    return `[page: ${clean(block.title)} (pageId ${block.pageId}, version ${block.version})]`;
+    return `[page: ${clean(block.title)} (pageId ${safeHistoryText(block.pageId)}, version ${safeHistoryText(block.version)})]`;
   }
   if (block.kind === "file") {
-    return `[file: ${clean(block.name)} (${block.mimeType}, ${block.size} bytes)]`;
+    return `[file: ${clean(block.name)} (${safeHistoryText(block.mimeType)}, ${safeHistoryText(block.size)} bytes)]`;
   }
   // Keep attribution on peer messages: without it a later turn cannot tell
   // which lines came from another bot rather than the user.
@@ -563,7 +571,7 @@ function blockHistoryText(block: MessageBlock, redact?: (text: string) => string
   if (block.kind === "channel_message")
     return `[from ${clean(block.fromLabel)}] ${clean(block.text)}`;
   if (block.kind === "handoff") {
-    return `[handoff ${block.fromBotId} -> ${block.toBotId}] ${clean(block.text)}`;
+    return `[handoff ${safeHistoryText(block.fromBotId)} -> ${safeHistoryText(block.toBotId)}] ${clean(block.text)}`;
   }
   // Without the answer a later turn sees the question as still open and asks it again.
   if (block.kind === "ask") {
@@ -601,31 +609,44 @@ function blockHistoryText(block: MessageBlock, redact?: (text: string) => string
           )
       : [];
     const question = `${clean(block.text)}${options.join("")}${detail}`;
-    if (block.status !== "answered" || !block.answer) return question;
-    const choice = validActions.find((action) => action.id === block.answer);
-    const answerText = choice ? choice.label : block.answer;
+    const rawAnswer = safeHistoryText(block.answer);
+    if (block.status !== "answered" || !rawAnswer) return question;
+    const choice = validActions.find((action) => action.id === rawAnswer);
+    const answerText = choice ? choice.label : rawAnswer;
     return `${question}\nAnswer: ${clean(answerText)}`;
   }
   // The bot needs the outcome of its own call: a missed call is its cue to follow up.
   if (block.kind === "call_request") {
-    const outcome = {
+    const outcomes = {
       ringing: "still ringing",
       answered: "the user answered",
       declined: "the user declined it",
       missed: "the user did not answer",
-    }[block.status];
+    } as const;
+    const outcome =
+      typeof block.status === "string" && Object.hasOwn(outcomes, block.status)
+        ? outcomes[block.status as keyof typeof outcomes]
+        : "";
     return `[you called the user about: ${clean(block.reason)}; ${outcome}]${block.status === "answered" ? `\n${clean(block.opening)}` : ""}`;
   }
   // Whether the person answered a tool's question, never what was asked or sent: the question
   // is the server's own text and the answer went to the server.
   if (block.kind === "tool_question") {
-    const outcome = {
+    const outcomes = {
       pending: "waiting for the user",
       accepted: "the user answered",
       declined: "the user declined",
       expired: "the user did not answer",
-    }[block.status];
-    return `[${clean(block.question?.source)} asked the user a question during a tool call; ${outcome}]`;
+    } as const;
+    const outcome =
+      typeof block.status === "string" && Object.hasOwn(outcomes, block.status)
+        ? outcomes[block.status as keyof typeof outcomes]
+        : "";
+    const source =
+      block.question && typeof block.question === "object"
+        ? clean((block.question as { source?: unknown }).source)
+        : "";
+    return `[${source} asked the user a question during a tool call; ${outcome}]`;
   }
   if ("text" in block && typeof block.text === "string") return clean(block.text);
   return "";

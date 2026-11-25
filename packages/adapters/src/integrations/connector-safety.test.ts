@@ -52,4 +52,20 @@ describe("sanitizeConnectorError", () => {
     expect(sanitizeConnectorError(new TypeError(""))).toBe("TypeError without a message");
     expect(sanitizeConnectorError("")).toBe("unknown error");
   });
+
+  it("redacts JSON-escaped secrets before the 2,000-character cut without splitting surrogates", () => {
+    const secret = "secret-value-99";
+    const escaped = "\\u0073\\u0065cret-value-99";
+    const raw = `{"note":"${"a".repeat(1_978)}${escaped} tail"}`;
+    const sanitized = sanitizeConnectorError(new Error(raw), [secret]);
+    expect(sanitized.length).toBeLessThanOrEqual(2_000);
+    expect(sanitized).not.toContain("\\u0073");
+    expect(sanitized).not.toContain("secret");
+    expect(sanitized).not.toContain("value-99");
+    expect(sanitized).toContain("[redacted]");
+
+    const emojiCut = sanitizeConnectorError(new Error(`${"x".repeat(1_999)}😀tail`));
+    expect(Buffer.from(emojiCut, "utf8").toString("utf8")).toBe(emojiCut);
+    expect(emojiCut.length).toBe(1_999);
+  });
 });

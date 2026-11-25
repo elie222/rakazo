@@ -997,6 +997,26 @@ describe("tool step history", () => {
     expect(withToolHistory(blocks, { steps: [{ tool: "shell", calls: [] }] })).toEqual(blocks);
   });
 
+  it("renders malformed imported blocks with shadowed toString without throwing", () => {
+    const poisoned = JSON.parse('{"toString":null}');
+    const blocks = [
+      null,
+      { kind: "text", text: poisoned },
+      { kind: "chart", name: poisoned },
+      { kind: "page", title: poisoned, pageId: poisoned, version: poisoned },
+      { kind: "ask", text: poisoned, status: "answered", answer: poisoned, actions: [poisoned] },
+      { kind: "call_request", reason: poisoned, status: poisoned, opening: poisoned },
+      { kind: "call_request", reason: "Check", status: "toString" },
+      { kind: "tool_question", question: { source: poisoned }, status: poisoned },
+      { kind: "text", text: "Surviving text" },
+    ] as unknown as MessageBlock[];
+
+    const text = blocksToAgentHistoryText(blocks, secretRedactor([]));
+    expect(text).toContain("Surviving text");
+    expect(text).not.toContain("function toString");
+    expect(blocksToAgentHistorySegments(blocks, secretRedactor([]))).toEqual([{ text }]);
+  });
+
   it("splits a reply at its tool steps, in order, rendering the rest as the text form does", () => {
     const steps = [{ label: "Shell", tool: "shell", count: 1, note: "Checking." }];
     const blocks = [

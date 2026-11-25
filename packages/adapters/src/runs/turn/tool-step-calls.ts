@@ -1,7 +1,7 @@
 import type { AgentRunRequest, AgentToolCompletion } from "@rakazo/adapter-kit";
 import type { ToolStepCall } from "@rakazo/contracts";
 import { storedImageMimeType } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { redactJsonText, redactSecrets, sliceWellFormed } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "../../approvals/auto-review.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
@@ -176,16 +176,37 @@ function cleanToolText(text: string, secrets: string[]): string {
     const encoded = JSON.stringify(value).slice(1, -1);
     return [value, encoded, encoded.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")];
   });
-  return redactCredentialJsonFields(sanitizeSensitiveText(redactSecrets(text, secretForms)));
+  const decodedRedacted = redactJsonText(text, (value) =>
+    sanitizeSensitiveText(redactSecrets(value, secrets)),
+  );
+  return redactCredentialJsonFields(
+    sanitizeSensitiveText(redactSecrets(decodedRedacted, secretForms)),
+  );
+}
+
+function sliceTailWellFormed(text: string, maxChars: number): string {
+  if (maxChars <= 0) return "";
+  if (text.length <= maxChars) return text;
+  let start = text.length - maxChars;
+  if (start > 0 && start < text.length) {
+    const code = text.charCodeAt(start);
+    const prev = text.charCodeAt(start - 1);
+    if (code >= 0xdc00 && code <= 0xdfff && prev >= 0xd800 && prev <= 0xdbff) {
+      start += 1;
+    }
+  }
+  return text.slice(start);
 }
 
 function truncateBounded(cleaned: string, max: number): string {
   if (cleaned.length <= max) return cleaned;
   const headLength = Math.floor(max * 0.7);
   const tailLength = max - headLength;
-  const head = cleaned.slice(0, headLength);
-  const tail = cleaned.slice(-tailLength);
-  return `${head}${notKept(cleaned.length - max)}${tail}`;
+  const head = sliceWellFormed(cleaned, headLength);
+  const tail = sliceTailWellFormed(cleaned, tailLength);
+  const omitted = cleaned.length - head.length - tail.length;
+  if (omitted <= 0) return cleaned;
+  return `${head}${notKept(omitted)}${tail}`;
 }
 
 /**
@@ -240,8 +261,11 @@ export function keptToolResult(
   )
     return undefined;
   let text: string;
-  if (completion.error !== undefined) text = sanitizeConnectorError(completion.error, secrets);
-  else {
+  if (completion.error !== undefined) {
+    text = sanitizeConnectorError(completion.error, secrets, {
+      maxChars: Number.POSITIVE_INFINITY,
+    });
+  } else {
     const content = (completion.result as { content?: unknown } | undefined)?.content;
     if (!Array.isArray(content)) return undefined;
     text = content
@@ -257,7 +281,8 @@ export function keptToolResult(
   }
   if (!text.trim()) return undefined;
   const cleaned = cleanToolText(text, secrets).trim();
-  return cleaned ? truncateBounded(cleaned, max) : undefined;
+  const limit = completion.error !== undefined ? Math.min(max, 2_000) : max;
+  return cleaned ? truncateBounded(cleaned, limit) : undefined;
 }
 
 /**
