@@ -71,7 +71,13 @@ export async function runModelTurn(
       signal: AbortSignal.any([context.signal, ctx.runtimeAbortController.signal]),
     };
     const runtimeEvents = run.primaryRuntime
-      ? (await loadPilotRuntime({ ...run, primaryRuntime: run.primaryRuntime }, request.model)).run(
+      ? (
+          await loadPilotRuntime(
+            { ...run, primaryRuntime: run.primaryRuntime },
+            request.model,
+            Boolean(turn.records.thread.groupId),
+          )
+        ).run(
           turn.records.thread.groupId
             ? await pilotGroupRequest(deps.prisma, {
                 run: { ...run, primaryRuntime: run.primaryRuntime },

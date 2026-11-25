@@ -26,6 +26,49 @@ export function groupPilotRuntimeForBot(botId: string, environment = process.env
     : undefined;
 }
 
+/** Model-authored tasks are a separate opt-in from human group mentions. */
+export function handoffPilotRuntimeForBot(botId: string, environment = process.env) {
+  const allowed = environment.PRIMARY_RUNTIME_PILOT_HANDOFF_BOT_IDS?.split(",").some(
+    (id) => id.trim() === botId,
+  );
+  return allowed ? groupPilotRuntimeForBot(botId, environment) : undefined;
+}
+
+export function groupHandoffNonce(sourceRunId: string) {
+  return `group-handoff:${sourceRunId}`;
+}
+
+/** For this pilot, only a human-started Pi turn in the same live app group can delegate. */
+export function pilotHandoffSourceWhere(input: {
+  spaceId: string;
+  threadId: string;
+  userId: string;
+  botId: string;
+}) {
+  const { spaceId, threadId, userId, botId } = input;
+  return {
+    spaceId,
+    threadId,
+    userId,
+    botId,
+    primaryRuntime: null,
+    trigger: "user",
+    routineId: null,
+    sourceMessage: { threadId, role: "user", authorUserId: userId },
+    thread: {
+      botId: null,
+      externalConversationId: null,
+      group: {
+        spaceId,
+        archivedAt: null,
+        members: {
+          some: { botId, bot: { spaceId, userId, archivedAt: null } },
+        },
+      },
+    },
+  };
+}
+
 export function pilotLauncher(environment = process.env): string | undefined {
   const launcher = environment.PRIMARY_RUNTIME_PILOT_LAUNCHER;
   if (process.platform !== "linux" || !launcher || !isAbsolute(launcher)) return;
@@ -68,13 +111,19 @@ export async function loadPilotRuntime(
     routineId: string | null;
   },
   model: AgentRunModel,
+  groupTurn = false,
 ) {
   const launcher = pilotLauncher();
   if (
     run.primaryRuntime !== nativeTextRuntime.id ||
     pilotRuntimeForBot(run.botId) !== run.primaryRuntime ||
     !launcher ||
-    run.trigger !== "user" ||
+    (run.trigger !== "user" &&
+      !(
+        groupTurn &&
+        run.trigger === "follow_up" &&
+        handoffPilotRuntimeForBot(run.botId) === run.primaryRuntime
+      )) ||
     run.routineId ||
     run.modelProvider !== nativeTextRuntime.provider ||
     !run.modelCredentialId ||
@@ -155,7 +204,7 @@ export function pilotConversation(
 
 /** A group pilot turn never receives the normal group's history or instructions. */
 export async function pilotGroupRequest(
-  prisma: Pick<PrismaClient, "message">,
+  prisma: Pick<PrismaClient, "message" | "run">,
   input: {
     run: {
       id: string;
@@ -180,26 +229,28 @@ export async function pilotGroupRequest(
   },
 ): Promise<AgentRunRequest> {
   const { run, thread, model, onUsage, redactions } = input;
-  const error = () => new Error("The group runtime pilot requires the bot owner's addressed text.");
+  const handoff = run.trigger === "follow_up";
+  const error = () =>
+    new Error("The group runtime pilot requires authorized addressed text or a verified handoff.");
   if (
     !thread.groupId ||
     thread.botId ||
     thread.externalConversationId ||
     thread.id !== run.threadId ||
     !run.sourceMessageId ||
-    run.trigger !== "user" ||
+    (run.trigger !== "user" && !handoff) ||
     run.routineId ||
-    groupPilotRuntimeForBot(run.botId) !== run.primaryRuntime
+    (handoff ? handoffPilotRuntimeForBot(run.botId) : groupPilotRuntimeForBot(run.botId)) !==
+      run.primaryRuntime
   )
     throw error();
-  // Only the human group-send admission path persists a pilot Runtime on a group user run.
-  // Validate live membership/ownership and read the source by id, not from assembled history.
+  // Re-read live membership and the exact admitted source, never assembled history.
   const source = await prisma.message.findFirst({
     where: {
       id: run.sourceMessageId,
       threadId: run.threadId,
-      authorUserId: run.userId,
-      role: "user",
+      authorUserId: handoff ? null : run.userId,
+      role: handoff ? "bot" : "user",
       thread: {
         groupId: thread.groupId,
         spaceId: run.spaceId,
@@ -216,25 +267,46 @@ export async function pilotGroupRequest(
         },
       },
     },
-    select: { id: true, threadId: true, blocks: true },
+    select: { id: true, threadId: true, botId: true, runId: true, clientNonce: true, blocks: true },
   });
   if (!source) throw error();
   const { blocks, intact } = readMessageBlocks(source);
   const [block] = blocks;
-  if (
-    !intact ||
-    blocks.length !== 1 ||
-    block?.kind !== "text" ||
-    typeof block.text !== "string" ||
-    !block.text.trim()
-  )
-    throw error();
+  if (!intact || blocks.length !== 1 || !block) throw error();
+  let prompt: string;
+  if (handoff) {
+    if (
+      block.kind !== "handoff" ||
+      block.hop !== 1 ||
+      !source.botId ||
+      source.botId === run.botId ||
+      block.fromBotId !== source.botId ||
+      block.toBotId !== run.botId ||
+      !source.runId ||
+      source.clientNonce !== groupHandoffNonce(source.runId)
+    )
+      throw error();
+    const origin = await prisma.run.findFirst({
+      where: {
+        ...pilotHandoffSourceWhere({ ...run, botId: source.botId }),
+        id: source.runId,
+        status: { in: ["running", "completed"] },
+      },
+      select: { id: true },
+    });
+    if (!origin) throw error();
+    prompt = block.text;
+  } else {
+    if (block.kind !== "text") throw error();
+    prompt = block.text;
+  }
+  if (!prompt.trim()) throw error();
   return {
     botId: run.botId,
     threadId: run.threadId,
     runId: run.id,
     sourceMessageId: run.sourceMessageId,
-    prompt: redactSecrets(block.text, redactions),
+    prompt: redactSecrets(prompt, redactions),
     instructions: "",
     history: [],
     tools: [],
