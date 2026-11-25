@@ -248,6 +248,8 @@ What it needs:
 - The API and worker running from a source checkout on your own computer, as the same OS user as
   the CLI. As with OpenCode, this is only for your own machine.
 - `agy` on that user's `PATH`, signed in once in a terminal as that user with `agy acp --login`.
+  Rakazo finds that sign-in in the default `~/.gemini`, so leave `GEMINI_HOME` unset when you sign
+  in.
 - One account on the server, as with the other CLI routes.
 
 ```env
