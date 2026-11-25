@@ -97,6 +97,10 @@ export const billingRpc = {
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))
       .output(z.object({ ok: z.literal(true) })),
+    /** Owners only: adds a credit code's credits to the organization, once per account. */
+    redeemCreditCode: oc
+      .input(z.object({ code: z.string().trim().min(1).max(64) }))
+      .output(z.object({ creditCents: z.number().int().positive() })),
   },
   /** Admins only, on deployments that sell model credits. */
   accessGrants: {

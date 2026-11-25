@@ -1,8 +1,15 @@
 import { ORPCError } from "@orpc/server";
 import type { AccessGrant, AccessGrantInput } from "@rakazo/contracts";
 import { AccessGrantInputSchema } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { extendByokFreePeriod, FREE_MONTH_DAYS, reconcileCreditPurchase } from "@rakazo/db";
+import {
+  extendByokFreePeriod,
+  FREE_MONTH_DAYS,
+  isUniqueViolation,
+  reconcileCreditPurchase,
+} from "@rakazo/db";
+import type { CreditCode } from "../billing/credit-codes.js";
 
 const LIST_LIMIT = 200;
 const WITH_CREATOR = { createdBy: { select: { email: true } } } as const;
@@ -104,4 +111,35 @@ export async function applyAccessGrants(
       });
     });
   }
+}
+
+/** Grants the code's credits to the organization the account owns, once per account. */
+export async function grantCreditCode(
+  prisma: PrismaClient,
+  input: { userId: string; organizationId: string; code: CreditCode },
+): Promise<void> {
+  const { code, creditCents, maxClaims } = input.code;
+  const user = await prisma.user.findUnique({
+    where: { id: input.userId },
+    select: { email: true, emailVerified: true },
+  });
+  if (!user?.emailVerified)
+    throw new ClientError("FORBIDDEN", "Verify your email to redeem a code");
+  const email = user.email.toLowerCase();
+  // Concurrent redemptions can pass the limit by a few; the per-account limit is exact.
+  if (maxClaims !== null && (await prisma.accessGrant.count({ where: { code } })) >= maxClaims)
+    throw new ClientError("CONFLICT", "This code has been fully redeemed", "CREDIT_CODE_USED_UP");
+  try {
+    await prisma.accessGrant.create({
+      data: { email, code, creditCents, organizationId: input.organizationId },
+    });
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    throw new ClientError("CONFLICT", "You already redeemed this code", "CREDIT_CODE_REDEEMED");
+  }
+  await applyAccessGrants(prisma, {
+    userId: input.userId,
+    email,
+    organizationId: input.organizationId,
+  });
 }

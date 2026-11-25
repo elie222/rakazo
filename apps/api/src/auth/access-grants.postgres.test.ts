@@ -73,6 +73,21 @@ dbTests("access grants", () => {
     expect(row).toMatchObject({ organizationId: actor.spaceId, appliedAt: expect.any(Date) });
   });
 
+  it("redeems a credit code once per account, up to its limit of accounts", async () => {
+    const code = { code: `SPRING-${process.pid}-${Date.now()}`, creditCents: 1000, maxClaims: 2 };
+    const first = await signUp("redeem-first");
+    await service.redeemCreditCode(first, code);
+    await expect(service.status(first)).resolves.toMatchObject({ balanceUsd: 10 });
+    await expect(service.redeemCreditCode(first, code)).rejects.toMatchObject({
+      code: "CREDIT_CODE_REDEEMED",
+    });
+    await service.redeemCreditCode(await signUp("redeem-second"), code);
+    await expect(
+      service.redeemCreditCode(await signUp("redeem-third"), code),
+    ).rejects.toMatchObject({ code: "CREDIT_CODE_USED_UP" });
+    await expect(service.status(first)).resolves.toMatchObject({ balanceUsd: 10 });
+  });
+
   it("gives a free own-key period to an existing account", async () => {
     const actor = await signUp("existing");
     await service.status(actor);
