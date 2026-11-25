@@ -54,8 +54,8 @@ vi.mock("../platform/app-foreground", () => ({
   useAppActive: () => mocks.active,
 }));
 vi.mock("../personal-calendar/device-calendar", () => ({
-  readAppleCalendarPermissions: mocks.permissions,
-  requestAppleCalendarPermission: mocks.requestPermission,
+  readDeviceCalendarPermissions: mocks.permissions,
+  requestDeviceCalendarPermission: mocks.requestPermission,
 }));
 vi.mock("../account/user-devices", () => ({
   listUserDevices: vi.fn(),

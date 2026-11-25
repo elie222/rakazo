@@ -1,6 +1,11 @@
 import { t } from "@lingui/core/macro";
 import type { RpcInput, RpcOutput, RpcPath, ThreadSnapshot } from "@rakazo/contracts";
-import { CLIENT_UPDATE_REQUIRED_STATUS, parseServerHeaders } from "@rakazo/contracts";
+import {
+  CLIENT_UPDATE_REQUIRED_STATUS,
+  isBuildId,
+  parseServerHeaders,
+  SERVER_BUILD_HEADER,
+} from "@rakazo/contracts";
 import {
   aiConsentTargets,
   aiDataUsesForProcedure,
@@ -16,6 +21,7 @@ import {
 import { identityLabels } from "@rakazo/i18n/identity-display";
 import { clientCorrelationHeaders, responseCorrelation } from "@rakazo/logging/monitoring";
 import * as SecureStore from "expo-secure-store";
+import { MobileDeviceRoutesUnavailable } from "../account/mobile-device-errors";
 import { followSelectedSpace, selectedSpaceChanged } from "../billing/referral";
 import {
   newMobileAvatarSnapshotRequest,
@@ -768,6 +774,18 @@ async function request(
     if (proc === "vault/import" && res.status === 404) {
       cancelResponseBody(res);
       throw new Error(t`Update your server to import logins.`);
+    }
+    // Old Rakazo builds answer an unmatched procedure with Hono's plain-text 404.
+    // Keep proxy 404s and structured RPC errors visible, rather than treating any 404 as absence.
+    if (
+      (proc === "mobileDevices/list" || proc === "mobileDevices/heartbeat") &&
+      res.status === 404 &&
+      isBuildId(res.headers.get(SERVER_BUILD_HEADER)) &&
+      res.headers.get("content-type")?.toLowerCase().startsWith("text/plain")
+    ) {
+      cancelResponseBody(res);
+      if (proc === "mobileDevices/list") return [];
+      throw new MobileDeviceRoutesUnavailable();
     }
     const parsed: { json?: unknown } = await readBoundedJsonResponse<{ json?: unknown }>(
       res,

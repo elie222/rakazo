@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { MobileDeviceRoutesUnavailable } from "./mobile-device-errors";
 import { MobileDevicePresence } from "./mobile-device-presence";
 
 const state = vi.hoisted(() => ({
@@ -54,5 +55,30 @@ it("registers the signed-in phone when the app comes to the foreground", async (
     );
   } finally {
     await act(async () => root.unmount());
+  }
+});
+
+it("backs off missing older-server routes without carrying the pause to a new session", async () => {
+  vi.useFakeTimers();
+  state.rpc.mockClear();
+  state.rpc.mockRejectedValueOnce(new MobileDeviceRoutesUnavailable());
+  state.foreground = true;
+  state.authorization = "Bearer fixture";
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const render = () => act(async () => root.render(<MobileDevicePresence ready />));
+  try {
+    await render();
+    expect(state.rpc).toHaveBeenCalledTimes(1);
+
+    await act(async () => vi.advanceTimersByTimeAsync(30_000));
+    expect(state.rpc).toHaveBeenCalledTimes(1);
+
+    state.generation += 1;
+    await render();
+    expect(state.rpc).toHaveBeenCalledTimes(2);
+  } finally {
+    await act(async () => root.unmount());
+    vi.useRealTimers();
   }
 });

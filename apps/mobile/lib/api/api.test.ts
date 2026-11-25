@@ -8,6 +8,7 @@ vi.mock("../settings/ai-consent", () => ({
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 import type { RpcInput } from "@rakazo/contracts";
+import { SERVER_BUILD_HEADER } from "@rakazo/contracts";
 import { isServerUnreachable } from "@rakazo/core";
 import * as SecureStore from "expo-secure-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -64,6 +65,45 @@ describe("mobile API requests", () => {
     vi.mocked(SecureStore.deleteItemAsync).mockReset();
     vi.mocked(resumeLiveNotifications).mockClear();
     await restoreSessionToken("");
+  });
+
+  it("omits phone rows when a Rakazo server lacks the optional presence routes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("404 Not Found", {
+            status: 404,
+            headers: { [SERVER_BUILD_HEADER]: "20261124090000" },
+          }),
+      ),
+    );
+    await expect(rpc("mobileDevices/list")).resolves.toEqual([]);
+  });
+
+  it("keeps structured and proxy phone-list errors visible", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("404 Not Found", { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ json: { code: "NOT_FOUND", message: "Not found", status: 404 } }),
+          {
+            status: 404,
+            headers: {
+              [SERVER_BUILD_HEADER]: "20261124090000",
+              "content-type": "application/json",
+            },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(rpc("mobileDevices/list")).rejects.toMatchObject({ status: 404, code: undefined });
+    await expect(rpc("mobileDevices/list")).rejects.toMatchObject({
+      status: 404,
+      code: "NOT_FOUND",
+    });
   });
 
   it("rejects an expired account session without sending the selected Space", async () => {

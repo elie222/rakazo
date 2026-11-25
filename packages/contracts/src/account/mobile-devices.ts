@@ -18,5 +18,7 @@ export const MobileDeviceSummarySchema = z.object({
   connected: z.boolean(),
   /** Allows clients to show a missed heartbeat without requesting the list again. */
   onlineUntil: IsoDate,
+  /** A phone stays listed after its heartbeat goes stale, but not after its sign-in expires. */
+  sessionExpiresAt: IsoDate.optional(),
 });
 export type MobileDeviceSummary = z.infer<typeof MobileDeviceSummarySchema>;

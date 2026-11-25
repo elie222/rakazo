@@ -48,12 +48,19 @@ function requestPermission(expo: typeof ExpoCalendar, kind: DeviceCalendarPermis
     : expo.requestCalendarPermissions();
 }
 
+function settingsPermissionKinds(): readonly DeviceCalendarPermissionKind[] {
+  if (Platform.OS === "android") return ["calendar"];
+  if (Platform.OS === "ios" && apple()) return ["calendar", "reminders"];
+  return [];
+}
+
 /** The capabilities whose device authorization is managed by this settings screen. */
-export async function readAppleCalendarPermissions() {
-  if (Platform.OS !== "ios" || !apple()) return [];
+export async function readDeviceCalendarPermissions() {
+  const kinds = settingsPermissionKinds();
+  if (!kinds.length) return [];
   const expo = await import("expo-calendar");
   return Promise.all(
-    (["calendar", "reminders"] as const).map(async (kind) => {
+    kinds.map(async (kind) => {
       const { granted } = await readPermission(expo, kind);
       return { kind, granted };
     }),
@@ -61,10 +68,10 @@ export async function readAppleCalendarPermissions() {
 }
 
 /** May direct a new tap to Settings when the OS has already ruled out another prompt. */
-export async function requestAppleCalendarPermission(
+export async function requestDeviceCalendarPermission(
   kind: DeviceCalendarPermissionKind,
 ): Promise<"settings" | undefined> {
-  if (Platform.OS !== "ios" || !apple()) return;
+  if (!settingsPermissionKinds().includes(kind)) return;
   const expo = await import("expo-calendar");
   const permission = await readPermission(expo, kind);
   if (permission.granted) return;
@@ -72,7 +79,7 @@ export async function requestAppleCalendarPermission(
   const result = await requestPermission(expo, kind);
   // On iOS only an undetermined permission remains askable. If the request returns
   // without a decision, offer Settings. A recorded denial stays in the app.
-  if (!result.granted && result.canAskAgain) return "settings";
+  if (Platform.OS === "ios" && !result.granted && result.canAskAgain) return "settings";
 }
 
 type Prepared = { perform: () => Promise<CalendarResponse> } | CalendarResponse;

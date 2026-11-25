@@ -2,8 +2,8 @@ import type { CalendarOperation } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   prepareDeviceCalendar,
-  readAppleCalendarPermissions,
-  requestAppleCalendarPermission,
+  readDeviceCalendarPermissions,
+  requestDeviceCalendarPermission,
 } from "./device-calendar";
 
 const native = vi.hoisted(() => ({
@@ -71,11 +71,11 @@ describe("device app permissions", () => {
     native.getRemindersPermissions.mockResolvedValue(granted);
     native.requestCalendarPermissions.mockResolvedValue(granted);
 
-    expect(await readAppleCalendarPermissions()).toEqual([
+    expect(await readDeviceCalendarPermissions()).toEqual([
       { kind: "calendar", granted: false },
       { kind: "reminders", granted: true },
     ]);
-    await requestAppleCalendarPermission("calendar");
+    await requestDeviceCalendarPermission("calendar");
     expect(native.requestCalendarPermissions).toHaveBeenCalledOnce();
     expect(native.getCalendars).not.toHaveBeenCalled();
   });
@@ -88,8 +88,8 @@ describe("device app permissions", () => {
       .mockResolvedValueOnce(blocked);
     native.requestCalendarPermissions.mockResolvedValue(blocked);
 
-    expect(await requestAppleCalendarPermission("calendar")).toBeUndefined();
-    expect(await requestAppleCalendarPermission("calendar")).toBe("settings");
+    expect(await requestDeviceCalendarPermission("calendar")).toBeUndefined();
+    expect(await requestDeviceCalendarPermission("calendar")).toBe("settings");
     expect(native.requestCalendarPermissions).toHaveBeenCalledOnce();
   });
 
@@ -99,14 +99,20 @@ describe("device app permissions", () => {
     native.getCalendarPermissions.mockResolvedValue(undetermined);
     native.requestCalendarPermissions.mockResolvedValue(undetermined);
 
-    expect(await requestAppleCalendarPermission("calendar")).toBe("settings");
+    expect(await requestDeviceCalendarPermission("calendar")).toBe("settings");
   });
 
-  it("does not offer or request new Android permissions from settings", async () => {
-    expect(await readAppleCalendarPermissions()).toEqual([]);
-    await requestAppleCalendarPermission("calendar");
-    expect(native.getCalendarPermissions).not.toHaveBeenCalled();
-    expect(native.requestCalendarPermissions).not.toHaveBeenCalled();
+  it("offers the existing Android Calendar permission without offering Reminders", async () => {
+    const available = { granted: false, canAskAgain: true };
+    native.getCalendarPermissions.mockResolvedValue(available);
+    native.requestCalendarPermissions.mockResolvedValue({ granted: true, canAskAgain: true });
+
+    expect(await readDeviceCalendarPermissions()).toEqual([{ kind: "calendar", granted: false }]);
+    await requestDeviceCalendarPermission("reminders");
+    await requestDeviceCalendarPermission("calendar");
+    expect(native.requestCalendarPermissions).toHaveBeenCalledOnce();
+    expect(native.getRemindersPermissions).not.toHaveBeenCalled();
+    expect(native.getCalendars).not.toHaveBeenCalled();
   });
 });
 

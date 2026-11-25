@@ -45,7 +45,7 @@ export async function listMobileDevices(
       lastSeenAt: true,
       session: { select: { expiresAt: true } },
     },
-    orderBy: [{ session: { createdAt: "desc" } }, { id: "asc" }],
+    orderBy: [{ lastSeenAt: "desc" }, { id: "asc" }],
   });
   return devices.map(({ id, platform, name, lastSeenAt, session }) => {
     const onlineUntil = Math.min(
@@ -58,6 +58,7 @@ export async function listMobileDevices(
       name,
       connected: onlineUntil > now.getTime(),
       onlineUntil: new Date(onlineUntil).toISOString(),
+      sessionExpiresAt: session.expiresAt.toISOString(),
     };
   });
 }

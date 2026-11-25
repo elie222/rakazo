@@ -1,6 +1,6 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { useLingui } from "@lingui/react/macro";
-import { useNow } from "@rakazo/chat-ui/hooks";
+import { useMobileDeviceRows } from "@rakazo/chat-ui/hooks";
 import type { CloudComputers, ComputerSize, UserDeviceSummary } from "@rakazo/contracts";
 import {
   applySavedCloudComputerSize,
@@ -9,7 +9,7 @@ import {
 } from "@rakazo/contracts";
 import { refreshQueriesAfterSignal } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
-import { computerName, computerSizeLabel } from "@rakazo/i18n/computer-usage";
+import { computerName, computerSizeLabel, mobileDeviceName } from "@rakazo/i18n/computer-usage";
 import { useIsFocused, useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -52,13 +52,12 @@ export default function DevicesSettings() {
   const devicesQuery = useScreenQuery(devicesRead);
   const phonesRead = targetRpcQuery(ACCOUNT_SETTINGS, "mobileDevices/list");
   const phonesQuery = useScreenQuery(phonesRead);
-  const phones = phonesQuery.data;
+  const phones = useMobileDeviceRows(phonesQuery.data, focused);
   useSpaceChanges(
     "mobileDevices",
     () => refreshQueriesAfterSignal(queryClient, { queryKey: phonesRead.queryKey, exact: true }),
     focused,
   );
-  const now = useNow(focused && phones?.some((phone) => phone.connected) ? 1_000 : null);
   const cloudRead = rpcQuery("cloudComputers/list");
   const cloudQuery = useScreenQuery(cloudRead);
   const cloud = cloudQuery.data;
@@ -217,8 +216,8 @@ export default function DevicesSettings() {
               );
             })}
             {phones?.map((phone) => {
-              const name = phone.name || (phone.platform === "ios" ? t`iPhone` : t`Android phone`);
-              const status = presence(phone.connected && Date.parse(phone.onlineUntil) > now);
+              const name = mobileDeviceName(phone);
+              const status = presence(phone.connected);
               return (
                 <SettingsRow
                   key={phone.deviceId}

@@ -1,3 +1,4 @@
+import type { MobileDeviceSummary } from "@rakazo/contracts";
 import type { ListSearchOptions } from "@rakazo/core";
 import { listSearch } from "@rakazo/core";
 import { useEffect, useEffectEvent, useState } from "react";
@@ -25,6 +26,17 @@ export function useNow(ms: number | null): number {
     return () => clearInterval(timer);
   }, [ms]);
   return now;
+}
+
+/** Apply the server's presence and sign-in deadlines locally, without a timed RPC read. */
+export function useMobileDeviceRows(phones: MobileDeviceSummary[] | undefined, visible = true) {
+  const now = useNow(visible && phones?.length ? 1_000 : null);
+  return phones
+    ?.filter((phone) => !phone.sessionExpiresAt || Date.parse(phone.sessionExpiresAt) > now)
+    .map((phone) => ({
+      ...phone,
+      connected: phone.connected && Date.parse(phone.onlineUntil) > now,
+    }));
 }
 
 /** A list filtered by a search box's query, with the query state the box binds to. */

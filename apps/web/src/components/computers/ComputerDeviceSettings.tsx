@@ -1,7 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { useNow } from "@rakazo/chat-ui/hooks";
+import { useMobileDeviceRows } from "@rakazo/chat-ui/hooks";
 import type { RakazoDesktop, UserDeviceSummary } from "@rakazo/contracts";
 import { secureHttpOrigin } from "@rakazo/contracts/network-host";
+import { mobileDeviceName } from "@rakazo/i18n/computer-usage";
 import {
   Button,
   Collapsible,
@@ -208,8 +209,7 @@ export function ComputerDeviceSettings() {
     spaceQueries(userId, null).mobileDevices.list.queryOptions({ refetchOnWindowFocus: "always" }),
   );
   const devices = devicesRead.data ?? [];
-  const phones = phonesRead.data ?? [];
-  const now = useNow(phones.some((phone) => phone.connected) ? 1_000 : null);
+  const phones = useMobileDeviceRows(phonesRead.data) ?? [];
   const devicesFailed = !devicesRead.data && devicesRead.isError;
   const phonesFailed = !phonesRead.data && phonesRead.isError;
   const currentDevice = plainHttp ? null : thisComputer;
@@ -282,15 +282,10 @@ export function ComputerDeviceSettings() {
       {phones.map((phone) => (
         <SettingsRow
           key={phone.deviceId}
-          label={
-            <DeviceIdentity
-              phone
-              name={phone.name ?? (phone.platform === "ios" ? t`iPhone` : t`Android phone`)}
-            />
-          }
+          label={<DeviceIdentity phone name={mobileDeviceName(phone)} />}
           control={
             <>
-              <DeviceStatus connected={phone.connected && Date.parse(phone.onlineUntil) > now} />
+              <DeviceStatus connected={phone.connected} />
               <span aria-hidden="true" className={DEVICE_ACTION_SLOT} />
             </>
           }

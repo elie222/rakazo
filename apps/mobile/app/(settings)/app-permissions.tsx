@@ -8,8 +8,8 @@ import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
 import type { DeviceCalendarPermissionKind } from "../../lib/personal-calendar/device-calendar";
 import {
-  readAppleCalendarPermissions,
-  requestAppleCalendarPermission,
+  readDeviceCalendarPermissions,
+  requestDeviceCalendarPermission,
 } from "../../lib/personal-calendar/device-calendar";
 import { useAppActive } from "../../lib/platform/app-foreground";
 import { accountQuery, useSave } from "../../lib/query/query";
@@ -20,13 +20,13 @@ export default function AppPermissionsSettings() {
   const { t } = useLingui();
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
-  const read = accountQuery("appleCalendarPermissions", readAppleCalendarPermissions);
+  const read = accountQuery("deviceCalendarPermissions", readDeviceCalendarPermissions);
   // Wait for the OS transition to finish: a return from Settings can pass through "inactive".
   const permissions = useScreenQuery(read, { enabled: useAppActive(), onForeground: false });
   const change = useSave<DeviceCalendarPermissionKind | "settings">({
     target: ACCOUNT_SETTINGS,
     save: async (kind) => {
-      if (kind === "settings" || (await requestAppleCalendarPermission(kind)) === "settings") {
+      if (kind === "settings" || (await requestDeviceCalendarPermission(kind)) === "settings") {
         await Linking.openSettings();
         return;
       }

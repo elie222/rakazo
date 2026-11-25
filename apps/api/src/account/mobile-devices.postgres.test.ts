@@ -35,12 +35,13 @@ describe.skipIf(!enabled)("mobile device presence (PostgreSQL)", () => {
     await db.pool.end();
   });
 
-  function signIn(userId: string) {
+  function signIn(userId: string, createdAt = now) {
     return fixtures.session.create({
       data: {
         id: randomUUID(),
         token: randomUUID(),
         userId,
+        createdAt,
         expiresAt: new Date("2030-01-02T12:00:00.000Z"),
       },
     });
@@ -68,6 +69,7 @@ describe.skipIf(!enabled)("mobile device presence (PostgreSQL)", () => {
       name: "Test phone",
       connected: true,
       onlineUntil: "2030-01-01T12:02:00.000Z",
+      sessionExpiresAt: "2030-01-02T12:00:00.000Z",
     });
     expect(device?.deviceId).not.toBe(id);
     await expect(list(new Date("2030-01-01T12:02:00.000Z"))).resolves.toEqual([
@@ -77,6 +79,32 @@ describe.skipIf(!enabled)("mobile device presence (PostgreSQL)", () => {
     await expect(
       fixtures.mobileDevice.findUnique({ where: { sessionId: id } }),
     ).resolves.toBeNull();
+  });
+
+  it("lists the most recently active phone first even when it signed in earlier", async () => {
+    const olderSignIn = await signIn(userId, new Date("2030-01-01T10:00:00.000Z"));
+    const newerSignIn = await signIn(userId, new Date("2030-01-01T11:00:00.000Z"));
+    try {
+      const latest = new Date("2030-01-01T12:00:30.000Z");
+      await asUser(userId, () =>
+        recordMobileDeviceHeartbeat(db.prisma, userId, newerSignIn.id, { platform: "ios" }, now),
+      );
+      await asUser(userId, () =>
+        recordMobileDeviceHeartbeat(
+          db.prisma,
+          userId,
+          olderSignIn.id,
+          { platform: "android" },
+          latest,
+        ),
+      );
+      const phones = await asUser(userId, () => listMobileDevices(db.prisma, userId, latest));
+      expect(phones.map(({ platform }) => platform)).toEqual(["android", "ios"]);
+    } finally {
+      await fixtures.session.deleteMany({
+        where: { id: { in: [olderSignIn.id, newerSignIn.id] } },
+      });
+    }
   });
 
   it("rejects a heartbeat sent under a different account from the session", async () => {

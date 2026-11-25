@@ -361,3 +361,30 @@ it("lists signed-in phones, looks at the server's presence deadline, and gives p
   expect(host.textContent).toContain("iPhoneOffline");
   expect(host.querySelector("button")).toBeNull();
 });
+
+it("removes a phone when its cached session expires without a refetch", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+  try {
+    vi.mocked(listUserDevices).mockResolvedValue([]);
+    vi.mocked(rpc.mobileDevices.list).mockResolvedValue([
+      {
+        deviceId: "phone-1",
+        platform: "ios",
+        name: null,
+        connected: false,
+        onlineUntil: new Date(Date.now() - 1_000).toISOString(),
+        sessionExpiresAt: new Date(Date.now() + 1_000).toISOString(),
+      },
+    ]);
+    await renderSettings();
+    expect(host.textContent).toContain("iPhoneOffline");
+    const reads = vi.mocked(rpc.mobileDevices.list).mock.calls.length;
+
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+
+    expect(host.textContent).not.toContain("iPhone");
+    expect(rpc.mobileDevices.list).toHaveBeenCalledTimes(reads);
+  } finally {
+    vi.useRealTimers();
+  }
+});
