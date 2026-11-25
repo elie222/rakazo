@@ -49,8 +49,12 @@ import { storedWatchCheckOutsideContent } from "../assembly/watch-outside-text.j
 import type { ToolHandlers } from "./run-tool-gate.js";
 
 /** A stored watch check carries what the watch last read, which is outside content. */
-async function markStoredWatchChecks(ctx: RunContext, routines: readonly unknown[]): Promise<void> {
-  const watchChecks = storedWatchCheckOutsideContent(routines, ctx.deps?.contextStrategy);
+async function markStoredWatchChecks(
+  ctx: RunContext,
+  routines: readonly unknown[],
+  delivery: { name: string; args?: Record<string, unknown>; payload?: unknown },
+): Promise<void> {
+  const watchChecks = storedWatchCheckOutsideContent(routines, ctx.deps?.contextStrategy, delivery);
   if (watchChecks.length > 0) {
     await markReadOutsideContent(ctx, watchChecks);
   }
@@ -60,13 +64,14 @@ async function markStoredWatchChecks(ctx: RunContext, routines: readonly unknown
 export async function markReplayedRoutineReadTaint(
   ctx: RunContext,
   name: string,
+  args: Record<string, unknown>,
   result: unknown,
 ): Promise<void> {
   if (name !== "schedule_list" && name !== "task_catalog") return;
   if (!result || typeof result !== "object" || !("routines" in result)) return;
   const routines = (result as { routines?: unknown }).routines;
   if (!Array.isArray(routines)) return;
-  await markStoredWatchChecks(ctx, routines);
+  await markStoredWatchChecks(ctx, routines, { name, args, payload: result });
 }
 
 /** A command watch may not run what the desktop guard keeps the bot from running itself. */
@@ -108,7 +113,11 @@ export const taskTools: ToolHandlers = {
       ...(thread.groupId ? { groupThreadId: thread.id } : {}),
       tools: ctx.tools.offered,
     });
-    await markStoredWatchChecks(ctx, catalog.routines);
+    await markStoredWatchChecks(ctx, catalog.routines, {
+      name: "task_catalog",
+      args: call.args,
+      payload: catalog,
+    });
     return call.finish(catalog);
   },
   async scratchpad_list(ctx, call) {
@@ -266,7 +275,11 @@ export const taskTools: ToolHandlers = {
       botId: target.botId,
       ...(target.groupThreadId ? { groupThreadId: target.groupThreadId } : {}),
     });
-    await markStoredWatchChecks(ctx, listed.routines);
+    await markStoredWatchChecks(ctx, listed.routines, {
+      name: "schedule_list",
+      args: call.args,
+      payload: listed,
+    });
     return call.finish(listed);
   },
   async schedule_cancel(ctx, call) {

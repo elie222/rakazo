@@ -1,6 +1,7 @@
 import type { AgentContextStrategy } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { sliceWellFormed } from "@rakazo/core";
+import { MAX_OUTSIDE_TEXT_CHARS } from "../../approvals/review-target-sources.js";
 import { shortenToolResultText } from "../../runtime/context/context-selection.js";
 import {
   OMITTED_AFTER_USE,
@@ -8,6 +9,10 @@ import {
   OMITTED_TEXT_BEFORE_USE,
 } from "../../runtime/context/runtime-context.prompt.js";
 import { clipToolResultText, TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
+import {
+  deliveredToolResultText,
+  serializeToolResult,
+} from "../../runtime/pi/tools/pi-runtime-tools.js";
 
 const WATCH_ITEM_SIGNATURE = "item:";
 const OMISSION_MARKERS = [OMITTED_BEFORE_USE, OMITTED_TEXT_BEFORE_USE, OMITTED_AFTER_USE] as const;
@@ -46,34 +51,56 @@ function hasWatchOutsideContent(lastCheck: unknown): boolean {
 }
 
 function collectRawWatchTextParts(
-  node: unknown,
+  root: unknown,
   parts: WatchTextPart[],
-  depth = 0,
-  isEntryValue = false,
+  maxChars = MAX_OUTSIDE_TEXT_CHARS,
 ): void {
-  if (depth > 16) return;
-  if (typeof node === "string") {
-    if (node.trim()) parts.push(isEntryValue ? { text: node, isEntryValue: true } : { text: node });
-    return;
-  }
-  if (typeof node === "number") {
-    parts.push({ text: String(node) });
-    return;
-  }
-  if (Array.isArray(node)) {
-    for (const item of node) collectRawWatchTextParts(item, parts, depth + 1, isEntryValue);
-    return;
-  }
-  if (node && typeof node === "object") {
-    if ((node as { type?: unknown }).type === "image") return;
-    for (const [key, child] of Object.entries(node)) {
-      if (key === "entries" && child && typeof child === "object" && !Array.isArray(child)) {
-        for (const [entryKey, entryValue] of Object.entries(child)) {
-          if (entryKey.trim()) parts.push({ text: entryKey });
-          collectRawWatchTextParts(entryValue, parts, depth + 2, true);
+  const stack: Array<{ node: unknown; isEntryValue: boolean; literal?: true }> = [
+    { node: root, isEntryValue: false },
+  ];
+  let used = 0;
+  const pushPart = (part: WatchTextPart) => {
+    used += (parts.length === 0 ? 0 : 1) + part.text.length;
+    parts.push(part);
+  };
+  while (stack.length > 0 && used <= maxChars) {
+    const item = stack.pop()!;
+    const { node, isEntryValue, literal } = item;
+    if (literal && typeof node === "string") {
+      pushPart({ text: node });
+      continue;
+    }
+    if (typeof node === "string") {
+      if (node.trim()) {
+        pushPart(isEntryValue ? { text: node, isEntryValue: true } : { text: node });
+      }
+      continue;
+    }
+    if (typeof node === "number") {
+      pushPart({ text: String(node) });
+      continue;
+    }
+    if (Array.isArray(node)) {
+      for (let i = node.length - 1; i >= 0; i -= 1) {
+        stack.push({ node: node[i], isEntryValue });
+      }
+      continue;
+    }
+    if (node && typeof node === "object") {
+      if ((node as { type?: unknown }).type === "image") continue;
+      const entries = Object.entries(node);
+      for (let i = entries.length - 1; i >= 0; i -= 1) {
+        const [key, child] = entries[i]!;
+        if (key === "entries" && child && typeof child === "object" && !Array.isArray(child)) {
+          const watchEntries = Object.entries(child);
+          for (let j = watchEntries.length - 1; j >= 0; j -= 1) {
+            const [entryKey, entryValue] = watchEntries[j]!;
+            stack.push({ node: entryValue, isEntryValue: true });
+            if (entryKey.trim()) stack.push({ node: entryKey, isEntryValue: false, literal: true });
+          }
+        } else {
+          stack.push({ node: child, isEntryValue });
         }
-      } else {
-        collectRawWatchTextParts(child, parts, depth + 1, isEntryValue);
       }
     }
   }
@@ -100,24 +127,45 @@ function takePrefixPartList(parts: readonly WatchTextPart[], maxChars: number): 
   return kept;
 }
 
-function collectDecodedJsonStrings(value: unknown, parts: string[], depth = 0): void {
-  if (depth > 8) return;
-  if (typeof value === "string") {
-    if (value.trim()) parts.push(value);
-    return;
-  }
-  if (typeof value === "number") {
-    parts.push(String(value));
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) collectDecodedJsonStrings(item, parts, depth + 1);
-    return;
-  }
-  if (value && typeof value === "object") {
-    for (const [key, child] of Object.entries(value)) {
-      if (key.trim()) parts.push(key);
-      collectDecodedJsonStrings(child, parts, depth + 1);
+function collectDecodedJsonStrings(
+  root: unknown,
+  parts: string[],
+  budget: { remaining: number },
+): void {
+  const stack: unknown[] = [root];
+  while (stack.length > 0 && budget.remaining > 0) {
+    const value = stack.pop();
+    if (typeof value === "string") {
+      if (value.trim()) {
+        const kept =
+          value.length <= budget.remaining ? value : sliceWellFormed(value, budget.remaining);
+        if (kept) {
+          parts.push(kept);
+          budget.remaining -= kept.length + 1;
+        }
+      }
+      continue;
+    }
+    if (typeof value === "number") {
+      const text = String(value);
+      const kept = text.length <= budget.remaining ? text : sliceWellFormed(text, budget.remaining);
+      if (kept) {
+        parts.push(kept);
+        budget.remaining -= kept.length + 1;
+      }
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (let i = value.length - 1; i >= 0; i -= 1) stack.push(value[i]);
+      continue;
+    }
+    if (value && typeof value === "object") {
+      const entries = Object.entries(value);
+      for (let i = entries.length - 1; i >= 0; i -= 1) {
+        const [key, child] = entries[i]!;
+        stack.push(child);
+        if (key.trim()) stack.push(key);
+      }
     }
   }
 }
@@ -184,21 +232,32 @@ function decodeWatchTextPart(part: WatchTextPart): string {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const record = parsed as { fields?: unknown; title?: unknown };
       const decoded: string[] = [];
+      const budget = { remaining: MAX_OUTSIDE_TEXT_CHARS };
       if (Array.isArray(record.fields)) {
         for (const field of record.fields) {
+          if (budget.remaining <= 0) break;
           if (typeof field === "string") {
             try {
-              collectDecodedJsonStrings(JSON.parse(field), decoded);
+              collectDecodedJsonStrings(JSON.parse(field), decoded, budget);
             } catch {
-              if (field.trim()) decoded.push(field);
+              if (field.trim()) {
+                const kept =
+                  field.length <= budget.remaining
+                    ? field
+                    : sliceWellFormed(field, budget.remaining);
+                if (kept) {
+                  decoded.push(kept);
+                  budget.remaining -= kept.length + 1;
+                }
+              }
             }
           } else {
-            collectDecodedJsonStrings(field, decoded);
+            collectDecodedJsonStrings(field, decoded, budget);
           }
         }
       }
-      if (record.title !== undefined && record.title !== null) {
-        collectDecodedJsonStrings(record.title, decoded);
+      if (budget.remaining > 0 && record.title !== undefined && record.title !== null) {
+        collectDecodedJsonStrings(record.title, decoded, budget);
       }
       if (decoded.length > 0) return decoded.join("\n");
     }
@@ -213,16 +272,9 @@ function formatBoundedWatchParts(parts: readonly WatchTextPart[], rawChecks: unk
   return decoded.length > 0 ? [decoded.join("\n")] : rawChecks;
 }
 
-/**
- * Extract the outside content carried by stored routine watch checks (`lastCheck`), including
- * `entries` keys (which hold tracked item identities or file paths that `outsideTextOf` skips
- * when walking object values). Checks without `entries` or `detail` carry no outside text. Each
- * read keeps one representation matching the run's delivery strategy, bounded to Pi's raw UTF-16
- * delivery budget (`TOOL_RESULT_TEXT_LIMIT`) before NFKC normalization.
- */
-export function storedWatchCheckOutsideContent(
+function extractWatchCheckTexts(
   routines: readonly unknown[],
-  contextStrategy?: AgentContextStrategy,
+  maxChars = MAX_OUTSIDE_TEXT_CHARS,
 ): unknown[] {
   const rawChecks: unknown[] = [];
   for (const routine of routines) {
@@ -232,32 +284,223 @@ export function storedWatchCheckOutsideContent(
   }
   if (rawChecks.length === 0) return [];
   const rawParts: WatchTextPart[] = [];
-  collectRawWatchTextParts(rawChecks, rawParts);
+  collectRawWatchTextParts(rawChecks, rawParts, maxChars);
   if (rawParts.length === 0) return rawChecks;
-  const rawTotal = rawParts.reduce((sum, part) => sum + part.text.length, 0) + rawParts.length - 1;
-  if (rawTotal <= TOOL_RESULT_TEXT_LIMIT) return formatBoundedWatchParts(rawParts, rawChecks);
+  return formatBoundedWatchParts(takePrefixPartList(rawParts, maxChars), rawChecks);
+}
 
-  const strategy = contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
-  if (strategy === "current") {
-    return formatBoundedWatchParts(takePrefixPartList(rawParts, TOOL_RESULT_TEXT_LIMIT), rawChecks);
+function decodeClippedJsonString(encoded: string, maxChars: number): string {
+  if (encoded.length <= maxChars) {
+    return JSON.parse(encoded) as string;
   }
-
-  let shortenedParts: WatchTextPart[] | undefined;
+  const innerLimit = maxChars - 1;
+  if (innerLimit <= 0) return "";
+  let inner = sliceWellFormed(encoded.slice(1), innerLimit);
+  // Trim an incomplete trailing `\uXXXX` escape or lone trailing `\` before decoding.
+  const slashIdx = inner.lastIndexOf("\\");
+  if (slashIdx >= 0 && inner.length - slashIdx <= 5) {
+    let slashes = 0;
+    for (let i = slashIdx; i >= 0 && inner[i] === "\\"; i -= 1) slashes += 1;
+    if (slashes % 2 === 1) {
+      const tail = inner.slice(slashIdx + 1);
+      if (tail === "" || /^u[0-9a-fA-F]{0,3}$/.test(tail)) {
+        inner = inner.slice(0, slashIdx);
+      }
+    }
+  }
   try {
-    const rawJson = JSON.stringify(rawChecks);
-    if (rawJson) {
-      const shortenedJson = shortenToolResultText(rawJson, TOOL_RESULT_TEXT_LIMIT);
-      const parsed: unknown = JSON.parse(shortenedJson);
-      shortenedParts = [];
-      collectRawWatchTextParts(parsed, shortenedParts);
+    return JSON.parse(`"${inner}"`) as string;
+  } catch {
+    return inner;
+  }
+}
+
+function collectDeliveredLastCheckParts(
+  lastCheck: Record<string, unknown>,
+  startPos: number,
+  limit: number,
+  parts: WatchTextPart[],
+): number {
+  let pos = startPos + 1;
+  let first = true;
+  for (const [key, value] of Object.entries(lastCheck)) {
+    if (pos >= limit) return pos;
+    if (!first) pos += 1;
+    first = false;
+    pos += JSON.stringify(key).length + 1;
+    if (pos >= limit) return pos;
+    if (key === "detail" && typeof value === "string") {
+      const encoded = JSON.stringify(value);
+      const delivered = decodeClippedJsonString(encoded, limit - pos);
+      if (delivered.trim()) parts.push({ text: delivered });
+      pos += encoded.length;
+      continue;
+    }
+    if (key === "entries" && value && typeof value === "object" && !Array.isArray(value)) {
+      pos += 1;
+      let firstEntry = true;
+      for (const [entryKey, entryVal] of Object.entries(value as Record<string, unknown>)) {
+        if (pos >= limit) return pos;
+        if (!firstEntry) pos += 1;
+        firstEntry = false;
+        const encodedKey = JSON.stringify(entryKey);
+        const deliveredKey = decodeClippedJsonString(encodedKey, limit - pos);
+        if (deliveredKey.trim()) parts.push({ text: deliveredKey });
+        pos += encodedKey.length + 1;
+        if (pos >= limit) return pos;
+        if (typeof entryVal === "string") {
+          const encodedVal = JSON.stringify(entryVal);
+          const deliveredVal = decodeClippedJsonString(encodedVal, limit - pos);
+          if (deliveredVal.trim()) parts.push({ text: deliveredVal, isEntryValue: true });
+          pos += encodedVal.length;
+        } else {
+          const encodedVal = JSON.stringify(entryVal);
+          if (pos + encodedVal.length <= limit) {
+            collectRawWatchTextParts(entryVal, parts, limit - pos);
+          } else {
+            const slice = sliceWellFormed(encodedVal, limit - pos);
+            if (slice.trim()) parts.push({ text: slice });
+          }
+          pos += encodedVal.length;
+        }
+      }
+      pos += 1;
+      continue;
+    }
+    const encoded = JSON.stringify(value);
+    if (!WATCH_STATE_METADATA_KEYS.has(key) && value != null) {
+      if (typeof value === "string") {
+        const delivered = decodeClippedJsonString(encoded, limit - pos);
+        if (delivered.trim()) parts.push({ text: delivered });
+      } else if (pos + encoded.length <= limit) {
+        collectRawWatchTextParts(value, parts, limit - pos);
+      } else {
+        const slice = sliceWellFormed(encoded, limit - pos);
+        if (slice.trim()) parts.push({ text: slice });
+      }
+    }
+    pos += encoded.length;
+  }
+  return pos + 1;
+}
+
+function extractDeliveredWatchPartsFromParsedJson(
+  payload: unknown,
+  limit: number,
+): WatchTextPart[] {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return [];
+  const parts: WatchTextPart[] = [];
+  let pos = 1;
+  let firstTop = true;
+  for (const [topKey, topVal] of Object.entries(payload as Record<string, unknown>)) {
+    if (pos >= limit) break;
+    if (!firstTop) pos += 1;
+    firstTop = false;
+    pos += JSON.stringify(topKey).length + 1;
+    if (pos >= limit) break;
+    if (topKey !== "routines" || !Array.isArray(topVal)) {
+      pos += JSON.stringify(topVal).length;
+      continue;
+    }
+    pos += 1;
+    let firstRoutine = true;
+    for (const routine of topVal) {
+      if (pos >= limit) break;
+      if (!firstRoutine) pos += 1;
+      firstRoutine = false;
+      if (!routine || typeof routine !== "object" || Array.isArray(routine)) {
+        pos += JSON.stringify(routine).length;
+        continue;
+      }
+      pos += 1;
+      let firstField = true;
+      for (const [fieldKey, fieldVal] of Object.entries(routine as Record<string, unknown>)) {
+        if (pos >= limit) break;
+        if (!firstField) pos += 1;
+        firstField = false;
+        pos += JSON.stringify(fieldKey).length + 1;
+        if (pos >= limit) break;
+        if (fieldKey !== "lastCheck" || !hasWatchOutsideContent(fieldVal)) {
+          pos += JSON.stringify(fieldVal).length;
+          continue;
+        }
+        if (typeof fieldVal === "string") {
+          const encoded = JSON.stringify(fieldVal);
+          const delivered = decodeClippedJsonString(encoded, limit - pos);
+          if (delivered.trim()) parts.push({ text: delivered });
+          pos += encoded.length;
+        } else if (fieldVal && typeof fieldVal === "object" && !Array.isArray(fieldVal)) {
+          pos = collectDeliveredLastCheckParts(
+            fieldVal as Record<string, unknown>,
+            pos,
+            limit,
+            parts,
+          );
+        } else {
+          const encoded = JSON.stringify(fieldVal);
+          if (pos + encoded.length <= limit) {
+            collectRawWatchTextParts(fieldVal, parts, limit - pos);
+          } else {
+            const slice = sliceWellFormed(encoded, limit - pos);
+            if (slice.trim()) parts.push({ text: slice });
+          }
+          pos += encoded.length;
+        }
+      }
+      pos += 1;
+    }
+    pos += 1;
+  }
+  return parts;
+}
+
+/**
+ * Extract the outside content carried by stored routine watch checks (`lastCheck`), including
+ * `entries` keys (which hold tracked item identities or file paths that `outsideTextOf` skips
+ * when walking object values). Checks without `entries` or `detail` carry no outside text. Mirrors
+ * Pi's exact delivered representation (`deliveredToolResultText`), so verbatim tool results
+ * keep full checks up to `MAX_OUTSIDE_TEXT_CHARS` while clipped results record only
+ * the watch check content that actually fits within `TOOL_RESULT_TEXT_LIMIT`.
+ */
+export function storedWatchCheckOutsideContent(
+  routines: readonly unknown[],
+  contextStrategy?: AgentContextStrategy,
+  delivery?: { name: string; args?: Record<string, unknown>; payload?: unknown },
+): unknown[] {
+  const hasChecks = routines.some(
+    (routine) =>
+      routine &&
+      typeof routine === "object" &&
+      hasWatchOutsideContent((routine as { lastCheck?: unknown }).lastCheck),
+  );
+  if (!hasChecks) return [];
+  const name = delivery?.name ?? "schedule_list";
+  const args = delivery?.args ?? {};
+  const payload = delivery?.payload ?? { routines };
+  const delivered = deliveredToolResultText(payload, contextStrategy, name, args);
+  try {
+    const parsed: unknown = JSON.parse(delivered);
+    if (parsed && typeof parsed === "object" && "routines" in parsed) {
+      const deliveredRoutines = (parsed as { routines?: unknown }).routines;
+      if (Array.isArray(deliveredRoutines)) {
+        return extractWatchCheckTexts(deliveredRoutines, MAX_OUTSIDE_TEXT_CHARS);
+      }
     }
   } catch {
-    shortenedParts = undefined;
+    // `delivered` was clipped at TOOL_RESULT_TEXT_LIMIT; walk the unclipped JSON up to that cut.
   }
-  return formatBoundedWatchParts(
-    takePrefixPartList(shortenedParts ?? rawParts, TOOL_RESULT_TEXT_LIMIT),
-    rawChecks,
-  );
+  const unclippedJson =
+    (contextStrategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
+      ? JSON.stringify(payload)
+      : serializeToolResult(payload, contextStrategy, name, args);
+  try {
+    const unclipped: unknown = JSON.parse(unclippedJson);
+    const parts = extractDeliveredWatchPartsFromParsedJson(unclipped, TOOL_RESULT_TEXT_LIMIT);
+    if (parts.length === 0) return [];
+    return formatBoundedWatchParts(takePrefixPartList(parts, MAX_OUTSIDE_TEXT_CHARS), []);
+  } catch {
+    return extractWatchCheckTexts(routines, TOOL_RESULT_TEXT_LIMIT);
+  }
 }
 
 function toolMessageTexts(content: unknown): string[] {
@@ -275,7 +518,7 @@ function toolMessageTexts(content: unknown): string[] {
       : [];
 }
 
-type SavedWatchStrategy = AgentContextStrategy | "both";
+type SavedWatchStrategy = AgentContextStrategy | "verbatim" | "both";
 
 /**
  * Infer the delivery strategy that produced a saved checkpoint's tool result by comparing its
@@ -291,6 +534,7 @@ function savedToolResultStrategy(
   try {
     const raw = JSON.stringify(message.details);
     if (!raw || raw.length <= TOOL_RESULT_TEXT_LIMIT) return fallback;
+    if (savedText === raw) return "verbatim";
     const currentClip = clipToolResultText(raw);
     if (savedText === currentClip) return "current";
     const structuredClip = clipToolResultText(shortenToolResultText(raw, TOOL_RESULT_TEXT_LIMIT));
@@ -312,10 +556,13 @@ function savedToolResultStrategy(
       if (markerAt !== -1) {
         const head = savedText.slice(0, markerAt);
         const tail = savedText.slice(markerAt + markerSplit.length);
+        const matchesVerbatim = raw.startsWith(head) && raw.endsWith(tail);
         const matchesCurrent = currentClip.startsWith(head) && currentClip.endsWith(tail);
         const matchesStructured = structuredClip.startsWith(head) && structuredClip.endsWith(tail);
-        if (matchesCurrent && !matchesStructured) return "current";
-        if (matchesStructured && !matchesCurrent) return DEFAULT_CONTEXT_STRATEGY;
+        if (matchesVerbatim && !matchesCurrent && !matchesStructured) return "verbatim";
+        if (matchesCurrent && !matchesStructured && !matchesVerbatim) return "current";
+        if (matchesStructured && !matchesCurrent && !matchesVerbatim)
+          return DEFAULT_CONTEXT_STRATEGY;
       }
       return "both";
     }
@@ -325,20 +572,22 @@ function savedToolResultStrategy(
   return fallback;
 }
 
-function watchChecksFromToolMessageContent(
+function parseWatchChecksFromToolMessageContent(
   content: unknown,
-  contextStrategy?: AgentContextStrategy,
-): unknown[] {
+): { parsed: true; extracted: unknown[] } | { parsed: false; extracted: unknown[] } {
   const texts = toolMessageTexts(content);
+  if (texts.length === 0) return { parsed: false, extracted: [] };
   const extracted: unknown[] = [];
   const unparsed: string[] = [];
+  let parsedRoutines = false;
   for (const text of texts) {
     try {
       const parsed: unknown = JSON.parse(text);
       if (parsed && typeof parsed === "object" && "routines" in parsed) {
         const routines = (parsed as { routines?: unknown }).routines;
         if (Array.isArray(routines)) {
-          extracted.push(...storedWatchCheckOutsideContent(routines, contextStrategy));
+          parsedRoutines = true;
+          extracted.push(...extractWatchCheckTexts(routines, MAX_OUTSIDE_TEXT_CHARS));
         }
       }
     } catch {
@@ -351,17 +600,18 @@ function watchChecksFromToolMessageContent(
       if (joined && typeof joined === "object" && "routines" in joined) {
         const routines = (joined as { routines?: unknown }).routines;
         if (Array.isArray(routines)) {
-          extracted.push(...storedWatchCheckOutsideContent(routines, contextStrategy));
-          return extracted;
+          extracted.push(...extractWatchCheckTexts(routines, MAX_OUTSIDE_TEXT_CHARS));
+          return { parsed: true, extracted };
         }
       }
-      return extracted;
+      return { parsed: parsedRoutines, extracted };
     } catch {
       // Truncated or non-JSON tool output cannot be narrowed safely, so keep its text.
       extracted.push(...unparsed);
+      return { parsed: false, extracted };
     }
   }
-  return extracted;
+  return { parsed: parsedRoutines, extracted };
 }
 
 /** Extract watch-check outside text from a saved `schedule_list` or `task_catalog` toolResult. */
@@ -372,13 +622,24 @@ export function watchChecksFromToolResultMessage(
   },
   contextStrategy?: AgentContextStrategy,
 ): unknown[] {
+  // Prefer `details` over `content` so structured or plain-text after-use compaction (`OMITTED_AFTER_USE`)
+  // in `content` cannot drop watch evidence the model already read before pausing.
   if (message.details && typeof message.details === "object" && "routines" in message.details) {
     const routines = (message.details as { routines?: unknown }).routines;
     if (Array.isArray(routines)) {
       const detected = savedToolResultStrategy(message, contextStrategy);
+      if (detected === "verbatim") {
+        return extractWatchCheckTexts(routines, MAX_OUTSIDE_TEXT_CHARS);
+      }
       if (detected === "both") {
-        const current = storedWatchCheckOutsideContent(routines, "current");
-        const structured = storedWatchCheckOutsideContent(routines, DEFAULT_CONTEXT_STRATEGY);
+        const current = storedWatchCheckOutsideContent(routines, "current", {
+          name: "schedule_list",
+          payload: message.details,
+        });
+        const structured = storedWatchCheckOutsideContent(routines, DEFAULT_CONTEXT_STRATEGY, {
+          name: "schedule_list",
+          payload: message.details,
+        });
         const seen = new Set<string>();
         return [...current, ...structured].filter((item) => {
           const key = typeof item === "string" ? item : JSON.stringify(item);
@@ -387,8 +648,11 @@ export function watchChecksFromToolResultMessage(
           return true;
         });
       }
-      return storedWatchCheckOutsideContent(routines, detected);
+      return storedWatchCheckOutsideContent(routines, detected, {
+        name: "schedule_list",
+        payload: message.details,
+      });
     }
   }
-  return watchChecksFromToolMessageContent(message.content, contextStrategy);
+  return parseWatchChecksFromToolMessageContent(message.content).extracted;
 }

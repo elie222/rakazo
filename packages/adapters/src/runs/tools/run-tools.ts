@@ -301,7 +301,7 @@ async function dispatchTool(
           ownComputer: ownComputerResult(request.name),
         });
       }
-      await markReplayedRoutineReadTaint(ctx, request.name, gate.result);
+      await markReplayedRoutineReadTaint(ctx, request.name, request.args, gate.result);
     }
     return refuse(gate.result, request.name);
   }

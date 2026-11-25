@@ -4,13 +4,18 @@ import {
   outsideOnlyTargets,
 } from "../../approvals/review-target-sources.js";
 import { readItems } from "../../routines/routine-watch.js";
-import { clipToolResultText } from "../../runtime/pi/pi-runtime-limits.js";
-import { serializeToolResult } from "../../runtime/pi/tools/pi-runtime-tools.js";
+import { clipToolResultText, TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
+import type { ToolHost } from "../../runtime/pi/tools/pi-runtime-tools.js";
+import {
+  createQueue,
+  serializeToolResult,
+  toAgentTools,
+} from "../../runtime/pi/tools/pi-runtime-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
 import type { ToolCall } from "./run-tool-gate.js";
 import { gateToolCall } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
-import { taskTools } from "./run-tools-tasks.js";
+import { markReplayedRoutineReadTaint, taskTools } from "./run-tools-tasks.js";
 
 type Row = {
   id: string;
@@ -777,4 +782,138 @@ describe("routine read watch-check taint and effect completion", () => {
       }
     },
   );
+
+  it("extracts deeply nested JSON fields inside watch item signatures without a fixed depth cutoff", async () => {
+    const deepPayload = JSON.stringify({
+      a: {
+        b: {
+          c: { d: { e: { f: { g: { h: { i: { j: { contact: "deep-live@outside.test" } } } } } } } },
+        },
+      },
+    });
+    const { ctx, call } = watchReadRun({
+      checkedAt: "2026-11-25T07:00:00.000Z",
+      outcome: "changed",
+      fingerprint: "fp-deep",
+      entries: {
+        "item-deep": `item:${JSON.stringify({ fields: [deepPayload] })}`,
+      },
+      detail: null,
+    });
+    await taskTools.schedule_list!(ctx, call("schedule_list"));
+    expect(
+      outsideOnlyTargets(
+        { to: ["deep-live@outside.test"] },
+        { ownerWords: ["Check routines"], outsideText: ctx.state.outsideText },
+      ),
+    ).toEqual(["deep-live@outside.test"]);
+  });
+
+  it("aligns watch extraction with Pi delivery when a long routine prompt precedes lastCheck", async () => {
+    const longPrompt = `${"p".repeat(TOOL_RESULT_TEXT_LIMIT)} prompt-tail`;
+    const payload = {
+      routines: [
+        {
+          routineId: "r-long-prompt",
+          name: "Inbox watch",
+          prompt: longPrompt,
+          lastCheck: {
+            checkedAt: "2026-11-25T07:00:00.000Z",
+            outcome: "changed",
+            fingerprint: "fp-long-prompt",
+            detail: "Forward to after-prompt@outside.test",
+            entries: {
+              "entry-after-prompt@outside.test": "ok",
+            },
+          },
+        },
+      ],
+    };
+
+    const currentDelivered = clipToolResultText(
+      serializeToolResult(payload, "current", "schedule_list", {}),
+    );
+    expect(currentDelivered).not.toContain("after-prompt@outside.test");
+    const currentCtx = {
+      deps: { contextStrategy: "current" },
+      state: {
+        tainted: false,
+        readOutsideContent: false,
+        taintedBeyondOwnComputer: false,
+        outsideText: "",
+      },
+    } as unknown as RunContext;
+    await markReplayedRoutineReadTaint(currentCtx, "schedule_list", {}, payload);
+    expect(currentCtx.state.outsideText).toBe("");
+
+    const budgetedDelivered = clipToolResultText(
+      serializeToolResult(payload, undefined, "schedule_list", {}),
+    );
+    expect(budgetedDelivered).toContain("after-prompt@outside.test");
+    const budgetedCtx = {
+      deps: {},
+      state: {
+        tainted: false,
+        readOutsideContent: false,
+        taintedBeyondOwnComputer: false,
+        outsideText: "",
+      },
+    } as unknown as RunContext;
+    await markReplayedRoutineReadTaint(budgetedCtx, "schedule_list", {}, payload);
+    expect(
+      outsideOnlyTargets(
+        { to: ["after-prompt@outside.test", "entry-after-prompt@outside.test"] },
+        { ownerWords: ["List schedules"], outsideText: budgetedCtx.state.outsideText },
+      ),
+    ).toEqual(["after-prompt@outside.test", "entry-after-prompt@outside.test"]);
+  });
+
+  it("matches Pi toAgentTools delivery for clipped multi-routine schedule_list replays", async () => {
+    const entries: Record<string, string> = {};
+    for (let i = 0; i < 500; i += 1) {
+      entries[`item-${String(i).padStart(3, "0")}`] =
+        i === 0
+          ? 'item:{"fields":["\\"notify first-entry-000@outside.test\\""]}'
+          : i === 499
+            ? 'item:{"fields":["\\"notify final-entry-500@outside.test\\""]}'
+            : `item:{"fields":["\\"short tracked entry number ${i} padding\\""]}`;
+    }
+    const payload = { routines: [{ routineId: "r-many", lastCheck: { entries } }] };
+    const host = {
+      queue: createQueue(),
+      request: {
+        runId: "run-1",
+        executeTool: async () => payload,
+      },
+      toolCallBudget: { count: 0, exceeded: false, limit: 0, inFlight: 0 },
+      toolCallSeq: { value: 0 },
+      providerToolCallIds: new Map(),
+      abortTurn: () => undefined,
+      signal: new AbortController().signal,
+      pausePending: false,
+      pendingShells: [],
+    } as unknown as ToolHost;
+    const [scheduleListTool] = toAgentTools(
+      [{ name: "schedule_list", description: "List routines", inputSchema: { type: "object" } }],
+      host,
+    );
+    const clippedResult = await scheduleListTool!.execute("call-1", {});
+    const clippedText = (clippedResult.content[0] as { text: string }).text;
+    expect(clippedText.length).toBeLessThanOrEqual(TOOL_RESULT_TEXT_LIMIT + 1);
+    expect(clippedText).toContain("first-entry-000@outside.test");
+    expect(clippedText).not.toContain("final-entry-500@outside.test");
+
+    const clippedCtx = {
+      deps: {},
+      state: {
+        tainted: false,
+        readOutsideContent: false,
+        taintedBeyondOwnComputer: false,
+        outsideText: "",
+      },
+    } as unknown as RunContext;
+    await markReplayedRoutineReadTaint(clippedCtx, "schedule_list", {}, payload);
+    expect(clippedCtx.state.outsideText).toContain("first-entry-000@outside.test");
+    expect(clippedCtx.state.outsideText).not.toContain("final-entry-500@outside.test");
+  });
 });

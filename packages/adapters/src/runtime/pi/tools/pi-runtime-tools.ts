@@ -499,9 +499,8 @@ function toAgentTool(
           )
             throw new Error("Enter top-level computer mode before using computer tools");
           const args = (params ?? {}) as Record<string, unknown>;
-          const keepToolResultWhole = (name: string, callArgs: Record<string, unknown>) =>
-            VERBATIM_TOOL_RESULTS.has(name) ||
-            isVerbatimMcpResult(name, callArgs, host.request.verbatimMcpServers);
+          const keepWhole = (name: string, callArgs: Record<string, unknown>) =>
+            keepToolResultWhole(name, callArgs, host.request.verbatimMcpServers);
           recordPiTelemetryContent(span, "pi.agent.tool.arguments", args);
           const rawCallId =
             providerToolCallId(host.providerToolCallIds, toolCallId) ||
@@ -648,9 +647,7 @@ function toAgentTool(
                 );
                 if (isAgentToolExecutionResult(result)) {
                   if (isToolPauseResult(result)) host.pausePending = true;
-                  return keepToolResultWhole(tool.name, args)
-                    ? result
-                    : boundAgentToolResult(result);
+                  return keepWhole(tool.name, args) ? result : boundAgentToolResult(result);
                 }
                 const lifted = liftMcpResultImages(result);
                 return {
@@ -680,7 +677,7 @@ function toAgentTool(
                 details: { error: "no executor" },
               };
             })();
-            if (keepToolResultWhole(tool.name, args)) return result as AgentToolResult<unknown>;
+            if (keepWhole(tool.name, args)) return result as AgentToolResult<unknown>;
             return boundAgentToolResult(result as AgentToolResult<unknown>);
           } catch (error) {
             failure = error;
@@ -744,6 +741,14 @@ function isAgentToolExecutionResult(result: unknown): result is AgentToolExecuti
   );
 }
 
+export function keepToolResultWhole(
+  name: string,
+  args: Record<string, unknown>,
+  verbatimMcpServers?: AgentRunRequest["verbatimMcpServers"],
+): boolean {
+  return VERBATIM_TOOL_RESULTS.has(name) || isVerbatimMcpResult(name, args, verbatimMcpServers);
+}
+
 export function serializeToolResult(
   result: unknown,
   strategy: AgentRunRequest["contextStrategy"],
@@ -757,8 +762,7 @@ export function serializeToolResult(
     // skill-tools.ts already bounds skill content; the context budget selector may still shorten it.
     if (
       text.length <= TOOL_RESULT_TEXT_LIMIT ||
-      VERBATIM_TOOL_RESULTS.has(name) ||
-      isVerbatimMcpResult(name, args, verbatimMcpServers)
+      keepToolResultWhole(name, args, verbatimMcpServers)
     )
       return text;
     return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
@@ -767,6 +771,18 @@ export function serializeToolResult(
   } catch {
     return "ok";
   }
+}
+
+/** Exact text Pi delivers to the model for a JSON tool result after result bounding. */
+export function deliveredToolResultText(
+  result: unknown,
+  strategy: AgentRunRequest["contextStrategy"],
+  name: string,
+  args: Record<string, unknown>,
+  verbatimMcpServers?: AgentRunRequest["verbatimMcpServers"],
+): string {
+  const text = serializeToolResult(result, strategy, name, args, verbatimMcpServers);
+  return keepToolResultWhole(name, args, verbatimMcpServers) ? text : clipToolResultText(text);
 }
 
 function boundAgentToolResult<T>(result: AgentToolResult<T>): AgentToolResult<T> {

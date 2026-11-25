@@ -8,8 +8,15 @@ import {
   outsideOnlyTargets,
 } from "../../approvals/review-target-sources.js";
 import { shortenToolResultText } from "../../runtime/context/context-selection.js";
-import { clipToolResultText } from "../../runtime/pi/pi-runtime-limits.js";
-import { namedAgentTools, serializeToolResult } from "../../runtime/pi/tools/pi-runtime-tools.js";
+import { OMITTED_AFTER_USE } from "../../runtime/context/runtime-context.prompt.js";
+import { clipToolResultText, TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
+import type { ToolHost } from "../../runtime/pi/tools/pi-runtime-tools.js";
+import {
+  createQueue,
+  namedAgentTools,
+  serializeToolResult,
+  toAgentTools,
+} from "../../runtime/pi/tools/pi-runtime-tools.js";
 import { PausedTurnToolsUnavailableError } from "../lifecycle/run-lifecycle.js";
 import type { RunContext } from "./run-context.js";
 import {
@@ -758,4 +765,138 @@ it("keeps original watch strategy evidence after plain-text after-use compaction
       { ownerWords: ["List schedules"], outsideText: plainCurrentToDefaultCtx.state.outsideText },
     ),
   ).toEqual(["head@example.test"]);
+});
+
+it("restores deeply nested watch fields and matches Pi clipped and compacted delivery in checkpoints", async () => {
+  const deepPayload = JSON.stringify({
+    a: {
+      b: {
+        c: {
+          d: { e: { f: { g: { h: { i: { j: { contact: "deep-checkpoint@outside.test" } } } } } } },
+        },
+      },
+    },
+  });
+  const deepDetails = {
+    routines: [
+      {
+        routineId: "r-deep",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          entries: {
+            "item-deep": `item:${JSON.stringify({ fields: [deepPayload] })}`,
+          },
+        },
+      },
+    ],
+  };
+  const deepCheckpoint = JSON.parse(checkpoint("ask_user"));
+  deepCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "deep-1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: JSON.stringify(deepDetails) }],
+    details: deepDetails,
+  });
+  const deepCtx = fixture([tool("ask_user")]);
+  deepCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(deepCtx, JSON.stringify(deepCheckpoint), model),
+  ).toBeDefined();
+  expect(deepCtx.state.outsideText).toContain("deep-checkpoint@outside.test");
+
+  const entries: Record<string, string> = {};
+  for (let i = 0; i < 500; i += 1) {
+    entries[`item-${String(i).padStart(3, "0")}`] =
+      i === 0
+        ? 'item:{"fields":["\\"notify checkpoint-entry-000@outside.test\\""]}'
+        : i === 499
+          ? 'item:{"fields":["\\"notify checkpoint-entry-500@outside.test\\""]}'
+          : `item:{"fields":["\\"short tracked entry number ${i} padding\\""]}`;
+  }
+  const clippedPayload = { routines: [{ routineId: "r-many", lastCheck: { entries } }] };
+  const runViaPi = async (resultPayload: unknown) => {
+    const host = {
+      queue: createQueue(),
+      request: {
+        runId: "run-1",
+        executeTool: async () => resultPayload,
+      },
+      toolCallBudget: { count: 0, exceeded: false, limit: 0, inFlight: 0 },
+      toolCallSeq: { value: 0 },
+      providerToolCallIds: new Map(),
+      abortTurn: () => undefined,
+      signal: new AbortController().signal,
+      pausePending: false,
+      pendingShells: [],
+    } as unknown as ToolHost;
+    const [scheduleListTool] = toAgentTools(
+      [{ name: "schedule_list", description: "List routines", inputSchema: { type: "object" } }],
+      host,
+    );
+    return scheduleListTool!.execute("c1", {});
+  };
+
+  const clippedResult = await runViaPi(clippedPayload);
+  const clippedText = (clippedResult.content[0] as { text: string }).text;
+  expect(clippedText).toContain("checkpoint-entry-000@outside.test");
+  expect(clippedText).not.toContain("checkpoint-entry-500@outside.test");
+  const clippedCheckpoint = JSON.parse(checkpoint("ask_user"));
+  clippedCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "clipped-1",
+    toolName: "schedule_list",
+    content: clippedResult.content,
+    details: clippedResult.details,
+  });
+  const clippedCtx = fixture([tool("ask_user")]);
+  clippedCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(clippedCtx, JSON.stringify(clippedCheckpoint), model),
+  ).toBeDefined();
+  expect(clippedCtx.state.outsideText).toContain("checkpoint-entry-000@outside.test");
+  expect(clippedCtx.state.outsideText).not.toContain("checkpoint-entry-500@outside.test");
+
+  const largeStructuredPayload = {
+    routines: [
+      {
+        routineId: "r-large-structured",
+        lastCheck: {
+          detail: `${"d".repeat(TOOL_RESULT_TEXT_LIMIT + 500)} tail-marker`,
+          entries: {
+            "item-001": `item:${JSON.stringify({
+              fields: [`"${"x".repeat(400)} buried-entry@outside.test ${"y".repeat(400)}"`],
+            })}`,
+          },
+        },
+      },
+    ],
+  };
+  const structuredDelivered = await runViaPi(largeStructuredPayload);
+  const structuredText = (structuredDelivered.content[0] as { text: string }).text;
+  expect(structuredText).toContain("buried-entry@outside.test");
+  const structuredCompacted = shortenToolResultText(
+    structuredText,
+    400,
+    { name: "schedule_list", arguments: {} },
+    { afterUse: true },
+  );
+  expect(structuredCompacted).toContain(OMITTED_AFTER_USE);
+  expect(() => JSON.parse(structuredCompacted)).not.toThrow();
+  expect(structuredCompacted).not.toContain("buried-entry@outside.test");
+  const compactedCheckpoint = JSON.parse(checkpoint("ask_user"));
+  compactedCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "compacted-1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: structuredCompacted }],
+    details: structuredDelivered.details,
+  });
+  const compactedCtx = fixture([tool("ask_user")]);
+  compactedCtx.deps = { contextStrategy: "current" } as never;
+  compactedCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(compactedCtx, JSON.stringify(compactedCheckpoint), model),
+  ).toBeDefined();
+  expect(compactedCtx.state.outsideText).toContain("buried-entry@outside.test");
 });
