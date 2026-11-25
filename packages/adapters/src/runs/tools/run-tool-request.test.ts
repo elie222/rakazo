@@ -817,7 +817,7 @@ describe("the user's computer after a routine or webhook joined the run", () => 
   });
 
   it("still refuses once webhook text was handed in, with every switch on", async () => {
-    const { ctx, request } = userComputerCall(true, {
+    const { ctx, request, findFirst } = userComputerCall(true, {
       routines: true,
       ownBots: true,
       messaging: true,
@@ -826,6 +826,8 @@ describe("the user's computer after a routine or webhook joined the run", () => 
     await expect(prepareToolRequest(ctx as never, request)).resolves.toEqual({
       error: "The user's computer is not available in this run.",
     });
+    // The bot that took the event in never gets the computer; only bots it messages may.
+    expect(findFirst.mock.calls.at(-1)?.[0].where.originTrigger).toEqual({ in: ["webhook"] });
   });
 
   /** A routine run the routines switch let on the computer, whose routine is now `routine`. */

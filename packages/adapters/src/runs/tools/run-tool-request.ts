@@ -460,8 +460,8 @@ export async function prepareToolRequest(
         "user_computer_unavailable",
         "The user's computer is not available in this run.",
       );
-    // Text a webhook, Git event, email or routine handed into this run keeps it off the computer,
-    // unless the server lets that kind of start reach it (see userComputerBlockingOrigins).
+    // Text a webhook, Git event or email handed into this run keeps it off the computer, and so
+    // does a routine's unless the server lets routines reach it (see userComputerBlockingOrigins).
     if (
       await deps.prisma.steeringMessage.findFirst({
         where: {

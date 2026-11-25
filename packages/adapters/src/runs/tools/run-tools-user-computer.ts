@@ -218,9 +218,13 @@ export async function userComputerTrust(
   };
 }
 
-/** Outside tasks whose text, once handed into a run, keeps it from the owner's computer. */
+/**
+ * Outside tasks whose text, once handed into a run, keeps it from the owner's computer. A webhook,
+ * Git event or email always does: the bot that took one in never gets the computer, and only the
+ * bots it messages may (see botChainFromOwner).
+ */
 export function userComputerBlockingOrigins(access: UserComputerAccess): string[] {
-  return [...(access.routines ? [] : ["routine"]), ...(access.webhookChains ? [] : ["webhook"])];
+  return [...(access.routines ? [] : ["routine"]), "webhook"];
 }
 
 /** Whether a stored message is a webhook, Git event or email delivery a routine received. */
@@ -316,15 +320,34 @@ export async function botChainFromOwner(
       sender.thread.groupId
     )
       return false;
-    const steered = await prisma.steeringMessage.findFirst({
-      where: {
-        runId: sender.id,
-        claimedAt: { not: null },
-        originTrigger: { in: userComputerBlockingOrigins(access) },
-      },
-      select: { id: true },
-    });
-    if (steered) return false;
+    const [routineText, events] = await Promise.all([
+      access.routines
+        ? null
+        : prisma.steeringMessage.findFirst({
+            where: {
+              runId: sender.id,
+              claimedAt: { not: null },
+              originTrigger: { in: ["routine"] },
+            },
+            select: { id: true },
+          }),
+      prisma.steeringMessage.findMany({
+        where: { runId: sender.id, claimedAt: { not: null }, originTrigger: "webhook" },
+        select: { message: { select: { id: true, role: true, blocks: true } } },
+      }),
+    ]);
+    // Outside events handed into a sender count only as one that may start a chain: allowed,
+    // each marked, and never on their way back to the bot that took them in.
+    if (
+      routineText ||
+      (events.length > 0 &&
+        !(
+          access.webhookChains &&
+          sender.botId !== run.botId &&
+          events.every((item) => markedDelivery(item.message))
+        ))
+    )
+      return false;
     if (sender.trigger === "routine") return access.routines && scheduledRoutine(sender);
     if (sender.trigger === "messaging")
       return access.messaging && (await ownerDirectMessage(prisma, sender, access));

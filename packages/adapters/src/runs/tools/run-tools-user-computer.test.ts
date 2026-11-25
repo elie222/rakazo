@@ -662,8 +662,10 @@ describe("botChainFromOwner", () => {
     const c = chain();
     c.fromSender({ trigger: "user", sourceMessageId: "owner-1" });
     c.ownerMessage("owner-1");
-    c.steered.set("run-1", "webhook");
+    c.eventDelivery("held-1");
+    c.batched.set("run-1", ["held-1"]);
     await expect(c.check({ ...all, webhookChains: false })).resolves.toBe(false);
+    c.batched.delete("run-1");
     c.steered.set("run-1", "routine");
     await expect(c.check(ownBots)).resolves.toBe(false);
     await expect(c.check(all)).resolves.toBe(true);
@@ -782,11 +784,30 @@ describe("botChainFromOwner", () => {
     const c = chain();
     c.ownerMessage("src-1");
     c.fromSender({ trigger: "user", sourceMessageId: "src-1" });
-    c.steered.set("run-1", "webhook");
+    c.eventDelivery("held-1");
+    c.batched.set("run-1", ["held-1"]);
     await expect(c.check({ ...all, webhookChains: false })).resolves.toBe(false);
     await expect(c.check(all)).resolves.toBe(true);
     c.steered.set("run-1", "routine");
     await expect(c.check({ ...all, routines: false })).resolves.toBe(false);
+  });
+
+  it("refuses a running sender that took in an unmarked delivery", async () => {
+    const c = chain();
+    c.ownerMessage("src-1");
+    c.fromSender({ trigger: "user", sourceMessageId: "src-1" });
+    c.eventDelivery("held-1", false);
+    c.batched.set("run-1", ["held-1"]);
+    await expect(c.check(all)).resolves.toBe(false);
+  });
+
+  it("keeps a bot that took in an outside event while running off the computer when work comes back to it", async () => {
+    const c = chain();
+    c.ownerMessage("src-1");
+    c.fromSender({ trigger: "user", sourceMessageId: "src-1" });
+    c.eventDelivery("held-1");
+    c.batched.set("run-1", ["held-1"]);
+    await expect(c.check(all, undefined, "bot-sender")).resolves.toBe(false);
   });
 
   it("refuses a chain whose starting run also took in an unmarked delivery with its batch", async () => {
