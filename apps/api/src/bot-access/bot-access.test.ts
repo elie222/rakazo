@@ -51,8 +51,8 @@ function setup(
     { id: "task-theirs", userId: "user-2", spaceId: "space-mine", botId: "bot-a" },
   ];
   const at = new Date("2026-11-25T00:00:00Z");
-  const callbacks = new Map<string, { url: string }>([
-    ["task-1", { url: "https://hooks.example.test/a" }],
+  const callbacks = new Map<string, { url: string; apiKeyId: string }>([
+    ["task-1", { url: "https://hooks.example.test/a", apiKeyId: "key-first" }],
   ]);
   const enqueueIn = vi.fn(async () => undefined);
   const prisma = {
@@ -61,9 +61,11 @@ function setup(
       findUnique: vi.fn(
         async ({ where }: { where: { taskId: string } }) => callbacks.get(where.taskId) ?? null,
       ),
-      upsert: vi.fn(async ({ create }: { create: { taskId: string; url: string } }) => {
-        callbacks.set(create.taskId, { url: create.url });
-      }),
+      upsert: vi.fn(
+        async ({ create }: { create: { taskId: string; url: string; apiKeyId: string } }) => {
+          callbacks.set(create.taskId, { url: create.url, apiKeyId: create.apiKeyId });
+        },
+      ),
     },
     user: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
@@ -205,7 +207,11 @@ describe("bot access", () => {
     const { access, caller, callbacks, enqueueIn } = setup(undefined, "task-next");
     const { task } = await access.sendToTask(caller, "task-1", "Keep going");
     expect(task.id).toBe("task-next");
-    expect(callbacks.get("task-next")).toEqual({ url: "https://hooks.example.test/a" });
+    // Signed with the first callback's key, so the receiver's secret still checks.
+    expect(callbacks.get("task-next")).toEqual({
+      url: "https://hooks.example.test/a",
+      apiKeyId: "key-first",
+    });
     expect(enqueueIn).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ name: "task.callback", payload: { taskId: "task-next" } }),

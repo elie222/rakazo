@@ -11,6 +11,9 @@ export function configPath(env: NodeJS.ProcessEnv = process.env): string {
 
 /** The server and key to use: environment first, then what `rakazo login` saved. */
 export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<CliConfig | null> {
+  const fromEnv = (url: string, key: string) => ({ url: url.replace(/\/+$/, ""), key });
+  // The environment alone is enough; a broken saved file must not stand in its way.
+  if (env.RAKAZO_URL && env.RAKAZO_API_KEY) return fromEnv(env.RAKAZO_URL, env.RAKAZO_API_KEY);
   let saved: Partial<CliConfig> = {};
   try {
     saved = JSON.parse(await readFile(configPath(env), "utf8")) as Partial<CliConfig>;

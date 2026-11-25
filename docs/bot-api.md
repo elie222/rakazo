@@ -96,8 +96,8 @@ there each time the task completes, fails, is cancelled or needs input. `id`, al
 one you have already handled. A callback carries at most the newest 64 KB of output, with
 `"truncated": true` when it was cut; read the task for all of it.
 
-The create response includes a `callback_secret`, shown once. It is the same for every task you
-send to the same address. Each callback carries `x-rakazo-signature: t=<unix seconds>,v1=<signature>`,
+The create response includes a `callback_secret`, shown once. It is the same for every task one
+key sends to the same address; a new key gets a new secret. Each callback carries `x-rakazo-signature: t=<unix seconds>,v1=<signature>`,
 where the signature is the hex HMAC-SHA256 of `<t>.<raw body>` with that secret. Check it, and
 reject an old `t`. A failed delivery is retried with backoff. The address must be public: private
 and local addresses are refused.

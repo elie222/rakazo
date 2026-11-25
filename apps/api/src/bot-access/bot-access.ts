@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { createRouterClient, ORPCError, onError } from "@orpc/server";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { taskCallbackJob } from "@rakazo/adapter-kit";
-import { assertCallbackUrl, readPublicTask, taskCallbackSecret } from "@rakazo/adapters";
+import {
+  apiKeyStillGrants,
+  assertCallbackUrl,
+  readPublicTask,
+  taskCallbackSecret,
+} from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import type { Actor, PublicBot, PublicTask } from "@rakazo/contracts";
 import { taskSettled } from "@rakazo/contracts";
@@ -136,18 +141,12 @@ export function createBotAccess(deps: BotAccessDeps) {
         signal,
         // A long wait ends when the key is revoked, the account is turned off or the person
         // leaves the Space.
-        stillAuthorized: async () =>
-          Boolean(
-            (await prisma.apiKey.findFirst({
-              where: {
-                id: caller.keyId,
-                referenceId: caller.userId,
-                enabled: { not: false },
-                user: { deactivatedAt: null },
-              },
-              select: { id: true },
-            })) && (await memberActor(caller, actor.spaceId)),
-          ),
+        stillAuthorized: () =>
+          apiKeyStillGrants(prisma, {
+            keyId: caller.keyId,
+            userId: caller.userId,
+            spaceId: actor.spaceId,
+          }),
       },
     });
   }
@@ -260,7 +259,7 @@ export function createBotAccess(deps: BotAccessDeps) {
    * Reports a task to `url`; the job commits with the row, so a stopped process loses nothing. It
    * looks at once, since a turn may have ended before the row existed for its end to find.
    */
-  async function watchTask(caller: KeyCaller, actor: Actor, taskId: string, url: string) {
+  async function watchTask(keyId: string, actor: Actor, taskId: string, url: string) {
     await runAsTenant(actor, () =>
       prisma.$transaction(async (tx) => {
         await tx.taskCallback.upsert({
@@ -270,9 +269,9 @@ export function createBotAccess(deps: BotAccessDeps) {
             url,
             spaceId: actor.spaceId,
             userId: actor.userId,
-            apiKeyId: caller.keyId,
+            apiKeyId: keyId,
           },
-          update: { url, apiKeyId: caller.keyId },
+          update: { url, apiKeyId: keyId },
         });
         await deps.jobs.enqueueIn(tx, taskCallbackJob(taskId, new Date()));
       }),
@@ -286,13 +285,13 @@ export function createBotAccess(deps: BotAccessDeps) {
     if (input.callbackUrl) await assertCallbackUrl(input.callbackUrl);
     const bot = await resolveBot(caller, input.bot);
     const { taskId, cursor } = await send(caller, bot.actor, bot.id, input.text);
-    if (input.callbackUrl) await watchTask(caller, bot.actor, taskId, input.callbackUrl);
+    if (input.callbackUrl) await watchTask(caller.keyId, bot.actor, taskId, input.callbackUrl);
     return {
       task: await readTask(bot.actor, taskId),
       actor: bot.actor,
       cursor,
       callbackSecret: input.callbackUrl
-        ? taskCallbackSecret(deps.taskCallbackRootKey, caller.userId, input.callbackUrl)
+        ? taskCallbackSecret(deps.taskCallbackRootKey, caller.keyId, input.callbackUrl)
         : undefined,
     };
   }
@@ -305,9 +304,10 @@ export function createBotAccess(deps: BotAccessDeps) {
     const { actor, botId } = await taskActor(caller, taskId);
     const sent = await send(caller, actor, botId, text);
     const callback = await runAsTenant(actor, () =>
-      prisma.taskCallback.findUnique({ where: { taskId }, select: { url: true } }),
+      prisma.taskCallback.findUnique({ where: { taskId }, select: { url: true, apiKeyId: true } }),
     );
-    if (callback) await watchTask(caller, actor, sent.taskId, callback.url);
+    // Signed as before, with the key that asked for the first callback.
+    if (callback) await watchTask(callback.apiKeyId, actor, sent.taskId, callback.url);
     return { task: await readTask(actor, sent.taskId), actor, cursor: sent.cursor };
   }
 

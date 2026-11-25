@@ -101,7 +101,7 @@ describe("task callbacks", () => {
       truncated: false,
     });
     expect(request!.headers.get("x-rakazo-delivery")).toBe("task-1:run-1:completed");
-    const secret = taskCallbackSecret("root-key", "user-1", url);
+    const secret = taskCallbackSecret("root-key", "key-1", url);
     const timestamp = Math.floor(now.getTime() / 1000);
     const expected = createHmac("sha256", secret).update(`${timestamp}.${body}`).digest("hex");
     expect(request!.headers.get("x-rakazo-signature")).toBe(`t=${timestamp},v1=${expected}`);

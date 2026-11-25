@@ -19,3 +19,19 @@ it("saves the key readable by this user only, even over an open file", async () 
     await rm(base, { recursive: true, force: true });
   }
 });
+
+it("uses the environment alone, whatever the saved file holds", async () => {
+  const base = await mkdtemp(path.join(tmpdir(), "rakazo-cli-"));
+  const env = {
+    XDG_CONFIG_HOME: base,
+    RAKAZO_URL: "https://rakazo.example.test/",
+    RAKAZO_API_KEY: "rkz_env",
+  };
+  try {
+    await mkdir(path.dirname(configPath(env)));
+    await writeFile(configPath(env), "not json");
+    expect(await loadConfig(env)).toEqual({ url: "https://rakazo.example.test", key: "rkz_env" });
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});

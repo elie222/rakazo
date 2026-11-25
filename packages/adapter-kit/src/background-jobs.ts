@@ -204,13 +204,20 @@ export class RetryJobLaterError extends Error {
 /** Failed deliveries back off between these attempts; the task is rechecked by a new job. */
 export const TASK_CALLBACK_MAX_ATTEMPTS = 8;
 
-/** One job per task: a new one replaces the one pending. */
-export function taskCallbackJob(taskId: string, availableAt: Date): BackgroundJob {
+/**
+ * A task's callback check. A prompt replaces the pending prompt; the slow recheck has its own key,
+ * so scheduling it never pushes back a prompt that is due now.
+ */
+export function taskCallbackJob(
+  taskId: string,
+  availableAt: Date,
+  kind: "prompt" | "recheck" = "prompt",
+): BackgroundJob {
   return {
     name: "task.callback",
     payload: { taskId },
     availableAt,
-    replaceKey: `task.callback:${taskId}`,
+    replaceKey: `task.callback:${taskId}${kind === "recheck" ? ":recheck" : ""}`,
     maxAttempts: TASK_CALLBACK_MAX_ATTEMPTS,
   };
 }

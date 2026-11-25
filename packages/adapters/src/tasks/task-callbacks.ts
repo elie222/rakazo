@@ -13,6 +13,7 @@ import { getLogger } from "@rakazo/logging";
 import { isEgressRefused } from "../network/network-address.js";
 import type { SafeWebFetchOptions } from "../web/web-ssrf.js";
 import { assertSafeWebUrl, fetchSafeHttpRequest } from "../web/web-ssrf.js";
+import { apiKeyStillGrants } from "./api-key-access.js";
 import { readPublicTask } from "./public-task.js";
 
 /** While a task works, its callback checks back this often; settling sends it at once. */
@@ -60,11 +61,11 @@ export function taskCallbackRootKey(encryptionKey: string): string {
 }
 
 /**
- * The secret one person's callbacks to one address are signed with. Every task that person sends
- * to that address shares it, so a follow-up's new task needs no new secret.
+ * The secret callbacks to one address are signed with for one key. Every task the key sends there
+ * shares it, so a follow-up's new task needs no new one; a new key gets a new secret.
  */
-export function taskCallbackSecret(rootKey: string, userId: string, url: string): string {
-  return `whsec_${createHmac("sha256", rootKey).update(`${userId}\n${url}`).digest("hex")}`;
+export function taskCallbackSecret(rootKey: string, apiKeyId: string, url: string): string {
+  return `whsec_${createHmac("sha256", rootKey).update(`${apiKeyId}\n${url}`).digest("hex")}`;
 }
 
 /** `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`, so a replayed old body is visible. */
@@ -113,28 +114,17 @@ export async function deliverTaskCallback(
       select: { id: true, createdAt: true },
     }),
   ]);
-  // Output goes only where the person still could read it themselves: their key, their account
-  // and their place in the Space all still stand. Otherwise the callback stops for good.
-  const [key, member] = await Promise.all([
-    deps.prisma.apiKey.findFirst({
-      where: {
-        id: callback.apiKeyId,
-        referenceId: callback.userId,
-        enabled: { not: false },
-        user: { deactivatedAt: null },
-      },
-      select: { id: true },
-    }),
-    deps.prisma.spaceMember.findFirst({
-      where: { userId: callback.userId, spaceId: callback.spaceId },
-      select: { userId: true },
-    }),
-  ]);
-  if (!task || !latestRun || !key || !member) return;
+  // Output goes only where the person could still read it themselves; otherwise it stops for good.
+  const granted = await apiKeyStillGrants(deps.prisma, {
+    keyId: callback.apiKeyId,
+    userId: callback.userId,
+    spaceId: callback.spaceId,
+  });
+  if (!task || !latestRun || !granted) return;
   const recheck = async () => {
     if (now.getTime() - latestRun.createdAt.getTime() < TASK_CALLBACK_GIVE_UP_MS)
       await deps.jobs.enqueue(
-        taskCallbackJob(taskId, new Date(now.getTime() + TASK_CALLBACK_RECHECK_MS)),
+        taskCallbackJob(taskId, new Date(now.getTime() + TASK_CALLBACK_RECHECK_MS), "recheck"),
       );
   };
   if (!taskSettled(task.status)) return recheck();
@@ -152,7 +142,7 @@ export async function deliverTaskCallback(
   if (task.status === "needs_input") await recheck();
 
   async function post(
-    target: { userId: string; url: string },
+    target: { apiKeyId: string; url: string },
     settled: PublicTask,
     delivery: string,
   ) {
@@ -167,7 +157,7 @@ export async function deliverTaskCallback(
       truncated,
     } satisfies TaskCallbackBody);
     const signature = signTaskCallback(
-      taskCallbackSecret(deps.rootKey, target.userId, target.url),
+      taskCallbackSecret(deps.rootKey, target.apiKeyId, target.url),
       body,
       Math.floor(now.getTime() / 1000),
     );

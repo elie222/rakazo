@@ -308,6 +308,7 @@ export * from "./storage/home-object-store.js";
 export { ObjectStorageUnavailableError } from "./storage/object-storage-common.js";
 export * from "./storage/storage-migration.js";
 export { workspaceSaveLimits } from "./storage/workspace-save-policy.js";
+export * from "./tasks/api-key-access.js";
 export { returnHelperOutcome, startBackgroundHelper } from "./tasks/background-helpers.js";
 export * from "./tasks/public-task.js";
 export * from "./tasks/scratchpad-tools.js";
