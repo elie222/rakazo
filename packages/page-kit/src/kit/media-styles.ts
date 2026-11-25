@@ -37,6 +37,7 @@ export const MEDIA_CSS = `
 .rk-gallery-arrow[data-way="next"]{inset-inline-end:10px}
 .rk-gallery-arrow svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 [dir="rtl"] .rk-gallery-arrow svg{transform:scaleX(-1)}
+.rk-gallery-arrow:dir(ltr) svg{transform:none}
 @media (hover:hover){.rk-gallery-arrow{display:grid}.rk-gallery:hover .rk-gallery-arrow{opacity:.92}.rk-gallery .rk-gallery-arrow:hover{opacity:1}}
 .rk-gallery-dots{position:absolute;left:0;right:0;bottom:3px;display:flex;justify-content:center}
 .rk-gallery-dots button{appearance:none;display:grid;place-items:center;width:24px;height:24px;margin:0 -6px;padding:0;border:0;background:none;cursor:pointer}
