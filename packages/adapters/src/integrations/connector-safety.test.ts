@@ -104,5 +104,27 @@ describe("sanitizeConnectorError", () => {
       new Error("Authorization: Bearer \"clipped-tok-1\nNext: Bearer 'clipped-tok-2"),
     );
     expect(clippedQuotedBearer).toBe("Authorization: Bearer [redacted]\nNext: Bearer [redacted]");
+
+    const semicolonSecret = "tok-part;fixture-suffix";
+    expect(
+      sanitizeConnectorError(new Error(`Authorization: Bearer ${semicolonSecret}`), [
+        semicolonSecret,
+      ]),
+    ).toBe("Authorization: Bearer [redacted]");
+
+    const colonQuoted = sanitizeConnectorError(new Error(`Error: "${quotedSecret}"`), [
+      quotedSecret,
+    ]);
+    expect(colonQuoted).toBe('Error: "[redacted]"');
+
+    const slashSecret = "prefix\\";
+    const escapedQuoteJson = sanitizeConnectorError(
+      new Error('{"safe":"prefix\\"kept","secret":"prefix\\\\"}'),
+      [slashSecret],
+    );
+    expect(JSON.parse(escapedQuoteJson)).toEqual({
+      safe: 'prefix"kept',
+      secret: "[redacted]",
+    });
   });
 });

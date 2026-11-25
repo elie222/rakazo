@@ -454,6 +454,24 @@ function precedesJsonStringToken(raw: string, index: number): boolean {
   return ch === "{" || ch === "[" || ch === "," || ch === ":";
 }
 
+function isClosedJsonStringToken(token: string): boolean {
+  if (token.length < 2 || !token.endsWith('"')) return false;
+  let slashes = 0;
+  for (let index = token.length - 2; index >= 0 && token[index] === "\\"; index -= 1) {
+    slashes += 1;
+  }
+  return slashes % 2 === 0;
+}
+
+function followsJsonStringToken(raw: string, end: number, closed: boolean): boolean {
+  if (!closed) return true;
+  let next = end;
+  while (next < raw.length && isJsonWhitespace(raw[next])) next += 1;
+  if (next >= raw.length) return true;
+  const ch = raw[next];
+  return ch === ":" || ch === "," || ch === "}" || ch === "]";
+}
+
 /**
  * Redact JSON string tokens after decoding them and apply `redactPlain` only to non-string text
  * between tokens, so pattern redactors never consume JSON quotes, escapes, or sibling fields.
@@ -468,20 +486,32 @@ export function redactJsonStringsAndPlainText(
   let cursor = 0;
   for (const match of raw.matchAll(JSON_STRING_LITERAL_TOKEN)) {
     const index = match.index ?? 0;
-    // Plain diagnostics such as `Bearer "secret"` put quotes after a word rather than a JSON
-    // structural delimiter; keep those with surrounding text so plain-text patterns still match.
-    if (!precedesJsonStringToken(raw, index)) continue;
-    if (index > cursor) out += redactPlain(raw.slice(cursor, index));
     const token = match[0];
+    const end = index + token.length;
+    // Plain diagnostics such as `Bearer "secret"` or `Error: "a"b"` do not sit between JSON
+    // structural delimiters; keep them in plain text so exact and pattern redactors see them whole.
+    if (
+      !precedesJsonStringToken(raw, index) ||
+      !followsJsonStringToken(raw, end, isClosedJsonStringToken(token))
+    ) {
+      continue;
+    }
+    if (index > cursor) out += redactPlain(raw.slice(cursor, index));
     out += redactSingleJsonStringToken(token, redactString, redactPlain);
-    cursor = index + token.length;
+    cursor = end;
   }
   if (cursor < raw.length) out += redactPlain(raw.slice(cursor));
   return out;
 }
 
 export function redactJsonText(raw: string, redact: (text: string) => string): string {
-  return redact(redactJsonStringTokens(raw, redact));
+  const tokenized = redactJsonStringTokens(raw, redact);
+  try {
+    JSON.parse(tokenized);
+    return tokenized;
+  } catch {
+    return redact(tokenized);
+  }
 }
 
 /**

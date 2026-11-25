@@ -33,23 +33,14 @@ export function sanitizeConnectorError(
 ): string {
   const message = errorMessage(error);
   const sanitizeDecoded = (value: string) =>
-    redactSecrets(
-      value
-        .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
-        .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]"),
-      secrets,
-    );
+    redactSecrets(value, secrets)
+      .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+      .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
   const sanitizePlain = (value: string) =>
-    redactSecrets(
-      value
-        .replace(/Bearer\s+(?:"[^"\r\n]*"?|'[^'\r\n]*'?|[^\s"',;&}]+)/gi, "Bearer [redacted]")
-        .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]"),
-      secrets,
-    );
-  const cleaned = redactSecrets(
-    redactJsonStringsAndPlainText(message, sanitizeDecoded, sanitizePlain),
-    secrets,
-  );
+    redactSecrets(value, secrets)
+      .replace(/Bearer\s+(?:"[^"\r\n]*"?|'[^'\r\n]*'?|[^\s"',;&}]+)/gi, "Bearer [redacted]")
+      .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
+  const cleaned = redactJsonStringsAndPlainText(message, sanitizeDecoded, sanitizePlain);
   const maxChars = options?.maxChars ?? 2_000;
   return Number.isFinite(maxChars) ? sliceWellFormed(cleaned, maxChars) : cleaned;
 }

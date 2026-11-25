@@ -294,6 +294,28 @@ describe("tool step outcomes", () => {
     expect(windowsDiag).toBe(
       'Open "C:\\Users\\bob\\Bearer [redacted]" and "C:\\Users\\[redacted]"',
     );
+
+    const slashSecret = "prefix\\";
+    const escapedQuoteResult = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [{ type: "text", text: '{"safe":"prefix\\"kept","secret":"prefix\\\\"}' }],
+        },
+      },
+      [slashSecret],
+    )!;
+    expect(JSON.parse(escapedQuoteResult)).toEqual({
+      safe: 'prefix"kept',
+      secret: "[redacted]",
+    });
+
+    const semicolonSecret = "tok-part;fixture-suffix";
+    const failedBearer = keptToolResult(
+      { ...base, error: new Error(`Authorization: Bearer ${semicolonSecret}`) },
+      [semicolonSecret],
+    )!;
+    expect(failedBearer).toBe("Authorization: Bearer [redacted]");
   });
 
   it("replays tool calls only to runs the owner started themselves, failing closed", () => {

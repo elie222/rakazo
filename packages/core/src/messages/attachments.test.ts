@@ -976,6 +976,36 @@ describe("tool step history", () => {
         ],
       },
     ]);
+
+    const escapedQuote = '{"safe":"prefix\\"kept","secret":"prefix\\\\"}';
+    const slashSegments = blocksToAgentHistorySegments(
+      [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Lookup",
+              tool: "lookup",
+              count: 1,
+              calls: [{ arguments: escapedQuote, result: escapedQuote }],
+            },
+          ],
+        },
+      ] as unknown as MessageBlock[],
+      secretRedactor(["prefix\\"]),
+    );
+    const slashCall =
+      slashSegments[0] && "steps" in slashSegments[0]
+        ? slashSegments[0].steps[0]?.calls?.[0]
+        : undefined;
+    expect(JSON.parse(slashCall?.arguments ?? "")).toEqual({
+      safe: 'prefix"kept',
+      secret: "[redacted]",
+    });
+    expect(JSON.parse(slashCall?.result ?? "")).toEqual({
+      safe: 'prefix"kept',
+      secret: "[redacted]",
+    });
   });
 
   it("ignores fractional step counts and non-string ask action labels in flat history", () => {

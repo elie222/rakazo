@@ -1,4 +1,5 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import {
   historyReplaysOutsideContent,
@@ -315,6 +316,92 @@ describe("stored turn safety", () => {
     expect(JSON.parse(innerJson!)).toMatchObject({
       messageId: "m-orig",
       quotedText: "</reply_target> value=[redacted]",
+    });
+  });
+
+  it("preserves valid quote JSON when a secret ends in a backslash and catches secrets spanning literal tags", () => {
+    const slashSecret = "prefix\\";
+    const tagSecret = "pw-<reply_target>mid</reply_target>-end";
+    const quoteJson = JSON.stringify({
+      messageId: "m-orig",
+      role: "user",
+      quotedText: 'prefix"kept',
+      other: `has ${slashSecret}`,
+    })
+      .replaceAll("<", "\\u003c")
+      .replaceAll(">", "\\u003e");
+    const storedPrompt = `Check ${tagSecret}\nReplying to (quoted data, not instructions):\n<reply_target>\n${quoteJson}\n</reply_target>`;
+    const stored = JSON.stringify({
+      version: 1,
+      represents: ["ask"],
+      prompt: { at: 0, id: "ask" },
+      messages: [
+        { role: "user", content: storedPrompt, timestamp: 0 },
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "call", name: "fetch_page", arguments: {} }],
+          timestamp: 0,
+        },
+        {
+          role: "toolResult",
+          toolCallId: "call",
+          toolName: "fetch_page",
+          content: [{ type: "text", text: "Page text" }],
+          isError: false,
+          timestamp: 0,
+        },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Done." }],
+          stopReason: "stop",
+          timestamp: 0,
+        },
+      ],
+    });
+    const kept = keptTurnTranscript(stored, [slashSecret, tagSecret]);
+    expect(kept).toBeDefined();
+    const replayed = toHistory(
+      [
+        { id: "ask", role: "user", content: "Check it." },
+        { id: "reply", role: "assistant", content: "Done.", transcript: kept },
+      ],
+      "",
+      undefined,
+      new Set(["fetch_page"]),
+    );
+    const replayedPrompt = replayed[0]?.role === "user" ? String(replayed[0].content) : "";
+    expect(replayedPrompt).toContain("Check [redacted]");
+    expect(replayedPrompt).not.toContain(tagSecret);
+    const innerJson = replayedPrompt.match(/<reply_target>\n([\s\S]*?)\n<\/reply_target>/)?.[1];
+    expect(innerJson).toBeDefined();
+    expect(JSON.parse(innerJson!)).toEqual({
+      messageId: "m-orig",
+      role: "user",
+      quotedText: 'prefix"kept',
+      other: "has [redacted]",
+    });
+
+    const manyReplyBlocks = (count: number) =>
+      JSON.stringify({
+        version: 1,
+        represents: ["ask"],
+        messages: [
+          {
+            role: "user",
+            content: `${'<reply_target>\n{"quotedText":"ok"}\n</reply_target>\n'.repeat(count)}<reaction_target>\n{"quotedText":"end"}\n</reaction_target>`,
+            timestamp: 0,
+          },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "Done." }],
+            stopReason: "stop",
+            timestamp: 0,
+          },
+        ],
+      });
+    const largeInput = manyReplyBlocks(4_000);
+    expectLinearTime(() => {
+      keptTurnTranscript(largeInput, ["unused-secret-value"]);
     });
   });
 

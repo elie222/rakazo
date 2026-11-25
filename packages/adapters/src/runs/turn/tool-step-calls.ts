@@ -2,6 +2,7 @@ import type { AgentRunRequest, AgentToolCompletion } from "@rakazo/adapter-kit";
 import type { ToolStepCall } from "@rakazo/contracts";
 import { storedImageMimeType } from "@rakazo/contracts";
 import {
+  createSecretMatcher,
   escapePromptData,
   redactJsonStringsAndPlainText,
   redactSecrets,
@@ -184,7 +185,7 @@ function cleanToolText(text: string, secrets: string[]): string {
   const sanitizeDecoded = (value: string) => sanitizeSensitiveText(redactSecrets(value, secrets));
   const sanitizePlain = (value: string) => sanitizeSensitiveText(redactSecrets(value, secretForms));
   const cleaned = redactJsonStringsAndPlainText(text, sanitizeDecoded, sanitizePlain);
-  return redactCredentialJsonFields(redactSecrets(cleaned, secretForms));
+  return redactCredentialJsonFields(cleaned);
 }
 
 function sliceTailWellFormed(text: string, maxChars: number): string {
@@ -322,6 +323,23 @@ const REPLY_TARGET_TAGS = [
   { open: "<reaction_target>", close: "</reaction_target>" },
 ] as const;
 
+function overlapsSortedRange(
+  ranges: ReadonlyArray<readonly [number, number]>,
+  start: number,
+  end: number,
+): boolean {
+  let lo = 0;
+  let hi = ranges.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    const [rStart, rEnd] = ranges[mid]!;
+    if (rEnd <= start) lo = mid + 1;
+    else if (rStart >= end) hi = mid - 1;
+    else return true;
+  }
+  return false;
+}
+
 /**
  * Redact known secrets in a stored turn's prompt, decoding JSON strings inside `<reply_target>` /
  * `<reaction_target>` blocks while preserving their `\u003c`/`\u003e` framing, and matching
@@ -334,6 +352,7 @@ function redactStoredPrompt(text: string, secrets: string[]): string {
     const xmlEscaped = escapePromptData(value);
     return xmlEscaped === value ? [value] : [value, xmlEscaped];
   });
+  if (promptForms.length === 0) return text;
   const quoteSecretForms = secrets.flatMap((value) => {
     if (!value) return [];
     const encoded = JSON.stringify(value).slice(1, -1);
@@ -345,28 +364,31 @@ function redactStoredPrompt(text: string, secrets: string[]): string {
       encoded.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e"),
     ];
   });
+  const wholeMatches = createSecretMatcher(promptForms).ranges(text);
   const redactOutside = (chunk: string) => redactSecrets(chunk, promptForms);
   const redactQuoteBody = (body: string) => {
-    const cleaned = redactSecrets(
-      redactJsonStringsAndPlainText(
-        body,
-        (value) => redactSecrets(value, promptForms),
-        (value) => redactSecrets(value, quoteSecretForms),
-      ),
-      quoteSecretForms,
+    const cleaned = redactJsonStringsAndPlainText(
+      body,
+      (value) => redactSecrets(value, promptForms),
+      (value) => redactSecrets(value, quoteSecretForms),
     );
     return cleaned === body ? body : cleaned.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e");
   };
   let out = "";
-  let cursor = 0;
+  let emitCursor = 0;
+  let scanPos = 0;
   const exhausted = [false, false];
+  const cachedOpen = [-1, -1];
   const cachedClose = [-1, -1];
-  while (cursor < text.length) {
+  while (scanPos < text.length) {
     let nextIndex = -1;
     let nextTagIndex = -1;
     for (let i = 0; i < REPLY_TARGET_TAGS.length; i += 1) {
       if (exhausted[i]) continue;
-      const at = text.indexOf(REPLY_TARGET_TAGS[i]!.open, cursor);
+      if (cachedOpen[i]! < scanPos) {
+        cachedOpen[i] = text.indexOf(REPLY_TARGET_TAGS[i]!.open, scanPos);
+      }
+      const at = cachedOpen[i]!;
       if (at === -1) {
         exhausted[i] = true;
         continue;
@@ -376,10 +398,7 @@ function redactStoredPrompt(text: string, secrets: string[]): string {
         nextTagIndex = i;
       }
     }
-    if (nextIndex === -1 || nextTagIndex === -1) {
-      out += redactOutside(text.slice(cursor));
-      break;
-    }
+    if (nextIndex === -1 || nextTagIndex === -1) break;
     const tag = REPLY_TARGET_TAGS[nextTagIndex]!;
     const bodyStart = nextIndex + tag.open.length;
     if (cachedClose[nextTagIndex]! < bodyStart) {
@@ -388,20 +407,31 @@ function redactStoredPrompt(text: string, secrets: string[]): string {
     const closeIndex = cachedClose[nextTagIndex]!;
     if (closeIndex === -1) {
       exhausted[nextTagIndex] = true;
-      out += redactOutside(text.slice(cursor, bodyStart));
-      cursor = bodyStart;
+      scanPos = bodyStart;
       continue;
     }
-    const innerOpen = text.indexOf(tag.open, bodyStart);
+    if (cachedOpen[nextTagIndex]! < bodyStart) {
+      cachedOpen[nextTagIndex] = text.indexOf(tag.open, bodyStart);
+    }
+    const innerOpen = cachedOpen[nextTagIndex]!;
     if (innerOpen !== -1 && innerOpen < closeIndex) {
-      out += redactOutside(text.slice(cursor, innerOpen));
-      cursor = innerOpen;
+      scanPos = innerOpen;
       continue;
     }
-    out += redactOutside(text.slice(cursor, nextIndex));
+    const closeEnd = closeIndex + tag.close.length;
+    if (
+      overlapsSortedRange(wholeMatches, nextIndex, bodyStart) ||
+      overlapsSortedRange(wholeMatches, closeIndex, closeEnd)
+    ) {
+      scanPos = bodyStart;
+      continue;
+    }
+    out += redactOutside(text.slice(emitCursor, nextIndex));
     out += tag.open + redactQuoteBody(text.slice(bodyStart, closeIndex)) + tag.close;
-    cursor = closeIndex + tag.close.length;
+    emitCursor = closeEnd;
+    scanPos = closeEnd;
   }
+  if (emitCursor < text.length) out += redactOutside(text.slice(emitCursor));
   return out;
 }
 
