@@ -134,7 +134,7 @@ export function mapTurnTranscript(
 ): string | undefined {
   const turn = readTurnTranscript(serialized);
   if (!turn) return undefined;
-  if (turnToolNames(turn.messages).some((name) => !keep(name))) return undefined;
+  if (turnToolNames(turn.messages, { reached: true }).some((name) => !keep(name))) return undefined;
   const deep = (value: unknown): unknown =>
     typeof value === "string"
       ? change(value, "arguments")
@@ -153,23 +153,35 @@ export function mapTurnTranscript(
       content: message.content.map((part) =>
         part.type === "text"
           ? { ...part, text: change(part.text, kind) }
-          : part.type === "toolCall"
-            ? {
-                ...part,
-                arguments: deep(changeArguments(part.arguments)) as typeof part.arguments,
-              }
-            : part,
+          : part.type === "thinking"
+            ? { ...part, thinking: change(part.thinking, kind) }
+            : part.type === "toolCall"
+              ? {
+                  ...part,
+                  arguments: deep(changeArguments(part.arguments)) as typeof part.arguments,
+                }
+              : part,
       ),
     } as Message;
   });
   return JSON.stringify({ version: 1, represents: turn.represents, messages });
 }
 
-/** Every tool the turn called, by the name the model called it. */
-export function turnToolNames(messages: readonly Message[]): string[] {
+/**
+ * Every tool the turn called, by the name the model called it, and with `reached` also each tool
+ * it reached through another (use_tool names the one it runs in its arguments).
+ */
+export function turnToolNames(
+  messages: readonly Message[],
+  options: { reached?: boolean } = {},
+): string[] {
   return messages.flatMap((message) =>
     message.role === "assistant"
-      ? message.content.flatMap((part) => (part.type === "toolCall" ? [part.name] : []))
+      ? message.content.flatMap((part) => {
+          if (part.type !== "toolCall") return [];
+          const inner = part.arguments?.name;
+          return options.reached && typeof inner === "string" ? [part.name, inner] : [part.name];
+        })
       : [],
   );
 }

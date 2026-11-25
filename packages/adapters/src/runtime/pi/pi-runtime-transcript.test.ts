@@ -243,6 +243,8 @@ describe("stored turn safety", () => {
 
   it("keeps no turn that read a secret, and cleans credentials out of the rest", () => {
     expect(keptTurnTranscript(turn("read_secret", "value"), [])).toBeUndefined();
+    const bridged = turn("use_tool", "value").replace('{"token":"abc"}', '{"name":"list_secrets"}');
+    expect(keptTurnTranscript(bridged, [])).toBeUndefined();
     const kept = keptTurnTranscript(turn("fetch_page", '{"api_key":"sk-live-1"}'), []);
     expect(kept).toBeDefined();
     expect(kept).not.toContain("sk-live-1");
