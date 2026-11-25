@@ -1,4 +1,5 @@
 """Offline tests for the page browser: the agent-browser wrapper and the saved-login, card and pay-token steps."""
+import fcntl
 import importlib.machinery
 import importlib.util
 import json
@@ -1484,6 +1485,7 @@ class NewTabTest(unittest.TestCase):
             chromium.ids[:0] = chromium.opening
             chromium.opening = []
             now, opened, flooded = tabs.end(own, ours=ours)
+            tabs.release()
         return [tab["id"] for tab in opened], tabs.note(now, opened, now[0]["url"]), flooded
 
     def test_names_the_tabs_opened_since_the_last_call(self):
@@ -1499,10 +1501,24 @@ class NewTabTest(unittest.TestCase):
         self.assertEqual(self.call(chromium, "d", ours="d")[0], [])
         # Another screen's browser is kept apart: its first call names every tab but its own.
         self.assertEqual(self.call(FakeTabs("x", "y"), "x", port=9223)[0], ["y"])
-        # Written whole: nothing is left beside it.
-        self.assertEqual(sorted(os.listdir(self.home)), ["tabs-9222.json", "tabs-9223.json"])
+        # Written whole: nothing is left beside it and its lock.
+        self.assertEqual(sorted(os.listdir(self.home)),
+                         ["tabs-9222.json", "tabs-9222.lock", "tabs-9223.json", "tabs-9223.lock"])
         Path(self.home, "tabs-9222.json").write_text("not json")
         self.assertEqual(self.call(chromium, "d")[0], ["c", "a"])
+
+    def test_one_page_call_on_a_screen_sees_to_its_tabs_at_a_time(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        first = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        second = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        with patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            self.assertTrue(first.begin())
+            # Started while the first call still reads its page, the second leaves the tabs to it.
+            self.assertFalse(second.begin())
+            first.end("own")
+            first.release()
+            self.assertTrue(helper.Tabs(self.home, 9222, "browser-1", chromium.select).begin())
 
     def test_after_the_browser_starts_every_tab_but_the_call_s_own_is_new(self):
         chromium = FakeTabs("a")
@@ -1834,6 +1850,15 @@ class NewTabTest(unittest.TestCase):
         self.assertEqual(chromium.closed, [f"r{index}" for index in range(11, 6, -1)])
         self.assertTrue(result["note"].startswith("Closed the 5 tabs in the background longest, to keep at most 8 "
                                                   "tabs open. "))
+
+    def test_a_call_that_starts_while_another_sees_to_the_screen_s_tabs_leaves_them(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        with open(Path(self.home, "tabs-9222.lock"), "w") as other_call:
+            fcntl.flock(other_call, fcntl.LOCK_EX)
+            result, _, _ = self.run_call(chromium, {"ok": True, "title": "Report", "tree": "", "elements": []})
+        self.assertEqual((chromium.closed, result), ([], {"ok": True, "title": "Report", "tree": "", "elements": [],
+                                                          "url": "https://portal.example.test/own"}))
+        self.assertFalse(Path(self.home, "tabs-9222.json").exists())
 
     def test_a_tab_list_that_fails_leaves_the_result_as_it_is(self):
         reports = {"ok": True, "title": "Report", "tree": "", "elements": []}

@@ -10,6 +10,7 @@ Saved logins, cards and pay tokens go through page_secrets instead.
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import json
 import math
 import mimetypes
@@ -218,6 +219,7 @@ class Tabs:
 
     def __init__(self, home: str, port: int, browser_id: Any, select: Callable[[Any], None]) -> None:
         self.path, self.port, self.browser_id = os.path.join(home, f"tabs-{port}.json"), port, browser_id
+        self.lock_path = os.path.join(home, f"tabs-{port}.lock")
         # Points agent-browser's session at a tab, before tabs are closed.
         self.select = select
         try:
@@ -230,12 +232,20 @@ class Tabs:
         self.closed = self.trimmed = 0
         self.start: set[Any] = set()
         self.deadline: float | None = None
+        self.lock: int | None = None
 
-    def begin(self) -> None:
+    def begin(self) -> bool:
         """Close a flood of tabs opened since the last call and the tabs beyond MAX_TABS, before the
-        call picks its tab. Only its first tab list can fail it."""
+        call picks its tab. False when another page call on this screen sees to its tabs: one does at
+        a time. Only its first tab list can fail it."""
         tabs = page_tabs(self.port)
         self.start = {tab.get("id") for tab in tabs}
+        self.lock = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            self.release()
+            return False
         with contextlib.suppress(Exception):
             if self.known is not None:
                 # The tab in front of those the last call left, or else the tab in front, which stays.
@@ -245,6 +255,14 @@ class Tabs:
                 self.known.add(keep)
                 tabs = self.close_flood(tabs, self.known, keep)
             self.trim(tabs)
+        return True
+
+    def release(self) -> None:
+        """Give the next page call on this screen its turn with the tabs. The lock ends with the
+        process, so a call killed on the way holds none."""
+        if self.lock is not None:
+            os.close(self.lock)
+            self.lock = None
 
     def end(self, own: str, ours: str | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
         """The tabs now, the ones opened since the last call (or, for a browser started again, every
@@ -2722,11 +2740,12 @@ def run(argv: list[str]) -> int:
                 started = Tabs(browser.home, port, (version or {}).get("webSocketDebuggerUrl"), browser.use_tab)
                 browser.deadline = started.deadline = tab_deadline()
                 try:
-                    started.begin()
+                    seeing = started.begin()
                 finally:
                     browser.deadline = None
-                # Only once it knows the tabs the call began with: without them, every tab would look new.
-                tabs = started
+                # Only once it knows the tabs the call began with, and when no other page call on this
+                # screen sees to them: without them, every tab would look new.
+                tabs = started if seeing else None
         target, address = front_tab(port)
         if args.get("downloads") is not None:
             client = CdpClient(discover_ws_url(port))
@@ -2831,6 +2850,8 @@ def run(argv: list[str]) -> int:
     finally:
         if page:
             page.close()
+        if tabs:
+            tabs.release()
         if client:
             client.close()
 
