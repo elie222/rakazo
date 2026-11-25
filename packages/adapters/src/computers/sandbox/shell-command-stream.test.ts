@@ -1,7 +1,9 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { deferred } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { automated } from "../../messaging/automated-messages.prompt.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
+import { secretPrefixSuffixLength, secretSuffixPrefixLength } from "./agent-environment.js";
 import {
   deliverFinishedShells,
   formatFinishedShellCommand,
@@ -489,6 +491,26 @@ describe("observeShellCommand", () => {
     expect(observed.result.stdout).toContain("[redacted]\n[...");
     expect(observed.result.stdout).toContain("omitted ...]\n[redacted]");
     expect(observed.result.stdout).toContain("\nDONE\n");
+  });
+
+  it("matches late-registered secret cut fragments in linear time for long adversarial secrets", () => {
+    expect(secretPrefixSuffixLength("xxabab", "ababa")).toBe(4);
+    expect(secretSuffixPrefixLength("babaxx", "ababa")).toBe(4);
+    expect(secretPrefixSuffixLength("abc", "abcd")).toBe(3);
+    expect(secretSuffixPrefixLength("bcd", "abcd")).toBe(3);
+    expect(secretPrefixSuffixLength("abcd", "abcd")).toBe(0);
+    expect(secretSuffixPrefixLength("abcd", "abcd")).toBe(0);
+
+    expectLinearTime(() => {
+      const size = 65_536;
+      const prefixSecret = `${"a".repeat(size)}b`;
+      const prefixText = `${"a".repeat(size)}c`;
+      expect(secretPrefixSuffixLength(prefixText, prefixSecret)).toBe(0);
+
+      const suffixSecret = `b${"a".repeat(size)}`;
+      const suffixText = `c${"a".repeat(size)}`;
+      expect(secretSuffixPrefixLength(suffixText, suffixSecret)).toBe(0);
+    });
   });
 
   it("throttles live onOutput snapshots when onOutputIntervalMs is set", async () => {

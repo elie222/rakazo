@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { BrowserProvider, SandboxProvider } from "@rakazo/adapter-kit";
+import type { BrowserProvider, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
@@ -669,31 +669,55 @@ export const computerTools: ToolHandlers = {
           : undefined);
       // The computer is sent the command with its variables here, so each is a use from then on,
       // recorded once the command answers, fails or runs on. One stopped before this got none.
+      let sawNoDisplay = false;
+      const trackNoDisplay = async function* (
+        events: AsyncIterable<ProcessEvent>,
+      ): AsyncIterable<ProcessEvent> {
+        let stdoutOverlap = "";
+        let stderrOverlap = "";
+        for await (const event of events) {
+          if (!sawNoDisplay && (event.type === "stdout" || event.type === "stderr") && event.data) {
+            const combined = (event.type === "stdout" ? stdoutOverlap : stderrOverlap) + event.data;
+            if (NO_DISPLAY_OUTPUT.test(combined)) {
+              sawNoDisplay = true;
+              stdoutOverlap = "";
+              stderrOverlap = "";
+            } else {
+              const tail = combined.slice(-NO_DISPLAY_OVERLAP_CHARS);
+              if (event.type === "stdout") stdoutOverlap = tail;
+              else stderrOverlap = tail;
+            }
+          }
+          yield event;
+        }
+      };
       const observed = await observeShellCommand(
-        deps.sandbox.execute(
-          computer,
-          {
-            argv: shellEnvironment
-              ? nativeShellCommandArgv(command, shellEnvironment)
-              : [
-                  "bash",
-                  "-c",
-                  BACKGROUND_WORK_LAUNCH,
-                  "rakazo-background-launch",
-                  // Marker id must match sleepComputerIfIdle's probe (DB id), not ComputerRef.id
-                  // (providerRef via toComputerRef). Scope launches to this run for cancel teardown.
-                  ctx.computer.stored.id,
-                  runId,
-                  randomUUID(),
-                  command,
-                ],
-            cwd,
-            env:
-              Object.keys(commandEnvironment.env).length > 0 ? commandEnvironment.env : undefined,
-            unsetEnv: commandEnvironment.unsetEnv,
-            timeoutMs: sandboxCommandTimeoutMs(),
-          },
-          context,
+        trackNoDisplay(
+          deps.sandbox.execute(
+            computer,
+            {
+              argv: shellEnvironment
+                ? nativeShellCommandArgv(command, shellEnvironment)
+                : [
+                    "bash",
+                    "-c",
+                    BACKGROUND_WORK_LAUNCH,
+                    "rakazo-background-launch",
+                    // Marker id must match sleepComputerIfIdle's probe (DB id), not ComputerRef.id
+                    // (providerRef via toComputerRef). Scope launches to this run for cancel teardown.
+                    ctx.computer.stored.id,
+                    runId,
+                    randomUUID(),
+                    command,
+                  ],
+              cwd,
+              env:
+                Object.keys(commandEnvironment.env).length > 0 ? commandEnvironment.env : undefined,
+              unsetEnv: commandEnvironment.unsetEnv,
+              timeoutMs: sandboxCommandTimeoutMs(),
+            },
+            context,
+          ),
         ),
         {
           secrets: ctx.secrets,
@@ -746,7 +770,8 @@ export const computerTools: ToolHandlers = {
         output: commandOutput(redacted, false).slice(-COMPUTER_COMMAND_OUTPUT_MAX_CHARS),
       });
       const screenTool =
-        redacted.code && NO_DISPLAY_OUTPUT.test(`${redacted.stderr}\n${redacted.stdout}`)
+        redacted.code &&
+        (sawNoDisplay || NO_DISPLAY_OUTPUT.test(`${redacted.stderr}\n${redacted.stdout}`))
           ? screenOpeningTool(ctx.tools.offered)
           : undefined;
       return call.finish(
@@ -835,3 +860,4 @@ export const computerTools: ToolHandlers = {
 /** What X clients and the browsers' own launchers print when they find no display to use. */
 const NO_DISPLAY_OUTPUT =
   /\b(?:can'?t|cannot|could not|unable to) (?:open|connect to) (?:the )?(?:X )?display\b|\bmissing X server\b|\bno \$DISPLAY\b/i;
+const NO_DISPLAY_OVERLAP_CHARS = 64;

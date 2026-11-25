@@ -4,7 +4,11 @@ import { redactedRanges, redactSecrets } from "@rakazo/core";
 import { automated } from "../../messaging/automated-messages.prompt.js";
 import { shortenPlainText } from "../../runtime/context/context-selection.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
-import { redactShellStreams, secretPrefixSuffixLength } from "./agent-environment.js";
+import {
+  redactShellStreams,
+  secretPrefixSuffixLength,
+  secretSuffixPrefixLength,
+} from "./agent-environment.js";
 
 /**
  * Device-code logins print a code and then wait. Once that output goes quiet,
@@ -58,24 +62,6 @@ function protectedCutValues(secrets: readonly string[]): string[] {
     }
   }
   return [...values];
-}
-
-/** Longest prefix of `text` that is a proper suffix of `secret`. */
-function secretSuffixPrefixLength(text: string, secret: string): number {
-  const max = Math.min(secret.length - 1, text.length);
-  for (let size = max; size >= 1; size -= 1) {
-    const secretStart = secret.length - size;
-    if (text.charCodeAt(0) !== secret.charCodeAt(secretStart)) continue;
-    let matches = true;
-    for (let offset = 1; offset < size; offset += 1) {
-      if (text.charCodeAt(offset) !== secret.charCodeAt(secretStart + offset)) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) return size;
-  }
-  return 0;
 }
 
 function maxSecretOverlap(secrets: readonly string[]): number {
@@ -212,13 +198,17 @@ class BoundedStreamBuffer {
   }
 
   private effectiveHeadRedactedSuffix(): number {
-    let suffix = this.headRedactedSuffix;
-    if (!this.head) return suffix;
+    if (!this.head) return this.headRedactedSuffix;
     for (const value of protectedCutValues(this.secrets)) {
       if (value.length < 2 || this.headCutSecrets.has(value)) continue;
-      suffix = Math.max(suffix, secretPrefixSuffixLength(this.head, value));
+      // Head is immutable after compaction, so each newly registered secret is scanned once.
+      this.headCutSecrets.add(value);
+      this.headRedactedSuffix = Math.max(
+        this.headRedactedSuffix,
+        secretPrefixSuffixLength(this.head, value),
+      );
     }
-    return suffix;
+    return this.headRedactedSuffix;
   }
 
   private effectiveTailRedactedPrefix(): number {
@@ -226,7 +216,12 @@ class BoundedStreamBuffer {
     if (!this.tail) return prefix;
     for (const value of protectedCutValues(this.secrets)) {
       if (value.length < 2 || this.tailCutSecrets.has(value)) continue;
-      prefix = Math.max(prefix, secretSuffixPrefixLength(this.tail, value));
+      const matched = secretSuffixPrefixLength(this.tail, value);
+      if (this.tail.length >= value.length - 1) {
+        this.tailCutSecrets.add(value);
+        this.tailRedactedPrefix = Math.max(this.tailRedactedPrefix, matched);
+      }
+      prefix = Math.max(prefix, matched);
     }
     return prefix;
   }

@@ -127,6 +127,21 @@ describe("shell Activity events", () => {
     });
   });
 
+  it("keeps the screen-opening notice when the display diagnostic was compacted out of large output", async () => {
+    async function* stream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: "h".repeat(70_000) };
+      yield { type: "stderr", data: "\nError: Can't op" };
+      yield { type: "stderr", data: "en display: :0\n" };
+      yield { type: "stderr", data: "t".repeat(120_000) };
+      yield { type: "exit", code: 1 };
+    }
+    const { ctx, call } = setup(stream());
+    const result = (await shell(ctx, call)) as { code: number; stderr: string; notice?: string };
+    expect(result.code).toBe(1);
+    expect(result.stderr).not.toContain("Can't open display");
+    expect(result.notice).toContain("Call browser_snapshot to open it");
+  });
+
   it("serializes live running writes so slow appends never pile up concurrently", async () => {
     const chunkGate = deferred();
     const slowWrite = deferred();

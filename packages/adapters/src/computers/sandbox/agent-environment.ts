@@ -52,23 +52,46 @@ function redactSpanningSecret(
   };
 }
 
-/** Longest suffix of `text` that is a proper prefix of `secret`. */
+/** Longest suffix of `text` that is a proper prefix of `secret`, in O(secret.length) time. */
 export function secretPrefixSuffixLength(text: string, secret: string): number {
-  const max = Math.min(secret.length - 1, text.length);
-  const regionStart = text.length - max;
-  for (let index = regionStart; index < text.length; index++) {
-    if (text.charCodeAt(index) !== secret.charCodeAt(0)) continue;
-    const size = text.length - index;
-    let matches = true;
-    for (let offset = 1; offset < size; offset++) {
-      if (text.charCodeAt(index + offset) !== secret.charCodeAt(offset)) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) return size;
+  const patLen = secret.length - 1;
+  if (patLen <= 0 || text.length === 0) return 0;
+  const lps = new Int32Array(patLen);
+  for (let i = 1, j = 0; i < patLen; i += 1) {
+    const ch = secret.charCodeAt(i);
+    while (j > 0 && secret.charCodeAt(j) !== ch) j = lps[j - 1]!;
+    if (secret.charCodeAt(j) === ch) j += 1;
+    lps[i] = j;
   }
-  return 0;
+  const start = Math.max(0, text.length - patLen);
+  let matched = 0;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text.charCodeAt(i);
+    while (matched > 0 && secret.charCodeAt(matched) !== ch) matched = lps[matched - 1]!;
+    if (secret.charCodeAt(matched) === ch) matched += 1;
+  }
+  return matched;
+}
+
+/** Longest prefix of `text` that is a proper suffix of `secret`, in O(secret.length) time. */
+export function secretSuffixPrefixLength(text: string, secret: string): number {
+  const patLen = secret.length - 1;
+  if (patLen <= 0 || text.length === 0) return 0;
+  const lps = new Int32Array(patLen);
+  for (let i = 1, j = 0; i < patLen; i += 1) {
+    const ch = secret.charCodeAt(patLen - i);
+    while (j > 0 && secret.charCodeAt(patLen - j) !== ch) j = lps[j - 1]!;
+    if (secret.charCodeAt(patLen - j) === ch) j += 1;
+    lps[i] = j;
+  }
+  const winLen = Math.min(text.length, patLen);
+  let matched = 0;
+  for (let i = winLen - 1; i >= 0; i -= 1) {
+    const ch = text.charCodeAt(i);
+    while (matched > 0 && secret.charCodeAt(patLen - matched) !== ch) matched = lps[matched - 1]!;
+    if (secret.charCodeAt(patLen - matched) === ch) matched += 1;
+  }
+  return matched;
 }
 
 /** How far `text` continues `secret` from `offset`, in UTF-16 code units. */
