@@ -23,6 +23,8 @@ export type PricingPlan = {
   name: string;
   price: string;
   note?: string;
+  /** The same plan billed yearly, for the billing toggle. */
+  yearly?: { price: string; note: string };
   features: string[];
   action: { label: string; href: string };
 };
@@ -30,6 +32,19 @@ export type PricingPlan = {
 /** Ends each computer hover, so the hours don't read as a meter on everything a bot does. */
 const COMPUTER_TIME_NOTE =
   "Counts only while your bot uses its computer, which most work doesn't need. It pauses when idle.";
+
+function yearlyPrice(annualCents: number) {
+  return {
+    price: `${dollars(annualCents / 12)}/mo`,
+    note: `${dollars(annualCents)} billed yearly`,
+  };
+}
+
+/** How much less paying yearly costs than twelve monthly payments, in whole percent. */
+export const YEARLY_SAVING_PERCENT =
+  STANDARD.monthlyPriceCents === null || STANDARD.annualPriceCents === null
+    ? null
+    : Math.round((1 - STANDARD.annualPriceCents / (STANDARD.monthlyPriceCents * 12)) * 100);
 
 const SANDBOX_PROVIDERS = [
   "Docker",
@@ -68,6 +83,7 @@ const OWN_MODEL_PLAN: PricingPlan = {
     STANDARD.annualPriceCents === null
       ? undefined
       : `${dollars(STANDARD.annualPriceCents / 12)}/mo billed yearly`,
+  yearly: STANDARD.annualPriceCents === null ? undefined : yearlyPrice(STANDARD.annualPriceCents),
   features: [
     "Hosted by us",
     "Claude, ChatGPT, or any API key",
@@ -100,12 +116,14 @@ export type PricingCell = boolean | string | { label: string; detail: string };
 const TIERS = (Object.keys(BYOK_TIERS) as ByokTier[]).flatMap((tier) => {
   const monthly = byokTierPriceCents(tier, "month");
   if (monthly === null && tier !== "standard") return [];
+  const annual = byokTierPriceCents(tier, "year");
   const terms = BYOK_TIERS[tier];
   return [
     {
       name: terms.name,
       monthlyCents: monthly ?? 0,
       price: monthly === null ? "Free" : `${dollars(monthly)}/mo`,
+      yearlyPrice: annual === null ? undefined : yearlyPrice(annual).price,
       computerAllowanceCents: terms.computerAllowanceCents,
     },
   ];
@@ -134,6 +152,7 @@ export const PRICING_COMPARISON = {
     ...TIERS.map((tier) => ({
       name: tier.name,
       price: tier.price,
+      yearlyPrice: tier.yearlyPrice,
       action: {
         ...OWN_MODEL_PLAN.action,
         label: "Start trial",
