@@ -415,6 +415,43 @@ describe("NativeStackController", () => {
     await controller.stop();
   });
 
+  it("fetches a downloaded update's server bundle once ready and keeps it through pruning", async () => {
+    const release = "https://github.com/o/r/releases/download";
+    const next = { url: `${release}/v1.1.0/b.tar.xz`, sha256: "b".repeat(64), size: 9 };
+    const { deps } = harness();
+    const installed: string[] = [];
+    const controller = new NativeStackController({
+      ...deps,
+      serverBundle: {
+        version: "1.0.0",
+        download: { url: `${release}/v1.0.0/a.tar.xz`, sha256: "a".repeat(64), size: 9 },
+      },
+      fetch: async (url) =>
+        new Response(
+          url === `${release}/v1.1.0/server-bundle.json`
+            ? JSON.stringify({ ...next, version: "1.1.0" })
+            : "{}",
+        ),
+      installers: {
+        ...deps.installers,
+        server: async (runtimeDeps, bundle) => {
+          installed.push(bundle.download?.url ?? "");
+          return deps.installers!.server!(runtimeDeps, bundle);
+        },
+      },
+    });
+    controller.prefetchServerBundle("1.1.0");
+    await controller.start();
+    await vi.waitFor(() => expect(installed).toEqual([`${release}/v1.0.0/a.tar.xz`, next.url]));
+
+    const prefetched = path.join(stackDir, "runtime", "server-1.1.0");
+    await mkdir(prefetched);
+    await controller.stop();
+    await controller.start();
+    expect(existsSync(prefetched)).toBe(true);
+    await controller.stop();
+  });
+
   it("stops a database VM a crashed launch left running before attaching to it", async () => {
     const runtime = fakeRuntime();
     runtime.image = true;
