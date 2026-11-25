@@ -195,12 +195,16 @@ describe("media", () => {
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Enlarge B");
   });
 
-  it("hands focus to the photo when the arrow used leaves at the end", () => {
-    render(<Gallery photos={["A", "B"].map((alt) => ({ src: PNG, alt }))} />);
-    const next = q<HTMLButtonElement>('button[aria-label="Next photo"]')!;
-    next.focus();
-    click(next);
+  it("hands focus to the photo an arrow brings on screen, so arrow keys carry on", () => {
+    render(<Gallery photos={["A", "B", "C"].map((alt) => ({ src: PNG, alt }))} />);
+    click(q('button[aria-label="Next photo"]'));
     expect(document.activeElement?.getAttribute("aria-label")).toBe("Enlarge B");
+    act(() => {
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
+    });
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Enlarge C");
   });
 
   it("steps through a gallery with arrows that leave at either end", () => {

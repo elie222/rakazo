@@ -400,9 +400,8 @@ export function Gallery({
                 tabIndex={-1}
                 aria-label={words.t(way === "next" ? "nextPhoto" : "previousPhoto")}
                 onClick={() => {
-                  const next = current + step;
-                  show(next);
-                  if (next === 0 || next === items.length - 1) focusPhoto(next);
+                  show(current + step);
+                  focusPhoto(current + step);
                 }}
               >
                 <svg viewBox="0 0 16 16" aria-hidden="true">
