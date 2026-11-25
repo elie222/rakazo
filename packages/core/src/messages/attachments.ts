@@ -455,6 +455,31 @@ function redactJsonStringTokens(raw: string, redact: (text: string) => string): 
     .join("");
 }
 
+const JSON_STRING_LITERAL_TOKEN = /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))/g;
+
+/**
+ * Redact JSON string tokens after decoding them and apply `redactPlain` only to non-string text
+ * between tokens, so pattern redactors never consume JSON quotes, escapes, or sibling fields.
+ */
+export function redactJsonStringsAndPlainText(
+  raw: string,
+  redactString: (text: string) => string,
+  redactPlain: (text: string) => string = redactString,
+): string {
+  if (!raw.includes('"')) return redactPlain(raw);
+  let out = "";
+  let cursor = 0;
+  for (const match of raw.matchAll(JSON_STRING_LITERAL_TOKEN)) {
+    const index = match.index ?? 0;
+    if (index > cursor) out += redactPlain(raw.slice(cursor, index));
+    const token = match[0];
+    out += redactSingleJsonStringToken(token, redactString);
+    cursor = index + token.length;
+  }
+  if (cursor < raw.length) out += redactPlain(raw.slice(cursor));
+  return out;
+}
+
 export function redactJsonText(raw: string, redact: (text: string) => string): string {
   return redact(redactJsonStringTokens(raw, redact));
 }

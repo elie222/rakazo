@@ -1,4 +1,4 @@
-import { botMessageAllowsSilence, userTurnMessageForRun } from "@rakazo/core";
+import { botMessageAllowsSilence, redactSecrets, userTurnMessageForRun } from "@rakazo/core";
 import { isPartialReplyClientNonce, storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { loadAgentMemoryContext } from "../../memory/memory-context.js";
@@ -244,6 +244,7 @@ export async function loadTurnContext(
           context,
         )
       : Promise.resolve(null);
+  const redact = (text: string) => redactSecrets(text, hold.secrets);
   const [discovered, currentTurnImages, memoryContext, scratchpadContext, ticketContext, recalled] =
     await Promise.all([
       discoveredPromise,
@@ -252,19 +253,30 @@ export async function loadTurnContext(
         ? Promise.resolve("")
         : loadAgentMemoryContext(deps.memory, bot.id, context, {
             today: latestEndedDate(deps.now?.() ?? new Date()),
+            redact,
           }),
       savedContextHidden
         ? Promise.resolve("")
-        : loadAgentScratchpadContext(deps, {
-            spaceId: run.spaceId,
-            botId: bot.id,
-          }),
+        : loadAgentScratchpadContext(
+            deps,
+            {
+              spaceId: run.spaceId,
+              botId: bot.id,
+            },
+            undefined,
+            redact,
+          ),
       savedContextHidden || !ticketBoardEnabled
         ? Promise.resolve(undefined)
-        : loadAgentTicketContext(deps, {
-            spaceId: run.spaceId,
-            text: task.prompt,
-          }),
+        : loadAgentTicketContext(
+            deps,
+            {
+              spaceId: run.spaceId,
+              text: task.prompt,
+            },
+            undefined,
+            redact,
+          ),
       recallPromise,
     ]);
   const semanticMemoryEnabled = Boolean(semanticMemory) && !savedContextHidden;
@@ -276,7 +288,17 @@ export async function loadTurnContext(
       recallSucceeded = stored.length > 0;
       // Provider extraction and recall return derived knowledge, even when the original
       // conversation was this bot's own. Storage cannot promote it to owner authority.
-      recalledMemory = stored.length ? formatRecalledMemory(stored) : "";
+      recalledMemory = stored.length
+        ? formatRecalledMemory(
+            stored.map((item) => ({
+              ...item,
+              memory: redact(item.memory),
+              ...(item.provenance ? { provenance: redact(item.provenance) } : {}),
+              ...(item.id ? { id: redact(item.id) } : {}),
+              ...(item.entity ? { entity: redact(item.entity) } : {}),
+            })),
+          )
+        : "";
     } else {
       getLogger().error("semantic memory recall failed", recalled.error);
     }

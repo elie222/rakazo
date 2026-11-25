@@ -68,4 +68,15 @@ describe("sanitizeConnectorError", () => {
     expect(Buffer.from(emojiCut, "utf8").toString("utf8")).toBe(emojiCut);
     expect(emojiCut.length).toBe(1_999);
   });
+
+  it("preserves valid JSON framing and sibling fields when redacting bearer tokens inside JSON strings", () => {
+    const sanitized = sanitizeConnectorError(
+      new Error('{"auth":"Bearer tok123","msg":"Bearer tok456\\nNext line","next":"keep"}'),
+    );
+    expect(JSON.parse(sanitized)).toEqual({
+      auth: "Bearer [redacted]",
+      msg: "Bearer [redacted]\nNext line",
+      next: "keep",
+    });
+  });
 });

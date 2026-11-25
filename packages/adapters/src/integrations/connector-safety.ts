@@ -1,4 +1,4 @@
-import { redactJsonText, redactSecrets, sliceWellFormed } from "@rakazo/core";
+import { redactJsonStringsAndPlainText, redactSecrets, sliceWellFormed } from "@rakazo/core";
 
 export function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   return AbortSignal.any(signals.filter((signal): signal is AbortSignal => Boolean(signal)));
@@ -32,13 +32,21 @@ export function sanitizeConnectorError(
   options?: { maxChars?: number },
 ): string {
   const message = errorMessage(error);
-  const patternCleaned = message
-    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
-    .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
-  const cleaned =
-    secrets.length > 0
-      ? redactJsonText(patternCleaned, (value) => redactSecrets(value, secrets))
-      : patternCleaned;
+  const sanitizeDecoded = (value: string) =>
+    redactSecrets(
+      value
+        .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+        .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]"),
+      secrets,
+    );
+  const sanitizePlain = (value: string) =>
+    redactSecrets(
+      value
+        .replace(/Bearer\s+[^\s"',;&}]+/gi, "Bearer [redacted]")
+        .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]"),
+      secrets,
+    );
+  const cleaned = redactJsonStringsAndPlainText(message, sanitizeDecoded, sanitizePlain);
   const maxChars = options?.maxChars ?? 2_000;
   return Number.isFinite(maxChars) ? sliceWellFormed(cleaned, maxChars) : cleaned;
 }

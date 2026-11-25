@@ -424,7 +424,10 @@ export async function buildTurnPrompt(
     historicalContext.push({
       role: "user",
       content: redactSecrets(
-        formatCompactedSummary(compactedHistory.summary, thread.historyCompactedUpToSeq!),
+        formatCompactedSummary(
+          redactSecrets(compactedHistory.summary, runSecrets),
+          thread.historyCompactedUpToSeq!,
+        ),
         runSecrets,
       ),
     });

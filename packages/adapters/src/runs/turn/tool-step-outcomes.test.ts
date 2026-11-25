@@ -265,6 +265,20 @@ describe("tool step outcomes", () => {
     expect(keptJson).toContain('"stdout":"got [redacted]"');
     expect(keptJson).not.toContain(multilineSecret);
     expect(keptJson).not.toContain(JSON.stringify(multilineSecret).slice(1, -1));
+
+    const bearerJson = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [{ type: "text", text: '{"msg":"Bearer secret-tok\\nNext line","ok":"keep"}' }],
+        },
+      },
+      [],
+    )!;
+    expect(JSON.parse(bearerJson)).toEqual({
+      msg: "Bearer [redacted]\nNext line",
+      ok: "keep",
+    });
   });
 
   it("replays tool calls only to runs the owner started themselves, failing closed", () => {

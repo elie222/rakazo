@@ -1,7 +1,7 @@
 import type { AgentRunRequest, AgentToolCompletion } from "@rakazo/adapter-kit";
 import type { ToolStepCall } from "@rakazo/contracts";
 import { storedImageMimeType } from "@rakazo/contracts";
-import { redactJsonText, redactSecrets, sliceWellFormed } from "@rakazo/core";
+import { redactJsonStringsAndPlainText, redactSecrets, sliceWellFormed } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "../../approvals/auto-review.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
@@ -176,12 +176,10 @@ function cleanToolText(text: string, secrets: string[]): string {
     const encoded = JSON.stringify(value).slice(1, -1);
     return [value, encoded, encoded.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")];
   });
-  const decodedRedacted = redactJsonText(text, (value) =>
-    sanitizeSensitiveText(redactSecrets(value, secrets)),
-  );
-  return redactCredentialJsonFields(
-    sanitizeSensitiveText(redactSecrets(decodedRedacted, secretForms)),
-  );
+  const sanitizeDecoded = (value: string) => sanitizeSensitiveText(redactSecrets(value, secrets));
+  const sanitizePlain = (value: string) => sanitizeSensitiveText(redactSecrets(value, secretForms));
+  const cleaned = redactJsonStringsAndPlainText(text, sanitizeDecoded, sanitizePlain);
+  return redactCredentialJsonFields(redactSecrets(cleaned, secretForms));
 }
 
 function sliceTailWellFormed(text: string, maxChars: number): string {

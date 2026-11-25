@@ -46,6 +46,11 @@ async function runAfterFill(
     /** Another bot of the same owner runs on their Team Computer, reading a real vault. */
     teamVault?: ReturnType<typeof fakeDatabase>;
     printed?: string[];
+    trigger?: "routine" | "user";
+    extraCommandSecret?: string;
+    memoryText?: string;
+    scratchpadNotes?: string;
+    compactedSummary?: string;
   } = {},
 ) {
   const run = {
@@ -56,8 +61,8 @@ async function runAfterFill(
     spaceId: "space-1",
     userId: "user-1",
     status: "queued",
-    trigger: "routine",
-    routineId: "routine-1",
+    trigger: options.trigger ?? "routine",
+    routineId: options.trigger === "user" ? null : "routine-1",
     retryOfRunId: null,
     leaseFence: 0,
   };
@@ -102,9 +107,23 @@ async function runAfterFill(
       { recordId: "key-1" },
     )),
   };
+  const extraCommandRow = options.extraCommandSecret
+    ? {
+        ...scope,
+        name: "xml-token",
+        origin: "",
+        auth: { type: "command" },
+        ...(await secretStore.put(
+          options.extraCommandSecret,
+          { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
+          { recordId: "command-xml-1" },
+        )),
+      }
+    : undefined;
   const botSecrets = [
     ...(options.savedLogin === false ? [] : [loginRow]),
     commandRow,
+    ...(extraCommandRow ? [extraCommandRow] : []),
     ...(options.blockedKey ? [keyRow] : []),
   ];
   const load = vi.spyOn(secretStore, "load");
@@ -117,7 +136,21 @@ async function runAfterFill(
     ...(options.printed ?? []),
   ].join("\n");
   const toolResults: unknown[] = [];
-  const runtimeRun = vi.fn(async function* (request: { executeTool?: ExecuteTool }) {
+  let capturedRequest:
+    | {
+        prompt?: string;
+        instructions?: string;
+        history?: unknown[];
+        executeTool?: ExecuteTool;
+      }
+    | undefined;
+  const runtimeRun = vi.fn(async function* (request: {
+    prompt?: string;
+    instructions?: string;
+    history?: unknown[];
+    executeTool?: ExecuteTool;
+  }) {
+    capturedRequest = request;
     for (const [index, call] of toolCalls.entries()) {
       toolResults.push(await request.executeTool?.(call.name, call.args, `exec-${index}`));
     }
@@ -177,11 +210,29 @@ async function runAfterFill(
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.threadId,
         groupId: null,
-        historyCompactionSummary: null,
-        historyCompactedUpToSeq: null,
-        nextMessageSeq: 1,
+        historyCompactionSummary: options.compactedSummary ?? null,
+        historyCompactedUpToSeq: options.compactedSummary ? 3 : null,
+        nextMessageSeq: 4,
       })),
     },
+    ...(options.scratchpadNotes
+      ? {
+          scratchpadItem: {
+            findMany: vi.fn(async () => [
+              {
+                id: "s-1",
+                key: "note-1",
+                title: "Note",
+                status: "open",
+                notes: options.scratchpadNotes,
+                createdAt: new Date("2026-11-25T10:00:00Z"),
+                updatedAt: new Date("2026-11-25T11:00:00Z"),
+              },
+            ]),
+            count: vi.fn(async () => 0),
+          },
+        }
+      : {}),
     message: {
       findMany: vi.fn(async () => []),
       findUnique: vi.fn(async () => null),
@@ -270,7 +321,14 @@ async function runAfterFill(
     sandbox,
     secretStore,
     home: { commit: vi.fn(async () => "fixture-revision") },
-    memory: { read: async () => ({ documents: [] }) },
+    memory: {
+      read: async ({ scope }: { scope: string }) => ({
+        documents:
+          scope === "bot" && options.memoryText
+            ? [{ path: "MEMORY.md", content: options.memoryText }]
+            : [],
+      }),
+    },
     memoryProviders: { resolve: async () => null },
     artifacts: { get: vi.fn() },
     events,
@@ -282,7 +340,7 @@ async function runAfterFill(
   await executor.continueRun(run.id, "worker-1");
   const loginLoads = load.mock.calls.filter(([, recordId]) => recordId === "login-1").length;
   const published = JSON.stringify([events.append.mock.calls, events.finalizeRun.mock.calls]);
-  return { toolResults, loginLoads, published };
+  return { toolResults, loginLoads, published, capturedRequest };
 }
 
 afterEach(() => {
@@ -329,6 +387,27 @@ describe("command variables in a later run", () => {
         metadata: { tool: "shell", scope: "space", name: "cli-token", kind: "command" },
       }),
     ]);
+  });
+  it("redacts secrets containing XML characters from memory, scratchpad, and compacted summary in the assembled model request", async () => {
+    const xmlSecret = "xml<sec&ret>99";
+    const { capturedRequest } = await runAfterFill([], {
+      trigger: "user",
+      extraCommandSecret: xmlSecret,
+      memoryText: `Saved memory token ${xmlSecret}`,
+      scratchpadNotes: `Saved scratchpad token ${xmlSecret}`,
+      compactedSummary: `Prior summary token ${xmlSecret}`,
+    });
+    expect(capturedRequest).toBeDefined();
+    expect(capturedRequest?.prompt).toContain("Saved memory token [redacted]");
+    expect(capturedRequest?.prompt).toContain("Saved scratchpad token [redacted]");
+    expect(capturedRequest?.prompt).not.toContain("xml&lt;");
+    expect(capturedRequest?.prompt).not.toContain("sec&amp;ret");
+    expect(capturedRequest?.instructions).not.toContain("xml&lt;");
+    expect(capturedRequest?.instructions).not.toContain("sec&amp;ret");
+    const serializedHistory = JSON.stringify(capturedRequest?.history ?? []);
+    expect(serializedHistory).toContain("Prior summary token [redacted]");
+    expect(serializedHistory).not.toContain("xml&lt;");
+    expect(serializedHistory).not.toContain("sec&amp;ret");
   });
 });
 
