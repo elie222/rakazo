@@ -659,6 +659,9 @@ export interface DockerStreamChunk {
   data: string;
 }
 
+/** Upper bound on a single Docker multiplexed frame (Docker's stdcopy uses 32 KiB chunks). */
+export const MAX_DOCKER_STREAM_FRAME_BYTES = 16 * 1024 * 1024;
+
 /**
  * Split docker exec frames as they arrive. A complete multiplexed stream matches
  * demuxDockerStream; an unfinished frame is held until its payload arrives.
@@ -680,7 +683,10 @@ export function createDockerStreamDemuxer() {
     if (mode === "pending") {
       if (buffer.length === 0) return events;
       if (!final && buffer.length < 8) return events;
-      const headerReady = buffer.length >= 8 && isDockerFrameHeader(buffer, 0);
+      const headerReady =
+        buffer.length >= 8 &&
+        isDockerFrameHeader(buffer, 0) &&
+        buffer.readUInt32BE(4) <= MAX_DOCKER_STREAM_FRAME_BYTES;
       const frameReady = headerReady && firstDockerFrameComplete(buffer);
       if (!frameReady) {
         if (!final && headerReady) return events;
@@ -692,8 +698,20 @@ export function createDockerStreamDemuxer() {
       mode = "multiplex";
     }
     let offset = 0;
-    while (offset + 8 <= buffer.length && isDockerFrameHeader(buffer, offset)) {
+    while (offset + 8 <= buffer.length) {
+      if (!isDockerFrameHeader(buffer, offset)) {
+        mode = "raw";
+        events.push({ stream: "stdout", data: decoders.stdout.write(buffer.subarray(offset)) });
+        buffer = Buffer.alloc(0);
+        return events;
+      }
       const size = buffer.readUInt32BE(offset + 4);
+      if (size > MAX_DOCKER_STREAM_FRAME_BYTES) {
+        mode = "raw";
+        events.push({ stream: "stdout", data: decoders.stdout.write(buffer.subarray(offset)) });
+        buffer = Buffer.alloc(0);
+        return events;
+      }
       if (offset + 8 + size > buffer.length) break;
       const stream = buffer[offset] === 2 ? "stderr" : "stdout";
       events.push({

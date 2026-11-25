@@ -126,4 +126,105 @@ describe("shell Activity events", () => {
       notice: expect.stringContaining("Call browser_snapshot to open it"),
     });
   });
+
+  it("serializes live running writes so slow appends never pile up concurrently", async () => {
+    const chunkGate = deferred();
+    const slowWrite = deferred();
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const events: Recorded[] = [];
+    let callIndex = 0;
+    async function* stream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stdout", data: "chunk-1\n" };
+      await chunkGate.promise;
+      yield { type: "stdout", data: "chunk-2\n" };
+      yield { type: "stdout", data: "chunk-3\n" };
+      yield { type: "exit", code: 0 };
+    }
+    const { ctx, call } = setup(stream());
+    ctx.deps.events.append = (async ({ payload }: { payload: Recorded }) => {
+      callIndex += 1;
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        // Hold the first live output write open while time advances and more chunks arrive.
+        if (callIndex === 2) await slowWrite.promise;
+        events.push({
+          status: payload.status,
+          exitCode: payload.exitCode,
+          output: payload.output,
+        });
+      } finally {
+        inFlight -= 1;
+      }
+    }) as unknown as RunContext["deps"]["events"]["append"];
+
+    const running = shell(ctx, call);
+    await vi.waitFor(() => expect(callIndex).toBe(2));
+    // Advance well past the publish interval while the first live write is still in flight.
+    await vi.advanceTimersByTimeAsync(5_000);
+    chunkGate.resolve();
+    await vi.advanceTimersByTimeAsync(5_000);
+    // No second concurrent write should have started while write #2 is still in flight.
+    expect(maxInFlight).toBe(1);
+    expect(callIndex).toBe(2);
+
+    slowWrite.resolve();
+    await expect(running).resolves.toMatchObject({ code: 0 });
+    expect(maxInFlight).toBe(1);
+    expect(events.at(-1)).toEqual({
+      status: "done",
+      exitCode: 0,
+      output: "chunk-1\nchunk-2\nchunk-3\n",
+    });
+  });
+
+  it("cancels a queued stale snapshot when later clipped output returns to the last sent tail", async () => {
+    const gate = deferred();
+    const secondFillerGate = deferred();
+    const exitGate = deferred();
+    const slowWrite = deferred();
+    const events: Recorded[] = [];
+    let callIndex = 0;
+    const filler = "a".repeat(16_000);
+    async function* stream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stdout", data: filler };
+      await gate.promise;
+      yield { type: "stdout", data: "B" };
+      await secondFillerGate.promise;
+      yield { type: "stdout", data: filler };
+      await exitGate.promise;
+      yield { type: "exit", code: 0 };
+    }
+    const { ctx, call } = setup(stream());
+    ctx.deps.events.append = (async ({ payload }: { payload: Recorded }) => {
+      callIndex += 1;
+      if (callIndex === 2) await slowWrite.promise;
+      events.push({
+        status: payload.status,
+        exitCode: payload.exitCode,
+        output: payload.output,
+      });
+    }) as unknown as RunContext["deps"]["events"]["append"];
+
+    const running = shell(ctx, call);
+    await vi.waitFor(() => expect(callIndex).toBe(2));
+    gate.resolve();
+    // Queue the "B" snapshot while write #2 is still in flight.
+    await vi.advanceTimersByTimeAsync(1_100);
+    secondFillerGate.resolve();
+    // Deliver the second filler so clipped output returns to lastSentOutput before write #2 settles.
+    await vi.advanceTimersByTimeAsync(1_100);
+    slowWrite.resolve();
+    // Hold exit open and advance timers to confirm no stale "B" running write fires while still running.
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(callIndex).toBe(2);
+    expect(events.some((event) => event.status === "running" && event.output.endsWith("B"))).toBe(
+      false,
+    );
+
+    exitGate.resolve();
+    await expect(running).resolves.toMatchObject({ code: 0 });
+    expect(events.at(-1)?.status).toBe("done");
+  });
 });

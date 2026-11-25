@@ -1,5 +1,5 @@
 import { deferred } from "@rakazo/core/test-async";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { automated } from "../../messaging/automated-messages.prompt.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
 import {
@@ -330,6 +330,195 @@ describe("observeShellCommand", () => {
     expect(joined).toBe("pre [redacted] post");
     expect(joined).not.toContain("SECRET123");
     expect(seen.every((line) => !line.includes("SECRET123"))).toBe(true);
+  });
+
+  it("bounds oversized output to head and tail while redacting secrets across boundaries", async () => {
+    const secretA = "HEAD_CUT_SECRET_VALUE";
+    const secretB = "TAIL_CUT_SECRET_VALUE";
+    const secretSpan = "BOUNDARY_SECRET_999";
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: `HEADER\n${"a".repeat(63_990)}${secretA}` };
+        for (let i = 0; i < 40; i += 1) {
+          yield { type: "stdout" as const, data: `middle-${i}-${"m".repeat(10_000)}\n` };
+        }
+        yield {
+          type: "stdout" as const,
+          data: `${secretB}${"z".repeat(63_990)}TAIL_END\nBOUNDARY_`,
+        };
+        yield { type: "stderr" as const, data: "SECRET_999 stderr-end\n" };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [secretA, secretB, secretSpan] },
+    );
+
+    expect(observed.completion).toBeUndefined();
+    expect(observed.result.stdout).toContain("HEADER\n");
+    expect(observed.result.stdout).toContain("TAIL_END\n");
+    expect(observed.result.stdout).toContain("characters omitted");
+    expect(observed.result.stdout.length).toBeLessThan(200_000);
+    const joined = `${observed.result.stdout}${observed.result.stderr}`;
+    expect(joined).not.toContain(secretA);
+    expect(joined).not.toContain(secretB);
+    expect(joined).not.toContain(secretSpan);
+    expect(joined).not.toContain("BOUNDARY_");
+    expect(observed.result.stderr).toContain("stderr-end\n");
+  });
+
+  it("redacts overlapping secrets across compaction boundaries and detects sign-in prompts after compaction", async () => {
+    vi.useFakeTimers();
+    try {
+      const first = "OVERLAP_ONE_TWO";
+      const second = "TWO_THREE_FOUR";
+      const exitGate = deferred();
+      const observedPromise = observeShellCommand(
+        (async function* () {
+          yield { type: "stdout" as const, data: `HEAD\n${"x".repeat(165_000)}${first}` };
+          yield {
+            type: "stdout" as const,
+            data: `_THREE_FOUR\n${SIGN_IN}`,
+          };
+          await exitGate.promise;
+          yield { type: "exit" as const, code: 0 };
+        })(),
+        {
+          secrets: [first, second],
+          idleMs: 1_000,
+          quietMs: 10_000,
+        },
+      );
+
+      let settled = false;
+      void observedPromise.then(() => {
+        settled = true;
+      });
+      // Must take the short idleMs path (1_000 ms) well before quietMs (10_000 ms) even after compaction.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(settled).toBe(true);
+      const observed = await observedPromise;
+      expect(isRunningShellCommand(observed.result)).toBe(true);
+      expect(observed.result.stdout).not.toContain(first);
+      expect(observed.result.stdout).not.toContain(second);
+      expect(observed.result.stdout).not.toContain("_THREE_FOUR");
+      exitGate.resolve();
+      const final = await observed.completion;
+      expect(final?.stdout).not.toContain(first);
+      expect(final?.stdout).not.toContain(second);
+      expect(final?.stdout).not.toContain("_THREE_FOUR");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("redacts overlapping secrets registered after first compaction covers the retained head", async () => {
+    const shortInterior = "HEAD_ALPHA_BETA";
+    const longerInterior = "ALPHA_BETA_GAMMA";
+    const boundarySecret = "BOUNDARY_CUT_SECRET";
+    const boundaryPrefixOverlap = "PRE_BOUNDARY_CUT";
+    const secrets = [shortInterior, boundarySecret];
+    const chunkGate = deferred();
+    // Place boundarySecret across the 64_000-character head boundary so headRedactedSuffix is non-zero.
+    const lead = `BEGIN_${shortInterior}_GAMMA\n`;
+    const padToBoundary = "p".repeat(64_000 - lead.length - "PRE_BOUNDARY_".length);
+    const bigChunk = `${lead}${padToBoundary}PRE_${boundarySecret}${"x".repeat(110_000)}`;
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: bigChunk };
+        await chunkGate.promise;
+        yield { type: "stdout" as const, data: "DONE\n" };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets,
+        onOutput: () => {
+          if (!secrets.includes(longerInterior)) {
+            secrets.push(longerInterior, boundaryPrefixOverlap);
+            chunkGate.resolve();
+          }
+        },
+      },
+    );
+
+    expect(observed.result.stdout).not.toContain("ALPHA_BETA");
+    expect(observed.result.stdout).not.toContain("GAMMA");
+    expect(observed.result.stdout).not.toContain("PRE_BOUNDARY");
+    expect(observed.result.stdout).not.toContain("BOUNDARY_");
+    expect(observed.result.stdout).toContain("BEGIN_[redacted]\n");
+    expect(observed.result.stdout).toContain("DONE\n");
+  });
+
+  it("masks fragments at both compaction cuts for secrets registered after compaction", async () => {
+    const headCutSecret = "LATE_HEAD_CUT_TOKEN_99";
+    const tailCutSecret = "LATE_TAIL_CUT_TOKEN_88";
+    const secrets: string[] = [];
+    const chunkGate = deferred();
+    // Place headCutSecret across index 64_000 and tailCutSecret across tailStart (length - 64_000).
+    const totalLength = 170_000;
+    const headCutPos = 64_000 - "LATE_HEAD_".length;
+    const tailCutPos = totalLength - 64_000 - "LATE_TAIL_".length;
+    const bigChunk =
+      "h".repeat(headCutPos) +
+      headCutSecret +
+      "m".repeat(tailCutPos - headCutPos - headCutSecret.length) +
+      tailCutSecret +
+      "t".repeat(totalLength - tailCutPos - tailCutSecret.length);
+    expect(bigChunk.length).toBe(totalLength);
+
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: bigChunk };
+        await chunkGate.promise;
+        yield { type: "stdout" as const, data: "\nDONE\n" };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets,
+        onOutput: () => {
+          if (secrets.length === 0) {
+            secrets.push(headCutSecret, tailCutSecret);
+            chunkGate.resolve();
+          }
+        },
+      },
+    );
+
+    expect(observed.result.stdout).not.toContain("LATE_HEAD_");
+    expect(observed.result.stdout).not.toContain("CUT_TOKEN_88");
+    expect(observed.result.stdout).not.toContain(headCutSecret);
+    expect(observed.result.stdout).not.toContain(tailCutSecret);
+    expect(observed.result.stdout).toContain("[redacted]\n[...");
+    expect(observed.result.stdout).toContain("omitted ...]\n[redacted]");
+    expect(observed.result.stdout).toContain("\nDONE\n");
+  });
+
+  it("throttles live onOutput snapshots when onOutputIntervalMs is set", async () => {
+    const gate = deferred();
+    const seen: string[] = [];
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: "first\n" };
+        for (let i = 0; i < 20; i += 1) {
+          yield { type: "stdout" as const, data: `line-${i}\n` };
+        }
+        await gate.promise;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: [],
+        idleMs: 20,
+        quietMs: 20,
+        onOutputIntervalMs: 500,
+        onOutput: (snapshot) => seen.push(snapshot.stdout),
+      },
+    );
+
+    // Only the leading-edge snapshot fires synchronously; rapid subsequent chunks coalesce.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe("first\n");
+    expect(observed.result.stdout).toContain("line-19\n");
+    gate.resolve();
+    const final = await observed.completion;
+    expect(final?.stdout).toContain("line-19\n");
   });
 });
 

@@ -568,16 +568,28 @@ export const computerTools: ToolHandlers = {
       exitCode: null,
       output: "",
     });
+    const LIVE_COMMAND_EVENT_INTERVAL_MS = 1_000;
     let latestOutput = "";
+    let lastSentOutput = "";
+    let hasPublishedRunning = false;
     let lastPublishedAt = 0;
     let publishTimer: ReturnType<typeof setTimeout> | undefined;
+    let runningWrite: Promise<unknown> | undefined;
+    let pendingPublish = false;
+    let commandEnded = false;
     const clearPublishTimer = () => {
       if (publishTimer) clearTimeout(publishTimer);
       publishTimer = undefined;
     };
+    const settleLiveWrites = async () => {
+      commandEnded = true;
+      pendingPublish = false;
+      clearPublishTimer();
+      await runningWrite;
+    };
     // A stale debounced "running" must not land after the terminal event.
     const recordFailure = async (error: unknown) => {
-      clearPublishTimer();
+      await settleLiveWrites();
       await appendComputerCommand(ctx, {
         ...commandEvent,
         status: "done",
@@ -589,23 +601,58 @@ export const computerTools: ToolHandlers = {
       });
     };
     try {
-      const publishRunning = (output: string, immediate = false) => {
-        latestOutput = output.slice(-COMPUTER_COMMAND_OUTPUT_MAX_CHARS);
-        const send = () => {
-          clearPublishTimer();
-          lastPublishedAt = Date.now();
-          void appendComputerCommand(ctx, {
-            ...commandEvent,
-            status: "running",
-            exitCode: null,
-            output: latestOutput,
-          });
-        };
-        if (immediate || Date.now() - lastPublishedAt >= 400) {
-          send();
+      const flushRunning = () => {
+        clearPublishTimer();
+        if (commandEnded || runningWrite) return;
+        if (!pendingPublish || latestOutput === lastSentOutput) {
+          pendingPublish = false;
           return;
         }
-        if (!publishTimer) publishTimer = setTimeout(send, 400);
+        pendingPublish = false;
+        hasPublishedRunning = true;
+        lastPublishedAt = Date.now();
+        const output = latestOutput;
+        lastSentOutput = output;
+        const write = appendComputerCommand(ctx, {
+          ...commandEvent,
+          status: "running",
+          exitCode: null,
+          output,
+        }).finally(() => {
+          if (runningWrite === write) runningWrite = undefined;
+          if (!commandEnded && pendingPublish && latestOutput !== lastSentOutput) {
+            const delay = Math.max(
+              0,
+              LIVE_COMMAND_EVENT_INTERVAL_MS - (Date.now() - lastPublishedAt),
+            );
+            if (delay === 0) flushRunning();
+            else if (!publishTimer) publishTimer = setTimeout(flushRunning, delay);
+          }
+        });
+        runningWrite = write;
+      };
+      const publishRunning = (output: string, immediate = false) => {
+        if (commandEnded) return;
+        const clipped = output.slice(-COMPUTER_COMMAND_OUTPUT_MAX_CHARS);
+        latestOutput = clipped;
+        if (clipped === lastSentOutput) {
+          pendingPublish = false;
+          clearPublishTimer();
+          return;
+        }
+        pendingPublish = true;
+        if (runningWrite) return;
+        const elapsed = Date.now() - lastPublishedAt;
+        if (immediate || !hasPublishedRunning || elapsed >= LIVE_COMMAND_EVENT_INTERVAL_MS) {
+          flushRunning();
+          return;
+        }
+        if (!publishTimer) {
+          publishTimer = setTimeout(
+            flushRunning,
+            Math.max(0, LIVE_COMMAND_EVENT_INTERVAL_MS - elapsed),
+          );
+        }
       };
       const commandOutput = (
         snapshot: { stdout: string; stderr: string },
@@ -650,6 +697,7 @@ export const computerTools: ToolHandlers = {
         ),
         {
           secrets: ctx.secrets,
+          onOutputIntervalMs: LIVE_COMMAND_EVENT_INTERVAL_MS,
           onOutput: (snapshot) => {
             const output = commandOutput(snapshot, true);
             if (output) publishRunning(output);
@@ -661,7 +709,7 @@ export const computerTools: ToolHandlers = {
       if (observed.completion) {
         const completion = observed.completion.then(
           async (final) => {
-            clearPublishTimer();
+            await settleLiveWrites();
             await appendComputerCommand(ctx, {
               ...commandEvent,
               status: "done",
@@ -689,7 +737,7 @@ export const computerTools: ToolHandlers = {
         if (isRunningShellCommand(returned)) observer?.onShellStillRunning?.(completion);
         return returned;
       }
-      clearPublishTimer();
+      await settleLiveWrites();
       const redacted = observed.result;
       await appendComputerCommand(ctx, {
         ...commandEvent,

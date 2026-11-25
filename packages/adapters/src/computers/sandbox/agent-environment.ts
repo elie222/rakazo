@@ -53,7 +53,7 @@ function redactSpanningSecret(
 }
 
 /** Longest suffix of `text` that is a proper prefix of `secret`. */
-function secretPrefixSuffixLength(text: string, secret: string): number {
+export function secretPrefixSuffixLength(text: string, secret: string): number {
   const max = Math.min(secret.length - 1, text.length);
   const regionStart = text.length - max;
   for (let index = regionStart; index < text.length; index++) {
