@@ -347,7 +347,9 @@ export class PiAgentRuntime implements AgentRuntime {
           declarations = offered;
           modelTools = modelToolDeclarations(tools, toolsByAgentName, offered);
         };
-        // A later system message keeps the transcript before it, and so the cached prefix.
+        // Emitting the note as a later system message preserves the leading cached prefix on
+        // models that support mid-conversation system messages; other models fold it into the
+        // leading instructions during provider serialization.
         const instructionsUpdate = (messages: readonly { role: string }[]): Message[] => {
           const text = request.getInstructionsUpdate?.(getCurrentSystemPrompt(messages));
           return text ? [{ role: "system", content: text, timestamp: Date.now() }] : [];

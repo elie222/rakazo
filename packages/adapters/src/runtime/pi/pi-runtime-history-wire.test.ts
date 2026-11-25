@@ -408,4 +408,36 @@ describe("history on the wire", () => {
     expect(results[0]).not.toContain("is not available to you now");
     expect(results[1]).toContain("[save_page is not available to you now.]");
   });
+
+  it("sends a mid-run scope note in place when supported and folds it into system otherwise", async () => {
+    const scopeNote =
+      "search_history now covers only this chat. Scope my_chats is no longer available in this run, so ignore earlier guidance to use it.";
+    const baseInstructions = "Search earlier chats with scope my_chats.";
+    const overrides: Partial<AgentRunRequest> = {
+      instructions: baseInstructions,
+      claimSteering: async () => [
+        { id: "steer-1", messageId: "m-ext", origin: "webhook", text: "External update" },
+      ],
+      getInstructionsUpdate: (instructions) =>
+        instructions.includes(scopeNote) ? undefined : scopeNote,
+    };
+
+    const inPlace = await wireBody(
+      { ...anthropic, id: "claude-fable-5" },
+      anthropicReply,
+      overrides,
+    );
+    expect(JSON.stringify(inPlace.system)).toContain(baseInstructions);
+    expect(JSON.stringify(inPlace.system)).not.toContain(scopeNote);
+    expect(JSON.stringify(inPlace.messages)).toContain(scopeNote);
+
+    const folded = await wireBody(
+      { ...anthropic, id: "claude-haiku-4-5" },
+      anthropicReply,
+      overrides,
+    );
+    expect(JSON.stringify(folded.system)).toContain(baseInstructions);
+    expect(JSON.stringify(folded.system)).toContain(scopeNote);
+    expect(JSON.stringify(folded.messages)).not.toContain(scopeNote);
+  });
 });
