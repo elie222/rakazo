@@ -1,8 +1,9 @@
 import { t } from "@lingui/core/macro";
 import { NativeClockOperation, NativeClockResponse } from "@rakazo/contracts";
 import { requireOptionalNativeModule } from "expo-modules-core";
-import { Alert, AppState, Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { dateLocaleForUi } from "../i18n/i18n";
+import type { ClockConfirmation } from "./use-clock-confirmation";
 
 type AndroidClock = {
   startTimer(durationSeconds: number, label: string | null): Promise<string>;
@@ -31,6 +32,7 @@ function timerDuration(seconds: number, locale: string): string {
 export async function prepareDeviceClock(
   operation: NativeClockOperation,
   current: () => boolean,
+  confirm: (details: ClockConfirmation) => Promise<boolean>,
 ): Promise<PreparedClock> {
   const active = () => current() && AppState.currentState === "active";
   if (!active()) return { status: "unavailable" };
@@ -47,32 +49,19 @@ export async function prepareDeviceClock(
         Date.UTC(1970, 0, 1, input.hour, input.minute),
       );
   const title = timer ? t`Open Clock to start a timer?` : t`Open Clock to set an alarm?`;
-  const accepted = await new Promise<boolean>((resolve) => {
-    Alert.alert(
-      title,
-      input.label ? `${time}\n${input.label}` : time,
-      [
-        { text: t`Cancel`, style: "cancel", onPress: () => resolve(false) },
-        { text: t`Open Clock`, onPress: () => resolve(true) },
-      ],
-      { cancelable: true, onDismiss: () => resolve(false) },
-    );
-  });
-  if (!accepted) return { status: "cancelled" };
+  const message = input.label ? `${time}\n${input.label}` : time;
+  if (!(await confirm({ title, message }))) return { status: "cancelled" };
 
   return {
     perform: async () => {
       if (!active()) return { status: "unavailable" };
-      try {
-        const status = timer
-          ? await clock.startTimer(input.durationSeconds, input.label ?? null)
-          : await clock.setAlarm(input.hour, input.minute, input.label ?? null);
-        const response = NativeClockResponse.safeParse({ status });
-        // Opening Clock can move Rakazo to the background before this receipt arrives.
-        return response.success ? response.data : { status: "uncertain" };
-      } catch {
-        return { status: "uncertain" };
-      }
+      const status = timer
+        ? await clock.startTimer(input.durationSeconds, input.label ?? null)
+        : await clock.setAlarm(input.hour, input.minute, input.label ?? null);
+      const response = NativeClockResponse.safeParse({ status });
+      if (!response.success) throw new Error("Unexpected native Clock result");
+      // Opening Clock can move Rakazo to the background before this receipt arrives.
+      return response.data;
     },
   };
 }

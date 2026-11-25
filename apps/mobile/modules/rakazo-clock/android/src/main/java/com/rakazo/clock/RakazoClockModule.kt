@@ -61,8 +61,6 @@ class RakazoClockModule : Module() {
       "unavailable"
     } catch (_: SecurityException) {
       "unavailable"
-    } catch (_: RuntimeException) {
-      "uncertain"
     }
   }
 }

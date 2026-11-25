@@ -6,6 +6,7 @@ import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { ClockPrompt } from "../phone-clock/use-clock-confirmation";
 import { useDeviceCalendar } from "./use-device-calendar";
 
 const mocks = vi.hoisted(() => {
@@ -25,8 +26,10 @@ const mocks = vi.hoisted(() => {
     },
     rpc: vi.fn(),
     prepare: vi.fn(),
+    prepareCalendar: vi.fn(),
     perform: vi.fn(),
     report: vi.fn(),
+    listen: vi.fn(),
   };
 });
 
@@ -37,9 +40,15 @@ vi.mock("../api/api", () => ({
   selectedSpaceId: () => "space",
   rpc: mocks.rpc,
 }));
-vi.mock("../api/roster-signals", () => ({ useSpaceChanges: () => undefined }));
+vi.mock("../api/roster-signals", () => ({
+  useSpaceChanges: (_signal: string, read: () => void) => mocks.listen(read),
+}));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../phone-clock/device-clock", () => ({ prepareDeviceClock: mocks.prepare }));
+vi.mock("./device-calendar", () => ({
+  prepareDeviceCalendar: mocks.prepareCalendar,
+  validateDeviceCalendarResult: vi.fn(),
+}));
 vi.mock("../platform/monitoring", () => ({ reportMobileError: mocks.report }));
 
 const pending = {
@@ -54,18 +63,26 @@ const ids = { id: pending.id, runId: pending.runId, threadId: pending.threadId, 
 const botId = "bot";
 
 function Probe({ focused }: { focused: boolean }) {
-  useDeviceCalendar(botId, focused);
-  return null;
+  lastPrompt = useDeviceCalendar(botId, focused);
+  return lastPrompt ? (
+    <button type="button" onClick={() => lastPrompt?.settle(true)}>
+      {lastPrompt.title}
+    </button>
+  ) : null;
 }
 
 let root: Root;
+let container: HTMLDivElement;
+let lastPrompt: ClockPrompt | undefined;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("expo", { modules: { RakazoClock: {} }, uuidv4: () => device.deviceKey });
   vi.resetAllMocks();
   mocks.setAppState("active");
   mocks.prepare.mockResolvedValue({ perform: mocks.perform });
-  root = createRoot(document.createElement("div"));
+  container = document.createElement("div");
+  root = createRoot(container);
+  lastPrompt = undefined;
 });
 
 afterEach(() => act(() => root.unmount()));
@@ -147,4 +164,114 @@ it("does not dispatch a claim from an earlier foreground visit", async () => {
   });
   await expectResult("unavailable");
   expect(mocks.perform).not.toHaveBeenCalled();
+});
+
+it("handles the earlier calendar request before waiting for Clock consent", async () => {
+  const confirmation = deferred<{ status: "cancelled" }>();
+  const calendar = {
+    ...pending,
+    id: "calendar-request",
+    remainingMs: 9_000,
+    operation: { action: "list_calendars", input: { source: "device" } },
+  } satisfies NativeDeviceRequest;
+  vi.stubGlobal("expo", {
+    modules: { RakazoClock: {}, CalendarNext: {} },
+    uuidv4: () => device.deviceKey,
+  });
+  mocks.prepare.mockReturnValue(confirmation.promise);
+  mocks.prepareCalendar.mockResolvedValue({ status: "cancelled" });
+  mocks.rpc.mockImplementation(async (method, input) => {
+    if (method === "threads/nativeCalendarPending")
+      return input.capability === "clock" ? [pending] : [calendar];
+    if (method === "threads/nativeCalendarClaim")
+      return input.id === pending.id ? pending : calendar;
+  });
+
+  await act(async () => root.render(<Probe focused />));
+  // A Clock confirmation has not been answered, but the older Calendar request was served.
+  const callsBeforeAnswer = [...mocks.rpc.mock.calls];
+  await act(async () => confirmation.resolve({ status: "cancelled" }));
+
+  expect(callsBeforeAnswer).toContainEqual([
+    "threads/nativeCalendarResult",
+    {
+      id: calendar.id,
+      runId: calendar.runId,
+      threadId: calendar.threadId,
+      deviceKey: device.deviceKey,
+      response: { status: "cancelled" },
+    },
+    { requestContext: {}, skipSpaceAuthRecovery: true },
+  ]);
+});
+
+it("reports an uncertain native exception without logging Clock arguments or its message", async () => {
+  queueClaim(pending);
+  mocks.perform.mockRejectedValue(new Error("private alarm label"));
+
+  await act(async () => root.render(<Probe focused />));
+  await expectResult("uncertain");
+
+  expect(mocks.report).toHaveBeenCalledExactlyOnceWith(
+    new Error("Device clock execution failed"),
+    "rpc.transport",
+    { errorType: "Error" },
+  );
+});
+
+it("dismisses expired Clock consent and then reads the Calendar request that arrived", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  try {
+    const shortClock = { ...pending, remainingMs: 100 };
+    const calendar = {
+      ...pending,
+      id: "later-calendar-request",
+      operation: { action: "list_calendars", input: { source: "device" } },
+    } satisfies NativeDeviceRequest;
+    let calendarAvailable = false;
+    vi.stubGlobal("expo", {
+      modules: { RakazoClock: {}, CalendarNext: {} },
+      uuidv4: () => device.deviceKey,
+    });
+    mocks.prepare.mockImplementation(async (_operation, _eligible, confirm) =>
+      (await confirm({ title: "Clock timer", message: "1 min" }))
+        ? { perform: mocks.perform }
+        : { status: "cancelled" },
+    );
+    mocks.prepareCalendar.mockResolvedValue({ status: "cancelled" });
+    mocks.rpc.mockImplementation(async (method, input) => {
+      if (method === "threads/nativeCalendarPending") {
+        if (input.capability === "clock") return performance.now() < 100 ? [shortClock] : [];
+        return calendarAvailable ? [calendar] : [];
+      }
+      if (method === "threads/nativeCalendarClaim")
+        return input.id === pending.id ? shortClock : calendar;
+    });
+
+    await act(async () => root.render(<Probe focused />));
+    expect(container.textContent).toBe("Clock timer");
+    expect(lastPrompt).toBeDefined();
+    const staleConfirm = lastPrompt?.settle;
+    calendarAvailable = true;
+    await act(async () => mocks.listen.mock.lastCall?.[0]());
+    expect(mocks.prepareCalendar).not.toHaveBeenCalled();
+
+    await act(async () => vi.advanceTimersByTimeAsync(101));
+    expect(container.textContent).toBe("");
+    await act(async () => staleConfirm?.(true));
+
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "threads/nativeCalendarResult",
+      expect.objectContaining({ id: calendar.id, response: { status: "cancelled" } }),
+      { requestContext: {}, skipSpaceAuthRecovery: true },
+    );
+    expect(mocks.rpc).not.toHaveBeenCalledWith(
+      "threads/nativeCalendarClaim",
+      ids,
+      expect.anything(),
+    );
+    expect(mocks.perform).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });

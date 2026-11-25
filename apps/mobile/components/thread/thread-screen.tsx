@@ -81,6 +81,7 @@ import { liveEndRunError } from "../../lib/thread/thread-window";
 import { RunErrorSheet } from "../cards/run-error-sheet";
 import { ThreadComposer } from "../composer/thread-composer";
 import { SelectTextSheet } from "../messages/select-text-sheet";
+import { ClockConfirmationDialog } from "./clock-confirmation-dialog";
 import { FailedSendBubble } from "./failed-send-bubble";
 import { createThreadHeaderStyles } from "./header/thread-header-styles";
 import { QuoteSheet } from "./quote-sheet";
@@ -152,7 +153,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   const rootAvoidsKeyboard = useContext(CallKeyboardContext);
   const contentBottomInset = useContentBottomInset();
   const onCall = Boolean(botId) && call?.botId === botId;
-  useDeviceCalendar(botId, focused && !readOnly && !inGroup && !onCall);
+  const clockPrompt = useDeviceCalendar(botId, focused && !readOnly && !inGroup && !onCall);
   // The composer floats over the list, which scrolls underneath; this keeps the newest message
   // clear of it. A read-only chat has no composer.
   const [dockHeight, setDockHeight] = useState(0);
@@ -592,6 +593,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
 
   return (
     <View style={{ flex: 1 }}>
+      {clockPrompt ? <ClockConfirmationDialog prompt={clockPrompt} /> : null}
       <KeyboardAvoidingView
         enabled={!rootAvoidsKeyboard && keyboard.avoiding}
         // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
