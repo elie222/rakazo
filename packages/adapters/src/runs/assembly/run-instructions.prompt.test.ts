@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { connectedPluginsInstruction, taughtSkillsInstruction } from "./run-instructions.prompt.js";
+import {
+  CALENDAR_RESPONSE_INSTRUCTION,
+  connectedPluginsInstruction,
+  taughtSkillsInstruction,
+} from "./run-instructions.prompt.js";
 
 describe("connectedPluginsInstruction", () => {
   it("names each connected plugin and prefers its tools to browsing", () => {
@@ -9,7 +13,7 @@ describe("connectedPluginsInstruction", () => {
         { displayName: "Code", connectorId: "apps", provider: "code" },
       ]),
     ).toBe(
-      "Connected plugins: Mail (apps:mail), Code (apps:code). Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).",
+      `Connected plugins: Mail (apps:mail), Code (apps:code). Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar). ${CALENDAR_RESPONSE_INSTRUCTION}`,
     );
   });
 
