@@ -587,7 +587,7 @@ model AccessGrant {
   code           String?
   createdAt      DateTime  @default(now())
 
-  @@unique([email, code])
+  @@unique([code, email])
   @@index([email])
   @@index([createdAt])
   @@map("access_grants")

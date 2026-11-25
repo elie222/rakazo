@@ -26,6 +26,7 @@ it("starts a new account in onboarding unless it came for an invite, invitation 
   expect(newAccountDestination("/invite/abc_DEF-123")).toBe("/invite/abc_DEF-123");
   expect(newAccountDestination("/redeem/SPRING-CODE")).toBe("/redeem/SPRING-CODE");
   expect(newAccountDestination("/redeem")).toBe("/redeem");
+  expect(newAccountDestination("/redeem/SPRING-CODE/")).toBe("/redeem/SPRING-CODE/");
   expect(newAccountDestination("/join/abc_DEF-123")).toBe("/join/abc_DEF-123");
   expect(newAccountDestination("/integrations/setup")).toBe("/onboarding");
   expect(newAccountDestination(null)).toBe("/onboarding");

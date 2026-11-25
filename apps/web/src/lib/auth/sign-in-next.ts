@@ -8,7 +8,7 @@ const PAGE_REVIEW_PATH = /^\/review(?:\/[A-Za-z0-9_-]{1,200})?\/?$/;
 
 // A Space invite link, an organization invitation's Join page, or a credit code to redeem.
 const INVITE_PATH =
-  /^\/(?:(?:invite|join)\/[A-Za-z0-9_-]{1,200}|redeem(?:\/[A-Za-z0-9_-]{1,64})?)$/;
+  /^\/(?:(?:invite|join)\/[A-Za-z0-9_-]{1,200}|redeem(?:\/[A-Za-z0-9_-]{1,64})?\/?)$/;
 
 const BOT_CHAT_PREFIX = "/app/";
 

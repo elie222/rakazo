@@ -126,16 +126,25 @@ export async function grantCreditCode(
   if (!user?.emailVerified)
     throw new ClientError("FORBIDDEN", "Verify your email to redeem a code");
   const email = user.email.toLowerCase();
-  // Concurrent redemptions can pass the limit by a few; the per-account limit is exact.
-  if (maxClaims !== null && (await prisma.accessGrant.count({ where: { code } })) >= maxClaims)
-    throw new ClientError("CONFLICT", "This code has been fully redeemed", "CREDIT_CODE_USED_UP");
-  try {
-    await prisma.accessGrant.create({
-      data: { email, code, creditCents, organizationId: input.organizationId },
-    });
-  } catch (error) {
-    if (!isUniqueViolation(error)) throw error;
+  const redeemed = await prisma.accessGrant.findUnique({
+    where: { code_email: { code, email } },
+    select: { appliedAt: true },
+  });
+  if (redeemed?.appliedAt)
     throw new ClientError("CONFLICT", "You already redeemed this code", "CREDIT_CODE_REDEEMED");
+  // A redemption saved but not yet applied is finished below rather than refused.
+  if (!redeemed) {
+    // Concurrent redemptions can pass the limit by a few; the per-account limit is exact.
+    if (maxClaims !== null && (await prisma.accessGrant.count({ where: { code } })) >= maxClaims)
+      throw new ClientError("CONFLICT", "This code has been fully redeemed", "CREDIT_CODE_USED_UP");
+    try {
+      await prisma.accessGrant.create({
+        data: { email, code, creditCents, organizationId: input.organizationId },
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      throw new ClientError("CONFLICT", "You already redeemed this code", "CREDIT_CODE_REDEEMED");
+    }
   }
   await applyAccessGrants(prisma, {
     userId: input.userId,

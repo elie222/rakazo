@@ -78,14 +78,29 @@ dbTests("access grants", () => {
     const first = await signUp("redeem-first");
     await service.redeemCreditCode(first, code);
     await expect(service.status(first)).resolves.toMatchObject({ balanceUsd: 10 });
-    await expect(service.redeemCreditCode(first, code)).rejects.toMatchObject({
-      code: "CREDIT_CODE_REDEEMED",
-    });
     await service.redeemCreditCode(await signUp("redeem-second"), code);
     await expect(
       service.redeemCreditCode(await signUp("redeem-third"), code),
     ).rejects.toMatchObject({ code: "CREDIT_CODE_USED_UP" });
+    await expect(service.redeemCreditCode(first, code)).rejects.toMatchObject({
+      code: "CREDIT_CODE_REDEEMED",
+    });
     await expect(service.status(first)).resolves.toMatchObject({ balanceUsd: 10 });
+  });
+
+  it("finishes a redemption that was saved but not applied", async () => {
+    const code = { code: `RETRY-${process.pid}-${Date.now()}`, creditCents: 1000, maxClaims: 1 };
+    const actor = await signUp("redeem-retry");
+    await prisma.accessGrant.create({
+      data: {
+        email: actor.email,
+        code: code.code,
+        creditCents: 1000,
+        organizationId: actor.spaceId,
+      },
+    });
+    await service.redeemCreditCode(actor, code);
+    await expect(service.status(actor)).resolves.toMatchObject({ balanceUsd: 10 });
   });
 
   it("gives a free own-key period to an existing account", async () => {
