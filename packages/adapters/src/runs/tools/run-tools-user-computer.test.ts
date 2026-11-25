@@ -101,6 +101,7 @@ describe("userComputerOwner", () => {
     groupThread: false,
     routineWatches: false,
     ownerComputerRoutine: false,
+    helperRun: false,
   };
   const ownRoutine = {
     ...own,
@@ -174,6 +175,9 @@ describe("userComputerOwner", () => {
     { trigger: "routine", access: all, routineWatches: true },
     { trigger: "routine", access: all, groupThread: true },
     { trigger: "bot_message", access: all, ownBotChain: true, groupThread: true },
+    // A helper is judged by the run that delegated to it; the switches reach only that run.
+    { trigger: "routine", access: all, helperRun: true },
+    { trigger: "bot_message", access: all, ownBotChain: true, helperRun: true },
   ])("is still nobody with the switches on for %o", (change) => {
     expect(userComputerOwner({ ...own, ...change })).toBeUndefined();
   });

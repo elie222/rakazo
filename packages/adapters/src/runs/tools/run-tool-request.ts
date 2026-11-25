@@ -75,6 +75,7 @@ import { holdSharedPageSave } from "./run-tools-pages.js";
 import { scheduleCreateRefusal, scheduleUpdatePreview } from "./run-tools-tasks.js";
 import {
   NO_USER_COMPUTER_ACCESS,
+  routineRunWatches,
   USER_COMPUTER_TOOLS,
   userComputerBlockingOrigins,
 } from "./run-tools-user-computer.js";
@@ -448,10 +449,12 @@ export async function prepareToolRequest(
       );
     if (isSubagentToolExecution(executionId))
       return refusal("helper_user_computer", "Helpers cannot use the user's computer.");
-    // Turning the switch off or editing the routine mid-run ends its use of the computer.
+    // Turning the switch off or editing the routine mid-run ends its use of the computer, and a
+    // routine the server's switch let on it loses it once the routine watches or is gone.
     if (
-      ctx.source.ownerComputerRoutine &&
-      !(await routineRunUsesOwnerComputer(deps.prisma, ctx.run))
+      ctx.source.ownerComputerRoutine
+        ? !(await routineRunUsesOwnerComputer(deps.prisma, ctx.run))
+        : ctx.run.trigger === "routine" && (await routineRunWatches(deps.prisma, ctx.runId))
     )
       return refusal(
         "user_computer_unavailable",
