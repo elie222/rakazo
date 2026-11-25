@@ -104,7 +104,7 @@ function postponeIdleScreen(computerId: string, screenKey: string, error: unknow
   const slot = assigned?.get(screenKey);
   if (!assigned || !slot) return;
   if (slot.releasing) completeWarmReleasedScreen(assigned, screenKey, slot.index, Date.now());
-  else slot.idleAt = Date.now();
+  else if (screenIsIdle(slot)) slot.idleAt = Date.now();
 }
 
 export async function managedScreen(
