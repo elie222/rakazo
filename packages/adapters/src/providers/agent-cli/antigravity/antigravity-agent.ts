@@ -1,4 +1,5 @@
 import { mkdir, symlink } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { privateFolder } from "../../../cli-models/cli-process.js";
 import type { AcpAgentDescriptor } from "../../../runtime/acp/acp-agent.js";
@@ -49,7 +50,7 @@ export const antigravityAgent: AcpAgentDescriptor = {
   signIn: "Run `agy acp --login` in a terminal as the user that runs the Rakazo worker.",
   async launch({ env }) {
     const home = botHome();
-    await linkSignIn(home, join(env.HOME ?? "", ".gemini"));
+    await linkSignIn(home, join(homedir(), ".gemini"));
     return { args: ["acp"], env: { ...env, GEMINI_HOME: home } };
   },
   sessionMeta: ({ instructions, toolServer }) => ({

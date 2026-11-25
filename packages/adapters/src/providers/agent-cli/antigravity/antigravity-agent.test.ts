@@ -31,6 +31,7 @@ describe("antigravityAgent", () => {
     operatorHome = mkdtempSync(join(tmpdir(), "rakazo-antigravity-test-"));
     // The CLI's home lives in the temp folder; this test gets one of its own.
     vi.stubEnv("TMPDIR", operatorHome);
+    vi.stubEnv("HOME", operatorHome);
     const env = { PATH: "/usr/bin", HOME: operatorHome };
 
     const launch = await antigravityAgent.launch({
