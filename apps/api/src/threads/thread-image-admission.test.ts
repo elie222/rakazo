@@ -82,6 +82,7 @@ function fixture(group = false) {
   const send = (
     imageAdmission?: Parameters<typeof sendThreadMessage>[0]["imageAdmission"],
     imageHandling: "confirm" | "file" | null = "confirm",
+    extra?: Partial<Parameters<typeof sendThreadMessage>[3]>,
   ) =>
     sendThreadMessage(
       {
@@ -106,6 +107,7 @@ function fixture(group = false) {
         clientNonce: "image-send-1",
         imageHandling: imageHandling ?? undefined,
         mentions: group ? ["bot-1", "bot-2"] : undefined,
+        ...extra,
       } as Parameters<typeof sendThreadMessage>[3],
       releaseTakeover,
     );
@@ -586,5 +588,76 @@ describe("current image send admission", () => {
     expect(notify).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
     expect(releaseTakeover).not.toHaveBeenCalled();
+  });
+
+  it("ignores a skipped waiting run during image admission when replying to an answered card", async () => {
+    const answeredCard = {
+      id: "ask-answered",
+      role: "bot",
+      botId: "bot-1",
+      authorUserId: null,
+      runId: "run-done",
+      blocks: [{ kind: "ask", text: "Old?", status: "answered", answer: "Yes" }],
+    };
+    const waitingAsk = {
+      id: "ask-waiting",
+      role: "bot",
+      botId: "bot-1",
+      runId: "run-waiting",
+      blocks: [{ kind: "ask", text: "Other?", status: "pending" }],
+    };
+
+    // Vision bot with text-only skipped waiting run: image is accepted for the new turn.
+    const vision = fixture();
+    vision.tx.bot.findFirst.mockResolvedValue({
+      id: "bot-1",
+      modelProvider: "openrouter",
+      modelId: "openai/gpt-4o",
+    });
+    vision.tx.message.findFirst = vi.fn(async ({ where }: { where: { id?: string } }) =>
+      where.id === "ask-answered" ? answeredCard : waitingAsk,
+    ) as never;
+    vision.tx.message.findMany = vi.fn().mockResolvedValue([waitingAsk]) as never;
+    vision.tx.run.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "run-waiting",
+          taskId: "task-waiting",
+          status: "waiting_input",
+          userId: "user-1",
+          trigger: "user",
+          modelProvider: "openrouter",
+          modelId: "deepseek/deepseek-v4-pro",
+          modelPinned: true,
+        },
+      ] as never)
+      .mockResolvedValue([]);
+    await expect(
+      vision.send(undefined, "confirm", { replyToMessageId: "ask-answered" }),
+    ).resolves.toMatchObject({ runId: "run-1" });
+
+    // Text-only bot with vision skipped waiting run: image is rejected for the new turn.
+    const textOnly = fixture();
+    textOnly.tx.message.findFirst = vi.fn(async ({ where }: { where: { id?: string } }) =>
+      where.id === "ask-answered" ? answeredCard : waitingAsk,
+    ) as never;
+    textOnly.tx.message.findMany = vi.fn().mockResolvedValue([waitingAsk]) as never;
+    textOnly.tx.run.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "run-waiting",
+          taskId: "task-waiting",
+          status: "waiting_input",
+          userId: "user-1",
+          trigger: "user",
+          modelProvider: "openrouter",
+          modelId: "openai/gpt-4o",
+          modelPinned: true,
+        },
+      ] as never)
+      .mockResolvedValue([]);
+    await expect(
+      textOnly.send(undefined, "confirm", { replyToMessageId: "ask-answered" }),
+    ).rejects.toMatchObject({ code: "CONFLICT", status: 409 });
   });
 });

@@ -354,13 +354,17 @@ async function assertImageRecipients(
     botId: string;
     runs: Array<ImageAdmissionRun & { id: string; userId: string }>;
     imageAdmission: Parameters<typeof assertThreadImageInput>[5];
+    repliedQuestionRunId?: string | null;
   },
 ) {
   if (!attachmentBlocks.some((block) => block.kind === "image")) return;
-  const { botId, runs } = recipient;
+  const { botId, runs, repliedQuestionRunId } = recipient;
   const answered = [];
   for (const run of runs.filter(
-    (run) => run.status === "waiting_input" && run.userId === actor.userId,
+    (run) =>
+      run.status === "waiting_input" &&
+      run.userId === actor.userId &&
+      (repliedQuestionRunId === undefined || run.id === repliedQuestionRunId),
   )) {
     const eligible = await eligibleWaitingTextAnswer(tx, {
       spaceId: actor.spaceId,
@@ -495,10 +499,7 @@ export async function sendThreadMessage(
           if (replyBlocks.length > 0) {
             if (
               reply.role === "bot" &&
-              replyBlocks.some(
-                (block) =>
-                  block.kind === "ask" && isQuestionAskBlock(block) && block.status !== "answered",
-              )
+              replyBlocks.some((block) => block.kind === "ask" && isQuestionAskBlock(block))
             ) {
               repliedQuestionRunId = reply.runId;
             }
@@ -602,6 +603,7 @@ export async function sendThreadMessage(
             botId: target.botId,
             runs: activeRuns,
             imageAdmission: deps.imageAdmission,
+            repliedQuestionRunId,
           });
         }
         const strictRun = input.answersQuestion
@@ -862,6 +864,7 @@ export async function sendThreadMessage(
             botId,
             runs: activeRuns.filter((run) => run.botId === botId),
             imageAdmission: deps.imageAdmission,
+            repliedQuestionRunId,
           });
         }
       }
