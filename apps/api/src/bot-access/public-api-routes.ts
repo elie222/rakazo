@@ -180,11 +180,11 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
               continue;
             }
             last = task;
-            const content = unsentText(sent, taskAnswer(task));
-            if (content) {
-              sent += content;
-              send(chatCompletionChunk(task, request.model, created, { content }));
-            }
+            const answer = taskAnswer(task);
+            const content = unsentText(sent, answer);
+            // Later text is compared with the current answer, whatever was sent before.
+            sent = answer;
+            if (content) send(chatCompletionChunk(task, request.model, created, { content }));
           }
           if (last.status === "failed" || last.status === "cancelled")
             send(openAiError(502, last.error ?? "The bot stopped"));

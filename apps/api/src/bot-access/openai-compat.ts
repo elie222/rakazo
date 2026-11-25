@@ -91,12 +91,16 @@ export function chatCompletionChunk(
 }
 
 /**
- * The text a stream has not sent yet. Replies only grow, so the answer so far starts with what
- * was sent; a reply edited after it was streamed is not sent again.
+ * The text a stream has not sent yet. Sent text cannot be taken back, so when the answer no
+ * longer starts with it (a reply was edited, or an answered question left the answer), the part
+ * after what both share follows on a new paragraph.
  */
 export function unsentText(sent: string, answer: string): string {
-  if (!answer.startsWith(sent)) return "";
-  return answer.slice(sent.length);
+  if (answer.startsWith(sent)) return answer.slice(sent.length);
+  let shared = 0;
+  while (shared < sent.length && sent[shared] === answer[shared]) shared += 1;
+  const rest = answer.slice(shared).trim();
+  return rest ? `\n\n${rest}` : "";
 }
 
 /** Each bot the key can use, as a model; `owned_by` names the Space the bot is in. */

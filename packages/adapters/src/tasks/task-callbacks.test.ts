@@ -98,6 +98,7 @@ describe("task callbacks", () => {
       type: "task.settled",
       id: "task-1:run-1:completed",
       task: { id: "task-1", status: "completed", output: "Done" },
+      truncated: false,
     });
     expect(request!.headers.get("x-rakazo-delivery")).toBe("task-1:run-1:completed");
     const secret = taskCallbackSecret("root-key", "user-1", url);

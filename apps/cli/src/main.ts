@@ -132,8 +132,9 @@ export async function main(argv: string[]): Promise<number> {
       return ended(task) ? 1 : 0;
     }
     if (sub === "get" && first) {
-      printTask(await client.task(first), values.json);
-      return 0;
+      const task = await client.task(first);
+      printTask(task, values.json);
+      return ended(task) ? 1 : 0;
     }
     if (sub === "wait" && first) {
       const task = await waitFor(client, await client.task(first));

@@ -85,6 +85,8 @@ export const TaskCallbackBodySchema = z.object({
   type: z.literal("task.settled"),
   id: z.string(),
   task: PublicTaskSchema,
+  /** The output was cut to its newest part; `GET /api/v1/tasks/<id>` has all of it. */
+  truncated: z.boolean(),
 });
 export type TaskCallbackBody = z.infer<typeof TaskCallbackBodySchema>;
 export const TASK_CALLBACK_SIGNATURE_HEADER = "x-rakazo-signature";

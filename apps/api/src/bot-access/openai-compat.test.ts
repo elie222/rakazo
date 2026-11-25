@@ -98,10 +98,11 @@ describe("OpenAI-compatible chat", () => {
     );
   });
 
-  it("streams only text not sent yet, and nothing for a reply edited after it was sent", () => {
+  it("streams only text not sent yet, and goes on after a reply changes", () => {
     expect(unsentText("", "Hello")).toBe("Hello");
     expect(unsentText("Hello", "Hello\n\nworld")).toBe("\n\nworld");
-    expect(unsentText("Hello", "Goodbye")).toBe("");
+    expect(unsentText("Done.\n\nShall I post it?", "Done.\n\nPosted it.")).toBe("\n\nPosted it.");
+    expect(unsentText("Hello there", "Hello")).toBe("");
   });
 
   it("lists bots as models and errors in OpenAI's shape", () => {

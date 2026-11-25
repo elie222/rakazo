@@ -21,6 +21,8 @@ export const TASK_CALLBACK_RECHECK_MS = 5 * 60_000;
 const TASK_CALLBACK_GIVE_UP_MS = 7 * 24 * 60 * 60_000;
 const DELIVERY_TIMEOUT_MS = 15_000;
 const CALLBACK_PORTS = [443];
+/** The most output one callback carries: the newest part, the rest stays on the task. */
+const CALLBACK_OUTPUT_LIMIT = 64 * 1024;
 
 /**
  * Refuses, before any work starts, an address a callback could never be delivered to: not HTTPS
@@ -154,10 +156,15 @@ export async function deliverTaskCallback(
     settled: PublicTask,
     delivery: string,
   ) {
+    // The body stays small however long the task ran; the task itself holds all of it.
+    const truncated = settled.output.length > CALLBACK_OUTPUT_LIMIT;
     const body = JSON.stringify({
       type: "task.settled",
       id: delivery,
-      task: settled,
+      task: truncated
+        ? { ...settled, output: settled.output.slice(-CALLBACK_OUTPUT_LIMIT) }
+        : settled,
+      truncated,
     } satisfies TaskCallbackBody);
     const signature = signTaskCallback(
       taskCallbackSecret(deps.rootKey, target.userId, target.url),
