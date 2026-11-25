@@ -1,5 +1,6 @@
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
 import { createStreamingRedactor, displayName, redactSecrets } from "@rakazo/core";
+import { stableJsonValue } from "@rakazo/core/node/approval-effect-key";
 import type { RunSecretAnswer } from "@rakazo/db";
 import {
   Prisma,
@@ -53,7 +54,7 @@ import {
   persistTurnCheckpoint,
   recordVaultUse,
 } from "../assembly/run-context.js";
-import { recordEffect } from "../lifecycle/run-effects.js";
+import { inRunLeaseTransaction, recordEffect } from "../lifecycle/run-effects.js";
 import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lifecycle.js";
 import { notifyRun, secretAskNotification } from "../lifecycle/run-notifications.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
@@ -258,37 +259,50 @@ export const secretTools: ToolHandlers = {
     // With no value recorded for this request, a value another card recorded for its own request
     // is never this one's, whatever its age.
     const answeredElsewhere =
-      answer?.kind === "answered"
+      destination || answer?.kind === "answered"
         ? []
         : await runSecretsAnsweredForOtherRequests(
             deps.prisma,
             { id: runId, spaceId: run.spaceId },
             applied?.effect.id,
           );
-    const held = await deps.prisma.secret.findFirst({
-      where: {
-        spaceId: run.spaceId,
-        userId: run.userId,
-        kind: secretKind,
-        ...(answer?.kind === "answered"
-          ? { id: answer.secretId }
-          : answeredElsewhere.length > 0
-            ? { id: { notIn: answeredElsewhere } }
-            : {}),
-      },
-    });
-    const stale = held && !destination && !answersRequest(held, applied, answer) ? held : undefined;
+    // A credential card saves its answer where the request reads it above, never as a run value,
+    // so a value the run holds never answers a credential request.
+    const held = destination
+      ? null
+      : await deps.prisma.secret.findFirst({
+          where: {
+            spaceId: run.spaceId,
+            userId: run.userId,
+            kind: secretKind,
+            ...(answer?.kind === "answered"
+              ? { id: answer.secretId }
+              : answeredElsewhere.length > 0
+                ? { id: { notIn: answeredElsewhere } }
+                : {}),
+          },
+        });
+    const stale = held && !answersRequest(held, applied, answer) ? held : undefined;
     const storedSecret = stale ? null : held;
     // A code no card answered for this request is never typed: the next code card replaces it
     // anyway. Any other value may answer another request still waiting, so it stays.
     const staleCodeId = stale && codeOrigin ? stale.id : undefined;
     // Action approval authorizes showing the card; it is not a credential submission or an
     // answer. A credential card's answer returned above. Return the claim to intended, with no
-    // record, so the card's answer can approve it, and drop a stale code in the same write.
-    if (call.claimedEffect && (destination || !storedSecret)) {
-      const released = await deps.prisma.$transaction(async (tx) => {
+    // record, so the card's answer can approve it, and drop a stale code in the same write. Only
+    // this attempt's claim is handed back: a newer attempt that reopened the card holds the run's
+    // lease, and its claim records the answer the user gave since.
+    if (call.claimedEffect && !storedSecret) {
+      const claimed = applied!.effect;
+      const released = await inRunLeaseTransaction(deps, runId, async (tx) => {
+        const current = await tx.externalEffect.findUnique({ where: { id: claimed.id } });
+        if (
+          current?.status !== "executing" ||
+          stableJsonValue(current.result ?? null) !== stableJsonValue(claimed.result ?? null)
+        )
+          return false;
         const claim = await tx.externalEffect.updateMany({
-          where: { id: applied!.effect.id, status: "executing" },
+          where: { id: claimed.id, status: "executing" },
           data: { status: "intended", result: Prisma.DbNull },
         });
         if (claim.count === 1 && staleCodeId)

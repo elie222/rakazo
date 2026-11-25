@@ -508,13 +508,18 @@ export async function settleUncertainEffect(
   effectId: string,
   toolName: string,
   args?: Record<string, unknown>,
+  /** Runs in the store's transaction only when this call settled the effect. */
+  onSettled?: () => Promise<unknown>,
 ): Promise<unknown> {
   const result = uncertainEffectResult(toolName, args);
   const settled = await store.externalEffect.updateMany({
     where: { id: effectId, status: "executing" },
     data: { status: "uncertain", result },
   });
-  if (settled.count === 1) return result;
+  if (settled.count === 1) {
+    await onSettled?.();
+    return result;
+  }
 
   const current = await store.externalEffect.findUnique({ where: { id: effectId } });
   if (!current) return result;

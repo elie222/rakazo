@@ -67,6 +67,7 @@ import {
   CATALOG_APPROVAL_TOOL,
   claimEffect,
   completeEffect,
+  inRunLeaseTransaction,
   recordEffect,
   uncertainEffectError,
 } from "../lifecycle/run-effects.js";
@@ -773,6 +774,21 @@ async function settleToolUncertainty(
       (await completeEffect(ctx.deps, effectId, "executing", recovered))
     )
       return recovered;
+  }
+  if (call.name === "request_secret") {
+    // The value a card recorded for the request goes in the same write, so no other request,
+    // including a dismissed one replayed later, can take it.
+    const { run } = ctx;
+    return inRunLeaseTransaction(ctx.deps, ctx.runId, async (tx) => {
+      const current = await tx.externalEffect.findUnique({ where: { id: effectId } });
+      const answer = current ? readRunSecretAnswer(current) : undefined;
+      return settleUncertainEffect(tx, effectId, toolName, call.args, async () => {
+        if (answer?.kind !== "answered") return;
+        await tx.secret.deleteMany({
+          where: { id: answer.secretId, spaceId: run.spaceId, userId: run.userId },
+        });
+      });
+    });
   }
   return settleUncertainEffect(ctx.deps.prisma, effectId, toolName, call.args);
 }
