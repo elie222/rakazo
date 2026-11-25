@@ -6460,6 +6460,39 @@ describe("closing denied approved effects", () => {
     expect(f.fetchedUrls).toEqual([]);
   });
 
+  it("does not keep site trust from a policy-denied approved effect for later calls in the same attempt", async () => {
+    const blockedUrl = "https://blocked-site.example.test/pay";
+    const secondUrl = "https://blocked-site.example.test/other";
+    const key = approvalEffectKey("run-1", "paid_request", { url: blockedUrl });
+    const f = fixture({
+      name: "paid_request",
+      builtin: true,
+      rules: [{ effect: "deny", matchKind: "tool", matchValue: "paid_request" }],
+    });
+    f.effects.push({
+      id: "effect-paid-approved-blocked",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "paid_request",
+      request: { url: blockedUrl },
+      idempotencyKey: key,
+      status: "approved",
+    });
+    f.setCalls([
+      { name: "paid_request", args: { url: blockedUrl }, executionId: "call-1" },
+      { name: "web_fetch", args: { url: secondUrl }, executionId: "call-2" },
+    ]);
+    await f.run();
+
+    expect(f.effects[0]).toMatchObject({
+      status: "denied",
+      result: { refused: "rule", error: expect.stringContaining("blocked in this space") },
+    });
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+    expect(f.pauseRunForInput).toHaveBeenCalledTimes(1);
+    expect(f.fetchedUrls).toEqual([]);
+  });
+
   it("drops a pending run secret when closing a policy-denied approved request_secret effect", async () => {
     const args = { connectionId: "conn-1" };
     const key = approvalEffectKey("run-1", "request_secret", args);
