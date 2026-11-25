@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto";
 import type { HistoryReadInput, HistorySearchInput } from "@rakazo/contracts";
-import {
-  ATTACHMENT_MAX_COUNT,
-  HISTORY_ATTACHMENTS_PER_RESPONSE,
-  HistoryQueriesSchema,
-} from "@rakazo/contracts";
+import { HISTORY_ATTACHMENTS_PER_RESPONSE, HistoryQueriesSchema } from "@rakazo/contracts";
 import {
   attachmentComputerPath,
   originalLowercaseOffset,
@@ -68,6 +64,7 @@ const MAX_SEARCH_OFFSET = 10_000;
 // Bound complete JSON pages, including cursors. Current retains Pi's legacy 12k
 // result clipping; newer strategies preserve structured results within their context budget.
 const MAX_RESPONSE_BYTES = 10_000;
+const ATTACHMENT_REFERENCES_BEFORE_TEXT_TRIMMING = 4;
 const LINK_PAGE_SIZE = 5;
 /** An empty literal search rules out only those words, not what they were meant to find. */
 const NO_MATCH_NOTE = "No message matched these words, which does not show it never happened.";
@@ -120,9 +117,11 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
     listed += files.length;
   }
   while (Buffer.byteLength(JSON.stringify(response), "utf8") > MAX_RESPONSE_BYTES) {
-    // Keep up to four attachment references per message before shortening text; the rest are pageable.
     const fullest = crowded();
-    if (fullest?.attachments && fullest.attachments.length > ATTACHMENT_MAX_COUNT) {
+    if (
+      fullest?.attachments &&
+      fullest.attachments.length > ATTACHMENT_REFERENCES_BEFORE_TEXT_TRIMMING
+    ) {
       dropFile(fullest);
       continue;
     }

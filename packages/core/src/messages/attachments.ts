@@ -32,15 +32,11 @@ function isWellFormedBase64(value: string): boolean {
   return /^[A-Za-z0-9+/]*$/.test(body);
 }
 
-/**
- * Attachments per message a server allows until `MAX_ATTACHMENTS_PER_MESSAGE` says otherwise.
- * Clients of a server that advertises no count keep the contract's `ATTACHMENT_MAX_COUNT`.
- */
-const ATTACHMENT_DEFAULT_COUNT = 10;
+const DEFAULT_SERVER_ATTACHMENT_COUNT = 10;
 
 export function attachmentCountFromEnv(source: { MAX_ATTACHMENTS_PER_MESSAGE?: string }): number {
   const value = source.MAX_ATTACHMENTS_PER_MESSAGE?.trim();
-  if (!value) return ATTACHMENT_DEFAULT_COUNT;
+  if (!value) return DEFAULT_SERVER_ATTACHMENT_COUNT;
   const count = Number(value);
   if (
     !/^\d+$/.test(value) ||

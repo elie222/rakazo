@@ -260,8 +260,13 @@ async function materializeThreadFiles(
   return materialized;
 }
 
+type RecentThreadFileDeps = Pick<
+  Parameters<typeof materializeCurrentTurnFiles>[0],
+  "prisma" | "maxUploadSizeBytes"
+> & { maxAttachmentsPerMessage?: number };
+
 export async function materializeRecentThreadFiles(
-  deps: Parameters<typeof materializeCurrentTurnFiles>[0] & { maxAttachmentsPerMessage?: number },
+  deps: Parameters<typeof materializeCurrentTurnFiles>[0] & RecentThreadFileDeps,
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
   input: Parameters<typeof materializeCurrentTurnFiles>[2] & {
@@ -351,9 +356,7 @@ export async function materializeEarlierFiles(
  * copies them with materializeRecentThreadFiles once something first uses the computer.
  */
 export async function listRecentThreadFiles(
-  deps: Pick<Parameters<typeof materializeCurrentTurnFiles>[0], "prisma" | "maxUploadSizeBytes"> & {
-    maxAttachmentsPerMessage?: number;
-  },
+  deps: RecentThreadFileDeps,
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
   input: {
