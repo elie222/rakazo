@@ -1,3 +1,19 @@
-# Qodo is the default reviewer (see .github/workflows/review-bot.yml).
+# Qodo reviews only PRs labeled review:qodo (see .github/workflows/review-bot.yml):
+# the workflow asks for the first review, and pushes re-review from there.
 [github_app]
+pr_commands = []
 handle_push_trigger = true
+push_commands = ["/agentic_review"]
+
+[config]
+ignore_pr_labels = ["review:cr", "review:greptile"]
+
+[review_agent.comments_routing]
+action_required = "both"
+remediation_recommended = "summary"
+informational = "drop"
+
+[review_agent_ux]
+finding_overflow_count = 1
+show_daily_tips = false
+show_comment_footer = false

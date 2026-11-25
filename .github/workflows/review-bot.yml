@@ -1,29 +1,58 @@
 name: Review bot
 
-# Qodo reviews every PR on open and on each push (.pr_agent.toml). When Qodo
-# says it is blocked, the PR is labeled review:cr and CodeRabbit reviews it
-# (.coderabbit.yaml reviews only that label). When CodeRabbit is rate limited,
-# the label becomes review:greptile and Greptile reviews it from the next push
-# (greptile.json reviews only that label).
+# Each PR gets one review bot, picked by its number when it opens: Qodo
+# (review:qodo), CodeRabbit (review:cr) or Greptile (review:greptile). Each bot
+# reviews only its own label (.pr_agent.toml, .coderabbit.yaml, greptile.json)
+# and re-reviews on every push. Qodo does not review on open by itself, so this
+# workflow asks it. When Qodo says it is blocked, the PR moves to CodeRabbit;
+# when CodeRabbit is rate limited, it moves to Greptile.
 #
-# issue_comment so fork PRs get a fallback; this workflow never checks out or
-# runs PR code.
+# pull_request_target and issue_comment so fork PRs get a reviewer; this
+# workflow never checks out or runs PR code.
 on:
+  pull_request_target:
+    types: [opened, reopened]
   issue_comment:
     types: [created, edited]
 
 permissions: {}
 
 jobs:
+  assign:
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      !contains(github.event.pull_request.labels.*.name, 'review:qodo') &&
+      !contains(github.event.pull_request.labels.*.name, 'review:cr') &&
+      !contains(github.event.pull_request.labels.*.name, 'review:greptile')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          case $(( PR % 3 )) in
+            0) gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:cr" --silent ;;
+            1) gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:greptile" --silent ;;
+            2)
+              gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:qodo" --silent
+              gh pr comment "$PR" --repo "$REPO" --body "/agentic_review"
+              ;;
+          esac
+
   handoff:
     if: >-
+      github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
       github.event.issue.state == 'open' &&
       ((startsWith(github.event.comment.user.login, 'qodo-') &&
         endsWith(github.event.comment.user.login, '[bot]') &&
         startsWith(github.event.comment.body, '<!-- qodo:') &&
-        !contains(github.event.issue.labels.*.name, 'review:cr') &&
-        !contains(github.event.issue.labels.*.name, 'review:greptile')) ||
+        contains(github.event.issue.labels.*.name, 'review:qodo')) ||
        (github.event.comment.user.login == 'coderabbitai[bot]' &&
         contains(github.event.comment.body, 'rate limited by coderabbit.ai') &&
         contains(github.event.issue.labels.*.name, 'review:cr')))
@@ -43,5 +72,6 @@ jobs:
             gh api -X DELETE "repos/$REPO/issues/$PR/labels/review:cr" --silent
             gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:greptile" --silent
           else
+            gh api -X DELETE "repos/$REPO/issues/$PR/labels/review:qodo" --silent
             gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:cr" --silent
           fi
