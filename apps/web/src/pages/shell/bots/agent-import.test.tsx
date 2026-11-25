@@ -569,12 +569,33 @@ describe("a Grok Bot reply with several Bots", () => {
     expect(created).toEqual(["Bramble"]);
   });
 
-  it("reviews one Bot on its own", async () => {
+  it("finishes with what was imported once the refused Bots are unticked", async () => {
+    await paste();
+    importMany.mockResolvedValue([bot("Bramble"), { error: "Too long" }, bot("Finch")]);
+    await press("Import 3 Bots");
+    await act(async () => (boxes()[0] as HTMLElement).click());
+    await press("Done");
+    expect(created).toEqual(["Bramble"]);
+  });
+
+  it("reviews one Bot on its own, and comes back to the list keeping what was imported", async () => {
     importPreview.mockResolvedValue(plan);
     await paste();
+    importMany.mockResolvedValue([bot("Bramble"), { error: "Too long" }, bot("Finch")]);
+    await press("Import 3 Bots");
+    const key = (importMany.mock.calls[0]![0] as { agents: { importKey: string }[] }).agents[1]!
+      .importKey;
     await press("Review Wren");
     expect(importPreview).toHaveBeenCalledTimes(1);
     expect(container!.querySelector('[data-testid="agent-import-preview"]')).not.toBeNull();
+
+    await press("Back");
+    expect(boxes()).toHaveLength(1);
+    importMany.mockResolvedValue([bot("Wren")]);
+    await press("Import 1 Bot");
+    expect(
+      (importMany.mock.calls[1]![0] as { agents: { importKey: string }[] }).agents[0]!.importKey,
+    ).toBe(key);
   });
 
   it("forgets the Bots on Back", async () => {

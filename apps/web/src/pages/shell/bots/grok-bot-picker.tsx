@@ -1,12 +1,15 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
-import { GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
+import { GROK_BOT_EXPORT_MAX_LENGTH, GROK_BOT_EXPORT_PATH } from "@rakazo/contracts";
 import type { GrokBot } from "@rakazo/core";
 import { grokBotExportJson, newClientId } from "@rakazo/core";
 import { Button, Checkbox, Label } from "@rakazo/ui-web";
 import { Check, ChevronRight } from "lucide-react";
-import { useRef, useState } from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
+import { useMemo, useState } from "react";
+import { grokBotErrorText } from "../../../lib/bots/agent-import-errors";
 import { rpc } from "../../../lib/query/rpc";
+import type { GrokBatch } from "./use-agent-import-source";
 
 /**
  * Every Bot in an export starts ticked and imports in one go with what a review ticks by
@@ -15,6 +18,9 @@ import { rpc } from "../../../lib/query/rpc";
  */
 export function GrokBotPicker({
   bots,
+  batch,
+  setBatch,
+  keys,
   busy,
   onReview,
   onCreatingChange,
@@ -22,50 +28,57 @@ export function GrokBotPicker({
   onError,
 }: {
   bots: GrokBot[];
+  batch: GrokBatch;
+  setBatch: Dispatch<SetStateAction<GrokBatch>>;
+  /** One import key per Bot's export text, so a retried import returns the bot it made. */
+  keys: RefObject<Map<string, string>>;
   busy: boolean;
   onReview: (bot: GrokBot) => void;
   onCreatingChange: (creating: boolean) => void;
-  /** Once every picked Bot is in, with the first one made. */
+  /** Once the import is finished, with the first bot it made. */
   onImported: (first: Bot) => void;
   onError: (err: unknown) => void;
 }) {
   const { t } = useLingui();
-  const [unpicked, setUnpicked] = useState<ReadonlySet<GrokBot>>(new Set());
-  const [created, setCreated] = useState<ReadonlyMap<GrokBot, Bot>>(new Map());
-  const [reasons, setReasons] = useState<ReadonlyMap<GrokBot, string>>(new Map());
   const [importing, setImporting] = useState(false);
-  // One key per Bot, so a retried import returns the bot the first one made.
-  const keys = useRef(new WeakMap<GrokBot, string>());
-  const keyFor = (bot: GrokBot) => {
-    const known = keys.current.get(bot);
-    if (known) return known;
-    const key = newClientId();
-    keys.current.set(bot, key);
-    return key;
-  };
-  const picked = bots.filter((bot) => !unpicked.has(bot) && !created.has(bot));
+  const rows = useMemo(() => bots.map((bot) => ({ bot, id: grokBotExportJson(bot) })), [bots]);
+  const picked = rows.filter(({ id }) => !batch.unpicked.has(id) && !batch.created.has(id));
+  const first = rows.map(({ id }) => batch.created.get(id)).find(Boolean);
 
   async function importPicked() {
+    const keyFor = (id: string) => {
+      const known = keys.current.get(id);
+      if (known) return known;
+      const key = newClientId();
+      keys.current.set(id, key);
+      return key;
+    };
+    const reasons = new Map<string, string>();
+    const sent = picked.filter(({ id }) => {
+      if (id.length <= GROK_BOT_EXPORT_MAX_LENGTH) return true;
+      reasons.set(id, grokBotErrorText("too_large"));
+      return false;
+    });
     setImporting(true);
     onCreatingChange(true);
     try {
-      const results = await rpc.bots.importMany({
-        agents: picked.map((bot) => ({
-          importKey: keyFor(bot),
-          files: [{ path: GROK_BOT_EXPORT_PATH, content: grokBotExportJson(bot) }],
-        })),
-      });
-      const made = new Map(created);
-      const failed = new Map<GrokBot, string>();
+      const results = sent.length
+        ? await rpc.bots.importMany({
+            agents: sent.map(({ id }) => ({
+              importKey: keyFor(id),
+              files: [{ path: GROK_BOT_EXPORT_PATH, content: id }],
+            })),
+          })
+        : [];
+      const created = new Map(batch.created);
       results.forEach((result, index) => {
-        const bot = picked[index]!;
-        if ("bot" in result) made.set(bot, result.bot);
-        else failed.set(bot, result.error);
+        const { id } = sent[index]!;
+        if ("bot" in result) created.set(id, result.bot);
+        else reasons.set(id, result.error);
       });
-      setCreated(made);
-      setReasons(failed);
-      const first = bots.map((bot) => made.get(bot)).find(Boolean);
-      if (failed.size === 0 && first) onImported(first);
+      setBatch((current) => ({ ...current, created, reasons }));
+      const made = rows.map(({ id }) => created.get(id)).find(Boolean);
+      if (reasons.size === 0 && made) onImported(made);
     } catch (err) {
       onError(err);
     } finally {
@@ -77,8 +90,9 @@ export function GrokBotPicker({
   return (
     <section data-testid="agent-import-grok-bots" className="mt-5">
       <ul className="divide-y divide-border/60">
-        {bots.map((bot, index) => {
-          const done = created.has(bot);
+        {rows.map(({ bot, id }, index) => {
+          const done = batch.created.has(id);
+          const reason = batch.reasons.get(id);
           return (
             <li
               key={`${bot.exportId ?? bot.name}:${index}`}
@@ -94,14 +108,14 @@ export function GrokBotPicker({
                   />
                 ) : (
                   <Checkbox
-                    checked={!unpicked.has(bot)}
+                    checked={!batch.unpicked.has(id)}
                     disabled={importing}
                     onCheckedChange={(checked) =>
-                      setUnpicked((current) => {
-                        const next = new Set(current);
-                        if (checked) next.delete(bot);
-                        else next.add(bot);
-                        return next;
+                      setBatch((current) => {
+                        const unpicked = new Set(current.unpicked);
+                        if (checked) unpicked.delete(id);
+                        else unpicked.add(id);
+                        return { ...current, unpicked };
                       })
                     }
                   />
@@ -110,8 +124,8 @@ export function GrokBotPicker({
                   <span className="block truncate" dir="auto">
                     {bot.name}
                   </span>
-                  {reasons.has(bot) ? (
-                    <span className="block text-body-sm text-destructive">{reasons.get(bot)}</span>
+                  {reason ? (
+                    <span className="block text-body-sm text-destructive">{reason}</span>
                   ) : null}
                 </span>
               </Label>
@@ -131,17 +145,23 @@ export function GrokBotPicker({
         })}
       </ul>
       <div className="mt-4 flex justify-end">
-        <Button
-          data-testid="agent-import-grok-import"
-          disabled={busy || importing || picked.length === 0}
-          onClick={() => void importPicked()}
-        >
-          {importing ? (
-            <Trans>Importing…</Trans>
-          ) : (
-            <Plural value={picked.length} one="Import # Bot" other="Import # Bots" />
-          )}
-        </Button>
+        {picked.length === 0 && first ? (
+          <Button onClick={() => onImported(first)}>
+            <Trans>Done</Trans>
+          </Button>
+        ) : (
+          <Button
+            data-testid="agent-import-grok-import"
+            disabled={busy || importing || picked.length === 0}
+            onClick={() => void importPicked()}
+          >
+            {importing ? (
+              <Trans>Importing…</Trans>
+            ) : (
+              <Plural value={picked.length} one="Import # Bot" other="Import # Bots" />
+            )}
+          </Button>
+        )}
       </div>
     </section>
   );

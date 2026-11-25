@@ -3,6 +3,7 @@ import type {
   AgentImportFile,
   AgentImportMemoryDestination,
   AgentImportPlan,
+  Bot,
 } from "@rakazo/contracts";
 import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
@@ -35,18 +36,43 @@ import { errorText } from "../../../lib/query/user-error";
 
 export type AgentImportSource = ReturnType<typeof useAgentImportSource>;
 
-/** A chosen file's text, or each JSON file inside a .zip of exports. */
-async function grokExportTexts(file: File): Promise<string[]> {
-  if (!file.name.toLowerCase().endsWith(".zip")) return [await file.text()];
-  const archive = openAgentImportArchive(new Uint8Array(await file.arrayBuffer()));
-  return archive.paths
+/** Bots of an export, by their export text: unticked, imported, and why one was not. */
+export type GrokBatch = {
+  unpicked: ReadonlySet<string>;
+  created: ReadonlyMap<string, Bot>;
+  reasons: ReadonlyMap<string, string>;
+};
+const EMPTY_GROK_BATCH: GrokBatch = { unpicked: new Set(), created: new Map(), reasons: new Map() };
+
+/**
+ * A chosen file's Bots, or those of each export inside a .zip of them. Another JSON file
+ * in a .zip is skipped; a .zip with no export is not one.
+ */
+async function grokExportBots(file: File): Promise<GrokBot[]> {
+  if (!file.name.toLowerCase().endsWith(".zip")) return parseGrokBotExport(await file.text());
+  // A character can take four bytes, so the archive's byte limits follow the export's.
+  const archive = openAgentImportArchive(new Uint8Array(await file.arrayBuffer()), {
+    ...AGENT_IMPORT_ARCHIVE_LIMITS,
+    fileBytes: GROK_BOT_EXPORT_MAX_LENGTH * 4,
+    readBytes: GROK_BOT_REPLY_MAX_LENGTH * 4,
+  });
+  const bots = archive.paths
     .filter((path) => {
       const name = path.split("/").at(-1) ?? "";
       return (
         name.toLowerCase().endsWith(".json") && !name.startsWith(".") && !path.includes("__MACOSX/")
       );
     })
-    .map((path) => archive.read(path));
+    .flatMap((path) => {
+      try {
+        return parseGrokBotExport(archive.read(path));
+      } catch (err) {
+        if (err instanceof GrokBotExportError && err.code === "not_export") return [];
+        throw err;
+      }
+    });
+  if (bots.length === 0) throw new GrokBotExportError("not_export");
+  return bots;
 }
 
 /**
@@ -76,6 +102,10 @@ export function useAgentImportSource() {
   const [busy, setBusy] = useState(false);
   // Bots in one Grok Bot reply, while the user picks which to import.
   const [grokBots, setGrokBots] = useState<GrokBot[]>([]);
+  // Kept by each Bot's export text, so a Bot read again after a review keeps its import key
+  // and shows as imported.
+  const [grokBatch, setGrokBatch] = useState<GrokBatch>(EMPTY_GROK_BATCH);
+  const grokKeys = useRef(new Map<string, string>());
   // Bumped by every new read, so a slower earlier one never lands over it.
   const latestRead = useRef(0);
   const [error, setError] = useState<string | null>(null);
@@ -271,7 +301,6 @@ export function useAgentImportSource() {
 
   /** A pasted reply or one chosen file: no folder, so no secrets or skill siblings. */
   async function previewOne(read: number, file: AgentImportFile) {
-    setGrokBots([]);
     setSource(null);
     setSourceFiles([]);
     setHasSecretFiles(false);
@@ -330,9 +359,9 @@ export function useAgentImportSource() {
       return;
     }
     try {
-      const texts = (await Promise.all(chosen.map(grokExportTexts))).flat();
+      const bots = (await Promise.all(chosen.map(grokExportBots))).flat();
       if (read !== latestRead.current) return;
-      const parts = texts.flatMap((text) => parseGrokBotExport(text).map(grokBotExportJson));
+      const parts = bots.map(grokBotExportJson);
       await previewGrokReply(parts.join("\n\n"), read);
     } catch (err) {
       if (read !== latestRead.current) return;
@@ -365,10 +394,15 @@ export function useAgentImportSource() {
     }
   }
 
-  function stopReading() {
+  /** Stops a read in progress; the Bots an export listed stay. */
+  function cancelRead() {
     ++latestRead.current;
-    setGrokBots([]);
     setBusy(false);
+  }
+
+  function stopReading() {
+    cancelRead();
+    setGrokBots([]);
   }
 
   function toggle(id: string, checked: boolean) {
@@ -423,6 +457,10 @@ export function useAgentImportSource() {
     previewGrokReply,
     previewGrokBot,
     pickGrokFiles,
+    grokBatch,
+    setGrokBatch,
+    grokKeys,
+    cancelRead,
     stopReading,
     modelUsable,
     tooLong,

@@ -71,6 +71,7 @@ function PromptReplySteps({
   accept,
   multiple = false,
   busy,
+  locked = false,
   onContinue,
   onFiles,
   onCancelRead,
@@ -85,6 +86,8 @@ function PromptReplySteps({
   accept: string;
   multiple?: boolean;
   busy: boolean;
+  /** While bots are being created from this reply, it cannot change under them. */
+  locked?: boolean;
   onContinue: () => void;
   onFiles: (files: FileList | null) => void;
   onCancelRead: () => void;
@@ -150,6 +153,7 @@ function PromptReplySteps({
             id={replyId}
             value={reply}
             onChange={(event) => onReplyChange(event.target.value)}
+            readOnly={locked}
             rows={6}
             className="mt-2 max-h-64"
           />
@@ -226,6 +230,10 @@ export function AgentImportForm({
     previewGrokReply,
     previewGrokBot,
     pickGrokFiles,
+    grokBatch,
+    setGrokBatch,
+    grokKeys,
+    cancelRead,
     stopReading,
     modelUsable,
     ready,
@@ -273,10 +281,15 @@ export function AgentImportForm({
   }
 
   function back() {
-    stopReading();
     setError(null);
-    if (plan) setPlan(null);
-    else setOrigin(null);
+    // From one Bot's review, back to the Bots its export listed.
+    if (plan) {
+      cancelRead();
+      setPlan(null);
+    } else {
+      stopReading();
+      setOrigin(null);
+    }
   }
 
   function step() {
@@ -372,7 +385,8 @@ export function AgentImportForm({
         }}
         accept=".json,.md,.txt,.zip,application/json,text/plain,text/markdown,application/zip"
         multiple
-        busy={busy}
+        busy={busy || creating}
+        locked={creating}
         onContinue={() => void previewGrokReply(grokReply)}
         onFiles={(list) => void pickGrokFiles(list)}
         onCancelRead={stopReading}
@@ -380,6 +394,9 @@ export function AgentImportForm({
         {grokBots.length > 1 ? (
           <GrokBotPicker
             bots={grokBots}
+            batch={grokBatch}
+            setBatch={setGrokBatch}
+            keys={grokKeys}
             busy={busy}
             onReview={(bot) => void previewGrokBot(bot)}
             onCreatingChange={setCreating}

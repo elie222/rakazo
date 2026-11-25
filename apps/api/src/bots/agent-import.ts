@@ -446,7 +446,10 @@ export async function createImportedBots<PreparedKey>(
       );
       results.push({ bot: written.bot });
     } catch (error) {
-      if (!(error instanceof ORPCError || error instanceof ClientError)) throw error;
+      // This module refuses with 4xx ORPCErrors; anything else is a server fault.
+      const refusal =
+        error instanceof ClientError || (error instanceof ORPCError && error.status < 500);
+      if (!refusal) throw error;
       results.push({ error: error.message });
     }
   }
