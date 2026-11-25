@@ -78,6 +78,7 @@ import {
   MEMORY_JUDGE_CALIBRATION,
   MEMORY_JUDGE_VERSION,
 } from "../evals/suites/memory.js";
+import { PAGES_EVAL_CASES, PAGES_FIXTURE_VERSION } from "../evals/suites/pages.js";
 import {
   loadRecallCases,
   RECALL_EVAL_CASES,
@@ -251,6 +252,7 @@ async function main() {
       judge: { version: TOOL_CHOICE_JUDGE_VERSION, calibration: TOOL_CHOICE_JUDGE_CALIBRATION },
     },
     "bot-files": { cases: BOT_FILES_EVAL_CASES, fixtureVersion: BOT_FILES_FIXTURE_VERSION },
+    pages: { cases: PAGES_EVAL_CASES, fixtureVersion: PAGES_FIXTURE_VERSION },
     apps: {
       cases: APPS_EVAL_CASES,
       fixtureVersion: APPS_FIXTURE_VERSION,

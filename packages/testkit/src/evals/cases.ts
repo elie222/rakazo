@@ -80,6 +80,8 @@ export type Evidence = {
   calls: ServiceCall[];
   /** The bot under test, to tell its calls from a peer's. */
   subjectBotId?: string;
+  /** The subject's pages, with the source of each one's newest version. */
+  pages?: Array<{ title: string; currentVersion: number; source: string }>;
   routines: Array<{
     name: string;
     prompt: string;
