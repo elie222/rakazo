@@ -70,7 +70,7 @@ import {
   unexpiredCreditAccount,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { applyAccessGrants } from "../auth/access-grants.js";
+import { applyAccessGrants, grantCreditCode } from "../auth/access-grants.js";
 import type { ScheduleLifecycleEmail } from "../email/lifecycle-email.js";
 import {
   byokTierOffers,
@@ -82,6 +82,7 @@ import {
 import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
 import { readCloudComputers, readComputerUsage, saveCloudComputerSize } from "./computer-usage.js";
+import type { CreditCode } from "./credit-codes.js";
 import { createPartnerSales } from "./partner-sales.js";
 import { schedulePlanStartEmails } from "./plan-start-emails.js";
 import { createReferrals } from "./referrals.js";
@@ -149,6 +150,8 @@ export interface BillingService {
     expectedCustomerId?: string,
   ): Promise<void>;
   claimReferral(actor: Actor, code: string): Promise<void>;
+  /** Owners only: adds a credit code's credits to the organization, once per account. */
+  redeemCreditCode(actor: Actor, code: CreditCode): Promise<void>;
 }
 
 export function createBillingService(deps: {
@@ -951,6 +954,16 @@ export function createBillingService(deps: {
     async claimReferral(actor, code) {
       const { organizationId, isOwner } = await organization(actor);
       if (isOwner) await referrals.claim(organizationId, code, actor.userId);
+    },
+
+    async redeemCreditCode(actor, code) {
+      const { organizationId } = await managedOrganization(actor);
+      const credited = await grantCreditCode(prisma, {
+        userId: actor.userId,
+        organizationId,
+        code,
+      });
+      await publishOrganizationChange(prisma, deps.realtime, credited);
     },
 
     async cancelForDeletedUser(userId) {

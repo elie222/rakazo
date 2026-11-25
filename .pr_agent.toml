@@ -1,3 +1,13 @@
 # Qodo is the default reviewer (see .github/workflows/review-bot.yml).
 [github_app]
 handle_push_trigger = true
+
+[review_agent.comments_routing]
+action_required = "both"
+remediation_recommended = "summary"
+informational = "drop"
+
+[review_agent_ux]
+finding_overflow_count = 1
+show_daily_tips = false
+show_comment_footer = false

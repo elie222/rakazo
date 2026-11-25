@@ -594,6 +594,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/switchToYearly"],
       ["billing/changeTier"],
       ["billing/claimReferral"],
+      ["billing/redeemCreditCode", { code: "NOT-A-REAL-CODE" }],
       ["accessGrants/list"],
       ["accessGrants/create"],
       ["accessGrants/revoke"],

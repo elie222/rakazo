@@ -3,7 +3,6 @@ import {
   AGENT_IMPORT_ASK_ACTION_ID,
   ATTACHMENT_COUNT_CEILING,
   ATTACHMENT_MAX_BYTES,
-  ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
@@ -33,9 +32,11 @@ function isWellFormedBase64(value: string): boolean {
   return /^[A-Za-z0-9+/]*$/.test(body);
 }
 
+const DEFAULT_SERVER_ATTACHMENT_COUNT = 10;
+
 export function attachmentCountFromEnv(source: { MAX_ATTACHMENTS_PER_MESSAGE?: string }): number {
   const value = source.MAX_ATTACHMENTS_PER_MESSAGE?.trim();
-  if (!value) return ATTACHMENT_MAX_COUNT;
+  if (!value) return DEFAULT_SERVER_ATTACHMENT_COUNT;
   const count = Number(value);
   if (
     !/^\d+$/.test(value) ||
