@@ -268,13 +268,15 @@ async function* spaceRecords(
             botId: true,
             replyToMessageId: true,
             replyQuote: true,
+            pinnedAt: true,
             createdAt: true,
           },
         });
-        for (const message of messages)
+        for (const { pinnedAt, ...message } of messages)
           yield {
             type: "message",
             ...message,
+            ...(pinnedAt ? { pinnedAt: iso(pinnedAt) } : {}),
             blocks: json(message.blocks),
             threadId: thread.id,
             botId: ownBot(message.botId),

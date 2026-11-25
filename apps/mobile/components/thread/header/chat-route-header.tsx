@@ -6,7 +6,6 @@ import { setInboxHidden } from "../../../lib/layout/split-view";
 import { iosAtLeast } from "../../../lib/native/native-controls";
 import { threadEdgeOptions } from "../../../lib/thread/scroll/thread-edges";
 import { NativeSymbol } from "../../native/native-symbol";
-import { trailingHeaderOptions } from "../../native/sheet-header";
 import type { ChatTitleParams } from "./chat-header-title";
 import { ChatHeaderTitle } from "./chat-header-title";
 import { openInvite, threadHeaderRight } from "./thread-header-right";
@@ -45,10 +44,9 @@ export function chatRouteHeader(
       onGroupSettings: () =>
         router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
       onInvite: canInvite && botId ? () => openInvite(router) : undefined,
+      restore: readOnly ? { onPress: () => undefined } : undefined,
     }),
     ...threadHeaderLeft({ split, inboxHidden, foldActive, color }),
-    // An archived chat offers Restore; the open chat gives it its action.
-    ...(readOnly ? trailingHeaderOptions(t`Restore`, () => undefined) : {}),
   };
 }
 

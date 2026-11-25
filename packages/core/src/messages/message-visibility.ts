@@ -1,4 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { canReactToThreadMessage } from "@rakazo/contracts";
 import { messageReaction } from "./message-reactions.js";
 
 type PresentableMessage = {
@@ -211,5 +212,24 @@ export function expandPeerReplies<T extends PresentableMessage>(
     expandedMarkerIds.has(message.id)
       ? [message, ...(transcript.folded.get(message.id) ?? [])]
       : [message],
+  );
+}
+
+/** Only recognizable, stored chat content can be pinned. */
+export function canPinMessage(
+  message: Parameters<typeof canReactToThreadMessage>[0] & Parameters<typeof messageReaction>[0],
+): boolean {
+  return (
+    canReactToThreadMessage(message) &&
+    message.role !== "system" &&
+    !messageReaction(message) &&
+    !isDeliveryMessage(message.blocks) &&
+    !isPeerReceiptBlocks(message.blocks) &&
+    message.blocks.some(
+      (block) =>
+        (block.kind === "text" && Boolean(block.text.trim())) ||
+        block.kind === "image" ||
+        block.kind === "file",
+    )
   );
 }

@@ -22,6 +22,7 @@ import {
 import { MessageReactionSchema } from "./reactions.js";
 import { SEARCH_QUERY_MAX_LENGTH, SearchQueryOutputSchema } from "./search.js";
 import { ChatAlertSchema, ThreadMessagePageSchema, ThreadSnapshotSchema } from "./thread.js";
+import { PinnedMessageSchema } from "./thread-message.js";
 import {
   threadSendInput,
   threadSendOutput,
@@ -83,6 +84,10 @@ export const threadsRpc = {
         }),
       )
       .output(z.object({ accepted: z.boolean() })),
+    pins: oc.input(threadTarget).output(z.array(PinnedMessageSchema)),
+    setPin: oc
+      .input(threadTarget.safeExtend({ messageId: Id, pinned: z.boolean() }))
+      .output(z.object({ ok: z.literal(true) })),
     react: oc
       .input(
         threadTarget.safeExtend({

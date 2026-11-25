@@ -1,8 +1,10 @@
 import type { ReactNode, RefObject } from "react";
 import { useRef, useState } from "react";
 import { CallReturnBar } from "../../../components/call/CallCard";
+import type { ChatTarget } from "../../../lib/query/query";
 import { FileDropZoneContext } from "../composer/use-composer-file-drop";
 import { ChatFindBar } from "./chat-find-bar";
+import { MessagePinsProvider } from "./message-pins";
 import "./chat-top-fade.css";
 
 /** The open chat's column beside the sidebar: its floating header, find bar, body and composer. */
@@ -13,6 +15,8 @@ export function ChatColumn({
   findInputRef,
   onCloseFind,
   header,
+  pinTarget,
+  onJumpToMessage,
   children,
   composer,
 }: {
@@ -24,6 +28,8 @@ export function ChatColumn({
   findInputRef: RefObject<HTMLInputElement | null>;
   onCloseFind: () => void;
   header: ReactNode;
+  pinTarget?: ChatTarget;
+  onJumpToMessage?: (messageId: string) => void;
   children: ReactNode;
   composer: ReactNode;
 }) {
@@ -66,8 +72,10 @@ export function ChatColumn({
             <ChatFindBar scope={chatColumnRef} inputRef={findInputRef} onClose={onCloseFind} />
           </div>
         ) : null}
-        {header}
-        {children}
+        <MessagePinsProvider target={pinTarget} onJump={onJumpToMessage}>
+          {header}
+          {children}
+        </MessagePinsProvider>
       </div>
       <FileDropZoneContext value={dropZone}>{composer}</FileDropZoneContext>
     </main>

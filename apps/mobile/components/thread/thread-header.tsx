@@ -1,18 +1,17 @@
 import { useLingui } from "@lingui/react/macro";
-import { useNavigation, useRoute, useRouter } from "expo-router";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRoute, useRouter } from "expo-router";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { MobileBot } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
-import { mobileTokens } from "../../lib/appearance/appearance";
 import { useReferral } from "../../lib/billing/referral";
 import { restoreArchivedBot } from "../../lib/bots/bot-lifecycle";
 import { notifyArchivedChatsChanged } from "../../lib/inbox/archived/archived-chats";
-import { useResolvedAppearance } from "../../lib/native/native";
+import { useMobileTokens } from "../../lib/native/native";
 import { chatTitleRoute } from "../../lib/navigation/chat-settings-route";
+import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { onConversationCleared } from "../../lib/thread/conversation-cleared";
 import { threadEdgeOptions } from "../../lib/thread/scroll/thread-edges";
-import { trailingHeaderOptions } from "../native/sheet-header";
 import type { ChatTitle } from "./header/chat-header-title";
 import { publishChatTitle } from "./header/chat-header-title";
 import { openInvite, threadHeaderRight } from "./header/thread-header-right";
@@ -33,6 +32,7 @@ export function useThreadHeader({
   currentBotStatus,
   composingBots,
   onCleared,
+  onShowPins,
 }: {
   botId?: string;
   groupId?: string;
@@ -48,16 +48,20 @@ export function useThreadHeader({
   composingBots: string;
   /** Runs once the server has cleared the conversation, from the bot's profile. */
   onCleared: () => void;
+  onShowPins?: () => void;
 }) {
-  const colorScheme = useResolvedAppearance();
-  const tokens = mobileTokens();
+  const { foreground } = useMobileTokens();
   const { t } = useLingui();
-  const navigation = useNavigation();
+  useScreenHeader({ title: displayName || t`Thread` });
   // This screen's own route: its header title reads what this screen publishes, by key.
   const route = useRoute();
   const router = useRouter();
   const [restoring, setRestoring] = useState(false);
   const canInvite = Boolean(useReferral());
+
+  const showPins = useRef(onShowPins);
+  showPins.current = onShowPins;
+  const hasPins = Boolean(onShowPins);
 
   const cleared = useRef(onCleared);
   cleared.current = onCleared;
@@ -95,39 +99,7 @@ export function useThreadHeader({
     ],
   );
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: displayName || t`Thread`,
-      headerTitleAlign: "center",
-      ...threadEdgeOptions(),
-      ...threadHeaderRight({
-        inGroup,
-        readOnly,
-        color: tokens.foreground,
-        onGroupSettings: () =>
-          router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
-        onInvite: canInvite && botId ? () => openInvite(router) : undefined,
-      }),
-      ...(readOnly
-        ? trailingHeaderOptions(t`Restore`, () => void restoreConversation(), restoring)
-        : {}),
-    });
-  }, [
-    readOnly,
-    restoring,
-    botId,
-    canInvite,
-    displayName,
-    groupId,
-    inGroup,
-    navigation,
-    router,
-    t,
-    tokens,
-    colorScheme,
-  ]);
-
-  async function restoreConversation() {
+  const restoreConversation = useCallback(async () => {
     if (!botId || restoring) return;
     setRestoring(true);
     try {
@@ -139,5 +111,36 @@ export function useThreadHeader({
     } finally {
       setRestoring(false);
     }
-  }
+  }, [botId, restoring, router, t]);
+
+  return useMemo(
+    () => ({
+      headerTitleAlign: "center" as const,
+      ...threadEdgeOptions(),
+      ...threadHeaderRight({
+        inGroup,
+        readOnly,
+        color: foreground,
+        onGroupSettings: () =>
+          router.push({ pathname: "/group-settings", params: { groupId: groupId ?? "" } }),
+        onInvite: canInvite && botId ? () => openInvite(router) : undefined,
+        onShowPins: hasPins ? () => showPins.current?.() : undefined,
+        restore: readOnly
+          ? { onPress: () => void restoreConversation(), pending: restoring }
+          : undefined,
+      }),
+    }),
+    [
+      inGroup,
+      readOnly,
+      foreground,
+      router,
+      groupId,
+      canInvite,
+      botId,
+      hasPins,
+      restoreConversation,
+      restoring,
+    ],
+  );
 }

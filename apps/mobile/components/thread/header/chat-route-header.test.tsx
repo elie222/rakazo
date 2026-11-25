@@ -2,6 +2,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ChatSplit } from "./chat-route-header";
 import { chatRouteHeader } from "./chat-route-header";
+import { threadHeaderRight } from "./thread-header-right";
 
 const push = vi.hoisted(() => vi.fn());
 const setInboxHidden = vi.hoisted(() => vi.fn());
@@ -93,4 +94,22 @@ it("folded like a book beside the chat list, declares neither a back nor a sideb
   expect(options.headerLeft).toBeUndefined();
   expect(leftItems(options)).toEqual([]);
   expect(header({ botId: "bot-1" }).headerBackVisible).toBe(true);
+});
+
+it("keeps the archived chat's Restore action beside its pins", () => {
+  const showPins = vi.fn();
+  const actions = rightItems(
+    threadHeaderRight({
+      readOnly: true,
+      inGroup: false,
+      color: "foreground",
+      onGroupSettings: vi.fn(),
+      onInvite: vi.fn(),
+      onShowPins: showPins,
+      restore: { onPress: vi.fn() },
+    }),
+  );
+  expect(actions).toMatchObject([{ label: "Restore" }, { label: "Pinned messages" }]);
+  (actions[1] as { onPress: () => void }).onPress();
+  expect(showPins).toHaveBeenCalledOnce();
 });

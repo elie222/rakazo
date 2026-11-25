@@ -423,8 +423,6 @@ function SpaceShell() {
     integrationsOpen: overlay?.kind === "integrations",
     initialBotsLoaded,
   });
-  // Not while the shell is leaving: a roster with nothing anywhere is on its way to onboarding,
-  // and a reopened group chat is on its way to that group.
   const showNewBotPrompt =
     initialBotsLoaded &&
     bots.length === 0 &&
@@ -736,6 +734,8 @@ function SpaceShell() {
       />
 
       <ChatColumn
+        pinTarget={groupId ? { groupId } : active ? { botId: active.id } : undefined}
+        onJumpToMessage={jumpToReplyMessage}
         drawerOpen={mobileSidebarOpen}
         covered={panelCoversChat}
         findOpen={findOpen}

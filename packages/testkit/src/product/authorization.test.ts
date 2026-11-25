@@ -370,6 +370,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/get", { botId: "missing-bot" }],
       ["threads/get", { groupId: "missing-group" }],
       ["threads/messages", { botId: "missing-bot", before: 1 }],
+      ["threads/pins", { botId: "missing-bot" }],
+      ["threads/setPin", { botId: "missing-bot", messageId: "missing-message", pinned: true }],
       ["threads/subscribe", { botId: "missing-bot", cursor: -1 }],
       ["threads/send", { botId: "missing-bot", text: "Nope" }],
       [
@@ -812,6 +814,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/claimEmailAddress", { botId: ownerBot.id, name: "intruder-claim" }],
       ["threads/get", { botId: ownerBot.id }],
       ["threads/messages", { botId: ownerBot.id, before: 1 }],
+      ["threads/pins", { botId: ownerBot.id }],
+      ["threads/setPin", { botId: ownerBot.id, messageId: "missing-message", pinned: true }],
       ["threads/subscribe", { botId: ownerBot.id, cursor: -1 }],
       ["threads/send", { botId: ownerBot.id, text: "intruder message" }],
       ["threads/send", { botId: ownerBot.id, artifactIds: [ownerArtifact.id] }],

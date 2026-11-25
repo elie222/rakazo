@@ -7,6 +7,8 @@ export const messageMenuSymbols = [
   "select",
   "selectMessages",
   "unread",
+  "pin",
+  "unpin",
 ] as const;
 
 export type MessageMenuSymbol = (typeof messageMenuSymbols)[number];
@@ -33,8 +35,10 @@ export function buildMessageContextMenu({
   labels,
   reactions,
   include,
+  pin,
 }: {
-  labels: Record<MessageMenuSymbol, string>;
+  labels: Record<Exclude<MessageMenuSymbol, "pin" | "unpin">, string>;
+  pin?: { name: "pin" | "unpin"; text: string };
   reactions: readonly string[];
   include: {
     reply?: boolean;
@@ -55,6 +59,7 @@ export function buildMessageContextMenu({
   return [
     ...(include.reply !== false ? [entry("reply", labels.reply)] : []),
     ...(include.unread ? [entry("unread", labels.unread)] : []),
+    ...(pin ? [entry(pin.name, pin.text)] : []),
     entry("copy", labels.copy),
     ...(include.react
       ? [

@@ -976,6 +976,7 @@ class AccountImporter implements ArchiveSink {
         botId: space.optional(record.botId),
         replyToMessageId: space.optional(record.replyToMessageId),
         replyQuote: record.replyQuote,
+        pinnedAt: record.pinnedAt ? new Date(record.pinnedAt) : undefined,
         createdAt: new Date(record.createdAt),
       });
       if (batch.length >= MESSAGE_BATCH_SIZE) await flush();

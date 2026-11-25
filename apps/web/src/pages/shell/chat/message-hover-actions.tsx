@@ -2,7 +2,12 @@ import { i18n } from "@lingui/core";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
-import { canMarkMessageUnread, copyableMessageText, formatTimeSeparator } from "@rakazo/core";
+import {
+  canMarkMessageUnread,
+  canPinMessage,
+  copyableMessageText,
+  formatTimeSeparator,
+} from "@rakazo/core";
 import {
   CopyTextFallback,
   DropdownMenu,
@@ -14,10 +19,21 @@ import {
   PopoverTrigger,
   useCopyText,
 } from "@rakazo/ui-web";
-import { Check, Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
+import {
+  Check,
+  Copy,
+  MessageSquareDot,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  Reply,
+  Smile,
+} from "lucide-react";
 import { useState } from "react";
 import { MessageHoverMetadata } from "../../../components/messages/MessageHoverMetadata";
 import { isPendingSendMessage } from "../../../lib/composer/pending-send";
+
+import { useMessagePins } from "./message-pins";
 
 export function MessageHoverActions({
   message,
@@ -38,6 +54,8 @@ export function MessageHoverActions({
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
+  const messagePins = useMessagePins();
+  const pinned = messagePins?.ids.has(message.id) ?? false;
   const [copiedNow, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
   // The text the last successful copy put on the clipboard: a message that changes during the
   // confirmation no longer shows as copied.
@@ -142,6 +160,14 @@ export function MessageHoverActions({
               >
                 <MessageSquareDot size={14} strokeWidth={1.7} />
                 <Trans>Mark as unread</Trans>
+              </DropdownMenuItem>
+            ) : null}
+            {messagePins?.setPin && (pinned || canPinMessage(message)) ? (
+              <DropdownMenuItem
+                onClick={() => messagePins.setPin?.({ messageId: message.id, pinned: !pinned })}
+              >
+                {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+                {pinned ? <Trans>Unpin message</Trans> : <Trans>Pin message</Trans>}
               </DropdownMenuItem>
             ) : null}
             <DropdownMenuItem onClick={copyMessage}>

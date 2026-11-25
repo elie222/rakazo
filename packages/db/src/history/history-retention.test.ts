@@ -15,6 +15,7 @@ type Fixture = {
   oldestKeptAt?: Date;
   failChunk?: boolean;
   nonceSeqs?: number[];
+  pinnedSeqs?: number[];
 };
 
 function database(fixture: Fixture = {}) {
@@ -33,6 +34,7 @@ function database(fixture: Fixture = {}) {
           id: `m${seq}`,
           seq,
           clientNonce: fixture.nonceSeqs?.includes(seq) ? `nonce-${seq}` : null,
+          pinnedAt: fixture.pinnedSeqs?.includes(seq) ? NOW : null,
         })),
       ),
       deleteMany: vi.fn(async () => ({ count: pending.messageSeqs.length })),
@@ -59,7 +61,7 @@ function database(fixture: Fixture = {}) {
     return { count };
   });
   const prisma = {
-    $queryRaw: vi.fn(async () => [{ id: "thread-1" }]),
+    $queryRaw: vi.fn(async () => [{ id: "thread-1", spaceId: "space-1" }]),
     $transaction: vi.fn(async (run: (client: typeof tx) => Promise<number>) => {
       if (fixture.failChunk) throw new Error("lock timeout");
       return run(tx);
@@ -196,7 +198,10 @@ describe("pruneChatHistory", () => {
 
   it("goes on to the next chat when one cannot be pruned", async () => {
     const { prisma, raw } = database({ failChunk: true });
-    raw.mockResolvedValueOnce([{ id: "thread-1" }, { id: "thread-2" }]);
+    raw.mockResolvedValueOnce([
+      { id: "thread-1", spaceId: "space-1" },
+      { id: "thread-2", spaceId: "space-2" },
+    ]);
     await expect(pruneChatHistory(prisma, 30, NOW)).resolves.toBe(0);
     expect(prisma.$transaction).toHaveBeenCalledTimes(2);
   });
@@ -212,4 +217,13 @@ describe("pruneChatHistory", () => {
     await pruneChatHistory(prisma, 30, NOW);
     expect(raw).toHaveBeenCalledTimes(1);
   });
+});
+
+it("signals the Space when retention removes a pinned message", async () => {
+  const { prisma } = database({ messageSeqs: [1, 2], pinnedSeqs: [2] });
+  const onPinsRemoved = vi.fn(async () => {});
+
+  await pruneChatHistory(prisma, 30, NOW, onPinsRemoved);
+
+  expect(onPinsRemoved).toHaveBeenCalledExactlyOnceWith("space-1");
 });

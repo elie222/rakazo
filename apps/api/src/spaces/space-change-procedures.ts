@@ -15,6 +15,8 @@ const SPACE_CHANGE_PROCEDURES: Record<string, readonly SpaceChangeKind[]> = {
   // These can queue a run.
   "threads.sendWithRoutines": ["runs"],
   "threads.react": ["runs"],
+  "threads.setPin": ["messagePins"],
+  "threads.clear": ["messagePins"],
   "threads.endCall": ["runs"],
   "threads.followUp": ["runs"],
   "skills.testRun": ["runs"],

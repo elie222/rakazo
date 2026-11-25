@@ -31,6 +31,7 @@ const READS: Record<ReadChangeKind, readonly Procedure[]> = {
     ["meetings", "transcript"],
   ],
   artifacts: [["artifacts", "listSpace"]],
+  messagePins: [["threads", "pins"]],
   pages: [
     ["pages", "get"],
     ["pages", "list"],

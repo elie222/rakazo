@@ -445,7 +445,11 @@ export function createRunReconciler(
     ),
     reconcileAuditLog: createAuditLogReconciler(prisma, auditLogConfig()),
     reconcileChatHistoryRetention:
-      chatHistoryDays === null ? undefined : createChatHistoryPruner(prisma, chatHistoryDays),
+      chatHistoryDays === null
+        ? undefined
+        : createChatHistoryPruner(prisma, chatHistoryDays, {
+            onPinsRemoved: (spaceId) => deps.events.publishSpaceChange?.(spaceId, "messagePins"),
+          }),
     reconcileNativeCalendarRetention: createRetentionPruner(
       "native_calendar_requests",
       (now) => pruneExpiredNativeCalendarRequests(prisma, now),

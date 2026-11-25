@@ -121,6 +121,7 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     botId: Id.nullable(),
     replyToMessageId: Id.nullable(),
     replyQuote: z.string().nullable(),
+    pinnedAt: IsoDate.optional(),
     createdAt: IsoDate,
   }),
   /** A page arrives private: its link stays with the source install. */
