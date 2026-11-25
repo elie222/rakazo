@@ -208,6 +208,11 @@ def left(deadline: float | None, most: float) -> float:
     return most if deadline is None else max(0.2, min(most, deadline - time.monotonic()))
 
 
+def person_controls_screen() -> bool:
+    """Whether a person holds this screen now. The supervisor keeps its control token file only while they do."""
+    return os.path.exists(f"/tmp/rakazo/control-token-{display_num()}")
+
+
 class Tabs:
     """The browser's tabs at the end of the last call, kept in the page browser's own folder."""
 
@@ -266,7 +271,10 @@ class Tabs:
         return tabs, opened, flooded
 
     def close(self, ids: list[Any], keep: Any) -> list[Any]:
-        """The tabs it closed, by the deadline: the rest are left for the next call."""
+        """The tabs it closed, by the deadline: the rest are left for the next call, as is everything
+        while a person holds the screen."""
+        if person_controls_screen():
+            return []
         if keep is not None:
             # Best effort: if the session does not move, the tab it reads is read again or refused after.
             with contextlib.suppress(Exception):
@@ -292,7 +300,7 @@ class Tabs:
         """Close the tabs beyond MAX_TABS, longest out of sight first. The tab in front and the call's
         own tab stay, and nothing closes until the session has moved to the tab in front."""
         extra = [tab.get("id") for tab in reversed(tabs[1:]) if tab.get("id") != own][:max(0, len(tabs) - MAX_TABS)]
-        if not extra:
+        if not extra or person_controls_screen():
             return tabs
         try:
             self.select(tabs[0].get("id"))
@@ -2815,7 +2823,7 @@ def run(argv: list[str]) -> int:
         dialog = page.dialog() if page and command != "purchase_check" else None
         failure = page.dialog_result(dialog, {}) if page and dialog else {
             "ok": False, "error": str(exc), "fallback": "computer_act", "uncertain": command == "act" and connected}
-        note = tabs.note([], [], "") if tabs else None
+        note = " ".join(filter(None, [failure.get("note"), tabs.note([], [], "") if tabs else None]))
         print(json.dumps({**failure, **({"note": note} if note else {}), **({"downloads": saved} if saved else {})}))
         return 0
     finally:

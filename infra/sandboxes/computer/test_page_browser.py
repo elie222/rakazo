@@ -1789,6 +1789,37 @@ class NewTabTest(unittest.TestCase):
             self.assertEqual([tab["id"] for tab in tabs.trim(chromium.list())], chromium.ids)
         self.assertEqual((chromium.closed, tabs.note([], [], "")), ([], None))
 
+    def test_a_person_holds_the_screen_while_the_supervisor_s_control_token_file_exists(self):
+        with patch.dict(os.environ, {"DISPLAY": ":3"}), patch.object(helper.os.path, "exists", return_value=True) as exists:
+            self.assertTrue(helper.person_controls_screen())
+        exists.assert_called_once_with("/tmp/rakazo/control-token-3")
+
+    def test_nothing_closes_while_a_person_holds_the_screen(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        chromium.opening = [f"p{index}" for index in range(60)]
+        with patch.object(helper, "person_controls_screen", return_value=True):
+            opened, note, flooded = self.call(chromium, "own")
+        self.assertEqual((chromium.closed, chromium.events, flooded), ([], [], False))
+        self.assertEqual(len(opened), 72)
+        self.assertNotIn("Closed", note)
+        self.assertNotIn("were closed", note)
+
+    def test_a_failed_call_keeps_the_alert_notice_beside_the_tabs_it_closed(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        browser = FakeAgentBrowser()
+        browser.home, browser.dialog = self.home, {"type": "alert", "message": "Saved"}
+        with patch.dict(os.environ, {"RAKAZO_CDP_PORT": "9222"}), \
+                patch.object(helper, "wait_for_cdp", return_value={"webSocketDebuggerUrl": "ws://b/1"}), \
+                patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen), \
+                patch.object(helper, "AgentBrowser", return_value=browser), \
+                patch.object(browser, "use_tab", create=True), patch("builtins.print") as printed:
+            self.assertEqual(helper.run(["rakazo-page-browser", "snapshot", "{}"]), 0)
+        result = json.loads(printed.call_args.args[0])
+        self.assertEqual(result["note"], 'The page showed an alert, now closed: "Saved". '
+                                         "Closed the 5 tabs in the background longest, to keep at most 8 tabs open.")
+        self.assertEqual((result["ok"], chromium.closed), (True, [f"r{index}" for index in range(11, 6, -1)]))
+
     def test_a_tab_list_that_fails_leaves_the_result_as_it_is(self):
         reports = {"ok": True, "title": "Report", "tree": "", "elements": []}
         with patch.object(helper.Tabs, "end", side_effect=OSError("read-only")):
