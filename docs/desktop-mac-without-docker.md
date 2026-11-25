@@ -10,50 +10,17 @@ unchanged.
 - The server side does not need Docker. The API, worker and web run as plain Node processes bound
   to `127.0.0.1`, and the database is the official `postgres:16` image, at the digest Compose pins,
   running as a VM of its own through the same computer runtime and published on `127.0.0.1` only.
-  Verified on this Mac (below).
 - Bot computers run as one lightweight Linux VM each through Apple's open-source `container`
   runtime (Apache 2.0, Virtualization.framework), from the **unchanged** published computer
   image. A new sandbox provider, `local-vm`, plugs into the existing `SandboxProvider` seam the
   way the Incus provider does: no supervisor, no Docker socket, screen reached on the VM's address.
-  Verified end to end through the real API (below).
 - Nothing is bundled: the app download does not grow. The server bundle and (unless the person
   already runs one) the computer runtime are downloaded, pinned by size and SHA-256, and the
-  database image is pulled by digest, only when **This computer** is chosen. First start measured
-  below at about a minute plus the computer runtime download; later starts take about 5 seconds.
+  database image is pulled by digest, only when **This computer** is chosen. The first start takes
+  about a minute plus the computer runtime download; later starts take about 5 seconds.
 - Isolation is stronger than today: each computer gets its own kernel and VM instead of sharing
   Docker Desktop's VM, sits on its own network, and a firewall inside the VM keeps anything running
   on it away from the Mac, the local network and other computers. It still reaches the internet.
-
-## What was run on this Mac
-
-macOS 26.6.1 (25G76), Apple silicon (arm64). `container` was not installed, and stayed
-uninstalled: everything ran from the expanded release package in a private directory, without
-sudo and without the system installer. The first rows were measured before the in-VM firewall
-existed; the egress row shows the result with it.
-
-| Step                                                        | Result                                                                                                                                                               |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `container` 1.7.1 release package (Apple-signed, notarized) | Expanded with `pkgutil`; `container system start --install-root … --app-root … --log-root …` registered user launchd agents in 45 s, including kernel download       |
-| Pull `ghcr.io/elie222/rakazo/computer:edge` (linux/arm64)   | 50 s, 1.58 GB unpacked                                                                                                                                               |
-| First computer VM, noVNC gateway ready                      | 11 s (includes the one-time 66 MB init image); later VMs 2–3 s                                                                                                       |
-| Host reaches VM screen gateway                              | `http://<vm-ip>:6080/embed.html` and per-bot `:6100` answered 200                                                                                                    |
-| Two computers on separate networks                          | Cannot reach each other; each reaches the internet                                                                                                                   |
-| VM reaching the host                                        | With the firewall: host listeners on `127.0.0.1` and `0.0.0.0` and the LAN router refused; internet, DNS and SSH to github.com work; uid 1000 cannot flush the rules |
-| `local-vm` provider, opt-in live test                       | Provisioned in 2.8 s; shared workspace contract, Chromium screenshot on the bot's display, screen URL, workspace export, stop and network cleanup all passed         |
-| Official `postgres:16` image as a VM (Compose's digest)     | Pull of the linux/arm64 variant only: 25 s, 151.5 MB, 452 MB unpacked. First start with init about 3 s, restarts about 2 s; published on `127.0.0.1` only            |
-| Desktop controller end to end (Node, scratch runtime)       | First start 64 s; sign-up and bot creation; restart 4.6 s with data intact; DB VM killed while ready recovered in 3.4 s; taken DB port recreated the VM, data intact |
-| API, worker, web as Node processes                          | `/internal/health` reports `sandbox: local-vm`; Graphile worker connected; web preview served and proxied the API                                                    |
-| Sign up, create bot, `computer.boot` through the web origin | Computer running 4 s after boot; `computer.screenUrl` issued a capability URL                                                                                        |
-| Proxied screen                                              | Capability URL page served through the web proxy; its websocket returned the VNC `RFB 003.008` banner from the VM                                                    |
-| Persistence                                                 | File written in VM 1 survived `computer.stop` (checkpoint into `DATA_DIR/homes`) and was present in a brand-new VM 2 after `computer.boot`                           |
-| Memory                                                      | One computer with Chromium: about 970 MB host RSS (2 GB cap). Database VM: about 540 MB (1 GB cap). API + worker + web: under 245 MB (measured with native Postgres) |
-
-The live provider test is `VERIFY_LOCAL_VM=1 LOCAL_VM_CLI=<path to container> pnpm exec vitest run
-packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.test.ts`. It is skipped by default and in CI.
-
-Not verified: a model-driven bot run on the VM computer, the in-app screen viewer in Electron, the
-terminal over the screen gateway, sleep/wake of the Mac with VMs running, Intel or macOS 15
-behavior, and anything packaged or signed as part of the app.
 
 ## Server stack without Docker
 
@@ -140,7 +107,7 @@ person to update or quit it.
 
 | Option                                                       | Verdict                                                                                                                                                                              |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Apple `container` CLI and its services, bundled              | **Recommended for v1.** Proven here, unchanged image, Apache 2.0, maintained by Apple, monthly releases. Needs only the unrestricted `com.apple.security.virtualization` entitlement |
+| Apple `container` CLI and its services, bundled              | **Chosen.** Unchanged image, Apache 2.0, maintained by Apple, monthly releases. Needs only the unrestricted `com.apple.security.virtualization` entitlement |
 | Own Swift helper on the Containerization framework           | Cleaner long term: one small binary, our own launchd label, no plugin layout. More code to own (image pull, networking, exec). Revisit if the CLI's services get in the way          |
 | One shared Linux VM running the existing supervisor + Docker | Keeps the Docker topology, but we would ship and update a whole VM image and its Docker engine, and lose per-computer VM isolation                                                   |
 | Run bot desktops on the host                                 | No. The computer is the security boundary                                                                                                                                            |
@@ -176,9 +143,6 @@ shared `ExecComputer` and `LinuxDesktop`), selected with `SANDBOX_PROVIDER=local
 The kind name and its settings (`LOCAL_VM_CLI`, `LOCAL_VM_COMPUTER_IMAGE`, `LOCAL_VM_CPUS`,
 `LOCAL_VM_MEMORY`) stay provider-neutral; only the adapter file names Apple.
 
-Offline tests drive the provider against a fake CLI. Not done: cancellation of a running
-`container exec` beyond killing the client (the in-VM `timeout` wrapper still bounds it).
-
 ## What is downloaded, and when
 
 Nothing below is in the app download. All of it is fetched the first time **This computer** starts.
@@ -190,23 +154,6 @@ Nothing below is in the app download. All of it is fetched the first time **This
 | Computer runtime 1.7.1 (only when none is used) | 170 MB   | 182 MB  | Apple's signed release package, pinned in code                  |
 | Linux kernel for the VMs                        | ~30 MB   | ~30 MB  | Fetched by the runtime itself on its first start                |
 | Computer image                                  | —        | 1.58 GB | Pulled in the background once the stack is ready                |
-
-## First run
-
-Measured on this Mac (fast connection) with the real downloads and a locally built bundle, against a
-computer runtime that was already running:
-
-| Run                                                                | Time to ready            |
-| ------------------------------------------------------------------ | ------------------------ |
-| First start (database image pull, bundle unpack, init, migrations) | 64 s                     |
-| Later start                                                        | 4.6 s                    |
-| Database VM killed while ready, until sign-in works again          | 3.4 s                    |
-| Move from a Docker stack (dump, restore, file copy)                | 13 s (small sample data) |
-| Computer runtime package: download, verify, expand                 | 47 s                     |
-
-A first start that also downloads the runtime adds its 47 s in parallel with the other downloads,
-plus the kernel download on its first start (about 45 s measured). The computer image pull
-(about 50 s) runs in the background after the app is ready.
 
 ## Upgrade and data directory
 
@@ -251,8 +198,8 @@ plus the kernel download on its first start (about 45 s measured). The computer 
 
 | Concern               | Docker Desktop today                                                      | Native stack + `local-vm`                                                                                                                                                              |
 | --------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Computer vs. computer | Containers sharing one Linux VM and kernel; per-bot Docker networks       | One VM and kernel per computer; per-computer network, verified unreachable from each other                                                                                             |
-| Computer vs. host     | Docker Desktop VM; host services reachable through `host.docker.internal` | Refused by the in-VM firewall, except DNS on the gateway (verified)                                                                                                                    |
+| Computer vs. computer | Containers sharing one Linux VM and kernel; per-bot Docker networks       | One VM and kernel per computer; per-computer network, unreachable from each other                                                                                             |
+| Computer vs. host     | Docker Desktop VM; host services reachable through `host.docker.internal` | Refused by the in-VM firewall, except DNS on the gateway                                                                                                                    |
 | Egress restriction    | Unsupported on Docker Desktop (`open`)                                    | Always on: public internet only, enforced inside each VM; a bot that gained root in its VM could lift it                                                                               |
 | Privileged component  | Supervisor holds the Docker socket, root-equivalent on the Docker VM      | No socket. The API and worker can create VMs as the signed-in user, nothing more                                                                                                       |
 | Server processes      | Inside the Docker VM                                                      | Run as the user on the host, bound to loopback. They are our code; bot commands still only run in VMs                                                                                  |
@@ -280,21 +227,6 @@ unless the user turns on the existing local computer access, which is unchanged.
 - `SANDBOX_PROVIDER` is always `local-vm` on this path, whatever the shared `.env` says.
 - No API is exposed beyond loopback, so phones on the LAN cannot reach a native stack without the
   existing remote access options.
-
-## Not verified
-
-- Anything inside the packaged, signed Electron app: Electron's binary as Node under the hardened
-  runtime, the one-time dialog, quitting with processes running. The real runs drove the controller
-  with Node itself.
-- Starting our own downloaded runtime copy with only the four kept plugins (a system was already
-  running on the test Mac and only one can run at a time); the download, signature check and
-  expansion were run for real.
-- The Docker move against Docker Desktop: verified on OrbStack only. It uses `docker compose exec`
-  and `docker cp` streams, nothing specific to how Docker reaches the Mac.
-- A full computer boot through the desktop controller: the published `edge` computer image has no
-  `nft` yet, so `local-vm` failed closed with its error, as designed. The provider's live test did
-  boot a locally built image with `nft` and passed with the firewall on. Computers start once an
-  image built from this change is published.
 
 ## Decided
 
