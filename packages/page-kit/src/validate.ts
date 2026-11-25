@@ -104,6 +104,16 @@ export function checkPageSource(source: string): PageSourceCheck {
     const iconOf =
       token.type === TokenType.string ? iconTarget(tokens, index, source, tag) : undefined;
     if (iconOf !== undefined) icons.push({ name: text.slice(1, -1), line, tag: iconOf });
+    if (
+      token.type === TokenType.string &&
+      /^[a-z]/.test(tag) &&
+      text.slice(1).startsWith("image:") &&
+      isJsxAttributeValue(tokens, index)
+    ) {
+      warnings.push(
+        `line ${line}: <${tag}> does not load "${text.slice(1, -1)}"; only kit components resolve image: names, so use <Image src="${text.slice(1, -1)}" />.`,
+      );
+    }
     if (token.type === TokenType._import) {
       const problem = importProblem(tokens, index, source);
       if (problem) errors.push(`line ${line}: ${problem}`);
