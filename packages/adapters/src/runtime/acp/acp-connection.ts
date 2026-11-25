@@ -164,6 +164,8 @@ export function startAcpAgent(
         call.resolve(message.result);
       }
     }
+    // An agent that closed its output can answer nothing more; an exit, if one follows, says more.
+    setImmediate(() => endConnection(new Error("closed its output")));
   })().catch((error: unknown) =>
     endConnection(error instanceof Error ? error : new Error(String(error))),
   );

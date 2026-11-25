@@ -12,6 +12,8 @@ export interface AgentSession {
   seen: Set<string>;
   /** Hashes of history entries without an id (summaries, recall) the session has seen. */
   context: Set<string>;
+  /** Hashes of the replies this session wrote, told apart from replies written elsewhere. */
+  replies: Set<string>;
   usedAt: number;
 }
 

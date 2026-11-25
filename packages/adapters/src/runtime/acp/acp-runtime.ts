@@ -154,6 +154,8 @@ async function runAcpTurn(
   /** The prompt the CLI is still answering, if the turn ends before it does. */
   let inFlight: Promise<Update> | undefined;
   let sentPrompt = false;
+  let replied = false;
+  let replyText = "";
   /** The CLI reported something about the new message, so it has it. */
   let promptHeard = false;
   let violation: Error | undefined;
@@ -253,6 +255,7 @@ async function runAcpTurn(
           }
           thinking = false;
           push({ type: "text", text });
+          replyText += text;
           return;
         }
         case "agent_thought_chunk":
@@ -395,6 +398,7 @@ async function runAcpTurn(
       cwd,
       seen: new Set(),
       context: new Set(),
+      replies: new Set(),
       usedAt: Date.now(),
     };
     const promptText = turnText(
@@ -446,6 +450,9 @@ async function runAcpTurn(
       throw new Error(`${descriptor.label} stopped the turn before it finished.`);
     }
     await reportUsage(request, descriptor, response.usage, push);
+    replied = true;
+    // So the chat's session can tell its own replies from those written elsewhere.
+    if (replyText.trim()) current.replies.add(contentHash(replyText.trim()));
     push({ type: "done" });
   } catch (error) {
     if (error instanceof TurnAborted || (signal.aborted && !violation)) {
@@ -469,7 +476,7 @@ async function runAcpTurn(
     releaseToolCallBudget(request.runId, false);
     if (ownsChatSession) releaseSession(key);
     // A turn beside the chat's own wrote a reply its session never saw; the next turn sends it.
-    else if (!oneShot) noteReplyElsewhere(key);
+    else if (!oneShot && replied) noteReplyElsewhere(key);
     if (connection) {
       // Give a cancelled turn a moment to settle so the CLI saves the session cleanly.
       if (inFlight && sessionId) {
@@ -625,9 +632,9 @@ function turnText(
       if (session.seen.has(item.id)) continue;
       session.seen.add(item.id);
       // The session wrote this reply itself, unless a turn running beside it did.
-      if (own && !fresh && !includeOwn) continue;
+      if (own && !fresh && (!includeOwn || session.replies.has(contentHash(content)))) continue;
     } else {
-      const hash = createHash("sha256").update(content).digest("hex");
+      const hash = contentHash(content);
       if (session.context.has(hash)) continue;
       session.context.add(hash);
     }
@@ -759,4 +766,8 @@ function toolResult(result: AgentToolResult<unknown>, finishedShells?: string): 
     content: content.length ? content : [{ type: "text", text: "ok" }],
     ...(details?.error != null || details?.isError === true ? { isError: true } : {}),
   };
+}
+
+function contentHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }
