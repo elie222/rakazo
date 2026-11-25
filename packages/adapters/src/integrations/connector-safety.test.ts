@@ -137,5 +137,22 @@ describe("sanitizeConnectorError", () => {
         "sécret-123",
       ]),
     ).toBe('"[redacted]"\n"done"\n"[redacted]"');
+
+    expect(
+      sanitizeConnectorError(new Error('Response body: "s\\u00e9cret-123"'), ["sécret-123"]),
+    ).toBe('Response body: "[redacted]"');
+
+    expect(sanitizeConnectorError(new Error('Authorization: Bearer\n "opaque-123"'))).toBe(
+      "Authorization: Bearer [redacted]",
+    );
+
+    const jsonObjSecret = '{"mode":"opaque-123"}';
+    expect(
+      JSON.parse(
+        sanitizeConnectorError(new Error('{"value":{"mode":"opaque-123"},"next":"ok"}'), [
+          jsonObjSecret,
+        ]),
+      ),
+    ).toEqual({ value: "[redacted]", next: "ok" });
   });
 });

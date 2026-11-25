@@ -399,7 +399,7 @@ describe("stored turn safety", () => {
           },
         ],
       });
-    const largeInput = manyReplyBlocks(25_000);
+    const largeInput = manyReplyBlocks(50_000);
     expectLinearTime(() => {
       keptTurnTranscript(largeInput, ["unused-secret-value"]);
     });

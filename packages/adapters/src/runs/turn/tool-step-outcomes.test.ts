@@ -339,6 +339,35 @@ describe("tool step outcomes", () => {
         ["sécret-123"],
       ),
     ).toBe('"[redacted]"\n"done"\n"[redacted]"');
+
+    expect(
+      keptToolResult(
+        {
+          ...base,
+          result: { content: [{ type: "text", text: 'Response body: "s\\u00e9cret-123"' }] },
+        },
+        ["sécret-123"],
+      ),
+    ).toBe('Response body: "[redacted]"');
+
+    expect(
+      keptToolResult({ ...base, error: new Error('Authorization: Bearer\n "opaque-123"') }, []),
+    ).toBe("Authorization: Bearer [redacted]");
+
+    const jsonObjSecret = '{"mode":"opaque-123"}';
+    expect(
+      JSON.parse(
+        keptToolResult(
+          {
+            ...base,
+            result: {
+              content: [{ type: "text", text: '{"value":{"mode":"opaque-123"},"next":"ok"}' }],
+            },
+          },
+          [jsonObjSecret],
+        )!,
+      ),
+    ).toEqual({ value: "[redacted]", next: "ok" });
   });
 
   it("replays tool calls only to runs the owner started themselves, failing closed", () => {
