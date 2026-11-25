@@ -6307,15 +6307,21 @@ describe("closing denied approved effects", () => {
       result: { refused: "rule", error: expect.stringContaining("blocked in this space") },
     });
 
-    // After the deny rule is removed, retrying the same call still hits the stored refusal
-    // instead of taking the read-only shortcut and running web_search.
+    // After the deny rule is removed, retrying the same call (including a second identical call
+    // in the same attempt) still hits the stored refusal instead of running web_search.
     rules.length = 0;
-    f.setCalls([{ args, executionId: "call-1" }]);
+    f.setCalls([
+      { args, executionId: "call-1" },
+      { args, executionId: "call-2" },
+    ]);
     await f.run();
-    expect(f.results).toHaveLength(2);
-    expect(f.results[1]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
-    expect(String((f.results[1] as { error?: string })?.error)).not.toContain("user denied");
-    expect(f.results[1]).not.toHaveProperty("results");
+    expect(f.results).toHaveLength(3);
+    for (const replay of [f.results[1], f.results[2]]) {
+      expect(replay).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+      expect(String((replay as { error?: string })?.error)).not.toContain("user denied");
+      expect(replay).not.toHaveProperty("results");
+    }
+    expect(f.effects).toHaveLength(1);
   });
 
   it("keeps completed web_search URL trust intact after its approval rule is removed", async () => {

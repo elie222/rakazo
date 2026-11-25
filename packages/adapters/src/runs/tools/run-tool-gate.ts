@@ -478,17 +478,19 @@ export async function gateToolCall(
     siteGate !== "new" &&
     nextApprovedTool !== name &&
     !approvedEffectKey;
-  const readOnlyDenied = readOnlyEligible
-    ? await loadDeniedEffectKeys(ctx).then((keys) => keys.has(effectKey) || keys.has(baseEffectKey))
-    : false;
+  const readOnlyDeniedKey = readOnlyEligible
+    ? await loadDeniedEffectKeys(ctx).then((keys) =>
+        keys.has(effectKey) ? effectKey : keys.has(baseEffectKey) ? baseEffectKey : undefined,
+      )
+    : undefined;
   const applied =
-    readOnlyEligible && !readOnlyDenied
+    readOnlyEligible && !readOnlyDeniedKey
       ? undefined
       : await recordEffect(
           deps,
           run,
           replayEffectToolName,
-          effectKey,
+          readOnlyDeniedKey ?? effectKey,
           effectRequest,
           executionId,
           ctx.state.effects.consumedIds,
