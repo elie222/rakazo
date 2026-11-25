@@ -193,6 +193,12 @@ function SpaceHeading({
               />
             ) : null}
             <Text style={styles.spaceTitle}>{title}</Text>
+            <NativeSymbol
+              ios="chevron.down"
+              android="chevron-down"
+              size={11}
+              color={native.tertiaryLabel}
+            />
           </View>
         </DragSafePressable>
       )}

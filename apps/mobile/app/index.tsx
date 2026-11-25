@@ -40,6 +40,7 @@ import {
 } from "../components/inbox/inbox-render-item";
 import { CompactRowsContext, SelectedChatContext } from "../components/inbox/inbox-rows";
 import { createInboxStyles } from "../components/inbox/inbox-styles";
+import { InboxToolbar } from "../components/inbox/inbox-toolbar";
 import { NativeInboxList } from "../components/inbox/native-inbox-list";
 import { OrganizationTitleMenu } from "../components/inbox/organization-menu";
 import { PickChatPane } from "../components/inbox/pick-chat-pane";
@@ -673,7 +674,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     nativeHeader,
     ready,
     hasSession,
-    initials,
     activityMode,
     toggleActivityMode,
     runCreateAction,
@@ -854,6 +854,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
 
   return (
     <View style={styles.screen}>
+      {nativeHeader && ready && hasSession ? <InboxToolbar /> : null}
       {nativeHeader || onShareSelect ? null : (
         <InboxHeader
           embedded={embedded}
