@@ -122,9 +122,12 @@ function fixture({
   memoryProvider,
   deploymentLabs,
   inbox = false,
+  textBeforeCalls,
 }: {
   /** The bot has an email address on this server. */
   inbox?: boolean;
+  /** Text the model writes before its tool calls. */
+  textBeforeCalls?: string;
   /** Labs on for the whole deployment, such as the ticket board. */
   deploymentLabs?: string[];
   /** The Space's semantic memory provider; none by default. */
@@ -628,6 +631,7 @@ function fixture({
       results.push(result);
       return result;
     };
+    if (textBeforeCalls) yield { type: "text" as const, text: textBeforeCalls };
     if (parallelCalls) {
       const completed = await Promise.all(calls.map(executeCall));
       if (completed.some(isApprovalPausedResult)) return;
@@ -890,6 +894,44 @@ describe("disabled builtins", () => {
     expect(f.commit).not.toHaveBeenCalled();
     expect(f.execute).not.toHaveBeenCalled();
     expect(f.effects).toEqual([]);
+  });
+});
+
+describe("text written before an approval card", () => {
+  // The resumed reply is created after the card, so text held until then was drawn below it
+  // and read as the bot's answer to the approval (#6704).
+  it("is posted ahead of the card and is not carried into the resumed turn", async () => {
+    const text = "I will update the notes file.";
+    const f = fixture({
+      name: "write_file",
+      rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "write_file" }],
+      textBeforeCalls: text,
+    });
+    f.pauseWithTurnCheckpoint("call-1", {
+      version: 1,
+      systemPrompt: "You are Assistant.",
+      pendingToolCallId: "call-1",
+      executionMode: "sequential",
+      messages: [],
+    });
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    // The approval resumes from the saved turn; its reply must not hold the text again.
+    expect(f.turnCheckpoints).toHaveLength(1);
+    const { reply } = JSON.parse(f.turnCheckpoints[0]!.result) as {
+      reply: Record<string, unknown>;
+    };
+    expect(reply).toMatchObject({
+      assembled: "",
+      currentTextSegment: "",
+      messageSegments: [],
+      workingNotes: [],
+    });
+    const posted = f.prisma.message.create.mock.calls.map(([{ data }]) => data.blocks);
+    expect(posted).toContainEqual([expect.objectContaining({ kind: "text", text })]);
+    expect(f.prisma.message.create.mock.invocationCallOrder[0]).toBeLessThan(
+      f.pauseRunForInput.mock.invocationCallOrder[0]!,
+    );
   });
 });
 
