@@ -675,20 +675,43 @@ export const computerTools: ToolHandlers = {
       ): AsyncIterable<ProcessEvent> {
         let stdoutOverlap = "";
         let stderrOverlap = "";
-        for await (const event of events) {
-          if (!sawNoDisplay && (event.type === "stdout" || event.type === "stderr") && event.data) {
-            const combined = (event.type === "stdout" ? stdoutOverlap : stderrOverlap) + event.data;
-            if (NO_DISPLAY_OUTPUT.test(combined)) {
-              sawNoDisplay = true;
-              stdoutOverlap = "";
-              stderrOverlap = "";
-            } else {
-              const tail = combined.slice(-NO_DISPLAY_OVERLAP_CHARS);
-              if (event.type === "stdout") stdoutOverlap = tail;
-              else stderrOverlap = tail;
-            }
+        const flushPending = () => {
+          if (
+            !sawNoDisplay &&
+            (NO_DISPLAY_OUTPUT.test(stdoutOverlap) || NO_DISPLAY_OUTPUT.test(stderrOverlap))
+          ) {
+            sawNoDisplay = true;
           }
-          yield event;
+          stdoutOverlap = "";
+          stderrOverlap = "";
+        };
+        try {
+          for await (const event of events) {
+            if (
+              !sawNoDisplay &&
+              (event.type === "stdout" || event.type === "stderr") &&
+              event.data
+            ) {
+              const combined =
+                (event.type === "stdout" ? stdoutOverlap : stderrOverlap) + event.data;
+              // Hold back an unfinished trailing word so a chunk split inside `displayName` cannot
+              // latch `\bdisplay\b` until a non-word character or stream end confirms the boundary.
+              if (NO_DISPLAY_OUTPUT.test(trimTrailingWordChars(combined))) {
+                sawNoDisplay = true;
+                stdoutOverlap = "";
+                stderrOverlap = "";
+              } else {
+                const tail = combined.slice(-NO_DISPLAY_OVERLAP_CHARS);
+                if (event.type === "stdout") stdoutOverlap = tail;
+                else stderrOverlap = tail;
+              }
+            } else if (event.type === "exit") {
+              flushPending();
+            }
+            yield event;
+          }
+        } finally {
+          flushPending();
         }
       };
       const observed = await observeShellCommand(
@@ -861,3 +884,18 @@ export const computerTools: ToolHandlers = {
 const NO_DISPLAY_OUTPUT =
   /\b(?:can'?t|cannot|could not|unable to) (?:open|connect to) (?:the )?(?:X )?display\b|\bmissing X server\b|\bno \$DISPLAY\b/i;
 const NO_DISPLAY_OVERLAP_CHARS = 64;
+
+function trimTrailingWordChars(text: string): string {
+  let end = text.length;
+  while (end > 0) {
+    const code = text.charCodeAt(end - 1);
+    const isWord =
+      (code >= 48 && code <= 57) ||
+      (code >= 65 && code <= 90) ||
+      (code >= 97 && code <= 122) ||
+      code === 95;
+    if (!isWord) break;
+    end -= 1;
+  }
+  return end === text.length ? text : text.slice(0, end);
+}

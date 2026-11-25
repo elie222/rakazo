@@ -37,10 +37,10 @@ const SIGN_IN_PROMPT_SCAN_CHARS = 4_000;
 
 /**
  * Target characters retained per shell stream (stdout or stderr) after compaction, split evenly
- * between head and tail so initial headers and final errors survive. Between compactions a stream
- * may temporarily hold up to `SHELL_STREAM_COMPACT_STEP` extra characters plus the longest secret
- * overlap margin (`maxSecretOverlap(secrets)`), so peak retention is
- * `SHELL_STREAM_MAX_CHARS + SHELL_STREAM_COMPACT_STEP + overlap`.
+ * between head and tail so initial headers and final errors survive. Each side also preserves the
+ * longest secret overlap margin (`maxSecretOverlap(secrets)`) so registered secrets split across
+ * stdout and stderr or straddling a cut still match whole; peak retention is
+ * `SHELL_STREAM_MAX_CHARS + SHELL_STREAM_COMPACT_STEP + 2 * overlap`.
  */
 export const SHELL_STREAM_MAX_CHARS = 128_000;
 const SHELL_STREAM_HEAD_CHARS = Math.floor(SHELL_STREAM_MAX_CHARS / 2);
@@ -147,17 +147,30 @@ class BoundedStreamBuffer {
     return this.head !== undefined || this.tail.length > 0;
   }
 
+  get compacted(): boolean {
+    return this.head !== undefined && this.omittedChars > 0;
+  }
+
+  rawHead(): string {
+    return this.head ?? this.tail;
+  }
+
+  rawTail(): string {
+    return this.tail;
+  }
+
   append(chunk: string): void {
     if (!chunk) return;
     this.tail += chunk;
     const overlap = maxSecretOverlap(this.secrets);
+    const keepHead = SHELL_STREAM_HEAD_CHARS + overlap;
     const keepTail = SHELL_STREAM_TAIL_CHARS + overlap;
     if (this.head === undefined) {
-      if (this.tail.length <= SHELL_STREAM_HEAD_CHARS + keepTail + SHELL_STREAM_COMPACT_STEP) {
+      if (this.tail.length <= keepHead + keepTail + SHELL_STREAM_COMPACT_STEP) {
         return;
       }
       const ranges = redactedRanges(this.tail, this.secrets);
-      const headEnd = safeCutBefore(this.tail, SHELL_STREAM_HEAD_CHARS);
+      const headEnd = safeCutBefore(this.tail, keepHead);
       const tailStart = safeCutAfter(this.tail, this.tail.length - keepTail);
       const cutSnapshot = new Set(protectedCutValues(this.secrets));
       this.head = detachString(this.tail.slice(0, headEnd));
@@ -230,31 +243,113 @@ class BoundedStreamBuffer {
     return this.tail.length <= chars ? this.tail : this.tail.slice(-chars);
   }
 
-  text(): string {
-    if (this.head === undefined) return this.tail;
-    let headView = this.head;
-    const headSuffix = this.effectiveHeadRedactedSuffix();
-    if (headSuffix > 0) {
-      const trailingStart = safeCutBefore(
-        this.head,
-        mergeTrailingRedactedRange(
-          redactedRanges(this.head, this.secrets),
-          this.head.length - headSuffix,
-          this.head.length,
-        ),
-      );
-      headView = `${this.head.slice(0, trailingStart)}[redacted]`;
+  text(mask?: { redactLeading?: number; redactTrailing?: number }): string {
+    const redactLeading = mask?.redactLeading ?? 0;
+    const redactTrailing = mask?.redactTrailing ?? 0;
+    if (this.head === undefined) {
+      return this.maskSegment(this.tail, redactLeading, redactTrailing);
     }
-    let tailView = this.tail;
-    const tailPrefix = this.effectiveTailRedactedPrefix();
-    if (tailPrefix > 0) {
-      const merged = mergeLeadingRedactedRange(redactedRanges(this.tail, this.secrets), tailPrefix);
-      const leadingEnd = safeCutAfter(this.tail, merged[0]![1]);
-      tailView = `[redacted]${this.tail.slice(leadingEnd)}`;
-    }
+    const headView = this.maskSegment(this.head, redactLeading, this.effectiveHeadRedactedSuffix());
+    const tailView = this.maskSegment(
+      this.tail,
+      this.effectiveTailRedactedPrefix(),
+      redactTrailing,
+    );
     if (this.omittedChars <= 0) return `${headView}${tailView}`;
     return `${headView}\n[... ${this.omittedChars} characters omitted ...]\n${tailView}`;
   }
+
+  private maskSegment(segment: string, leading: number, trailing: number): string {
+    if (leading <= 0 && trailing <= 0) return segment;
+    if (segment.length === 0) return "";
+    const ranges = redactedRanges(segment, this.secrets);
+    const startCut =
+      leading > 0
+        ? safeCutAfter(
+            segment,
+            mergeLeadingRedactedRange(ranges, Math.min(leading, segment.length))[0]![1],
+          )
+        : 0;
+    const endCut =
+      trailing > 0
+        ? safeCutBefore(
+            segment,
+            mergeTrailingRedactedRange(
+              ranges,
+              Math.max(0, segment.length - trailing),
+              segment.length,
+            ),
+          )
+        : segment.length;
+    if (startCut >= endCut) return "[redacted]";
+    const prefix = leading > 0 ? "[redacted]" : "";
+    const suffix = trailing > 0 ? "[redacted]" : "";
+    return `${prefix}${segment.slice(startCut, endCut)}${suffix}`;
+  }
+}
+
+function redactCompactedStreams(
+  stdout: BoundedStreamBuffer,
+  stderr: BoundedStreamBuffer,
+  secrets: string[],
+  withholdPartial: boolean,
+): ShellCommandSnapshot {
+  let stdoutTrailing = 0;
+  let stderrLeading = 0;
+  if (stdout.compacted || stderr.compacted) {
+    const stdoutTail = stdout.rawTail();
+    const stderrHead = stderr.rawHead();
+    if (stdoutTail.length > 0 && stderrHead.length > 0) {
+      for (const secret of protectedCutValues(secrets)) {
+        if (secret.length < 2) continue;
+        if (stderr.compacted && secret.length > stderrHead.length) {
+          const prefixLen = secretPrefixSuffixLength(stdoutTail, secret);
+          if (
+            prefixLen > 0 &&
+            prefixLen + stderrHead.length < secret.length &&
+            secret.startsWith(stderrHead, prefixLen)
+          ) {
+            stdoutTrailing = Math.max(stdoutTrailing, prefixLen);
+            stderrLeading = stderrHead.length;
+          }
+        }
+        if (stdout.compacted && secret.length > stdoutTail.length) {
+          const suffixLen = secretSuffixPrefixLength(stderrHead, secret);
+          if (
+            suffixLen > 0 &&
+            suffixLen + stdoutTail.length < secret.length &&
+            secret.startsWith(stdoutTail, secret.length - suffixLen - stdoutTail.length)
+          ) {
+            stdoutTrailing = stdoutTail.length;
+            stderrLeading = Math.max(stderrLeading, suffixLen);
+          }
+        }
+        if (
+          stdout.compacted &&
+          stderr.compacted &&
+          secret.length > stdoutTail.length + stderrHead.length
+        ) {
+          const pos = secret.indexOf(stdoutTail);
+          if (
+            pos > 0 &&
+            pos + stdoutTail.length + stderrHead.length < secret.length &&
+            secret.startsWith(stderrHead, pos + stdoutTail.length)
+          ) {
+            stdoutTrailing = stdoutTail.length;
+            stderrLeading = stderrHead.length;
+          }
+        }
+      }
+    }
+  }
+  return redactShellStreams(
+    {
+      stdout: stdout.text(stdoutTrailing > 0 ? { redactTrailing: stdoutTrailing } : undefined),
+      stderr: stderr.text(stderrLeading > 0 ? { redactLeading: stderrLeading } : undefined),
+    },
+    secrets,
+    { withholdPartial },
+  );
 }
 
 function showsSignInPrompt(stdoutTail: string, stderrTail: string): boolean {
@@ -425,13 +520,8 @@ export async function observeShellCommand(
     resolveIdle = resolve;
   });
 
-  const snapshot = (): ShellCommandSnapshot => ({
-    stdout: stdout.text(),
-    stderr: stderr.text(),
-  });
-
-  const redact = (value: ShellCommandSnapshot, withholdPartial: boolean): ShellCommandSnapshot =>
-    redactShellStreams(value, options.secrets, { withholdPartial });
+  const redact = (withholdPartial: boolean): ShellCommandSnapshot =>
+    redactCompactedStreams(stdout, stderr, options.secrets, withholdPartial);
 
   const clearIdle = () => {
     if (timer) clearTimeout(timer);
@@ -448,7 +538,7 @@ export async function observeShellCommand(
     if (!options.onOutput || finished) return;
     hasEmittedOutput = true;
     lastOnOutputAt = Date.now();
-    const published = redact(snapshot(), true);
+    const published = redact(true);
     try {
       options.onOutput(published);
     } catch {
@@ -514,7 +604,7 @@ export async function observeShellCommand(
       finished = true;
       resolveIdle?.("done");
     }
-    return { ...redact(snapshot(), false), code: code ?? 0 };
+    return { ...redact(false), code: code ?? 0 };
   })();
 
   const reason = await Promise.race([
@@ -530,7 +620,7 @@ export async function observeShellCommand(
   return {
     // The process is still running, so an unfinished secret prefix stays out of the
     // tool result. The completion publishes the rest once the command exits.
-    result: { ...redact(snapshot(), true), code: null, running: true },
+    result: { ...redact(true), code: null, running: true },
     completion: done,
   };
 }

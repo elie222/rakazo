@@ -233,7 +233,10 @@ describe("POST /computers/:id/exec streaming", () => {
 
     const part1 = Buffer.from("hello ").toString("base64");
     const part2 = Buffer.from("world!").toString("base64");
-    const outcomePromise = readContainerFile(container, "/home/rakazo/big.bin", { maxBytes: 12 });
+    const outcomePromise = readContainerFile(container, "/home/rakazo/big.bin", {
+      maxBytes: 12,
+      signalMidStreamOverflow: true,
+    });
     await vi.waitFor(() => expect(container.exec).toHaveBeenCalledOnce());
     stream.write(frame(1, part1));
     const outcome = await outcomePromise;
@@ -332,7 +335,7 @@ describe("POST /computers/:id/exec streaming", () => {
       tooLarge: true,
     });
 
-    // 5. Legacy callers without opt-in get a stream error on mid-stream overflow so they never save partial bytes.
+    // 5. Legacy callers without opt-in spool bounded reads to disk and return too_large (HTTP 413) on mid-stream overflow.
     const legacyGrowStream = new PassThrough();
     const legacyGrowContainer = {
       exec: vi.fn(async () => ({
@@ -345,19 +348,26 @@ describe("POST /computers/:id/exec streaming", () => {
     });
     await vi.waitFor(() => expect(legacyGrowContainer.exec).toHaveBeenCalledOnce());
     legacyGrowStream.write(frame(1, part1));
-    const legacyGrowOutcome = await legacyGrowPromise;
-    expect(legacyGrowOutcome.kind).toBe("stream");
-    if (legacyGrowOutcome.kind !== "stream") return;
-    const legacyGrowReader = legacyGrowOutcome.body.getReader();
-    await legacyGrowReader.read();
     legacyGrowStream.end();
-    await expect(
-      (async () => {
-        while (!(await legacyGrowReader.read()).done) {
-          // drain until error
-        }
-      })(),
-    ).rejects.toThrow("computer file exceeds 6 bytes");
+    expect(await legacyGrowPromise).toEqual({ kind: "too_large" });
+
+    const legacyOverflowStream = new PassThrough();
+    const legacyOverflowContainer = {
+      exec: vi.fn(async () => ({
+        start: async () => legacyOverflowStream,
+        inspect: async () => ({ ExitCode: 0 }),
+      })),
+    } as unknown as Docker.Container;
+    const legacyOverflowPromise = readContainerFile(
+      legacyOverflowContainer,
+      "/home/rakazo/grow.bin",
+      { maxBytes: 6 },
+    );
+    await vi.waitFor(() => expect(legacyOverflowContainer.exec).toHaveBeenCalledOnce());
+    legacyOverflowStream.write(frame(1, part1));
+    legacyOverflowStream.write(frame(1, part2));
+    legacyOverflowStream.end();
+    expect(await legacyOverflowPromise).toEqual({ kind: "too_large" });
 
     // 6. Non-42 mid-stream errors still fail the stream instead of closing valid JSON.
     const failStream = new PassThrough();
@@ -389,7 +399,7 @@ describe("POST /computers/:id/exec streaming", () => {
     ).rejects.toThrow("disk read failed");
   });
 
-  it("carries mid-stream exit 42 as tooLarge JSON only when overflow=marker is requested", async () => {
+  it("carries mid-stream exit 42 as tooLarge JSON for overflow=marker and HTTP 413 for legacy callers", async () => {
     const optedInStream = new PassThrough();
     mock.exec.mockResolvedValueOnce({
       start: async () => optedInStream,
@@ -433,10 +443,34 @@ describe("POST /computers/:id/exec streaming", () => {
     );
     await vi.waitFor(() => expect(mock.exec).toHaveBeenCalledTimes(2));
     legacyStream.write(frame(1, part1));
-    const legacyResponse = await legacyPromise;
-    expect(legacyResponse.status).toBe(200);
     legacyStream.end();
-    await expect(legacyResponse.json()).rejects.toThrow("computer file exceeds 6 bytes");
+    const legacyResponse = await legacyPromise;
+    expect(legacyResponse.status).toBe(413);
+    expect(await legacyResponse.json()).toEqual({ error: "computer file exceeds 6 bytes" });
+
+    // Legacy bounded read within limit streams the spooled content back as HTTP 200 JSON.
+    const legacyOkStream = new PassThrough();
+    mock.exec.mockResolvedValueOnce({
+      start: async () => legacyOkStream,
+      inspect: async () => ({ ExitCode: 0 }),
+    });
+    const legacyOkPromise = supervisorApp.request(
+      "/computers/computer-3/files?path=ok.bin&mode=read&maxBytes=6",
+      {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+          "x-rakazo-bot-id": "bot",
+          "x-rakazo-space-id": "space",
+        },
+      },
+    );
+    await vi.waitFor(() => expect(mock.exec).toHaveBeenCalledTimes(3));
+    legacyOkStream.write(frame(1, part1));
+    legacyOkStream.end();
+    const legacyOkResponse = await legacyOkPromise;
+    expect(legacyOkResponse.status).toBe(200);
+    expect(await legacyOkResponse.json()).toEqual({ content: part1 });
   });
 
   it("caps writeContainerFile diagnostics after demultiplexing without corrupting frames", async () => {

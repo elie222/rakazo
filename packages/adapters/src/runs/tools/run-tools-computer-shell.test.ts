@@ -142,6 +142,31 @@ describe("shell Activity events", () => {
     expect(result.notice).toContain("Call browser_snapshot to open it");
   });
 
+  it("does not latch the screen-opening notice across a chunk boundary inside displayName", async () => {
+    async function* splitWordStream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: "Unable to open display" };
+      yield { type: "stderr", data: "Name: missing\n" };
+      yield { type: "exit", code: 1 };
+    }
+    const splitWord = setup(splitWordStream());
+    const splitResult = (await shell(splitWord.ctx, splitWord.call)) as {
+      code: number;
+      notice?: string;
+    };
+    expect(splitResult.code).toBe(1);
+    expect(splitResult.notice).toBeUndefined();
+
+    async function* eofStream(): AsyncGenerator<ProcessEvent> {
+      yield { type: "stderr", data: "Unable to open display" };
+      yield { type: "exit", code: 1 };
+    }
+    const eof = setup(eofStream());
+    await expect(shell(eof.ctx, eof.call)).resolves.toMatchObject({
+      code: 1,
+      notice: expect.stringContaining("Call browser_snapshot to open it"),
+    });
+  });
+
   it("serializes live running writes so slow appends never pile up concurrently", async () => {
     const chunkGate = deferred();
     const slowWrite = deferred();

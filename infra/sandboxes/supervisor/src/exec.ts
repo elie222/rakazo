@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type { FileHandle } from "node:fs/promises";
+import { open, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type Docker from "dockerode";
 import type { z } from "zod";
 import type { computerActionSchema } from "./supervisor-logic.js";
@@ -14,7 +18,26 @@ import {
 /** Cap buffered raw bytes for non-streaming container commands so one command cannot OOM the supervisor. */
 export const DEFAULT_MAX_BUFFERED_OUTPUT_BYTES = 32 * 1024 * 1024;
 const MAX_WRITE_ERROR_OUTPUT_BYTES = 64 * 1024;
+const SPOOL_READ_CHUNK_BYTES = 64 * 1024;
 const BASE64_CHUNK_RE = /^[A-Za-z0-9+/=]+$/;
+
+async function unlinkIfPresent(filePath: string): Promise<void> {
+  try {
+    await unlink(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+async function writeAll(handle: FileHandle, data: string): Promise<void> {
+  const buf = Buffer.from(data, "ascii");
+  let offset = 0;
+  while (offset < buf.length) {
+    const { bytesWritten } = await handle.write(buf, offset, buf.length - offset, null);
+    if (bytesWritten <= 0) throw new Error("short write to file read spool");
+    offset += bytesWritten;
+  }
+}
 
 const READ_CONTAINER_FILE_SCRIPT = [
   "import base64, os, sys",
@@ -279,11 +302,200 @@ export async function observeContainer(container: Docker.Container, display = ":
   return parseObservation(result.stdout);
 }
 
+async function readContainerFileSpooled(
+  container: Docker.Container,
+  target: string,
+  maxBytes: number,
+  signal?: AbortSignal,
+): Promise<ReadContainerFileOutcome> {
+  const abort = new AbortController();
+  const onCallerAbort = () => abort.abort(signal?.reason ?? new Error("file read cancelled"));
+  signal?.addEventListener("abort", onCallerAbort, { once: true });
+  if (signal?.aborted) onCallerAbort();
+  const cleanupCallerAbort = () => {
+    signal?.removeEventListener("abort", onCallerAbort);
+  };
+
+  const encoder = new TextEncoder();
+  const maxEncodedBytes = Math.ceil(maxBytes / 3) * 4;
+  let encodedBytes = 0;
+  let exceededLimit = false;
+  let stderr = "";
+  let failure: unknown;
+  let streamControls: { pause: () => void; resume: () => void } | undefined;
+  let inFlightWrites = 0;
+  let spoolPath: string | undefined;
+  let writeHandle: FileHandle | undefined;
+  let pendingWrite: Promise<void> = Promise.resolve();
+  let handedOff = false;
+
+  const stopReading = (error: unknown) => {
+    failure ??= error;
+    abort.abort(error);
+  };
+
+  try {
+    let exitCode: number | undefined;
+    try {
+      const result = await runContainerCommand(
+        container,
+        ["python3", "-c", READ_CONTAINER_FILE_SCRIPT, target, String(maxBytes)],
+        {
+          signal: abort.signal,
+          onStream: (controls) => {
+            streamControls = controls;
+            if (inFlightWrites > 0) controls.pause();
+          },
+          onOutput: (chunk) => {
+            if (chunk.stream === "stderr") {
+              stderr = appendCappedDiagnostic(stderr, chunk.data, MAX_WRITE_ERROR_OUTPUT_BYTES);
+              return;
+            }
+            if (!chunk.data || exceededLimit || failure !== undefined) return;
+            if (!BASE64_CHUNK_RE.test(chunk.data)) {
+              stopReading(new Error("invalid base64 file stream output"));
+              return;
+            }
+            encodedBytes += chunk.data.length;
+            if (encodedBytes > maxEncodedBytes) {
+              exceededLimit = true;
+              abort.abort(new Error(`computer file exceeds ${maxBytes} bytes`));
+              return;
+            }
+            inFlightWrites += 1;
+            streamControls?.pause();
+            const data = chunk.data;
+            pendingWrite = pendingWrite
+              .then(async () => {
+                if (exceededLimit || failure !== undefined || abort.signal.aborted) return;
+                if (!writeHandle) {
+                  spoolPath = path.join(tmpdir(), `rakazo-file-read-${randomUUID()}.b64`);
+                  writeHandle = await open(spoolPath, "wx", 0o600);
+                }
+                await writeAll(writeHandle, data);
+              })
+              .catch((error: unknown) => {
+                stopReading(error);
+              })
+              .finally(() => {
+                inFlightWrites -= 1;
+                if (
+                  inFlightWrites === 0 &&
+                  !exceededLimit &&
+                  failure === undefined &&
+                  !abort.signal.aborted
+                ) {
+                  streamControls?.resume();
+                }
+              });
+          },
+        },
+      );
+      exitCode = result.code;
+    } catch (error) {
+      failure ??= error;
+    }
+
+    await pendingWrite;
+    if (writeHandle) {
+      const handle = writeHandle;
+      writeHandle = undefined;
+      await handle.close();
+    }
+
+    if (exceededLimit || exitCode === 42) {
+      return { kind: "too_large" };
+    }
+    if (failure !== undefined) {
+      throw failure;
+    }
+    if (exitCode !== 0) {
+      return { kind: "error", stderr };
+    }
+    if (!spoolPath) {
+      return {
+        kind: "stream",
+        body: new ReadableStream<Uint8Array>({
+          start(ctrl) {
+            ctrl.enqueue(encoder.encode('{"content":""}'));
+            ctrl.close();
+          },
+        }),
+      };
+    }
+
+    const filePath = spoolPath;
+    let readHandle: FileHandle | undefined;
+    let cleanedUp = false;
+    const cleanupStream = async () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      const handle = readHandle;
+      readHandle = undefined;
+      try {
+        await handle?.close();
+      } finally {
+        await unlinkIfPresent(filePath);
+      }
+    };
+    const body = new ReadableStream<Uint8Array>(
+      {
+        start(ctrl) {
+          ctrl.enqueue(encoder.encode('{"content":"'));
+        },
+        async pull(ctrl) {
+          try {
+            if (signal?.aborted) {
+              await cleanupStream();
+              ctrl.error(signal.reason ?? new Error("file read cancelled"));
+              return;
+            }
+            if (!readHandle) readHandle = await open(filePath, "r");
+            const buffer = Buffer.allocUnsafe(SPOOL_READ_CHUNK_BYTES);
+            const { bytesRead } = await readHandle.read(buffer, 0, buffer.length, null);
+            if (bytesRead === 0) {
+              await cleanupStream();
+              ctrl.enqueue(encoder.encode('"}'));
+              ctrl.close();
+              return;
+            }
+            ctrl.enqueue(buffer.subarray(0, bytesRead));
+          } catch (error) {
+            await cleanupStream();
+            ctrl.error(error);
+          }
+        },
+        async cancel() {
+          await cleanupStream();
+        },
+      },
+      { highWaterMark: 1 },
+    );
+    handedOff = true;
+    return { kind: "stream", body };
+  } finally {
+    cleanupCallerAbort();
+    if (writeHandle) {
+      const handle = writeHandle;
+      writeHandle = undefined;
+      await handle.close();
+    }
+    if (!handedOff && spoolPath) {
+      await unlinkIfPresent(spoolPath);
+    }
+  }
+}
+
 export async function readContainerFile(
   container: Docker.Container,
   target: string,
   options: { maxBytes?: number; signal?: AbortSignal; signalMidStreamOverflow?: boolean } = {},
 ): Promise<ReadContainerFileOutcome> {
+  // Older adapters during a rolling deploy expect HTTP 413 even if a file grows after reads start;
+  // spool bounded legacy reads to disk so status is decided before headers without buffering in RAM.
+  if (!options.signalMidStreamOverflow && options.maxBytes !== undefined) {
+    return readContainerFileSpooled(container, target, options.maxBytes, options.signal);
+  }
   const abort = new AbortController();
   const onCallerAbort = () =>
     abort.abort(options.signal?.reason ?? new Error("file read cancelled"));

@@ -510,7 +510,65 @@ describe("observeShellCommand", () => {
       const suffixSecret = `b${"a".repeat(size)}`;
       const suffixText = `c${"a".repeat(size)}`;
       expect(secretSuffixPrefixLength(suffixText, suffixSecret)).toBe(0);
+
+      // Short live output against many large secrets bounds table work by text length.
+      const largeSecrets = Array.from({ length: 1_000 }, (_, i) => `${"z".repeat(8_192)}-${i}`);
+      for (const secret of largeSecrets) {
+        expect(secretPrefixSuffixLength("ok\n", secret)).toBe(0);
+        expect(secretSuffixPrefixLength("ok\n", secret)).toBe(0);
+      }
     });
+  });
+
+  it("redacts long secrets split across stdout and compacted stderr without leaking fragments", async () => {
+    const headPart = "SPLIT_STDOUT_HEAD_";
+    const stderrBody = `SPLIT_STDERR_${"S".repeat(70_000)}_END`;
+    const secret = `${headPart}${stderrBody}`;
+
+    // Registered before compaction: stderr head preserves the full overlap margin so exact matching runs.
+    const preRegistered = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: `out:\n${headPart}` };
+        yield { type: "stderr" as const, data: stderrBody };
+        yield { type: "stderr" as const, data: `\n${"n".repeat(400_000)}\nTAIL_OK\n` };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [secret] },
+    );
+
+    expect(preRegistered.result.stdout).not.toContain(headPart);
+    expect(preRegistered.result.stderr).not.toContain("SPLIT_STDERR_");
+    expect(preRegistered.result.stderr).not.toContain("_END");
+    expect(preRegistered.result.stdout).toContain("[redacted]");
+    expect(preRegistered.result.stderr).toContain("TAIL_OK");
+
+    // Registered after stderr already compacted: cross-stream cut check masks both retained fragments.
+    const lateSecrets: string[] = [];
+    const gate = deferred();
+    const lateRegistered = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: `out:\n${headPart}` };
+        yield { type: "stderr" as const, data: stderrBody };
+        yield { type: "stderr" as const, data: `\n${"n".repeat(250_000)}\nTAIL_OK\n` };
+        await gate.promise;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: lateSecrets,
+        onOutput: (snapshot) => {
+          if (lateSecrets.length === 0 && snapshot.stderr.includes("characters omitted")) {
+            lateSecrets.push(secret);
+            gate.resolve();
+          }
+        },
+      },
+    );
+
+    expect(lateRegistered.result.stdout).not.toContain(headPart);
+    expect(lateRegistered.result.stderr).not.toContain("SPLIT_STDERR_");
+    expect(lateRegistered.result.stdout).toContain("[redacted]");
+    expect(lateRegistered.result.stderr).toContain("[redacted]");
+    expect(lateRegistered.result.stderr).toContain("TAIL_OK");
   });
 
   it("throttles live onOutput snapshots when onOutputIntervalMs is set", async () => {
