@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, symlink } from "node:fs/promises";
+import { link, mkdir, rename, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { privateFolder } from "../../../cli-models/cli-process.js";
@@ -31,7 +31,22 @@ async function linkSignIn(home: string, operatorHome: string): Promise<void> {
     // signing out or switching accounts in the operator's own folder always reaches the bots. A
     // link made beside it and renamed over it leaves no moment without one.
     const next = join(own, `.${name}.${randomUUID()}`);
-    await symlink(join(operatorHome, ACP_FOLDER, name), next);
+    const target = join(operatorHome, ACP_FOLDER, name);
+    try {
+      await symlink(target, next);
+    } catch (error) {
+      // Windows lets only some accounts make symlinks; a hard link needs no privilege.
+      if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") {
+        throw error;
+      }
+      try {
+        await link(target, next);
+      } catch (linkError) {
+        // A hard link needs its file; a sign-in file the operator does not have is skipped.
+        if ((linkError as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw linkError;
+      }
+    }
     await rename(next, join(own, name));
   }
 }
