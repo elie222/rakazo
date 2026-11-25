@@ -254,10 +254,10 @@ function scratchpadClause(disabled?: ReadonlySet<string>): string | undefined {
   if (pads.length === 0) return undefined;
   const schedules = [...SCHEDULE_TOOL_NAMES].some((name) => builtinOffered(disabled, name));
   if (pads.length === 3 && schedules) {
-    return "Use scratchpad_add / scratchpad_update / scratchpad_complete for open work that should outlive this turn (not reminders — those are schedule_*).";
+    return "Use scratchpad_add / scratchpad_update / scratchpad_complete for open work that should outlive this turn, such as waiting on someone, rather than memory (not reminders — those are schedule_*).";
   }
   const reminder = schedules ? " (not reminders — those are schedule_*)" : "";
-  return `Use ${pads.join(" / ")} for open work that should outlive this turn${reminder}.`;
+  return `Use ${pads.join(" / ")} for open work that should outlive this turn, such as waiting on someone, rather than memory${reminder}.`;
 }
 
 /**

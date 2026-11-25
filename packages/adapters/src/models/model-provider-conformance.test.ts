@@ -1,6 +1,7 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ConnectionSetupError } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { OPENCODE_CLI_PROVIDER_ID } from "../providers/agent-cli/opencode/provider-id.js";
 import { CLAUDE_CODE_PROVIDER_ID } from "../providers/cli-model/claude-code/provider-id.js";
 import { LOCAL_PROVIDER_ID } from "../runtime/pi/models/pi-local-provider-id.js";
 import {
@@ -20,7 +21,11 @@ type KeyCheckedProvider = {
 }[ProviderId];
 
 /** Providers the model registry does not list, because Rakazo runs them itself. */
-const outsideCatalog: readonly string[] = [CLAUDE_CODE_PROVIDER_ID, LOCAL_PROVIDER_ID];
+const outsideCatalog: readonly string[] = [
+  CLAUDE_CODE_PROVIDER_ID,
+  OPENCODE_CLI_PROVIDER_ID,
+  LOCAL_PROVIDER_ID,
+];
 
 /** How each provider answers a key it rejects, offline. */
 const rejections = {

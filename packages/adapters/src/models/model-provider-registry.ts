@@ -8,6 +8,10 @@ import type {
 import { bestEffort } from "@rakazo/logging";
 import type { MediaModelList } from "../media/media-models.js";
 import {
+  OPENCODE_CLI_CREDENTIAL_SOURCE,
+  OPENCODE_CLI_PROVIDER_ID,
+} from "../providers/agent-cli/opencode/provider-id.js";
+import {
   CLAUDE_CODE_CREDENTIAL_SOURCE,
   CLAUDE_CODE_PROVIDER_ID,
 } from "../providers/cli-model/claude-code/provider-id.js";
@@ -223,6 +227,9 @@ export const modelProviders = {
   "amazon-bedrock": { hostCredentials: { source: "AWS IAM", resolvedAtRequest: true } },
   [CLAUDE_CODE_PROVIDER_ID]: {
     hostCredentials: { source: CLAUDE_CODE_CREDENTIAL_SOURCE, resolvedAtRequest: true },
+  },
+  [OPENCODE_CLI_PROVIDER_ID]: {
+    hostCredentials: { source: OPENCODE_CLI_CREDENTIAL_SOURCE, resolvedAtRequest: true },
   },
 } satisfies Record<string, ModelProviderDefinition>;
 
