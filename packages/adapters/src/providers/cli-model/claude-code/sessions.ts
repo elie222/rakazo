@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync } from "node:fs";
 import { readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -181,11 +181,23 @@ function privateFolder(name: string, empty: boolean): () => string {
 /** The CLI names its working folder in the first message, so every turn uses the same empty one. */
 export const workingFolder = privateFolder("rakazo-claude-code", true);
 
+const tokenSessionsFolder = privateFolder("rakazo-claude-code-sessions", false);
+
 /**
- * With the setup token the CLI gets a config dir of its own, without the operator's profile. It
- * also holds the CLI's sessions, so it stays the same across turns and restarts.
+ * With the setup token the CLI gets a new, empty config dir for each turn, so nothing it stores
+ * (such as the account's profile) reaches a later turn. Only its `projects` folder, where it saves
+ * sessions, is linked to one that lasts. Returns the new config dir and that lasting folder's
+ * parent, which is where Rakazo finds the sessions.
  */
-export const tokenConfigFolder = privateFolder("rakazo-claude-code-config", false);
+export function tokenConfigFolder(parent: string): { configDir: string; sessionsDir: string } {
+  const sessionsDir = tokenSessionsFolder();
+  const projects = join(sessionsDir, "projects");
+  mkdirSync(projects, { recursive: true, mode: 0o700 });
+  const configDir = join(parent, "config");
+  mkdirSync(configDir, { mode: 0o700 });
+  symlinkSync(projects, join(configDir, "projects"), "junction");
+  return { configDir, sessionsDir };
+}
 
 /** Where the CLI keeps its sign-in and sessions unless CLAUDE_CONFIG_DIR says otherwise. */
 const CLI_HOME_FOLDER = ".claude";

@@ -454,12 +454,17 @@ export function streamClaudeCode(
       }
       if (model.reasoning && options.reasoning) args.push("--effort", EFFORT[options.reasoning]);
       const maxTokens = options.maxTokens ?? model.maxTokens;
+      const requestFiles = files;
+      let tokenConfig: ReturnType<typeof tokenConfigFolder> | undefined;
       const env = claudeCodeEnv(
         process.env,
         maxTokens ? { CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(maxTokens) } : {},
-        tokenConfigFolder,
+        () => {
+          tokenConfig = tokenConfigFolder(requestFiles);
+          return tokenConfig.configDir;
+        },
       );
-      const configDir = cliConfigDir(env, cwd);
+      const configDir = tokenConfig?.sessionsDir ?? cliConfigDir(env, cwd);
       place = { configDir, cwd };
       const idleMs = modelStreamIdleTimeoutMs();
 

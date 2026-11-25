@@ -105,7 +105,8 @@ export function claudeCodeEnv(
   const token =
     source.RAKAZO_CLAUDE_CODE_SETUP_TOKEN === "1" ? source[OPT_IN_TOKEN_NAME] : undefined;
   if (!token) return { ...env, ...BRIDGE_ENV, ...extra };
-  // The token needs no stored profile, and the CLI tells the model the profile's email.
+  // The token needs no stored profile, and the CLI tells the model the profile's email, so each
+  // turn gets a new config dir with none.
   const config: Record<string, string> = emptyConfigDir
     ? { CLAUDE_CONFIG_DIR: emptyConfigDir() }
     : {};

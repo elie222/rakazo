@@ -427,7 +427,7 @@ describe.skipIf(process.platform === "win32")("Claude Code CLI provider", () => 
       vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "1");
       await run(hello);
       const { env } = cli.read();
-      expect(env.CLAUDE_CONFIG_DIR).toMatch(/rakazo-claude-code-config-[^/\\]+$/);
+      expect(env.CLAUDE_CONFIG_DIR).toMatch(/rakazo-claude-code-request-[^/\\]+[/\\]config$/);
     } finally {
       vi.stubEnv("RAKAZO_CLAUDE_CODE_SETUP_TOKEN", "");
       vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
