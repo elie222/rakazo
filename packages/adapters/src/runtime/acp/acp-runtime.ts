@@ -512,8 +512,13 @@ async function runAcpTurn(
     // The CLI did the model work whatever the stop, so its usage is recorded first.
     await reportUsage(request, descriptor, response.usage, push);
     if (stopReason === "refusal") throw new Error(`${descriptor.label} refused to answer.`);
-    if (stopReason === "max_tokens" || stopReason === "max_turn_requests") {
+    if (stopReason === "max_tokens") {
       throw new Error(`${descriptor.label} reached its output limit before it finished.`);
+    }
+    if (stopReason === "max_turn_requests") {
+      throw new Error(
+        `${descriptor.label} reached its limit of steps in one turn before it finished.`,
+      );
     }
     // Only a finished turn, or one Rakazo cancelled itself, is complete.
     if (stopReason !== "end_turn" && !(stopReason === "cancelled" && cancelled)) {
