@@ -38,7 +38,10 @@ export function sanitizeConnectorError(
       .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
   const sanitizePlain = (value: string) =>
     redactSecrets(value, secrets)
-      .replace(/Bearer\s+(?:"[^"\r\n]*"?|'[^'\r\n]*'?|[^\s"',;&}]+)/gi, "Bearer [redacted]")
+      .replace(
+        /Bearer\s+(?:"(?!\s*[,}\]])[^"\r\n]*"?|'(?!\s*[,}\]])[^'\r\n]*'?|[^\s"',;&}]+)/gi,
+        "Bearer [redacted]",
+      )
       .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
   const cleaned = redactJsonStringsAndPlainText(message, sanitizeDecoded, sanitizePlain, secrets);
   const maxChars = options?.maxChars ?? 2_000;

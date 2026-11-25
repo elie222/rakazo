@@ -139,8 +139,10 @@ describe("sanitizeConnectorError", () => {
     ).toBe('"[redacted]"\n"done"\n"[redacted]"');
 
     expect(
-      sanitizeConnectorError(new Error('Response body: "s\\u00e9cret-123"'), ["sécret-123"]),
-    ).toBe('Response body: "[redacted]"');
+      sanitizeConnectorError(new Error('Response body: "s\\u00e9cret-123" (HTTP 400)'), [
+        "sécret-123",
+      ]),
+    ).toBe('Response body: "[redacted]" (HTTP 400)');
 
     expect(sanitizeConnectorError(new Error('Authorization: Bearer\n "opaque-123"'))).toBe(
       "Authorization: Bearer [redacted]",
@@ -154,5 +156,13 @@ describe("sanitizeConnectorError", () => {
         ]),
       ),
     ).toEqual({ value: "[redacted]", next: "ok" });
+
+    expect(
+      JSON.parse(
+        sanitizeConnectorError(new Error('{"message":"details: [\\"opaque-123\\"]","next":"ok"}'), [
+          '\\"opaque-123\\"',
+        ]),
+      ),
+    ).toEqual({ message: 'details: ["opaque-123"]', next: "ok" });
   });
 });

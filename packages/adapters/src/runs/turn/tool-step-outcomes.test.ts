@@ -344,14 +344,26 @@ describe("tool step outcomes", () => {
       keptToolResult(
         {
           ...base,
-          result: { content: [{ type: "text", text: 'Response body: "s\\u00e9cret-123"' }] },
+          result: {
+            content: [{ type: "text", text: 'Response body: "s\\u00e9cret-123" (HTTP 400)' }],
+          },
         },
         ["sécret-123"],
       ),
-    ).toBe('Response body: "[redacted]"');
+    ).toBe('Response body: "[redacted]" (HTTP 400)');
 
     expect(
       keptToolResult({ ...base, error: new Error('Authorization: Bearer\n "opaque-123"') }, []),
+    ).toBe("Authorization: Bearer [redacted]");
+
+    expect(
+      keptToolResult(
+        {
+          ...base,
+          result: { content: [{ type: "text", text: 'Authorization: Bearer\n "opaque-123"' }] },
+        },
+        [],
+      ),
     ).toBe("Authorization: Bearer [redacted]");
 
     const jsonObjSecret = '{"mode":"opaque-123"}';
@@ -368,6 +380,22 @@ describe("tool step outcomes", () => {
         )!,
       ),
     ).toEqual({ value: "[redacted]", next: "ok" });
+
+    expect(
+      JSON.parse(
+        keptToolResult(
+          {
+            ...base,
+            result: {
+              content: [
+                { type: "text", text: '{"message":"details: [\\"opaque-123\\"]","next":"ok"}' },
+              ],
+            },
+          },
+          ['\\"opaque-123\\"'],
+        )!,
+      ),
+    ).toEqual({ message: 'details: ["opaque-123"]', next: "ok" });
   });
 
   it("replays tool calls only to runs the owner started themselves, failing closed", () => {

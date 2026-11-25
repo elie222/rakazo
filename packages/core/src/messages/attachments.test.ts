@@ -1015,17 +1015,25 @@ describe("tool step history", () => {
             {
               label: "Lookup",
               tool: "lookup",
-              count: 3,
+              count: 5,
               calls: [
                 { result: "731428" },
                 { result: 'Log prefix: {"safe":"prefix\\"kept","secret":"prefix\\\\"}' },
                 { result: 'Rejected values: ["opaque-123"]' },
+                { result: '{"value":{"mode":"opaque-123"},"next":"ok"}' },
+                { result: 'Rejected fixture:\n"opaque-123"' },
               ],
             },
           ],
         },
       ] as unknown as MessageBlock[],
-      secretRedactor(["731428", "prefix\\", '"opaque-123"']),
+      secretRedactor([
+        "731428",
+        "prefix\\",
+        '"opaque-123"',
+        '{"mode":"opaque-123"}',
+        'fixture:\n"opaque-123"',
+      ]),
     );
     const extraCalls =
       numericAndPrefixed[0] && "steps" in numericAndPrefixed[0]
@@ -1038,6 +1046,11 @@ describe("tool step history", () => {
       secret: "[redacted]",
     });
     expect(extraCalls?.[2]?.result).toBe('Rejected values: ["[redacted]"]');
+    expect(JSON.parse(extraCalls?.[3]?.result ?? "")).toEqual({
+      value: "[redacted]",
+      next: "ok",
+    });
+    expect(extraCalls?.[4]?.result).toBe("Rejected [redacted]");
   });
 
   it("ignores fractional step counts and non-string ask action labels in flat history", () => {

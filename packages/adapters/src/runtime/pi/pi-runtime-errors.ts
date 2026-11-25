@@ -69,7 +69,10 @@ export function sanitizeSensitiveText(message: string) {
   return message
     .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
     .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
-    .replace(/Bearer\s+[^\s"',;&]+/gi, "Bearer [redacted]")
+    .replace(
+      /Bearer\s+(?:"(?!\s*[,}\]])[^"\r\n]*"?|'(?!\s*[,}\]])[^'\r\n]*'?|[^\s"',;&}]+)/gi,
+      "Bearer [redacted]",
+    )
     .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]")
     .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]")
     .replace(
