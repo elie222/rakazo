@@ -7,6 +7,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunDocker } from "./docker-cli.js";
 import { STACK_ENV_TEMPLATE, STACK_WEB_URL_FILE } from "./local-stack.js";
@@ -449,6 +450,44 @@ describe("NativeStackController", () => {
     await controller.stop();
     await controller.start();
     expect(existsSync(prefetched)).toBe(true);
+    await controller.stop();
+  });
+
+  it("fetches a newer update's server bundle once the older prefetch finishes", async () => {
+    const release = "https://github.com/o/r/releases/download";
+    const { deps } = harness();
+    const first = deferred();
+    const installed: string[] = [];
+    const controller = new NativeStackController({
+      ...deps,
+      serverBundle: {
+        version: "1.0.0",
+        download: { url: `${release}/v1.0.0/a.tar.xz`, sha256: "a".repeat(64), size: 9 },
+      },
+      fetch: async (url) => {
+        const version = /\/v([\d.]+)\/server-bundle\.json$/.exec(url)?.[1];
+        const download = {
+          url: `${release}/v${version}/b.tar.xz`,
+          sha256: "b".repeat(64),
+          size: 9,
+        };
+        return new Response(version ? JSON.stringify({ ...download, version }) : "{}");
+      },
+      installers: {
+        ...deps.installers,
+        server: async (runtimeDeps, bundle) => {
+          installed.push(bundle.version);
+          if (bundle.version === "1.1.0") await first.promise;
+          return deps.installers!.server!(runtimeDeps, bundle);
+        },
+      },
+    });
+    await controller.start();
+    controller.prefetchServerBundle("1.1.0");
+    await vi.waitFor(() => expect(installed).toContain("1.1.0"));
+    controller.prefetchServerBundle("1.2.0");
+    first.resolve();
+    await vi.waitFor(() => expect(installed).toEqual(["1.0.0", "1.1.0", "1.2.0"]));
     await controller.stop();
   });
 

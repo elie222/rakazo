@@ -786,6 +786,7 @@ app.whenReady().then(async () => {
       prepareHostComputer(userDataDir, bundle === null ? "docker" : "native", hostScreen),
     );
     desktop.localStack = bundle === null ? dockerStack() : nativeStack(bundle, moving);
+    prefetchForUpdate(desktop.localStack, desktop.desktopUpdater.state());
   };
   // Setup can read the Docker controller's idle state while the move choice is pending.
   // Opening or starting the local stack waits for that choice before preparing the bridge.

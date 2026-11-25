@@ -457,15 +457,20 @@ export class NativeStackController extends StackLifecycle {
       if (bundle !== null) await install(deps, bundle);
     });
     const done = bestEffort("download the next server bundle", work).then(() => {
-      if (this.prefetch?.done === done) this.prefetch = null;
+      if (this.prefetch?.done !== done) return;
+      this.prefetch = null;
+      // A newer update, or a restart that cut this one short, fetches again while the stack runs.
+      if (abort.signal.aborted || this.nextVersion !== version) {
+        if (this.current.phase === "ready") this.startPrefetch();
+      }
     });
     this.prefetch = { done, abort };
   }
 
   /** Stops every process; the database, data and downloads stay for the next start. */
   protected async shutdown() {
-    this.prefetch?.abort.abort();
     await this.stopServices();
+    this.prefetch?.abort.abort();
     this.setState(initialStackState(this.deps.imageTag));
   }
 
