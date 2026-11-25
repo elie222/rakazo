@@ -2,6 +2,7 @@ import type { Message } from "@earendil-works/pi-ai";
 import { getLogger } from "@rakazo/logging";
 import { z } from "zod";
 import { withoutSavedMeetingResult } from "../../runs/turn/turn-checkpoint.js";
+import { USE_TOOL } from "../../tools/builtin.tool-definition.js";
 import { RECALLED_MEMORY_LEAD } from "../context/runtime-context.prompt.js";
 
 /**
@@ -14,6 +15,8 @@ interface TurnTranscript {
   /** The history messages the turn stands for: its prompt and steering it took up. */
   represents: string[];
   messages: Message[];
+  /** Which message is the person's prompt, and the history message it was sent for. */
+  prompt?: { at: number; id: string };
 }
 
 /** Larger turns are replayed from the stored reply instead; history is read on every run. */
@@ -59,6 +62,7 @@ export function captureTurnTranscript(
   sent: readonly Message[] | undefined,
   reply: Message | undefined,
   represents: readonly string[],
+  promptId?: string,
 ): string | undefined {
   if (!sent || reply?.role !== "assistant" || reply.stopReason !== "stop") return undefined;
   if (reply.content.some((part) => part.type === "toolCall")) return undefined;
@@ -71,6 +75,7 @@ export function captureTurnTranscript(
       index > lastHistory && !message.rakazoHistory && (message.role as string) !== "system",
   );
   if (start < 0) return undefined;
+  const promptAt = start;
   if (start > 0 && isRecall(tagged[start - 1]!)) start -= 1;
   const messages = [...sent.slice(start), reply].map(sentForm);
   const hasImage = messages.some(
@@ -78,7 +83,12 @@ export function captureTurnTranscript(
       typeof message.content !== "string" && message.content.some((part) => part.type === "image"),
   );
   if (hasImage) return undefined;
-  const transcript: TurnTranscript = { version: 1, represents: [...represents], messages };
+  const transcript: TurnTranscript = {
+    version: 1,
+    represents: [...represents],
+    messages,
+    ...(promptId ? { prompt: { at: promptAt - start, id: promptId } } : {}),
+  };
   const serialized = JSON.stringify(transcript);
   return serialized.length > MAX_TRANSCRIPT_CHARS ? undefined : serialized;
 }
@@ -96,12 +106,13 @@ const StoredTurnSchema = z.object({
         .passthrough(),
     )
     .min(1),
+  prompt: z.object({ at: z.number().int().nonnegative(), id: z.string() }).optional(),
 });
 
 /** A stored turn's messages and the history it stands for, or none when it cannot be read. */
 export function readTurnTranscript(
   serialized: string | undefined,
-): Pick<TurnTranscript, "represents" | "messages"> | undefined {
+): Pick<TurnTranscript, "represents" | "messages" | "prompt"> | undefined {
   if (!serialized) return undefined;
   let parsed: ReturnType<typeof StoredTurnSchema.safeParse> | undefined;
   try {
@@ -113,6 +124,7 @@ export function readTurnTranscript(
     return {
       represents: parsed.data.represents,
       messages: parsed.data.messages as unknown as Message[],
+      ...(parsed.data.prompt ? { prompt: parsed.data.prompt } : {}),
     };
   // The turn is rebuilt from its reply instead, as before records were kept.
   getLogger().warn("Stored turn transcript could not be read; replaying from the reply");
@@ -164,7 +176,7 @@ export function mapTurnTranscript(
       ),
     } as Message;
   });
-  return JSON.stringify({ version: 1, represents: turn.represents, messages });
+  return JSON.stringify({ ...turn, version: 1, messages });
 }
 
 /**
@@ -180,7 +192,9 @@ export function turnToolNames(
       ? message.content.flatMap((part) => {
           if (part.type !== "toolCall") return [];
           const inner = part.arguments?.name;
-          return options.reached && typeof inner === "string" ? [part.name, inner] : [part.name];
+          return options.reached && part.name === USE_TOOL && typeof inner === "string"
+            ? [part.name, inner]
+            : [part.name];
         })
       : [],
   );

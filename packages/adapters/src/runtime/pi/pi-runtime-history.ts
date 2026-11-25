@@ -278,7 +278,7 @@ function replayedToolReply(
  * still offered under the same name.
  */
 function storedTurns(prior: AgentRunRequest["history"], offered: ReadonlySet<string>) {
-  const turns = new Map<number, Message[]>();
+  const turns = new Map<number, NonNullable<ReturnType<typeof readTurnTranscript>>>();
   const covered = new Set<number>();
   for (const [index, entry] of prior.entries()) {
     if (entry.role !== "assistant" || entry.speaker || !entry.transcript) continue;
@@ -298,7 +298,7 @@ function storedTurns(prior: AgentRunRequest["history"], offered: ReadonlySet<str
     )
       continue;
     for (let at = first; at <= index; at += 1) covered.add(at);
-    turns.set(index, turn.messages);
+    turns.set(index, turn);
   }
   return { turns, covered };
 }
@@ -355,7 +355,19 @@ export function toHistory(
     const turn = stored.turns.get(index);
     // The whole turn goes in under its reply, as sent: its prompt with that turn's notes, each
     // step's calls and results, and the reply.
-    if (turn) return turn.map((message) => ({ ...message, ...common }) as HistoryMessage);
+    if (turn) {
+      // The prompt keeps its message's id, so history lookups still list what the person said;
+      // the rest of the turn belongs to the reply.
+      const { prompt } = turn;
+      return turn.messages.map(
+        (message, at) =>
+          ({
+            ...message,
+            ...common,
+            ...(prompt && at === prompt.at ? { rakazoMessageId: prompt.id } : {}),
+          }) as HistoryMessage,
+      );
+    }
     if (stored.covered.has(index)) return [];
     if (m.role === "assistant" && !m.speaker) {
       if (offered.size > 0 && m.segments && replaysAsToolCalls(m.segments))

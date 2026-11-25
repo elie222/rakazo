@@ -208,6 +208,8 @@ describe("Pi turn transcript", () => {
       offered,
     );
     expect(JSON.stringify(replayed)).not.toContain("<current_time>");
+    // The prompt is listed under the person's message, not the reply.
+    expect(whole[0]).toMatchObject({ role: "user", rakazoMessageId: "ask-0" });
     expect(replayed.at(-1)).toMatchObject({ role: "assistant", content: [{ text: "Saved a." }] });
   });
 });

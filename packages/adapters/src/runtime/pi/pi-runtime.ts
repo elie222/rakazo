@@ -1353,7 +1353,12 @@ export class PiAgentRuntime implements AgentRuntime {
         if (request.onTranscript && !restored && !budgetExceeded && !terminatedReply) {
           const transcript = host.pausePending
             ? undefined
-            : captureTurnTranscript(sentContext?.context.messages, terminalMessage, turnMessageIds);
+            : captureTurnTranscript(
+                sentContext?.context.messages,
+                terminalMessage,
+                turnMessageIds,
+                request.sourceMessageId ?? undefined,
+              );
           if (transcript) request.onTranscript(transcript);
         }
         queue.push(streamed.trim() ? { type: "done", text: streamed } : { type: "done" });
