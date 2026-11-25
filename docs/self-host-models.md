@@ -128,7 +128,9 @@ Unset, calls are sent as soon as they are ready. Like the other token limits, a 
 a positive integer is rejected when the local provider is configured.
 
 Rakazo keeps a run's earlier messages unchanged between calls so a server's prompt cache keeps
-hitting, and trims old page state only when that saves more than the cache would. A server without
+hitting, and trims old page state only when that saves more than the cache would. A new message in
+the same chat starts with the previous turn exactly as it was sent, so the cache carries over
+between turns too. A server without
 prompt caching (several hosted gateways and confidential-compute endpoints report no cached
 tokens) gets nothing from that, and old page snapshots are only sent again on every call. Set
 `RAKAZO_LOCAL_PROMPT_CACHE=off` to declare this: stale page state is then trimmed once about 3,000
@@ -153,7 +155,8 @@ that only you use can run its deployment model through the official Claude Code 
 or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
 conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,
 settings and project files turned off. Each model turn continues the CLI's saved session from the
-turn before, so its prompt cache carries over, and Rakazo removes each session once it moves on.
+turn before, including the first turn of a new message in the same chat, so its prompt cache
+carries over, and Rakazo removes each session once it moves on.
 
 What it needs:
 
@@ -345,7 +348,8 @@ automatically uses cache-aware context:
 recent history remains bounded on a cold request, and subsequent requests keep
 that selected prefix while it is likely warm and fits the context budget.
 Connections with unknown retention or `retentionMode: "none"` retain the default
-retrieval policy. An explicit executor context strategy still takes precedence.
+retrieval policy, whose kept history starts at the same message for several exchanges in a row
+instead of moving with each one, so the cached prefix holds. An explicit executor context strategy still takes precedence.
 Callers without usable history-retrieval tools keep fitting original history
 under the model's context budget instead of replacing it with snapshots.
 
