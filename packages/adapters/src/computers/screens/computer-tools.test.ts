@@ -1,13 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import { computerObservation } from "./computer-support.js";
 import type { UnchangedVisualStreak } from "./computer-tools.js";
 import {
   advanceUnchangedVisualGuard,
+  ComputerPerceptionUnknownError,
+  ComputerStaleTargetError,
   computerVisualActionKey,
   MAX_CONSECUTIVE_UNCHANGED_VISUAL_ACTIONS,
   observationToolResult,
   parseComputerActions,
+  parseComputerZoomRequest,
+  parseSettleRequest,
+  resolveComputerTargets,
   unchangedVisualActionBlocked,
   unchangedVisualLoopToolResult,
   unchangedVisualStreakAfterPageBrowser,
@@ -353,6 +358,188 @@ describe("computer tool bridge", () => {
     );
     expect(unchangedVisualStreakAfterPageBrowser(engaged, "browser_act", { ok: false })).toEqual(
       engaged,
+    );
+  });
+});
+
+describe("semantic computer targets", () => {
+  const target = {
+    source: "ax" as const,
+    point: { x: 10, y: 20 },
+    bbox: { x: 0, y: 0, w: 100, h: 40 },
+    windowFrame: { x: 0, y: 0, w: 800, h: 600 },
+    app: "Thunar",
+    window: "Files",
+    role: "button",
+    name: "Save",
+    editable: true,
+  };
+
+  it("parses a target, a frame and a drag", () => {
+    expect(
+      parseComputerActions([
+        { kind: "click", target, basedOn: "frame-1" },
+        { kind: "drag", from: target, to: { ...target, point: { x: 80, y: 90 } } },
+        { kind: "zoom", region: { x: 1, y: 2, w: 30, h: 40 } },
+        { kind: "settle", request: { quiet_ms: 200, verb: "click" } },
+      ]),
+    ).toEqual([
+      { kind: "pointer", x: 10, y: 20, type: "click", button: "left", target, basedOn: "frame-1" },
+      {
+        kind: "drag",
+        from: target,
+        to: { ...target, point: { x: 80, y: 90 } },
+      },
+      { kind: "zoom", region: { x: 1, y: 2, w: 30, h: 40 } },
+      { kind: "settle", request: { quietMs: 200, verb: "click" } },
+    ]);
+  });
+
+  it("clicks a target before typing or pressing a key", () => {
+    expect(
+      parseComputerActions([
+        { kind: "type", target, text: "hello" },
+        { kind: "key", target, key: "Return" },
+      ]),
+    ).toEqual([
+      { kind: "pointer", x: 10, y: 20, type: "click" },
+      { kind: "clipboard", text: "hello" },
+      { kind: "pointer", x: 10, y: 20, type: "click" },
+      { kind: "key", key: "Return", modifiers: undefined },
+    ]);
+  });
+
+  it("rejects a semantic target without a name or role", () => {
+    expect(() =>
+      parseComputerActions([{ kind: "click", target: { source: "ax", point: { x: 1, y: 2 } } }]),
+    ).toThrow("semantic computer target requires name or role");
+    expect(() =>
+      parseComputerActions([{ kind: "click", target: { source: "wat", point: { x: 1, y: 2 } } }]),
+    ).toThrow("computer target source must be coords, ax or cdp");
+  });
+
+  it("resolves a target against the current frame and refuses a stale frame", async () => {
+    const find = vi.fn(async () => ({
+      elements: [{ ...target, point: { x: 50, y: 30 } }],
+      truncated: false,
+    }));
+    await expect(
+      resolveComputerTargets(
+        [{ kind: "pointer", x: 10, y: 20, type: "click", target, basedOn: "frame-1" }],
+        "frame-1",
+        { find },
+      ),
+    ).resolves.toEqual([
+      { kind: "pointer", x: 50, y: 30, type: "click", target: undefined, basedOn: "frame-1" },
+    ]);
+    expect(find).toHaveBeenCalledWith({
+      text: "Save",
+      role: "button",
+      app: "Thunar",
+      window: "Files",
+      page: false,
+      limit: 1,
+    });
+
+    await expect(
+      resolveComputerTargets(
+        [{ kind: "pointer", x: 10, y: 20, type: "click", target, basedOn: "frame-1" }],
+        "frame-2",
+        {
+          find,
+        },
+      ),
+    ).rejects.toThrow(ComputerStaleTargetError);
+  });
+
+  it("refuses a target that moved or a lookup that timed out", async () => {
+    await expect(
+      resolveComputerTargets(
+        [{ kind: "pointer", x: 10, y: 20, type: "click", target }],
+        "frame-1",
+        {
+          find: async () => ({ elements: [], truncated: false, unknown: true }),
+        },
+      ),
+    ).rejects.toThrow(ComputerPerceptionUnknownError);
+    await expect(
+      resolveComputerTargets(
+        [{ kind: "pointer", x: 10, y: 20, type: "click", target }],
+        "frame-1",
+        {
+          find: async () => ({
+            elements: [{ ...target, name: "Cancel", point: { x: 10, y: 20 } }],
+            truncated: false,
+          }),
+        },
+      ),
+    ).rejects.toThrow(ComputerStaleTargetError);
+  });
+
+  it("resolves both ends of a drag", async () => {
+    const find = vi
+      .fn()
+      .mockResolvedValueOnce({
+        elements: [{ ...target, point: { x: 100, y: 200 } }],
+        truncated: false,
+      })
+      .mockResolvedValueOnce({
+        elements: [{ ...target, point: { x: 300, y: 400 } }],
+        truncated: false,
+      });
+    await expect(
+      resolveComputerTargets(
+        [
+          {
+            kind: "drag",
+            from: target,
+            to: {
+              ...target,
+              point: { x: 300, y: 400 },
+              bbox: { x: 250, y: 350, w: 100, h: 100 },
+            },
+          },
+        ],
+        "frame-1",
+        { find },
+      ),
+    ).resolves.toEqual([
+      {
+        kind: "drag",
+        from: { ...target, point: { x: 100, y: 200 } },
+        to: {
+          ...target,
+          point: { x: 300, y: 400 },
+          bbox: { x: 250, y: 350, w: 100, h: 100 },
+        },
+      },
+    ]);
+  });
+});
+
+describe("computer zoom and settle arguments", () => {
+  it("parses a zoom request and rejects a missing frame or region", () => {
+    expect(
+      parseComputerZoomRequest({ frameId: "frame-1", region: { x: 1, y: 2, w: 30, h: 40 } }),
+    ).toEqual({ frameId: "frame-1", region: { x: 1, y: 2, w: 30, h: 40 } });
+    expect(() => parseComputerZoomRequest({ region: { x: 1, y: 2, w: 30, h: 40 } })).toThrow(
+      "computer_zoom requires a frameId",
+    );
+    expect(() => parseComputerZoomRequest({ frameId: "frame-1" })).toThrow(
+      "computer target region must be a rectangle",
+    );
+  });
+
+  it("parses a settle request and defaults only when it is absent", () => {
+    expect(parseSettleRequest(undefined)).toEqual({});
+    expect(parseSettleRequest({ quiet_ms: 100, first_ms: 0, timeout_ms: 5, verb: "key" })).toEqual({
+      quietMs: 100,
+      firstMs: 0,
+      timeoutMs: 5,
+      verb: "key",
+    });
+    expect(() => parseSettleRequest({ verb: "teleport" })).toThrow(
+      "computer settle verb is invalid",
     );
   });
 });

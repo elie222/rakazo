@@ -3,8 +3,14 @@ import type {
   CommandRequest,
   ComputerActionRequest,
   ComputerFileEntry,
+  ComputerFindRequest,
+  ComputerFindResult,
   ComputerInput,
+  ComputerObservation,
   ComputerRef,
+  ComputerSettleRequest,
+  ComputerSettleResult,
+  ComputerZoomRequest,
   ControlLeaseRef,
   PortableFile,
   ProcessEvent,
@@ -14,7 +20,9 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { SandboxFileTooLargeError } from "@rakazo/adapter-kit";
+import type { ComputerCapabilities } from "@rakazo/contracts";
 import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core/node/screen-lease";
+import { unavailableCapabilities } from "../../../computers/perception/capabilities.js";
 import { sandboxCommandEnvironment } from "../../../computers/sandbox/sandbox-command-environment.js";
 import {
   ComputerScreenUnavailableError,
@@ -202,6 +210,37 @@ export class FakeSandboxProvider implements SandboxProvider {
       completed: actions.length,
       ...(request.observe === false ? {} : { observation: await this.observe(computer, context) }),
     };
+  }
+
+  async findElements(
+    _computer: ComputerRef,
+    _request: ComputerFindRequest,
+    _context: AdapterContext,
+  ): Promise<ComputerFindResult> {
+    return { elements: [], truncated: false, unknown: true };
+  }
+
+  async settle(
+    _computer: ComputerRef,
+    _request: ComputerSettleRequest,
+    _context: AdapterContext,
+  ): Promise<ComputerSettleResult> {
+    return { changed: [], lastChangeMono: null, quiet: false, noVisibleChange: false };
+  }
+
+  async zoom(
+    _computer: ComputerRef,
+    _request: ComputerZoomRequest,
+    _context: AdapterContext,
+  ): Promise<ComputerObservation> {
+    throw new Error("Zoom is unavailable on the fake computer.");
+  }
+
+  async capabilities(
+    _computer: ComputerRef,
+    _context: AdapterContext,
+  ): Promise<ComputerCapabilities> {
+    return unavailableCapabilities();
   }
 
   async listFiles(

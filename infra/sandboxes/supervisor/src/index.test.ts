@@ -1304,6 +1304,15 @@ describe("computer command identity", () => {
       "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
       "NPM_CONFIG_PREFIX=/home/rakazo/.local",
       "PIP_USER=1",
+      "XDG_CACHE_HOME=/tmp/rakazo-cache/xdg",
+      "npm_config_cache=/tmp/rakazo-cache/npm",
+      "PIP_CACHE_DIR=/tmp/rakazo-cache/pip",
+      "PLAYWRIGHT_BROWSERS_PATH=/tmp/rakazo-cache/ms-playwright",
+      "UV_CACHE_DIR=/tmp/rakazo-cache/uv",
+      "DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/rakazo/session-bus",
+      "GTK_MODULES=gail:atk-bridge",
+      "NO_AT_BRIDGE=0",
+      "QT_ACCESSIBILITY=1",
     ]);
   });
 });

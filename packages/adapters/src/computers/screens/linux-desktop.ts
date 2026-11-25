@@ -5,9 +5,14 @@ import type {
   CommandRequest,
   ComputerAction,
   ComputerActionRequest,
+  ComputerFindRequest,
+  ComputerFindResult,
   ComputerInput,
   ComputerObservation,
   ComputerRef,
+  ComputerSettleRequest,
+  ComputerSettleResult,
+  ComputerZoomRequest,
   ControlLeaseRef,
   PageBrowserCommand,
   PageBrowserResult,
@@ -16,6 +21,7 @@ import type {
   SnapshotRef,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import type { ComputerCapabilities } from "@rakazo/contracts";
 import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
 import {
   BROWSER_APPLICATIONS,
@@ -35,6 +41,8 @@ import {
   stopAllDesktopBrowsersCommand,
 } from "@rakazo/core/node/desktop-runtime";
 import { getLogger } from "@rakazo/logging";
+import { AtspiPerception } from "../perception/atspi-perception.js";
+import { ComputerStaleFrameError } from "../perception/zoom.js";
 import {
   BrowserStillRunningError,
   BrowserStoppedReleaseError,
@@ -102,7 +110,15 @@ export function onBotScreen(
 
 /** Provider SDKs supply only command execution, workspace paths, and protected port URLs. */
 export class LinuxDesktop {
-  constructor(private readonly host: LinuxDesktopHost) {}
+  private readonly perception: AtspiPerception;
+
+  constructor(private readonly host: LinuxDesktopHost) {
+    this.perception = new AtspiPerception(host, {
+      display: async (computer, context) => (await this.ensure(computer, context)).layout.display,
+      observe: (computer, context) => this.observe(computer, context),
+      screen: async () => ({ width: 1280, height: 800, scale: 1 }),
+    });
+  }
 
   private async run(
     computer: ComputerRef,
@@ -244,12 +260,50 @@ export class LinuxDesktop {
   ) {
     const output = await this.run(computer, observeExtraDisplayCommand(layout), context);
     const observed = parseExtraDisplayObservation(output);
-    return computerObservation(observed.image, {
+    const observation = computerObservation(observed.image, {
       mimeType: "image/png",
       width: 1280,
       height: 800,
+      ...(observed.cursor ? { pointer: observed.cursor } : {}),
       cursor: observed.cursor,
     });
+    this.perception.remember(observation);
+    return observation;
+  }
+
+  async findElements(
+    computer: ComputerRef,
+    request: ComputerFindRequest,
+    context: AdapterContext,
+  ): Promise<ComputerFindResult> {
+    return this.perception.find(computer, request, context);
+  }
+
+  async settle(
+    computer: ComputerRef,
+    request: ComputerSettleRequest,
+    context: AdapterContext,
+  ): Promise<ComputerSettleResult> {
+    return this.perception.settle(computer, request, context);
+  }
+
+  async zoom(
+    computer: ComputerRef,
+    request: ComputerZoomRequest,
+    context: AdapterContext,
+  ): Promise<ComputerObservation> {
+    const result = await this.perception.zoom(computer, request, context);
+    if ("unknown" in result) {
+      throw new ComputerStaleFrameError();
+    }
+    return result;
+  }
+
+  async capabilities(
+    computer: ComputerRef,
+    context: AdapterContext,
+  ): Promise<ComputerCapabilities> {
+    return this.perception.capabilities(computer, context);
   }
 
   async sendInput(computer: ComputerRef, input: ComputerInput, context: AdapterContext) {
@@ -411,6 +465,37 @@ export abstract class LinuxDesktopSandbox {
 
   async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
     return this.desktops.act(computer, request, context);
+  }
+
+  async findElements(
+    computer: ComputerRef,
+    request: ComputerFindRequest,
+    context: AdapterContext,
+  ): Promise<ComputerFindResult> {
+    return this.desktops.findElements(computer, request, context);
+  }
+
+  async settle(
+    computer: ComputerRef,
+    request: ComputerSettleRequest,
+    context: AdapterContext,
+  ): Promise<ComputerSettleResult> {
+    return this.desktops.settle(computer, request, context);
+  }
+
+  async zoom(
+    computer: ComputerRef,
+    request: ComputerZoomRequest,
+    context: AdapterContext,
+  ): Promise<ComputerObservation> {
+    return this.desktops.zoom(computer, request, context);
+  }
+
+  async capabilities(
+    computer: ComputerRef,
+    context: AdapterContext,
+  ): Promise<ComputerCapabilities> {
+    return this.desktops.capabilities(computer, context);
   }
 
   async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {

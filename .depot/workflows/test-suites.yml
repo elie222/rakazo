@@ -143,6 +143,9 @@ jobs:
       - name: Preview startup tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/preview/start.test.py
+      - name: Computer perception helper tests
+        if: steps.areas.outputs.all_packages != 'false'
+        run: python3 infra/sandboxes/computer/test_atspi.py
       - name: Codex subscription auth safety tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 .github/scripts/codex-subscription-auth.test.py && python3 .github/scripts/codex-credential-proxy.test.py

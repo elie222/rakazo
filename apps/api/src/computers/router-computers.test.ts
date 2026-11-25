@@ -209,6 +209,125 @@ describe("computer screen url", () => {
   });
 });
 
+describe("computer find and zoom", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const computerRow = {
+    id: "computer-1",
+    screenGeneration: 3,
+    kind: "e2b",
+    scope: "team",
+    state: "running",
+    providerRef: "sandbox-ref-1",
+    homeKey: "home-1",
+    controlHolder: "none",
+    controlLeaseId: null,
+    controlLeaseExpiresAt: null,
+    controlBotId: null,
+  };
+  const observation = {
+    frameId: "frame-1",
+    capturedAt: new Date().toISOString(),
+    mimeType: "image/png" as const,
+    image: Uint8Array.from([137, 80, 78, 71]),
+    width: 1280,
+    height: 800,
+  };
+  const element = {
+    point: { x: 10, y: 20 },
+    source: "ax" as const,
+    role: "button",
+    name: "Save",
+  };
+
+  async function call(
+    path: string,
+    body: Record<string, unknown>,
+    sandbox: Record<string, unknown>,
+  ) {
+    const deps = {
+      prisma: {
+        bot: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "bot-1",
+            screenGeneration: 2,
+            thread: { id: "thread-1" },
+            computer: computerRow,
+          }),
+        },
+        computer: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
+        computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
+      } as unknown as PrismaClient,
+      sandbox,
+      jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "e2b",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const response = await handle(
+      appHandler(deps),
+      new Request(`http://127.0.0.1/rpc/computer/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { botId: "bot-1", ...body } }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    const envelope = (await response.json()) as { json: unknown };
+    return { response, json: envelope.json };
+  }
+
+  it("finds controls and returns the frame they were read from", async () => {
+    const { response, json } = await call(
+      "find",
+      { text: "Save" },
+      {
+        observe: vi.fn().mockResolvedValue(observation),
+        findElements: vi.fn().mockResolvedValue({ elements: [element], truncated: false }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({ elements: [element], truncated: false, frameId: "frame-1" });
+  });
+
+  it("zooms a region and returns its image as a data URL", async () => {
+    const { response, json } = await call(
+      "zoom",
+      { region: { x: 1, y: 2, w: 30, h: 40 } },
+      {
+        observe: vi.fn().mockResolvedValue(observation),
+        zoom: vi.fn().mockResolvedValue({
+          ...observation,
+          frameId: "frame-2",
+          width: 30,
+          height: 40,
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({
+      frameId: "frame-2",
+      image: "data:image/png;base64,iVBORw==",
+      width: 30,
+      height: 40,
+    });
+  });
+});
+
 describe("computer terminal and file transfer", () => {
   const actor = {
     spaceId: "workspace-1",

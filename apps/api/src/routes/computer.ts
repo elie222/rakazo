@@ -781,6 +781,64 @@ export function computerRoutes(ctx: RouterContext) {
         const data = Buffer.from(observation.image).toString("base64");
         return { image: `data:${observation.mimeType};base64,${data}` };
       }),
+      find: authed.computer.find.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const computer = bot.computer;
+        if (!computer?.providerRef || computer.state !== "running" || !deps.sandbox.findElements) {
+          return { elements: [], truncated: false, unknown: true };
+        }
+        const screen = await computerScreenContext(
+          deps.prisma,
+          context.actor,
+          computer.id,
+          bot.id,
+          "find",
+        );
+        const ref = await wakeableComputerRef(deps.prisma, computer);
+        const [observation, result] = await Promise.all([
+          deps.sandbox.observe(ref, screen),
+          deps.sandbox.findElements(
+            ref,
+            {
+              ...(input.text === undefined ? {} : { text: input.text }),
+              ...(input.role === undefined ? {} : { role: input.role }),
+              ...(input.app === undefined ? {} : { app: input.app }),
+              ...(input.window === undefined ? {} : { window: input.window }),
+              ...(input.page === undefined ? {} : { page: input.page }),
+              ...(input.limit === undefined ? {} : { limit: input.limit }),
+            },
+            screen,
+          ),
+        ]);
+        return { ...result, frameId: observation.frameId };
+      }),
+      zoom: authed.computer.zoom.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const computer = bot.computer;
+        if (!computer?.providerRef || computer.state !== "running" || !deps.sandbox.zoom) {
+          throw new ORPCError("CONFLICT", { message: "The computer is not running." });
+        }
+        const screen = await computerScreenContext(
+          deps.prisma,
+          context.actor,
+          computer.id,
+          bot.id,
+          "zoom",
+        );
+        const ref = await wakeableComputerRef(deps.prisma, computer);
+        const observation = await deps.sandbox.observe(ref, screen);
+        const zoomed = await deps.sandbox.zoom(
+          ref,
+          { frameId: observation.frameId, region: input.region },
+          screen,
+        );
+        return {
+          frameId: zoomed.frameId,
+          image: `data:${zoomed.mimeType};base64,${Buffer.from(zoomed.image).toString("base64")}`,
+          width: zoomed.width,
+          height: zoomed.height,
+        };
+      }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);
         if (bot.computer && holdsComputerControl(bot.computer, bot.id, context.actor)) {

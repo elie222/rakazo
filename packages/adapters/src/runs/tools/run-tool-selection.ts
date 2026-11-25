@@ -34,6 +34,9 @@ import { USER_COMPUTER_SCREEN_TOOLS, USER_COMPUTER_TOOLS } from "./run-tools-use
 
 export const READ_ONLY_AGENT_TOOLS = new Set([
   "computer_observe",
+  "computer_find",
+  "computer_zoom",
+  "computer_settle",
   "list_files",
   "list_fleet",
   "read_file",

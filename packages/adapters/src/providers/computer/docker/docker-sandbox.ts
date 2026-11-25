@@ -3,9 +3,14 @@ import type {
   CommandRequest,
   ComputerActionRequest,
   ComputerFileEntry,
+  ComputerFindRequest,
+  ComputerFindResult,
   ComputerInput,
   ComputerObservation,
   ComputerRef,
+  ComputerSettleRequest,
+  ComputerSettleResult,
+  ComputerZoomRequest,
   ControlLeaseRef,
   PageBrowserCommand,
   PageBrowserResult,
@@ -25,6 +30,7 @@ import {
   SandboxUnresponsiveError,
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
+import type { ComputerCapabilities } from "@rakazo/contracts";
 import { COMPUTER_UNRESPONSIVE_ERROR } from "@rakazo/contracts";
 import {
   cancelResponseBody,
@@ -36,6 +42,9 @@ import {
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import { outgoingCorrelationHeaders } from "@rakazo/logging";
+import { unavailableCapabilities } from "../../../computers/perception/capabilities.js";
+import { settleScreen } from "../../../computers/perception/settle.js";
+import { ComputerStaleFrameError, zoomObservation } from "../../../computers/perception/zoom.js";
 import { sandboxCommandArgv } from "../../../computers/sandbox/sandbox-command-environment.js";
 import {
   isSandboxGoneError,
@@ -111,6 +120,7 @@ export class DockerSandboxProvider implements SandboxProvider {
   private stalls = 0;
   /** One check per computer, shared by every caller that needs it meanwhile. */
   private readonly healthChecks = new Map<string, Promise<void>>();
+  private lastObservation: ComputerObservation | undefined;
 
   constructor(
     private readonly supervisorUrl: string,
@@ -497,13 +507,15 @@ export class DockerSandboxProvider implements SandboxProvider {
       cursor?: { x: number; y: number };
       activeWindow?: { id: string; title?: string };
     }>(res, context.signal);
-    return computerObservation(Uint8Array.from(Buffer.from(body.image, "base64")), {
+    const observation = computerObservation(Uint8Array.from(Buffer.from(body.image, "base64")), {
       mimeType: body.mimeType,
       width: body.width,
       height: body.height,
       cursor: body.cursor,
       activeWindow: body.activeWindow,
     });
+    this.lastObservation = observation;
+    return observation;
   }
 
   async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
@@ -545,6 +557,71 @@ export class DockerSandboxProvider implements SandboxProvider {
           }
         : {}),
     };
+  }
+
+  async findElements(
+    computer: ComputerRef,
+    request: ComputerFindRequest,
+    context: AdapterContext,
+  ): Promise<ComputerFindResult> {
+    const body = await this.perceptionRequest<ComputerFindResult>(computer, context, {
+      cmd: "find",
+      ...request,
+    });
+    if ("unknown" in body) return { elements: [], truncated: false, unknown: true };
+    return body;
+  }
+
+  async settle(
+    computer: ComputerRef,
+    request: ComputerSettleRequest,
+    context: AdapterContext,
+  ): Promise<ComputerSettleResult> {
+    return settleScreen(request, context.signal, {
+      observe: () => this.observe(computer, context),
+    });
+  }
+
+  async zoom(
+    _computer: ComputerRef,
+    request: ComputerZoomRequest,
+    context: AdapterContext,
+  ): Promise<ComputerObservation> {
+    context.signal.throwIfAborted();
+    if (this.lastObservation?.frameId !== request.frameId) {
+      throw new ComputerStaleFrameError();
+    }
+    return zoomObservation(this.lastObservation, request);
+  }
+
+  async capabilities(
+    computer: ComputerRef,
+    context: AdapterContext,
+  ): Promise<ComputerCapabilities> {
+    const body = await this.perceptionRequest<ComputerCapabilities>(computer, context, {
+      cmd: "capabilities",
+    });
+    return "unknown" in body ? unavailableCapabilities() : body;
+  }
+
+  private async perceptionRequest<T extends object>(
+    computer: ComputerRef,
+    context: AdapterContext,
+    request: Record<string, unknown>,
+  ): Promise<T | { unknown: true }> {
+    const res = await fetch(this.url(`/computers/${computer.id}/perception`), {
+      method: "POST",
+      headers: { ...this.headers(context, computer.botId), "content-type": "application/json" },
+      body: JSON.stringify({ request }),
+      signal: context.signal,
+    });
+    if (!res.ok) return { unknown: true };
+    const body = await readSandboxJson<T & { ok?: boolean; unknown?: boolean }>(
+      res,
+      context.signal,
+    );
+    if (body.ok !== true || body.unknown === true) return { unknown: true };
+    return body;
   }
 
   async listFiles(

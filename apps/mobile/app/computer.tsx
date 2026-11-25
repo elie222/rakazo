@@ -36,8 +36,10 @@ import {
   SafeAreaView,
 } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
+import { ComputerFindSheet } from "../components/computers/computer-find-sheet";
 import { ComputerKeyboardBar } from "../components/computers/computer-keyboard-bar";
 import { ComputerModePicker } from "../components/computers/computer-mode-picker";
+import { ComputerZoomModal } from "../components/computers/computer-zoom-modal";
 import { GlassIconButton } from "../components/native/glass-icon-button";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { currentApiBase, rpc } from "../lib/api/api";
@@ -64,6 +66,7 @@ import {
   NATIVE_COMPUTER_KEYBOARD_BOOT,
 } from "../lib/computers/computer-keyboard";
 import { useComputerBoot } from "../lib/computers/use-computer-boot";
+import { useComputerFinder } from "../lib/computers/use-computer-finder";
 import { tabletopLayout } from "../lib/layout/fold-layout";
 import { useFoldRegions } from "../lib/layout/fold-regions";
 import { useSideInsets } from "../lib/layout/side-insets";
@@ -99,6 +102,22 @@ export default function Computer() {
     refreshController,
     bootComputer,
   } = useComputerBoot(botId);
+  const {
+    open: finderOpen,
+    query: findQuery,
+    results: findResults,
+    zoomImage,
+    find,
+    zoom,
+    click,
+    openFinder,
+    closeFinder,
+    changeQuery,
+    runFind,
+    chooseTarget,
+    runZoom,
+    closeZoom,
+  } = useComputerFinder(botId);
   const [cleaningUp, setCleaningUp] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [screenOriginError, setScreenOriginError] = useState(false);
@@ -714,6 +733,27 @@ export default function Computer() {
               </Text>
             ) : null}
             <View style={{ flex: 1, backgroundColor: tokens.card }}>
+              {computer?.state === "running" ? (
+                <View style={styles.computerTools} pointerEvents="box-none">
+                  <GlassIconButton
+                    accessibilityLabel={t`Find on screen`}
+                    onPress={openFinder}
+                    ios="magnifyingglass"
+                    android="search"
+                    size={36}
+                    iconSize={16}
+                  />
+                  <GlassIconButton
+                    accessibilityLabel={t`Zoom into screen`}
+                    onPress={runZoom}
+                    ios="plus.magnifyingglass"
+                    android={{ material: "magnify-plus-outline" }}
+                    size={36}
+                    iconSize={16}
+                    disabled={zoom.pending}
+                  />
+                </View>
+              ) : null}
               {foreground && loadedScreenUrl ? (
                 <ScreenWebView
                   key={screenReload}
@@ -765,6 +805,19 @@ export default function Computer() {
           </KeyboardAvoidingView>
         </SafeAreaProvider>
       </Modal>
+      <ComputerFindSheet
+        visible={finderOpen}
+        query={findQuery}
+        results={findResults}
+        pending={find.pending}
+        error={find.error}
+        clickPending={click.pending}
+        onQueryChange={changeQuery}
+        onFind={runFind}
+        onChoose={chooseTarget}
+        onClose={closeFinder}
+      />
+      <ComputerZoomModal image={zoomImage} onClose={closeZoom} />
     </ScrollView>
   );
 }
@@ -899,4 +952,12 @@ function ScreenWebView({
 
 const styles = StyleSheet.create({
   sharedBrowser: { fontSize: 12, paddingHorizontal: 14, paddingBottom: 4 },
+  computerTools: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    flexDirection: "row",
+    gap: 8,
+    zIndex: 1,
+  },
 });

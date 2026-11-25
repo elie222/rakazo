@@ -23,6 +23,9 @@ export const FEEDBACK_DESCRIPTION_MAX_LENGTH = 2_000;
 export const BUILTIN_TOOL_NAMES = [
   "computer_observe",
   "computer_act",
+  "computer_find",
+  "computer_zoom",
+  "computer_settle",
   "browser_navigate",
   "browser_snapshot",
   "browser_act",

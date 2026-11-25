@@ -200,20 +200,134 @@ export type ComputerInput =
     }
   | { kind: "clipboard"; text: string };
 
+/** A rectangle in the computer's screen or device pixels. */
+export interface ComputerRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * A semantic target on the computer's screen. `point` is always present so a provider that cannot
+ * resolve `source` can fall back to the coordinate. `bbox` is the element's screen bounds when the
+ * source is `ax` or `cdp`.
+ */
+export interface ComputerTarget {
+  point: { x: number; y: number };
+  bbox?: ComputerRect;
+  /** The window frame the element was read from, for a stale check after the window moves. */
+  windowFrame?: ComputerRect;
+  source: "coords" | "ax" | "cdp";
+  app?: string;
+  window?: string;
+  role?: string;
+  name?: string;
+  url?: string;
+  /** A field whose value is never read back or logged. */
+  secret?: boolean;
+  /** A field the model can type into. */
+  editable?: boolean;
+}
+
+/** What a control shows besides its name. */
+export interface ComputerElementState {
+  value?: string;
+  checked?: "true" | "false" | "mixed";
+  disabled?: boolean;
+  expanded?: boolean;
+}
+
+/** One accessible control, as a find or observation listed it. */
+export interface ComputerElement extends ComputerTarget {
+  /** A stable ref for this frame, such as `e12`. */
+  ref?: string;
+  state?: ComputerElementState;
+}
+
+/** One top-level window on the computer's screen. */
+export interface ComputerWindow {
+  id: number;
+  pid: number;
+  cls: string;
+  title: string;
+  frame: ComputerRect;
+  active: boolean;
+  /** Menus, popups and tooltips: never managed, never active, stacked above their parent. */
+  overrideRedirect?: boolean;
+  transientFor?: number | null;
+}
+
+export interface ComputerFindRequest {
+  text?: string;
+  role?: string;
+  app?: string;
+  window?: string;
+  /** Search the front Chromium page's interactive elements instead of native windows. */
+  page?: boolean;
+  limit?: number;
+}
+
+export interface ComputerFindResult {
+  elements: ComputerElement[];
+  url?: string;
+  /** More matches existed than `limit`. */
+  truncated: boolean;
+  /** The lookup did not finish in time; nothing is known below the window. */
+  unknown?: boolean;
+}
+
+export interface ComputerSettleRequest {
+  quietMs?: number;
+  firstMs?: number;
+  timeoutMs?: number;
+  verb?: "click" | "scroll" | "key" | "type" | "launch";
+}
+
+export interface ComputerSettleResult {
+  changed: ComputerRect[];
+  lastChangeMono: number | null;
+  quiet: boolean;
+  noVisibleChange: boolean;
+}
+
+export interface ComputerZoomRequest {
+  frameId: string;
+  region: ComputerRect;
+}
+
+/**
+ * What this action was chosen on. A provider refuses an action whose frame no longer matches, so
+ * a model cannot click a target that moved under it.
+ */
+export interface ComputerActionContext {
+  target?: ComputerTarget;
+  basedOn?: string;
+}
+
 export type ComputerAction =
-  | ComputerInput
+  | (ComputerInput & ComputerActionContext)
   /** With x and y, the wheel turns there, so it scrolls what is under that point. */
-  | {
+  | ({
       kind: "scroll";
       direction: "up" | "down" | "left" | "right";
       amount?: number;
       x?: number;
       y?: number;
-    }
+    } & ComputerActionContext)
   | { kind: "wait"; ms: number }
   | { kind: "open"; path: string }
   | { kind: "launch"; application: string; uri?: string }
-  | { kind: "focus"; application: string; uri?: string };
+  | { kind: "focus"; application: string; uri?: string }
+  | {
+      kind: "drag";
+      from: ComputerTarget;
+      to: ComputerTarget;
+      durationMs?: number;
+      basedOn?: string;
+    }
+  | { kind: "zoom"; region: ComputerRect; basedOn?: string }
+  | { kind: "settle"; request: ComputerSettleRequest; basedOn?: string };
 
 export interface ComputerObservation {
   frameId: string;
@@ -222,8 +336,14 @@ export interface ComputerObservation {
   image: Uint8Array;
   width: number;
   height: number;
+  /** The pointer in model pixels, when the provider can read it. */
+  pointer?: { x: number; y: number };
   cursor?: { x: number; y: number };
   activeWindow?: { id: string; title?: string };
+  /** Bounded top-level windows, when the provider can list them. */
+  windows?: ComputerWindow[];
+  /** Bounded accessible controls, when the provider can read them. */
+  elements?: ComputerElement[];
 }
 
 export interface ComputerActionRequest {
@@ -315,6 +435,23 @@ export interface SandboxKindCapabilities {
   sizedUsage?: boolean;
   /** On the desktop app's own server, the person may give bots the host machine instead. */
   offersHostComputer?: boolean;
+  /** What semantic perception this kind offers. Omitted means screenshots and coordinates only. */
+  perception?: {
+    atspi: boolean;
+    cdp: boolean;
+    hitTest: boolean;
+    settle: boolean;
+    zoom: boolean;
+  };
+  /** How a viewer opens the screen. Omitted means the existing VNC path. */
+  stream?: {
+    protocol: "vnc" | "webrtc";
+    quality: boolean;
+  };
+  /** Whether the computer can record a session. */
+  recording?: boolean;
+  /** Whether a desktop application catalog is available. */
+  desktopApps?: boolean;
 }
 
 export interface SandboxCapabilities {

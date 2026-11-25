@@ -1,5 +1,6 @@
 import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
 import {
+  COMPUTER_CACHE_ENV,
   ensureScreenCommand as coreEnsureScreenCommand,
   interactiveScreenCommand as coreInteractiveScreenCommand,
   terminalCommand as coreTerminalCommand,
@@ -776,6 +777,11 @@ export function demuxDockerStream(buffer: Buffer): { stdout: string; stderr: str
  * Environment for commands in a computer: the bot's shell tool and the user's terminal share
  * it, including this screen's CDP port. Neither exec sets a Docker `User`, so both run as the
  * container's workspace user.
+ *
+ * An exec replaces the image environment, so the accessibility settings the image sets have to
+ * be repeated here: without them an application the bot launches publishes no AT-SPI tree, and
+ * `computer_find` cannot see its own windows. The session bus is the one `start.sh` exports, so
+ * every exec and the boot session share a single bus.
  */
 export function computerCommandEnv(
   layout: Pick<ReturnType<typeof screenPorts>, "display" | "debugPort"> | undefined,
@@ -789,6 +795,11 @@ export function computerCommandEnv(
     "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "NPM_CONFIG_PREFIX=/home/rakazo/.local",
     "PIP_USER=1",
+    ...Object.entries(COMPUTER_CACHE_ENV).map(([name, value]) => `${name}=${value}`),
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/rakazo/session-bus",
+    "GTK_MODULES=gail:atk-bridge",
+    "NO_AT_BRIDGE=0",
+    "QT_ACCESSIBILITY=1",
   ];
 }
 

@@ -22,6 +22,7 @@ const PAGE_STATE_TOOL_NAMES = new Set([
   "browser_act",
   "computer_observe",
   "computer_act",
+  "computer_zoom",
 ]);
 const DEFAULT_PAGE_STATE_RESULTS_TO_KEEP = 3;
 /**

@@ -18,6 +18,9 @@ import { parametersFor } from "./pi-runtime-tool-parameters.js";
 export const COMPUTER_MODE_TOOLS = new Set([
   "computer_observe",
   "computer_act",
+  "computer_find",
+  "computer_zoom",
+  "computer_settle",
   "browser_navigate",
   "browser_snapshot",
   "browser_act",

@@ -24,6 +24,7 @@ shutdown() {
   if [[ -n "$XVFB_PID" ]]; then
     wait "$XVFB_PID" 2>/dev/null || true
   fi
+  rm -f /tmp/rakazo/perception.sock
   exit 0
 }
 trap shutdown TERM INT
@@ -61,6 +62,31 @@ if dbus-daemon --session --fork --address="$DBUS_SESSION_BUS_ADDRESS"; then
   # Keep the address file for browser launchers with a minimal environment.
   printf 'export DBUS_SESSION_BUS_ADDRESS=%q\n' "$DBUS_SESSION_BUS_ADDRESS" \
     > /tmp/rakazo/dbus-session
+fi
+
+# AT-SPI's bus is per session; GTK and Qt applications expose their accessibility trees there.
+# The helper stays up so focus events and trees survive between tool calls. The bus socket
+# appears a moment after the launcher forks it, and an application that starts before that
+# gives up on accessibility for its whole lifetime, so wait for it before anything can.
+AT_SPI_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/at-spi"
+at_spi_launcher=""
+if [ -x /usr/libexec/at-spi-bus-launcher ]; then
+  at_spi_launcher=/usr/libexec/at-spi-bus-launcher
+  /usr/libexec/at-spi-bus-launcher --launch-immediately >/tmp/rakazo/atspi.log 2>&1 &
+elif command -v at-spi-bus-launcher >/dev/null 2>&1; then
+  at_spi_launcher=at-spi-bus-launcher
+  at-spi-bus-launcher --launch-immediately >/tmp/rakazo/atspi.log 2>&1 &
+fi
+if [ -n "$at_spi_launcher" ]; then
+  for _ in $(seq 1 100); do
+    compgen -G "$AT_SPI_CACHE/bus_*" >/dev/null 2>&1 && break
+    sleep 0.05
+  done
+fi
+rm -f /tmp/rakazo/perception.sock
+if [ -x /usr/local/bin/atspi.py ]; then
+  RAKAZO_PERCEPTION_SOCKET=/tmp/rakazo/perception.sock \
+    /usr/bin/python3 -u /usr/local/bin/atspi.py >/tmp/rakazo/perception.log 2>&1 &
 fi
 
 # Chromium's file chooser talks to xdg-desktop-portal over the session bus.

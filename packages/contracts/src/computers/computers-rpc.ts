@@ -4,14 +4,17 @@ import { Id } from "../ids.js";
 import { botId } from "../rpc/inputs.js";
 import {
   CloudComputersSchema,
+  ComputerFindResultSchema,
   ComputerHomeVersionSchema,
   ComputerProviderSettingsSchema,
   ComputerProviderUpdateSchema,
+  ComputerRectSchema,
   ComputerReleaseReasonSchema,
   ComputerScreenSchema,
   ComputerSizeSchema,
   ComputerStatusSchema,
   ComputerUpdateSchema,
+  ComputerZoomResultSchema,
 } from "./computer.js";
 import { ComputerCommandSchema } from "./computer-command.js";
 
@@ -113,6 +116,21 @@ export const computersRpc = {
         }),
       )
       .output(z.object({ image: z.string().nullable() })),
+    /** Find accessible controls in the running computer. */
+    find: oc
+      .input(
+        botId.extend({
+          text: z.string().max(256).optional(),
+          role: z.string().max(64).optional(),
+          app: z.string().max(128).optional(),
+          window: z.string().max(256).optional(),
+          page: z.boolean().optional(),
+          limit: z.number().int().min(1).max(300).optional(),
+        }),
+      )
+      .output(ComputerFindResultSchema),
+    /** Read a region of the current screen at device resolution, in model pixels. */
+    zoom: oc.input(botId.extend({ region: ComputerRectSchema })).output(ComputerZoomResultSchema),
     heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
   },
 };
