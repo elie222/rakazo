@@ -183,11 +183,12 @@
       stackProgressFill.style.width = "0%";
       return;
     }
-    // A retry restarts at its phase; otherwise the bar only ever moves forward.
-    lastProgress =
-      stack.phase === "checking-docker"
-        ? progressFor(stack)
-        : Math.max(lastProgress, progressFor(stack));
+    // A retry restarts at its phase, and a download whose size arrives late grows the total, so
+    // measured bytes are shown as they are; otherwise the bar only ever moves forward.
+    const exact =
+      stack.phase === "checking-docker" ||
+      (stack.phase === "pulling" && downloadProgress(stack).total > 0);
+    lastProgress = exact ? progressFor(stack) : Math.max(lastProgress, progressFor(stack));
     const percent = (lastProgress * 100).toFixed(1);
     stackProgressFill.style.width = `${percent}%`;
     stackProgress.setAttribute("aria-valuenow", percent);

@@ -671,6 +671,30 @@ describe("setup", () => {
     expect(element("stack-progress").getAttribute("aria-valuenow")).toBe("22.6");
   });
 
+  it("moves the bar back when a download's size arrives after another has progressed", async () => {
+    const ui = await boot(null, ENGLISH);
+    selectMode("new");
+    submitForm();
+    ui.startResult.resolve({
+      ...stackState("pulling"),
+      layerBytes: { server: 5e7 },
+      layerTotals: { server: 1e8 },
+    });
+    await flush();
+    expect(element("stack-progress").getAttribute("aria-valuenow")).toBe("50.0");
+
+    const later = {
+      ...stackState("pulling"),
+      layerBytes: { server: 5e7, runtime: 0 },
+      layerTotals: { server: 1e8, runtime: 1e8 },
+    };
+    ui.pushStackState(later);
+    await flush();
+    ui.resolveStackState(later);
+    await flush();
+    expect(element("stack-progress").getAttribute("aria-valuenow")).toBe("35.0");
+  });
+
   it("renders Polish setup controls and interpolates connection and download status", async () => {
     const ui = await boot(null, { lang: "pl", dir: "ltr", messages: PL_MESSAGES });
     expect(document.documentElement.lang).toBe("pl");
