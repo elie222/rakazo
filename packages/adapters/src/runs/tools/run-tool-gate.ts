@@ -23,7 +23,7 @@ import {
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
-import { runSecretKind } from "@rakazo/db";
+import { readRunSecretAnswer, runSecretKind, runSecretsAnsweredForOtherRequests } from "@rakazo/db";
 import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
 import {
   approvalActionName,
@@ -602,11 +602,18 @@ export async function gateToolCall(
       // Only a completed request can have a newer value replace what it took; a denied or
       // uncertain one returns as it settled.
       if (name === "request_secret" && applied.effect.status === "completed") {
+        // A value another card recorded for its own request never replaces what this one took.
+        const answeredElsewhere = await runSecretsAnsweredForOtherRequests(
+          deps.prisma,
+          { id: runId, spaceId: run.spaceId },
+          applied.effect.id,
+        );
         const replacementSecret = await deps.prisma.secret.findFirst({
           where: {
             spaceId: run.spaceId,
             userId: run.userId,
             kind: runSecretKind(runId),
+            ...(answeredElsewhere.length > 0 ? { id: { notIn: answeredElsewhere } } : {}),
           },
           select: { id: true, createdAt: true },
         });
@@ -655,10 +662,19 @@ export async function gateToolCall(
         return { result: await requestApproval(ctx, call, card) };
       }
     } else if (gate.action === "uncertain") {
-      return {
-        result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName),
-        replayed: true,
-      };
+      // A claim that still holds only the allowed action card stopped before it was handed back:
+      // nothing was entered or submitted, so the handler hands it back and shows the input card.
+      if (
+        name === "request_secret" &&
+        readRunSecretAnswer(applied.effect).kind === "action_approved"
+      ) {
+        call.claimedEffect = true;
+      } else {
+        return {
+          result: await settleToolUncertainty(ctx, call, applied.effect.id, gate.toolName),
+          replayed: true,
+        };
+      }
     } else if (gate.action === "execute") {
       const early = await call.claimOrReturn("approved");
       if (early !== undefined) return { result: early, replayed: true };

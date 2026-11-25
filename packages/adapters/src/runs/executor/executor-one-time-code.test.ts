@@ -126,9 +126,11 @@ function world(printed = "", rules: Row[] = [], connection: Row = CONNECTION) {
     Object.entries(where).every(([key, value]) =>
       value && typeof value === "object" && "in" in value
         ? (value.in as unknown[]).includes(row[key])
-        : value && typeof value === "object" && "startsWith" in value
-          ? String(row[key]).startsWith(String(value.startsWith))
-          : row[key] === value,
+        : value && typeof value === "object" && "notIn" in value
+          ? !(value.notIn as unknown[]).includes(row[key])
+          : value && typeof value === "object" && "startsWith" in value
+            ? String(row[key]).startsWith(String(value.startsWith))
+            : row[key] === value,
     );
 
   async function attempt(
@@ -658,6 +660,55 @@ describe("request_secret answers", () => {
     expect(result).toMatchObject({ details: { secret: "paused" } });
     expect(run.secrets).toEqual([]);
     expect(run.asked).toHaveLength(2);
+  });
+
+  it("never gives a dismissed request the answer to a later card", async () => {
+    const dismissed = { ok: false, dismissed: true };
+    const run = world();
+    await run.attempt([connectionCode("First")]);
+    Object.assign(run.effects[0]!, {
+      status: "completed",
+      result: dismissed,
+      updatedAt: new Date(0),
+    });
+    await run.attempt([connectionCode("Second")]);
+    await run.userAnswers(CODE, { connection: true });
+    // The second request was claimed and stopped before it took its answer.
+    run.effects[1]!.status = "executing";
+    const [result] = await run.attempt([connectionCode("First")]);
+    expect(result).toEqual(dismissed);
+    expect(run.secrets).toHaveLength(1);
+    expect(run.effects).toMatchObject([
+      { status: "completed", result: dismissed },
+      { status: "executing", result: answeredRunSecretResult(String(run.secrets[0]!.id)) },
+    ]);
+  });
+
+  it("shows the card for a request whose allowed action stopped before it was handed back", async () => {
+    const call = connectionCode("Code");
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    run.userAllows();
+    run.effects[0]!.status = "executing";
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({
+      input: "secret",
+      requestEffectId: run.effects[0]!.id,
+    });
+    expect(run.effects).toMatchObject([{ status: "intended", result: null }]);
+  });
+
+  it("settles a request that stopped while taking its answer as uncertain", async () => {
+    const call = connectionCode("Code");
+    const run = world();
+    await run.attempt([call]);
+    await run.userAnswers(CODE, { connection: true });
+    run.effects[0]!.status = "executing";
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ uncertain: true });
+    expect(run.asked).toHaveLength(1);
+    expect(run.effects).toMatchObject([{ status: "uncertain" }]);
   });
 
   it.each([

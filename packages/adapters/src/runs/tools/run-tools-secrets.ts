@@ -7,6 +7,7 @@ import {
   runCodeKind,
   runLoginKind,
   runSecretKind,
+  runSecretsAnsweredForOtherRequests,
   spaceIsShared,
 } from "@rakazo/db";
 import {
@@ -254,12 +255,26 @@ export const secretTools: ToolHandlers = {
       applied && !destination && applied.effect.status !== "completed"
         ? readRunSecretAnswer(applied.effect)
         : undefined;
+    // With no value recorded for this request, a value another card recorded for its own request
+    // is never this one's, whatever its age.
+    const answeredElsewhere =
+      answer?.kind === "answered"
+        ? []
+        : await runSecretsAnsweredForOtherRequests(
+            deps.prisma,
+            { id: runId, spaceId: run.spaceId },
+            applied?.effect.id,
+          );
     const held = await deps.prisma.secret.findFirst({
       where: {
         spaceId: run.spaceId,
         userId: run.userId,
         kind: secretKind,
-        ...(answer?.kind === "answered" ? { id: answer.secretId } : {}),
+        ...(answer?.kind === "answered"
+          ? { id: answer.secretId }
+          : answeredElsewhere.length > 0
+            ? { id: { notIn: answeredElsewhere } }
+            : {}),
       },
     });
     const stale = held && !destination && !answersRequest(held, applied, answer) ? held : undefined;
