@@ -11,6 +11,7 @@ import {
   listModelCredentials,
   listPiCatalog,
   ModelSignInError,
+  mediaModelsView,
   oauthCredentialEmail,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
@@ -18,6 +19,7 @@ import {
   providerCatalogCache,
   selectDefaultCredentialId,
   serializeModelSecret,
+  setMediaModel,
   storedOpenAiCompatibleProbeHeaders,
   storedOpenAiCompatibleProbeKey,
   subscriptionSignInChoice,
@@ -51,7 +53,11 @@ import {
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
-import { assertCompatibleDefaultChange } from "../bots/model-pins.js";
+import {
+  assertCompatibleDefaultChange,
+  disconnectedModelChoices,
+  modelDisconnectPreview,
+} from "../bots/model-pins.js";
 import { mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
 import {
   getDeploymentModelSettings,
@@ -208,6 +214,25 @@ export function modelsRoutes(ctx: RouterContext) {
         );
         return withImageInput(context.actor, role, { ...settings, ...deployment }, reads);
       }),
+      media: authed.models.media.handler(async ({ context, input }) => {
+        if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
+          throw new ORPCError("FORBIDDEN");
+        const target = await modelRoleTarget(deps.prisma, context.actor, input.scope);
+        return mediaModelsView(deps.prisma, target);
+      }),
+      setMedia: authed.models.setMedia.handler(async ({ context, input }) => {
+        if (input.expectedUserId && input.expectedUserId !== context.actor.userId)
+          throw new ORPCError("FORBIDDEN");
+        const { actor } = context;
+        const { role, credentialId, modelId, scope } = input;
+        await setMediaModel(
+          deps.prisma,
+          { userId: actor.userId, spaceId: actor.spaceId, scope },
+          role,
+          { credentialId, modelId },
+        );
+        return mediaModelsView(deps.prisma, await modelRoleTarget(deps.prisma, actor, scope));
+      }),
       backups: authed.models.backups.handler(async ({ context }) =>
         (await appliedModelRole(deps.prisma, context.actor, "main")).backups.map(
           ({ provider, modelId, credentialId, creditOfferingId }) => ({
@@ -244,13 +269,10 @@ export function modelsRoutes(ctx: RouterContext) {
         return { ok: true as const };
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
-        const { record } = await startModelConnect(
-          deps,
-          context.actor,
-          "api_key",
-          input.provider,
-          input.surface,
-        );
+        const { record } = await startModelConnect(deps, context.actor, "api_key", input.provider, {
+          surface: input.surface,
+          appVersion: input.appVersion,
+        });
         try {
           const saved = await connectModelCredential(context.actor, input, context.signal);
           record(input.provider, { name: "model_connected" });
@@ -320,7 +342,7 @@ export function modelsRoutes(ctx: RouterContext) {
               { ...input, apiKey, headers },
               preset ? deps.modelConnectionFetch : undefined,
               context.signal,
-              { allowPrivate: mayUsePrivateEndpoint(deps) },
+              { allowPrivate: mayUsePrivateEndpoint(deps), catalogProbe: preset !== undefined },
             );
             return { models };
           } catch (error) {
@@ -356,7 +378,7 @@ export function modelsRoutes(ctx: RouterContext) {
           context.actor,
           "oauth",
           input.provider,
-          input.surface,
+          { surface: input.surface, appVersion: input.appVersion },
         );
         const startedAt = new Date();
         return deps.oauthLogins
@@ -629,6 +651,9 @@ export function modelsRoutes(ctx: RouterContext) {
           throw new ORPCError("NOT_FOUND", { message: "Connection not found" });
         return { ok: true as const };
       }),
+      disconnectPreview: authed.models.disconnectPreview.handler(async ({ context, input }) =>
+        modelDisconnectPreview(deps, context.actor, input),
+      ),
       disconnect: authed.models.disconnect.handler(async ({ context, input }) => {
         // Retire pending sign-ins in every space first — the credentials are
         // account-wide, so a finishing OAuth session anywhere could otherwise
@@ -653,15 +678,12 @@ export function modelsRoutes(ctx: RouterContext) {
               if (input.credentialId && existing.length === 0) return;
               const ids = existing.map((row) => row.id);
               const lastConnection = existing.length === connections.length;
-              const roleRows = {
-                userId: context.actor.userId,
+              const roleRows = disconnectedModelChoices(
+                context.actor.userId,
                 provider,
-                OR: [
-                  { credentialId: { in: ids } },
-                  // Legacy rows without a funding pin ran on the provider's last connection.
-                  ...(lastConnection ? [{ credentialId: null, creditOfferingId: null }] : []),
-                ],
-              };
+                ids,
+                lastConnection,
+              );
               // Its models leave every purpose in the account's models and every Space's,
               // like the connection itself; the tenant scope would otherwise limit the
               // Space deletes to the active Space.

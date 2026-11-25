@@ -9,7 +9,9 @@ import {
   useLayoutEffect,
   useState,
 } from "react";
+import { isPageIcon } from "../icon-names.js";
 import { ErrorBoundary } from "./boundary.js";
+import { Icon } from "./icon.js";
 import { Inline, Link, webUrl } from "./inline.js";
 import { documentLanguage, PageLanguage, wordsFor } from "./labels.js";
 import { PageHero, PageMeta, slugify } from "./text.js";
@@ -276,17 +278,26 @@ function ToneIcon({ tone }: { tone: string }) {
 export function Callout({
   lead,
   tone,
+  icon,
   children,
 }: {
   lead?: string;
   tone?: "info" | "success" | "warning" | "danger";
+  icon?: string;
   children?: ReactNode;
 }) {
   if (!lead && (children === undefined || children === null || children === "")) return null;
   const toned = tone && CALLOUT_TONES.has(tone) ? tone : undefined;
+  const drawn = isPageIcon(icon);
   return (
-    <div className="rk-callout" role="note" data-tone={toned}>
-      {toned ? <ToneIcon tone={toned} /> : null}
+    <div className="rk-callout" role="note" data-tone={toned} data-icon={drawn || undefined}>
+      {drawn ? (
+        <span className="rk-callout-glyph">
+          <Icon name={icon} />
+        </span>
+      ) : toned ? (
+        <ToneIcon tone={toned} />
+      ) : null}
       <div className="rk-callout-text">
         {lead ? <p className="rk-callout-lead">{lead}</p> : null}
         {children !== undefined && children !== null && children !== "" ? (

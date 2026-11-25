@@ -37,6 +37,7 @@ import { CompatibleKeyInput, ConnectionControls } from "./connection-controls";
 import { DeploymentModelSettings } from "./deployment-model-settings";
 import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
+import { MediaModelSettings } from "./media-model-settings";
 import { ModelSettingsPanel } from "./model-settings-panel";
 import { ProviderPage } from "./provider-page";
 import { ConnectionNameField, ProvidersSection } from "./providers-section";
@@ -77,6 +78,8 @@ export function ModelSettingsOverlay({
     credentials,
     disconnectCredential,
     disconnectName,
+    disconnectPreviewLoading,
+    disconnectWarning,
     endpointPresets,
     error,
     groups,
@@ -443,6 +446,14 @@ export function ModelSettingsOverlay({
               panel={connectionAt === "computer" ? panelFor(true) : null}
             />
           ) : null}
+          {firstConnection ? null : (
+            <MediaModelSettings
+              userId={me.userId}
+              spaceId={me.spaceId}
+              scope={scope}
+              connectionIds={credentials.map((credential) => credential.id)}
+            />
+          )}
           {scope === "space" || firstConnection ? null : (
             <ProvidersSection
               credentials={credentials}
@@ -476,8 +487,13 @@ export function ModelSettingsOverlay({
       open={confirmDisconnect}
       onCancel={() => setConfirmDisconnect(false)}
       title={<Trans>Disconnect {disconnectName}?</Trans>}
-      description={<Trans>This removes the connection from every space.</Trans>}
-      confirmDisabled={pending === "disconnect"}
+      description={
+        <>
+          <Trans>This removes the connection from every space.</Trans>
+          {disconnectWarning ? <> {disconnectWarning}</> : null}
+        </>
+      }
+      confirmDisabled={pending === "disconnect" || disconnectPreviewLoading}
       onConfirm={() => {
         setConfirmDisconnect(false);
         setConnectionAt(null);

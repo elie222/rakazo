@@ -253,6 +253,8 @@ export interface DesktopLocalStackState {
   output: string[];
   /** Bytes pulled per image layer in the current attempt; the sum is the only progress Docker reports. */
   layerBytes: Record<string, number>;
+  /** Full size of each download whose size is known in advance; Docker layers never have one. */
+  layerTotals: Record<string, number>;
   /** Image tag this app launches (`v<app version>` for installed builds, `edge` otherwise). */
   imageTag: string;
 }

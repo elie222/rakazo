@@ -62,8 +62,12 @@ describe("built-in tool bridge", () => {
     // whether a routine runs in its chat, and takes the events (webhook, Git, chat, email) a
     // routine can start on, saying a Git event needs no connected app; schedule_list reaches a
     // managed bot's routines; update_bot carries the settings its owner can change;
-    // update_preferences includes the chat model picker and reply streaming.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(36_400);
+    // update_preferences includes the chat model picker and reply streaming; remember takes a
+    // list of operations so one call can make room and add, each with an optional end, and edits
+    // the Space's shared memory too; shell says to open the bot's screen when a graphical program
+    // finds no display; schedule_create takes an end date for a repeat or watch, so a limited
+    // stretch is one routine.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(37_835);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

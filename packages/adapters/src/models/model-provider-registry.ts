@@ -1,4 +1,4 @@
-import type { ModelUsageLookup } from "@rakazo/adapter-kit";
+import type { MediaGenerationProvider, ModelUsageLookup } from "@rakazo/adapter-kit";
 import type {
   ModelCatalogEntry,
   ModelOAuthSignInMode,
@@ -6,10 +6,17 @@ import type {
   ThinkingLevel,
 } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
+import type { MediaModelList } from "../media/media-models.js";
 import {
   CLAUDE_CODE_CREDENTIAL_SOURCE,
   CLAUDE_CODE_PROVIDER_ID,
 } from "../providers/cli-model/claude-code/provider-id.js";
+import {
+  OPENAI_IMAGE_MODELS,
+  OpenAIMediaGenerationProvider,
+} from "../providers/media/openai/openai-media.js";
+import { OpenRouterMediaGenerationProvider } from "../providers/media/openrouter/openrouter-media.js";
+import { openRouterMediaModels } from "../providers/media/openrouter/openrouter-media-models.js";
 import { OpenRouterUsageLookup } from "./endpoints/openrouter-usage.js";
 
 /**
@@ -60,11 +67,36 @@ export interface ModelProviderDefinition {
   routingFields?: ModelRoutingField[];
   /** A connection can ask that requests only reach endpoints that keep no prompts or replies. */
   dataRetentionControl?: true;
+  /** An API key connection can also generate media, which bots then use instead of the hosted provider. */
+  media?: {
+    images?: MediaModelList;
+    video?: MediaModelList;
+    /** A model left out is the list's default. */
+    create(connection: {
+      apiKey: string;
+      zeroDataRetention?: boolean;
+      imageModel?: string;
+      videoModel?: string;
+    }): MediaGenerationProvider;
+  };
 }
 
 const bearer = (apiKey: string) => ({ Authorization: `Bearer ${apiKey}` });
 const unauthorized = async (response: Response) =>
   response.status === 401 || response.status === 403;
+
+const openAIImages: MediaModelList = {
+  defaultModel: OPENAI_IMAGE_MODELS[0]!,
+  models: async () => OPENAI_IMAGE_MODELS.map(({ id, label }) => ({ id, label })),
+};
+const openRouterImages: MediaModelList = {
+  defaultModel: { id: "openai/gpt-image-2", label: "OpenAI: GPT Image 2" },
+  models: () => openRouterMediaModels("images"),
+};
+const openRouterVideo: MediaModelList = {
+  defaultModel: { id: "google/veo-3.1-lite", label: "Google: Veo 3.1 Lite" },
+  models: () => openRouterMediaModels("video"),
+};
 
 const subscriptionNames = {
   codex: /*i18n*/ { id: "XrwIDk", message: "ChatGPT subscription" },
@@ -93,7 +125,17 @@ export const modelProviders = {
       },
     },
   },
-  openai: { recommendedModel: "gpt-6-luna" },
+  openai: {
+    recommendedModel: "gpt-6-luna",
+    media: {
+      images: openAIImages,
+      create: ({ apiKey, imageModel }) =>
+        new OpenAIMediaGenerationProvider({
+          apiKey,
+          imageModel: imageModel ?? openAIImages.defaultModel.id,
+        }),
+    },
+  },
   openrouter: {
     usageLookup: (apiKey: string) => new OpenRouterUsageLookup(apiKey),
     recommendedModel: "anthropic/claude-haiku-5.5",
@@ -104,6 +146,17 @@ export const modelProviders = {
     },
     deployment: { keyEnv: "OPENROUTER_API_KEY", defaultModel: "anthropic/claude-haiku-5.5" },
     dataRetentionControl: true,
+    media: {
+      images: openRouterImages,
+      video: openRouterVideo,
+      create: ({ apiKey, zeroDataRetention, imageModel, videoModel }) =>
+        new OpenRouterMediaGenerationProvider({
+          apiKey,
+          zeroDataRetention,
+          imageModel: imageModel ?? openRouterImages.defaultModel.id,
+          videoModel: videoModel ?? openRouterVideo.defaultModel.id,
+        }),
+    },
   },
   anthropic: {
     recommendedModel: "claude-haiku-5-5",

@@ -98,6 +98,8 @@ export * from "./mcp/mcp-transport.js";
 export * from "./mcp/remote-mcp.js";
 export * from "./media/media-generation-factory.js";
 export * from "./media/media-generation-provider.js";
+export * from "./media/media-model-choices.js";
+export * from "./media/media-usage.js";
 export * from "./media/media-video-poll.js";
 export * from "./meetings/calendar/calendar-notifications.js";
 export * from "./meetings/calendar/calendar-service.js";
@@ -106,6 +108,7 @@ export * from "./meetings/meeting-service.js";
 export { purgeClearedConversationMemory } from "./memory/conversation-memory-cleanup.js";
 export { readAgentMemory } from "./memory/memory-context.js";
 export { AGENT_MEMORY_MAX_BYTES, buildAgentMemoryPrompt } from "./memory/memory-context.prompt.js";
+export { latestEndedDate } from "./memory/memory-expiry.js";
 export * from "./memory/memory-provider-factory.js";
 export * from "./messaging/bot-messages.js";
 export * from "./messaging/chat-sdk-surface.js";
@@ -201,6 +204,12 @@ export * from "./providers/web/keyless-http/keyless-http-web.js";
 export * from "./providers/web/parallel/parallel-web.js";
 export * from "./routines/release-watch.js";
 export { releaseRoutineBackoffs } from "./routines/routine-backoff.js";
+export {
+  routineEndError,
+  routineEnded,
+  routineEndInZone,
+  runBeforeEnd,
+} from "./routines/routine-end.js";
 export * from "./routines/routine-notice.js";
 export * from "./routines/routine-owner-computer.js";
 export { routineGroupThreadId } from "./routines/routine-thread.js";
@@ -315,6 +324,7 @@ export * from "./tools/builtin.tool-definition.js";
 export * from "./tools/builtin-skills.prompt.js";
 export * from "./tools/builtin-tool-bridge.js";
 export * from "./tools/fleet-tools.js";
+export { isLazyCatalogControlRoute } from "./tools/lazy-tool-catalog.js";
 export * from "./tools/schedule-tools.js";
 export * from "./tools/skill-tools.js";
 export * from "./voice/realtime-tools.js";

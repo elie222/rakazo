@@ -65,12 +65,17 @@ export function ThreadComposerDock({
   const { t } = useLingui();
   const insets = useSafeAreaInsets();
   const rootOwnsBottom = useContext(CallKeyboardContext);
-  // On iOS the input rests just above the home indicator rather than a full safe area up.
+  // An iPhone window that runs the screen's full height, status bar to home indicator, rests the
+  // input on the safe area as system apps do. Other iOS windows (landscape, iPad, one pane of a
+  // dual-screen phone) keep it just above the indicator.
+  const fullHeightPhone = Platform.OS === "ios" && !Platform.isPad && insets.top > 0;
   const composerRestingPadding = rootOwnsBottom
     ? 12
-    : Platform.OS === "ios"
-      ? Math.max(insets.bottom - 14, 8)
-      : Math.max(insets.bottom + 12, 24);
+    : fullHeightPhone
+      ? insets.bottom
+      : Platform.OS === "ios"
+        ? Math.max(insets.bottom - 14, 8)
+        : Math.max(insets.bottom + 12, 24);
   // Hands the composer from the keyboard to the safe area as the keyboard moves, so it never
   // dips into the home indicator and then jumps back up.
   const composerKeyboardPadding = useAnimatedStyle(() => ({

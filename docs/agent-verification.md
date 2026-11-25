@@ -245,6 +245,16 @@ pnpm test:evals --live --provider openrouter --model <model-id> \
   --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json>
 ```
 
+With the [Claude Code CLI](self-host-models.md#claude-code-cli) signed in on your machine, the
+bot and the judge can run on your own Claude plan instead; neither needs a key or pricing, and
+their cost is reported as unknown:
+
+```bash
+echo '{"provider":"claude-code","modelId":"claude-sonnet-5-5"}' > <judge-connection.json>
+pnpm test:evals --live --provider claude-code --model claude-opus-5-5 \
+  --judge-connection <judge-connection.json>
+```
+
 The CLI defaults to one trial per case and strategy. Use `--trials` with a higher
 count when investigating an intermittent failure or measuring variability.
 
@@ -594,12 +604,14 @@ pnpm test:evals --suite memory --list
 pnpm test:evals --live --suite memory --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --spend-cap-usd 1 --output test-report/evals/memory.json
 ```
 
-The five synthetic cases check that the bot's own memory stays short and correct
+The six synthetic cases check that the bot's own memory stays short and correct
 across conversations: a move from London to Berlin replaces the old home and a
 fresh conversation recalls Berlin, a forgotten code leaves memory, a preference
 restated in other words is kept once, chatty personal details become short
 entries, and a save into memory seeded close to its 4 KB limit consolidates the
-existing notes instead of dropping them. Conversations are separated by clearing
+existing notes instead of dropping them. A sixth starts from the same full seed:
+the user corrects a fact held in two entries and adds a new one, and the bot must
+do both in a single `remember` call. Conversations are separated by clearing
 history, so only durable memory carries over. The full-memory seed is written
 through the memory API before the first step; no model authors it.
 
@@ -607,15 +619,18 @@ Deterministic checks read the stored memory and the model's `remember` calls:
 each earlier fact must have been saved before it can count as updated or
 forgotten, the home saved in the first conversation must not survive unchanged, entries
 stay under 200 characters, and the bot's memory stays within the limit. The
-`memory-meaning-v2` judge then grades meaning: no stale current home, no
+`memory-meaning-v3` judge then grades meaning: no stale current home, no
 recoverable forgotten code, no duplicate preference, every shared fact captured,
 and every important seeded fact preserved. Calibration labels cover a former
 home, a contradiction, a stale recall, a residual secret, a duplicate, a dropped
-fact and a wiped memory.
+fact, a wiped memory, and a correction that dropped the seeded facts.
 
 The offline model-protocol fixture runs the same product path and proves that an
 appended Berlin beside London and a claimed save after a full-memory refusal
-fail, while a rewrite and a consolidate-then-save pass.
+fail, while a rewrite and one call that makes room and saves pass.
+
+`memory-ended-rule` starts from memory holding a rule whose end date passed months ago;
+when asked which standing instructions apply, the reply must not present it as in force.
 
 Seven `memory-proactive-*` cases check that the bot takes notes on its own. In
 three, the user mentions a lasting fact in passing (a child's allergy, a team

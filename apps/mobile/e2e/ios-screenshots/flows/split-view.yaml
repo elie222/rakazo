@@ -15,6 +15,18 @@ name: Split view
 - takeScreenshot: 01-chat-beside-list
 - runFlow:
     when:
+      visible: "Connect apps"
+    commands:
+      - tapOn: "Settings"
+      - extendedWaitUntil:
+          visible: "General"
+          timeout: 10000
+      - tapOn: "Dismiss"
+      - extendedWaitUntil:
+          visible: ".*The fixture workspace is ready.*"
+          timeout: 5000
+- runFlow:
+    when:
       visible: "Hide chats"
     commands:
       - tapOn: "Hide chats"

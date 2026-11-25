@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.18",
+    "version": "1.0.20",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -112,9 +112,21 @@
       "expo-apple-authentication"
     ],
     "locales": {
+      "de": "./locales/de.json",
       "es": "./locales/es.json",
+      "fr": "./locales/fr.json",
+      "he": "./locales/he.json",
+      "hi": "./locales/hi.json",
+      "ja": "./locales/ja.json",
+      "ko": "./locales/ko.json",
+      "nl": "./locales/nl.json",
       "pl": "./locales/pl.json",
-      "th": "./locales/th.json"
+      "pt-BR": "./locales/pt-BR.json",
+      "ru": "./locales/ru.json",
+      "th": "./locales/th.json",
+      "tr": "./locales/tr.json",
+      "zh-Hans": "./locales/zh-Hans.json",
+      "zh-Hant": "./locales/zh-Hant.json"
     },
     "ios": {
       "bundleIdentifier": "com.rakazo.app",
@@ -165,7 +177,17 @@
               "appExtensions": [
                 {
                   "targetName": "RakazoWatch",
-                  "bundleIdentifier": "com.rakazo.app.watchkitapp"
+                  "bundleIdentifier": "com.rakazo.app.watchkitapp",
+                  "entitlements": {
+                    "com.apple.security.application-groups": ["group.com.rakazo.app"]
+                  }
+                },
+                {
+                  "targetName": "RakazoWatchComplications",
+                  "bundleIdentifier": "com.rakazo.app.watchkitapp.complications",
+                  "entitlements": {
+                    "com.apple.security.application-groups": ["group.com.rakazo.app"]
+                  }
                 },
                 {
                   "targetName": "RakazoWidgets",

@@ -15,7 +15,24 @@ your own branded build, use your own Expo and store accounts.
 3. Configure `EXPO_PUBLIC_API_URL` in the EAS build environment. Production
    builds require a valid HTTPS URL.
 4. Keep store application IDs, team IDs, signing credentials, API keys, and
-   review-account credentials out of Git.
+   review-account credentials out of Git. To override upstream's iOS and Expo
+   identifiers at build time without editing `apps/mobile/app.json`, set:
+   - `RAKAZO_IOS_BUNDLE_ID`: your iOS bundle identifier. App extensions and the
+     share extension's App Group (`group.<bundle identifier>`) follow it. When
+     this differs from `app.json`'s bundle identifier and
+     `RAKAZO_EXPO_PROJECT_ID` is unset, upstream's Expo project ID, owner, and
+     OTA updates are detached so the build cannot pull upstream bundles.
+   - `RAKAZO_APPLE_TEAM_ID`: your 10-character Apple Developer Team ID
+     (`ios.appleTeamId`).
+   - `RAKAZO_EXPO_PROJECT_ID`: your Expo project ID for push tokens and OTA
+     updates (`extra.eas.projectId` and `updates.url`).
+   - `RAKAZO_EXPO_OWNER`: optional Expo account or organization slug (`owner`).
+     When omitted alongside `RAKAZO_EXPO_PROJECT_ID`, upstream's `owner` is
+     removed so EAS resolves ownership from the project ID.
+
+   Keep these variables set for both `expo prebuild` and the native Xcode/EAS
+   build (or in a local untracked `.env`), because `expo-constants` evaluates
+   `app.config.ts` again during the native build phase.
 5. Before a native iOS or Android build, run
    `pnpm --filter @rakazo/mobile exec expo install --check`. Attachment pickers
    and other Expo native modules must match the SDK. Use

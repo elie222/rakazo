@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import type { ModelCatalogEntry, ModelCredential, ModelRoleView } from "@rakazo/contracts";
+import { i18n } from "@lingui/core";
+import type {
+  MediaModelsView,
+  ModelCatalogEntry,
+  ModelCredential,
+  ModelRoleView,
+} from "@rakazo/contracts";
 
 import { MAX_MODEL_CONTEXT_WINDOW, MAX_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
@@ -63,6 +69,10 @@ const { push, back, replace, params, rpcCalls, saved, pinnedTo, focus } = vi.hoi
     roleCatalog: [] as ModelCatalogEntry[],
     roleSettings: { primary: null, backups: [] } as ModelRoleView,
     extraCredentials: [] as ModelCredential[],
+    media: {
+      image: { options: [], selected: null },
+      video: { options: [], selected: null },
+    } as MediaModelsView,
     // A failed save either keeps the bot's own model or finds it already cleared elsewhere.
     failBotUpdates: {} as Record<string, "kept" | "changed elsewhere">,
     needsModel: false,
@@ -73,6 +83,7 @@ const { push, back, replace, params, rpcCalls, saved, pinnedTo, focus } = vi.hoi
 }));
 const settingsRouter = { push, back, replace };
 
+vi.mock("../platform/app-version", () => ({ analyticsAppVersion: () => undefined }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../api/api", () => ({
@@ -101,6 +112,19 @@ vi.mock("../api/api", () => ({
     if (procedure === "models/probeOpenAiCompatible")
       return { models: Array.from({ length: 11 }, (_, index) => `found-${index}`) };
     if (procedure === "models/role") return saved.roleSettings;
+    if (procedure === "models/media") return saved.media;
+    if (procedure === "models/setMedia") {
+      const { role, credentialId, modelId } = input as {
+        role: "image" | "video";
+        credentialId: string;
+        modelId: string;
+      };
+      saved.media = {
+        ...saved.media,
+        [role]: { ...saved.media[role], selected: { credentialId, modelId } },
+      };
+      return saved.media;
+    }
     if (procedure === "models/setRole") {
       const {
         role: _role,
@@ -346,6 +370,10 @@ async function renderConnection(request: Partial<ModelConnectionRequest> = {}) {
   await act(async () => root.render(createElement(ModelConnection)));
 }
 
+// The shared level labels read the active catalog.
+i18n.load("en", {});
+i18n.activate("en");
+
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   queryClient.clear();
@@ -353,6 +381,7 @@ beforeEach(async () => {
   saved.roleCatalog = [];
   saved.roleSettings = { primary: null, backups: [] };
   saved.extraCredentials = [];
+  saved.media = { image: { options: [], selected: null }, video: { options: [], selected: null } };
   delete params.spaceId;
   back.mockClear();
   container = document.createElement("div");
@@ -1015,6 +1044,50 @@ it("paints a revisit from cache without a spinner and refreshes behind it", asyn
     saved.held = null;
     saved.label = "Fixture";
   }
+});
+
+it("offers the image models the member's keys make and saves the one chosen", async () => {
+  const option = (modelId: string, label: string) => ({
+    credentialId: "key",
+    modelId,
+    label,
+    provider: "lab",
+    connectionLabel: "Work",
+  });
+  saved.media = {
+    image: {
+      options: [option("draw-2", "Draw 2"), option("draw-mini", "Draw Mini")],
+      selected: { credentialId: "key", modelId: "draw-2" },
+    },
+    video: { options: [], selected: null },
+  };
+  await remount(async () => {
+    await act(async () => root.render(createElement(Models)));
+  });
+  expect(container.textContent).not.toContain("Video model");
+  const row = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Draw 2"),
+  )!;
+  await act(async () => row.click());
+  const request = modelPickerRequest(
+    (push.mock.calls.at(-1)![0] as { params: { requestId: string } }).params.requestId,
+  )!;
+  expect(request.title).toBe("Image model");
+  expect(request.choices.map((choice) => choice.modelLabel)).toEqual(["Draw 2", "Draw Mini"]);
+  await act(async () => request.onSelect(request.choices[1]!));
+  expect(rpcCalls.find(([procedure]) => procedure === "models/setMedia")?.[1]).toEqual({
+    role: "image",
+    credentialId: "key",
+    modelId: "draw-mini",
+    scope: "account",
+  });
+  await vi.waitFor(() =>
+    expect(
+      [...container.querySelectorAll("button")].some((button) =>
+        button.textContent?.includes("Draw Mini"),
+      ),
+    ).toBe(true),
+  );
 });
 
 it("offers a retry when the first load fails, then shows the model lists", async () => {

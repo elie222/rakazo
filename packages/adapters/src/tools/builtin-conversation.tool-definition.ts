@@ -5,12 +5,41 @@ import {
   botSecretDestinationSchema,
   GenerateSecretInput,
   LOGIN_FIELD_LIMIT,
+  MEMORY_INDEX_PATH,
   SecretAskPurpose,
   SecretHttpRequest,
 } from "@rakazo/contracts";
 import { z } from "zod";
 import { messageUserMaxLength } from "../runs/lifecycle/user-progress.js";
 import { allowPrivateHttpSecretOrigins } from "../secrets/bot-secrets.js";
+
+export const RememberInputSchema = z.object({
+  operations: z
+    .array(
+      z.object({
+        action: z.enum(["add", "replace", "remove"]),
+        content: z.string().optional(),
+        old_text: z.string().optional(),
+        until: z
+          .string()
+          .optional()
+          .describe(
+            "For an instruction or state the user set for a period: the last date it holds (YYYY-MM-DD) or the event that ends it. Omit for lasting facts.",
+          ),
+      }),
+    )
+    .min(1),
+  path: z
+    .string()
+    .optional()
+    .describe(`Another existing memory document to edit. Defaults to ${MEMORY_INDEX_PATH}.`),
+  shared: z
+    .boolean()
+    .optional()
+    .describe(
+      "Edit the Space's shared memory, read by every bot here: rules, decisions and facts about the user or team that all bots should follow. Your own role and how you work stay in yours.",
+    ),
+});
 
 // The owner flag can land in process.env after static imports run (loadRootEnv
 // parses .env once the entry module is already executing), so the model-facing
@@ -28,7 +57,7 @@ function secretAskToolSurface() {
       allowPrivateHttpOrigins
         ? "HTTPS origin, or an HTTP origin on a private LAN host"
         : "HTTPS origin"
-    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the HTTPS origin of the sign-in form's page or frame, and fields with the labels the site signs in with (default Username and Password); the card asks for each, and browser_act fill_secret types one by its label. The user decides which fields are hidden: a hidden field is typed only into a password field. A field whose label is an ID, phone, email or username starts visible on the card and any other starts hidden, so label each field by what the site calls it. If one is refused in another field, ask again with replace true so the user can make it visible. The user may choose not to save a login: the result then says saved false, the login works only until this run ends, and a later run must ask again, so never say it was saved. For a value this bot's shell commands need, use auth {type:"command"} with no origin; it is exported to them as an environment variable named after the credential in upper case with hyphens as underscores (netbird-setup-key becomes $NETBIRD_SETUP_KEY). Use auth {type:"card"} for a payment card, which you see only as brand, last four and expiry, and {type:"contact"} for an address, phone or email named for who or where (home, mom); neither has an origin. Existing named credentials are reused unless replace is true, as is a site's saved login. A sign-in without a password, such as fields ["ID number","Phone"], still uses auth {type:"login"}; never ask for those in chat or on the screen. For a code the site texted or emailed, use oneTimeCode {origin} with the page's HTTPS origin: you never see the code, browser_act fill_code types it, and a wrong or new code needs a new request. Never ask for a code in chat. For CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover.`,
+    }, or connectionId for a one-use connector code. Credential names must start with a lowercase letter and use only lowercase letters, digits, hyphens, or underscores (max 64 characters). For a website login the user wants saved, use auth {type:"login"} with the HTTPS origin of the sign-in form's page or frame, and fields with the labels the site signs in with (default Username and Password); the card asks for each, and browser_act fill_secret types one by its label. The user decides which fields are hidden: a hidden field is typed only into a password field. A field whose label is an ID, phone, email or username starts visible on the card and any other starts hidden, so label each field by what the site calls it. If one is refused in another field, ask again with replace true so the user can make it visible. The user may choose not to save a login: the result then says saved false, the login works only until this run ends, and a later run must ask again, so never say it was saved. For a value this bot's shell commands need, use auth {type:"command"} with no origin; it is exported to them as an environment variable named after the credential in upper case with hyphens as underscores (netbird-setup-key becomes $NETBIRD_SETUP_KEY); browser_act fill_secret cannot type it, so never use it for a website sign-in. Use auth {type:"card"} for a payment card, which you see only as brand, last four and expiry, and {type:"contact"} for an address, phone or email named for who or where (home, mom); neither has an origin. Existing named credentials are reused unless replace is true, as is a site's saved login. A sign-in without a password, such as fields ["ID number","Phone"], still uses auth {type:"login"}; never ask for those in chat or on the screen. For a code the site texted or emailed somewhere you cannot read, use oneTimeCode {origin} with the page's HTTPS origin: you never see the code, browser_act fill_code types it, and a wrong or new code needs a new request. Never ask for a code in chat. For CAPTCHA, passkeys, or anything else that needs the live desktop, call request_takeover.`,
     inputSchema: {
       oneOf: [
         {
@@ -210,7 +239,7 @@ export const conversationTools: ConnectorTool[] = [
   {
     name: "save_page",
     description:
-      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once.',
+      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once. A read also returns readerState: what the user set on the page controls that save.',
     inputSchema: {
       type: "object",
       properties: {
@@ -226,6 +255,12 @@ export const conversationTools: ConnectorTool[] = [
             properties: { find: { type: "string" }, replace: { type: "string" } },
             required: ["find", "replace"],
           },
+        },
+        images: {
+          type: "object",
+          description:
+            'Pictures to keep with the page, each shown in the source as "image:<name>". Map each name to an http(s) address, a chat file\'s artifactId or a path on your computer. Later saves keep the ones the source still shows.',
+          additionalProperties: { type: "string" },
         },
       },
     },
@@ -278,33 +313,13 @@ export const conversationTools: ConnectorTool[] = [
   },
   {
     name: "remember",
-    description: `Save one short new fact to your memory, one call per fact. To change or drop a fact, pass old_text from its entry with new or empty content. Holds ${BOT_MEMORY_MAX_BYTES / 1024} KB.`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        content: { type: "string" },
-        old_text: { type: "string" },
-      },
-      required: ["content"],
-    },
-  },
-  {
-    name: "save_shared_memory",
-    description:
-      "Save a Space shared memory document every bot reads. Replaces the full content, so include everything it should keep.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Document name, for example MEMORY.md." },
-        content: { type: "string", description: "The document's complete new content." },
-      },
-      required: ["path", "content"],
-    },
+    description: `Edit your memory. Each entry is one short declarative fact, not an instruction to yourself; task progress, one-off details and promises do not belong. Operations apply all or none, and the ${BOT_MEMORY_MAX_BYTES / 1024} KB limit counts only the result, so one call can make room and add.`,
+    inputSchema: z.toJSONSchema(RememberInputSchema, { io: "input" }),
   },
   {
     name: "delete_shared_memory",
     description:
-      "Delete a Space shared memory document when the user asks. MEMORY.md cannot be deleted; save it with new content instead.",
+      "Delete a Space shared memory document when the user asks. MEMORY.md cannot be deleted; edit it with remember instead.",
     inputSchema: {
       type: "object",
       properties: {

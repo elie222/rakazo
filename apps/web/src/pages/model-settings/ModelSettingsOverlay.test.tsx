@@ -18,9 +18,12 @@ const models = vi.hoisted(() => ({
   role: vi.fn(),
   forRole: vi.fn(),
   setRole: vi.fn(),
+  media: vi.fn(),
+  setMedia: vi.fn(),
   credentials: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
+  disconnectPreview: vi.fn(),
   rename: vi.fn(),
   saveModelSettings: vi.fn(),
   setDefault: vi.fn(),
@@ -228,6 +231,16 @@ async function click(element: Element | null | undefined) {
   });
 }
 
+/** Opens the disconnect question and answers it once its preview has been read. */
+async function confirmDisconnect(container: HTMLElement) {
+  await click(buttons(container, "Disconnect")[0]);
+  const answer = () => buttons(container, "Disconnect").at(-1) as HTMLButtonElement;
+  await act(async () => {
+    await vi.waitFor(() => expect(answer().disabled).toBe(false));
+  });
+  await click(answer());
+}
+
 function section(role: "main" | "approval" | "computer") {
   const found = document.querySelector(`[data-testid="model-role-${role}"]`);
   if (!found) throw new Error(`Missing ${role} model list`);
@@ -342,6 +355,8 @@ beforeEach(() => {
   vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
   models.list.mockResolvedValue([deepseekEntry]);
   models.credentials.mockResolvedValue([]);
+  const noMedia = { options: [], selected: null };
+  models.media.mockResolvedValue({ image: noMedia, video: noMedia });
   autoReview.get.mockResolvedValue({
     mode: "ask",
     enabled: false,
@@ -350,6 +365,12 @@ beforeEach(() => {
   });
   models.connect.mockResolvedValue({});
   models.disconnect.mockResolvedValue(undefined);
+  models.disconnectPreview.mockResolvedValue({
+    mainModel: false,
+    otherChoice: false,
+    usedBy: [],
+    usedByTotal: 0,
+  });
   models.forRole.mockImplementation(() => models.list());
   models.setRole.mockImplementation(
     async ({ role: _role, expectedUserId: _user, ...patch }: Record<string, unknown>) => ({
@@ -438,9 +459,7 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(keyField(view.container).placeholder).toBe(STORED_PLACEHOLDER);
 
     models.credentials.mockResolvedValue([]);
-    await click(buttons(view.container, "Disconnect")[0]);
-    const confirm = buttons(view.container, "Disconnect");
-    await click(confirm[confirm.length - 1]);
+    await confirmDisconnect(view.container);
     expect(models.disconnect).toHaveBeenCalledWith({
       provider: "deepseek",
       credentialId: "cred-deepseek",
@@ -1810,9 +1829,7 @@ it("replaces one connection's key and disconnects only that connection", async (
       }),
     );
 
-    await click(buttons(view.container, "Disconnect")[0]);
-    const confirm = buttons(view.container, "Disconnect");
-    await click(confirm[confirm.length - 1]);
+    await confirmDisconnect(view.container);
     expect(models.disconnect).toHaveBeenCalledWith({
       provider: "deepseek",
       credentialId: "cred-deepseek-work",
@@ -1944,9 +1961,7 @@ it("shows what a disconnect left, not a read sent before it", async () => {
   try {
     expect(providerNames()).toContain("DeepSeek (Work)");
     await openProvider("DeepSeek (Work)");
-    await click(buttons(view.container, "Disconnect")[0]);
-    const confirm = buttons(view.container, "Disconnect");
-    await click(confirm[confirm.length - 1]);
+    await confirmDisconnect(view.container);
     await act(async () => releaseStale());
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(providerNames()).not.toContain("DeepSeek (Work)");

@@ -66,6 +66,10 @@ export function cronLabels(locale: string): CronLabels {
       return { lead: t`Every`, detail: t`${n} ${ph({ unit: unitLabel })}` };
     },
     atTime: (time) => t`at ${ph({ time: localizedClock(time, locale) })}`,
+    atTimes: (clocks) => {
+      const times = clocks.map((time) => localizedClock(time, locale));
+      return t`at ${ph({ times: times.slice(0, -1).join(listSeparator) })} and ${ph({ last: times.at(-1) ?? "" })}`;
+    },
     onThe1stAt: (time) => t`on the 1st at ${ph({ time: localizedClock(time, locale) })}`,
     onDayAt: (day, time) => t`on day ${day} at ${ph({ time: localizedClock(time, locale) })}`,
     hourAtMinute: (minute) => t`Every hour at :${ph({ minute: String(minute).padStart(2, "0") })}`,

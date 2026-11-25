@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isIPv4 } from "node:net";
 import path from "node:path";
+import { browserReadyCommand } from "./browser-ready.js";
 import { TERMINAL_SERVER_PROGRAM } from "./terminal-server.js";
 // Each live Chrome needs a private debugger port. This is the TCP address-space
 // boundary, not a product limit on bots or saved browser profiles.
@@ -418,6 +419,7 @@ function browserLauncherCommand(
   env: DesktopEnvironment,
 ) {
   const layout = commandLayout(index, env);
+  const profile = shellQuote(browserProfilePathForScreen(screenId, env));
   return [
     "#!/bin/bash",
     "set -eu",
@@ -452,7 +454,13 @@ function browserLauncherCommand(
     '  if [ -n "$_kept" ]; then export LD_PRELOAD="$_kept"; else unset LD_PRELOAD; fi',
     "  unset _kept _rest _entry",
     "fi",
-    `exec "$browser" --test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=${layout.debugPort} --user-data-dir=${shellQuote(browserProfilePathForScreen(screenId, env))} "$@"`,
+    // rakazo-browser owns the full Chromium flag set (and derives the debugger port from DISPLAY);
+    // passing those flags here too duplicates every flag in Chromium's argv.
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
+    'case "${browser##*/}" in',
+    `  rakazo-browser) exec "$browser" --user-data-dir=${profile} "$@" ;;`,
+    `  *) exec "$browser" --test-type --no-sandbox --disable-dev-shm-usage --disable-gpu --enable-unsafe-swiftshader --no-first-run --no-default-browser-check --disable-session-crashed-bubble --hide-crash-restore-bubble --password-store=basic --restore-last-session --start-maximized --remote-debugging-address=127.0.0.1 --remote-debugging-port=${layout.debugPort} --user-data-dir=${profile} "$@" ;;`,
+    "esac",
   ].join("\n");
 }
 
@@ -857,28 +865,7 @@ function renderEnsureScreenCommand(
     `  nohup ${browserLauncherPath(layout.displayNumber)} 8>&- 9>&- </dev/null >${log}-browser.log 2>&1 & launched=$!`,
     `  printf %s "$launched" >${pidFile}`,
     "}",
-    "launched=",
-    "relaunched=0",
-    "browser_running || launch_browser",
-    "waited=0",
-    'while [ "$waited" -lt 80 ]; do',
-    "  if browser_running; then",
-    `    (echo >/dev/tcp/127.0.0.1/${layout.debugPort}) >/dev/null 2>&1 && break`,
-    // The browser found running can be closed, by its window or a home save, before its port
-    // answers. Start it again once rather than wait out a browser that is gone.
-    '  elif [ "$relaunched" -eq 0 ] && ! { [ -n "$launched" ] && kill -0 "$launched" 2>/dev/null; }; then',
-    "    relaunched=1",
-    "    waited=0",
-    "    launch_browser",
-    "  fi",
-    "  sleep 0.25",
-    "  waited=$((waited + 1))",
-    "done",
-    `if ! browser_running || ! (echo >/dev/tcp/127.0.0.1/${layout.debugPort}) >/dev/null 2>&1; then`,
-    `  echo "computer browser CDP not ready on ${layout.debugPort} (running=$(browser_running && echo yes || echo no))" >&2`,
-    `  tail -c 4000 ${log}-browser.log >&2 || true`,
-    `  exit ${SCREEN_NOT_READY_EXIT}`,
-    "fi",
+    ...browserReadyCommand(layout.debugPort, pidFile, `${log}-browser.log`, SCREEN_NOT_READY_EXIT),
     ...setupView,
     `for i in $(seq 1 50); do (echo >/dev/tcp/${gatewayProbeHost(layout.bindHost)}/${layout.viewPort}) >/dev/null 2>&1 && exit 0; sleep 0.1; done`,
     "echo 'screen view port did not open' >&2",

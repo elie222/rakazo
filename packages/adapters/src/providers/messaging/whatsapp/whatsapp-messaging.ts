@@ -1,11 +1,12 @@
 import type { AttachmentTransport } from "@chat-adapter/shared";
 import { downloadAttachment, NetworkError } from "@chat-adapter/shared";
 import { WhatsAppAdapter, WhatsAppApiError } from "@chat-adapter/whatsapp";
-import type { MessagingOutboundStatus } from "@rakazo/adapter-kit";
+import type { MessagingOutbound, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { deadlineSignal, uploadSizeFromEnv } from "@rakazo/core";
 import type { Attachment } from "chat";
 import { ConsoleLogger, convertEmojiPlaceholders } from "chat";
+import { splitMarkdown } from "../../../messaging/markdown-split.js";
 import {
   arrayField,
   asRecord,
@@ -39,6 +40,7 @@ export const whatsappMessaging = defineMessagingPlatform({
     });
     return {
       provider: "whatsapp",
+      outbound: whatsappOutbound,
       capabilities: { direct: true, groups: false, receipt: null, files: true },
       adapter,
       attachmentSize: (attachment, signal) => adapter.mediaSize(attachment, signal),
@@ -192,6 +194,14 @@ export function whatsappPayloads(markdown: string): string[] {
   });
   return [whatsappRenderer.render(markdown)];
 }
+
+/**
+ * WhatsApp renders Markdown as its own formatting, and splits at the 4,096-character limit.
+ */
+export const whatsappOutbound: MessagingOutbound = {
+  markdown: true,
+  split: (body) => splitMarkdown(body, { limit: 4096, sent: whatsappPayloads }),
+};
 
 /**
  * WhatsApp reports asynchronous delivery (including 24-hour-window failures

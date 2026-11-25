@@ -49,6 +49,11 @@ when there's something to send. During a call you can
 **Mute**, open the **Transcript**, minimize the call and keep using the app, or **Hang up**. The
 transcript stays in the chat afterwards.
 
+To switch languages during a call, turn on **Detect call language automatically** in
+**Settings → Voice**. This setting applies to new calls on this device. It uses the configured
+transcription provider instead of the device or browser recognizer and asks before sharing audio.
+Supported languages and any charges depend on the provider.
+
 With a personal OpenAI voice connection, **Settings → Voice → Realtime calls** lets you choose a
 model for calls you start from web or desktop. It works whichever provider reads replies aloud.
 The choice follows your account. Once a model is chosen you can also set the call voice, the
@@ -71,8 +76,15 @@ missed call shows **Call back** in the chat.
 
 ## On mobile
 
-The mobile app uses your phone's own speech recognition and voices for calls. Pick a
-**Device voice** in a bot's settings. On Android, a call keeps going with the screen off.
+Choose **Device voice** in a bot's settings to have the phone read its replies. Automatic call
+language still uses the configured provider to transcribe your microphone audio.
+
+During calls, the microphone stays closed while the bot speaks and reopens after a short pause to
+avoid picking up the reply from the speaker. When the app is in English, on-device speech
+recognition follows the phone's preferred language. To use Portuguese recognition on a phone
+set to English, choose **Português (Brasil)** in **Settings → General → Language**.
+
+On Android, a call keeps going with the screen off.
 
 ## Join a meeting
 

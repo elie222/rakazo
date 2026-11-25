@@ -37,12 +37,16 @@ import {
   isSandboxGoneError,
   sandboxNotFoundError,
 } from "../../../computers/sandbox/sandbox-errors.js";
-import { screenSessionKey } from "../../../computers/screens/computer-screens.js";
+import {
+  PAGE_BROWSER_INTERRUPTED,
+  screenSessionKey,
+} from "../../../computers/screens/computer-screens.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
   workspaceCwd,
   workspacePath,
+  workspaceRelativePath,
 } from "../../../computers/screens/computer-support.js";
 import {
   LinuxDesktop,
@@ -174,7 +178,7 @@ export class DaytonaSandboxProvider extends LinuxDesktopSandbox implements Sandb
           if (error instanceof (await daytonaSdk()).DaytonaProcessExecutionTimeoutError)
             return { code: 124, stdout: "" };
           context.signal.throwIfAborted();
-          throw new Error("Page browser unavailable or interrupted");
+          throw new Error(PAGE_BROWSER_INTERRUPTED);
         }
       } finally {
         let cleaned = false;
@@ -361,9 +365,10 @@ export class DaytonaSandboxProvider extends LinuxDesktopSandbox implements Sandb
     _context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
     const sandbox = await this.box(computer);
-    const relative = normalizeWorkspacePath(directory);
+    const root = await this.workspaceRoot(sandbox);
+    const relative = workspaceRelativePath(root, directory);
     const entries = await sandbox.fs
-      .listFiles(workspacePath(await this.workspaceRoot(sandbox), relative))
+      .listFiles(workspacePath(root, relative))
       .catch(async (error: unknown) => {
         throw (await daytonaRateLimitError(error)) ?? error;
       });

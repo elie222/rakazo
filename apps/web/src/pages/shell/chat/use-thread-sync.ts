@@ -9,18 +9,19 @@ import type {
 } from "@rakazo/contracts";
 import {
   activeThreadRuns,
-  anySignal,
   createRefreshCoalescer,
   isRunTerminalEvent,
   isRunWorking,
   isThreadSnapshotEvent,
   messageUnreadFor,
+  needsThreadSnapshotAfterEvent,
   reconcileRefreshedThread,
   reduceThreadSnapshot,
   rememberTerminalRun,
   runThreadSubscription,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -47,12 +48,6 @@ import { useEventListener } from "../../../lib/use-event-listener";
 import type { ComputerState } from "../computers/use-computer";
 import type { useBrowserNotifications } from "../use-browser-notifications";
 import type { ThreadState } from "./use-thread-state";
-
-const THREAD_SNAPSHOT_TIMEOUT_MS = 2_000;
-
-function threadSnapshotSignal(parent: AbortSignal): AbortSignal {
-  return anySignal([parent, AbortSignal.timeout(THREAD_SNAPSHOT_TIMEOUT_MS)]);
-}
 
 function applyThreadEvent(
   event: ProductEvent,
@@ -419,12 +414,11 @@ export function useThreadSync({
         return primed?.botId === active.id
           ? primed
           : pendingJump
-            ? rpc.threads.get({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) })
-            : refreshThread(active.id, threadSnapshotSignal(abort.signal));
+            ? rpc.threads.get({ botId: active.id }, { signal: abort.signal })
+            : refreshThread(active.id, abort.signal);
       },
-      loadHead: () =>
-        rpc.threads.head({ botId: active.id }, { signal: threadSnapshotSignal(abort.signal) }),
-      refresh: () => refreshThread(active.id, threadSnapshotSignal(abort.signal)),
+      loadHead: () => rpc.threads.head({ botId: active.id }, { signal: abort.signal }),
+      refresh: () => refreshThread(active.id, abort.signal),
       currentSnapshot: () => snapshotRef.current,
       subscribe: (cursor, signal) =>
         openLogoAvatarActivityFeed(avatarSource, snapshotRef.current, cursor, signal, () =>
@@ -469,13 +463,9 @@ export function useThreadSync({
           }
           if (messageUnreadFor(event.payload, meId)) markBotReadIfVisible(active.id);
         }
-        if (
-          isRunTerminalEvent(event) ||
-          event.type === "run.waiting_input" ||
-          event.type === "skill.teaching.stopped"
-        ) {
+        if (needsThreadSnapshotAfterEvent(event) || event.type === "skill.teaching.stopped") {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-          void snapshotRefresh.invalidate().catch(() => undefined);
+          void bestEffort("refresh thread snapshot", snapshotRefresh.invalidate());
         } else if (isComputerStatusEvent(event)) {
           // This tab's own take or release already reads the new screen.
           const own = readControlEventScreen(active.id, event);
@@ -521,10 +511,10 @@ export function useThreadSync({
       signal: abort.signal,
       loadInitial: () =>
         pendingJump
-          ? rpc.threads.get({ groupId }, { signal: threadSnapshotSignal(abort.signal) })
-          : refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)),
-      loadHead: () => rpc.threads.head({ groupId }, { signal: threadSnapshotSignal(abort.signal) }),
-      refresh: () => refreshGroupThread(groupId, threadSnapshotSignal(abort.signal)),
+          ? rpc.threads.get({ groupId }, { signal: abort.signal })
+          : refreshGroupThread(groupId, abort.signal),
+      loadHead: () => rpc.threads.head({ groupId }, { signal: abort.signal }),
+      refresh: () => refreshGroupThread(groupId, abort.signal),
       currentSnapshot: () => snapshotRef.current,
       subscribe: (cursor, signal) =>
         openLogoAvatarActivityFeed(avatarSource, snapshotRef.current, cursor, signal, () =>
@@ -571,9 +561,9 @@ export function useThreadSync({
         ) {
           void sidebarRefresh.invalidate().catch(() => undefined);
         }
-        if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
+        if (needsThreadSnapshotAfterEvent(event)) {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-          void snapshotRefresh.invalidate().catch(() => undefined);
+          void bestEffort("refresh group snapshot", snapshotRefresh.invalidate());
         }
         // The initiating tab already reads the screen; request answers do not change it.
         const computerBotId = computerBotIdRef.current;

@@ -108,6 +108,7 @@ export async function applyTool(
   _route?: unknown,
   observer?: AgentToolExecutionObserver,
 ) {
+  ctx.state.toolStarted = true;
   // Refused there: a routine with its owner's computer is never offered update_bot.
   if (ctx.source.ownerComputerRoutine) return dispatchTool(ctx, name, args, executionId, observer);
   // A bot naming itself in bot_id means its own settings. Dropping it here sends the call down

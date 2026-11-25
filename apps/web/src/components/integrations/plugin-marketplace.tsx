@@ -72,7 +72,7 @@ export function PluginLogo({
     <div
       ref={placeholderRef}
       aria-hidden="true"
-      className={`${box} grid shrink-0 place-items-center border border-border/60 bg-favicon-plate font-semibold text-foreground`}
+      className={`${box} grid shrink-0 place-items-center bg-accent font-semibold text-foreground`}
     >
       {Array.from(name)[0]?.toUpperCase()}
     </div>

@@ -72,6 +72,9 @@ vi.mock("../thread/send/thread-feedback", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadFeedback>()),
   hasUnsentSends: vi.fn(() => false),
 }));
+vi.mock("../../components/composer/composer-keyboard", () => ({
+  supportsComposerHardwareEnter: false,
+}));
 vi.mock("expo-notifications", () => ({
   getPermissionsAsync: vi.fn(async () => ({ status: "granted" })),
 }));
@@ -880,9 +883,9 @@ it.each([false, true])(
   "lists the settings in order, free of server controls (stored owner: %s)",
   async (isDeploymentOwner) => {
     account.me = { ...account.me, isDeploymentOwner };
-    const events: string[] = [];
+    const events: unknown[] = [];
     const unregister = registerSettingsSheet(() => events.push("close"));
-    account.push.mockImplementation((href: string) => events.push(href));
+    account.push.mockImplementation((href: unknown) => events.push(href));
     try {
       const view = await renderAccount();
       const titles = Array.from(
@@ -910,15 +913,14 @@ it.each([false, true])(
       expect(artifacts.getAttribute("role")).toBe("button");
       expect(artifacts.dataset.chevron).toBe("right");
 
-      // These shortcuts close the settings sheet before opening on the root stack.
-      for (const [title, href] of [
-        ["Artifacts", "/artifacts"],
-        ["Pages shared with you", "/shared-pages"],
-      ] as const) {
-        events.length = 0;
-        await view.press(title);
-        expect(events).toEqual(["close", href]);
-      }
+      await view.press("Artifacts");
+      expect(events).toEqual([
+        "close",
+        { pathname: "/artifacts", params: { fromSettings: "/account" } },
+      ]);
+      events.length = 0;
+      await view.press("Pages shared with you");
+      expect(events).toEqual(["close", "/shared-pages"]);
       for (const [title, href] of [
         ["tester@example.test", "/profile"],
         ["General", "/general"],

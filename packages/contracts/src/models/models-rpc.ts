@@ -1,9 +1,18 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { AnalyticsSurface, ModelSignInCancelReason } from "../account/analytics.js";
+import {
+  AnalyticsAppVersion,
+  AnalyticsSurface,
+  ModelSignInCancelReason,
+} from "../account/analytics.js";
 import { Id, ThinkingLevelSchema } from "../ids.js";
 import { SettingsScopeSchema, settingsScopeInput } from "../settings-scope.js";
 import { DeploymentModelSettingsSchema, DeploymentModelUpdateSchema } from "./deployment-model.js";
+import {
+  MediaModelChoiceSchema,
+  MediaModelRoleSchema,
+  MediaModelsViewSchema,
+} from "./media-models.js";
 import {
   ModelApiProtocolSchema,
   ModelCatalogEntrySchema,
@@ -11,6 +20,7 @@ import {
   ModelConnectionLabelSchema,
   ModelConnectionTargetSchema,
   ModelCredentialSchema,
+  ModelDisconnectPreviewSchema,
   ModelOAuthBeginSchema,
   ModelSettingsSaveSchema,
   modelChoiceListSchema,
@@ -56,6 +66,18 @@ export const modelsRpc = {
         }),
       )
       .output(ModelRoleViewSchema),
+    media: oc
+      .input(z.object({ expectedUserId: Id.optional(), scope: SettingsScopeSchema.optional() }))
+      .output(MediaModelsViewSchema),
+    setMedia: oc
+      .input(
+        MediaModelChoiceSchema.extend({
+          role: MediaModelRoleSchema,
+          expectedUserId: Id.optional(),
+          scope: SettingsScopeSchema.optional(),
+        }),
+      )
+      .output(MediaModelsViewSchema),
     list: oc.output(z.array(ModelCatalogEntrySchema)),
     credentials: oc.output(z.array(ModelCredentialSchema)),
     backups: oc.output(z.array(ModelRoleChoiceSchema)),
@@ -63,7 +85,14 @@ export const modelsRpc = {
       .input(modelChoiceListSchema(ModelRoleChoiceSchema))
       .output(z.object({ ok: z.literal(true) })),
     connect: oc
-      .input(ModelConnectInputSchema.and(z.object({ surface: AnalyticsSurface.optional() })))
+      .input(
+        ModelConnectInputSchema.and(
+          z.object({
+            surface: AnalyticsSurface.optional(),
+            appVersion: AnalyticsAppVersion.optional(),
+          }),
+        ),
+      )
       .output(ModelCredentialSchema),
     probeOpenAiCompatible: oc
       .input(
@@ -98,6 +127,7 @@ export const modelsRpc = {
           /** No loopback listener (web, mobile): the provider shows a code to paste instead. */
           codePage: z.boolean().optional(),
           surface: AnalyticsSurface.optional(),
+          appVersion: AnalyticsAppVersion.optional(),
         }),
       )
       .output(ModelOAuthBeginSchema),
@@ -130,6 +160,10 @@ export const modelsRpc = {
       .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
       .output(z.object({ ok: z.literal(true) })),
     saveModelSettings: oc.input(ModelSettingsSaveSchema).output(z.object({ ok: z.literal(true) })),
+    /** What disconnecting this connection takes with it, for the question that asks first. */
+    disconnectPreview: oc
+      .input(z.object({ provider: z.string().trim().min(1), credentialId: Id }))
+      .output(ModelDisconnectPreviewSchema),
     /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
@@ -154,6 +188,8 @@ export const modelsRpc = {
              * the account's model connection authenticates (the catalog's `modelConnection`).
              */
             apiKey: z.string().max(4096).default(""),
+            /** With no key, the account's model connection voice uses; omitted uses the preferred one. */
+            modelCredentialId: z.string().min(1).max(64).optional(),
             voiceId: z.string().max(120).optional(),
             speechModel: z.string().max(64).optional(),
             /** Self-hosted (OpenAI-compatible) server address and model ids. */

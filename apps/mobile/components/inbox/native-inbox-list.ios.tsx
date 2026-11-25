@@ -117,6 +117,7 @@ export function NativeInboxList<Item>({
   onRefresh,
   signals,
   showJumpPills,
+  bottomBar = 0,
 }: NativeInboxListProps<Item>) {
   const hostRef = useRef(null);
   const openSwipe = useRef<OpenSwipe | null>(null);
@@ -203,7 +204,7 @@ export function NativeInboxList<Item>({
       )}
       {spacer(
         "bottom",
-        floatingHeader ? bottom + 32 : 32,
+        (floatingHeader ? bottom + 32 : 32) + bottomBar,
         onGeometryChange((frame) => {
           if (frame.width > 0)
             setMeasured((current) =>
@@ -237,7 +238,7 @@ export function NativeInboxList<Item>({
             signals={signals}
             viewport={avatarViewport}
             topInset={headerInset}
-            bottomInset={bottom}
+            bottomInset={bottom + bottomBar}
             onJump={(index) => {
               openSwipe.current?.close();
               void scrollNativeListToRow(

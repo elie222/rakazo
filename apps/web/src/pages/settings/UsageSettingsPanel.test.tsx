@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { UsageBreakdown, UsageDateRange } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type * as UiWeb from "@rakazo/ui-web";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -33,6 +34,7 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => ({
 const breakdown = vi.hoisted(() => ({ fetch: vi.fn() }));
 const catalog = vi.hoisted(() => ({
   entries: [] as { provider: string; id: string; label: string; providerName?: string }[] | Error,
+  imageModels: [] as Array<{ provider: string; modelId: string; label: string }>,
 }));
 
 vi.mock("../../lib/query/query", async (importOriginal) => ({
@@ -46,6 +48,22 @@ vi.mock("../../lib/query/query", async (importOriginal) => ({
             if (catalog.entries instanceof Error) throw catalog.entries;
             return catalog.entries;
           },
+        }),
+      },
+      media: {
+        queryOptions: () => ({
+          queryKey: ["models-media"],
+          queryFn: async () => ({
+            image: {
+              options: catalog.imageModels.map((model) => ({
+                ...model,
+                credentialId: "key",
+                connectionLabel: "Work",
+              })),
+              selected: null,
+            },
+            video: { options: [], selected: null },
+          }),
         }),
       },
     },
@@ -62,7 +80,7 @@ vi.mock("../../lib/query/query", async (importOriginal) => ({
 
 import { UsageSettingsPanel } from "./UsageSettingsPanel";
 
-type Input = { botId?: string; provider?: string; model?: string; range: string };
+type Input = { botId?: string; provider?: string; model?: string; range: UsageDateRange };
 
 const point = (modelCalls: number, totalTokens: number, costUsd: number | null) => ({
   modelCalls,
@@ -72,7 +90,7 @@ const point = (modelCalls: number, totalTokens: number, costUsd: number | null) 
   costUsd,
 });
 
-const usageFor = (input: Input) => ({
+const usageFor = (input: Input): UsageBreakdown => ({
   range: input.range,
   bots: [
     { id: "bot-a", name: "Alpha", deleted: false, runs: 2, ...point(3, 400, 0.04) },
@@ -94,17 +112,23 @@ const usageFor = (input: Input) => ({
       cachedTokens: 250,
     },
   ],
+  routines: [],
   overTimeUnit: "day",
   overTime: [{ date: "2026-11-10", ...point(3, 400, 0.04) }],
 });
 
 const settle = () => act(flush);
 
-async function renderPanel(entries: typeof catalog.entries = []) {
+async function renderPanel(
+  entries: typeof catalog.entries = [],
+  imageModels: typeof catalog.imageModels = [],
+  usage = usageFor,
+) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   breakdown.fetch.mockReset();
   catalog.entries = entries;
-  breakdown.fetch.mockImplementation(async (input: Input) => usageFor(input));
+  catalog.imageModels = imageModels;
+  breakdown.fetch.mockImplementation(async (input: Input) => usage(input));
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -163,6 +187,38 @@ async function renderPanel(entries: typeof catalog.entries = []) {
 
 afterEach(() => {
   document.body.replaceChildren();
+});
+
+it("shows the routine split only when the selection includes routine usage", async () => {
+  const other = { id: null, name: null, botName: null, runs: 1, ...point(2, 167, 0.01) };
+  const routine = {
+    id: "routine-a",
+    name: "Morning brief",
+    botName: "Alpha",
+    runs: 2,
+    ...point(2, 300, 0.03),
+  };
+  const panel = await renderPanel([], [], (input) => ({
+    ...usageFor(input),
+    routines: input.botId ? [other] : [routine, other],
+  }));
+  try {
+    const table = [...panel.container.querySelectorAll("table")].find(
+      (table) => table.querySelector("th")?.textContent === "Routine",
+    );
+    expect(
+      [...table!.querySelectorAll("tbody tr")].map((row) =>
+        [...row.querySelectorAll("td")].map((cell) => cell.textContent),
+      ),
+    ).toEqual([
+      ["Morning briefAlpha", "2", "300", "$0.03"],
+      ["Chats and other work", "1", "167", "$0.01"],
+    ]);
+    await panel.choose("Bot", "Alpha");
+    expect(table!.isConnected).toBe(false);
+  } finally {
+    await panel.unmount();
+  }
 });
 
 it("shows every bot's usage first, then narrows it by bot, model and date range", async () => {
@@ -436,6 +492,21 @@ it("keeps a known provider name when the recorded model is no longer listed", as
     );
     expect(panel.container.textContent).not.toContain("retired-opaque-id");
     expect(await panel.options("Model")).toEqual(["All models", "Unlisted model"]);
+  } finally {
+    await panel.unmount();
+  }
+});
+
+it("names an image model from the member's media models", async () => {
+  const panel = await renderPanel([], [{ provider: "alpha", modelId: "draw-2", label: "Draw 2" }]);
+  try {
+    breakdown.fetch.mockImplementation(async (input: Input) => ({
+      ...usageFor(input),
+      modelOptions: [{ provider: "alpha", model: "draw-2" }],
+      models: [{ provider: "alpha", model: "draw-2", ...point(1, 0, 0.04) }],
+    }));
+    await panel.pick("7 days");
+    expect(await panel.options("Model")).toEqual(["All models", "Draw 2"]);
   } finally {
     await panel.unmount();
   }

@@ -482,12 +482,85 @@ describe("shared Linux desktop lifecycle", () => {
     );
     const lines = command.split("\n");
     const unsetAt = lines.findIndex((line) => line.includes("unset LD_PRELOAD"));
-    const execAt = lines.findIndex((line) => line.startsWith("exec "));
+    const wrapperExecAt = lines.findIndex((line) => line.includes("rakazo-browser) exec "));
+    const directExecAt = lines.findIndex((line) => line.includes("*) exec "));
     expect(unsetAt).toBeGreaterThan(-1);
-    expect(execAt).toBeGreaterThan(unsetAt);
-    // A relaunch keeps the bot's tabs and session cookies, matching rakazo-browser.
-    expect(lines[execAt]).toContain("--restore-last-session");
+    expect(wrapperExecAt).toBeGreaterThan(unsetAt);
+    expect(directExecAt).toBeGreaterThan(unsetAt);
+    // rakazo-browser owns its flag set; browser-launch only hands it the profile and user args.
+    expect(lines[wrapperExecAt]).toContain("--user-data-dir=");
+    expect(lines[wrapperExecAt]).not.toContain("--test-type");
+    expect(lines[wrapperExecAt]).not.toContain("--remote-debugging-port=");
+    // Direct browser fallback keeps the bot's tabs and session cookies, matching rakazo-browser.
+    expect(lines[directExecAt]).toContain("--restore-last-session");
   });
+
+  it.skipIf(process.platform !== "linux")(
+    "hands rakazo-browser only the profile and extra args, keeping direct flags for raw browsers",
+    () => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-browser-launcher-"));
+      roots.push(root);
+      const runtime = path.join(root, "runtime");
+      const wrapperBin = path.join(root, "wrapper-bin");
+      const rawBin = path.join(root, "raw-bin");
+      const wrapperArgs = path.join(root, "wrapper-args");
+      const rawArgs = path.join(root, "raw-args");
+      mkdirSync(runtime, { recursive: true });
+      mkdirSync(wrapperBin, { recursive: true });
+      mkdirSync(rawBin, { recursive: true });
+      const writeRecorder = (target: string, outFile: string) => {
+        writeFileSync(
+          target,
+          `#!/bin/sh\nprintf 'DISPLAY=%s\\n' "$DISPLAY" > ${shellQuote(outFile)}\nprintf '%s\\n' "$@" >> ${shellQuote(outFile)}\n`,
+          { mode: 0o755 },
+        );
+      };
+      writeRecorder(path.join(wrapperBin, "rakazo-browser"), wrapperArgs);
+      writeRecorder(path.join(rawBin, "google-chrome"), rawArgs);
+
+      const script = ensureScreenCommand(0, "bot", "token", env)
+        .replaceAll("/tmp/rakazo", runtime)
+        .replaceAll("/usr/share/novnc", root);
+      const launcherWritten = script.indexOf("\nchmod 700 ");
+      expect(launcherWritten).toBeGreaterThan(-1);
+      const writeLauncher = `command() { :; }\n${script.slice(0, script.indexOf("\n", launcherWritten + 1))}\n`;
+      const setup = spawnSync("bash", ["-eu", "-c", writeLauncher], {
+        encoding: "utf8",
+        timeout: 5_000,
+      });
+      expect(setup.status, setup.stderr).toBe(0);
+
+      const launcher = path.join(runtime, `browser-launch-${env.displayStart}`);
+      const profile = browserProfilePathForScreen("bot", env);
+      const { debugPort } = screenPorts(0, env);
+
+      const viaWrapper = spawnSync(launcher, ["https://example.test"], {
+        encoding: "utf8",
+        timeout: 5_000,
+        env: { PATH: `${wrapperBin}${path.delimiter}${process.env.PATH ?? ""}` },
+      });
+      expect(viaWrapper.status, viaWrapper.stderr).toBe(0);
+      expect(readFileSync(wrapperArgs, "utf8").trim().split("\n")).toEqual([
+        `DISPLAY=:${env.displayStart}`,
+        `--user-data-dir=${profile}`,
+        "https://example.test",
+      ]);
+
+      const viaRaw = spawnSync(launcher, ["https://example.test"], {
+        encoding: "utf8",
+        timeout: 5_000,
+        env: { PATH: `${rawBin}${path.delimiter}/usr/bin:/bin` },
+      });
+      expect(viaRaw.status, viaRaw.stderr).toBe(0);
+      const rawLines = readFileSync(rawArgs, "utf8").trim().split("\n");
+      expect(rawLines[0]).toBe(`DISPLAY=:${env.displayStart}`);
+      expect(rawLines).toContain("--test-type");
+      expect(rawLines).toContain("--restore-last-session");
+      expect(rawLines).toContain(`--remote-debugging-port=${debugPort}`);
+      expect(rawLines).toContain(`--user-data-dir=${profile}`);
+      expect(rawLines.at(-1)).toBe("https://example.test");
+    },
+  );
 
   it.skipIf(process.platform !== "linux").each([
     ["readable", false],
@@ -603,6 +676,75 @@ describe("shared Linux desktop lifecycle", () => {
       `home settings folder\nfbsetbg=${path.join(root, "flux-20/bin/fbsetbg")}\nxsetroot -solid #111113\n`,
     );
   });
+
+  it.skipIf(process.platform !== "linux")(
+    "restarts a screen's browser that stops answering, but not again within ten minutes",
+    () => {
+      const root = mkdtempSync(path.join(tmpdir(), "desktop-hung-browser-"));
+      roots.push(root);
+      const bin = path.join(root, "bin");
+      mkdirSync(bin);
+      const fake = path.join(root, "fake-browser.py");
+      writeFileSync(
+        fake,
+        [
+          "import socket, sys",
+          'port = int(next(a for a in sys.argv if a.startswith("--remote-debugging-port=")).split("=")[1])',
+          "server = socket.socket()",
+          "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
+          'server.bind(("127.0.0.1", port))',
+          "server.listen(64)",
+          "while True:",
+          "    client, _ = server.accept()",
+          "    client.recv(4096)",
+          '    client.sendall(b"HTTP/1.1 200 OK\\r\\nContent-Length: 2\\r\\n\\r\\n{}")',
+          "    client.close()",
+        ].join("\n"),
+      );
+      writeFileSync(path.join(bin, "websockify"), "#!/bin/sh\n", { mode: 0o755 });
+      writeFileSync(
+        path.join(bin, "rakazo-browser"),
+        `#!/bin/sh\nexec python3 ${fake} "$@" --remote-debugging-port=${screenPorts(0, env).debugPort}\n`,
+        { mode: 0o755 },
+      );
+      const script = ensureScreenCommand(0, "bot", "token", env)
+        .replaceAll("/tmp/rakazo", root)
+        .replaceAll("/usr/share/novnc", root)
+        .replaceAll(env.homeDir, path.join(root, "home"));
+      // Stop once the browser is ready; the viewer after it is covered elsewhere.
+      const browserReady = script.slice(0, script.indexOf(`\nmkdir -p ${root}/desktop-targets `));
+      const ensure = () =>
+        spawnSync("bash", ["-c", `xdpyinfo() { return 0; }\n${browserReady}`], {
+          encoding: "utf8",
+          timeout: 60_000,
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+        });
+      const browserPid = () => {
+        const file = readdirSync(root).find(
+          (name) => name.startsWith("browser-pid-") && !name.endsWith("-restarted"),
+        );
+        if (!file) throw new Error("no browser was started");
+        return Number(readFileSync(path.join(root, file), "utf8"));
+      };
+      try {
+        const started = ensure();
+        expect(started.status, started.stderr).toBe(0);
+        // A stopped process keeps its port open and never answers, as a hung browser does.
+        process.kill(browserPid(), "SIGSTOP");
+        const restarted = ensure();
+        expect(restarted.status, restarted.stderr).toBe(0);
+        expect(restarted.stdout).toContain("RAKAZO_BROWSER_RESTARTED=unresponsive");
+
+        process.kill(browserPid(), "SIGSTOP");
+        const again = ensure();
+        expect(again.status).toBe(77);
+        expect(again.stdout).not.toContain("RAKAZO_BROWSER_RESTARTED");
+        expect(again.stderr).toContain("computer browser CDP not ready");
+      } finally {
+        spawnSync("pkill", ["-KILL", "-f", fake]);
+      }
+    },
+  );
 
   it.skipIf(process.platform !== "linux").each([false, true])(
     "repairs an empty control route or fails if publication fails (failPublish=%s)",
@@ -1003,11 +1145,14 @@ describe("shared Linux desktop lifecycle", () => {
         preservePrimaryDisplay: true,
       };
       const { debugPort } = screenPorts(0, screenEnv);
+      writeFileSync(path.join(bin, "websockify"), "#!/bin/sh\n", { mode: 0o755 });
       writeFileSync(
         path.join(bin, "rakazo-browser"),
         [
           "#!/usr/bin/env python3",
           "import os, socket, sys, time",
+          "if not any(arg.startswith('--remote-debugging-port=') for arg in sys.argv[1:]):",
+          `    os.execv(sys.executable, [sys.executable, __file__, "--remote-debugging-port=${debugPort}", *sys.argv[1:]])`,
           `open(${JSON.stringify(launches)}, "a").write("launch\\n")`,
           "server = socket.socket()",
           "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
@@ -1262,6 +1407,14 @@ describe("shared Linux desktop lifecycle", () => {
       [
         "#!/usr/bin/env python3",
         "import os, socket, sys, time",
+        "port = None",
+        "for arg in sys.argv[1:]:",
+        "    if arg.startswith('--remote-debugging-port='):",
+        "        port = int(arg.split('=', 1)[1])",
+        "if port is None:",
+        "    display = os.environ.get('DISPLAY', ':1').lstrip(':').split('.', 1)[0]",
+        "    port = 9221 + int(display)",
+        "    os.execv(sys.executable, [sys.executable, __file__, f'--remote-debugging-port={port}', *sys.argv[1:]])",
         "log = os.environ.get('BROWSER_LOG')",
         "if log:",
         "    handle = open(log, 'a')",
@@ -1271,12 +1424,6 @@ describe("shared Linux desktop lifecycle", () => {
         "pid_log = os.environ.get('PID_LOG')",
         "if pid_log:",
         "    open(pid_log, 'a').write(str(os.getpid()) + '\\n')",
-        "port = None",
-        "for arg in sys.argv[1:]:",
-        "    if arg.startswith('--remote-debugging-port='):",
-        "        port = int(arg.split('=', 1)[1])",
-        "if port is None:",
-        "    raise SystemExit('missing debugging port')",
         "server = socket.socket()",
         "server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)",
         "server.bind(('127.0.0.1', port))",
@@ -1288,8 +1435,14 @@ describe("shared Linux desktop lifecycle", () => {
         "        request = connection.recv(1024)",
         "    except socket.timeout:",
         "        request = b''",
-        "    connection.close()",
+        // The screen check asks for the version; Browser.close asks for it and then connects.
         "    if b'GET /json/version' in request:",
+        '        body = b\'{"webSocketDebuggerUrl": "ws://127.0.0.1:%d/devtools/browser/fake"}\' % port',
+        "        connection.sendall(b'HTTP/1.1 200 OK\\r\\nContent-Length: %d\\r\\n\\r\\n' % len(body) + body)",
+        "        connection.close()",
+        "        continue",
+        "    connection.close()",
+        "    if b'GET /devtools/' in request:",
         "        break",
         "",
       ].join("\n"),

@@ -112,6 +112,12 @@ export const ENCRYPTED_MODELS: Record<string, ModelSpec> = {
     space: { column: "spaceId" },
     ownerRelation: "thread",
   },
+  PageReaderState: {
+    table: "page_reader_states",
+    fields: { values: { plainKeys: NO_PLAINTEXT_KEYS } },
+    space: { column: "spaceId" },
+    ownerRelation: "user",
+  },
   /** A bot's inbox. Recipients and file names stay plaintext; `key` and `messageId` are lookups. */
   BotEmailMessage: {
     table: "bot_email_messages",
