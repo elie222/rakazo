@@ -31,6 +31,33 @@ describe("mobile voice call entry", () => {
     expect(fakes.loadVoiceStatus).not.toHaveBeenCalled();
   });
 
+  it("keeps device speech but uses the configured transcriber for automatic language", async () => {
+    const fakes = deps({
+      deviceVoice: true,
+      dictation: true,
+      status: { ready: false, transcribe: true },
+    });
+    await expect(resolveVoiceCallPlan({ ...fakes, autoLanguage: true })).resolves.toEqual({
+      kind: "device",
+      transcribe: true,
+    });
+    expect(fakes.dictationAvailable).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    "requires a transcriber before dialing in automatic mode (device voice: %s)",
+    async (deviceVoice) => {
+      const fakes = deps({
+        deviceVoice,
+        dictation: true,
+        status: { ready: true, transcribe: false },
+      });
+      await expect(resolveVoiceCallPlan({ ...fakes, autoLanguage: true })).resolves.toEqual({
+        kind: "dictation",
+      });
+    },
+  );
+
   it("reports missing speech recognition instead of opening provider setup", async () => {
     const fakes = deps({
       deviceVoice: true,

@@ -203,6 +203,10 @@ export function CallCard() {
             {call.caption || call.heard || " "}
           </Text>
         </View>
+      ) : call.phase === "listening" && call.caption ? (
+        <Text style={[styles.line, { color: tokens.mutedForeground, marginTop: 12 }]}>
+          {call.caption}
+        </Text>
       ) : null}
     </GlassSurface>
   );

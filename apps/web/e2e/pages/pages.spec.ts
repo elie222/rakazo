@@ -453,6 +453,82 @@ test("shared page contents jump below the header and copy fallback", async ({
   await visitor.close();
 });
 
+test("a page shows the pictures kept with it to its owner and on its shared link", async ({
+  page,
+  browser,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-pictures-${Date.now()}@rakazo.test`, "password12", "Trip Planner");
+  await completeOnboarding(page);
+  const photo = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 675;
+    const draw = canvas.getContext("2d")!;
+    const sky = draw.createLinearGradient(0, 0, 0, 675);
+    sky.addColorStop(0, "#f4b183");
+    sky.addColorStop(0.55, "#c5d7e8");
+    sky.addColorStop(1, "#2f5d7c");
+    draw.fillStyle = sky;
+    draw.fillRect(0, 0, 1200, 675);
+    draw.fillStyle = "#fbe3a1";
+    draw.beginPath();
+    draw.arc(820, 300, 70, 0, Math.PI * 2);
+    draw.fill();
+    draw.fillStyle = "#1d3b52";
+    draw.fillRect(0, 430, 1200, 245);
+    draw.fillStyle = "#3c4a3e";
+    draw.beginPath();
+    draw.moveTo(0, 440);
+    draw.lineTo(260, 300);
+    draw.lineTo(520, 440);
+    draw.fill();
+    return canvas.toDataURL("image/png").split(",")[1]!;
+  });
+  const file = await rpc<{ id: string }>(page, "artifacts/create", {
+    botId: activeBotId(page),
+    name: "harbour.png",
+    mimeType: "image/png",
+    contentBase64: photo,
+  });
+  const title = "Harbour weekend";
+  const source = `export default function Trip() {
+    return <Page title="Harbour weekend" summary="Two nights by the water.">
+      <Image src="image:harbour" alt="The harbour at dusk" caption="The view from the quay" ratio="16/9" />
+      <CardGrid label="Where to stay">
+        <ProductCard title="Quay Hotel" image="image:harbour" price="$180 a night" note="Sea view" />
+        <ProductCard title="Old Town Inn" price="$120 a night" note="Ten minutes on foot" />
+      </CardGrid>
+    </Page>;
+  }`;
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source, images: { harbour: file.id } })}\nthen say Done.`,
+  );
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const picture = pageFrame(page, title).getByRole("img", { name: "The harbour at dusk" });
+  await expect(picture).toHaveAttribute("src", /^data:image\/webp;base64,/);
+  await expect(pageFrame(page, title).getByRole("img", { name: "Quay Hotel" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "page-pictures");
+
+  await page.getByTestId("page-view").getByRole("button", { name: "Share" }).click();
+  const share = page.getByTestId("page-share");
+  await share.getByRole("radio", { name: /Anyone with the link/ }).click();
+  const link = share.getByRole("link", { name: "Open link" });
+  await expect(link).toBeVisible();
+  const visitor = await browser.newContext({ reducedMotion: "reduce" });
+  const outside = await visitor.newPage();
+  await outside.setViewportSize({ width: 1280, height: 860 });
+  await outside.goto((await link.getAttribute("href"))!);
+  await expect(
+    pageFrame(outside, title).getByRole("img", { name: "The harbour at dusk" }),
+  ).toHaveAttribute("src", /^data:image\/webp;base64,/);
+  await captureScreenshot(outside, testInfo, "page-public-pictures");
+  await visitor.close();
+});
+
 test("a bot's page shows in its reply, opens full screen, is shared by link and updates", async ({
   page,
   browser,

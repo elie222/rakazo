@@ -2,14 +2,14 @@ import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Connection, ConnectionCatalogItem, RpcOutput } from "@rakazo/contracts";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
-import { appToolLabel, catalogItemKey } from "@rakazo/core";
+import { catalogItemKey } from "@rakazo/core";
 import type { Dispatch, SetStateAction } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { NativeActionButton } from "../native/native-action-button";
-import { Chevron } from "../ui/row-accessories";
 import { ConnectorIcon } from "./connector-icon";
 import { createIntegrationsStyles, LOGO_SIZE } from "./integrations-styles";
+import { ToolPermissions } from "./tool-permissions";
 
 export type ConnectionTool = RpcOutput<"connections/tools">[number];
 
@@ -22,8 +22,7 @@ export function IntegrationDetail({
   setLabelDrafts,
   tools,
   toolsLoading,
-  toolsOpen,
-  setToolsOpen,
+  toolsFailed,
   onBack,
   onUninstall,
   onRename,
@@ -38,8 +37,7 @@ export function IntegrationDetail({
   setLabelDrafts: Dispatch<SetStateAction<Record<string, string>>>;
   tools: ConnectionTool[];
   toolsLoading: boolean;
-  toolsOpen: boolean;
-  setToolsOpen: Dispatch<SetStateAction<boolean>>;
+  toolsFailed: boolean;
   onBack: () => void;
   onUninstall: () => void;
   onRename: (row: Connection) => void;
@@ -52,7 +50,6 @@ export function IntegrationDetail({
   const key = catalogItemKey(item);
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
-  const toolCount = tools.length;
 
   return (
     <View style={styles.detail}>
@@ -114,41 +111,20 @@ export function IntegrationDetail({
         />
       </View>
 
-      <View style={styles.card}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ expanded: toolsOpen }}
-          onPress={() => setToolsOpen((open) => !open)}
-          style={styles.toolsToggle}
-        >
-          <Text style={styles.title}>
-            {toolsLoading
-              ? t`Tools`
-              : toolCount === 1
-                ? t`1 tool`
-                : t`${ph({ count: toolCount })} tools`}
-          </Text>
-          <Chevron expanded={toolsOpen} />
-        </Pressable>
-        {toolsOpen ? (
-          <View style={styles.toolsBody}>
-            {toolsLoading ? (
-              <ActivityIndicator
-                color={native.secondaryLabel}
-                accessibilityLabel={t`Loading tools…`}
-              />
-            ) : tools.length === 0 ? (
-              <Text style={styles.secondary}>{t`No tools available.`}</Text>
-            ) : (
-              tools.map((tool) => (
-                <Text key={tool.name} style={styles.toolName}>
-                  {appToolLabel(tool.name, item.slug)}
-                </Text>
-              ))
-            )}
-          </View>
-        ) : null}
-      </View>
+      {toolsFailed ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {t`Could not load permissions`}
+        </Text>
+      ) : toolsLoading ? (
+        <ActivityIndicator
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={t`Loading tool permissions…`}
+          color={native.secondaryLabel}
+        />
+      ) : tools.length > 0 ? (
+        <ToolPermissions tools={tools} slug={item.slug} />
+      ) : null}
       {item.chatApp ? (
         <Text accessibilityRole="link" onPress={onOpenChatApp} style={styles.inlineLink}>
           {t`Chat from ${ph({ name: item.name })}`}

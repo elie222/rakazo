@@ -3,7 +3,12 @@ import {
   MOBILE_MEETING_CALENDAR_CALLBACK_URL,
 } from "@rakazo/contracts";
 import { receiveIncomingShare } from "../lib/composer/incoming-share";
-import { closeSettingsSheet, isSettingsLink, linkScreen } from "../lib/settings/settings-sheet";
+import {
+  closeSettingsSheet,
+  isSettingsLink,
+  linkScreen,
+  stripSettingsReturn,
+} from "../lib/settings/settings-sheet";
 
 const browserCallbacks = new Set(
   [MOBILE_MCP_OAUTH_CALLBACK_URL, MOBILE_MEETING_CALENDAR_CALLBACK_URL].map(linkScreen),
@@ -19,5 +24,5 @@ export function redirectSystemPath({ path, initial }: { path: string; initial: b
   // The in-app browser already handed this to the sign-in that opened it; stay put.
   if (browserCallbacks.has(screen)) return "";
   if (!isSettingsLink(path)) closeSettingsSheet();
-  return isShare ? "/share" : path;
+  return isShare ? "/share" : stripSettingsReturn(path);
 }

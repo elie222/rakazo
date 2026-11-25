@@ -1,21 +1,25 @@
 import { createHash } from "node:crypto";
-import type { Actor, PageComment, PageReview } from "@rakazo/contracts";
+import type { ArtifactStore } from "@rakazo/adapter-kit";
+import type { Actor, PageComment, PageImageSource, PageReview } from "@rakazo/contracts";
 import { PageRevisionStatus } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   cancelPageGrantRequests,
   canPageRequestRevision,
+  findPageVersionImage,
   IsolationError,
   lockPage,
   pageOwnerWhere,
   pageRevisionBotSelect,
   pageRevisionPendingCutoff,
+  pageVersionImages,
   runAsSystem,
   signalPage,
   signalPageUsers,
   verifiedPageAccount,
 } from "@rakazo/db";
+import { readPageImage } from "./pages.js";
 
 const LIST_SIZE = 40;
 const MAX_GRANTS = 50;
@@ -119,19 +123,38 @@ export function getPageReview(
     if (reviewed < (grant?.firstVersion ?? 1)) throw new IsolationError();
     const stored = await tx.pageVersion.findUnique({
       where: { pageId_version: { pageId, version: reviewed } },
-      select: { title: true, code: true },
+      select: { id: true, title: true, code: true, images: true },
     });
     if (!stored) throw new IsolationError();
     return {
       id: pageId,
       title: reviewed === page.currentVersion ? page.title : stored.title,
       code: stored.code,
+      images: pageVersionImages(stored),
       currentVersion: page.currentVersion,
       version: reviewed,
       owner,
       canRequestRevision: await canPageRequestRevision(tx, page),
     };
   });
+}
+
+export async function getPageImage(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  actor: Actor,
+  { pageId, version, imageId }: { pageId: string; version: number; imageId: string },
+): Promise<PageImageSource> {
+  const image = await readPageReview(deps.prisma, actor, pageId, async (tx, { grant }) => {
+    if (version < (grant?.firstVersion ?? 1)) throw new IsolationError();
+    const stored = await tx.pageVersion.findUnique({
+      where: { pageId_version: { pageId, version } },
+      select: { id: true, pageId: true, images: true },
+    });
+    const image = stored ? await findPageVersionImage(tx, stored, imageId) : null;
+    if (!image) throw new IsolationError();
+    return image;
+  });
+  return readPageImage(deps.artifacts, actor, image);
 }
 
 export function getPageGrants(prisma: PrismaClient, actor: Actor, pageId: string) {

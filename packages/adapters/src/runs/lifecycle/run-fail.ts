@@ -165,6 +165,14 @@ export async function failRun(
     leaseFence: ctx.fence,
     outcome: "failed",
     error: message,
+    // A fresh run has fresh tool effect keys. Only offer it when this was the first
+    // attempt and its model failed before any tool could have done work.
+    retryable:
+      run.trigger === "user" &&
+      ctx.fence === 1 &&
+      error instanceof TransientModelError &&
+      !ctx.state.toolStarted &&
+      partialReply.length === 0,
     ...(partialReply.length > 0 ? { partialReply } : {}),
   });
   if (!failed) return;

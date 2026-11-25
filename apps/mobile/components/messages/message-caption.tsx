@@ -29,12 +29,13 @@ export function MessageCaption({
   const mentionLink = useContext(MessageMentionsContext);
   const userMentions = useContext(UserMentionsContext);
   const openPage = useContext(OpenPageContext);
+  const textColor = received ? tokens.foreground : tokens.chatUserForeground;
   // User messages keep literal Markdown; only explicit URLs, email addresses and page links link.
   // Links stay the bubble's text colour (underlined): link blue is too faint on chatUser.
   return role === "user" ? (
     <LinkifiedText
-      color={received ? tokens.foreground : tokens.chatUserForeground}
-      linkColor={received ? tokens.foreground : tokens.chatUserForeground}
+      color={textColor}
+      linkColor={textColor}
       palette={tokens}
       renderText={
         userMentions
@@ -45,7 +46,7 @@ export function MessageCaption({
                     key={index}
                     target={part.target}
                     label={part.text.slice(1)}
-                    color={tokens.chatUserForeground}
+                    color={textColor}
                     onOpenBot={userMentions.onOpenBot}
                   />
                 ) : (

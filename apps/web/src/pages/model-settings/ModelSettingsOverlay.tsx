@@ -78,6 +78,8 @@ export function ModelSettingsOverlay({
     credentials,
     disconnectCredential,
     disconnectName,
+    disconnectPreviewLoading,
+    disconnectWarning,
     endpointPresets,
     error,
     groups,
@@ -485,8 +487,13 @@ export function ModelSettingsOverlay({
       open={confirmDisconnect}
       onCancel={() => setConfirmDisconnect(false)}
       title={<Trans>Disconnect {disconnectName}?</Trans>}
-      description={<Trans>This removes the connection from every space.</Trans>}
-      confirmDisabled={pending === "disconnect"}
+      description={
+        <>
+          <Trans>This removes the connection from every space.</Trans>
+          {disconnectWarning ? <> {disconnectWarning}</> : null}
+        </>
+      }
+      confirmDisabled={pending === "disconnect" || disconnectPreviewLoading}
       onConfirm={() => {
         setConfirmDisconnect(false);
         setConnectionAt(null);

@@ -182,10 +182,6 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
   await expect(settings.getByTestId("voice-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice");
-  const voice = settings.getByTestId("voice-settings");
-  await chooseOption(voice.getByLabel("Provider", { exact: true }), "xAI");
-  await expect(voice.getByLabel("API key", { exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "settings-shell-voice-xai");
 
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("user-settings")).toHaveCount(0);
