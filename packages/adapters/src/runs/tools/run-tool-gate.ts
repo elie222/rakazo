@@ -33,6 +33,7 @@ import {
 import {
   boundDirectApprovalDetails,
   DENIED_ACTION_ERROR,
+  policyRefusalMessage,
   resolveDuplicateEffectGate,
   settleUncertainEffect,
   uncertainEffectResult,
@@ -399,14 +400,11 @@ export async function gateToolCall(
       });
   if (plan === "deny") {
     const reason = approvalResolved.decision === "deny" ? "rule" : "never_asks";
-    const message =
-      approvalResolved.decision === "deny"
-        ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
-        : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`;
+    const message = policyRefusalMessage(reason, name, blockingRuleSuffix(approvalResolved));
     if (approvedEffectKey) {
       const closed = await denyApprovedEffect(deps, run, approvedEffectKey, reason, message);
       if (closed && ctx.state.effects.deniedKeys) {
-        (await ctx.state.effects.deniedKeys).set(approvedEffectKey, false);
+        (await ctx.state.effects.deniedKeys).add(approvedEffectKey);
       }
     }
     await auditToolCall(ctx, name, "denied", { reason });
@@ -538,7 +536,7 @@ export async function gateToolCall(
       data: { status: "denied", result: { refused: "repeat" } },
     });
     if (ctx.state.effects.deniedKeys) {
-      (await ctx.state.effects.deniedKeys).set(effectKey, false);
+      (await ctx.state.effects.deniedKeys).add(effectKey);
     }
     return { result: refusal("action_denied_repeat", DENIED_ACTION_ERROR) };
   }
@@ -712,22 +710,21 @@ export async function gateToolCall(
   return { call };
 }
 
-function isExpiredDeniedResult(result: unknown): boolean {
-  const gate = resolveDuplicateEffectGate({ status: "denied", result }, "");
+function isExpiredDeniedResult(id: string, result: unknown): boolean {
+  const gate = resolveDuplicateEffectGate({ id, status: "denied", result }, "");
   return gate.action === "return" && gate.result === APPROVAL_EXPIRED_RESULT;
 }
 
 function findDeniedReadOnlyEffectKey(
-  keys: ReadonlyMap<string, boolean>,
+  keys: ReadonlySet<string>,
   effectKey: string,
   baseEffectKey: string,
 ): string | undefined {
-  if (keys.get(effectKey) === false) return effectKey;
+  if (keys.has(effectKey)) return effectKey;
   let bestKey: string | undefined;
   let bestOccurrence = -1;
   const occurrencePrefix = `${baseEffectKey}:`;
-  for (const [key, expired] of keys) {
-    if (expired) continue;
+  for (const key of keys) {
     if (key === baseEffectKey) {
       if (bestOccurrence < 0) {
         bestKey = key;
@@ -744,27 +741,30 @@ function findDeniedReadOnlyEffectKey(
       bestOccurrence = occurrence;
     }
   }
-  return bestKey ?? (keys.has(effectKey) ? effectKey : undefined);
+  return bestKey;
 }
 
-function loadDeniedEffectKeys(ctx: RunContext): Promise<Map<string, boolean>> {
+function loadDeniedEffectKeys(ctx: RunContext): Promise<Set<string>> {
   const cached = ctx.state.effects.deniedKeys;
   if (cached) return cached;
   const pending = ctx.deps.prisma.externalEffect?.findMany
     ? ctx.deps.prisma.externalEffect
         .findMany({
           where: { runId: ctx.runId, status: "denied" },
-          select: { idempotencyKey: true, result: true },
+          select: { id: true, idempotencyKey: true, result: true },
         })
-        .then(
-          (rows) =>
-            new Map(rows.map((row) => [row.idempotencyKey, isExpiredDeniedResult(row.result)])),
-        )
+        .then((rows) => {
+          const keys = new Set<string>();
+          for (const row of rows) {
+            if (!isExpiredDeniedResult(row.id, row.result)) keys.add(row.idempotencyKey);
+          }
+          return keys;
+        })
         .catch((error) => {
           ctx.state.effects.deniedKeys = undefined;
           throw error;
         })
-    : Promise.resolve(new Map<string, boolean>());
+    : Promise.resolve(new Set<string>());
   ctx.state.effects.deniedKeys = pending;
   return pending;
 }

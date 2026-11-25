@@ -346,30 +346,28 @@ export function uncertainEffectError(toolName: string): Error {
   );
 }
 
-const RequestSecretPayloadSchema = z.record(z.string(), z.unknown()).nullable();
+const RequestSecretPayloadSchema = z.record(z.string(), z.unknown());
 
-const SavedCredentialResultSchema = z
-  .object({
-    credentialSaved: z
-      .object({
-        name: z.string().min(1),
-        auth: z.object({ type: z.string() }),
-      })
-      .optional(),
-  })
-  .nullable();
+const SavedCredentialResultSchema = z.object({
+  credentialSaved: z
+    .object({
+      name: z.string().min(1),
+      auth: z.object({ type: z.string() }),
+    })
+    .optional(),
+});
 
 function pendingRequestSecretKind(
   runId: string,
   effect: { id: string; request: unknown; result: unknown },
 ): string | undefined {
+  if (effect.request == null) return undefined;
   const request = readJsonColumn(
     RequestSecretPayloadSchema,
     effect.request,
     { table: "external_effects", column: "request", id: effect.id },
-    { fallback: null },
+    "reject",
   );
-  if (!request) return undefined;
   const resolved = resolveRequestSecretDestination(request);
   if (resolved.oneTimeCodeOrigin) return runCodeKind(runId);
   if (resolved.destination) {
@@ -378,9 +376,9 @@ function pendingRequestSecretKind(
       SavedCredentialResultSchema,
       effect.result,
       { table: "external_effects", column: "result", id: effect.id },
-      { fallback: null },
+      "reject",
     );
-    return saved?.credentialSaved?.auth.type === "login"
+    return saved.credentialSaved?.auth.type === "login"
       ? runLoginKind(runId, saved.credentialSaved.name)
       : undefined;
   }

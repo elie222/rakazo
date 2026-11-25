@@ -439,17 +439,22 @@ const DeniedEffectResultSchema = z
   ])
   .nullable();
 
+export function policyRefusalMessage(
+  reason: "rule" | "never_asks",
+  toolName: string,
+  ruleSuffix = "",
+): string {
+  return reason === "rule"
+    ? `${toolName} is blocked in this space${ruleSuffix}. Don't try it another way; tell the user it's blocked.`
+    : `${toolName} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`;
+}
+
 function policyRefusalResult(
   result: { refused: "rule" | "never_asks"; error?: string },
   toolName: string,
 ): { error: string } {
   if (typeof result.error === "string" && result.error.trim()) return { error: result.error };
-  return {
-    error:
-      result.refused === "rule"
-        ? `${toolName} is blocked in this space. Don't try it another way; tell the user it's blocked.`
-        : `${toolName} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`,
-  };
+  return { error: policyRefusalMessage(result.refused, toolName) };
 }
 
 export function resolveDuplicateEffectGate(

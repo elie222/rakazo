@@ -12,7 +12,13 @@ import type { ActionApprovalRule } from "@rakazo/core";
 import { inboundRoutineBlock } from "@rakazo/core";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
 import type { PrismaClient } from "@rakazo/db";
-import { createPendingSteeringRun, runCodeKind, runSecretKind, sendUserMessage } from "@rakazo/db";
+import {
+  APPROVAL_EXPIRED_RESULT,
+  createPendingSteeringRun,
+  runCodeKind,
+  runSecretKind,
+  sendUserMessage,
+} from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DENIED_ACTION_ERROR, isApprovalPausedResult } from "../../approvals/approval-effect.js";
 import { fakeSpendingPrisma } from "../../billing/fake-spending.js";
@@ -6749,5 +6755,30 @@ describe("closing denied approved effects", () => {
         (query as { where?: { status?: unknown } } | undefined)?.where?.status === "denied",
     );
     expect(deniedLookups).toHaveLength(1);
+  });
+
+  it("lets a read-only call run when its earlier approval expired and the call is now allowed", async () => {
+    const args = { query: "weather today" };
+    const key = approvalEffectKey("run-1", "web_search", args);
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+    });
+    f.web.searchHits = [{ title: "Sunny", url: "https://example.test", snippet: "" }];
+    f.effects.push({
+      id: "effect-readonly-expired",
+      runId: "run-1",
+      spaceId: "space-1",
+      kind: "web_search",
+      request: args,
+      idempotencyKey: key,
+      status: "denied",
+      result: APPROVAL_EXPIRED_RESULT,
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+
+    expect(f.results).toHaveLength(1);
+    expect(f.results[0]).toMatchObject({ results: [{ title: "Sunny" }] });
   });
 });

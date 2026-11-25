@@ -1,5 +1,11 @@
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
-import { RunHistoryWriteError, runCodeKind, runLoginKind, runSecretKind } from "@rakazo/db";
+import {
+  JsonColumnMismatchError,
+  RunHistoryWriteError,
+  runCodeKind,
+  runLoginKind,
+  runSecretKind,
+} from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildApprovalContinuation,
@@ -457,7 +463,7 @@ describe("denyApprovedEffect", () => {
     expect(f.deleteManySecret).not.toHaveBeenCalled();
   });
 
-  it("does not delete generic run secrets when closing a non-login credential or malformed request_secret", async () => {
+  it("does not delete generic run secrets for a non-login credential and rejects malformed request_secret payloads", async () => {
     const bearer: Effect = {
       ...effect("run-1:tool:bearer", "run-1"),
       id: "eff-bearer",
@@ -483,10 +489,12 @@ describe("denyApprovedEffect", () => {
     const f = fixture([bearer, malformed]);
 
     await denyApprovedEffect(f.deps, scope, "run-1:tool:bearer", "rule", "blocked");
-    await denyApprovedEffect(f.deps, scope, "run-1:tool:malformed", "rule", "blocked");
+    await expect(
+      denyApprovedEffect(f.deps, scope, "run-1:tool:malformed", "rule", "blocked"),
+    ).rejects.toBeInstanceOf(JsonColumnMismatchError);
 
     expect(bearer.status).toBe("denied");
-    expect(malformed.status).toBe("denied");
+    expect(malformed.status).toBe("approved");
     expect(f.deleteManySecret).not.toHaveBeenCalled();
   });
 
