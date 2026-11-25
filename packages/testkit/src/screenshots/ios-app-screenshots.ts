@@ -80,15 +80,14 @@ async function main() {
   });
   const { apiUrl, databaseUrl } = backend;
   const metroPort = await freeMetroPort();
-  await pointAppAtMetro(udid, metroPort);
   const metro = await startMetro(apiUrl, outDir, metroPort);
   const screenRelay = await startScreenRelay(apiUrl, outDir).catch(async (error: unknown) => {
     metro.stop();
     await backend.stop();
-    await restoreAppMetro(udid);
     throw error;
   });
   try {
+    await pointAppAtMetro(udid, metroPort);
     await firstLaunch(udid, outDir);
     const fixture = await seedIosScreenshotFixture({
       apiUrl,
