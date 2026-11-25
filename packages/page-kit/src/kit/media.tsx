@@ -309,8 +309,9 @@ export function Gallery({
     .slice(0, GALLERY_MAX);
   const track = useRef<HTMLDivElement>(null);
   const [chosen, setCurrent] = useState(0);
-  const [zoomed, setZoomed] = useState<{ src: string; alt: string }>();
+  const [zoomed, setZoomed] = useState<number>();
   if (items.length === 0) return null;
+  const enlarged = zoomed === undefined ? undefined : items[zoomed];
   // Fewer photos on a later render keep the last one marked rather than none.
   const current = Math.min(chosen, items.length - 1);
   // A right-to-left track starts at zero and scrolls to negative offsets towards later photos.
@@ -342,7 +343,13 @@ export function Gallery({
           if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
             event.preventDefault();
             const step = (event.key === "ArrowRight" ? 1 : -1) * side(event.currentTarget);
-            show(Math.min(items.length - 1, Math.max(0, current + step)));
+            const next = Math.min(items.length - 1, Math.max(0, current + step));
+            show(next);
+            if (event.target !== event.currentTarget) {
+              event.currentTarget
+                .querySelectorAll<HTMLButtonElement>(".rk-zoom")
+                [next]?.focus({ preventScroll: true });
+            }
           }
         }}
         onScroll={(event) => {
@@ -367,15 +374,15 @@ export function Gallery({
               aria-label={
                 photo.alt ? words.t("enlarge", { name: photo.alt }) : words.t("enlargeImage")
               }
-              onClick={() => setZoomed(photo)}
+              onClick={() => setZoomed(index)}
             >
               <Picture src={photo.src} alt={photo.alt} style={{ height: "100%" }} />
             </button>
           </figure>
         ))}
       </div>
-      {zoomed ? (
-        <Lightbox src={zoomed.src} alt={zoomed.alt} onClose={() => setZoomed(undefined)} />
+      {enlarged ? (
+        <Lightbox src={enlarged.src} alt={enlarged.alt} onClose={() => setZoomed(undefined)} />
       ) : null}
       {items.length > 1
         ? (

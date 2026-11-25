@@ -185,6 +185,16 @@ describe("media", () => {
     expect(q('[role="dialog"]')?.getAttribute("aria-label")).toBe("Pool");
   });
 
+  it("moves focus with the photo when arrow keys step from a focused photo", () => {
+    render(<Gallery photos={["A", "B"].map((alt) => ({ src: PNG, alt }))} />);
+    const photo = q<HTMLButtonElement>('button[aria-label="Enlarge A"]')!;
+    photo.focus();
+    act(() => {
+      photo.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Enlarge B");
+  });
+
   it("steps through a gallery with arrows that leave at either end", () => {
     render(<Gallery photos={["A", "B", "C"].map((alt) => ({ src: PNG, alt }))} />);
     const arrows = () => all(".rk-gallery-arrow").map((arrow) => arrow.getAttribute("aria-label"));
