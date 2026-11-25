@@ -347,7 +347,12 @@ export function createBotAccess(deps: BotAccessDeps) {
         }
         if (!TASK_EVENTS.has(event.type)) continue;
         const next = await readTask(start.actor, last.id);
-        if (next.output === last.output && next.status === last.status) continue;
+        if (
+          next.output === last.output &&
+          next.status === last.status &&
+          next.question === last.question
+        )
+          continue;
         last = next;
         yield last;
         if (taskSettled(last.status)) return;

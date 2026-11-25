@@ -1,5 +1,5 @@
 import type { PublicBot, PublicTask } from "@rakazo/contracts";
-import { THREAD_MESSAGE_TEXT_MAX_LENGTH } from "@rakazo/contracts";
+import { THREAD_MESSAGE_TEXT_MAX_LENGTH, taskSettled } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import * as z from "zod";
 
@@ -50,6 +50,14 @@ export function taskAnswer(task: PublicTask): string {
   return [task.output, task.question].filter(Boolean).join("\n\n");
 }
 
+/**
+ * `stop` once the turn settled. `length` marks an answer cut off while the bot still works (the
+ * wait ran out or the stream ended), so a client does not take it as complete.
+ */
+export function finishReason(task: PublicTask): "stop" | "length" {
+  return taskSettled(task.status) ? "stop" : "length";
+}
+
 export function completionId(task: PublicTask): string {
   return `chatcmpl-${task.id}`;
 }
@@ -67,7 +75,7 @@ export function chatCompletion(task: PublicTask, model: string, created: number)
         index: 0,
         message: { role: "assistant" as const, content: taskAnswer(task), refusal: null },
         logprobs: null,
-        finish_reason: "stop" as const,
+        finish_reason: finishReason(task),
       },
     ],
     usage: NO_USAGE,
@@ -79,14 +87,14 @@ export function chatCompletionChunk(
   model: string,
   created: number,
   delta: { role?: "assistant"; content?: string },
-  finishReason: "stop" | null = null,
+  finish: "stop" | "length" | null = null,
 ) {
   return {
     id: completionId(task),
     object: "chat.completion.chunk" as const,
     created,
     model,
-    choices: [{ index: 0, delta, logprobs: null, finish_reason: finishReason }],
+    choices: [{ index: 0, delta, logprobs: null, finish_reason: finish }],
   };
 }
 

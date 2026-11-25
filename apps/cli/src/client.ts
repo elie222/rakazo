@@ -80,12 +80,14 @@ export function createClient(config: CliConfig, fetchImpl: typeof fetch = fetch)
       for await (const event of readEvents(response.body)) {
         if (event.data === "[DONE]") return;
         const chunk = JSON.parse(event.data) as {
-          choices?: Array<{ delta?: { content?: string } }>;
+          choices?: Array<{ delta?: { content?: string }; finish_reason?: string | null }>;
           error?: { message?: string };
         };
         if (chunk.error) throw new ApiError(500, chunk.error.message ?? "The stream stopped");
         const content = chunk.choices?.[0]?.delta?.content;
         if (content) yield content;
+        if (chunk.choices?.[0]?.finish_reason === "length")
+          throw new ApiError(504, "The bot is still working; follow the task for the rest");
       }
       throw new ApiError(502, "The reply stopped before it finished");
     },

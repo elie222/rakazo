@@ -1,6 +1,6 @@
 import { taskCallbackRootKey } from "@rakazo/adapters";
 import type { PublicTask } from "@rakazo/contracts";
-import { CreateTaskInputSchema, TaskMessageInputSchema, taskSettled } from "@rakazo/contracts";
+import { CreateTaskInputSchema, TaskMessageInputSchema } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
@@ -13,6 +13,7 @@ import {
   ChatCompletionRequestSchema,
   chatCompletion,
   chatCompletionChunk,
+  finishReason,
   latestUserText,
   modelList,
   openAiError,
@@ -188,8 +189,7 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
           }
           if (last.status === "failed" || last.status === "cancelled")
             send(openAiError(502, last.error ?? "The bot stopped"));
-          else if (taskSettled(last.status))
-            send(chatCompletionChunk(last, request.model, created, {}, "stop"));
+          else send(chatCompletionChunk(last, request.model, created, {}, finishReason(last)));
           done();
         },
         (send, failure) => send(openAiError(failure.status, failure.message)),

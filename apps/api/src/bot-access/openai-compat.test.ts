@@ -85,6 +85,11 @@ describe("OpenAI-compatible chat", () => {
     });
   });
 
+  it("marks an answer cut off while the bot still works", () => {
+    const working = { ...task, status: "working" as const, question: null };
+    expect(chatCompletion(working, "bot-1", 1).choices[0]?.finish_reason).toBe("length");
+  });
+
   it("streams chat.completion.chunk events", () => {
     expect(chatCompletionChunk(task, "bot-1", 1, { content: "Hi" })).toEqual({
       id: "chatcmpl-task-1",
