@@ -381,6 +381,10 @@ export function createBotAccess(deps: BotAccessDeps) {
     } catch (error) {
       if (!signal.aborted) throw error;
     }
+    // The wait may end just as access does; the snapshot goes only to a caller still allowed it.
+    const grant = { keyId: caller.keyId, userId: caller.userId, spaceId: start.actor.spaceId };
+    if (!(await apiKeyStillGrants(prisma, grant)))
+      throw new ApiKeyRefusal("UNAUTHORIZED", "Invalid API key");
     return last;
   }
 
