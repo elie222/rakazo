@@ -178,6 +178,8 @@ On Apple silicon Macs with macOS 26 or later, builds that include a server bundl
 
 Other builds and platforms use Docker Compose and the published images (see [Published images](#published-images-no-checkout)); their managed API gets a Docker-assigned loopback port. These Docker containers keep running after the app quits. **Quit and Stop Bots** in the application menu stops the managed stack and quits, for either runtime; switching to another server also stops it. Unpackaged development builds normally have no server bundle; use **Existing instance** for the source development stack.
 
+On headless Linux hosts running the API and worker directly, install Fontconfig and a Latin font for PNG chart labels. On Debian and Ubuntu, install `fontconfig` and `fonts-dejavu-core`.
+
 For source development in WSL, keep the checkout and `data` directory in the Linux filesystem (for example, `~/rakazo`), and run `pnpm dev` as your normal user. The host-run supervisor matches bot container UID/GID to that user. If Docker Desktop container IPs are unreachable, set `SANDBOX_CONTROL_VIA_LOOPBACK=true` in `.env`; this publishes the token-protected control service on a random loopback port. Leave this unset for the Compose-hosted supervisor.
 
 Compose bot homes mount only their own subdirectory of the application volume using Docker volume semantics. Docker's internal volume paths are never used as host bind mounts.
