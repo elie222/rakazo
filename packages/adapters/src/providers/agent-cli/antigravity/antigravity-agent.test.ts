@@ -1,4 +1,4 @@
-import { lstatSync, mkdtempSync, readlinkSync, rmSync } from "node:fs";
+import { lstatSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +40,10 @@ describe("antigravityAgent", () => {
       toolServer: "rakazo",
       env,
     });
-    // A second turn reuses the same home and links.
+    // A sign-in the CLI wrote over a link is replaced by the link again on the next turn.
+    const own = join(launch.env.GEMINI_HOME!, "antigravity-acp");
+    rmSync(join(own, "acp_token.json"));
+    writeFileSync(join(own, "acp_token.json"), "{}");
     await antigravityAgent.launch({ files: operatorHome, instructions: "", toolServer: "", env });
 
     expect(launch.args).toEqual(["acp"]);

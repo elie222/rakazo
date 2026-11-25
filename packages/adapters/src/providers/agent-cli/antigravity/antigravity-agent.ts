@@ -1,4 +1,5 @@
-import { mkdir, symlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, rename, symlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { privateFolder } from "../../../cli-models/cli-process.js";
@@ -26,12 +27,12 @@ async function linkSignIn(home: string, operatorHome: string): Promise<void> {
   const own = join(home, ACP_FOLDER);
   await mkdir(own, { recursive: true, mode: 0o700 });
   for (const name of SIGN_IN_FILES) {
-    try {
-      await symlink(join(operatorHome, ACP_FOLDER, name), join(own, name));
-    } catch (error) {
-      // Linked before, or a file the CLI has since written in its place (a refreshed sign-in).
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
+    // Made anew every turn, replacing a file the CLI wrote in its place (a refreshed sign-in), so
+    // signing out or switching accounts in the operator's own folder always reaches the bots. A
+    // link made beside it and renamed over it leaves no moment without one.
+    const next = join(own, `.${name}.${randomUUID()}`);
+    await symlink(join(operatorHome, ACP_FOLDER, name), next);
+    await rename(next, join(own, name));
   }
 }
 
