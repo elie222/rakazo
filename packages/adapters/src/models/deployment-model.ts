@@ -48,7 +48,8 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
   }
   const provider = env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
   // An unknown provider gets no key rather than another vendor's.
-  const deployment = modelProviderDefinition(provider)?.deployment;
+  const definition = modelProviderDefinition(provider);
+  const deployment = definition?.deployment;
   const explicitModel = env.PI_DEFAULT_MODEL?.trim();
   const key = deployment ? env[deployment.keyEnv] : undefined;
   const hostCredentials =
@@ -57,8 +58,10 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
     env.PI_DEFAULT_CREDENTIALS?.trim() === "host" &&
     (provider === LOCAL_PROVIDER_ID
       ? localModelIds(env).includes(explicitModel!)
-      : modelProviderDefinition(provider)?.hostCredentials?.resolvedAtRequest ||
-        getEnvApiKey(provider) === HOST_CREDENTIALS);
+      : definition?.hostCredentials?.configured
+        ? definition.hostCredentials.configured(env)
+        : definition?.hostCredentials?.resolvedAtRequest ||
+          getEnvApiKey(provider) === HOST_CREDENTIALS);
   return {
     provider,
     model: explicitModel || deployment?.defaultModel || DEFAULT_OPENROUTER_MODEL_ID,
@@ -66,6 +69,21 @@ export function resolveDeploymentModel(env: NodeJS.ProcessEnv = process.env) {
     configured: Boolean(key) || hostCredentials,
     hostCredentials,
   };
+}
+
+/** Resolve an explicitly selected host identity, never a member's connection. */
+export function deploymentHostCredentialKey(
+  provider: string,
+  modelId: string,
+  signal?: AbortSignal,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const deployment = resolveDeploymentModel(env);
+  return deployment.provider === provider &&
+    deployment.model === modelId &&
+    deployment.hostCredentials
+    ? modelProviderDefinition(provider)?.hostCredentials?.key?.(env, signal)
+    : undefined;
 }
 
 export function deploymentModelUsageLookup(): ModelUsageLookup | undefined {

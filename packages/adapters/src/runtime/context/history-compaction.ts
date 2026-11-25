@@ -1,6 +1,6 @@
 import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
-import { blocksToAgentHistoryText, botMessageContext } from "@rakazo/core";
+import { blocksToAgentHistoryText, botMessageContext, redactSecrets } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { recordUsage, runAsTenant, storedMessageBlocks } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
@@ -9,7 +9,10 @@ import type {
   MemoryProviderResolver,
 } from "../../memory/memory-provider-factory.js";
 import { modelCreditOfferings } from "../../model-credits/offerings.js";
-import { resolveDeploymentModel } from "../../models/deployment-model.js";
+import {
+  deploymentHostCredentialKey,
+  resolveDeploymentModel,
+} from "../../models/deployment-model.js";
 import { modelBilling } from "../../models/model-secret.js";
 import {
   historyCompactionInstructions,
@@ -396,7 +399,11 @@ export async function compactHistory(
           // Provider must come from the same resolver as the key, not a hardcoded one.
           provider: deploymentFallback.provider,
           id: deploymentFallback.model,
-          apiKey: deps.deploymentModelKey,
+          apiKey:
+            (await deploymentHostCredentialKey(
+              deploymentFallback.provider,
+              deploymentFallback.model,
+            )) ?? deps.deploymentModelKey,
           billing: modelBilling({}),
         }
       : await (async () => {
@@ -415,6 +422,7 @@ export async function compactHistory(
     return;
   }
 
+  const secrets = model.apiKey ? [model.apiKey] : [];
   let summary = "";
   let runtimeReportedFailure = false;
   for await (const event of deps.runtime.run(
@@ -437,6 +445,7 @@ export async function compactHistory(
       history: [],
       tools: [],
       model,
+      secrets,
       // An empty summarizer response must reach the retry guard below, not become Pi's
       // user-facing fallback text and advance the cursor without preserving any history.
       allowSilentEmpty: true,
@@ -462,7 +471,7 @@ export async function compactHistory(
       runtimeReportedFailure = true;
     }
     if (event.type === "done" && event.text) {
-      const text = event.text.trim();
+      const text = redactSecrets(event.text, secrets).trim();
       if (/^(?:I hit a problem:|Unknown model )/i.test(text)) runtimeReportedFailure = true;
       else summary = text;
     }

@@ -11,7 +11,7 @@ import {
   creditOfferingFromConnectionId,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
-import { MISSING_MODEL_RUN_ERROR, savedThinkingLevel } from "@rakazo/core";
+import { ClientError, MISSING_MODEL_RUN_ERROR, savedThinkingLevel } from "@rakazo/core";
 import {
   approvedModelCreditOffering,
   modelCreditOfferings,
@@ -26,6 +26,7 @@ import {
 } from "../../models/credits/model-credit-observer.js";
 import type { SavedDeploymentModel } from "../../models/deployment-model.js";
 import {
+  deploymentHostCredentialKey,
   loadAdminDeploymentModelKey,
   matchingAdminDeploymentModel,
   resolveDeploymentModel,
@@ -464,13 +465,24 @@ async function resolveModelKeyMaterial(
   }
   cloudflareProviderEnv({ provider });
   const admin = !operatorFunded && matchingAdminDeploymentModel(adminSettings, provider, modelId);
-  return {
-    apiKey:
-      admin && !(await modelCreditBillingEnabled(deps))
-        ? await loadAdminDeploymentModelKey(deps.secretStore, admin.cipher)
-        : operatorModelKey(deps, provider),
-    redact: [],
-  };
+  if (admin && !(await modelCreditBillingEnabled(deps)))
+    return {
+      apiKey: await loadAdminDeploymentModelKey(deps.secretStore, admin.cipher),
+      redact: [],
+    };
+  try {
+    const hostKey = await deploymentHostCredentialKey(provider, modelId);
+    return { apiKey: hostKey ?? operatorModelKey(deps, provider), redact: [] };
+  } catch (error) {
+    if (
+      !(error instanceof ClientError) &&
+      !(error instanceof DOMException && error.name === "TimeoutError")
+    )
+      throw error;
+    throw new UnavailableModelForAuthError(
+      "The deployment model workload identity is unavailable.",
+    );
+  }
 }
 
 /**

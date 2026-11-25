@@ -11,6 +11,7 @@ import {
 import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
 import {
+  deploymentHostCredentialKey,
   loadAdminDeploymentModelKey,
   matchingAdminDeploymentModel,
 } from "../../models/deployment-model.js";
@@ -170,6 +171,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           history: [],
           tools: [],
           model: resolved.model,
+          secrets: secretsToRedact,
         },
         {
           operationId: judgeId,
@@ -180,7 +182,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           signal: AbortSignal.timeout(this.deps.timeoutMs ?? DEFAULT_TIMEOUT_MS),
         },
       )) {
-        if (event.type === "done" && event.text) text = event.text;
+        if (event.type === "done" && event.text) text = redactSecrets(event.text, secretsToRedact);
         if (event.type === "usage" && !event.accounted) {
           await recordUsage(this.deps.prisma, event, {
             spaceId: input.bot.spaceId,
@@ -294,7 +296,8 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         (admin
           ? await loadAdminDeploymentModelKey(this.deps.secrets, admin.cipher)
           : provider === this.deps.deploymentProvider
-            ? this.deps.deploymentModelKey
+            ? ((await deploymentHostCredentialKey(provider, modelId)) ??
+              this.deps.deploymentModelKey)
             : undefined);
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)

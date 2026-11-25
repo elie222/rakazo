@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
@@ -26,7 +29,10 @@ function setup(billingEnabled: boolean) {
   return { deps, load };
 }
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe("the model an admin set for everyone", () => {
   it("runs on the admin's key and redacts it", async () => {
@@ -129,5 +135,45 @@ describe("the model an admin set for everyone", () => {
       ),
     ).rejects.toThrow(MISSING_MODEL_RUN_ERROR);
     expect(load).not.toHaveBeenCalled();
+  });
+});
+
+describe("an operator's workload identity", () => {
+  it("authorizes the configured deployment model and registers the bearer for redaction", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "deployment-identity-"));
+    try {
+      const tokenFile = join(dir, "token");
+      await writeFile(tokenFile, "test-assertion", { mode: 0o600 });
+      vi.stubEnv("PI_DEFAULT_PROVIDER", "openai");
+      vi.stubEnv("PI_DEFAULT_MODEL", "gpt-6-luna");
+      vi.stubEnv("PI_DEFAULT_CREDENTIALS", "host");
+      vi.stubEnv("OPENAI_API_KEY", "");
+      vi.stubEnv("OPENAI_IDENTITY_TOKEN_FILE", tokenFile);
+      vi.stubEnv("OPENAI_IDENTITY_PROVIDER_ID", "fixture-provider");
+      vi.stubEnv("OPENAI_SERVICE_ACCOUNT_ID", "fixture-account");
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          Response.json({ access_token: "fixture-runtime-bearer", expires_in: 600 }),
+        );
+      vi.stubGlobal("fetch", fetcher);
+      const { deps, load } = setup(false);
+      const registerSecrets = vi.fn();
+      const resolved = await resolveModelKey(
+        deps,
+        scope.userId,
+        scope.spaceId,
+        null,
+        "openai",
+        "gpt-6-luna",
+        registerSecrets,
+      );
+      expect(resolved).toMatchObject({ apiKey: "fixture-runtime-bearer", billing: "deployment" });
+      expect(registerSecrets).toHaveBeenCalledWith(["fixture-runtime-bearer"]);
+      expect(load).not.toHaveBeenCalled();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
