@@ -11,8 +11,8 @@ import {
   View,
 } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
+import type { ImageArtifactPreviewTarget } from "../../lib/artifacts/artifact-gallery";
 import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
-import type { ImageArtifactPreviewTarget } from "../../lib/artifacts/gallery";
 import { NativeSymbol } from "../native/native-symbol";
 import { useImagePreview } from "./use-image-preview";
 

@@ -1,8 +1,8 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { initialWindowMetrics, SafeAreaProvider } from "react-native-safe-area-context";
 import { ImageArtifactViewer } from "../components/media/image-artifact-viewer";
+import { parseImageArtifactGallery } from "../lib/artifacts/artifact-gallery";
 import type { MobileArtifactTarget } from "../lib/artifacts/artifact-open";
-import { galleryPictures } from "../lib/artifacts/gallery";
 
 function first(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? "";
@@ -33,7 +33,7 @@ export default function ImageScreen() {
           name: first(params.name),
           mimeType: first(params.mimeType) || "image/png",
         }}
-        gallery={galleryPictures(first(params.gallery))}
+        gallery={parseImageArtifactGallery(params.gallery)}
         onClose={() => router.back()}
       />
     </SafeAreaProvider>

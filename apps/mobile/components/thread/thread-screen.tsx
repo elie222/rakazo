@@ -486,7 +486,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           ...(gallery
             ? {
                 gallery: JSON.stringify(
-                  gallery.map(({ artifactId, name, mimeType }) => ({ artifactId, name, mimeType })),
+                  gallery.map(({ artifactId: id, name, mimeType }) => ({ id, name, mimeType })),
                 ),
               }
             : {}),
