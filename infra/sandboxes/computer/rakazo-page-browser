@@ -230,14 +230,9 @@ class Tabs:
 
     def begin(self) -> bool:
         """Close a flood of tabs opened since the last call and the tabs beyond MAX_TABS, before the
-        call picks its tab. False when another page call on this screen sees to its tabs: one does at
-        a time, and reads the tabs the last call left only once it holds that turn. Only its first
-        tab list can fail it."""
-        self.lock = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-        try:
-            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            self.release()
+        call picks its tab. False when another page call on this screen sees to its tabs. Only its
+        first tab list can fail it."""
+        if not self.take_turn():
             return False
         tabs = page_tabs(self.port)
         self.start = {tab.get("id") for tab in tabs}
@@ -259,9 +254,22 @@ class Tabs:
             self.trim(tabs)
         return True
 
+    def take_turn(self) -> bool:
+        """Whether this call sees to the screen's tabs: one page call on a screen does at a time. The
+        lock is the system's, so it ends with a killed call, and where it cannot be taken every call
+        still sees to them."""
+        try:
+            self.lock = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+            fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            self.release()
+            return False
+        except OSError:
+            self.release()
+        return True
+
     def release(self) -> None:
-        """Give the next page call on this screen its turn with the tabs. The lock ends with the
-        process, so a call killed on the way holds none."""
+        """Give the next page call on this screen its turn with the tabs."""
         if self.lock is not None:
             os.close(self.lock)
             self.lock = None

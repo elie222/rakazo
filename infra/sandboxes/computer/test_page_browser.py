@@ -1536,6 +1536,15 @@ class NewTabTest(unittest.TestCase):
             self.assertTrue(second.begin())
         self.assertEqual(chromium.ids, ["c", "d", "a", "b", "own"])
 
+    def test_a_call_still_sees_to_the_tabs_where_the_screen_s_lock_cannot_be_taken(self):
+        chromium = FakeTabs("own", *(f"r{index}" for index in range(12)))
+        tabs = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        with patch.object(helper.fcntl, "flock", side_effect=OSError("no locks available")), \
+                patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            self.assertTrue(tabs.begin())
+        self.assertEqual(chromium.closed, [f"r{index}" for index in range(11, 6, -1)])
+
     def test_after_the_browser_starts_every_tab_but_the_call_s_own_is_new(self):
         chromium = FakeTabs("a")
         self.call(chromium, "a")
