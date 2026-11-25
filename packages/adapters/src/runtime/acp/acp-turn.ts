@@ -46,7 +46,7 @@ export function turnText(
     if (item.id) {
       if (session.seen.has(item.id)) {
         // An image that could not be read when the session first saw its message comes now.
-        if (item.images?.length && !session.imaged.has(item.id)) {
+        if (withImages && item.images?.length && !session.imaged.has(item.id)) {
           session.imaged.add(item.id);
           late.push({ line: historyLine(speakerOf(item), content), images: item.images });
         }
@@ -54,7 +54,11 @@ export function turnText(
       }
       session.seen.add(item.id);
       // The session wrote this reply itself, unless a turn running beside it did.
-      if (own && !fresh && (!includeOwn || session.replies.has(contentHash(content)))) continue;
+      if (own && !fresh && (!includeOwn || session.replies.has(contentHash(content)))) {
+        // Its images (a screenshot of its own step) were the session's tool results already.
+        session.imaged.add(item.id);
+        continue;
+      }
     } else {
       const hash = contentHash(content);
       if (session.context.has(hash)) continue;
@@ -93,9 +97,11 @@ export function turnText(
   }
   // Only images actually sent count as sent: an entry cut from a new session's history sends its
   // image later, once it is the session's.
-  for (const { id, images } of kept) if (id && images.length) session.imaged.add(id);
-  if (request.sourceMessageId && request.currentTurnImages?.length) {
-    session.imaged.add(request.sourceMessageId);
+  if (withImages) {
+    for (const { id, images } of kept) if (id && images.length) session.imaged.add(id);
+    if (request.sourceMessageId && request.currentTurnImages?.length) {
+      session.imaged.add(request.sourceMessageId);
+    }
   }
   const message = request.promptSpeaker
     ? historyLine(request.promptSpeaker, request.prompt)

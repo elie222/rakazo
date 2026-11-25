@@ -657,6 +657,33 @@ describe("acpAgentRuntime", () => {
       expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
     });
 
+    it("does not send the bot's own screenshots back to it", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const threadId = `thread-${randomUUID()}`;
+      const screenshot = {
+        name: "s.png",
+        mimeType: "image/png" as const,
+        data: new Uint8Array([9]),
+      };
+
+      await collect(runtime, request({ threadId, sourceMessageId: "m1" }));
+      const history: AgentRunRequest["history"] = [
+        { id: "m1", role: "user", content: "hello" },
+        { id: "m2", role: "assistant", content: "ok", images: [screenshot] },
+      ];
+      await collect(runtime, request({ threadId, prompt: "next", history }));
+      await collect(runtime, request({ threadId, prompt: "again", history }));
+
+      for (const index of [1, 2]) {
+        const prompt = requests("session/prompt")[index]?.params as {
+          prompt: Array<{ type: string }>;
+        };
+        expect(prompt.prompt.map((block) => block.type)).toEqual(["text"]);
+      }
+    });
+
     it("sends an earlier message's image once it can be read", async () => {
       const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
         accessCheck: allowed,
