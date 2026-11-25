@@ -11,7 +11,7 @@ import type {
 import { SandboxUnavailableError } from "@rakazo/adapter-kit";
 import { deadlineSignal, pollUntil } from "@rakazo/core";
 import { COMPUTER_CACHE_ENV, shellQuote } from "@rakazo/core/node/desktop-runtime";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import type { RawExecEvent } from "../../../computers/sandbox/exec-computer.js";
 import { RawExecChannel } from "../../../computers/sandbox/exec-computer.js";
 import { ImageComputerSandbox } from "../../../computers/sandbox/image-computer-sandbox.js";
@@ -106,13 +106,18 @@ export class ExeSandboxProvider extends ImageComputerSandbox {
       const existing = await this.vm(name, signal);
       if (existing) this.assertOwner(existing, name, request.botId);
       if (existing?.status === "running") {
-        // A VM that restarted runs the image's command as root again until it is booted.
-        await this.boot(name, signal);
-        await this.waitForReady(name, request.botId, context);
-        return { id: name, botId: request.botId, kind: "exe", providerRef: name, fresh: false };
+        try {
+          // A VM that restarted runs the image's command as root again until it is booted.
+          await this.boot(name, signal);
+          await this.waitForReady(name, request.botId, context);
+          return { id: name, botId: request.botId, kind: "exe", providerRef: name, fresh: false };
+        } catch (error) {
+          signal.throwIfAborted();
+          // Its computer died or never came back: a fresh VM gets the saved workspace instead.
+          getLogger().warn("replace an exe.dev computer that did not start", { error, vm: name });
+        }
       }
-      if (existing)
-        await bestEffort("delete a stopped exe.dev computer", this.remove(name, signal));
+      if (existing) await this.discard(name, request.botId);
     }
     await this.removeOrphans(request.botId, request.providerRef, signal);
     // VM names are global on exe.dev, and a new one for every start means a later start never
@@ -125,9 +130,7 @@ export class ExeSandboxProvider extends ImageComputerSandbox {
       await this.boot(name, signal);
       await this.waitForReady(name, request.botId, context);
     } catch (error) {
-      await deleteUnreferencedMachine(this.machines, machine, (signal) =>
-        this.remove(name, signal),
-      );
+      await this.discard(name, request.botId);
       throw error;
     }
     return { id: name, botId: request.botId, kind: "exe", providerRef: name, fresh: true };
@@ -203,13 +206,11 @@ export class ExeSandboxProvider extends ImageComputerSandbox {
     const stop = new AbortController();
     const channel = new RawExecChannel(signal, timeoutMs, () => stop.abort());
     const start = async () => {
-      const input = stdin ? await readAll(stdin) : undefined;
-      if (channel.done) return;
       const code = await this.client.run(
         name,
         `${EXEC_WRAPPER} ${command.map(shellQuote).join(" ")}`,
         {
-          stdin: input,
+          stdin,
           signal: stop.signal,
           stdout: (data) => channel.push({ type: "stdout", data }),
           stderr: (data) => channel.push({ type: "stderr", data }),
@@ -238,7 +239,7 @@ export class ExeSandboxProvider extends ImageComputerSandbox {
       name,
       `RAKAZO_EXTRA_ENV=${shellQuote(environment)} bash -s`,
       {
-        stdin: Buffer.from(BOOT_SCRIPT),
+        stdin: [Buffer.from(BOOT_SCRIPT)],
         signal: deadlineSignal(BOOT_TIMEOUT_MS, signal),
         stdout: (data) => output.push(data),
         stderr: (data) => output.push(data),
@@ -302,11 +303,20 @@ export class ExeSandboxProvider extends ImageComputerSandbox {
     }
     for (const vm of vms) {
       if (vm.name === keep || !this.owns(vm, botId)) continue;
-      await bestEffort(
-        "delete an exe.dev computer left by an earlier start",
-        this.remove(vm.name, signal),
-      );
+      await this.discard(vm.name, botId);
     }
+  }
+
+  /**
+   * Deletes a VM no computer will use again, trying again and handing one that stays to the
+   * unreferenced-machine sweep, so a failed delete never leaves it billing. Never rejects.
+   */
+  private async discard(name: string, botId: string): Promise<void> {
+    await deleteUnreferencedMachine(
+      this.machines,
+      { provider: "exe", machineId: name, homeKey: botId },
+      (signal) => this.remove(name, signal),
+    );
   }
 
   private async remove(name: string, signal: AbortSignal): Promise<void> {
@@ -365,12 +375,6 @@ export class ExeSandboxProvider extends ImageComputerSandbox {
 
 function vmName(computer: ComputerRef): string {
   return computer.providerRef || computer.id;
-}
-
-async function readAll(stream: Readable): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
-  return Buffer.concat(chunks);
 }
 
 function sandboxGone(name: string, cause?: unknown): Error {

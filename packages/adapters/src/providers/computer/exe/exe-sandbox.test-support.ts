@@ -14,6 +14,8 @@ export interface Vm extends ExeVm {
   created?: ExeCreateOptions;
   /** How many times the boot script ran on it. */
   boots: number;
+  /** Its computer's command died after it booted, so booting it again fails. */
+  computerDied?: boolean;
 }
 
 export interface Run {
@@ -77,25 +79,24 @@ export class FakeExe implements ExeClient {
     this.vms.delete(name);
   }
 
-  run(name: string, script: string, options: ExeRunOptions): Promise<number> {
+  async run(name: string, script: string, options: ExeRunOptions): Promise<number> {
     this.call(`ssh ${name}`, options.signal);
     const target = this.vms.get(name);
     if (target?.status !== "running") {
-      return Promise.reject(
-        new Error(`exe.dev API error (422) during ssh: VM "${name}" is not running`),
-      );
+      throw new Error(`exe.dev API error (422) during ssh: VM "${name}" is not running`);
     }
     const run: Run = {
       name,
       command: parse(script).map(String),
-      input: options.stdin && Buffer.from(options.stdin),
+      input: options.stdin && (await readAll(options.stdin)),
       aborted: false,
     };
     this.runs.push(run);
     if (run.command[0] !== EXEC_WRAPPER) {
       target.boots += 1;
-      if (this.failBoot) options.stderr(Buffer.from(this.failBoot));
-      return Promise.resolve(this.failBoot ? 1 : 0);
+      const failure = target.computerDied ? "the computer's command has stopped" : this.failBoot;
+      if (failure) options.stderr(Buffer.from(failure));
+      return failure ? 1 : 0;
     }
     const result = this.runner(run.command.slice(1), run.input ?? Buffer.alloc(0));
     if (result === "hang") {
@@ -112,7 +113,7 @@ export class FakeExe implements ExeClient {
     }
     if (result.stdout?.length) options.stdout(Buffer.from(result.stdout));
     if (result.stderr?.length) options.stderr(Buffer.from(result.stderr));
-    return Promise.resolve(result.code ?? 0);
+    return result.code ?? 0;
   }
 
   async vmToken(name: string, expiresAt: number, signal: AbortSignal): Promise<string> {
@@ -139,4 +140,10 @@ export function emulatedExe() {
   const shell = execComputerShell();
   const fake = new FakeExe((command, input) => shell.run(command, input));
   return { fake, provider: providerFor(fake) };
+}
+
+async function readAll(input: AsyncIterable<Uint8Array> | Iterable<Uint8Array>): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of input) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
 }

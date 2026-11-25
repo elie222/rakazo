@@ -168,6 +168,39 @@ describe("ExeSandboxProvider", () => {
     expect([...fake.vms.keys()]).toEqual([created.providerRef]);
   });
 
+  it("replaces a running stored VM whose computer does not start again", async () => {
+    const fake = fakeWith(vm("rakazo-box"));
+    fake.vms.get("rakazo-box")!.computerDied = true;
+    const created = await providerFor(fake).provision(
+      { botId: "bot-a", homePath: "/unused", providerKind: "exe", providerRef: "rakazo-box" },
+      context,
+    );
+    expect(created.fresh).toBe(true);
+    expect([...fake.vms.keys()]).toEqual([created.providerRef]);
+  });
+
+  it("hands a stored VM it could not delete to the records before replacing it", async () => {
+    const fake = fakeWith(vm("rakazo-box", "bot-a", ["rakazo"], "stopped"));
+    fake.onCall = (call) => {
+      if (call === "rm rakazo-box") throw new Error("exe.dev rm: busy");
+    };
+    const records = new MachineRecords();
+    let created: ComputerRef | undefined;
+    let endedAt = 0;
+    const { left } = await settleMachineCleanup(async () => {
+      created = await providerFor(fake, { unreferencedMachines: records }).provision(
+        { botId: "bot-a", homePath: "/unused", providerKind: "exe", providerRef: "rakazo-box" },
+        context,
+      );
+      endedAt = Date.now();
+    });
+    expect(created?.fresh).toBe(true);
+    expect(left).toEqual([{ provider: "exe", machineId: "rakazo-box" }]);
+    const stored = records.dueIn(endedAt).find((entry) => entry.machineId === "rakazo-box");
+    expect(stored).toMatchObject({ homeKey: "bot-a" });
+    expect(stored!.dueInMs).toBeLessThanOrEqual(0);
+  });
+
   it("removes this bot's VMs that no saved reference points to before starting", async () => {
     const fake = fakeWith(
       vm("rakazo-old"),

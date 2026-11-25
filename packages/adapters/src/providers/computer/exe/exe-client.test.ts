@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { parse } from "shell-quote";
 import { describe, expect, it } from "vitest";
 import { ExeSdkClient, parseKey, userAgent } from "./exe-client.js";
@@ -211,22 +211,69 @@ describe("ExeSdkClient", () => {
     expect(api.requests[0]!.argv).toEqual(["ssh", "rakazo-box", "echo hi"]);
   });
 
-  it("hands input to a script through a private file it removes", async () => {
+  it("hands input to a script through files on disk that the script removes", async () => {
     const api = fakeApi();
     const client = await ExeSdkClient.create("exe1.token", api.fetch);
     await client.run("rakazo-box", "cat >/tmp/x", {
-      stdin: Buffer.from("hello"),
+      stdin: [Buffer.from("hel"), Buffer.from("lo")],
       signal,
       stdout: () => undefined,
       stderr: () => undefined,
     });
     const scripts = api.requests.map((request) => request.argv[2]!);
     const run = scripts.at(-1)!;
-    const file = /<(\/run\/rakazo-input-[0-9a-f]{16});/.exec(run)?.[1];
-    expect(file).toBeDefined();
-    expect(run).toBe(`(cat >/tmp/x) <${file}; status=$?; rm -f ${file}; exit $status`);
-    // The SDK writes it before the script runs.
-    expect(scripts.slice(0, -1).some((script) => script.includes(file!))).toBe(true);
+    const input = /^cat (\/var\/tmp\/rakazo-input-[0-9a-f]{16})\.\* \|/.exec(run)?.[1];
+    expect(input).toBeDefined();
+    expect(run).toBe(`cat ${input}.* | (cat >/tmp/x); status=$?; rm -f ${input}.*; exit $status`);
+    // The SDK writes the one part before the script runs, and nothing runs after it.
+    expect(scripts.slice(0, -1).every((script) => script.includes(`${input}.000000`))).toBe(true);
+  });
+
+  it("uploads large input one bounded part at a time", async () => {
+    const api = fakeApi();
+    const client = await ExeSdkClient.create("exe1.token", api.fetch);
+    const mib = Buffer.from(randomBytes(1024 * 1024));
+    await client.run("rakazo-box", "cat >/tmp/x", {
+      stdin: Array.from({ length: 6 }, () => mib),
+      signal,
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+    const scripts = api.requests.map((request) => request.argv[2]!).join("\n");
+    expect(scripts).toContain(".000000");
+    expect(scripts).toContain(".000001");
+    expect(scripts).not.toContain(".000002");
+  });
+
+  it("runs a script with empty input without uploading anything", async () => {
+    const api = fakeApi();
+    const client = await ExeSdkClient.create("exe1.token", api.fetch);
+    await client.run("rakazo-box", "cat", {
+      stdin: [],
+      signal,
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+    expect(api.requests.map((request) => request.argv[2])).toEqual(["(cat) </dev/null"]);
+  });
+
+  it("removes the input when the script cannot run", async () => {
+    const api = fakeApi((argv) => {
+      if (argv[2]?.startsWith("cat ")) throw new Error("connection reset");
+      return {};
+    });
+    const client = await ExeSdkClient.create("exe1.token", api.fetch);
+    await expect(
+      client.run("rakazo-box", "cat >/tmp/x", {
+        stdin: [Buffer.from("hello")],
+        signal,
+        stdout: () => undefined,
+        stderr: () => undefined,
+      }),
+    ).rejects.toThrow();
+    const last = api.requests.at(-1)!.argv;
+    expect(last.slice(0, 2)).toEqual(["ssh", "rakazo-box"]);
+    expect(last[2]).toMatch(/^rm -f \/var\/tmp\/rakazo-input-[0-9a-f]{16}\.\*$/);
   });
 
   it("signs a VM token locally with an SSH key", async () => {

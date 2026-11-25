@@ -1,5 +1,8 @@
 import { randomBytes } from "node:crypto";
+import type * as ExeSdk from "@exedev/sdk";
 import type { ExedevClient as Sdk, VM } from "@exedev/sdk";
+import { deadlineSignal } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging";
 
 /** Lifetime of the API tokens Rakazo signs with an SSH key; a fresh one is signed before it ends. */
 const SIGNED_TOKEN_MS = 60 * 60_000;
@@ -11,6 +14,12 @@ const COMMANDS = ["new", "ls", "ssh", "rm"];
  * lasts a day and serves every screen of that VM until it is close to its end.
  */
 const ISSUED_VM_TOKEN_HOURS = 24;
+/**
+ * The API has no standard input, so a command's input goes to files on the VM's disk first, one
+ * part at a time, and only one part is ever held in memory.
+ */
+const INPUT_PART_BYTES = 4 * 1024 * 1024;
+const INPUT_CLEANUP_MS = 30_000;
 
 export interface ExeVm {
   name: string;
@@ -32,7 +41,7 @@ export interface ExeCreateOptions {
 
 export interface ExeRunOptions {
   /** Given to the script on its standard input. */
-  stdin?: Uint8Array;
+  stdin?: AsyncIterable<Uint8Array> | Iterable<Uint8Array>;
   signal: AbortSignal;
   stdout(data: Buffer): void;
   stderr(data: Buffer): void;
@@ -51,7 +60,7 @@ export interface ExeClient {
   vmToken(name: string, expiresAt: number, signal: AbortSignal): Promise<string>;
 }
 
-type SdkModule = typeof import("@exedev/sdk");
+type SdkModule = typeof ExeSdk;
 
 /**
  * exe.dev's HTTPS API through its SDK, with either kind of key: an API token
@@ -116,10 +125,29 @@ export class ExeSdkClient implements ExeClient {
     const vm = (await this.sdk()).vm(name);
     const { signal } = options;
     if (!options.stdin) return this.ssh(vm, script, options);
-    // The API has no standard input: the input goes to a private file first.
-    const input = `/run/rakazo-input-${randomBytes(8).toString("hex")}`;
-    await vm.writeFile(input, options.stdin, { mode: 0o600, signal });
-    return this.ssh(vm, `(${script}) <${input}; status=$?; rm -f ${input}; exit $status`, options);
+    const input = `/var/tmp/rakazo-input-${randomBytes(8).toString("hex")}`;
+    let finished = false;
+    try {
+      const parts = await uploadInput(vm, input, options.stdin, signal);
+      const command =
+        parts === 0
+          ? `(${script}) </dev/null`
+          : `cat ${input}.* | (${script}); status=$?; rm -f ${input}.*; exit $status`;
+      const code = await this.ssh(vm, command, options);
+      finished = true;
+      return code;
+    } finally {
+      // The command removes its input when it ends; an upload or command cut short leaves it.
+      if (!finished) {
+        await bestEffort(
+          "remove a command's input from an exe.dev computer",
+          vm.ssh(`rm -f ${input}.*`, {
+            capture: false,
+            signal: deadlineSignal(INPUT_CLEANUP_MS),
+          }),
+        );
+      }
+    }
   }
 
   async vmToken(name: string, expiresAt: number, signal: AbortSignal): Promise<string> {
@@ -200,11 +228,38 @@ export function parseKey(value: string): { token: string } | { privateKey: strin
   throw new Error("EXE_SANDBOX_KEY must be an exe.dev API token or an SSH private key");
 }
 
+/** Writes the input as numbered parts `<prefix>.000000` on, in order; resolves to their count. */
+async function uploadInput(
+  vm: VM,
+  prefix: string,
+  input: AsyncIterable<Uint8Array> | Iterable<Uint8Array>,
+  signal: AbortSignal,
+): Promise<number> {
+  let parts = 0;
+  let pending: Buffer[] = [];
+  let size = 0;
+  const flush = async () => {
+    const name = `${prefix}.${String(parts).padStart(6, "0")}`;
+    await vm.writeFile(name, Buffer.concat(pending), { mode: 0o600, signal });
+    parts += 1;
+    pending = [];
+    size = 0;
+  };
+  for await (const chunk of input) {
+    signal.throwIfAborted();
+    pending.push(Buffer.from(chunk));
+    size += chunk.byteLength;
+    if (size >= INPUT_PART_BYTES) await flush();
+  }
+  if (size > 0) await flush();
+  return parts;
+}
+
 /**
  * `rakazo/<revision>`: the commit the image was built from, which health reports too, since images
  * carry no release version. The SDK appends its own name and version.
  */
-export function userAgent(gitSha = process.env.GIT_SHA ?? process.env.RAKAZO_GIT_SHA): string {
+export function userAgent(gitSha = process.env.GIT_SHA): string {
   const revision = gitSha?.trim();
   return revision && revision !== "unknown" ? `rakazo/${revision.slice(0, 12)}` : "rakazo";
 }

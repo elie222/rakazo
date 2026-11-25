@@ -12,7 +12,11 @@ export const EXEC_WRAPPER = "/run/rakazo-exe/exec";
 export const BOOT_SCRIPT = String.raw`set -eu
 dir=/run/rakazo-exe
 command=/usr/local/bin/rakazo-computer
-if [ -f "$dir/ready" ] && pgrep -u 1000 -f "^bash $command\$" >/dev/null; then exit 0; fi
+if [ -f "$dir/ready" ]; then
+  pgrep -u 1000 -f "^bash $command\$" >/dev/null && exit 0
+  echo "the computer's command has stopped" >&2
+  exit 1
+fi
 pid=""
 for _ in $(seq 1 240); do
   pid=$(pgrep -o -f "^bash $command\$" || true)
