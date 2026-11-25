@@ -2061,3 +2061,136 @@ it("retains accepted watch provenance in checkpoints when context selection drop
   });
   expect(secondCheckpoint.watchOutsideText).toEqual(savedCheckpoint.watchOutsideText);
 });
+
+it("preserves restored watch targets on a second checkpoint after a resumed attempt compacts and then drops the watch result", () => {
+  const details = {
+    routines: [
+      {
+        routineId: "r-second-checkpoint",
+        prompt: "Send update to owner-second@example.test",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: `${"a".repeat(3_500)} first-attempt-target@outside.test ${"b".repeat(3_500)}`,
+        },
+      },
+    ],
+  };
+  const raw = JSON.stringify(details);
+  const emptyUsage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+  const firstWatchResult: Message = {
+    role: "toolResult",
+    toolCallId: "watch-r1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: raw }],
+    details,
+    isError: false,
+    timestamp: 3,
+  };
+  const firstCheckpointMessages: Message[] = [
+    { role: "user", content: "List schedules", timestamp: 1 },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "watch-r1", name: "schedule_list", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-a",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 2,
+    },
+    firstWatchResult,
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "ask-1", name: "ask_user", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-a",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 4,
+    },
+  ];
+  // Resumed attempt compacts watch-r1 (dropping the target from its compacted delivery) and records
+  // that narrower delivery in watchDeliveries before a narrow backup drops watch-r1 entirely.
+  const compactedText = shortenToolResultText(
+    raw,
+    1_024,
+    { name: "schedule_list" },
+    { afterUse: true },
+  );
+  expect(compactedText).not.toContain("first-attempt-target@outside.test");
+  const resumedDeliveries = new Map<string, WatchDeliveryState>([
+    [
+      "hash-watch-r1",
+      {
+        full: false,
+        texts: [compactedText],
+        details,
+        toolCallId: "watch-r1",
+      },
+    ],
+  ]);
+  const secondAskAssistant: Message = {
+    role: "assistant",
+    content: [{ type: "toolCall", id: "ask-2", name: "ask_user", arguments: {} }],
+    api: "openai-responses",
+    provider: "openai",
+    model: "model-b",
+    usage: emptyUsage,
+    stopReason: "toolUse",
+    timestamp: 8,
+  };
+  const keptOnBackup: Message[] = [
+    { role: "user", content: "Continue", timestamp: 6 },
+    {
+      role: "toolResult",
+      toolCallId: "read-2",
+      toolName: "read_file",
+      content: [{ type: "text", text: "r".repeat(6_000) }],
+      isError: false,
+      timestamp: 7,
+    },
+  ];
+  const secondCheckpoint = buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages: keptOnBackup, tools: [] },
+      sourceLength: 7,
+    },
+    stateMessages: [...firstCheckpointMessages, ...keptOnBackup, secondAskAssistant],
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "ask-2",
+    toolCallCount: 3,
+    mainModelConfig: { provider: "openai", id: "model-b" },
+    provider: "openai",
+    modelId: "model-b",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries: resumedDeliveries,
+    restoredMessages: firstCheckpointMessages,
+  });
+
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(ctx, JSON.stringify(secondCheckpoint), {
+      provider: "openai",
+      id: "model-b",
+    }),
+  ).toBeDefined();
+  expect(ctx.state.outsideText).toContain("first-attempt-target@outside.test");
+  expect(ctx.state.outsideText).not.toContain("owner-second@example.test");
+  expect(
+    outsideOnlyTargets(
+      { to: ["first-attempt-target@outside.test"] },
+      { ownerWords: ["List schedules"], outsideText: ctx.state.outsideText },
+    ),
+  ).toEqual(["first-attempt-target@outside.test"]);
+});

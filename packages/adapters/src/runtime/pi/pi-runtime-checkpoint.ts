@@ -84,11 +84,9 @@ export function buildTurnCheckpoint(input: {
   const droppedWatchOutside: string[] = [
     ...(input.priorWatchOutsideText ?? []).filter((entry) => entry.trim().length > 0),
   ];
-  const coveredDropped: Array<{ toolCallId: string; routines: unknown }> = [];
   if (input.watchDeliveries) {
     for (const entry of input.watchDeliveries.values()) {
       if (isRetained(entry.toolCallId, entry.details.routines)) continue;
-      coveredDropped.push({ toolCallId: entry.toolCallId, routines: entry.details.routines });
       const synthetic = entry.full
         ? {
             details: { ...entry.details, contextBeforeUseText: entry.fullText },
@@ -109,21 +107,38 @@ export function buildTurnCheckpoint(input: {
     }
   }
   if (input.restoredMessages) {
-    for (const message of input.restoredMessages) {
+    // Only results before the paused assistant turn in the restored checkpoint were actually
+    // delivered to an earlier model; trailing sibling results await their first delivery.
+    const lastRestoredAssistant = input.restoredMessages.findLastIndex(
+      (message) => message.role === "assistant",
+    );
+    for (let index = 0; index < lastRestoredAssistant; index += 1) {
+      const message = input.restoredMessages[index]!;
       if (message.role !== "toolResult") continue;
       const details = message.details;
       if (!isRecord(details) || !("routines" in details)) continue;
-      if (isRetained(message.toolCallId, details.routines)) continue;
-      if (
-        coveredDropped.some(
-          (entry) => entry.toolCallId === message.toolCallId && entry.routines === details.routines,
-        )
-      ) {
+      const restoredItems = watchChecksFromToolResultMessage(message, input.contextStrategy)
+        .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+        .filter((value) => value.trim().length > 0);
+      if (restoredItems.length === 0) continue;
+      const retainedMatch = retainedWatch.find(
+        (retained) =>
+          retained.toolCallId === message.toolCallId &&
+          isRecord(retained.details) &&
+          retained.details.routines === details.routines,
+      );
+      if (!retainedMatch) {
+        // Always union with any narrower delivery recorded during the resumed attempt.
+        droppedWatchOutside.push(...restoredItems);
         continue;
       }
-      for (const item of watchChecksFromToolResultMessage(message, input.contextStrategy)) {
-        const value = typeof item === "string" ? item : JSON.stringify(item);
-        if (value.trim()) droppedWatchOutside.push(value);
+      const retainedSet = new Set(
+        watchChecksFromToolResultMessage(retainedMatch, input.contextStrategy).map((item) =>
+          typeof item === "string" ? item : JSON.stringify(item),
+        ),
+      );
+      for (const value of restoredItems) {
+        if (!retainedSet.has(value)) droppedWatchOutside.push(value);
       }
     }
   }
