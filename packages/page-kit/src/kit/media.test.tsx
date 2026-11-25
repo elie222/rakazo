@@ -18,6 +18,7 @@ import {
   ProductCard,
   ProductRows,
   RatingSummary,
+  setPageImages,
   Video,
   WatchCard,
 } from "./media.js";
@@ -40,6 +41,7 @@ beforeEach(() => {
   Element.prototype.scrollTo ??= () => {};
 });
 afterEach(() => {
+  setPageImages(undefined);
   host.remove();
   document.documentElement.removeAttribute("data-reply");
   vi.restoreAllMocks();
@@ -54,6 +56,25 @@ const all = (selector: string) => [...host.querySelectorAll<HTMLElement>(selecto
 const click = (element: Element | null) => act(() => (element as HTMLElement).click());
 
 describe("media", () => {
+  it("shows a picture the host read for its name, and leaves out names it has none for", () => {
+    setPageImages({ hotel: PNG, script: "javascript:alert(1)" });
+    render(
+      <>
+        <Image src="image:hotel" alt="Hotel" />
+        <Image src="image:script" alt="Not a picture" />
+        <Image src="image:missing" alt="Missing" />
+        <Image src="image:constructor" alt="Prototype" />
+        <Gallery photos={[{ src: "image:hotel", alt: "Lobby" }, { src: "image:missing" }]} />
+        <ProductCard title="Quay Hotel" photos={["image:hotel", "image:missing"]} />
+      </>,
+    );
+    expect(all("img").map((img) => [img.getAttribute("src"), img.getAttribute("alt")])).toEqual([
+      [PNG, "Hotel"],
+      [PNG, "Lobby"],
+      [PNG, "Quay Hotel"],
+    ]);
+  });
+
   it("shows only embedded pictures and sound, never a network address", () => {
     render(
       <>

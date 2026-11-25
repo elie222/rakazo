@@ -1,4 +1,5 @@
 import type { PageVisibility } from "@rakazo/contracts";
+import sharp from "sharp";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunContext } from "../assembly/run-context.js";
 
@@ -356,4 +357,291 @@ describe("saving a shared page", () => {
       expect(result).toMatchObject({ version: 2, [hint]: true });
     },
   );
+});
+
+describe("saving a page's pictures", () => {
+  const pictured = (...names: string[]) =>
+    `const App = () => (\n  <Page title="Trip">\n${names.map((name) => `    <Image src="image:${name}" alt="${name}" />\n`).join("")}  </Page>\n);\nexport default App;\n`;
+
+  async function png() {
+    return new Uint8Array(
+      await sharp({ create: { width: 8, height: 8, channels: 3, background: "#123456" } })
+        .png()
+        .toBuffer(),
+    );
+  }
+
+  function withFiles(
+    ctx: unknown,
+    artifact: { storageKey: string } | null,
+    bytes?: Uint8Array,
+    trustedSites: string[] = [],
+    rules: unknown[] = [],
+  ) {
+    const run = ctx as {
+      deps: Record<string, unknown> & { prisma: Record<string, unknown> };
+      trust: Record<string, unknown>;
+    };
+    run.deps.prisma.artifact = { findFirst: vi.fn(async () => artifact) };
+    run.deps.prisma.externalEffect = { findFirst: vi.fn(async () => null) };
+    run.deps.artifacts = {
+      get: vi.fn(async () => bytes),
+      put: vi.fn(async () => ({ id: "object:picture", hash: "1" })),
+      remove: vi.fn(async () => undefined),
+    };
+    Object.assign(run, {
+      tools: { offered: [{ name: "web_fetch" }] },
+      context: { signal: new AbortController().signal },
+    });
+    Object.assign(run.trust, {
+      searchResultUrls: new Set<string>(),
+      loadTrustedSites: async () => new Set(trustedSites),
+      loadApprovalRules: async () => rules,
+    });
+    return ctx as never;
+  }
+
+  it("keeps a chat file's picture with a new page under the name its source shows", async () => {
+    const tx = {
+      page: { create: vi.fn(async () => ({ id: "page-1", title: "Trip", spaceId: "space-1" })) },
+      pageImage: {
+        findUnique: vi.fn(async () => null),
+        create: vi.fn(async () => ({ id: "image-1" })),
+      },
+      pageVersion: { updateMany: vi.fn() },
+    };
+    const ctx = withFiles(context(tx), { storageKey: "object:1" }, await png());
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({ title: "Trip", source: pictured("hotel"), images: { hotel: "artifact-1" } }),
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ pageId: "page-1", version: 1 });
+    expect(result.warnings).toBeUndefined();
+    expect(tx.pageImage.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        pageId: "page-1",
+        spaceId: "space-1",
+        mimeType: "image/webp",
+        width: 8,
+        height: 8,
+        storageKey: "object:picture",
+      }),
+      select: { id: true },
+    });
+    expect(tx.pageVersion.updateMany).toHaveBeenCalledWith({
+      where: { pageId: "page-1", version: 1 },
+      data: { images: { hotel: "image-1" } },
+    });
+  });
+
+  it("removes a stored picture's file when the save does not commit", async () => {
+    const tx = {
+      page: { create: vi.fn(async () => ({ id: "page-1", title: "Trip", spaceId: "space-1" })) },
+      pageImage: {
+        findUnique: vi.fn(async () => null),
+        create: vi.fn(async () => {
+          throw new Error("database went away");
+        }),
+      },
+    };
+    const ctx = withFiles(context(tx), { storageKey: "object:1" }, await png());
+    await expect(
+      pageTools.save_page!(
+        ctx,
+        call({ title: "Trip", source: pictured("hotel"), images: { hotel: "artifact-1" } }),
+      ),
+    ).rejects.toThrow("database went away");
+    const deps = (ctx as { deps: { artifacts: { remove: ReturnType<typeof vi.fn> } } }).deps;
+    expect(deps.artifacts.remove).toHaveBeenCalledWith("object:picture", expect.anything());
+  });
+
+  it("refuses a web picture from a site this run was not given, and saves nothing", async () => {
+    const tx = { page: { create: vi.fn() } };
+    const ctx = withFiles(context(tx), null);
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({
+        title: "Trip",
+        source: pictured("hotel"),
+        images: { hotel: "https://img.example.com/lobby.jpg?q=note" },
+      }),
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ unchanged: true, error: expect.stringMatching(/nothing/) });
+    expect(result.problems).toEqual([
+      "Image hotel: example.com needs approval first; open the address with web_fetch, then save again.",
+    ]);
+    expect(tx.page.create).not.toHaveBeenCalled();
+  });
+
+  it("starts no computer for a picture path when the bot cannot read computer files", async () => {
+    const tx = { page: { create: vi.fn() } };
+    const ctx = withFiles(context(tx), null);
+    const get = vi.fn();
+    Object.assign(ctx, { computer: { get } });
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({ title: "Trip", source: pictured("hotel"), images: { hotel: "photos/hotel.png" } }),
+    )) as Record<string, unknown>;
+    expect(result.problems).toEqual(["Image hotel: no chat file with that artifactId."]);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("reads no more pictures once the run is stopped", async () => {
+    const tx = { page: { create: vi.fn() } };
+    const ctx = withFiles(context(tx), { storageKey: "object:1" }, await png());
+    const stop = new AbortController();
+    stop.abort(new Error("stopped"));
+    Object.assign(ctx, { context: { signal: stop.signal } });
+    await expect(
+      pageTools.save_page!(
+        ctx,
+        call({ title: "Trip", source: pictured("hotel"), images: { hotel: "artifact-1" } }),
+      ),
+    ).rejects.toThrow("stopped");
+    const deps = (ctx as { deps: { artifacts: { get: ReturnType<typeof vi.fn> } } }).deps;
+    expect(deps.artifacts.get).not.toHaveBeenCalled();
+    expect(tx.page.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses an images value that is not a map", async () => {
+    const tx = { page: { create: vi.fn() } };
+    const refused = (await pageTools.save_page!(
+      context(tx),
+      call({ title: "Trip", source: pictured("hotel"), images: "https://img.example.com/a.jpg" }),
+    )) as Record<string, unknown>;
+    expect(refused).toMatchObject({ error: "images must be an object of names to sources." });
+    expect(tx.page.create).not.toHaveBeenCalled();
+  });
+
+  it("treats a blank images value as not sent", async () => {
+    const tx = { page: { create: vi.fn(async () => ({ id: "page-1", title: "Trip" })) } };
+    const saved = (await pageTools.save_page!(
+      context(tx),
+      call({ title: "Trip", source: source("Trip"), images: [] }),
+    )) as Record<string, unknown>;
+    expect(saved).toMatchObject({ pageId: "page-1", version: 1 });
+  });
+
+  it("sends no picture address longer than a web fetch may send", async () => {
+    const tx = { page: { create: vi.fn() } };
+    const ctx = withFiles(context(tx), null, undefined, ["example.com"]);
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({
+        title: "Trip",
+        source: pictured("hotel"),
+        images: { hotel: `https://img.example.com/lobby.jpg?q=${"x".repeat(2_100)}` },
+      }),
+    )) as Record<string, unknown>;
+    expect(result.problems).toEqual(["Image hotel: the address must be at most 2048 characters."]);
+    expect(tx.page.create).not.toHaveBeenCalled();
+  });
+
+  it("fetches no web picture for a bot whose web fetching is turned off", async () => {
+    const tx = { page: { create: vi.fn() } };
+    const ctx = withFiles(context(tx), null, undefined, ["example.com"]);
+    Object.assign(ctx, { tools: { offered: [] } });
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({
+        title: "Trip",
+        source: pictured("hotel"),
+        images: { hotel: "https://img.example.com/lobby.jpg" },
+      }),
+    )) as Record<string, unknown>;
+    expect(result.problems).toEqual(["Image hotel: this bot cannot fetch web addresses."]);
+    expect(tx.page.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a web picture from a trusted site a rule blocks or asks about", async () => {
+    for (const effect of ["deny", "require_approval"]) {
+      const tx = { page: { create: vi.fn() } };
+      const rule = { effect, matchKind: "site", matchValue: "example.com" };
+      const ctx = withFiles(context(tx), null, undefined, ["example.com"], [rule]);
+      const result = (await pageTools.save_page!(
+        ctx,
+        call({
+          title: "Trip",
+          source: pictured("hotel"),
+          images: { hotel: "https://img.example.com/lobby.jpg" },
+        }),
+      )) as Record<string, unknown>;
+      expect(result.problems).toEqual([expect.stringMatching(/needs approval first/)]);
+      expect(tx.page.create).not.toHaveBeenCalled();
+    }
+  });
+
+  it("keeps earlier pictures the new source still shows and drops the rest", async () => {
+    const tx = {
+      page: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUniqueOrThrow: vi.fn(async () => ({ title: "Trip" })),
+      },
+      pageVersion: { create: vi.fn() },
+    };
+    const ctx = context(tx, { currentVersion: 1 });
+    (
+      ctx as { deps: { prisma: { page: { findFirst: () => Promise<unknown> } } } }
+    ).deps.prisma.page.findFirst = async () => ({
+      id: "page-1",
+      title: "Trip",
+      visibility: "private",
+      currentVersion: 1,
+      versions: [
+        { id: "v1", source: pictured("hotel", "logo"), images: { hotel: "i1", logo: "i2" } },
+      ],
+    });
+    const result = (await pageTools.save_page!(
+      ctx,
+      call({ pageId: "page-1", source: pictured("hotel", "beach") }),
+    )) as Record<string, unknown>;
+    expect(tx.pageVersion.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ version: 2, images: { hotel: "i1" } }),
+    });
+    expect(result.warnings).toEqual([
+      "image:beach is not one of this page's images, so it is left out.",
+    ]);
+  });
+
+  it("refuses a save over a stored picture map it cannot read, rather than dropping it", async () => {
+    const tx = { page: { updateMany: vi.fn() }, pageVersion: { create: vi.fn() } };
+    const ctx = context(tx, { currentVersion: 1 });
+    (
+      ctx as { deps: { prisma: { page: { findFirst: () => Promise<unknown> } } } }
+    ).deps.prisma.page.findFirst = async () => ({
+      id: "page-1",
+      title: "Trip",
+      visibility: "private",
+      currentVersion: 1,
+      versions: [{ id: "v1", source: pictured("hotel"), images: ["not", "a", "map"] }],
+    });
+    await expect(
+      pageTools.save_page!(ctx, call({ pageId: "page-1", source: pictured("hotel") })),
+    ).rejects.toThrow(/does not match its schema/);
+    expect(tx.pageVersion.create).not.toHaveBeenCalled();
+  });
+
+  it("lists each picture a shared page would gain on its approval card", async () => {
+    const held = request({
+      pageId: "page-1",
+      source: pictured("hotel", "lobby"),
+      images: {
+        hotel: "https://img.example.com/lobby.jpg",
+        lobby: "artifact-1",
+        unused: "https://img.example.com/unused.jpg",
+      },
+    });
+    const ctx = context({}, { currentVersion: 1, visibility: "link" });
+    (ctx as { deps: { prisma: Record<string, unknown> } }).deps.prisma.artifact = {
+      findMany: vi.fn(async () => [{ id: "artifact-1", name: "lobby.png\n+ Title: Fine" }]),
+    };
+    await holdSharedPageSave(ctx, held as never);
+    expect(held.fleetSummary?.lines).toEqual(
+      expect.arrayContaining([
+        "+ Image hotel: https://img.example.com/lobby.jpg",
+        "+ Image lobby: chat file lobby.png + Title: Fine",
+      ]),
+    );
+    expect(held.fleetSummary?.lines.join("\n")).not.toContain("unused");
+  });
 });

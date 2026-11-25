@@ -51,9 +51,11 @@ export function pageViewerDocument(input: {
   bottomInset?: number;
   /** The reader's app language, for the kit's own words when the page does not set `lang`. */
   lang?: string;
+  images?: Record<string, string>;
 }): string {
   const boot = JSON.stringify({
     code: input.code,
+    images: input.images,
     theme: input.theme,
     errorTitle: input.errorTitle,
     lang: input.lang,

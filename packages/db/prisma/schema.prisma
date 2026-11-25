@@ -2154,6 +2154,7 @@ model Page {
   versions       PageVersion[]
   grants         PageGrant[]
   comments       PageComment[]
+  images         PageImage[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2170,10 +2171,29 @@ model PageVersion {
   source    String
   /// The source compiled for the viewer when it was saved, so reads never run the compiler.
   code      String
+  images    Json?
   createdAt DateTime @default(now())
 
   @@unique([pageId, version])
   @@map("page_versions")
+}
+
+model PageImage {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  spaceId   String
+  hash      String
+  mimeType  String
+  width     Int
+  height    Int
+  size      Int
+  /// Where the artifact store keeps the bytes, as for a chat file.
+  storageKey String
+  createdAt DateTime @default(now())
+
+  @@unique([pageId, hash])
+  @@map("page_images")
 }
 
 model PageGrant {

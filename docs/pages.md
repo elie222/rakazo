@@ -10,6 +10,14 @@ The page appears as a card in the chat. Open it to see it full screen, with the 
 can ask for changes. The bot edits the same page rather than making a new one, so a
 [routine](./routines.md) can keep it up to date.
 
+Pages can show pictures: images the bot generated, files from the chat or its computer, and
+images from the web. The bot fetches a web image only from a site it could already fetch from in
+that chat, so ask it to open a new site first. Each picture is redrawn as a still WebP up to 1600
+pixels wide or tall and kept with the page's files, like a chat file: under `DATA_DIR`, or in
+[object storage](./self-host-storage.md) when one is configured. It is shown wherever the page
+is, including shared links, review and PDF, and is removed with the page. A page holds up to 24
+pictures.
+
 ## Find your pages
 
 On web and desktop, select the bot or group name at the top of the chat to open its panel.
