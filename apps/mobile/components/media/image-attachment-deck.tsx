@@ -19,10 +19,12 @@ export function MessagePictureStack({
   threadTarget,
   pictures,
   onPreview,
+  actionProps,
 }: {
   threadTarget: MobileArtifactTarget;
   pictures: InlineImageBlock[];
   onPreview: (target: DeckImage, gallery?: DeckImage[]) => void;
+  actionProps?: Record<string, unknown>;
 }) {
   const { t } = useLingui();
   const images = pictures.map((picture) => ({
@@ -34,7 +36,8 @@ export function MessagePictureStack({
     <ImageAttachmentDeck
       threadTarget={threadTarget}
       images={images}
-      onOpen={() => onPreview(images[0]!, images)}
+      onOpen={(image) => onPreview(image, images)}
+      actionProps={actionProps}
     />
   );
 }
@@ -52,10 +55,12 @@ export function ImageAttachmentDeck({
   threadTarget,
   images,
   onOpen,
+  actionProps,
 }: {
   threadTarget: MobileArtifactTarget;
   images: DeckImage[];
-  onOpen: () => void;
+  onOpen: (image: DeckImage, images: DeckImage[]) => void;
+  actionProps?: Record<string, unknown>;
 }) {
   const { t } = useLingui();
   const tokens = mobileTokens();
@@ -67,18 +72,17 @@ export function ImageAttachmentDeck({
 
   return (
     <View style={styles.group}>
-      <Pressable
-        accessibilityRole="imagebutton"
-        accessibilityLabel={t`${plural(images.length, { one: "Open # picture", other: "Open # pictures" })}`}
-        onPress={onOpen}
-        style={{ width: width + PEEK * behind, height: height + PEEK * behind }}
-      >
+      <View style={{ width: width + PEEK * behind, height: height + PEEK * behind }}>
         {shown
           .map((image, index) => ({ image, index }))
           .reverse()
           .map(({ image, index }) => (
-            <View
+            <Pressable
               key={image.artifactId}
+              accessibilityRole="imagebutton"
+              accessibilityLabel={t`${plural(images.length, { one: "Open # picture", other: "Open # pictures" })}`}
+              onPress={() => onOpen(image, images)}
+              {...(actionProps ?? {})}
               style={[
                 styles.card,
                 {
@@ -95,9 +99,9 @@ export function ImageAttachmentDeck({
               ]}
             >
               <DeckCard target={threadTarget} image={image} labelColor={tokens.mutedForeground} />
-            </View>
+            </Pressable>
           ))}
-      </Pressable>
+      </View>
       <View style={styles.caption}>
         <NativeSymbol
           ios="photo.on.rectangle"

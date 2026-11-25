@@ -658,6 +658,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               threadTarget={artifactTarget}
               pictures={group.pictures}
               onPreview={onPreviewImage}
+              actionProps={actionProps}
             />
           ) : (
             <View

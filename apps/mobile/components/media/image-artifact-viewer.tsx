@@ -288,6 +288,7 @@ export function ImageArtifactViewer({
 
   useEffect(() => {
     let cancelled = false;
+    setState({ status: "loading" });
     void imageArtifactPreview(requestTarget(), current.artifactId, current.mimeType)
       .then(({ uri, size }) => {
         if (!cancelled) setState({ status: "ready", uri, natural: size });
@@ -386,6 +387,24 @@ export function ImageArtifactViewer({
           );
         }}
       >
+        {state.status === "ready" && box ? (
+          <ZoomableImage
+            key={current.artifactId}
+            uri={state.uri}
+            displayed={fitImageSize(state.natural, box.width, box.height)}
+            box={box}
+            onClose={close}
+            dismissY={dismissY}
+            onError={() => fail(new Error(t`Could not load image`))}
+          />
+        ) : state.status === "error" ? (
+          <Text style={[styles.message, { color: tokens.mutedForeground }]}>{state.message}</Text>
+        ) : (
+          <ActivityIndicator
+            color={tokens.mutedForeground}
+            accessibilityLabel={t`Loading image…`}
+          />
+        )}
         {pictures.length > 1 ? (
           <>
             <View style={[styles.pager, styles.pagerStart]}>
@@ -406,24 +425,6 @@ export function ImageArtifactViewer({
             </View>
           </>
         ) : null}
-        {state.status === "ready" && box ? (
-          <ZoomableImage
-            key={current.artifactId}
-            uri={state.uri}
-            displayed={fitImageSize(state.natural, box.width, box.height)}
-            box={box}
-            onClose={close}
-            dismissY={dismissY}
-            onError={() => fail(new Error(t`Could not load image`))}
-          />
-        ) : state.status === "error" ? (
-          <Text style={[styles.message, { color: tokens.mutedForeground }]}>{state.message}</Text>
-        ) : (
-          <ActivityIndicator
-            color={tokens.mutedForeground}
-            accessibilityLabel={t`Loading image…`}
-          />
-        )}
       </View>
     </Animated.View>
   );
@@ -447,7 +448,7 @@ const styles = StyleSheet.create({
     pointerEvents: "none",
   },
   counter: { fontSize: 13 },
-  pager: { position: "absolute", top: 0, bottom: 0, justifyContent: "center" },
+  pager: { position: "absolute", top: 0, bottom: 0, justifyContent: "center", zIndex: 10 },
   pagerStart: { left: 12 },
   pagerEnd: { right: 12 },
   stage: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
