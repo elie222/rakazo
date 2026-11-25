@@ -1520,6 +1520,22 @@ class NewTabTest(unittest.TestCase):
             first.release()
             self.assertTrue(helper.Tabs(self.home, 9222, "browser-1", chromium.select).begin())
 
+    def test_a_call_reads_the_tabs_the_last_call_left_once_it_holds_the_screen_s_turn(self):
+        chromium = FakeTabs("own")
+        self.call(chromium, "own")
+        chromium.ids[:0] = ["a", "b"]
+        first = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        second = helper.Tabs(self.home, 9222, "browser-1", chromium.select)
+        with patch.object(helper, "page_tabs", chromium.list), \
+                patch.object(helper.urllib.request, "urlopen", chromium.urlopen):
+            self.assertTrue(first.begin())
+            chromium.ids[:0] = ["c", "d"]
+            first.end("own")
+            first.release()
+            # Built before the first call: the second still judges the tabs against what it left.
+            self.assertTrue(second.begin())
+        self.assertEqual(chromium.ids, ["c", "d", "a", "b", "own"])
+
     def test_after_the_browser_starts_every_tab_but_the_call_s_own_is_new(self):
         chromium = FakeTabs("a")
         self.call(chromium, "a")

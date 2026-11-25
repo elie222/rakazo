@@ -222,13 +222,7 @@ class Tabs:
         self.lock_path = os.path.join(home, f"tabs-{port}.lock")
         # Points agent-browser's session at a tab, before tabs are closed.
         self.select = select
-        try:
-            with open(self.path, encoding="utf-8") as file:
-                last = json.load(file)
-            # A browser started again has new tabs only, and may have restored the person's own.
-            self.known: set[Any] | None = set(last["tabs"]) if last["browser"] == browser_id else None
-        except (OSError, ValueError, TypeError, KeyError, AttributeError):
-            self.known = None
+        self.known: set[Any] | None = None
         self.closed = self.trimmed = 0
         self.start: set[Any] = set()
         self.deadline: float | None = None
@@ -237,15 +231,23 @@ class Tabs:
     def begin(self) -> bool:
         """Close a flood of tabs opened since the last call and the tabs beyond MAX_TABS, before the
         call picks its tab. False when another page call on this screen sees to its tabs: one does at
-        a time. Only its first tab list can fail it."""
-        tabs = page_tabs(self.port)
-        self.start = {tab.get("id") for tab in tabs}
+        a time, and reads the tabs the last call left only once it holds that turn. Only its first
+        tab list can fail it."""
         self.lock = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
             fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             self.release()
             return False
+        tabs = page_tabs(self.port)
+        self.start = {tab.get("id") for tab in tabs}
+        try:
+            with open(self.path, encoding="utf-8") as file:
+                last = json.load(file)
+            # A browser started again has new tabs only, and may have restored the person's own.
+            self.known = set(last["tabs"]) if last["browser"] == self.browser_id else None
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            self.known = None
         with contextlib.suppress(Exception):
             if self.known is not None:
                 # The tab in front of those the last call left, or else the tab in front, which stays.
