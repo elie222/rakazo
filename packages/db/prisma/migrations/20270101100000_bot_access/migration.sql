@@ -33,7 +33,7 @@ CREATE TABLE "task_callbacks" (
     "taskId" TEXT NOT NULL,
     "spaceId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "apiKeyId" TEXT NOT NULL,
+    "issuerKeyId" TEXT NOT NULL,
     "url" TEXT NOT NULL,
     "deliveredRunId" TEXT,
     "deliveredStatus" TEXT,

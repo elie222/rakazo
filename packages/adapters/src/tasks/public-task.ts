@@ -27,6 +27,9 @@ function questionOf(block: MessageBlock): string | null {
     !block.expired
   )
     return block.text;
+  // An integration's question waits on the person while the run itself still reads as running.
+  if (block.kind === "tool_question" && block.status === "pending" && block.question?.message)
+    return block.question.message;
   if (block.kind === "choice" && !block.answerId && Array.isArray(block.options)) {
     const options = block.options.map((option) => `${option.letter}. ${option.label}`);
     return [block.question, ...options].join("\n");
@@ -41,7 +44,7 @@ type ReplyRow = { id: string; blocks: unknown };
 /** What the public API says about a task: its newest run's state and the bot's replies. */
 export function publicTaskView(task: TaskRow, runs: RunRow[], replies: ReplyRow[]): PublicTask {
   const latest = runs.at(-1);
-  const status = publicTaskStatus(latest?.status);
+  const runStatus = publicTaskStatus(latest?.status);
   const texts: string[] = [];
   let question: string | null = null;
   for (const reply of replies) {
@@ -52,6 +55,10 @@ export function publicTaskView(task: TaskRow, runs: RunRow[], replies: ReplyRow[
       question = questionOf(block) ?? question;
     }
   }
+  const toolQuestion = replies
+    .flatMap((reply) => storedMessageBlocks(reply))
+    .some((block) => block.kind === "tool_question" && block.status === "pending");
+  const status = runStatus === "working" && toolQuestion ? "needs_input" : runStatus;
   const updatedAt = [task.updatedAt, ...runs.map((run) => run.updatedAt)].reduce((a, b) =>
     b > a ? b : a,
   );

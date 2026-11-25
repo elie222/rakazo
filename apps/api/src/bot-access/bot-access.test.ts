@@ -51,8 +51,8 @@ function setup(
     { id: "task-theirs", userId: "user-2", spaceId: "space-mine", botId: "bot-a" },
   ];
   const at = new Date("2026-11-25T00:00:00Z");
-  const callbacks = new Map<string, { url: string; apiKeyId: string }>([
-    ["task-1", { url: "https://hooks.example.test/a", apiKeyId: "key-first" }],
+  const callbacks = new Map<string, { url: string; issuerKeyId: string }>([
+    ["task-1", { url: "https://hooks.example.test/a", issuerKeyId: "key-first" }],
   ]);
   const enqueueIn = vi.fn(async () => undefined);
   const prisma = {
@@ -62,8 +62,8 @@ function setup(
         async ({ where }: { where: { taskId: string } }) => callbacks.get(where.taskId) ?? null,
       ),
       upsert: vi.fn(
-        async ({ create }: { create: { taskId: string; url: string; apiKeyId: string } }) => {
-          callbacks.set(create.taskId, { url: create.url, apiKeyId: create.apiKeyId });
+        async ({ create }: { create: { taskId: string; url: string; issuerKeyId: string } }) => {
+          callbacks.set(create.taskId, { url: create.url, issuerKeyId: create.issuerKeyId });
         },
       ),
     },
@@ -210,7 +210,7 @@ describe("bot access", () => {
     // Signed with the first callback's key, so the receiver's secret still checks.
     expect(callbacks.get("task-next")).toEqual({
       url: "https://hooks.example.test/a",
-      apiKeyId: "key-first",
+      issuerKeyId: "key-first",
     });
     expect(enqueueIn).toHaveBeenCalledWith(
       expect.anything(),

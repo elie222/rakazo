@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { taskCallbackJob } from "@rakazo/adapter-kit";
 import type { PublicTask, TaskCallbackBody } from "@rakazo/contracts";
@@ -64,8 +64,8 @@ export function taskCallbackRootKey(encryptionKey: string): string {
  * The secret callbacks to one address are signed with for one key. Every task the key sends there
  * shares it, so a follow-up's new task needs no new one; a new key gets a new secret.
  */
-export function taskCallbackSecret(rootKey: string, apiKeyId: string, url: string): string {
-  return `whsec_${createHmac("sha256", rootKey).update(`${apiKeyId}\n${url}`).digest("hex")}`;
+export function taskCallbackSecret(rootKey: string, issuerKeyId: string, url: string): string {
+  return `whsec_${createHmac("sha256", rootKey).update(`${issuerKeyId}\n${url}`).digest("hex")}`;
 }
 
 /** `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`, so a replayed old body is visible. */
@@ -116,7 +116,7 @@ export async function deliverTaskCallback(
   ]);
   // Output goes only where the person could still read it themselves; otherwise it stops for good.
   const granted = await apiKeyStillGrants(deps.prisma, {
-    keyId: callback.apiKeyId,
+    keyId: callback.issuerKeyId,
     userId: callback.userId,
     spaceId: callback.spaceId,
   });
@@ -128,8 +128,15 @@ export async function deliverTaskCallback(
       );
   };
   if (!taskSettled(task.status)) return recheck();
-  // A run can ask more than once, so each question is its own state; an ended run is one state.
-  const state = task.status === "needs_input" ? `needs_input@${task.updated_at}` : task.status;
+  // A run can ask more than once, so each question is its own state, named by what it asks; an
+  // ended run is one state.
+  const state =
+    task.status === "needs_input"
+      ? `needs_input:${createHash("sha256")
+          .update(task.question ?? "")
+          .digest("hex")
+          .slice(0, 16)}`
+      : task.status;
   // A waiting run may be cancelled or ask again with no worker to say so; keep looking, even if
   // this delivery fails for good.
   if (task.status === "needs_input") await recheck();
@@ -143,7 +150,7 @@ export async function deliverTaskCallback(
   }
 
   async function post(
-    target: { apiKeyId: string; url: string },
+    target: { issuerKeyId: string; url: string },
     settled: PublicTask,
     delivery: string,
   ) {
@@ -158,7 +165,7 @@ export async function deliverTaskCallback(
       truncated,
     } satisfies TaskCallbackBody);
     const signature = signTaskCallback(
-      taskCallbackSecret(deps.rootKey, target.apiKeyId, target.url),
+      taskCallbackSecret(deps.rootKey, target.issuerKeyId, target.url),
       body,
       Math.floor(now.getTime() / 1000),
     );

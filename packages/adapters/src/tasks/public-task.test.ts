@@ -36,6 +36,26 @@ describe("publicTaskView", () => {
     expect(view).toMatchObject({ status: "needs_input", question: "Post this reply?" });
   });
 
+  it("shows an integration's pending question while the run still works", () => {
+    const view = publicTaskView(
+      task,
+      [{ status: "running", updatedAt: at }],
+      [
+        {
+          id: "m1",
+          blocks: [
+            {
+              kind: "tool_question",
+              status: "pending",
+              question: { source: "Calendar", message: "Which calendar?", fields: [] },
+            },
+          ],
+        },
+      ],
+    );
+    expect(view).toMatchObject({ status: "needs_input", question: "Which calendar?" });
+  });
+
   it("reads past a stored block missing its fields", () => {
     const view = publicTaskView(
       task,

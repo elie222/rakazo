@@ -274,9 +274,9 @@ export function createBotAccess(deps: BotAccessDeps) {
             url,
             spaceId: actor.spaceId,
             userId: actor.userId,
-            apiKeyId: keyId,
+            issuerKeyId: keyId,
           },
-          update: { url, apiKeyId: keyId },
+          update: { url, issuerKeyId: keyId },
         });
         await deps.jobs.enqueueIn(tx, taskCallbackJob(taskId, new Date()));
       }),
@@ -309,10 +309,13 @@ export function createBotAccess(deps: BotAccessDeps) {
     const { actor, botId } = await taskActor(caller, taskId);
     const sent = await send(caller, actor, botId, text);
     const callback = await runAsTenant(actor, () =>
-      prisma.taskCallback.findUnique({ where: { taskId }, select: { url: true, apiKeyId: true } }),
+      prisma.taskCallback.findUnique({
+        where: { taskId },
+        select: { url: true, issuerKeyId: true },
+      }),
     );
     // Signed as before, with the key that asked for the first callback.
-    if (callback) await watchTask(callback.apiKeyId, actor, sent.taskId, callback.url);
+    if (callback) await watchTask(callback.issuerKeyId, actor, sent.taskId, callback.url);
     return { task: await readTask(actor, sent.taskId), actor, cursor: sent.cursor };
   }
 

@@ -31,7 +31,7 @@ function setup(
         url,
         userId: "user-1",
         spaceId: "space-1",
-        apiKeyId: "key-1",
+        issuerKeyId: "key-1",
         deliveredRunId: delivered.runId ?? null,
         deliveredStatus: delivered.status ?? null,
         deliveredAt: null,
@@ -122,11 +122,11 @@ describe("task callbacks", () => {
 
   it("sends each question a waiting run asks, and keeps watching it", async () => {
     const { deliver, enqueue, requests } = setup("waiting_input", {
-      delivered: { runId: "run-1", status: "needs_input@2026-11-25T11:00:00.000Z" },
+      delivered: { runId: "run-1", status: "needs_input:0000000000000000" },
     });
     await deliver();
     expect(JSON.parse(await requests[0]!.text())).toMatchObject({
-      id: `task-1:run-1:needs_input@${now.toISOString()}`,
+      id: expect.stringMatching(/^task-1:run-1:needs_input:[0-9a-f]{16}$/),
     });
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "task.callback" }));
   });

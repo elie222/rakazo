@@ -35,11 +35,18 @@ const ended = (task: PublicTask) => task.status === "failed" || task.status === 
 /** Follows a task until it settles, reconnecting when a stream ends early. */
 async function waitFor(client: Client, task: PublicTask): Promise<PublicTask> {
   let last = task;
-  for (let quiet = 0; last.status === "working"; ) {
+  // Reconnects after a dropped or closed stream; only quick drops with no news count against it.
+  for (let quickDrops = 0; last.status === "working"; ) {
     const before = last.updated_at;
-    for await (const next of client.followTask(task.id)) last = next;
-    quiet = last.updated_at === before ? quiet + 1 : 0;
-    if (last.status === "working" && quiet >= 3)
+    const openedAt = Date.now();
+    try {
+      for await (const next of client.followTask(task.id)) last = next;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+    }
+    const quick = Date.now() - openedAt < 30_000 && last.updated_at === before;
+    quickDrops = quick ? quickDrops + 1 : 0;
+    if (last.status === "working" && quickDrops >= 3)
       throw new Error(`Lost the connection while task ${task.id} was still working`);
   }
   return last;
