@@ -124,8 +124,9 @@ export async function loadPilotRuntime(
         groupTurn &&
         run.trigger === "follow_up" &&
         handoffPilotRuntimeForBot(run.botId) === run.primaryRuntime
-      )) ||
-    run.routineId ||
+      ) &&
+      !(run.trigger === "routine" && !groupTurn && run.routineId)) ||
+    (run.trigger !== "routine" && run.routineId) ||
     run.modelProvider !== nativeTextRuntime.provider ||
     !run.modelCredentialId ||
     model.provider !== run.modelProvider ||

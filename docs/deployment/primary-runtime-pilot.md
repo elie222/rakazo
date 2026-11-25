@@ -3,8 +3,7 @@
 Off by default. It changes only the selected bot owner's plain-text app direct
 chat. A pilot turn uses the configured named API-key connection and model as of
 enqueue; it never uses the deployment/default key or falls back to another
-engine. Connections remain controlled by existing bot settings. Ordinary Pi
-turns, team chat, routines and other entry points are unchanged. No provider
+engine. Connections remain controlled by existing bot settings. Ordinary Pi turns are unchanged unless a separate pilot entry point is explicitly enabled. No provider
 login, tools, shared workspace, media, steering or native conversation state
 are available in a pilot turn.
 
@@ -33,6 +32,30 @@ are available in a pilot turn.
    `PRIMARY_RUNTIME_PILOT_BOT_IDS` to the same comma-separated bot IDs across
    API and workers. Start with one dedicated test bot. Prefer a personal
    space and do not rely on unsupported turn types to run through the pilot.
+
+## Recurring text routine pilot
+
+Default off. Keep the staging gate above. An operator and bot owner may approve
+one or more dedicated recurring routines in the owner's bot chat. Set
+`PRIMARY_RUNTIME_PILOT_ROUTINES` to comma-separated
+`<routine-id>:<sha256-of-exact-stored-UTF-8-prompt>` entries on all workers.
+Approve the raw prompt, not its rendered text. A prompt edit needs a new digest;
+do not put the prompt itself, a key, or a shared account in this setting.
+
+Only automatic recurring timer occurrences use this path. The routine must be
+active and use its owner's bot's model, with no group, watch, inbound trigger,
+computer access or separate model override. Run now, retries and one-time
+routines are not supported by this pilot. The provider receives only the approved
+text, with secret redaction, no tools, history, skills, or native session.
+An ineligible enrolled timer is skipped with an operator warning, not run through
+Pi. The worker rechecks the active routine, exact prompt, space membership,
+ownership, and named model connection before launch. If the account becomes
+unavailable, the marked run fails without falling back.
+
+Before enabling, verify a real scheduler occurrence in staging, a repeated
+delivery of the same occurrence, and refusal after disabling the routine or
+revoking the connection. Clear this setting after draining/cancelling marked
+runs to restore ordinary Pi handling for future timer occurrences.
 
 ## Pause and rollback
 

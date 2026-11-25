@@ -35,6 +35,7 @@ import {
 import { listAgentSkillRecords } from "../../tools/skill-tools.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { notifyRun } from "../lifecycle/run-notifications.js";
+import { pilotRoutineModel, routinePilotEnrollment } from "../turn/primary-routine-pilot.js";
 import { wakeRun } from "../wakeups/wake-run.js";
 
 /** A routine run stopped by a transient model error gets one more try this much later. */
@@ -70,11 +71,13 @@ export async function scheduleRoutineRetry(
     trigger: string;
     routineId: string | null;
     retryOfRunId: string | null;
+    primaryRuntime?: string | null;
   },
   error: unknown,
 ): Promise<boolean> {
   if (
     run.trigger !== "routine" ||
+    run.primaryRuntime ||
     !run.routineId ||
     run.retryOfRunId ||
     !(error instanceof TransientModelError)
@@ -213,11 +216,12 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     return;
   }
   if (!bot?.thread) return;
-  const targetThreadId = await routineGroupThreadId(deps.prisma, routine, bot.id);
+  const pilot = routinePilotEnrollment(routine.id);
+  const targetThreadId = pilot ? null : await routineGroupThreadId(deps.prisma, routine, bot.id);
   const thread = targetThreadId ? { id: targetThreadId } : bot.thread;
   // A change trigger checks first, without a model; only news becomes a run.
   const watchTick =
-    routine.watch == null
+    pilot || routine.watch == null
       ? null
       : await tickRoutineWatch(
           { ...deps, commandRefusal: protectedComputerLifecycleRefusal },
@@ -231,10 +235,12 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   // already-due run once, then nextRunAt stays null and the routine
   // pauses rather than crash-looping the wakeup job.
   const nextRunAt = watchTick?.run ? watchTick.nextRunAt : nextScheduledRunAt(routine, scheduledAt);
-  const skillRecords = await listAgentSkillRecords(deps.prisma, {
-    spaceId: routine.spaceId,
-    userId: routine.userId,
-  });
+  const skillRecords = pilot
+    ? []
+    : await listAgentSkillRecords(deps.prisma, {
+        spaceId: routine.spaceId,
+        userId: routine.userId,
+      });
   const claimed = await deps.prisma.$transaction(async (tx) => {
     if (!(await spaceTakesWork(tx, routine.spaceId))) return null;
     // The owner is part of the claim: a routine taken over mid-check runs as no one stale.
@@ -244,6 +250,7 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         userId: routine.userId,
         active: true,
         nextRunAt: scheduledAt,
+        ...(pilot ? { crons: { equals: routine.crons }, timezone: routine.timezone } : {}),
         bot: { archivedAt: null },
       },
       data: {
@@ -258,26 +265,43 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     // committed when it fired; a prompt edit that lands while the tick gathers
     // its context must not pair with the newer model. Skill expansion runs on
     // the already-loaded list.
-    const current = await tx.routine.findUnique({
-      where: { id: routine.id },
-      select: { prompt: true, modelProvider: true, modelId: true, thinkingLevel: true },
-    });
+    const native = pilot
+      ? await tx.routine.findUnique({
+          where: { id: routine.id },
+          include: { bot: { include: { thread: true } } },
+        })
+      : null;
+    const pin =
+      native && nextRunAt && native.botId === bot.id && native.spaceId === routine.spaceId
+        ? pilotRoutineModel(native, thread.id, pilot)
+        : undefined;
+    if (pilot && !pin) return "pilot-refused" as const;
+    const current =
+      native ??
+      (await tx.routine.findUnique({
+        where: { id: routine.id },
+        select: { prompt: true, modelProvider: true, modelId: true, thinkingLevel: true },
+      }));
     if (!current) return null;
     const routinePrompt =
-      expandSkillReferencesInPrompt(current.prompt, skillRecords) +
+      (pin ? current.prompt : expandSkillReferencesInPrompt(current.prompt, skillRecords)) +
       (watchTick?.run ? watchTick.note : "");
-    const timerTick = routine.watch == null && !isOneShotRoutineCrons(routine.crons);
-    const timerNonce = timerTick ? routineTimerNonce(routine.id, scheduledFor) : undefined;
+    const timerTick = pin || (routine.watch == null && !isOneShotRoutineCrons(routine.crons));
+    const timerNonce = timerTick
+      ? routineTimerNonce(routine.id, pin ? scheduledAt.toISOString() : scheduledFor)
+      : undefined;
     if (timerNonce) {
-      const pending = await findPendingRoutineTick(tx, {
-        routineId: routine.id,
-        spaceId: routine.spaceId,
-        botId: bot.id,
-        userId: routine.userId,
-        threadId: thread.id,
-        prompt: routinePrompt,
-        ...routineRunModelPin(current),
-      });
+      const pending =
+        !pin &&
+        (await findPendingRoutineTick(tx, {
+          routineId: routine.id,
+          spaceId: routine.spaceId,
+          botId: bot.id,
+          userId: routine.userId,
+          threadId: thread.id,
+          prompt: routinePrompt,
+          ...routineRunModelPin(current),
+        }));
       if (pending) return { ...pending, coalesced: true };
       // An edit racing an earlier tick can rewind the schedule onto an occurrence that already ran.
       const fired = await tx.run.findUnique({
@@ -307,13 +331,15 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         trigger: "routine",
         routineId: routine.id,
         clientNonce: timerNonce,
-        ...routineRunModelPin(current),
+        ...(pin ?? routineRunModelPin(current)),
       },
     });
     return { ...run, coalesced: false };
   });
   if (!claimed) return;
-  if (claimed === "fired") {
+  if (claimed === "fired" || claimed === "pilot-refused") {
+    if (claimed === "pilot-refused")
+      getLogger().warn("routine.primary_runtime_refused", { "routine.id": routine.id });
     if (nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
     return;
   }
@@ -381,6 +407,7 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
   const failed = await deps.prisma.run.findUnique({ where: { id: runId } });
   if (
     !failed?.routineId ||
+    failed.primaryRuntime ||
     failed.trigger !== "routine" ||
     failed.status !== "failed" ||
     failed.retryOfRunId
