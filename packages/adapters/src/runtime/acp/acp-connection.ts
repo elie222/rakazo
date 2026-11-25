@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { getLogger } from "@rakazo/logging";
 import { stopProcessTree } from "../../cli-models/cli-process.js";
 
 /** A JSON-RPC error the agent answered a request with. */
@@ -102,7 +103,7 @@ export function startAcpAgent(
   };
 
   const answer = async (message: Message & { method: string }) => {
-    const params = (message.params ?? {}) as Record<string, unknown>;
+    const params = record(message.params);
     try {
       const result = await handlers.onRequest(message.method, params);
       write({ id: message.id, result: result ?? null });
@@ -133,10 +134,15 @@ export function startAcpAgent(
       heardAt = Date.now();
       if (typeof message.method === "string") {
         if (message.id === undefined || message.id === null) {
-          handlers.onNotification(
-            message.method,
-            (message.params ?? {}) as Record<string, unknown>,
-          );
+          try {
+            handlers.onNotification(message.method, record(message.params));
+          } catch (error) {
+            // One malformed update must not end the turn's reading.
+            getLogger().warn("The agent CLI sent a notification that could not be read", {
+              method: message.method,
+              error,
+            });
+          }
         } else {
           void answer(message as Message & { method: string });
         }
@@ -158,7 +164,9 @@ export function startAcpAgent(
         call.resolve(message.result);
       }
     }
-  })();
+  })().catch((error: unknown) =>
+    endConnection(error instanceof Error ? error : new Error(String(error))),
+  );
 
   return {
     request<T>(method: string, params: unknown) {
@@ -180,4 +188,10 @@ export function startAcpAgent(
       endConnection(new Error("stopped"));
     },
   };
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }

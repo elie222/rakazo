@@ -153,6 +153,9 @@ async function runAcpTurn(
   let cancelled = false;
   /** The prompt the CLI is still answering, if the turn ends before it does. */
   let inFlight: Promise<Update> | undefined;
+  let sentPrompt = false;
+  /** The CLI reported something about the new message, so it has it. */
+  let promptHeard = false;
   let violation: Error | undefined;
   /** How the CLI removes a session, where it can. */
   let endSession: string | undefined;
@@ -303,7 +306,9 @@ async function runAcpTurn(
       {
         onNotification(method, params) {
           if (method === "session/update" && params.sessionId === sessionId) {
-            onUpdate((params.update ?? {}) as Update);
+            if (inFlight) promptHeard = true;
+            const update = params.update;
+            if (update && typeof update === "object") onUpdate(update as Update);
           }
         },
         async onRequest(method, params) {
@@ -407,6 +412,7 @@ async function runAcpTurn(
         prompt: [{ type: "text", text }],
       });
       inFlight = prompting;
+      sentPrompt = true;
       try {
         return await step(prompting);
       } catch (error) {
@@ -442,7 +448,12 @@ async function runAcpTurn(
     await reportUsage(request, descriptor, response.usage, push);
     push({ type: "done" });
   } catch (error) {
-    if (error instanceof TurnAborted || (signal.aborted && !violation)) return;
+    if (error instanceof TurnAborted || (signal.aborted && !violation)) {
+      // Stopped before the CLI said anything about the new message: it may never have received
+      // it, so the next turn starts over from the chat rather than skip what it was sent.
+      if (ownsChatSession && sentPrompt && !promptHeard) forgetSession(key);
+      return;
+    }
     // A failed turn may have left the session short of what it was sent, so the next turn
     // starts over from the chat. A helper never used the chat's session.
     if (ownsChatSession) forgetSession(key);
