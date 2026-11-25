@@ -374,7 +374,7 @@ describe("memory prompt budget", () => {
     const { text } = buildAgentMemoryPrompt([doc("bot", "MEMORY.md", "x".repeat(3700), 1, OLD)]);
 
     expect(text).toContain(
-      "(revision 1, 3700 of 4096 bytes, nearly full: any add must remove or shorten entries in the same remember call)",
+      "(revision 1, 3700 of 4096 bytes, nearly full: make room in the same remember call by removing what ended or is outdated, merging duplicates and rewriting dated histories as how things now stand, never by abbreviating)",
     );
   });
 
