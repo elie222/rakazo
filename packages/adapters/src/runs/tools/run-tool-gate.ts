@@ -23,7 +23,7 @@ import {
 } from "@rakazo/core";
 import { normalizedHttpUrl, urlSite } from "@rakazo/core/egress";
 import { approvalEffectKey, toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key";
-import { runSecretKind } from "@rakazo/db";
+import { APPROVAL_EXPIRED_RESULT, runSecretKind } from "@rakazo/db";
 import type { ApprovalCardOptions } from "../../approvals/approval-ask.js";
 import {
   approvalActionName,
@@ -31,7 +31,6 @@ import {
   MAX_FETCH_URL_LENGTH,
 } from "../../approvals/approval-ask.js";
 import {
-  APPROVAL_EXPIRED_RESULT,
   boundDirectApprovalDetails,
   DENIED_ACTION_ERROR,
   resolveDuplicateEffectGate,
