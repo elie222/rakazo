@@ -601,6 +601,38 @@ describe("acpAgentRuntime", () => {
       expect(prompt.prompt).toContainEqual({ type: "image", mimeType: "image/png", data: "AQID" });
     });
 
+    it("puts each image after its message and names which message each came from", async () => {
+      const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
+        accessCheck: allowed,
+      });
+      const old = { name: "old.png", mimeType: "image/png" as const, data: new Uint8Array([1]) };
+      const fresh = { name: "new.png", mimeType: "image/png" as const, data: new Uint8Array([2]) };
+
+      await collect(
+        runtime,
+        request({
+          prompt: "What is in my new photo?",
+          history: [{ id: "m1", role: "user", content: "An old photo", images: [old] }],
+          currentTurnImages: [fresh],
+        }),
+      );
+
+      const prompt = requests("session/prompt")[0]?.params as {
+        prompt: Array<{ type: string; text?: string; data?: string }>;
+      };
+      expect(prompt.prompt.map((block) => block.data ?? block.type)).toEqual([
+        "text",
+        "AQ==",
+        "text",
+        "Ag==",
+        "text",
+      ]);
+      expect(prompt.prompt[0]?.text).toContain("[User]: An old photo");
+      expect(prompt.prompt[2]?.text).toContain("What is in my new photo?");
+      expect(prompt.prompt[4]?.text).toContain("1. From [User]: An old photo");
+      expect(prompt.prompt[4]?.text).toContain("2. Attached to this message");
+    });
+
     it("does not send a message's images again once it is in the history", async () => {
       const runtime = acpAgentRuntime(fallback, descriptor({ acceptsImages: true }), {
         accessCheck: allowed,

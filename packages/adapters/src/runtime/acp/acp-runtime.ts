@@ -8,7 +8,6 @@ import { validateToolArguments } from "@earendil-works/pi-ai";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type {
   AdapterContext,
-  AgentInputImage,
   AgentRunRequest,
   AgentRuntime,
   AgentRuntimeEvent,
@@ -46,13 +45,8 @@ import {
   sessionKey,
   takeReplyElsewhere,
 } from "./acp-sessions.js";
-import {
-  conversationBlock,
-  historyLine,
-  OWN_SPEAKER,
-  PERSON_SPEAKER,
-  unknownToolText,
-} from "./acp-turn.prompt.js";
+import { contentHash, turnText } from "./acp-turn.js";
+import { unknownToolText } from "./acp-turn.prompt.js";
 
 /** The MCP server name the CLI sees Rakazo's tools under. */
 export const ACP_TOOL_SERVER = "rakazo";
@@ -72,8 +66,6 @@ const INVALID_PARAMS = -32602;
 const PROTOCOL_VERSION = 1;
 /** How many of its own replies a session remembers, to tell them from replies written elsewhere. */
 const MAX_REMEMBERED_REPLIES = 200;
-/** How much of the chat a new session is given, newest first, in characters. */
-const SEED_CHARS = 32_000;
 /** How long a turn that ends early waits for the CLI to settle its cancelled prompt. */
 const CANCEL_GRACE_MS = 3_000;
 
@@ -481,13 +473,18 @@ async function runAcpTurn(
       replies: new Set(),
       usedAt: Date.now(),
     };
-    const turn = turnText(request, current, fresh, includeOwnReplies);
     const takesImages = Boolean((capabilities.promptCapabilities as Update | undefined)?.image);
-    const images = descriptor.acceptsImages && takesImages ? turn.images : [];
-    if (turn.images.length && !images.length) {
+    const turn = turnText(
+      request,
+      current,
+      fresh,
+      includeOwnReplies,
+      Boolean(descriptor.acceptsImages) && takesImages,
+    );
+    if (turn.leftOut) {
       getLogger().warn("The agent CLI does not take images; the message's images were left out", {
         agent: descriptor.id,
-        images: turn.images.length,
+        images: turn.leftOut,
       });
     }
     current.usedAt = Date.now();
@@ -496,17 +493,10 @@ async function runAcpTurn(
       cachedSession = true;
     }
 
-    const send = async (text: string, attached: readonly AgentInputImage[] = []) => {
+    const send = async (prompt: Update[]) => {
       const prompting = agent.request<Update>("session/prompt", {
         sessionId: activeSessionId,
-        prompt: [
-          { type: "text", text },
-          ...attached.map((image) => ({
-            type: "image",
-            mimeType: image.mimeType,
-            data: Buffer.from(image.data).toString("base64"),
-          })),
-        ],
+        prompt,
       });
       inFlight = prompting;
       sentPrompt = true;
@@ -519,7 +509,7 @@ async function runAcpTurn(
         if (inFlight === prompting) inFlight = undefined;
       }
     };
-    let response = await send(turn.text, images);
+    let response = await send(turn.blocks);
     // Shell commands still running when the CLI ended its turn report back, as between steps.
     while (!violation && !cancelled && host.pendingShells.length) {
       let finished: string | undefined;
@@ -534,7 +524,7 @@ async function runAcpTurn(
       if (!finished) break;
       await reportUsage(request, descriptor, response.usage, push);
       afterTool = true;
-      response = await send(finished);
+      response = await send([{ type: "text", text: finished }]);
     }
     if (violation) throw violation;
     const stopReason = response.stopReason;
@@ -755,97 +745,6 @@ function flattenValues(options: unknown): string[] {
   );
 }
 
-/**
- * This turn's message: the chat the session has not seen, then the new message. A new session
- * gets the newest part of the chat that fits; a continued one only what others wrote since.
- */
-function turnText(
-  request: AgentRunRequest,
-  session: AgentSession,
-  fresh: boolean,
-  includeOwn: boolean,
-): { text: string; images: AgentInputImage[] } {
-  const lines: Array<{ line: string; images: readonly AgentInputImage[]; id?: string }> = [];
-  const late: AgentInputImage[] = [];
-  for (const item of request.history) {
-    const content = item.content.trim();
-    // The new message itself goes last, as the prompt.
-    if (!content || (item.id && item.id === request.sourceMessageId)) continue;
-    const own = item.role === "assistant" && !item.speaker;
-    if (item.id) {
-      if (session.seen.has(item.id)) {
-        // An image that could not be read when the session first saw its message comes now.
-        if (item.images?.length && !session.imaged.has(item.id)) {
-          session.imaged.add(item.id);
-          late.push(...item.images);
-        }
-        continue;
-      }
-      session.seen.add(item.id);
-      // The session wrote this reply itself, unless a turn running beside it did.
-      if (own && !fresh && (!includeOwn || session.replies.has(contentHash(content)))) continue;
-    } else {
-      const hash = contentHash(content);
-      if (session.context.has(hash)) continue;
-      session.context.add(hash);
-    }
-    const speaker =
-      item.speaker ?? (own ? OWN_SPEAKER : item.role === "system" ? "Note" : PERSON_SPEAKER);
-    lines.push({ line: historyLine(speaker, content), images: item.images ?? [], id: item.id });
-  }
-  if (request.sourceMessageId) session.seen.add(request.sourceMessageId);
-  // As with ids: only summaries and recall still in this turn's history can come up again.
-  const inContext = new Set(
-    request.history.filter((item) => !item.id).map((item) => contentHash(item.content.trim())),
-  );
-  for (const hash of session.context) if (!inContext.has(hash)) session.context.delete(hash);
-  // Only ids still in the chat's history window can come up again, so the rest are let go.
-  const inWindow = new Set(request.history.map((item) => item.id).filter(Boolean));
-  for (const id of session.seen) {
-    if (!inWindow.has(id) && id !== request.sourceMessageId) session.seen.delete(id);
-  }
-  for (const id of session.imaged) if (!inWindow.has(id)) session.imaged.delete(id);
-  let kept = lines;
-  if (fresh) {
-    // The newest messages that fit; the newest one is kept, shortened, even when it alone does not.
-    let size = 0;
-    const start = lines.findLastIndex(({ line }) => {
-      size += line.length;
-      return size > SEED_CHARS;
-    });
-    kept =
-      start >= 0 && start === lines.length - 1
-        ? [{ ...lines[start]!, line: `…${lines[start]!.line.slice(-SEED_CHARS)}` }]
-        : lines.slice(start + 1);
-  }
-  // Only images actually sent count as sent: an entry cut from a new session's history sends its
-  // image later, once it is the session's.
-  for (const { id, images } of kept) if (id && images.length) session.imaged.add(id);
-  if (request.sourceMessageId && request.currentTurnImages?.length) {
-    session.imaged.add(request.sourceMessageId);
-  }
-  const message = request.promptSpeaker
-    ? historyLine(request.promptSpeaker, request.prompt)
-    : request.prompt;
-  return {
-    text: [
-      conversationBlock(
-        kept.map(({ line }) => line),
-        fresh,
-      ),
-      message,
-    ]
-      .filter(Boolean)
-      .join("\n\n"),
-    // Images go with the messages they came with, the new message's last.
-    images: [
-      ...late,
-      ...kept.flatMap(({ images }) => images),
-      ...(request.currentTurnImages ?? []),
-    ],
-  };
-}
-
 /** Usage is reported only when the CLI gives it; the plan pays, so its cost is unknown. */
 async function reportUsage(
   request: AgentRunRequest,
@@ -956,10 +855,6 @@ function toolResult(result: AgentToolResult<unknown>, finishedShells?: string): 
     content: content.length ? content : [{ type: "text", text: "ok" }],
     ...(details?.error != null || details?.isError === true ? { isError: true } : {}),
   };
-}
-
-function contentHash(text: string): string {
-  return createHash("sha256").update(text).digest("hex");
 }
 
 /**
