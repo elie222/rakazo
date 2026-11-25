@@ -7,7 +7,7 @@ import {
   MAX_OUTSIDE_TEXT_CHARS,
   outsideOnlyTargets,
 } from "../../approvals/review-target-sources.js";
-import { shortenToolResultText } from "../../runtime/context/context-selection.js";
+import { selectContext, shortenToolResultText } from "../../runtime/context/context-selection.js";
 import { OMITTED_AFTER_USE } from "../../runtime/context/runtime-context.prompt.js";
 import { clipToolResultText, TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
 import type { ToolHost } from "../../runtime/pi/tools/pi-runtime-tools.js";
@@ -961,4 +961,233 @@ it("does not restore watch targets omitted before first use, while still recover
     restoreTurnCheckpointEffects(afterUseCtx, JSON.stringify(afterUseCheckpoint), model),
   ).toBeDefined();
   expect(afterUseCtx.state.outsideText).toContain("never-seen@outside.test");
+});
+
+it("decodes only visible lastCheck fragments on plain-text before-use cuts without flagging owner prompts", () => {
+  const details = {
+    routines: [
+      {
+        routineId: "r-plain-before",
+        prompt: "Send weekly summary to owner-authored@example.test",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: `line1\nvisible-head@outside.test ${"a".repeat(6_000)} omitted-mid@outside.test ${"b".repeat(5_500)} visible-tail@outside.test ${"c".repeat(2_000)}`,
+        },
+      },
+    ],
+  };
+  const clipped = clipToolResultText(serializeToolResult(details, "current", "schedule_list", {}));
+  expect(() => JSON.parse(clipped)).toThrow();
+  expect(clipped).toContain("visible-head@outside.test");
+  expect(clipped).toContain("omitted-mid@outside.test");
+
+  const beforeUsePlain = shortenToolResultText(
+    clipped,
+    900,
+    { name: "schedule_list" },
+    { afterUse: false },
+  );
+  expect(beforeUsePlain).toContain("owner-authored@example.test");
+  expect(beforeUsePlain).toContain("visible-head@outside.test");
+  expect(beforeUsePlain).not.toContain("omitted-mid@outside.test");
+
+  const blob = JSON.parse(checkpoint("ask_user"));
+  blob.messages.unshift({
+    role: "toolResult",
+    toolCallId: "plain-before-1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: beforeUsePlain }],
+    details,
+  });
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(restoreTurnCheckpointEffects(ctx, JSON.stringify(blob), model)).toBeDefined();
+  expect(ctx.state.outsideText).toContain("visible-head@outside.test");
+  expect(ctx.state.outsideText).not.toContain("owner-authored@example.test");
+  expect(ctx.state.outsideText).not.toContain("omitted-mid@outside.test");
+  expect(
+    outsideOnlyTargets(
+      {
+        to: [
+          "visible-head@outside.test",
+          "owner-authored@example.test",
+          "omitted-mid@outside.test",
+        ],
+      },
+      { ownerWords: ["List schedules"], outsideText: ctx.state.outsideText },
+    ),
+  ).toEqual(["visible-head@outside.test"]);
+});
+
+it("keeps before-use omissions excluded when selectContext later compacts the result after use", () => {
+  const details = {
+    routines: [
+      {
+        routineId: "r-two-stage",
+        prompt: "Send weekly summary to owner-prompt@example.test",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: `${"x".repeat(4_800)} never-seen-stage1@outside.test ${"y".repeat(4_800)}`,
+          entries: {
+            "item-seen": `${"s".repeat(67)} seen-stage1@outside.test ${"t".repeat(67)}`,
+          },
+        },
+      },
+    ],
+  };
+  const raw = JSON.stringify(details);
+  expect(raw.length).toBeLessThan(TOOL_RESULT_TEXT_LIMIT);
+
+  // Stage 1 (before first use): selectContext shortens the newest tool result before the model sees it.
+  const turn1 = selectContext(
+    [
+      { role: "user", content: "List schedules" },
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "two-stage-1", name: "schedule_list", arguments: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "two-stage-1",
+        toolName: "schedule_list",
+        content: [{ type: "text", text: raw }],
+        details,
+      },
+    ],
+    {
+      strategy: "cache-aware",
+      truncateToolResults: true,
+      budget: { contextWindow: 2_600, outputReserve: 0, systemPrompt: "Fixture", tools: [] },
+    },
+  );
+  const stage1Msg = turn1.messages.find((m) => m.role === "toolResult") as {
+    content: Array<{ type: string; text?: string }>;
+    details?: Record<string, unknown>;
+  };
+  const stage1Text = stage1Msg.content[0]?.text ?? "";
+  expect(stage1Text).not.toContain("never-seen-stage1@outside.test");
+  expect(stage1Text).toContain("seen-stage1@outside.test");
+  expect(stage1Msg.details?.contextBeforeUseText).toBe(stage1Text);
+
+  // Stage 2 (after use): a later assistant turn arrives and selectContext compacts the same result further.
+  const turn2 = selectContext(
+    [
+      ...turn1.messages,
+      { role: "assistant", content: [{ type: "text", text: "Checked schedules." }] },
+      { role: "user", content: `Continue ${"c".repeat(40)}` },
+    ],
+    {
+      strategy: "cache-aware",
+      truncateToolResults: true,
+      protectedIndexes: [1, 2],
+      budget: {
+        contextWindow: turn1.estimatedInputTokens + 10,
+        outputReserve: 0,
+        systemPrompt: "Fixture",
+        tools: [],
+      },
+    },
+  );
+  const stage2Msg = turn2.messages.find((m) => m.role === "toolResult") as {
+    content: Array<{ type: string; text?: string }>;
+    details?: Record<string, unknown>;
+  };
+  const stage2Text = stage2Msg.content[0]?.text ?? "";
+  expect(stage2Text).not.toContain("never-seen-stage1@outside.test");
+  expect(stage2Text).not.toContain("seen-stage1@outside.test");
+  expect(stage2Text).toContain(OMITTED_AFTER_USE);
+  expect(stage2Msg.details?.contextBeforeUseText).toBe(stage1Text);
+
+  const blob = JSON.parse(checkpoint("ask_user"));
+  blob.messages.unshift(stage2Msg);
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(restoreTurnCheckpointEffects(ctx, JSON.stringify(blob), model)).toBeDefined();
+  expect(ctx.state.outsideText).not.toContain("never-seen-stage1@outside.test");
+  expect(ctx.state.outsideText).not.toContain("owner-prompt@example.test");
+  expect(ctx.state.outsideText).toContain("seen-stage1@outside.test");
+});
+
+it("keeps plain-text before-use cuts bounded across later after-use compaction", () => {
+  const details = {
+    routines: [
+      {
+        routineId: "r-plain-two-stage",
+        prompt: "Forward digest to owner-plain-two-stage@example.test",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: `hdr\nvisible-before-use@outside.test ${"a".repeat(6_000)} omitted-before-use@outside.test ${"b".repeat(6_000)} tail-end`,
+        },
+      },
+    ],
+  };
+  const clipped = clipToolResultText(serializeToolResult(details, "current", "schedule_list", {}));
+  expect(() => JSON.parse(clipped)).toThrow();
+  expect(clipped).toContain("visible-before-use@outside.test");
+  expect(clipped).toContain("omitted-before-use@outside.test");
+
+  // Stage 1 (before first use): selectContext shortens the clipped plain-text result and records it.
+  const turn1 = selectContext(
+    [
+      { role: "user", content: "List schedules" },
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "plain-two-stage", name: "schedule_list", arguments: {} },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "plain-two-stage",
+        toolName: "schedule_list",
+        content: [{ type: "text", text: clipped }],
+        details,
+      },
+    ],
+    {
+      strategy: "cache-aware",
+      truncateToolResults: true,
+      budget: { contextWindow: 3_600, outputReserve: 0, systemPrompt: "Fixture", tools: [] },
+    },
+  );
+  const stage1Msg = turn1.messages.find((m) => m.role === "toolResult") as {
+    content: Array<{ type: string; text?: string }>;
+    details?: Record<string, unknown>;
+  };
+  const stage1Text = stage1Msg.content[0]?.text ?? "";
+  expect(stage1Text).toContain("visible-before-use@outside.test");
+  expect(stage1Text).not.toContain("omitted-before-use@outside.test");
+  expect(stage1Msg.details?.contextBeforeUseText).toBe(stage1Text);
+
+  // Stage 2 (after use): a later turn compacts the result further, dropping visible-before-use from text.
+  const turn2 = selectContext(
+    [
+      ...turn1.messages,
+      { role: "assistant", content: [{ type: "text", text: "Checked schedules." }] },
+      { role: "user", content: "Continue" },
+    ],
+    {
+      strategy: "cache-aware",
+      truncateToolResults: true,
+      protectedIndexes: [1, 2],
+      budget: { contextWindow: 300, outputReserve: 0, systemPrompt: "Fixture", tools: [] },
+    },
+  );
+  const stage2Msg = turn2.messages.find((m) => m.role === "toolResult") as {
+    content: Array<{ type: string; text?: string }>;
+    details?: Record<string, unknown>;
+  };
+  const stage2Text = stage2Msg.content[0]?.text ?? "";
+  expect(stage2Text).not.toContain("visible-before-use@outside.test");
+  expect(stage2Text).toContain(OMITTED_AFTER_USE);
+  expect(stage2Msg.details?.contextBeforeUseText).toBe(stage1Text);
+
+  const blob = JSON.parse(checkpoint("ask_user"));
+  blob.messages.unshift(stage2Msg);
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(restoreTurnCheckpointEffects(ctx, JSON.stringify(blob), model)).toBeDefined();
+  expect(ctx.state.outsideText).toContain("visible-before-use@outside.test");
+  expect(ctx.state.outsideText).not.toContain("omitted-before-use@outside.test");
+  expect(ctx.state.outsideText).not.toContain("owner-plain-two-stage@example.test");
 });

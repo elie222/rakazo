@@ -579,6 +579,10 @@ function messageGroups(
   }
   return groups;
 }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 /** Cheap selection only. No clock event or strategy calls a model or creates a summary. */
 export function selectContext<T extends ContextMessage>(
   messages: readonly T[],
@@ -676,15 +680,29 @@ export function selectContext<T extends ContextMessage>(
             128,
             Math.min(Math.floor(serialized.length / 2), Math.floor(available / 4)),
           );
+          const afterUse = index < latestAssistant;
           const text = shortenToolResultText(
             serialized,
             size,
             nativeCall ?? { name: message.toolName },
-            { afterUse: index < latestAssistant },
+            { afterUse },
           );
           if (text.length >= serialized.length) return message;
           shortenedCount += 1;
-          return { ...message, content: [{ type: "text", text }, ...images] } as T;
+          const nextMessage = { ...message, content: [{ type: "text", text }, ...images] } as T & {
+            details?: unknown;
+          };
+          // A before-use cut changes what the model first sees, so record that delivery on
+          // `details` without overwriting metadata fields like `frameId` or `error`, preventing
+          // later after-use compaction from restoring content the model never received.
+          const currentDetails = nextMessage.details;
+          if (!afterUse && isRecord(currentDetails)) {
+            nextMessage.details = {
+              ...currentDetails,
+              contextBeforeUseText: text,
+            };
+          }
+          return nextMessage as T;
         });
         if (shortenedCount) {
           const retry = selectContext(shortened, options);
