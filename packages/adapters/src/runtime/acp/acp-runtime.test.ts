@@ -11,6 +11,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { approvalPausedToolResult } from "../../approvals/approval-effect.js";
+import { buildApprovalContinuation } from "../../runs/lifecycle/run-effects.js";
 import type { AcpAgentDescriptor } from "./acp-agent.js";
 import { acpAgentRuntime } from "./acp-runtime.js";
 
@@ -307,19 +308,41 @@ describe("acpAgentRuntime", () => {
     expect(promptText()).toContain("[User]: Earlier question");
   });
 
-  it("ends the turn when a tool pauses for approval", async () => {
+  it("runs an approved call once on the continuation, with its original arguments", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+    const threadId = `thread-${randomUUID()}`;
+    const executeTool = vi
+      .fn()
+      .mockResolvedValueOnce(approvalPausedToolResult())
+      .mockResolvedValueOnce({ sent: true });
 
-    const { events, error } = await collect(runtime, request({ prompt: "Send a note" }));
+    const paused = await collect(
+      runtime,
+      request({ threadId, prompt: "Send a note", executeTool }),
+    );
+    const pausedArgs = executeTool.mock.calls[0]?.[1];
+    // The prompt Rakazo builds for a run resumed after the person approved the request.
+    const continuation = buildApprovalContinuation(
+      [{ kind: "send_note", request: pausedArgs }],
+      (args) => JSON.stringify(args),
+    )!;
+    const resumed = await collect(
+      runtime,
+      request({ threadId, prompt: continuation, executeTool }),
+    );
 
-    expect(error).toBeUndefined();
-    expect(events.map((event) => event.type)).toContain("tool");
-    expect(events.at(-1)?.type).toBe("done");
+    expect(paused.events.at(-1)?.type).toBe("done");
     expect(
       recorded().some(
         (event) => event.type === "notification" && event.method === "session/cancel",
       ),
     ).toBe(true);
+    expect(requests("session/resume")).toHaveLength(1);
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(executeTool.mock.calls[1]?.[0]).toBe("send_note");
+    expect(executeTool.mock.calls[1]?.[1]).toEqual(pausedArgs);
+    expect(resumed.error).toBeUndefined();
+    expect(resumed.text).toBe('Done: {"sent":true}');
   });
 
   it("stops a turn in which the agent uses a tool of its own", async () => {
