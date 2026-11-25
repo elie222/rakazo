@@ -1,5 +1,10 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
+import {
+  historyReplaysOutsideContent,
+  historyToolResults,
+  keptTurnTranscript,
+} from "../../runs/turn/tool-step-calls.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { toHistory } from "./pi-runtime-history.js";
 
@@ -204,5 +209,74 @@ describe("Pi turn transcript", () => {
     );
     expect(JSON.stringify(replayed)).not.toContain("<current_time>");
     expect(replayed.at(-1)).toMatchObject({ role: "assistant", content: [{ text: "Saved a." }] });
+  });
+});
+
+describe("stored turn safety", () => {
+  const turn = (tool: string, result: string) =>
+    JSON.stringify({
+      version: 1,
+      represents: ["ask"],
+      messages: [
+        { role: "user", content: "Check it.", timestamp: 0 },
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "call", name: tool, arguments: { token: "abc" } }],
+          timestamp: 0,
+        },
+        {
+          role: "toolResult",
+          toolCallId: "call",
+          toolName: tool,
+          content: [{ type: "text", text: result }],
+          isError: false,
+          timestamp: 0,
+        },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Done." }],
+          stopReason: "stop",
+          timestamp: 0,
+        },
+      ],
+    });
+
+  it("keeps no turn that read a secret, and cleans credentials out of the rest", () => {
+    expect(keptTurnTranscript(turn("read_secret", "value"), [])).toBeUndefined();
+    const kept = keptTurnTranscript(turn("fetch_page", '{"api_key":"sk-live-1"}'), []);
+    expect(kept).toBeDefined();
+    expect(kept).not.toContain("sk-live-1");
+    expect(kept).not.toContain('"abc"');
+  });
+
+  it("hands Auto Review and taint the whole results a stored turn replays", () => {
+    const history: AgentRunRequest["history"] = [
+      {
+        id: "reply",
+        role: "assistant",
+        content: "Done.",
+        transcript: turn("fetch_page", "Page text"),
+      },
+    ];
+    expect(historyToolResults(history)).toEqual(["Page text"]);
+    expect(historyReplaysOutsideContent(history)).toBe(true);
+  });
+
+  it("replays from the reply when a tool the turn called is no longer offered", () => {
+    const history: AgentRunRequest["history"] = [
+      { id: "ask", role: "user", content: "Check it." },
+      {
+        id: "reply",
+        role: "assistant",
+        content: "Done.",
+        transcript: turn("fetch_page", "Page text"),
+      },
+    ];
+    expect(JSON.stringify(toHistory(history, "", undefined, new Set(["fetch_page"])))).toContain(
+      "Page text",
+    );
+    expect(JSON.stringify(toHistory(history, "", undefined, new Set(["other"])))).not.toContain(
+      "Page text",
+    );
   });
 });

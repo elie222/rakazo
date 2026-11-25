@@ -15,7 +15,7 @@ import {
   toolNotAvailableNote,
 } from "../context/history-replay.prompt.js";
 import { neutralizeSpeakerLabels } from "../context/history-speakers.js";
-import { readTurnTranscript } from "./pi-runtime-transcript.js";
+import { readTurnTranscript, turnToolNames } from "./pi-runtime-transcript.js";
 import { normalizeAgentToolName } from "./tools/pi-runtime-tools.js";
 
 export function toPiImages(images: AgentRunRequest["currentTurnImages"]) {
@@ -274,26 +274,18 @@ function replayedToolReply(
 /**
  * Earlier turns stored as they were sent, by the index of the reply that ended each, with the
  * indexes of the messages it stands for. A turn replays this way only when those messages sit
- * right before its reply, so nothing sent since is lost or repeated, and only with tools offered
- * when it holds tool calls.
+ * right before its reply, so nothing sent since is lost or repeated, and every tool it called is
+ * still offered under the same name.
  */
-function storedTurns(prior: AgentRunRequest["history"], toolsOffered: boolean) {
+function storedTurns(prior: AgentRunRequest["history"], offered: ReadonlySet<string>) {
   const turns = new Map<number, Message[]>();
   const covered = new Set<number>();
   for (const [index, entry] of prior.entries()) {
     if (entry.role !== "assistant" || entry.speaker || !entry.transcript) continue;
     const turn = readTurnTranscript(entry.transcript);
     if (!turn) continue;
-    if (
-      !toolsOffered &&
-      turn.messages.some(
-        (message) =>
-          message.role === "toolResult" ||
-          (message.role === "assistant" &&
-            message.content.some((part) => part.type === "toolCall")),
-      )
-    )
-      continue;
+    // A tool the run no longer offers as it was called replays with a note, from the reply.
+    if (turnToolNames(turn.messages).some((name) => !offered.has(name))) continue;
     const first = index - turn.represents.length;
     if (first < 0) continue;
     const before = prior.slice(first, index);
@@ -351,7 +343,7 @@ export function toHistory(
     duplicatePromptIndex < 0
       ? history
       : history.filter((_, index) => index !== duplicatePromptIndex);
-  const stored = storedTurns(prior, offered.size > 0);
+  const stored = storedTurns(prior, offered);
   return prior.flatMap((m, index): HistoryMessage[] => {
     const created = m.createdAt ? Date.parse(m.createdAt) : Number.NaN;
     const common = {

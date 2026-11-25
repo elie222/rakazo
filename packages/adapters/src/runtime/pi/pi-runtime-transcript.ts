@@ -1,4 +1,6 @@
 import type { Message } from "@earendil-works/pi-ai";
+import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 import { withoutSavedMeetingResult } from "../../runs/turn/turn-checkpoint.js";
 import { RECALLED_MEMORY_LEAD } from "../context/runtime-context.prompt.js";
 
@@ -81,30 +83,102 @@ export function captureTurnTranscript(
   return serialized.length > MAX_TRANSCRIPT_CHARS ? undefined : serialized;
 }
 
+const StoredTurnSchema = z.object({
+  version: z.literal(1),
+  represents: z.array(z.string()),
+  messages: z
+    .array(
+      z
+        .object({
+          role: z.enum(["user", "assistant", "toolResult"]),
+          content: z.union([z.string(), z.array(z.record(z.string(), z.unknown()))]),
+        })
+        .passthrough(),
+    )
+    .min(1),
+});
+
 /** A stored turn's messages and the history it stands for, or none when it cannot be read. */
 export function readTurnTranscript(
   serialized: string | undefined,
 ): Pick<TurnTranscript, "represents" | "messages"> | undefined {
   if (!serialized) return undefined;
+  let parsed: ReturnType<typeof StoredTurnSchema.safeParse> | undefined;
   try {
-    const value = JSON.parse(serialized) as Partial<TurnTranscript>;
-    if (
-      value.version !== 1 ||
-      !Array.isArray(value.represents) ||
-      !value.represents.every((id) => typeof id === "string") ||
-      !Array.isArray(value.messages) ||
-      value.messages.length === 0 ||
-      !value.messages.every(
-        (message) =>
-          message &&
-          typeof message === "object" &&
-          ["user", "assistant", "toolResult"].includes(message.role) &&
-          (typeof message.content === "string" || Array.isArray(message.content)),
-      )
-    )
-      return undefined;
-    return { represents: value.represents, messages: value.messages };
+    parsed = StoredTurnSchema.safeParse(JSON.parse(serialized));
   } catch {
-    return undefined;
+    parsed = undefined;
   }
+  if (parsed?.success)
+    return {
+      represents: parsed.data.represents,
+      messages: parsed.data.messages as unknown as Message[],
+    };
+  // The turn is rebuilt from its reply instead, as before records were kept.
+  getLogger().warn("Stored turn transcript could not be read; replaying from the reply");
+  return undefined;
+}
+
+/** Where a text sits in a stored turn, so each can be treated as its kind is elsewhere. */
+export type TurnTextKind = "prompt" | "reply" | "arguments" | "result";
+
+/**
+ * The stored turn with `change` applied to each text it holds (after `changeArguments` to each
+ * call's arguments), or none when it cannot be read or `keep` refuses one of its tool calls.
+ */
+export function mapTurnTranscript(
+  serialized: string,
+  change: (text: string, kind: TurnTextKind) => string,
+  keep: (toolName: string) => boolean = () => true,
+  changeArguments: (args: Record<string, unknown>) => Record<string, unknown> = (args) => args,
+): string | undefined {
+  const turn = readTurnTranscript(serialized);
+  if (!turn) return undefined;
+  if (turnToolNames(turn.messages).some((name) => !keep(name))) return undefined;
+  const deep = (value: unknown): unknown =>
+    typeof value === "string"
+      ? change(value, "arguments")
+      : Array.isArray(value)
+        ? value.map(deep)
+        : value && typeof value === "object"
+          ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, deep(item)]))
+          : value;
+  const messages = turn.messages.map((message): Message => {
+    const kind: TurnTextKind =
+      message.role === "user" ? "prompt" : message.role === "toolResult" ? "result" : "reply";
+    if (typeof message.content === "string")
+      return { ...message, content: change(message.content, kind) } as Message;
+    return {
+      ...message,
+      content: message.content.map((part) =>
+        part.type === "text"
+          ? { ...part, text: change(part.text, kind) }
+          : part.type === "toolCall"
+            ? {
+                ...part,
+                arguments: deep(changeArguments(part.arguments)) as typeof part.arguments,
+              }
+            : part,
+      ),
+    } as Message;
+  });
+  return JSON.stringify({ version: 1, represents: turn.represents, messages });
+}
+
+/** Every tool the turn called, by the name the model called it. */
+export function turnToolNames(messages: readonly Message[]): string[] {
+  return messages.flatMap((message) =>
+    message.role === "assistant"
+      ? message.content.flatMap((part) => (part.type === "toolCall" ? [part.name] : []))
+      : [],
+  );
+}
+
+/** The text of every tool result a stored turn hands the model, oldest first. */
+export function turnTranscriptResults(serialized: string | undefined): string[] {
+  return (readTurnTranscript(serialized)?.messages ?? []).flatMap((message) =>
+    message.role === "toolResult"
+      ? message.content.flatMap((part) => (part.type === "text" ? [part.text] : []))
+      : [],
+  );
 }

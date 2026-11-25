@@ -19,6 +19,7 @@ import {
   neutralizeSpeakerLabels,
 } from "../../runtime/context/history-speakers.js";
 import { loadAgentScratchpadContext } from "../../runtime/context/scratchpad-context.js";
+import { mapTurnTranscript } from "../../runtime/pi/pi-runtime-transcript.js";
 import { loadAgentTicketContext } from "../../tasks/ticket-context.js";
 import type { RunHold } from "../lifecycle/run-attempt.js";
 import { loadCurrentTurnImages } from "../turn/run-turn-images.js";
@@ -80,11 +81,18 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
                       })),
                     },
               );
-        // The turn exactly as this bot's model was sent it, so the next request extends it.
-        const transcript =
+        // The turn exactly as this bot's model was sent it, so the next request extends it. In a
+        // group, what tools returned and the bot wrote may not pose as a speaker either.
+        const stored =
           m.role === "bot" && !speaker && replaysToolHistory && !partial
             ? messageTranscript(m)
             : undefined;
+        const transcript =
+          stored && speakers
+            ? mapTurnTranscript(stored, (value, kind) =>
+                kind === "result" || kind === "reply" ? neutral(value) : value,
+              )
+            : stored;
         return {
           id: m.id,
           createdAt: m.createdAt?.toISOString(),

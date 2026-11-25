@@ -28,7 +28,7 @@ import {
 } from "../../runtime/context/history-compaction.js";
 import { returnHelperOutcome } from "../../tasks/background-helpers.js";
 import type { RunContext } from "../assembly/run-context.js";
-import { redactBlocks, redactTranscript } from "../assembly/run-messages.js";
+import { redactBlocks } from "../assembly/run-messages.js";
 import {
   completionMessageSegments,
   emptyDelegatedToolTurnShouldFail,
@@ -42,7 +42,7 @@ import {
   stripNoResponseReply,
   stripStrayNoResponse,
 } from "../assembly/silent-reply.js";
-import { saveLatestStepScreenshot } from "../turn/tool-step-calls.js";
+import { keptTurnTranscript, saveLatestStepScreenshot } from "../turn/tool-step-calls.js";
 import { enqueueSteeringContinuation, renewRunLease } from "./run-lifecycle.js";
 import {
   completionMarksUnread,
@@ -153,7 +153,7 @@ export async function completeRun(ctx: RunContext) {
     // Only a reply that holds the whole turn stands for it; earlier messages of this run would
     // sit between the turn's prompt and the reply.
     ...(reply.transcript && blocks.length > 0 && !reply.publishedMidTurnUserMessage
-      ? { transcript: redactTranscript(reply.transcript, ctx.secrets) }
+      ? { transcript: keptTurnTranscript(reply.transcript, ctx.secrets) }
       : {}),
   });
   if (!completed) return;
