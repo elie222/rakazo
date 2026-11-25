@@ -22,6 +22,7 @@ import {
 import type { FinishedShellCommand } from "../../../computers/sandbox/shell-command-stream.js";
 import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
+import { NO_RESPONSE } from "../../../runs/assembly/silent-reply.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
 import { settleMsArg, textContentArg } from "../../../runs/turn/tool-text.js";
 import {
@@ -409,8 +410,7 @@ function toAgentTool(
       const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       if (tool.name === "remember") {
         return {
-          content: String(raw.content ?? ""),
-          ...(typeof raw.old_text === "string" && raw.old_text ? { old_text: raw.old_text } : {}),
+          operations: raw.operations,
           ...(typeof raw.path === "string" && raw.path.trim() ? { path: raw.path } : {}),
         };
       }
@@ -588,6 +588,12 @@ function toAgentTool(
                   new Set(options).size !== options.length
                 ) {
                   throw new Error("ask_user requires two to four unique, non-empty options");
+                }
+                if (typeof args.question !== "string" || args.question.trim().length === 0) {
+                  // A blank question is a card nobody can answer, not a way to end quietly.
+                  throw new Error(
+                    `ask_user requires a question for the person. To finish without a message where staying silent is allowed, reply exactly ${NO_RESPONSE} instead.`,
+                  );
                 }
                 host.pausePending = true;
                 host.queue.push({

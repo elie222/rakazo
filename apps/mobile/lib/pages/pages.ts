@@ -1,5 +1,7 @@
-import type { PageDetail } from "@rakazo/contracts";
+import type { PageDetail, PageImages } from "@rakazo/contracts";
+import type { PageShown } from "@rakazo/core";
 import { isServerUnreachable, pageViewerDocument } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { rpc } from "../api/api";
 import { registerSessionDiskCache } from "../api/session";
 import { getActiveUiLocale } from "../i18n/i18n";
@@ -166,9 +168,38 @@ export function removePage(pageId: string) {
     .finally(() => pageReads.delete(pageId));
 }
 
+const PAGE_IMAGE_READS_MAX = 96;
+const pageImageReads = new Map<string, Promise<string | undefined>>();
+registerSessionDiskCache(() => pageImageReads.clear());
+
+function readPageImage(pageId: string, version: number, imageId: string) {
+  const cached = pageImageReads.get(imageId);
+  if (cached) return cached;
+  const read = bestEffort(
+    "read a page picture",
+    rpc("pageReviews/image", { pageId, version, imageId }).then((image) => image.src),
+  );
+  pageImageReads.set(imageId, read);
+  if (pageImageReads.size > PAGE_IMAGE_READS_MAX)
+    pageImageReads.delete(pageImageReads.keys().next().value!);
+  void read.then((src) => {
+    if (src === undefined && pageImageReads.get(imageId) === read) pageImageReads.delete(imageId);
+  });
+  return read;
+}
+
+async function readPageImages(pageId: string, version: number, images: PageImages) {
+  const read = await Promise.all(
+    Object.entries(images ?? {}).map(
+      async ([name, imageId]) => [name, await readPageImage(pageId, version, imageId)] as const,
+    ),
+  );
+  return Object.fromEntries(read.filter((entry): entry is [string, string] => Boolean(entry[1])));
+}
+
 export async function pageDocument(
   apiBase: string,
-  code: string,
+  page: PageShown & { pageId: string },
   theme: "light" | "dark",
   errorTitle: string,
   options: {
@@ -178,10 +209,14 @@ export async function pageDocument(
     reviewAnchorOccurrence?: number;
   } = {},
 ): Promise<string> {
-  const runtime = await loadPageRuntime(apiBase);
+  const [runtime, images] = await Promise.all([
+    loadPageRuntime(apiBase),
+    readPageImages(page.pageId, page.version, page.images),
+  ]);
   return pageViewerDocument({
     runtime,
-    code,
+    code: page.code,
+    images,
     theme,
     errorTitle,
     touch: true,

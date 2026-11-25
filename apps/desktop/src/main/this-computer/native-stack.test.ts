@@ -227,6 +227,44 @@ describe("choosePort", () => {
 });
 
 describe("NativeStackController", () => {
+  it("fills in CLI locations missing from the inherited PATH for the API and worker", async () => {
+    const { deps, byName } = harness({
+      env: {
+        HOME: "/Users/someone",
+        PATH: "/custom/bin:/usr/bin::/bin:/custom/bin:/usr/sbin:/sbin",
+      },
+    });
+    const controller = new NativeStackController(deps);
+    expect((await controller.start()).phase).toBe("ready");
+    await controller.stop();
+
+    for (const name of ["apps/api/dist/index.js", "apps/worker/dist/index.js"]) {
+      expect(byName(name)[0]?.env.PATH?.split(":")).toEqual([
+        "/custom/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+        "/Users/someone/.local/bin",
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+      ]);
+    }
+  });
+
+  it("uses the PATH set in stack/.env for the API and worker", async () => {
+    await mkdir(stackDir, { recursive: true });
+    await writeFile(path.join(stackDir, ".env"), `${TEMPLATE}PATH=/configured/bin:/usr/bin\n`);
+    const { deps, byName } = harness();
+    const controller = new NativeStackController(deps);
+    expect((await controller.start()).phase).toBe("ready");
+    await controller.stop();
+
+    for (const name of ["apps/api/dist/index.js", "apps/worker/dist/index.js"]) {
+      expect(byName(name)[0]?.env.PATH).toBe("/configured/bin:/usr/bin");
+    }
+  });
+
   it("offers the stop item from the moment start begins, before Postgres is up", async () => {
     const { deps } = harness({
       hostComputer: { url: "http://127.0.0.1:47000", token: "host-token" },

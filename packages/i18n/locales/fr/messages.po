@@ -136,6 +136,12 @@ msgstr "{0} Mo"
 msgid "{0} occurrences"
 msgstr "{0} occurrences"
 
+#. placeholder {0}: usd(media.leftCents / 100)
+#. placeholder {1}: usd(media.limitCents / 100)
+#: apps/web/src/components/billing/PlanUsage.tsx
+msgid "{0} of {1} left"
+msgstr "{0} restant sur {1}"
+
 #. placeholder {0}: sender.name
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "{0} rollup hours"
@@ -323,10 +329,6 @@ msgstr "{count} demandent votre attention"
 msgid "{count} on"
 msgstr "{count} activés"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
-msgid "{count} tools"
-msgstr "{count} outils"
-
 #: apps/mobile/components/inbox/unread-jump-overlay.tsx
 msgid "{count} unread"
 msgstr "{count} non lus"
@@ -411,6 +413,10 @@ msgstr "{label}, en dessous"
 #: apps/web/src/components/messages/markdown-copy.tsx
 msgid "{label}, empty"
 msgstr "{label}, vide"
+
+#: apps/mobile/app/(settings)/account.tsx
+msgid "{left} of {limit} left"
+msgstr "{left} restant sur {limit}"
 
 #: apps/mobile/components/settings/space-bots-model.tsx
 msgid "{moved, plural, one {# bot now uses the space default.} other {# bots now use the space default.}}"
@@ -505,6 +511,16 @@ msgstr "{name}, activée"
 #: packages/i18n/src/computer-usage.ts
 msgid "{name}’s computer"
 msgstr "Ordinateur de {name}"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "{names} and {more} more may stop until you reconnect."
+msgstr "{names} et {more} autres risquent de s'arrêter jusqu'à ce que vous vous reconnectiez."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "{names} may stop until you reconnect."
+msgstr "{names} risque de s'arrêter jusqu'à ce que vous vous reconnectiez."
 
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "{owner}'s {peer} wants to connect to {agent}"
@@ -732,7 +748,6 @@ msgid "{title}, saved as {savedAs}"
 msgstr "{title}, enregistré sous {savedAs}"
 
 #: apps/web/src/components/messages/ToolActivityDisclosure.tsx
-#: apps/web/src/pages/plugins/connector-detail.tsx
 msgid "{toolCount, plural, one {# tool} other {# tools}}"
 msgstr "{toolCount, plural, one {# outil} other {# outils}}"
 
@@ -754,12 +769,11 @@ msgid "@{0}"
 msgstr "@{0}"
 
 #. placeholder {0}: mention.name
-#. placeholder {1}: mention.subtitle
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
-msgid "@{0}, {1}"
-msgstr "@{0}, {1}"
+msgid "@{0}, {details}"
+msgstr "@{0}, {details}"
 
-#: apps/mobile/components/composer/thread-composer.tsx
+#: apps/mobile/components/composer/composer-mention-picker.tsx
 msgid "@{name}"
 msgstr "@{name}"
 
@@ -883,10 +897,6 @@ msgstr "1 heure"
 msgid "1 space"
 msgstr "1 espace"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
-msgid "1 tool"
-msgstr "1 outil"
-
 #: apps/mobile/components/inbox/unread-jump-overlay.tsx
 msgid "1 unread"
 msgstr "1 non lu"
@@ -967,7 +977,6 @@ msgstr "Jeton d'accès (optionnel)"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/paywall.tsx
-#: apps/mobile/components/inbox/inbox-footer.tsx
 #: apps/mobile/components/inbox/inbox-header.tsx
 #: apps/mobile/lib/inbox/use-inbox-header.ts
 #: apps/web/src/components/account/AccountMenu.tsx
@@ -1025,6 +1034,7 @@ msgstr "Actions pour {name}"
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Active"
 msgstr "Actif"
 
@@ -1154,7 +1164,6 @@ msgid "Add credits"
 msgstr "Ajouter des crédits"
 
 #: apps/mobile/app/(settings)/integrations.tsx
-#: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/web/src/pages/plugins/add-menu.tsx
 msgid "Add custom"
 msgstr "Ajouter un élément personnalisé"
@@ -1305,6 +1314,7 @@ msgstr "Inclut"
 msgid "Admin"
 msgstr "Administrateur"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/mobile/components/routines/routine-schedule-editor.tsx
@@ -1358,6 +1368,7 @@ msgstr "La totalité des {credit} sert à l’utilisation des modèles."
 msgid "All {price} goes to model usage."
 msgstr "La totalité des {price} sert à l'utilisation des modèles."
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/artifacts.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/integrations/agent-access.tsx
@@ -1400,10 +1411,12 @@ msgid "Allow"
 msgstr "Autoriser"
 
 #: apps/mobile/app/(settings)/messaging.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/mobile/lib/settings/ai-consent.ts
 #: apps/web/src/components/call/AiDataConsentDialog.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
 msgid "Allow"
 msgstr "Autoriser"
@@ -1494,6 +1507,10 @@ msgstr "Toujours autoriser"
 #: apps/web/src/components/messages/AskCard.tsx
 msgid "Always allow {site}"
 msgstr "Toujours autoriser {site}"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Always allow routine updates"
+msgstr "Toujours autoriser les modifications de routine"
 
 #: apps/mobile/lib/cards/ask-action-label.ts
 #: apps/web/src/components/messages/AskCard.tsx
@@ -1704,6 +1721,10 @@ msgstr "Approbations"
 msgid "Approve"
 msgstr "Approuver"
 
+#: packages/i18n/src/routine-approval.ts
+msgid "Approve once"
+msgstr "Approuver une fois"
+
 #: apps/mobile/lib/calls/call-session.ts
 #: apps/web/src/lib/calls/call-session.ts
 msgid "Approve or deny it on screen."
@@ -1765,8 +1786,10 @@ msgstr "Artefact"
 msgid "Artifacts"
 msgstr "Artefacts"
 
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/mobile/components/settings/approval-settings-rows.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Ask"
 msgstr "Demander"
 
@@ -1804,6 +1827,10 @@ msgstr "En veille"
 msgid "at {time}"
 msgstr "à {time}"
 
+#: packages/i18n/src/cron.ts
+msgid "at {times} and {last}"
+msgstr "à {times} et {last}"
+
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "at {timeSelect}"
 msgstr "à {timeSelect}"
@@ -1838,6 +1865,7 @@ msgstr "Authentification"
 msgid "Authenticator key"
 msgstr "Clé d’authentification"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Authorization parameters (optional)"
 msgstr "Paramètres d'autorisation (optionnel)"
@@ -1969,6 +1997,7 @@ msgstr "Authentification basique ({username})"
 msgid "Bearer"
 msgstr "Bearer"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/integrations/add-custom-integration.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
@@ -1978,6 +2007,10 @@ msgstr "Bearer"
 #: apps/web/src/pages/plugins/source-form.tsx
 msgid "Bearer token"
 msgstr "Jeton porteur"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "Bearer token (optional)"
+msgstr "Jeton porteur (optionnel)"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
@@ -2002,7 +2035,9 @@ msgstr "Période de facturation"
 msgid "Block"
 msgstr "Bloquer"
 
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 msgid "Block"
 msgstr "Bloquer"
 
@@ -2119,6 +2154,7 @@ msgstr "Modèle du bot"
 msgid "Both"
 msgstr "Les deux"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/mobile/components/vault/vault-item-sheet.tsx
 #: apps/web/src/components/vault/VaultItemAccess.tsx
@@ -2129,6 +2165,11 @@ msgstr "Bots"
 #: apps/web/src/components/billing/CreditChoice.tsx
 msgid "Bots and browser automation"
 msgstr "Bots et automatisation du navigateur"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Bots and routines that rely on this connection may stop."
+msgstr "Les bots et routines qui dépendent de cette connexion risquent de s'arrêter."
 
 #: apps/mobile/lib/bots/bot-lifecycle.ts
 msgid "Bots and their own chats stay."
@@ -2271,8 +2312,8 @@ msgstr "Ne peut pas lire les images"
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/(settings)/general.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/organization-members.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/mobile/app/(settings)/profile.tsx
@@ -2318,6 +2359,7 @@ msgstr "Ne peut pas lire les images"
 #: apps/mobile/lib/dialogs/text-prompt.ts
 #: apps/mobile/lib/inbox/sections/confirm-delete-section.ts
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 #: apps/mobile/lib/thread/send/unsent-send-warning.ts
 #: apps/mobile/lib/thread/thread-voice.ts
@@ -2413,6 +2455,11 @@ msgstr "Cartes"
 msgid "Category"
 msgstr "Catégorie"
 
+#. placeholder {0}: titles[role]
+#: apps/web/src/pages/model-settings/media-model-settings.tsx
+msgid "Change {0}"
+msgstr "Changer {0}"
+
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 msgid "Change {name}"
 msgstr "Changer {name}"
@@ -2505,6 +2552,10 @@ msgstr "Abonnement ChatGPT"
 msgid "Chats"
 msgstr "Discussions"
 
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+msgid "Chats and other work"
+msgstr "Discussions et autres tâches"
+
 #: apps/web/src/components/computers/ComputersUnavailableHint.tsx
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Check again"
@@ -2551,6 +2602,7 @@ msgstr "Vérification de la configuration des ordinateurs…"
 msgid "Checking connection…"
 msgstr "Vérification de la connexion…"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/server.tsx
 #: apps/web/src/components/computers/ComputersUnavailableHint.tsx
 #: apps/web/src/components/DesktopUpdates.tsx
@@ -2567,6 +2619,7 @@ msgid "Choose a bot shape, color, or upload an image"
 msgstr "Choisissez une forme, une couleur de bot, ou téléchargez une image"
 
 #: apps/mobile/app/(settings)/models.tsx
+#: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/shell/composer/composer-error.tsx
 msgid "Choose a model"
@@ -2625,6 +2678,7 @@ msgstr "Choisir une option de participation partage les transcriptions avec cet 
 msgid "Chosen bots"
 msgstr "Bots choisis"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 msgid "Chosen bots"
 msgstr "Bots choisis"
@@ -2859,11 +2913,6 @@ msgstr "Commande"
 msgid "Command menu"
 msgstr "Menu des commandes"
 
-#: apps/mobile/lib/vault/secret-destination.ts
-#: apps/web/src/components/messages/SecretAskCard.tsx
-msgid "Command variable"
-msgstr "Variable de commande"
-
 #: apps/mobile/lib/pages/page-review-comments.tsx
 #: apps/web/src/components/pages/PageReviewComments.tsx
 #: apps/web/src/pages/space/Board.tsx
@@ -3055,6 +3104,11 @@ msgstr "Connectez un modèle dans Paramètres avant d'exécuter des bots."
 msgid "Connect a voice provider first."
 msgstr "Connectez d'abord un fournisseur vocal."
 
+#: apps/mobile/lib/calls/call-language-preference.ts
+#: apps/web/src/lib/calls/dictation.ts
+msgid "Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings."
+msgstr "Connectez un fournisseur vocal qui transcrit, ou désactivez la détection automatique de la langue dans les paramètres Voix."
+
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 msgid "Connect API key"
@@ -3182,6 +3236,7 @@ msgstr "La connexion à {0} est toujours en attente. Vous pouvez fermer cette fe
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
+#: apps/web/src/pages/shell/composer/composer-parts.tsx
 msgid "Connector"
 msgstr "Connecteur"
 
@@ -3624,6 +3679,7 @@ msgstr "Impossible de supprimer le bot"
 msgid "Could not delete group"
 msgstr "Impossible de supprimer le groupe"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Could not delete MCP server"
 msgstr "Impossible de supprimer le serveur MCP"
@@ -3725,6 +3781,10 @@ msgstr "Impossible de télécharger l'image"
 #: apps/mobile/app/artifact.tsx
 msgid "Could not download this artifact"
 msgstr "Impossible de télécharger cet artefact"
+
+#: apps/mobile/components/bots/bot-profile-menu.tsx
+msgid "Could not duplicate bot"
+msgstr "Impossible de dupliquer le bot"
 
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -3877,6 +3937,7 @@ msgid "Could not load integrations"
 msgstr "Impossible de charger les intégrations"
 
 #: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/plugins/use-plugin-connections.ts
 msgid "Could not load MCP servers"
@@ -3913,6 +3974,13 @@ msgstr "Impossible de charger les paramètres du modèle"
 #: apps/mobile/app/pages.tsx
 msgid "Could not load pages."
 msgstr "Impossible de charger les pages."
+
+#: apps/mobile/components/integrations/integration-detail.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/connector-detail.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Could not load permissions"
+msgstr "Impossible de charger les autorisations"
 
 #: apps/mobile/app/(settings)/ai-data-sharing.tsx
 msgid "Could not load permissions."
@@ -4231,6 +4299,7 @@ msgstr "Impossible d'exécuter la routine"
 
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/labs.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
@@ -4267,6 +4336,7 @@ msgstr "Impossible d'enregistrer les paramètres de l'ordinateur"
 msgid "Could not save group"
 msgstr "Impossible d'enregistrer le groupe"
 
+#: apps/mobile/components/models/media-model-settings.tsx
 #: apps/web/src/pages/onboarding/use-onboarding-model.ts
 msgid "Could not save model"
 msgstr "Impossible d'enregistrer le modèle"
@@ -4276,6 +4346,11 @@ msgstr "Impossible d'enregistrer le modèle"
 #: apps/web/src/pages/model-settings/model-settings-panel.tsx
 msgid "Could not save model settings"
 msgstr "Impossible d'enregistrer les paramètres du modèle"
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Could not save permission"
+msgstr "Impossible d'enregistrer l'autorisation"
 
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
@@ -4442,6 +4517,10 @@ msgstr "Impossible de lancer la connexion"
 msgid "Could not start teaching"
 msgstr "Impossible de démarrer l'enseignement"
 
+#: apps/mobile/lib/thread/thread-voice.ts
+msgid "Could not start the call"
+msgstr "Impossible de démarrer l'appel"
+
 #: apps/mobile/components/cards/AskActions.tsx
 msgid "Could not submit answer"
 msgstr "Impossible d'envoyer la réponse"
@@ -4476,6 +4555,7 @@ msgstr "Impossible de changer d'espace"
 msgid "Could not take control"
 msgstr "Impossible de prendre le contrôle"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Could not test MCP server"
 msgstr "Impossible de tester le serveur MCP"
@@ -4488,6 +4568,10 @@ msgstr "Impossible de transcrire cet enregistrement."
 #: apps/mobile/lib/voice/voice-clip.ts
 msgid "Could not transcribe that."
 msgstr "Impossible de transcrire cela."
+
+#: apps/web/src/pages/shell/composer/use-composer-actions.ts
+msgid "Could not try again"
+msgstr "Impossible de réessayer"
 
 #: apps/web/src/pages/space/ScratchpadSection.tsx
 msgid "Could not update"
@@ -4868,6 +4952,7 @@ msgstr "jours"
 #: apps/web/src/components/call/IncomingCall.tsx
 #: apps/web/src/components/messages/ToolQuestionCard.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Decline"
 msgstr "Refuser"
 
@@ -4879,11 +4964,13 @@ msgstr "Refusé"
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/components/bots/bot-look-picker.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 #: apps/web/src/pages/model-settings/deployment-model-settings.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/model-settings/role-model-picker.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
 #: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Default"
@@ -4919,6 +5006,7 @@ msgstr "Par défaut d’OpenClaw"
 msgid "Default scope"
 msgstr "Portée par défaut"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/organization.tsx
 #: apps/mobile/app/(settings)/profile.tsx
@@ -4994,6 +5082,7 @@ msgstr "Supprimer {name} et ses {count} bots ?"
 msgid "Delete {name} and its bot?"
 msgstr "Supprimer {name} et son bot ?"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/profile.tsx
 #: apps/mobile/app/(settings)/skill.tsx
@@ -5150,6 +5239,11 @@ msgstr "Mise à jour du bureau"
 msgid "Details"
 msgstr "Détails"
 
+#: apps/mobile/app/(settings)/voice.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
+msgid "Detect call language automatically"
+msgstr "Détecter automatiquement la langue de l'appel"
+
 #. js-lingui-explicit-id
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Developer"
@@ -5236,6 +5330,7 @@ msgstr "Abandonné"
 #: apps/mobile/app/(settings)/wallet.tsx
 #: apps/mobile/app/meeting-calendar.tsx
 #: apps/mobile/components/models/model-providers.tsx
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 #: apps/web/src/pages/settings/MemorySettingsOverlay.tsx
@@ -5249,9 +5344,8 @@ msgstr "Déconnecter"
 msgid "Disconnect {disconnectName}?"
 msgstr "Déconnecter {disconnectName} ?"
 
-#: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/wallet.tsx
-#: apps/mobile/components/models/model-providers.tsx
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/web/src/pages/settings/PaymentWalletSettingsPanel.tsx
 msgid "Disconnect {name}?"
 msgstr "Déconnecter {name} ?"
@@ -5421,6 +5515,7 @@ msgstr "Compétence en brouillon"
 msgid "Drag, drop, or paste an image"
 msgstr "Glissez, déposez ou collez une image"
 
+#: apps/mobile/components/bots/bot-profile-menu.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "Duplicate"
 msgstr "Dupliquer"
@@ -5524,11 +5619,18 @@ msgstr "Modèles activés"
 msgid "Enabled routine \"{name}\""
 msgstr "Routine « {name} » activée"
 
+#: apps/mobile/components/routines/routine-end-date.tsx
+msgid "End date"
+msgstr "Date de fin"
+
 #: apps/web/src/components/computers/ComputerProviderSettings.tsx
 msgid "End user ID"
 msgstr "ID de l'utilisateur final"
 
 #: apps/mobile/app/(settings)/billing.tsx
+#: apps/mobile/app/routine.tsx
+#: apps/mobile/components/routines/routine-end-date.tsx
+#: apps/web/src/pages/routines/RoutineEditor.tsx
 msgid "Ends"
 msgstr "Se termine"
 
@@ -6127,6 +6229,11 @@ msgstr "Raccrochez, puis saisissez le code à l'écran."
 msgid "Haptics"
 msgstr "Retour haptique"
 
+#: apps/mobile/app/(settings)/general.tsx
+msgid "Hardware keyboard"
+msgstr "Clavier physique"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/routines/routine-editor/trigger-cards.tsx
 msgid "Header"
 msgstr "En-tête"
@@ -6139,6 +6246,7 @@ msgstr "En-tête « {header} »"
 msgid "Header {name}"
 msgstr "En-tête {name}"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/integrations/header-rows-editor.tsx
 #: apps/mobile/components/vault/vault-item-editor.tsx
 #: apps/web/src/components/models/ModelHeadersEditor.tsx
@@ -6148,6 +6256,7 @@ msgstr "En-tête {name}"
 msgid "Header name"
 msgstr "Nom de l'en-tête"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/integrations/header-rows-editor.tsx
 #: apps/web/src/components/models/ModelHeadersEditor.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
@@ -6349,9 +6458,19 @@ msgstr "La saisie d’images n’est pas configurée pour ce modèle."
 msgid "Image input is not configured for this model."
 msgstr "La saisie d’images n’est pas configurée pour ce modèle."
 
+#: apps/mobile/components/models/media-model-settings.tsx
+#: apps/web/src/pages/model-settings/media-model-settings.tsx
+msgid "Image model"
+msgstr "Modèle d'image"
+
 #: apps/web/src/pages/shell/bots/avatar-studio-popover.tsx
 msgid "Image upload area"
 msgstr "Zone de téléchargement d'image"
+
+#: apps/mobile/app/(settings)/account.tsx
+#: apps/web/src/components/billing/PlanUsage.tsx
+msgid "Images and video"
+msgstr "Images et vidéo"
 
 #: apps/mobile/app/(settings)/vault.tsx
 #: apps/web/src/components/settings/AccountDataSettings.tsx
@@ -6396,6 +6515,14 @@ msgstr "Dans la réunion"
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "In this bot"
 msgstr "Dans ce bot"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "In this chat"
+msgstr "Dans cette discussion"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "In use"
+msgstr "Utilisé"
 
 #: apps/mobile/app/(settings)/model-connection.tsx
 msgid "In your browser, sign in and paste this code when asked. Then return to Rakazo."
@@ -6667,6 +6794,7 @@ msgstr "Garder dans le message"
 msgid "Keep memories"
 msgstr "Conserver les mémoires"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Keep tool results whole"
 msgstr "Conserver les résultats d'outils en entier"
@@ -6910,8 +7038,9 @@ msgid "Loading preview…"
 msgstr "Chargement de l'aperçu…"
 
 #: apps/mobile/components/integrations/integration-detail.tsx
-msgid "Loading tools…"
-msgstr "Chargement des outils…"
+#: apps/web/src/pages/plugins/connector-detail.tsx
+msgid "Loading tool permissions…"
+msgstr "Chargement des autorisations des outils…"
 
 #: apps/mobile/app/meeting-transcript.tsx
 #: apps/web/src/pages/shell/meetings/meeting-transcript.tsx
@@ -6929,6 +7058,7 @@ msgstr "Chargement des fournisseurs vocaux…"
 #: apps/mobile/app/(settings)/bot-template.tsx
 #: apps/mobile/app/(settings)/bot-templates.tsx
 #: apps/mobile/app/(settings)/computers.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -7034,7 +7164,6 @@ msgid "Make member"
 msgstr "Rétrograder en membre"
 
 #: apps/web/src/pages/settings/BillingSettingsPanel.tsx
-#: apps/web/src/pages/settings/SpacesSettingsPanel.tsx
 msgid "Manage"
 msgstr "Gérer"
 
@@ -7485,6 +7614,11 @@ msgstr "Plus"
 msgid "More actions"
 msgstr "Plus d'actions"
 
+#: apps/mobile/components/cards/AskActions.tsx
+#: apps/web/src/components/messages/AskCard.tsx
+msgid "More approval options"
+msgstr "Plus d'options d'approbation"
+
 #: apps/web/src/pages/plugins/plugin-browse.tsx
 msgid "More apps"
 msgstr "Plus d'applications"
@@ -7508,7 +7642,7 @@ msgid "Move them to your shared memory."
 msgstr "Déplacez-les dans votre mémoire partagée."
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/lib/board/board-list.ios.tsx
 #: apps/mobile/lib/board/board-list.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
@@ -7533,6 +7667,7 @@ msgstr "Micro coupé"
 msgid "My computers"
 msgstr "Mes ordinateurs"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/organization.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/group-settings.tsx
@@ -7560,6 +7695,7 @@ msgstr "Mes ordinateurs"
 #: apps/web/src/pages/shell/bots/create-bot-dialog.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
 #: apps/web/src/pages/space/GroupPanel.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Name"
 msgstr "Nom"
 
@@ -7663,6 +7799,10 @@ msgstr "Nouveau"
 msgid "New API key"
 msgstr "Nouvelle clé d'API"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "New bearer token"
+msgstr "Nouveau jeton porteur"
+
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 #: apps/mobile/lib/inbox/create-chooser.ts
@@ -7697,6 +7837,14 @@ msgstr "Nouveau groupe"
 #: apps/web/src/pages/shell/use-palette-actions.ts
 msgid "New group chat"
 msgstr "Nouvelle discussion de groupe"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "New header value"
+msgstr "Nouvelle valeur de l'en-tête"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "New instructions"
+msgstr "Nouvelles instructions"
 
 #: apps/mobile/app/(settings)/vault.tsx
 msgid "New item"
@@ -7746,7 +7894,7 @@ msgid "New routine"
 msgstr "Nouvelle routine"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -7796,6 +7944,7 @@ msgid "Next page"
 msgstr "Page suivante"
 
 #: apps/mobile/app/routine.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Next run"
 msgstr "Prochaine exécution"
 
@@ -8013,10 +8162,6 @@ msgstr "Aucun ticket pour l'instant"
 msgid "No tickets yet."
 msgstr "Aucun ticket pour l'instant."
 
-#: apps/mobile/components/integrations/integration-detail.tsx
-msgid "No tools available."
-msgstr "Aucun outil disponible."
-
 #: apps/web/src/pages/routines/RoutineList.tsx
 msgid "No trigger"
 msgstr "Aucun déclencheur"
@@ -8043,6 +8188,7 @@ msgstr "Aucune colonne de site web et de mot de passe trouvée."
 #: apps/web/src/components/billing/SpendingLimitSettings.tsx
 #: apps/web/src/components/messages/ToolQuestionCard.tsx
 #: apps/web/src/components/vault/VaultItemEditor.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "None"
 msgstr "Aucun"
 
@@ -8112,6 +8258,10 @@ msgstr "Plus tard"
 #: packages/i18n/src/vault.ts
 msgid "Not on an HTTPS site"
 msgstr "Pas sur un site HTTPS"
+
+#: apps/web/src/pages/plugins/source-form.tsx
+msgid "Not reviewed by Rakazo. Only add it if you trust this address."
+msgstr "Non vérifié par Rakazo. Ajoutez-le uniquement si vous faites confiance à cette adresse."
 
 #. js-lingui-explicit-id
 #: packages/i18n/src/vault.ts
@@ -8193,10 +8343,16 @@ msgstr "OAuth"
 msgid "OAuth authorization was cancelled."
 msgstr "L'autorisation OAuth a été annulée."
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "OAuth client"
+msgstr "Client OAuth"
+
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "OAuth client ID (optional)"
 msgstr "ID client OAuth (optionnel)"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "OAuth client secret (optional)"
 msgstr "Secret client OAuth (optionnel)"
@@ -8204,6 +8360,10 @@ msgstr "Secret client OAuth (optionnel)"
 #: apps/web/src/pages/integrations/McpOAuthCallback.tsx
 msgid "OAuth connection failed"
 msgstr "Échec de la connexion OAuth"
+
+#: packages/i18n/src/thinking-level.ts
+msgid "Off"
+msgstr "Désactivé"
 
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/web/src/components/computers/ComputerDeviceSettings.tsx
@@ -8252,6 +8412,11 @@ msgstr "Achat unique. Les crédits n'expirent pas."
 #: apps/web/src/pages/routines/routine-editor/access-note.tsx
 msgid "Only {name} can change this routine."
 msgstr "Cette routine ne peut être modifiée que par {name}."
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Only Block rules apply in Never ask."
+msgstr "Seules les règles Bloquer s'appliquent en mode Ne jamais demander."
 
 #: apps/web/src/components/messages/SecretAskCard.tsx
 msgid "Only enter a code {codeHost} sent you."
@@ -8439,8 +8604,10 @@ msgstr "Options pour {app}"
 msgid "Or connect an API key"
 msgstr "Ou connectez une clé API"
 
+#: apps/mobile/app/(settings)/voice.tsx
 #: apps/web/src/pages/model-settings/connection-controls.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
+#: apps/web/src/pages/settings/VoiceSettingsOverlay.tsx
 msgid "Or paste an API key"
 msgstr "Ou collez une clé API"
 
@@ -8482,6 +8649,16 @@ msgstr "OTA {id}"
 #: apps/mobile/lib/platform/app-version.ts
 msgid "OTA {id}, {date}"
 msgstr "OTA {id}, {date}"
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Other actions"
+msgstr "Autres actions"
+
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Other approval rules still apply."
+msgstr "Les autres règles d'approbation s'appliquent toujours."
 
 #: packages/i18n/src/computer-usage.ts
 msgid "Other computers"
@@ -8683,6 +8860,7 @@ msgstr "Mettre en pause {name}"
 #: apps/mobile/lib/routines/routine.ts
 #: apps/web/src/pages/routines/RoutineList.tsx
 #: apps/web/src/pages/shell/bots/import-status.ts
+#: packages/i18n/src/routine-approval.ts
 msgid "Paused"
 msgstr "En pause"
 
@@ -8875,9 +9053,18 @@ msgstr "Aperçu du brouillon"
 msgid "Preview isn't available for this file type. Download it to view it."
 msgstr "L'aperçu n'est pas disponible pour ce type de fichier. Téléchargez-le pour l'afficher."
 
+#: apps/web/src/components/pages/PageCard.tsx
+msgid "Preview of {title}"
+msgstr "Aperçu de {title}"
+
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "Previous image"
 msgstr "Image précédente"
+
+#: apps/mobile/components/cards/routine-approval-detail.tsx
+#: apps/web/src/components/messages/RoutineApprovalDetail.tsx
+msgid "Previous instructions"
+msgstr "Instructions précédentes"
 
 #: apps/web/src/pages/shell/chat/chat-find-bar.tsx
 msgid "Previous match"
@@ -8890,6 +9077,10 @@ msgstr "Page précédente"
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Previous settings sections"
 msgstr "Sections de paramètres précédentes"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Previously: {value}"
+msgstr "Auparavant : {value}"
 
 #: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
@@ -8975,6 +9166,10 @@ msgstr "Message du fournisseur"
 #: apps/web/src/pages/model-settings/providers-section.tsx
 msgid "Providers"
 msgstr "Fournisseurs"
+
+#: apps/web/src/pages/plugins/plugin-browse.tsx
+msgid "Public MCP directory"
+msgstr "Annuaire MCP public"
 
 #: apps/mobile/lib/api/endpoint.ts
 msgid "Public servers need https://. HTTP only works on your local network."
@@ -9069,6 +9264,11 @@ msgstr "Lire les rappels ?"
 msgid "Read replies aloud"
 msgstr "Lire les réponses à voix haute"
 
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Reads"
+msgstr "Lectures"
+
 #: apps/web/src/pages/shell/bots/import-status.ts
 msgid "Ready"
 msgstr "Prêt"
@@ -9145,6 +9345,21 @@ msgstr "Reconnecter OAuth"
 #: apps/web/src/components/computers/ComputerUpdateProgress.tsx
 msgid "Reconnecting"
 msgstr "Reconnexion en cours"
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Reconnecting will not restore saved model choices that use this connection."
+msgstr "La reconnexion ne rétablira pas les choix de modèle enregistrés qui utilisent cette connexion."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Reconnecting will not restore the main model choice or other choices that use this connection."
+msgstr "La reconnexion ne rétablira pas le choix du modèle principal ni les autres choix qui utilisent cette connexion."
+
+#. js-lingui-explicit-id
+#: packages/i18n/src/model-disconnect.ts
+msgid "Reconnecting will not restore the main model choice that uses this connection."
+msgstr "La reconnexion ne rétablira pas le choix du modèle principal qui utilise cette connexion."
 
 #: apps/web/src/components/teach/TeachComputerOverlay.tsx
 msgid "Recording may have started, but the view could not refresh"
@@ -9383,6 +9598,10 @@ msgstr "Supprimer le déclencheur de changement"
 msgid "Remove email trigger"
 msgstr "Retirer le déclencheur e-mail"
 
+#: apps/web/src/pages/routines/RoutineEditor.tsx
+msgid "Remove end date"
+msgstr "Supprimer la date de fin"
+
 #: apps/mobile/app/(settings)/plugin.tsx
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
@@ -9455,8 +9674,8 @@ msgid "Rename"
 msgstr "Renommer"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
 #: apps/mobile/lib/inbox/use-inbox-chat-actions.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/create-delete-dialogs.tsx
@@ -9708,7 +9927,7 @@ msgid "Restoring…"
 msgstr "Restauration…"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 msgid "Resume notifications"
 msgstr "Réactiver les notifications"
 
@@ -9718,6 +9937,7 @@ msgstr "Réactiver les notifications"
 #: apps/mobile/app/(settings)/computers.tsx
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/(settings)/integrations.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/memory.tsx
 #: apps/mobile/app/(settings)/plugin.tsx
@@ -9821,11 +10041,18 @@ msgstr "Tourner la clé"
 #: apps/mobile/app/_layout.tsx
 #: apps/mobile/app/routine.tsx
 #: apps/web/src/pages/routines/RoutineEditor.tsx
+#: apps/web/src/pages/settings/UsageSettingsPanel.tsx
+#: apps/web/src/pages/shell/composer/composer-parts.tsx
 #: apps/web/src/pages/shell/use-routine-editor.ts
 #: packages/i18n/src/identity-display.ts
 #: packages/i18n/src/search.ts
 msgid "Routine"
 msgstr "Routine"
+
+#: apps/mobile/lib/messages/routine-event-label.ts
+#: apps/web/src/pages/shell/chat/routine-event-row.tsx
+msgid "Routine \"{name}\" ended"
+msgstr "Routine « {name} » terminée"
 
 #: apps/mobile/app/routine.tsx
 msgid "Routine link is incomplete"
@@ -9944,6 +10171,7 @@ msgstr "Bac à sable"
 msgid "Saturday"
 msgstr "samedi"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/memory-note.tsx
 #: apps/mobile/app/(settings)/model-connection.tsx
 #: apps/mobile/app/(settings)/model-settings.tsx
@@ -10096,6 +10324,10 @@ msgstr "Enregistrement en cours…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Dites oui ou non, ou répondez en une phrase."
 
+#: packages/i18n/src/routine-approval.ts
+msgid "Schedule"
+msgstr "Planification"
+
 #: apps/mobile/app/routine.tsx
 #: apps/mobile/lib/routines/routine.ts
 #: apps/web/src/pages/routines/RoutineEditor.tsx
@@ -10115,6 +10347,7 @@ msgstr "Routines planifiées"
 msgid "Scheduled tasks"
 msgstr "Tâches planifiées"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Scopes (optional)"
 msgstr "Portées (facultatif)"
@@ -10339,10 +10572,12 @@ msgstr "Envoyez ce prompt à {assistantName}"
 msgid "Send this prompt to your assistant"
 msgstr "Envoyez ce prompt à votre assistant"
 
+#: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Send with Enter"
 msgstr "Envoyer avec Entrée"
 
+#: apps/mobile/components/cards/AskActions.tsx
 #: apps/mobile/components/thread/failed-send-bubble.tsx
 #: apps/web/src/components/messages/AskCard.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
@@ -10358,7 +10593,12 @@ msgstr "Envoi en cours…"
 msgid "Sent"
 msgstr "Envoyé"
 
+#: packages/i18n/src/routine-approval.ts
+msgid "Separately from this chat"
+msgstr "Séparément de cette discussion"
+
 #: apps/mobile/app/_layout.tsx
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/server.tsx
 msgid "Server"
 msgstr "Serveur"
@@ -10371,6 +10611,7 @@ msgstr "Intégrations du serveur"
 msgid "Server name"
 msgstr "Nom du serveur"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/app/(settings)/voice.tsx
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/web/src/components/integrations/IntegrationSetup.tsx
@@ -10392,6 +10633,7 @@ msgstr "Définir"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/components/calls/CallCard.tsx
+#: apps/mobile/components/inbox/inbox-footer.tsx
 #: apps/mobile/components/inbox/inbox-render-item.tsx
 #: apps/web/src/components/call/CallCard.tsx
 #: apps/web/src/pages/settings/MessagingSettingsPanel.tsx
@@ -10711,7 +10953,7 @@ msgid "Signing out deletes unsent messages."
 msgstr "La déconnexion supprime les messages non envoyés."
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 msgid "Silence notifications"
 msgstr "Couper les notifications"
 
@@ -10820,7 +11062,7 @@ msgid "Slide up to lock"
 msgstr "Glisser vers le haut pour verrouiller"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 msgid "Snooze"
 msgstr "Mettre en attente"
@@ -11073,10 +11315,12 @@ msgstr "Démarrage en cours…"
 msgid "State or region"
 msgstr "État ou région"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/mobile/components/cards/run-error-sheet.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/board-views.tsx
 #: apps/web/src/pages/space/Board.tsx
+#: packages/i18n/src/routine-approval.ts
 msgid "Status"
 msgstr "Statut"
 
@@ -11211,11 +11455,6 @@ msgstr "Soutenir Rakazo"
 msgid "Supports images"
 msgstr "Prend en charge les images"
 
-#: apps/mobile/app/(settings)/model-settings.tsx
-#: apps/web/src/pages/model-settings/model-settings-panel.tsx
-msgid "Supports thinking"
-msgstr "Prend en charge la réflexion"
-
 #. Switches the account's timezone to this device's
 #: apps/mobile/app/(settings)/billing.tsx
 #: apps/mobile/components/settings/space-bots-model.tsx
@@ -11341,6 +11580,7 @@ msgstr "Conditions"
 msgid "Test"
 msgstr "Tester"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "Test connection"
 msgstr "Tester la connexion"
@@ -11536,10 +11776,12 @@ msgstr "Ces paramètres enregistrés sont illisibles. Supprimez-les et ajoutez-l
 msgid "They get {weeks} weeks free."
 msgstr "Il profite de {weeks} semaines gratuites."
 
+#: apps/mobile/app/(settings)/model-settings.tsx
 #: apps/mobile/app/bot-settings.tsx
 #: apps/mobile/app/chat-model.tsx
 #: apps/mobile/components/models/model-role-settings.tsx
 #: apps/web/src/components/call/CallCard.tsx
+#: apps/web/src/pages/model-settings/model-settings-panel.tsx
 #: apps/web/src/pages/model-settings/ModelRoleSettings.tsx
 #: apps/web/src/pages/routines/routine-editor/model-settings.tsx
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
@@ -11795,8 +12037,7 @@ msgstr "Ceci supprime définitivement tous les messages et arrête les travaux e
 msgid "This removes every message and stops current work. The bot, computer, memory, and routines are kept."
 msgstr "Cela supprime tous les messages et arrête le travail en cours. Le bot, l'ordinateur, la mémoire et les routines sont conservés."
 
-#: apps/mobile/app/(settings)/model-connection.tsx
-#: apps/mobile/components/models/model-providers.tsx
+#: apps/mobile/lib/models/model-disconnect.ts
 #: apps/web/src/pages/model-settings/ModelSettingsOverlay.tsx
 msgid "This removes the connection from every space."
 msgstr "La connexion sera retirée de tous les espaces."
@@ -11881,6 +12122,10 @@ msgstr "Ticket"
 #: apps/web/src/pages/routines/RoutineSchedule.tsx
 msgid "Time of day"
 msgstr "Heure de la journée"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Time zone"
+msgstr "Fuseau horaire"
 
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Timezone"
@@ -11971,9 +12216,12 @@ msgstr "Les arguments doivent être au format JSON"
 msgid "Tool name"
 msgstr "Nom de l’outil"
 
-#: apps/mobile/components/integrations/integration-detail.tsx
+#: apps/mobile/components/integrations/tool-permissions.tsx
+#: apps/web/src/pages/plugins/tool-permissions.tsx
+msgid "Tool permissions"
+msgstr "Autorisations des outils"
+
 #: apps/web/src/components/settings/ApprovalRulesSettings.tsx
-#: apps/web/src/pages/plugins/connector-detail.tsx
 #: apps/web/src/pages/shell/bots/bot-settings-sections.tsx
 msgid "Tools"
 msgstr "Outils"
@@ -12042,6 +12290,10 @@ msgstr "URL du serveur de transcription"
 msgid "Transcription vocabulary"
 msgstr "Vocabulaire de transcription"
 
+#: apps/mobile/app/(settings)/mcp-server.tsx
+msgid "Transport"
+msgstr "Transport"
+
 #: apps/mobile/app/(settings)/team-conversation.tsx
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "Treat like a person"
@@ -12082,6 +12334,7 @@ msgstr "Sites de confiance"
 #: apps/mobile/components/models/compatible-endpoint-form.tsx
 #: apps/mobile/components/routines/routine-run-history.tsx
 #: apps/mobile/components/thread/failed-send-bubble.tsx
+#: apps/mobile/components/thread/thread-error-notice.tsx
 #: apps/mobile/components/ui/app-error-boundary.tsx
 #: apps/mobile/lib/pages/page-load-failure.tsx
 #: apps/web/src/components/pages/PageNotice.tsx
@@ -12091,6 +12344,7 @@ msgstr "Sites de confiance"
 #: apps/web/src/pages/onboarding/first-bot.tsx
 #: apps/web/src/pages/onboarding/model-step.tsx
 #: apps/web/src/pages/SharedPage.tsx
+#: apps/web/src/pages/shell/composer/composer-error.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
 #: apps/web/src/pages/space/ActivityList.tsx
 #: apps/web/src/pages/space/SpaceSearch.tsx
@@ -12167,7 +12421,7 @@ msgid "Type your answer"
 msgstr "Saisissez votre réponse"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/mobile/lib/inbox/inbox-spaces.ts
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/sidebar/use-sidebar-view.ts
@@ -12224,7 +12478,7 @@ msgid "Unsent messages"
 msgstr "Messages non envoyés"
 
 #: apps/mobile/components/inbox/bot-organize-modal.tsx
-#: apps/mobile/components/inbox/inbox-swipe-row.ios.tsx
+#: apps/mobile/components/inbox/chat-menu-items.ios.tsx
 #: apps/web/src/pages/shell/chat/bot-context-menu.tsx
 #: apps/web/src/pages/shell/sidebar/snoozed-chats.tsx
 msgid "Unsnooze"
@@ -12239,6 +12493,11 @@ msgstr "Annuler la mise en attente de {0}"
 #: apps/web/src/pages/shell/composer/use-composer-actions.ts
 msgid "Unsupported file type: {0}"
 msgstr "Type de fichier non pris en charge : {0}"
+
+#: apps/mobile/lib/routines/routine.ts
+#: apps/web/src/pages/routines/RoutineList.tsx
+msgid "until {end}"
+msgstr "jusqu'au {end}"
 
 #: apps/mobile/app/meeting-calendar.tsx
 #: apps/web/src/pages/shell/meetings/meeting-calendar.tsx
@@ -12387,6 +12646,11 @@ msgstr "Utiliser {0}"
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Use {hostLabel}"
 msgstr "Utiliser {hostLabel}"
+
+#: apps/mobile/components/models/voice-model-connection-actions.tsx
+#: apps/web/src/pages/settings/voice-model-connection-actions.tsx
+msgid "Use {label}"
+msgstr "Utiliser {label}"
 
 #: apps/mobile/lib/dialogs/text-prompt.ts
 msgid "Use {maxLength} characters or fewer"
@@ -12582,6 +12846,11 @@ msgstr "Version"
 #: apps/mobile/app/artifact.tsx
 msgid "Versions"
 msgstr "Versions"
+
+#: apps/mobile/components/models/media-model-settings.tsx
+#: apps/web/src/pages/model-settings/media-model-settings.tsx
+msgid "Video model"
+msgstr "Modèle vidéo"
 
 #: apps/mobile/components/integrations/integration-plugins.tsx
 #: apps/web/src/pages/plugins/plugin-browse.tsx
@@ -12809,6 +13078,10 @@ msgstr "Quand exécuter"
 #: apps/web/src/components/vault/VaultItemEditor.tsx
 msgid "When to use"
 msgstr "Quand utiliser"
+
+#: packages/i18n/src/routine-approval.ts
+msgid "Where it runs"
+msgstr "Où elle s'exécute"
 
 #: apps/web/src/pages/shell/host-computer-prompt.tsx
 msgid "Where should bots run?"

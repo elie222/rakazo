@@ -21,11 +21,13 @@ export function useSourceForm() {
   const [authType, setAuthType] = useState<SourceAuth>("bearer");
   const [authName, setAuthName] = useState("x-api-key");
   const [sourceHint, setSourceHint] = useState<string | null>(null);
+  const [unreviewed, setUnreviewed] = useState(false);
 
   function start(kind: SourceKind, preset: McpSourcePreset | null) {
     setSourceKind(kind);
     setSourcePreset(preset);
     setSourceHint(null);
+    setUnreviewed(false);
     setSourceName(preset?.name ?? "");
     setSourceUrl(preset?.url ?? preset?.defaultUrl ?? "");
     setCredential("");
@@ -48,6 +50,7 @@ export function useSourceForm() {
     setAuthType(auth?.type ?? "none");
     setAuthName(auth?.headerName ?? "x-api-key");
     setSourceHint(auth?.note ?? null);
+    setUnreviewed(true);
   }
 
   function close() {
@@ -70,6 +73,7 @@ export function useSourceForm() {
     authName,
     setAuthName,
     sourceHint,
+    unreviewed,
     start,
     startFromCatalog,
     close,
@@ -104,6 +108,7 @@ export function SourceFormView({
     authName,
     setAuthName,
     sourceHint,
+    unreviewed,
   } = form;
   if (!sourceKind) return null;
   const custom = !sourcePreset;
@@ -172,6 +177,11 @@ export function SourceFormView({
                     : "https://example.com/openapi.json")
               }
             />
+            {unreviewed ? (
+              <FieldDescription>
+                <Trans>Not reviewed by Rakazo. Only add it if you trust this address.</Trans>
+              </FieldDescription>
+            ) : null}
           </Field>
         ) : null}
         {custom ? (

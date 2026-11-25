@@ -35,6 +35,8 @@ import {
 import {
   PAGE_LIST_MAX_LIMIT,
   PageDetailSchema,
+  PageImageSourceSchema,
+  PageImagesSchema,
   PageSummarySchema,
   PageTitleSchema,
   PageVisibilitySchema,
@@ -135,7 +137,10 @@ export const artifactsRpc = {
       .output(z.object({ ok: z.literal(true) })),
     draft: oc
       .input(PageAccessInput.extend({ requestId: Id }))
-      .output(z.object({ code: z.string() })),
+      .output(z.object({ code: z.string(), images: PageImagesSchema })),
+    image: oc
+      .input(PageAccessInput.extend({ version: PageVersionNumber, imageId: Id }))
+      .output(PageImageSourceSchema),
     publish: oc
       .input(PageAccessInput.extend({ requestId: Id }))
       .output(z.object({ version: PageVersionNumber })),

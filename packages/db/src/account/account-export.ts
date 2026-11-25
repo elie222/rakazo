@@ -412,6 +412,7 @@ async function* spaceRecords(
       modelId: routine.modelId,
       thinkingLevel: routine.thinkingLevel,
       watch: json(routine.watch),
+      endsAt: isoOrNull(routine.endsAt),
       createdAt: iso(routine.createdAt),
     };
 

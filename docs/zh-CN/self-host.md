@@ -138,7 +138,7 @@ docker compose --env-file .env -f infra/compose/docker-compose.yml \
 - [升级](./self-host-upgrading.md)
 - [受限网络与镜像下载](./self-host-restricted-network.md)
 - [无影云电脑](../wuying-computers.zh-CN.md)
-- [配置](./self-host-configuration.md)、[密钥清单](./self-host-secrets.md)、[账号与登录](./self-host-accounts.md)、[工具集成](./self-host-integrations.md)
+- [配置](./self-host-configuration.md)、[密钥清单](./self-host-secrets.md)、[账号与登录](./self-host-accounts.md)（含[设置团队](../self-host-accounts.md#set-up-a-team)）、[工具集成](./self-host-integrations.md)
 - [存储与加密](../self-host-storage.md)、[日志与监控](../self-host-observability.md)、[客户端](../self-host-clients.md)（英文）
 
 ## 报告问题

@@ -794,6 +794,7 @@ class AccountImporter implements ArchiveSink {
             messageProvider: record.messageProvider,
             ...carriedRoutineModelPin(record),
             watch: jsonValue(record.watch),
+            endsAt: record.endsAt ? new Date(record.endsAt) : null,
             createdAt: new Date(record.createdAt),
           },
         });

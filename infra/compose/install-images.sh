@@ -88,11 +88,6 @@ else
   command -v curl >/dev/null 2>&1 || fail "'curl' is required."
 fi
 
-for command_name in docker openssl; do
-  command -v "$command_name" >/dev/null 2>&1 || fail "'$command_name' is required."
-done
-docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is required."
-
 # Optional proxy knobs from an existing .env (operators often set them there for
 # containers). Do not override values already present in the shell. Treat each
 # HTTP/HTTPS/NO_PROXY pair as one family so either case in the shell wins.
@@ -189,6 +184,17 @@ prepare_proxy_env() {
   sync_curl_proxy_env
 }
 prepare_proxy_env
+
+if ! command -v docker >/dev/null 2>&1 && [[ "$offline" != true && "$(uname -s)" == Linux ]]; then
+  [[ "$(id -u)" == 0 ]] || fail "'docker' is required. Run this installer as root to install it automatically, or install Docker Engine first."
+  echo "Installing Docker Engine with Docker's official script (https://get.docker.com)..."
+  curl -fsSL https://get.docker.com | sh || fail "could not install Docker Engine; install it and rerun."
+fi
+
+for command_name in docker openssl; do
+  command -v "$command_name" >/dev/null 2>&1 || fail "'$command_name' is required."
+done
+docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is required."
 
 curl_download() {
   local url="$1"

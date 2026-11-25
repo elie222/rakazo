@@ -3,11 +3,12 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { indexPageMiddleware } from "./index-page";
 import {
-  instanceThemeIndexMiddleware,
   instanceThemeMiddleware,
   parseInstanceTheme,
   renderInstanceThemeCss,
+  withInstanceThemeLink,
 } from "./instance-theme";
 
 const dir = path.resolve("/srv/theme");
@@ -102,7 +103,7 @@ describe("instance theme", () => {
   it("links the theme only on the pages the SPA fallback resolves to the app", () => {
     const folder = mkdtempSync(path.join(tmpdir(), "rakazo-dist-"));
     writeFileSync(path.join(folder, "index.html"), "<html><head><title>x</title></head></html>");
-    const middleware = instanceThemeIndexMiddleware(folder);
+    const middleware = indexPageMiddleware(folder, withInstanceThemeLink);
     const page = (url: string, headers: Record<string, string> = {}) => {
       const res = { setHeader: vi.fn(), end: vi.fn() };
       const next = vi.fn();

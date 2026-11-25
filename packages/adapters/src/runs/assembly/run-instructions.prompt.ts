@@ -135,13 +135,6 @@ export function persistentComputerInstruction(options: {
   return `You have a persistent sandbox${capabilities}. This backend does not provide model-visible graphical control.${toolSentence}`;
 }
 
-/** Only where the desktop-protection guard checks shell commands. */
-export function desktopGuardShellInstruction(offeredToolNames: ReadonlySet<string>) {
-  if (!offeredToolNames.has("shell")) return undefined;
-  const write = offeredToolNames.has("write_file") ? "a script with write_file" : "a script file";
-  return `Shell commands must be literal: no \`$(...)\`, backticks, subshells, loops, or \`$\` variables, environment variables included. Otherwise write ${write} and run it with \`python3\` or \`bash\`.`;
-}
-
 export function dockerComputerToolInstruction(
   computerKind: string,
   disabled?: ReadonlySet<string>,
@@ -344,7 +337,7 @@ function toolUsageLine(parts: {
       ? "Use connect_app when an app needs connecting or the user asks to connect one, then wait for them."
       : undefined,
     builtinOffered(disabled, "remember")
-      ? "Use remember for durable facts, even ones the user mentions in passing without asking."
+      ? "Save lasting facts the user mentions about themselves, people they know, their work or decisions with remember in the same turn, even unasked: using a fact in your answer does not keep it. When the user sets an instruction or a state for a period (a pause until they're back, someone away until the 18th, nothing booked before the 20th), save it with until: the last date it holds, or the event that ends it. A detail of one task, such as a code, tracking number or budget, is not worth saving because it ends; save it only when asked. Each entry shows the date it was saved; work out relative dates from that. Remove a temporary entry as soon as the user lifts it or its event happens; dated ones drop out by themselves."
       : undefined,
     scratchpadClause(disabled),
     parts.followUpsOffered ? FOLLOW_UP_INSTRUCTION : undefined,

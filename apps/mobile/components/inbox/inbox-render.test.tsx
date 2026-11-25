@@ -8,6 +8,7 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { MobileBot } from "../../lib/api/mobile-types";
+import { resetI18nForTests, setDeviceDateFormatForTests } from "../../lib/i18n/i18n";
 import { askForModelBeforeFirstBot, createInboxBot } from "../../lib/inbox/create-inbox-bot";
 import { formatThreadTime } from "../../lib/inbox/inbox";
 import { onInboxChanged } from "../../lib/inbox/inbox-changes";
@@ -389,7 +390,8 @@ it.each(["midnight", "focus", "foreground"])(
     try {
       render(<DayList items={items} />);
       const weekday = formatThreadTime(sixDaysAgo, new Date(2026, 9, 10));
-      expect(rowLabels()).toEqual(labels("12:30", weekday));
+      const todayTime = formatThreadTime(today, new Date(2026, 9, 10));
+      expect(rowLabels()).toEqual(labels(todayTime, weekday));
       if (trigger === "focus") {
         ui.focused = false;
         render(<DayList items={items} />);
@@ -410,7 +412,7 @@ it.each(["midnight", "focus", "foreground"])(
         });
       }
       expect(rowLabels()).toEqual(labels(formatThreadTime(today), formatThreadTime(sixDaysAgo)));
-      expect(formatThreadTime(today)).not.toBe("12:30");
+      expect(formatThreadTime(today)).not.toBe(todayTime);
       expect(formatThreadTime(sixDaysAgo)).not.toBe(weekday);
       expect(vi.getTimerCount()).toBe(1);
       act(() => root.unmount());
@@ -422,6 +424,25 @@ it.each(["midnight", "focus", "foreground"])(
     }
   },
 );
+
+it("updates a mounted inbox row when the phone clock changes", () => {
+  const date = new Date(2026, 9, 10, 14, 30);
+  const bot = {
+    id: "helper",
+    name: "Helper",
+    preview: "",
+    updatedAt: date.toISOString(),
+  } as MobileBot;
+  try {
+    setDeviceDateFormatForTests({ region: "US", hourCycle: "h12" });
+    render(<List items={[{ type: "bot", bot }]} day={date.getTime()} />);
+    expect(rowLabels()).toEqual(["Helper, 2:30 PM, No messages yet"]);
+    act(() => setDeviceDateFormatForTests({ region: "US", hourCycle: "h23" }));
+    expect(rowLabels()).toEqual(["Helper, 14:30, No messages yet"]);
+  } finally {
+    act(() => resetI18nForTests());
+  }
+});
 
 it("renders saved bot rows without a notification setting", () => {
   // Inboxes saved before notification settings were kept have bots without them.

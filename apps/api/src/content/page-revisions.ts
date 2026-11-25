@@ -10,7 +10,9 @@ import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   canPageRequestRevision,
   IsolationError,
+  pageImagesNamedIn,
   pageRevisionPendingCutoff,
+  pageVersionImages,
   signalPage,
   verifiedPageAccount,
 } from "@rakazo/db";
@@ -171,7 +173,17 @@ async function requireReadyDraft(
   if (!(await pageRevisionAuthorized(tx, request))) throw new IsolationError();
   if (request.status !== "ready" || !request.draftCode || !request.draftSource)
     throw new ClientError("CONFLICT", "The bot draft isn't ready");
-  return { code: request.draftCode, source: request.draftSource };
+  const base = await tx.pageVersion.findUnique({
+    where: {
+      pageId_version: { pageId: request.comment.page.id, version: request.comment.version },
+    },
+    select: { id: true, images: true },
+  });
+  const images = pageImagesNamedIn(
+    base ? pageVersionImages(base, "reject") : {},
+    request.draftSource,
+  );
+  return { code: request.draftCode, source: request.draftSource, images };
 }
 
 export function getPageDraft(prisma: PrismaClient, actor: Actor, input: DraftInput) {
@@ -181,7 +193,7 @@ export function getPageDraft(prisma: PrismaClient, actor: Actor, input: DraftInp
     input.pageId,
     async (tx) => {
       const draft = await requireReadyDraft(tx, await loadDraft(tx, input));
-      return { code: draft.code };
+      return { code: draft.code, images: draft.images };
     },
     true,
   );

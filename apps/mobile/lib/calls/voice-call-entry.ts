@@ -2,12 +2,13 @@ import { displayName } from "@rakazo/core";
 export type VoiceCallStatus = { ready: boolean; transcribe: boolean };
 
 export type VoiceCallPlan =
-  | { kind: "device"; transcribe: false }
+  | { kind: "device"; transcribe: boolean }
   | { kind: "provider"; transcribe: boolean }
   | { kind: "settings" }
   | { kind: "dictation" };
 
 export type VoiceCallPlanDeps = {
+  autoLanguage?: boolean;
   loadDeviceVoiceEnabled: () => Promise<boolean>;
   dictationAvailable: () => Promise<boolean>;
   loadVoiceStatus: () => Promise<VoiceCallStatus>;
@@ -29,12 +30,18 @@ export async function resolveVoiceCallPlan(
     deviceVoiceEnabled = true;
   }
 
-  const deviceDictationAvailable = deviceVoiceEnabled ? await deps.dictationAvailable() : false;
+  const autoLanguage = purpose === "call" && deps.autoLanguage;
+  const deviceDictationAvailable =
+    deviceVoiceEnabled && !autoLanguage && (await deps.dictationAvailable());
   if (deviceVoiceEnabled && deviceDictationAvailable) {
     return { kind: "device", transcribe: false };
   }
 
   const status = await deps.loadVoiceStatus();
+  if (autoLanguage && !status.transcribe) return { kind: "dictation" };
+  if (deviceVoiceEnabled && autoLanguage) {
+    return { kind: "device", transcribe: status.transcribe };
+  }
   if (!status.ready && !(purpose === "dictation" && status.transcribe)) {
     return deviceVoiceEnabled ? { kind: "dictation" } : { kind: "settings" };
   }

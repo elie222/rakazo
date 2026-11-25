@@ -632,12 +632,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
 
   // Self-hosted deployments without billing keep every saved home.
   const stopHomeRetention =
-    email && billingProvider && home instanceof ObjectAgentHomeStore
+    email && billing && home instanceof ObjectAgentHomeStore
       ? startHourlySweep(
           homeRetentionSweep({
             prisma,
             email,
             appUrl: new URL("/app", env.webOrigin).href,
+            syncBilling: (customerId) => billing.sync(customerId),
             onError: (error) => getLogger().error("saved home retention failed", error),
           }),
           (error) => getLogger().error("saved home retention failed", error),
@@ -805,7 +806,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountApiRequestBodyLimits(app);
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountScriptAssets(app);
-  mountSharedPages(app, prisma, requestClientIp);
+  mountSharedPages(app, { prisma, artifacts }, requestClientIp);
   const auditAuthResponse = createAuthResponseAudit();
   for (const [path, reason] of SYSTEM_CONTEXT_PATHS) {
     app.use(path, (_c, next) => runAsSystem(reason, next));

@@ -200,6 +200,7 @@ export const AccountExportRecordSchema = z.discriminatedUnion("type", [
     modelId: z.string().nullable(),
     thinkingLevel: z.string().nullable(),
     watch: json.nullable(),
+    endsAt: IsoDate.nullable().default(null),
     createdAt: IsoDate,
   }),
   z.object({

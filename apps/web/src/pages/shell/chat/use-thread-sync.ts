@@ -14,12 +14,14 @@ import {
   isRunWorking,
   isThreadSnapshotEvent,
   messageUnreadFor,
+  needsThreadSnapshotAfterEvent,
   reconcileRefreshedThread,
   reduceThreadSnapshot,
   rememberTerminalRun,
   runThreadSubscription,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -461,13 +463,9 @@ export function useThreadSync({
           }
           if (messageUnreadFor(event.payload, meId)) markBotReadIfVisible(active.id);
         }
-        if (
-          isRunTerminalEvent(event) ||
-          event.type === "run.waiting_input" ||
-          event.type === "skill.teaching.stopped"
-        ) {
+        if (needsThreadSnapshotAfterEvent(event) || event.type === "skill.teaching.stopped") {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-          void snapshotRefresh.invalidate().catch(() => undefined);
+          void bestEffort("refresh thread snapshot", snapshotRefresh.invalidate());
         } else if (isComputerStatusEvent(event)) {
           // This tab's own take or release already reads the new screen.
           const own = readControlEventScreen(active.id, event);
@@ -563,9 +561,9 @@ export function useThreadSync({
         ) {
           void sidebarRefresh.invalidate().catch(() => undefined);
         }
-        if (isRunTerminalEvent(event) || event.type === "run.waiting_input") {
+        if (needsThreadSnapshotAfterEvent(event)) {
           // waiting_input: reconcile ask cards if a stale post-send refresh raced SSE.
-          void snapshotRefresh.invalidate().catch(() => undefined);
+          void bestEffort("refresh group snapshot", snapshotRefresh.invalidate());
         }
         // The initiating tab already reads the screen; request answers do not change it.
         const computerBotId = computerBotIdRef.current;

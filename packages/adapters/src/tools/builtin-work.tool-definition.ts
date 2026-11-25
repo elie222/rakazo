@@ -104,6 +104,11 @@ const startAtSpec = {
     "ISO date or datetime a repeating schedule starts; the first run is the first match at or after it. Without an offset, read in timezone. If you already did this period's work yourself, set startAt so the first run does not repeat it.",
 };
 
+const endAtDescription =
+  "ISO date or datetime it stops; a date alone includes that day. Without an offset, read in timezone.";
+
+const endAtSpec = { type: "string", description: endAtDescription };
+
 /**
  * One way to time a routine. Repeats and watches also take events (`on`); the cron branch leaves
  * cron optional, so a routine that only events start matches it alone.
@@ -124,6 +129,7 @@ export function scheduleCreateBranch(
   const repeats = activeNames.has("cron") || activeNames.has("every");
   properties.on = repeats || activeNames.has("watch") ? optionalRoutineEvents : blankScheduleTiming;
   properties.startAt = repeats ? startAtSpec : blankScheduleTiming;
+  properties.endAt = repeats || activeNames.has("watch") ? endAtSpec : blankScheduleTiming;
   return {
     type: "object",
     properties,
@@ -335,7 +341,7 @@ export const workTools: ConnectorTool[] = [
   {
     name: "schedule_create",
     description:
-      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt. One-shot: runAt, delayMinutes, or delaySeconds. A repeating job carries out the user\'s lasting request each time, not a copy of what was decided today. inChat true only when each run continues work this chat is doing, such as updating a draft or plan written here or fixing something started here; it then waits for work under way here. Otherwise false: it runs on time, seeing this chat\'s latest messages and its own earlier results. on: run on events too, or only (no timing); each run receives the event: webhook, git (a GitHub repo webhook the user adds with the routine URL and key; needs no connected app), chat (your connected chat app, by name), email (to your address from the owner or their domain).',
+      'Create a reminder or recurring job for this bot. Use for "remind me in 10 minutes" or "every morning send a joke". Repeats: cron or every/unit (min 1 minute), optionally from startAt and until endAt, when it is deleted; for a limited stretch, one routine with endAt, not one per run. One-shot: runAt, delayMinutes, or delaySeconds. A repeating job carries out the user\'s lasting request each time, not a copy of what was decided today. inChat true only when each run continues work this chat is doing, such as updating a draft or plan written here or fixing something started here; it then waits for work under way here. Otherwise false: it runs on time, seeing this chat\'s latest messages and its own earlier results. on: run on events too, or only (no timing); each run receives the event: webhook, git (a GitHub repo webhook the user adds with the routine URL and key; needs no connected app), chat (your connected chat app, by name), email (to your address from the owner or their domain).',
     inputSchema: scheduleCreateInputSchema,
   },
   {
@@ -357,6 +363,7 @@ export const workTools: ConnectorTool[] = [
         every: scheduleTimingSpecs.every,
         unit: scheduleTimingSpecs.unit,
         startAt: startAtSpec,
+        endAt: { type: "string", description: `${endAtDescription} "none" removes it.` },
         runAt: scheduleTimingSpecs.runAt,
         delayMinutes: scheduleTimingSpecs.delayMinutes,
         delaySeconds: scheduleTimingSpecs.delaySeconds,

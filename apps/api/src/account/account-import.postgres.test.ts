@@ -259,6 +259,7 @@ function sourceRecords(): AccountExportRecord[] {
       modelId: null,
       thinkingLevel: null,
       watch: null,
+      endsAt: null,
       createdAt: at,
     },
     {

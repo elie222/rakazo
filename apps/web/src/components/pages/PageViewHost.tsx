@@ -7,7 +7,13 @@ import { MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type { PageSession } from "../../lib/pages/pages";
-import { PAGE_PARAM, useMedia, usePageDocument, usePageSession } from "../../lib/pages/pages";
+import {
+  PAGE_PARAM,
+  useMedia,
+  usePageDocument,
+  usePageSession,
+  useReviewedPageContent,
+} from "../../lib/pages/pages";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorCode } from "../../lib/query/user-error";
 import { PageNotice } from "./PageNotice";
@@ -60,12 +66,8 @@ function OpenPage({
     ...queries.pages.get.queryOptions({ input: { pageId: shownId } }),
     enabled: pageId !== null,
   });
-  const viewer = usePageDocument(
-    page.data?.code,
-    sheet ? "background" : "card",
-    true,
-    DOCK_CLEARANCE,
-  );
+  const content = useReviewedPageContent(shownId, page.data);
+  const viewer = usePageDocument(content, sheet ? "background" : "card", true, DOCK_CLEARANCE);
   const [shareOpen, setShareOpen] = useState(false);
   const link = useQuery({
     ...queries.pages.get.queryOptions({ input: { pageId: shownId, link: true } }),
