@@ -22,7 +22,7 @@ export const TASK_CALLBACK_RECHECK_MS = 5 * 60_000;
 const TASK_CALLBACK_GIVE_UP_MS = 7 * 24 * 60 * 60_000;
 const DELIVERY_TIMEOUT_MS = 15_000;
 const CALLBACK_PORTS = [443];
-/** The most output one callback carries: the newest part, the rest stays on the task. */
+/** The most output one callback carries, in characters: the newest part, the rest stays on the task. */
 const CALLBACK_OUTPUT_LIMIT = 64 * 1024;
 
 /**

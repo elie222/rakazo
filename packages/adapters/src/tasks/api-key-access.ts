@@ -1,8 +1,8 @@
 import type { PrismaClient } from "@rakazo/db";
 
 /**
- * Whether an API key may still act for its person in a Space: the key is enabled, the account
- * is on and the person is still a member. Live streams and task callbacks both stop on it.
+ * Whether an API key may still act for its person in a Space: the key is enabled and unexpired,
+ * the account is on and the person is still a member. Live streams and task callbacks both stop on it.
  */
 export async function apiKeyStillGrants(
   prisma: Pick<PrismaClient, "apiKey" | "spaceMember">,
@@ -14,6 +14,7 @@ export async function apiKeyStillGrants(
         id: grant.keyId,
         referenceId: grant.userId,
         enabled: { not: false },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
         user: { deactivatedAt: null },
       },
       select: { id: true },

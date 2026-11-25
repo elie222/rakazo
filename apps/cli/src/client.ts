@@ -27,11 +27,18 @@ export function createClient(config: CliConfig, fetchImpl: typeof fetch = fetch)
   assertSecureUrl(config.url);
   const base = `${config.url}/api/v1`;
 
-  async function request(method: string, route: string, body?: unknown): Promise<Response> {
+  async function request(
+    method: string,
+    route: string,
+    body?: unknown,
+    stream = false,
+  ): Promise<Response> {
     const response = await fetchImpl(`${base}${route}`, {
       method,
       headers: {
         authorization: `Bearer ${config.key}`,
+        // Says it is a stream, so a server shutting down closes it at once rather than waiting.
+        ...(stream ? { accept: "text/event-stream" } : {}),
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -57,7 +64,12 @@ export function createClient(config: CliConfig, fetchImpl: typeof fetch = fetch)
       json<PublicTask>("POST", `/tasks/${encodeURIComponent(id)}/messages`, { input }),
     /** The task each time it changes, until it settles. */
     async *followTask(id: string): AsyncGenerator<PublicTask> {
-      const response = await request("GET", `/tasks/${encodeURIComponent(id)}/events`);
+      const response = await request(
+        "GET",
+        `/tasks/${encodeURIComponent(id)}/events`,
+        undefined,
+        true,
+      );
       if (!response.body) return;
       for await (const event of readEvents(response.body)) {
         if (event.event === "task") yield JSON.parse(event.data) as PublicTask;
@@ -71,11 +83,12 @@ export function createClient(config: CliConfig, fetchImpl: typeof fetch = fetch)
     },
     /** A chat turn's reply as it arrives. */
     async *chat(bot: string, message: string): AsyncGenerator<string> {
-      const response = await request("POST", "/chat/completions", {
-        model: bot,
-        stream: true,
-        messages: [{ role: "user", content: message }],
-      });
+      const response = await request(
+        "POST",
+        "/chat/completions",
+        { model: bot, stream: true, messages: [{ role: "user", content: message }] },
+        true,
+      );
       if (!response.body) return;
       for await (const event of readEvents(response.body)) {
         if (event.data === "[DONE]") return;

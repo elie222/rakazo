@@ -93,7 +93,7 @@ bot asked while it needs input.
 With an HTTPS `callback_url`, Rakazo posts `{ "type": "task.settled", "id": "…", "task": { … } }`
 there each time the task completes, fails, is cancelled or needs input. `id`, also sent as the
 `x-rakazo-delivery` header, names that state and stays the same if a delivery is retried, so drop
-one you have already handled. A callback carries at most the newest 64 KB of output, with
+one you have already handled. A callback carries at most the newest 65,536 characters of output, with
 `"truncated": true` when it was cut; read the task for all of it.
 
 The create response includes a `callback_secret`, shown once. It is the same for every task one
