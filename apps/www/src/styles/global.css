@@ -462,11 +462,6 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   color: var(--ink);
 }
 
-.hero__platforms .hero__license {
-  padding-left: 20px;
-  border-left: 1px solid var(--line);
-}
-
 .setup-copy {
   display: inline-flex;
   min-height: 42px;
