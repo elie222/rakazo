@@ -69,9 +69,11 @@ export function GrokBotPicker({
     onSaved: (results, sent) => {
       onCreatingChange(false);
       const created = new Map(batch.created);
-      // Bots not in this request keep why they were refused before.
+      // Bots of this export not in this request keep why they were refused before.
       const reasons = new Map(
-        [...batch.reasons].filter(([id]) => !picked.some((row) => row.id === id)),
+        [...batch.reasons].filter(
+          ([id]) => rows.some((row) => row.id === id) && !picked.some((row) => row.id === id),
+        ),
       );
       for (const { id } of picked) {
         if (id.length > GROK_BOT_EXPORT_MAX_LENGTH) reasons.set(id, grokBotErrorText("too_large"));
