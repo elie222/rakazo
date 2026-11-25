@@ -36,6 +36,15 @@ describe("publicTaskView", () => {
     expect(view).toMatchObject({ status: "needs_input", question: "Post this reply?" });
   });
 
+  it("reads past a stored block missing its fields", () => {
+    const view = publicTaskView(
+      task,
+      [{ status: "completed", updatedAt: at }],
+      [{ id: "m1", blocks: [{ kind: "text" }, { kind: "text", text: "Kept" }] }],
+    );
+    expect(view.output).toBe("Kept");
+  });
+
   it("reads as working before its run starts, and names no internal error when it fails", () => {
     expect(publicTaskView(task, [], []).status).toBe("working");
     expect(publicTaskView(task, [{ status: "failed", updatedAt: at }], []).error).toBe(

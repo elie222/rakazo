@@ -50,6 +50,13 @@ describe("createClient", () => {
     expect(await request?.json()).toMatchObject({ model: "Scout", stream: true });
   });
 
+  it("sends the key only over HTTPS, or plain HTTP to this machine", () => {
+    expect(() => createClient({ url: "http://rakazo.example.test", key: "rkz_key" })).toThrow(
+      "https://",
+    );
+    expect(() => createClient({ url: "http://localhost:5173", key: "rkz_key" })).not.toThrow();
+  });
+
   it("reports the server's error message", async () => {
     const client = createClient(config, async () =>
       Response.json({ error: { message: "Invalid API key" } }, { status: 401 }),

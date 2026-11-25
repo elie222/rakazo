@@ -2,12 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createRouterClient, ORPCError, onError } from "@orpc/server";
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { taskCallbackJob } from "@rakazo/adapter-kit";
-import {
-  assertCallbackUrl,
-  readPublicTask,
-  TASK_CALLBACK_RECHECK_MS,
-  taskCallbackSecret,
-} from "@rakazo/adapters";
+import { assertCallbackUrl, readPublicTask, taskCallbackSecret } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
 import type { Actor, PublicBot, PublicTask } from "@rakazo/contracts";
 import { taskSettled } from "@rakazo/contracts";
@@ -251,7 +246,10 @@ export function createBotAccess(deps: BotAccessDeps) {
     };
   }
 
-  /** Reports a task to `url`; the job commits with the row, so a stopped process loses nothing. */
+  /**
+   * Reports a task to `url`; the job commits with the row, so a stopped process loses nothing. It
+   * looks at once, since a turn may have ended before the row existed for its end to find.
+   */
   async function watchTask(actor: Actor, taskId: string, url: string) {
     await runAsTenant(actor, () =>
       prisma.$transaction(async (tx) => {
@@ -260,10 +258,7 @@ export function createBotAccess(deps: BotAccessDeps) {
           create: { taskId, url, spaceId: actor.spaceId, userId: actor.userId },
           update: { url },
         });
-        await deps.jobs.enqueueIn(
-          tx,
-          taskCallbackJob(taskId, new Date(Date.now() + TASK_CALLBACK_RECHECK_MS)),
-        );
+        await deps.jobs.enqueueIn(tx, taskCallbackJob(taskId, new Date()));
       }),
     );
   }

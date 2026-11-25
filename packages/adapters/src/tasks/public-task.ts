@@ -19,9 +19,15 @@ export function publicTaskStatus(runStatus: string | undefined): TaskStatus {
 }
 
 function questionOf(block: MessageBlock): string | null {
-  if (block.kind === "ask" && block.status !== "answered" && !block.dismissed && !block.expired)
+  if (
+    block.kind === "ask" &&
+    typeof block.text === "string" &&
+    block.status !== "answered" &&
+    !block.dismissed &&
+    !block.expired
+  )
     return block.text;
-  if (block.kind === "choice" && !block.answerId) {
+  if (block.kind === "choice" && !block.answerId && Array.isArray(block.options)) {
     const options = block.options.map((option) => `${option.letter}. ${option.label}`);
     return [block.question, ...options].join("\n");
   }
@@ -40,7 +46,9 @@ export function publicTaskView(task: TaskRow, runs: RunRow[], replies: ReplyRow[
   let question: string | null = null;
   for (const reply of replies) {
     for (const block of storedMessageBlocks(reply)) {
-      if (block.kind === "text" && block.text.trim()) texts.push(block.text.trim());
+      // Older rows may hold a text block without its text.
+      if (block.kind === "text" && typeof block.text === "string" && block.text.trim())
+        texts.push(block.text.trim());
       question = questionOf(block) ?? question;
     }
   }

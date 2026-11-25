@@ -11,10 +11,20 @@ export class ApiError extends Error {
   }
 }
 
+/** The key is a bearer credential, so it only travels over HTTPS, or to this machine. */
+export function assertSecureUrl(url: string): void {
+  const parsed = URL.parse(url);
+  if (!parsed) throw new Error(`Not a URL: ${url}`);
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && local))
+    throw new Error("Use an https:// address; only this machine may use http://");
+}
+
 type Model = { id: string; name: string; owned_by: string };
 
 /** The few calls the CLI makes, all under the server's `/api/v1` and authorized by the key. */
 export function createClient(config: CliConfig, fetchImpl: typeof fetch = fetch) {
+  assertSecureUrl(config.url);
   const base = `${config.url}/api/v1`;
 
   async function request(method: string, route: string, body?: unknown): Promise<Response> {
