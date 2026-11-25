@@ -21,7 +21,9 @@ export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const url = env.RAKAZO_URL || saved.url;
-  const key = env.RAKAZO_API_KEY || saved.key;
+  // A saved key goes only to the server it was saved for, never to one the environment names.
+  const sameServer = !env.RAKAZO_URL || env.RAKAZO_URL.replace(/\/+$/, "") === saved.url;
+  const key = env.RAKAZO_API_KEY || (sameServer ? saved.key : undefined);
   return url && key ? { url: url.replace(/\/+$/, ""), key } : null;
 }
 

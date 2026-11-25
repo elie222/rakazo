@@ -35,3 +35,21 @@ it("uses the environment alone, whatever the saved file holds", async () => {
     await rm(base, { recursive: true, force: true });
   }
 });
+
+it("never sends a saved key to a server only the environment names", async () => {
+  const base = await mkdtemp(path.join(tmpdir(), "rakazo-cli-"));
+  try {
+    await saveConfig(
+      { url: "https://rakazo.example.test", key: "rkz_saved" },
+      { XDG_CONFIG_HOME: base },
+    );
+    expect(
+      await loadConfig({ XDG_CONFIG_HOME: base, RAKAZO_URL: "https://other.example.test" }),
+    ).toBeNull();
+    expect(
+      await loadConfig({ XDG_CONFIG_HOME: base, RAKAZO_URL: "https://rakazo.example.test/" }),
+    ).toEqual({ url: "https://rakazo.example.test", key: "rkz_saved" });
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});

@@ -130,6 +130,9 @@ export async function deliverTaskCallback(
   if (!taskSettled(task.status)) return recheck();
   // A run can ask more than once, so each question is its own state; an ended run is one state.
   const state = task.status === "needs_input" ? `needs_input@${task.updated_at}` : task.status;
+  // A waiting run may be cancelled or ask again with no worker to say so; keep looking, even if
+  // this delivery fails for good.
+  if (task.status === "needs_input") await recheck();
   if (callback.deliveredRunId !== latestRun.id || callback.deliveredStatus !== state) {
     await post(callback, task, `${taskId}:${latestRun.id}:${state}`);
     // Only the address it was sent to is marked; a changed address still gets this state.
@@ -138,8 +141,6 @@ export async function deliverTaskCallback(
       data: { deliveredAt: now, deliveredRunId: latestRun.id, deliveredStatus: state },
     });
   }
-  // A waiting run may be cancelled or ask again with no worker to say so; keep looking.
-  if (task.status === "needs_input") await recheck();
 
   async function post(
     target: { apiKeyId: string; url: string },
