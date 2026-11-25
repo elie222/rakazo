@@ -10,7 +10,6 @@ import {
   usableVaultFields,
   VAULT_UNLOCK_CONCURRENCY,
   vaultFields,
-  vaultMemberFilter,
 } from "./vault-access.js";
 import {
   commandRedactionForms,
@@ -94,15 +93,14 @@ export async function loadCommandVariables(
   keyOutage: "throw" | "unset" = "throw",
 ): Promise<{ env: Record<string, string>; used: VaultItemUse[]; redactions: string[] }> {
   const { botId: _, ...owner } = scope;
-  const memberFilter = vaultMemberFilter(scope);
   const [usable, rows] = await Promise.all([
     prisma.vaultCredential.findMany({
-      where: { ...(await usableVaultFields(prisma, scope)), ...memberFilter },
+      where: await usableVaultFields(prisma, scope),
       select: commandRowFields,
       orderBy: { name: "asc" },
     }),
     prisma.vaultCredential.findMany({
-      where: { ...(await vaultFields(prisma, owner)), ...memberFilter },
+      where: await vaultFields(prisma, owner),
       select: commandRowFields,
       orderBy: { name: "asc" },
     }),

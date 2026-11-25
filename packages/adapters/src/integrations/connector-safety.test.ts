@@ -79,4 +79,20 @@ describe("sanitizeConnectorError", () => {
       next: "keep",
     });
   });
+
+  it("redacts secrets and bearer tokens inside undecodable quoted diagnostics and across literal quotes", () => {
+    const windowsDiag = sanitizeConnectorError(
+      new Error('Failed reading "C:\\Users\\bob\\secret-tok" with "C:\\Users\\Bearer tok789"'),
+      ["secret-tok"],
+    );
+    expect(windowsDiag).toBe(
+      'Failed reading "C:\\Users\\bob\\[redacted]" with "C:\\Users\\Bearer [redacted]"',
+    );
+
+    const quotedSecret = 'api"secret';
+    const acrossQuotes = sanitizeConnectorError(new Error(`Invalid value ${quotedSecret} in arg`), [
+      quotedSecret,
+    ]);
+    expect(acrossQuotes).toBe("Invalid value [redacted] in arg");
+  });
 });

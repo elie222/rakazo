@@ -47,10 +47,13 @@ async function runAfterFill(
     teamVault?: ReturnType<typeof fakeDatabase>;
     printed?: string[];
     trigger?: "routine" | "user";
+    deploymentModelKey?: string;
     extraCommandSecret?: string;
     memoryText?: string;
     scratchpadNotes?: string;
     compactedSummary?: string;
+    teammates?: Array<{ id: string; name: string; description?: string | null }>;
+    replyQuote?: string;
   } = {},
 ) {
   const run = {
@@ -63,6 +66,7 @@ async function runAfterFill(
     status: "queued",
     trigger: options.trigger ?? "routine",
     routineId: options.trigger === "user" ? null : "routine-1",
+    sourceMessageId: options.replyQuote ? "msg-source" : null,
     retryOfRunId: null,
     leaseFence: 0,
   };
@@ -199,7 +203,7 @@ async function runAfterFill(
           homeKey: "home-1",
         },
       })),
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async () => options.teammates ?? []),
     },
     attempt: {
       create: vi.fn(async () => ({ id: "attempt-1" })),
@@ -235,6 +239,26 @@ async function runAfterFill(
       : {}),
     message: {
       findMany: vi.fn(async () => []),
+      findFirst: vi.fn(async () =>
+        options.replyQuote
+          ? {
+              id: "msg-source",
+              threadId: run.threadId,
+              role: "user",
+              botId: null,
+              blocks: [{ kind: "text", text: "Follow up" }],
+              replyToMessageId: "msg-target",
+              replyQuote: options.replyQuote,
+              replyTo: {
+                id: "msg-target",
+                threadId: run.threadId,
+                role: "assistant",
+                botId: run.botId,
+                blocks: [{ kind: "text", text: "Original message" }],
+              },
+            }
+          : null,
+      ),
       findUnique: vi.fn(async () => null),
       count: vi.fn(async () => 0),
     },
@@ -316,7 +340,7 @@ async function runAfterFill(
   };
   const executor = createRunExecutor({
     prisma: withEmptyModels(prisma),
-    deploymentModelKey: "fake-deployment-key",
+    deploymentModelKey: options.deploymentModelKey ?? "fake-deployment-key",
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     sandbox,
     secretStore,
@@ -388,26 +412,38 @@ describe("command variables in a later run", () => {
       }),
     ]);
   });
-  it("redacts secrets containing XML characters from memory, scratchpad, and compacted summary in the assembled model request", async () => {
-    const xmlSecret = "xml<sec&ret>99";
+  it("redacts model-start secrets containing XML characters from memory, scratchpad, rosters, reply quotes, and compacted summary", async () => {
+    const modelSecret = "model<api&key>99";
     const { capturedRequest } = await runAfterFill([], {
       trigger: "user",
-      extraCommandSecret: xmlSecret,
-      memoryText: `Saved memory token ${xmlSecret}`,
-      scratchpadNotes: `Saved scratchpad token ${xmlSecret}`,
-      compactedSummary: `Prior summary token ${xmlSecret}`,
+      deploymentModelKey: modelSecret,
+      memoryText: `Saved memory token ${modelSecret}`,
+      scratchpadNotes: `Saved scratchpad token ${modelSecret}`,
+      compactedSummary: `Prior summary token ${modelSecret}`,
+      teammates: [
+        {
+          id: "bot-peer",
+          name: `Peer ${modelSecret}`,
+          description: `Handles ${modelSecret}`,
+        },
+      ],
+      replyQuote: `Quoted ${modelSecret}`,
     });
     expect(capturedRequest).toBeDefined();
     expect(capturedRequest?.prompt).toContain("Saved memory token [redacted]");
     expect(capturedRequest?.prompt).toContain("Saved scratchpad token [redacted]");
-    expect(capturedRequest?.prompt).not.toContain("xml&lt;");
-    expect(capturedRequest?.prompt).not.toContain("sec&amp;ret");
-    expect(capturedRequest?.instructions).not.toContain("xml&lt;");
-    expect(capturedRequest?.instructions).not.toContain("sec&amp;ret");
+    expect(capturedRequest?.prompt).toContain("Quoted [redacted]");
+    expect(capturedRequest?.prompt).not.toContain("model&lt;");
+    expect(capturedRequest?.prompt).not.toContain("model\\u003c");
+    expect(capturedRequest?.prompt).not.toContain("api&amp;key");
+    expect(capturedRequest?.instructions).toContain("Peer [redacted]");
+    expect(capturedRequest?.instructions).toContain("Handles [redacted]");
+    expect(capturedRequest?.instructions).not.toContain("model&lt;");
+    expect(capturedRequest?.instructions).not.toContain("api&amp;key");
     const serializedHistory = JSON.stringify(capturedRequest?.history ?? []);
     expect(serializedHistory).toContain("Prior summary token [redacted]");
-    expect(serializedHistory).not.toContain("xml&lt;");
-    expect(serializedHistory).not.toContain("sec&amp;ret");
+    expect(serializedHistory).not.toContain("model&lt;");
+    expect(serializedHistory).not.toContain("api&amp;key");
   });
 });
 

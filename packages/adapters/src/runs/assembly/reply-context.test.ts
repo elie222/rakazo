@@ -71,6 +71,36 @@ describe("reply context", () => {
     expect(await loadReplyContext(prisma, "thread-1", "user-reply")).toBeUndefined();
   });
 
+  it("redacts reply excerpts and target content before truncation and JSON escaping", async () => {
+    const secret = "tok<a&b>99";
+    const longSecret = `secret-${"z".repeat(40)}-end`;
+    const redact = (text: string) =>
+      text.replaceAll(secret, "[redacted]").replaceAll(longSecret, "[redacted]");
+    const quote = `${"a".repeat(REPLY_QUOTE_MAX_LENGTH - 10)}${longSecret} ${secret}`;
+    const { prisma } = harness(target, quote);
+    const context = await loadReplyContext(prisma, "thread-1", "user-reply", redact);
+    expect(context).toContain("[redacted]");
+    expect(context).not.toContain("tok\\u003c");
+    expect(context).not.toContain("secret-zzzz");
+
+    const historyText = messageToAgentHistoryText(
+      {
+        id: "user-reply",
+        threadId: "thread-1",
+        role: "user",
+        blocks: [{ kind: "text", text: `Body ${secret}` }],
+        replyToMessageId: target.id,
+        replyQuote: `Excerpt ${secret}`,
+        replyTo: { ...target, blocks: [{ kind: "text", text: `Target ${secret}` }] },
+      },
+      redact,
+    );
+    expect(historyText).toContain("Excerpt [redacted]");
+    expect(historyText).toContain("Body [redacted]");
+    expect(historyText).not.toContain("tok\\u003c");
+    expect(historyText).not.toContain(secret);
+  });
+
   it("preserves attachment descriptions and escapes quote delimiters", async () => {
     const { prisma } = harness({
       ...target,

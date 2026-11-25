@@ -46,7 +46,10 @@ export function sanitizeConnectorError(
         .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]"),
       secrets,
     );
-  const cleaned = redactJsonStringsAndPlainText(message, sanitizeDecoded, sanitizePlain);
+  const cleaned = redactSecrets(
+    redactJsonStringsAndPlainText(message, sanitizeDecoded, sanitizePlain),
+    secrets,
+  );
   const maxChars = options?.maxChars ?? 2_000;
   return Number.isFinite(maxChars) ? sliceWellFormed(cleaned, maxChars) : cleaned;
 }

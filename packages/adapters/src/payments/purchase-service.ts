@@ -520,14 +520,13 @@ const REDACTION_WINDOW_MS = 7 * 24 * 60 * 60_000;
  */
 export async function loadPurchaseRedactions(
   deps: Pick<PurchaseDeps, "prisma" | "secretStore">,
-  run: { spaceId: string; userId: string; botId: string; requireMember?: boolean },
+  run: { spaceId: string; userId: string; botId: string },
 ): Promise<string[]> {
   const rows = await deps.prisma.purchase.findMany({
     where: {
       spaceId: run.spaceId,
       userId: run.userId,
       botId: run.botId,
-      ...(run.requireMember ? { space: { memberships: { some: { userId: run.userId } } } } : {}),
       OR: [{ cardCiphertext: { not: null } }, { tokenCiphertext: { not: null } }],
       createdAt: { gte: new Date(Date.now() - REDACTION_WINDOW_MS) },
     },

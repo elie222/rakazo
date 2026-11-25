@@ -25,9 +25,9 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
   const saved = await loadSavedTurn(services, hold);
   const records = await loadRunRecords(services, hold, { saved });
   const connected = await connectRun(services, hold, { records });
-  const thread = await readThreadHistory(hold, { records });
   const model = await startTurnModel(hold, { saved, records });
   if (!model) return;
+  const thread = await readThreadHistory(hold, { records });
   const turnContext = await loadTurnContext(hold, { records, connected, thread });
   const computer = await prepareRunComputer(hold, { records, connected, turnContext, model });
   const capabilities = await resolveRunCapabilities(services, hold, {

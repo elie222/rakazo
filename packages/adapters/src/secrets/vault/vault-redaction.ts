@@ -13,12 +13,7 @@ import { ContentDecryptionError, ciphertextKeyId } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { credentialHeader, percentEncoded } from "../bot-secret-destination.js";
 import type { BotSecretScope } from "./vault-access.js";
-import {
-  VAULT_UNLOCK_CONCURRENCY,
-  vaultFields,
-  vaultMemberFilter,
-  vaultRow,
-} from "./vault-access.js";
+import { VAULT_UNLOCK_CONCURRENCY, vaultFields, vaultRow } from "./vault-access.js";
 import { openVaultValue } from "./vault-values.js";
 
 function singleCommandRedactionForms(value: string): string[] {
@@ -171,7 +166,6 @@ export async function loadLoginPasswordRedactions(
   const rows = await prisma.vaultCredential.findMany({
     where: {
       ...(await vaultFields(prisma, scope)),
-      ...vaultMemberFilter(scope),
       OR: ["login", "card", "bearer", "header", "basic"].map((type) => ({
         auth: { path: ["type"], equals: type },
       })),

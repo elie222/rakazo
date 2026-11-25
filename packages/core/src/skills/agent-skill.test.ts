@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildSkillMd,
   expandSkillReferencesInPrompt,
-  expandSkillReferencesInPromptWithSpan,
   extractForcedSkillName,
   extractRoutineSkillMentions,
   findSkillByName,
@@ -790,48 +789,5 @@ describe("renameRoutineSkillMentions", () => {
     expect(
       renameRoutineSkillMentions("Use @garden tools, then @Garden. Email@garden stays.", renames),
     ).toBe("Use @garden tools, then @garden-2. Email@garden stays.");
-  });
-});
-
-describe("expandSkillReferencesInPromptWithSpan", () => {
-  it("remaps caller spans across @mention stripping, separators, and forced /Name prefixes", () => {
-    const opsSkill = {
-      name: "OpsGuide",
-      description: "Ops guide",
-      content: "Step 1: verify",
-      source: "user" as const,
-      readOnly: false,
-    };
-    const routine = 'Run routine "Hook":\nUse @OpsGuide to triage.\n';
-    const payload = "\nInbound webhook payload:\nraw\n\n";
-    const answer = "Which env?\nAnswer: prod secret-123";
-    const raw = `${routine}${payload}${answer}`;
-    const rawSpans = [
-      { start: 0, end: routine.length },
-      { start: routine.length + payload.length, end: raw.length },
-    ];
-    const expanded = expandSkillReferencesInPromptWithSpan(raw, [opsSkill], rawSpans);
-    expect(expanded.remappedSpans).toHaveLength(2);
-    expect(
-      expanded.prompt.slice(expanded.remappedSpans[0]!.start, expanded.remappedSpans[0]!.end),
-    ).toBe('Run routine "Hook":\nUse to triage.\n');
-    expect(
-      expanded.prompt.slice(expanded.remappedSpans[1]!.start, expanded.remappedSpans[1]!.end),
-    ).toBe(answer);
-
-    const forcedRaw = "  /OpsGuide   check secret-456  ";
-    const forcedSecretStart = forcedRaw.indexOf("secret-456");
-    const forcedExpanded = expandSkillReferencesInPromptWithSpan(
-      forcedRaw,
-      [opsSkill],
-      [{ start: forcedSecretStart, end: forcedSecretStart + "secret-456".length }],
-    );
-    expect(forcedExpanded.remappedSpans).toHaveLength(1);
-    expect(
-      forcedExpanded.prompt.slice(
-        forcedExpanded.remappedSpans[0]!.start,
-        forcedExpanded.remappedSpans[0]!.end,
-      ),
-    ).toBe("secret-456");
   });
 });

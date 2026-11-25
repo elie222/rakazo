@@ -279,6 +279,21 @@ describe("tool step outcomes", () => {
       msg: "Bearer [redacted]\nNext line",
       ok: "keep",
     });
+
+    const windowsDiag = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [
+            { type: "text", text: 'Open "C:\\Users\\bob\\Bearer tok999" and "C:\\Users\\sec-1"' },
+          ],
+        },
+      },
+      ["sec-1"],
+    )!;
+    expect(windowsDiag).toBe(
+      'Open "C:\\Users\\bob\\Bearer [redacted]" and "C:\\Users\\[redacted]"',
+    );
   });
 
   it("replays tool calls only to runs the owner started themselves, failing closed", () => {

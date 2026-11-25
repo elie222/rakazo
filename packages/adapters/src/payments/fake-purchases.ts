@@ -87,15 +87,9 @@ export class FakePaymentWallet implements PaymentWalletProvider {
 
 type Row = Record<string, unknown>;
 
-function matches(row: Row, where: Row, memberUserId?: string): boolean {
+function matches(row: Row, where: Row): boolean {
   return Object.entries(where).every(([key, expected]) => {
-    if (key === "OR")
-      return (expected as Row[]).some((branch) => matches(row, branch, memberUserId));
-    if (key === "space" && expected && typeof expected === "object") {
-      const memberships = (expected as { memberships?: { some?: { userId?: string } } })
-        .memberships;
-      return Boolean(memberUserId && memberships?.some?.userId === memberUserId);
-    }
+    if (key === "OR") return (expected as Row[]).some((branch) => matches(row, branch));
     const actual = row[key];
     if (expected instanceof Date)
       return actual instanceof Date && actual.getTime() === expected.getTime();
@@ -132,7 +126,7 @@ export function fakePurchasePrisma(fixture: {
       purchases.find((row) => matches(row, where)) ?? null,
     findMany: async ({ where, select }: { where: Row; select?: Record<string, boolean> }) =>
       purchases
-        .filter((row) => matches(row, where, live.member ? fixture.userId : undefined))
+        .filter((row) => matches(row, where))
         .map((row) =>
           Object.fromEntries(
             Object.keys(select ?? { id: true }).map((key) => [key, row[key as keyof Purchase]]),

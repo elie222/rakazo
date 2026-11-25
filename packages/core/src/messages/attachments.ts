@@ -329,10 +329,14 @@ function splitTrailingIncompleteJsonEscape(value: string): { trimmed: string; tr
   return { trimmed: value, trailing: "" };
 }
 
-function redactSingleJsonStringToken(token: string, redact: (text: string) => string): string {
+function redactSingleJsonStringToken(
+  token: string,
+  redact: (text: string) => string,
+  fallbackPlain?: (text: string) => string,
+): string {
   try {
     const decoded: unknown = JSON.parse(token);
-    if (typeof decoded !== "string") return token;
+    if (typeof decoded !== "string") return fallbackPlain ? fallbackPlain(token) : token;
     const next = redact(decoded);
     return next === decoded ? token : JSON.stringify(next);
   } catch {
@@ -340,11 +344,15 @@ function redactSingleJsonStringToken(token: string, redact: (text: string) => st
     const { trimmed, trailing: trailingEscape } = splitTrailingIncompleteJsonEscape(token);
     try {
       const decoded: unknown = JSON.parse(`${trimmed}"`);
-      if (typeof decoded !== "string") return token;
+      if (typeof decoded !== "string") return fallbackPlain ? fallbackPlain(token) : token;
       const next = redact(decoded);
       return next === decoded ? token : `${JSON.stringify(next).slice(0, -1)}${trailingEscape}`;
     } catch {
-      return token;
+      if (!fallbackPlain) return token;
+      if (token.length >= 2 && token.startsWith('"') && token.endsWith('"')) {
+        return `"${fallbackPlain(token.slice(1, -1))}"`;
+      }
+      return fallbackPlain(token);
     }
   }
 }
@@ -473,7 +481,7 @@ export function redactJsonStringsAndPlainText(
     const index = match.index ?? 0;
     if (index > cursor) out += redactPlain(raw.slice(cursor, index));
     const token = match[0];
-    out += redactSingleJsonStringToken(token, redactString);
+    out += redactSingleJsonStringToken(token, redactString, redactPlain);
     cursor = index + token.length;
   }
   if (cursor < raw.length) out += redactPlain(raw.slice(cursor));

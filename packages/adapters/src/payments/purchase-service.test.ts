@@ -353,22 +353,6 @@ describe("resolvePurchaseCardFill", () => {
       "4242-4242-4242-4242",
     ]);
     expect(await loadPurchaseRedactions(env.deps, { ...run, botId: "bot-2" })).toEqual([]);
-    const findManySpy = vi.spyOn(env.deps.prisma.purchase, "findMany");
-    expect(await loadPurchaseRedactions(env.deps, { ...run, requireMember: true })).toEqual([
-      "4242424242424242",
-      "4242 4242 4242 4242",
-      "4242-4242-4242-4242",
-    ]);
-    expect(findManySpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          space: { memberships: { some: { userId: run.userId } } },
-        }),
-      }),
-    );
-    expect(findManySpy.mock.calls[0]?.[0]?.where).not.toHaveProperty("user");
-    env.live.member = false;
-    expect(await loadPurchaseRedactions(env.deps, { ...run, requireMember: true })).toEqual([]);
   });
 
   it("deletes a sealed card that two first fills raced to save", async () => {

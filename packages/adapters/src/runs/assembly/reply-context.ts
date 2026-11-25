@@ -29,7 +29,11 @@ function messageBlocks(message: QuotedMessage): MessageBlock[] {
   return storedMessageBlocks(message);
 }
 
-function replyContext(source: ReplyMessage, threadId: string): string | undefined {
+function replyContext(
+  source: ReplyMessage,
+  threadId: string,
+  redact?: (text: string) => string,
+): string | undefined {
   const target = source.replyTo;
   if (!target || target.threadId !== threadId) return undefined;
   const emoji = messageReaction({ ...source, blocks: messageBlocks(source) });
@@ -37,14 +41,15 @@ function replyContext(source: ReplyMessage, threadId: string): string | undefine
   // on the whole-message path because a reaction always targets the message.
   // A page card is always read whole, so the bot gets the page's id, not just its title.
   const wholePage = isPageCardMessage(messageBlocks(target));
-  const excerpt =
+  const rawExcerpt =
     !emoji && !wholePage && typeof source.replyQuote === "string"
       ? source.replyQuote.trim()
       : undefined;
+  const excerpt = rawExcerpt ? (redact ? redact(rawExcerpt) : rawExcerpt) : undefined;
   const targetPayload = excerpt
     ? { quotedText: truncateReplyQuote(excerpt) }
     : (() => {
-        const content = blocksToAgentHistoryText(messageBlocks(target));
+        const content = blocksToAgentHistoryText(messageBlocks(target), redact);
         return {
           content: content.slice(0, 20_000),
           ...(content.length > 20_000 ? { truncated: true } : {}),
@@ -61,8 +66,14 @@ function replyContext(source: ReplyMessage, threadId: string): string | undefine
   return replyTargetNote(emoji, quote);
 }
 
-export function messageToAgentHistoryText(message: ReplyMessage): string {
-  return [replyContext(message, message.threadId), blocksToAgentHistoryText(messageBlocks(message))]
+export function messageToAgentHistoryText(
+  message: ReplyMessage,
+  redact?: (text: string) => string,
+): string {
+  return [
+    replyContext(message, message.threadId, redact),
+    blocksToAgentHistoryText(messageBlocks(message), redact),
+  ]
     .filter(Boolean)
     .join("\n\n");
 }
@@ -70,12 +81,14 @@ export function messageToAgentHistoryText(message: ReplyMessage): string {
 /** A message split at its tool steps, as messageToAgentHistoryText reads it; none without steps. */
 export function messageToAgentHistorySegments(
   message: ReplyMessage & { toolHistory?: string | null },
+  redact?: (text: string) => string,
 ): AgentHistorySegment[] | undefined {
   const segments = blocksToAgentHistorySegments(
     withToolHistory(messageBlocks(message), parsedToolHistory(message.toolHistory)),
+    redact,
   );
   if (!segments.some((segment) => "steps" in segment)) return undefined;
-  const context = replyContext(message, message.threadId);
+  const context = replyContext(message, message.threadId, redact);
   return context ? [{ text: context }, ...segments] : segments;
 }
 
@@ -100,6 +113,7 @@ export async function loadReplyContext(
   prisma: PrismaClient,
   threadId: string,
   sourceMessageId: string | null | undefined,
+  redact?: (text: string) => string,
 ): Promise<string | undefined> {
   if (!sourceMessageId) return undefined;
   const selection = { id: true, threadId: true, role: true, botId: true, blocks: true } as const;
@@ -112,5 +126,5 @@ export async function loadReplyContext(
       replyTo: { select: selection },
     },
   });
-  return source ? replyContext(source, threadId) : undefined;
+  return source ? replyContext(source, threadId, redact) : undefined;
 }

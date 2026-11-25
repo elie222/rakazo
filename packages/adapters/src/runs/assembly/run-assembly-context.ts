@@ -352,7 +352,8 @@ export async function buildTurnPrompt(
         (request) => redactSecrets(JSON.stringify(request), runSecrets),
         { exposedToolNames: new Set(partitionTools(tools).listed.map((tool) => tool.name)) },
       );
-  const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
+  const redact = (text: string) => redactSecrets(text, runSecrets);
+  const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId, redact);
   let userTimeZone: string | null | undefined;
   try {
     userTimeZone = (
@@ -396,7 +397,7 @@ export async function buildTurnPrompt(
   // Other members' account names are text the owner of a routine with their computer never approved.
   const sharedSpaceNote =
     people && !ownerComputerRoutine
-      ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId)
+      ? await loadSharedSpaceNote(deps.prisma, run.spaceId, run.userId, redact)
       : undefined;
   const prompt = [
     replyContext,
@@ -467,10 +468,11 @@ export async function buildTurnPrompt(
   const groupDirectory =
     conversationThread.groupId || ownerComputerRoutine
       ? undefined
-      : await loadBotGroupDirectory(deps.prisma, run);
+      : await loadBotGroupDirectory(deps.prisma, run, redact);
   const botDirectory =
-    [renderBotDirectory(parts.tools.teammates), groupDirectory].filter(Boolean).join("\n\n") ||
-    undefined;
+    [renderBotDirectory(parts.tools.teammates, redact), groupDirectory]
+      .filter(Boolean)
+      .join("\n\n") || undefined;
   return {
     pluginLine,
     taughtSkillsLine,

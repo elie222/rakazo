@@ -57,14 +57,15 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
       messages: [...messages].reverse().map((m) => {
         const speaker = historySpeaker(speakers, m);
         // In a group, turns from several speakers are joined, so no line may pose as a label.
+        const redact = (value: string) => redactSecrets(value, hold.secrets);
         const neutral = (value: string) => (speakers ? neutralizeSpeakerLabels(value) : value);
-        const text = neutral(messageToAgentHistoryText(m));
+        const text = neutral(messageToAgentHistoryText(m, redact));
         const partial = isPartialReplyClientNonce(m.clientNonce);
         // Runs for someone other than the owner replay replies as everyone saw them.
         const segments =
           m.role === "user" || m.role === "system" || speaker || !replaysToolHistory
             ? undefined
-            : messageToAgentHistorySegments(m)?.map((segment) =>
+            : messageToAgentHistorySegments(m, redact)?.map((segment) =>
                 "text" in segment
                   ? { text: neutral(segment.text) }
                   : {

@@ -10,6 +10,7 @@ import {
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
   nonOwnerChatPrivacyBlock,
+  redactSecrets,
 } from "@rakazo/core";
 import { mayBeChannelMessage, parseComputerMode } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -431,6 +432,7 @@ export async function resolveRunCapabilities(
         conversationThread.groupId,
         { id: bot.id, name: bot.name },
         Boolean(people),
+        (text) => redactSecrets(text, hold.secrets),
       )
     : undefined;
   const hasMessagingIdentity = deps.messaging ? await deps.messaging.hasIdentity(bot.id) : false;

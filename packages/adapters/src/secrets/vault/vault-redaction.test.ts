@@ -1,11 +1,8 @@
 import type { BotSecretDestination } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
-import { vaultMemberFilter } from "./vault-access.js";
-import { loadCommandVariables } from "./vault-commands.js";
+import { describe, expect, it } from "vitest";
 import {
   apiKeyRedactionForms,
   commandRedactionForms,
-  loadLoginPasswordRedactions,
   passwordRedactionForms,
 } from "./vault-redaction.js";
 
@@ -51,35 +48,5 @@ describe("vault redaction normalized forms", () => {
     const forms = commandRedactionForms("  abc  ");
     expect(forms).toContain("  abc  ");
     expect(forms).not.toContain("abc");
-  });
-});
-
-describe("vaultMemberFilter", () => {
-  it("adds the Space membership query filter only when requireMember is set", async () => {
-    expect(vaultMemberFilter({ spaceId: "space-1", userId: "user-1" })).toEqual({});
-    const filter = vaultMemberFilter({
-      spaceId: "space-1",
-      userId: "user-1",
-      requireMember: true,
-    });
-    expect(filter).toEqual({
-      user: { members: { some: { spaceMemberships: { some: { spaceId: "space-1" } } } } },
-    });
-
-    const findMany = vi.fn(async (_args: { where: Record<string, unknown> }) => []);
-    const prisma = {
-      spaceSettingOverride: { findUnique: vi.fn(async () => null) },
-      vaultCredential: { findMany },
-    };
-    const secretStore = { load: vi.fn() };
-    const scope = { spaceId: "space-1", userId: "user-1", botId: "bot-1", requireMember: true };
-
-    await loadLoginPasswordRedactions(prisma as never, secretStore, scope);
-    await loadCommandVariables(prisma as never, secretStore, scope);
-
-    expect(findMany).toHaveBeenCalledTimes(3);
-    for (const [call] of findMany.mock.calls) {
-      expect(call.where).toMatchObject(filter);
-    }
   });
 });

@@ -365,50 +365,11 @@ function restAlreadyIncludesSkillContent(rest: string, content: string): boolean
   );
 }
 
-interface TextEdit {
-  start: number;
-  end: number;
-  replacementLength: number;
-}
-
-function remapSpansForEdits(
-  spans: readonly { start: number; end: number }[],
-  edits: readonly TextEdit[],
-): Array<{ start: number; end: number }> {
-  if (spans.length === 0 || edits.length === 0) {
-    return spans.filter((span) => span.end > span.start).map((span) => ({ ...span }));
-  }
-  const mapPoint = (point: number, isEnd: boolean): number => {
-    let delta = 0;
-    for (const edit of edits) {
-      if (point < edit.start) break;
-      if (point >= edit.end) {
-        delta += edit.replacementLength - (edit.end - edit.start);
-        continue;
-      }
-      return edit.start + delta + (isEnd ? 0 : edit.replacementLength);
-    }
-    return point + delta;
-  };
-  const result: Array<{ start: number; end: number }> = [];
-  for (const span of spans) {
-    if (span.end <= span.start) continue;
-    const nextStart = mapPoint(span.start, false);
-    const nextEnd = mapPoint(span.end, true);
-    if (nextEnd > nextStart) result.push({ start: nextStart, end: nextEnd });
-  }
-  return result;
-}
-
-function stripRoutineSkillMentionWithEdits(
-  prompt: string,
-  name: string,
-): { text: string; edits: TextEdit[] } {
+function stripRoutineSkillMention(prompt: string, name: string): string {
   const token = `@${escapeRegExp(name)}${ROUTINE_SKILL_END}`;
   // Adjacent repeats share a separator. Clean that seam only once.
   const mention = new RegExp(`(^|${ROUTINE_SKILL_LEAD})${token}(?:[ \\t]+${token})*`, "gi");
   const parts: string[] = [];
-  const edits: TextEdit[] = [];
   let cursor = 0;
   for (const match of prompt.matchAll(mention)) {
     const start = match.index + (match[1]?.length ?? 0);
@@ -428,109 +389,10 @@ function stripRoutineSkillMentionWithEdits(
       separator = hasLeftText ? (before && after ? " " : before || after) : before;
     }
     parts.push(prompt.slice(cursor, left), separator);
-    edits.push({ start: left, end: right, replacementLength: separator.length });
     cursor = right;
   }
   parts.push(prompt.slice(cursor));
-  return { text: parts.join(""), edits };
-}
-
-/**
- * Expand forced `/Name` or routine `@Name` mentions, report the prepended skill prefix length,
- * and remap any caller-supplied character spans through the expansion and mention-stripping edits.
- */
-export function expandSkillReferencesInPromptWithSpan(
-  prompt: string,
-  skills: readonly SkillRecord[],
-  spans: readonly { start: number; end: number }[] = [],
-): {
-  prompt: string;
-  expandedPrefixLength: number;
-  remappedSpans: Array<{ start: number; end: number }>;
-} {
-  const forced = extractForcedSkillName(prompt);
-  if (forced) {
-    const skill = findSkillByName(skills, forced.name);
-    if (skill) {
-      const trimmedStart = prompt.trimStart();
-      const leadingWs = prompt.length - trimmedStart.length;
-      // Routines expand at fire time into `Use skill: …`; run time expands again — stay idempotent.
-      if (restAlreadyIncludesSkillContent(forced.rest, skill.content)) {
-        return {
-          prompt: trimmedStart,
-          expandedPrefixLength: 0,
-          remappedSpans: remapSpansForEdits(
-            spans,
-            leadingWs > 0 ? [{ start: 0, end: leadingWs, replacementLength: 0 }] : [],
-          ),
-        };
-      }
-      const header = formatForcedSkillPrompt(skill.name, skill.content);
-      const trailing = forced.rest.trim();
-      if (!trailing) {
-        return { prompt: header, expandedPrefixLength: header.length, remappedSpans: [] };
-      }
-      const match = FORCE_SKILL_PREFIX.exec(trimmedStart);
-      const afterPrefix = trimmedStart.slice(match?.[0].length ?? 0);
-      const restStart =
-        leadingWs +
-        (match?.[0].length ?? 0) +
-        (afterPrefix.length - afterPrefix.trimStart().length);
-      const restEnd = restStart + trailing.length;
-      const offset = header.length + 2 - restStart;
-      const remappedSpans = spans.flatMap((span) => {
-        const s = Math.max(restStart, span.start);
-        const e = Math.min(restEnd, span.end);
-        return e > s ? [{ start: s + offset, end: e + offset }] : [];
-      });
-      return {
-        prompt: formatForcedSkillPrompt(skill.name, skill.content, forced.rest),
-        expandedPrefixLength: header.length,
-        remappedSpans,
-      };
-    }
-  }
-
-  const mentions = extractRoutineSkillMentions(
-    prompt,
-    skills.map((skill) => skill.name),
-  );
-  if (mentions.length === 0) {
-    return {
-      prompt,
-      expandedPrefixLength: 0,
-      remappedSpans: spans.filter((span) => span.end > span.start).map((span) => ({ ...span })),
-    };
-  }
-
-  const blocks: string[] = [];
-  let remaining = prompt;
-  let currentSpans = spans.filter((span) => span.end > span.start).map((span) => ({ ...span }));
-  for (const mention of mentions) {
-    const skill = findSkillByName(skills, mention);
-    if (!skill) continue;
-    blocks.push(formatForcedSkillPrompt(skill.name, skill.content));
-    // Strip the @mention token so the agent is not confused by a dangling pointer.
-    const stripped = stripRoutineSkillMentionWithEdits(remaining, mention);
-    remaining = stripped.text;
-    currentSpans = remapSpansForEdits(currentSpans, stripped.edits);
-  }
-  if (blocks.length === 0) {
-    return { prompt, expandedPrefixLength: 0, remappedSpans: currentSpans };
-  }
-  const prefix = blocks.join("\n\n");
-  if (!remaining.trim()) {
-    return { prompt: prefix, expandedPrefixLength: prefix.length, remappedSpans: [] };
-  }
-  const shift = prefix.length + 2;
-  return {
-    prompt: `${prefix}\n\n${remaining}`,
-    expandedPrefixLength: prefix.length,
-    remappedSpans: currentSpans.map((span) => ({
-      start: span.start + shift,
-      end: span.end + shift,
-    })),
-  };
+  return parts.join("");
 }
 
 /** Expand forced `/Name` or routine `@Name` mentions into full skill bodies for the task prompt. */
@@ -538,7 +400,35 @@ export function expandSkillReferencesInPrompt(
   prompt: string,
   skills: readonly SkillRecord[],
 ): string {
-  return expandSkillReferencesInPromptWithSpan(prompt, skills).prompt;
+  const forced = extractForcedSkillName(prompt);
+  if (forced) {
+    const skill = findSkillByName(skills, forced.name);
+    if (skill) {
+      // Routines expand at fire time into `Use skill: …`; run time expands again — stay idempotent.
+      if (restAlreadyIncludesSkillContent(forced.rest, skill.content)) {
+        return prompt.trimStart();
+      }
+      return formatForcedSkillPrompt(skill.name, skill.content, forced.rest);
+    }
+  }
+
+  const mentions = extractRoutineSkillMentions(
+    prompt,
+    skills.map((skill) => skill.name),
+  );
+  if (mentions.length === 0) return prompt;
+
+  const blocks: string[] = [];
+  let remaining = prompt;
+  for (const mention of mentions) {
+    const skill = findSkillByName(skills, mention);
+    if (!skill) continue;
+    blocks.push(formatForcedSkillPrompt(skill.name, skill.content));
+    // Strip the @mention token so the agent is not confused by a dangling pointer.
+    remaining = stripRoutineSkillMention(remaining, mention);
+  }
+  if (blocks.length === 0) return prompt;
+  return [...blocks, remaining].filter((part) => part.trim()).join("\n\n");
 }
 
 /**

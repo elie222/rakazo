@@ -16,11 +16,8 @@ import {
   buildBotMessageWakePrompt,
   formatBotRosterLines,
   renderBotDirectory,
-  renderBotDirectoryWithSpans,
   renderBotGroupDirectory,
-  renderBotGroupDirectoryWithSpans,
   renderGroupMembersContext,
-  renderGroupMembersContextWithSpans,
 } from "./bot-messages.prompt.js";
 
 const bots = [
@@ -446,76 +443,34 @@ describe("group routing metadata", () => {
     expect(directory.split("</bot_groups>")).toHaveLength(2);
   });
 
-  it("redacts raw directory and roster fields before escaping and reports exact ownership spans", () => {
-    const ownSecret = "own&sec<1>\nval";
-    const sharedSecret = "shr&sec<2>\nval";
-    const redactors = {
-      own: secretRedactor([ownSecret]),
-      shared: secretRedactor([ownSecret, sharedSecret]),
-    };
+  it("redacts raw directory and roster fields before escaping or truncation", () => {
+    const secret = "own&sec<1>\nval";
+    const redact = secretRedactor([secret]);
 
-    const dir = renderBotDirectoryWithSpans(
-      [
-        {
-          id: "b_1",
-          name: `Own ${ownSecret}`,
-          nameOwn: true,
-          description: `Shared ${sharedSecret}`,
-          descriptionOwn: false,
-        },
-      ],
-      redactors,
+    const dir = renderBotDirectory(
+      [{ id: "b_1", name: `Own ${secret}`, description: `Shared ${secret}` }],
+      redact,
     );
-    expect(dir.text).toContain("- Own [redacted] (id: b_1): Shared [redacted]");
-    expect(dir.ownSpans.map((s) => dir.text!.slice(s.start, s.end))).toEqual(["Own [redacted]"]);
-    expect(dir.foreignSpans.map((s) => dir.text!.slice(s.start, s.end))).toEqual([
-      "Shared [redacted]",
-    ]);
+    expect(dir).toContain("- Own [redacted] (id: b_1): Shared [redacted]");
+    expect(dir).not.toContain("own&amp;");
+    expect(dir).not.toContain("&lt;1&gt;");
 
-    const groupDir = renderBotGroupDirectoryWithSpans(
-      [
-        {
-          id: "g_1",
-          name: `Team ${sharedSecret}`,
-          nameOwn: false,
-          members: [{ id: "b_1", name: `Lead ${ownSecret}`, nameOwn: true }],
-        },
-      ],
-      redactors,
+    const groupDir = renderBotGroupDirectory(
+      [{ id: "g_1", name: `Team ${secret}`, members: [{ id: "b_1", name: `Lead ${secret}` }] }],
+      redact,
     );
-    expect(groupDir.text).toContain("- Team [redacted] (group_id: g_1): Lead [redacted] (id: b_1)");
-    expect(groupDir.text).toContain("Use post_to_group");
-    expect(groupDir.ownSpans.map((s) => groupDir.text!.slice(s.start, s.end))).toEqual([
-      "Lead [redacted]",
-    ]);
-    expect(groupDir.foreignSpans.map((s) => groupDir.text!.slice(s.start, s.end))).toEqual([
-      "Team [redacted]",
-    ]);
+    expect(groupDir).toContain("- Team [redacted] (group_id: g_1): Lead [redacted] (id: b_1)");
+    expect(groupDir).toContain("Use post_to_group");
 
-    const membersCtx = renderGroupMembersContextWithSpans(
-      `Ops ${sharedSecret}`,
-      [
-        {
-          id: "b_1",
-          name: `Self ${ownSecret}`,
-          nameOwn: true,
-          description: `Desc ${ownSecret}`,
-          descriptionOwn: true,
-        },
-      ],
-      { id: "b_1", name: `Self ${ownSecret}`, nameOwn: true },
+    const membersCtx = renderGroupMembersContext(
+      `Ops ${secret}`,
+      [{ id: "b_1", name: `Self ${secret}`, description: `Desc ${secret}` }],
+      { id: "b_1", name: `Self ${secret}` },
       true,
-      { groupNameOwn: false, redactors },
+      redact,
     );
-    expect(membersCtx.text).toContain('You are in the group chat "Ops [redacted]".');
-    expect(membersCtx.text).toContain("You are Self [redacted] (id: b_1).");
-    expect(membersCtx.foreignSpans.map((s) => membersCtx.text.slice(s.start, s.end))).toEqual([
-      "Ops [redacted]",
-    ]);
-    expect(membersCtx.ownSpans.map((s) => membersCtx.text.slice(s.start, s.end))).toEqual([
-      "Self [redacted]",
-      "Self [redacted]",
-      "Desc [redacted]",
-    ]);
+    expect(membersCtx).toContain('You are in the group chat "Ops [redacted]".');
+    expect(membersCtx).toContain("You are Self [redacted] (id: b_1).");
+    expect(membersCtx).toContain("- Self [redacted] (id: b_1): Desc [redacted]");
   });
 });
