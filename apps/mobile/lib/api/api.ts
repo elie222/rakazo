@@ -781,7 +781,7 @@ async function request(
     if (!res.ok) {
       // oRPC sends a failure as `{ json: { code, status, message } }`; the message is the
       // server's user-facing copy.
-      const error = parsed.json as
+      const error = parsed?.json as
         | { message?: unknown; code?: unknown; data?: unknown }
         | undefined;
       if (

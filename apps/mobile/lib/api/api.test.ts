@@ -409,7 +409,13 @@ describe("mobile API requests", () => {
     );
   });
 
-  it("asks to update a server from before typed card answers", async () => {
+  it.each([
+    ["plain text", () => new Response("404 Not Found", { status: 404 })],
+    [
+      "JSON null",
+      () => new Response("null", { status: 404, headers: { "content-type": "application/json" } }),
+    ],
+  ])("asks to update a server from before typed card answers (%s 404)", async (_label, make404) => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string | URL | Request) =>
@@ -417,7 +423,7 @@ describe("mobile API requests", () => {
           ? jsonResponse({
               json: { scope: "account-space", version: "2026-09-14", recipients: [] },
             })
-          : new Response("404 Not Found", { status: 404 }),
+          : make404(),
       ),
     );
     await expect(
