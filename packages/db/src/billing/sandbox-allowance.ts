@@ -76,13 +76,9 @@ export async function sandboxAllowancePlan(
     Math.floor((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
   if (billing?.status !== "trialing" && !tier && !billing?.creditAmountCents) {
     // Granted credit without a monthly plan: its share is one pool, spent since the first grant.
-    const granted = await prisma.accessGrant.aggregate({
-      where: { organizationId, appliedAt: { not: null }, creditCents: { gt: 0 } },
-      _sum: { creditCents: true },
-      _min: { appliedAt: true },
-    });
-    if (granted._sum.creditCents && granted._min.appliedAt) {
-      const since = granted._min.appliedAt;
+    const granted = await grantedCreditPool(prisma, organizationId);
+    if (granted) {
+      const since = granted.since;
       // Grants from a paid plan's earlier periods already reset; its last period's still count. A
       // yearly plan's period is the month that began on its last anniversary before it ended.
       const periodStartsAt = billing?.currentPeriodStartsAt;
@@ -101,7 +97,7 @@ export async function sandboxAllowancePlan(
         lastPeriod && lastPeriod > since ? lastPeriod : since,
       );
       return {
-        limitCents: creditShare(granted._sum.creditCents) + extraCents,
+        limitCents: creditShare(granted.cents) + extraCents,
         extraCents,
         since,
         resetsAt: null,
@@ -139,6 +135,21 @@ export async function sandboxAllowancePlan(
   return { limitCents, extraCents, since, resetsAt };
 }
 
+/** Credit an operator granted the organization, summed, and when the first grant applied. */
+async function grantedCreditPool(
+  prisma: Pick<PrismaClient, "accessGrant">,
+  organizationId: string,
+): Promise<{ cents: number; since: Date } | null> {
+  const granted = await prisma.accessGrant.aggregate({
+    where: { organizationId, appliedAt: { not: null }, creditCents: { gt: 0 } },
+    _sum: { creditCents: true },
+    _min: { appliedAt: true },
+  });
+  return granted._sum.creditCents && granted._min.appliedAt
+    ? { cents: granted._sum.creditCents, since: granted._min.appliedAt }
+    : null;
+}
+
 /** The monthly allowance period an organization's billing puts it in. */
 function allowancePeriod(
   billing:
@@ -167,11 +178,12 @@ function allowancePeriod(
 
 /**
  * What the organization may spend on deployment-funded speech this period, in micros, and when
- * the period began: a share of its plan's monthly price. Without a live plan or a trial it gets
- * nothing; a deployment without model-credit billing never limits speech (null).
+ * the period began: a share of its plan's monthly price. Without a live plan or a trial, credit an
+ * operator granted brings its share once, spent since the first grant; otherwise it gets nothing.
+ * A deployment without model-credit billing never limits speech (null).
  */
 export async function speechAllowancePlan(
-  prisma: Pick<PrismaClient, "deploymentSettings" | "organization">,
+  prisma: Pick<PrismaClient, "deploymentSettings" | "organization" | "accessGrant">,
   organizationId: string,
   now = new Date(),
 ): Promise<{ limitMicros: bigint; since: Date } | null> {
@@ -213,7 +225,12 @@ export async function speechAllowancePlan(
           ? (BYOK_TIERS[tier].monthlyPriceCents ?? 0)
           : (billing?.creditAmountCents ?? 0);
   // One cent is 10,000 micros, so a percent of it is 100.
-  return { limitMicros: BigInt(planCents) * BigInt(SPEECH_ALLOWANCE_PERCENT) * 100n, since };
+  const share = (cents: number) => BigInt(cents) * BigInt(SPEECH_ALLOWANCE_PERCENT) * 100n;
+  if (planCents === 0 && billing?.status !== "trialing") {
+    const granted = await grantedCreditPool(prisma, organizationId);
+    if (granted) return { limitMicros: share(granted.cents), since: granted.since };
+  }
+  return { limitMicros: share(planCents), since };
 }
 
 /**
