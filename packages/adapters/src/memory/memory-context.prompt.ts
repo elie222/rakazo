@@ -63,9 +63,7 @@ export function buildAgentMemoryPrompt(
       continue;
     }
     const usage =
-      document.scope === "bot" && document.path === MEMORY_INDEX_PATH
-        ? memoryUsage(byteLength(document.content))
-        : "";
+      document.path === MEMORY_INDEX_PATH ? memoryUsage(byteLength(document.content)) : "";
     const heading = `${sections.length === 0 ? "" : "\n\n"}## ${SCOPE_LABELS[document.scope]}: ${escapePromptData(document.path)} (revision ${document.revision}${usage})\n`;
     const headingBytes = byteLength(heading);
     if (headingBytes > remainingBytes) {

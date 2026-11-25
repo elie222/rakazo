@@ -68,6 +68,13 @@ A start, in order:
 6. Waits for the API's `/health` and the web's authenticated stack probe, then removes unused
    runtime versions and pulls the computer image in the background.
 
+Once an app update is downloaded and the stack is ready, the app fetches the update's server bundle
+in the background: it reads `server-bundle.json` from the update's release (beside the bundle the
+running app names) and installs it into `runtime/server-<next version>` the same way, which pruning
+keeps. The first start after the update then finds it unpacked. The `.complete` marker records the
+SHA-256 it was unpacked from, so the updated app reuses it only when its own signed descriptor pins
+the same hash; otherwise, or when the prefetch failed, it downloads the bundle as before.
+
 Ports are saved in `.native-ports` (database, API, and which runtime holds the database) and
 `.desktop-web-url` (web) and reused while free, so the web origin and its sign-in survive
 relaunches; a taken port is replaced and saved. A process that crashes after the stack is ready,

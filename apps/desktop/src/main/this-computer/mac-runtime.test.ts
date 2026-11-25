@@ -8,6 +8,7 @@ import type { PinnedDownload, ResolveRuntimeDeps } from "./mac-runtime.js";
 import {
   DownloadError,
   downloadVerified,
+  fetchServerBundle,
   installContainerRuntime,
   installServerBundle,
   nativeStackEligible,
@@ -106,20 +107,21 @@ describe("downloadVerified", () => {
   const body = new TextEncoder().encode("pinned contents");
 
   it("moves a matching download into place and reports progress", async () => {
-    const progress: number[] = [];
+    const progress: [number, number][] = [];
     const destination = path.join(dir, "file.bin");
     await downloadVerified(
       {
         fetch: bytesFetch(body),
         signal: new AbortController().signal,
-        onBytes: (_, bytes) => progress.push(bytes),
+        onBytes: (_, bytes, total) => progress.push([bytes, total]),
       },
       "file",
       pinnedFor(body),
       destination,
     );
     expect(await readFile(destination, "utf8")).toBe("pinned contents");
-    expect(progress.at(-1)).toBe(body.length);
+    expect(progress[0]).toEqual([0, body.length]);
+    expect(progress.at(-1)).toEqual([body.length, body.length]);
   });
 
   it.each([
@@ -217,6 +219,22 @@ describe("installers", () => {
     await expect(
       installServerBundle(deps, { version: "1.0.0", download: pinnedFor(new Uint8Array()) }),
     ).resolves.toMatchObject({ dir: server });
+  });
+
+  it("unpacks again a version fetched ahead whose hash the app's own pin does not match", async () => {
+    const body = new TextEncoder().encode("signed bundle");
+    await mkdir(path.join(dir, "server-1.1.0"));
+    await writeFile(path.join(dir, "server-1.1.0", ".complete"), "c".repeat(64));
+    const calls: string[][] = [];
+    const run: RunDocker = async (binary, args) => {
+      calls.push([binary, ...args]);
+      return fail();
+    };
+    const { deps } = runtimeDeps(run, { fetch: bytesFetch(body) });
+    await expect(
+      installServerBundle(deps, { version: "1.1.0", download: pinnedFor(body) }),
+    ).rejects.toThrow();
+    expect(calls.map((call) => call.slice(0, 2))).toEqual([["/usr/bin/tar", "-xJf"]]);
   });
 
   it("accepts only the publisher's notarized signature", () => {
@@ -509,6 +527,42 @@ describe("readServerBundle", () => {
     });
     expect(local?.file).toBe(archive);
     expect(local?.version).toMatch(/^local-1-\d+$/);
+  });
+});
+
+describe("fetchServerBundle", () => {
+  const current = {
+    version: "1.0.0",
+    download: pinnedFor(
+      new Uint8Array(),
+      "https://github.com/o/r/releases/download/v1.0.0/rakazo-server-darwin-arm64-1.0.0.tar.xz",
+    ),
+  };
+  const descriptor = (version: string) =>
+    JSON.stringify({
+      url: "https://example.test/b.tar.xz",
+      sha256: "b".repeat(64),
+      size: 1,
+      version,
+    });
+
+  it("reads the descriptor the next release publishes beside its bundle", async () => {
+    const urls: string[] = [];
+    const fetch = async (url: string) => {
+      urls.push(url);
+      return new Response(descriptor("1.1.0"));
+    };
+    const signal = new AbortController().signal;
+    await expect(fetchServerBundle({ fetch, signal }, current, "1.1.0")).resolves.toMatchObject({
+      version: "1.1.0",
+    });
+    expect(urls).toEqual(["https://github.com/o/r/releases/download/v1.1.0/server-bundle.json"]);
+  });
+
+  it("refuses a descriptor for another version", async () => {
+    const fetch = async () => new Response(descriptor("1.2.0"));
+    const signal = new AbortController().signal;
+    await expect(fetchServerBundle({ fetch, signal }, current, "1.1.0")).resolves.toBeNull();
   });
 });
 

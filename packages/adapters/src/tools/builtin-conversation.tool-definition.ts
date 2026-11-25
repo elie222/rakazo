@@ -32,7 +32,13 @@ export const RememberInputSchema = z.object({
   path: z
     .string()
     .optional()
-    .describe(`Another of your memory documents to edit. Defaults to ${MEMORY_INDEX_PATH}.`),
+    .describe(`Another existing memory document to edit. Defaults to ${MEMORY_INDEX_PATH}.`),
+  shared: z
+    .boolean()
+    .optional()
+    .describe(
+      "Edit the Space's shared memory, read by every bot here: rules, decisions and facts about the user or team that all bots should follow. Your own role and how you work stay in yours.",
+    ),
 });
 
 // The owner flag can land in process.env after static imports run (loadRootEnv
@@ -311,22 +317,9 @@ export const conversationTools: ConnectorTool[] = [
     inputSchema: z.toJSONSchema(RememberInputSchema, { io: "input" }),
   },
   {
-    name: "save_shared_memory",
-    description:
-      "Save a Space shared memory document every bot reads. Replaces the full content, so include everything it should keep.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Document name, for example MEMORY.md." },
-        content: { type: "string", description: "The document's complete new content." },
-      },
-      required: ["path", "content"],
-    },
-  },
-  {
     name: "delete_shared_memory",
     description:
-      "Delete a Space shared memory document when the user asks. MEMORY.md cannot be deleted; save it with new content instead.",
+      "Delete a Space shared memory document when the user asks. MEMORY.md cannot be deleted; edit it with remember instead.",
     inputSchema: {
       type: "object",
       properties: {
