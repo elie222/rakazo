@@ -112,7 +112,9 @@ for (const { lang, label, next, previous } of [
       await expectMarked(page, 1);
     });
 
-    test("arrows on hover sit on the side they lead to and step the photos", async ({ page }) => {
+    test("arrows on hover sit on the side they lead to and step the photos", async ({
+      page,
+    }, testInfo) => {
       const track = await openGallery(page, lang);
       const arrow = (way: string) => page.locator(`.rk-gallery-arrow[data-way="${way}"]`);
       await track.hover();
@@ -128,6 +130,12 @@ for (const { lang, label, next, previous } of [
       await arrow("previous").click();
       await expect.poll(() => shown(track)).toBe("Second");
       await expectMarked(page, 1);
+      const screenshot = testInfo.outputPath(`page-gallery-arrows-${lang}.png`);
+      await page.locator(".rk-gallery").screenshot({ path: screenshot, caret: "hide" });
+      await testInfo.attach(`page-gallery-arrows-${lang}`, {
+        contentType: "image/png",
+        path: screenshot,
+      });
     });
   });
 }
