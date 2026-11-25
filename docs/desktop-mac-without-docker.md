@@ -105,13 +105,13 @@ person to update or quit it.
 
 ### Options considered
 
-| Option                                                       | Verdict                                                                                                                                                                              |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Apple `container` CLI and its services, bundled              | **Chosen.** Unchanged image, Apache 2.0, maintained by Apple, monthly releases. Needs only the unrestricted `com.apple.security.virtualization` entitlement |
-| Own Swift helper on the Containerization framework           | Cleaner long term: one small binary, our own launchd label, no plugin layout. More code to own (image pull, networking, exec). Revisit if the CLI's services get in the way          |
-| One shared Linux VM running the existing supervisor + Docker | Keeps the Docker topology, but we would ship and update a whole VM image and its Docker engine, and lose per-computer VM isolation                                                   |
-| Run bot desktops on the host                                 | No. The computer is the security boundary                                                                                                                                            |
-| Lima, colima, OrbStack, Podman machine                       | Each is another runtime to install or bundle, ships its own VM image, and most are not under a permissive license with a trusted vendor behind them                                  |
+| Option                                                       | Verdict                                                                                                                                                                     |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Apple `container` CLI and its services, bundled              | **Chosen.** Unchanged image, Apache 2.0, maintained by Apple, monthly releases. Needs only the unrestricted `com.apple.security.virtualization` entitlement                 |
+| Own Swift helper on the Containerization framework           | Cleaner long term: one small binary, our own launchd label, no plugin layout. More code to own (image pull, networking, exec). Revisit if the CLI's services get in the way |
+| One shared Linux VM running the existing supervisor + Docker | Keeps the Docker topology, but we would ship and update a whole VM image and its Docker engine, and lose per-computer VM isolation                                          |
+| Run bot desktops on the host                                 | No. The computer is the security boundary                                                                                                                                   |
+| Lima, colima, OrbStack, Podman machine                       | Each is another runtime to install or bundle, ships its own VM image, and most are not under a permissive license with a trusted vendor behind them                         |
 
 ### The `local-vm` provider
 
@@ -198,8 +198,8 @@ Nothing below is in the app download. All of it is fetched the first time **This
 
 | Concern               | Docker Desktop today                                                      | Native stack + `local-vm`                                                                                                                                                              |
 | --------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Computer vs. computer | Containers sharing one Linux VM and kernel; per-bot Docker networks       | One VM and kernel per computer; per-computer network, unreachable from each other                                                                                             |
-| Computer vs. host     | Docker Desktop VM; host services reachable through `host.docker.internal` | Refused by the in-VM firewall, except DNS on the gateway                                                                                                                    |
+| Computer vs. computer | Containers sharing one Linux VM and kernel; per-bot Docker networks       | One VM and kernel per computer; per-computer network, unreachable from each other                                                                                                      |
+| Computer vs. host     | Docker Desktop VM; host services reachable through `host.docker.internal` | Refused by the in-VM firewall, except DNS on the gateway                                                                                                                               |
 | Egress restriction    | Unsupported on Docker Desktop (`open`)                                    | Always on: public internet only, enforced inside each VM; a bot that gained root in its VM could lift it                                                                               |
 | Privileged component  | Supervisor holds the Docker socket, root-equivalent on the Docker VM      | No socket. The API and worker can create VMs as the signed-in user, nothing more                                                                                                       |
 | Server processes      | Inside the Docker VM                                                      | Run as the user on the host, bound to loopback. They are our code; bot commands still only run in VMs                                                                                  |
