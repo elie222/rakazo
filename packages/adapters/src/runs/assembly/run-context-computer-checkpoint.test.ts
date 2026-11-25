@@ -900,3 +900,65 @@ it("restores deeply nested watch fields and matches Pi clipped and compacted del
   ).toBeDefined();
   expect(compactedCtx.state.outsideText).toContain("buried-entry@outside.test");
 });
+
+it("does not restore watch targets omitted before first use, while still recovering after-use cuts", () => {
+  const shortDetails = {
+    routines: [
+      {
+        routineId: "r-short",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: `${"a".repeat(350)} never-seen@outside.test ${"b".repeat(350)}`,
+        },
+      },
+    ],
+  };
+  const raw = JSON.stringify(shortDetails);
+  expect(raw.length).toBeLessThan(TOOL_RESULT_TEXT_LIMIT);
+
+  const beforeUseText = shortenToolResultText(
+    raw,
+    260,
+    { name: "schedule_list" },
+    { afterUse: false },
+  );
+  expect(beforeUseText).not.toContain("never-seen@outside.test");
+  expect(beforeUseText).not.toContain(OMITTED_AFTER_USE);
+  const beforeUseCheckpoint = JSON.parse(checkpoint("ask_user"));
+  beforeUseCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "before-use-1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: beforeUseText }],
+    details: shortDetails,
+  });
+  const beforeUseCtx = fixture([tool("ask_user")]);
+  beforeUseCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(beforeUseCtx, JSON.stringify(beforeUseCheckpoint), model),
+  ).toBeDefined();
+  expect(beforeUseCtx.state.outsideText).not.toContain("never-seen@outside.test");
+
+  const afterUseText = shortenToolResultText(
+    raw,
+    260,
+    { name: "schedule_list" },
+    { afterUse: true },
+  );
+  expect(afterUseText).not.toContain("never-seen@outside.test");
+  expect(afterUseText).toContain(OMITTED_AFTER_USE);
+  const afterUseCheckpoint = JSON.parse(checkpoint("ask_user"));
+  afterUseCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "after-use-1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: afterUseText }],
+    details: shortDetails,
+  });
+  const afterUseCtx = fixture([tool("ask_user")]);
+  afterUseCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(afterUseCtx, JSON.stringify(afterUseCheckpoint), model),
+  ).toBeDefined();
+  expect(afterUseCtx.state.outsideText).toContain("never-seen@outside.test");
+});

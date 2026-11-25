@@ -614,6 +614,39 @@ function parseWatchChecksFromToolMessageContent(
   return { parsed: parsedRoutines, extracted };
 }
 
+function shouldExtractFromSavedContent(savedText: string, details: unknown): boolean {
+  if (!savedText) return false;
+  try {
+    const parsed: unknown = JSON.parse(savedText);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      if (savedText.includes(OMITTED_AFTER_USE)) {
+        try {
+          return savedText === JSON.stringify(details);
+        } catch {
+          return false;
+        }
+      }
+      return true;
+    }
+  } catch {
+    if (savedText.includes(OMITTED_TEXT_BEFORE_USE) && !savedText.includes(OMITTED_AFTER_USE)) {
+      try {
+        const raw = JSON.stringify(details);
+        if (raw) {
+          const currentClip = clipToolResultText(raw);
+          const structuredClip = clipToolResultText(
+            shortenToolResultText(raw, TOOL_RESULT_TEXT_LIMIT),
+          );
+          return savedText !== currentClip && savedText !== structuredClip;
+        }
+      } catch {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Extract watch-check outside text from a saved `schedule_list` or `task_catalog` toolResult. */
 export function watchChecksFromToolResultMessage(
   message: {
@@ -622,11 +655,24 @@ export function watchChecksFromToolResultMessage(
   },
   contextStrategy?: AgentContextStrategy,
 ): unknown[] {
-  // Prefer `details` over `content` so structured or plain-text after-use compaction (`OMITTED_AFTER_USE`)
-  // in `content` cannot drop watch evidence the model already read before pausing.
   if (message.details && typeof message.details === "object" && "routines" in message.details) {
     const routines = (message.details as { routines?: unknown }).routines;
     if (Array.isArray(routines)) {
+      const hasChecks = routines.some(
+        (routine) =>
+          routine &&
+          typeof routine === "object" &&
+          hasWatchOutsideContent((routine as { lastCheck?: unknown }).lastCheck),
+      );
+      if (!hasChecks) return [];
+      const savedText = toolMessageTexts(message.content).join("\n");
+      // For unshortened JSON and before-use cuts (`OMITTED_BEFORE_USE` / `OMITTED_TEXT_BEFORE_USE`),
+      // extract only what remained in `content` so checkpoint recovery never attributes targets the
+      // model did not receive. For after-use compaction (`OMITTED_AFTER_USE`) and Pi clips, recover
+      // previously delivered watch evidence from `details`.
+      if (shouldExtractFromSavedContent(savedText, message.details)) {
+        return parseWatchChecksFromToolMessageContent(message.content).extracted;
+      }
       const detected = savedToolResultStrategy(message, contextStrategy);
       if (detected === "verbatim") {
         return extractWatchCheckTexts(routines, MAX_OUTSIDE_TEXT_CHARS);

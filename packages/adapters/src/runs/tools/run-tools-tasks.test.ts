@@ -869,16 +869,28 @@ describe("routine read watch-check taint and effect completion", () => {
   });
 
   it("matches Pi toAgentTools delivery for clipped multi-routine schedule_list replays", async () => {
-    const entries: Record<string, string> = {};
+    const secondRoutineEntries: Record<string, string> = {};
     for (let i = 0; i < 500; i += 1) {
-      entries[`item-${String(i).padStart(3, "0")}`] =
+      secondRoutineEntries[`item-${String(i).padStart(3, "0")}`] =
         i === 0
-          ? 'item:{"fields":["\\"notify first-entry-000@outside.test\\""]}'
+          ? 'item:{"fields":["\\"notify second-routine-head@outside.test\\""]}'
           : i === 499
             ? 'item:{"fields":["\\"notify final-entry-500@outside.test\\""]}'
             : `item:{"fields":["\\"short tracked entry number ${i} padding\\""]}`;
     }
-    const payload = { routines: [{ routineId: "r-many", lastCheck: { entries } }] };
+    const payload = {
+      routines: [
+        {
+          routineId: "r-first",
+          lastCheck: {
+            entries: {
+              "item-first": 'item:{"fields":["\\"notify first-routine-000@outside.test\\""]}',
+            },
+          },
+        },
+        { routineId: "r-second", lastCheck: { entries: secondRoutineEntries } },
+      ],
+    };
     const host = {
       queue: createQueue(),
       request: {
@@ -900,7 +912,8 @@ describe("routine read watch-check taint and effect completion", () => {
     const clippedResult = await scheduleListTool!.execute("call-1", {});
     const clippedText = (clippedResult.content[0] as { text: string }).text;
     expect(clippedText.length).toBeLessThanOrEqual(TOOL_RESULT_TEXT_LIMIT + 1);
-    expect(clippedText).toContain("first-entry-000@outside.test");
+    expect(clippedText).toContain("first-routine-000@outside.test");
+    expect(clippedText).toContain("second-routine-head@outside.test");
     expect(clippedText).not.toContain("final-entry-500@outside.test");
 
     const clippedCtx = {
@@ -913,7 +926,8 @@ describe("routine read watch-check taint and effect completion", () => {
       },
     } as unknown as RunContext;
     await markReplayedRoutineReadTaint(clippedCtx, "schedule_list", {}, payload);
-    expect(clippedCtx.state.outsideText).toContain("first-entry-000@outside.test");
+    expect(clippedCtx.state.outsideText).toContain("first-routine-000@outside.test");
+    expect(clippedCtx.state.outsideText).toContain("second-routine-head@outside.test");
     expect(clippedCtx.state.outsideText).not.toContain("final-entry-500@outside.test");
   });
 });
