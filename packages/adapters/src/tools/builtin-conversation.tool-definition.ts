@@ -244,6 +244,10 @@ export const conversationTools: ConnectorTool[] = [
       type: "object",
       properties: {
         help: { type: "boolean", description: "Return the page kit guide instead of saving." },
+        list: {
+          type: "boolean",
+          description: "List your pages with their pageIds, newest first, instead of saving.",
+        },
         pageId: { type: "string", description: "The page to read or update." },
         title: { type: "string", description: "Page title; required for a new page." },
         source: { type: "string", description: "The whole page as JSX." },

@@ -2,6 +2,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import {
   PAGE_IMAGE_PREFIX,
   PAGE_IMAGES_MAX,
+  PAGE_LIST_MAX_LIMIT,
   PAGE_TITLE_MAX_LENGTH,
   PageTitleSchema,
 } from "@rakazo/contracts";
@@ -79,13 +80,33 @@ function parseEdits(value: unknown): PageEdit[] | string {
  * A bot reaches its own pages and its group's pages, from any of its chats or routines; another
  * bot's page answers as if it did not exist, since its source may hold that chat's text.
  */
-function reachablePage(ctx: RunContext, pageId: string) {
+function reachablePages(ctx: RunContext) {
   const { run, bot, thread } = ctx;
   return {
-    id: pageId,
     spaceId: run.spaceId,
     userId: run.userId,
     OR: thread.groupId ? [{ botId: bot.id }, { groupId: thread.groupId }] : [{ botId: bot.id }],
+  };
+}
+
+function reachablePage(ctx: RunContext, pageId: string) {
+  return { id: pageId, ...reachablePages(ctx) };
+}
+
+async function listPages(ctx: RunContext) {
+  const pages = await ctx.deps.prisma.page.findMany({
+    where: reachablePages(ctx),
+    select: { id: true, title: true, visibility: true, updatedAt: true },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: PAGE_LIST_MAX_LIMIT,
+  });
+  return {
+    pages: pages.map((page) => ({
+      pageId: page.id,
+      title: page.title,
+      updatedAt: page.updatedAt.toISOString(),
+      ...pageSharingHint(page.visibility),
+    })),
   };
 }
 
@@ -175,7 +196,7 @@ export async function holdSharedPageSave(
   const { approvedVersion: _version, approvedVisibility: _visibility, ...args } = request.args;
   request.args = args;
   request.effectRequest = args;
-  if (args.help === true || !argumentGiven(args.pageId)) return undefined;
+  if (args.help === true || args.list === true || !argumentGiven(args.pageId)) return undefined;
   const hasTitle = argumentGiven(args.title);
   if (!argumentGiven(args.source) && !editsGiven(args) && !hasTitle && !imagesGiven(args))
     return undefined;
@@ -242,6 +263,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread } = ctx;
   const { args } = call;
   if (args.help === true) return { guide: PAGE_KIT_GUIDE };
+  if (args.list === true) return listPages(ctx);
   const pageId = argumentGiven(args.pageId) ? String(args.pageId) : undefined;
   const hasSource = argumentGiven(args.source);
   const hasEdits = editsGiven(args);

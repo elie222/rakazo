@@ -1,4 +1,5 @@
 import type { PageVisibility } from "@rakazo/contracts";
+import { PAGE_LIST_MAX_LIMIT } from "@rakazo/contracts";
 import sharp from "sharp";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunContext } from "../assembly/run-context.js";
@@ -196,6 +197,55 @@ describe("save_page", () => {
   });
 });
 
+describe("listing pages", () => {
+  function listing(rows: unknown[], groupId: string | null = null) {
+    const ctx = context({}) as RunContext;
+    const findMany = vi.fn(async (_query: unknown) => rows);
+    Object.assign(ctx.deps.prisma.page, { findMany });
+    Object.assign(ctx.thread, { groupId });
+    return { ctx, findMany };
+  }
+
+  it("lists only the bot's own pages, newest first and bounded, with what a save needs", async () => {
+    const { ctx, findMany } = listing([
+      { id: "page-2", title: "Deals", visibility: "link", updatedAt: new Date("2026-11-02") },
+      { id: "page-1", title: "Plan", visibility: "private", updatedAt: new Date("2026-11-01") },
+    ]);
+    const result = await pageTools.save_page!(ctx, call({ list: true }));
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { spaceId: "space-1", userId: "user-1", OR: [{ botId: "bot-1" }] },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        take: PAGE_LIST_MAX_LIMIT,
+      }),
+    );
+    expect(result).toEqual({
+      pages: [
+        {
+          pageId: "page-2",
+          title: "Deals",
+          updatedAt: "2026-11-02T00:00:00.000Z",
+          sharedByLink: true,
+        },
+        { pageId: "page-1", title: "Plan", updatedAt: "2026-11-01T00:00:00.000Z" },
+      ],
+    });
+  });
+
+  it("adds the group's pages in a group chat", async () => {
+    const { ctx, findMany } = listing([], "group-1");
+    await pageTools.save_page!(ctx, call({ list: true }));
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { OR: [{ botId: "bot-1" }, { groupId: "group-1" }] },
+    });
+  });
+
+  it("answers an empty list when the bot has no pages", async () => {
+    const { ctx } = listing([]);
+    expect(await pageTools.save_page!(ctx, call({ list: true }))).toEqual({ pages: [] });
+  });
+});
+
 describe("saving a shared page", () => {
   const edit = { find: "Hi", replace: "Hello" };
 
@@ -295,10 +345,14 @@ describe("saving a shared page", () => {
     expect(tx.page.updateMany).not.toHaveBeenCalled();
   });
 
-  it("does not hold a private page, a read, a new page, or any save under Never ask", async () => {
+  it("does not hold a private page, a read, a listing, a new page, or any save under Never ask", async () => {
     const cases = [
       [request({ pageId: "page-1", edits: [edit] }), context({}, { currentVersion: 1 })],
       [request({ pageId: "page-1" }), context({}, { currentVersion: 1, visibility: "link" })],
+      [
+        request({ list: true, pageId: "page-1", edits: [edit] }),
+        context({}, { currentVersion: 1, visibility: "link" }),
+      ],
       [request({ title: "New", source: source("New") }), context({})],
       [
         request({ pageId: "page-1", edits: [edit] }),
