@@ -6324,6 +6324,67 @@ describe("closing denied approved effects", () => {
     expect(f.effects).toHaveLength(1);
   });
 
+  it("reconciles a denied nonzero occurrence on subsequent identical read-only calls after the deny rule is removed", async () => {
+    const args = { query: "weather today" };
+    const baseKey = approvalEffectKey("run-1", "web_search", args);
+    const secondKey = toolEffectIdempotencyKey("run-1", "web_search", args, 1);
+    const rules: ActionApprovalRule[] = [
+      { effect: "deny", matchKind: "tool", matchValue: "web_search" },
+    ];
+    const f = fixture({
+      name: "web_search",
+      builtin: true,
+      rules,
+    });
+    f.web.searchHits = [{ title: "Sunny", url: "https://example.test", snippet: "" }];
+    f.effects.push(
+      {
+        id: "effect-readonly-first-completed",
+        runId: "run-1",
+        spaceId: "space-1",
+        kind: "web_search",
+        request: args,
+        idempotencyKey: baseKey,
+        status: "completed",
+        result: { results: f.web.searchHits },
+      },
+      {
+        id: "effect-readonly-second-approved-blocked",
+        runId: "run-1",
+        spaceId: "space-1",
+        kind: "web_search",
+        request: args,
+        idempotencyKey: secondKey,
+        status: "approved",
+      },
+    );
+    f.setCalls([{ args, executionId: "call-blocked" }]);
+    await f.run();
+    expect(f.results).toHaveLength(1);
+    expect(f.results[0]).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+    expect(f.effects[1]).toMatchObject({
+      status: "denied",
+      result: { refused: "rule", error: expect.stringContaining("blocked in this space") },
+    });
+
+    // After the deny rule is removed, repeated identical calls (across occurrences 0, 1, and 2)
+    // still hit the stored refusal instead of missing the denied nonzero occurrence and running.
+    rules.length = 0;
+    f.setCalls([
+      { args, executionId: "call-1" },
+      { args, executionId: "call-2" },
+      { args, executionId: "call-3" },
+    ]);
+    await f.run();
+    expect(f.results).toHaveLength(4);
+    for (const replay of [f.results[1], f.results[2], f.results[3]]) {
+      expect(replay).toMatchObject({ error: expect.stringContaining("blocked in this space") });
+      expect(String((replay as { error?: string })?.error)).not.toContain("user denied");
+      expect(replay).not.toHaveProperty("results");
+    }
+    expect(f.effects).toHaveLength(2);
+  });
+
   it("keeps completed web_search URL trust intact after its approval rule is removed", async () => {
     const args = { query: "weather today" };
     const hitUrl = "https://forecast.example.test/today";

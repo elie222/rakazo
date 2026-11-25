@@ -31,6 +31,7 @@ import {
   MAX_FETCH_URL_LENGTH,
 } from "../../approvals/approval-ask.js";
 import {
+  APPROVAL_EXPIRED_RESULT,
   boundDirectApprovalDetails,
   DENIED_ACTION_ERROR,
   resolveDuplicateEffectGate,
@@ -404,9 +405,9 @@ export async function gateToolCall(
         ? `${name} is blocked in this space${blockingRuleSuffix(approvalResolved)}. Don't try it another way; tell the user it's blocked.`
         : `${name} needs the owner's approval because it could have been asked for by someone else, and this space never asks. Don't retry; tell the user.`;
     if (approvedEffectKey) {
-      await denyApprovedEffect(deps, run, approvedEffectKey, reason, message);
-      if (ctx.state.effects.deniedKeys) {
-        (await ctx.state.effects.deniedKeys).add(approvedEffectKey);
+      const closed = await denyApprovedEffect(deps, run, approvedEffectKey, reason, message);
+      if (closed && ctx.state.effects.deniedKeys) {
+        (await ctx.state.effects.deniedKeys).set(approvedEffectKey, false);
       }
     }
     await auditToolCall(ctx, name, "denied", { reason });
@@ -480,7 +481,7 @@ export async function gateToolCall(
     !approvedEffectKey;
   const readOnlyDeniedKey = readOnlyEligible
     ? await loadDeniedEffectKeys(ctx).then((keys) =>
-        keys.has(effectKey) ? effectKey : keys.has(baseEffectKey) ? baseEffectKey : undefined,
+        findDeniedReadOnlyEffectKey(keys, effectKey, baseEffectKey),
       )
     : undefined;
   const applied =
@@ -536,7 +537,7 @@ export async function gateToolCall(
       data: { status: "denied", result: { refused: "repeat" } },
     });
     if (ctx.state.effects.deniedKeys) {
-      (await ctx.state.effects.deniedKeys).add(effectKey);
+      (await ctx.state.effects.deniedKeys).set(effectKey, false);
     }
     return { result: refusal("action_denied_repeat", DENIED_ACTION_ERROR) };
   }
@@ -710,21 +711,59 @@ export async function gateToolCall(
   return { call };
 }
 
-function loadDeniedEffectKeys(ctx: RunContext): Promise<Set<string>> {
+function isExpiredDeniedResult(result: unknown): boolean {
+  const gate = resolveDuplicateEffectGate({ status: "denied", result }, "");
+  return gate.action === "return" && gate.result === APPROVAL_EXPIRED_RESULT;
+}
+
+function findDeniedReadOnlyEffectKey(
+  keys: ReadonlyMap<string, boolean>,
+  effectKey: string,
+  baseEffectKey: string,
+): string | undefined {
+  if (keys.get(effectKey) === false) return effectKey;
+  let bestKey: string | undefined;
+  let bestOccurrence = -1;
+  const occurrencePrefix = `${baseEffectKey}:`;
+  for (const [key, expired] of keys) {
+    if (expired) continue;
+    if (key === baseEffectKey) {
+      if (bestOccurrence < 0) {
+        bestKey = key;
+        bestOccurrence = 0;
+      }
+      continue;
+    }
+    if (!key.startsWith(occurrencePrefix)) continue;
+    const suffix = key.slice(occurrencePrefix.length);
+    if (!/^\d+$/.test(suffix)) continue;
+    const occurrence = Number(suffix);
+    if (occurrence > bestOccurrence) {
+      bestKey = key;
+      bestOccurrence = occurrence;
+    }
+  }
+  return bestKey ?? (keys.has(effectKey) ? effectKey : undefined);
+}
+
+function loadDeniedEffectKeys(ctx: RunContext): Promise<Map<string, boolean>> {
   const cached = ctx.state.effects.deniedKeys;
   if (cached) return cached;
   const pending = ctx.deps.prisma.externalEffect?.findMany
     ? ctx.deps.prisma.externalEffect
         .findMany({
           where: { runId: ctx.runId, status: "denied" },
-          select: { idempotencyKey: true },
+          select: { idempotencyKey: true, result: true },
         })
-        .then((rows) => new Set(rows.map((row) => row.idempotencyKey)))
+        .then(
+          (rows) =>
+            new Map(rows.map((row) => [row.idempotencyKey, isExpiredDeniedResult(row.result)])),
+        )
         .catch((error) => {
           ctx.state.effects.deniedKeys = undefined;
           throw error;
         })
-    : Promise.resolve(new Set<string>());
+    : Promise.resolve(new Map<string, boolean>());
   ctx.state.effects.deniedKeys = pending;
   return pending;
 }

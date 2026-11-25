@@ -398,9 +398,9 @@ export async function denyApprovedEffect(
   idempotencyKey: string,
   refused: string,
   error?: string,
-) {
-  await underRunLease(deps, run.id, async (tx) => {
-    if (!tx.externalEffect?.findUnique) return;
+): Promise<boolean> {
+  return underRunLease(deps, run.id, async (tx) => {
+    if (!tx.externalEffect?.findUnique) return false;
     const existing = await tx.externalEffect.findUnique({
       where: { idempotencyKey },
       select: {
@@ -413,7 +413,7 @@ export async function denyApprovedEffect(
         createdAt: true,
       },
     });
-    if (!existing || existing.runId !== run.id || existing.status !== "approved") return;
+    if (!existing || existing.runId !== run.id || existing.status !== "approved") return false;
     const secretKind =
       existing.kind === "request_secret" ? pendingRequestSecretKind(run.id, existing) : undefined;
     const createdAt = existing.createdAt;
@@ -421,7 +421,7 @@ export async function denyApprovedEffect(
       where: { id: existing.id, status: "approved" },
       data: { status: "denied", result: error ? { refused, error } : { refused } },
     });
-    if (updated && updated.count !== 1) return;
+    if (updated && updated.count !== 1) return false;
     if (secretKind && tx.secret?.deleteMany) {
       await tx.secret.deleteMany({
         where: {
@@ -432,5 +432,6 @@ export async function denyApprovedEffect(
         },
       });
     }
+    return true;
   });
 }
