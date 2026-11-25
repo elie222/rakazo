@@ -10,7 +10,6 @@ import { redactConnectorPayload } from "../../integrations/connector-safety.js";
 import { stampMemoryEntry, userMemoryDate } from "../../memory/memory-expiry.js";
 import { editMemory } from "../../memory/memory-tools.js";
 import { MAX_RECALLED_MEMORIES } from "../../runtime/context/history-compaction.prompt.js";
-import { sharedMemorySaveError } from "../../tools/builtin.tool-definition.js";
 import { RememberInputSchema } from "../../tools/builtin-conversation.tool-definition.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent } from "../assembly/run-context.js";
@@ -112,11 +111,14 @@ export const memoryTools: ToolHandlers = {
         ? { ...operation, content: stampMemoryEntry(operation.content, today, operation.until) }
         : operation,
     );
-    // A save may edit any document the bot already has, such as an imported one. A path it
+    const owner = parsed.data.shared
+      ? { scope: "user" as const }
+      : { scope: "bot" as const, botId: bot.id };
+    // A save may edit any document the memory already has, such as an imported one. A path it
     // does not have means the index: a save never creates a document, so models cannot
     // invent file names to get past the size cap.
-    const requested = String(args.path ?? "").trim() || MEMORY_INDEX_PATH;
-    const read = (path: string) => deps.memory.read({ scope: "bot", botId: bot.id, path }, context);
+    const requested = parsed.data.path?.trim() || MEMORY_INDEX_PATH;
+    const read = (path: string) => deps.memory.read({ ...owner, path }, context);
     // A concurrent save changes the revision, so re-read and apply the edit again.
     for (let attempt = 1; ; attempt += 1) {
       let snapshot = await read(requested);
@@ -131,8 +133,7 @@ export const memoryTools: ToolHandlers = {
       try {
         await deps.memory.commit(
           {
-            scope: "bot",
-            botId: bot.id,
+            ...owner,
             path,
             content,
             expectedRevision: existing?.revision ?? 0,
@@ -145,35 +146,6 @@ export const memoryTools: ToolHandlers = {
       } catch (error) {
         if (!(error instanceof MemoryRevisionConflictError) || attempt >= 3) throw error;
       }
-    }
-  },
-  async save_shared_memory(ctx, call) {
-    const { deps, runId, thread, context } = ctx;
-    const { args } = call;
-    const invalid = sharedMemorySaveError(args);
-    if (invalid) return call.finish({ error: invalid });
-    const path = String(args.path ?? "").trim();
-    // The save replaces the whole document. Pass the revision just read so a
-    // concurrent edit is rejected instead of overwritten.
-    const snapshot = await deps.memory.read({ scope: "user", path }, context);
-    const expectedRevision = snapshot.documents[0]?.revision ?? 0;
-    try {
-      const saved = await deps.memory.commit(
-        {
-          scope: "user",
-          path,
-          content: String(args.content ?? ""),
-          expectedRevision,
-          sourceRunId: runId,
-          sourceThreadId: thread.id,
-        },
-        context,
-      );
-      return call.finish({ ok: true, path: saved.path, revision: saved.revision });
-    } catch (error) {
-      if (error instanceof MemoryRevisionConflictError)
-        return call.finish({ error: error.message });
-      throw error;
     }
   },
   async delete_shared_memory(ctx, call) {

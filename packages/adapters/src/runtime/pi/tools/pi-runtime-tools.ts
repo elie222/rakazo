@@ -284,7 +284,6 @@ export function describeToolActivity(
   if (toolName === "set_child_bot_model") return "Setting a bot's model";
   if (toolName === "create_child_routine") return `Scheduling routine: ${detail(record.name)}`;
   if (toolName === "remember") return "Saving a note to memory";
-  if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
   if (toolName === "delete_shared_memory") return `Deleting shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
@@ -412,6 +411,7 @@ function toAgentTool(
         return {
           operations: raw.operations,
           ...(typeof raw.path === "string" && raw.path.trim() ? { path: raw.path } : {}),
+          ...(raw.shared === true ? { shared: true } : {}),
         };
       }
       if (tool.name === "request_takeover") {
