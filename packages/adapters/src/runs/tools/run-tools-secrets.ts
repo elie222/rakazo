@@ -49,6 +49,15 @@ import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lif
 import { notifyRun, secretAskNotification } from "../lifecycle/run-notifications.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
 
+/** Whether a held value was entered after the request was made. Unknown times count as after. */
+function enteredAfter(held: { createdAt?: unknown }, request: { createdAt?: unknown }): boolean {
+  return !(
+    held.createdAt instanceof Date &&
+    request.createdAt instanceof Date &&
+    held.createdAt <= request.createdAt
+  );
+}
+
 /** Saved credentials and protected input. */
 export const secretTools: ToolHandlers = {
   async list_secrets(ctx) {
@@ -210,16 +219,6 @@ export const secretTools: ToolHandlers = {
               "change its site in the Vault, or use another name for a different account.",
           });
       }
-      // Action approval authorizes showing the card; it is not a credential submission.
-      // Return the claim to intended so the answer transaction can approve the saved value.
-      if (call.claimedEffect) {
-        const released = await deps.prisma.externalEffect.updateMany({
-          where: { id: applied!.effect.id, status: "executing" },
-          data: { status: "intended" },
-        });
-        if (released.count !== 1) return uncertainEffectResult(name);
-        call.claimedEffect = false;
-      }
     }
     const secretKind = codeOrigin ? runCodeKind(runId) : runSecretKind(runId);
     let storedSecret = await deps.prisma.secret.findFirst({
@@ -229,6 +228,25 @@ export const secretTools: ToolHandlers = {
         kind: secretKind,
       },
     });
+    // Action approval authorizes showing the card; it is not a credential submission or an
+    // answer. A credential card's answer returned above, and only a value entered after this
+    // request was made answers a code or connection card: one held from before it answered an
+    // earlier card. Return the claim to intended so the card's answer can approve it.
+    if (
+      call.claimedEffect &&
+      (destination || !storedSecret || !enteredAfter(storedSecret, applied!.effect))
+    ) {
+      const released = await deps.prisma.externalEffect.updateMany({
+        where: { id: applied!.effect.id, status: "executing" },
+        data: { status: "intended" },
+      });
+      if (released.count !== 1) return uncertainEffectResult(name);
+      call.claimedEffect = false;
+      if (storedSecret && !destination) {
+        await deps.prisma.secret.deleteMany({ where: { id: storedSecret.id } });
+        storedSecret = null;
+      }
+    }
     // A card not yet answered means a code left from an earlier one is stale, and one that cannot
     // be read is no code: ask again.
     const heldCode =

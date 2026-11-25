@@ -42,6 +42,15 @@ const ORIGIN = "https://login.example.test";
 const CODE = "482913";
 const secretStore = new EncryptedSecretStore("test-only-encryption-key");
 const scope = { userId: "user-1", spaceId: "space-1", botId: "bot-1" };
+const CONNECTION = {
+  id: "connection-1",
+  spaceId: scope.spaceId,
+  userId: scope.userId,
+  status: "pending",
+  connectorId: "connector-1",
+  provider: "provider-1",
+};
+const ASK_FIRST = [{ effect: "require_approval", matchKind: "tool", matchValue: "request_secret" }];
 const requestCode = (extra: Record<string, unknown> = {}) => ({
   name: "request_secret",
   args: { label: "Code", purpose: "otp", oneTimeCode: { origin: ORIGIN }, ...extra },
@@ -88,7 +97,7 @@ function recordingPrisma(models: Record<string, Record<string, unknown>>, calls:
  * Each `attempt` is a fresh executor working through some tool calls; what the user does between
  * attempts (answering a card, the page taking a code) is the test's doing.
  */
-function world(printed = "") {
+function world(printed = "", rules: Row[] = [], connection: Row = CONNECTION) {
   const run = {
     id: "run-1",
     botId: scope.botId,
@@ -177,6 +186,11 @@ function world(printed = "") {
           update: async () => ({ nextMessageSeq: 1, nextEventSeq: 1 }),
         },
         message: { create: async ({ data }: { data: object }) => ({ id: "message-1", ...data }) },
+        userActionApprovalRule: { findMany: async () => rules },
+        connection: {
+          findFirst: async ({ where }: { where: Row }) =>
+            matches(connection, where) ? connection : null,
+        },
         event: { create: async ({ data }: { data: object }) => ({ seq: 1, ...data }) },
         task: { findUniqueOrThrow: async () => ({ id: run.taskId, prompt: "Sign in" }) },
         secret: {
@@ -199,11 +213,12 @@ function world(printed = "") {
             defaultModelId: "local-model",
           }),
         },
+        // Never ask, unless the test saves rules: those only apply in Ask.
         actionAutoReviewPreference: {
-          findUnique: async () => ({ enabled: false, skipApprovals: true }),
+          findUnique: async () => ({ enabled: false, skipApprovals: rules.length === 0 }),
         },
         userActionAutoReviewPreference: {
-          findUnique: async () => ({ enabled: false, skipApprovals: true }),
+          findUnique: async () => ({ enabled: false, skipApprovals: rules.length === 0 }),
         },
         externalEffect: {
           findUnique: async ({ where }: { where: Row }) =>
@@ -211,7 +226,12 @@ function world(printed = "") {
           findMany: async ({ where }: { where: Row }) =>
             effects.filter((row) => matches(row, where)),
           create: async ({ data }: { data: Row }) => {
-            const row = { id: `effect-${effects.length + 1}`, updatedAt: new Date(), ...data };
+            const row = {
+              id: `effect-${effects.length + 1}`,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              ...data,
+            };
             effects.push(row);
             return row;
           },
@@ -275,14 +295,20 @@ function world(printed = "") {
     );
     secrets.push({
       ...stored,
+      createdAt: new Date(),
       userId: scope.userId,
       spaceId: scope.spaceId,
       kind: runCodeKind("run-1"),
     });
   }
 
+  /** The user allows the action card: the effect is approved, with nothing entered yet. */
+  function userAllows() {
+    for (const effect of effects) if (effect.status === "intended") effect.status = "approved";
+  }
+
   const everythingWritten = () => JSON.stringify([calls, appended, asked, effects]);
-  return { attempt, userAnswers, effects, secrets, asked, calls, everythingWritten };
+  return { attempt, userAnswers, userAllows, effects, secrets, asked, calls, everythingWritten };
 }
 
 afterEach(() => {
@@ -445,5 +471,63 @@ describe("request_secret for a one-time code", () => {
     await run.attempt([requestCode()]);
     await run.attempt([requestCode()]);
     expect(run.effects).toHaveLength(1);
+  });
+});
+
+describe("request_secret behind an action card", () => {
+  it.each([
+    ["a code", requestCode()],
+    [
+      "a connection code",
+      { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } },
+    ],
+  ])("shows the card for %s once the action is allowed", async (_name, call) => {
+    const run = world("", ASK_FIRST);
+    await run.attempt([call]);
+    expect(run.asked[0]!.blocks[0]).toMatchObject({ approvalEffectId: run.effects[0]!.id });
+    run.userAllows();
+    const [result] = await run.attempt([call]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({ input: "secret", status: "pending" });
+    // Answering the card approves only a request still waiting for it.
+    expect(run.effects).toMatchObject([{ status: "intended" }]);
+  });
+
+  it("finishes a connection that completed meanwhile, with no card", async () => {
+    const call = { name: "request_secret", args: { label: "Code", connectionId: CONNECTION.id } };
+    const run = world("", ASK_FIRST, { ...CONNECTION, status: "connected" });
+    await run.attempt([call]);
+    run.userAllows();
+    const [result] = await run.attempt([call]);
+    expect(result).toEqual({ ok: true, submitted: true, connected: true });
+    expect(run.asked).toHaveLength(1);
+    expect(run.effects).toMatchObject([{ status: "completed" }]);
+  });
+
+  it("shows a new code card, not a code an earlier card left, once the action is allowed", async () => {
+    const run = world("", ASK_FIRST);
+    await run.userAnswers();
+    run.secrets[0]!.createdAt = new Date(Date.now() - 60_000);
+    await run.attempt([requestCode()]);
+    run.userAllows();
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toMatchObject({ details: { secret: "paused" } });
+    expect(run.asked[1]!.blocks[0]).toMatchObject({ oneTimeCode: { origin: ORIGIN } });
+    expect(run.secrets).toEqual([]);
+  });
+
+  it("hands the code answered on its card to the bot", async () => {
+    const run = world("", ASK_FIRST);
+    await run.attempt([requestCode()]);
+    run.userAllows();
+    await run.attempt([requestCode()]);
+    await run.userAnswers();
+    const [result] = await run.attempt([requestCode()]);
+    expect(result).toEqual({
+      ok: true,
+      submitted: true,
+      note: expect.stringContaining("fill_code"),
+    });
+    expect(run.effects).toMatchObject([{ status: "completed" }]);
   });
 });
