@@ -313,7 +313,6 @@ dbTests("own-key plan", () => {
     await service.changeTier(actor, "max");
     expect(await planComputerSize(prisma, computer.id)).toBe("large");
 
-    // A plan set to cancel stays as it is.
     provider.subscriptions.at(-1)!.cancelAtPeriodEnd = true;
     await expect(service.changeTier(actor, "pro")).rejects.toMatchObject({ code: "CONFLICT" });
   });

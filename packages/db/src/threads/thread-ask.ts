@@ -589,7 +589,6 @@ export async function answerRunInput(
     );
   // Unwrapping space keys can wait on the key manager; keep that wait outside the transaction.
   await contentEncryptionOf(prisma)?.ring.all(input.spaceId);
-  // A dismissal has no secret to prepare.
   const committed =
     runSecretWriter?.withPrepared && !input.dismiss
       ? await runSecretWriter.withPrepared(prisma, input, commit)

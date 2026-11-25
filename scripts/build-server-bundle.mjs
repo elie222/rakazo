@@ -123,7 +123,6 @@ function addPackage(packageDir) {
   }
 }
 
-/** The package folder a resolved file belongs to. */
 function packageOf(file) {
   const parts = path.relative(store, file).split(path.sep);
   const nameLength = parts[2]?.startsWith("@") ? 2 : 1;

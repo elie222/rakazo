@@ -8,7 +8,6 @@ import {
 } from "@rakazo/contracts";
 import { APP_URL, SELF_HOST_GUIDE_PATH } from "./site";
 
-/** Whole dollars when the amount is round ("$15"), otherwise cents ("$12.50"). */
 function dollars(cents: number) {
   const rounded = Math.round(cents);
   return new Intl.NumberFormat("en-US", {
@@ -32,7 +31,6 @@ export type PricingPlan = {
 const COMPUTER_TIME_NOTE =
   "Counts only while your bot uses its computer, which most work doesn't need. It pauses when idle.";
 
-/** Display names for every sandbox a self-hosted deployment can use. */
 const SANDBOX_PROVIDERS = [
   "Docker",
   "Kubernetes",
@@ -79,7 +77,6 @@ const OWN_MODEL_PLAN: PricingPlan = {
   action: { label: "Start free trial", href: APP_URL },
 };
 
-/** Prices come from the same constants the app bills with. */
 export const PRICING_PLANS: PricingPlan[] = [SELF_HOSTED_PLAN, OWN_MODEL_PLAN];
 
 /** The less common hosted option, shown below the main plans. */
@@ -100,10 +97,8 @@ export const CREDITS_PLAN: PricingPlan = {
 /** A comparison cell: included, not included, or a short value with optional detail on hover. */
 export type PricingCell = boolean | string | { label: string; detail: string };
 
-/** Own-model tiers on offer, from the terms the app bills with. */
 const TIERS = (Object.keys(BYOK_TIERS) as ByokTier[]).flatMap((tier) => {
   const monthly = byokTierPriceCents(tier, "month");
-  // A null Standard price makes the own-model plan free and hides the other tiers.
   if (monthly === null && tier !== "standard") return [];
   const terms = BYOK_TIERS[tier];
   return [
@@ -204,7 +199,6 @@ export const PRICING_COMPARISON = {
   ] satisfies { feature: string; hint?: string; cells: PricingCell[] }[],
 };
 
-/** Every plan's price, for structured data. */
 export const PRICE_OFFERS: readonly (
   | { name: string; monthlyCents: number }
   | { name: string; fromMonthlyCents: number; description: string }

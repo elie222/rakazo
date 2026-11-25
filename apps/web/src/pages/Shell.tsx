@@ -920,7 +920,6 @@ function SpaceShell() {
           onConnectedAppsChange={setFooterLogos}
           onOpenBot={(bot) => {
             openCreatedBot(bot);
-            // As after any new bot: the Space's sections and counts come from the server.
             void bestEffort("refresh bots after opening one", refreshBots());
           }}
         />
