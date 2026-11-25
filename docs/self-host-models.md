@@ -189,6 +189,50 @@ own sign-in. `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` adds only `CLAUDE_CODE_OAUTH_TOK
 reads and Rakazo does not. Only the deployment model runs on Claude Code; it is not offered as a
 connection in **Settings → Models**.
 
+## OpenCode CLI
+
+A server that only you use can run its bots through the official OpenCode CLI, so models and plans
+that OpenCode offers only in its own app, such as its free models, work for your bots. For each
+turn Rakazo starts `opencode acp` on the server and talks to it over the Agent Client Protocol, the
+same way an editor does. OpenCode runs the bot's turn itself, and Rakazo keeps the chat, memory and
+approvals: OpenCode gets the bot's instructions as its system prompt and Rakazo's tools through a
+private connection on this machine, and every tool call goes through Rakazo's approvals as usual.
+OpenCode's own tools, plugins, MCP servers, skills and instruction files are turned off, and a turn
+in which OpenCode tries to use one of its own tools is stopped. Rakazo never reads, stores or
+refreshes your OpenCode sign-in.
+
+What it needs:
+
+- The API and worker running from a source checkout on your own computer, as the same OS user as
+  the CLI. OpenCode can reach that computer's files and network, so this is only for your own
+  machine: the official Docker images and hosted servers do not include it.
+- OpenCode on that user's `PATH`. Its free models need no sign-in; for a plan or provider, sign in
+  once in a terminal as that user with `opencode auth login`.
+- One account on the server. The CLI's sign-in and plan are one person's, and the CLI runs with
+  that person's access to the computer, so Rakazo refuses OpenCode runs while the server has more
+  than one account (people who only message bots from chat apps do not count) or bills for model
+  usage.
+
+The desktop app's **This computer** server is not covered yet: it has no setting for a
+deployment model, and it looks for commands only in a few standard folders, which do not include
+where OpenCode's own installer puts it. Run from a source checkout instead.
+
+```env
+PI_DEFAULT_PROVIDER=opencode-cli
+PI_DEFAULT_CREDENTIALS=host
+PI_DEFAULT_MODEL=opencode/big-pickle
+```
+
+Use a model id from `opencode models`. Each chat continues OpenCode's session from its previous
+turn, so OpenCode keeps its context and prompt cache; after a restart, the next turn starts a new
+session with the recent chat. Screen and computer use, and images people send, are not available
+to bots on OpenCode yet. Usage counts against your OpenCode plan or provider, and Rakazo shows no cost for these runs. Your
+use of OpenCode and of the models it reaches is covered by their own terms.
+
+The CLI runs in a private working folder with an allowlisted environment: API keys and other server
+secrets are never passed to it. Only the deployment model runs on OpenCode; it is not offered as a
+connection in **Settings → Models**.
+
 ## Ollama Cloud
 
 In **Settings → Models**, choose **Ollama Cloud**, paste an API key from ollama.com, then choose a model from the list that loads. This uses an OpenAI-compatible connection with no environment configuration, and stays available when `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0`. `RAKAZO_MODEL_PROVIDER_ALLOWLIST` without `ollama-cloud` removes the preset, and with `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=0` its host exemption too; see [Limiting model providers](#limiting-model-providers).
