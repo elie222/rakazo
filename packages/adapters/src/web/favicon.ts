@@ -5,7 +5,8 @@ import type { ResolveHostname } from "../network/network-address.js";
 import { fetchSafeWebBytes } from "./web-ssrf.js";
 
 const PAGE_MAX_BYTES = 256 * 1024;
-const ICON_MAX_BYTES = 64 * 1024;
+/** Many sites declare only a large PNG app icon. MAX_INPUT_PIXELS is what bounds decoding. */
+const ICON_MAX_BYTES = 256 * 1024;
 const FETCH_TIMEOUT_MS = 4_000;
 const MAX_REDIRECTS = 3;
 const ALLOWED_PORTS = [80, 443] as const;
