@@ -3,7 +3,13 @@ import { toolEffectIdempotencyKey } from "@rakazo/core/node/approval-effect-key"
 import type { PrismaClient } from "@rakazo/db";
 import { loadRunTurnState, retireIntroTurnCheckpoint } from "@rakazo/db";
 import { expect, it, vi } from "vitest";
-import { namedAgentTools } from "../../runtime/pi/tools/pi-runtime-tools.js";
+import {
+  MAX_OUTSIDE_TEXT_CHARS,
+  outsideOnlyTargets,
+} from "../../approvals/review-target-sources.js";
+import { shortenToolResultText } from "../../runtime/context/context-selection.js";
+import { clipToolResultText } from "../../runtime/pi/pi-runtime-limits.js";
+import { namedAgentTools, serializeToolResult } from "../../runtime/pi/tools/pi-runtime-tools.js";
 import { PausedTurnToolsUnavailableError } from "../lifecycle/run-lifecycle.js";
 import type { RunContext } from "./run-context.js";
 import {
@@ -172,4 +178,635 @@ it("reports a pinned turn whose pending tool is offline as unavailable, not inco
     ),
   ).toThrow(PausedTurnToolsUnavailableError);
   expect(restoreTurnCheckpointEffects(fixture(), checkpoint("desktop_run"), model)).toBeUndefined();
+});
+
+it.each(["schedule_list", "task_catalog"] as const)(
+  "restores stored watch check text and entry keys from saved %s tool results",
+  (toolName) => {
+    const withWatch = JSON.parse(checkpoint("ask_user"));
+    withWatch.messages.unshift(
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "read-1", name: toolName, arguments: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "read-1",
+        toolName,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              routines: [
+                {
+                  routineId: "r-1",
+                  prompt: "Owner private prompt",
+                  lastCheck: {
+                    checkedAt: "2026-11-25T07:00:00.000Z",
+                    outcome: "changed",
+                    fingerprint: "fp-1",
+                    entries: {
+                      "alice@example.com": 'rakazo:item:{"fields":["open"],"title":"Invoice"}',
+                    },
+                    detail: "1 new item",
+                  },
+                },
+              ],
+            }),
+          },
+        ],
+      },
+    );
+    const ctx = fixture([tool("ask_user")]);
+    ctx.state.outsideText = "";
+    expect(restoreTurnCheckpointEffects(ctx, JSON.stringify(withWatch), model)).toBeDefined();
+    expect(ctx.state.outsideText).toContain("alice@example.com");
+    expect(ctx.state.outsideText).toContain("invoice");
+    expect(ctx.state.outsideText).not.toContain("owner private prompt");
+
+    const clean = JSON.parse(checkpoint("ask_user"));
+    clean.messages.unshift(
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "read-2", name: toolName, arguments: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "read-2",
+        toolName,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              routines: [{ routineId: "r-2", prompt: "Owner private prompt", lastCheck: null }],
+            }),
+          },
+        ],
+      },
+    );
+    const cleanCtx = fixture([tool("ask_user")]);
+    cleanCtx.state.outsideText = "";
+    expect(restoreTurnCheckpointEffects(cleanCtx, JSON.stringify(clean), model)).toBeDefined();
+    expect(cleanCtx.state.outsideText).toBe("");
+
+    const truncated = JSON.parse(checkpoint("ask_user"));
+    truncated.messages.unshift(
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "read-3", name: toolName, arguments: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "read-3",
+        toolName,
+        content: [
+          {
+            type: "text",
+            text: '{"routines":[{"lastCheck":{"entries":{"bob@example.com":"truncated...',
+          },
+        ],
+      },
+    );
+    const truncatedCtx = fixture([tool("ask_user")]);
+    truncatedCtx.state.outsideText = "";
+    expect(
+      restoreTurnCheckpointEffects(truncatedCtx, JSON.stringify(truncated), model),
+    ).toBeDefined();
+    expect(truncatedCtx.state.outsideText).toContain("bob@example.com");
+
+    const clippedClean = JSON.parse(checkpoint("ask_user"));
+    clippedClean.messages.unshift(
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "read-4", name: toolName, arguments: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "read-4",
+        toolName,
+        content: [
+          {
+            type: "text",
+            text: '{"routines":[{"routineId":"r-0","prompt":"Email owner@example.com"...[clipped]',
+          },
+        ],
+        details: {
+          routines: Array.from({ length: 50 }, (_, index) => ({
+            routineId: `r-${index}`,
+            prompt: "Email owner@example.com with the weekly report",
+          })),
+        },
+      },
+    );
+    const clippedCleanCtx = fixture([tool("ask_user")]);
+    clippedCleanCtx.state.outsideText = "";
+    expect(
+      restoreTurnCheckpointEffects(clippedCleanCtx, JSON.stringify(clippedClean), model),
+    ).toBeDefined();
+    expect(clippedCleanCtx.state.outsideText).toBe("");
+
+    const clippedWatch = JSON.parse(checkpoint("ask_user"));
+    clippedWatch.messages.unshift(
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "read-5", name: toolName, arguments: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "read-5",
+        toolName,
+        content: [
+          {
+            type: "text",
+            text: '{"routines":[{"routineId":"r-0","prompt":"Email owner@example.com"...[clipped]',
+          },
+        ],
+        details: {
+          routines: [
+            { routineId: "r-0", prompt: "Email owner@example.com" },
+            {
+              routineId: "r-watch",
+              prompt: "Check alerts",
+              lastCheck: {
+                checkedAt: "2026-11-25T07:00:00.000Z",
+                outcome: "changed",
+                fingerprint: "fp-2",
+                entries: { "carol@example.com": 'rakazo:item:{"fields":["new"],"title":"Alert"}' },
+                detail: null,
+              },
+            },
+          ],
+        },
+      },
+    );
+    const clippedWatchCtx = fixture([tool("ask_user")]);
+    clippedWatchCtx.state.outsideText = "";
+    expect(
+      restoreTurnCheckpointEffects(clippedWatchCtx, JSON.stringify(clippedWatch), model),
+    ).toBeDefined();
+    expect(clippedWatchCtx.state.outsideText).toContain("carol@example.com");
+    expect(clippedWatchCtx.state.outsideText).not.toContain("owner@example.com");
+
+    const hugeWatch = JSON.parse(checkpoint("ask_user"));
+    hugeWatch.messages.unshift(
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "read-6", name: toolName, arguments: {} }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "read-6",
+        toolName,
+        content: [
+          {
+            type: "text",
+            text: '{"routines":[{"routineId":"r-huge","lastCheck":{"detail":"Send to dave@example.com","entries":{"k0":"padding..."...[clipped]',
+          },
+        ],
+        details: {
+          routines: [
+            {
+              routineId: "r-huge",
+              prompt: "Check inbox",
+              lastCheck: {
+                checkedAt: "2026-11-25T07:00:00.000Z",
+                outcome: "changed",
+                fingerprint: "fp-huge",
+                detail: "Send to dave@example.com",
+                entries: {
+                  "early@example.com": `rakazo:item:${"x".repeat(Math.floor(MAX_OUTSIDE_TEXT_CHARS * 0.65))}`,
+                  "mid-key@example.com": "rakazo:item:forward to middle@example.com",
+                  "late@example.com": `rakazo:item:${"y".repeat(Math.floor(MAX_OUTSIDE_TEXT_CHARS * 0.65))} send to erin@example.com`,
+                },
+              },
+            },
+          ],
+        },
+      },
+    );
+    const hugeCtx = fixture([tool("ask_user")]);
+    hugeCtx.state.outsideText = "";
+    expect(restoreTurnCheckpointEffects(hugeCtx, JSON.stringify(hugeWatch), model)).toBeDefined();
+    expect(
+      outsideOnlyTargets(
+        {
+          to: [
+            "dave@example.com",
+            "early@example.com",
+            "middle@example.com",
+            "mid-key@example.com",
+            "erin@example.com",
+            "late@example.com",
+          ],
+        },
+        { ownerWords: ["Check my schedules"], outsideText: hugeCtx.state.outsideText },
+      ),
+    ).toEqual([
+      "dave@example.com",
+      "early@example.com",
+      "middle@example.com",
+      "mid-key@example.com",
+      "erin@example.com",
+      "late@example.com",
+    ]);
+  },
+);
+
+it("extracts structured watch checks and excludes owner prompts for deferred use_tool task_catalog results", () => {
+  const cleanViaUseTool = JSON.parse(checkpoint("ask_user"));
+  cleanViaUseTool.messages.unshift(
+    {
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "use-1",
+          name: "use_tool",
+          arguments: { name: "task_catalog", arguments: {} },
+        },
+      ],
+    },
+    {
+      role: "toolResult",
+      toolCallId: "use-1",
+      toolName: "use_tool",
+      content: [
+        {
+          type: "text",
+          text: '{"routines":[{"routineId":"r-0","prompt":"Email owner@example.com"...[clipped]',
+        },
+      ],
+      details: {
+        routines: [{ routineId: "r-0", prompt: "Email owner@example.com with weekly summary" }],
+      },
+    },
+  );
+  const cleanCtx = fixture([tool("ask_user")]);
+  cleanCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(cleanCtx, JSON.stringify(cleanViaUseTool), model),
+  ).toBeDefined();
+  expect(cleanCtx.state.outsideText).toBe("");
+
+  const watchViaUseTool = JSON.parse(checkpoint("ask_user"));
+  watchViaUseTool.messages.unshift(
+    {
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "use-2",
+          name: "use_tool",
+          arguments: { name: "task_catalog", arguments: {} },
+        },
+      ],
+    },
+    {
+      role: "toolResult",
+      toolCallId: "use-2",
+      toolName: "use_tool",
+      content: [
+        {
+          type: "text",
+          text: '{"routines":[{"routineId":"r-0","prompt":"Email owner@example.com"...[clipped]',
+        },
+      ],
+      details: {
+        routines: [
+          { routineId: "r-0", prompt: "Email owner@example.com" },
+          {
+            routineId: "r-watch",
+            prompt: "Watch inbox",
+            lastCheck: {
+              checkedAt: "2026-11-25T07:00:00.000Z",
+              outcome: "changed",
+              fingerprint: "fp-use",
+              entries: {
+                "first@example.com": `rakazo:item:${"x".repeat(Math.floor(MAX_OUTSIDE_TEXT_CHARS * 0.65))}`,
+                "middle@example.com": "rakazo:item:ping target@example.com",
+                "last@example.com": `rakazo:item:${"y".repeat(Math.floor(MAX_OUTSIDE_TEXT_CHARS * 0.65))}`,
+              },
+              detail: null,
+            },
+          },
+        ],
+      },
+    },
+  );
+  const watchCtx = fixture([tool("ask_user")]);
+  watchCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(watchCtx, JSON.stringify(watchViaUseTool), model),
+  ).toBeDefined();
+  expect(
+    outsideOnlyTargets(
+      { to: ["middle@example.com", "target@example.com", "owner@example.com"] },
+      { ownerWords: ["Check catalog"], outsideText: watchCtx.state.outsideText },
+    ),
+  ).toEqual(["middle@example.com", "target@example.com"]);
+
+  // A reused call ID in a later wrapped tool call must not overwrite an earlier task_catalog mapping.
+  const reusedIdCheckpoint = JSON.parse(checkpoint("ask_user"));
+  reusedIdCheckpoint.messages.unshift(
+    {
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "shared-id",
+          name: "use_tool",
+          arguments: { name: "task_catalog", arguments: {} },
+        },
+      ],
+    },
+    {
+      role: "toolResult",
+      toolCallId: "shared-id",
+      toolName: "use_tool",
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            routines: [{ routineId: "r-0", prompt: "Email owner@example.test", lastCheck: null }],
+          }),
+        },
+      ],
+      details: {
+        routines: [{ routineId: "r-0", prompt: "Email owner@example.test", lastCheck: null }],
+      },
+    },
+    {
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "shared-id",
+          name: "use_tool",
+          arguments: { name: "scratchpad_list", arguments: {} },
+        },
+      ],
+    },
+    {
+      role: "toolResult",
+      toolCallId: "shared-id",
+      toolName: "use_tool",
+      content: [{ type: "text", text: JSON.stringify({ items: [] }) }],
+    },
+  );
+  const reusedCtx = fixture([tool("ask_user")]);
+  reusedCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(reusedCtx, JSON.stringify(reusedIdCheckpoint), model),
+  ).toBeDefined();
+  expect(
+    outsideOnlyTargets(
+      { to: ["owner@example.test"] },
+      { ownerWords: ["Check catalog"], outsideText: reusedCtx.state.outsideText },
+    ),
+  ).toEqual([]);
+});
+
+it("restores saved watch-check targets across context strategy switches and after-use compaction", () => {
+  const details = {
+    routines: [
+      {
+        routineId: "r-watch",
+        prompt: "Watch inbox",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          outcome: "changed",
+          fingerprint: "fp-switch",
+          entries: {
+            "item-1": `${"a".repeat(8_000)} current-only@example.test ${"b".repeat(15_000)} tail@example.test`,
+          },
+          detail: null,
+        },
+      },
+    ],
+  };
+  const currentDelivered = clipToolResultText(
+    serializeToolResult(details, "current", "schedule_list", {}),
+  );
+  expect(currentDelivered).toContain("current-only@example.test");
+  const currentSavedCheckpoint = JSON.parse(checkpoint("ask_user"));
+  currentSavedCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "switch-1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: currentDelivered }],
+    details,
+  });
+  const defaultResumingCtx = fixture([tool("ask_user")]);
+  defaultResumingCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(defaultResumingCtx, JSON.stringify(currentSavedCheckpoint), model),
+  ).toBeDefined();
+  expect(
+    outsideOnlyTargets(
+      { to: ["current-only@example.test"] },
+      { ownerWords: ["List schedules"], outsideText: defaultResumingCtx.state.outsideText },
+    ),
+  ).toEqual(["current-only@example.test"]);
+
+  const shortenedDelivered = clipToolResultText(
+    serializeToolResult(details, undefined, "schedule_list", {}),
+  );
+  expect(shortenedDelivered).toContain("tail@example.test");
+  const shortenedSavedCheckpoint = JSON.parse(checkpoint("ask_user"));
+  shortenedSavedCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "switch-2",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: shortenedDelivered }],
+    details,
+  });
+  const currentResumingCtx = fixture([tool("ask_user")]);
+  currentResumingCtx.deps = { contextStrategy: "current" } as never;
+  currentResumingCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(
+      currentResumingCtx,
+      JSON.stringify(shortenedSavedCheckpoint),
+      model,
+    ),
+  ).toBeDefined();
+  expect(
+    outsideOnlyTargets(
+      { to: ["tail@example.test"] },
+      { ownerWords: ["List schedules"], outsideText: currentResumingCtx.state.outsideText },
+    ),
+  ).toEqual(["tail@example.test"]);
+
+  // A result compacted again after use (e.g. under retrieval) still restores structured evidence under "current".
+  const compactedAfterUse = shortenToolResultText(
+    shortenedDelivered,
+    1_024,
+    { name: "schedule_list" },
+    { afterUse: true },
+  );
+  expect(compactedAfterUse).toContain("tail@example.test");
+  const compactedCheckpoint = JSON.parse(checkpoint("ask_user"));
+  compactedCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "switch-3",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: compactedAfterUse }],
+    details,
+  });
+  const compactedResumingCtx = fixture([tool("ask_user")]);
+  compactedResumingCtx.deps = { contextStrategy: "current" } as never;
+  compactedResumingCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(compactedResumingCtx, JSON.stringify(compactedCheckpoint), model),
+  ).toBeDefined();
+  expect(
+    outsideOnlyTargets(
+      { to: ["tail@example.test"] },
+      { ownerWords: ["List schedules"], outsideText: compactedResumingCtx.state.outsideText },
+    ),
+  ).toEqual(["tail@example.test"]);
+});
+
+it("keeps literal backslashes in a shortened watch item title when shortening removes the title separator", () => {
+  const literalTitleItem = `item:${JSON.stringify({
+    fields: [JSON.stringify(`prefix ${"f".repeat(12_000)}`)],
+    title: "Order \\nbugs@corp.com",
+  })}`;
+  const entriesWithLongFields: Record<string, string> = {
+    "long-watch": literalTitleItem,
+  };
+  for (let i = 0; i < 400; i += 1) {
+    entriesWithLongFields[`entry-${i}@example.test`] = `short-${i}`;
+  }
+  const separatorDropDetails = {
+    routines: [
+      {
+        routineId: "r-sep-drop",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          outcome: "changed",
+          fingerprint: "fp-sep-drop",
+          entries: entriesWithLongFields,
+        },
+      },
+    ],
+  };
+  const sepDropDelivered = clipToolResultText(
+    serializeToolResult(separatorDropDetails, undefined, "schedule_list", {}),
+  );
+  expect(sepDropDelivered).not.toContain('\\"title\\":');
+  expect(sepDropDelivered).toContain("nbugs@corp.com");
+  const sepDropCheckpoint = JSON.parse(checkpoint("ask_user"));
+  sepDropCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "sep-drop-1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: sepDropDelivered }],
+    details: separatorDropDetails,
+  });
+  const sepDropCtx = fixture([tool("ask_user")]);
+  sepDropCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(sepDropCtx, JSON.stringify(sepDropCheckpoint), model),
+  ).toBeDefined();
+  expect(
+    outsideOnlyTargets(
+      { to: ["nbugs@corp.com"] },
+      { ownerWords: ["List schedules"], outsideText: sepDropCtx.state.outsideText },
+    ),
+  ).toEqual(["nbugs@corp.com"]);
+});
+
+it("keeps original watch strategy evidence after plain-text after-use compaction across strategy switches", () => {
+  const clippedDefaultEntries: Record<string, string> = {
+    "head-leaf": `item:${JSON.stringify({
+      fields: [JSON.stringify(`head@example.test ${"a".repeat(20_000)}`)],
+      title: "Head leaf",
+    })}`,
+  };
+  for (let i = 0; i < 400; i += 1) {
+    clippedDefaultEntries[`short-${i}@example.test`] = `val-${i}`;
+  }
+  const plainCompactDetails = {
+    routines: [
+      {
+        routineId: "r-plain-compact",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          outcome: "changed",
+          fingerprint: "fp-plain-compact",
+          entries: clippedDefaultEntries,
+        },
+      },
+    ],
+  };
+  const clippedDefaultDelivered = clipToolResultText(
+    serializeToolResult(plainCompactDetails, undefined, "schedule_list", {}),
+  );
+  expect(() => JSON.parse(clippedDefaultDelivered)).toThrow();
+  expect(clippedDefaultDelivered).toContain("short-150@example.test");
+  const plainCompactedDefault = shortenToolResultText(
+    clippedDefaultDelivered,
+    2_048,
+    { name: "schedule_list" },
+    { afterUse: true },
+  );
+  const plainDefaultCheckpoint = JSON.parse(checkpoint("ask_user"));
+  plainDefaultCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "plain-1",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: plainCompactedDefault }],
+    details: plainCompactDetails,
+  });
+  const plainDefaultToCurrentCtx = fixture([tool("ask_user")]);
+  plainDefaultToCurrentCtx.deps = { contextStrategy: "current" } as never;
+  plainDefaultToCurrentCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(
+      plainDefaultToCurrentCtx,
+      JSON.stringify(plainDefaultCheckpoint),
+      model,
+    ),
+  ).toBeDefined();
+  expect(
+    outsideOnlyTargets(
+      { to: ["short-150@example.test"] },
+      { ownerWords: ["List schedules"], outsideText: plainDefaultToCurrentCtx.state.outsideText },
+    ),
+  ).toEqual(["short-150@example.test"]);
+
+  const clippedCurrentDelivered = clipToolResultText(
+    serializeToolResult(plainCompactDetails, "current", "schedule_list", {}),
+  );
+  expect(clippedCurrentDelivered).toContain("head@example.test");
+  const plainCompactedCurrent = shortenToolResultText(
+    clippedCurrentDelivered,
+    2_048,
+    { name: "schedule_list" },
+    { afterUse: true },
+  );
+  const plainCurrentCheckpoint = JSON.parse(checkpoint("ask_user"));
+  plainCurrentCheckpoint.messages.unshift({
+    role: "toolResult",
+    toolCallId: "plain-2",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: plainCompactedCurrent }],
+    details: plainCompactDetails,
+  });
+  const plainCurrentToDefaultCtx = fixture([tool("ask_user")]);
+  plainCurrentToDefaultCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(
+      plainCurrentToDefaultCtx,
+      JSON.stringify(plainCurrentCheckpoint),
+      model,
+    ),
+  ).toBeDefined();
+  expect(
+    outsideOnlyTargets(
+      { to: ["head@example.test"] },
+      { ownerWords: ["List schedules"], outsideText: plainCurrentToDefaultCtx.state.outsideText },
+    ),
+  ).toEqual(["head@example.test"]);
 });

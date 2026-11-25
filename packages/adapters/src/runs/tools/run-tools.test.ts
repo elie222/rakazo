@@ -4,6 +4,8 @@ import {
   createApprovedEffectReplayQueue,
   terminatingToolResult,
 } from "../../approvals/approval-effect.js";
+import { outsideOnlyTargets } from "../../approvals/review-target-sources.js";
+import { readItems } from "../../routines/routine-watch.js";
 import { CATALOG_EXECUTE } from "../../tools/lazy-tool-catalog.js";
 
 const audited = vi.hoisted(() => [] as { tool: string; outcome: string; metadata: unknown }[]);
@@ -98,6 +100,133 @@ describe("dispatchTool audit outcomes", () => {
 
     expect(ctx.state.tainted).toBe(true);
   });
+
+  it.each(["schedule_list", "task_catalog"] as const)(
+    "re-applies watch-check taint when replaying a completed %s result",
+    async (toolName) => {
+      const makeCtx = () => {
+        const base = dispatchContext(false);
+        return {
+          ...base,
+          state: { ...base.state, taintedBeyondOwnComputer: false, outsideText: "" },
+          deps: {
+            ...base.deps,
+            prisma: {
+              ...base.deps.prisma,
+              steeringMessage: { findFirst: vi.fn(async () => null) },
+            },
+          },
+        };
+      };
+      const taintedCtx = makeCtx();
+      vi.mocked(gateToolCall).mockResolvedValueOnce({
+        result: {
+          routines: [
+            {
+              routineId: "r-1",
+              watch: { kind: "tool", tool: "list_messages", track: ["from", "status"] },
+              lastCheck: {
+                checkedAt: "2026-11-25T07:00:00.000Z",
+                outcome: "changed",
+                fingerprint: "fp-1",
+                entries: {
+                  "alice@example.com": 'rakazo:item:{"fields":["open"],"title":"Invoice"}',
+                },
+                detail: "Remote watch output",
+              },
+            },
+          ],
+        },
+        replayed: true,
+      } as never);
+      await applyTool(taintedCtx as never, toolName, {}, "call-1");
+      expect(taintedCtx.state.tainted).toBe(true);
+      expect(taintedCtx.state.taintedBeyondOwnComputer).toBe(true);
+      expect(taintedCtx.state.outsideText).toContain("remote watch output");
+      expect(taintedCtx.state.outsideText).toContain("alice@example.com");
+
+      const cleanCtx = makeCtx();
+      vi.mocked(gateToolCall).mockResolvedValueOnce({
+        result: {
+          routines: [{ routineId: "r-2", lastCheck: null }],
+        },
+        replayed: true,
+      } as never);
+      await applyTool(cleanCtx as never, toolName, {}, "call-2");
+      expect(cleanCtx.state.tainted).toBe(false);
+    },
+  );
+
+  it.each(["schedule_list", "task_catalog"] as const)(
+    "keeps bounded watch-check targets on fresh large %s reads through applyTool without dumping routine prompts",
+    async (toolName) => {
+      const items = Array.from({ length: 1_800 }, (_value, index) => ({
+        id: `sender-${index}@example.test`,
+        subject: `item-${index} ${"x".repeat(120)}`,
+        status: "open",
+      }));
+      const reading = readItems(items, ["id", "subject"]);
+      const row = {
+        id: "routine-large-watch",
+        name: "Inbox watch",
+        prompt: "Owner prompt sentinel prompt-secret@example.test",
+        crons: [],
+        timezone: "UTC",
+        inChat: false,
+        active: true,
+        nextRunAt: null,
+        watch: { kind: "http", url: "https://status.example.test", everyMinutes: 15 },
+        watchState: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          outcome: "changed",
+          fingerprint: "fp-large",
+          entries: reading.entries,
+          detail: "Watch detail dave@example.test",
+        },
+        eventTriggers: null,
+        threadId: "thread-1",
+        spaceId: "space-1",
+        botId: "bot-1",
+        userId: "user-1",
+      };
+      const base = dispatchContext(false);
+      const ctx = {
+        ...base,
+        state: { ...base.state, taintedBeyondOwnComputer: false, outsideText: "" },
+        deps: {
+          ...base.deps,
+          prisma: {
+            ...base.deps.prisma,
+            routine: { findMany: vi.fn(async () => [row]) },
+            scratchpadItem: { findMany: vi.fn(async () => []) },
+            taughtSkill: { findMany: vi.fn(async () => []) },
+            agentSkill: { findMany: vi.fn(async () => []) },
+            bot: { findUnique: async () => null, findMany: vi.fn(async () => []) },
+            steeringMessage: { findFirst: vi.fn(async () => null) },
+          },
+        },
+        run: { id: "run-1", spaceId: "space-1", userId: "user-1", threadId: "thread-1" },
+        bot: { id: "bot-1", name: "Bot" },
+        fleetRun: { spaceId: "space-1", botId: "bot-1", userId: "user-1" },
+        thread: { id: "thread-1", groupId: null },
+        source: { ownerStartedRun: true, messagingChannelRun: false },
+        tools: { ...base.tools, offered: [] },
+      };
+
+      const result = await applyTool(ctx as never, toolName, {}, "call-large");
+      expect(JSON.stringify(result).length).toBeGreaterThan(400_000);
+      expect(ctx.state.tainted).toBe(true);
+      expect(ctx.state.taintedBeyondOwnComputer).toBe(true);
+      expect(ctx.state.outsideText.length).toBeLessThan(20_000);
+      expect(ctx.state.outsideText).not.toContain("prompt-secret@example.test");
+      expect(
+        outsideOnlyTargets(
+          { to: ["sender-0@example.test", "sender-20@example.test", "sender-60@example.test"] },
+          { ownerWords: ["List schedules"], outsideText: ctx.state.outsideText },
+        ),
+      ).toEqual(["sender-0@example.test", "sender-20@example.test", "sender-60@example.test"]);
+    },
+  );
 
   it("dispatches a connector named delete_bot to its connector instead of local archival", async () => {
     const execute = vi.fn(async function* () {

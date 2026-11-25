@@ -44,7 +44,30 @@ import {
   skillUpdateFromTool,
 } from "../../tools/skill-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
+import { markReadOutsideContent } from "../assembly/run-context.js";
+import { storedWatchCheckOutsideContent } from "../assembly/watch-outside-text.js";
 import type { ToolHandlers } from "./run-tool-gate.js";
+
+/** A stored watch check carries what the watch last read, which is outside content. */
+async function markStoredWatchChecks(ctx: RunContext, routines: readonly unknown[]): Promise<void> {
+  const watchChecks = storedWatchCheckOutsideContent(routines, ctx.deps?.contextStrategy);
+  if (watchChecks.length > 0) {
+    await markReadOutsideContent(ctx, watchChecks);
+  }
+}
+
+/** Apply the same watch-check taint when a completed schedule_list or task_catalog result is replayed. */
+export async function markReplayedRoutineReadTaint(
+  ctx: RunContext,
+  name: string,
+  result: unknown,
+): Promise<void> {
+  if (name !== "schedule_list" && name !== "task_catalog") return;
+  if (!result || typeof result !== "object" || !("routines" in result)) return;
+  const routines = (result as { routines?: unknown }).routines;
+  if (!Array.isArray(routines)) return;
+  await markStoredWatchChecks(ctx, routines);
+}
 
 /** A command watch may not run what the desktop guard keeps the bot from running itself. */
 function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undefined {
@@ -76,15 +99,17 @@ export async function scheduleCreateRefusal(
 
 /** The task catalog, scratchpad, ticket board, schedules and skills. */
 export const taskTools: ToolHandlers = {
-  async task_catalog(ctx) {
+  async task_catalog(ctx, call) {
     const { deps, run, bot, thread } = ctx;
-    return taskCatalogFromTool(deps, {
+    const catalog = await taskCatalogFromTool(deps, {
       spaceId: run.spaceId,
       botId: bot.id,
       userId: run.userId,
       ...(thread.groupId ? { groupThreadId: thread.id } : {}),
       tools: ctx.tools.offered,
     });
+    await markStoredWatchChecks(ctx, catalog.routines);
+    return call.finish(catalog);
   },
   async scratchpad_list(ctx, call) {
     const { deps, run, bot } = ctx;
@@ -235,12 +260,14 @@ export const taskTools: ToolHandlers = {
   async schedule_list(ctx, call) {
     const { deps, run } = ctx;
     const target = await routinesTarget(ctx, call.name, call.args);
-    if ("error" in target) return target;
-    return listSchedulesFromTool(deps, {
+    if ("error" in target) return call.finish(target);
+    const listed = await listSchedulesFromTool(deps, {
       spaceId: run.spaceId,
       botId: target.botId,
       ...(target.groupThreadId ? { groupThreadId: target.groupThreadId } : {}),
     });
+    await markStoredWatchChecks(ctx, listed.routines);
+    return call.finish(listed);
   },
   async schedule_cancel(ctx, call) {
     const { deps, run } = ctx;
