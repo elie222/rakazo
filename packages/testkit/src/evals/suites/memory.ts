@@ -74,7 +74,7 @@ The memory held many distinct facts about an operations lead and was a few hundr
   "full-correction": `${preamble}
 The memory was nearly full of long, repetitive notes when the user said their manager is now Tomás Ortega instead of Priya Raman, and asked the bot to remember a new office door code, 5829. These earlier facts are important and must all survive: works as a product designer at Fernhill Studio; weekly summary on Mondays before 9:00; daughter Mia is allergic to peanuts; uses the Europe/Lisbon time zone; no meetings on Fridays; Northwind invoices are due on the 5th of each month; prefers metric units; prefers short, direct answers. Pass only if each of these, the door code, and Tomás Ortega as the current manager are recorded accurately, and no entry still presents Priya Raman as the manager. Dropping small talk and repeated entries is expected.`,
   "open-loop": `${preamble}
-The user said they are waiting for Marta Reis at Quinta Azul to countersign the venue contract before they can pay the deposit, and asked the bot to keep track of it and follow up. The reply answers "what am I still waiting on?" in a later, fresh conversation. Pass only if the reply names Marta's countersignature, or the venue contract, as still outstanding, and the memory does not keep the wait as an entry with no end date. A memory entry stamped with an end date ("ends 2026-12-02") is fine, and so are lasting facts such as who Marta is. Fail if the memory holds the wait undated or ending on an event ("ends when Marta signs"), or if the reply does not mention it.`,
+The user said they are waiting for Marta Reis at Quinta Azul to countersign the venue contract before they can pay the deposit, and asked the bot to keep track of it and follow up. The reply answers "what am I still waiting on?" in a later, fresh conversation. Pass only if the reply names Marta's countersignature, or the venue contract, as still outstanding, and the memory does not keep the wait as an entry with no end date. The bot is expected to track the wait outside memory, so memory with no entry about it, even an empty memory, is fine; so is an entry stamped with an end date ("ends 2026-12-02") or a lasting fact such as who Marta is. Fail if the memory holds the wait undated or ending on an event ("ends when Marta signs"), or if the reply does not mention it.`,
   "approval-history": `${preamble}
 The memory was nearly full, and much of it was a dated log of what Rui approved, rejected or changed and when. The user then gave a new decision: launch shipping is free on orders over €60 to Portugal and Spain, and a flat €4.90 elsewhere in the EU. Pass only if all of these hold. The new shipping offer is recorded with both parts. Each decision as it now stands survives: hero headline "Built for every forecast"; launch email subject "Winter-ready in one click"; launch date 2026-12-08; code WINTER15 for 15% off first orders until 2026-12-31, excluding gift cards; hero image is the tent-at-dusk photo; the Instagram teaser goes out 2026-12-08 at 12:00. No replaced choice ("Gear that goes further", "Your winter kit is here", 2026-12-03) is presented as current. These lasting facts survive: marketing lead at Pinecrest Outdoor; Rui Almeida approves launch copy; time zone Europe/Lisbon; no exclamation marks in brand copy; never name competitors. The history is condensed: fail if the memory still keeps a log of several entries stamped with the day or time something was approved.`,
   "ended-rule": `${preamble}
@@ -188,6 +188,14 @@ export const MEMORY_JUDGE_CALIBRATION = [
       "open-loop",
       "# Assistant\n\nMarta Reis is the events contact at Quinta Azul.\n",
       "You're waiting on Marta to countersign the venue contract, then you can pay the deposit.",
+    ),
+    pass: true,
+  },
+  {
+    input: judgeInput(
+      "open-loop",
+      "# Assistant\n",
+      "Marta's countersignature on the venue contract is still outstanding.",
     ),
     pass: true,
   },
