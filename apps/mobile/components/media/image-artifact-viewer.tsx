@@ -264,7 +264,7 @@ export function ImageArtifactViewer({
       closed.current = true;
     };
   }, []);
-  const downloading = useRef(false);
+  const downloadingArtifactId = useRef<string | null>(null);
   const close = () => {
     if (closed.current) return;
     closed.current = true;
@@ -309,8 +309,8 @@ export function ImageArtifactViewer({
       .catch((error) => Alert.alert(t`Could not share image`, errorText(error, t`Try again.`)));
 
   const download = async () => {
-    if (downloading.current) return;
-    downloading.current = true;
+    if (downloadingArtifactId.current === current.artifactId) return;
+    downloadingArtifactId.current = current.artifactId;
     try {
       const uri = await imageArtifactUri(requestTarget(), current.artifactId, current.mimeType);
       if (closed.current) return;
@@ -320,7 +320,7 @@ export function ImageArtifactViewer({
       if (!closed.current)
         Alert.alert(t`Could not download image`, errorText(error, t`Try again.`));
     } finally {
-      downloading.current = false;
+      downloadingArtifactId.current = null;
     }
   };
 

@@ -39,7 +39,7 @@ export function ImageAttachmentDeck({
   const { t } = useLingui();
   const tokens = mobileTokens();
   const { width: windowWidth } = useWindowDimensions();
-  const width = Math.min(Math.round(windowWidth * 0.62), 320);
+  const width = Math.min(Math.round(windowWidth * 0.5), 240);
   const height = Math.round(width * 1.5);
   const gallery = images.map(({ artifactId, name, mimeType }) => ({ artifactId, name, mimeType }));
   const shown = gallery.slice(0, MAX_CARDS);

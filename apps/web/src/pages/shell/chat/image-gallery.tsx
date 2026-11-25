@@ -173,7 +173,11 @@ function GalleryThumb({
 function LightboxPicture({ image }: { image: GalleryImage }) {
   const src = useArtifactImage(image.target, image.artifactId);
   return src ? (
-    <img src={src} alt={image.name} className="size-full cursor-zoom-out object-contain" />
+    <img
+      src={src}
+      alt={image.name}
+      className="size-full max-w-[calc(100%-6rem)] cursor-zoom-out object-contain"
+    />
   ) : (
     <div className="size-40 rounded-xl bg-muted" />
   );
