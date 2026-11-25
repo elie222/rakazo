@@ -93,6 +93,8 @@ export function userComputerOwner(input: {
   ownerMessage: boolean;
   /** The owner turned on "Use my computer" for this routine, and its run still qualifies. */
   ownerComputerRoutine: boolean;
+  /** A helper the run was delegated to, judged by `trigger`, its origin's; no switch reaches it. */
+  helperRun: boolean;
 }): string | undefined {
   if (input.messagingChannelRun || input.runUserId !== input.botUserId) return undefined;
   const reachable =
@@ -100,6 +102,7 @@ export function userComputerOwner(input: {
       ? input.sourceRole === "user"
       : (input.trigger === "routine" && input.ownerComputerRoutine) ||
         (!input.groupThread &&
+          !input.helperRun &&
           (input.trigger === "routine"
             ? input.access.routines && !input.routineWatches
             : input.trigger === "messaging"

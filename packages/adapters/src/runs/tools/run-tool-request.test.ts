@@ -825,6 +825,39 @@ describe("the user's computer after a routine or webhook joined the run", () => 
       error: "The user's computer is not available in this run.",
     });
   });
+
+  /** A routine run the routines switch let on the computer, whose routine is now `routine`. */
+  function switchRoutineCall(routine: { watch: unknown } | null) {
+    const { ctx, request } = userComputerCall(false, {
+      routines: true,
+      ownBots: false,
+      messaging: false,
+    });
+    const findUnique = vi.fn(async () => ({ task: { prompt: "Check the repo" }, routine }));
+    return {
+      ctx: {
+        ...ctx,
+        run: { trigger: "routine" },
+        deps: { ...ctx.deps, prisma: { ...ctx.deps.prisma, run: { findUnique } } },
+      },
+      request,
+    };
+  }
+
+  it("keeps the computer for a routine run that still runs only its own prompt", async () => {
+    const { ctx, request } = switchRoutineCall({ watch: null });
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["now watches a page", { watch: { url: "https://example.com" } }],
+    ["was deleted", null],
+  ])("ends a routine run's use of the computer once its routine %s", async (_, routine) => {
+    const { ctx, request } = switchRoutineCall(routine);
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toEqual({
+      error: "The user's computer is not available in this run.",
+    });
+  });
 });
 
 describe("a schedule_update that needs an approval preview", () => {

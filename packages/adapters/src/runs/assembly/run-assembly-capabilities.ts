@@ -573,6 +573,7 @@ export async function resolveRunCapabilities(
       userComputerAccess,
     )),
     ownerComputerRoutine: parts.records.ownerComputerRoutine,
+    helperRun: run.trigger === BACKGROUND_HELPER_TRIGGER,
   });
   let userComputer: UserComputerState;
   let userComputerShell = false;
@@ -742,7 +743,10 @@ export async function selectRunTools(
             select: { id: true },
           }),
         ),
-      historyRetrievalEnabled: contextStrategy !== "current" && !unknownChannelSourceId,
+      historyRetrievalEnabled:
+        contextStrategy !== "current" &&
+        !unknownChannelSourceId &&
+        !parts.records.switchComputerRoutine,
       historyMyChats: myChatsAllowed,
       ownPromptOnly: ownerComputerRoutine,
       meetingTranscriptsAvailable: parts.meetingTranscriptsAvailable,
