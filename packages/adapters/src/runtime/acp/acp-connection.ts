@@ -120,7 +120,6 @@ export function startAcpAgent(
       input: child.stdout,
       crlfDelay: Number.POSITIVE_INFINITY,
     })) {
-      heardAt = Date.now();
       if (!line.trim()) continue;
       let message: Message;
       try {
@@ -130,6 +129,8 @@ export function startAcpAgent(
         continue;
       }
       if (!message || typeof message !== "object") continue;
+      // Only protocol messages count as the agent being alive; stray output does not.
+      heardAt = Date.now();
       if (typeof message.method === "string") {
         if (message.id === undefined || message.id === null) {
           handlers.onNotification(

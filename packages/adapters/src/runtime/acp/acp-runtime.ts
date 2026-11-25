@@ -38,8 +38,10 @@ import {
   findSession,
   forgetSession,
   keepSession,
+  noteReplyElsewhere,
   releaseSession,
   sessionKey,
+  takeReplyElsewhere,
 } from "./acp-sessions.js";
 import { startToolServer } from "./acp-tool-server.js";
 import { conversationBlock, historyLine, OWN_SPEAKER, PERSON_SPEAKER } from "./acp-turn.prompt.js";
@@ -180,7 +182,15 @@ async function runAcpTurn(
     let thinking = false;
     let replaying = false;
 
-    const callTool = async (
+    // One call at a time, as Rakazo's tools expect where one call can change what the next acts on
+    // or pause the turn.
+    let toolsDone: Promise<unknown> = Promise.resolve();
+    const callTool = (name: string, args: Record<string, unknown>): Promise<CallToolResult> => {
+      const call = toolsDone.then(() => runTool(name, args));
+      toolsDone = call;
+      return call;
+    };
+    const runTool = async (
       name: string,
       args: Record<string, unknown>,
     ): Promise<CallToolResult> => {
@@ -382,7 +392,12 @@ async function runAcpTurn(
       context: new Set(),
       usedAt: Date.now(),
     };
-    const promptText = turnText(request, current, fresh);
+    const promptText = turnText(
+      request,
+      current,
+      fresh,
+      ownsChatSession && takeReplyElsewhere(key),
+    );
     current.usedAt = Date.now();
     if (ownsChatSession) keepSession(key, current);
 
@@ -442,6 +457,8 @@ async function runAcpTurn(
   } finally {
     releaseToolCallBudget(request.runId, false);
     if (ownsChatSession) releaseSession(key);
+    // A turn beside the chat's own wrote a reply its session never saw; the next turn sends it.
+    else if (!oneShot) noteReplyElsewhere(key);
     if (connection) {
       // Give a cancelled turn a moment to settle so the CLI saves the session cleanly.
       if (inFlight && sessionId) {
@@ -581,17 +598,23 @@ function flattenValues(options: unknown): string[] {
  * This turn's message: the chat the session has not seen, then the new message. A new session
  * gets the newest part of the chat that fits; a continued one only what others wrote since.
  */
-function turnText(request: AgentRunRequest, session: AgentSession, fresh: boolean): string {
+function turnText(
+  request: AgentRunRequest,
+  session: AgentSession,
+  fresh: boolean,
+  includeOwn: boolean,
+): string {
   const lines: string[] = [];
   for (const item of request.history) {
     const content = item.content.trim();
-    if (!content) continue;
+    // The new message itself goes last, as the prompt.
+    if (!content || (item.id && item.id === request.sourceMessageId)) continue;
     const own = item.role === "assistant" && !item.speaker;
     if (item.id) {
       if (session.seen.has(item.id)) continue;
       session.seen.add(item.id);
-      // The session wrote this reply itself.
-      if (own && !fresh) continue;
+      // The session wrote this reply itself, unless a turn running beside it did.
+      if (own && !fresh && !includeOwn) continue;
     } else {
       const hash = createHash("sha256").update(content).digest("hex");
       if (session.context.has(hash)) continue;

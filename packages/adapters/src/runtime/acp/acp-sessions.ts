@@ -33,6 +33,18 @@ export function releaseSession(key: string): void {
   busy.delete(key);
 }
 
+/** Chats where a turn replied in a session of its own, which the chat's session never saw. */
+const repliedElsewhere = new Set<string>();
+
+export function noteReplyElsewhere(key: string): void {
+  repliedElsewhere.add(key);
+}
+
+/** Whether the chat's session lacks replies written elsewhere, clearing the note. */
+export function takeReplyElsewhere(key: string): boolean {
+  return repliedElsewhere.delete(key);
+}
+
 export function sessionKey(agent: string, botId: string, threadId: string): string {
   return JSON.stringify([agent, botId, threadId]);
 }

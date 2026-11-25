@@ -263,6 +263,16 @@ describe("acpAgentRuntime", () => {
 
     expect(requests("session/new")).toHaveLength(2);
     expect(requests("session/delete")).toHaveLength(1);
+    // The chat's own session then learns what the bot replied in the other one.
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "next",
+        history: [{ id: "m9", role: "assistant", content: "Reply from the other turn" }],
+      }),
+    );
+    expect(promptText()).toContain("[You]: Reply from the other turn");
   });
 
   it("keeps the newest message when it alone is longer than a new session's history", async () => {
