@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import { Platform } from "react-native";
-import { dateLocaleForUi, useUiLocale } from "../../lib/i18n/i18n";
+import { useDateLocale } from "../../lib/i18n/i18n";
 import { formatCalendarDay } from "../../lib/native/calendar-day";
 import { isComposeViewAvailable } from "../../lib/native/compose-available";
 import type { SettingsDateRowProps } from "./settings-date-row-props";
@@ -17,9 +17,9 @@ export function settingsDateRowAvailable(): boolean {
 }
 
 export function SettingsDateRow({ title, day, minimumDay, onChange }: SettingsDateRowProps) {
-  const locale = useUiLocale();
+  const dateLocale = useDateLocale();
   const [open, setOpen] = useState(false);
-  const shown = formatCalendarDay(day, dateLocaleForUi(locale));
+  const shown = formatCalendarDay(day, dateLocale);
   return (
     <>
       <SettingsRow title={title} value={shown} onPress={() => setOpen(true)} />

@@ -445,6 +445,27 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
   await expect(connection.getByRole("button", { name: "Disconnect" })).toBeVisible();
   await expect(connection.getByRole("button", { name: "Test connection" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "model-connection-page");
+  // Disconnecting says what goes with the connection before it asks.
+  await page.route("**/rpc/models/disconnectPreview", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          mainModel: true,
+          otherChoice: false,
+          usedBy: ["Inbox", "Morning digest"],
+          usedByTotal: 2,
+        },
+      },
+    }),
+  );
+  await connection.getByRole("button", { name: "Disconnect" }).click();
+  const question = page.getByRole("alertdialog");
+  await expect(question).toContainText(
+    "Reconnecting will not restore the main model choice that uses this connection.",
+  );
+  await expect(question).toContainText("Inbox, Morning digest may stop until you reconnect.");
+  await captureScreenshot(page, testInfo, "model-disconnect-warning");
+  await question.getByRole("button", { name: "Cancel" }).click();
 });
 
 test("a refused private model server names the setting that allows it", async ({

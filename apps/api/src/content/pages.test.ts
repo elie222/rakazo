@@ -45,6 +45,7 @@ function fakeDeps(hooks: { onUpdate?: (attempt: number) => void } = {}) {
         return { shareSecretId: deleted.shareSecretId };
       },
     },
+    pageImage: { findMany: async () => [] },
     secret: {
       create: async ({ data }: { data: { id: string; ciphertext: string } }) => {
         secrets.set(data.id, { id: data.id, ciphertext: data.ciphertext });
@@ -85,7 +86,8 @@ function fakeDeps(hooks: { onUpdate?: (attempt: number) => void } = {}) {
       tokens.delete(ref);
     }),
   };
-  const deps = { prisma, secrets: store, webOrigin: "https://rakazo.test" } as never;
+  const artifacts = { remove: vi.fn() };
+  const deps = { prisma, secrets: store, artifacts, webOrigin: "https://rakazo.test" } as never;
   return {
     deps,
     store,

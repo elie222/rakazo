@@ -423,6 +423,7 @@ describe("groups.remove", () => {
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
       // No page in the group had a link, so there are no tokens to delete.
+      pageImage: { findMany: vi.fn(async () => []) },
       page: { updateMany: vi.fn(async () => ({ count: 0 })) },
       secret: { findMany: vi.fn(async () => []), deleteMany: vi.fn() },
       computerExecutionLease: {
@@ -555,6 +556,7 @@ describe("groups.remove", () => {
       },
       attempt: { updateMany: vi.fn() },
       task: { updateMany: vi.fn() },
+      pageImage: { findMany: vi.fn(async () => []) },
       page: { updateMany: vi.fn(async () => ({ count: 1 })) },
       secret: {
         findMany: vi.fn(async () => [{ id: "secret-1", ciphertext: "vault-ref-1" }]),

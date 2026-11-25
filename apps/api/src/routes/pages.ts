@@ -4,6 +4,7 @@ import { aiConsentStatus } from "../account/ai-consent.js";
 import {
   addPageComment,
   getPageGrants,
+  getPageImage,
   getPageReview,
   grantPage,
   listPageReviews,
@@ -28,6 +29,7 @@ export function pagesRoutes(ctx: RouterContext) {
   const pageDeps = () => ({
     prisma: deps.prisma,
     secrets: deps.secrets,
+    artifacts: deps.artifacts,
     webOrigin: deps.env.webOrigin,
     events: deps.events,
   });
@@ -73,6 +75,9 @@ export function pagesRoutes(ctx: RouterContext) {
       ),
       saveState: authed.pageReviews.saveState.handler(({ context, input }) =>
         savePageReaderState(deps.prisma, context.actor, input.pageId, input.values),
+      ),
+      image: authed.pageReviews.image.handler(({ context, input }) =>
+        getPageImage(deps, context.actor, input),
       ),
     },
     pages: {

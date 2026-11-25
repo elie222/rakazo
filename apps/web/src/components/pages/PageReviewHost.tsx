@@ -19,7 +19,7 @@ import { MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { usePageStateSaver } from "../../lib/pages/page-state";
-import { useMedia, usePageDocument } from "../../lib/pages/pages";
+import { useMedia, usePageDocument, useReviewedPageContent } from "../../lib/pages/pages";
 import { followStream } from "../../lib/query/follow-stream";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { spaceChanged } from "../../lib/query/space-changes";
@@ -72,14 +72,22 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
     enabled: Boolean(page?.owner && draftId),
     gcTime: 0,
   });
-  const { code, sections } = pageReviewContent({
+  const { shown, sections } = pageReviewContent({
     page,
     showingDraft: Boolean(draftId),
-    draftCode: draft.isError ? undefined : draft.data?.code,
+    draft: draft.isError ? undefined : draft.data,
     reported: anchors,
   });
   const readerState = draftId ? undefined : page?.readerState;
-  const preview = usePageDocument(code, "card", false, 0, !draftId, revision?.anchor, readerState);
+  const preview = usePageDocument(
+    useReviewedPageContent(pageId, shown),
+    "card",
+    false,
+    0,
+    !draftId,
+    revision?.anchor,
+    readerState,
+  );
   const stateSaver = usePageStateSaver(pageId, read.queryKey);
   const publish = useSave({
     save: (requestId: string, rpc) => rpc.pageReviews.publish({ pageId, requestId }),
@@ -122,7 +130,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
               >
                 <Trans>Back to comments</Trans>
               </Button>
-              <Button onClick={() => publish.run(draftId)} disabled={publish.pending || !code}>
+              <Button onClick={() => publish.run(draftId)} disabled={publish.pending || !shown}>
                 <Trans>Publish revision</Trans>
               </Button>
             </>

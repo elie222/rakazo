@@ -1,7 +1,14 @@
 import { useLingui } from "@lingui/react/macro";
-import type { MessageBlock, PageSectionAnchor, PageState } from "@rakazo/contracts";
+import type {
+  MessageBlock,
+  PageImageSource,
+  PageImages,
+  PageSectionAnchor,
+  PageState,
+} from "@rakazo/contracts";
 import { PAGE_RUNTIME_PATH, pageReply, pageReplyText, pageViewerDocument } from "@rakazo/core";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { QueryKey } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useCallback,
@@ -59,12 +66,74 @@ async function fetchPageRuntime(): Promise<string> {
   return response.text();
 }
 
+export type PageContent = {
+  code: string;
+  images: PageImages;
+  readImage: (imageId: string) => { queryKey: QueryKey; queryFn: () => Promise<PageImageSource> };
+};
+
+export function usePageContent(
+  page: { code: string; images: PageImages } | null | undefined,
+  readImage: PageContent["readImage"],
+): PageContent | undefined {
+  const latest = useRef(readImage);
+  latest.current = readImage;
+  return useMemo(
+    () =>
+      page
+        ? {
+            code: page.code,
+            images: page.images,
+            readImage: (imageId: string) => latest.current(imageId),
+          }
+        : undefined,
+    [page],
+  );
+}
+
+export function useReviewedPageContent(
+  pageId: string | null,
+  page: { code: string; images: PageImages; version: number } | undefined,
+): PageContent | undefined {
+  const queries = useSpaceQueries();
+  return usePageContent(pageId ? page : undefined, (imageId) => ({
+    queryKey: [...queries.pageReviews.image.key(), imageId],
+    queryFn: () =>
+      queries.pageReviews.image.call({ pageId: pageId!, version: page!.version, imageId }),
+  }));
+}
+
+function usePageImages(content: PageContent | undefined): Record<string, string> | undefined {
+  const entries = Object.entries(content?.images ?? {});
+  const names = content ? entries.map(([name]) => name).join("\n") : undefined;
+  const combine = useCallback(
+    (results: { isPending: boolean; data?: PageImageSource }[]) => {
+      if (names === undefined || results.some((result) => result.isPending)) return undefined;
+      return Object.fromEntries(
+        (names ? names.split("\n") : []).flatMap((name, index) => {
+          const src = results[index]?.data?.src;
+          return src ? [[name, src]] : [];
+        }),
+      );
+    },
+    [names],
+  );
+  return useQueries({
+    queries: entries.map(([, imageId]) => ({
+      ...content!.readImage(imageId),
+      staleTime: Number.POSITIVE_INFINITY,
+      refetchOnMount: false,
+    })),
+    combine,
+  });
+}
+
 /**
- * A page's compiled code as the sandboxed viewer's document; null until the runtime has loaded.
+ * A page as the sandboxed viewer's document; null until the runtime and its pictures have loaded.
  * `failed` says the runtime could not be fetched, and `retry` fetches it again.
  */
 export function usePageDocument(
-  code: string | undefined,
+  content: PageContent | undefined,
   /** The app surface behind the page; a tablet sheet sits on the background. */
   on: "card" | "background" = "card",
   /** The chat's composer is beside the page, so its reply buttons can fill it. */
@@ -85,13 +154,16 @@ export function usePageDocument(
   const errorTitle = t`This page couldn't be shown.`;
   const savedState = useRef(state);
   savedState.current = state;
+  const code = content?.code;
+  const images = usePageImages(content);
   const viewerDocument = useMemo(
     () =>
-      runtime.data === undefined || code === undefined
+      runtime.data === undefined || code === undefined || images === undefined
         ? null
         : pageViewerDocument({
             runtime: runtime.data,
             code,
+            images,
             theme,
             errorTitle,
             surface,
@@ -107,6 +179,7 @@ export function usePageDocument(
     [
       runtime.data,
       code,
+      images,
       theme,
       errorTitle,
       surface,

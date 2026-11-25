@@ -21,6 +21,18 @@ export const PageSourceSchema = z
     `Page source must fit within ${PAGE_SOURCE_MAX_BYTES} UTF-8 bytes`,
   );
 
+export const PAGE_IMAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+export const PAGE_IMAGE_PREFIX = "image:";
+export const PAGE_IMAGES_MAX = 24;
+
+export const PageImagesSchema = z
+  .record(z.string().regex(PAGE_IMAGE_NAME), Id)
+  .refine((images) => Object.keys(images).length <= PAGE_IMAGES_MAX);
+export type PageImages = z.infer<typeof PageImagesSchema>;
+
+export const PageImageSourceSchema = z.strictObject({ src: z.string().startsWith("data:image/") });
+export type PageImageSource = z.infer<typeof PageImageSourceSchema>;
+
 export const PageVisibilitySchema = z.enum(["private", "people", "link"]);
 export type PageVisibility = z.infer<typeof PageVisibilitySchema>;
 
@@ -52,6 +64,7 @@ export const PageDetailSchema = z.strictObject({
   version: z.number().int().positive(),
   /** The version's source compiled for the viewer, which carries no compiler. */
   code: z.string(),
+  images: PageImagesSchema,
   owner: z.strictObject({ name: z.string(), image: z.string().nullable() }),
   /** Set while anyone with the link can open the page. */
   shareUrl: z.string().nullable(),
@@ -64,6 +77,7 @@ export const SharedPageSchema = z.strictObject({
   title: z.string().max(PAGE_TITLE_MAX_LENGTH),
   /** Compiled for the viewer, as in PageDetail. */
   code: z.string(),
+  images: PageImagesSchema,
   version: z.number().int().positive(),
   updatedAt: IsoDate,
 });

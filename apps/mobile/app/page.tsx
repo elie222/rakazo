@@ -70,7 +70,7 @@ export default function PageScreen() {
       .then(async (page) => {
         const document = await pageDocument(
           currentApiBase(),
-          page.code,
+          { ...page, pageId: page.id },
           theme,
           t`This page couldn't be shown.`,
           { reply: pageChat(page) !== null, state: page.readerState },

@@ -129,7 +129,7 @@ function computerContext(actor: Actor, botId: string, operationId: string): Adap
 }
 
 export async function getActiveTeachingSession(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, "taughtSkill">,
   spaceId: string,
   botId: string,
   userId?: string,

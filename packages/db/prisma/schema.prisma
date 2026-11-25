@@ -1362,7 +1362,7 @@ model Run {
   sourceMessage        Message?          @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   routineId            String?
   routine              Routine?          @relation(fields: [routineId], references: [id], onDelete: SetNull)
-  // The failed routine run this run retries. Unique, so a run is retried at most once.
+  // The failed run this run retries. Unique, so a run is retried at most once.
   retryOfRunId         String?           @unique
   // Durable retry schedule; null means runnable immediately when queued.
   wakeAt               DateTime?
@@ -2156,6 +2156,7 @@ model Page {
   grants         PageGrant[]
   comments       PageComment[]
   readerStates   PageReaderState[]
+  images         PageImage[]
 
   @@index([spaceId, userId, updatedAt])
   @@index([botId])
@@ -2172,10 +2173,29 @@ model PageVersion {
   source    String
   /// The source compiled for the viewer when it was saved, so reads never run the compiler.
   code      String
+  images    Json?
   createdAt DateTime @default(now())
 
   @@unique([pageId, version])
   @@map("page_versions")
+}
+
+model PageImage {
+  id        String   @id @default(cuid())
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  spaceId   String
+  hash      String
+  mimeType  String
+  width     Int
+  height    Int
+  size      Int
+  /// Where the artifact store keeps the bytes, as for a chat file.
+  storageKey String
+  createdAt DateTime @default(now())
+
+  @@unique([pageId, hash])
+  @@map("page_images")
 }
 
 model PageGrant {

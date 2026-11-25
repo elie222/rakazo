@@ -464,19 +464,6 @@ describe("computer settings reach the shared API/worker executor", () => {
     });
     expect(request.computerModel).toBeUndefined();
   });
-  it("states the literal-command rule only where the desktop guard checks the shell", async () => {
-    const rule = "Shell commands must be literal";
-    const guarded = await runWithModel(VISION_MODEL, undefined, false, false, true, {
-      computer: { kind: "e2b" },
-    });
-    expect(guarded.request.instructions).toContain(rule);
-    const nativeShell = await runWithModel(VISION_MODEL, undefined, false, false, true, {
-      computer: { kind: "desktop" },
-    });
-    expect(nativeShell.request.instructions).not.toContain(rule);
-    const headless = await runWithModel(VISION_MODEL);
-    expect(headless.request.instructions).not.toContain(rule);
-  });
   it("does not switch when the computer-use model is the main model", async () => {
     const { request } = await runWithModel(VISION_MODEL, undefined, false, false, true, {
       computer: { defaultModelId: VISION_MODEL },

@@ -161,12 +161,13 @@ export async function transcribeClip(
   clip: VoiceClip,
   signal: AbortSignal,
   requestContext: ApiRequestContext,
-  currentCallId?: string,
+  { callId, autoLanguage = false }: { callId?: string; autoLanguage?: boolean } = {},
 ): Promise<string> {
   await ensureVoiceConsent(requestContext);
   const { apiBase, headers } = requestContext;
-  // Without a language the provider guesses one, and a short clip can come back in another.
-  const language = recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
+  const language = autoLanguage
+    ? undefined
+    : recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
   const res = await fetchServer(
     `${apiBase}/api/voice/transcribe`,
     {
@@ -176,7 +177,7 @@ export async function transcribeClip(
         audioBase64: clip.base64,
         mimeType: clip.mimeType,
         language,
-        callId: currentCallId,
+        callId,
       }),
       signal,
     },

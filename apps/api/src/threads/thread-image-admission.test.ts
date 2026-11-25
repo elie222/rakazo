@@ -167,17 +167,16 @@ describe("current image send admission", () => {
             kind: "openai_compatible",
             baseUrl: "https://model.example.test/v1",
             enabledModelIds: ["custom-model"],
-            visionModelIds: images ? ["custom-model"] : [],
+            models: { "custom-model": { images } },
           }),
         ),
       },
     };
     if (images) await expect(send(configuration)).resolves.toMatchObject({ runId: "run-1" });
-    // A custom endpoint is never known to be text-only; image input is just not turned on.
     else
       await expect(send(configuration)).rejects.toMatchObject({
         code: "CONFLICT",
-        message: "Image input is not configured for this model.",
+        message: "This model cannot read images. Choose a model that supports images.",
       });
   });
 
@@ -307,7 +306,7 @@ describe("current image send admission", () => {
     );
   });
 
-  it("asks to configure image input for a legacy custom connection that never set it", async () => {
+  it("lets a custom model that never set image input read images", async () => {
     const { tx, send } = fixture();
     tx.bot.findFirst.mockResolvedValue({
       id: "bot-1",
@@ -332,10 +331,7 @@ describe("current image send admission", () => {
         ),
       },
     };
-    await expect(send(configuration)).rejects.toMatchObject({
-      code: "CONFLICT",
-      message: "Image input is not configured for this model.",
-    });
+    await expect(send(configuration)).resolves.toMatchObject({ runId: "run-1" });
   });
 
   it("follows a listed-only model's own image setting, but never over the catalog", async () => {

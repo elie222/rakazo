@@ -8,7 +8,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageStateSaver } from "../../lib/pages/page-state";
 import type { PageSession } from "../../lib/pages/pages";
-import { PAGE_PARAM, useMedia, usePageDocument, usePageSession } from "../../lib/pages/pages";
+import {
+  PAGE_PARAM,
+  useMedia,
+  usePageDocument,
+  usePageSession,
+  useReviewedPageContent,
+} from "../../lib/pages/pages";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorCode } from "../../lib/query/user-error";
 import { PageNotice } from "./PageNotice";
@@ -62,8 +68,9 @@ function OpenPage({
     enabled: pageId !== null,
   });
   const savedState = pageId === null ? undefined : page.data?.readerState;
+  const content = useReviewedPageContent(shownId, page.data);
   const viewer = usePageDocument(
-    page.data?.code,
+    content,
     sheet ? "background" : "card",
     true,
     DOCK_CLEARANCE,
