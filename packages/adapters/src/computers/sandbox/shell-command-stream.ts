@@ -159,6 +159,14 @@ class BoundedStreamBuffer {
     return this.tail;
   }
 
+  headCutRedactedSuffix(): number {
+    return this.head === undefined ? 0 : this.effectiveHeadRedactedSuffix();
+  }
+
+  tailCutRedactedPrefix(): number {
+    return this.head === undefined ? 0 : this.effectiveTailRedactedPrefix();
+  }
+
   append(chunk: string): void {
     if (!chunk) return;
     this.tail += chunk;
@@ -369,6 +377,43 @@ function secretSuffixPrefixBorders(text: string, secret: string, maxLen: number)
   return mask;
 }
 
+function collectSpanningMatches(
+  stdoutTail: string,
+  stderrHead: string,
+  secrets: readonly string[],
+): Array<{ maxPrefixLen: number; maxSuffixLen: number }> {
+  const spans: Array<{ maxPrefixLen: number; maxSuffixLen: number }> = [];
+  for (const secret of secrets) {
+    if (secret.length < 2) continue;
+    const headLen = Math.min(secret.length - 1, stdoutTail.length);
+    const tailLen = Math.min(secret.length - 1, stderrHead.length);
+    if (headLen + tailLen < secret.length) continue;
+    const boundary = stdoutTail.slice(stdoutTail.length - headLen) + stderrHead.slice(0, tailLen);
+    const minStart = Math.max(0, headLen - secret.length + 1);
+    let minIdx = -1;
+    let maxIdx = -1;
+    kmpSearchStarts(boundary, secret, minStart, headLen, (idx) => {
+      if (idx + secret.length <= headLen) return;
+      if (minIdx < 0) minIdx = idx;
+      maxIdx = idx;
+    });
+    if (minIdx >= 0) {
+      spans.push({
+        maxPrefixLen: headLen - minIdx,
+        maxSuffixLen: maxIdx + secret.length - headLen,
+      });
+    }
+  }
+  return spans;
+}
+
+function secretContinuationLen(text: string, secret: string, offset: number): number {
+  const limit = Math.min(text.length, secret.length - offset);
+  let size = 0;
+  while (size < limit && text.charCodeAt(size) === secret.charCodeAt(offset + size)) size += 1;
+  return size;
+}
+
 function redactCompactedStreams(
   stdout: BoundedStreamBuffer,
   stderr: BoundedStreamBuffer,
@@ -417,6 +462,44 @@ function redactCompactedStreams(
               stderrLeading = stderrHead.length;
             }
           });
+        }
+      }
+      // Collect ordinary spanning secrets from the raw boundary before applying any cut mask so
+      // masking one secret cannot hide the boundary text needed to detect an overlapping secret.
+      const stdoutTailPrefix = stdout.compacted ? stdout.tailCutRedactedPrefix() : 0;
+      const stderrHeadSuffix = stderr.compacted ? stderr.headCutRedactedSuffix() : 0;
+      if (stdoutTrailing > 0 || stderrLeading > 0 || stdoutTailPrefix > 0 || stderrHeadSuffix > 0) {
+        const rawSpans = collectSpanningMatches(stdoutTail, stderrHead, secrets);
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const { maxPrefixLen, maxSuffixLen } of rawSpans) {
+            const touchesMask =
+              stdoutTrailing > 0 ||
+              stderrLeading > 0 ||
+              (stdoutTailPrefix > 0 && stdoutTailPrefix > stdoutTail.length - maxPrefixLen) ||
+              (stderrHeadSuffix > 0 && stderrHeadSuffix > stderrHead.length - maxSuffixLen);
+            if (!touchesMask) continue;
+            if (maxPrefixLen > stdoutTrailing) {
+              stdoutTrailing = maxPrefixLen;
+              grew = true;
+            }
+            if (maxSuffixLen > stderrLeading) {
+              stderrLeading = maxSuffixLen;
+              grew = true;
+            }
+          }
+        }
+        if (withholdPartial && (stdoutTrailing > 0 || stderrLeading > 0)) {
+          for (const secret of secrets) {
+            if (secret.length < 2) continue;
+            const prefixLen = secretPrefixSuffixLength(stdoutTail, secret);
+            if (prefixLen > 0) {
+              stdoutTrailing = Math.max(stdoutTrailing, prefixLen);
+              const cont = secretContinuationLen(stderrHead, secret, prefixLen);
+              if (cont > 0) stderrLeading = Math.max(stderrLeading, cont);
+            }
+          }
         }
       }
     }

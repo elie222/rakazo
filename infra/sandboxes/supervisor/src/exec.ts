@@ -433,21 +433,31 @@ async function readContainerFileSpooled(
     let streamSettled = false;
     let cleanedUp = false;
     let cleanupPromise: Promise<void> | undefined;
+    const markSettled = () => {
+      if (streamSettled) return false;
+      streamSettled = true;
+      signal?.removeEventListener("abort", onBodyAbort);
+      return true;
+    };
+    const errorStream = (ctrl: ReadableStreamDefaultController<Uint8Array>, reason: unknown) => {
+      if (!markSettled()) return;
+      try {
+        ctrl.error(reason);
+      } catch {
+        // Stream may already be closed or cancelled.
+      }
+    };
     const onBodyAbort = () => {
-      if (!streamSettled && bodyController) {
-        streamSettled = true;
-        try {
-          bodyController.error(signal?.reason ?? new Error("file read cancelled"));
-        } catch {
-          // Stream may already be closed or cancelled.
-        }
+      if (bodyController) {
+        errorStream(bodyController, signal?.reason ?? new Error("file read cancelled"));
+      } else {
+        markSettled();
       }
       void bestEffort("cleanup spooled file read", cleanupStream());
     };
     const cleanupStream = () => {
       if (!cleanupPromise) {
         cleanedUp = true;
-        signal?.removeEventListener("abort", onBodyAbort);
         cleanupPromise = (async () => {
           const pendingOpen = opening;
           if (pendingOpen) {
@@ -489,10 +499,7 @@ async function readContainerFileSpooled(
           try {
             if (signal?.aborted) {
               await cleanupStream();
-              if (!streamSettled) {
-                streamSettled = true;
-                ctrl.error(signal.reason ?? new Error("file read cancelled"));
-              }
+              errorStream(ctrl, signal.reason ?? new Error("file read cancelled"));
               return;
             }
             if (cleanedUp) return;
@@ -520,8 +527,11 @@ async function readContainerFileSpooled(
             if (cleanedUp) return;
             if (bytesRead === 0) {
               await cleanupStream();
-              if (!streamSettled) {
-                streamSettled = true;
+              if (signal?.aborted) {
+                errorStream(ctrl, signal.reason ?? new Error("file read cancelled"));
+                return;
+              }
+              if (markSettled()) {
                 ctrl.enqueue(encoder.encode('"}'));
                 ctrl.close();
               }
@@ -531,14 +541,11 @@ async function readContainerFileSpooled(
           } catch (error) {
             const wasCancelled = cleanedUp;
             await cleanupStream();
-            if (!wasCancelled && !streamSettled) {
-              streamSettled = true;
-              ctrl.error(error);
-            }
+            if (!wasCancelled) errorStream(ctrl, error);
           }
         },
         async cancel() {
-          streamSettled = true;
+          markSettled();
           await cleanupStream();
         },
       },

@@ -2,13 +2,35 @@ import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { Duplex, PassThrough, Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type Docker from "dockerode";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readContainerFile, runContainerCommand, writeContainerFile } from "./exec.js";
 import { createDockerStreamDemuxer } from "./supervisor-logic.js";
 
-const mock = vi.hoisted(() => ({ exec: vi.fn(), inspect: vi.fn() }));
+const mock = vi.hoisted(() => ({
+  exec: vi.fn(),
+  inspect: vi.fn(),
+  onNextClose: undefined as (() => Promise<void>) | undefined,
+}));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args);
+      const hook = mock.onNextClose;
+      if (!hook) return handle;
+      mock.onNextClose = undefined;
+      const origClose = handle.close.bind(handle);
+      handle.close = async () => {
+        await hook();
+        return origClose();
+      };
+      return handle;
+    },
+  };
+});
 vi.mock("dockerode", () => ({
   default: class {
     getContainer() {
@@ -585,6 +607,70 @@ describe("POST /computers/:id/exec streaming", () => {
     const unconsumedOutcome = await unconsumedPromise;
     expect(unconsumedOutcome.kind).toBe("stream");
     unconsumedAbort.abort(new Error("client disconnected early"));
+    await vi.waitFor(async () => {
+      const remaining = (await readdir(tmpdir())).filter(
+        (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),
+      );
+      expect(remaining).toEqual([]);
+    });
+
+    // 4. Aborting while EOF spool close() is held rejects the pending read before cleanup resumes.
+    const eofStream = new PassThrough();
+    const eofAbort = new AbortController();
+    const eofContainer = {
+      exec: vi.fn(async () => ({
+        start: async () => eofStream,
+        inspect: async () => ({ ExitCode: 0 }),
+      })),
+    } as unknown as Docker.Container;
+    const eofOutcomePromise = readContainerFile(eofContainer, "/home/rakazo/ok.bin", {
+      maxBytes: 6,
+      signal: eofAbort.signal,
+    });
+    await vi.waitFor(() => expect(eofContainer.exec).toHaveBeenCalledOnce());
+    eofStream.write(frame(1, part1));
+    eofStream.end();
+    const eofOutcome = await eofOutcomePromise;
+    expect(eofOutcome.kind).toBe("stream");
+    if (eofOutcome.kind !== "stream") return;
+
+    const eofReader = eofOutcome.body.getReader();
+    await eofReader.read(); // '{"content":"'
+
+    const closeStarted = deferred();
+    const closeGate = deferred();
+    mock.onNextClose = async () => {
+      closeStarted.resolve();
+      await closeGate.promise;
+    };
+    try {
+      await eofReader.read(); // opens read handle (wrapping close) and returns part1
+      const pendingEofRead = eofReader.read();
+      await closeStarted.promise;
+      let outcome:
+        | { settled: "resolved"; value: unknown }
+        | { settled: "rejected"; error: unknown }
+        | undefined;
+      void pendingEofRead.then(
+        (value) => {
+          outcome = { settled: "resolved", value };
+        },
+        (error: unknown) => {
+          outcome = { settled: "rejected", error };
+        },
+      );
+      eofAbort.abort(new Error("aborted during eof cleanup"));
+      await flush();
+      expect(outcome?.settled).toBe("rejected");
+      if (outcome?.settled === "rejected") {
+        expect(outcome.error).toBeInstanceOf(Error);
+        expect((outcome.error as Error).message).toBe("aborted during eof cleanup");
+      }
+      closeGate.resolve();
+    } finally {
+      mock.onNextClose = undefined;
+      closeGate.resolve();
+    }
     await vi.waitFor(async () => {
       const remaining = (await readdir(tmpdir())).filter(
         (name) => name.startsWith("rakazo-file-read-") && !beforeSpools.has(name),

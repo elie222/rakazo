@@ -626,6 +626,65 @@ describe("observeShellCommand", () => {
     expect(bothObserved.result.stdout).not.toContain("mmmmmm");
     expect(bothObserved.result.stderr).not.toContain("zzzzzz");
     expect(bothObserved.result.stderr).toContain("BOTH_OK");
+
+    // Overlapping spanning secret must not leak its outer prefix when another secret masks the inner cut.
+    const innerSecret = `INNER_${"K".repeat(70_000)}_END`;
+    const outerSecret = "OUTER_LEAK_INNER_KKKK";
+    const overlapSecrets = [outerSecret];
+    const overlapGate = deferred();
+    const overlapObserved = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: "ok:OUTER_LEAK_INNER_" };
+        yield {
+          type: "stderr" as const,
+          data: `${"K".repeat(70_000)}_END\n${"n".repeat(250_000)}\nOVERLAP_OK\n`,
+        };
+        await overlapGate.promise;
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets: overlapSecrets,
+        onOutput: (snapshot) => {
+          if (overlapSecrets.length === 1 && snapshot.stderr.includes("characters omitted")) {
+            overlapSecrets.push(innerSecret);
+            overlapGate.resolve();
+          }
+        },
+      },
+    );
+    expect(overlapObserved.result.stdout).toBe("ok:[redacted]");
+    expect(overlapObserved.result.stdout).not.toContain("OUTER_LEAK_");
+    expect(overlapObserved.result.stderr).not.toContain("KKKKKK");
+    expect(overlapObserved.result.stderr).toContain("OVERLAP_OK");
+
+    // Repeated 16 KiB spanning secret over a compacted boundary stays linear via KMP.
+    const repeatedBoundarySecret = "q".repeat(16_384);
+    const linearGate = deferred();
+    const linearSecrets = [repeatedBoundarySecret];
+    await expectLinearTime(async () => {
+      const linearObserved = await observeShellCommand(
+        (async function* () {
+          yield { type: "stdout" as const, data: `head:${"q".repeat(16_383)}` };
+          yield {
+            type: "stderr" as const,
+            data: `${"q".repeat(16_383)}\n${"x".repeat(250_000)}\nLIN_OK\n`,
+          };
+          await linearGate.promise;
+          yield { type: "exit" as const, code: 0 };
+        })(),
+        {
+          secrets: linearSecrets,
+          onOutput: (snapshot) => {
+            if (linearSecrets.length === 1 && snapshot.stderr.includes("characters omitted")) {
+              linearSecrets.push(`q${"q".repeat(70_000)}`);
+              linearGate.resolve();
+            }
+          },
+        },
+      );
+      expect(linearObserved.result.stdout).toBe("head:[redacted]");
+      expect(linearObserved.result.stderr).toContain("LIN_OK");
+    });
   });
 
   it("throttles live onOutput snapshots when onOutputIntervalMs is set", async () => {
