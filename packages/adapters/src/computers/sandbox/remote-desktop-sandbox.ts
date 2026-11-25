@@ -26,6 +26,7 @@ import {
   shellQuote,
   workspaceCwd,
   workspacePath,
+  workspaceRelativePath,
 } from "../screens/computer-support.js";
 import {
   LinuxDesktop,
@@ -564,7 +565,7 @@ export class RemoteDesktopSandboxProvider extends LinuxDesktopSandbox implements
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeWorkspacePath(directory);
+    const relative = workspaceRelativePath(REMOTE_WORKSPACE, directory);
     const entries = await this.use(computer, (desktop) =>
       desktop.files.list(workspacePath(REMOTE_WORKSPACE, relative), { signal: context.signal }),
     );

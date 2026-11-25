@@ -46,6 +46,7 @@ import {
   shellQuote,
   workspaceCwd,
   workspacePath,
+  workspaceRelativePath,
 } from "../../../computers/screens/computer-support.js";
 import {
   LinuxDesktop,
@@ -364,9 +365,10 @@ export class DaytonaSandboxProvider extends LinuxDesktopSandbox implements Sandb
     _context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
     const sandbox = await this.box(computer);
-    const relative = normalizeWorkspacePath(directory);
+    const root = await this.workspaceRoot(sandbox);
+    const relative = workspaceRelativePath(root, directory);
     const entries = await sandbox.fs
-      .listFiles(workspacePath(await this.workspaceRoot(sandbox), relative))
+      .listFiles(workspacePath(root, relative))
       .catch(async (error: unknown) => {
         throw (await daytonaRateLimitError(error)) ?? error;
       });
