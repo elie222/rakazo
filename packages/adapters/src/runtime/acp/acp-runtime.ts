@@ -14,6 +14,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { abortableDelay, pollUntil } from "@rakazo/core";
 import { bestEffort, getLogger } from "@rakazo/logging";
+import { isTerminatingReplyResult, terminatingReplyText } from "../../approvals/approval-effect.js";
 import { cliEnv, privateFolder } from "../../cli-models/cli-process.js";
 import type { PersonalCliAccessCheck } from "../../cli-models/personal-access.js";
 import { deliverFinishedShells } from "../../computers/sandbox/shell-command-stream.js";
@@ -26,6 +27,7 @@ import {
   createQueue,
   releaseToolCallBudget,
   toAgentTools,
+  toolCallBudgetExceededMessage,
   toolCallBudgetFor,
 } from "../pi/tools/pi-runtime-tools.js";
 import { fallbackSystemPrompt } from "../runtime.prompt.js";
@@ -192,6 +194,8 @@ async function runAcpTurn(
   let sentPrompt = false;
   let replied = false;
   let replyText = "";
+  /** The final reply a tool that ends the turn carries. */
+  let terminatedReply: string | undefined;
   /** The CLI reported something about the new message, so it has it. */
   let promptHeard = false;
   let violation: Error | undefined;
@@ -258,6 +262,9 @@ async function runAcpTurn(
           { toolResults: [{ toolName: name, details: result?.details }] },
           signal,
         );
+        if (isTerminatingReplyResult(result)) {
+          terminatedReply = terminatingReplyText(result) ?? terminatedReply;
+        }
         return toolResult(result, finished);
       } catch (error) {
         return errorResult(
@@ -286,6 +293,8 @@ async function runAcpTurn(
           if (!text) return;
           if (afterTool) {
             afterTool = false;
+            // A later reply supersedes what a turn-ending tool carried.
+            terminatedReply = undefined;
             host.modelResponses = (host.modelResponses ?? 0) + 1;
             push({ type: "turn" });
           }
@@ -486,6 +495,19 @@ async function runAcpTurn(
       throw new Error(`${descriptor.label} stopped the turn before it finished.`);
     }
     await reportUsage(request, descriptor, response.usage, push);
+    // The same endings as a turn in the runtime this one wraps.
+    const ending = toolBudget.exceeded
+      ? toolCallBudgetExceededMessage(toolBudget.limit)
+      : !host.pausePending && terminatedReply
+        ? terminatedReply
+        : !host.pausePending && !replyText.trim() && !request.allowSilentEmpty
+          ? request.emptyResponseText?.trim() || "No response. Try again."
+          : undefined;
+    if (ending) {
+      const text = replyText.trim() ? `\n\n${ending}` : ending;
+      push({ type: "text", text });
+      replyText += text;
+    }
     replied = true;
     // So the chat's session can tell its own replies from those written elsewhere.
     if (replyText.trim()) current.replies.add(contentHash(replyText.trim()));
@@ -510,9 +532,8 @@ async function runAcpTurn(
     throw error;
   } finally {
     releaseToolCallBudget(request.runId, false);
-    if (ownsChatSession) releaseSession(key);
     // A turn beside the chat's own wrote a reply its session never saw; the next turn sends it.
-    else if (!oneShot && replied) noteReplyElsewhere(key);
+    if (!ownsChatSession && !oneShot && replied) noteReplyElsewhere(key);
     if (connection) {
       // Give a cancelled turn a moment to settle so the CLI saves the session cleanly.
       if (inFlight && sessionId) {
@@ -543,6 +564,8 @@ async function runAcpTurn(
       connection.stop();
     }
     await closeToolServer?.();
+    // Only once the CLI is gone may the chat's next turn continue its session.
+    if (ownsChatSession) releaseSession(key);
     await bestEffort(
       "Remove the agent CLI's turn files",
       rm(files, { recursive: true, force: true }),

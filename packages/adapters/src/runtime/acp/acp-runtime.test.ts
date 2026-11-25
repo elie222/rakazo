@@ -386,6 +386,17 @@ describe("acpAgentRuntime", () => {
     expect(onModelChange).toHaveBeenCalledWith("openrouter", "some/backup");
   });
 
+  it("answers with the run's fallback text when the agent ends without a reply", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+
+    const { text } = await collect(
+      runtime,
+      request({ prompt: "stay silent", emptyResponseText: "Nothing to add." }),
+    );
+
+    expect(text).toBe("Nothing to add.");
+  });
+
   it("reports the agent's error answer", async () => {
     const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
 

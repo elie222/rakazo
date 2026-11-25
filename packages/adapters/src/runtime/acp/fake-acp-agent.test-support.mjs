@@ -6,6 +6,7 @@
 //   "native"      reports a call to a tool of its own
 //   "permission"  asks permission to run a tool of its own
 //   "fail"        answers the prompt with an error
+//   "silent"      ends the turn without a reply
 // anything else gets the reply "ok".
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
@@ -111,6 +112,7 @@ async function prompt(params) {
     sessionUpdate: "agent_thought_chunk",
     content: { type: "text", text: "hmm" },
   });
+  if (text.includes("silent")) return { stopReason: "end_turn" };
   if (text.includes("weather")) {
     update(sessionId, {
       sessionUpdate: "agent_message_chunk",
