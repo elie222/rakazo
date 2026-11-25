@@ -117,7 +117,7 @@ export function ConnectionControls({
                 (selected?.oauthLabel ?? t`Sign in`)
               )
             }
-            starting={oauthPending}
+            starting={oauthPending === "own"}
             disabled={busy}
             onStart={() => beginSelectedSubscriptionSignIn()}
             onRestart={() => {
@@ -141,7 +141,11 @@ export function ConnectionControls({
                 disabled={busy}
                 onClick={() => beginSelectedSubscriptionSignIn(true)}
               >
-                {selected.alternativeSignIn.loginLabel}
+                {oauthPending === "alternative" ? (
+                  <Trans>Starting…</Trans>
+                ) : (
+                  selected.alternativeSignIn.loginLabel
+                )}
               </Button>
             </div>
           ) : null}

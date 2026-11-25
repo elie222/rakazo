@@ -6,7 +6,7 @@ import type {
   ModelSignInCancelReason,
   ThinkingLevel,
 } from "@rakazo/contracts";
-import { clampCatalogThinkingLevel } from "@rakazo/core";
+import { subscriptionSignInTarget } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import type { RefObject } from "react";
 import { useCallback, useRef, useState } from "react";
@@ -68,7 +68,8 @@ export function useSubscriptionSignIn({
   const { t } = useLingui();
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
-  const [oauthPending, setOauthPending] = useState(false);
+  // Which sign-in is starting, so only the button that was pressed says so.
+  const [oauthPending, setOauthPending] = useState<false | "own" | "alternative">(false);
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
@@ -161,35 +162,28 @@ export function useSubscriptionSignIn({
     publishFeedback("connection", { notice: t`Subscription connected.` });
   }
 
-  async function startSubscriptionSignIn(
-    alternative?: NonNullable<MobileModel["alternativeSignIn"]>,
-  ) {
+  async function startSubscriptionSignIn(alternative = false) {
     if (!selected) return;
     clearFeedback();
-    setOauthPending(true);
+    setOauthPending(alternative ? "alternative" : "own");
     const controller = new AbortController();
     oauthAbortRef.current = controller;
     let waitingForCode = false;
+    const target = subscriptionSignInTarget(selected, {
+      alternative,
+      credentialId: credentialIdRef.current,
+      thinkingLevel,
+      credentials,
+    });
     try {
       const started = await rpc(
         "models/beginOAuth",
         {
-          provider: alternative?.provider ?? selected.provider,
-          modelId: alternative?.modelId ?? selected.id,
-          thinkingLevel: alternative
-            ? null
-            : (clampCatalogThinkingLevel(
-                thinkingLevel,
-                selected.thinkingLevels,
-              ) as ThinkingLevel | null),
+          ...target,
+          thinkingLevel: target.thinkingLevel as ThinkingLevel | null,
           makeDefault,
           scope,
           label: selected.providerName ?? selected.provider,
-          credentialId: alternative
-            ? (credentials.find(
-                (entry) => entry.provider === alternative.provider && entry.authKind === "oauth",
-              )?.id ?? null)
-            : credentialIdRef.current,
           codePage: true,
           ...analyticsClient(),
         },

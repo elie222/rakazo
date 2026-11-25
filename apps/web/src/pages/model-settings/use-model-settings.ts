@@ -7,7 +7,6 @@ import {
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
-  clampCatalogThinkingLevel,
   compatibleConnectionReady,
   compatibleModelRows,
   connectionFormFields,
@@ -16,6 +15,7 @@ import {
   modelConnectRequest,
   popularModelProvidersFirst,
   savedCompatibleModelIds,
+  subscriptionSignInTarget,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import { modelDisconnectWarning } from "@rakazo/i18n/model-disconnect";
@@ -127,6 +127,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   const selectionRevisionRef = useRef(0);
   const formRevisionRef = useRef(0);
   const selectedLabelRef = useRef<string | undefined>(undefined);
+  // Which sign-in is starting, so only the button that was pressed says so.
+  const [alternativeStarted, setAlternativeStarted] = useState(false);
 
   const {
     oauth,
@@ -459,32 +461,24 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
 
   function beginSelectedSubscriptionSignIn(alternative = false) {
     if (!selected) return;
-    const method = alternative ? selected.alternativeSignIn : undefined;
     setNotice(null);
+    setAlternativeStarted(alternative);
     const intent = intentRef.current;
+    const target = subscriptionSignInTarget(selected, {
+      alternative,
+      credentialId: credential?.id ?? null,
+      thinkingLevel,
+      credentials,
+    });
     oauthChoiceRef.current = {
-      choice: {
-        provider: method?.provider ?? selected.provider,
-        modelId: method?.modelId ?? selected.id,
-      },
+      choice: { provider: target.provider, modelId: target.modelId },
       intent,
     };
     void startSubscriptionSignIn({
-      provider: method?.provider ?? selected.provider,
-      credentialId: method
-        ? (credentials.find(
-            (entry) => entry.provider === method.provider && entry.authKind === "oauth",
-          )?.id ?? null)
-        : (credential?.id ?? null),
-      modelId: method?.modelId ?? selected.id,
+      ...target,
+      thinkingLevel: target.thinkingLevel as ThinkingLevel | null,
       makeDefault: intent?.makeDefault ?? false,
       scope,
-      thinkingLevel: method
-        ? null
-        : (clampCatalogThinkingLevel(
-            thinkingLevel,
-            selected.thinkingLevels,
-          ) as ThinkingLevel | null),
       label: selected.providerName ?? selected.provider,
     });
   }
@@ -521,7 +515,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     loading,
     me,
     oauth,
-    oauthPending,
+    oauthPending:
+      oauthPending && (alternativeStarted ? ("alternative" as const) : ("own" as const)),
     openAiCompatibleReady,
     pasteCode,
     pending,

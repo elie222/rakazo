@@ -3,6 +3,25 @@ import { createManualOpenAIOAuthLogin } from "./openai-oauth.js";
 
 afterEach(() => vi.unstubAllEnvs());
 
+function signInWith(token: Response) {
+  vi.stubEnv("ENCRYPTION_KEY", "a".repeat(64));
+  let authorizeUrl = "";
+  const login = createManualOpenAIOAuthLogin({
+    verifier: "saved-verifier",
+    fetch: async () => token,
+  });
+  return login({
+    signal: new AbortController().signal,
+    notify(event) {
+      if (event.type === "auth_url") authorizeUrl = event.url;
+    },
+    async prompt() {
+      const state = new URL(authorizeUrl).searchParams.get("state");
+      return `http://127.0.0.1:1455/auth/callback?code=grant-code&state=${state}&client_id=issued-client`;
+    },
+  });
+}
+
 describe("manual ChatGPT browser sign-in", () => {
   it("exchanges a registered callback with the original verifier and issued client ID", async () => {
     vi.stubEnv("ENCRYPTION_KEY", "a".repeat(64));
@@ -94,5 +113,23 @@ describe("manual ChatGPT browser sign-in", () => {
       }),
     ).rejects.toThrow("ChatGPT callback is missing its code or issued client ID.");
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it("takes a token response without scope as granting the requested scopes", async () => {
+    const credential = await signInWith(
+      Response.json({
+        access_token: "access",
+        refresh_token: "refresh",
+        id_token: "id",
+        expires_in: 3600,
+      }),
+    );
+    expect(credential.scopes).toContain("chatgpt.tokens.use.direct");
+  });
+
+  it("reports a token response that is not JSON as invalid", async () => {
+    await expect(signInWith(new Response("<html>bad gateway</html>"))).rejects.toThrow(
+      "ChatGPT token response is invalid.",
+    );
   });
 });

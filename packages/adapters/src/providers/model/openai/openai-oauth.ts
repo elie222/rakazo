@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, scrypt } from "node:crypto";
 import type { AuthInteraction, OAuthCredential } from "@earendil-works/pi-ai";
 import { deadlineSignal, readResponseWithin } from "@rakazo/core";
 
@@ -19,14 +19,32 @@ function derivedValue(verifier: string, purpose: string): string {
     .digest("base64url");
 }
 
-function agentHostId(): string {
+// The id appears in every sign-in link, so it comes from a slow hash: a cheap one would let
+// anyone who can start a sign-in test guesses at the encryption key offline.
+const HOST_ID_SCRYPT = { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 } as const;
+let hostIdCache: { key: string; id: Promise<string> } | undefined;
+
+function agentHostId(): Promise<string> {
   const key = process.env.ENCRYPTION_KEY;
   if (!key) throw new Error("ChatGPT sign-in needs the server encryption key.");
-  const bytes = createHash("sha256").update("rakazo:agent-host:v1\0").update(key).digest();
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
-  const id = bytes.toString("hex", 0, 16);
-  return `urn:uuid:${id.slice(0, 8)}-${id.slice(8, 12)}-${id.slice(12, 16)}-${id.slice(16, 20)}-${id.slice(20)}`;
+  if (hostIdCache?.key !== key) {
+    const id = new Promise<string>((resolve, reject) =>
+      scrypt(key, "rakazo:agent-host:v1", 16, HOST_ID_SCRYPT, (error, bytes) => {
+        if (error) return reject(error);
+        bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+        bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+        const hex = bytes.toString("hex");
+        resolve(
+          `urn:uuid:${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`,
+        );
+      }),
+    );
+    hostIdCache = { key, id };
+    id.catch(() => {
+      if (hostIdCache?.id === id) hostIdCache = undefined;
+    });
+  }
+  return hostIdCache.id;
 }
 
 /** The browser callback is pasted into Rakazo; the verifier is stored for an API process hand-off. */
@@ -41,7 +59,7 @@ export function createManualOpenAIOAuthLogin(options: Options = {}) {
     authorization.search = new URLSearchParams({
       client_id: "dynamic_agent_client",
       agent_name_hint: "Rakazo",
-      ext_agent_host_id: agentHostId(),
+      ext_agent_host_id: await agentHostId(),
       response_type: "code",
       redirect_uri: REDIRECT_URI,
       resource: RESOURCE,
@@ -103,10 +121,16 @@ export function createManualOpenAIOAuthLogin(options: Options = {}) {
       tooLargeMessage: "ChatGPT token response is too large.",
       signal,
     });
-    const data: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    let data: unknown;
+    try {
+      data = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      throw new Error("ChatGPT token response is invalid.");
+    }
     if (!data || typeof data !== "object") throw new Error("ChatGPT token response is invalid.");
     const token = data as Record<string, unknown>;
-    const scopes = typeof token.scope === "string" ? token.scope.trim().split(/\s+/) : [];
+    // A token response may leave out scope when it grants exactly what was asked (RFC 6749 §5.1).
+    const scopes = (typeof token.scope === "string" ? token.scope : SCOPE).trim().split(/\s+/);
     if (
       typeof token.access_token !== "string" ||
       !token.access_token ||

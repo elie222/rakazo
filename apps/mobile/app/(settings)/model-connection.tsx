@@ -323,7 +323,7 @@ export default function ModelConnection() {
   });
   const acceptsKey = selected?.auth !== "oauth";
   const subscriptionSignIn = selected?.signIn !== undefined;
-  const busy = pending !== null || oauthPending;
+  const busy = pending !== null || oauthPending !== false;
   const openAiCompatibleReady = compatibleConnectionReady({
     apiKey,
     baseUrl,
@@ -669,9 +669,7 @@ export default function ModelConnection() {
                 onPress={() => {
                   cancelOAuth("replaced");
                   void startSubscriptionSignIn(
-                    oauth.provider === selected?.alternativeSignIn?.provider
-                      ? selected.alternativeSignIn
-                      : undefined,
+                    oauth.provider === selected?.alternativeSignIn?.provider,
                   );
                 }}
                 prominence="secondary"
@@ -684,7 +682,7 @@ export default function ModelConnection() {
                 disabled={busy}
                 fill
                 label={
-                  oauthPending
+                  oauthPending === "own"
                     ? t`Starting…`
                     : credential?.authKind === "oauth"
                       ? t`Sign in again`
@@ -700,8 +698,12 @@ export default function ModelConnection() {
                 <NativeActionButton
                   disabled={busy}
                   fill
-                  label={selected.alternativeSignIn.loginLabel}
-                  onPress={() => void startSubscriptionSignIn(selected.alternativeSignIn)}
+                  label={
+                    oauthPending === "alternative"
+                      ? t`Starting…`
+                      : selected.alternativeSignIn.loginLabel
+                  }
+                  onPress={() => void startSubscriptionSignIn(true)}
                   prominence="secondary"
                   style={{ marginTop: 12 }}
                 />
