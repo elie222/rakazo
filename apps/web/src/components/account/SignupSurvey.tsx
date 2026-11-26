@@ -63,24 +63,16 @@ export function SignupSurvey({ onDone }: { onDone: () => void }) {
         value={use ? [use] : []}
         onValueChange={([next]) => setUse((next as Use | undefined) ?? null)}
         spacing={1}
-        className="mt-2 grid w-full grid-cols-3 rounded-lg bg-muted p-1"
+        variant="segmented"
+        className="mt-2 grid w-full grid-cols-3"
       >
-        <ToggleGroupItem
-          value="personal"
-          className="aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
-        >
+        <ToggleGroupItem value="personal" className="text-body">
           <Trans>Personal</Trans>
         </ToggleGroupItem>
-        <ToggleGroupItem
-          value="work"
-          className="aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
-        >
+        <ToggleGroupItem value="work" className="text-body">
           <Trans>Work</Trans>
         </ToggleGroupItem>
-        <ToggleGroupItem
-          value="both"
-          className="aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
-        >
+        <ToggleGroupItem value="both" className="text-body">
           <Trans>Both</Trans>
         </ToggleGroupItem>
       </ToggleGroup>

@@ -38,10 +38,6 @@ import { errorText } from "../../lib/query/user-error";
 import { SpendingLimitSettings } from "../billing/SpendingLimitSettings";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
 
-const segmented = "rounded-lg bg-muted p-1";
-const segment =
-  "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50";
-
 type Change =
   | { kind: "mode"; mode: ApprovalMode }
   | { kind: "rule"; rule: Pick<ActionApprovalRule, "effect" | "matchKind" | "matchValue"> }
@@ -153,10 +149,11 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
               }}
               disabled={loading || saving || !autoReview}
               spacing={1}
-              className={segmented}
+              variant="segmented"
+              size="sm"
             >
               {modes.map(({ mode, label }) => (
-                <ToggleGroupItem key={mode} value={mode} className={segment}>
+                <ToggleGroupItem key={mode} value={mode}>
                   {label}
                 </ToggleGroupItem>
               ))}
@@ -332,10 +329,11 @@ function RuleControls({
           }}
           disabled={disabled}
           spacing={1}
-          className={segmented}
+          variant="segmented"
+          size="sm"
         >
           {effects.map((effect) => (
-            <ToggleGroupItem key={effect} value={effect} className={segment}>
+            <ToggleGroupItem key={effect} value={effect}>
               {options[effect]}
             </ToggleGroupItem>
           ))}

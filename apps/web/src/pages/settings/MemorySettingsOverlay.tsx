@@ -54,7 +54,7 @@ function ScopePicker({
             pressed={value === option}
             disabled={disabled}
             onPressedChange={() => onChange(option)}
-            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
+            variant="segmented"
           >
             {option === "isolated" ? <Trans>Isolated</Trans> : <Trans>Shared</Trans>}
           </Toggle>
