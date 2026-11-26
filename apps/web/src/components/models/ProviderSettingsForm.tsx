@@ -102,7 +102,7 @@ function Segmented({
           <ToggleGroupItem
             key={option.value}
             value={option.value}
-            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
           >
             {option.label}
           </ToggleGroupItem>

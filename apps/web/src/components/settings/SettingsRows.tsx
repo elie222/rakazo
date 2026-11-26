@@ -18,7 +18,8 @@ export function SettingsGroup({
   return (
     <section data-testid={testId}>
       {title ? (
-        <div className="mb-2 flex items-center justify-between gap-3 px-1">
+        // Inset by the group's border and row padding, so the title starts where row text does.
+        <div className="mx-px mb-2 flex items-center justify-between gap-3 px-4">
           <h3 className="text-body font-medium text-foreground">{title}</h3>
           {action}
         </div>

@@ -67,14 +67,20 @@ export function SignupSurvey({ onDone }: { onDone: () => void }) {
       >
         <ToggleGroupItem
           value="personal"
-          className="aria-pressed:bg-background aria-pressed:shadow-sm"
+          className="aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
         >
           <Trans>Personal</Trans>
         </ToggleGroupItem>
-        <ToggleGroupItem value="work" className="aria-pressed:bg-background aria-pressed:shadow-sm">
+        <ToggleGroupItem
+          value="work"
+          className="aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
+        >
           <Trans>Work</Trans>
         </ToggleGroupItem>
-        <ToggleGroupItem value="both" className="aria-pressed:bg-background aria-pressed:shadow-sm">
+        <ToggleGroupItem
+          value="both"
+          className="aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
+        >
           <Trans>Both</Trans>
         </ToggleGroupItem>
       </ToggleGroup>

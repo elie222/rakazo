@@ -176,7 +176,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
               <ToggleGroupItem
                 key={r.id}
                 value={r.id}
-                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
               >
                 {r.label}
               </ToggleGroupItem>

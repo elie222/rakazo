@@ -14,10 +14,11 @@ import {
   Toggle,
 } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { XIcon } from "lucide-react";
+import { Plus, XIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import type { ProviderSettingsDraft } from "../../components/models/ProviderSettingsForm";
 import { ProviderSettingsForm } from "../../components/models/ProviderSettingsForm";
+import { Notice } from "../../components/Notice";
 import { SETTINGS_CONTENT_WIDTH } from "../../components/settings/SettingsRows";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorCode, errorText } from "../../lib/query/user-error";
@@ -53,7 +54,7 @@ function ScopePicker({
             pressed={value === option}
             disabled={disabled}
             onPressedChange={() => onChange(option)}
-            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+            className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
           >
             {option === "isolated" ? <Trans>Isolated</Trans> : <Trans>Shared</Trans>}
           </Toggle>
@@ -168,13 +169,7 @@ export function MemorySettingsOverlay({
       ) : null}
 
       <div className="rk-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pb-6 pt-6 sm:px-8 sm:pb-8">
-        <div className={`space-y-5 ${SETTINGS_CONTENT_WIDTH}`}>
-          {error ? (
-            <p role="alert" className="text-body-sm text-destructive">
-              {error}
-            </p>
-          ) : null}
-
+        <div className={`space-y-8 ${SETTINGS_CONTENT_WIDTH}`}>
           <SpaceMemorySection />
 
           {providers === undefined && providersQuery.isError ? (
@@ -188,134 +183,146 @@ export function MemorySettingsOverlay({
             <p className="text-body-sm text-muted-foreground">
               <Spinner aria-label={t`Loading memory settings…`} />
             </p>
-          ) : config ? (
-            <section className="rounded-xl border border-border px-4 py-4">
-              <div className="flex items-center justify-between gap-3">
-                <SectionHeading variant="heading">{nameOf(config.provider)}</SectionHeading>
-                <span className="text-body-sm text-success">
-                  <Trans>Connected</Trans>
-                </span>
+          ) : (
+            <section className="space-y-3">
+              {/* Inset like the card's content, so the heading starts where its text does. */}
+              <div className="flex items-center justify-between gap-3 px-4">
+                <SectionHeading variant="heading">
+                  <Trans>Memory provider</Trans>
+                </SectionHeading>
+                {config ? (
+                  <span className="text-body-sm text-success">
+                    <Trans>Connected</Trans>
+                  </span>
+                ) : !addingProvider ? (
+                  <Button variant="secondary" type="button" onClick={() => setAddingProvider(true)}>
+                    <Plus data-icon="inline-start" />
+                    <Trans>Connect</Trans>
+                  </Button>
+                ) : null}
               </div>
-              <p className="mt-1 text-body-sm text-muted-foreground">
-                {config.connectionLabel ?? config.provider}
-              </p>
-              <div className="mt-4">
-                <ScopePicker
-                  value={defaultScope}
-                  disabled={busy}
-                  onChange={(scope) => {
-                    if (scope !== defaultScope) change.run({ kind: "scope", scope });
-                  }}
-                />
-              </div>
-              {editingProvider && descriptor ? (
-                <>
+              {/* Every save on this page acts on the provider, so its failures show here. */}
+              {error ? <Notice tone="error">{error}</Notice> : null}
+              {config ? (
+                <div className="rounded-xl bg-muted/50 p-4">
+                  <p className="text-body font-medium text-foreground">{nameOf(config.provider)}</p>
+                  <p className="mt-1 text-body-sm text-muted-foreground">
+                    {config.connectionLabel ?? config.provider}
+                  </p>
+                  <div className="mt-4">
+                    <ScopePicker
+                      value={defaultScope}
+                      disabled={busy}
+                      onChange={(scope) => {
+                        if (scope !== defaultScope) change.run({ kind: "scope", scope });
+                      }}
+                    />
+                  </div>
+                  {editingProvider && descriptor ? (
+                    <>
+                      <ProviderSettingsForm
+                        fields={descriptor.fields}
+                        busy={busy}
+                        saved={config.settings}
+                        onSubmit={(draft) => change.run({ kind: "update", draft })}
+                        advancedSettings={null}
+                      />
+                      <Button
+                        variant="ghost"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          setEditingProvider(false);
+                          change.reset();
+                        }}
+                        className="mt-5 ml-2"
+                      >
+                        <Trans>Cancel</Trans>
+                      </Button>
+                    </>
+                  ) : (
+                    <div className="mt-5 flex gap-2">
+                      {descriptor ? (
+                        <Button
+                          variant="outline"
+                          type="button"
+                          disabled={busy}
+                          onClick={() => setEditingProvider(true)}
+                        >
+                          <Trans>Edit</Trans>
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="outline"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => change.run({ kind: "disconnect" })}
+                      >
+                        {busy && change.input?.kind === "disconnect" ? (
+                          <Trans>Disconnecting…</Trans>
+                        ) : (
+                          <Trans>Disconnect</Trans>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : !addingProvider ? null : descriptor ? (
+                <div className="rounded-xl bg-muted/50 p-4">
+                  <SectionHeading id={providerSelectId} variant="label">
+                    <Trans>Provider</Trans>
+                  </SectionHeading>
+                  {providers.length > 1 ? (
+                    <div className="mt-3">
+                      <OptionSelect
+                        aria-labelledby={providerSelectId}
+                        value={descriptor.id}
+                        disabled={busy}
+                        options={providers.map((entry) => ({
+                          value: entry.id,
+                          label: entry.displayName,
+                        }))}
+                        onValueChange={setSelectedProvider}
+                      />
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-body text-foreground">{descriptor.displayName}</p>
+                  )}
+
+                  <p className="mt-3 text-body-sm text-muted-foreground">
+                    <Trans>
+                      An external memory service for storing and recalling context across chats.
+                    </Trans>
+                  </p>
                   <ProviderSettingsForm
+                    key={descriptor.id}
                     fields={descriptor.fields}
                     busy={busy}
-                    saved={config.settings}
-                    onSubmit={(draft) => change.run({ kind: "update", draft })}
-                    advancedSettings={null}
-                  />
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      setEditingProvider(false);
-                      change.reset();
-                    }}
-                    className="mt-5 ml-2"
-                  >
-                    <Trans>Cancel</Trans>
-                  </Button>
-                </>
-              ) : (
-                <div className="mt-5 flex gap-2">
-                  {descriptor ? (
-                    <Button
-                      variant="outline"
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setEditingProvider(true)}
-                    >
-                      <Trans>Edit</Trans>
-                    </Button>
-                  ) : null}
-                  <Button
-                    variant="outline"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => change.run({ kind: "disconnect" })}
-                  >
-                    {busy && change.input?.kind === "disconnect" ? (
-                      <Trans>Disconnecting…</Trans>
-                    ) : (
-                      <Trans>Disconnect</Trans>
-                    )}
-                  </Button>
-                </div>
-              )}
-            </section>
-          ) : !addingProvider ? (
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => setAddingProvider(true)}
-              className="rounded-full"
-            >
-              <Trans>Connect memory provider</Trans>
-            </Button>
-          ) : descriptor ? (
-            <section className="rounded-xl border border-border px-4 py-4">
-              <SectionHeading id={providerSelectId} variant="heading">
-                <Trans>Provider</Trans>
-              </SectionHeading>
-              {providers.length > 1 ? (
-                <div className="mt-3">
-                  <OptionSelect
-                    aria-labelledby={providerSelectId}
-                    value={descriptor.id}
-                    disabled={busy}
-                    options={providers.map((entry) => ({
-                      value: entry.id,
-                      label: entry.displayName,
-                    }))}
-                    onValueChange={setSelectedProvider}
+                    onSubmit={(draft) =>
+                      change.run({
+                        kind: "connect",
+                        provider: descriptor.id,
+                        draft,
+                        scope: defaultScope,
+                      })
+                    }
+                    advancedSettings={
+                      <div className="mt-4">
+                        <ScopePicker
+                          value={defaultScope}
+                          disabled={busy}
+                          onChange={setDefaultScope}
+                        />
+                      </div>
+                    }
                   />
                 </div>
               ) : (
-                <p className="mt-3 text-body text-foreground">{descriptor.displayName}</p>
+                <p className="text-body-sm text-destructive">
+                  <Trans>The selected memory provider is not available in this build.</Trans>
+                </p>
               )}
-
-              <p className="mt-3 text-body-sm text-muted-foreground">
-                <Trans>
-                  An external memory service for storing and recalling context across chats.
-                </Trans>
-              </p>
-              <ProviderSettingsForm
-                key={descriptor.id}
-                fields={descriptor.fields}
-                busy={busy}
-                onSubmit={(draft) =>
-                  change.run({
-                    kind: "connect",
-                    provider: descriptor.id,
-                    draft,
-                    scope: defaultScope,
-                  })
-                }
-                advancedSettings={
-                  <div className="mt-4">
-                    <ScopePicker value={defaultScope} disabled={busy} onChange={setDefaultScope} />
-                  </div>
-                }
-              />
             </section>
-          ) : (
-            <p className="text-body-sm text-destructive">
-              <Trans>The selected memory provider is not available in this build.</Trans>
-            </p>
           )}
         </div>
       </div>

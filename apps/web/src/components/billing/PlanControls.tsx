@@ -34,7 +34,8 @@ export function ByokIntervalToggle({
 }) {
   const { t } = useLingui();
   const savings = byokYearlySavingsPercent(monthlyCents, annualCents);
-  const segment = "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm";
+  const segment =
+    "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50";
   return (
     <ToggleGroup
       aria-label={t`Billing period`}

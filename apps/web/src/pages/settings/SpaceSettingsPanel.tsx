@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { Button, Input } from "@rakazo/ui-web";
+import { Trash2 } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRows";
 import { SpaceMembersSettings } from "../../components/spaces/SpaceMembersSettings";
@@ -111,11 +112,8 @@ export function SpaceSettingsPanel({
         onBusyChange={setOverridesBusy}
       />
       {space.canDelete ? (
-        <Button
-          variant="destructive"
-          className="rounded-full"
-          onClick={() => setConfirmingDelete(true)}
-        >
+        <Button variant="destructive-secondary" onClick={() => setConfirmingDelete(true)}>
+          <Trash2 data-icon="inline-start" />
           <Trans>Delete space</Trans>
         </Button>
       ) : null}

@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { AccountSecurity, SignInProvider } from "@rakazo/contracts";
 import { identityConfirmationProviders } from "@rakazo/contracts";
 import { Button, Input, Label } from "@rakazo/ui-web";
+import { Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fetchAccountSecurity, requestAccountDeletionCode } from "../../lib/auth/account-security";
 import { authClient } from "../../lib/auth/auth";
@@ -24,12 +25,12 @@ export function AccountAccess({
       label={<Trans>Delete account</Trans>}
       control={
         <Button
-          variant="secondary"
+          variant="destructive-secondary"
           size="sm"
           data-testid="delete-account"
-          className="text-destructive hover:text-destructive"
           onClick={() => setOpen((value) => !value)}
         >
+          <Trash2 data-icon="inline-start" />
           <Trans>Delete</Trans>
         </Button>
       }
@@ -101,10 +102,17 @@ export function DeleteAccountForm({
   return (
     <>
       {open ? (
-        <div className="mt-3 space-y-3">
-          <p className="text-body">
-            <Trans>This permanently deletes your account and data.</Trans>
-          </p>
+        <div className="mt-3 space-y-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
+          <div className="flex gap-2.5 text-body">
+            <TriangleAlert
+              aria-hidden
+              className="mt-0.5 size-4 shrink-0 text-destructive"
+              strokeWidth={1.75}
+            />
+            <p>
+              <Trans>This permanently deletes your account and data.</Trans>
+            </p>
+          </div>
           {!security ? (
             <Button variant="outline" onClick={() => setAttempt((value) => value + 1)}>
               <Trans>Retry</Trans>

@@ -142,7 +142,7 @@ it("connects the provider picked from the ones the server describes", async () =
   const saved = { ...connected, defaultMemoryScope: "shared" as const };
   memory.connectProvider.mockResolvedValue(saved);
   const { onConfigChange, onBusyChange } = await render(null);
-  await click(button("Connect memory provider"));
+  await click(button("Connect"));
   const select = host.querySelector<HTMLElement>('[role="combobox"]')!;
   expect(select.textContent).toBe("Notes");
   expect(input("API key")).toBeDefined();
@@ -172,7 +172,7 @@ it("shows why a connection failed, and keeps the form", async () => {
   memory.connectProvider.mockRejectedValueOnce(new Error("The key was rejected"));
   memory.connectProvider.mockRejectedValueOnce(new Error(""));
   const { onConfigChange } = await render(null);
-  await click(button("Connect memory provider"));
+  await click(button("Connect"));
   await type("API key", "key_12345678");
   await click(button("Connect"));
   expect(host.textContent).toContain("The key was rejected");

@@ -346,13 +346,13 @@ export function GeneralSettingsPanels({
                 >
                   <ToggleGroupItem
                     value="organic"
-                    className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+                    className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
                   >
                     <Trans>Original</Trans>
                   </ToggleGroupItem>
                   <ToggleGroupItem
                     value="rakazo"
-                    className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+                    className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
                   >
                     <Trans>Rakazo</Trans>
                   </ToggleGroupItem>
@@ -386,14 +386,14 @@ export function GeneralSettingsPanels({
               <ToggleGroupItem
                 value="comfortable"
                 data-testid="bots-sidebar-density-comfortable"
-                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
               >
                 <Trans>Comfortable</Trans>
               </ToggleGroupItem>
               <ToggleGroupItem
                 value="compact"
                 data-testid="bots-sidebar-density-compact"
-                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+                className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
               >
                 <Trans>Compact</Trans>
               </ToggleGroupItem>
@@ -832,7 +832,7 @@ function AppearancePicker({
           key={option.value}
           value={option.value}
           data-testid={`ui-appearance-${option.value}`}
-          className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+          className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
         >
           {option.label}
         </ToggleGroupItem>

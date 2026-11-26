@@ -34,8 +34,8 @@ export function SpacesSettingsPanel({
         ))}
       </SettingsGroup>
       {onNewSpace ? (
-        <Button variant="outline" className="rounded-full" onClick={onNewSpace}>
-          <Plus />
+        <Button variant="secondary" onClick={onNewSpace}>
+          <Plus data-icon="inline-start" />
           {t`New private space`}
         </Button>
       ) : null}

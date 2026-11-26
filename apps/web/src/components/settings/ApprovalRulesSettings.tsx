@@ -25,11 +25,12 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  SectionHeading,
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
@@ -38,7 +39,8 @@ import { SpendingLimitSettings } from "../billing/SpendingLimitSettings";
 import { SettingsGroup, SettingsRow } from "./SettingsRows";
 
 const segmented = "rounded-lg bg-muted p-1";
-const segment = "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm";
+const segment =
+  "h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50";
 
 type Change =
   | { kind: "mode"; mode: ApprovalMode }
@@ -168,44 +170,59 @@ export function ApprovalRulesSettings({ scope }: { scope: SettingsScope }) {
       </SettingsGroup>
       {/* Spending is the person's own across every Space, so it is set with the account's approvals. */}
       {scope === "account" ? <SpendingLimitSettings /> : null}
-      <AddRulePicker
-        choices={approvalRuleChoices(rules)}
-        disabled={loading || Boolean(loadFailed) || saving}
-        // An app or tool that already has a rule is not offered, so a pick always adds one.
-        onPick={({ matchKind, matchValue }) =>
-          change.run({ kind: "rule", rule: { effect: "require_approval", matchKind, matchValue } })
-        }
-      />
-      {groups.map(({ effect, title }) => {
-        const matching = rules.filter((rule) => rule.effect === effect);
-        if (matching.length === 0) return null;
-        // Never ask runs everything a block does not stop, so these rules wait for another mode.
-        const unused = !approvalRuleApplies(autoReview?.mode, effect);
-        return (
-          <div
-            key={effect}
-            data-unused={unused || undefined}
-            className={unused ? "opacity-50" : undefined}
-          >
-            <SettingsGroup title={title} data-testid={`approval-rules-${effect}`}>
-              {matching.map((rule) => (
-                <SettingsRow
-                  key={rule.id}
-                  label={approvalRuleLabel(rule)}
-                  control={
-                    <RuleControls
-                      rule={rule}
-                      disabled={saving}
-                      onEffect={(effect) => change.run({ kind: "rule", rule: { ...rule, effect } })}
-                      onRemove={() => change.run({ kind: "remove", rule })}
+      <section className="space-y-4">
+        {/* Inset like a settings group title, so the heading starts where row text does. */}
+        <div className="mx-px flex items-center justify-between gap-3 px-4">
+          <SectionHeading variant="heading">
+            <Trans>Rules</Trans>
+          </SectionHeading>
+          <AddRulePicker
+            choices={approvalRuleChoices(rules)}
+            disabled={loading || Boolean(loadFailed) || saving}
+            // An app or tool that already has a rule is not offered, so a pick always adds one.
+            onPick={({ matchKind, matchValue }) =>
+              change.run({
+                kind: "rule",
+                rule: { effect: "require_approval", matchKind, matchValue },
+              })
+            }
+          />
+        </div>
+        <div className="space-y-6">
+          {groups.map(({ effect, title }) => {
+            const matching = rules.filter((rule) => rule.effect === effect);
+            if (matching.length === 0) return null;
+            // Never ask runs everything a block does not stop, so these rules wait for another mode.
+            const unused = !approvalRuleApplies(autoReview?.mode, effect);
+            return (
+              <div
+                key={effect}
+                data-unused={unused || undefined}
+                className={unused ? "opacity-50" : undefined}
+              >
+                <SettingsGroup title={title} data-testid={`approval-rules-${effect}`}>
+                  {matching.map((rule) => (
+                    <SettingsRow
+                      key={rule.id}
+                      label={approvalRuleLabel(rule)}
+                      control={
+                        <RuleControls
+                          rule={rule}
+                          disabled={saving}
+                          onEffect={(effect) =>
+                            change.run({ kind: "rule", rule: { ...rule, effect } })
+                          }
+                          onRemove={() => change.run({ kind: "remove", rule })}
+                        />
+                      }
                     />
-                  }
-                />
-              ))}
-            </SettingsGroup>
-          </div>
-        );
-      })}
+                  ))}
+                </SettingsGroup>
+              </div>
+            );
+          })}
+        </div>
+      </section>
       {error ? (
         <p role="alert" className="text-body-sm text-destructive">
           {error}
@@ -253,12 +270,13 @@ function AddRulePicker({
       }}
     >
       <PopoverTrigger
-        render={<Button variant="outline" size="sm" disabled={disabled} />}
+        render={<Button variant="secondary" disabled={disabled} />}
         data-testid="approval-rule-add"
       >
+        <Plus aria-hidden data-icon="inline-start" />
         <Trans>Add rule</Trans>
       </PopoverTrigger>
-      <PopoverContent initialFocus={searchRef} className="w-72 gap-0 p-0" align="start">
+      <PopoverContent initialFocus={searchRef} className="w-72 gap-0 p-0" align="end">
         <Command label={t`Search tools`} shouldFilter={false}>
           <ListSearchInput
             command
@@ -325,9 +343,9 @@ function RuleControls({
       )}
       <Button
         variant="ghost"
-        size="icon-sm"
+        size="icon"
         aria-label={t`Remove ${label}`}
-        className="text-destructive hover:text-destructive"
+        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive active:bg-destructive/20 dark:hover:bg-destructive/20 dark:active:bg-destructive/30"
         disabled={disabled}
         onClick={onRemove}
       >

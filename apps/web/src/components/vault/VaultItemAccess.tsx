@@ -84,7 +84,7 @@ export function VaultItemAccess({
             <ToggleGroupItem
               key={option}
               value={option}
-              className="h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm"
+              className="h-7 px-3 text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
             >
               {labels[option]}
             </ToggleGroupItem>
