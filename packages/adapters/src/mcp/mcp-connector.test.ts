@@ -705,6 +705,55 @@ describe("MCP connector session cache", () => {
     await connector.close();
   });
 
+  it("uses distinct catalog groups for assigned servers with colliding names", async () => {
+    const first = { ...SERVER, name: "Notion", slug: "slug-a" };
+    const second = { ...first, id: "server-2", slug: "slug-b" };
+    const unavailable = {
+      ...first,
+      id: "server-3",
+      name: "notion",
+      slug: "slug-c",
+      endpoint: "https://mcp.example.test/unavailable",
+    };
+    const unique = { ...first, id: "server-4", name: "Docs", slug: "slug-d" };
+    const healthyFetch = mcpFetch({ failNext: false, initializations: 0 });
+    const connector = new McpConnector(
+      {
+        mcpServer: { findMany: async () => [unavailable, unique] },
+        botMcpServer: {
+          findMany: async () =>
+            [first, second].map((server) => ({ ...ASSIGNMENT, serverId: server.id, server })),
+        },
+      } as never,
+      {} as never,
+      {
+        network: {
+          ...TEST_NETWORK,
+          fetch: async (input, init) =>
+            logicalHref(input, init) === unavailable.endpoint
+              ? new Response("unavailable", { status: 500 })
+              : healthyFetch(input, init),
+        },
+      },
+    );
+    try {
+      const tools = await connector.discoverTools({
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      } as never);
+      expect(tools.map(({ name, route }) => [name, route?.catalogGroup])).toEqual([
+        ["mcp__slug-a__echo", "Notion (slug-a)"],
+        ["mcp__slug-b__echo", "Notion (slug-b)"],
+        ["mcp__slug-c__unavailable", "notion (slug-c)"],
+        ["mcp__slug-d__echo", "Docs"],
+      ]);
+    } finally {
+      await connector.close();
+    }
+  });
+
   it("exposes 20 MCP tools directly and switches at 21", async () => {
     const context = {
       spaceId: "w1",

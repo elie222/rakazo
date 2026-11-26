@@ -1,6 +1,10 @@
 import { expect, it } from "vitest";
 import { MAX_GROUP_LENGTH } from "../tools/lazy-tool-catalog.tool-definition.js";
-import { mcpCatalogGroup, unavailableTool } from "./mcp-connector.tool-definition.js";
+import {
+  mcpCatalogGroup,
+  mcpCatalogGroups,
+  unavailableTool,
+} from "./mcp-connector.tool-definition.js";
 
 const server = { id: "server-1", name: "Mail", slug: "mail", revision: 3 };
 
@@ -28,6 +32,28 @@ it("labels the catalog source with the server name, not an opaque slug", () => {
   expect(mcpCatalogGroup({ name: "n".repeat(MAX_GROUP_LENGTH + 5), slug: "demo" })).toBe(
     "n".repeat(MAX_GROUP_LENGTH),
   );
+});
+
+it("preserves the full slug when disambiguating labels that collide at the length cap", () => {
+  const prefix = "n".repeat(MAX_GROUP_LENGTH);
+  const slugPrefix = "s".repeat(63);
+  const groups = mcpCatalogGroups([
+    { id: "a", name: `${prefix}a`, slug: `${slugPrefix}a` },
+    { id: "b", name: `${prefix}b`, slug: `${slugPrefix}b` },
+  ]);
+  expect([...groups.values()]).toEqual([
+    `${"n".repeat(MAX_GROUP_LENGTH - 67)} (${slugPrefix}a)`,
+    `${"n".repeat(MAX_GROUP_LENGTH - 67)} (${slugPrefix}b)`,
+  ]);
+});
+
+it("keeps generated labels distinct from existing names and shared slugs", () => {
+  const groups = mcpCatalogGroups([
+    { id: "a", name: "Docs", slug: "docs" },
+    { id: "b", name: "docs", slug: "docs" },
+    { id: "c", name: "Docs (docs)", slug: "other" },
+  ]);
+  expect([...groups.values()]).toEqual(["Docs (docs, 2)", "docs (docs, 3)", "Docs (docs)"]);
 });
 
 it("cuts a long reason", () => {
