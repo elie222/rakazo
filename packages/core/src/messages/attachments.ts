@@ -12,7 +12,11 @@ import { sliceWellFormed } from "../primitives/utf8.js";
 import { isApprovalAskBlock, isSecretAskBlock } from "../runs/action-approval.js";
 import { redactJsonText } from "./json-redaction.js";
 
-export { redactJsonStringsAndPlainText, redactJsonText } from "./json-redaction.js";
+export {
+  redactJsonStringsAndPlainText,
+  redactJsonText,
+  redactPlainBearerTokens,
+} from "./json-redaction.js";
 
 export class AttachmentValidationError extends Error {
   constructor(message: string) {

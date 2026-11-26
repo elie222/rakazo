@@ -9,6 +9,7 @@ import {
   MODEL_OUTPUT_LIMIT_ERROR,
   normalizeRunError,
   parseModelFallbackFailure,
+  redactPlainBearerTokens,
 } from "@rakazo/core";
 import { LOCAL_PROVIDER_ID } from "./models/pi-local-provider-id.js";
 import { terminalOAuthRefreshErrorMarker } from "./models/pi-oauth.js";
@@ -66,13 +67,11 @@ export function providerFailureText(message: unknown): string | undefined {
 }
 
 export function sanitizeSensitiveText(message: string) {
-  return message
-    .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
-    .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
-    .replace(
-      /Bearer\s+(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|(?:\\(?!")|[^\s"',;&}\\])+)/gi,
-      "Bearer [redacted]",
-    )
+  return redactPlainBearerTokens(
+    message
+      .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
+      .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]"),
+  )
     .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]")
     .replace(/COMPOSIO_API_KEY[=:]?\s*\S+/gi, "COMPOSIO_API_KEY=[redacted]")
     .replace(

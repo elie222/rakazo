@@ -18,6 +18,17 @@ const JSON_VALUE_TOKEN =
   /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
 const JSON_STRING_LITERAL_TOKEN = /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))/g;
 
+/**
+ * Redact Bearer tokens in plain or raw JSON-like text, handling quoted, escaped-quote, and
+ * newline-wrapped values without consuming JSON structural delimiters (`:`, `,`, `}`, `]`).
+ */
+export function redactPlainBearerTokens(text: string): string {
+  return text.replace(
+    /Bearer\s+(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|(?:\\(?!")|[^\s"',;&}\\])+)/gi,
+    "Bearer [redacted]",
+  );
+}
+
 function blackBoxTokenRanges(
   redact: (text: string) => string,
 ): (candidate: string) => ReadonlyArray<readonly [number, number]> {

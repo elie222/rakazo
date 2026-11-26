@@ -37,9 +37,10 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
   const { deps, run } = hold;
   const { bot, historyReach, messages, nonOwnerChatRun, replaysToolHistory, thread } =
     parts.records;
+  const secrets = hold.secrets ?? [];
   // Group threads and spaces several people share: who wrote each message, so the model can
   // tell the bots and the people apart. A personal space's direct chat stays plain turns.
-  const redact = (value: string) => redactSecrets(value, hold.secrets);
+  const redact = (value: string) => redactSecrets(value, secrets);
   const people = await loadSpacePeople(
     deps.prisma,
     thread.space?._count.memberships ?? 0,
@@ -92,7 +93,7 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
             ? messageTranscript(m)
             : undefined;
         const redactedStored =
-          stored && hold.secrets.length > 0 ? keptTurnTranscript(stored, hold.secrets) : stored;
+          stored && secrets.length > 0 ? keptTurnTranscript(stored, secrets) : stored;
         const transcript =
           redactedStored && speakers
             ? mapTurnTranscript(redactedStored, (value, kind) =>
@@ -250,7 +251,7 @@ export async function loadTurnContext(
           context,
         )
       : Promise.resolve(null);
-  const redact = (text: string) => redactSecrets(text, hold.secrets);
+  const redact = (text: string) => redactSecrets(text, hold.secrets ?? []);
   const [discovered, currentTurnImages, memoryContext, scratchpadContext, ticketContext, recalled] =
     await Promise.all([
       discoveredPromise,
