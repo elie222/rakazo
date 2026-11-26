@@ -176,6 +176,7 @@ export const KO_MESSAGES: Record<string, string> = {
   "The stack started but the web app did not answer. Retry, and check the output below.":
     "스택은 시작되었지만 웹 앱이 응답하지 않았습니다. 다시 시도하고 아래 출력을 확인하세요.",
   "Could not prepare the local stack. Retry.": "로컬 스택을 준비할 수 없습니다. 다시 시도하세요.",
+  "Could not stop the local stack. Try again.": "로컬 스택을 중지할 수 없습니다. 다시 시도하세요.",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "로컬 스택을 중지할 수 없습니다. Docker가 실행 중인지 확인한 후 다시 시도하세요.",
   "Settings…": "설정…",

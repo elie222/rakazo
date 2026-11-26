@@ -63,7 +63,7 @@ export function showSetupWindow(
   const nextQuitAfterStop =
     options?.quitAfterStop !== undefined
       ? options.quitAfterStop === true
-      : setupSaveInProgress
+      : error !== null
         ? quitAfterStackStop
         : false;
   const quitChanged = quitAfterStackStop !== nextQuitAfterStop;

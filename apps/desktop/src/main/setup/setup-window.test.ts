@@ -516,4 +516,29 @@ describe("desktop.setup.stack.stop", () => {
       desktop.localStack = previousStack;
     }
   });
+
+  it("preserves quit intent when an app-open error reopens setup and clears it on Change Server", () => {
+    const previousStack = desktop.localStack;
+    desktop.localStack = {
+      webUrl: () => "http://127.0.0.1:47000",
+    } as unknown as typeof desktop.localStack;
+    try {
+      showSetupWindow("Could not stop the local stack.", { quitAfterStop: true });
+      page.reload.mockClear();
+
+      // An automatic app-open failure calls showSetupWindow(error) without quitAfterStop.
+      showSetupWindow("Could not reach the saved server.");
+      expect(mocks.invoke.get("desktop.setup.state")?.(page.event)).toMatchObject({
+        stopToQuit: true,
+      });
+
+      // Opening Change Rakazo Server explicitly clears quit intent.
+      showSetupWindow(null, { quitAfterStop: false });
+      expect(mocks.invoke.get("desktop.setup.state")?.(page.event)).not.toMatchObject({
+        stopToQuit: true,
+      });
+    } finally {
+      desktop.localStack = previousStack;
+    }
+  });
 });

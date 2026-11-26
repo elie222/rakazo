@@ -162,6 +162,7 @@ export const ZH_CN_MESSAGES: Record<string, string> = {
   "The stack started but the web app did not answer. Retry, and check the output below.":
     "服务栈已启动，但网页应用没有响应。请重试并查看下方输出。",
   "Could not prepare the local stack. Retry.": "无法准备本地服务栈。请重试。",
+  "Could not stop the local stack. Try again.": "无法停止本地服务栈。请重试。",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "无法停止本地服务栈。请确认 Docker 正在运行后重试。",
   "Settings…": "设置…",

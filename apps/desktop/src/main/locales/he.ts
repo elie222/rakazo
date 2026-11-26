@@ -174,6 +174,8 @@ export const HE_MESSAGES: Record<string, string> = {
     "ה-Stack הופעל, אבל אפליקציית האינטרנט לא הגיבה. יש לנסות שוב ולעיין בפלט שלמטה.",
   "Could not prepare the local stack. Retry.":
     "לא ניתן היה להכין את ה-Stack המקומי. כדאי לנסות שוב.",
+  "Could not stop the local stack. Try again.":
+    "לא ניתן היה לעצור את ה-Stack המקומי. כדאי לנסות שוב.",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "לא ניתן היה לעצור את ה-Stack המקומי. יש לוודא ש-Docker פועל ולנסות שוב.",
   "Settings…": "הגדרות…",

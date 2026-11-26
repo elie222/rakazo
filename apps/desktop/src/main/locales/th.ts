@@ -167,6 +167,7 @@ export const TH_MESSAGES: Record<string, string> = {
   "The stack started but the web app did not answer. Retry, and check the output below.":
     "สแตกเริ่มทำงานแต่เว็บแอปไม่ตอบกลับ ลองอีกครั้งและดูผลลัพธ์ด้านล่าง",
   "Could not prepare the local stack. Retry.": "เตรียมสแตกในเครื่องไม่สำเร็จ ลองอีกครั้ง",
+  "Could not stop the local stack. Try again.": "หยุดสแตกในเครื่องไม่สำเร็จ ลองอีกครั้ง",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "หยุดสแตกในเครื่องไม่สำเร็จ ตรวจสอบว่า Docker ทำงานอยู่แล้วลองอีกครั้ง",
   "Settings…": "การตั้งค่า…",

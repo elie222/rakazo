@@ -173,6 +173,7 @@ export const HI_MESSAGES: Record<string, string> = {
   "The stack started but the web app did not answer. Retry, and check the output below.":
     "स्टैक शुरू हो गया, लेकिन वेब ऐप ने जवाब नहीं दिया। फिर से कोशिश करें और नीचे दिया आउटपुट देखें।",
   "Could not prepare the local stack. Retry.": "लोकल स्टैक तैयार नहीं हो सका। फिर से कोशिश करें।",
+  "Could not stop the local stack. Try again.": "लोकल स्टैक रोका नहीं जा सका। फिर से कोशिश करें।",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "लोकल स्टैक रोका नहीं जा सका। देखें कि Docker चल रहा है, फिर से कोशिश करें।",
   "Settings…": "सेटिंग्स…",

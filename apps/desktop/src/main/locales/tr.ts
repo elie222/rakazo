@@ -175,6 +175,7 @@ export const TR_MESSAGES: Record<string, string> = {
   "The stack started but the web app did not answer. Retry, and check the output below.":
     "Yığın başladı ancak web uygulaması yanıt vermedi. Yeniden deneyin ve aşağıdaki çıktıyı inceleyin.",
   "Could not prepare the local stack. Retry.": "Yerel yığın hazırlanamadı. Yeniden deneyin.",
+  "Could not stop the local stack. Try again.": "Yerel yığın durdurulamadı. Yeniden deneyin.",
   "Could not stop the local stack. Check that Docker is running, then try again.":
     "Yerel yığın durdurulamadı. Docker’ın çalıştığını denetleyip yeniden deneyin.",
   "Settings…": "Ayarlar…",
