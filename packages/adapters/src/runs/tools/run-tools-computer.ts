@@ -559,44 +559,54 @@ export const computerTools: ToolHandlers = {
     const { name, args } = call;
     const blocked = await screenBlocked(ctx, true);
     if (blocked) return { error: blocked };
-    const computer = await ctx.computer.get("tool", name);
-    if (!deps.sandbox.findElements) {
+    // The screen may be busy: a refusal there is the standard retryable result, as for the
+    // other screen tools.
+    return computerScreenToolResult(async () => {
+      const computer = await ctx.computer.get("tool", name);
+      if (!deps.sandbox.findElements) {
+        return {
+          error: "This computer has no semantic perception. Use computer_observe and coordinates.",
+        };
+      }
+      const result = await deps.sandbox.findElements(
+        computer,
+        {
+          ...(args.text === undefined ? {} : { text: String(args.text) }),
+          ...(args.role === undefined ? {} : { role: String(args.role) }),
+          ...(args.app === undefined ? {} : { app: String(args.app) }),
+          ...(args.window === undefined ? {} : { window: String(args.window) }),
+          ...(args.page === undefined ? {} : { page: Boolean(args.page) }),
+          ...(args.limit === undefined ? {} : { limit: Number(args.limit) }),
+        },
+        context,
+      );
+      const text = JSON.stringify({ frameId: ctx.state.screen.lastFrameId, ...result });
       return {
-        error: "This computer has no semantic perception. Use computer_observe and coordinates.",
+        kind: "agent_tool_result",
+        content: [{ type: "text", text }],
+        details: result,
       };
-    }
-    const result = await deps.sandbox.findElements(
-      computer,
-      {
-        ...(args.text === undefined ? {} : { text: String(args.text) }),
-        ...(args.role === undefined ? {} : { role: String(args.role) }),
-        ...(args.app === undefined ? {} : { app: String(args.app) }),
-        ...(args.window === undefined ? {} : { window: String(args.window) }),
-        ...(args.page === undefined ? {} : { page: Boolean(args.page) }),
-        ...(args.limit === undefined ? {} : { limit: Number(args.limit) }),
-      },
-      context,
-    );
-    const text = JSON.stringify({ frameId: ctx.state.screen.lastFrameId, ...result });
-    return {
-      kind: "agent_tool_result",
-      content: [{ type: "text", text }],
-      details: result,
-    };
+    });
   },
   async computer_zoom(ctx, call) {
     const { deps, context } = ctx;
     const { name, args } = call;
     const blocked = await screenBlocked(ctx, true);
     if (blocked) return { error: blocked };
-    const computer = await ctx.computer.get("tool", name);
-    if (!deps.sandbox.zoom) return { error: "Zoom is unavailable on this computer." };
-    const observation = await deps.sandbox.zoom(computer, parseComputerZoomRequest(args), context);
-    // A crop is the frame the bot already has: it keeps that frame id and never advances the
-    // unchanged-visual guard, or the next target based on the read frame would look stale.
-    const frameId = ctx.state.screen.lastFrameId;
-    return observationToolResult(observation, "zoomed the screen", frameId, {
-      ...(frameId === undefined ? {} : { frameId }),
+    return computerScreenToolResult(async () => {
+      const computer = await ctx.computer.get("tool", name);
+      if (!deps.sandbox.zoom) return { error: "Zoom is unavailable on this computer." };
+      const observation = await deps.sandbox.zoom(
+        computer,
+        parseComputerZoomRequest(args),
+        context,
+      );
+      // A crop is the frame the bot already has: it keeps that frame id and never advances the
+      // unchanged-visual guard, or the next target based on the read frame would look stale.
+      const frameId = ctx.state.screen.lastFrameId;
+      return observationToolResult(observation, "zoomed the screen", frameId, {
+        ...(frameId === undefined ? {} : { frameId }),
+      });
     });
   },
   async computer_settle(ctx, call) {
@@ -604,14 +614,16 @@ export const computerTools: ToolHandlers = {
     const { name, args } = call;
     const blocked = await screenBlocked(ctx);
     if (blocked) return { error: blocked };
-    const computer = await ctx.computer.get("tool", name);
-    if (!deps.sandbox.settle) return { error: "Settle is unavailable on this computer." };
-    const result = await deps.sandbox.settle(computer, parseSettleRequest(args), context);
-    return {
-      kind: "agent_tool_result",
-      content: [{ type: "text", text: JSON.stringify(result) }],
-      details: result,
-    };
+    return computerScreenToolResult(async () => {
+      const computer = await ctx.computer.get("tool", name);
+      if (!deps.sandbox.settle) return { error: "Settle is unavailable on this computer." };
+      const result = await deps.sandbox.settle(computer, parseSettleRequest(args), context);
+      return {
+        kind: "agent_tool_result",
+        content: [{ type: "text", text: JSON.stringify(result) }],
+        details: result,
+      };
+    });
   },
   async shell(ctx, call) {
     const { deps, run, runId, bot, context } = ctx;
