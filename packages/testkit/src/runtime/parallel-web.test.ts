@@ -103,6 +103,7 @@ function executorFixture(
   };
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   vi.stubEnv("WEB_PROVIDER", "parallel");
+  vi.stubEnv("PARALLEL_API_KEY", "");
   vi.stubEnv("OPENROUTER_API_KEY", "fixture-openrouter-key");
   const executor = createRunExecutor({
     prisma,
