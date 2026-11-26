@@ -371,8 +371,26 @@ function createScanningStreamFactory(present: readonly string[]): () => SecretMa
           }
         }
         let maxPending = 0;
-        let chunkMatches: Array<[number, number]> | undefined;
-        let matchedPatterns = 0;
+        // All cross-chunk matches ending in this chunk span basePos, so their union is one interval.
+        let crossStart = -1;
+        let crossEnd = -1;
+        // Count in-chunk match starts/ends by offset so overlapping patterns never allocate or sort
+        // per-hit ranges, while preserving separate ranges for matches that only touch.
+        let starts: Int32Array | undefined;
+        let ends: Int32Array | undefined;
+        const recordRange = (rangeStart: number, rangeEnd: number) => {
+          if (rangeStart < basePos) {
+            if (crossStart === -1 || rangeStart < crossStart) crossStart = rangeStart;
+            if (rangeEnd > crossEnd) crossEnd = rangeEnd;
+            return;
+          }
+          starts ??= new Int32Array(chunk.length + 1);
+          ends ??= new Int32Array(chunk.length + 1);
+          const localStart = rangeStart - basePos;
+          const localEnd = rangeEnd - basePos;
+          starts[localStart] = starts[localStart]! + 1;
+          ends[localEnd] = ends[localEnd]! + 1;
+        };
         for (let j = 0; j < count; j += 1) {
           let m = matched[j]!;
           const first = firstCodes[j]!;
@@ -434,26 +452,29 @@ function createScanningStreamFactory(present: readonly string[]): () => SecretMa
               } else if (matchStart < patternEnd) {
                 if (matchEnd > patternEnd) patternEnd = matchEnd;
               } else {
-                chunkMatches ??= [];
-                chunkMatches.push([patternStart, patternEnd]);
+                recordRange(patternStart, patternEnd);
                 patternStart = matchStart;
                 patternEnd = matchEnd;
               }
             }
           }
-          if (patternStart !== -1) {
-            matchedPatterns += 1;
-            chunkMatches ??= [];
-            chunkMatches.push([patternStart, patternEnd]);
-          }
+          if (patternStart !== -1) recordRange(patternStart, patternEnd);
           matched[j] = m;
           if (m > maxPending) maxPending = m;
         }
-        if (chunkMatches) {
-          if (matchedPatterns > 1 && chunkMatches.length > 1) {
-            chunkMatches.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+        if (crossStart !== -1) onMatch(crossStart, crossEnd);
+        if (starts && ends) {
+          let open = 0;
+          let start = 0;
+          for (let offset = 0; offset <= chunk.length; offset += 1) {
+            const ending = ends[offset]!;
+            const starting = starts[offset]!;
+            if (ending === 0 && starting === 0) continue;
+            open -= ending;
+            if (ending > 0 && open === 0) onMatch(basePos + start, basePos + offset);
+            if (starting > 0 && open === 0) start = offset;
+            open += starting;
           }
-          for (const [start, end] of chunkMatches) onMatch(start, end);
         }
         pending = maxPending;
         return maxPending;
