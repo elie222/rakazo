@@ -19,20 +19,22 @@ const MAX_BYTES = 2_000_000;
 const engineEnvironment = { PATH: "/usr/local/bin:/usr/bin:/bin" };
 
 async function runContainer(engine: string[], name: string, input: string, signal: AbortSignal) {
+  signal.throwIfAborted();
   const child = spawn("docker", [...engine, "start", "--attach", "--interactive", name], {
     signal,
+    killSignal: "SIGKILL",
     env: engineEnvironment,
     stdio: ["pipe", "pipe", "ignore"],
   });
   // A failed start can close its input while the first write is pending.
-  child.stdin.on("error", () => child.kill());
-  const done = once(child, "close");
+  child.stdin.on("error", () => child.kill("SIGKILL"));
+  const done = once(child, "close", { signal });
   child.stdin.end(input);
   const chunks: Buffer[] = [];
   let bytes = 0;
   child.stdout.on("data", (chunk: Buffer) => {
     bytes += chunk.length;
-    if (bytes > MAX_BYTES) child.kill();
+    if (bytes > MAX_BYTES) child.kill("SIGKILL");
     else chunks.push(chunk);
   });
   const [code] = await done;
@@ -117,7 +119,7 @@ export function createProtectedBrowserLauncher({
           "--",
           image,
         ],
-        { signal, env: engineEnvironment },
+        { signal, killSignal: "SIGKILL", env: engineEnvironment },
       );
       phase = "container-run";
       const result = await runContainer(engine, name, input, signal);
@@ -143,6 +145,7 @@ export function createProtectedBrowserLauncher({
           "remove protected browser container",
           docker("docker", [...container.engine, "rm", "--force", container.name], {
             signal: deadlineSignal(5_000),
+            killSignal: "SIGKILL",
             env: engineEnvironment,
           }).then(
             () => undefined,
