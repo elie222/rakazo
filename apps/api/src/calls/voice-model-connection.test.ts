@@ -141,7 +141,12 @@ describe("synthesizeVoice through a model connection", () => {
       [],
     ) as unknown as VoiceDeps;
     const app = new Hono();
-    mountVoiceHttpRoutes(app, deps, async () => actor);
+    const voiceOriginEnv = {
+      webOrigin: "https://app.example.test",
+      apiUrl: "https://api.example.test",
+      authUrl: "https://app.example.test",
+    };
+    mountVoiceHttpRoutes(app, deps, async () => actor, voiceOriginEnv);
 
     const response = await app.request("/api/voice/speak", {
       method: "POST",
