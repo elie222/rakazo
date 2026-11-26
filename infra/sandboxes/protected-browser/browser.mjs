@@ -124,7 +124,12 @@ export async function runBrowser(chromium, request, launchOptions = {}) {
       await executeStep(page, step, signingIn ? url.origin : undefined);
     }
     const storageState = await context.storageState();
-    if (!initialStorage) return { storageState };
+    if (!initialStorage) {
+      if (!storageState.cookies.length && !storageState.origins.length) {
+        throw new Error("Sign-in produced no reusable browser state");
+      }
+      return { storageState };
+    }
     const snapshot = await page.locator("body").ariaSnapshot({ timeout: TIMEOUT });
     return {
       storageState,
