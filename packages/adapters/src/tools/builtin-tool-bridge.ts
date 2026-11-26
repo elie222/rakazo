@@ -206,13 +206,13 @@ export async function findTools(
   const hits = names.length
     ? [...local, ...remote]
     : rankToolSearchHits([...local, ...remote], query, FIND_TOOL_LIMIT);
-  const foundNames = new Set(hits.flatMap((hit) => [hit.id, hit.name.toLowerCase()]));
+  const foundNames = new Set(hits.flatMap((hit) => [hit.id.toLowerCase(), hit.name.toLowerCase()]));
   const unavailableEntries: Array<[string, string]> = [];
   const unavailableNames = new Set<string>();
   const unknown: string[] = [];
   if (names.length) {
     for (const name of names) {
-      if (foundNames.has(name) || foundNames.has(name.toLowerCase())) continue;
+      if (foundNames.has(name.toLowerCase())) continue;
       const reason = unavailableToolReason(unavailableToolReasons, name);
       if (reason !== undefined) {
         if (!unavailableNames.has(name)) {

@@ -6,6 +6,7 @@ import type {
   ConnectorTool,
   ToolSearchHit,
 } from "@rakazo/adapter-kit";
+import { bestEffort } from "@rakazo/logging";
 import type { CatalogSearchHit } from "../lazy-tool-catalog.js";
 import {
   CATALOG_LOAD,
@@ -64,25 +65,28 @@ export function connectorCatalogSource(
       connectorId,
     };
   };
+  // One connector failing hides only its own tools; bestEffort logs why.
+  const fromEach = async <T>(work: (connectorId: string) => Promise<T[]>) =>
+    (
+      await Promise.all(
+        catalogs.map(
+          async (connectorId) =>
+            (await bestEffort(`find_tool catalog ${connectorId}`, work(connectorId))) ?? [],
+        ),
+      )
+    )
+      .flat()
+      .filter((hit) => hit !== undefined);
   return {
     label: "connected tools",
-    async search(query, limit) {
-      const found = await Promise.all(
-        catalogs.map(async (connectorId) => {
-          const result = (await control(connectorId, CATALOG_SEARCH, { query, limit })) as
-            | { tools?: CatalogSearchHit[] }
-            | undefined;
-          const hits = (result?.tools ?? []).slice(0, LOADED_PER_CONNECTOR);
-          return Promise.all(hits.map((hit) => load(connectorId, hit.id)));
-        }),
-      );
-      return found.flat().filter((hit) => hit !== undefined);
-    },
-    async find(ids) {
-      const found = await Promise.all(
-        ids.flatMap((id) => catalogs.map((connectorId) => load(connectorId, id))),
-      );
-      return found.filter((hit) => hit !== undefined);
-    },
+    search: (query, limit) =>
+      fromEach(async (connectorId) => {
+        const result = (await control(connectorId, CATALOG_SEARCH, { query, limit })) as
+          | { tools?: CatalogSearchHit[] }
+          | undefined;
+        const hits = (result?.tools ?? []).slice(0, LOADED_PER_CONNECTOR);
+        return Promise.all(hits.map((hit) => load(connectorId, hit.id)));
+      }),
+    find: (ids) => fromEach((connectorId) => Promise.all(ids.map((id) => load(connectorId, id)))),
   };
 }

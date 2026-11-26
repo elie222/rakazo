@@ -67,6 +67,26 @@ describe("find_tool", () => {
   });
 });
 
+describe("find_tool by name", () => {
+  it("finds an app by the slug written in any case, without calling it unknown", async () => {
+    const apps = catalogOf([app("Google Sheets")]);
+    const { result } = await findTools(
+      { deferred: [], search: (request) => apps.find("ids" in request ? request.ids : []) },
+      { names: ["google_sheets"] },
+    );
+    expect(result).toEqual({
+      tools: [
+        {
+          next: "connect_app",
+          app: "GOOGLE_SHEETS",
+          title: "Google Sheets",
+          description: "An app the user can connect.",
+        },
+      ],
+    });
+  });
+});
+
 describe("app catalog source", () => {
   const apps = catalogOf([
     app("Pagesnap"),
@@ -146,17 +166,25 @@ describe("connector catalog source", () => {
     ]);
   });
 
-  it("reports a catalog that fails instead of finding nothing in it", async () => {
-    const failing = connectorCatalogSource(
+  it("hides only the tools of a connector whose catalog fails", async () => {
+    const source = connectorCatalogSource(
       {
-        async *execute() {
-          yield { type: "error" as const, message: "Server unavailable" };
-        },
+        execute: (call: ConnectorCall) =>
+          call.route?.connectorId === "installed"
+            ? (async function* () {
+                yield { type: "error" as const, message: "Server unavailable" };
+              })()
+            : executeLazyCatalogControl(call, entries, async function* () {}),
       },
       context,
-      lazyCatalogTools("connectors", "mcp", "MCP", entries),
+      [
+        ...lazyCatalogTools("connectors", "mcp", "MCP", entries),
+        ...lazyCatalogTools("installed", "installed", "API", entries),
+      ],
       "run-1",
     );
-    await expect(failing.search("release calendar", 5)).rejects.toThrow("Server unavailable");
+    expect((await source.search("release calendar", 5)).map((hit) => hit.connectorId)).toEqual([
+      "mcp",
+    ]);
   });
 });
