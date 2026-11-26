@@ -60,6 +60,21 @@ describe("botModelState", () => {
     expect(state.thinkingLevels).toEqual(["off", "low", "high"]);
   });
 
+  it("lists the Space default's model for a pinned bot even when no connection offers it", () => {
+    const state = botModelState({
+      credentials,
+      catalog: [...catalog, { provider: "gone", id: "old", label: "Old" }] as ModelCatalogEntry[],
+      me: { defaultProvider: "gone", defaultModel: "old" },
+      modelKey: "acme::plain",
+    });
+    expect(state.choices.map((choice) => choice.key)).toEqual([
+      "gone::old",
+      "acme::fast",
+      "acme::plain",
+    ]);
+    expect(state.savedModelKey("gone::old")).toBe("");
+  });
+
   it("follows the bot's own model", () => {
     const state = botModelState({
       credentials,
@@ -133,7 +148,7 @@ describe("botModelState", () => {
       me,
       modelKey: "gone::old-model",
     });
-    expect(state.choices.map((choice) => choice.key)).toEqual(["gone::old-model"]);
+    expect(state.choices.map((choice) => choice.key)).toEqual(["gone::old-model", "acme::fast"]);
     expect(state.nothingConnected).toBe(true);
   });
 });

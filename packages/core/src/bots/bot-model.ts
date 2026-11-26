@@ -51,11 +51,14 @@ export function botModelState({
   // The model in effect: the bot's, or the Space default's while it follows it.
   const shownKey = selectedModelKey || defaultModelKey;
   const connected = connectedModelChoices(credentials, catalog);
-  const choices = chatModelChoices(
-    connected,
-    shownKey,
-    selectedModelKey ? undefined : { label: defaultEntry?.label, images: defaultEntry?.images },
-  );
+  // The Space default's model is always listed, so a pinned bot can go back to following it.
+  const choices = chatModelChoices(connected, defaultModelKey, {
+    label: defaultEntry?.label,
+    images: defaultEntry?.images,
+  });
+  if (!choices.some((choice) => choice.key === shownKey)) {
+    choices.unshift(...chatModelChoices([], shownKey));
+  }
   const shown = choices.find((choice) => choice.key === shownKey);
   // Its maker's mark, and its own name without its connection or the product word the mark stands for.
   const selectedMark = modelMark(

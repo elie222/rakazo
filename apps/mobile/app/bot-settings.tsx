@@ -196,6 +196,7 @@ function BotSettings() {
   );
   const {
     selectedModel,
+    selectedModelKey,
     shownKey,
     choices: modelChoices,
     thinkingLevels: thinkingOptions,
@@ -214,8 +215,9 @@ function BotSettings() {
   }, [focus]);
 
   function selectModel(key: string) {
-    if (key === shownKey) return;
-    setModelKey(savedModelKey(key));
+    const saved = savedModelKey(key);
+    if (saved === selectedModelKey) return;
+    setModelKey(saved);
     setThinkingLevel("");
   }
 

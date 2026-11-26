@@ -70,7 +70,7 @@ export function composerModelChip(
   });
   const level = (bot.thinkingLevel as typeof state.defaultThinkingLevel | null | undefined) ?? null;
   return {
-    label: state.selectedName ?? t`Model`,
+    label: state.selectedName ?? t`Choose a model`,
     mark: state.selectedMark,
     thinking: state.thinkingLevels.length
       ? thinkingLevelLabel(level ?? state.defaultThinkingLevel)

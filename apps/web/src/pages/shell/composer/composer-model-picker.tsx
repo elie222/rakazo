@@ -86,6 +86,7 @@ export function ComposerModelPicker({
   const pendingModel = saveModel.pending ? saveModel.input : undefined;
   const modelPending = pendingModel !== undefined;
   const {
+    selectedModelKey,
     shownKey,
     selectedName,
     selectedMark,
@@ -157,7 +158,8 @@ export function ComposerModelPicker({
         </>
       }
       onChange={(key) => {
-        if (key !== shownKey) saveModel.run(savedModelKey(key));
+        const saved = savedModelKey(key);
+        if (saved !== selectedModelKey) saveModel.run(saved);
       }}
       // A model with thinking levels keeps the panel open, so its level can be set next.
       // With no provider connected there is nothing to switch to, so the list offers a connection.

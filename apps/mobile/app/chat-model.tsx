@@ -65,9 +65,10 @@ export default function ChatModelScreen() {
       selectedKey={state?.shownKey ?? ""}
       error={failure && !choices ? errorText(failure, t`Could not load model settings`) : null}
       onSelect={(choice) => {
-        if (!state || choice.key === state.shownKey) return;
+        const modelKey = state?.savedModelKey(choice.key);
+        if (!state || modelKey === state.selectedModelKey) return;
         // A new model starts on its own default thinking, as it does from the bot's settings.
-        save.run({ modelKey: state.savedModelKey(choice.key), thinkingLevel: null });
+        save.run({ modelKey, thinkingLevel: null });
       }}
       header={
         state?.thinkingLevels.length || connectable ? (

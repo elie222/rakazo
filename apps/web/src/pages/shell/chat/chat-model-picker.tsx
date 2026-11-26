@@ -90,7 +90,7 @@ export function ChatModelPicker({
   );
   const selected = choices.find((choice) => choice.key === value);
   const textOnly = selected?.images === false;
-  const model = selectedLabel ?? selected?.label ?? "";
+  const model = selectedLabel ?? selected?.label ?? t`Choose a model`;
 
   // A list closed by its owner (a keyboard shortcut) starts unfiltered next time too.
   if (!open && query) setQuery("");
@@ -140,7 +140,7 @@ export function ChatModelPicker({
         >
           <Trans>Model</Trans>
           <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
-            <span className="min-w-0 truncate">{selected?.label}</span>
+            <span className="min-w-0 truncate">{model}</span>
             {textOnly ? <TextOnlyMark /> : null}
             <ChevronRightIcon className="size-4 shrink-0 rtl:rotate-180" aria-hidden="true" />
           </span>
