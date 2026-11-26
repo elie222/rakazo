@@ -1,7 +1,15 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { Routine } from "@rakazo/contracts";
-import { activeBotId, completeOnboarding, createNamedBot, rpc, signup } from "../helpers/helpers";
+import { deferred } from "@rakazo/core/test-async";
+import {
+  activeBotId,
+  captureScreenshot,
+  completeOnboarding,
+  createNamedBot,
+  rpc,
+  signup,
+} from "../helpers/helpers";
 
 async function openComposer(page: Page, prefix: string) {
   await signup(page, `${prefix}-${Date.now()}@rakazo.test`, "password12", "Draft Keeper");
@@ -222,4 +230,85 @@ test("a retried send after an edit reuses the attachment's uploaded artifact", {
     limit: 60,
   });
   expect(artifacts.items.filter((artifact) => artifact.name === "notes.txt")).toHaveLength(1);
+});
+
+test("keeps a failed message in chat with retry when the user starts typing a new draft", async ({
+  page,
+}, testInfo) => {
+  const composer = await openComposer(page, "send-failure-keep-text");
+  const releaseFirstSend = deferred();
+  const nonces: string[] = [];
+  await page.route("**/rpc/threads/send", async (route) => {
+    nonces.push(route.request().postDataJSON().json.clientNonce);
+    if (nonces.length === 1) {
+      await releaseFirstSend.promise;
+      await route.abort("internetdisconnected");
+      return;
+    }
+    await route.continue();
+  });
+
+  await composer.fill("first unsent message");
+  const firstRequest = page.waitForRequest("**/rpc/threads/send");
+  await composer.press("Enter");
+  await firstRequest;
+
+  // User starts typing a follow-up while the first send is still in flight.
+  await composer.fill("newer follow-up draft");
+  releaseFirstSend.resolve();
+
+  const failedActions = page.getByTestId("failed-send-actions");
+  await expect(failedActions).toBeVisible();
+  await expect(failedActions).toContainText("Not sent");
+  await expect(
+    page.getByTestId("transcript").getByText("first unsent message", { exact: true }),
+  ).toBeVisible();
+  await expect(composer).toHaveValue("newer follow-up draft");
+  await captureScreenshot(page, testInfo, "failed-send-keep-text");
+
+  // Retrying reuses the original clientNonce and leaves the newer draft intact.
+  const retryResponse = page.waitForResponse(
+    (response) => response.url().includes("/rpc/threads/send") && response.ok(),
+  );
+  await failedActions.getByRole("button", { name: "Retry" }).click();
+  await retryResponse;
+
+  await expect(failedActions).toHaveCount(0);
+  await expect(
+    page.getByTestId("transcript").getByText("first unsent message", { exact: true }),
+  ).toBeVisible();
+  await expect(composer).toHaveValue("newer follow-up draft");
+  expect(nonces).toHaveLength(2);
+  expect(nonces[1]).toBe(nonces[0]);
+});
+
+test("dismisses a failed message in chat while keeping the newer draft", async ({ page }) => {
+  const composer = await openComposer(page, "send-failure-dismiss");
+  const releaseFirstSend = deferred();
+  await page.route("**/rpc/threads/send", async (route) => {
+    await releaseFirstSend.promise;
+    await route.abort("internetdisconnected");
+  });
+
+  await composer.fill("drop this failed message");
+  const firstRequest = page.waitForRequest("**/rpc/threads/send");
+  await composer.press("Enter");
+  await firstRequest;
+
+  await composer.fill("draft that survives dismiss");
+  releaseFirstSend.resolve();
+
+  const failedActions = page.getByTestId("failed-send-actions");
+  await expect(failedActions).toBeVisible();
+  await expect(
+    page.getByTestId("transcript").getByText("drop this failed message", { exact: true }),
+  ).toBeVisible();
+
+  await failedActions.getByRole("button", { name: "Dismiss" }).click();
+
+  await expect(failedActions).toHaveCount(0);
+  await expect(
+    page.getByTestId("transcript").getByText("drop this failed message", { exact: true }),
+  ).toHaveCount(0);
+  await expect(composer).toHaveValue("draft that survives dismiss");
 });

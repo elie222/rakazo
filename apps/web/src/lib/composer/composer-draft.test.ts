@@ -3,12 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 import {
   appendComposerDraftText,
   beginComposerDraftSubmission,
+  captureComposerDraftSnapshot,
+  clearAcceptedComposerDraft,
   clearComposerDrafts,
   composerDraftBindingsKey,
   composerDraftStorageKey,
+  keepComposerRetryNonce,
   readComposerDraft,
   readComposerDraftBindings,
+  readComposerRetryNonce,
   settleComposerDraftSubmission,
+  subscribeComposerDraftAccepted,
   writeComposerDraft,
 } from "./composer-draft.js";
 
@@ -126,6 +131,87 @@ describe("composer drafts", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("clears a retried draft only when raw text, bindings, and revision still match and notifies listeners", () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    const accepted = vi.fn();
+    const unsubscribe = subscribeComposerDraftAccepted("retry-thread", accepted);
+    try {
+      const samA = [
+        { start: 0, end: 4, mention: { kind: "bot" as const, id: "bot-a", name: "Sam" } },
+      ];
+      const samB = [
+        { start: 0, end: 4, mention: { kind: "bot" as const, id: "bot-b", name: "Sam" } },
+      ];
+      writeComposerDraft("retry-thread", "@Sam ", storage, samA);
+      const submission = beginComposerDraftSubmission("retry-thread", "@Sam ");
+      const snapshot = captureComposerDraftSnapshot("retry-thread", "/review @Sam");
+      settleComposerDraftSubmission("retry-thread", submission, false);
+
+      // Same spelling bound to a different target must not be cleared on retry.
+      writeComposerDraft("retry-thread", "@Sam ", storage, samB);
+      clearAcceptedComposerDraft("retry-thread", snapshot);
+      expect(readComposerDraft("retry-thread", storage)).toBe("@Sam ");
+      expect(readComposerDraftBindings("retry-thread", storage)).toEqual(samB);
+      expect(accepted).not.toHaveBeenCalled();
+
+      // Re-capturing the current untouched raw draft clears storage and notifies mounted composers.
+      const sub2 = beginComposerDraftSubmission("retry-thread", "@Sam ");
+      const snap2 = captureComposerDraftSnapshot("retry-thread", "/review @Sam");
+      settleComposerDraftSubmission("retry-thread", sub2, false);
+      clearAcceptedComposerDraft("retry-thread", snap2);
+      expect(readComposerDraft("retry-thread", storage)).toBe("");
+      expect(readComposerDraftBindings("retry-thread", storage)).toEqual([]);
+      expect(accepted).toHaveBeenCalledWith(snap2.text, snap2.bindingRecord);
+    } finally {
+      unsubscribe();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("preserves a same-text draft written in another tab and refuses a stale retry nonce", async () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    try {
+      vi.resetModules();
+      const tab1 = await import("./composer-draft.js");
+      vi.resetModules();
+      const tab2 = await import("./composer-draft.js");
+
+      tab1.writeComposerDraft("cross-tab", "hello", storage);
+      const submission = tab1.beginComposerDraftSubmission("cross-tab", "hello");
+      const snapshot = tab1.captureComposerDraftSnapshot("cross-tab", "hello");
+      tab1.settleComposerDraftSubmission("cross-tab", submission, false);
+
+      // Another tab edits the draft away and retypes identical text.
+      tab2.writeComposerDraft("cross-tab", "edited", storage);
+      tab2.writeComposerDraft("cross-tab", "hello", storage);
+
+      tab1.clearAcceptedComposerDraft("cross-tab", snapshot);
+      expect(tab2.readComposerDraft("cross-tab", storage)).toBe("hello");
+
+      tab1.keepComposerRetryNonce("cross-tab", submission, "stale-nonce");
+      expect(tab2.readComposerRetryNonce("cross-tab", storage)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("refuses to attach an old retry nonce after a reopened tab edits away and retypes the text", () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    try {
+      writeComposerDraft("nonce-thread", "hello", storage);
+      const submission = beginComposerDraftSubmission("nonce-thread", "hello");
+      writeComposerDraft("nonce-thread", "edited", storage);
+      writeComposerDraft("nonce-thread", "hello", storage);
+      keepComposerRetryNonce("nonce-thread", submission, "old-nonce");
+      expect(readComposerRetryNonce("nonce-thread", storage)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("legacy send envelope cleanup", () => {
@@ -173,6 +259,7 @@ describe("legacy send envelope cleanup", () => {
       "composerDraft",
       "composerNonce",
       "composerBindings",
+      "composerVersion",
     ]) {
       storage.setItem(`rakazo.${namespace}.bot:old`, "private");
       storage.setItem(`rakazo.${namespace}.group:old`, "private");

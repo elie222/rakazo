@@ -116,6 +116,38 @@ describe("withoutDeliveredSends", () => {
     // Another chat's seq numbers say nothing about this send.
     expect(withoutDeliveredSends(waiting, [stored(3, "new words")], "bot2")).toBe(waiting);
   });
+
+  it("keeps a failed reply retryable when a later send with the same words arrives", () => {
+    const failedFirst: PendingSend = {
+      threadKey: "bot1",
+      clientNonce: "n-failed",
+      text: "OK",
+      afterSeq: 1,
+      replyToMessageId: "m1",
+      error: "Failed to send message",
+    };
+    const acceptedSecond: PendingSend = {
+      threadKey: "bot1",
+      clientNonce: "n-ok",
+      text: "OK",
+      afterSeq: 1,
+      acceptedSeq: 3,
+      replyToMessageId: "m2",
+    };
+    const messages = [
+      stored(1, "first"),
+      stored(2, "second"),
+      { ...stored(3, "OK"), replyToMessageId: "m2" },
+    ];
+    expect(withoutDeliveredSends([failedFirst, acceptedSecond], messages, "bot1")).toEqual([
+      failedFirst,
+    ]);
+    // Even after the accepted send is dropped, the failed reply stays shown and retryable.
+    expect(withoutDeliveredSends([failedFirst], messages, "bot1")).toEqual([failedFirst]);
+    expect(shownTexts(withPendingSends(messages, [failedFirst], "bot1", "t1", "me"))).toEqual([
+      "OK",
+    ]);
+  });
 });
 
 describe("newestMessageSeq", () => {

@@ -1,11 +1,19 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type { ComposerMention, SLASH_ACTIONS, SlashActionId } from "@rakazo/core";
-import { mentionChipKey, truncateSlashDescription } from "@rakazo/core";
+import { mentionChipKey, resolveMentionPickerKey, truncateSlashDescription } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { ArrowUp, Box, Paperclip, Settings, Square, X } from "lucide-react";
-import type { CSSProperties, ReactNode, RefObject } from "react";
+import type { ClipboardEvent, CSSProperties, KeyboardEvent, ReactNode, RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
+import * as composerDraft from "../../../lib/composer/composer-draft";
+import { isFilePaste } from "../../../lib/composer/pending-attachments";
+import { usePageSession } from "../../../lib/pages/pages";
+import { hasOpenDialog } from "../../../lib/platform/has-open-dialog";
+import { useEventListener } from "../../../lib/use-event-listener";
 import type { PendingAttachment } from "../chat/chat-shared";
+import { isApplePlatform, isEditableTarget, primaryModifier } from "../shell-shortcuts";
 import { MentionOptionIcon, slashActionLabel } from "./composer-mentions";
 import type { useHoldToTalk } from "./hold-to-talk";
 import { HoldToTalkControls } from "./hold-to-talk";
@@ -296,4 +304,226 @@ export function ComposerActions({
       )}
     </div>
   );
+}
+
+const noDockState = { node: null, page: null };
+export const noComposerDock = { subscribe: () => () => {}, get: () => noDockState };
+
+/** Moves one mounted composer portal between the chat column and the open page dock. */
+export function ComposerDockHost({ children }: { children: (docked: boolean) => ReactNode }) {
+  const dock = usePageSession()?.dock ?? noComposerDock;
+  const { node: dockNode } = useSyncExternalStore(dock.subscribe, dock.get);
+  const [host] = useState(() => {
+    const element = document.createElement("div");
+    element.style.display = "contents";
+    return element;
+  });
+  const slot = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const target = dockNode ?? slot.current;
+    if (!target || host.parentNode === target) return;
+    const focused = host.contains(document.activeElement) ? document.activeElement : null;
+    target.append(host);
+    if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
+  }, [dockNode, host]);
+  useEffect(() => () => host.remove(), [host]);
+  return (
+    <>
+      <div ref={slot} className="contents" />
+      {createPortal(children(dockNode !== null), host)}
+    </>
+  );
+}
+
+/** Cmd/Ctrl+D in the message field starts hands-free dictation, and submits it once locked. */
+export function useDictationShortcut({
+  talk,
+  available,
+  textareaRef,
+}: {
+  talk: ReturnType<typeof useHoldToTalk>;
+  available: boolean;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+}) {
+  const state = useRef({ talk, available });
+  state.current = { talk, available };
+  useEventListener(window, "keydown", (event) => {
+    if (event.repeat || event.altKey || event.shiftKey || event.key?.toLowerCase() !== "d") return;
+    if (!primaryModifier(event, isApplePlatform())) return;
+    const current = state.current;
+    if (current.talk.recording) {
+      // Pressed while typing elsewhere, it belongs to that field rather than this recording.
+      if (!current.talk.recording.locked || current.talk.transcribing) return;
+      if (isEditableTarget(event.target) || hasOpenDialog(document)) return;
+      event.preventDefault();
+      current.talk.submit();
+    } else if (current.available && document.activeElement === textareaRef.current) {
+      event.preventDefault();
+      current.talk.startHandsFree();
+    }
+  });
+}
+
+/** Handles composer textarea keyboard navigation, picker completion, send, and Escape stop. */
+export function handleComposerKeyDown(
+  event: KeyboardEvent<HTMLTextAreaElement>,
+  params: {
+    rememberSelection: (field: HTMLTextAreaElement) => void;
+    draftLength: number;
+    hasSkill: boolean;
+    removeSkill: () => void;
+    enterToSend: boolean;
+    mentionPickerOpen: boolean;
+    mentionOptions: ComposerMention[];
+    activeMentionIndex: number;
+    slashOptionKeys: string[];
+    activeSlashIndex: number;
+    showSlashPicker: boolean;
+    pickSlashOption: (index: number) => void;
+    setSlashHighlightKey: (key: string | null) => void;
+    setCompletedSelection: (caret: number) => void;
+    setSlashQuery: (query: null) => void;
+    insertMention: (mention: ComposerMention) => void;
+    setMentionHighlightKey: (key: string | null) => void;
+    setMentionQuery: (query: null) => void;
+    onSend: () => void;
+    canStop: boolean;
+    onStop: () => void;
+  },
+) {
+  params.rememberSelection(event.currentTarget);
+  if (event.key === "Backspace" && params.draftLength === 0 && params.hasSkill) {
+    event.preventDefault();
+    params.removeSkill();
+    return;
+  }
+  const action = resolveMentionPickerKey({
+    key: event.key,
+    shiftKey: event.shiftKey,
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+    altKey: event.altKey,
+    enterToSend: params.enterToSend,
+    isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
+    optionCount: params.mentionPickerOpen
+      ? params.mentionOptions.length
+      : params.slashOptionKeys.length,
+    highlightedIndex: params.mentionPickerOpen
+      ? params.activeMentionIndex
+      : params.activeSlashIndex,
+  });
+  // An open slash menu only sends once closed, so Ctrl/Cmd+Enter picks the row too.
+  if (params.showSlashPicker && action.type !== "none") {
+    event.preventDefault();
+    if (action.type === "complete" || action.type === "send")
+      params.pickSlashOption(params.activeSlashIndex);
+    else if (action.type === "move")
+      params.setSlashHighlightKey(params.slashOptionKeys[action.index] ?? null);
+    else {
+      params.setCompletedSelection(event.currentTarget.selectionStart);
+      params.setSlashQuery(null);
+    }
+    return;
+  }
+  if (action.type === "complete") {
+    const mention = params.mentionOptions[action.index];
+    if (!mention) return;
+    event.preventDefault();
+    params.insertMention(mention);
+    return;
+  }
+  if (action.type === "move") {
+    event.preventDefault();
+    params.setMentionHighlightKey(mentionChipKey(params.mentionOptions[action.index]!));
+    return;
+  }
+  if (action.type === "dismiss") {
+    event.preventDefault();
+    params.setCompletedSelection(event.currentTarget.selectionStart);
+    params.setMentionQuery(null);
+    params.setMentionHighlightKey(null);
+    return;
+  }
+  if (action.type === "send") {
+    event.preventDefault();
+    params.onSend();
+    return;
+  }
+  if (
+    event.key !== "Escape" ||
+    event.repeat ||
+    event.nativeEvent.isComposing ||
+    event.keyCode === 229 ||
+    event.shiftKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey
+  )
+    return;
+  if (params.canStop) {
+    event.preventDefault();
+    params.onStop();
+  }
+}
+
+/** Subscribes a composer to offered reply text from an open page or app card in this chat. */
+export function useComposerOffers({
+  draftKey,
+  pageSession,
+  onClearReply,
+  onOffer,
+}: {
+  draftKey: string;
+  pageSession: ReturnType<typeof usePageSession>;
+  onClearReply?: () => void;
+  onOffer: (text: string) => void;
+}) {
+  const clearReply = useRef(onClearReply);
+  clearReply.current = onClearReply;
+  const offerRef = useRef(onOffer);
+  offerRef.current = onOffer;
+  const applyOffer = useRef((text: string) => {
+    clearReply.current?.();
+    offerRef.current(text);
+  });
+  useEffect(() => pageSession?.subscribeReply((text) => applyOffer.current(text)), [pageSession]);
+  useEffect(
+    () => composerDraft.subscribeComposerOffer(draftKey, (text) => applyOffer.current(text)),
+    [draftKey],
+  );
+}
+
+/** Handles pasted files and large text pastes that offer an attach-as-file follow-up. */
+export function handleComposerPaste<T extends { text: string }>(
+  event: ClipboardEvent<HTMLTextAreaElement>,
+  params: {
+    disabled?: boolean;
+    threshold: number;
+    current: T;
+    pickAttachments: (files: FileList | readonly File[] | null) => void;
+    rememberSelection: (field: HTMLTextAreaElement) => void;
+    updateDraft: (value: string, caret: number) => void;
+    setPendingCaret: (caret: number) => void;
+    setLargePaste: (value: { text: string; before: T; start: number; end: number }) => void;
+  },
+) {
+  const clipboardData = event.clipboardData;
+  if (params.disabled || !clipboardData) return;
+  const text = clipboardData.getData("text/plain");
+  const files = isFilePaste(clipboardData);
+  if (!files && text.length <= params.threshold) return;
+  event.preventDefault();
+  if (files) params.pickAttachments(clipboardData.files);
+  if (!text) return;
+  const textarea = event.currentTarget;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  params.rememberSelection(textarea);
+  const caret = start + text.length;
+  params.updateDraft(
+    `${params.current.text.slice(0, start)}${text}${params.current.text.slice(end)}`,
+    caret,
+  );
+  params.setPendingCaret(caret);
+  if (!files) params.setLargePaste({ text, before: params.current, start, end });
 }

@@ -110,6 +110,8 @@ export function ChatComposerArea({
         sendError={composer.sendError}
         imageConfirmation={composer.imageConfirmation}
         onDraftEdited={composer.clearImageConfirmation}
+        hasFailedSend={composer.hasFailedSend}
+        onFailedSendRestored={composer.restorePendingSend}
         onOpenModels={() => {
           // A group's failed run belongs to one member; change that bot's model.
           const failedBotId =

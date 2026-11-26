@@ -464,3 +464,27 @@ it("draws a reply's pictures in one row instead of one under another", async () 
   ]);
   expect(new Set(tiles.map((tile) => tile.parentElement)).size).toBe(1);
 });
+
+it("renders retry and dismiss actions below a failed optimistic user message", () => {
+  const onRetrySend = vi.fn();
+  const onDismissSend = vi.fn();
+  renderView("user", [{ kind: "text", text: "first draft" }], {
+    failedSendError: "Failed to send message",
+    onRetrySend,
+    onDismissSend,
+  });
+  const bubble = container.querySelector('[data-testid="message-user-bubble"]');
+  expect(bubble?.textContent).toContain("first draft");
+  expect(bubble?.className).toContain("opacity-80");
+
+  const actions = container.querySelector('[data-testid="failed-send-actions"]');
+  expect(actions?.textContent).toContain("Not sent");
+  const retryButton = actions?.querySelector("button");
+  expect(retryButton?.textContent).toBe("Retry");
+  act(() => retryButton?.click());
+  expect(onRetrySend).toHaveBeenCalledTimes(1);
+
+  const dismissButton = actions?.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]');
+  act(() => dismissButton?.click());
+  expect(onDismissSend).toHaveBeenCalledTimes(1);
+});

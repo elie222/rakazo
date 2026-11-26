@@ -498,6 +498,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
     commitComputer,
     clearReadBoundary: read.clearReadBoundary,
     flushPendingBrowserNotifications,
+    recordingSkill: Boolean(recordingSkill),
   });
   const { sending, sendError, stopRun } = composer;
   const routineList = useRoutineList({

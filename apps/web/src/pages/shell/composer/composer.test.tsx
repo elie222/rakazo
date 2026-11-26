@@ -24,7 +24,12 @@ vi.mock("../../../components/billing/SubscriptionGate", () => ({
 }));
 
 import { dictation } from "../../../lib/calls/dictation";
-import { replaceComposerDraft } from "../../../lib/composer/composer-draft";
+import {
+  captureComposerDraftSnapshot,
+  clearAcceptedComposerDraft,
+  replaceComposerDraft,
+  writeComposerDraft,
+} from "../../../lib/composer/composer-draft";
 import { createPageSession, PagesProvider } from "../../../lib/pages/pages";
 import { Composer, LARGE_PASTE_THRESHOLD } from "./composer";
 import { FileDropZoneContext } from "./use-composer-file-drop";
@@ -1386,6 +1391,478 @@ it("clears accepted saved text when only an attachment was picked during the sen
   expect(textarea.value).toBe("");
   expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBeNull();
 });
+
+it("clears a reopened composer when a failed send is later accepted by retry", async () => {
+  let finishSend: Deferred<boolean> | undefined;
+  let capturedSnapshot: ReturnType<typeof captureComposerDraftSnapshot> | undefined;
+  const draftKey = "bot:retry-clears-reopened";
+  const first = renderComposer(
+    (text) => {
+      capturedSnapshot = captureComposerDraftSnapshot(draftKey, text);
+      finishSend = deferred();
+      return finishSend.promise;
+    },
+    { draftKey },
+  );
+  type(first, " padded draft ");
+  pressEnter(first);
+  act(() => root?.unmount());
+  container?.remove();
+  await act(async () => finishSend?.resolve(false));
+
+  // Reopening the chat loads the untouched saved draft into the mounted field.
+  const reopened = renderComposer(vi.fn(), { draftKey });
+  expect(reopened.value).toBe(" padded draft ");
+
+  // Retrying that failed row clears both storage and the mounted field.
+  act(() => clearAcceptedComposerDraft(draftKey, capturedSnapshot!));
+  expect(reopened.value).toBe("");
+  expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBeNull();
+});
+
+it("clears a reopened composer with a real connector mention when retry accepts", async () => {
+  let finishSend: Deferred<boolean> | undefined;
+  let capturedSnapshot: ReturnType<typeof captureComposerDraftSnapshot> | undefined;
+  const draftKey = "bot:retry-clears-connector";
+  // Non-canonical property order mirrors real picker payloads whose keys reorder on restore.
+  const connector: ComposerMention = {
+    kind: "connector",
+    authStatus: "connected",
+    connectionId: "conn-1",
+    name: "Test",
+    id: "connector-test",
+  };
+  const first = renderComposer(
+    (text) => {
+      capturedSnapshot = captureComposerDraftSnapshot(draftKey, text);
+      finishSend = deferred();
+      return finishSend.promise;
+    },
+    { draftKey, mentionTargets: [connector] },
+  );
+  type(first, "@Te");
+  pressEnter(first);
+  expect(first.value).toBe("@Test ");
+  pressEnter(first);
+  act(() => root?.unmount());
+  container?.remove();
+  await act(async () => finishSend?.resolve(false));
+
+  const reopened = renderComposer(vi.fn(), { draftKey, mentionTargets: [connector] });
+  expect(reopened.value).toBe("@Test ");
+  expect(container?.querySelectorAll('[data-testid="mention-chip"]')).toHaveLength(1);
+
+  act(() => clearAcceptedComposerDraft(draftKey, capturedSnapshot!));
+  expect(reopened.value).toBe("");
+  expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBeNull();
+});
+
+it("does not overwrite a reopened draft edited away and retyped to match queued dictation", async () => {
+  let finishSend!: Deferred<boolean>;
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  const onFailedSendRestored = vi.fn();
+  const draftKey = "bot:queued-dictation-retyped";
+  try {
+    const first = renderComposer(
+      () => {
+        finishSend = deferred();
+        return finishSend.promise;
+      },
+      { draftKey, phoneCallsEnabled: true, onFailedSendRestored },
+    );
+    type(first, "please book the flight");
+    pressEnter(first);
+    rerenderComposer({ sending: true });
+
+    // Dictate while the first send is still in flight (queues behind it).
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("and a hotel"));
+    await act(async () => {});
+    expect(first.value).toBe("and a hotel");
+
+    // Leave and reopen the chat, then edit the draft away and retype the exact same words.
+    act(() => root?.unmount());
+    container?.remove();
+    const reopened = renderComposer(vi.fn(), { draftKey, phoneCallsEnabled: true });
+    expect(reopened.value).toBe("and a hotel");
+    type(reopened, "something else");
+    type(reopened, "and a hotel");
+
+    // The earlier send now fails; the reopened user's draft must not be overwritten or merged.
+    await act(async () => finishSend.resolve(false));
+    expect(reopened.value).toBe("and a hotel");
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("and a hotel");
+    expect(onFailedSendRestored).not.toHaveBeenCalled();
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it.each([false, true])(
+  "does not overwrite another tab's draft from mounted queued dictation (firstAccepted=%s)",
+  async (firstAccepted) => {
+    let finishSend!: Deferred<boolean>;
+    const onSend = vi.fn(() => {
+      finishSend = deferred();
+      return finishSend.promise;
+    });
+    let onFinal!: (text: string) => void;
+    const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+      onFinal = options.onFinal;
+    });
+    const onFailedSendRestored = vi.fn();
+    const draftKey = `bot:mounted-queued-cross-tab-${firstAccepted}`;
+    try {
+      const textarea = renderComposer(onSend, {
+        draftKey,
+        phoneCallsEnabled: true,
+        onFailedSendRestored,
+      });
+      type(textarea, "first");
+      pressEnter(textarea);
+      rerenderComposer({ sending: true });
+
+      const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+      act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      act(() => onFinal("spoken"));
+      await act(async () => {});
+      expect(textarea.value).toBe("spoken");
+
+      // Another tab saves a newer draft for the same chat while this composer stays mounted.
+      writeComposerDraft(draftKey, "other tab draft");
+
+      await act(async () => finishSend.resolve(firstAccepted));
+      rerenderComposer({ sending: false });
+      await act(async () => {});
+
+      expect(onSend).toHaveBeenCalledTimes(1);
+      expect(onFailedSendRestored).not.toHaveBeenCalled();
+      expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("other tab draft");
+    } finally {
+      listen.mockRestore();
+    }
+  },
+);
+
+it("does not restore a failed plain-text send into the mounted composer after another tab edits the draft", async () => {
+  let finishSend!: Deferred<boolean>;
+  const draftKey = "bot:plain-send-cross-tab-fail";
+  const textarea = renderComposer(
+    () => {
+      finishSend = deferred();
+      return finishSend.promise;
+    },
+    { draftKey },
+  );
+  type(textarea, "first message");
+  pressEnter(textarea);
+  expect(textarea.value).toBe("");
+
+  // Another tab edits the same chat's saved draft before the send fails.
+  writeComposerDraft(draftKey, "other tab newer draft");
+
+  await act(async () => finishSend.resolve(false));
+  // Failed row in transcript owns retry; mounted field stays empty and remote draft stays intact.
+  expect(textarea.value).toBe("");
+  expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("other tab newer draft");
+});
+
+it("restores a failed attachment send into the mounted composer after another tab edits the draft", async () => {
+  let finishSend!: Deferred<boolean>;
+  const draftKey = "bot:attachment-send-cross-tab-fail";
+  const file = new File(["hello"], "notes.txt", { type: "text/plain" });
+  const pendingAttachments = [{ id: "att-1", threadKey: "bot-1", file }];
+  const textarea = renderComposer(
+    () => {
+      finishSend = deferred();
+      return finishSend.promise;
+    },
+    { draftKey, pendingAttachments },
+  );
+  type(textarea, "caption with file");
+  pressEnter(textarea);
+  expect(textarea.value).toBe("");
+
+  // Another tab saves a newer draft while the attachment upload/send is in flight.
+  writeComposerDraft(draftKey, "other tab draft");
+
+  await act(async () => finishSend.resolve(false));
+  // Attachment sends have no failed transcript row, so the mounted composer restores the text
+  // without overwriting the other tab's saved draft.
+  expect(textarea.value).toBe("caption with file");
+  expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("other tab draft");
+});
+
+it("preserves both a failed attachment caption and cross-tab dictation locally without overwriting storage", async () => {
+  let finishSend!: Deferred<boolean>;
+  const onSend = vi.fn(() => {
+    finishSend = deferred();
+    return finishSend.promise;
+  });
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  const draftKey = "bot:attachment-cross-tab-dictation-fail";
+  const file = new File(["hello"], "notes.txt", { type: "text/plain" });
+  const pendingAttachments = [{ id: "att-1", threadKey: "bot-1", file }];
+  try {
+    const textarea = renderComposer(onSend, {
+      draftKey,
+      phoneCallsEnabled: true,
+      pendingAttachments,
+    });
+    type(textarea, "caption with file");
+    pressEnter(textarea);
+    rerenderComposer({ sending: true });
+
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    writeComposerDraft(draftKey, "other tab draft");
+    act(() => onFinal("spoken words"));
+    await act(async () => {});
+
+    expect(textarea.value).toBe("spoken words");
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("other tab draft");
+
+    await act(async () => finishSend.resolve(false));
+    rerenderComposer({ sending: false });
+    await act(async () => {});
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(textarea.value).toBe("caption with file spoken words");
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("other tab draft");
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it("saves and queues dictation after a same-tab edit is typed and cleared while a send is pending", async () => {
+  let finishFirst!: Deferred<boolean>;
+  const onSend = vi
+    .fn<ComponentProps<typeof Composer>["onSend"]>()
+    .mockImplementationOnce(() => {
+      finishFirst = deferred();
+      return finishFirst.promise;
+    })
+    .mockResolvedValue(true);
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  const draftKey = "bot:same-tab-edit-clear-dictate";
+  try {
+    const textarea = renderComposer(onSend, { draftKey, phoneCallsEnabled: true });
+    type(textarea, "first");
+    pressEnter(textarea);
+    rerenderComposer({ sending: true });
+
+    // Type and clear a follow-up in the same tab while the first send is still pending.
+    type(textarea, "typo");
+    type(textarea, "");
+
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("spoken follow-up"));
+    await act(async () => {});
+
+    // Dictation must be persisted to storage (not misread as cross-tab) and auto-send next.
+    expect(textarea.value).toBe("spoken follow-up");
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("spoken follow-up");
+
+    await act(async () => finishFirst.resolve(true));
+    rerenderComposer({ sending: false });
+    await act(async () => {});
+
+    expect(onSend).toHaveBeenCalledTimes(2);
+    expect(onSend).toHaveBeenLastCalledWith("spoken follow-up", [], expect.any(String));
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it.each([false, true])(
+  "keeps late dictation local when a send settles after another tab edited the draft (firstAccepted=%s)",
+  async (firstAccepted) => {
+    let finishFirst!: Deferred<boolean>;
+    const onSend = vi
+      .fn<ComponentProps<typeof Composer>["onSend"]>()
+      .mockImplementationOnce(() => {
+        finishFirst = deferred();
+        return finishFirst.promise;
+      })
+      .mockResolvedValue(true);
+    let onFinal!: (text: string) => void;
+    const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+      onFinal = options.onFinal;
+    });
+    const draftKey = `bot:late-dictation-after-settle-${firstAccepted}`;
+    try {
+      const textarea = renderComposer(onSend, { draftKey, phoneCallsEnabled: true });
+      type(textarea, "first");
+      pressEnter(textarea);
+      rerenderComposer({ sending: true });
+
+      const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+      act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      // Another tab saves a newer draft, and the first send settles BEFORE transcription finishes.
+      writeComposerDraft(draftKey, "other tab draft");
+      await act(async () => finishFirst.resolve(firstAccepted));
+      rerenderComposer({ sending: false });
+      await act(async () => {});
+
+      act(() => onFinal("late spoken words"));
+      await act(async () => {});
+
+      expect(onSend).toHaveBeenCalledTimes(1);
+      expect(textarea.value).toBe("late spoken words");
+      expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("other tab draft");
+    } finally {
+      listen.mockRestore();
+    }
+  },
+);
+
+it("keeps dictation local when another tab edits the draft during a transcript retry", async () => {
+  const onSend = vi.fn<ComponentProps<typeof Composer>["onSend"]>().mockResolvedValue(true);
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  const draftKey = "bot:dictation-during-transcript-retry";
+  try {
+    // Transcript retry sets `sending: true` without creating a composer submission (`inFlightSend`).
+    const textarea = renderComposer(onSend, {
+      draftKey,
+      phoneCallsEnabled: true,
+      sending: true,
+    });
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    writeComposerDraft(draftKey, "other tab draft");
+    act(() => onFinal("spoken during retry"));
+    await act(async () => {});
+
+    rerenderComposer({ sending: false });
+    await act(async () => {});
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(textarea.value).toBe("spoken during retry");
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("other tab draft");
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it("persists and sends dictation after a same-tab retry or dismiss clears an empty composer's saved draft", async () => {
+  let finishFirst!: Deferred<boolean>;
+  let capturedSnapshot: ReturnType<typeof captureComposerDraftSnapshot> | undefined;
+  const onSend = vi
+    .fn<ComponentProps<typeof Composer>["onSend"]>()
+    .mockImplementationOnce((text) => {
+      capturedSnapshot = captureComposerDraftSnapshot("bot:clear-empty-then-dictate", text);
+      finishFirst = deferred();
+      return finishFirst.promise;
+    })
+    .mockResolvedValue(true);
+  let onFinal!: (text: string) => void;
+  const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+    onFinal = options.onFinal;
+  });
+  const draftKey = "bot:clear-empty-then-dictate";
+  const reply: ThreadMessage = {
+    id: "m-reply-1",
+    threadId: "t-1",
+    seq: 1,
+    role: "bot",
+    blocks: [{ kind: "text", text: "original" }],
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  try {
+    const textarea = renderComposer(onSend, {
+      draftKey,
+      phoneCallsEnabled: true,
+      replyTarget: reply,
+    });
+    type(textarea, "reply draft");
+    pressEnter(textarea);
+    rerenderComposer({ sending: true });
+
+    // Cancel the reply while the send is pending so the failed send does not restore into the field.
+    rerenderComposer({ replyTarget: null });
+    await act(async () => finishFirst.resolve(false));
+    rerenderComposer({ sending: false });
+    expect(textarea.value).toBe("");
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("reply draft");
+
+    // Same-tab retry acceptance or dismiss clears the saved draft while the field is already empty.
+    act(() => clearAcceptedComposerDraft(draftKey, capturedSnapshot!));
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBeNull();
+
+    // Next dictation must persist and send instead of being treated as a cross-tab conflict.
+    const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+    act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+    act(() => onFinal("next dictated message"));
+    await act(async () => {});
+
+    expect(onSend).toHaveBeenCalledTimes(2);
+    expect(onSend).toHaveBeenLastCalledWith("next dictated message", [], expect.any(String));
+  } finally {
+    listen.mockRestore();
+  }
+});
+
+it.each([false, true])(
+  "keeps dictation local without overwriting another tab's draft written before transcription finishes (firstAccepted=%s)",
+  async (firstAccepted) => {
+    let finishSend!: Deferred<boolean>;
+    const onSend = vi.fn(() => {
+      finishSend = deferred();
+      return finishSend.promise;
+    });
+    let onFinal!: (text: string) => void;
+    const listen = vi.spyOn(dictation, "listen").mockImplementation(async (options) => {
+      onFinal = options.onFinal;
+    });
+    const onFailedSendRestored = vi.fn();
+    const draftKey = `bot:dictation-after-remote-edit-${firstAccepted}`;
+    try {
+      const textarea = renderComposer(onSend, {
+        draftKey,
+        phoneCallsEnabled: true,
+        onFailedSendRestored,
+      });
+      type(textarea, "first");
+      pressEnter(textarea);
+      rerenderComposer({ sending: true });
+
+      const mic = container?.querySelector<HTMLButtonElement>('button[aria-label="Hold to talk"]');
+      act(() => mic?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })));
+      // Another tab saves a newer draft BEFORE dictation finishes transcribing.
+      writeComposerDraft(draftKey, "other tab draft");
+      act(() => onFinal("spoken"));
+      await act(async () => {});
+
+      expect(textarea.value).toBe("spoken");
+      expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("other tab draft");
+
+      await act(async () => finishSend.resolve(firstAccepted));
+      rerenderComposer({ sending: false });
+      await act(async () => {});
+
+      expect(onSend).toHaveBeenCalledTimes(1);
+      expect(onFailedSendRestored).not.toHaveBeenCalled();
+      expect(textarea.value).toBe("spoken");
+      expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("other tab draft");
+    } finally {
+      listen.mockRestore();
+    }
+  },
+);
 
 it.each([false, true])(
   "sends dictation at once and keeps a draft typed during its failing send (throws=%s)",
