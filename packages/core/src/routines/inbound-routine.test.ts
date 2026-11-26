@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  inboundRoutineBlock,
-  inboundRoutinePrefixLength,
-  inboundRoutinePrompts,
-} from "./inbound-routine.js";
+import { inboundRoutineBlock, inboundRoutinePrompts } from "./inbound-routine.js";
 
 const digest = { name: "Digest", prompt: "Summarize https://status.example.com\n" };
 const triage = { name: "Triage", prompt: "Label the issue" };
@@ -44,21 +40,5 @@ describe("inboundRoutinePrompts", () => {
     ].join("\n");
     expect(inboundRoutinePrompts(task, [triage, digest])).toEqual(["Label the issue"]);
     expect(inboundRoutinePrompts(inboundRoutineBlock(forged), [digest])).toEqual([]);
-  });
-});
-
-describe("inboundRoutinePrefixLength", () => {
-  it("returns the exact character length of verified leading routine blocks and excludes the payload", () => {
-    const task = [
-      inboundRoutineBlock(digest),
-      inboundRoutineBlock(triage),
-      "",
-      "Inbound webhook payload:",
-      inboundRoutineBlock(digest),
-    ].join("\n");
-    const expectedPrefix = `${inboundRoutineBlock(digest)}\n${inboundRoutineBlock(triage)}\n`;
-    expect(inboundRoutinePrefixLength(task, [triage, digest])).toBe(expectedPrefix.length);
-    expect(task.slice(0, inboundRoutinePrefixLength(task, [triage, digest]))).toBe(expectedPrefix);
-    expect(inboundRoutinePrefixLength("Inbound webhook payload:\n{}", [digest])).toBe(0);
   });
 });

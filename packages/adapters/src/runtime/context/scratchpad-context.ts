@@ -20,7 +20,7 @@ type AgentScratchpadSnapshot = {
   parked: number;
 };
 
-export async function readAgentScratchpad(
+async function readAgentScratchpad(
   deps: ScratchpadToolDeps | { prisma: PrismaClient },
   input: { spaceId: string; botId: string },
 ): Promise<AgentScratchpadSnapshot> {
@@ -34,7 +34,7 @@ export async function readAgentScratchpad(
   return { items, parked };
 }
 
-export function formatAgentScratchpadContext(
+function formatAgentScratchpadContext(
   snapshot: AgentScratchpadSnapshot,
   maxBytes = MAX_SCRATCHPAD_CONTEXT_BYTES,
   redact?: (text: string) => string,

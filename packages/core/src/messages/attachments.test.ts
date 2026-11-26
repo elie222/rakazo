@@ -977,7 +977,9 @@ describe("tool step history", () => {
         ],
       },
     ]);
+  });
 
+  it("keeps escaped-quote neighbors intact when redacting trailing-backslash secrets in JSON tool calls", () => {
     const escapedQuote = '{"safe":"prefix\\"kept","secret":"prefix\\\\"}';
     const slashSegments = blocksToAgentHistorySegments(
       [
@@ -1007,8 +1009,10 @@ describe("tool step history", () => {
       safe: 'prefix"kept',
       secret: "[redacted]",
     });
+  });
 
-    const numericAndPrefixed = blocksToAgentHistorySegments(
+  it("redacts root primitives, log-prefixed JSON, and labeled quoted secrets in tool results", () => {
+    const segments = blocksToAgentHistorySegments(
       [
         {
           kind: "steps",
@@ -1021,20 +1025,8 @@ describe("tool step history", () => {
                 { result: "731428" },
                 { result: 'Log prefix: {"safe":"prefix\\"kept","secret":"prefix\\\\"}' },
                 { result: 'Rejected values: ["opaque-123"]' },
-                { result: '{"value":{"mode":"opaque-123"},"next":"ok"}' },
                 { result: 'Rejected fixture:\n"opaque-123"' },
-                { result: '{"value":[731428,918273],"next":"ok"}' },
-                { result: '{"message":"details: [\\"opaque-123\\"]","next":"ok"}' },
-                { result: '{"value":{"mode":"opaque-123"},"next":"ok"}\n{"done":true}' },
-                {
-                  result: `${"[".repeat(19)}{"filler":"${"x".repeat(900)}","value":{"mode":"opaque-123"}}${"]".repeat(19)}`,
-                },
                 { result: 'Response body: "s\\u00e9cret-123". HTTP 400' },
-                { result: '{"message":"details: [\\"opaque-123\\"]' },
-                { result: '{"message":"\\u006fpaque-123006\\u0074oken-456"}' },
-                { result: '{"message":"\\u006fpaque-123 and other-secret"}' },
-                { result: '{"message":"opaque-1234567890"}' },
-                { result: '{"done":true}\n731428' },
               ],
             },
           ],
@@ -1044,65 +1036,116 @@ describe("tool step history", () => {
         "731428",
         "prefix\\",
         '"opaque-123"',
-        '{"mode":"opaque-123"}',
         'fixture:\n"opaque-123"',
-        "[731428,918273]",
-        '\\"opaque-123\\"',
         "sécret-123",
+      ]),
+    );
+    const calls = segments[0] && "steps" in segments[0] ? segments[0].steps[0]?.calls : undefined;
+    expect(calls?.[0]?.result).toBe("[redacted]");
+    const embeddedJson = calls?.[1]?.result?.replace(/^Log prefix: /, "") ?? "";
+    expect(JSON.parse(embeddedJson)).toEqual({
+      safe: 'prefix"kept',
+      secret: "[redacted]",
+    });
+    expect(calls?.[2]?.result).toBe('Rejected values: ["[redacted]"]');
+    expect(calls?.[3]?.result).toBe("Rejected [redacted]");
+    expect(calls?.[4]?.result).toBe('Response body: "[redacted]". HTTP 400');
+  });
+
+  it("redacts whole JSON object/array values, deep nesting, and JSON Lines tool results without breaking JSON", () => {
+    const segments = blocksToAgentHistorySegments(
+      [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Lookup",
+              tool: "lookup",
+              count: 5,
+              calls: [
+                { result: '{"value":{"mode":"opaque-123"},"next":"ok"}' },
+                { result: '{"value":[731428,918273],"next":"ok"}' },
+                { result: '{"value":{"mode":"opaque-123"},"next":"ok"}\n{"done":true}' },
+                {
+                  result: `${"[".repeat(19)}{"filler":"${"x".repeat(900)}","value":{"mode":"opaque-123"}}${"]".repeat(19)}`,
+                },
+                { result: '{"done":true}\n731428' },
+              ],
+            },
+          ],
+        },
+      ] as unknown as MessageBlock[],
+      secretRedactor(["731428", '{"mode":"opaque-123"}', "[731428,918273]"]),
+    );
+    const calls = segments[0] && "steps" in segments[0] ? segments[0].steps[0]?.calls : undefined;
+    expect(JSON.parse(calls?.[0]?.result ?? "")).toEqual({
+      value: "[redacted]",
+      next: "ok",
+    });
+    expect(JSON.parse(calls?.[1]?.result ?? "")).toEqual({
+      value: "[redacted]",
+      next: "ok",
+    });
+    expect((calls?.[2]?.result ?? "").split("\n").map((line) => JSON.parse(line))).toEqual([
+      { value: "[redacted]", next: "ok" },
+      { done: true },
+    ]);
+    expect(calls?.[3]?.result).not.toContain("opaque-123");
+    expect(() => JSON.parse(calls?.[3]?.result ?? "")).not.toThrow();
+    expect((calls?.[4]?.result ?? "").split("\n").map((line) => JSON.parse(line))).toEqual([
+      { done: true },
+      "[redacted]",
+    ]);
+  });
+
+  it("redacts escaped and unicode-escaped raw secrets inside valid and truncated JSON strings", () => {
+    const segments = blocksToAgentHistorySegments(
+      [
+        {
+          kind: "steps",
+          steps: [
+            {
+              label: "Lookup",
+              tool: "lookup",
+              count: 5,
+              calls: [
+                { result: '{"message":"details: [\\"opaque-123\\"]","next":"ok"}' },
+                { result: '{"message":"details: [\\"opaque-123\\"]' },
+                { result: '{"message":"\\u006fpaque-123006\\u0074oken-456"}' },
+                { result: '{"message":"\\u006fpaque-123 and other-secret"}' },
+                { result: '{"message":"opaque-1234567890"}' },
+              ],
+            },
+          ],
+        },
+      ] as unknown as MessageBlock[],
+      secretRedactor([
+        '\\"opaque-123\\"',
         "\\u006fpaque-123",
         "\\u0074oken-456",
         "other-secret",
         'heading\n"opaque-1234567890"\nfooter',
       ]),
     );
-    const extraCalls =
-      numericAndPrefixed[0] && "steps" in numericAndPrefixed[0]
-        ? numericAndPrefixed[0].steps[0]?.calls
-        : undefined;
-    expect(extraCalls?.[0]?.result).toBe("[redacted]");
-    const embeddedJson = extraCalls?.[1]?.result?.replace(/^Log prefix: /, "") ?? "";
-    expect(JSON.parse(embeddedJson)).toEqual({
-      safe: 'prefix"kept',
-      secret: "[redacted]",
-    });
-    expect(extraCalls?.[2]?.result).toBe('Rejected values: ["[redacted]"]');
-    expect(JSON.parse(extraCalls?.[3]?.result ?? "")).toEqual({
-      value: "[redacted]",
-      next: "ok",
-    });
-    expect(extraCalls?.[4]?.result).toBe("Rejected [redacted]");
-    expect(JSON.parse(extraCalls?.[5]?.result ?? "")).toEqual({
-      value: "[redacted]",
-      next: "ok",
-    });
-    expect(extraCalls?.[6]?.result).not.toContain('\\"opaque-123\\"');
-    expect(JSON.parse(extraCalls?.[6]?.result ?? "")).toEqual({
+    const calls = segments[0] && "steps" in segments[0] ? segments[0].steps[0]?.calls : undefined;
+    expect(calls?.[0]?.result).not.toContain('\\"opaque-123\\"');
+    expect(JSON.parse(calls?.[0]?.result ?? "")).toEqual({
       message: "details: [[redacted]]",
       next: "ok",
     });
-    expect((extraCalls?.[7]?.result ?? "").split("\n").map((line) => JSON.parse(line))).toEqual([
-      { value: "[redacted]", next: "ok" },
-      { done: true },
-    ]);
-    expect(extraCalls?.[8]?.result).not.toContain("opaque-123");
-    expect(() => JSON.parse(extraCalls?.[8]?.result ?? "")).not.toThrow();
-    expect(extraCalls?.[9]?.result).toBe('Response body: "[redacted]". HTTP 400');
-    expect(extraCalls?.[10]?.result).toBe('{"message":"details: [[redacted]]');
-    expect(JSON.parse(extraCalls?.[11]?.result ?? "")).toEqual({
+    expect(calls?.[1]?.result).toBe('{"message":"details: [[redacted]]');
+    expect(JSON.parse(calls?.[2]?.result ?? "")).toEqual({
       message: "[redacted]006[redacted]",
     });
-    expect(JSON.parse(extraCalls?.[12]?.result ?? "")).toEqual({
+    expect(JSON.parse(calls?.[3]?.result ?? "")).toEqual({
       message: "[redacted] and [redacted]",
     });
-    expect(JSON.parse(extraCalls?.[13]?.result ?? "")).toEqual({
+    expect(JSON.parse(calls?.[4]?.result ?? "")).toEqual({
       message: "[redacted]",
     });
-    expect((extraCalls?.[14]?.result ?? "").split("\n").map((line) => JSON.parse(line))).toEqual([
-      { done: true },
-      "[redacted]",
-    ]);
+  });
 
-    // Overlapping label+value and quoted secrets must scan linearly, never re-scanning growing prefixes.
+  it("scans overlapping labeled and quoted secrets linearly without re-scanning growing prefixes", () => {
     const overlapping = 'fixture:\n"opaque-123"\n'.repeat(2_000);
     let inspectedChars = 0;
     const countingRedactor = (text: string) => {
