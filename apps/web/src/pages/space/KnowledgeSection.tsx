@@ -402,7 +402,7 @@ export function AgentSkills() {
       if (creating) {
         await rpc.agentSkills.create({
           content: draft,
-          ...(canShare && forOrganization ? { organization: true } : {}),
+          ...(forOrganization ? { organization: true } : {}),
         });
       } else if (open) {
         await rpc.agentSkills.update({ skillId: open.id, content: draft });
@@ -488,7 +488,7 @@ export function AgentSkills() {
             </Button>
           ))
         : null}
-      {creating && canShare ? (
+      {creating && (canShare || forOrganization) ? (
         <Field orientation="horizontal" className="mb-3">
           <Checkbox
             id={organizationScopeId}

@@ -63,7 +63,7 @@ function SkillEditor({ id }: { id?: string }) {
       if (skill) return send("agentSkills/update", { skillId: skill.id, content });
       await send("agentSkills/create", {
         content,
-        ...(canShare && forOrganization ? { organization: true } : {}),
+        ...(forOrganization ? { organization: true } : {}),
       });
       return null;
     },
@@ -131,7 +131,7 @@ function SkillEditor({ id }: { id?: string }) {
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
       >
-        {!id && canShare ? (
+        {!id && (canShare || forOrganization) ? (
           <SettingsGroup>
             <SettingsSwitch
               label={t`Share with organization`}

@@ -496,6 +496,27 @@ describe("skill tools", () => {
     expect(catalog).toContain("skill_read");
   });
 
+  it("advertises the personal recipe when a shared name overlaps", async () => {
+    prisma = makePrisma([
+      { ...owner, id: "personal", name: "Daily review", source: "user" },
+      { organizationId: "org-1", id: "shared", name: "daily review", source: "user" },
+    ]);
+
+    const records = await listAgentSkillRecords(prisma as never, owner);
+    expect(records.filter(({ name }) => name.toLowerCase() === "daily review")).toEqual([
+      expect.objectContaining({ id: "personal" }),
+    ]);
+    expect(await skillReadFromTool(prisma as never, owner, { name: "daily review" })).toMatchObject(
+      {
+        name: "Daily review",
+      },
+    );
+    expect(await skillReadFromTool(prisma as never, owner, { skillId: "shared" })).toMatchObject({
+      name: "daily review",
+      readOnly: true,
+    });
+  });
+
   it("rejects update/delete for plugin and builtin skills", async () => {
     prisma = makePrisma([
       {

@@ -179,7 +179,7 @@ function visibleSkillQuery(owner: SkillOwner) {
   } satisfies Prisma.AgentSkillFindManyArgs;
 }
 
-export async function listAgentSkillRecords(
+async function listVisibleSkillRecords(
   prisma: PrismaClient,
   owner: SkillOwner,
 ): Promise<Array<SkillRecord & { id: string }>> {
@@ -191,6 +191,17 @@ export async function listAgentSkillRecords(
   return mergeBuiltinSkills(builtinAgentSkillRecords(), rows.map(toRecord));
 }
 
+export async function listAgentSkillRecords(prisma: PrismaClient, owner: SkillOwner) {
+  const records = await listVisibleSkillRecords(prisma, owner);
+  const seen = new Set<string>();
+  return records.filter((skill) => {
+    const name = skill.name.trim().toLowerCase();
+    if (seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
+}
+
 type SkillKey = Pick<AgentSkillRow, "id" | "name">;
 type SkillLookup = { skillId?: string; name?: string };
 
@@ -200,7 +211,7 @@ function matchSkill<T extends SkillKey>(skills: readonly T[], input: SkillLookup
 }
 
 async function findOwnedSkill(prisma: PrismaClient, owner: SkillOwner, input: SkillLookup) {
-  return matchSkill(await listAgentSkillRecords(prisma, owner), input);
+  return matchSkill(await listVisibleSkillRecords(prisma, owner), input);
 }
 
 async function findPersonalSkillName(prisma: PrismaClient, owner: SkillOwner, name: string) {
