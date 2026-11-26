@@ -59,7 +59,12 @@ export function spaceChanged(kind: ReadChangeKind, client = queryClient): Promis
     predicate: ({ queryKey: [path] }) => {
       if (!Array.isArray(path)) return false;
       if (kind === "deploymentModel") return path[2] === "me" || path[2] === "models";
-      if (kind === "preferences" && path[2] === "me") return true;
+      if (
+        kind === "preferences" &&
+        (path[2] === "me" ||
+          path.slice(-3).join(".") === "models.organizationConnections.available")
+      )
+        return true;
       if (kind === "capabilities") {
         return CAPABILITY_READ_PATHS.some(
           (procedure) => path.slice(-procedure.split("/").length).join("/") === procedure,

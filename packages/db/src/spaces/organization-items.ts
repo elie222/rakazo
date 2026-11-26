@@ -23,6 +23,31 @@ export function organizationItemIn(scope: Scope) {
   };
 }
 
+export function organizationModelConnectionIn(scope: Scope, selectedId?: string) {
+  return {
+    organization: {
+      AND: [
+        LIVE_ORGANIZATION,
+        {
+          spaces: {
+            some: {
+              id: scope.spaceId,
+              deletingAt: null,
+              memberships: {
+                some: {
+                  userId: scope.userId,
+                  member: { role: { not: GUEST_ROLE } },
+                  ...(selectedId ? { organizationModelConnectionId: selectedId } : {}),
+                },
+              },
+            },
+          },
+        },
+      ],
+    },
+  };
+}
+
 /** The managed app connections available to a member in this Space. */
 export function connectionIn(scope: Scope) {
   return { OR: [{ spaceId: scope.spaceId, userId: scope.userId }, organizationItemIn(scope)] };

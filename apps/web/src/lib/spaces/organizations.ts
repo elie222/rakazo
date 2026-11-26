@@ -135,6 +135,7 @@ export function organizationsChanged(client = queryClient): Promise<void> {
     predicate: ({ queryKey }) =>
       queryKey[1] === ORGANIZATIONS_KEY ||
       (Array.isArray(queryKey[0]) &&
-        ["billing.status", "cloudComputers.list"].includes(queryKey[0].slice(-2).join("."))),
+        (["billing.status", "cloudComputers.list"].includes(queryKey[0].slice(-2).join(".")) ||
+          queryKey[0].slice(-3).join(".") === "models.organizationConnections.available")),
   });
 }

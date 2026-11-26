@@ -84,7 +84,8 @@ export function refreshOrganizationReads(): Promise<void> {
       queryKey.includes("organizations/list") ||
       queryKey.includes("organizations/members/list") ||
       queryKey.includes("billing/status") ||
-      queryKey.includes("cloudComputers/list"),
+      queryKey.includes("cloudComputers/list") ||
+      queryKey.includes("models/organizationConnections/available"),
   });
 }
 

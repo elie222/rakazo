@@ -74,6 +74,7 @@ async function follow(signal: AbortSignal) {
             void refreshRpcQueries("approvalRules/effective");
             void refreshRpcQueries("autoReview/get");
             void refreshRpcQueries("spaceSettings/overrides");
+            void refreshRpcQueries("models/organizationConnections/available");
           }
           if (kind === "integrations") {
             void refreshRpcQueries("connections/catalog");

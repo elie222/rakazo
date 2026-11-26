@@ -1387,9 +1387,11 @@ async function continuePinnedRoutineRun(
   const enqueue = vi.fn(async () => undefined);
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const append = vi.fn(async () => undefined);
+  const { spaceMember, ...runPrisma } = pinnedRoutineRunPrisma(modelId, options.trigger);
   const prisma: Record<string, unknown> = {
-    ...pinnedRoutineRunPrisma(modelId, options.trigger),
+    ...runPrisma,
     ...compatiblePrismaParts("space-model", plaintext),
+    spaceMember,
   };
   prisma.$transaction = vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
   const executor = compatibleExecutor(prisma, plaintext, {
