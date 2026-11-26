@@ -4,8 +4,8 @@ import { HistorySearchInputSchema } from "@rakazo/contracts";
 import { escapeJsonSearchWildcards } from "@rakazo/core";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { Prisma } from "../database/client.js";
-import { PrismaClient } from "../database/client.js";
+import { Prisma, PrismaClient } from "../database/client.js";
+import { loadRunHistoryMessages } from "../threads/messages.js";
 import { readHistory, searchHistory } from "./history-retrieval.js";
 
 // Temporary synthetic tables shadow product tables. Never inspect existing chat content.
@@ -252,6 +252,101 @@ postgres("history retrieval (PostgreSQL)", () => {
         `DELETE FROM messages WHERE id IN ('owner-ask','member-ask','channel-in','own-reply','channel-reply','member-reply','peer-reply');
         DELETE FROM runs WHERE id IN ('owner-turn','channel-turn','member-turn')`,
       );
+    }
+  });
+
+  it("probes runs by primary key instead of scanning runs in routine history reads", async () => {
+    await pool.query(`
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS "authorUserId" text,
+        ADD COLUMN IF NOT EXISTS "botId" text;
+      ALTER TABLE runs ADD COLUMN IF NOT EXISTS trigger text;
+      INSERT INTO runs (id, "spaceId", "userId", "threadId", "botId", status, trigger)
+      SELECT 'plan-run-' || n, 'synthetic-space', 'synthetic-user', 'synthetic-thread', 'synthetic-bot', 'completed', 'user'
+      FROM generate_series(1, 20000) n;
+      ANALYZE runs;
+    `);
+    try {
+      let captured: Prisma.Sql[] = [];
+      const rawSpy = vi.spyOn(prisma, "$queryRaw").mockImplementation(((
+        first: Prisma.Sql | TemplateStringsArray,
+        ...rest: unknown[]
+      ) => {
+        const sql = Array.isArray(first)
+          ? Prisma.sql(first as unknown as TemplateStringsArray, ...rest)
+          : (first as Prisma.Sql);
+        captured.push(sql);
+        return Promise.resolve([]);
+      }) as never);
+      const findManySpy = vi.spyOn(prisma.message, "findMany").mockResolvedValue([] as never);
+      let historyQuery: Prisma.Sql | undefined;
+      let searchQuery: Prisma.Sql | undefined;
+      try {
+        captured = [];
+        await loadRunHistoryMessages(
+          prisma,
+          {
+            id: "plan-run-current",
+            threadId: "synthetic-thread",
+            botId: "synthetic-bot",
+            userId: "synthetic-user",
+          },
+          20,
+          undefined,
+          { routineId: "r-plan", earlierResults: 0 },
+        );
+        expect(captured).toHaveLength(1);
+        historyQuery = captured[0];
+
+        captured = [];
+        await searchHistory(
+          prisma,
+          { ...scope, ownerOnly: "synthetic-user" },
+          { query: "exports batching" },
+        );
+        expect(captured.length).toBeGreaterThanOrEqual(1);
+        searchQuery = captured[0];
+      } finally {
+        rawSpy.mockRestore();
+        findManySpy.mockRestore();
+      }
+      expect(historyQuery).toBeDefined();
+      expect(searchQuery).toBeDefined();
+      type PlanNode = {
+        "Node Type"?: string;
+        "Parent Relationship"?: string;
+        "Relation Name"?: string;
+        Alias?: string;
+        "Index Name"?: string;
+        Plans?: PlanNode[];
+      };
+      const collectRunsNodes = (node: PlanNode, inSubPlan = false) => {
+        const subPlan =
+          inSubPlan ||
+          node["Parent Relationship"] === "SubPlan" ||
+          node["Parent Relationship"] === "InitPlan";
+        const hits: Array<{ node: PlanNode; subPlan: boolean }> =
+          node["Relation Name"] === "runs" ? [{ node, subPlan }] : [];
+        for (const child of node.Plans ?? []) hits.push(...collectRunsNodes(child, subPlan));
+        return hits;
+      };
+      for (const query of [historyQuery!, searchQuery!]) {
+        const explained = await pool.query(`EXPLAIN (FORMAT JSON) ${query.text}`, query.values);
+        const rootPlan = (explained.rows[0]["QUERY PLAN"] as Array<{ Plan: PlanNode }>)[0]!.Plan;
+        const runsNodes = collectRunsNodes(rootPlan);
+        expect(
+          runsNodes.some(
+            ({ node, subPlan }) =>
+              !subPlan &&
+              node["Node Type"] === "Index Scan" &&
+              node["Index Name"] === "runs_pkey" &&
+              node.Alias === "owned",
+          ),
+        ).toBe(true);
+        expect(runsNodes.some(({ subPlan }) => subPlan)).toBe(false);
+        expect(runsNodes.some(({ node }) => node["Node Type"] === "Seq Scan")).toBe(false);
+      }
+    } finally {
+      await pool.query(`DELETE FROM runs WHERE id LIKE 'plan-run-%'`);
     }
   });
 

@@ -16,7 +16,7 @@ import {
   INDEXED_MESSAGE,
   UNINDEXED_MESSAGE,
 } from "../encryption/content-encryption.js";
-import { routineReadableSql } from "../threads/messages.js";
+import { routineReadableJoinSql, routineReadableSql } from "../threads/messages.js";
 import {
   historyAttachmentBlocks,
   historyMessageText,
@@ -154,6 +154,10 @@ const columns = Prisma.sql`m.id, m.seq, m.role, m."runId", m."replyToMessageId",
 
 /** Replies that used tools; matches the predicate of messages_tool_work_idx exactly. */
 const TOOL_WORK = Prisma.sql`m.role = 'bot' AND jsonb_path_exists(m.blocks, '$[*] ? (@.kind == "steps")')`;
+function visibleJoin(scope: HistoryScope, myChats = false): Prisma.Sql {
+  if (myChats || !scope.ownerOnly) return Prisma.empty;
+  return routineReadableJoinSql(scope.ownerOnly, scope.botId);
+}
 function visible(scope: HistoryScope, myChats = false, targetThreadId?: string): Prisma.Sql {
   // Match loadRunHistoryMessages: only an unassigned row for this bot means waiting.
   // Cross-chat direct threads use their owning bot; groups retain the reading bot.
@@ -202,7 +206,7 @@ function visible(scope: HistoryScope, myChats = false, targetThreadId?: string):
       )))`
         : Prisma.empty
     }
-    ${scope.ownerOnly ? Prisma.sql`AND ${routineReadableSql(scope.ownerOnly, scope.botId)}` : Prisma.empty}
+    ${scope.ownerOnly ? Prisma.sql`AND ${routineReadableSql(scope.ownerOnly)}` : Prisma.empty}
   `;
 }
 /** Raw reads bypass the client extension, so decrypt here. */
@@ -383,6 +387,7 @@ function withAttachments<T extends { messageId: string }>(
 async function hasToolWork(prisma: PrismaClient, scope: HistoryScope, myChats: boolean) {
   const rows = await prisma.$queryRaw<unknown[]>(Prisma.sql`
     SELECT 1 FROM messages m JOIN threads t ON t.id = m."threadId"
+    ${visibleJoin(scope, myChats)}
     WHERE ${visible(scope, myChats)} AND ${TOOL_WORK}
       ${scope.searchBeforeSeq !== undefined ? Prisma.sql`AND (t.id <> ${scope.threadId} OR m.seq < ${scope.searchBeforeSeq})` : Prisma.empty}
       ${myChats && scope.searchAt ? Prisma.sql`AND m."createdAt" < ${scope.searchAt}` : Prisma.empty}
@@ -477,6 +482,7 @@ export async function searchHistory(
   // False candidates are skipped and the scan continues, so pages stay full.
   const terms = queries.map(searchTerms);
   const indexed = contentEncryptionOf(prisma) ? INDEXED_MESSAGE : Prisma.sql`false`;
+  const join = visibleJoin(scope, myChats);
   const rows: Array<HistoryRow & { matchedQueryIndexes: number[]; nextOffset: number }> = [];
   let cursor = beforeSeq;
   let scanned = offset;
@@ -494,11 +500,13 @@ export async function searchHistory(
     SELECT ${columns}, ${indexed} AS indexed, COALESCE(b.name, g.name) AS "chatName"
     FROM messages m JOIN threads t ON t.id = m."threadId"
     LEFT JOIN bots b ON b.id = t."botId" LEFT JOIN chat_groups g ON g.id = t."groupId"
+    ${join}
     WHERE ${filters}
     ORDER BY m."createdAt" DESC, m.id DESC LIMIT ${limit + 1} OFFSET ${scanned}`
         : Prisma.sql`
     SELECT ${columns}, ${indexed} AS indexed
     FROM messages m JOIN threads t ON t.id = m."threadId"
+    ${join}
     WHERE ${filters}
       ${Number.isFinite(cursor) ? Prisma.sql`AND m.seq < ${cursor}` : Prisma.empty}
     ORDER BY m.seq DESC LIMIT ${limit + 1}`,
@@ -596,6 +604,7 @@ export async function readHistory(
   const permitted = !crossThread || (scope.allowMyChats === true && !scope.channelId);
   const targetThreadId = input.threadId ?? scope.threadId;
   const authorized = permitted ? visible(scope, crossThread, targetThreadId) : Prisma.sql`FALSE`;
+  const authorizedJoin = permitted ? visibleJoin(scope, crossThread) : Prisma.empty;
   const limit = Math.min(pageSize(input.limit), 5);
   const direction = input.direction ?? "around";
   if (
@@ -614,6 +623,7 @@ export async function readHistory(
     prisma,
     Prisma.sql`
     SELECT ${columns}, t."botId" FROM messages m JOIN threads t ON t.id = m."threadId"
+    ${authorizedJoin}
     WHERE ${authorized} AND m.id = ${input.messageId} LIMIT 1
   `,
   );
@@ -644,6 +654,7 @@ export async function readHistory(
           prisma,
           Prisma.sql`
     SELECT ${columns} FROM messages m JOIN threads t ON t.id = m."threadId"
+    ${authorizedJoin}
     WHERE ${authorized} AND ${bound}
     ORDER BY m.seq ${direction === "older" ? Prisma.sql`DESC` : Prisma.sql`ASC`} LIMIT ${limit}
   `,
@@ -702,6 +713,7 @@ export async function readHistory(
           prisma,
           Prisma.sql`
     SELECT ${columns} FROM messages m JOIN threads t ON t.id = m."threadId"
+    ${authorizedJoin}
     WHERE ${authorized} AND m.role = 'bot' AND m."runId" IN (${Prisma.join(runs.map((run) => run.id))})
       ${input.outcomeAfterSeq !== undefined ? Prisma.sql`AND m.seq > ${input.outcomeAfterSeq}` : Prisma.empty}
     ORDER BY m.seq ASC LIMIT ${LINK_PAGE_SIZE + 1}
