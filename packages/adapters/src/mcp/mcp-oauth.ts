@@ -30,7 +30,12 @@ import {
 } from "@rakazo/contracts";
 import { ClientError, readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { mcpServerIn, runAsSystem, serverSecretIn, serverSecretOwner } from "@rakazo/db";
+import {
+  personalOrOrganizationItemIn,
+  runAsSystem,
+  serverSecretIn,
+  serverSecretOwner,
+} from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "../integrations/connector-safety.js";
 import { isUnreachableHost } from "../integrations/connector-source.js";
@@ -1328,7 +1333,7 @@ export class McpOAuthBroker {
     const server = await this.prisma.mcpServer.findFirst({
       where: {
         id: input.serverId,
-        ...mcpServerIn(input),
+        ...personalOrOrganizationItemIn(input),
         enabled: true,
       },
     });
@@ -1497,7 +1502,7 @@ export class McpOAuthBroker {
       const server = await this.prisma.mcpServer.findFirst({
         where: {
           id: session.serverId,
-          ...mcpServerIn(input),
+          ...personalOrOrganizationItemIn(input),
           enabled: true,
         },
       });
@@ -1554,7 +1559,7 @@ export class McpOAuthBroker {
     // The exchange sends the client secret: check it against the binding stored now, not
     // the one this flow started with, in case an overlapping flow bound the client first.
     const current = await this.prisma.mcpServer.findFirst({
-      where: { id: pending.serverId, ...mcpServerIn(input) },
+      where: { id: pending.serverId, ...personalOrOrganizationItemIn(input) },
       select: { id: true, endpoint: true, secretId: true },
     });
     if (current) {
@@ -1653,7 +1658,7 @@ export class McpOAuthBroker {
       where: { serverId: input.serverId, spaceId: input.spaceId, userId: input.userId },
     });
     const server = await this.prisma.mcpServer.findFirst({
-      where: { id: input.serverId, ...mcpServerIn(input) },
+      where: { id: input.serverId, ...personalOrOrganizationItemIn(input) },
     });
     if (!server) return undefined;
     // With no stored credential the generation is still raised, so a first authorization
@@ -1967,7 +1972,7 @@ export class McpOAuthBroker {
     expectedEndpoint?: string | null,
   ): Promise<MaterialSnapshot> {
     const server = await tx.mcpServer.findFirst({
-      where: { id: serverId, ...mcpServerIn(context) },
+      where: { id: serverId, ...personalOrOrganizationItemIn(context) },
       select: { endpoint: true, secretId: true },
     });
     if (!server) throw new McpCredentialRefusedError("MCP server is unavailable");
@@ -2007,7 +2012,7 @@ export class McpOAuthBroker {
     incrementRevision = false,
   ): Promise<false | { revision: number }> {
     const server = await tx.mcpServer.findFirst({
-      where: { id: serverId, ...mcpServerIn(context) },
+      where: { id: serverId, ...personalOrOrganizationItemIn(context) },
       select: {
         endpoint: true,
         secretId: true,

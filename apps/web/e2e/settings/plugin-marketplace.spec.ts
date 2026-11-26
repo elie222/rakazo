@@ -77,6 +77,9 @@ test("Integrations installs a plugin, completes real broker OAuth against a fake
   ).toBeVisible();
   await expect(dialog.getByText(/^Not added/)).toHaveCount(0);
   expect(await rpc(page, "capabilities/list", undefined)).toEqual([]);
+  await expect(
+    dialog.getByRole("checkbox", { name: "Install for organization" }),
+  ).not.toBeChecked();
   await captureScreenshot(page, testInfo, "integrations-plugin-detail");
 
   // Connecting adds only the connector; the skills are a separate choice.

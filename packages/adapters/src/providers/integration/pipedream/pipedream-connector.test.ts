@@ -432,6 +432,39 @@ describe("PipedreamConnector", () => {
     );
   });
 
+  it.each([403, 503])("handles HTTP %s from the mailbox profile", async (status) => {
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch: async (input) =>
+        String(input).endsWith("/v1/oauth/token")
+          ? Response.json({ access_token: "fake-access-token", expires_in: 3_600 })
+          : Response.json({ error: "Profile unavailable" }, { status }),
+    });
+    const identity = connector.connectedAccountIdentity("GMAIL", "account-1", context);
+    if (status === 403) await expect(identity).resolves.toBeUndefined();
+    else await expect(identity).rejects.toThrow("HTTP 503");
+  });
+
+  it("deletes only the selected account when an organization has two accounts for an app", async () => {
+    const deleted: string[] = [];
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch: async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path.endsWith("/v1/oauth/token")) {
+          return Response.json({ access_token: "fake-access-token", expires_in: 3_600 });
+        }
+        if (init?.method === "DELETE") {
+          deleted.push(path);
+          return new Response(null, { status: 204 });
+        }
+        return Response.json({
+          data: ["account-1", "account-2"].map((id) => ({ id, app: { name_slug: "gmail" } })),
+        });
+      },
+    });
+    await connector.revoke("account-2", { ...context, organizationId: "org-example" });
+    expect(deleted).toEqual(["/v1/connect/fake-project-id/accounts/account-2"]);
+  });
+
   it("marks account-list failures as pre-delete so revoke can restore local retry state", async () => {
     vi.stubGlobal(
       "fetch",

@@ -1,3 +1,4 @@
+import { ClientError } from "@rakazo/core";
 import { GUEST_ROLE, LIVE_ORGANIZATION } from "../billing/billing.js";
 import type { PrismaClient } from "../database/client.js";
 import type { Prisma } from "../generated/prisma/client.js";
@@ -53,7 +54,7 @@ export function connectionIn(scope: Scope) {
 }
 
 /** The MCP servers a member's agents can use in this Space: their own and the organization's. */
-export function mcpServerIn(scope: Scope) {
+export function personalOrOrganizationItemIn(scope: Scope) {
   return { OR: [availableInSpace(scope), organizationItemIn(scope)] };
 }
 
@@ -101,10 +102,19 @@ export async function lockManagedOrganization(tx: Prisma.TransactionClient, scop
 }
 
 /** The MCP servers a member can change: their own and, for an admin, the organization's. */
-export function mcpServerManagedIn(scope: Scope, organizationId: string | null) {
+export function personalOrManagedOrganizationItemIn(scope: Scope, organizationId: string | null) {
   return {
     OR: [availableInSpace(scope), ...(organizationId ? [{ organizationId }] : [])],
   };
+}
+
+export async function requireManagedOrganizationId(
+  db: Pick<PrismaClient, "space" | "member">,
+  scope: Scope,
+) {
+  const id = await managedOrganizationId(db, scope);
+  if (!id) throw new ClientError("FORBIDDEN", "Only organization admins can share items.");
+  return id;
 }
 
 /**

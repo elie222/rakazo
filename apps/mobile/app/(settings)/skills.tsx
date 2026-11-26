@@ -23,6 +23,7 @@ import { Chevron } from "../../components/ui/row-accessories";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   gitImportParams,
+  installedPluginParams,
   pluginParams,
   pluginSkillCount,
   skillPacks,
@@ -88,10 +89,7 @@ export default function SkillsScreen() {
   const openSkills = (params: PluginParams) =>
     router.push({ pathname: "/plugin", params: { ...params, skillsOnly: "1" } });
   function setParams(install: CapabilityInstall): PluginParams {
-    const entry = entries.find((row) => row.installedSource === install.source);
-    return entry
-      ? pluginParams(entry)
-      : { source: install.source, installedSource: install.source, name: install.name };
+    return installedPluginParams(install, entries);
   }
 
   return (
@@ -143,9 +141,9 @@ export default function SkillsScreen() {
                 <Text numberOfLines={1} style={styles.title}>
                   {skill.name}
                 </Text>
-                {skill.description ? (
+                {skill.organization || skill.description ? (
                   <Text numberOfLines={1} style={styles.secondary}>
-                    {skill.description}
+                    {skill.organization ? t`Organization` : skill.description}
                   </Text>
                 ) : null}
               </View>
@@ -197,7 +195,9 @@ export default function SkillsScreen() {
                       {params.name}
                     </Text>
                     <Text numberOfLines={1} style={styles.secondary}>
-                      {t`${plural(count, { one: "# skill", other: "# skills" })}`}
+                      {install.organization
+                        ? t`Organization`
+                        : t`${plural(count, { one: "# skill", other: "# skills" })}`}
                     </Text>
                   </View>
                   <Chevron />

@@ -1,8 +1,5 @@
 import type { Actor, Connection } from "@rakazo/contracts";
-import {
-  APP_CONNECTION_IN_ORGANIZATION,
-  ORGANIZATION_CONNECTION_NAME_TAKEN,
-} from "@rakazo/contracts";
+import { ORGANIZATION_CONNECTION_NAME_TAKEN } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { connectionIn, isUniqueViolation, managedOrganizationId, runAsSystem } from "@rakazo/db";
@@ -48,14 +45,6 @@ export async function findManagedConnection(
   const row = await db.connection.findFirst({ where: { id, ...connectionIn(actor) } });
   if (row?.organizationId) await requireConnectionOrganization(db, actor, row.organizationId);
   return row;
-}
-
-export function organizationAppTaken() {
-  return new ClientError(
-    "CONFLICT",
-    "This app is already connected for the organization.",
-    APP_CONNECTION_IN_ORGANIZATION,
-  );
 }
 
 export function throwConnectionNameConflict(error: unknown): never {

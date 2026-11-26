@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { ORPCError } from "@orpc/server";
 import type {
   AdapterContext,
   BackgroundJobPayloads,
@@ -8,27 +7,31 @@ import type {
 import { ConnectorAuthUnavailableError, connectionCleanupJob } from "@rakazo/adapter-kit";
 import type { ConnectionOwner } from "@rakazo/adapters";
 import {
+  advisoryLock,
   authorizationInUse,
   CONNECTION_CLEANUP_BACKUP_MS,
   connectionCleanupRetryAt,
   connectionOwnerWhere,
-  dropLeftover,
+  connectionProviderWhere,
   dropLeftoverAuthorization,
+  hostedSignInCleanupJob,
   leftoverAuthorization,
-  loadOrganizationReconnectCheck,
   lockProviderConnectionScope,
   PROVIDER_LOCK_TRANSACTION_MS,
   pickReusableConnection,
   prepareManagedConnectorForTransaction,
   providerLockTransaction,
   providerScopeKey,
-  tryLockProviderConnectionScope,
+  readHostedSignIn,
+  settleRevokedHostedSignIn,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { ClientError, matchFeaturedConnectorId } from "@rakazo/core";
+import { ClientError, connectionLabelFrom, matchFeaturedConnectorId } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
+import type { Prisma } from "@rakazo/db";
 import {
   IsolationError,
+  lockOrganizationSpaces,
   ProviderTransactionBusyError,
   recordSecurityEvent,
   runAsSystem,
@@ -37,9 +40,7 @@ import { getLogger } from "@rakazo/logging";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import type { RouterDeps } from "../router.js";
 import {
-  connectionDto,
   findManagedConnection,
-  organizationAppTaken,
   publishConnectionChange,
   requireConnectionOrganization,
   throwConnectionNameConflict,
@@ -70,8 +71,48 @@ function shouldRestoreLocalAfterRemoteRevokeFailure(error: unknown): boolean {
   return isRemoteRevokePreDeleteFailure(error) || !isAmbiguousRemoteRevokeFailure(error);
 }
 
-/** How long a poll of connections/complete waits for the slot before reporting the row as is. */
-const COMPLETE_POLL_SLOT_WAIT_MS = 2_000;
+export function requireNoPendingSignIn(pending: boolean) {
+  if (pending)
+    throw new ClientError("CONFLICT", "Finish or remove the pending sign-in for this app first.");
+}
+
+/** Retire an expired hosted attempt while preserving its baseline for cleanup. */
+export async function expireHostedSignIn(
+  tx: Prisma.TransactionClient,
+  jobs: RouterDeps["jobs"],
+  owner: ConnectionOwner & { organizationId: string },
+  row: Parameters<typeof readHostedSignIn>[0] & { status: string },
+  listAccounts: () => Promise<string[]>,
+) {
+  if (row.status !== "pending" || row.providerRef !== row.provider) return;
+  const signIn = readHostedSignIn(row);
+  if (!signIn) return;
+  const { expiresAt, priorAccountIds } = signIn;
+  const expiry = Date.parse(expiresAt ?? "");
+  if (!Number.isFinite(expiry) || expiry > Date.now()) return;
+
+  // Expiration closes the link. A completed authorization can still be claimed.
+  if (!priorAccountIds || (await listAccounts()).some((id) => !priorAccountIds.includes(id)))
+    return;
+
+  const revoked = await tx.connection.update({
+    where: { id: row.id },
+    data: { status: "revoked" },
+  });
+  await jobs.enqueueIn(
+    tx,
+    hostedSignInCleanupJob(
+      {
+        ...owner,
+        connectorId: row.connectorId,
+        provider: row.provider,
+        connectionId: row.id,
+      },
+      new Date(expiry),
+    ),
+  );
+  return revoked;
+}
 
 export function connectionContext(
   actor: ConnectionOwner,
@@ -88,7 +129,10 @@ export function connectionContext(
   };
 }
 
-function connectionFlowOwner({ spaceId, userId }: Actor, organizationId?: string): ConnectionOwner {
+export function connectionFlowOwner(
+  { spaceId, userId }: Actor,
+  organizationId?: string,
+): ConnectionOwner {
   return { spaceId, userId, ...(organizationId ? { organizationId } : {}) };
 }
 
@@ -214,33 +258,72 @@ export async function beginConnection(
       providerScopeKey(owner, input.connectorId, input.provider),
       async (tx) => {
         await lockProviderConnectionScope(tx, owner, input.connectorId, input.provider);
-        if (organizationId) {
-          await requireConnectionOrganization(tx, context.actor, organizationId);
-          const duplicate = await tx.connection.findFirst({
-            where: {
-              organizationId,
-              provider: { equals: input.provider, mode: "insensitive" },
-              status: { not: "revoked" },
-            },
-            select: { id: true },
-          });
-          if (duplicate) throw organizationAppTaken();
-        }
+        if (organizationId) await requireConnectionOrganization(tx, context.actor, organizationId);
         const existing = await tx.connection.findMany({
           where: {
             ...owned,
             connectorId: input.connectorId,
-            provider: input.provider,
+            provider: connectionProviderWhere(owner, input.provider),
           },
-          select: { id: true, status: true },
+          select: {
+            id: true,
+            status: true,
+            connectorId: true,
+            provider: true,
+            providerRef: true,
+            metadata: true,
+            updatedAt: true,
+          },
           orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
         });
-        const reusable = pickReusableConnection(existing);
+        const listAccounts = connector.listAccountsBeforeSignIn?.bind(connector);
+        if (organizationId && listAccounts) {
+          for (const previous of existing) {
+            if (previous.status !== "pending") continue;
+            requireNoPendingSignIn(
+              !(await expireHostedSignIn(
+                tx,
+                deps.jobs,
+                { ...owner, organizationId },
+                previous,
+                () =>
+                  listAccounts(
+                    input.provider,
+                    connectionContext(owner, "connections.begin", context.signal),
+                  ),
+              )),
+            );
+          }
+        }
+        let displayName = input.displayName;
+        if (organizationId) {
+          // Deletion takes this lock before placing its claim and discovering providers.
+          await lockOrganizationSpaces(tx, organizationId);
+          await requireConnectionOrganization(tx, context.actor, organizationId);
+          await advisoryLock(tx, "organization-connection-label", organizationId);
+          const names = new Set(
+            (
+              await tx.connection.findMany({
+                where: { organizationId, status: { not: "revoked" } },
+                select: { displayName: true },
+              })
+            ).map((row) => row.displayName.toLowerCase()),
+          );
+          for (let number = 2; names.has(displayName.toLowerCase()); number += 1) {
+            displayName = connectionLabelFrom(input.displayName, input.provider, ` ${number}`);
+          }
+        }
+        // A revoked hosted link may still be live. Keep its row and expiration
+        // until the new attempt has checked it.
+        const reusable =
+          organizationId && connector.listAccountsBeforeSignIn
+            ? undefined
+            : pickReusableConnection(existing);
         if (reusable) {
           return tx.connection.update({
             where: { id: reusable.id },
             data: {
-              displayName: input.displayName,
+              displayName,
               status: "pending",
               providerRef: null,
               metadata: { attempt },
@@ -252,7 +335,7 @@ export async function beginConnection(
             ...owned,
             connectorId: input.connectorId,
             provider: input.provider,
-            displayName: input.displayName,
+            displayName,
             status: "pending",
             metadata: { attempt },
           },
@@ -316,15 +399,15 @@ export async function beginConnection(
     throw error;
   }
   const scope = { ...owner, connectorId: input.connectorId, provider: input.provider };
-  const leftover = leftoverAuthorization(connector, scope, auth.state);
+  const hosted = Boolean(organizationId && connector.listAccountsBeforeSignIn);
+  const leftover = hosted ? undefined : leftoverAuthorization(connector, scope, auth.state);
   const replacedRef = reconnecting?.providerRef;
-  // A slug-scoped sign-in may reuse an old account. Its cleanup waits for the new row to pin an ID.
   const replaced =
-    replacedRef && replacedRef !== auth.state
+    replacedRef && replacedRef !== auth.state && (!hosted || replacedRef !== input.provider)
       ? leftoverAuthorization(
           connector,
           scope,
-          auth.state === input.provider ? auth.state : replacedRef,
+          !hosted && auth.state === input.provider ? auth.state : replacedRef,
         )
       : undefined;
   // Never send an opaque provider reference or a non-web URI to native URL handlers.
@@ -341,6 +424,7 @@ export async function beginConnection(
   // Re-take the provider lock and only advance the row while it is still this attempt's, so
   // a concurrent revoke cannot be overwritten back to pending/connected, and neither can the
   // result of a later begin that reused the row.
+  const pending = Boolean(auth.authorizationUrl || auth.requiresCompletion);
   let applied: boolean;
   try {
     applied = await providerLockTransaction(
@@ -349,6 +433,45 @@ export async function beginConnection(
       async (tx) => {
         await lockProviderConnectionScope(tx, owner, input.connectorId, input.provider);
         if (organizationId) await requireConnectionOrganization(tx, context.actor, organizationId);
+        let priorAccountIds: string[] | undefined;
+        if (organizationId && pending && connector.listAccountsBeforeSignIn) {
+          requireNoPendingSignIn(
+            (await tx.connection.count({
+              where: {
+                ...owned,
+                connectorId: input.connectorId,
+                provider: connectionProviderWhere(owner, input.provider),
+                status: "pending",
+                id: { not: row.id },
+              },
+            })) > 0,
+          );
+          if (!auth.expiresAt || !Number.isFinite(Date.parse(auth.expiresAt)))
+            throw new ClientError("SERVICE_UNAVAILABLE", "The sign-in link has no expiration.");
+          const revoked = await tx.connection.findMany({
+            where: {
+              ...owned,
+              connectorId: input.connectorId,
+              provider: connectionProviderWhere(owner, input.provider),
+              providerRef: { equals: input.provider, mode: "insensitive" },
+              status: "revoked",
+            },
+          });
+          const hostedContext = connectionContext(owner, "connections.begin", context.signal);
+          for (const previous of revoked) {
+            if ((await settleRevokedHostedSignIn(tx, connector, previous, hostedContext)) === false)
+              throw new ClientError("CONFLICT", "The previous sign-in could not be verified.");
+          }
+          priorAccountIds = await connector.listAccountsBeforeSignIn(
+            input.provider,
+            connectionContext(owner, "connections.begin", context.signal),
+          );
+        }
+        if (organizationId) {
+          // A claim taken while the remote request was running must win over publication.
+          await lockOrganizationSpaces(tx, organizationId);
+          await requireConnectionOrganization(tx, context.actor, organizationId);
+        }
         const updated = await tx.connection.updateMany({
           where: reconnecting
             ? {
@@ -359,9 +482,13 @@ export async function beginConnection(
               }
             : unsavedRow,
           data: {
-            status: auth.authorizationUrl ? "pending" : "connected",
+            status: pending ? "pending" : "connected",
             providerRef: auth.state || null,
-            metadata: { state: auth.state, attempt },
+            metadata: {
+              state: auth.state,
+              attempt,
+              ...(priorAccountIds && { priorAccountIds, expiresAt: auth.expiresAt }),
+            },
           },
         });
         if (updated.count > 0) {
@@ -391,267 +518,13 @@ export async function beginConnection(
     throw new IsolationError();
   }
   if (replaced) await removeLeftoverAuthorization(deps, connector, replaced, true);
-  logSetup(auth.authorizationUrl ? "authorization_ready" : "connected");
-  if (!auth.authorizationUrl) {
+  logSetup(pending ? "authorization_ready" : "connected");
+  if (!pending) {
     await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
     recordToolConnected(deps.analytics, context.actor.userId, row);
   }
   await publishConnectionChange(deps, context.actor, organizationId);
   return { connectionId: row.id, authorizationUrl: auth.authorizationUrl };
-}
-
-export async function completeConnection(
-  deps: RouterDeps,
-  context: { actor: Actor; signal?: AbortSignal },
-  input: { connectionId: string; code?: string },
-) {
-  const existing = await findManagedConnection(deps.prisma, context.actor, input.connectionId);
-  if (!existing) throw new IsolationError();
-  const organizationId = existing.organizationId ?? undefined;
-  const owner = connectionFlowOwner(context.actor, organizationId);
-  const owned = connectionOwnerWhere(owner);
-  const connector = deps.connectors.managed(existing.connectorId);
-  if (!connector) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: `Connector ${existing.connectorId} is not configured`,
-    });
-  }
-  // Catalog reconciliation connects a row without its account id; the next poll stores it.
-  const settling = (row: { status: string; provider: string; providerRef: string | null }) =>
-    row.status !== "connected" || (!organizationId && row.providerRef === row.provider);
-  const prepared = settling(existing)
-    ? await prepareManagedConnectorForTransaction(connector)
-    : { provider: connector, recheck: undefined };
-  const transactionConnector = prepared.provider;
-  if (!transactionConnector)
-    throw new ORPCError("BAD_REQUEST", { message: "Integration provider is not configured" });
-  let row = existing;
-  let connectedNow = false;
-  if (settling(existing)) {
-    // Hold the provider lock across remote completion, account-id resolution,
-    // providerRef persistence, and any overlapping revokeUnreferencedAccounts cleanup
-    // so a concurrent begin-loss cleanup cannot delete the account we are about
-    // to persist. Clients poll, so while another call holds the slot or the lock,
-    // report the row as it is instead of waiting on a pooled connection.
-    row = await providerLockTransaction(
-      deps.prisma,
-      providerScopeKey(owner, existing.connectorId, existing.provider),
-      async (tx) => {
-        const locked = await tryLockProviderConnectionScope(
-          tx,
-          owner,
-          existing.connectorId,
-          existing.provider,
-        );
-        if (!locked) return existing;
-        if (organizationId) await requireConnectionOrganization(tx, context.actor, organizationId);
-        const current = await tx.connection.findFirst({
-          where: {
-            id: existing.id,
-            ...owned,
-          },
-        });
-        if (!current) throw new IsolationError();
-        if (prepared.recheck && !(await prepared.recheck(tx))) {
-          throw new ORPCError("CONFLICT", {
-            message: "Integration credentials changed; retry.",
-          });
-        }
-        if (!settling(current)) return current;
-        if (current.status === "revoked") {
-          // Authorization URLs from a revoke-win begin can still finish
-          // remotely. Cancel leftover authorization-request ids, or drop slug-scoped
-          // remotes no active local row still references, before rejecting.
-          // Not the request signal: clients abort a poll they no longer need, and
-          // that must not cut short removing the leftover remote account.
-          const revokedContext = connectionContext(owner, "connections.complete");
-          const pendingRef = current.providerRef?.trim();
-          const scope = {
-            ...owner,
-            connectorId: existing.connectorId,
-            provider: existing.provider,
-          };
-          // The row's own request or account unless an active row has saved it since, or the
-          // app's accounts no active row references.
-          const cleanup: BackgroundJobPayloads["connection.cleanup"] & { organizationId?: string } =
-            pendingRef && pendingRef !== current.provider ? { ...scope, ref: pendingRef } : scope;
-          try {
-            const outcome = await dropLeftover(tx, transactionConnector, cleanup, revokedContext);
-            // A sibling still connecting may own any of the accounts. Nothing polls this row
-            // again, so a job removes the unreferenced ones once the sibling has saved its own.
-            if (outcome === "undecided")
-              await deps.jobs.enqueueIn(
-                tx,
-                connectionCleanupJob(cleanup, connectionCleanupRetryAt("undecided")),
-              );
-          } catch (error) {
-            const where = {
-              connectionId: current.id,
-              connectorId: existing.connectorId,
-              provider: existing.provider,
-            };
-            // The row stays revoked and nothing polls it again, so a job retries the removal.
-            // Not with this transaction: the failure may have been its own.
-            try {
-              await deps.jobs.enqueue(connectionCleanupJob(cleanup));
-              getLogger().warn("connections.complete remote cleanup failed for revoked row", {
-                error,
-                ...where,
-              });
-            } catch (unrecorded) {
-              getLogger().error(
-                "connections.complete could not record its cleanup; remove the authorization at the provider by hand",
-                unrecorded,
-                { ...where, ...(cleanup.ref ? { providerRef: cleanup.ref } : {}) },
-              );
-              throw unrecorded;
-            }
-          }
-          // A newer attempt or a removal superseded this one. Report it so the
-          // caller stops polling instead of retrying an error.
-          return current;
-        }
-
-        const adapterContext = connectionContext(owner, "connections.complete", context.signal);
-        if (input.code && current.status !== "connected") {
-          const state = current.providerRef ?? current.provider;
-          await transactionConnector.complete({ state, code: input.code }, adapterContext);
-        }
-        const ready = await transactionConnector.connectionReady(adapterContext, current.provider);
-        if (!ready) return current;
-
-        // Browser OAuth stores a connection-request id in providerRef from
-        // begin. Resolve it to the connected-account id so revoke deletes the
-        // right remote authorization. Prefer an account id not already used
-        // by a sibling row for the same provider.
-        const resolveAccountId = (ref: string | null | undefined, excludeIds: string[]) =>
-          transactionConnector.resolveConnectedAccountId?.(
-            context.actor.userId,
-            existing.provider,
-            ref,
-            excludeIds,
-            context.actor.spaceId,
-            ...(organizationId ? [organizationId] : []),
-          );
-        let resolvedAccountId: string | undefined;
-        if (transactionConnector.resolveConnectedAccountId) {
-          const siblings = await tx.connection.findMany({
-            where: {
-              ...owned,
-              connectorId: existing.connectorId,
-              provider: existing.provider,
-              id: { not: existing.id },
-              status: { in: ["connected", "pending", "error"] },
-            },
-            select: { providerRef: true, status: true },
-          });
-          // Exclude concrete account ids only. A pending sibling may still
-          // store a slug or authorization-request id; passing those raw refs
-          // would not match remote account ids and can let this row adopt the
-          // sibling's account. If a sibling ref cannot be resolved yet, leave
-          // this row pending so a later complete can re-resolve safely.
-          const excludeIds: string[] = [];
-          try {
-            for (const sibling of siblings) {
-              const ref = sibling.providerRef?.trim();
-              // Slug-only refs cannot identify a concrete remote account; resolving
-              // them would pick an arbitrary ACTIVE id and over-exclude.
-              if (!ref || ref === existing.provider) {
-                // A connected row has no claim on a newer account a sibling may have just authorized.
-                if (current.status === "connected" && sibling.status === "pending") return current;
-                continue;
-              }
-              const resolvedSiblingId = await resolveAccountId(ref, []);
-              if (!resolvedSiblingId) return current;
-              excludeIds.push(resolvedSiblingId);
-            }
-            resolvedAccountId = await resolveAccountId(current.providerRef, excludeIds);
-          } catch (error) {
-            // Not being able to ask is not "no account": connecting the row now would store a
-            // ref revoke cannot target. Leave it for the next poll, which asks again: a warning,
-            // since a provider outage repeats it on every poll of every pending connection.
-            getLogger().warn("connections.complete could not resolve the connected account", {
-              error,
-              connectionId: current.id,
-              connectorId: existing.connectorId,
-              provider: existing.provider,
-            });
-            return current;
-          }
-        }
-
-        // When a resolver exists and providerRef is still a request-scoped
-        // id (not the provider slug), require a concrete account id before
-        // marking connected — otherwise revoke would delete the wrong ref.
-        if (
-          transactionConnector.resolveConnectedAccountId &&
-          (organizationId || (current.providerRef && current.providerRef !== current.provider)) &&
-          !resolvedAccountId
-        ) {
-          return current;
-        }
-
-        const providerRef = resolvedAccountId ?? current.providerRef;
-        if (providerRef) {
-          const taken = await tx.connection.findFirst({
-            where: {
-              ...owned,
-              connectorId: existing.connectorId,
-              provider: existing.provider,
-              id: { not: existing.id },
-              status: { in: ["connected", "pending", "error"] },
-              providerRef,
-            },
-            select: { id: true },
-          });
-          if (taken) {
-            // Do not mark connected with a request-scoped or shared ref —
-            // leave pending so a later complete can re-resolve an unused id.
-            return current;
-          }
-        }
-        // Catalog reconciliation does not take the provider lock, so it may have
-        // connected this row meanwhile; only the call that changes it records the event.
-        const updated = await tx.connection.updateMany({
-          where: { id: current.id, status: current.status },
-          data: {
-            status: "connected",
-            ...(providerRef ? { providerRef } : {}),
-          },
-        });
-        connectedNow = updated.count > 0 && current.status !== "connected";
-        if (!connectedNow && providerRef) {
-          // Reconciliation sets only the status; keep the resolved account id so
-          // revoke still deletes the right remote account.
-          await tx.connection.updateMany({
-            where: { id: current.id, status: "connected" },
-            data: { providerRef },
-          });
-        }
-        const next = await tx.connection.findFirst({
-          where: {
-            id: current.id,
-            ...owned,
-          },
-        });
-        if (!next) throw new IsolationError();
-        return next;
-      },
-      COMPLETE_POLL_SLOT_WAIT_MS,
-    ).catch((error: unknown) => {
-      if (error instanceof ProviderTransactionBusyError) return existing;
-      throw error;
-    });
-  }
-  // Clients poll this procedure, so it records the credential once, on the transition.
-  if (connectedNow) {
-    await recordSecurityEvent(
-      connectionCreatedEvent("connections.complete", row.id, context.actor),
-    );
-    recordToolConnected(deps.analytics, context.actor.userId, row);
-  }
-  if (connectedNow) await publishConnectionChange(deps, context.actor, organizationId);
-  return connectionDto(row, organizationId);
 }
 
 /** A removal's provider call ends this long into its transaction, leaving time to commit. */
@@ -724,19 +597,48 @@ export async function revokeConnection(
       });
       if (updated.count === 0) return {};
 
+      if (
+        organizationId &&
+        row.status === "pending" &&
+        (!row.providerRef || row.providerRef === row.provider)
+      ) {
+        const signIn = readHostedSignIn(row);
+        if (!signIn) return {};
+        const { expiresAt, priorAccountIds } = signIn;
+        const expiry = Date.parse(expiresAt ?? "");
+        if (priorAccountIds && Number.isFinite(expiry)) {
+          await deps.jobs.enqueueIn(
+            tx,
+            hostedSignInCleanupJob(
+              {
+                ...owner,
+                organizationId,
+                connectorId: row.connectorId,
+                provider: row.provider,
+                connectionId: row.id,
+              },
+              new Date(expiry),
+            ),
+          );
+          return {};
+        }
+        if (prepared?.provider?.listAccountsBeforeSignIn) return {};
+      }
+
       const remaining = await tx.connection.count({
         where: {
           ...owned,
           connectorId: row.connectorId,
-          provider: row.provider,
-          status: { in: ["connected", "pending"] },
+          provider: connectionProviderWhere(owner, row.provider),
+          OR: [
+            { status: { in: ["connected", "pending"] } },
+            { status: "error", providerRef: { not: null } },
+          ],
         },
       });
       const connectionRef = row.providerRef || row.provider;
       const accountSpecific = Boolean(row.providerRef && row.providerRef !== row.provider);
-      // Account-scoped refs can disconnect one remote authorization while
-      // siblings remain. Slug-only legacy rows must wait until they are last,
-      // or a provider-wide revoke would drop every account for that app.
+      // Revoking a legacy slug removes all remote accounts for the app.
       if (!accountSpecific && remaining > 0) return {};
       const scope = {
         ...owner,
@@ -755,15 +657,11 @@ export async function revokeConnection(
         row.provider !== snapshot?.provider ||
         (prepared?.recheck && !(await prepared.recheck(tx)))
       ) {
-        throw new ORPCError("CONFLICT", {
-          message: "Integration credentials changed; retry.",
-        });
+        throw new ClientError("CONFLICT", "Integration credentials changed; retry.");
       }
       const connector = prepared?.provider;
       if (!connector) {
-        throw new ORPCError("BAD_REQUEST", {
-          message: `Connector ${row.connectorId} is not configured`,
-        });
+        throw new ClientError("BAD_REQUEST", `Connector ${row.connectorId} is not configured`);
       }
       // The call ends before the transaction's own timeout, counted from its start, so a late
       // remote delete cannot succeed after local status has already rolled back. Waiting for the
@@ -800,29 +698,4 @@ export async function revokeConnection(
   if (snapshot) await publishConnectionChange(deps, context.actor, organizationId);
   if ("uncertain" in outcome) throw outcome.uncertain;
   return { ok: true as const };
-}
-
-export async function reconnectOrganizationConnection(
-  deps: RouterDeps,
-  context: { actor: Actor; signal?: AbortSignal },
-  connectionId: string,
-) {
-  const row = await findManagedConnection(deps.prisma, context.actor, connectionId);
-  if (!row?.organizationId || row.status === "revoked") throw new IsolationError();
-  if (row.status === "pending" && row.providerRef) {
-    const completed = await completeConnection(deps, context, { connectionId });
-    if (completed.status === "connected") return { connectionId, authorizationUrl: null };
-  }
-  if (row.status === "connected") {
-    const connector = deps.connectors.managed(row.connectorId);
-    if (!connector) throw new ClientError("BAD_REQUEST", "Integration provider is not configured");
-    const adapterContext = connectionContext(
-      connectionFlowOwner(context.actor, row.organizationId),
-      "connections.reconnectOrganization",
-      context.signal,
-    );
-    const needsReconnect = await loadOrganizationReconnectCheck(connector, adapterContext);
-    if (!needsReconnect(row)) return { connectionId, authorizationUrl: null };
-  }
-  return beginConnection(deps, context, row, row.organizationId, row);
 }

@@ -6,7 +6,7 @@ import {
   changeMessageBlocks,
   HOLDS_CHAT,
   IsolationError,
-  mcpServerIn,
+  personalOrOrganizationItemIn,
   storedMessageBlocks,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -56,7 +56,7 @@ async function threadsForDecision(
   // Threads are shared by the space, but a card is about a server the member can use:
   // their own or their organization's.
   const server = await deps.prisma.mcpServer.findFirst({
-    where: { id: input.serverId, ...mcpServerIn(actor) },
+    where: { id: input.serverId, ...personalOrOrganizationItemIn(actor) },
     select: { id: true },
   });
   if (!server) return [];
@@ -254,7 +254,7 @@ export async function queueMcpConnectedRun(
       select: { id: true },
     }),
     tx.mcpServer.findFirst({
-      where: { id: input.serverId, ...mcpServerIn(actor) },
+      where: { id: input.serverId, ...personalOrOrganizationItemIn(actor) },
       select: { name: true },
     }),
   ]);

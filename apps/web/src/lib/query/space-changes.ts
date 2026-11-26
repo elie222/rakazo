@@ -1,4 +1,5 @@
 import type { SpaceChangeKind } from "@rakazo/contracts";
+import { CAPABILITY_READ_PATHS } from "@rakazo/contracts";
 import { refreshQueriesAfterSignal } from "@rakazo/core";
 import type { QueryFilters } from "@tanstack/react-query";
 import { queryClient } from "./query";
@@ -12,6 +13,7 @@ type Procedure = {
 
 const READS: Record<ReadChangeKind, readonly Procedure[]> = {
   deploymentModel: [],
+  capabilities: [],
   integrations: [
     ["connections", "catalog"],
     ["connections", "list"],
@@ -63,6 +65,11 @@ export function spaceChanged(kind: ReadChangeKind, client = queryClient): Promis
           path.slice(-3).join(".") === "models.organizationConnections.available")
       )
         return true;
+      if (kind === "capabilities") {
+        return CAPABILITY_READ_PATHS.some(
+          (procedure) => path.slice(-procedure.split("/").length).join("/") === procedure,
+        );
+      }
       return procedures.includes(path.slice(-2).join("."));
     },
   };

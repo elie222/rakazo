@@ -6,9 +6,9 @@ import { runAsSystem, runAsTenant } from "../database/row-security.js";
 import { assertNameFreeWhereAvailable } from "./name-claims.js";
 import {
   managedOrganizationId,
-  mcpServerIn,
   organizationModelConnectionIn,
   organizationServerAt,
+  personalOrOrganizationItemIn,
   serverSecretIn,
 } from "./organization-items.js";
 
@@ -38,7 +38,7 @@ describe.skipIf(!enabled)("an organization's MCP servers (PostgreSQL)", () => {
       secrets: (await prisma.secret.findMany({ where: { id: secretId } })).length,
       servers: (
         await prisma.mcpServer.findMany({
-          where: { id: serverId, ...mcpServerIn({ spaceId, userId }) },
+          where: { id: serverId, ...personalOrOrganizationItemIn({ spaceId, userId }) },
         })
       ).length,
       serverSecrets: (

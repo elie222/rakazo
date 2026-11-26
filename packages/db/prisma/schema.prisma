@@ -524,6 +524,9 @@ model Organization {
 
   @@unique([slug])
   @@map("organization")
+  agentSkills AgentSkill[]
+  capabilityInstalls CapabilityInstall[]
+
 }
 
 model OrganizationModelConnection {
@@ -1832,9 +1835,9 @@ model AgentImport {
 
 model AgentSkill {
   id          String   @id @default(cuid())
-  spaceId     String
-  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId      String
+  spaceId     String?
+  space       Space?    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId      String?
   name        String
   description String
   content     String
@@ -1848,6 +1851,10 @@ model AgentSkill {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  organizationId String?
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([spaceId, userId])
   @@index([installId])
   // Case-insensitive unique index agent_skills_spaceId_userId_name_lower_key is created in SQL.
@@ -1872,16 +1879,16 @@ model Connection {
   updatedAt      DateTime      @updatedAt
 
   @@index([spaceId, userId, connectorId])
-  // Active organization apps and labels have case-insensitive unique indexes in SQL.
+  // Active organization connection labels have a case-insensitive unique index in SQL.
   @@index([organizationId])
   @@map("connections")
 }
 
 model CapabilityInstall {
   id        String   @id @default(cuid())
-  spaceId   String
-  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId    String
+  spaceId   String?
+  space     Space?    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId    String?
   kind      String
   name      String
   source    String
@@ -1896,6 +1903,10 @@ model CapabilityInstall {
   mcpServers  McpServer[]
   availableIn CapabilityInstallSpace[]
 
+  organizationId String?
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([spaceId, userId])
   @@map("capability_installs")
 }
