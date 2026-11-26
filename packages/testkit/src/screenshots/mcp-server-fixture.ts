@@ -2,7 +2,8 @@ import type { PrismaClient } from "@rakazo/db";
 
 /**
  * A working remote MCP server two bots can use, for the integrations and MCP server screens. It
- * keeps tool results whole, so its Advanced row shows a setting in use.
+ * keeps tool results whole, so its Advanced row shows a setting in use. A custom source added
+ * beside it opens the source screen.
  */
 export async function ensureMcpServer(
   prisma: PrismaClient,
@@ -28,4 +29,16 @@ export async function ensureMcpServer(
     data: input.botIds.map((botId) => ({ ...owner, botId, serverId: server.id })),
     skipDuplicates: true,
   });
+  const source = { ...owner, kind: "mcp", name: "Docs search" };
+  if (!(await prisma.capabilityInstall.findFirst({ where: source }))) {
+    await prisma.capabilityInstall.create({
+      data: {
+        ...source,
+        allSpaces: true,
+        source: "https://docs.example.com/mcp",
+        config: { preset: "custom", auth: { type: "none" } },
+        version: "1.0.0",
+      },
+    });
+  }
 }

@@ -104,6 +104,19 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 08-mcp-server
+- openLink: "rakazo:///integrations"
+- extendedWaitUntil:
+    visible:
+      id: "tool-source"
+    timeout: 15000
+- tapOn:
+    id: "tool-source"
+- extendedWaitUntil:
+    visible: "Remove"
+    timeout: 15000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 08-tool-source
 - openLink: "rakazo:///voice"
 - extendedWaitUntil:
     visible: ".*This device.*"
