@@ -265,13 +265,15 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     // the allowlist never refuses it. Any other pin the list refuses is skipped rather than
     // failing the decision, so a member with an allowed main model still gets one.
     const pinned = useOverride && (explicitJudgeOverride || !refused(requestedProvider));
+    // An unavailable organization choice cannot spend on the deployment fallback.
+    if (!pinned && member?.organizationConnectionId && refused(member.provider)) return null;
     const mainModel = main && !refused(main.provider) ? main : null;
     const credential = pinned ? overrideCredential : (mainModel?.credential ?? null);
     const provider = pinned ? requestedProvider : (mainModel ?? fallback)?.provider;
     const modelId = pinned ? requestedModel : (mainModel ?? fallback)?.modelId;
     if (!provider || !modelId) return null;
 
-    if (!pinned && member?.organizationConnectionId) {
+    if (!pinned && mainModel?.organizationConnectionId) {
       const resolved = await resolveOrganizationModelKey(
         {
           prisma: this.deps.prisma,
@@ -279,15 +281,15 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           mcpAllowPrivateEndpoint: this.deps.allowPrivateEndpoint,
         },
         scope,
-        `${ORGANIZATION_MODEL_CONNECTION_PREFIX}${member.organizationConnectionId}`,
-        member.provider,
-        member.modelId,
+        `${ORGANIZATION_MODEL_CONNECTION_PREFIX}${mainModel.organizationConnectionId}`,
+        mainModel.provider,
+        mainModel.modelId,
         registerSecrets,
       );
       return {
         model: {
-          provider: member.provider,
-          id: member.modelId,
+          provider: mainModel.provider,
+          id: mainModel.modelId,
           ...resolvedModelRunFields(resolved),
         },
       };

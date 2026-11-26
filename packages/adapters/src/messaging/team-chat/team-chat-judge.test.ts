@@ -133,12 +133,25 @@ describe("team chat engagement judge", () => {
 
   function allowlistJudge(deps: {
     memberProvider: string;
+    organizationChoice?: boolean;
     deploymentProvider: string;
     deploymentModel: string;
     providerOverride?: string;
     modelOverride?: string;
   }) {
     const prisma = {
+      spaceMember: {
+        findUnique: vi.fn(async () =>
+          deps.organizationChoice
+            ? {
+                organizationModelConnectionId: "shared",
+                organizationModelProvider: deps.memberProvider,
+                organizationModelId: "fixture-model",
+              }
+            : null,
+        ),
+      },
+      organizationModelConnection: { findFirst: vi.fn(async () => null) },
       user: { findUnique: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       userModelPreference: {
@@ -178,6 +191,7 @@ describe("team chat engagement judge", () => {
       } as never,
       deploymentProvider: deps.deploymentProvider,
       deploymentModel: deps.deploymentModel,
+      deploymentModelKey: "fixture-deployment-key",
       ...(deps.providerOverride ? { providerOverride: deps.providerOverride } : {}),
       ...(deps.modelOverride ? { modelOverride: deps.modelOverride } : {}),
     });
@@ -212,6 +226,23 @@ describe("team chat engagement judge", () => {
     } finally {
       if (savedAllowlist === undefined) delete process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST;
       else process.env.RAKAZO_MODEL_PROVIDER_ALLOWLIST = savedAllowlist;
+    }
+  });
+
+  it("skips a refused organization choice without spending on the deployment model", async () => {
+    vi.stubEnv("RAKAZO_MODEL_PROVIDER_ALLOWLIST", "openai");
+    try {
+      const { decide, run, prisma } = allowlistJudge({
+        memberProvider: "anthropic",
+        organizationChoice: true,
+        deploymentProvider: "openai",
+        deploymentModel: "fixture-deployment-model",
+      });
+      await expect(decide(null)).resolves.toEqual({ act: false });
+      expect(prisma.organizationModelConnection.findFirst).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 

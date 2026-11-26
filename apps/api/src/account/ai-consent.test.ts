@@ -82,6 +82,29 @@ describe("consent grants", () => {
     expect(moved.allowed).toBe(false);
   });
 
+  it("discloses the provider when the selected organization key cannot be read", async () => {
+    const { deps, actor } = setup();
+    deps.env.agentRuntime = "pi";
+    vi.mocked(deps.prisma.spaceMember.findUnique).mockResolvedValue({
+      organizationModelConnectionId: "shared-model",
+      organizationModelProvider: "openai-compatible",
+      organizationModelId: "fixture-model",
+    } as never);
+    vi.mocked(deps.prisma.organizationModelConnection.findFirst).mockResolvedValue({
+      secretId: "fixture-secret",
+      ciphertext: "fixture-cipher",
+    } as never);
+    deps.secrets = {
+      load: vi.fn().mockRejectedValue(new Error("Fixture secret unavailable")),
+    } as never;
+
+    const status = await aiConsentStatus(deps, actor, { uses: ["model"] });
+
+    expect(status.recipients).toEqual([
+      expect.objectContaining({ name: "OpenAI-compatible", allowed: false }),
+    ]);
+  });
+
   it("includes reachable helper models and cloud services for a targeted send", async () => {
     const { deps, actor } = setup();
     deps.env.agentRuntime = "pi";

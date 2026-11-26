@@ -1,5 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import type { OrganizationModelConnectInput } from "@rakazo/contracts";
+import {
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+  ORGANIZATION_MODEL_API_KEY_MIN_LENGTH,
+  organizationModelProviders,
+} from "@rakazo/contracts";
 import {
   Button,
   DropdownMenu,
@@ -22,14 +27,7 @@ import type { ConnectableProvider } from "./role-model-picker";
 type Change =
   | { kind: "select"; id: string | null }
   | { kind: "remove"; id: string }
-  | {
-      kind: "create";
-      provider: string;
-      modelId: string;
-      label: string;
-      apiKey: string;
-      baseUrl?: string;
-    };
+  | { kind: "create"; input: OrganizationModelConnectInput };
 
 export function OrganizationModelSettings({ providers }: { providers: ConnectableProvider[] }) {
   const { t } = useLingui();
@@ -45,10 +43,7 @@ export function OrganizationModelSettings({ providers }: { providers: Connectabl
       const actions = rpc.models.organizationConnections;
       if (change.kind === "select") await actions.select({ id: change.id });
       else if (change.kind === "remove") await actions.remove({ id: change.id });
-      else {
-        const { kind: _kind, ...input } = change;
-        await actions.create(input);
-      }
+      else await actions.create(change.input);
     },
     stale: [procedures.available.key(), queries.me.key()],
     onSaved: (_, change) => {
@@ -107,11 +102,13 @@ export function OrganizationModelSettings({ providers }: { providers: Connectabl
             const data = new FormData(event.currentTarget);
             save.run({
               kind: "create",
-              provider,
-              modelId: String(data.get("modelId")),
-              label: String(data.get("label")),
-              apiKey: String(data.get("apiKey")),
-              baseUrl: String(data.get("baseUrl") ?? "") || undefined,
+              input: {
+                provider,
+                modelId: String(data.get("modelId")),
+                label: String(data.get("label")),
+                apiKey: String(data.get("apiKey")),
+                baseUrl: String(data.get("baseUrl") ?? "") || undefined,
+              },
             });
           }}
         >
@@ -122,9 +119,10 @@ export function OrganizationModelSettings({ providers }: { providers: Connectabl
                 id={`${field}-provider`}
                 value={provider}
                 onValueChange={setProvider}
-                options={providers
-                  .filter((item) => !item.baseUrl)
-                  .map((item) => ({ value: item.id, label: item.name }))}
+                options={organizationModelProviders(providers).map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                }))}
               />
             </Field>
             {provider === OPENAI_COMPATIBLE_PROVIDER_ID ? (
@@ -143,7 +141,13 @@ export function OrganizationModelSettings({ providers }: { providers: Connectabl
             </Field>
             <Field>
               <FieldLabel htmlFor={`${field}-key`}>{t`API key`}</FieldLabel>
-              <Input id={`${field}-key`} name="apiKey" type="password" minLength={8} required />
+              <Input
+                id={`${field}-key`}
+                name="apiKey"
+                type="password"
+                minLength={ORGANIZATION_MODEL_API_KEY_MIN_LENGTH}
+                required
+              />
             </Field>
             <div className="flex gap-2">
               <Button

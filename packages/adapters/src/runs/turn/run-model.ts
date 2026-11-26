@@ -294,11 +294,33 @@ export async function resolveOrganizationModelKey(
   if (authError) throw new UnavailableModelForAuthError(authError);
   const apiKey = secret.kind === "api_key" ? secret.key : secret.apiKey;
   if (!apiKey?.trim()) throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
+  return {
+    ...storedModelRunFields(deps, secret, provider, modelId, {
+      defaultModel: modelId,
+      supportsImages: row.supportsImages,
+    }),
+    apiKey,
+    billing: "organization",
+    redact,
+    connectionId,
+  };
+}
+
+function storedModelRunFields(
+  deps: Pick<ExecutorDeps, "mcpAllowPrivateEndpoint">,
+  secret: StoredModelSecret,
+  provider: string,
+  modelId: string,
+  credential: NonNullable<Parameters<typeof connectionModelSettings>[3]>,
+) {
   const endpoint = secret.kind === "openai_compatible" ? secret : undefined;
-  const allowPrivateEndpoint = endpoint ? deps.mcpAllowPrivateEndpoint === true : undefined;
-  if (endpoint) {
+  const apiKeySecret = secret.kind === "api_key" ? secret : undefined;
+  const baseUrl = endpoint?.baseUrl;
+  const allowPrivateEndpoint = baseUrl ? deps.mcpAllowPrivateEndpoint === true : undefined;
+  if (baseUrl) {
     try {
-      assertAllowedOpenAiCompatibleUrl(endpoint.baseUrl, {
+      // The public gate stays with the request-time fetch guard.
+      assertAllowedOpenAiCompatibleUrl(baseUrl, {
         allowPublic: true,
         allowPrivate: allowPrivateEndpoint,
       });
@@ -306,33 +328,29 @@ export async function resolveOrganizationModelKey(
       throw new UnavailableModelForAuthError((error as Error).message);
     }
   }
-  if (secret.kind === "api_key")
-    cloudflareProviderEnv({ provider, accountId: secret.accountId, gatewayId: secret.gatewayId });
-  const settings = connectionModelSettings(secret, provider, modelId, {
-    defaultModel: modelId,
-    supportsImages: row.supportsImages,
+  const settings = connectionModelSettings(secret, provider, modelId, credential);
+  cloudflareProviderEnv({
+    provider,
+    accountId: apiKeySecret?.accountId,
+    gatewayId: apiKeySecret?.gatewayId,
   });
   return {
-    apiKey,
-    baseUrl: endpoint?.baseUrl,
+    baseUrl,
     headers: endpoint?.headers,
     apiProtocol: endpoint?.apiProtocol,
     allowPrivateEndpoint,
-    cacheCapabilities: secret.cacheCapabilities,
-    accountId: secret.kind === "api_key" ? secret.accountId : undefined,
-    gatewayId: secret.kind === "api_key" ? secret.gatewayId : undefined,
-    projectId: secret.kind === "api_key" ? secret.projectId : undefined,
-    region: secret.kind === "api_key" ? secret.region : undefined,
-    zeroDataRetention: secret.kind === "api_key" ? secret.zeroDataRetention : undefined,
+    accountId: apiKeySecret?.accountId,
+    gatewayId: apiKeySecret?.gatewayId,
+    projectId: apiKeySecret?.projectId,
+    region: apiKeySecret?.region,
+    zeroDataRetention: apiKeySecret?.zeroDataRetention,
+    cacheCapabilities: secret.kind !== "oauth" ? secret.cacheCapabilities : undefined,
     acceptsImages: settings.images,
     maxImagesPerPrompt: settings.maxImagesPerPrompt,
     contextWindow: settings.contextWindow,
     maxTokens: settings.maxTokens,
     reasoning: settings.reasoning,
     thinkingLevel: settings.thinkingLevel,
-    billing: "organization",
-    redact,
-    connectionId,
   };
 }
 
@@ -461,58 +479,19 @@ async function resolveModelKeyMaterial(
       }
       assertCompatibleModelEnabled(credential, resolved.secret, modelId);
       const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
-      const baseUrl =
-        resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;
-      // Recheck operator configuration for saved private connections on every run.
-      const allowPrivateEndpoint = baseUrl ? deps.mcpAllowPrivateEndpoint === true : undefined;
-      if (baseUrl) {
-        try {
-          // The public gate stays with the request-time fetch guard.
-          assertAllowedOpenAiCompatibleUrl(baseUrl, {
-            allowPublic: true,
-            allowPrivate: allowPrivateEndpoint,
-          });
-        } catch (error) {
-          throw new UnavailableModelForAuthError((error as Error).message);
-        }
-      }
-      const settings = connectionModelSettings(resolved.secret, provider, modelId, credential);
-      // The account catalog knows what a Codex model reads; elsewhere the model's setting
-      // decides wherever the bundled catalog cannot.
-      // Live-only models have no static reasoning or context card to fall back to.
-      // Keep explicit context limits; enable thinking when the account advertises efforts.
-      const acceptsImages = liveCodex?.supportsImages ?? settings.images;
-      const accountId = resolved.secret.kind === "api_key" ? resolved.secret.accountId : undefined;
-      const gatewayId = resolved.secret.kind === "api_key" ? resolved.secret.gatewayId : undefined;
-      cloudflareProviderEnv({ provider, accountId, gatewayId });
-      const projectId = resolved.secret.kind === "api_key" ? resolved.secret.projectId : undefined;
-      const region = resolved.secret.kind === "api_key" ? resolved.secret.region : undefined;
-      const zeroDataRetention =
-        resolved.secret.kind === "api_key" ? resolved.secret.zeroDataRetention : undefined;
+      const fields = storedModelRunFields(deps, resolved.secret, provider, modelId, credential);
+      // The live catalog can describe models absent from the bundled catalog.
       return {
+        ...fields,
         apiKey: resolved.apiKey,
-        accountId,
-        gatewayId,
-        projectId,
-        region,
-        zeroDataRetention,
-        baseUrl,
-        apiProtocol:
-          resolved.secret.kind === "openai_compatible" ? resolved.secret.apiProtocol : undefined,
-        headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
-        allowPrivateEndpoint,
-        cacheCapabilities:
-          resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
-        contextWindow: settings.contextWindow ?? liveCodex?.contextWindow,
-        reasoning: liveCodex?.reasoningEfforts.length ? true : settings.reasoning,
+        contextWindow: fields.contextWindow ?? liveCodex?.contextWindow,
+        reasoning: liveCodex?.reasoningEfforts.length ? true : fields.reasoning,
         thinkingLevel: savedThinkingLevel(
-          settings.thinkingLevel,
+          fields.thinkingLevel,
           { modelId: credential.defaultModel, thinkingLevel: credential.thinkingLevel },
           modelId,
         ),
-        maxTokens: settings.maxTokens,
-        acceptsImages,
-        maxImagesPerPrompt: settings.maxImagesPerPrompt,
+        acceptsImages: liveCodex?.supportsImages ?? fields.acceptsImages,
         oauth,
         persistOAuth: oauth
           ? persistRefreshedModelCredential(

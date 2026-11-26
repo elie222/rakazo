@@ -227,17 +227,22 @@ export async function aiConsentStatus(
           },
         })
       : [];
+    const readBaseUrl = async (ciphertext: string, secretId: string) => {
+      try {
+        const secret = parseModelSecret(await deps.secrets.load(ciphertext, secretId));
+        return secret.kind === "openai_compatible" && URL.canParse(secret.baseUrl)
+          ? secret.baseUrl
+          : undefined;
+      } catch {
+        // Unreadable credentials still disclose by provider; the base URL is unknown.
+        return undefined;
+      }
+    };
     const baseUrls = new Map(
       await Promise.all(
-        secrets.map(async (secret): Promise<[string, string | undefined]> => {
-          try {
-            const parsed = parseModelSecret(await deps.secrets.load(secret.ciphertext, secret.id));
-            return [secret.id, parsed.kind === "openai_compatible" ? parsed.baseUrl : undefined];
-          } catch {
-            // Unreadable credentials still disclose by provider; the base URL is unknown.
-            return [secret.id, undefined];
-          }
-        }),
+        secrets.map(
+          async (secret) => [secret.id, await readBaseUrl(secret.ciphertext, secret.id)] as const,
+        ),
       ),
     );
     for (const model of models) {
@@ -251,8 +256,7 @@ export async function aiConsentStatus(
           model.id,
         );
         if (!row) continue;
-        const secret = parseModelSecret(await deps.secrets.load(row.ciphertext, row.secretId));
-        if (secret.kind === "openai_compatible") baseUrl = secret.baseUrl;
+        baseUrl = await readBaseUrl(row.ciphertext, row.secretId);
       }
       add(
         aiRecipient({

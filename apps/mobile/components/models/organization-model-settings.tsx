@@ -1,5 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import type { OrganizationModelConnectInput } from "@rakazo/contracts";
+import {
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+  OrganizationModelConnectInputSchema,
+  organizationModelProviders,
+} from "@rakazo/contracts";
 import { useState } from "react";
 import { Alert, Text, TextInput, View } from "react-native";
 import { errorText } from "../../lib/api/user-error";
@@ -17,7 +22,7 @@ const emptyDraft: Draft = { label: "", modelId: "", apiKey: "", baseUrl: "" };
 type Change =
   | { kind: "select"; id: string | null }
   | { kind: "remove"; id: string }
-  | { kind: "create"; provider: string; draft: Draft };
+  | { kind: "create"; input: OrganizationModelConnectInput };
 
 export function OrganizationModelSettings({
   providers,
@@ -40,12 +45,7 @@ export function OrganizationModelSettings({
         await send("models/organizationConnections/select", { id: change.id });
       else if (change.kind === "remove")
         await send("models/organizationConnections/remove", { id: change.id });
-      else
-        await send("models/organizationConnections/create", {
-          ...change.draft,
-          baseUrl: change.draft.baseUrl || undefined,
-          provider: change.provider,
-        });
+      else await send("models/organizationConnections/create", change.input);
     },
     stale: [read.queryKey, rpcQuery("me", undefined, spaceId).queryKey],
     onSaved: (_, change) => {
@@ -57,6 +57,11 @@ export function OrganizationModelSettings({
   });
   if (!view || (!view.connections.length && !view.selectedId && !view.canManage)) return null;
   const compatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const input = {
+    ...draft,
+    provider,
+    baseUrl: compatible ? draft.baseUrl : undefined,
+  };
   const fields = [
     ...(compatible ? [{ key: "baseUrl" as const, label: t`Base URL` }] : []),
     { key: "modelId" as const, label: t`Model ID` },
@@ -98,9 +103,10 @@ export function OrganizationModelSettings({
                 label={t`Provider`}
                 placeholder={t`Choose a provider`}
                 value={provider}
-                choices={providers
-                  .filter((entry) => !entry.baseUrl)
-                  .map((entry) => ({ key: entry.id, label: entry.name }))}
+                choices={organizationModelProviders(providers).map((entry) => ({
+                  key: entry.id,
+                  label: entry.name,
+                }))}
                 disabled={save.pending}
                 onChange={setProvider}
               />
@@ -124,12 +130,9 @@ export function OrganizationModelSettings({
                 disabled={
                   save.pending ||
                   !provider ||
-                  !draft.label.trim() ||
-                  !draft.modelId.trim() ||
-                  draft.apiKey.trim().length < 8 ||
-                  (compatible && !draft.baseUrl.trim())
+                  !OrganizationModelConnectInputSchema.safeParse(input).success
                 }
-                onPress={() => save.run({ kind: "create", draft, provider })}
+                onPress={() => save.run({ kind: "create", input })}
               />
             </>
           ) : view.connections.length ? (

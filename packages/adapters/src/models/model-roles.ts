@@ -116,7 +116,7 @@ export async function memberOrganizationMainModel(
   prisma: PrismaClient,
   scope: { userId: string; spaceId: string },
 ): Promise<MemberMainModel | null> {
-  const organization = await prisma.spaceMember?.findUnique?.({
+  const organization = await prisma.spaceMember.findUnique({
     where: { spaceId_userId: { spaceId: scope.spaceId, userId: scope.userId } },
     select: {
       organizationModelConnectionId: true,
