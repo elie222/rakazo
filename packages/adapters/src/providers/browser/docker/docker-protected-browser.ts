@@ -47,7 +47,10 @@ async function runContainer(engine: string[], name: string, input: string, signa
   return result;
 }
 
-/** Deploy only against a trusted Linux engine whose host shares this process's socket directory. */
+/**
+ * Deploy against a trusted Linux engine with nested user namespaces and a shared socket directory.
+ * Generate seccompProfile with infra/sandboxes/protected-browser/seccomp-profile.sh.
+ */
 export function createProtectedBrowserLauncher({
   image,
   seccompProfile,

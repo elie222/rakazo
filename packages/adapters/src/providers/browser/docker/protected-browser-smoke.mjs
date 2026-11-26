@@ -68,6 +68,15 @@ if (process.argv[2] === "fixture") {
     ],
   });
   assert.ok(storageState.cookies.some(({ value }) => value === "synthetic-cookie"));
+  assert.ok(
+    storageState.origins.some(
+      ({ origin, localStorage }) =>
+        origin === url &&
+        localStorage.some(
+          ({ name, value }) => name === "session" && value === "synthetic form value",
+        ),
+    ),
+  );
   const { page } = await run({ mode: "browse", url, storageState, steps: [] });
   assert.match(page, /Synthetic account/);
   assert.doesNotMatch(page, /synthetic-cookie|synthetic\+form\+value/);

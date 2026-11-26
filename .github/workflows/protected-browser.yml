@@ -24,7 +24,7 @@ jobs:
       - name: Build sandboxed browser image
         run: |
           docker build -t rakazo/protected-browser:base -f infra/sandboxes/protected-browser/Dockerfile .
-          curl -fsSL https://raw.githubusercontent.com/microsoft/playwright/v1.64.1/utils/docker/seccomp_profile.json -o /tmp/browser-seccomp.json
+          bash infra/sandboxes/protected-browser/seccomp-profile.sh > /tmp/browser-seccomp.json
       - name: Run the browser protocol test
         run: |
           docker run --rm --init --network none --read-only --cap-drop ALL \

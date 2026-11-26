@@ -20,6 +20,7 @@ type BrowserStep = { name: string } & (
   | { kind: "wait"; role: BrowserControlRole | "heading" }
 );
 
+/** For asynchronous sign-in, wait for a site-specific success control before capturing storage. */
 export type ProtectedBrowserRequest = {
   url: string;
   steps: BrowserStep[];

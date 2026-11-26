@@ -69,6 +69,10 @@ test("a fresh protected browser resumes the synthetic signed-in session", async 
     await once(server, "listening");
     const url = `https://127.0.0.1:${server.address().port}`;
     const launch = { args: ["--ignore-certificate-errors"] };
+    await assert.rejects(
+      runBrowser(chromium, { mode: "sign-in", url, steps: [] }, launch),
+      /Sign-in produced no reusable browser state/,
+    );
     const signedIn = await runBrowser(
       chromium,
       {
