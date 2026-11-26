@@ -276,18 +276,18 @@ as an alarm. On ordinary pages:
 | A status or failure that stays until something changes | `Notice` | Bare coloured text |
 | Nothing here yet | `Empty` | Custom text block |
 
-### Segmented control (proposed)
+### Segmented control
 
-Status: **pattern**. Today it is `ToggleGroup` styled inline in 14 places (Usage date range,
-appearance, approvals, billing, vault, memory, signup survey and others):
+`ToggleGroup` with `variant="segmented"` draws the muted track, and its items take the selected
+style, including the lighter dark-mode fill. Use `size="sm"` (28px) beside other small controls.
+Layout classes (`grid grid-cols-N`, `w-full`) are the only ones you add.
 
 ```tsx
-<ToggleGroup spacing={1} className="grid grid-cols-N rounded-lg bg-muted p-1">
-  <ToggleGroupItem className="text-body-sm aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50">
+<ToggleGroup variant="segmented" spacing={1} className="grid grid-cols-3" value={[value]}>
+  <ToggleGroupItem value="a">A</ToggleGroupItem>
 ```
 
-It should become a `segmented` variant in `packages/ui-web` so the track and selected state
-live in one place. Until then, copy the class string above exactly.
+A standalone `Toggle` in a hand-built track takes `variant="segmented"` too.
 
 ### Dialog
 
@@ -319,7 +319,8 @@ control, wrapping when narrow) from `apps/web/src/components/settings/SettingsRo
 - A list with an add action gets a section header: `SectionHeading` (`heading` variant) on the
   left, a `secondary` button with a `Plus` icon on the right, inset to the text edge. The list
   sits below, in a `SettingsGroup` or a muted card (`rounded-xl bg-muted/50`). Approvals (Rules),
-  Vault (Items) and Memory (Memory provider) follow this.
+  Vault (Items) and Memory (Memory provider) follow this. When a heading would only repeat the
+  page title, pass the button as the group's `action` with no `title`, as Spaces does.
 - A record opened from a muted-card list shows its fields in the same card, so it looks the same
   open as in the list.
 
@@ -366,12 +367,19 @@ tokens from `apps/mobile/lib/appearance/appearance.ts`. System chrome uses `Plat
 
 ## Known gaps
 
-- No shared segmented control (see above).
-- No elevation or motion tokens. The conventions above are descriptive.
-- Some danger and error boxes are still hand-built with the `Notice` classes (the account
-  deletion container, a few inline errors). Move message-only ones to `Notice`.
-- About 20 buttons still use `destructive`. Most confirm an action in a dialog, which is right;
-  check the rest against the destructive-action rule above.
-- Spaces' "New private space" still sits below its list rather than in a section header.
+These need a decision from maintainers rather than a code change:
+
+- No elevation or motion tokens. The conventions above describe current usage; tokens would only
+  be worth adding once a second value is needed for the same role.
 - Light-theme `card` and `muted` are darker than `background`, the opposite of dark, where they
   are lighter. Worth a deliberate decision rather than a per-component fix.
+
+Tinted boxes that stay hand-built on purpose, because `Notice` (a message in a box) doesn't fit:
+
+- The account deletion container holds the final form, not just a message.
+- The MCP servers error wraps `ErrorNotice`, which adds a troubleshooting link.
+- The computer screen's send error is an edge-to-edge strip across the pane.
+- The composer error is an animated strip above the message box, with its own actions.
+
+`destructive` buttons and menu items were all checked: each one confirms an action, sits in a
+menu, or ends or declines a call, so none needs the neutral treatment.
