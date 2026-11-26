@@ -236,12 +236,9 @@ function isModelOutputFailure(text: string): boolean {
   return MODEL_REFUSAL.test(text) || MODEL_MALFORMED_OUTPUT.test(text);
 }
 
-/** Whether a failed reply's error says the provider refused the request, not that it garbled it. */
-export function isModelRefusal(error: string): boolean {
+function isModelRefusal(text: string): boolean {
   return MODEL_REFUSAL.test(
-    error
-      .trim()
-      .replace(/^(?:Provider (?:finish_reason|stopped with)|Unhandled stop reason): /, ""),
+    text.replace(/^(?:Provider (?:finish_reason|stopped with)|Unhandled stop reason): /, ""),
   );
 }
 
@@ -288,6 +285,8 @@ export function normalizeRunError(
   summary: string;
   details: string;
   recovery?: RunErrorRecovery;
+  /** The provider declined the request itself, so the same request would be declined again. */
+  refused?: true;
   resetAt?: number;
   kind?: RunErrorKind;
   period?: "none" | "daily" | "weekly" | "monthly";
@@ -405,6 +404,11 @@ export function normalizeRunError(
       details,
       recovery: "model",
       kind: "output",
+      ...(payload.code === "data_inspection_failed" ||
+      isModelRefusal(trimmed) ||
+      isModelRefusal(message)
+        ? { refused: true as const }
+        : {}),
       ...(status !== undefined ? { status } : {}),
       providerMessage: message,
     };

@@ -10,7 +10,6 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   containsSecret,
   displayName,
-  isModelRefusal,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   normalizeRunError,
   redactSecrets,
@@ -173,7 +172,7 @@ export async function failRun(
       run.trigger === "user" &&
       ctx.fence === 1 &&
       (error instanceof TransientModelError ||
-        (error instanceof ModelOutputError && !isModelRefusal(error.message))) &&
+        (error instanceof ModelOutputError && !normalizeRunError(error.message).refused)) &&
       !ctx.state.toolStarted &&
       partialReply.length === 0,
     ...(partialReply.length > 0 ? { partialReply } : {}),

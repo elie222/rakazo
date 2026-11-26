@@ -351,10 +351,11 @@ describe("retrying a failed typed reply", () => {
     );
   });
 
-  it("does not offer a fresh reply to a request the provider refused", async () => {
-    const finalize = await fixture().failFromModel(
-      new ModelOutputError("The model refused to complete the request"),
-    );
+  it.each([
+    "The model refused to complete the request",
+    '400: {"code":"data_inspection_failed","param":null,"message":"Input text data may contain inappropriate content.","type":"data_inspection_failed"}',
+  ])("does not offer a fresh reply to a request the provider refused: %s", async (message) => {
+    const finalize = await fixture().failFromModel(new ModelOutputError(message));
     expect(finalize).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", retryable: false }),
     );

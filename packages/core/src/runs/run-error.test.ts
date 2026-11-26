@@ -496,12 +496,25 @@ describe("normalizeRunError", () => {
       MODEL_OUTPUT_LIMIT_ERROR,
       "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
     ])("calls unusable model output what it is: %s", (details) => {
-      expect(classify(details)).toEqual({
+      expect(classify(details)).toMatchObject({
         summary: "The model returned an unusable response. Try again.",
         details,
         kind: "output",
         recovery: "model",
       });
+    });
+
+    it("tells a request the provider refused apart from a garbled answer", () => {
+      for (const refused of [
+        "The model refused to complete the request",
+        "Provider stopped with: SAFETY",
+        '400: {"code":"data_inspection_failed","param":null,"message":"Input text data may contain inappropriate content.","type":"data_inspection_failed"}',
+      ]) {
+        expect(normalizeRunError(refused).refused).toBe(true);
+      }
+      expect(
+        normalizeRunError("Unhandled stop reason: MALFORMED_RESPONSE").refused,
+      ).toBeUndefined();
     });
 
     it("shows an operator cap without suggesting buying credits or changing connections", () => {
