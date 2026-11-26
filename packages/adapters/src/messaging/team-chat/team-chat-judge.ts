@@ -204,7 +204,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     } catch (error) {
       getLogger().error(
         "team chat engagement judge failed",
-        redactSecrets(safeError(error), secretsToRedact),
+        redactSecrets(safeError(error), secretsToRedact, { cache: false }),
       );
       return { act: false };
     }

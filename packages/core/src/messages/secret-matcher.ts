@@ -20,8 +20,6 @@ export function indexedMatcherBuildCount(): number {
   return indexedMatcherBuilds;
 }
 
-const EMPTY_RANGES: Array<[number, number]> = [];
-
 /**
  * The most states the one-pass matcher builds. Its states grow with the values' combined length,
  * which very long values (keys of thousands of characters, each in several encodings) could push
@@ -134,7 +132,7 @@ export function createIndexedMatcher(
   return {
     empty,
     ranges(text) {
-      if (empty) return EMPTY_RANGES;
+      if (empty) return [];
       // Of the matches ending at one offset only the longest counts: the others lie inside it,
       // so they overlap it and can't change a stretch. Ends only grow, so a match that starts
       // before the current stretch ends joins it; one that only touches it starts another.
@@ -156,7 +154,7 @@ export function createIndexedMatcher(
         current[1] = end;
         return undefined;
       });
-      return ranges ?? EMPTY_RANGES;
+      return ranges ?? [];
     },
     test(text) {
       if (empty) return false;

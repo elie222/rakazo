@@ -251,5 +251,15 @@ describe("redacting with a growing list", () => {
       const other = sets[(index + 1) % sets.length]![0]!;
       expect(redactSecrets(`${own} ${other}`, sets[index]!)).toBe(`[redacted] ${other}`);
     }
+
+    // Mutating an empty result returned by redactedRanges on an indexed miss must not affect later calls.
+    const missSecrets = Array.from({ length: 20 }, (_, index) => `miss-secret-${index}-abcdef`);
+    const indexedMiss = redactedRanges("clean text without any match".repeat(200), missSecrets);
+    expect(indexedMiss).toEqual([]);
+    indexedMiss.push([0, 5]);
+    expect(redactSecrets("clean text without any match", ["other-secret-value"])).toBe(
+      "clean text without any match",
+    );
+    expect(redactedRanges("clean text without any match", missSecrets)).toEqual([]);
   });
 });
