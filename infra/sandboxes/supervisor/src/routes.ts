@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
-import { getLogger } from "@rakazo/logging";
+import { getLogContext, getLogger } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import type Docker from "dockerode";
 import type { Context } from "hono";
@@ -81,7 +81,7 @@ import {
   removeUnusedComputerNetwork,
 } from "./networks.js";
 import { publishedScreenUrl } from "./readiness.js";
-import { logRequestFailure } from "./request-failures.js";
+import { logRequestFailure, logStreamFailure } from "./request-failures.js";
 import { limitSupervisorRequestBody, supervisorFileWriteSchema } from "./request-limits.js";
 import {
   computerScreenBoots,
@@ -442,6 +442,7 @@ app.post("/computers/:id/exec", async (c) => {
     logRequestFailure(error);
     return c.json({ stdout: "", stderr: message, code: 1 }, 200);
   }
+  const requestLogContext = getLogContext();
   const encoder = new TextEncoder();
   const abort = new AbortController();
   const requestSignal = c.req.raw.signal;
@@ -528,6 +529,7 @@ app.post("/computers/:id/exec", async (c) => {
         } catch (error) {
           if (!abort.signal.aborted) {
             const message = error instanceof Error ? error.message : String(error);
+            logStreamFailure(requestLogContext, "/computers/:id/exec", c.req.method, error);
             send({ type: "stderr", data: message });
             send({ type: "exit", code: 1 });
           }
@@ -855,10 +857,13 @@ app.get("/computers/:id/files", async (c) => {
       if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
         return c.json({ error: "invalid maxBytes" }, 400);
       }
+      const requestLogContext = getLogContext();
       const outcome = await readContainerFile(container, target, {
         maxBytes,
         signal: c.req.raw.signal,
         signalMidStreamOverflow: c.req.query("overflow") === "marker",
+        onStreamError: (error) =>
+          logStreamFailure(requestLogContext, "/computers/:id/files", c.req.method, error),
       });
       if (outcome.kind === "too_large") {
         return c.json({ error: `computer file exceeds ${maxBytes} bytes` }, 413);

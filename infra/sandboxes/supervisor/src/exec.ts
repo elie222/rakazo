@@ -105,6 +105,8 @@ interface ContainerCommandOptions {
   onStream?: (controls: { pause: () => void; resume: () => void }) => void;
   /** Maximum raw bytes buffered when `onOutput` is not provided. */
   maxOutputBytes?: number;
+  /** Non-zero exit codes that represent expected outcomes rather than container distress. */
+  ignoreLimitCheckExitCodes?: readonly number[];
 }
 
 export async function runContainerCommand(
@@ -114,10 +116,16 @@ export async function runContainerCommand(
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   try {
     const result = await execContainerCommand(container, argv, options);
-    if (result.code !== 0) warnNearLimits(container);
+    if (
+      result.code !== 0 &&
+      !options.signal?.aborted &&
+      !options.ignoreLimitCheckExitCodes?.includes(result.code)
+    ) {
+      warnNearLimits(container);
+    }
     return result;
   } catch (error) {
-    warnNearLimits(container);
+    if (!options.signal?.aborted) warnNearLimits(container);
     throw error;
   }
 }
@@ -318,6 +326,7 @@ async function readContainerFileSpooled(
   target: string,
   maxBytes: number,
   signal?: AbortSignal,
+  onStreamError?: (error: unknown) => void,
 ): Promise<ReadContainerFileOutcome> {
   const abort = new AbortController();
   const onCallerAbort = () => abort.abort(signal?.reason ?? new Error("file read cancelled"));
@@ -352,6 +361,7 @@ async function readContainerFileSpooled(
         ["python3", "-c", READ_CONTAINER_FILE_SCRIPT, target, String(maxBytes)],
         {
           signal: abort.signal,
+          ignoreLimitCheckExitCodes: [42],
           onStream: (controls) => {
             streamControls = controls;
             if (inFlightWrites > 0) controls.pause();
@@ -442,6 +452,7 @@ async function readContainerFileSpooled(
     let activeRead: Promise<unknown> | undefined;
     let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
     let streamSettled = false;
+    let cancelled = false;
     let cleanedUp = false;
     let cleanupPromise: Promise<void> | undefined;
     const markSettled = () => {
@@ -459,6 +470,7 @@ async function readContainerFileSpooled(
       }
     };
     const onBodyAbort = () => {
+      cancelled = true;
       if (bodyController) {
         errorStream(bodyController, signal?.reason ?? new Error("file read cancelled"));
       } else {
@@ -513,6 +525,7 @@ async function readContainerFileSpooled(
               try {
                 await cleanupStream();
               } catch (closeError) {
+                if (!cancelled && !signal?.aborted) onStreamError?.(closeError);
                 errorStream(ctrl, closeError);
                 return;
               }
@@ -529,16 +542,20 @@ async function readContainerFileSpooled(
             readOffset += bytesRead;
             if (!streamSettled) ctrl.enqueue(buffer.subarray(0, bytesRead));
           } catch (error) {
-            const wasCancelled = cleanedUp;
+            const wasCancelled = cancelled || cleanedUp || Boolean(signal?.aborted);
             try {
               await cleanupStream();
             } finally {
               if (wasCancelled) markSettled();
-              else errorStream(ctrl, error);
+              else {
+                onStreamError?.(error);
+                errorStream(ctrl, error);
+              }
             }
           }
         },
         async cancel() {
+          cancelled = true;
           markSettled();
           await cleanupStream();
         },
@@ -563,17 +580,31 @@ async function readContainerFileSpooled(
 export async function readContainerFile(
   container: Docker.Container,
   target: string,
-  options: { maxBytes?: number; signal?: AbortSignal; signalMidStreamOverflow?: boolean } = {},
+  options: {
+    maxBytes?: number;
+    signal?: AbortSignal;
+    signalMidStreamOverflow?: boolean;
+    onStreamError?: (error: unknown) => void;
+  } = {},
 ): Promise<ReadContainerFileOutcome> {
   // compat-shim(after v0.16.0): older adapters during a rolling deploy expect HTTP 413 even if a
   // file grows after reads start; spool bounded legacy reads to disk until all callers send
   // overflow=marker.
   if (!options.signalMidStreamOverflow && options.maxBytes !== undefined) {
-    return readContainerFileSpooled(container, target, options.maxBytes, options.signal);
+    return readContainerFileSpooled(
+      container,
+      target,
+      options.maxBytes,
+      options.signal,
+      options.onStreamError,
+    );
   }
   const abort = new AbortController();
-  const onCallerAbort = () =>
+  let cancelled = false;
+  const onCallerAbort = () => {
+    cancelled = true;
     abort.abort(options.signal?.reason ?? new Error("file read cancelled"));
+  };
   options.signal?.addEventListener("abort", onCallerAbort, { once: true });
   if (options.signal?.aborted) onCallerAbort();
   const cleanupCallerAbort = () => {
@@ -610,6 +641,7 @@ export async function readContainerFile(
     if (controller && !streamEnded) {
       streamEnded = true;
       cleanupCallerAbort();
+      if (!cancelled && !options.signal?.aborted) options.onStreamError?.(error);
       controller.error(error);
     }
     markReady();
@@ -634,11 +666,14 @@ export async function readContainerFile(
     streamEnded = true;
     cleanupCallerAbort();
     if (failure !== undefined) {
+      if (!cancelled && !options.signal?.aborted) options.onStreamError?.(failure);
       controller.error(failure);
       return;
     }
     if (exitCode !== 0) {
-      controller.error(new Error(stderr || "file read failed"));
+      const readError = new Error(stderr || "file read failed");
+      if (!cancelled && !options.signal?.aborted) options.onStreamError?.(readError);
+      controller.error(readError);
       return;
     }
     controller.enqueue(encoder.encode('"}'));
@@ -650,6 +685,7 @@ export async function readContainerFile(
     ["python3", "-c", READ_CONTAINER_FILE_SCRIPT, target, String(options.maxBytes ?? -1)],
     {
       signal: abort.signal,
+      ignoreLimitCheckExitCodes: [42],
       onStream: (controls) => {
         streamControls = controls;
         if (buffered.length > 0 && !controller) controls.pause();
@@ -676,6 +712,7 @@ export async function readContainerFile(
           try {
             controller.enqueue(encoder.encode(chunk.data));
           } catch (error) {
+            cancelled = true;
             streamEnded = true;
             cleanupCallerAbort();
             abort.abort(error);
@@ -749,6 +786,7 @@ export async function readContainerFile(
         if (!done && !streamEnded) streamControls?.resume();
       },
       cancel() {
+        cancelled = true;
         streamEnded = true;
         cleanupCallerAbort();
         abort.abort(new Error("file read cancelled"));

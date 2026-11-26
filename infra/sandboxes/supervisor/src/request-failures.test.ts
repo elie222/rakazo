@@ -1,4 +1,4 @@
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import {
   createLogger,
@@ -38,6 +38,13 @@ const managed = {
 function stderrFrame(text: string) {
   const header = Buffer.alloc(8);
   header[0] = 2;
+  header.writeUInt32BE(Buffer.byteLength(text), 4);
+  return Buffer.concat([header, Buffer.from(text)]);
+}
+
+function stdoutFrame(text: string) {
+  const header = Buffer.alloc(8);
+  header[0] = 1;
   header.writeUInt32BE(Buffer.byteLength(text), 4);
   return Buffer.concat([header, Buffer.from(text)]);
 }
@@ -140,5 +147,50 @@ describe("failed computer requests", () => {
     });
 
     expect(sink.events[0]?.error?.message).toBe(`${message.slice(0, 500)}…`);
+  });
+
+  it("logs a correlated warning when a streamed file read fails after the first chunk", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-sandbox-supervisor", sinks: [sink] }));
+    const stream = new PassThrough();
+    mock.inspect.mockResolvedValue(managed);
+    mock.exec.mockImplementation(async () => ({
+      start: async () => stream,
+      inspect: async () => {
+        throw new Error("docker inspect failed");
+      },
+    }));
+    mock.stats.mockResolvedValue({ pids_stats: {}, memory_stats: {} });
+
+    const responsePromise = supervisorApp.request(
+      "/computers/computer/files?path=a.txt&mode=read&overflow=marker&maxBytes=100",
+      {
+        method: "GET",
+        headers: {
+          ...headers,
+          "x-request-id": "req-late-file-fail",
+        },
+      },
+    );
+    await vi.waitFor(() => expect(mock.exec).toHaveBeenCalled());
+    stream.write(stdoutFrame(Buffer.from("hello").toString("base64")));
+
+    const response = await responsePromise;
+    expect(response.status).toBe(200);
+    stream.end();
+
+    await expect(response.text()).rejects.toThrow("docker inspect failed");
+    const completed = sink.events.find((event) => event.message === "http.request.completed");
+    const streamFailure = sink.events.find((event) => event.message === "http.stream.failed");
+    expect(completed).toBeDefined();
+    expect(streamFailure).toMatchObject({
+      level: "warn",
+      message: "http.stream.failed",
+      "http.method": "GET",
+      "http.route": "/computers/:id/files",
+      "request.id": completed?.["request.id"],
+      "trace.id": completed?.["trace.id"],
+      error: expect.objectContaining({ message: "docker inspect failed" }),
+    });
   });
 });
