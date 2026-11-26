@@ -26,7 +26,11 @@ import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-na
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
 import { AddCustomForm, AddCustomMenu } from "../../components/integrations/add-custom-integration";
-import { ConnectedApps, SavedServerRow } from "../../components/integrations/connected-apps";
+import {
+  ConnectedApps,
+  ConnectionStatus,
+  SavedServerRow,
+} from "../../components/integrations/connected-apps";
 import { ConnectorIcon } from "../../components/integrations/connector-icon";
 import { IntegrationCatalogSearch } from "../../components/integrations/integration-catalog-search";
 import { IntegrationDetail } from "../../components/integrations/integration-detail";
@@ -247,7 +251,15 @@ export default function Integrations() {
         );
   const showFeatured = !query.trim();
   const catalogApps = useMemo(() => filterConnectionCatalogItems(catalog, query), [catalog, query]);
-  const renderedApps = catalogApps.slice(0, visibleCount);
+  const filtering = Boolean(query.trim() || category);
+  // Outside a search, connected apps sit with the rest of what the account has.
+  const browseApps = filtering
+    ? catalogApps
+    : catalogApps.filter((item) => !isCatalogItemConnected(connections, item));
+  const renderedApps = browseApps.slice(0, visibleCount);
+  const connectedCatalog = filtering
+    ? []
+    : catalog.filter((item) => isCatalogItemConnected(connections, item));
   const { plugins, pluginForApp } = useMemo(
     () => browsablePlugins(pluginEntries, catalog),
     [pluginEntries, catalog],
@@ -261,7 +273,6 @@ export default function Integrations() {
     pluginCategoryLabel,
   );
   const pluginMatches = filterPlugins(plugins, query, category || null, pluginCategoryLabel);
-  const filtering = Boolean(query.trim() || category);
   const installedSources = new Set(pluginInstalls.map((install) => install.source));
   const standaloneServers = mcpServers.filter((server) => !server.installId);
   const savedServerMatches =
@@ -323,31 +334,21 @@ export default function Integrations() {
     const key = catalogItemKey(item);
     const connected = itemConnected(item);
     const connecting = pending === key;
-    if (connected) {
-      return (
-        <NativeActionButton
-          accessibilityLabel={t`Added`}
-          disabled={connecting}
-          fill={false}
-          label={connecting ? t`Working…` : t`Added`}
-          onPress={() => openDetail(item)}
-          prominence="secondary"
-        />
-      );
-    }
+    if (connected) return <ConnectionStatus state="connected" />;
     return (
       <NativeActionButton
-        accessibilityLabel={t`Add ${ph({ name: label })}`}
+        accessibilityLabel={t`Connect ${ph({ name: label })}`}
         disabled={connecting}
         fill={false}
-        label={connecting ? t`Working…` : t`Add`}
+        label={connecting ? t`Working…` : t`Connect`}
         onPress={() => connect(item)}
         prominence="secondary"
       />
     );
   }
 
-  function renderCatalogTile(item: ConnectionCatalogItem, label: string) {
+  /** A catalog app's row; `inGrid` sizes it as one cell of the catalog's columns. */
+  function renderCatalogTile(item: ConnectionCatalogItem, label: string, inGrid = true) {
     const connected = itemConnected(item);
     const brandPlugin = pluginForApp.get(catalogItemKey(item));
     const body = (
@@ -373,7 +374,7 @@ export default function Integrations() {
         {renderCatalogActions(item, label)}
       </>
     );
-    const tileStyle = [styles.row, catalogColumns === 2 ? styles.catalogCell : null];
+    const tileStyle = [styles.row, inGrid && catalogColumns === 2 ? styles.catalogCell : null];
     if (connected || brandPlugin) {
       return (
         <Pressable
@@ -460,6 +461,9 @@ export default function Integrations() {
 
             {!detailItem && !filtering ? (
               <ConnectedApps
+                connectedCatalog={connectedCatalog.map((item) =>
+                  renderCatalogTile(item, item.name, false),
+                )}
                 connectorPlugins={connectorPlugins}
                 mcpServers={mcpServers}
                 standaloneServers={standaloneServers}
@@ -598,6 +602,7 @@ export default function Integrations() {
                           const key = item ? catalogItemKey(item) : tile.id;
                           const disabled = tile.missing || !item;
                           if (item && !tile.missing) {
+                            if (itemConnected(item)) return null;
                             return renderCatalogTile(item, tile.label);
                           }
                           return (
@@ -646,7 +651,7 @@ export default function Integrations() {
                   />
                 ) : null}
 
-                {!category && renderedApps.length < catalogApps.length ? (
+                {!category && renderedApps.length < browseApps.length ? (
                   <NativeActionButton
                     label={t`Show more`}
                     onPress={() => setVisibleCount((count) => count + CONNECTION_CATALOG_PAGE_SIZE)}

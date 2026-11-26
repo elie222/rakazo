@@ -1,9 +1,10 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { CapabilityInstall, McpServer } from "@rakazo/contracts";
+import type { CapabilityInstall, McpServer, McpServerConnection } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn } from "@rakazo/contracts";
 import { mcpServerStatusLabel } from "@rakazo/i18n/plugin-catalog";
 import { useRouter } from "expo-router";
+import type { ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
@@ -57,23 +58,9 @@ function InstalledPluginRow({
   );
 }
 
-/** A saved MCP server, how its connection stands, and its sign-in when it needs one. */
-export function SavedServerRow({
-  server,
-  pending,
-  oauthServerId,
-  onAuthorize,
-}: {
-  server: McpServer;
-  pending: string | null;
-  /** A server just added to sign in to, offered Connect before it has ever been signed in. */
-  oauthServerId: string | null;
-  onAuthorize: (serverId: string) => void;
-}) {
-  const router = useRouter();
+/** How a connection stands, as a colored label with its symbol. */
+export function ConnectionStatus({ state }: { state: McpServerConnection }) {
   const styles = useThemedStyles(createIntegrationsStyles);
-  const { t } = useLingui();
-  const state = mcpServerConnection(server);
   const tokens = mobileTokens();
   const warning = state === "needs_sign_in" || state === "needs_client";
   const color =
@@ -93,6 +80,39 @@ export function SavedServerRow({
           ? { ios: "exclamationmark.circle", android: "alert-circle-outline" as const }
           : null;
   return (
+    <View style={styles.connectionStatus}>
+      {symbol ? (
+        <View
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          <NativeSymbol {...symbol} size={14} color={color} />
+        </View>
+      ) : null}
+      <Text style={[styles.secondary, { color }]}>{mcpServerStatusLabel(state)}</Text>
+    </View>
+  );
+}
+
+/** A saved MCP server, how its connection stands, and its sign-in when it needs one. */
+export function SavedServerRow({
+  server,
+  pending,
+  oauthServerId,
+  onAuthorize,
+}: {
+  server: McpServer;
+  pending: string | null;
+  /** A server just added to sign in to, offered Connect before it has ever been signed in. */
+  oauthServerId: string | null;
+  onAuthorize: (serverId: string) => void;
+}) {
+  const router = useRouter();
+  const styles = useThemedStyles(createIntegrationsStyles);
+  const { t } = useLingui();
+  const state = mcpServerConnection(server);
+  return (
     // Connect sits beside the row's button, not inside it, so VoiceOver reaches both.
     <View testID="registered-mcp-server" style={styles.row}>
       <Pressable
@@ -104,18 +124,7 @@ export function SavedServerRow({
         <Text numberOfLines={1} style={[styles.title, styles.grow]}>
           {server.name}
         </Text>
-        <View style={styles.connectionStatus}>
-          {symbol ? (
-            <View
-              accessible={false}
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-            >
-              <NativeSymbol {...symbol} size={14} color={color} />
-            </View>
-          ) : null}
-          <Text style={[styles.secondary, { color }]}>{mcpServerStatusLabel(state)}</Text>
-        </View>
+        <ConnectionStatus state={state} />
       </Pressable>
       {server.enabled &&
       state !== "connected" &&
@@ -137,8 +146,9 @@ export function sourceKindLabel(source: Pick<CapabilityInstall, "kind">) {
   return source.kind === "api" ? "OpenAPI" : source.kind === "graphql" ? "GraphQL" : "MCP";
 }
 
-/** What this account already has: plugins with a connector, saved servers, then custom sources. */
+/** What this account already has: connected apps, plugins with a connector, saved servers, then custom sources. */
 export function ConnectedApps({
+  connectedCatalog,
   connectorPlugins,
   mcpServers,
   standaloneServers,
@@ -151,6 +161,8 @@ export function ConnectedApps({
   onAuthorize,
   onRetry,
 }: {
+  /** Rows for the catalog apps already connected. */
+  connectedCatalog: ReactNode[];
   connectorPlugins: CapabilityInstall[];
   mcpServers: McpServer[];
   /** Servers no plugin installed. */
@@ -167,7 +179,8 @@ export function ConnectedApps({
   const router = useRouter();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
-  const apps = connectorPlugins.length + standaloneServers.length + sources.length;
+  const apps =
+    connectedCatalog.length + connectorPlugins.length + standaloneServers.length + sources.length;
   if (!apps && !mcpError) return null;
   return (
     <View testID="connected-apps" style={styles.catalogStack}>
@@ -183,6 +196,7 @@ export function ConnectedApps({
           />
         </View>
       ) : null}
+      {connectedCatalog}
       {connectorPlugins.map((install) => {
         const servers = mcpServers.filter((server) => server.installId === install.id);
         return (
