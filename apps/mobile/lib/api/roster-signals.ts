@@ -68,6 +68,11 @@ async function follow(signal: AbortSignal) {
             void refreshRpcQueries("autoReview/get");
             void refreshRpcQueries("spaceSettings/overrides");
           }
+          if (kind === "integrations") {
+            void refreshRpcQueries("connections/catalog");
+            void refreshRpcQueries("connections/list");
+            void refreshRpcQueries("connections/tools");
+          }
           if (kind === "deploymentModel") {
             void refreshRpcQueries("me");
             void refreshRpcQueries("models/role");

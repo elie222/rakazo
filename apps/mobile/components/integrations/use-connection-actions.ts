@@ -1,6 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
-import { catalogItemAccounts, catalogItemKey, connectCatalogItem } from "@rakazo/core";
+import type { CatalogConnectionTarget } from "@rakazo/core";
+import {
+  catalogItemAccounts,
+  catalogItemKey,
+  connectCatalogItem,
+  connectionLabelFrom,
+} from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import type { DataTag, QueryKey } from "@tanstack/react-query";
 import type { Dispatch, SetStateAction } from "react";
@@ -12,6 +18,8 @@ import { captureSessionScope } from "../../lib/api/verified-scope";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
 import { signInToMcpServer } from "../../lib/integrations/mcp-oauth";
 import { queryClient, useSave } from "../../lib/query/query";
+
+type ConnectInput = { item: ConnectionCatalogItem; target: CatalogConnectionTarget };
 
 type Read<T> = { queryKey: DataTag<QueryKey, T, Error> };
 
@@ -51,9 +59,7 @@ export function useConnectionActions({
   const connectionAttempt = useRef<AbortController | null>(null);
   // Another app tapped while a connection is still waiting on the browser starts once that one
   // stops, if the screen still shows the Space and session it was tapped in.
-  const nextConnect = useRef<{ item: ConnectionCatalogItem; isCurrent: () => boolean } | null>(
-    null,
-  );
+  const nextConnect = useRef<{ input: ConnectInput; isCurrent: () => boolean } | null>(null);
 
   /** Shows a changed account at once; a refresh sent before the change would answer without it. */
   async function updateAccount(row: Connection) {
@@ -101,11 +107,11 @@ export function useConnectionActions({
   function startNextConnect() {
     const next = nextConnect.current;
     nextConnect.current = null;
-    if (next?.isCurrent()) connect.run(next.item);
+    if (next?.isCurrent()) connect.run(next.input);
   }
 
   const connect = useSave({
-    save: async (item: ConnectionCatalogItem, send) => {
+    save: async ({ item, target }: ConnectInput, send) => {
       // One attempt at a time: one started in another Space stops the earlier one.
       connectionAttempt.current?.abort();
       const focused = captureFocus();
@@ -113,7 +119,15 @@ export function useConnectionActions({
       connectionAttempt.current = controller;
       try {
         const result = await connectCatalogItem(item, connections, {
-          begin: (input) => send("connections/begin", input),
+          begin: (input) =>
+            target === "me"
+              ? send("connections/begin", input)
+              : target === "organization"
+                ? send("connections/beginForOrganization", {
+                    ...input,
+                    displayName: connectionLabelFrom(item.name, item.slug),
+                  })
+                : send("connections/reconnectOrganization", { connectionId: target.reconnectId }),
           complete: (input) => send("connections/complete", input),
           openUrl: (url) => Linking.openURL(url),
           signal: controller.signal,
@@ -132,7 +146,7 @@ export function useConnectionActions({
       }
     },
     stale,
-    onSaved: ({ status, focused }, item) => {
+    onSaved: ({ status, focused }, { item }) => {
       if (status === "connected") void notifyAppConnected(item, focused);
       if (status === "pending")
         Alert.alert(
@@ -168,7 +182,9 @@ export function useConnectionActions({
     // showing what the server holds without reading the lists again.
     save: async (item: ConnectionCatalogItem, send) => {
       const focused = captureFocus();
-      for (const row of catalogItemAccounts(connections, item)) {
+      for (const row of catalogItemAccounts(connections, item).filter(
+        (row) => row.manageable !== false,
+      )) {
         await send("connections/revoke", { connectionId: row.id });
         await updateAccount({ ...row, status: "revoked" });
       }
@@ -193,7 +209,7 @@ export function useConnectionActions({
   }, []);
 
   const pending = connect.pending
-    ? connect.input && catalogItemKey(connect.input)
+    ? connect.input && catalogItemKey(connect.input.item)
     : revoke.pending
       ? revoke.input?.id
       : rename.pending
@@ -223,13 +239,14 @@ export function useConnectionActions({
   }
 
   return {
-    connect(item: ConnectionCatalogItem) {
+    connect(item: ConnectionCatalogItem, target: CatalogConnectionTarget = "me") {
+      const input = { item, target };
       if (!connect.pending) {
         resetFailures();
-        return connect.run(item);
+        return connect.run(input);
       }
-      if (connect.input && catalogItemKey(connect.input) === catalogItemKey(item)) return;
-      nextConnect.current = { item, isCurrent: captureSessionScope() };
+      if (connect.input && catalogItemKey(connect.input.item) === catalogItemKey(item)) return;
+      nextConnect.current = { input, isCurrent: captureSessionScope() };
       connectionAttempt.current?.abort();
     },
     revokeAccount(row: Connection) {

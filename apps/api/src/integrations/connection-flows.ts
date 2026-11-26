@@ -6,10 +6,12 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import { ConnectorAuthUnavailableError, connectionCleanupJob } from "@rakazo/adapter-kit";
+import type { ConnectionOwner } from "@rakazo/adapters";
 import {
   authorizationInUse,
   CONNECTION_CLEANUP_BACKUP_MS,
   connectionCleanupRetryAt,
+  connectionOwnerWhere,
   dropLeftover,
   dropLeftoverAuthorization,
   leftoverAuthorization,
@@ -24,10 +26,23 @@ import {
 import type { Actor } from "@rakazo/contracts";
 import { ClientError, matchFeaturedConnectorId } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
-import { IsolationError, ProviderTransactionBusyError, recordSecurityEvent } from "@rakazo/db";
+import {
+  IsolationError,
+  ProviderTransactionBusyError,
+  recordSecurityEvent,
+  runAsSystem,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import type { RouterDeps } from "../router.js";
+import {
+  connectionDto,
+  findManagedConnection,
+  organizationAppTaken,
+  publishConnectionChange,
+  requireConnectionOrganization,
+  throwConnectionNameConflict,
+} from "./connection-ownership.js";
 import { recordToolConnected } from "./tool-connect-analytics.js";
 
 function isAmbiguousRemoteRevokeFailure(error: unknown): boolean {
@@ -58,7 +73,7 @@ function shouldRestoreLocalAfterRemoteRevokeFailure(error: unknown): boolean {
 const COMPLETE_POLL_SLOT_WAIT_MS = 2_000;
 
 export function connectionContext(
-  actor: Pick<Actor, "spaceId" | "userId">,
+  actor: ConnectionOwner,
   operationId: string,
   signal?: AbortSignal,
 ): AdapterContext {
@@ -67,8 +82,13 @@ export function connectionContext(
     traceId: operationId,
     spaceId: actor.spaceId,
     userId: actor.userId,
+    ...(actor.organizationId ? { organizationId: actor.organizationId } : {}),
     signal: signal ?? new AbortController().signal,
   };
+}
+
+function connectionFlowOwner({ spaceId, userId }: Actor, organizationId?: string): ConnectionOwner {
+  return { spaceId, userId, ...(organizationId ? { organizationId } : {}) };
 }
 
 /**
@@ -82,7 +102,7 @@ export function connectionContext(
 async function removeLeftoverAuthorization(
   deps: Pick<RouterDeps, "prisma" | "jobs">,
   connector: ManagedConnectorProvider,
-  leftover: BackgroundJobPayloads["connection.cleanup"],
+  leftover: BackgroundJobPayloads["connection.cleanup"] & { organizationId?: string },
   backedUp: boolean,
 ): Promise<void> {
   const where = {
@@ -115,7 +135,13 @@ async function removeLeftoverAuthorization(
   if (!recorded) await record(cleanupBackupAt());
   try {
     // Its own time budget, not the request signal: a caller that hangs up must not cut it short.
-    const outcome = await dropLeftoverAuthorization(deps, connector, leftover, "connections.begin");
+    const drop = () => dropLeftoverAuthorization(deps, connector, leftover, "connections.begin");
+    const outcome = leftover.organizationId
+      ? await runAsSystem(
+          "check the organization still owns the authorization before removing it",
+          drop,
+        )
+      : await drop();
     if (outcome !== "done") await handOver(connectionCleanupRetryAt(outcome));
   } catch (error) {
     getLogger().warn("connections.begin leftover cleanup failed; retrying", { error, ...where });
@@ -131,7 +157,10 @@ export async function beginConnection(
   deps: RouterDeps,
   context: { actor: Actor; signal?: AbortSignal },
   request: { connectorId?: string; provider: string; displayName: string },
+  organizationId?: string,
 ) {
+  const owner = connectionFlowOwner(context.actor, organizationId);
+  const owned = connectionOwnerWhere(owner);
   const input = {
     ...request,
     connectorId: request.connectorId ?? deps.connectors.defaultConnectorId,
@@ -170,13 +199,24 @@ export async function beginConnection(
   // Complete and revoke hold that lock across provider calls, so wait as long as they may.
   const row = await providerLockTransaction(
     deps.prisma,
-    providerScopeKey(context.actor, input.connectorId, input.provider),
+    providerScopeKey(owner, input.connectorId, input.provider),
     async (tx) => {
-      await lockProviderConnectionScope(tx, context.actor, input.connectorId, input.provider);
+      await lockProviderConnectionScope(tx, owner, input.connectorId, input.provider);
+      if (organizationId) {
+        await requireConnectionOrganization(tx, context.actor, organizationId);
+        const duplicate = await tx.connection.findFirst({
+          where: {
+            organizationId,
+            provider: { equals: input.provider, mode: "insensitive" },
+            status: { not: "revoked" },
+          },
+          select: { id: true },
+        });
+        if (duplicate) throw organizationAppTaken();
+      }
       const existing = await tx.connection.findMany({
         where: {
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
+          ...owned,
           connectorId: input.connectorId,
           provider: input.provider,
         },
@@ -197,8 +237,7 @@ export async function beginConnection(
       }
       return tx.connection.create({
         data: {
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
+          ...owned,
           connectorId: input.connectorId,
           provider: input.provider,
           displayName: input.displayName,
@@ -209,14 +248,14 @@ export async function beginConnection(
     },
   ).catch((error: unknown) => {
     logSetup("initial_save_failed");
+    if (organizationId) throwConnectionNameConflict(error);
     throw error;
   });
   connectionId = row.id;
   // Exactly what the first transaction wrote: this attempt's row, with no result saved on it.
   const unsavedRow = {
     id: row.id,
-    spaceId: context.actor.spaceId,
-    userId: context.actor.userId,
+    ...owned,
     status: "pending",
     metadata: { equals: { attempt } },
   };
@@ -242,7 +281,7 @@ export async function beginConnection(
         provider: input.provider,
         redirectUrl: `${deps.env.webOrigin}/integrations/callback`,
       },
-      connectionContext(context.actor, "connections.begin", context.signal),
+      connectionContext(owner, "connections.begin", context.signal),
     );
   } catch (error) {
     logSetup(
@@ -265,8 +304,7 @@ export async function beginConnection(
   const leftover = leftoverAuthorization(
     connector,
     {
-      spaceId: context.actor.spaceId,
-      userId: context.actor.userId,
+      ...owner,
       connectorId: input.connectorId,
       provider: input.provider,
     },
@@ -290,9 +328,10 @@ export async function beginConnection(
   try {
     applied = await providerLockTransaction(
       deps.prisma,
-      providerScopeKey(context.actor, input.connectorId, input.provider),
+      providerScopeKey(owner, input.connectorId, input.provider),
       async (tx) => {
-        await lockProviderConnectionScope(tx, context.actor, input.connectorId, input.provider);
+        await lockProviderConnectionScope(tx, owner, input.connectorId, input.provider);
+        if (organizationId) await requireConnectionOrganization(tx, context.actor, organizationId);
         const updated = await tx.connection.updateMany({
           where: unsavedRow,
           data: {
@@ -327,6 +366,7 @@ export async function beginConnection(
     await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
     recordToolConnected(deps.analytics, context.actor.userId, row);
   }
+  await publishConnectionChange(deps, context.actor, organizationId);
   return { connectionId: row.id, authorizationUrl: auth.authorizationUrl };
 }
 
@@ -335,14 +375,11 @@ export async function completeConnection(
   context: { actor: Actor; signal?: AbortSignal },
   input: { connectionId: string; code?: string },
 ) {
-  const existing = await deps.prisma.connection.findFirst({
-    where: {
-      id: input.connectionId,
-      spaceId: context.actor.spaceId,
-      userId: context.actor.userId,
-    },
-  });
+  const existing = await findManagedConnection(deps.prisma, context.actor, input.connectionId);
   if (!existing) throw new IsolationError();
+  const organizationId = existing.organizationId ?? undefined;
+  const owner = connectionFlowOwner(context.actor, organizationId);
+  const owned = connectionOwnerWhere(owner);
   const connector = deps.connectors.managed(existing.connectorId);
   if (!connector) {
     throw new ORPCError("BAD_REQUEST", {
@@ -351,7 +388,7 @@ export async function completeConnection(
   }
   // Catalog reconciliation connects a row without its account id; the next poll stores it.
   const settling = (row: { status: string; provider: string; providerRef: string | null }) =>
-    row.status !== "connected" || row.providerRef === row.provider;
+    row.status !== "connected" || (!organizationId && row.providerRef === row.provider);
   const prepared = settling(existing)
     ? await prepareManagedConnectorForTransaction(connector)
     : { provider: connector, recheck: undefined };
@@ -368,20 +405,20 @@ export async function completeConnection(
     // report the row as it is instead of waiting on a pooled connection.
     row = await providerLockTransaction(
       deps.prisma,
-      providerScopeKey(context.actor, existing.connectorId, existing.provider),
+      providerScopeKey(owner, existing.connectorId, existing.provider),
       async (tx) => {
         const locked = await tryLockProviderConnectionScope(
           tx,
-          context.actor,
+          owner,
           existing.connectorId,
           existing.provider,
         );
         if (!locked) return existing;
+        if (organizationId) await requireConnectionOrganization(tx, context.actor, organizationId);
         const current = await tx.connection.findFirst({
           where: {
             id: existing.id,
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
+            ...owned,
           },
         });
         if (!current) throw new IsolationError();
@@ -397,17 +434,16 @@ export async function completeConnection(
           // remotes no active local row still references, before rejecting.
           // Not the request signal: clients abort a poll they no longer need, and
           // that must not cut short removing the leftover remote account.
-          const revokedContext = connectionContext(context.actor, "connections.complete");
+          const revokedContext = connectionContext(owner, "connections.complete");
           const pendingRef = current.providerRef?.trim();
           const scope = {
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
+            ...owner,
             connectorId: existing.connectorId,
             provider: existing.provider,
           };
           // The row's own request or account unless an active row has saved it since, or the
           // app's accounts no active row references.
-          const cleanup: BackgroundJobPayloads["connection.cleanup"] =
+          const cleanup: BackgroundJobPayloads["connection.cleanup"] & { organizationId?: string } =
             pendingRef && pendingRef !== current.provider ? { ...scope, ref: pendingRef } : scope;
           try {
             const outcome = await dropLeftover(tx, transactionConnector, cleanup, revokedContext);
@@ -446,11 +482,7 @@ export async function completeConnection(
           return current;
         }
 
-        const adapterContext = connectionContext(
-          context.actor,
-          "connections.complete",
-          context.signal,
-        );
+        const adapterContext = connectionContext(owner, "connections.complete", context.signal);
         if (input.code && current.status !== "connected") {
           const state = current.providerRef ?? current.provider;
           await transactionConnector.complete({ state, code: input.code }, adapterContext);
@@ -469,13 +501,13 @@ export async function completeConnection(
             ref,
             excludeIds,
             context.actor.spaceId,
+            ...(organizationId ? [organizationId] : []),
           );
         let resolvedAccountId: string | undefined;
         if (transactionConnector.resolveConnectedAccountId) {
           const siblings = await tx.connection.findMany({
             where: {
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
+              ...owned,
               connectorId: existing.connectorId,
               provider: existing.provider,
               id: { not: existing.id },
@@ -523,8 +555,7 @@ export async function completeConnection(
         // marking connected — otherwise revoke would delete the wrong ref.
         if (
           transactionConnector.resolveConnectedAccountId &&
-          current.providerRef &&
-          current.providerRef !== current.provider &&
+          (organizationId || (current.providerRef && current.providerRef !== current.provider)) &&
           !resolvedAccountId
         ) {
           return current;
@@ -534,8 +565,7 @@ export async function completeConnection(
         if (providerRef) {
           const taken = await tx.connection.findFirst({
             where: {
-              spaceId: context.actor.spaceId,
-              userId: context.actor.userId,
+              ...owned,
               connectorId: existing.connectorId,
               provider: existing.provider,
               id: { not: existing.id },
@@ -571,8 +601,7 @@ export async function completeConnection(
         const next = await tx.connection.findFirst({
           where: {
             id: current.id,
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
+            ...owned,
           },
         });
         if (!next) throw new IsolationError();
@@ -591,15 +620,8 @@ export async function completeConnection(
     );
     recordToolConnected(deps.analytics, context.actor.userId, row);
   }
-  return {
-    id: row.id,
-    connectorId: row.connectorId,
-    provider: row.provider,
-    displayName: row.displayName,
-    status: row.status as "pending" | "connected" | "revoked" | "error",
-    capabilities: [],
-    createdAt: row.createdAt.toISOString(),
-  };
+  if (connectedNow) await publishConnectionChange(deps, context.actor, organizationId);
+  return connectionDto(row, organizationId);
 }
 
 /** A removal's provider call ends this long into its transaction, leaving time to commit. */
@@ -611,14 +633,12 @@ export async function revokeConnection(
   deps: RouterDeps,
   context: { actor: Actor; signal?: AbortSignal },
   input: { connectionId: string },
+  reconnecting?: { updatedAt: Date },
 ) {
-  const snapshot = await deps.prisma.connection.findFirst({
-    where: {
-      id: input.connectionId,
-      spaceId: context.actor.spaceId,
-      userId: context.actor.userId,
-    },
-  });
+  const snapshot = await findManagedConnection(deps.prisma, context.actor, input.connectionId);
+  const organizationId = snapshot?.organizationId ?? undefined;
+  const owner = connectionFlowOwner(context.actor, organizationId);
+  const owned = connectionOwnerWhere(owner);
   // Prepared before the transaction, so the provider call inside it reads nothing from the pool.
   const active = snapshot && ["connected", "pending", "error"].includes(snapshot.status);
   const configured = active ? deps.connectors.managed(snapshot.connectorId) : undefined;
@@ -631,23 +651,38 @@ export async function revokeConnection(
     // The pre-transaction snapshot owns the scope; the row's connector and provider
     // never change, and without it (row already gone) the transaction is a quick read.
     snapshot
-      ? providerScopeKey(context.actor, snapshot.connectorId, snapshot.provider)
+      ? providerScopeKey(owner, snapshot.connectorId, snapshot.provider)
       : `connection:${input.connectionId}`,
     async (tx): Promise<{ uncertain?: unknown }> => {
       const startedAt = Date.now();
+      if (snapshot && organizationId)
+        await lockProviderConnectionScope(tx, owner, snapshot.connectorId, snapshot.provider);
       const row = await tx.connection.findFirst({
         where: {
           id: input.connectionId,
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
+          ...owned,
         },
       });
       if (!row) return {};
+      if (organizationId) {
+        await requireConnectionOrganization(tx, context.actor, organizationId);
+        if (
+          reconnecting &&
+          (row.status === "revoked" || row.updatedAt.getTime() !== reconnecting.updatedAt.getTime())
+        ) {
+          throw new ClientError("CONFLICT", "This connection changed. Try again.");
+        }
+      }
 
       // Advisory lock covers inserts as well as existing rows. SELECT FOR UPDATE
       // alone misses a concurrent begin that inserts after the lock query.
-      await lockProviderConnectionScope(tx, context.actor, row.connectorId, row.provider);
-      await tx.$queryRaw`
+      if (organizationId) {
+        await tx.$queryRaw`
+          SELECT id FROM connections WHERE "organizationId" = ${organizationId} AND id = ${row.id}
+          FOR UPDATE`;
+      } else {
+        await lockProviderConnectionScope(tx, owner, row.connectorId, row.provider);
+        await tx.$queryRaw`
         SELECT id
         FROM connections
         WHERE "spaceId" = ${context.actor.spaceId}
@@ -656,12 +691,12 @@ export async function revokeConnection(
           AND provider = ${row.provider}
           AND status IN ('connected', 'pending', 'error')
         FOR UPDATE`;
+      }
 
       const updated = await tx.connection.updateMany({
         where: {
           id: row.id,
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
+          ...owned,
           status: { in: ["connected", "pending", "error"] },
         },
         data: { status: "revoked" },
@@ -670,8 +705,7 @@ export async function revokeConnection(
 
       const remaining = await tx.connection.count({
         where: {
-          spaceId: context.actor.spaceId,
-          userId: context.actor.userId,
+          ...owned,
           connectorId: row.connectorId,
           provider: row.provider,
           status: { in: ["connected", "pending"] },
@@ -684,8 +718,7 @@ export async function revokeConnection(
       // or a provider-wide revoke would drop every account for that app.
       if (!accountSpecific && remaining > 0) return {};
       const scope = {
-        spaceId: context.actor.spaceId,
-        userId: context.actor.userId,
+        ...owner,
         connectorId: row.connectorId,
         provider: row.provider,
       };
@@ -722,7 +755,7 @@ export async function revokeConnection(
         const revokeSignal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals);
         await connector.revoke(
           connectionRef,
-          connectionContext(context.actor, "connections.revoke", revokeSignal),
+          connectionContext(owner, "connections.revoke", revokeSignal),
         );
       } catch (error) {
         // The row stays as it was when DELETE clearly did not run (including pre-delete list
@@ -743,6 +776,18 @@ export async function revokeConnection(
     },
   );
 
+  if (snapshot) await publishConnectionChange(deps, context.actor, organizationId);
   if ("uncertain" in outcome) throw outcome.uncertain;
   return { ok: true as const };
+}
+
+export async function reconnectOrganizationConnection(
+  deps: RouterDeps,
+  context: { actor: Actor; signal?: AbortSignal },
+  connectionId: string,
+) {
+  const row = await findManagedConnection(deps.prisma, context.actor, connectionId);
+  if (!row?.organizationId || row.status === "revoked") throw new IsolationError();
+  await revokeConnection(deps, context, { connectionId }, row);
+  return beginConnection(deps, context, row, row.organizationId);
 }

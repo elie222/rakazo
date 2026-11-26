@@ -2,6 +2,7 @@ import type { SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import { hasLab, resolveLabs } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isMessagingChannelRun, messagingChannelId } from "@rakazo/core";
 import {
+  connectionIn,
   effectiveMemoryScope,
   expireRunToolQuestions,
   loadRunHistoryMessages,
@@ -248,9 +249,10 @@ export async function loadRunRecords(
       : Promise.resolve(undefined),
     deps.prisma.task.findUniqueOrThrow({ where: { id: run.taskId } }),
     deps.prisma.connection.findMany({
-      where: { userId: run.userId, spaceId: run.spaceId },
+      where: connectionIn(run),
       select: {
         id: true,
+        organizationId: true,
         connectorId: true,
         provider: true,
         providerRef: true,
@@ -383,7 +385,7 @@ export async function connectRun(
   deps.shutdownSignal?.addEventListener("abort", onShutdown);
   hold.detachShutdown = () => deps.shutdownSignal?.removeEventListener("abort", onShutdown);
   const composioRows = storedConnections.filter(
-    (connection) => connection.connectorId === "composio",
+    (connection) => !connection.organizationId && connection.connectorId === "composio",
   );
   let liveSlugs: string[] = [];
   if (needsLivePluginSync(composioRows)) {

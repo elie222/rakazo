@@ -22,6 +22,11 @@ export function organizationItemIn(scope: Scope) {
   };
 }
 
+/** The managed app connections available to a member in this Space. */
+export function connectionIn(scope: Scope) {
+  return { OR: [{ spaceId: scope.spaceId, userId: scope.userId }, organizationItemIn(scope)] };
+}
+
 /** The MCP servers a member's agents can use in this Space: their own and the organization's. */
 export function mcpServerIn(scope: Scope) {
   return { OR: [availableInSpace(scope), organizationItemIn(scope)] };

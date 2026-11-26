@@ -5,11 +5,18 @@ import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "
 import {
   catalogItemKey,
   connectCatalogItem,
+  connectionSharingOrganization,
   installedPluginParts,
   isCatalogItemConnected,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  Redirect,
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -31,6 +38,7 @@ import {
   SpaceAvailabilityPicker,
   useOwnSpaces,
 } from "../../components/settings/space-availability";
+import { useLiveStream } from "../../lib/api/roster-signals";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
@@ -44,6 +52,7 @@ import { openExternalUrl } from "../../lib/platform/open-url";
 import type { SaveSend } from "../../lib/query/query";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
+import { activeOrganization, useOrganizations } from "../../lib/spaces/organizations";
 
 const SKILLS_SHOWN = 5;
 
@@ -59,6 +68,7 @@ function PluginScreen() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
+  useLiveStream(useIsFocused());
   const [lastBotId, setLastBotId] = useState<string | null>(null);
   const [allSkills, setAllSkills] = useState(false);
   const [noAuth, setNoAuth] = useState(new Set<string>());
@@ -72,6 +82,9 @@ function PluginScreen() {
   );
   const botId = lastBotId ?? "";
 
+  const organizationName = connectionSharingOrganization(
+    activeOrganization(useOrganizations().data),
+  );
   const managed = Boolean(params.managedConnectorId && params.managedSlug);
   const installsRead = rpcQuery("capabilities/list");
   const serversRead = rpcQuery("mcp/servers/list");
@@ -243,9 +256,9 @@ function PluginScreen() {
   const managedConnected = managedApp ? isCatalogItemConnected(connections, managedApp) : false;
   const working = pending === "header";
   const action = managed
-    ? managedConnected
+    ? managedConnected || organizationName
       ? {
-          label: t`Added`,
+          label: managedConnected ? t`Added` : t`Connect`,
           onPress: () =>
             router.navigate({
               pathname: "/integrations",

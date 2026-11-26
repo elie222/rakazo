@@ -162,7 +162,10 @@ it("does not trust a client's connected claim", async () => {
   const { deps, actor, tx } = fixture([
     { connectorId: "pipedream", slug: "slack", connected: false },
   ]);
-  Object.assign(deps.prisma, { message: { findMany: vi.fn() } });
+  Object.assign(deps.prisma, {
+    message: { findMany: vi.fn() },
+    connection: { findFirst: vi.fn(async () => null) },
+  });
   await markAppConnected(deps, actor, "bot", "slack", "pipedream", "thread");
   expect(deps.prisma.message.findMany).not.toHaveBeenCalled();
   expect(tx.message.update).not.toHaveBeenCalled();

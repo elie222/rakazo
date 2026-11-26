@@ -10,7 +10,8 @@ import { rpc } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
 import { appConnectPresentation } from "../../lib/cards/app-connect";
 import { native, useMobileTokens } from "../../lib/native/native";
-import { refreshRpcQueries } from "../../lib/query/query";
+import { refreshRpcQueries, rpcQuery } from "../../lib/query/query";
+import { useScreenQuery } from "../../lib/query/screen-query";
 import { useThreadReadOnly } from "../../lib/thread/thread-read-only";
 import { ConnectorIcon } from "../integrations/connector-icon";
 import { NativeActionButton } from "../native/native-action-button";
@@ -37,28 +38,38 @@ export function AppConnectCard({
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
   const [error, setError] = useState<string | null>(null);
   const connectionAttempt = useRef<AbortController | null>(null);
-  const status = block.status === "connected" ? "connected" : localStatus;
+  const shared = useScreenQuery(rpcQuery("connections/list"), {
+    enabled: Boolean(block.organizationConnectionId),
+  }).data?.find((row) => row.id === block.organizationConnectionId);
+  const canAuthorize = !block.organizationConnectionId || shared?.manageable === true;
+  const status =
+    block.status === "connected" || shared?.status === "connected" ? "connected" : localStatus;
   const view = appConnectPresentation({ ...block, status }, busy);
 
   useEffect(() => () => connectionAttempt.current?.abort(), []);
 
   async function authorize() {
-    if (readOnly || !threadId) return;
+    if (readOnly || !threadId || !canAuthorize) return;
     connectionAttempt.current?.abort();
     const controller = new AbortController();
     connectionAttempt.current = controller;
     setBusy(true);
     setError(null);
     try {
-      const started = await rpc(
-        "connections/begin",
-        {
-          connectorId: block.connectorId,
-          provider: block.provider,
-          displayName: appConnectLabel(block),
-        },
-        { signal: controller.signal },
-      );
+      const request = block.organizationConnectionId
+        ? {
+            procedure: "connections/reconnectOrganization" as const,
+            input: { connectionId: block.organizationConnectionId },
+          }
+        : {
+            procedure: "connections/begin" as const,
+            input: {
+              connectorId: block.connectorId,
+              provider: block.provider,
+              displayName: appConnectLabel(block),
+            },
+          };
+      const started = await rpc(request.procedure, request.input, { signal: controller.signal });
       if (controller.signal.aborted) return;
       if (started.authorizationUrl) await Linking.openURL(started.authorizationUrl);
       const result = await waitForSignIn(
@@ -118,13 +129,15 @@ export function AppConnectCard({
             {view.title}
           </Text>
           <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }} numberOfLines={1}>
-            {view.description}
+            {block.organizationConnectionId ? t`Organization` : view.description}
           </Text>
         </View>
-        {view.showAuthorize && !readOnly && threadId ? (
+        {view.showAuthorize && !readOnly && threadId && canAuthorize ? (
           <NativeActionButton
-            label={view.actionLabel}
-            accessibilityLabel={t`Connect ${ph({ name: block.name })}`}
+            label={block.organizationConnectionId && !busy ? t`Reconnect` : view.actionLabel}
+            accessibilityLabel={
+              block.organizationConnectionId ? t`Reconnect` : t`Connect ${ph({ name: block.name })}`
+            }
             fill={false}
             busy={busy}
             style={{ alignSelf: "center" }}
@@ -136,6 +149,10 @@ export function AppConnectCard({
           >
             {view.actionLabel}
           </Text>
+        ) : block.organizationConnectionId && !canAuthorize ? (
+          <Text
+            style={{ color: tokens.mutedForeground, ...typeScale.secondary }}
+          >{t`Needs sign-in`}</Text>
         ) : null}
       </View>
       {error ? (

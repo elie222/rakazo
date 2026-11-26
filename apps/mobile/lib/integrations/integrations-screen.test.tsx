@@ -29,7 +29,9 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
+vi.mock("../api/roster-signals", () => ({ useLiveStream: () => {} }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => state.focused,
   useRouter: () => ({ push: state.push, setParams: vi.fn() }),
   useLocalSearchParams: () => ({}),
   useNavigation: () => state.navigation,

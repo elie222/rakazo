@@ -1,6 +1,8 @@
 import type { ConnectorCatalogItem } from "@rakazo/adapter-kit";
 import {
+  connectedContext,
   isLazyCatalogControlRoute,
+  loadOrganizationReconnectCheck,
   planLiveConnectionSync,
   sanitizeIntegrationError,
 } from "@rakazo/adapters";
@@ -8,15 +10,28 @@ import type { Actor } from "@rakazo/contracts";
 import type { AppPermissionTool } from "@rakazo/core";
 import { appToolApprovalKey, availableChatApps, isAvailableChatApp } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
-import { IsolationError, recordSecurityEvent } from "@rakazo/db";
+import {
+  connectionIn,
+  IsolationError,
+  managedOrganizationId,
+  recordSecurityEvent,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import {
   beginConnection,
   completeConnection,
   connectionContext,
+  reconnectOrganizationConnection,
   revokeConnection,
 } from "../integrations/connection-flows.js";
+import {
+  connectionDto,
+  findManagedConnection,
+  publishConnectionChange,
+  requireConnectionOrganization,
+  throwConnectionNameConflict,
+} from "../integrations/connection-ownership.js";
 import { recordToolConnected } from "../integrations/tool-connect-analytics.js";
 import type { RouterDeps } from "../router.js";
 import type { RouterContext } from "./context.js";
@@ -177,46 +192,96 @@ export function connectionsRoutes(ctx: RouterContext) {
       }),
       list: authed.connections.list.handler(async ({ context }) => {
         const rows = await deps.prisma.connection.findMany({
-          where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
+          where: connectionIn(context.actor),
         });
-        return rows.map((row) => ({
-          id: row.id,
-          connectorId: row.connectorId,
-          provider: row.provider,
-          displayName: row.displayName,
-          status: row.status as "pending" | "connected" | "revoked" | "error",
-          capabilities: [],
-          createdAt: row.createdAt.toISOString(),
-        }));
+        const managed = rows.some((row) => row.organizationId)
+          ? await managedOrganizationId(deps.prisma, context.actor)
+          : null;
+        const shared = rows.filter((row) => row.organizationId && row.status === "connected");
+        const reconnect = new Map<
+          string,
+          Awaited<ReturnType<typeof loadOrganizationReconnectCheck>>
+        >();
+        await Promise.all(
+          [...new Set(shared.map((row) => row.connectorId))].map(async (connectorId) => {
+            const provider = deps.connectors.managed(connectorId);
+            const organizationId = shared.find(
+              (row) => row.connectorId === connectorId,
+            )?.organizationId;
+            if (!provider || !organizationId) return;
+            try {
+              const unhealthy = await loadOrganizationReconnectCheck(
+                provider,
+                connectionContext(
+                  { ...context.actor, organizationId },
+                  "connections.list",
+                  context.signal,
+                ),
+              );
+              reconnect.set(connectorId, unhealthy);
+            } catch (error) {
+              getLogger().warn("Could not check organization app sign-ins", {
+                error: sanitizeIntegrationError(error),
+              });
+            }
+          }),
+        );
+        return Promise.all(
+          rows.map(async (row) => {
+            if (
+              row.organizationId &&
+              row.status === "connected" &&
+              reconnect.get(row.connectorId)?.(row)
+            )
+              return connectionDto({ ...row, status: "error" }, managed);
+            // The browser can finish after its admin left the sign-in screen.
+            if (
+              row.organizationId &&
+              row.organizationId === managed &&
+              row.status === "pending" &&
+              row.providerRef
+            ) {
+              try {
+                return await completeConnection(deps, context, { connectionId: row.id });
+              } catch (error) {
+                getLogger().warn("Could not complete organization app sign-in", {
+                  error: sanitizeIntegrationError(error),
+                });
+              }
+            }
+            return connectionDto(row, managed);
+          }),
+        );
       }),
       begin: authed.connections.begin.handler(({ context, input }) =>
         beginConnection(deps, context, input),
+      ),
+      beginForOrganization: authed.connections.beginForOrganization.handler(
+        async ({ context, input }) => {
+          const organizationId = await requireConnectionOrganization(deps.prisma, context.actor);
+          return beginConnection(deps, context, input, organizationId);
+        },
+      ),
+      reconnectOrganization: authed.connections.reconnectOrganization.handler(
+        ({ context, input }) => reconnectOrganizationConnection(deps, context, input.connectionId),
       ),
       complete: authed.connections.complete.handler(({ context, input }) =>
         completeConnection(deps, context, input),
       ),
       rename: authed.connections.rename.handler(async ({ context, input }) => {
-        const existing = await deps.prisma.connection.findFirst({
-          where: {
-            id: input.connectionId,
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-          },
-        });
-        if (!existing) throw new IsolationError();
-        const row = await deps.prisma.connection.update({
-          where: { id: existing.id },
-          data: { displayName: input.displayName },
-        });
-        return {
-          id: row.id,
-          connectorId: row.connectorId,
-          provider: row.provider,
-          displayName: row.displayName,
-          status: row.status as "pending" | "connected" | "revoked" | "error",
-          capabilities: [],
-          createdAt: row.createdAt.toISOString(),
-        };
+        const { actor } = context;
+        const row = await deps.prisma
+          .$transaction(async (tx) => {
+            const existing = await findManagedConnection(tx, actor, input.connectionId);
+            if (!existing) throw new IsolationError();
+            return tx.connection.update({
+              where: { id: existing.id },
+              data: { displayName: input.displayName },
+            });
+          })
+          .catch(throwConnectionNameConflict);
+        await publishConnectionChange(deps, actor, row.organizationId);
+        return connectionDto(row, row.organizationId);
       }),
       revoke: authed.connections.revoke.handler(({ context, input }) =>
         revokeConnection(deps, context, input),
@@ -226,10 +291,9 @@ export function connectionsRoutes(ctx: RouterContext) {
         if (!connector) return [];
         const rows = await deps.prisma.connection.findMany({
           where: {
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
+            ...connectionIn(context.actor),
             connectorId: input.connectorId,
-            provider: input.provider,
+            provider: { equals: input.provider, mode: "insensitive" },
             status: "connected",
           },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -238,13 +302,7 @@ export function connectionsRoutes(ctx: RouterContext) {
         try {
           const adapterContext = {
             ...connectionContext(context.actor, "connections.tools", context.signal),
-            connectedConnections: rows.map((row) => ({
-              id: row.id,
-              connectorId: input.connectorId,
-              externalId: input.provider,
-              displayName: row.displayName,
-              providerRef: row.providerRef ?? undefined,
-            })),
+            ...connectedContext(rows),
             connectedProviders: [input.provider],
           };
           adapterContext.signal.throwIfAborted();

@@ -3,6 +3,9 @@ import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
 import { abortableDelay } from "../primitives/async.js";
 import { sliceWellFormed } from "../primitives/utf8.js";
 
+export type ConnectionOwnerChoice = "me" | "organization";
+export type CatalogConnectionTarget = ConnectionOwnerChoice | { reconnectId: string };
+
 type CatalogRef = Pick<ConnectionCatalogItem, "connectorId" | "slug">;
 
 export function catalogItemKey(item: CatalogRef) {
@@ -14,9 +17,48 @@ export function catalogItemAccounts(connections: readonly Connection[], item: Ca
   return connections.filter(
     (row) =>
       row.connectorId === item.connectorId &&
-      row.provider === item.slug &&
-      (row.status === "connected" || row.status === "pending"),
+      row.provider.toLowerCase() === item.slug.toLowerCase() &&
+      (row.status === "connected" ||
+        row.status === "pending" ||
+        (row.organization && row.status === "error")),
   );
+}
+
+export function organizationConnectionForApp(connections: readonly Connection[], slug: string) {
+  return connections.find(
+    (row) =>
+      row.organization &&
+      row.status !== "revoked" &&
+      row.provider.toLowerCase() === slug.toLowerCase(),
+  );
+}
+
+/** A saved shared account still needs management when its provider's catalog is unavailable. */
+export function catalogWithOrganizationConnections(
+  catalog: ConnectionCatalogItem[],
+  connections: readonly Connection[],
+): ConnectionCatalogItem[] {
+  const known = new Set(
+    catalog.map((item) => catalogItemKey({ ...item, slug: item.slug.toLowerCase() })),
+  );
+  return [
+    ...catalog,
+    ...connections.flatMap((row) => {
+      if (!row.organization || row.status === "revoked") return [];
+      const item = {
+        connectorId: row.connectorId,
+        slug: row.provider,
+        name: row.displayName,
+        connected: false,
+        noAuth: false,
+        logo: null,
+      };
+      const key = catalogItemKey({ ...item, slug: item.slug.toLowerCase() });
+      if (known.has(key)) return [];
+      known.add(key);
+      return [item];
+    }),
+  ];
 }
 
 export function isCatalogItemConnected(
@@ -25,7 +67,9 @@ export function isCatalogItemConnected(
 ) {
   return (
     item.connected ||
-    catalogItemAccounts(connections, item).some((row) => row.status === "connected")
+    catalogItemAccounts(connections, item).some(
+      (row) => row.organization || row.status === "connected",
+    )
   );
 }
 
@@ -44,7 +88,7 @@ export function nextCatalogAccountLabel(
   connections: readonly Connection[],
   item: ConnectionCatalogItem,
 ) {
-  const accounts = catalogItemAccounts(connections, item);
+  const accounts = catalogItemAccounts(connections, item).filter((row) => !row.organization);
   const names = new Set(accounts.map((row) => row.displayName));
   let number = accounts.filter((row) => row.status === "connected").length + 1;
   const labelFor = (n: number) => connectionLabelFrom(item.name, item.slug, n === 1 ? "" : ` ${n}`);

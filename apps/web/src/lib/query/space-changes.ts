@@ -12,6 +12,11 @@ type Procedure = {
 
 const READS: Record<ReadChangeKind, readonly Procedure[]> = {
   deploymentModel: [],
+  integrations: [
+    ["connections", "catalog"],
+    ["connections", "list"],
+    ["connections", "tools"],
+  ],
   preferences: [
     ["approvalRules", "list"],
     ["approvalRules", "effective"],

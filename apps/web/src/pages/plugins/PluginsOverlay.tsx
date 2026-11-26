@@ -12,9 +12,11 @@ import {
   addedMcpEndpoints,
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemKey,
+  connectionSharingOrganization,
   customMcpServerInput,
   installedPluginParts,
   managedAppFor,
+  organizationOfSpace,
 } from "@rakazo/core";
 import {
   Button,
@@ -41,7 +43,9 @@ import { PluginDetail, pluginSelection } from "../../components/integrations/plu
 import { reachesOtherSpaces, useOwnSpaces } from "../../components/integrations/space-availability";
 import { connectMcpOauth } from "../../lib/integrations/mcp-connect";
 import { rpc } from "../../lib/query/rpc";
+import { useBoundSpaceId } from "../../lib/query/space-rpc";
 import { errorCode, errorText } from "../../lib/query/user-error";
+import { useOrganizations } from "../../lib/spaces/organizations";
 import { AddMenu } from "./add-menu";
 import { ConnectorDetail } from "./connector-detail";
 import { DomainSearch, useDomainSearch } from "./domain-search";
@@ -76,6 +80,13 @@ export function PluginsOverlay({
 }) {
   const { t } = useLingui();
   const [confirmingSource, setConfirmingSource] = useState<string | null>(null);
+  const boundSpaceId = useBoundSpaceId();
+  const { organizations, activeOrganizationId } = useOrganizations();
+  const organizationName = connectionSharingOrganization(
+    boundSpaceId === undefined
+      ? organizations.find(({ id }) => id === activeOrganizationId)
+      : organizationOfSpace(organizations, boundSpaceId),
+  );
   const spaceCount = useOwnSpaces().length;
   const [sourceError, setSourceError] = useState<string | null>(null);
   const sourceAction = useRef(0);
@@ -214,7 +225,12 @@ export function PluginsOverlay({
       logo: item.logo,
       connected: itemConnected(item),
       connecting: pending === catalogItemKey(item),
-      onConnect: () => void connect(item),
+      onConnect: () => {
+        if (organizationName) {
+          setPlugin(null);
+          openDetail(item);
+        } else connect(item);
+      },
       onManage: () => {
         setPlugin(null);
         openDetail(item);
@@ -236,6 +252,7 @@ export function PluginsOverlay({
     pluginForApp,
     onOpenApp: openApp,
     onOpenDetail: openDetail,
+    organizationName,
     onOpenChatApp: onOpenMessaging,
   };
 
@@ -590,7 +607,9 @@ export function PluginsOverlay({
             />
           ) : detailItem ? (
             <ConnectorDetail
+              key={catalogItemKey(detailItem)}
               item={detailItem}
+              organizationName={organizationName}
               state={state}
               onBack={closeDetail}
               onOpenChatApp={onOpenMessaging}

@@ -88,6 +88,9 @@ export function appConnectedInput(
     botId,
     threadId,
     ...(messageId ? { messageId } : {}),
+    ...(block.organizationConnectionId
+      ? { organizationConnectionId: block.organizationConnectionId }
+      : {}),
     connectorId: block.connectorId,
     provider: block.provider,
   };

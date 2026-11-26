@@ -11,7 +11,7 @@ import type { Actor } from "@rakazo/contracts";
 import { CONNECTOR_AUTH_UNAVAILABLE } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, runProviderTransaction } from "@rakazo/db";
+import { connectionIn, IsolationError, runProviderTransaction } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
@@ -855,6 +855,8 @@ describe("connection tool listing", () => {
     const findMany = vi.fn(async () => [
       {
         id: "connection-1",
+        connectorId: "example",
+        provider: "example",
         displayName: "Example",
         providerRef: "account-1",
       },
@@ -877,10 +879,9 @@ describe("connection tool listing", () => {
     );
     expect(findMany).toHaveBeenCalledWith({
       where: {
-        spaceId: "workspace-1",
-        userId: "user-1",
+        ...connectionIn({ spaceId: "workspace-1", userId: "user-1" }),
         connectorId: "example",
-        provider: "example",
+        provider: { equals: "example", mode: "insensitive" },
         status: "connected",
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],

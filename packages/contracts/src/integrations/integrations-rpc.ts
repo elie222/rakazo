@@ -65,6 +65,16 @@ const approvalRuleWriteInput = settingsScopeInput.extend({
   expectedTarget: EffectiveApprovalTargetSchema.optional(),
 });
 
+const ConnectionBeginInput = z.object({
+  connectorId: z.string().optional(),
+  provider: z.string(),
+  displayName: ConnectionLabelSchema,
+});
+const ConnectionBeginOutput = z.object({
+  connectionId: Id,
+  authorizationUrl: z.string().nullable(),
+});
+
 export const integrationsRpc = {
   marketplace: {
     catalog: oc
@@ -220,16 +230,9 @@ export const integrationsRpc = {
       .input(z.object({ query: z.string().optional(), connectorId: z.string().optional() }))
       .output(z.array(ConnectionCatalogItemSchema)),
     list: oc.output(z.array(ConnectionSchema)),
-    begin: oc
-      .input(
-        z.object({
-          /** Omitted for the server's default connector. */
-          connectorId: z.string().optional(),
-          provider: z.string(),
-          displayName: ConnectionLabelSchema,
-        }),
-      )
-      .output(z.object({ connectionId: Id, authorizationUrl: z.string().nullable() })),
+    begin: oc.input(ConnectionBeginInput).output(ConnectionBeginOutput),
+    beginForOrganization: oc.input(ConnectionBeginInput).output(ConnectionBeginOutput),
+    reconnectOrganization: oc.input(z.object({ connectionId: Id })).output(ConnectionBeginOutput),
     complete: oc
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),

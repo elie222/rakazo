@@ -32,6 +32,8 @@ export interface AdapterContext {
   /** Asks the person who owns the run a tool server's question and waits for the answer. Absent
    * when the run has nobody to ask; the question is then declined. */
   askPerson?: ToolAsk;
+  /** Organization identity for a managed connector authorization. */
+  organizationId?: string;
   /** Connected external accounts available to this run, including their owning connector. */
   connectedConnections?: ConnectedConnector[];
   /** @deprecated Prefer connectedConnections so providers with the same app slug cannot collide. */
@@ -57,6 +59,7 @@ export interface ConnectedConnector {
   externalId: string;
   displayName: string;
   providerRef?: string;
+  organizationId?: string;
 }
 
 export interface AdapterDescriptor<TCapabilities> {
@@ -1126,6 +1129,15 @@ export interface BackgroundJobPayloads {
    * no local row references.
    */
   "connection.cleanup": {
+    spaceId: string;
+    userId: string;
+    connectorId: string;
+    provider: string;
+    ref?: string;
+  };
+  /** Separate task so previous workers cannot treat an organization's account as personal. */
+  "connection.organization-cleanup": {
+    organizationId: string;
     spaceId: string;
     userId: string;
     connectorId: string;

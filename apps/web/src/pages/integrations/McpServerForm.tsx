@@ -15,7 +15,6 @@ import {
   FieldLabel,
   FieldTitle,
   Input,
-  OptionSelect,
   SectionHeading,
   Tabs,
   TabsList,
@@ -28,6 +27,7 @@ import { ChevronLeft, X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { AgentAccess } from "../../components/integrations/agent-access";
 import { AgentAccessControl } from "../../components/integrations/agent-access";
+import { ConnectionOwnerPicker } from "../../components/integrations/connection-owner-picker";
 import { mcpOAuthRedirectUri } from "../../lib/integrations/mcp-connect";
 
 type EnvRow = { id: number; name: string; value: string; file: boolean };
@@ -266,20 +266,11 @@ export function McpServerForm({
           />
         </Field>
         {!editing && organizationName ? (
-          <Field>
-            <FieldLabel htmlFor="mcp-owner">
-              <Trans>Available to</Trans>
-            </FieldLabel>
-            <OptionSelect
-              id="mcp-owner"
-              value={draft.organization ? "organization" : "me"}
-              onValueChange={(owner) => update({ organization: owner === "organization" })}
-              options={[
-                { value: "me", label: t`Just me` },
-                { value: "organization", label: organizationName },
-              ]}
-            />
-          </Field>
+          <ConnectionOwnerPicker
+            organizationName={organizationName}
+            value={draft.organization ? "organization" : "me"}
+            onChange={(owner) => update({ organization: owner === "organization" })}
+          />
         ) : null}
         <Tabs
           value={draft.transport}
