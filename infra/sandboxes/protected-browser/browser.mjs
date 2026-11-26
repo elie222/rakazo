@@ -49,6 +49,12 @@ async function executeStep(page, step, loginOrigin) {
   const control = page.getByRole(step.role, { name: step.name, exact: true });
   if (step.kind === "wait") {
     await control.waitFor({ state: "visible", timeout: TIMEOUT });
+    if (
+      loginOrigin &&
+      (await control.evaluate((element) => element.ownerDocument.location.origin)) !== loginOrigin
+    ) {
+      throw new SignInRejectedError("Unexpected sign-in origin");
+    }
     return;
   }
   if (step.kind === "click") {
@@ -158,6 +164,15 @@ export async function runBrowser(chromium, request, launchOptions = {}) {
     }
     const storageState = await context.storageState();
     if (!initialStorage) {
+      if (new URL(page.url()).origin !== url.origin) {
+        throw new SignInRejectedError("Unexpected sign-in origin");
+      }
+      storageState.origins = storageState.origins.filter((entry) => entry.origin === url.origin);
+      storageState.cookies = storageState.cookies.filter(({ domain }) =>
+        domain.startsWith(".")
+          ? url.hostname === domain.slice(1) || url.hostname.endsWith(domain)
+          : url.hostname === domain,
+      );
       if (!storageState.cookies.length && !storageState.origins.length) {
         throw new SignInRejectedError("Sign-in produced no reusable browser state");
       }
