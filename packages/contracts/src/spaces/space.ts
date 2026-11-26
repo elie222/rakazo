@@ -153,3 +153,11 @@ export const SpaceChangeKind = z.enum([
   "integrations",
 ]);
 export type SpaceChangeKind = z.infer<typeof SpaceChangeKind>;
+
+/** RPC reads affected by a capabilities signal on every client. */
+export const CAPABILITY_READ_PATHS = [
+  "capabilities/list",
+  "agentSkills/list",
+  "agentSkills/get",
+  "mcp/servers/list",
+] as const;

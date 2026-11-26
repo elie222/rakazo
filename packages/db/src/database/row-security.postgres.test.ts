@@ -976,6 +976,26 @@ describePostgres("row-level security (PostgreSQL)", () => {
     }
   });
 
+  it("repairs the organization capability grant when provisioning after restore", async () => {
+    const canExecute = async () => {
+      const { rows } = await owner.pool.query<{ allowed: boolean }>(
+        "SELECT has_function_privilege($1, 'public.app_manage_organization_item(text)', 'EXECUTE') AS allowed",
+        [RUNTIME_ROLE],
+      );
+      return rows[0]?.allowed;
+    };
+
+    await owner.pool.query(
+      `REVOKE EXECUTE ON FUNCTION app_manage_organization_item(text) FROM ${RUNTIME_ROLE}`,
+    );
+    try {
+      expect(await canExecute()).toBe(false);
+    } finally {
+      await provisionRuntimeRole(migrationUrl!, runtimeUrl!);
+    }
+    expect(await canExecute()).toBe(true);
+  });
+
   it("gives the runtime login the job queue, replacing a hand-made policy", async () => {
     const policies = () =>
       owner.prisma.$queryRaw<Array<{ tablename: string; cmd: string; roles: string[] }>>`

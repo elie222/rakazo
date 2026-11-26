@@ -1,4 +1,5 @@
 import type { SpaceChangeKind } from "@rakazo/contracts";
+import { CAPABILITY_READ_PATHS } from "@rakazo/contracts";
 import { abortableDelay, isRetryableError, reconnectDelayMs, retryDelayMs } from "@rakazo/core";
 import { useEffect, useRef } from "react";
 import { computerUpdates } from "../computers/computer-updates";
@@ -13,10 +14,7 @@ import { subscribeSessionGeneration } from "./session";
 // One stream for the whole app, open while any screen holds it.
 const rosterListeners = new Set<() => void>();
 function refreshCapabilities() {
-  void refreshRpcQueries("capabilities/list");
-  void refreshRpcQueries("agentSkills/list");
-  void refreshRpcQueries("agentSkills/get");
-  void refreshRpcQueries("mcp/servers/list");
+  for (const path of CAPABILITY_READ_PATHS) void refreshRpcQueries(path);
 }
 
 const spaceChangeListeners = new Set<(kind: SpaceChangeKind) => void>();

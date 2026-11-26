@@ -203,6 +203,14 @@ async function findOwnedSkill(prisma: PrismaClient, owner: SkillOwner, input: Sk
   return matchSkill(await listAgentSkillRecords(prisma, owner), input);
 }
 
+async function findPersonalSkillName(prisma: PrismaClient, owner: SkillOwner, name: string) {
+  const rows = await prisma.agentSkill.findMany({
+    where: { ...availableInSpace(owner), organizationId: null },
+    select: { id: true, name: true },
+  });
+  return findSkillByName(mergeBuiltinSkills<SkillKey>(builtinAgentSkillRecords(), rows), name);
+}
+
 /** The text files stored beside a skill's SKILL.md, keyed by relative path. */
 export function skillFiles(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -301,7 +309,7 @@ export async function skillCreateFromTool(
   const oversized = rejectOversizedContent(content);
   if (oversized) return { error: oversized };
 
-  const existing = await findOwnedSkill(prisma, owner, { name });
+  const existing = await findPersonalSkillName(prisma, owner, name);
   if (existing) return { error: `A skill named "${existing.name}" already exists.` };
 
   try {
@@ -384,7 +392,7 @@ export async function skillUpdateFromTool(
 
   const renamed = nextName !== existing.name;
   if (nextName.toLowerCase() !== existing.name.toLowerCase()) {
-    const clash = await findOwnedSkill(prisma, owner, { name: nextName });
+    const clash = await findPersonalSkillName(prisma, owner, nextName);
     if (clash && clash.id !== existing.id) {
       return { error: `A skill named "${clash.name}" already exists.` };
     }

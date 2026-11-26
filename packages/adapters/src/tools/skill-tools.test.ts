@@ -12,6 +12,7 @@ import {
 
 type Scope = {
   organization?: unknown;
+  organizationId?: null;
   allSpaces?: boolean;
   availableIn?: { some: { spaceId: string } };
   spaceId?: string;
@@ -22,7 +23,8 @@ type Scope = {
 };
 /** The owner's rows here: added in this space or available in all of the owner's spaces. */
 function inScope(row: Record<string, unknown>, where: Scope): boolean {
-  if (where.organization) return false;
+  if (where.organization) return Boolean(row.organizationId);
+  if (where.organizationId === null && row.organizationId) return false;
   if (where.availableIn && !Array.isArray(row.availableIn)) return false;
   if (where.allSpaces && !row.allSpaces) return false;
   if (where.userId && row.userId !== where.userId) return false;
@@ -164,6 +166,15 @@ describe("skill tools", () => {
 
   beforeEach(() => {
     prisma = makePrisma();
+  });
+
+  it("creates a personal skill with the same name as an organization skill", async () => {
+    const prisma = makePrisma([{ id: "shared", name: "Daily standup", organizationId: "org-1" }]);
+    const created = await skillCreateFromTool(prisma as never, owner, {
+      name: "Daily standup",
+      description: "Prepare notes",
+    });
+    expect(created).toMatchObject({ ok: true, name: "Daily standup" });
   });
 
   it("creates, reads, updates, and deletes user skills", async () => {
