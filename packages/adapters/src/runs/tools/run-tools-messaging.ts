@@ -1,5 +1,6 @@
 import { posix } from "node:path";
-import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import type { ResultCardItem } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_COUNT, MessageReactionSchema } from "@rakazo/contracts";
 import {
   BOT_MESSAGE_MAX_LENGTH,
   BOT_MESSAGE_TOO_LONG,
@@ -7,6 +8,7 @@ import {
   redactSecrets,
   resolveBotAddress,
 } from "@rakazo/core";
+import { normalizedHttpUrl } from "@rakazo/core/egress";
 import {
   connectAgent,
   messageConnectedAgent,
@@ -22,6 +24,7 @@ import {
 import { messageBot, unresolvedBotError } from "../../messaging/bot-messages.js";
 import { startBackgroundHelper } from "../../tasks/background-helpers.js";
 import type { RunContext } from "../assembly/run-context.js";
+import { publishMessage } from "../assembly/run-messages.js";
 import {
   canPostLongTaskHeadsUp,
   canPublishDurableProgress,
@@ -322,6 +325,140 @@ export const messagingTools: ToolHandlers = {
       reply.lastDiscardedMidTurnNarration = "";
     }
     return call.finish(result);
+  },
+  async react(ctx, call) {
+    const { deps, run, thread } = ctx;
+    const { reply } = ctx.state;
+    const parsedEmoji = MessageReactionSchema.safeParse(
+      typeof call.args.emoji === "string" ? call.args.emoji.trim() : "",
+    );
+    if (!parsedEmoji.success) {
+      return call.finish({ error: "emoji must be one of the supported reaction emojis" });
+    }
+    const requestedId =
+      typeof call.args.message_id === "string" ? call.args.message_id.trim() : undefined;
+    let targetId: string | undefined;
+    if (requestedId) {
+      const target = await deps.prisma.message.findFirst({
+        where: { id: requestedId, threadId: thread.id },
+        select: { id: true },
+      });
+      if (!target) return call.finish({ error: "Message not found in this thread" });
+      targetId = target.id;
+    } else if (run.sourceMessageId) {
+      targetId = run.sourceMessageId;
+    } else {
+      const latest = await deps.prisma.message.findFirst({
+        where: { threadId: thread.id, role: "user" },
+        orderBy: { seq: "desc" },
+        select: { id: true },
+      });
+      targetId = latest?.id;
+    }
+    if (!targetId) return call.finish({ error: "No message available to react to" });
+    await publishMessage(
+      deps,
+      run,
+      "bot",
+      [{ kind: "text", text: parsedEmoji.data }],
+      false,
+      `bot-react:${call.effectKey}`,
+      undefined,
+      targetId,
+    );
+    reply.publishedMidTurnUserMessage = true;
+    return call.finish({ ok: true, emoji: parsedEmoji.data, messageId: targetId });
+  },
+  async show_status(ctx, call) {
+    const { deps, run } = ctx;
+    const rawLines = Array.isArray(call.args.lines) ? call.args.lines : [];
+    const lines = rawLines
+      .slice(0, 8)
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        const row = entry as Record<string, unknown>;
+        const k = redactSecrets(String(row.key ?? "").trim(), ctx.secrets).slice(0, 80);
+        const v = redactSecrets(String(row.value ?? "").trim(), ctx.secrets).slice(0, 200);
+        return k && v ? { k, v } : null;
+      })
+      .filter((line): line is { k: string; v: string } => Boolean(line));
+    if (lines.length === 0) {
+      return call.finish({ error: "Provide at least one { key, value } line" });
+    }
+    await publishMessage(
+      deps,
+      run,
+      "bot",
+      [{ kind: "card", lines }],
+      true,
+      `status-card:${call.effectKey}`,
+    );
+    return call.finish({ ok: true, count: lines.length });
+  },
+  async show_cards(ctx, call) {
+    const { deps, run } = ctx;
+    const rawItems = Array.isArray(call.args.items) ? call.args.items : [];
+    const items: ResultCardItem[] = [];
+    for (const entry of rawItems.slice(0, 12)) {
+      if (!entry || typeof entry !== "object") continue;
+      const row = entry as Record<string, unknown>;
+      const title = redactSecrets(String(row.title ?? "").trim(), ctx.secrets).slice(0, 160);
+      if (!title) continue;
+      const subtitle =
+        typeof row.subtitle === "string" && row.subtitle.trim()
+          ? redactSecrets(row.subtitle.trim(), ctx.secrets).slice(0, 240)
+          : undefined;
+      const price =
+        typeof row.price === "string" && row.price.trim()
+          ? redactSecrets(row.price.trim(), ctx.secrets).slice(0, 60)
+          : undefined;
+      const rating =
+        typeof row.rating === "string" && row.rating.trim()
+          ? redactSecrets(row.rating.trim(), ctx.secrets).slice(0, 40)
+          : undefined;
+      const meta =
+        typeof row.meta === "string" && row.meta.trim()
+          ? redactSecrets(row.meta.trim(), ctx.secrets).slice(0, 160)
+          : undefined;
+      const url =
+        typeof row.url === "string" ? (normalizedHttpUrl(row.url) ?? undefined) : undefined;
+      const imageUrl =
+        typeof row.imageUrl === "string"
+          ? (normalizedHttpUrl(row.imageUrl) ?? undefined)
+          : undefined;
+      const badges = Array.isArray(row.badges)
+        ? row.badges
+            .slice(0, 4)
+            .map((b) => redactSecrets(String(b ?? "").trim(), ctx.secrets).slice(0, 40))
+            .filter(Boolean)
+        : undefined;
+      items.push({
+        title,
+        ...(subtitle ? { subtitle } : {}),
+        ...(imageUrl ? { imageUrl } : {}),
+        ...(price ? { price } : {}),
+        ...(rating ? { rating } : {}),
+        ...(url ? { url } : {}),
+        ...(badges && badges.length > 0 ? { badges } : {}),
+        ...(meta ? { meta } : {}),
+      });
+    }
+    if (items.length === 0) {
+      return call.finish({ error: "Provide at least one card item with a title" });
+    }
+    const title =
+      typeof call.args.title === "string" && call.args.title.trim()
+        ? redactSecrets(call.args.title.trim(), ctx.secrets).slice(0, 120)
+        : undefined;
+    await publishMessage(
+      deps,
+      run,
+      "bot",
+      [{ kind: "result_cards", ...(title ? { title } : {}), items }],
+      true,
+      `result-cards:${call.effectKey}`,
+    );
+    return call.finish({ ok: true, count: items.length });
   },
   async message_bot(ctx, call) {
     const { deps, run, bot } = ctx;

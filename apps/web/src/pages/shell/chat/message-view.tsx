@@ -14,7 +14,8 @@ import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
 import { BotAvatar, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
-import { memo, useCallback, useMemo } from "react";
+import type { ReactNode } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { CollaborationMarker } from "../../../components/ai/CollaborationMarker";
 import { ComputerCard } from "../../../components/computers/ComputerCard";
 import { ArtifactFileCard } from "../../../components/messages/ArtifactFileCard";
@@ -22,6 +23,7 @@ import { AskCard } from "../../../components/messages/AskCard";
 import { CloudAgentCard } from "../../../components/messages/CloudAgentCard";
 import { McpAppCard } from "../../../components/messages/McpAppCard";
 import { OutgoingDraftCard } from "../../../components/messages/OutgoingDraftCard";
+import { ResultCards } from "../../../components/messages/ResultCards";
 import { SubagentCard } from "../../../components/messages/SubagentCard";
 import {
   LIVE_TOOL_STEP_WINDOW,
@@ -59,6 +61,60 @@ import {
 } from "./message-cards";
 import { MessageHoverActions } from "./message-hover-actions";
 import { RoutineEventRow } from "./routine-event-row";
+
+const LONG_BOT_TEXT_CHARS = 1_200;
+const LONG_BOT_TEXT_LINES = 20;
+
+function BotTextBubble({
+  text,
+  isLive,
+  quoteMessageId,
+  renderMention,
+  openPage,
+}: {
+  text: string;
+  isLive: boolean;
+  quoteMessageId?: string;
+  renderMention?: (botId: string, label: string) => ReactNode;
+  openPage?: (pageId: string) => void;
+}) {
+  const isLong =
+    !isLive && (text.length > LONG_BOT_TEXT_CHARS || text.split("\n").length > LONG_BOT_TEXT_LINES);
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <div
+      data-testid="message-bot-bubble"
+      className="max-w-full rounded-2xl bg-muted px-4 py-2.5 text-body-lg text-foreground"
+      dir="auto"
+    >
+      <div
+        data-quote-message-id={quoteMessageId}
+        className={collapsed ? "relative max-h-60 overflow-hidden" : undefined}
+      >
+        <ChatMarkdown renderMention={renderMention} onOpenPage={openPage}>
+          {text}
+        </ChatMarkdown>
+        {collapsed ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-muted to-transparent"
+          />
+        ) : null}
+      </div>
+      {isLong ? (
+        <div className="mt-2 flex justify-end border-t border-border/50 pt-1.5">
+          <button
+            type="button"
+            onClick={() => setCollapsed((prev) => !prev)}
+            className="text-caption font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          >
+            {collapsed ? <Trans>Show full message</Trans> : <Trans>Collapse</Trans>}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export const MessageView = memo(function MessageView({
   artifactTarget,
@@ -629,17 +685,13 @@ export const MessageView = memo(function MessageView({
                 key={i}
                 className="relative flex w-fit max-w-full justify-start [@media(hover:none)]:w-full [@media(hover:none)]:flex-wrap"
               >
-                <div
-                  data-testid="message-bot-bubble"
-                  className="max-w-full rounded-2xl bg-muted px-4 py-2.5 text-body-lg text-foreground"
-                  dir="auto"
-                >
-                  <div data-quote-message-id={quoteMessageId}>
-                    <ChatMarkdown renderMention={renderMention} onOpenPage={openPage}>
-                      {block.text}
-                    </ChatMarkdown>
-                  </div>
-                </div>
+                <BotTextBubble
+                  text={block.text}
+                  isLive={isLive}
+                  quoteMessageId={quoteMessageId}
+                  renderMention={renderMention}
+                  openPage={openPage}
+                />
                 {i === hoverAnchorIndex ? hoverActions : null}
               </div>
             );
@@ -657,6 +709,14 @@ export const MessageView = memo(function MessageView({
                     </div>
                   ))}
                 </div>
+              </div>
+            );
+          }
+          if (block.kind === "result_cards") {
+            return (
+              <div key={i} className="relative w-full min-w-0">
+                <ResultCards block={block} />
+                {i === hoverAnchorIndex ? hoverActions : null}
               </div>
             );
           }

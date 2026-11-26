@@ -344,6 +344,12 @@ export function speechFromBlocks(blocks: MessageBlock[]): string {
       if (block.kind === "card") {
         return block.lines.map((line) => `${line.k}: ${line.v}`).join(". ");
       }
+      if (block.kind === "result_cards") {
+        const items = block.items
+          .map((item) => [item.title, item.price, item.subtitle].filter(Boolean).join(", "))
+          .join(". ");
+        return block.title ? `${block.title}: ${items}` : items;
+      }
       return "";
     })
     .filter(Boolean)

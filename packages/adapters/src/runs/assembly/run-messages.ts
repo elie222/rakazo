@@ -64,6 +64,32 @@ export function redactBlocks(blocks: MessageBlock[], secrets: string[]): Message
     if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
       return { ...block, text: redactSecrets(block.text, secrets) };
     }
+    if (block.kind === "card") {
+      return {
+        ...block,
+        lines: block.lines.map((line) => ({
+          k: redactSecrets(line.k, secrets),
+          v: redactSecrets(line.v, secrets),
+        })),
+      };
+    }
+    if (block.kind === "result_cards") {
+      return {
+        ...block,
+        ...(block.title ? { title: redactSecrets(block.title, secrets) } : {}),
+        items: block.items.map((item) => ({
+          ...item,
+          title: redactSecrets(item.title, secrets),
+          ...(item.subtitle ? { subtitle: redactSecrets(item.subtitle, secrets) } : {}),
+          ...(item.price ? { price: redactSecrets(item.price, secrets) } : {}),
+          ...(item.rating ? { rating: redactSecrets(item.rating, secrets) } : {}),
+          ...(item.meta ? { meta: redactSecrets(item.meta, secrets) } : {}),
+          ...(item.badges
+            ? { badges: item.badges.map((badge) => redactSecrets(badge, secrets)) }
+            : {}),
+        })),
+      };
+    }
     if (block.kind === "page") return { ...block, title: redactSecrets(block.title, secrets) };
     if (block.kind === "steps") {
       return {
@@ -104,6 +130,7 @@ export async function publishMessage(
     status: "failed";
     result: "stopped";
   },
+  replyToMessageId?: string,
 ) {
   if (isBackgroundRunTrigger(run.trigger)) {
     blocks = blocks.filter((block) => block.kind === "ask" || block.kind === "computer");
@@ -141,6 +168,7 @@ export async function publishMessage(
         clientNonce,
         Boolean(stoppedHelper),
         lease,
+        replyToMessageId,
       );
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
@@ -161,6 +189,7 @@ export async function persistMessageInTransaction(
   clientNonce?: string,
   allowCancelledRun = false,
   lease?: RunLease,
+  replyToMessageId?: string,
 ) {
   // Clients get the blocks without the kept calls, in the message and in its event alike.
   const { blocks: shown, toolHistory } = splitToolHistory(blocks);
@@ -174,6 +203,7 @@ export async function persistMessageInTransaction(
     runId: run.id,
     markUnread,
     clientNonce,
+    replyToMessageId,
     allowCancelledRun,
     lease,
   });
@@ -189,6 +219,7 @@ export async function persistMessageInTransaction(
       messageId: message.id,
       role,
       blocks,
+      ...(replyToMessageId ? { replyToMessageId } : {}),
       callId: callIdFromClientNonce(clientNonce),
     },
   });

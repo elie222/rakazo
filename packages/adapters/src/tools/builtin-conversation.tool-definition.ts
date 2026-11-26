@@ -6,6 +6,7 @@ import {
   GenerateSecretInput,
   LOGIN_FIELD_LIMIT,
   MEMORY_INDEX_PATH,
+  MESSAGE_REACTIONS,
   SecretAskPurpose,
   SecretHttpRequest,
 } from "@rakazo/contracts";
@@ -158,6 +159,86 @@ export const conversationTools: ConnectorTool[] = [
         },
         required: ["message"],
       };
+    },
+  },
+  {
+    name: "react",
+    description:
+      "React to a message in this chat with one emoji instead of posting a filler reply like 'thanks' or 'got it'. Defaults to the message that triggered this turn.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        emoji: {
+          type: "string",
+          enum: [...MESSAGE_REACTIONS],
+          description: "Emoji reaction to add.",
+        },
+        message_id: {
+          type: "string",
+          description:
+            "Optional message ID in this thread to react to; defaults to the latest user message.",
+        },
+      },
+      required: ["emoji"],
+    },
+  },
+  {
+    name: "show_status",
+    description:
+      "Post a compact key-to-value status card in this chat (for example Flight AC123 -> On time, Gate -> B14). Use for short structured status results instead of plain bullet text.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lines: {
+          type: "array",
+          minItems: 1,
+          maxItems: 8,
+          items: {
+            type: "object",
+            properties: {
+              key: { type: "string", maxLength: 80 },
+              value: { type: "string", maxLength: 200 },
+            },
+            required: ["key", "value"],
+          },
+        },
+      },
+      required: ["lines"],
+    },
+  },
+  {
+    name: "show_cards",
+    description:
+      "Post a swipeable row of visual result cards in this chat for products, flights, hotels, places, or search results instead of a long text list.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", maxLength: 120 },
+        items: {
+          type: "array",
+          minItems: 1,
+          maxItems: 12,
+          items: {
+            type: "object",
+            properties: {
+              title: { type: "string", maxLength: 160 },
+              subtitle: { type: "string", maxLength: 240 },
+              imageUrl: { type: "string", maxLength: 2048 },
+              price: { type: "string", maxLength: 60 },
+              rating: { type: "string", maxLength: 40 },
+              url: { type: "string", maxLength: 2048 },
+              badges: {
+                type: "array",
+                maxItems: 4,
+                items: { type: "string", maxLength: 40 },
+              },
+              meta: { type: "string", maxLength: 160 },
+            },
+            required: ["title"],
+          },
+        },
+      },
+      required: ["items"],
     },
   },
   {

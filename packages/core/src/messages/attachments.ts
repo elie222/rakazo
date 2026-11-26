@@ -264,6 +264,15 @@ function blockHistoryText(block: MessageBlock): string {
   // without them a later turn cannot tell what it already did.
   if (block.kind === "steps") return toolStepsHistoryText(block.steps);
   if (block.kind === "chart") return `[chart: ${block.name}]`;
+  if (block.kind === "card") {
+    return `[status: ${block.lines.map((line) => `${line.k}: ${line.v}`).join("; ")}]`;
+  }
+  if (block.kind === "result_cards") {
+    const items = block.items
+      .map((item) => [item.title, item.price, item.rating].filter(Boolean).join(" "))
+      .join(", ");
+    return `[cards${block.title ? `: ${block.title}` : ""}: ${items}]`;
+  }
   if (block.kind === "app") return `[app: ${block.server} showed ${block.tool}]`;
   if (block.kind === "image") return `[image: ${block.name}]`;
   // The id lets a later turn, or another chat, update this page instead of making a new one.

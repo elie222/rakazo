@@ -160,6 +160,10 @@ export function blockText(message: MobileMessage) {
       if (block.kind === "app") return `[app: ${block.server}]`;
       if (block.kind === "tool_question") return `[question: ${block.question.source}]`;
       if (block.kind === "page") return `[page: ${block.title}]`;
+      if (block.kind === "card")
+        return block.lines.map((line) => `${line.k}: ${line.v}`).join("\n");
+      if (block.kind === "result_cards")
+        return block.title || block.items.map((item) => item.title).join(", ");
       if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
       if (block.kind === "file") {
         return `[file: ${block.name ?? "attachment"}${block.size ? ` (${block.size} bytes)` : ""}]`;

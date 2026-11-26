@@ -105,6 +105,9 @@ const CREATED_RUN_TOOL_NAMES = new Set(["ask_user", "update_bot"]);
 /** Messaging and media tools a background run is not offered (see selectBuiltinToolsForRun). */
 const BACKGROUND_DROPPED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "message_user",
+  "react",
+  "show_status",
+  "show_cards",
   "message_bot",
   "handoff_to_bot",
   "message_agent",
@@ -117,6 +120,9 @@ export const SUBAGENT_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
   "run_subagent",
   "spawn_bot",
   "message_user",
+  "react",
+  "show_status",
+  "show_cards",
   "call_user",
   "end_call",
   "request_takeover",
@@ -270,6 +276,7 @@ export function selectBuiltinToolsForRun(options: {
         (!SCHEDULE_TOOL_NAMES.has(tool.name) &&
           !SKILL_TOOL_NAMES.has(tool.name) &&
           ![
+            "react",
             "remember",
             "delete_shared_memory",
             "remove_mcp_server",

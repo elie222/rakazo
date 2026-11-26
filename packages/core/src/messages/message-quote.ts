@@ -184,6 +184,8 @@ function replyBlockText(block: MessageBlock): string {
       return block.question;
     case "card":
       return block.lines.map((line) => `${line.k}: ${line.v}`).join(", ");
+    case "result_cards":
+      return block.title || block.items.map((item) => item.title).join(", ");
     case "steps":
       return block.steps.map((step) => step.label).join(", ");
     case "voice_call":
