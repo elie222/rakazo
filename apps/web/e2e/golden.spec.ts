@@ -7,6 +7,7 @@ import {
   captureScreenshot,
   chooseOption,
   completeOnboarding,
+  openBotComputer,
   openBotPanel,
   openEmailSignIn,
   realSandboxTimeout,
@@ -74,7 +75,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     await pill.click();
     await expect(sidePanel).toHaveAttribute("data-panel", "closed");
   }
-  await openBotPanel(page);
+  await openBotComputer(page);
   await expect(sidePanel).toHaveAttribute("data-panel", "settings");
   await expect(sidePanel).toHaveCSS("width", "384px");
   const [mainBox, panelBox] = await Promise.all([

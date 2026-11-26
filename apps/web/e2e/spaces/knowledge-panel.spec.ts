@@ -6,7 +6,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   createNamedBot,
-  openBotSettings,
+  openBotMemory,
   openUserSettings,
   rpc,
   signup,
@@ -163,7 +163,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
     documentId: seededDocs[0]!.id,
     content: "# Chief\n\nA remembered preference.\n",
   });
-  await openBotSettings(page);
+  await openBotMemory(page);
   const settings = page.getByTestId("bot-settings");
   await expect(settings.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
   const botMemory = settings.getByTestId("bot-knowledge-memory");
@@ -304,7 +304,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   );
 });
 
-test("a new bot hides its untouched memory index", async ({ page }, testInfo) => {
+test("a new bot's memory tab shows an empty index", async ({ page }, testInfo) => {
   await signup(page, `empty-memory-${Date.now()}@example.test`, "password12", "Sample");
   await completeOnboarding(page);
   const botId = await createNamedBot(page, "Researcher");
@@ -315,7 +315,7 @@ test("a new bot hides its untouched memory index", async ({ page }, testInfo) =>
   const memoryLoaded = page.waitForResponse(
     (response) => response.url().includes("/rpc/memory/list") && response.ok(),
   );
-  await openBotSettings(page);
+  await openBotMemory(page);
   await memoryLoaded;
   await page.evaluate(
     () =>
@@ -324,7 +324,9 @@ test("a new bot hides its untouched memory index", async ({ page }, testInfo) =>
       ),
   );
   const settings = page.getByTestId("bot-settings");
-  await expect(settings.getByRole("button", { name: "Edit name" })).toHaveText("Researcher");
-  await expect(settings.getByTestId("bot-knowledge-memory")).toHaveCount(0);
-  await captureScreenshot(page, testInfo, "bot-settings-empty-memory");
+  await expect(settings.getByTestId("bot-profile-header")).toContainText("Researcher");
+  const botMemory = settings.getByTestId("bot-knowledge-memory");
+  await expect(botMemory).toBeVisible();
+  await expect(botMemory).toContainText("Nothing remembered yet");
+  await captureScreenshot(page, testInfo, "bot-memory-empty");
 });

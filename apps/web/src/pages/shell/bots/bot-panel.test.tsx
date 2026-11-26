@@ -45,10 +45,16 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { OptionSelect } = await importOriginal<typeof UiWeb>();
+  const { OptionSelect, Tabs, TabsContent, TabsList, TabsTrigger } =
+    await importOriginal<typeof UiWeb>();
   const { createContext, useContext } = await import("react");
   const PopoverOpen = createContext<(open: boolean) => void>(() => undefined);
   return {
+    Tabs,
+    TabsContent,
+    TabsList,
+    TabsTrigger,
+    BotAvatar: () => <span />,
     useCopyText: () => [false, () => {}],
     SectionHeading: ({
       variant: _variant,
@@ -145,8 +151,17 @@ vi.mock("./avatar-studio-popover", () => ({
 }));
 vi.mock("../../space/ScratchpadSection", () => ({ ScratchpadSection: () => <h3>Open work</h3> }));
 vi.mock("../../space/KnowledgeSection", () => ({
-  KnowledgeSection: () => <h3>Memory and skills</h3>,
+  KnowledgeSection: ({
+    onConflictChange,
+  }: {
+    onConflictChange?: (conflicted: boolean) => void;
+  }) => (
+    <button type="button" data-testid="memory-conflict" onClick={() => onConflictChange?.(true)}>
+      Memory and skills
+    </button>
+  ),
 }));
+vi.mock("./bot-library", () => ({ BotLibrary: () => null }));
 
 import { spaceQueries } from "../../../lib/query/query";
 import { rpc } from "../../../lib/query/rpc";
@@ -245,14 +260,29 @@ async function saveProfile() {
   });
 }
 
-async function openSettings() {
-  await act(async () => settingsButton().click());
+const TAB_NAMES = ["Details", "Computer", "Library", "Memory", "Settings"] as const;
+type TabName = (typeof TAB_NAMES)[number];
+
+function panelTabs(): HTMLButtonElement[] {
+  return [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
 }
 
-function settingsButton() {
-  return container.querySelector<HTMLButtonElement>(
-    '[data-testid="bot-settings-advanced"] button',
-  )!;
+function panelTab(name: TabName): HTMLButtonElement {
+  const tab = panelTabs().find((entry) => entry.textContent === name);
+  if (!tab) throw new Error(`Missing tab ${name}`);
+  return tab;
+}
+
+async function openTab(name: TabName) {
+  await act(async () => panelTab(name).click());
+}
+
+/** The page a tab shows; keepMounted pages stay in the DOM, just hidden. */
+function tabPanel(name: TabName): HTMLElement {
+  const id = panelTab(name).getAttribute("aria-controls");
+  const panel = (id ? document.getElementById(id) : null) as HTMLElement | null;
+  if (!panel) throw new Error(`Missing page for tab ${name}`);
+  return panel;
 }
 
 async function openModelPicker() {
@@ -295,30 +325,133 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shows the profile and folds the settings away", async () => {
+it("shows the profile and splits the panel into five tabs", async () => {
   await render("Billing");
   expect(container.querySelector('[data-testid="bot-profile-header"]')?.textContent).toContain(
     "Ada",
   );
   expect(container.querySelector('input[aria-label="Name"]')).toBeNull();
-  expect(container.querySelector('[role="tab"]')).toBeNull();
   expect(
     [...container.querySelectorAll("button")].some((button) => button.textContent === "Save"),
   ).toBe(false);
-  const settings = document.getElementById(settingsButton().getAttribute("aria-controls")!)!;
-  expect(settingsButton().getAttribute("aria-expanded")).toBe("false");
-  expect(settings.hidden).toBe(true);
-  await openSettings();
-  expect(settingsButton().getAttribute("aria-expanded")).toBe("true");
-  expect(settings.hidden).toBe(false);
-  expect(settings.querySelector('textarea[id$="-instructions"]')).not.toBeNull();
-  expect(settings.querySelector('[data-testid="bot-settings-tools"]')).toBeNull();
-  const card = settings.firstElementChild!;
+  expect(panelTabs().map((tab) => tab.textContent)).toEqual([...TAB_NAMES]);
+  expect(panelTab("Details").getAttribute("aria-selected")).toBe("true");
+  expect(tabPanel("Details").hidden).toBe(false);
+  expect(tabPanel("Settings").hidden).toBe(true);
+  expect(tabPanel("Details").querySelector('textarea[id$="-instructions"]')).not.toBeNull();
+  expect(tabPanel("Details").querySelector('[data-testid="bot-settings-tools"]')).toBeNull();
+  await openTab("Settings");
+  expect(panelTab("Settings").getAttribute("aria-selected")).toBe("true");
+  expect(tabPanel("Settings").hidden).toBe(false);
+  expect(tabPanel("Details").hidden).toBe(true);
+  const card = tabPanel("Settings").querySelector('button[id$="-model"]')!.closest(".rounded-xl")!;
   expect(
     [...card.querySelectorAll('label, button[id$="-model"]')].map(
       (node) => node.firstChild?.textContent,
     ),
-  ).toEqual(["Model", "Notifications", "Own computer"]);
+  ).toEqual(["Model", "Notifications"]);
+});
+
+it("keeps a description draft when switching tabs", async () => {
+  await render();
+  await openTab("Settings");
+  await setDescription("Draft note");
+  await openTab("Details");
+  expect(tabPanel("Settings").hidden).toBe(true);
+  await openTab("Settings");
+  expect(descriptionField().value).toBe("Draft note");
+});
+
+it("marks the computer tab when the computer needs attention", async () => {
+  await render();
+  expect(container.querySelector('[data-testid="computer-attention"]')).toBeNull();
+  expect(tabPanel("Computer").querySelector('button[id$="-own-computer"]')).not.toBeNull();
+  expect(tabPanel("Settings").querySelector('button[id$="-own-computer"]')).toBeNull();
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <BotSettings
+          computerAttention
+          bot={bot()}
+          onSave={onSave}
+          onExport={onExport}
+          onClear={() => undefined}
+        />
+      </QueryClientProvider>,
+    );
+  });
+  await act(flush);
+  expect(container.querySelector('[data-testid="computer-attention"]')).not.toBeNull();
+  expect(panelTab("Computer").getAttribute("aria-label")).toBe("Computer, needs attention");
+});
+
+it("marks the memory tab while a save conflict waits for the reader", async () => {
+  await render();
+  await openTab("Memory");
+  expect(container.querySelector('[data-testid="memory-attention"]')).toBeNull();
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>('[data-testid="memory-conflict"]')!.click();
+  });
+  expect(container.querySelector('[data-testid="memory-attention"]')).not.toBeNull();
+  expect(panelTab("Memory").getAttribute("aria-label")).toBe("Memory, needs attention");
+});
+
+it("opens shared-memory settings from the memory tab when the host offers it", async () => {
+  await render();
+  expect(container.querySelector('[data-testid="bot-shared-memory-link"]')).toBeNull();
+  const onOpenMemorySettings = vi.fn();
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <BotSettings
+          onOpenMemorySettings={onOpenMemorySettings}
+          bot={bot()}
+          onSave={onSave}
+          onExport={onExport}
+          onClear={() => undefined}
+        />
+      </QueryClientProvider>,
+    );
+  });
+  await act(flush);
+  await openTab("Memory");
+  await act(async () => {
+    container.querySelector<HTMLButtonElement>('[data-testid="bot-shared-memory-link"]')!.click();
+  });
+  expect(onOpenMemorySettings).toHaveBeenCalledOnce();
+});
+
+it("edits the bot name from the settings tab's profile", async () => {
+  await render();
+  await openTab("Settings");
+  const profile = tabPanel("Settings").querySelector<HTMLElement>(
+    '[data-testid="bot-profile-settings"]',
+  )!;
+  expect(profile.querySelector('[aria-label="Avatar color"]')).not.toBeNull();
+  await act(async () => {
+    profile.querySelector<HTMLButtonElement>('[aria-label="Edit name"]')!.click();
+  });
+  const input = profile.querySelector<HTMLInputElement>('input[aria-label="Name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Ada V2",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onSave.mock.lastCall?.[0]).toHaveProperty("name", "Ada V2");
+});
+
+it("groups management switches under Permissions once the bot has one changed", async () => {
+  await render("Billing", { fleetManagement: false });
+  await openTab("Settings");
+  const headings = [...tabPanel("Settings").querySelectorAll("h3")].map(
+    (heading) => heading.textContent,
+  );
+  expect(headings).toContain("Permissions");
 });
 
 describe("BotSettings model choices", () => {
@@ -755,7 +888,7 @@ it("cancels an inline name edit", async () => {
 
 it("focuses the model control for a model deep link", async () => {
   await render("", {}, 1);
-  expect(settingsButton().getAttribute("aria-expanded")).toBe("true");
+  expect(panelTab("Settings").getAttribute("aria-selected")).toBe("true");
   expect(document.activeElement?.id.endsWith("-model")).toBe(true);
 });
 

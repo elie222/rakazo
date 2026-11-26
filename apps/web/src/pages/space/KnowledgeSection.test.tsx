@@ -66,7 +66,7 @@ vi.mock("@rakazo/ui-web", () => {
 
 import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import { spaceQueries } from "../../lib/query/query";
-import { AgentSkills, KnowledgeSection } from "./KnowledgeSection";
+import { AgentSkills, KnowledgeSection, SpaceMemorySection } from "./KnowledgeSection";
 
 const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 let queryClient = newClient();
@@ -338,6 +338,24 @@ it.each([" \n", "# Fixture\n\n"])("hides empty memory: %j", async (content) => {
     await show(root, <KnowledgeSection botId="fixture" />);
     expect(host.textContent).not.toContain("Memory");
     expect(host.textContent).not.toContain("MEMORY.md");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows a shared memory document even when it only holds the seed heading", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  memoryApi.list
+    .mockReset()
+    .mockResolvedValueOnce([
+      { id: "shared", path: "MEMORY.md", content: "# Space memory\n\n", revision: 1 },
+    ] as never);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await show(root, <SpaceMemorySection />);
+    expect(host.textContent).toContain("MEMORY.md");
   } finally {
     await act(async () => root.unmount());
     vi.unstubAllGlobals();

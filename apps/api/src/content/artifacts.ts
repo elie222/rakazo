@@ -466,7 +466,12 @@ export async function listSpaceArtifacts(
 ) {
   const take = Math.min(Math.max(input.limit ?? 30, 1), 60);
   const scopeBotId = input.botId ?? null;
-  const botFilter = scopeBotId ? Prisma.sql`AND "botId" = ${scopeBotId}` : Prisma.empty;
+  // The filter hides a whole file family once its newest version stops belonging to the bot:
+  // group uploads land on a member's botId too, and they belong to the group, while a file
+  // the bot made itself on a group run (runId) is still its own.
+  const botFilter = scopeBotId
+    ? Prisma.sql`AND latest."botId" = ${scopeBotId} AND (latest."groupId" IS NULL OR latest."runId" IS NOT NULL)`
+    : Prisma.empty;
   const madeByBots = input.madeByBots ?? false;
   const madeByBotsFilter = madeByBots
     ? Prisma.sql`AND (latest."runId" IS NOT NULL OR latest."meetingSessionId" IS NOT NULL)`
@@ -486,8 +491,18 @@ export async function listSpaceArtifacts(
   const rows = await deps.prisma.$queryRaw<ListSpaceRow[]>(Prisma.sql`
     WITH scoped AS (
       SELECT * FROM "artifacts"
-      WHERE "spaceId" = ${actor.spaceId} ${botFilter}
+      WHERE "spaceId" = ${actor.spaceId}
         AND "createdAt" <= ${asOf} AND "mimeType" NOT IN (${Prisma.join(HIDDEN_ARTIFACT_MIME_TYPES)})
+        ${
+          scopeBotId
+            ? Prisma.sql`AND COALESCE("rootArtifactId", id) IN (
+                SELECT COALESCE("rootArtifactId", id) FROM "artifacts"
+                WHERE "spaceId" = ${actor.spaceId} AND "botId" = ${scopeBotId}
+                  AND "createdAt" <= ${asOf}
+                  AND "mimeType" NOT IN (${Prisma.join(HIDDEN_ARTIFACT_MIME_TYPES)})
+              )`
+            : Prisma.empty
+        }
     ),
     latest AS (
       SELECT DISTINCT ON (COALESCE("rootArtifactId", id))
@@ -506,7 +521,7 @@ export async function listSpaceArtifacts(
            counts."versionCount"
     FROM latest
     JOIN counts ON counts."familyId" = COALESCE(latest."rootArtifactId", latest.id)
-    WHERE true ${madeByBotsFilter} ${cursorFilter}
+    WHERE true ${madeByBotsFilter} ${botFilter} ${cursorFilter}
     ORDER BY latest."createdAt" DESC, latest.id DESC
     LIMIT ${take + 1}
   `);

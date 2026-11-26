@@ -586,6 +586,11 @@ export function useComputerControls({
     showingRecoveryHint,
     embeddedScreenUrl,
     hasControl,
+    /** The panel flags the computer tab while any of these wait on the user, for this bot only. */
+    computerNeedsAttention:
+      (computer ? computer.botId === activeBotId.current : true) &&
+      !computersAreUnavailable(sandboxProvider) &&
+      (computerFailure !== null || showingRecoveryHint || computer?.diskFullPercent !== undefined),
     computerScreenError,
     computerBooting,
     screenProps,

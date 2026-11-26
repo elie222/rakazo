@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openBotPanel, signup } from "../helpers/helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  openBotComputer,
+  openBotPanel,
+  signup,
+} from "../helpers/helpers";
 
 test("computer rail resizes its preview and remembers width", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1500, height: 1000 });
@@ -10,7 +16,7 @@ test("computer rail resizes its preview and remembers width", async ({ page }, t
     "Computer Preferences",
   );
   await completeOnboarding(page);
-  await openBotPanel(page);
+  await openBotComputer(page);
   const panel = page.getByTestId("side-panel");
   const separator = page.getByRole("separator", { name: "Resize panel" });
   await expect(separator).toBeVisible();
@@ -71,11 +77,14 @@ test("phone composer menu and settings panel stay tappable", async ({ page }, te
   const settings = page.getByTestId("bot-settings");
   await expect(settings).toBeVisible();
   // Trial clicks fail when another element, like the composer, would receive the tap.
-  for (const name of ["More actions", "Close panel", "Settings"]) {
+  for (const name of ["More actions", "Close panel"]) {
     await settings
       .getByRole("button", { name, exact: true })
       .click({ trial: true, timeout: 5_000 });
   }
+  await settings
+    .getByRole("tab", { name: "Settings", exact: true })
+    .click({ trial: true, timeout: 5_000 });
   await captureScreenshot(page, testInfo, "bot-settings-mobile");
   await settings.getByRole("button", { name: "More actions", exact: true }).click();
   for (const name of ["Export", "Clear conversation"]) {

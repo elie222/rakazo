@@ -879,6 +879,8 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
             />
           ) : null
         }
+        computerAttention={computerControls.computerNeedsAttention}
+        onOpenMemorySettings={() => openSettings("memory")}
         routineList={routineList}
         routineEditorProps={routineEditorProps}
         openBot={openBot}

@@ -3,7 +3,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   expectCardWidth,
-  openBotPanel,
+  openBotComputer,
   signup,
 } from "../helpers/helpers";
 
@@ -12,7 +12,7 @@ test("teach a task records interaction and saves a draft", async ({ page }, test
   await signup(page, `teach-${stamp}@rakazo.test`, "password12", "Teach");
   await completeOnboarding(page);
 
-  await openBotPanel(page);
+  await openBotComputer(page);
   const sidePanel = page.getByTestId("side-panel");
   await expect(sidePanel).toHaveAttribute("data-panel", "settings");
   await expect(sidePanel.getByText("Teach a task")).toHaveCount(0);

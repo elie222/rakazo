@@ -1,15 +1,12 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { Artifact, Bot } from "@rakazo/contracts";
-import { artifactPreviewKind } from "@rakazo/contracts";
 import { artifactTypeLabel } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
 import {
   BotAvatar,
   Button,
   buttonVariants,
-  CopyTextFallback,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -27,44 +24,33 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@rakazo/ui-web";
-import { skipToken, useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check,
   ChevronLeft,
-  Copy,
-  Download,
   FileCode2,
   FileText,
   ImageIcon,
   LayoutGrid,
   List,
-  Lock,
-  Maximize2,
-  Minimize2,
   Search,
   SearchX,
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { IconTooltip } from "../../components/IconTooltip";
-import { VideoPreview } from "../../components/messages/ArtifactFileCard";
-import { PdfViewer } from "../../components/messages/PdfViewer";
-import { SandboxedHtmlViewer } from "../../components/messages/SandboxedHtmlViewer";
 import { WindowChrome } from "../../components/WindowChrome";
 import { takeInitialBootstrap } from "../../lib/bootstrap";
-import { useCopyText } from "../../lib/copy-text";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
-import { decodeArtifactBase64, downloadArtifactBytes } from "../../lib/pages/artifact-open";
-import { selectFilePreviewContents } from "../../lib/pages/file-preview-selection";
-import { useObjectUrl } from "../../lib/pages/use-object-url";
 import { desktopBridge } from "../../lib/platform/desktop";
 import { createStoredPreference } from "../../lib/preferences/stored-preference";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
 import { useRedrawAtMidnight } from "../shell/chat/use-redraw-at-midnight";
+import { ArtifactMimeIcon } from "./artifact-mime-icon";
+import { PreviewPane } from "./artifact-preview-pane";
 
 type ViewMode = "grid" | "list";
 type DateFilter = "all" | "today" | "week" | "month";
@@ -120,7 +106,19 @@ export function ArtifactsPage() {
   const navigate = useNavigate();
   const today = useRedrawAtMidnight();
   const { t } = useLingui();
-  const [activeBotId, setActiveBotId] = useState<string | null>(null);
+  // The bot filter is part of the URL, so a link to a bot's files keeps it after a reload.
+  const [searchParams, setSearchParams] = useSearchParams();
+  function setActiveBotId(botId: string | null) {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (botId) next.set("bot", botId);
+        else next.delete("bot");
+        return next;
+      },
+      { replace: true },
+    );
+  }
   const viewMode = viewModePreference.use();
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
@@ -131,12 +129,19 @@ export function ArtifactsPage() {
   const queries = useSpaceQueries();
   const queryClient = useQueryClient();
   // The space's bootstrap is where the shell keeps what it last loaded, bots included.
-  const bots =
-    useQuery({
-      queryKey: queries.bootstrap.queryKey({ input: {} }),
-      queryFn: () => takeInitialBootstrap(),
-      select: (bootstrap) => bootstrap.bots,
-    }).data ?? NO_BOTS;
+  const botsQuery = useQuery({
+    queryKey: queries.bootstrap.queryKey({ input: {} }),
+    queryFn: () => takeInitialBootstrap(),
+    select: (bootstrap) => bootstrap.bots,
+  });
+  const bots = botsQuery.data ?? NO_BOTS;
+  // A saved link naming a bot that no longer exists reads as all bots, not as a refused listing.
+  const requestedBotId = searchParams.get("bot");
+  const activeBotId =
+    requestedBotId && (botsQuery.isPending || bots.some((bot) => bot.id === requestedBotId))
+      ? requestedBotId
+      : null;
+  const botQuery = activeBotId ? `?bot=${activeBotId}` : "";
   const listingOptions = queries.artifacts.listSpace.infiniteOptions({
     input: (cursor: string | undefined) => ({
       botId: activeBotId ?? undefined,
@@ -222,7 +227,7 @@ export function ArtifactsPage() {
     // Listings for other bots may hold it too.
     stale: [queries.artifacts.listSpace.key()],
     onSaved: (_removed, artifact) => {
-      if (artifactId === artifact.id) navigate("/app/artifacts");
+      if (artifactId === artifact.id) navigate(`/app/artifacts${botQuery}`);
       setPendingDelete(null);
     },
   });
@@ -274,7 +279,7 @@ export function ArtifactsPage() {
         {showFilters ? (
           <div className="app-no-drag flex flex-wrap items-center gap-2">
             <SearchToggle query={searchQuery} onQueryChange={setSearchQuery} />
-            {bots.length > 1 ? (
+            {bots.length > 1 || activeBotId ? (
               <BotFilter bots={bots} value={activeBotId} onValueChange={setActiveBotId} />
             ) : null}
             <OptionSelect
@@ -346,6 +351,7 @@ export function ArtifactsPage() {
                 loadError={loadError}
                 botsById={botsById}
                 selectedId={artifactId}
+                botQuery={botQuery}
                 onRequestDelete={setPendingDelete}
                 nextCursor={nextCursor}
                 loadingMore={loadingMore}
@@ -366,6 +372,7 @@ export function ArtifactsPage() {
             loadError={loadError}
             viewMode={viewMode}
             botsById={botsById}
+            botQuery={botQuery}
             onRequestDelete={setPendingDelete}
             nextCursor={nextCursor}
             loadingMore={loadingMore}
@@ -407,6 +414,7 @@ function BrowsingPane({
   loadError,
   viewMode,
   botsById,
+  botQuery,
   onRequestDelete,
   nextCursor,
   loadingMore,
@@ -417,6 +425,7 @@ function BrowsingPane({
   loadError: string | null;
   viewMode: ViewMode;
   botsById: Map<string, Bot>;
+  botQuery: string;
   onRequestDelete: (artifact: ArtifactSummary) => void;
   nextCursor: string | null;
   loadingMore: boolean;
@@ -440,6 +449,7 @@ function BrowsingPane({
               key={item.id}
               artifact={item}
               bot={item.botId ? botsById.get(item.botId) : undefined}
+              botQuery={botQuery}
               onRequestDelete={onRequestDelete}
             />
           ))}
@@ -451,6 +461,7 @@ function BrowsingPane({
               key={item.id}
               artifact={item}
               bot={item.botId ? botsById.get(item.botId) : undefined}
+              botQuery={botQuery}
               onRequestDelete={onRequestDelete}
             />
           ))}
@@ -682,6 +693,7 @@ function IndexPane({
   loadError,
   botsById,
   selectedId,
+  botQuery,
   onRequestDelete,
   nextCursor,
   loadingMore,
@@ -692,6 +704,7 @@ function IndexPane({
   loadError: string | null;
   botsById: Map<string, Bot>;
   selectedId: string;
+  botQuery: string;
   onRequestDelete: (artifact: ArtifactSummary) => void;
   nextCursor: string | null;
   loadingMore: boolean;
@@ -714,6 +727,7 @@ function IndexPane({
               artifact={item}
               bot={item.botId ? botsById.get(item.botId) : undefined}
               active={item.id === selectedId}
+              botQuery={botQuery}
               onRequestDelete={onRequestDelete}
             />
           ))}
@@ -731,17 +745,19 @@ function IndexPane({
 function ArtifactCard({
   artifact,
   bot,
+  botQuery,
   onRequestDelete,
 }: {
   artifact: ArtifactSummary;
   bot: Bot | undefined;
+  botQuery: string;
   onRequestDelete: (artifact: ArtifactSummary) => void;
 }) {
   const { t } = useLingui();
   return (
     <div className="group relative">
       <Link
-        to={`/app/artifacts/${artifact.id}`}
+        to={`/app/artifacts/${artifact.id}${botQuery}`}
         className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 text-foreground hover:bg-accent/40"
       >
         <div className="flex items-start justify-between">
@@ -808,17 +824,22 @@ function ArtifactRow({
   artifact,
   bot,
   active,
+  botQuery,
   onRequestDelete,
 }: {
   artifact: ArtifactSummary;
   bot: Bot | undefined;
   active?: boolean;
+  botQuery: string;
   onRequestDelete: (artifact: ArtifactSummary) => void;
 }) {
   const { t } = useLingui();
   return (
     <div className={`group relative ${active ? "bg-accent/60" : "hover:bg-accent/40"}`}>
-      <Link to={`/app/artifacts/${artifact.id}`} className="flex flex-col gap-1 px-4 py-3 pe-10">
+      <Link
+        to={`/app/artifacts/${artifact.id}${botQuery}`}
+        className="flex flex-col gap-1 px-4 py-3 pe-10"
+      >
         <div className="flex items-center gap-2">
           <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[7px] bg-accent text-accent-foreground">
             <ArtifactMimeIcon mimeType={artifact.mimeType} small />
@@ -866,258 +887,6 @@ function ArtifactRow({
           <Trash2 strokeWidth={1.9} />
         </Button>
       </IconTooltip>
-    </div>
-  );
-}
-
-function ArtifactMimeIcon({ mimeType, small }: { mimeType: string; small?: boolean }) {
-  const size = small ? 12 : 16;
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {mimeType === "text/html" ? (
-        <>
-          <polyline points="8 6 2 12 8 18" />
-          <polyline points="16 6 22 12 16 18" />
-        </>
-      ) : (
-        <>
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-        </>
-      )}
-    </svg>
-  );
-}
-
-function PreviewPane({
-  artifactId,
-  maximized,
-  onToggleMaximize,
-}: {
-  artifactId: string;
-  maximized: boolean;
-  onToggleMaximize: () => void;
-}) {
-  const { t } = useLingui();
-  const [copied, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
-  const queries = useSpaceQueries();
-  const versionsQuery = useQuery(
-    queries.artifacts.listVersions.queryOptions({
-      input: { familyId: artifactId },
-    }),
-  );
-  const versions = versionsQuery.data ?? null;
-  const [pickedVersionId, setSelectedVersionId] = useState<string | null>(null);
-  const selectedVersionId =
-    pickedVersionId ??
-    (versions ? (versions[0]?.id ?? artifactId) : versionsQuery.isError ? artifactId : null);
-  const artifactQuery = useQuery(
-    queries.artifacts.getById.queryOptions({
-      input: selectedVersionId ? { artifactId: selectedVersionId } : skipToken,
-    }),
-  );
-  const bytes = useMemo(
-    () => (artifactQuery.data ? decodeArtifactBase64(artifactQuery.data.contentBase64) : null),
-    [artifactQuery.data],
-  );
-  const state:
-    | { status: "loading" }
-    | { status: "ready"; artifact: Artifact; bytes: Uint8Array }
-    | { status: "error"; message: string } =
-    artifactQuery.data && bytes
-      ? { status: "ready", artifact: artifactQuery.data, bytes }
-      : artifactQuery.error
-        ? {
-            status: "error",
-            message: errorText(artifactQuery.error, t`Could not load this artifact.`),
-          }
-        : { status: "loading" };
-
-  return (
-    <section
-      aria-label={state.status === "ready" ? state.artifact.name : t`Preview`}
-      onKeyDown={(event) =>
-        selectFilePreviewContents(
-          event,
-          event.currentTarget.querySelector("[data-file-preview-body]"),
-        )
-      }
-      className="flex min-w-0 flex-1 flex-col"
-    >
-      <header className="flex items-center gap-3 border-b border-border px-6 py-3">
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-body-lg font-semibold">
-            {state.status === "ready" ? state.artifact.name : null}
-          </h2>
-          {state.status === "ready" && state.artifact.description ? (
-            <p className="truncate text-body-sm text-muted-foreground">
-              {state.artifact.description}
-            </p>
-          ) : null}
-        </div>
-        {versions && versions.length > 1 && selectedVersionId ? (
-          <OptionSelect
-            aria-label={t`Version`}
-            className="w-auto shrink-0 text-body-sm"
-            value={selectedVersionId}
-            options={versions.map((entry) => ({
-              value: entry.id,
-              label: `v${entry.version} (${formatRelativeTime(entry.createdAt)})`,
-            }))}
-            onValueChange={setSelectedVersionId}
-          />
-        ) : null}
-        {state.status === "ready" ? (
-          <>
-            {["markdown", "text"].includes(artifactPreviewKind(state.artifact.mimeType)) ? (
-              <IconTooltip label={copied ? t`Copied` : t`Copy ${state.artifact.name}`}>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="text-muted-foreground"
-                  aria-label={copied ? t`Copied` : t`Copy ${state.artifact.name}`}
-                  onClick={() => void copy(new TextDecoder("utf-8").decode(state.bytes))}
-                >
-                  {copied ? (
-                    <Check size={15} strokeWidth={1.9} />
-                  ) : (
-                    <Copy size={15} strokeWidth={1.9} />
-                  )}
-                </Button>
-              </IconTooltip>
-            ) : null}
-            <CopyTextFallback
-              open={copyFailed}
-              onOpenChange={resetCopy}
-              text={copyFailedText}
-              label={t`Copy ${state.artifact.name}`}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                downloadArtifactBytes(state.artifact.name, state.artifact.mimeType, state.bytes)
-              }
-            >
-              <Download className="me-1.5" size={15} strokeWidth={1.9} />
-              <Trans>Download</Trans>
-            </Button>
-            <IconTooltip label={maximized ? t`Show list` : t`Maximize`}>
-              <Button
-                variant="outline"
-                size="icon"
-                aria-label={maximized ? t`Show list` : t`Maximize`}
-                onClick={onToggleMaximize}
-                className="text-muted-foreground"
-              >
-                {maximized ? (
-                  <Minimize2 size={15} strokeWidth={1.9} />
-                ) : (
-                  <Maximize2 size={15} strokeWidth={1.9} />
-                )}
-              </Button>
-            </IconTooltip>
-          </>
-        ) : null}
-      </header>
-
-      <div className="min-h-0 flex-1 p-5">
-        {state.status === "loading" ? (
-          <div className="grid h-full place-items-center text-body text-muted-foreground/80">
-            <Spinner aria-label={t`Loading…`} />
-          </div>
-        ) : state.status === "error" ? (
-          <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-destructive">
-            {state.message}
-          </div>
-        ) : (
-          <div className="relative h-full overflow-hidden rounded-2xl border border-border">
-            <ArtifactPreview artifact={state.artifact} bytes={state.bytes} />
-            {state.artifact.mimeType === "text/html" ? (
-              <div className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1.5 text-caption text-white">
-                <Lock size={12} strokeWidth={2} />
-                <span>
-                  <Trans>Isolated preview: no access to your account</Trans>
-                </span>
-              </div>
-            ) : null}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8Array }) {
-  switch (artifactPreviewKind(artifact.mimeType)) {
-    case "html":
-      return (
-        <SandboxedHtmlViewer html={new TextDecoder("utf-8").decode(bytes)} title={artifact.name} />
-      );
-    case "markdown":
-      return (
-        <div className="h-full overflow-y-auto bg-background">
-          <article
-            data-file-preview-body
-            // biome-ignore lint/a11y/noNoninteractiveTabindex: Focus the file body for keyboard selection.
-            tabIndex={0}
-            className="mx-auto w-full max-w-[760px] px-8 py-10 text-body-lg leading-7 text-foreground"
-          >
-            <ChatMarkdown>{new TextDecoder("utf-8").decode(bytes)}</ChatMarkdown>
-          </article>
-        </div>
-      );
-    case "text":
-      return (
-        <div className="h-full overflow-auto bg-background">
-          <pre
-            data-file-preview-body
-            // biome-ignore lint/a11y/noNoninteractiveTabindex: Focus the file body for keyboard selection.
-            tabIndex={0}
-            className="px-8 py-10 font-mono text-body-sm leading-6 whitespace-pre-wrap break-words text-foreground"
-          >
-            {new TextDecoder("utf-8").decode(bytes)}
-          </pre>
-        </div>
-      );
-    case "pdf":
-      return <PdfViewer bytes={bytes} title={artifact.name} />;
-    case "video":
-      return <VideoPreview bytes={bytes} name={artifact.name} />;
-    case "image":
-      return <ImagePreview bytes={bytes} mimeType={artifact.mimeType} name={artifact.name} />;
-    case "none":
-      return (
-        <div className="grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80">
-          <Trans>Preview isn't available for this file type. Download it to view it.</Trans>
-        </div>
-      );
-  }
-}
-
-function ImagePreview({
-  bytes,
-  mimeType,
-  name,
-}: {
-  bytes: Uint8Array;
-  mimeType: string;
-  name: string;
-}) {
-  const url = useObjectUrl(bytes, mimeType);
-  if (!url) return null;
-  return (
-    <div className="grid h-full place-items-center overflow-auto bg-muted/40 p-4">
-      <img src={url} alt={name} className="max-h-full max-w-full rounded-lg shadow-sm" />
     </div>
   );
 }

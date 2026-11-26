@@ -3,6 +3,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   createBotFromPicker,
+  openBotComputer,
   openBotPanel,
   openBotSettings,
   openNewBot,
@@ -123,6 +124,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await openBotSettings(page);
   await expect(page.getByRole("button", { name: "Edit name", exact: true })).toBeVisible();
   async function editName(value: string) {
+    await page.getByTestId("bot-tab-settings").click();
     await page.getByRole("button", { name: "Edit name", exact: true }).click();
     const input = page.getByRole("textbox", { name: "Name", exact: true });
     await input.fill(value);
@@ -160,11 +162,13 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   const modelRow = settings.getByRole("button", { name: /^Model/ });
   const openWork = settings.getByTestId("bot-scratchpad");
   const notifications = settings.getByRole("switch", { name: "Notifications", exact: true });
-  // Settings fold away by default; the panel itself shows the profile, computer and routines.
+  // The panel opens on Details; the model row and switches live one tab over, in Settings.
   await page.getByRole("button", { name: "Close panel" }).click();
   await openBotPanel(page);
-  await expect(notifications).toHaveCount(0);
-  await expect(modelRow).toHaveCount(0);
+  await expect(notifications).toBeHidden();
+  await expect(modelRow).toBeHidden();
+  // Open work lists itself only once the bot has some.
+  await expect(openWork).toHaveCount(0);
   await settings.getByRole("button", { name: "More actions", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "Export", exact: true })).toBeVisible();
   await expect(
@@ -173,9 +177,11 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await page.keyboard.press("Escape");
   await openBotSettings(page);
   await expect(notifications).toBeVisible();
-  await expect(openWork).toHaveCount(0);
+  await expect(openWork).toBeHidden();
   await expect(modelRow).toBeVisible();
+  await page.getByTestId("bot-tab-computer").click();
   await expect(settings.getByRole("switch", { name: "Own computer", exact: true })).toBeVisible();
+  await page.getByTestId("bot-tab-settings").click();
   // Rarely changed settings show only once the bot has them changed from the default.
   for (const name of [
     "Read replies aloud",
@@ -191,7 +197,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
     title: "First fixture task",
   });
   await page.getByRole("button", { name: "Close panel" }).click();
-  await openBotSettings(page);
+  await openBotPanel(page);
   await expect(openWork.getByText("First fixture task", { exact: true })).toBeVisible();
   await openWork.getByRole("button", { name: "Add open work" }).click();
   await openWork.getByRole("textbox", { name: "New open-work item" }).fill("Second fixture task");
@@ -224,7 +230,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "27c-disabled-builtin-tools");
   await expect(modelRow).toBeVisible();
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
-  await openBotPanel(page);
+  await openBotComputer(page);
   const sidePanel = page.getByTestId("side-panel");
   await expect(sidePanel).toHaveAttribute("data-panel", "settings");
   // Overlay may flash during boot or never appear (already ready/asleep/stopped). Assert panel
@@ -256,6 +262,7 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await captureScreenshot(page, testInfo, "29-reloaded-bot-profile");
 
   // Long instructions scroll inside their box instead of stretching the narrow panel.
+  await settings.getByTestId("bot-tab-details").click();
   const instructionsInput = settings.getByRole("textbox", { name: "Instructions", exact: true });
   await instructionsInput.fill(
     Array.from(

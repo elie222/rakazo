@@ -142,4 +142,70 @@ describePostgres("artifact upload nonce (PostgreSQL)", () => {
     await upload("send-3:0", { botId });
     await expect(upload("send-3:0", { botId: otherBotId })).rejects.toBeInstanceOf(IsolationError);
   });
+
+  it("keeps a group's files out of a member bot's own listing", async () => {
+    const group = await system.chatGroup.create({ data: { spaceId, userId, name: "Crew" } });
+    await runAsTenant(actor, () =>
+      createOwnedArtifact({ prisma, artifacts }, actor, {
+        botId,
+        groupId: group.id,
+        name: "crew-plan.txt",
+        mimeType: "text/plain",
+        contentBase64: Buffer.from("hi").toString("base64"),
+        clientNonce: "send-9:0",
+      }),
+    );
+    const listed = await runAsTenant(actor, () => listSpaceArtifacts({ prisma }, actor, { botId }));
+    expect(listed.items.map((item) => item.name)).not.toContain("crew-plan.txt");
+  });
+
+  it("keeps files the bot itself made on a group run in its own listing", async () => {
+    const group = await system.chatGroup.create({ data: { spaceId, userId, name: "Runway" } });
+    await system.artifact.create({
+      data: {
+        spaceId,
+        userId,
+        botId,
+        groupId: group.id,
+        runId: `run-${suffix}`,
+        name: "bot-made-report.txt",
+        mimeType: "text/plain",
+        size: 2,
+        hash: "bot-made-hash",
+        storageKey: "blob-bot-made",
+      },
+    });
+    const listed = await runAsTenant(actor, () => listSpaceArtifacts({ prisma }, actor, { botId }));
+    expect(listed.items.map((item) => item.name)).toContain("bot-made-report.txt");
+  });
+
+  it("hides the family from the bot when a group upload becomes its newest version", async () => {
+    const group = await system.chatGroup.create({ data: { spaceId, userId, name: "Chain" } });
+    await system.artifact.create({
+      data: {
+        spaceId,
+        userId,
+        botId,
+        groupId: group.id,
+        runId: `run-${suffix}-chain`,
+        name: "chain.txt",
+        mimeType: "text/plain",
+        size: 2,
+        hash: "chain-run-hash",
+        storageKey: "blob-chain-run",
+      },
+    });
+    await runAsTenant(actor, () =>
+      createOwnedArtifact({ prisma, artifacts }, actor, {
+        botId,
+        groupId: group.id,
+        name: "chain.txt",
+        mimeType: "text/plain",
+        contentBase64: Buffer.from("hi again").toString("base64"),
+        clientNonce: "send-10:0",
+      }),
+    );
+    const listed = await runAsTenant(actor, () => listSpaceArtifacts({ prisma }, actor, { botId }));
+    expect(listed.items.map((item) => item.name)).not.toContain("chain.txt");
+  });
 });

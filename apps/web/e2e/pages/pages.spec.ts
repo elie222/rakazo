@@ -6,7 +6,7 @@ import {
   captureScreenshot,
   completeOnboarding,
   createNamedBot,
-  openBotPanel,
+  openBotLibrary,
   rpc,
   signup,
 } from "../helpers/helpers";
@@ -846,7 +846,7 @@ test("a bot's page shows in its reply, opens full screen, is shared by link and 
   await expect(pageFrame(page, "Signups dashboard").getByText("1.9%")).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await openBotPanel(page);
+  await openBotLibrary(page);
   await page
     .getByTestId("bot-pages")
     .getByRole("button", { name: /^Signups dashboard/ })
@@ -1176,7 +1176,7 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
   await closePage(page);
 
   // The Library's Share opens the popover, every time.
-  await openBotPanel(page);
+  await openBotLibrary(page);
   // The panel shows the latest pages; the whole list is a separate view once there are more.
   const library = page.getByTestId("bot-pages").filter({ visible: true });
   for (let round = 0; round < 2; round++) {
@@ -1219,7 +1219,7 @@ test("a page's failures, a deleted page's card, and the Library's Share, search 
 
   // A longer list gets a field to find a page by title.
   for (const title of ["One", "Two", "Three", "Four", "Five", "Six", "Seven"]) await save(title);
-  await openBotPanel(page);
+  await openBotLibrary(page);
   await expect(library.getByRole("listitem")).toHaveCount(3);
   await library.getByRole("button", { name: "Pages", exact: true }).click();
   await expect(library.getByRole("listitem")).toHaveCount(8);
@@ -1561,7 +1561,7 @@ test("specific people review a version and lose access when removed", async ({
     await page.getByRole("button", { name: "Close page", exact: true }).click();
     const card = page.getByTestId("page-card").filter({ hasText: title });
     await expect(card).toContainText("Page · Specific people");
-    await openBotPanel(page);
+    await openBotLibrary(page);
     const library = page.getByTestId("bot-pages").filter({ visible: true });
     await expect(library.getByRole("listitem").filter({ hasText: title })).toContainText(
       "Specific people",

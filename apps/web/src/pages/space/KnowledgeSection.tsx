@@ -30,14 +30,26 @@ function rowClass(open: boolean): string {
 /**
  * Bot memory. Skills belong to the person in a space, not to one bot, so they live in
  * the Skills dialog; memory shared across bots lives in the Memory settings overlay.
+ * The full mode lists every document and the empty state; the caller names the section.
+ * The compact preview folds into its parent list.
  */
-export function KnowledgeSection({ botId }: { botId: string }) {
+export function KnowledgeSection({
+  botId,
+  full = false,
+  onConflictChange,
+}: {
+  botId: string;
+  full?: boolean;
+  /** Marks the Memory tab while a save's conflict waits for the reader. */
+  onConflictChange?: (conflicted: boolean) => void;
+}) {
   return (
     <MemoryDocumentList
       key={botId}
       input={{ botId, scope: "bot" }}
       testId="bot-knowledge-memory"
-      compact
+      compact={!full}
+      onConflictChange={onConflictChange}
     />
   );
 }
@@ -72,10 +84,12 @@ function MemoryDocumentList({
   input,
   testId,
   compact = false,
+  onConflictChange,
 }: {
   input: { botId?: string; scope: "bot" | "user" };
   testId: string;
   compact?: boolean;
+  onConflictChange?: (conflicted: boolean) => void;
 }) {
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -101,7 +115,11 @@ function MemoryDocumentList({
   const [showAll, setShowAll] = useState(false);
   // Once shown, memory stays visible while the panel is open, even if emptied.
   const [memoryShown, setMemoryShown] = useState(false);
-  const memoryVisible = memoryShown || docs.some((doc) => !isEmptyBotMemory(doc));
+  // Only a bot's untouched index is hidden; shared memory is always the user's to open.
+  const memoryVisible =
+    input.scope === "bot"
+      ? memoryShown || docs.some((doc) => !isEmptyBotMemory(doc))
+      : docs.length > 0;
   if (memoryVisible && !memoryShown) setMemoryShown(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -144,6 +162,7 @@ function MemoryDocumentList({
     onFailed: async (failure, { kind }) => {
       if (kind !== "save" || !isConflict(failure)) return;
       setConflicted(true);
+      onConflictChange?.(true);
       try {
         await fetchFresh(queryClient, list);
       } catch {
@@ -170,6 +189,7 @@ function MemoryDocumentList({
   function openDoc(doc: MemoryDocument) {
     setLoadedRevision(doc.revision);
     setConflicted(false);
+    onConflictChange?.(false);
     setOpenId(doc.id);
     setDraft(doc.content);
     change.reset();
@@ -179,6 +199,7 @@ function MemoryDocumentList({
   function closeDoc() {
     setOpenId(null);
     setConflicted(false);
+    onConflictChange?.(false);
     setConfirmingDelete(false);
   }
 
@@ -208,91 +229,93 @@ function MemoryDocumentList({
           </div>
         ) : null}
         {loading ? <Skeleton className="h-10 w-full" /> : null}
-        {!compact && !loading && docs.length === 0 && !error ? (
+        {!compact && !loading && !memoryVisible && !error ? (
           <div className="py-1 text-body-sm text-muted-foreground">
             <Trans>Nothing remembered yet</Trans>
           </div>
         ) : null}
-        <div>
-          {(compact && !showAll ? docs.slice(0, 5) : docs).map((doc) => (
-            <div key={doc.id} className="border-b border-border last:border-0">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => (openId === doc.id ? closeDoc() : openDoc(doc))}
-                  className="-ms-2 h-auto min-w-0 flex-1 justify-start whitespace-normal px-2 py-2.5 text-start"
-                >
-                  <span
-                    className="min-w-0 truncate text-body font-normal text-foreground"
-                    dir="auto"
-                  >
-                    {doc.path}
-                  </span>
-                </Button>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={<Button variant="ghost" size="icon-sm" />}
-                    aria-label={t`Download`}
+        {memoryVisible ? (
+          <div>
+            {(compact && !showAll ? docs.slice(0, 5) : docs).map((doc) => (
+              <div key={doc.id} className="border-b border-border last:border-0">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    type="button"
                     disabled={busy}
-                    onClick={() => change.run({ kind: "download", doc })}
+                    onClick={() => (openId === doc.id ? closeDoc() : openDoc(doc))}
+                    className="-ms-2 h-auto min-w-0 flex-1 justify-start whitespace-normal px-2 py-2.5 text-start"
                   >
-                    <Download className="size-4" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <Trans>Download</Trans>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              {openId === doc.id ? (
-                <div className="pb-2">
-                  <Textarea
-                    aria-label={doc.path}
-                    disabled={busy}
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
-                    className={fieldClass}
-                    dir="auto"
-                  />
-                  <div className="mt-2 flex gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      type="button"
-                      disabled={busy || conflicted || draft === doc.content}
-                      onClick={() => change.run({ kind: "save", doc })}
+                    <span
+                      className="min-w-0 truncate text-body font-normal text-foreground"
+                      dir="auto"
                     >
-                      <Trans>Save</Trans>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      type="button"
+                      {doc.path}
+                    </span>
+                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={<Button variant="ghost" size="icon-sm" />}
+                      aria-label={t`Download`}
                       disabled={busy}
-                      onClick={closeDoc}
-                      size="sm"
+                      onClick={() => change.run({ kind: "download", doc })}
                     >
-                      <Trans>Cancel</Trans>
-                    </Button>
-                    {isDeletableMemoryDocument(doc.path) ? (
+                      <Download className="size-4" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <Trans>Download</Trans>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                {openId === doc.id ? (
+                  <div className="pb-2">
+                    <Textarea
+                      aria-label={doc.path}
+                      disabled={busy}
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
+                      className={fieldClass}
+                      dir="auto"
+                    />
+                    <div className="mt-2 flex gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        type="button"
+                        disabled={busy || conflicted || draft === doc.content}
+                        onClick={() => change.run({ kind: "save", doc })}
+                      >
+                        <Trans>Save</Trans>
+                      </Button>
                       <Button
                         variant="ghost"
                         type="button"
                         disabled={busy}
-                        onClick={() => remove(doc)}
+                        onClick={closeDoc}
                         size="sm"
-                        className="ml-auto text-destructive"
                       >
-                        {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                        <Trans>Cancel</Trans>
                       </Button>
-                    ) : null}
+                      {isDeletableMemoryDocument(doc.path) ? (
+                        <Button
+                          variant="ghost"
+                          type="button"
+                          disabled={busy}
+                          onClick={() => remove(doc)}
+                          size="sm"
+                          className="ml-auto text-destructive"
+                        >
+                          {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
         {compact && docs.length > 5 && !showAll ? (
           <Button
             variant="ghost"
