@@ -4,6 +4,7 @@ import type {
   ConnectorCatalogItem,
   ConnectorTool,
   ManagedConnectorProvider,
+  PaidService,
 } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { selectBuiltinToolsForRun } from "../../runs/tools/run-tool-selection.js";
@@ -15,6 +16,7 @@ import {
 } from "../lazy-tool-catalog.js";
 import { appCatalogSource } from "./app-catalog-source.js";
 import { connectorCatalogSource } from "./connector-catalog-source.js";
+import { paidServiceSource } from "./paid-service-source.js";
 
 const context = { signal: new AbortController().signal } as AdapterContext;
 
@@ -131,6 +133,35 @@ describe("app catalog source with an app two catalogs list", () => {
   it("finds the slug only one of them uses", async () => {
     const apps = catalogOf([app("Pagesnap"), { ...app("Pagesnap"), slug: "pagesnap_v2" }]);
     expect((await apps.find(["pagesnap_v2"])).map((hit) => hit.id)).toEqual(["pagesnap_v2"]);
+  });
+});
+
+describe("paid service search", () => {
+  it("returns the callable ID when the requested name is a paid service's title", async () => {
+    const service: PaidService = {
+      id: "route-17",
+      name: "Page Capture",
+      description: "Capture a web page.",
+      priceUsd: 0.01,
+      priceVaries: false,
+      method: "GET",
+      params: {},
+    };
+    const source = paidServiceSource(
+      {
+        id: "test",
+        describe: async (id) => (id === service.id ? service : null),
+        search: async () => [{ ...service, id: "route-12", name: "Page Capture Pro" }, service],
+        call: async () => {
+          throw new Error("Unexpected paid call");
+        },
+      },
+      context,
+      async () => false,
+    );
+    expect(await source.find(["Page Capture"])).toMatchObject([
+      { id: "route-17", name: "Page Capture", next: "service_call" },
+    ]);
   });
 });
 

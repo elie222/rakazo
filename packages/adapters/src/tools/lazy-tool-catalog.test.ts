@@ -133,6 +133,17 @@ const githubTools = serverTools("github", [
 ]);
 
 describe("lazy tool catalog", () => {
+  it("ranks callable tools for schema search when a higher hit is oversized", () => {
+    const [oversized, callable] = tools(2);
+    const entries = catalogEntries([
+      { ...oversized!, inputSchema: { description: "a".repeat(SELECTED_SCHEMA_MAX_BYTES) } },
+      callable!,
+    ]);
+    expect(searchCatalog(entries, { query: "shared catalog", limit: 1 }, true)).toMatchObject({
+      tools: [{ id: "source-1:tool-1", inputSchema: callable!.inputSchema }],
+    });
+  });
+
   it("exposes tools directly at the limit and switches to lazy wrappers above it", () => {
     expect(tools(DIRECT_TOOL_LIMIT)).toHaveLength(20);
     expect(tools(DIRECT_TOOL_LIMIT + 1)).toHaveLength(21);

@@ -99,10 +99,11 @@ export function catalogGroupLabel(
 }
 
 export function searchCatalog(
-  entries: CatalogEntry[],
+  catalog: CatalogEntry[],
   args: Record<string, unknown>,
   withSchemas = false,
 ): CatalogSearchResult {
+  const entries = withSchemas ? catalog.filter(catalogSchemaFits) : catalog;
   // Source labels can differ only by case, so pick a source from the query as typed.
   const typedQuery = String(args.query ?? "")
     .slice(0, MAX_QUERY_LENGTH)
@@ -174,15 +175,13 @@ export function searchCatalog(
 }
 
 function catalogSearchHits(entries: CatalogEntry[], withSchemas: boolean): CatalogSearchHit[] {
-  return entries
-    .filter((entry) => !withSchemas || catalogSchemaFits(entry))
-    .map(({ id, tool }) => ({
-      id,
-      name: tool.name,
-      description: tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
-      readOnly: tool.readOnly === true,
-      ...(withSchemas ? { inputSchema: tool.inputSchema } : {}),
-    }));
+  return entries.map(({ id, tool }) => ({
+    id,
+    name: tool.name,
+    description: tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
+    readOnly: tool.readOnly === true,
+    ...(withSchemas ? { inputSchema: tool.inputSchema } : {}),
+  }));
 }
 
 /** The best `limit` entries for a query; `complete` when they match every query word. */
