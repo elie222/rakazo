@@ -326,5 +326,34 @@ describe("memory tool secret redaction", () => {
       expect.objectContaining({ content: "keep\n" }),
       expect.anything(),
     );
+
+    const datedCommit = vi.fn();
+    const datedCtx = {
+      ...ctx,
+      secrets: ["2026-03-19"],
+      deps: {
+        ...ctx.deps,
+        memory: {
+          read: vi.fn(async () => ({
+            documents: [{ path: "MEMORY.md", content: "", revision: 1 }],
+          })),
+          commit: datedCommit,
+        },
+      },
+    };
+    await expect(
+      memoryTools.remember!(
+        datedCtx as never,
+        {
+          args: {
+            operations: [{ action: "add", content: "Pause alerts", until: "2026-03-19" }],
+          },
+          finish: (v: unknown) => v,
+        } as never,
+      ),
+    ).resolves.toMatchObject({
+      error: expect.stringContaining("end date matched a protected value"),
+    });
+    expect(datedCommit).not.toHaveBeenCalled();
   });
 });

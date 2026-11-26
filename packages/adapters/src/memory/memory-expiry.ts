@@ -26,13 +26,22 @@ export function latestEndedDate(now: Date): string {
   return wallClock(now, "Etc/GMT+12").slice(0, 10);
 }
 
-/** One entry with the date it was saved and, for a temporary one, the date or event that ends it. */
-export function stampMemoryEntry(content: string, today: string, until = ""): string {
-  const end = until
+function normalizeMemoryUntil(until: string): string {
+  return until
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^until\s+/i, "")
     .replace(/[()]/g, "");
+}
+
+/** Whether a temporary memory end condition resolves to an ISO calendar expiry date. */
+export function isMemoryExpiryDate(until: string): boolean {
+  return isDate(normalizeMemoryUntil(until));
+}
+
+/** One entry with the date it was saved and, for a temporary one, the date or event that ends it. */
+export function stampMemoryEntry(content: string, today: string, until = ""): string {
+  const end = normalizeMemoryUntil(until);
   // An entry that ends is one line, so it leaves memory whole.
   const text = withoutStamp((end ? content.replace(/\s+/g, " ") : content).trim());
   const ends = !end

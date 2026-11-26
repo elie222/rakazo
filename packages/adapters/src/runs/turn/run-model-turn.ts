@@ -389,6 +389,7 @@ function modelTurnRequest(
           messageId: currentTurnMessage?.id,
           hasImages: Boolean(currentTurnImages?.length),
           resumeAnswerReplyContexts,
+          redact: (text) => redactSecrets(text, runSecrets),
         },
       ),
   };

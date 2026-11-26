@@ -8,7 +8,11 @@ import {
 import { redactSecrets } from "@rakazo/core";
 import { readHistory, searchHistory } from "@rakazo/db";
 import { redactConnectorPayload } from "../../integrations/connector-safety.js";
-import { stampMemoryEntry, userMemoryDate } from "../../memory/memory-expiry.js";
+import {
+  isMemoryExpiryDate,
+  stampMemoryEntry,
+  userMemoryDate,
+} from "../../memory/memory-expiry.js";
 import { editMemory } from "../../memory/memory-tools.js";
 import { MAX_RECALLED_MEMORIES } from "../../runtime/context/history-compaction.prompt.js";
 import { RememberInputSchema } from "../../tools/builtin-conversation.tool-definition.js";
@@ -108,14 +112,24 @@ export const memoryTools: ToolHandlers = {
     if (!parsed.success) return call.finish({ error: argsError(parsed.error) });
     const secrets = ctx.secrets ?? [];
     const today = await userMemoryDate(deps.prisma, run.userId, deps.now?.() ?? new Date());
-    const operations = parsed.data.operations.map((operation) => {
-      if (operation.action === "remove" || !operation.content?.trim()) return operation;
+    const operations: typeof parsed.data.operations = [];
+    for (const operation of parsed.data.operations) {
+      if (operation.action === "remove" || !operation.content?.trim()) {
+        operations.push(operation);
+        continue;
+      }
       const safeContent = redactSecrets(operation.content, secrets);
       const safeUntil = operation.until?.trim()
         ? redactSecrets(operation.until, secrets)
         : operation.until;
-      return { ...operation, content: stampMemoryEntry(safeContent, today, safeUntil) };
-    });
+      if (operation.until && isMemoryExpiryDate(operation.until) && safeUntil !== operation.until) {
+        return call.finish({
+          error:
+            "Could not save this temporary memory because its end date matched a protected value.",
+        });
+      }
+      operations.push({ ...operation, content: stampMemoryEntry(safeContent, today, safeUntil) });
+    }
     const owner = parsed.data.shared
       ? { scope: "user" as const }
       : { scope: "bot" as const, botId: bot.id };

@@ -445,6 +445,7 @@ export async function buildTurnPrompt(
         history,
         parts.records.messages,
         Boolean(speakers),
+        redact,
       )
     : undefined;
   const replayHistory = resumeHistory?.history ?? history;
