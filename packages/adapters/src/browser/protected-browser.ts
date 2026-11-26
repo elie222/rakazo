@@ -14,17 +14,19 @@ export interface ProtectedBrowserStorage {
 }
 
 type BrowserControlRole = "button" | "checkbox" | "combobox" | "link" | "radio" | "textbox";
+type BrowserWait = { kind: "wait"; role: BrowserControlRole | "heading"; name: string };
 type BrowserStep = { name: string } & (
   | { kind: "click"; role: BrowserControlRole }
   | { kind: "fill"; role: BrowserControlRole; text: string }
-  | { kind: "wait"; role: BrowserControlRole | "heading" }
 );
 
-/** For asynchronous sign-in, wait for a site-specific success control before capturing storage. */
+/** End sign-in with a condition that becomes visible only after authentication. */
 export type ProtectedBrowserRequest = {
   url: string;
-  steps: BrowserStep[];
-} & ({ mode: "sign-in" } | { mode: "browse"; storageState: ProtectedBrowserStorage });
+} & (
+  | { mode: "sign-in"; steps: [...(BrowserStep | BrowserWait)[], BrowserWait] }
+  | { mode: "browse"; steps: (BrowserStep | BrowserWait)[]; storageState: ProtectedBrowserStorage }
+);
 
 export interface ProtectedBrowserResult {
   storageState: ProtectedBrowserStorage;

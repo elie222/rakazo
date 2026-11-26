@@ -129,10 +129,11 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
       if (!url || url.origin !== login.origin || url.username || url.password) {
         throw new ClientError("BAD_REQUEST", "Enter a sign-in page on the saved site");
       }
+      const successStep = input.steps.at(-1);
       if (
         !input.steps.some((step) => step.kind === "fill") ||
         input.steps.at(-2)?.kind !== "click" ||
-        input.steps.at(-1)?.kind !== "wait"
+        successStep?.kind !== "wait"
       ) {
         throw new ClientError(
           "BAD_REQUEST",
@@ -147,7 +148,7 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
           {
             mode: "sign-in",
             url: url.href,
-            steps: input.steps,
+            steps: [...input.steps.slice(0, -1), successStep],
           },
           signal,
         ));

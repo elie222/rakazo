@@ -92,7 +92,15 @@ test("a fresh protected browser resumes the synthetic signed-in session", async 
     const launch = { args: ["--ignore-certificate-errors"] };
     await assert.rejects(
       runBrowser(chromium, { mode: "sign-in", url, steps: [] }, launch),
-      /Sign-in produced no reusable browser state/,
+      /Sign-in requires a final success condition/,
+    );
+    await assert.rejects(
+      runBrowser(
+        chromium,
+        { mode: "sign-in", url, steps: [{ kind: "wait", role: "button", name: "Sign in" }] },
+        launch,
+      ),
+      /Sign-in success condition was already visible/,
     );
     const signedIn = await runBrowser(
       chromium,
@@ -102,6 +110,7 @@ test("a fresh protected browser resumes the synthetic signed-in session", async 
         steps: [
           { kind: "fill", role: "textbox", name: "Password", text: "synthetic-password" },
           { kind: "click", role: "button", name: "Sign in" },
+          { kind: "wait", role: "heading", name: "Signed-in fixture" },
         ],
       },
       launch,

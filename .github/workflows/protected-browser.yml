@@ -4,6 +4,12 @@ on:
   pull_request:
     paths:
       - .github/workflows/protected-browser.yml
+      - .github/actions/setup-workspace/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - patches/**
+      - packages/contracts/**
       - infra/sandboxes/protected-browser/**
       - packages/adapters/src/browser/protected-browser.ts
       - packages/adapters/src/providers/browser/**
@@ -21,6 +27,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-workspace
+      - name: Check host address policy
+        run: pnpm exec vitest run packages/adapters/src/providers/browser/docker/protected-browser-proxy.test.ts
       - name: Build sandboxed browser image
         run: |
           docker build -t rakazo/protected-browser:base -f infra/sandboxes/protected-browser/Dockerfile .
