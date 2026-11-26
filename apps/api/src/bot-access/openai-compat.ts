@@ -45,9 +45,16 @@ export function latestUserText(messages: ChatCompletionRequest["messages"]): str
   return text;
 }
 
-/** What the assistant says for a task: its replies, then any question it is waiting on. */
-export function taskAnswer(task: PublicTask): string {
-  return [task.output, task.question].filter(Boolean).join("\n\n");
+/**
+ * What the assistant says for a task: its replies, then any question it is waiting on. Replies in
+ * `earlierOutput`, written before the request's message joined the task, are left out.
+ */
+export function taskAnswer(task: PublicTask, earlierOutput = ""): string {
+  const output =
+    earlierOutput && task.output.startsWith(earlierOutput)
+      ? task.output.slice(earlierOutput.length).replace(/^\n\n/, "")
+      : task.output;
+  return [output, task.question].filter(Boolean).join("\n\n");
 }
 
 /**
@@ -64,7 +71,12 @@ export function completionId(task: PublicTask): string {
 
 const NO_USAGE = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } as const;
 
-export function chatCompletion(task: PublicTask, model: string, created: number) {
+export function chatCompletion(
+  task: PublicTask,
+  model: string,
+  created: number,
+  earlierOutput = "",
+) {
   return {
     id: completionId(task),
     object: "chat.completion" as const,
@@ -73,7 +85,11 @@ export function chatCompletion(task: PublicTask, model: string, created: number)
     choices: [
       {
         index: 0,
-        message: { role: "assistant" as const, content: taskAnswer(task), refusal: null },
+        message: {
+          role: "assistant" as const,
+          content: taskAnswer(task, earlierOutput),
+          refusal: null,
+        },
         logprobs: null,
         finish_reason: finishReason(task),
       },

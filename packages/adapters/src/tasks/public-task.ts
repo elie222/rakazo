@@ -96,6 +96,8 @@ export function publicTaskView(task: TaskRow, runs: RunRow[], replies: ReplyRow[
 export async function readPublicTask(
   prisma: PrismaClient | Prisma.TransactionClient,
   owner: { taskId: string; userId: string; spaceId: string },
+  /** Reads only the replies written before this message seq. */
+  beforeSeq?: number,
 ): Promise<PublicTask | null> {
   const task = await prisma.task.findFirst({
     where: { id: owner.taskId, userId: owner.userId, spaceId: owner.spaceId },
@@ -114,7 +116,11 @@ export async function readPublicTask(
   // Replies are read after the run, so a run that ends between the reads shows as still working
   // with its last reply, never as ended without it. Its end event reads both again.
   const replies = await prisma.message.findMany({
-    where: { runId: { in: task.runs.map((run) => run.id) }, role: "bot" },
+    where: {
+      runId: { in: task.runs.map((run) => run.id) },
+      role: "bot",
+      ...(beforeSeq === undefined ? {} : { seq: { lt: beforeSeq } }),
+    },
     orderBy: { seq: "asc" },
     select: { id: true, blocks: true, createdAt: true },
   });

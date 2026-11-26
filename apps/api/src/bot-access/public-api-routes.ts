@@ -168,7 +168,11 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
         // A turn that ended badly is an error even when it said something first.
         if (task.status === "failed" || task.status === "cancelled")
           return c.json(openAiError(502, task.error ?? "The bot stopped"), 502, headers);
-        return c.json(chatCompletion(task, request.model, created), 200, headers);
+        return c.json(
+          chatCompletion(task, request.model, created, started.earlierOutput),
+          200,
+          headers,
+        );
       }
       return eventStream(
         c.req.raw.signal,
@@ -182,7 +186,7 @@ export function mountPublicApiRoutes(app: Hono, access: BotAccess) {
               continue;
             }
             last = task;
-            const answer = taskAnswer(task);
+            const answer = taskAnswer(task, started.earlierOutput);
             const content = unsentText(sent, answer);
             // Later text is compared with the current answer, whatever was sent before.
             sent = answer;

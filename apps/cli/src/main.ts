@@ -43,6 +43,9 @@ async function waitFor(client: Client, task: PublicTask): Promise<PublicTask> {
       for await (const next of client.followTask(task.id)) last = next;
     } catch (error) {
       if (error instanceof ApiError) throw error;
+      process.stderr.write(
+        `Reconnecting: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
     }
     const quick = Date.now() - openedAt < 30_000 && last.updated_at === before;
     quickDrops = quick ? quickDrops + 1 : 0;

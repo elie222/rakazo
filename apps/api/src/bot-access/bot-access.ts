@@ -208,9 +208,9 @@ export function createBotAccess(deps: BotAccessDeps) {
     return { actor, botId: task.botId };
   }
 
-  async function readTask(actor: Actor, taskId: string): Promise<PublicTask> {
+  async function readTask(actor: Actor, taskId: string, beforeSeq?: number): Promise<PublicTask> {
     const task = await runAsTenant(actor, () =>
-      readPublicTask(prisma, { taskId, userId: actor.userId, spaceId: actor.spaceId }),
+      readPublicTask(prisma, { taskId, userId: actor.userId, spaceId: actor.spaceId }, beforeSeq),
     );
     if (!task) throw new ClientError("NOT_FOUND", "No task with that id");
     return task;
@@ -223,11 +223,11 @@ export function createBotAccess(deps: BotAccessDeps) {
   async function ownTaskId(
     actor: Actor,
     sent: { threadId: string; clientNonce: string; taskId: string },
-  ): Promise<string> {
+  ): Promise<{ taskId: string; seq: number | undefined }> {
     const own = await runAsTenant(actor, async () => {
       const message = await prisma.message.findFirst({
         where: { threadId: sent.threadId, clientNonce: sent.clientNonce },
-        select: { runId: true },
+        select: { runId: true, seq: true },
       });
       const run = message?.runId
         ? await prisma.run.findFirst({
@@ -235,12 +235,12 @@ export function createBotAccess(deps: BotAccessDeps) {
             select: { taskId: true },
           })
         : null;
-      if (run) return run.taskId;
+      if (run) return { taskId: run.taskId, seq: message?.seq };
       const task = await prisma.task.findFirst({
         where: { id: sent.taskId, userId: actor.userId },
         select: { id: true },
       });
-      return task?.id ?? null;
+      return task ? { taskId: task.id, seq: message?.seq } : null;
     });
     if (!own)
       throw new ClientError("CONFLICT", "The bot is busy with someone else's request; try again");
@@ -254,10 +254,8 @@ export function createBotAccess(deps: BotAccessDeps) {
     const { threadId, cursor } = await rpc.threads.head({ botId });
     const clientNonce = `api:${randomUUID()}`;
     const sent = await rpc.threads.send({ botId, text, clientNonce });
-    return {
-      taskId: await ownTaskId(actor, { threadId, clientNonce, taskId: sent.taskId }),
-      cursor,
-    };
+    const own = await ownTaskId(actor, { threadId, clientNonce, taskId: sent.taskId });
+    return { taskId: own.taskId, messageSeq: own.seq, cursor };
   }
 
   /**
@@ -290,10 +288,13 @@ export function createBotAccess(deps: BotAccessDeps) {
   ) {
     if (input.callbackUrl) await assertCallbackUrl(input.callbackUrl);
     const bot = await resolveBot(caller, input.bot);
-    const { taskId, cursor } = await send(caller, bot.actor, bot.id, input.text);
+    const { taskId, messageSeq, cursor } = await send(caller, bot.actor, bot.id, input.text);
     if (input.callbackUrl) await watchTask(caller.keyId, bot.actor, taskId, input.callbackUrl);
     return {
       task: await readTask(bot.actor, taskId),
+      // What the task said before this message, when the message joined a task already going.
+      earlierOutput:
+        messageSeq === undefined ? "" : (await readTask(bot.actor, taskId, messageSeq)).output,
       actor: bot.actor,
       cursor,
       callbackSecret: input.callbackUrl
@@ -332,6 +333,10 @@ export function createBotAccess(deps: BotAccessDeps) {
 
   async function getTask(caller: KeyCaller, taskId: string) {
     const { actor, botId } = await taskActor(caller, taskId);
+    // A settled task is never followed, so it needs no cursor and stays readable once its bot
+    // is archived.
+    const settled = await readTask(actor, taskId);
+    if (taskSettled(settled.status)) return { task: settled, actor, cursor: 0 };
     const { cursor } = await client(caller, actor).threads.head({ botId });
     return { task: await readTask(actor, taskId), actor, cursor };
   }
