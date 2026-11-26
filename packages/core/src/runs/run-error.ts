@@ -261,11 +261,11 @@ export type RunErrorRecovery = "connection" | "model" | "plan";
 
 /**
  * Whether a failed reply the server allows to run again should offer that. A failure with a fix
- * offers the fix instead, since the same reply would fail the same way. An unusable answer is
- * the exception: the same model often answers properly the second time.
+ * offers only the fix, since the same reply would fail the same way. A garbled or empty answer
+ * is the exception and offers both.
  */
-export function runErrorOffersRetry(error: { recovery?: RunErrorRecovery; kind?: string }) {
-  return !error.recovery || error.kind === "output";
+export function runErrorOffersRetry(error: { recovery?: RunErrorRecovery; retryMayHelp?: true }) {
+  return !error.recovery || error.retryMayHelp === true;
 }
 
 /**
@@ -285,8 +285,8 @@ export function normalizeRunError(
   summary: string;
   details: string;
   recovery?: RunErrorRecovery;
-  /** The provider declined the request itself, so the same request would be declined again. */
-  refused?: true;
+  /** The answer was garbled or empty, which the same model often gets right the second time. */
+  retryMayHelp?: true;
   resetAt?: number;
   kind?: RunErrorKind;
   period?: "none" | "daily" | "weekly" | "monthly";
@@ -404,11 +404,14 @@ export function normalizeRunError(
       details,
       recovery: "model",
       kind: "output",
+      // A refused request is refused again, and a reply cut at the output limit is cut again.
       ...(payload.code === "data_inspection_failed" ||
       isModelRefusal(trimmed) ||
-      isModelRefusal(message)
-        ? { refused: true as const }
-        : {}),
+      isModelRefusal(message) ||
+      trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
+      MODEL_OUTPUT_LIMIT_REACHED.test(message)
+        ? {}
+        : { retryMayHelp: true as const }),
       ...(status !== undefined ? { status } : {}),
       providerMessage: message,
     };

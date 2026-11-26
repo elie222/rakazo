@@ -345,7 +345,9 @@ describe("retrying a failed typed reply", () => {
   });
 
   it("offers a fresh reply when the first answer was unusable", async () => {
-    const finalize = await fixture().failFromModel(new ModelOutputError("Empty response"));
+    const finalize = await fixture().failFromModel(
+      new ModelOutputError("Provider returned an empty response"),
+    );
     expect(finalize).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", retryable: true }),
     );
@@ -354,7 +356,8 @@ describe("retrying a failed typed reply", () => {
   it.each([
     "The model refused to complete the request",
     '400: {"code":"data_inspection_failed","param":null,"message":"Input text data may contain inappropriate content.","type":"data_inspection_failed"}',
-  ])("does not offer a fresh reply to a request the provider refused: %s", async (message) => {
+    "The model hit its output limit before writing a response.",
+  ])("does not offer a fresh reply that would fail the same way: %s", async (message) => {
     const finalize = await fixture().failFromModel(new ModelOutputError(message));
     expect(finalize).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", retryable: false }),

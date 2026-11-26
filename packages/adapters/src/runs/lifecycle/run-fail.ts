@@ -167,12 +167,13 @@ export async function failRun(
     error: message,
     // A fresh run has fresh tool effect keys. Only offer it when this was the first
     // attempt and its model failed, or answered with nothing usable, before any tool
-    // could have done work. A request the provider refused would be refused again.
+    // could have done work. A refused request or a reply cut at its limit would fail again.
     retryable:
       run.trigger === "user" &&
       ctx.fence === 1 &&
       (error instanceof TransientModelError ||
-        (error instanceof ModelOutputError && !normalizeRunError(error.message).refused)) &&
+        (error instanceof ModelOutputError &&
+          normalizeRunError(error.message).retryMayHelp === true)) &&
       !ctx.state.toolStarted &&
       partialReply.length === 0,
     ...(partialReply.length > 0 ? { partialReply } : {}),

@@ -504,17 +504,23 @@ describe("normalizeRunError", () => {
       });
     });
 
-    it("tells a request the provider refused apart from a garbled answer", () => {
-      for (const refused of [
+    it("says a retry may help only when the answer was garbled or empty", () => {
+      for (const garbled of [
+        "Unhandled stop reason: MALFORMED_RESPONSE",
+        "Provider returned an empty response",
+      ]) {
+        expect(normalizeRunError(garbled).retryMayHelp).toBe(true);
+      }
+      for (const sameAgain of [
         "The model refused to complete the request",
         "Provider stopped with: SAFETY",
         '400: {"code":"data_inspection_failed","param":null,"message":"Input text data may contain inappropriate content.","type":"data_inspection_failed"}',
+        MODEL_OUTPUT_LIMIT_ERROR,
+        MODEL_OUTPUT_CUT_ERROR,
+        "Upstream error from Example: HttpError: HTTP 400: Tool calls cutoff by max_tokens.",
       ]) {
-        expect(normalizeRunError(refused).refused).toBe(true);
+        expect(normalizeRunError(sameAgain).retryMayHelp).toBeUndefined();
       }
-      expect(
-        normalizeRunError("Unhandled stop reason: MALFORMED_RESPONSE").refused,
-      ).toBeUndefined();
     });
 
     it("shows an operator cap without suggesting buying credits or changing connections", () => {
