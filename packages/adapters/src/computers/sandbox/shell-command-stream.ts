@@ -1,14 +1,17 @@
 import { setImmediate } from "node:timers/promises";
 import type { ProcessEvent } from "@rakazo/adapter-kit";
-import { redactedRanges, redactSecrets } from "@rakazo/core";
+import { redactSecrets } from "@rakazo/core";
 import { automated } from "../../messaging/automated-messages.prompt.js";
 import { shortenPlainText } from "../../runtime/context/context-selection.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
+import { redactShellStreams } from "./agent-environment.js";
 import {
-  redactShellStreams,
-  secretPrefixSuffixLength,
-  secretSuffixPrefixLength,
-} from "./agent-environment.js";
+  BoundedStreamBuffer,
+  SecretsCutSnapshot,
+  SHELL_STREAM_MAX_CHARS,
+} from "./shell-stream-buffer.js";
+
+export { SHELL_STREAM_MAX_CHARS };
 
 /**
  * Device-code logins print a code and then wait. Once that output goes quiet,
@@ -34,286 +37,6 @@ const ONE_TIME_CODE =
 // A prompt is the latest output, so only the end of each stream is checked, which keeps long
 // logs cheap. The link and the code may be on different streams.
 const SIGN_IN_PROMPT_SCAN_CHARS = 4_000;
-
-/**
- * Target characters retained per shell stream (stdout or stderr) after compaction, split evenly
- * between head and tail so initial headers and final errors survive. Each side also preserves the
- * longest secret overlap margin (`maxSecretOverlap(secrets)`) so registered secrets split across
- * stdout and stderr or straddling a cut still match whole; peak retention is
- * `SHELL_STREAM_MAX_CHARS + SHELL_STREAM_COMPACT_STEP + 2 * overlap`.
- */
-export const SHELL_STREAM_MAX_CHARS = 128_000;
-const SHELL_STREAM_HEAD_CHARS = Math.floor(SHELL_STREAM_MAX_CHARS / 2);
-const SHELL_STREAM_TAIL_CHARS = SHELL_STREAM_MAX_CHARS - SHELL_STREAM_HEAD_CHARS;
-const SHELL_STREAM_COMPACT_STEP = 32_000;
-const MIN_MULTILINE_SECRET_LINE_LENGTH = 16;
-
-function protectedCutValues(secrets: readonly string[]): string[] {
-  const values = new Set<string>();
-  for (const secret of secrets) {
-    if (!secret) continue;
-    values.add(secret);
-    if (!/[\r\n]/.test(secret)) continue;
-    for (const line of secret.split(/\r\n?|\n/)) {
-      const trimmed = line.trim();
-      if (trimmed.length >= MIN_MULTILINE_SECRET_LINE_LENGTH && !/\s/.test(trimmed)) {
-        values.add(trimmed);
-      }
-    }
-  }
-  return [...values];
-}
-
-function maxSecretOverlap(secrets: readonly string[]): number {
-  let max = 0;
-  for (const secret of secrets) {
-    if (secret.length > max) max = secret.length;
-  }
-  return max > 1 ? max - 1 : 0;
-}
-
-function isSurrogateSplit(text: string, index: number): boolean {
-  if (index <= 0 || index >= text.length) return false;
-  const before = text.charCodeAt(index - 1);
-  const after = text.charCodeAt(index);
-  return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
-}
-
-function safeCutBefore(text: string, index: number): number {
-  return isSurrogateSplit(text, index) ? index - 1 : index;
-}
-
-function safeCutAfter(text: string, index: number): number {
-  return isSurrogateSplit(text, index) ? index + 1 : index;
-}
-
-/**
- * Copy a substring into a flat string so V8 can collect a much larger parent string that the
- * slice would otherwise keep alive. Preserves UTF-16 code units losslessly.
- */
-function detachString(value: string): string {
-  return value.length === 0 ? "" : Buffer.from(value, "utf16le").toString("utf16le");
-}
-
-function mergeLeadingRedactedRange(
-  ranges: ReadonlyArray<[number, number]>,
-  leadingEnd: number,
-): Array<[number, number]> {
-  if (leadingEnd <= 0) return [...ranges];
-  let end = leadingEnd;
-  let index = 0;
-  while (index < ranges.length && ranges[index]![0] <= end) {
-    end = Math.max(end, ranges[index]![1]);
-    index += 1;
-  }
-  return [[0, end], ...ranges.slice(index)];
-}
-
-function mergeTrailingRedactedRange(
-  ranges: ReadonlyArray<[number, number]>,
-  trailingStart: number,
-  length: number,
-): number {
-  let start = trailingStart;
-  for (let index = ranges.length - 1; index >= 0; index -= 1) {
-    const [rangeStart, rangeEnd] = ranges[index]!;
-    if (rangeEnd < start) break;
-    if (rangeStart < start) start = rangeStart;
-  }
-  return Math.min(start, length);
-}
-
-/**
- * Rolling head+tail accumulator for one shell stream.
- *
- * Keeps both `head` and `tail` raw so secrets registered later or overlapping across chunks still
- * match whole and sign-in prompt detection sees raw output. Tracks `headRedactedSuffix` and
- * `tailRedactedPrefix` for secrets known at each drop cut, and conservatively masks matching
- * boundary fragments of secrets registered after a cut so no fragment of a cut-straddling secret
- * can leak unredacted.
- */
-class BoundedStreamBuffer {
-  private head: string | undefined;
-  private headRedactedSuffix = 0;
-  private headCutSecrets = new Set<string>();
-  private tail = "";
-  private tailRedactedPrefix = 0;
-  private tailCutSecrets = new Set<string>();
-  private omittedChars = 0;
-
-  constructor(private readonly secrets: readonly string[]) {}
-
-  get hasContent(): boolean {
-    return this.head !== undefined || this.tail.length > 0;
-  }
-
-  get compacted(): boolean {
-    return this.head !== undefined && this.omittedChars > 0;
-  }
-
-  rawHead(): string {
-    return this.head ?? this.tail;
-  }
-
-  rawTail(): string {
-    return this.tail;
-  }
-
-  headCutRedactedSuffix(): number {
-    if (this.head === undefined) return 0;
-    const trailing = this.effectiveHeadRedactedSuffix();
-    if (trailing <= 0 || this.head.length === 0) return 0;
-    const ranges = redactedRanges(this.head, this.secrets);
-    const endCut = safeCutBefore(
-      this.head,
-      mergeTrailingRedactedRange(
-        ranges,
-        Math.max(0, this.head.length - trailing),
-        this.head.length,
-      ),
-    );
-    return this.head.length - endCut;
-  }
-
-  tailCutRedactedPrefix(): number {
-    if (this.head === undefined) return 0;
-    const leading = this.effectiveTailRedactedPrefix();
-    if (leading <= 0 || this.tail.length === 0) return 0;
-    const ranges = redactedRanges(this.tail, this.secrets);
-    return safeCutAfter(
-      this.tail,
-      mergeLeadingRedactedRange(ranges, Math.min(leading, this.tail.length))[0]![1],
-    );
-  }
-
-  append(chunk: string): void {
-    if (!chunk) return;
-    this.tail += chunk;
-    const overlap = maxSecretOverlap(this.secrets);
-    const keepHead = SHELL_STREAM_HEAD_CHARS + overlap;
-    const keepTail = SHELL_STREAM_TAIL_CHARS + overlap;
-    if (this.head === undefined) {
-      if (this.tail.length <= keepHead + keepTail + SHELL_STREAM_COMPACT_STEP) {
-        return;
-      }
-      const ranges = redactedRanges(this.tail, this.secrets);
-      const headEnd = safeCutBefore(this.tail, keepHead);
-      const tailStart = safeCutAfter(this.tail, this.tail.length - keepTail);
-      const cutSnapshot = new Set(protectedCutValues(this.secrets));
-      this.head = detachString(this.tail.slice(0, headEnd));
-      this.headRedactedSuffix = this.coveredBeforeCut(ranges, headEnd);
-      this.headCutSecrets = cutSnapshot;
-      this.tailRedactedPrefix = this.coveredPastCut(ranges, tailStart);
-      this.tailCutSecrets = new Set(cutSnapshot);
-      this.omittedChars = Math.max(0, tailStart - headEnd);
-      this.tail = detachString(this.tail.slice(tailStart));
-      return;
-    }
-    if (this.tail.length <= keepTail + SHELL_STREAM_COMPACT_STEP) return;
-    const ranges = mergeLeadingRedactedRange(
-      redactedRanges(this.tail, this.secrets),
-      this.effectiveTailRedactedPrefix(),
-    );
-    const drop = safeCutAfter(this.tail, this.tail.length - keepTail);
-    this.tailRedactedPrefix = this.coveredPastCut(ranges, drop);
-    this.tailCutSecrets = new Set(protectedCutValues(this.secrets));
-    this.omittedChars += drop;
-    this.tail = detachString(this.tail.slice(drop));
-  }
-
-  private coveredBeforeCut(ranges: ReadonlyArray<[number, number]>, cut: number): number {
-    for (const [start, end] of ranges) {
-      if (start >= cut) break;
-      if (end > cut) return cut - start;
-    }
-    return 0;
-  }
-
-  private coveredPastCut(ranges: ReadonlyArray<[number, number]>, cut: number): number {
-    for (const [start, end] of ranges) {
-      if (start >= cut) break;
-      if (end > cut) return end - cut;
-    }
-    return 0;
-  }
-
-  private effectiveHeadRedactedSuffix(): number {
-    if (!this.head) return this.headRedactedSuffix;
-    for (const value of protectedCutValues(this.secrets)) {
-      if (value.length < 2 || this.headCutSecrets.has(value)) continue;
-      // Head is immutable after compaction, so each newly registered secret is scanned once.
-      this.headCutSecrets.add(value);
-      this.headRedactedSuffix = Math.max(
-        this.headRedactedSuffix,
-        secretPrefixSuffixLength(this.head, value),
-      );
-    }
-    return this.headRedactedSuffix;
-  }
-
-  private effectiveTailRedactedPrefix(): number {
-    let prefix = this.tailRedactedPrefix;
-    if (!this.tail) return prefix;
-    for (const value of protectedCutValues(this.secrets)) {
-      if (value.length < 2 || this.tailCutSecrets.has(value)) continue;
-      const matched = secretSuffixPrefixLength(this.tail, value);
-      if (this.tail.length >= value.length - 1) {
-        this.tailCutSecrets.add(value);
-        this.tailRedactedPrefix = Math.max(this.tailRedactedPrefix, matched);
-      }
-      prefix = Math.max(prefix, matched);
-    }
-    return prefix;
-  }
-
-  recentTail(chars: number): string {
-    return this.tail.length <= chars ? this.tail : this.tail.slice(-chars);
-  }
-
-  text(mask?: { redactLeading?: number; redactTrailing?: number }): string {
-    const redactLeading = mask?.redactLeading ?? 0;
-    const redactTrailing = mask?.redactTrailing ?? 0;
-    if (this.head === undefined) {
-      return this.maskSegment(this.tail, redactLeading, redactTrailing);
-    }
-    const headView = this.maskSegment(this.head, redactLeading, this.effectiveHeadRedactedSuffix());
-    const tailView = this.maskSegment(
-      this.tail,
-      this.effectiveTailRedactedPrefix(),
-      redactTrailing,
-    );
-    if (this.omittedChars <= 0) return `${headView}${tailView}`;
-    return `${headView}\n[... ${this.omittedChars} characters omitted ...]\n${tailView}`;
-  }
-
-  private maskSegment(segment: string, leading: number, trailing: number): string {
-    if (leading <= 0 && trailing <= 0) return segment;
-    if (segment.length === 0) return "";
-    const ranges = redactedRanges(segment, this.secrets);
-    const startCut =
-      leading > 0
-        ? safeCutAfter(
-            segment,
-            mergeLeadingRedactedRange(ranges, Math.min(leading, segment.length))[0]![1],
-          )
-        : 0;
-    const endCut =
-      trailing > 0
-        ? safeCutBefore(
-            segment,
-            mergeTrailingRedactedRange(
-              ranges,
-              Math.max(0, segment.length - trailing),
-              segment.length,
-            ),
-          )
-        : segment.length;
-    if (startCut >= endCut) return "[redacted]";
-    const prefix = leading > 0 ? "[redacted]" : "";
-    const suffix = trailing > 0 ? "[redacted]" : "";
-    return `${prefix}${segment.slice(startCut, endCut)}${suffix}`;
-  }
-}
 
 function kmpPrefixTable(pattern: string, length = pattern.length): Int32Array {
   const lps = new Int32Array(length);
@@ -476,6 +199,7 @@ function redactCompactedStreams(
   stdout: BoundedStreamBuffer,
   stderr: BoundedStreamBuffer,
   secrets: string[],
+  cutSecrets: SecretsCutSnapshot,
   withholdPartial: boolean,
 ): ShellCommandSnapshot {
   let stdoutTrailing = 0;
@@ -484,7 +208,8 @@ function redactCompactedStreams(
     const stdoutTail = stdout.rawTail();
     const stderrHead = stderr.rawHead();
     if (stdoutTail.length > 0 && (stderrHead.length > 0 || (withholdPartial && stdout.compacted))) {
-      for (const secret of protectedCutValues(secrets)) {
+      cutSecrets.sync();
+      for (const secret of cutSecrets.values) {
         if (secret.length < 2) continue;
         const needStdoutScan = stdout.compacted && secret.length > stdoutTail.length;
         const needStderrScan =
@@ -766,8 +491,9 @@ export async function observeShellCommand(
   const idleMs = options.idleMs ?? SHELL_STREAM_IDLE_MS;
   const quietMs = options.quietMs ?? SHELL_STREAM_QUIET_MS;
   const onOutputIntervalMs = options.onOutputIntervalMs ?? 0;
-  const stdout = new BoundedStreamBuffer(options.secrets);
-  const stderr = new BoundedStreamBuffer(options.secrets);
+  const cutSecrets = new SecretsCutSnapshot(options.secrets);
+  const stdout = new BoundedStreamBuffer(cutSecrets);
+  const stderr = new BoundedStreamBuffer(cutSecrets);
   let code: number | undefined;
   let finished = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -780,7 +506,7 @@ export async function observeShellCommand(
   });
 
   const redact = (withholdPartial: boolean): ShellCommandSnapshot =>
-    redactCompactedStreams(stdout, stderr, options.secrets, withholdPartial);
+    redactCompactedStreams(stdout, stderr, options.secrets, cutSecrets, withholdPartial);
 
   const clearIdle = () => {
     if (timer) clearTimeout(timer);

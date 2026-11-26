@@ -702,27 +702,25 @@ describe("observeShellCommand", () => {
     expect(liveObserved.result.stderr).not.toContain(liveStderrPart2);
     expect(liveObserved.result.stderr).toContain("LIVE_DONE");
 
-    // Repeated 16 KiB spanning secret over a compacted boundary stays linear via KMP.
-    // Late secret (90,001 chars) exceeds retained stderr head (64,000 + 16,383 = 80,383), so the
-    // compacted cut activates collectSpanningMatches on the 16 KiB secret and expands stdoutTrailing
-    // from 9,617 to 16,383 (redacting every 'q' after OUTER_TAG:).
-    const repeatedBoundarySecret = "q".repeat(16_384);
-    const lateLongSecret = "q".repeat(90_001);
+    // Repeated long spanning secret over a compacted boundary stays linear via KMP.
+    // Neither stream holds 120,000 consecutive 'q's on its own (each has 119,999), so same-stream
+    // redaction stays instant while the stdout/stderr boundary forms 239,998 consecutive 'q's.
+    // Late secret (209,999 chars) exceeds retained stderr head (64,000 + 119,999 = 183,999), so
+    // the compacted cut activates collectSpanningMatches on the 120,000-char secret in a single
+    // snapshot and expands stdoutTrailing from 10,000 to 119,999 (redacting every 'q').
+    const repeatedBoundarySecret = "q".repeat(120_000);
+    const lateLongSecret = `${"q".repeat(129_999)}${"R".repeat(80_000)}`;
     await expectLinearTime(async () => {
       const linearGate = deferred();
       const linearSecrets = [repeatedBoundarySecret];
       const linearObserved = await observeShellCommand(
         (async function* () {
-          yield { type: "stdout" as const, data: `OUTER_TAG:${"q".repeat(16_383)}` };
+          yield { type: "stdout" as const, data: `OUTER_TAG:${"q".repeat(119_999)}` };
           yield {
             type: "stderr" as const,
-            data: `${"q".repeat(90_000)}\n${"x".repeat(300_000)}\nLIN_OK\n`,
+            data: `${"q".repeat(119_999)}${"R".repeat(80_000)}\n${"x".repeat(250_000)}\nLIN_OK\n`,
           };
           await linearGate.promise;
-          // Emit live chunks after compaction so each snapshot exercises collectSpanningMatches.
-          for (let i = 0; i < 55; i += 1) {
-            yield { type: "stderr" as const, data: `tick-${i}\n` };
-          }
           yield { type: "exit" as const, code: 0 };
         })(),
         {
@@ -922,6 +920,159 @@ describe("observeShellCommand", () => {
     gate.resolve();
     const final = await observed.completion;
     expect(final?.stdout).toContain("line-19\n");
+  });
+
+  it("redacts overlapping secret chains extending past the compaction cut margin and late-added secrets across compactions", async () => {
+    // Chain of 4 overlapping 20-char secrets (total span 50 chars > 19-char margin on either side of cut).
+    const chain = [
+      "CHAIN_A01_OVERLAP_11",
+      "OVERLAP_11_CHAIN_B02",
+      "CHAIN_B02_OVERLAP_22",
+      "OVERLAP_22_CHAIN_C03",
+    ];
+    const chainText = "CHAIN_A01_OVERLAP_11_CHAIN_B02_OVERLAP_22_CHAIN_C03";
+    // Overlap margin is 19, so keepHead = 64_019 and keepTail = 64_019.
+    // Place chainText so its right end crosses headEnd (64_019) while its left end is 35 chars before headEnd.
+    const headLead = "h".repeat(64_019 - 35);
+    const middlePad = "m".repeat(50_000);
+    // Place chainText again so its left end sits before tailStart while its right end extends 35 chars past tailStart.
+    const tailPad = "t".repeat(64_019 - 35);
+    const chunk1 = `${headLead}${chainText}${middlePad}${chainText}${tailPad}`;
+
+    // Also trigger a second compaction with a chain straddling the drop cut, plus a mid-stream secret addition.
+    const lateSecret = "LATE_SECOND_COMPACT_SECRET_999";
+    const secrets = [...chain];
+    const gate = deferred();
+    let addedLate = false;
+    const observed = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: chunk1 };
+        await gate.promise;
+        // Second compaction keeps the last `64_000 + (lateSecret.length - 1)` chars; size
+        // `secondTail` so `drop` lands mid-way through `lateSecret` and leaves its second half at
+        // the start of the retained tail (which leaks if `SecretsCutSnapshot` stays stale).
+        const keepTailAfterLate = 64_000 + lateSecret.length - 1;
+        const lateRetainedHalf = Math.floor(lateSecret.length / 2);
+        const endMarker = "FINAL_OK\n";
+        const secondLead = "s".repeat(40_000);
+        const secondTail = "z".repeat(keepTailAfterLate - lateRetainedHalf - endMarker.length);
+        yield {
+          type: "stdout" as const,
+          data: `${secondLead}${chainText}${lateSecret}${secondTail}${endMarker}`,
+        };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      {
+        secrets,
+        onOutput: (snapshot) => {
+          if (!addedLate && snapshot.stdout.includes("characters omitted")) {
+            addedLate = true;
+            secrets.push(lateSecret);
+            gate.resolve();
+          }
+        },
+      },
+    );
+
+    expect(observed.result.stdout).toContain("characters omitted");
+    expect(observed.result.stdout).toContain(`omitted ...]\n[redacted]${"z".repeat(32)}`);
+    expect(observed.result.stdout).toContain("FINAL_OK\n");
+    for (const part of [
+      "CHAIN_A01",
+      "OVERLAP_11",
+      "CHAIN_B02",
+      "OVERLAP_22",
+      "CHAIN_C03",
+      lateSecret,
+      lateSecret.slice(0, Math.floor(lateSecret.length / 2)),
+      lateSecret.slice(Math.floor(lateSecret.length / 2)),
+    ]) {
+      expect(observed.result.stdout).not.toContain(part);
+    }
+
+    // Touching secret right at the cut boundary (no overlap across cut) keeps surrounding text intact,
+    // while a secret starting just before the cut and ending just after is masked completely.
+    const touchLeft = "TOUCH_LEFT_PART_1111";
+    const touchRight = "TOUCH_RIGHT_PART_222";
+    const exactMargin = touchLeft.length - 1; // 19
+    const keepHead = 64_000 + exactMargin;
+    const keepTail = 64_000 + exactMargin;
+    const touchChunk =
+      `${"a".repeat(keepHead - touchLeft.length)}${touchLeft}${touchRight}` +
+      `${"b".repeat(40_000)}` +
+      `${touchLeft}${touchRight}${"c".repeat(keepTail - touchRight.length)}`;
+    const touchObserved = await observeShellCommand(
+      (async function* () {
+        yield { type: "stdout" as const, data: touchChunk };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [touchLeft, touchRight] },
+    );
+    expect(touchObserved.result.stdout).not.toContain(touchLeft);
+    expect(touchObserved.result.stdout).not.toContain(touchRight);
+    expect(touchObserved.result.stdout).toContain(`${"a".repeat(32)}[redacted]\n[...`);
+    expect(touchObserved.result.stdout).toContain(`omitted ...]\n[redacted]${"c".repeat(32)}`);
+
+    // Leading redacted prefix from an earlier cut bridges a touching chain across a subsequent drop cut.
+    // First cut lands 10 chars inside `bridgeUnit`, giving `tailRedactedPrefix = 10` followed by
+    // 2,000 touching `bridgeUnit` copies (`40_000` chars). Second chunk length (`34_010`) places
+    // `drop` exactly between copy #1700 and copy #1701 so only prior-prefix expansion collapses the
+    // remaining 300 touching copies into one leading `[redacted]` marker instead of 300 separate ones.
+    const bridgeUnit = "BRIDGE_UNIT_01234567"; // length 20
+    const bridgeKeepTail = 64_000 + bridgeUnit.length - 1;
+    const bridgeHalf = 10;
+    const bridgeRun = bridgeUnit.repeat(2_000); // 40_000 chars of touching secrets
+    const bridgeTailPad = "q".repeat(bridgeKeepTail - bridgeHalf - bridgeRun.length);
+    const bridgeDrop = bridgeHalf + 1_700 * bridgeUnit.length; // 34_010 (> 32_000 compact step)
+    const bridgeEnd = "BRIDGE_END\n";
+    const bridgeObserved = await observeShellCommand(
+      (async function* () {
+        yield {
+          type: "stdout" as const,
+          data: `${"p".repeat(160_000)}${bridgeUnit}${bridgeRun}${bridgeTailPad}`,
+        };
+        yield {
+          type: "stdout" as const,
+          data: `${"r".repeat(bridgeDrop - bridgeEnd.length)}${bridgeEnd}`,
+        };
+        yield { type: "exit" as const, code: 0 };
+      })(),
+      { secrets: [bridgeUnit] },
+    );
+    expect(bridgeObserved.result.stdout).not.toContain(bridgeUnit);
+    expect(bridgeObserved.result.stdout).toContain(`omitted ...]\n[redacted]${"q".repeat(32)}`);
+    expect(bridgeObserved.result.stdout).not.toContain("[redacted][redacted]");
+    expect(bridgeObserved.result.stdout).toContain(bridgeEnd);
+  });
+
+  it("compacts multi-megabyte shell output in linear time with thousands of secret forms", async () => {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const secrets = Array.from({ length: 3_000 }, (_, index) => {
+      const prefix =
+        alphabet[index % alphabet.length]! +
+        alphabet[(index * 7) % alphabet.length]! +
+        alphabet[(index * 13) % alphabet.length]!;
+      return `${prefix}-shell-vault-form-${index}-secretval`;
+    });
+    const chunk = `${"abcdefghijklmnopqrstuvwxyz0123456789".repeat(455)}end\n`; // ~16 KiB
+    const secretMarker = secrets[1_234]!;
+    await expectLinearTime(async () => {
+      const observed = await observeShellCommand(
+        (async function* () {
+          for (let index = 0; index < 3_072; index += 1) {
+            yield {
+              type: "stdout" as const,
+              data: index === 3_071 ? `${chunk}${secretMarker}\nTAIL_DONE\n` : chunk,
+            };
+          }
+          yield { type: "exit" as const, code: 0 };
+        })(),
+        { secrets },
+      );
+      expect(observed.result.stdout).toContain("characters omitted");
+      expect(observed.result.stdout).toContain("TAIL_DONE\n");
+      expect(observed.result.stdout).not.toContain(secretMarker);
+    });
   });
 });
 
