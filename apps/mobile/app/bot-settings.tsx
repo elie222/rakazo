@@ -184,16 +184,13 @@ function BotSettings() {
     );
   }, [botQuery.data]);
 
-  const modelState = useMemo(
-    () =>
-      botModelState({
-        credentials,
-        catalog: catalog.map(localizeModelEntry),
-        me,
-        modelKey,
-      }),
-    [catalog, credentials, me, modelKey],
-  );
+  // Read each render, so model names follow a change of language.
+  const modelState = botModelState({
+    credentials,
+    catalog: catalog.map(localizeModelEntry),
+    me,
+    modelKey,
+  });
   const {
     selectedModel,
     selectedModelKey,
