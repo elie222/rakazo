@@ -1,0 +1,62 @@
+name: Protected browser
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/protected-browser.yml
+      - infra/sandboxes/protected-browser/**
+      - packages/adapters/src/browser/protected-browser.ts
+      - packages/adapters/src/providers/browser/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  launcher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-workspace
+      - name: Build sandboxed browser image
+        run: |
+          docker build -t rakazo/protected-browser:base -f infra/sandboxes/protected-browser/Dockerfile .
+          curl -fsSL https://raw.githubusercontent.com/microsoft/playwright/v1.64.1/utils/docker/seccomp_profile.json -o /tmp/browser-seccomp.json
+      - name: Sign in, resume and refuse private egress
+        run: |
+          fixture="$(mktemp -d)"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj /CN=protected-browser-fixture.example.com \
+            -addext subjectAltName=DNS:protected-browser-fixture.example.com \
+            -keyout "$fixture/key.pem" -out "$fixture/cert.pem"
+          fingerprint="$(openssl x509 -in "$fixture/cert.pem" -pubkey -noout |
+            openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl base64 -A)"
+          # Trust only the generated fixture key in the test image.
+          docker build -t rakazo/protected-browser:smoke - <<DOCKERFILE
+          FROM rakazo/protected-browser:base
+          USER root
+          RUN sed -i 's@--disable-quic@--ignore-certificate-errors-spki-list=$fingerprint", "--disable-quic@' egress.mjs
+          USER pwuser
+          DOCKERFILE
+
+          # Route the fixture address to an isolated namespace. This address never leaves the runner.
+          sudo ip netns add browser-fixture
+          trap 'sudo ip netns pids browser-fixture | xargs -r sudo kill; sudo ip netns del browser-fixture' EXIT
+          sudo ip link add browser-fixture type veth peer name fixture-peer
+          sudo ip link set fixture-peer netns browser-fixture
+          sudo ip addr add 192.0.2.1/30 dev browser-fixture
+          sudo ip link set browser-fixture up
+          sudo ip -n browser-fixture addr add 192.0.2.2/30 dev fixture-peer
+          sudo ip -n browser-fixture addr add 93.184.216.34/32 dev fixture-peer
+          sudo ip -n browser-fixture link set fixture-peer up
+          sudo ip route add 93.184.216.34/32 via 192.0.2.2
+          printf '%s\n' '93.184.216.34 protected-browser-fixture.example.com' \
+            '127.0.0.1 private-protected-browser-fixture.example.com' | sudo tee -a /etc/hosts
+          sudo ip netns exec browser-fixture "$(command -v node)" \
+            infra/sandboxes/protected-browser/launcher-smoke.mjs fixture \
+            "$fixture/key.pem" "$fixture/cert.pem" > "$fixture/ready" &
+          timeout 10s bash -c 'until rg -q "^Fixture ready$" "$1"; do sleep 0.2; done' bash "$fixture/ready"
+          pnpm exec tsx infra/sandboxes/protected-browser/launcher-smoke.mjs /tmp/browser-seccomp.json

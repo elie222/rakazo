@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { startEgressRelay } from "./egress.mjs";
 
 const TIMEOUT = 8_000;
 const MAX_INPUT = 2_000_000;
@@ -132,8 +133,14 @@ async function main() {
     }
     const input = Buffer.concat(chunks).toString("utf8");
     const { chromium } = await import("playwright-core");
-    const output = await runBrowser(chromium, JSON.parse(input));
-    process.stdout.write(JSON.stringify(output));
+    if (process.env.PROTECTED_BROWSER_EGRESS !== "1") throw new Error("Missing egress relay");
+    const relay = await startEgressRelay();
+    try {
+      const output = await runBrowser(chromium, JSON.parse(input), relay.launchOptions);
+      process.stdout.write(JSON.stringify(output));
+    } finally {
+      relay.close();
+    }
   } catch {
     // Driver errors can contain arguments and URLs from a private browser operation.
     process.stdout.write(JSON.stringify({ error: "The protected browser operation failed." }));
