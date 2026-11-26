@@ -48,6 +48,7 @@ import {
   recordComputerRunEnd,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import * as z from "zod";
 import {
   acquireBootLease,
   answerComputerRequest,
@@ -95,6 +96,21 @@ function callerWorkspacePath(resolve: () => string): string {
 }
 
 /** The server's file limit, lowered to what the computer's own transport can carry. */
+/** Where a control was when the viewer picked it, before the server re-resolved it. */
+const pickedControlSchema = z.object({
+  point: z.object({ x: z.number(), y: z.number() }),
+  bbox: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).optional(),
+  windowFrame: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).optional(),
+  source: z.enum(["coords", "ax", "cdp"]),
+  app: z.string().optional(),
+  window: z.string().optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  url: z.string().optional(),
+  secret: z.boolean().optional(),
+  editable: z.boolean().optional(),
+});
+
 function transferMaxBytes(deps: RouterContext["deps"], kind: string) {
   return Math.min(
     attachmentMaxBytes(deps.env),
@@ -449,10 +465,11 @@ export function computerRoutes(ctx: RouterContext) {
           (input.payload.type as "move" | "down" | "up" | "click" | undefined) ?? "click";
         let pointerX = Number(input.payload.x ?? 0);
         let pointerY = Number(input.payload.y ?? 0);
+        const picked = pickedControlSchema.safeParse(input.payload.target);
         if (
           input.kind === "pointer" &&
           pointerType === "click" &&
-          input.target &&
+          picked.success &&
           deps.sandbox.findElements
         ) {
           const screen = computerContext(context.actor, bot.id, "input");
@@ -464,7 +481,7 @@ export function computerRoutes(ctx: RouterContext) {
                 x: pointerX,
                 y: pointerY,
                 type: "click",
-                target: input.target,
+                target: picked.data,
               },
             ],
             undefined,

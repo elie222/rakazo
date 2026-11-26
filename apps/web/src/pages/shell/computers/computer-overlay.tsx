@@ -111,9 +111,9 @@ export function ComputerOverlay({
       rpc.computer.input({
         botId: bot.id,
         kind: "pointer",
-        payload: { x: element.point.x, y: element.point.y, type: "click" },
-        // The server re-resolves it, so a screen that changed under the viewer is not clicked.
-        target: element,
+        // The server re-resolves the control, so a screen that changed under the viewer is
+        // not clicked at its old point.
+        payload: { x: element.point.x, y: element.point.y, type: "click", target: element },
       }),
     onSaved: () => {
       setFindOpen(false);

@@ -153,10 +153,6 @@ export const ComputerElementSchema = z.object({
 });
 export type ComputerElement = z.infer<typeof ComputerElementSchema>;
 
-/** Where a control was when the viewer picked it, for the server to re-resolve before clicking. */
-export const ComputerTargetSchema = ComputerElementSchema.omit({ ref: true, state: true });
-export type ComputerTarget = z.infer<typeof ComputerTargetSchema>;
-
 export const ComputerFindResultSchema = z.object({
   elements: z.array(ComputerElementSchema).max(300),
   url: z.string().optional(),
