@@ -11,28 +11,6 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { RouterContext } from "./context.js";
 
-const loginSelect = {
-  id: true,
-  name: true,
-  origin: true,
-  sessionCipher: true,
-  grants: {
-    where: { bot: { archivedAt: null } },
-    select: { botId: true },
-    orderBy: { botId: "asc" },
-  },
-} satisfies Prisma.OrganizationLoginSelect;
-
-function loginDto({
-  grants,
-  sessionCipher,
-  ...login
-}: Prisma.OrganizationLoginGetPayload<{
-  select: typeof loginSelect;
-}>) {
-  return { ...login, hasSession: sessionCipher !== null, botIds: grants.map(({ botId }) => botId) };
-}
-
 class InvalidOrganizationLoginAgentsError extends ClientError {
   constructor() {
     super("BAD_REQUEST", "Choose active agents in this organization");
@@ -86,13 +64,28 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
       }),
     );
   }
-  async function listLogins(tx: Prisma.TransactionClient, organizationId: string) {
-    const rows = await tx.organizationLogin.findMany({
-      where: { organizationId },
-      select: loginSelect,
-      orderBy: [{ name: "asc" }, { id: "asc" }],
-    });
-    return rows.map(loginDto);
+  function listLogins(tx: Prisma.TransactionClient, organizationId: string, loginId?: string) {
+    return tx.$queryRaw<
+      { id: string; name: string; origin: string; hasSession: boolean; botIds: string[] }[]
+    >`
+      SELECT login.id, login.name, login.origin, login."sessionCipher" IS NOT NULL AS "hasSession",
+        ARRAY(
+          SELECT grant_row."botId" FROM organization_login_grants AS grant_row
+          JOIN bots AS bot ON bot.id = grant_row."botId"
+          WHERE grant_row."loginId" = login.id AND bot."archivedAt" IS NULL
+          ORDER BY grant_row."botId"
+        ) AS "botIds"
+      FROM organization_logins AS login
+      WHERE login."organizationId" = ${organizationId}
+        ${loginId === undefined ? Prisma.empty : Prisma.sql`AND login.id = ${loginId}`}
+      ORDER BY login.name, login.id
+    `;
+  }
+
+  async function readLogin(tx: Prisma.TransactionClient, organizationId: string, loginId: string) {
+    const [login] = await listLogins(tx, organizationId, loginId);
+    if (!login) throw new OrganizationLoginNotFoundError();
+    return login;
   }
 
   async function notify(organizationId: string) {
@@ -220,12 +213,7 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
         });
         if (!count)
           throw new ClientError("CONFLICT", "The session changed while you were signing in");
-        return loginDto(
-          await tx.organizationLogin.findUniqueOrThrow({
-            where: { id: login.id },
-            select: loginSelect,
-          }),
-        );
+        return readLogin(tx, organizationId, login.id);
       });
     }),
     revokeSession: vault.revokeSession.handler(({ context, input }) =>
@@ -235,12 +223,7 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
           data: { sessionCipher: null, sessionVersion: { increment: 1 } },
         });
         if (!count) throw new OrganizationLoginNotFoundError();
-        return loginDto(
-          await tx.organizationLogin.findUniqueOrThrow({
-            where: { id: input.loginId },
-            select: loginSelect,
-          }),
-        );
+        return readLogin(tx, organizationId, input.loginId);
       }),
     ),
     list: vault.list.handler(({ context }) => adminOperation(context.actor, listLogins, false)),
@@ -254,9 +237,9 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
             origin: input.origin,
             grants: { create: botIds.map((botId) => ({ botId })) },
           },
-          select: loginSelect,
+          select: { id: true },
         });
-        return loginDto(row);
+        return readLogin(tx, organizationId, row.id);
       }),
     ),
     setAgents: vault.setAgents.handler(({ context, input }) =>
@@ -283,12 +266,7 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
           data: botIds.map((botId) => ({ loginId: login.id, botId })),
           skipDuplicates: true,
         });
-        return loginDto(
-          await tx.organizationLogin.findUniqueOrThrow({
-            where: { id: login.id },
-            select: loginSelect,
-          }),
-        );
+        return readLogin(tx, organizationId, login.id);
       }),
     ),
     remove: vault.remove.handler(({ context, input }) =>
