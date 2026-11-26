@@ -161,6 +161,8 @@ export interface ReplyState {
   assistantTurnBreakPending: boolean;
   /** Replaced whenever a secret is added, so streamed progress hides it too. */
   redactor: ReturnType<typeof createStreamingRedactor>;
+  /** The runtime's record of the turn as sent, stored with the final reply. */
+  transcript?: string;
 }
 
 export interface ApprovalState {
@@ -203,6 +205,8 @@ export interface RunState {
   effects: EffectState;
   screen: ScreenState;
   toolCallStreak: LoopGuardStreak;
+  /** Set before the attempt enters a tool, including calls not yet streamed to the chat. */
+  toolStarted?: true;
   /** Result fingerprints of finished calls, read when the next call is tracked. */
   toolResults: Map<string, string>;
   /** Calls refused before their tool ran, by execution id, for the log of a loop one causes. */
@@ -490,6 +494,23 @@ export const OWN_INSTRUCTIONS_CHANGED_ERROR =
 /** An older checkpoint predates the baseline; a resumed attempt must not guess. */
 export const OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR =
   "This resumed run cannot safely change its own instructions. Ask the user to send their request again so a new run starts from the current instructions.";
+
+/** Give the new task its own occurrences while keeping retries anchored to the intro. */
+export function seedIntroEffectOccurrences(
+  effects: Pick<RunContext["state"]["effects"], "counts" | "consumedIds">,
+  runId: string,
+  receipts: readonly { id: string; kind: string; idempotencyKey: string }[],
+): void {
+  for (const { id, kind, idempotencyKey } of receipts) {
+    effects.consumedIds.add(id);
+    if (!isToolEffectIdempotencyKey(idempotencyKey, runId, kind)) continue;
+    const prefix = `${runId}:${kind}:`;
+    const [digest, suffix] = idempotencyKey.slice(prefix.length).split(":");
+    const fingerprint = prefix + digest;
+    const occurrence = Number(suffix ?? 0);
+    effects.counts.set(fingerprint, Math.max(effects.counts.get(fingerprint) ?? 0, occurrence + 1));
+  }
+}
 
 export function nextMutatingEffectOccurrence(
   ctx: RunContext,

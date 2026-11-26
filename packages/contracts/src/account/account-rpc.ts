@@ -12,9 +12,9 @@ import { AnalyticsModelSignInStepInput, AnalyticsScreenInput } from "./analytics
 import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import { AppBootstrapSchema, MeSchema, SignupSurveySchema } from "./me.js";
 import {
+  AccountChatPreferencesPatchSchema,
   AppLocaleSchema,
   AvatarStyleSchema,
-  ChatPreferencesPatchSchema,
   TimeZoneSchema,
 } from "./preferences.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
@@ -60,7 +60,7 @@ export const accountRpc = {
             avatarStyle: AvatarStyleSchema.optional(),
             /** Restyles every bot not pinned to another set, and is what new bots get. */
             botAvatarSet: BotAvatarSetSchema.optional(),
-            chatPreferences: ChatPreferencesPatchSchema.refine(
+            chatPreferences: AccountChatPreferencesPatchSchema.refine(
               (patch) => Object.values(patch).some((value) => value !== undefined),
               { message: "Nothing to update" },
             ).optional(),

@@ -75,4 +75,6 @@ production dependencies, so This computer can run them without Docker. The app
 does not include it; it ships only `server-bundle.json` in its resources, with
 the asset's `url`, `sha256`, `size` and `version`, and downloads the bundle when
 someone picks This computer. Builds without that file, such as local packaging,
-have no bundle to download.
+have no bundle to download. The release also publishes that `server-bundle.json`
+as an asset, so the previous version can fetch the next bundle as soon as it has
+downloaded the update.

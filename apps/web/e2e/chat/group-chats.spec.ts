@@ -180,17 +180,18 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const transcript = page.getByTestId("transcript");
   await expect(transcript.getByText("Researcher", { exact: true }).first()).toBeVisible();
   await expect(transcript.getByText("Research Writer", { exact: true }).first()).toBeVisible();
-  const researcherSpeak = transcript
-    .locator("div")
+  const researcherMessage = transcript
+    .locator("[data-message-id]")
     .filter({ has: page.getByText("Researcher", { exact: true }) })
-    .filter({ has: page.getByRole("button", { name: "Speak this reply" }) })
-    .first()
-    .getByRole("button", { name: "Speak this reply" });
+    .filter({ has: page.getByTestId("message-bot-bubble") })
+    .first();
+  await researcherMessage.hover();
+  await researcherMessage.getByRole("button", { name: "More" }).click();
   const [speechRequest] = await Promise.all([
     page.waitForRequest(
       (request) => request.url().includes("/api/voice/speak") && request.method() === "POST",
     ),
-    researcherSpeak.click(),
+    page.getByRole("menuitem", { name: "Read aloud" }).click(),
   ]);
   expect(speechRequest.postDataJSON()).toMatchObject({ botId: researcherId });
   await captureScreenshot(page, testInfo, "group-transcript");

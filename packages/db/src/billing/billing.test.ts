@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../database/client.js";
-import { hasModelAccess, memberHasModelAccess, ownerHadTrial } from "./billing.js";
+import {
+  activeFreeByokTier,
+  hasModelAccess,
+  memberHasModelAccess,
+  ownerHadTrial,
+} from "./billing.js";
 
 describe("model access", () => {
   const now = new Date("2030-01-15T12:00:00.000Z");
@@ -21,6 +26,26 @@ describe("model access", () => {
     { mode: "credits", balanceMicros: 0n, byokFreeUntil: null, status: "canceled", access: false },
   ])("$mode with balance $balanceMicros and $status: $access", ({ status, access, ...credits }) => {
     expect(hasModelAccess(credits, status, now)).toBe(access);
+  });
+});
+
+describe("named own-key grants", () => {
+  const now = new Date("2030-01-15T12:00:00.000Z");
+  const maxExpiry = new Date("2030-02-14T12:00:00.000Z");
+  const proExpiry = new Date("2030-03-14T12:00:00.000Z");
+  const freeByokTiers = [
+    { tier: "pro", expiresAt: proExpiry },
+    { tier: "max", expiresAt: maxExpiry },
+  ];
+
+  it("uses the highest tier until its own expiry", () => {
+    const account = { mode: "byok", freeByokTiers };
+    expect(activeFreeByokTier(account, null, now)?.tier).toBe("max");
+    expect(activeFreeByokTier(account, null, maxExpiry)?.tier).toBe("pro");
+  });
+
+  it("waits for own-key funding before applying the tier", () => {
+    expect(activeFreeByokTier({ mode: "credits", freeByokTiers }, null, now)).toBeNull();
   });
 });
 

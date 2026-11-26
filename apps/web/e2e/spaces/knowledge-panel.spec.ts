@@ -19,22 +19,39 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await completeOnboarding(page);
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
-  // A second shared document that the user can delete later in this test. Saving shared
-  // memory from chat writes directly, without an approval card.
-  const retiredPath = "projects/retired.md";
-  const retiredContent = `Retired project ${stamp}`;
+  // A run moves the ended entry into ARCHIVE.md, a second shared document the user can
+  // delete later in this test. Saving shared memory from chat writes directly, without an
+  // approval card.
+  const retiredPath = "ARCHIVE.md";
+  const retiredContent = `Retired project ${stamp} (saved 2020-01-01, ends 2020-01-02)`;
+  const sharedIndex = (await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" })).find(
+    (doc) => doc.path === "MEMORY.md",
+  )!;
+  await rpc(page, "memory/update", {
+    documentId: sharedIndex.id,
+    content: `# Memory\n\n${retiredContent}\n`,
+  });
+  const savedFact = `Printing jobs go to Clyde ${stamp}`;
   const setupComposer = page.getByRole("combobox", { name: "Message Chief" });
-  await setupComposer.fill(`save shared memory ${retiredPath} with: ${retiredContent}`);
+  await setupComposer.fill(`save shared memory with: ${savedFact}`);
   await setupComposer.press("Enter");
   await expect
     .poll(
-      async () =>
-        (await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" })).find(
-          (doc) => doc.path === retiredPath,
-        )?.content,
+      async () => {
+        const docs = await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" });
+        return docs.map((doc) => [doc.path, doc.content.includes(savedFact)]).sort();
+      },
       { timeout: 30_000 },
     )
-    .toBe(retiredContent);
+    .toEqual([
+      ["ARCHIVE.md", false],
+      ["MEMORY.md", true],
+    ]);
+  expect(
+    (await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" })).find(
+      (doc) => doc.path === retiredPath,
+    )?.content,
+  ).toBe(`${retiredContent}\n`);
   await expect(page.getByRole("button", { name: "Allow once", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Deny", exact: true })).toHaveCount(0);
 
@@ -76,7 +93,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await captureScreenshot(page, testInfo, "84-space-memory-saved");
   const sharedDocuments = await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" });
   expect(sharedDocuments).toContainEqual(
-    expect.objectContaining({ content: `# Memory\n\n${marker}\n`, revision: 2 }),
+    expect.objectContaining({ content: `# Memory\n\n${marker}\n`, revision: 5 }),
   );
   // Export must fetch fresh content and exclude the bot's private document.
   const sharedDocument = sharedDocuments.find((doc) => doc.path === "MEMORY.md")!;
@@ -91,7 +108,7 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   await expect(docEditor).toHaveValue("Unsaved draft");
   await expect(spaceDocs.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   expect(await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" })).toContainEqual(
-    expect.objectContaining({ id: sharedDocument.id, content: latestMarker, revision: 3 }),
+    expect.objectContaining({ id: sharedDocument.id, content: latestMarker, revision: 6 }),
   );
   await captureScreenshot(page, testInfo, "84-space-memory-conflict");
   const downloadPromise = page.waitForEvent("download");

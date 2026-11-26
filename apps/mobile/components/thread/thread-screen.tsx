@@ -452,8 +452,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     activeBotId,
   });
 
-  const { runError, normalizedRunError, runErrorAction, detailsOpen, setDetailsOpen } =
-    useThreadRunError(snap?.run, botId);
+  const { runError, normalizedRunError, runErrorAction, retry, detailsOpen, setDetailsOpen } =
+    useThreadRunError(snap?.run, { botId, groupId, userId, isCurrentTarget });
 
   // Event actions read the latest committed screen state without invalidating settled rows.
   const rowActions = useLatestRowActions({
@@ -475,10 +475,22 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     // A chat attachment opens the version it was sent with, not the newest.
     previewFile: (artifactId) =>
       router.push({ pathname: "/artifact", params: { artifactId, exact: "1" } }),
-    previewImage: (target) =>
+    previewImage: (target, gallery) =>
       router.push({
         pathname: "/image",
-        params: { ...target, ...(groupId ? { groupId } : { botId }) },
+        params: {
+          artifactId: target.artifactId,
+          name: target.name,
+          mimeType: target.mimeType,
+          ...(groupId ? { groupId } : { botId }),
+          ...(gallery
+            ? {
+                gallery: JSON.stringify(
+                  gallery.map(({ artifactId: id, name, mimeType }) => ({ id, name, mimeType })),
+                ),
+              }
+            : {}),
+        },
       }),
     jump: (messageId) => {
       void applyMessageJump({
@@ -588,6 +600,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       resetAt={visibleRunError?.resetAt}
       onDetails={() => setDetailsOpen(true)}
       action={visibleRunError ? runErrorAction : null}
+      retry={visibleRunError && !readOnly ? retry : null}
     />
   );
 

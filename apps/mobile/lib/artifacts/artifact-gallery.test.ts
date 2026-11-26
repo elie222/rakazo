@@ -4,6 +4,7 @@ import {
   isMediaArtifact,
   mediaArtifactGallery,
   parseArtifactGallery,
+  parseImageArtifactGallery,
 } from "./artifact-gallery";
 
 const list = [
@@ -64,6 +65,26 @@ describe("parseArtifactGallery", () => {
     expect(parseArtifactGallery("")).toEqual([]);
     expect(parseArtifactGallery("not json")).toEqual([]);
     expect(parseArtifactGallery(JSON.stringify({ id: "image-a" }))).toEqual([]);
+  });
+});
+
+describe("parseImageArtifactGallery", () => {
+  it("keeps inline chat pictures in message order", () => {
+    const encoded = JSON.stringify([
+      ...list,
+      { id: "svg", name: "diagram.svg", mimeType: "image/svg+xml" },
+      { id: "malformed", mimeType: "image/png" },
+      { id: "image-c", name: "scan.heic", mimeType: "image/heic" },
+    ]);
+    expect(parseImageArtifactGallery(encoded)).toEqual([
+      { artifactId: "image-a", name: "chart.png", mimeType: "image/png" },
+      { artifactId: "image-b", name: "photo.jpg", mimeType: "image/jpeg" },
+      { artifactId: "image-c", name: "scan.heic", mimeType: "image/heic" },
+    ]);
+  });
+
+  it("opens a single picture without a gallery", () => {
+    expect(parseImageArtifactGallery(JSON.stringify(list.slice(0, 1)))).toBeUndefined();
   });
 });
 

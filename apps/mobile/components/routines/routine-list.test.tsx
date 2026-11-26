@@ -155,6 +155,7 @@ const routine = (id: string, name: string, partial: Partial<Routine> = {}): Rout
   watchState: null,
   lastRunAt: null,
   nextRunAt: null,
+  endsAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   ...partial,
 });

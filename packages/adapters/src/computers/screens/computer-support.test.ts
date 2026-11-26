@@ -7,6 +7,7 @@ import {
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
   workspaceCwd,
+  workspacePath,
 } from "./computer-support.js";
 import { teamWorkspaceInstruction } from "./computer-support.prompt.js";
 
@@ -40,6 +41,16 @@ describe("workspaceCwd", () => {
         "Path escapes the computer workspace",
       );
     }
+  });
+});
+
+describe("workspacePath", () => {
+  it("keeps only the tail of a path already under the workspace root", () => {
+    const root = "/home/user/rakazo-home";
+    expect(workspacePath(root, `${root}/shared/x.md`)).toBe(`${root}/shared/x.md`);
+    expect(
+      workspacePath(root, resolveBotWorkspacePath("team", "bot-1", `${root}/shared/x.md`)),
+    ).toBe(`${root}/shared/x.md`);
   });
 });
 

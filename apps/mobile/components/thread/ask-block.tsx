@@ -59,7 +59,6 @@ export function AskBlock({
   const secretInput = isSecretAskBlock(ask);
   const loginInput = secretInput && ask.credential?.auth.type === "login";
   const itemType = secretInput ? ask.credential?.auth.type : undefined;
-  // A login, card or contact is filled in a sheet.
   const sheetInput = itemType === "login" || itemType === "card" || itemType === "contact";
   // A login, credential or code is for the run's user, so only they can fill one in; others see
   // the card without fields or buttons.

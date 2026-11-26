@@ -6,7 +6,7 @@ import {
   storedImageMimeType,
 } from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
-import { detectImageMimeType } from "../../media/image-mime-type.js";
+import { MODEL_IMAGE_MAX_RAW_BYTES, prepareImageForModel } from "../../media/tool-result-image.js";
 import { listCurrentTurnFiles } from "../../storage/thread-artifacts.js";
 import { currentTurnFilesInstruction } from "../../storage/thread-artifacts.prompt.js";
 import { loadReplyContext } from "../assembly/reply-context.js";
@@ -78,10 +78,12 @@ export async function loadCurrentTurnImages(
     if (!row || !isAttachmentImageMimeType(block.mimeType)) continue;
     try {
       const bytes = await deps.artifacts.get(row.storageKey, context);
+      const prepared = await prepareImageForModel(bytes, block.mimeType);
+      if (!prepared) continue;
       images.push({
         name: block.name,
-        mimeType: detectImageMimeType(bytes) ?? block.mimeType,
-        data: bytes,
+        mimeType: prepared.mimeType,
+        data: prepared.data,
       });
     } catch (error) {
       if (context.signal.aborted) throw error;
@@ -168,7 +170,11 @@ async function loadTurnImagesWithinBudget(
       break;
     }
     const declared = declaredArtifactBytes(row.size);
-    if (declared !== undefined && declared > roomBytes) {
+    if (
+      declared !== undefined &&
+      declared > roomBytes &&
+      (declared <= MODEL_IMAGE_MAX_RAW_BYTES || declared > ATTACHMENT_MAX_BYTES)
+    ) {
       skippedForBudget = true;
       continue;
     }
@@ -180,16 +186,21 @@ async function loadTurnImagesWithinBudget(
       unavailable.add(index);
       continue;
     }
-    if (bytes.byteLength > roomBytes) {
+    const prepared = await prepareImageForModel(bytes, block.mimeType);
+    if (!prepared) {
+      unavailable.add(index);
+      continue;
+    }
+    if (prepared.data.byteLength > roomBytes) {
       skippedForBudget = true;
       continue;
     }
     newestFirst.push({
       name: block.name,
-      mimeType: detectImageMimeType(bytes) ?? block.mimeType,
-      data: bytes,
+      mimeType: prepared.mimeType,
+      data: prepared.data,
     });
-    usedBytes += bytes.byteLength;
+    usedBytes += prepared.data.byteLength;
     usedCount += 1;
   }
 
@@ -445,7 +456,12 @@ export async function withLatestStepScreenshot(
     const mimeType = row && storedImageMimeType(row.mimeType);
     if (!row || !mimeType) return history;
     const declared = declaredArtifactBytes(row.size);
-    if (declared !== undefined && declared > maxBytes) return history;
+    if (
+      declared !== undefined &&
+      declared > maxBytes &&
+      (declared <= MODEL_IMAGE_MAX_RAW_BYTES || declared > ATTACHMENT_MAX_BYTES)
+    )
+      return history;
     let data: Uint8Array;
     try {
       data = await deps.artifacts.get(row.storageKey, context);
@@ -453,8 +469,9 @@ export async function withLatestStepScreenshot(
       if (context.signal.aborted) throw error;
       return history;
     }
-    if (data.byteLength > maxBytes) return history;
-    const image = { name: "screenshot", mimeType, data };
+    const prepared = await prepareImageForModel(data, mimeType);
+    if (!prepared || prepared.data.byteLength > maxBytes) return history;
+    const image = { name: "screenshot", mimeType: prepared.mimeType, data: prepared.data };
     return history.map((item, at) => (at === index ? { ...item, images: [image] } : item));
   }
   return history;

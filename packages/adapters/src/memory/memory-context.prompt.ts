@@ -24,7 +24,7 @@ const NEARLY_FULL_FREE_BYTES = 512;
 function memoryUsage(used: number) {
   const usage = `, ${used} of ${BOT_MEMORY_MAX_BYTES} bytes`;
   return BOT_MEMORY_MAX_BYTES - used < NEARLY_FULL_FREE_BYTES
-    ? `${usage}, nearly full: any add must remove or shorten entries in the same remember call`
+    ? `${usage}, nearly full: make room in the same remember call by removing what ended or is outdated, merging duplicates and rewriting dated histories as how things now stand, never by abbreviating`
     : usage;
 }
 
@@ -63,9 +63,7 @@ export function buildAgentMemoryPrompt(
       continue;
     }
     const usage =
-      document.scope === "bot" && document.path === MEMORY_INDEX_PATH
-        ? memoryUsage(byteLength(document.content))
-        : "";
+      document.path === MEMORY_INDEX_PATH ? memoryUsage(byteLength(document.content)) : "";
     const heading = `${sections.length === 0 ? "" : "\n\n"}## ${SCOPE_LABELS[document.scope]}: ${escapePromptData(document.path)} (revision ${document.revision}${usage})\n`;
     const headingBytes = byteLength(heading);
     if (headingBytes > remainingBytes) {

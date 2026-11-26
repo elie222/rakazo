@@ -11,3 +11,8 @@ appId: com.rakazo.app
 - extendedWaitUntil:
     visible: "Sign up for Rakazo|Sign in to Rakazo|Account|Settings|.*How did you hear about us.*"
     timeout: 300000
+# A fresh simulator asks before opening the app's first link; answer it once for every flow.
+- openLink: "rakazo:///"
+- tapOn:
+    text: "Open"
+    optional: true

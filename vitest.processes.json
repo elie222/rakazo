@@ -9,6 +9,7 @@
   "packages/adapters/src/mcp/mcp-package-installer.test.ts",
   "packages/adapters/src/providers/computer/createos/createos-sandbox.test.ts",
   "packages/adapters/src/providers/computer/local-vm/apple-container-sandbox.test.ts",
+  "packages/adapters/src/runtime/acp/acp-runtime.test.ts",
   "packages/adapters/src/storage/workspace-save-policy.test.ts",
   "packages/core/src/node/desktop-runtime.test.ts",
   "packages/logging/src/redaction.test.ts",

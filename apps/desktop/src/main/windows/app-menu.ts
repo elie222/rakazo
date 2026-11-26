@@ -69,6 +69,12 @@ async function runMenuUpdateCheck() {
 export async function installUpdate() {
   if (desktop.desktopUpdater.state().phase !== "ready") return desktop.desktopUpdater.state();
   desktop.quitting = true;
+  // Another install already replaced the app on disk: open that one instead of this download.
+  if (desktop.desktopUpdater.installedElsewhere()) {
+    app.relaunch();
+    app.quit();
+    return desktop.desktopUpdater.state();
+  }
   const state = await desktop.desktopUpdater.install();
   // A failed install stays ready for retry but reports a message. Restore normal
   // window behavior while the user keeps working after that failure.

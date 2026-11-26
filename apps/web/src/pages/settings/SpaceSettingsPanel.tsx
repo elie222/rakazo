@@ -51,7 +51,6 @@ export function SpaceSettingsPanel({
   function save() {
     const trimmed = draft.trim();
     if (pending) return;
-    // An empty or unchanged name keeps the current one without a request.
     if (!trimmed || trimmed === space.name) {
       setDraft(space.name);
       rename.reset();

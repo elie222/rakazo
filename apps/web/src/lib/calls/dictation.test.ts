@@ -564,13 +564,15 @@ describe("Dictation recorder fallback", () => {
   });
 
   it.each([
-    ["recorder fallback", "", 240],
+    ["recorder fallback", "", 240, false],
+    ["desktop with automatic language", "Chrome", 240, true],
     [
       "phone with Web Speech available",
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
       undefined,
+      false,
     ],
-  ])("stops an endpoint recording after silence on %s", async (_browser, userAgent, endpointMs) => {
+  ] as const)("ends recording after silence: %s", async (_name, userAgent, endpointMs, auto) => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const level = { current: 0.6 };
     class FakeAnalyser {
@@ -609,7 +611,10 @@ describe("Dictation recorder fallback", () => {
       },
       language: "en-US",
     });
-    const fetchMock = vi.fn(async () => Response.json({ text: "hello" }));
+    const spoken = auto ? "Olá! How are you?" : "hello";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ text: spoken }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const onFinal = vi.fn();
@@ -633,7 +638,8 @@ describe("Dictation recorder fallback", () => {
     const dictation = new Dictation();
     await dictation.listen({
       mode: "endpoint",
-      transcribe: true,
+      transcribe: auto ? undefined : true,
+      autoLanguage: auto,
       endpointMs,
       onFinal,
     });
@@ -646,13 +652,16 @@ describe("Dictation recorder fallback", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(onFinal).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(80);
-    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledExactlyOnceWith("hello"));
+    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledExactlyOnceWith(spoken));
     expect(stopped).toHaveBeenCalledOnce();
     expect(track.stop).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
       "/api/voice/transcribe",
       expect.objectContaining({ method: "POST" }),
     );
+    if (auto) {
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty("language");
+    }
     await vi.advanceTimersByTimeAsync(1_200);
     expect(onFinal).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledOnce();

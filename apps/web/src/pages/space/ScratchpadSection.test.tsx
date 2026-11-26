@@ -109,7 +109,6 @@ it("keeps parked work behind Show more, without status chrome, and removes a wra
     expect(container.textContent).toContain("Compare both themes");
     expect(container.textContent).not.toContain("parked");
     expect(container.querySelector('[aria-label="Park"]')).toBeNull();
-    // Parking can happen without the person, so a parked item offers the way back.
     expect(container.querySelector('[aria-label="Reopen"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Complete"]')).not.toBeNull();
     const remove = container.querySelector<HTMLButtonElement>('[aria-label="Remove"]')!;

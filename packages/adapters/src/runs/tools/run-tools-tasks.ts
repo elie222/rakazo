@@ -3,7 +3,7 @@ import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../../approvals/approval-ask.js";
 import {
   desktopGuardApplies,
-  desktopProtectionGuardMessage,
+  desktopGuardRefusalMessage,
   protectedComputerLifecycleRefusal,
 } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { findRoutinesTarget } from "../../routines/routine-target.js";
@@ -50,9 +50,7 @@ import type { ToolHandlers } from "./run-tool-gate.js";
 function commandWatchGuardError(ctx: RunContext, watch: unknown): string | undefined {
   const command = commandWatchFromTool(watch);
   const refusal = command === undefined ? undefined : protectedComputerLifecycleRefusal(command);
-  return desktopGuardApplies(ctx.computer) && refusal
-    ? desktopProtectionGuardMessage(refusal, command ?? "")
-    : undefined;
+  return desktopGuardApplies(ctx.computer) && refusal ? desktopGuardRefusalMessage() : undefined;
 }
 
 /**
@@ -354,6 +352,7 @@ function scheduleUpdateInput(args: Record<string, unknown>) {
     schedule: compactScheduleInput(scheduleTimingArgs(args)),
     everyMinutes: isScheduleValueProvided(args.everyMinutes) ? args.everyMinutes : undefined,
     on: isScheduleValueProvided(args.on) ? args.on : undefined,
+    endAt: isScheduleValueProvided(args.endAt) ? String(args.endAt) : undefined,
     // The pinned before-values an approval was shown against, for the fields it writes.
     ...(expectedName !== undefined || expectedPrompt !== undefined
       ? {
@@ -392,7 +391,7 @@ async function onScheduleUpdateCall<T>(
 }
 
 /** Arguments the comparison cannot represent faithfully keep the generic approval card. */
-const PLAIN_CARD_FIELDS = ["delayMinutes", "delaySeconds", "on", "everyMinutes"];
+const PLAIN_CARD_FIELDS = ["delayMinutes", "delaySeconds", "on", "everyMinutes", "endAt"];
 
 /** The stored name and prompt an approval of a routine edit pins, each for a field the call writes. */
 type RoutineBaseline = { name?: string; prompt?: string };

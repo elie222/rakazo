@@ -20,14 +20,17 @@ import {
   pluginCategories,
 } from "@rakazo/core";
 import { pluginCategoryLabel } from "@rakazo/i18n/plugin-catalog";
-import type { NativeStackNavigationOptions } from "expo-router";
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
 import { AddCustomForm, AddCustomMenu } from "../../components/integrations/add-custom-integration";
-import { ConnectedApps, SavedServerRow } from "../../components/integrations/connected-apps";
+import {
+  ConnectedApps,
+  ConnectionStatus,
+  SavedServerRow,
+} from "../../components/integrations/connected-apps";
 import { ConnectorIcon } from "../../components/integrations/connector-icon";
 import { IntegrationCatalogSearch } from "../../components/integrations/integration-catalog-search";
 import { IntegrationDetail } from "../../components/integrations/integration-detail";
@@ -39,7 +42,7 @@ import {
 import { useConnectionActions } from "../../components/integrations/use-connection-actions";
 import { useCustomSourceForm } from "../../components/integrations/use-custom-source-form";
 import { NativeActionButton } from "../../components/native/native-action-button";
-import { MenuPicker } from "../../components/ui/menu-picker";
+import { NativeMenuPicker } from "../../components/native/native-menu-picker";
 import { Chevron } from "../../components/ui/row-accessories";
 import { selectedSpaceId } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
@@ -52,8 +55,8 @@ import {
   pluginParams,
 } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
-import { native, useThemedStyles } from "../../lib/native/native";
-import { iosAtLeast } from "../../lib/native/native-controls";
+import { useThemedStyles } from "../../lib/native/native";
+import { useHeaderSearch, useScreenHeader } from "../../lib/navigation/screen-header";
 import { openExternalUrl } from "../../lib/platform/open-url";
 import { queryClient, rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
@@ -63,7 +66,6 @@ export default function Integrations() {
   const router = useRouter();
   // A merged brand's plugin page sends people back here to manage the app's accounts.
   const { app: appToOpen } = useLocalSearchParams<{ app?: string }>();
-  const navigation = useNavigation();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
   const { width } = useWindowDimensions();
@@ -87,7 +89,6 @@ export default function Integrations() {
     setLabelDrafts({});
   }
   const detailKey = openApp?.spaceId === spaceId ? openApp : null;
-  const [toolsOpen, setToolsOpen] = useState(true);
 
   const catalogRead = rpcQuery("connections/catalog");
   const listRead = rpcQuery("connections/list");
@@ -153,7 +154,7 @@ export default function Integrations() {
         ? "partial"
         : "ready";
   const tools = toolsQuery.data ?? [];
-  const toolsLoading = Boolean(detailKey) && toolsQuery.isLoading;
+  const toolsFailed = Boolean(detailKey) && toolsQuery.isError;
 
   function refresh() {
     for (const screenQuery of screenQueries) void screenQuery.refetch({ cancelRefetch: false });
@@ -188,7 +189,6 @@ export default function Integrations() {
     adding,
     startAdding,
     startCatalogMcp,
-    removeSource,
     pending: sourcePending,
     formProps,
   } = useCustomSourceForm({
@@ -251,7 +251,15 @@ export default function Integrations() {
         );
   const showFeatured = !query.trim();
   const catalogApps = useMemo(() => filterConnectionCatalogItems(catalog, query), [catalog, query]);
-  const renderedApps = catalogApps.slice(0, visibleCount);
+  const filtering = Boolean(query.trim() || category);
+  // Outside a search, connected apps sit with the rest of what the account has.
+  const browseApps = filtering
+    ? catalogApps
+    : catalogApps.filter((item) => !isCatalogItemConnected(connections, item));
+  const renderedApps = browseApps.slice(0, visibleCount);
+  const connectedCatalog = filtering
+    ? []
+    : catalog.filter((item) => isCatalogItemConnected(connections, item));
   const { plugins, pluginForApp } = useMemo(
     () => browsablePlugins(pluginEntries, catalog),
     [pluginEntries, catalog],
@@ -265,7 +273,6 @@ export default function Integrations() {
     pluginCategoryLabel,
   );
   const pluginMatches = filterPlugins(plugins, query, category || null, pluginCategoryLabel);
-  const filtering = Boolean(query.trim() || category);
   const installedSources = new Set(pluginInstalls.map((install) => install.source));
   const standaloneServers = mcpServers.filter((server) => !server.installId);
   const savedServerMatches =
@@ -310,7 +317,6 @@ export default function Integrations() {
 
   function openDetail(item: ConnectionCatalogItem) {
     resetFailures();
-    setToolsOpen(true);
     setOpenApp({ connectorId: item.connectorId, slug: item.slug, spaceId: selectedSpaceId() });
   }
 
@@ -328,31 +334,21 @@ export default function Integrations() {
     const key = catalogItemKey(item);
     const connected = itemConnected(item);
     const connecting = pending === key;
-    if (connected) {
-      return (
-        <NativeActionButton
-          accessibilityLabel={t`Added`}
-          disabled={connecting}
-          fill={false}
-          label={connecting ? t`Working…` : t`Added`}
-          onPress={() => openDetail(item)}
-          prominence="secondary"
-        />
-      );
-    }
+    if (connected) return <ConnectionStatus state="connected" />;
     return (
       <NativeActionButton
-        accessibilityLabel={t`Add ${ph({ name: label })}`}
+        accessibilityLabel={t`Connect ${ph({ name: label })}`}
         disabled={connecting}
         fill={false}
-        label={connecting ? t`Working…` : t`Add`}
+        label={connecting ? t`Working…` : t`Connect`}
         onPress={() => connect(item)}
         prominence="secondary"
       />
     );
   }
 
-  function renderCatalogTile(item: ConnectionCatalogItem, label: string) {
+  /** A catalog app's row; `inGrid` sizes it as one cell of the catalog's columns. */
+  function renderCatalogTile(item: ConnectionCatalogItem, label: string, inGrid = true) {
     const connected = itemConnected(item);
     const brandPlugin = pluginForApp.get(catalogItemKey(item));
     const body = (
@@ -378,7 +374,7 @@ export default function Integrations() {
         {renderCatalogActions(item, label)}
       </>
     );
-    const tileStyle = [styles.row, catalogColumns === 2 ? styles.catalogCell : null];
+    const tileStyle = [styles.row, inGrid && catalogColumns === 2 ? styles.catalogCell : null];
     if (connected || brandPlugin) {
       return (
         <Pressable
@@ -400,26 +396,30 @@ export default function Integrations() {
     );
   }
 
-  useLayoutEffect(() => {
-    if (!iosAtLeast(26)) return;
-    navigation.setOptions({
-      unstable_headerRightItems: () => [
-        {
-          type: "menu" as const,
-          label: t`Add custom`,
-          accessibilityLabel: t`Add custom`,
-          icon: { type: "sfSymbol" as const, name: "plus" },
-          menu: {
-            items: addOptions.map((option) => ({
-              type: "action" as const,
-              label: option.label,
-              onPress: () => startAdding(option),
-            })),
-          },
-        },
-      ],
-    } satisfies NativeStackNavigationOptions);
-  }, [navigation, presetsQuery.data, installsQuery.data, serversQuery.data, t]);
+  // The bar stays over an open app, keeping its search: a new search returns to the results.
+  // The add form has nothing to search, so the bar leaves while it is open.
+  useHeaderSearch({
+    placeholder: t`Search apps`,
+    shown: !adding,
+    onChange: (value) => {
+      if (value === query) return;
+      closeDetail();
+      setQuery(value);
+      setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
+      setPluginCount(PLUGIN_PAGE_SIZE);
+    },
+  });
+
+  useScreenHeader({
+    action: {
+      kind: "menu",
+      label: t`Add custom`,
+      symbol: "plus",
+      items: addOptions.map(({ id, label }) => ({ id, label })),
+      onSelect: (id) => startAdding(addOptions.find((option) => option.id === id)),
+      Fallback: AddCustomMenu,
+    },
+  });
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
@@ -438,34 +438,17 @@ export default function Integrations() {
           />
         ) : (
           <>
-            {!detailItem ? <AddCustomMenu options={addOptions} onSelect={startAdding} /> : null}
-            {!detailItem ? (
-              <TextInput
-                value={query}
-                onChangeText={(value) => {
-                  setQuery(value);
-                  setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
-                  setPluginCount(PLUGIN_PAGE_SIZE);
-                }}
-                accessibilityLabel={t`Search apps`}
-                placeholder={t`Search apps`}
-                placeholderTextColor={native.tertiaryLabel}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-                style={styles.input}
-              />
-            ) : null}
-
             {!detailItem && (categories.length >= 2 || category) ? (
-              <View style={styles.categoryPicker}>
-                <MenuPicker
+              <View style={styles.categoryRow}>
+                <Text style={[styles.section, styles.grow]}>{t`Category`}</Text>
+                <NativeMenuPicker
                   label={t`Category`}
-                  showLabel={false}
-                  plain
                   choices={[
                     { key: "", label: t`All` },
-                    ...categories.map((name) => ({ key: name, label: pluginCategoryLabel(name) })),
+                    ...categories.map((name) => ({
+                      key: name,
+                      label: pluginCategoryLabel(name),
+                    })),
                   ]}
                   value={category}
                   onChange={(key) => {
@@ -478,6 +461,9 @@ export default function Integrations() {
 
             {!detailItem && !filtering ? (
               <ConnectedApps
+                connectedCatalog={connectedCatalog.map((item) =>
+                  renderCatalogTile(item, item.name, false),
+                )}
                 connectorPlugins={connectorPlugins}
                 mcpServers={mcpServers}
                 standaloneServers={standaloneServers}
@@ -489,7 +475,6 @@ export default function Integrations() {
                 onOpenPlugin={openPlugin}
                 onAuthorize={authorizeMcp}
                 onRetry={retry}
-                onRemoveSource={removeSource}
               />
             ) : null}
             {!detailItem && !filtering ? (
@@ -538,9 +523,8 @@ export default function Integrations() {
                 labelDrafts={labelDrafts}
                 setLabelDrafts={setLabelDrafts}
                 tools={tools}
-                toolsLoading={toolsLoading}
-                toolsOpen={toolsOpen}
-                setToolsOpen={setToolsOpen}
+                toolsLoading={toolsQuery.isLoading}
+                toolsFailed={toolsFailed}
                 onBack={() => closeDetail()}
                 onUninstall={() => uninstall(detailItem)}
                 onRename={renameAccount}
@@ -618,6 +602,7 @@ export default function Integrations() {
                           const key = item ? catalogItemKey(item) : tile.id;
                           const disabled = tile.missing || !item;
                           if (item && !tile.missing) {
+                            if (itemConnected(item)) return null;
                             return renderCatalogTile(item, tile.label);
                           }
                           return (
@@ -666,7 +651,7 @@ export default function Integrations() {
                   />
                 ) : null}
 
-                {!category && renderedApps.length < catalogApps.length ? (
+                {!category && renderedApps.length < browseApps.length ? (
                   <NativeActionButton
                     label={t`Show more`}
                     onPress={() => setVisibleCount((count) => count + CONNECTION_CATALOG_PAGE_SIZE)}

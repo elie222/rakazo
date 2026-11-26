@@ -622,7 +622,6 @@ describe("web external link confirmation", () => {
     await act(async () => {
       buttonNamed(document, "Always open example.test")?.click();
     });
-    // A failed save still opens the link.
     expect(open).toHaveBeenCalledWith(
       "https://docs.example.test/a",
       "_blank",
@@ -747,6 +746,18 @@ describe("web markdown code copy", () => {
     expect(html).toContain('aria-label="Copiar código"');
     expect(html).toContain('aria-label="Copiar filas"');
     expect(html).toContain("1 a 10 de 12 filas");
+  });
+});
+
+describe("web markdown line breaks", () => {
+  it("keeps a single newline inside a paragraph as a line break", () => {
+    const holder = document.createElement("div");
+    holder.innerHTML = renderToStaticMarkup(
+      <ChatMarkdown>{"Which one?\n\nA. First\nB. Second"}</ChatMarkdown>,
+    );
+    const options = holder.querySelectorAll("p")[1];
+    expect(options?.querySelectorAll("br")).toHaveLength(1);
+    expect(options?.textContent).toBe("A. First\nB. Second");
   });
 });
 

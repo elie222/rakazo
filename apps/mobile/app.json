@@ -4,7 +4,7 @@
     "slug": "rakazo",
     "owner": "inbox-zero",
     "scheme": "rakazo",
-    "version": "1.0.20",
+    "version": "1.0.21",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
@@ -177,7 +177,17 @@
               "appExtensions": [
                 {
                   "targetName": "RakazoWatch",
-                  "bundleIdentifier": "com.rakazo.app.watchkitapp"
+                  "bundleIdentifier": "com.rakazo.app.watchkitapp",
+                  "entitlements": {
+                    "com.apple.security.application-groups": ["group.com.rakazo.app"]
+                  }
+                },
+                {
+                  "targetName": "RakazoWatchComplications",
+                  "bundleIdentifier": "com.rakazo.app.watchkitapp.complications",
+                  "entitlements": {
+                    "com.apple.security.application-groups": ["group.com.rakazo.app"]
+                  }
                 },
                 {
                   "targetName": "RakazoWidgets",

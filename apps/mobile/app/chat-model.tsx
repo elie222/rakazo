@@ -1,4 +1,3 @@
-import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { botModelPick, botModelState, modelOptionKey } from "@rakazo/core";
@@ -10,7 +9,6 @@ import { ModelPickerList } from "../components/models/model-picker-list";
 import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
 import { MenuPicker } from "../components/ui/menu-picker";
 import { errorText } from "../lib/api/user-error";
-import { chatModelPickerChoices } from "../lib/models/chat-model";
 import { rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
 
@@ -50,29 +48,28 @@ export default function ChatModelScreen() {
         catalog: catalog.data.map(localizeModelEntry),
         me: me.data,
         modelKey: pendingKey ?? savedKey,
-        spaceDefaultLabel: t`Space default`,
       })
     : null;
-  const choices =
-    state && me.data && catalog.data && credentials.data
-      ? chatModelPickerChoices(me.data, catalog.data, credentials.data, state.selectedModelKey)
-      : null;
-  const thinking = save.pending
-    ? (save.input?.thinkingLevel ?? "")
-    : (bot.data?.thinkingLevel ?? "");
+  const choices = state?.choices ?? null;
+  // The level in use: the saved one, or the model's default while none is saved.
+  const thinking =
+    (save.pending ? save.input?.thinkingLevel : bot.data?.thinkingLevel) ??
+    state?.defaultThinkingLevel;
   const failure = bot.error ?? me.error ?? catalog.error ?? credentials.error;
   // With no provider connected there is nothing to switch to, so the sheet offers a connection.
   const connectable = Boolean(state?.nothingConnected);
 
   return (
     <ModelPickerList
+      latestOnly
       choices={choices}
-      selectedKey={state?.selectedModelKey ?? ""}
+      selectedKey={state?.shownKey ?? ""}
       error={failure && !choices ? errorText(failure, t`Could not load model settings`) : null}
       onSelect={(choice) => {
-        if (!state || choice.key === state.selectedModelKey) return;
+        const modelKey = state?.savedModelKey(choice.key);
+        if (!state || modelKey === state.selectedModelKey) return;
         // A new model starts on its own default thinking, as it does from the bot's settings.
-        save.run({ modelKey: choice.key, thinkingLevel: null });
+        save.run({ modelKey, thinkingLevel: null });
       }}
       header={
         state?.thinkingLevels.length || connectable ? (
@@ -83,19 +80,13 @@ export default function ChatModelScreen() {
                   label={t`Thinking`}
                   showLabel={false}
                   disabled={save.pending}
-                  choices={[
-                    {
-                      key: "",
-                      label: t`Default (${ph({ level: thinkingLevelLabel(state.defaultThinkingLevel) })})`,
-                    },
-                    ...state.thinkingLevels.map((level) => ({
-                      key: level,
-                      label: thinkingLevelLabel(level),
-                    })),
-                  ]}
-                  value={thinking}
+                  choices={state.thinkingLevels.map((level) => ({
+                    key: level,
+                    label: thinkingLevelLabel(level),
+                  }))}
+                  value={thinking ?? ""}
                   onChange={(level) =>
-                    save.run({ thinkingLevel: (level || null) as ThinkingLevel | null })
+                    save.run({ thinkingLevel: state.savedThinkingLevel(level as ThinkingLevel) })
                   }
                 />
               </SettingsGroup>

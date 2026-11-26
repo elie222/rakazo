@@ -2,6 +2,7 @@
 import {
   contentKeyProviderFromEnv,
   createSecretStore,
+  PostgresRealtimeFanout,
   unwrapEnvFromKeyManager,
   withSecretPersistence,
 } from "@rakazo/adapters";
@@ -33,6 +34,10 @@ await secrets.start();
 const prisma = withSecretPersistence(db.prisma, secrets);
 installSecurityEventStore(prisma);
 installAuditEventStore(prisma);
+const realtime = new PostgresRealtimeFanout({
+  connectionString: env.realtimeDatabaseUrl,
+  publisher: db.pool,
+});
 try {
   const result = await runAsSystem("run an operator admin command", () =>
     invocation.run({
@@ -40,6 +45,7 @@ try {
       secrets,
       env,
       pool: db.pool,
+      realtime,
       apiUrl: env.apiUrl,
       inboundOrigin: env.publishedInboundOrigin,
       signal: new AbortController().signal,
@@ -51,6 +57,7 @@ try {
   process.stderr.write(`${error.message}\n`);
   process.exitCode = 1;
 } finally {
+  await realtime.close();
   await secrets.close();
   await db.prisma.$disconnect();
   await db.pool.end();

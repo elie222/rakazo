@@ -234,6 +234,18 @@ describe("formatCron", () => {
     expect(formatCron("0 8 * * 0-6")).toBe("Every day at 8:00 AM");
   });
 
+  it("lists several times of day", () => {
+    expect(formatCron("0 11,17,23 * * *")).toBe("Every day at 11:00 AM, 5:00 PM and 11:00 PM");
+    expect(formatCron("30 21,9,21 * * *")).toBe("Every day at 9:30 AM and 9:30 PM");
+    expect(formatCron("0 9,17 * * 1-5")).toBe("Weekdays at 9:00 AM and 5:00 PM");
+    expect(formatCron("0 8,20 * * 6,0")).toBe("Weekends at 8:00 AM and 8:00 PM");
+  });
+
+  it("keeps the cron fallback for several times when the labels can't say it", () => {
+    const { atTimes: _, ...labels } = ENGLISH_CRON_LABELS;
+    expect(formatCron("0 11,17,23 * * *", labels)).toBe("Cron 0 11,17,23 * * *");
+  });
+
   it("singularizes an interval of one instead of 'Every 1 minutes'", () => {
     expect(formatCron("*/1 * * * *")).toBe("Every 1 minute");
     expect(formatCron("0 */1 * * *")).toBe("Every 1 hour");
@@ -322,6 +334,9 @@ describe("formatCron", () => {
     "0 9 * * 5-1",
     "0 9 * * 8",
     "0 9 1,15 * *",
+    "0 9,17 15 * *",
+    "0 9-17 * * *",
+    "0 9,24 * * *",
     "0 9 32 * *",
     "0 9 15 1 *",
     "60 * * * *",

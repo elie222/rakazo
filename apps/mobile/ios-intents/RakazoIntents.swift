@@ -427,9 +427,9 @@ struct RakazoSession {
 
   /// The app asks before AI first sees the user's data; an action from here cannot ask.
   func requireConsent(
-    _ target: [String: String], spaceId: String?, timeout: TimeInterval = 60
+    _ target: [String: String], uses: [String] = ["model", "memory"], spaceId: String?,
+    timeout: TimeInterval = 60
   ) async throws {
-    let uses = ["model", "memory"]
     var input: [String: Any] = target
     input["uses"] = uses
     let consent: ConsentStatus = try await rpc(
@@ -511,7 +511,13 @@ struct RakazoSession {
   private func request(
     _ procedure: String, _ input: [String: Any], spaceId: String?, timeout: TimeInterval
   ) throws -> URLRequest {
-    guard let url = URL(string: "\(apiBase)/rpc/\(procedure)") else {
+    try request(path: "/rpc/\(procedure)", body: ["json": input], spaceId: spaceId, timeout: timeout)
+  }
+
+  private func request(
+    path: String, body: [String: Any], spaceId: String?, timeout: TimeInterval
+  ) throws -> URLRequest {
+    guard let url = URL(string: "\(apiBase)\(path)") else {
       throw MessageBotError.signedOut
     }
     var request = URLRequest(url: url, timeoutInterval: timeout)
@@ -521,8 +527,19 @@ struct RakazoSession {
     request.setValue("rakazo://", forHTTPHeaderField: "origin")
     request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
     if let spaceId { request.setValue(spaceId, forHTTPHeaderField: "x-rakazo-space-id") }
-    request.httpBody = try JSONSerialization.data(withJSONObject: ["json": input])
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
     return request
+  }
+
+  /// Posts JSON to one of the server's plain HTTP routes, answering its status and body.
+  func post(
+    _ path: String, _ body: [String: Any], spaceId: String?, timeout: TimeInterval
+  ) async throws -> (Int, Data) {
+    let request = try request(path: path, body: body, spaceId: spaceId, timeout: timeout)
+    let (data, response) = try await Self.transport.data(for: request)
+    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    if status == 401 { throw MessageBotError.signedOut }
+    return (status, data)
   }
 
   private func checkResponse(_ response: URLResponse) throws {

@@ -8,6 +8,7 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
   paymentOverdue,
+  SELF_HOST_URL,
 } from "@rakazo/contracts";
 import { canDeleteOrganization } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
@@ -49,7 +50,7 @@ import {
   subscribedPlan,
 } from "../lib/billing/billing";
 import { endCallBeforeSessionEnd } from "../lib/calls/call-session";
-import { dateLocaleForUi } from "../lib/i18n/i18n";
+import { useDateLocale } from "../lib/i18n/i18n";
 import { FORM_COLUMN_WIDTH } from "../lib/layout/adaptive-layout";
 import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
 import { useMobileTokens } from "../lib/native/native";
@@ -83,6 +84,7 @@ const CREW = [
  */
 export default function Paywall() {
   const { t } = useLingui();
+  const dateLocale = useDateLocale();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const contentBottomInset = useContentBottomInset();
@@ -287,7 +289,7 @@ export default function Paywall() {
   if (started) {
     const endsAt = planEndsAt(status);
     const freeUntil = endsAt
-      ? new Date(endsAt).toLocaleDateString(dateLocaleForUi(), { month: "long", day: "numeric" })
+      ? new Date(endsAt).toLocaleDateString(dateLocale, { month: "long", day: "numeric" })
       : null;
     return (
       <View
@@ -362,7 +364,7 @@ export default function Paywall() {
   const subscribed = dismissible ? subscribedPlan(status) : null;
   const annualCents = status.byokPriceCents ? status.byokAnnualPriceCents : null;
   const yearly = interval === "year" && annualCents;
-  const usd = (cents: number) => formatBillingAmount(cents, "usd", dateLocaleForUi());
+  const usd = (cents: number) => formatBillingAmount(cents, "usd", dateLocale);
   const monthlyPrice = status.byokPriceCents ? usd(status.byokPriceCents) : null;
   const annualMonthlyPrice = annualCents ? usd(Math.round(annualCents / 12)) : null;
   // What the chosen plan bills each period, as the terms and trial timeline state it.
@@ -434,6 +436,14 @@ export default function Paywall() {
           <Text accessibilityRole="header" style={[styles.title, { color: tokens.foreground }]}>
             {t`Put your bots to work`}
           </Text>
+          {status.freePeriodEnded ? (
+            <>
+              <Text style={[styles.lead, { color: tokens.mutedForeground }]}>
+                {t`Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you self-host.`}
+              </Text>
+              <LegalLink label={t`Self-hosting guide`} url={SELF_HOST_URL} />
+            </>
+          ) : null}
         </View>
         <View style={styles.features}>
           {features.map((feature) => (
