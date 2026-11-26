@@ -2095,6 +2095,89 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toEqual([]);
   });
 
+  it("keeps the newest ordinary reply over an older queued foreign ask sharing the same tag on permission flush", async () => {
+    FakeNotification.permission = "default";
+    visible = false;
+    groups[0] = { id: "group-g" };
+    setLiveSnapshot("thread-g", [{ id: "run-other", userId: "user-2" }]);
+    await open({ groupId: "group-g" });
+
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "reply-1",
+          type: "thread.message.created",
+          threadId: "thread-g",
+          seq: 5,
+          runId: "run-other",
+          botId: "bot-b",
+          payload: {
+            id: "msg-reply-1",
+            role: "bot",
+            blocks: [{ kind: "text", text: "First reply" }],
+          },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "foreign-ask",
+          type: "thread.message.created",
+          threadId: "thread-g",
+          seq: 6,
+          runId: "run-other",
+          botId: "bot-b",
+          payload: {
+            id: "msg-foreign-ask",
+            role: "bot",
+            runUserId: "user-2",
+            blocks: [{ kind: "ask", text: "Older foreign ask?", status: "pending" }],
+          },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "reply-2",
+          type: "thread.message.created",
+          threadId: "thread-g",
+          seq: 7,
+          runId: "run-other",
+          botId: "bot-b",
+          payload: {
+            id: "msg-reply-2",
+            role: "bot",
+            blocks: [{ kind: "text", text: "Newest reply" }],
+          },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([["Scout", "Newest reply", "thread-g"]]);
+  });
+
   it("closes the stream when the shell unmounts", async () => {
     await open({ botId: "bot-a" });
     act(() => root.unmount());
