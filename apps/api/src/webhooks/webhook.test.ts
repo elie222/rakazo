@@ -25,6 +25,7 @@ import {
   WEBHOOK_SECRET_KIND,
 } from "./webhook.js";
 import { loadWebhookTarget } from "./webhook-inbound.js";
+import { hasValidWebhookSignature } from "./webhook-signature.js";
 
 const SECRET = "webhook-test-secret-value-32chars!!";
 const WEBHOOK_ROUTINE = { id: "routine-1", name: "Triage", prompt: "Triage this event." };
@@ -228,6 +229,73 @@ describe("GitHub webhook signatures", () => {
       expect(hasValidGithubSignature(signature, SECRET, Buffer.from("{}"))).toBe(false);
     },
   );
+});
+
+function signDelivery(id: string, timestamp: string, body: string, secret = SECRET) {
+  return `v1,${createHmac("sha256", secret).update(`${id}.${timestamp}.${body}`).digest("base64")}`;
+}
+
+describe("signed webhook deliveries", () => {
+  const body = JSON.stringify({ id: "order-42", status: "paid" });
+  const raw = new TextEncoder().encode(body);
+  const now = 1_800_000_000_000;
+  const timestamp = String(now / 1000);
+
+  it("rejects a signature made with another key", () => {
+    const signature = signDelivery("msg_1", timestamp, body, "another-key");
+    expect(hasValidWebhookSignature({ id: "msg_1", timestamp, signature }, SECRET, raw, now)).toBe(
+      false,
+    );
+  });
+
+  it("rejects a signature for a different delivery id", () => {
+    const signature = signDelivery("msg_1", timestamp, body);
+    expect(hasValidWebhookSignature({ id: "msg_2", timestamp, signature }, SECRET, raw, now)).toBe(
+      false,
+    );
+  });
+
+  it("rejects a correctly signed delivery outside the five minute window", () => {
+    for (const seconds of [now / 1000 - 301, now / 1000 + 301]) {
+      const stale = String(seconds);
+      const signature = signDelivery("msg_1", stale, body);
+      expect(
+        hasValidWebhookSignature({ id: "msg_1", timestamp: stale, signature }, SECRET, raw, now),
+      ).toBe(false);
+    }
+  });
+
+  it("accepts a match among several listed signatures", () => {
+    const signature = `${signDelivery("msg_1", timestamp, body, "previous-key")} ${signDelivery("msg_1", timestamp, body)}`;
+    expect(hasValidWebhookSignature({ id: "msg_1", timestamp, signature }, SECRET, raw, now)).toBe(
+      true,
+    );
+  });
+
+  it("starts the routine without the key in the request and deduplicates on the signed id", async () => {
+    const deps = createDeps({ routines: [WEBHOOK_ROUTINE] });
+    const app = mount(deps);
+    const sentAt = String(Math.floor(Date.now() / 1000));
+    for (const prefix of ["webhook", "svix"]) {
+      const res = await app.request("/api/v1/bots/bot-1/webhook", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": `changed-by-a-replay-${prefix}`,
+          [`${prefix}-id`]: "msg_signed-1",
+          [`${prefix}-timestamp`]: sentAt,
+          [`${prefix}-signature`]: signDelivery("msg_signed-1", sentAt, body),
+        },
+        body,
+      });
+      expect(res.status).toBe(200);
+    }
+    const digest = createHash("sha256").update("msg_signed-1").digest("base64url");
+    expect(deps.sendUserMessage.mock.calls.map((call) => call[0].clientNonce)).toEqual([
+      `webhook:bot-1:${digest}`,
+      `webhook:bot-1:${digest}`,
+    ]);
+  });
 });
 
 describe("inbound webhook HTTP route", () => {

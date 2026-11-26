@@ -44,6 +44,8 @@ watch can't be combined with a schedule.
 ### Webhook
 
 Gives you a URL and key. Any service that can send a POST request can start the routine.
+A service that signs its requests with `webhook-id`, `webhook-timestamp` and `webhook-signature`
+headers can use the key as its signing secret, so the key is never sent.
 
 ### Git event
 
