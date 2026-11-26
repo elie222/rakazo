@@ -52,6 +52,31 @@ function redactSpanningSecret(
   };
 }
 
+/** Computes the KMP prefix function for `pattern.slice(0, length)`. */
+export function kmpPrefixTable(pattern: string, length = pattern.length): Int32Array {
+  const lps = new Int32Array(length);
+  for (let i = 1, j = 0; i < length; i += 1) {
+    const ch = pattern.charCodeAt(i);
+    while (j > 0 && pattern.charCodeAt(j) !== ch) j = lps[j - 1]!;
+    if (pattern.charCodeAt(j) === ch) j += 1;
+    lps[i] = j;
+  }
+  return lps;
+}
+
+/** Computes the KMP prefix function for the reversed suffix of `pattern` of length `length`. */
+export function kmpReversedPrefixTable(pattern: string, length = pattern.length): Int32Array {
+  const lps = new Int32Array(length);
+  const last = pattern.length - 1;
+  for (let i = 1, j = 0; i < length; i += 1) {
+    const ch = pattern.charCodeAt(last - i);
+    while (j > 0 && pattern.charCodeAt(last - j) !== ch) j = lps[j - 1]!;
+    if (pattern.charCodeAt(last - j) === ch) j += 1;
+    lps[i] = j;
+  }
+  return lps;
+}
+
 /**
  * Longest suffix of `text` that is a proper prefix of `secret`, in O(min(text.length, secret.length)) time.
  */
@@ -70,13 +95,7 @@ export function secretPrefixSuffixLength(text: string, secret: string): number {
   if (start < 0) return 0;
   const patLen = text.length - start;
   if (patLen === 1) return 1;
-  const lps = new Int32Array(patLen);
-  for (let i = 1, j = 0; i < patLen; i += 1) {
-    const ch = secret.charCodeAt(i);
-    while (j > 0 && secret.charCodeAt(j) !== ch) j = lps[j - 1]!;
-    if (secret.charCodeAt(j) === ch) j += 1;
-    lps[i] = j;
-  }
+  const lps = kmpPrefixTable(secret, patLen);
   let matched = 0;
   for (let i = start; i < text.length; i += 1) {
     const ch = text.charCodeAt(i);
@@ -104,13 +123,7 @@ export function secretSuffixPrefixLength(text: string, secret: string): number {
   if (end < 0) return 0;
   const patLen = end + 1;
   if (patLen === 1) return 1;
-  const lps = new Int32Array(patLen);
-  for (let i = 1, j = 0; i < patLen; i += 1) {
-    const ch = secret.charCodeAt(last - i);
-    while (j > 0 && secret.charCodeAt(last - j) !== ch) j = lps[j - 1]!;
-    if (secret.charCodeAt(last - j) === ch) j += 1;
-    lps[i] = j;
-  }
+  const lps = kmpReversedPrefixTable(secret, patLen);
   let matched = 0;
   for (let i = end; i >= 0; i -= 1) {
     const ch = text.charCodeAt(i);

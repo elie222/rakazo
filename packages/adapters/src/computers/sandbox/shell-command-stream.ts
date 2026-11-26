@@ -4,7 +4,7 @@ import { redactSecrets } from "@rakazo/core";
 import { automated } from "../../messaging/automated-messages.prompt.js";
 import { shortenPlainText } from "../../runtime/context/context-selection.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../../runtime/pi/pi-runtime-limits.js";
-import { redactShellStreams } from "./agent-environment.js";
+import { kmpPrefixTable, kmpReversedPrefixTable, redactShellStreams } from "./agent-environment.js";
 import {
   BoundedStreamBuffer,
   SecretsCutSnapshot,
@@ -37,17 +37,6 @@ const ONE_TIME_CODE =
 // A prompt is the latest output, so only the end of each stream is checked, which keeps long
 // logs cheap. The link and the code may be on different streams.
 const SIGN_IN_PROMPT_SCAN_CHARS = 4_000;
-
-function kmpPrefixTable(pattern: string, length = pattern.length): Int32Array {
-  const lps = new Int32Array(length);
-  for (let i = 1, j = 0; i < length; i += 1) {
-    const ch = pattern.charCodeAt(i);
-    while (j > 0 && pattern.charCodeAt(j) !== ch) j = lps[j - 1]!;
-    if (pattern.charCodeAt(j) === ch) j += 1;
-    lps[i] = j;
-  }
-  return lps;
-}
 
 /** Calls `onStart(pos)` for every `pos` in `[minStart, maxStartExclusive)` where `haystack` contains `needle`. */
 function kmpSearchStarts(
@@ -100,13 +89,7 @@ function secretSuffixPrefixBorders(text: string, secret: string, maxLen: number)
   const last = secret.length - 1;
   const limit = Math.min(maxLen, text.length, last);
   if (limit <= 0) return mask;
-  const lps = new Int32Array(limit);
-  for (let i = 1, j = 0; i < limit; i += 1) {
-    const ch = secret.charCodeAt(last - i);
-    while (j > 0 && secret.charCodeAt(last - j) !== ch) j = lps[j - 1]!;
-    if (secret.charCodeAt(last - j) === ch) j += 1;
-    lps[i] = j;
-  }
+  const lps = kmpReversedPrefixTable(secret, limit);
   let matched = 0;
   for (let i = limit - 1; i >= 0; i -= 1) {
     const ch = text.charCodeAt(i);
