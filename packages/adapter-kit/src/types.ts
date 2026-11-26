@@ -386,6 +386,8 @@ export interface ConnectorCall {
   route?: ConnectorRoute;
   /** Read the tool's app after a successful call. Only a caller that shows it asks. */
   withApp?: boolean;
+  /** Include selected schemas in an internal catalog search. */
+  withCatalogSchemas?: boolean;
 }
 
 /**
@@ -798,6 +800,12 @@ export interface AgentRunRequest {
     route?: ConnectorRoute,
     observer?: AgentToolExecutionObserver,
   ) => Promise<unknown>;
+  /**
+   * Finds tools, apps and services this run does not list, for find_tool: by words, or by the
+   * exact names. A search answers the final ranked list, at most
+   * `limit` hits, so what it marks as read from outside is only what the model is shown.
+   */
+  searchTools?: (request: ToolSearchRequest) => Promise<ToolSearchHit[]>;
   /** Called after a tool returns; implementations must not persist raw result contents. */
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /**
@@ -813,6 +821,30 @@ export interface AgentRunRequest {
    * any copy of it is stored, recorded or replayed.
    */
   secrets?: readonly string[];
+}
+
+export type ToolSearchRequest =
+  /** `alongside`: hits the caller found itself, ranked together with these into one list. */
+  { query: string; limit: number; alongside?: ToolSearchHit[] } | { ids: string[] };
+
+/**
+ * One thing find_tool found. `next` is the tool the model calls for it: use_tool runs it with
+ * `id` as the name, connect_app shows the card that connects app `id`, and service_call runs
+ * paid service `id`.
+ */
+export interface ToolSearchHit {
+  id: string;
+  name: string;
+  description: string;
+  next: "use_tool" | "connect_app" | "service_call";
+  /** The requested name, when a catalog resolved it to a different canonical ID. */
+  matchedName?: string;
+  /** Its arguments, for a hit use_tool runs. */
+  inputSchema?: Record<string, unknown>;
+  /** Whatever else the next step needs, such as a paid service's price and params. */
+  details?: Record<string, unknown>;
+  /** The connector that runs it, for a hit use_tool runs. Never shown to the model. */
+  connectorId?: string;
 }
 
 export interface ScriptedTurn {
