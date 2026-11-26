@@ -6,20 +6,20 @@ Design reference: [computer-experience-architecture.md](./computer-experience-ar
 
 ## 0.1 进度
 
-| 任务   | 状态   | 证据                                                                                          |
-| ------ | ------ | --------------------------------------------------------------------------------------------- |
-| P1-01  | 已完成 | 契约新增 target/element/window/find/settle/zoom/capabilities；旧 provider 不需要实现也能编译  |
-| P1-02  | 已完成 | `fake-perception.test.ts` 13 个用例                                                           |
-| P1-03  | 已完成 | `test_atspi.py` 12 个用例                                                                     |
-| P1-04  | 已完成 | Dockerfile 安装 AT-SPI，`start.sh` 起 bus 与 helper，CI 跑 Python 用例                        |
-| P1-05  | 已完成 | `linux-desktop.ts` 接 `AtspiPerception`；docker/createos/wuying/fake 全部转发                 |
-| P1-06  | 已完成 | `computer-tools.test.ts` 覆盖目标消失、移动、旧 frame、坐标 fallback                          |
-| P1-07  | 已完成 | 新增 `computer_find`、`computer_zoom`、`computer_settle`；`computer_act` 支持 target          |
-| P1-08  | 已完成 | `run-instructions.prompt.ts` 原生应用优先 target、页面优先 `browser_snapshot`                |
-| P1-09  | 已完成 | `computer-overlay.test.tsx` 6 个用例；Find/Zoom 走 `useSave`                                  |
-| P1-10  | 已完成 | `use-computer-finder.ts`、`ComputerFindSheet`、`ComputerZoomModal`；`computer.tsx` 963 行      |
-| P1-11  | 已完成 | `computer-perception.docker.test.ts` 3 个用例，`pnpm test:computer-replay` 7 个全绿            |
-| P1-12  | 已完成 | `computer-runtime.md` 新增语义感知一节，`computer.md` 新增查找控件一节                        |
+| 任务  | 状态   | 证据                                                                                         |
+| ----- | ------ | -------------------------------------------------------------------------------------------- |
+| P1-01 | 已完成 | 契约新增 target/element/window/find/settle/zoom/capabilities；旧 provider 不需要实现也能编译 |
+| P1-02 | 已完成 | `fake-perception.test.ts` 13 个用例                                                          |
+| P1-03 | 已完成 | `test_atspi.py` 12 个用例                                                                    |
+| P1-04 | 已完成 | Dockerfile 安装 AT-SPI，`start.sh` 起 bus 与 helper，CI 跑 Python 用例                       |
+| P1-05 | 已完成 | `linux-desktop.ts` 接 `AtspiPerception`；docker/createos/wuying/fake 全部转发                |
+| P1-06 | 已完成 | `computer-tools.test.ts` 覆盖目标消失、移动、旧 frame、坐标 fallback                         |
+| P1-07 | 已完成 | 新增 `computer_find`、`computer_zoom`、`computer_settle`；`computer_act` 支持 target         |
+| P1-08 | 已完成 | `run-instructions.prompt.ts` 原生应用优先 target、页面优先 `browser_snapshot`                |
+| P1-09 | 已完成 | `computer-overlay.test.tsx` 6 个用例；Find/Zoom 走 `useSave`                                 |
+| P1-10 | 已完成 | `use-computer-finder.ts`、`ComputerFindSheet`、`ComputerZoomModal`；`computer.tsx` 963 行    |
+| P1-11 | 已完成 | `computer-perception.docker.test.ts` 3 个用例，`pnpm test:computer-replay` 7 个全绿          |
+| P1-12 | 已完成 | `computer-runtime.md` 新增语义感知一节，`computer.md` 新增查找控件一节                       |
 
 ## 0. 使用方式
 

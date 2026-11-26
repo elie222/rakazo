@@ -178,7 +178,7 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "computer_find",
     description:
-      "Find accessible controls in this bot's computer by name, role, application or window. Prefer this over coordinate clicks for native applications. Returns element refs with screen bounds and a frameId; pass a target and basedOn to computer_act. If unknown is true, the lookup timed out; observe again. A page's controls are listed by browser_snapshot instead.",
+      "Find a native control by name, role, app or window. Prefer this over coordinate clicks. Returns elements with bounds and a frameId; pass a target with basedOn to computer_act. unknown means the screen did not answer; observe again. Pages use browser_snapshot.",
     inputSchema: {
       type: "object",
       properties: {
@@ -194,7 +194,7 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "computer_zoom",
     description:
-      "Read a region of the last observed screen at device resolution. Use it for small text or details; pass the frameId from computer_observe and a region in model pixels.",
+      "Read a region of the last observed screen at device resolution, for small text. Pass the frameId from computer_observe and a region in model pixels.",
     inputSchema: {
       type: "object",
       properties: {
@@ -207,7 +207,7 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "computer_settle",
     description:
-      "Wait until the screen stops changing after an action. Prefer this over guessing a delay. Returns whether the screen is quiet, whether anything changed, and when it last changed.",
+      "Wait until the screen stops changing after an action instead of guessing a delay. Returns whether it is quiet, whether anything changed, and when.",
     inputSchema: {
       type: "object",
       properties: {
