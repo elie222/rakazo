@@ -1987,7 +1987,7 @@ describe("MCP connector session cache", () => {
       where: expect.objectContaining({
         enabled: true,
         allBots: true,
-        userId: "u1",
+        OR: expect.arrayContaining([expect.objectContaining({ userId: "u1" })]),
         assignments: { none: { botId: "bot-1" } },
       }),
     });
@@ -1996,7 +1996,11 @@ describe("MCP connector session cache", () => {
     for await (const event of connector.execute(call, context)) events.push(event);
     expect(events).toMatchObject([{ type: "result" }]);
     expect(prisma.mcpServer.findFirst).toHaveBeenCalledWith({
-      where: expect.objectContaining({ id: "server-1", allBots: true, userId: "u1" }),
+      where: expect.objectContaining({
+        id: "server-1",
+        allBots: true,
+        OR: expect.arrayContaining([expect.objectContaining({ userId: "u1" })]),
+      }),
     });
     expect(state.calls).toEqual(["list_sites"]);
     await connector.close();

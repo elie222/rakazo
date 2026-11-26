@@ -16,8 +16,13 @@ import {
   availableInSpace,
   IsolationError,
   isUniqueViolation,
-  itemSecretIn,
   lockOwner,
+  managedOrganizationId,
+  mcpServerIn,
+  mcpServerManagedIn,
+  OrganizationAdminRequiredError,
+  serverSecretIn,
+  serverSecretOwner,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -34,8 +39,9 @@ import {
   MCP_OAUTH_PENDING_MESSAGE,
   mcpAssignmentDto,
   mcpServerDto,
+  mcpViewer,
 } from "../integrations/mcp-servers.js";
-import { serverAvailability, serverSecretSpace } from "../spaces/name-claims.js";
+import { serverAvailability } from "../spaces/name-claims.js";
 import type { RouterContext } from "./context.js";
 import { computerContext } from "./shared.js";
 
@@ -75,7 +81,7 @@ export function mcpRoutes(ctx: RouterContext) {
             select: { id: true },
           }),
           tx.mcpServer.findFirst({
-            where: { id: input.serverId, ...availableInSpace(actor), enabled: true },
+            where: { id: input.serverId, ...mcpServerIn(actor), enabled: true },
             select: { id: true },
           }),
         ]);
@@ -152,8 +158,18 @@ export function mcpRoutes(ctx: RouterContext) {
     ).flat();
   }
 
-  /** Adds a server for every bot, or for `botIds` alone when given, in one transaction. */
-  async function createMcpServer(actor: Actor, config: McpServerConfigInput, botIds?: string[]) {
+  /** Adds a server for every bot, or for `botIds` alone when given, in one transaction; or,
+   * for an organization admin, the organization's server for every member's bots. */
+  async function createMcpServer(
+    actor: Actor,
+    config: McpServerConfigInput,
+    owner: { botIds?: string[]; organization?: boolean } = {},
+  ) {
+    const { botIds } = owner;
+    const organizationId = owner.organization
+      ? await managedOrganizationId(deps.prisma, actor)
+      : undefined;
+    if (organizationId === null) throw new OrganizationAdminRequiredError();
     const stored = await prepareMcpServer(actor, config);
     // A refused save drops the credential stored for it.
     const row = await persistPreparedSecret(deps.prisma, deps.secrets, stored ?? undefined, () =>
@@ -161,6 +177,7 @@ export function mcpRoutes(ctx: RouterContext) {
         const row = await insertMcpServer(tx, actor, config, stored, {
           everywhere: true,
           allBots: !botIds,
+          ...(organizationId ? { organizationId } : {}),
         });
         // A new server has no assignments, so choosing reopens no cards.
         if (botIds) await chooseMcpServerBots(tx, actor, row.id, botIds);
@@ -181,20 +198,19 @@ export function mcpRoutes(ctx: RouterContext) {
     input: { id: string; config: McpServerConfigInput } | { id: string; secret: string },
     access?: { allBots: boolean; botIds: string[] },
   ) {
+    const viewer = await mcpViewer(deps.prisma, actor);
+    const managed = mcpServerManagedIn(actor, viewer.managedOrganizationId);
     for (let attempt = 0; attempt < 5; attempt++) {
       const { existing, existingSecret } = await deps.prisma.$transaction(async (tx) => {
         const existing = await tx.mcpServer.findFirst({
-          where: {
-            id: input.id,
-            ...availableInSpace(actor),
-          },
+          where: { id: input.id, ...managed },
         });
         if (!existing) throw new IsolationError();
         const existingSecret = existing.secretId
           ? await tx.secret.findFirst({
               where: {
                 id: existing.secretId,
-                ...itemSecretIn(actor),
+                ...serverSecretIn(actor),
               },
             })
           : null;
@@ -298,13 +314,11 @@ export function mcpRoutes(ctx: RouterContext) {
         deps.prisma.$transaction(async (tx) => {
           // A rename claims a name; availability changes take that lock before the secret,
           // so this takes it first too and the two can never wait on each other.
-          if (config.slug !== existing.slug) await lockOwner(tx, actor.userId, "names:mcpServer");
+          if (config.slug !== existing.slug && !existing.organizationId)
+            await lockOwner(tx, actor.userId, "names:mcpServer");
           await lockMcpOAuthMaterial(tx, input.id);
           const current = await tx.mcpServer.findFirst({
-            where: {
-              id: input.id,
-              ...availableInSpace(actor),
-            },
+            where: { id: input.id, ...managed },
           });
           if (!current) throw new IsolationError();
           if (
@@ -319,26 +333,26 @@ export function mcpRoutes(ctx: RouterContext) {
             ? await tx.secret.findFirst({
                 where: {
                   id: current.secretId,
-                  ...itemSecretIn(actor),
+                  ...serverSecretIn(actor),
                 },
               })
             : null;
           if (secret?.ciphertext !== existingSecret?.ciphertext) return null;
-          if (config.slug !== current.slug)
+          // An organization's names are unique within it, which its own index holds.
+          if (config.slug !== current.slug && current.spaceId)
             await assertNameFreeWhereAvailable(
               tx,
               "mcpServer",
               actor,
               config.slug,
-              await serverAvailability(tx, current),
+              await serverAvailability(tx, { ...current, spaceId: current.spaceId }),
               current.id,
             );
           if (stored) {
             await tx.secret.create({
               data: {
                 id: stored.id,
-                userId: actor.userId,
-                spaceId: await serverSecretSpace(tx, current),
+                ...(await serverSecretOwner(tx, current, actor)),
                 kind: "mcp",
                 ciphertext: stored.ciphertext,
               },
@@ -382,7 +396,8 @@ export function mcpRoutes(ctx: RouterContext) {
                 : {}) as Prisma.InputJsonValue,
               enabled: config.enabled,
               verbatimResults: config.verbatimResults,
-              ...(access ? { allBots: access.allBots } : {}),
+              // An organization's server is for every agent.
+              ...(access && !current.organizationId ? { allBots: access.allBots } : {}),
               revision: { increment: 1 },
               // The old verdict is about the old config.
               healthStatus: "unknown",
@@ -396,12 +411,12 @@ export function mcpRoutes(ctx: RouterContext) {
             await tx.secret.deleteMany({
               where: {
                 id: existing.secretId,
-                ...itemSecretIn(actor),
+                ...serverSecretIn(actor),
               },
             });
           // Under allBots the assignments stay as they were, so choosing agents again restores them.
           const seqs =
-            access && !access.allBots
+            access && !access.allBots && !current.organizationId
               ? await chooseMcpServerBots(tx, actor, existing.id, access.botIds)
               : [];
           return { updated, seqs };
@@ -410,7 +425,7 @@ export function mcpRoutes(ctx: RouterContext) {
       if (row) {
         for (const event of row.seqs) await deps.events.notify(event.threadId, event.seq);
         const oauth = await mcpOAuth.summaryFor(row.updated, actor);
-        return mcpServerDto(await beginMcpProbe(row.updated, actor, oauth), oauth);
+        return mcpServerDto(await beginMcpProbe(row.updated, actor, oauth), oauth, viewer);
       }
     }
     throw new ORPCError("CONFLICT", { message: "MCP credentials changed; retry" });
@@ -436,6 +451,16 @@ export function mcpRoutes(ctx: RouterContext) {
         MCP_OAUTH_REDIRECT_MISMATCH,
       );
     }
+    // Only an organization's admins sign its server in; a member uses it as it is.
+    const server = await deps.prisma.mcpServer.findFirst({
+      where: { id: input.serverId, ...mcpServerIn(actor) },
+    });
+    if (server?.organizationId && !(await managesServer(actor, server.organizationId))) {
+      const { status } = await mcpOAuth.summaryFor(server, actor);
+      if (status === "connected") return { status: "already_connected" as const };
+      if (status === "none") return { status: "authorization_not_requested" as const };
+      throw new OrganizationAdminRequiredError();
+    }
     try {
       return await mcpOAuth.begin({
         ...input,
@@ -455,21 +480,26 @@ export function mcpRoutes(ctx: RouterContext) {
     }
   }
 
+  async function managesServer(actor: Actor, organizationId: string): Promise<boolean> {
+    return (await managedOrganizationId(deps.prisma, actor)) === organizationId;
+  }
+
   return {
     mcp: {
       servers: {
         list: authed.mcp.servers.list.handler(async ({ context }) => {
           const rows = await deps.prisma.mcpServer.findMany({
-            where: availableInSpace(context.actor),
+            where: mcpServerIn(context.actor),
             include: { availableIn: AVAILABILITY_SELECT },
             orderBy: [{ name: "asc" }, { createdAt: "asc" }],
           });
+          const viewer = await mcpViewer(deps.prisma, context.actor);
           const secretIds = rows.flatMap((row) => (row.secretId ? [row.secretId] : []));
           const secrets = secretIds.length
             ? await deps.prisma.secret.findMany({
                 where: {
                   id: { in: secretIds },
-                  ...itemSecretIn(context.actor),
+                  ...serverSecretIn(context.actor),
                 },
                 select: { id: true, ciphertext: true },
               })
@@ -483,6 +513,7 @@ export function mcpRoutes(ctx: RouterContext) {
                   row.secretId ? ciphertextById.get(row.secretId) : undefined,
                   row.secretId ?? undefined,
                 ),
+                viewer,
               ),
             ),
           );
@@ -491,7 +522,10 @@ export function mcpRoutes(ctx: RouterContext) {
           createMcpServer(context.actor, input),
         ),
         createForBots: authed.mcp.servers.createForBots.handler(({ context, input }) =>
-          createMcpServer(context.actor, input.config, input.botIds),
+          createMcpServer(context.actor, input.config, { botIds: input.botIds }),
+        ),
+        createForOrganization: authed.mcp.servers.createForOrganization.handler(
+          ({ context, input }) => createMcpServer(context.actor, input, { organization: true }),
         ),
         connect: authed.mcp.servers.connect.handler(async ({ context, input }) => {
           const { actor } = context;
@@ -509,8 +543,9 @@ export function mcpRoutes(ctx: RouterContext) {
               deps.prisma.$transaction(async (tx) => {
                 // Two connects to the same new address share one server.
                 await lockOwner(tx, actor.userId, "mcp-connect");
+                // The organization's server at this address counts as added.
                 const rows = await tx.mcpServer.findMany({
-                  where: { ...availableInSpace(actor), enabled: true, endpoint: { not: null } },
+                  where: { ...mcpServerIn(actor), enabled: true, endpoint: { not: null } },
                   include: { availableIn: AVAILABILITY_SELECT },
                   orderBy: { createdAt: "asc" },
                 });
@@ -526,7 +561,11 @@ export function mcpRoutes(ctx: RouterContext) {
           );
           const server = created
             ? await announceMcpServer(row, actor)
-            : mcpServerDto(row, await mcpOAuth.summaryFor(row, actor));
+            : mcpServerDto(
+                row,
+                await mcpOAuth.summaryFor(row, actor),
+                await mcpViewer(deps.prisma, actor),
+              );
           const serverId = row.id;
           const signIn = await beginMcpOAuth(actor, {
             serverId,
@@ -547,7 +586,7 @@ export function mcpRoutes(ctx: RouterContext) {
           updateMcpServer(context.actor, input, input.access),
         ),
         test: authed.mcp.servers.test.handler(async ({ context, input }) => {
-          const scope = { id: input.id, ...availableInSpace(context.actor) };
+          const scope = { id: input.id, ...mcpServerIn(context.actor) };
           const server = await deps.prisma.mcpServer.findFirst({ where: scope });
           if (!server) throw new IsolationError();
           const oauth = await mcpOAuth.summaryFor(server, context.actor);
@@ -570,7 +609,7 @@ export function mcpRoutes(ctx: RouterContext) {
           }
           const fresh = await deps.prisma.mcpServer.findFirst({ where: scope });
           if (!fresh) throw new IsolationError();
-          return mcpServerDto(fresh, oauth);
+          return mcpServerDto(fresh, oauth, await mcpViewer(deps.prisma, context.actor));
         }),
         agents: authed.mcp.servers.agents.handler(async ({ context, input }) => {
           const owner = { spaceId: context.actor.spaceId, userId: context.actor.userId };
@@ -599,7 +638,7 @@ export function mcpRoutes(ctx: RouterContext) {
           for (const event of seqs) await deps.events.notify(event.threadId, event.seq);
           const oauth = await mcpOAuth.summaryFor(server, context.actor);
           return {
-            server: mcpServerDto(server, oauth),
+            server: mcpServerDto(server, oauth, await mcpViewer(deps.prisma, context.actor)),
             assignments: assignments.map(mcpAssignmentDto),
           };
         }),
@@ -607,7 +646,10 @@ export function mcpRoutes(ctx: RouterContext) {
           const server = await deps.prisma.mcpServer.findFirst({
             where: {
               id: input.id,
-              ...availableInSpace(context.actor),
+              ...mcpServerManagedIn(
+                context.actor,
+                await managedOrganizationId(deps.prisma, context.actor),
+              ),
             },
             select: { id: true, secretId: true },
           });
@@ -629,7 +671,7 @@ export function mcpRoutes(ctx: RouterContext) {
               spaceId: context.actor.spaceId,
               userId: context.actor.userId,
               bot: { archivedAt: null },
-              server: availableInSpace(context.actor),
+              server: mcpServerIn(context.actor),
             },
             orderBy: { createdAt: "asc" },
           });
@@ -649,7 +691,7 @@ export function mcpRoutes(ctx: RouterContext) {
               botId: bot.id,
               spaceId: context.actor.spaceId,
               userId: context.actor.userId,
-              server: availableInSpace(context.actor),
+              server: mcpServerIn(context.actor),
             },
             orderBy: { createdAt: "asc" },
           });
@@ -683,7 +725,7 @@ export function mcpRoutes(ctx: RouterContext) {
             const servers = await tx.mcpServer.findMany({
               where: {
                 id: { in: input.assignments.map((assignment) => assignment.serverId) },
-                ...availableInSpace(context.actor),
+                ...mcpServerIn(context.actor),
               },
               select: { id: true },
             });
@@ -765,7 +807,7 @@ export function mcpRoutes(ctx: RouterContext) {
           // The account is connected now: check the server so it shows ok/error.
           void (async () => {
             const server = await deps.prisma.mcpServer.findFirst({
-              where: { id: serverId, revision, ...availableInSpace(context.actor) },
+              where: { id: serverId, revision, ...mcpServerIn(context.actor) },
             });
             if (server)
               await beginMcpProbe(
@@ -783,6 +825,15 @@ export function mcpRoutes(ctx: RouterContext) {
           return { ok: true as const };
         }),
         disconnect: authed.mcp.oauth.disconnect.handler(async ({ context, input }) => {
+          const server = await deps.prisma.mcpServer.findFirst({
+            where: { id: input.serverId, ...mcpServerIn(context.actor) },
+            select: { organizationId: true },
+          });
+          if (
+            server?.organizationId &&
+            !(await managesServer(context.actor, server.organizationId))
+          )
+            throw new OrganizationAdminRequiredError();
           const revision = await mcpOAuth.disconnect({
             ...input,
             spaceId: context.actor.spaceId,

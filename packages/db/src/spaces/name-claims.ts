@@ -1,4 +1,5 @@
 import { ClientError } from "@rakazo/core";
+import { GUEST_ROLE } from "../billing/billing.js";
 import { runAsSystemInTransaction } from "../database/row-security.js";
 import type { Prisma } from "../generated/prisma/client.js";
 import type { SpaceAvailability } from "./availability.js";
@@ -53,13 +54,32 @@ export async function assertNameFreeWhereAvailable(
         })
       : tx.mcpServer.findMany({
           where: {
-            userId: actor.userId,
+            // An organization's servers reach every Space its members work in.
+            OR: [
+              { userId: actor.userId },
+              {
+                organization: {
+                  members: { some: { userId: actor.userId, role: { not: GUEST_ROLE } } },
+                },
+              },
+            ],
             slug: name,
             ...(excludeId ? { NOT: { id: excludeId } } : {}),
           },
-          select: { spaceId: true, allSpaces: true, availableIn: AVAILABILITY_SELECT },
+          select: {
+            spaceId: true,
+            allSpaces: true,
+            organizationId: true,
+            availableIn: AVAILABILITY_SELECT,
+          },
         });
   const rows = await runAsSystemInTransaction(tx, "owner's names across their spaces", read);
-  if (rows.some((row) => overlaps(spaceAvailability(row), availability)))
+  if (
+    rows.some(
+      (row) =>
+        ("organizationId" in row && row.organizationId) ||
+        overlaps(spaceAvailability(row), availability),
+    )
+  )
     throw new NameTakenError(kind);
 }

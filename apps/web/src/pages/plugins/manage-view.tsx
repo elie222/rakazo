@@ -116,7 +116,13 @@ export function ManageView({
                     <span className="block truncate text-body-lg font-medium">{server.name}</span>
                     <ConnectionStatus server={server} />
                   </span>
-                  <AvailabilityLabel availability={server.availability} />
+                  {server.organization ? (
+                    <span className="shrink-0 text-body-sm text-muted-foreground">
+                      <Trans>Organization</Trans>
+                    </span>
+                  ) : (
+                    <AvailabilityLabel availability={server.availability} />
+                  )}
                 </div>
               ))}
             </div>

@@ -629,6 +629,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/servers/list"],
       ["mcp/servers/create"],
       ["mcp/servers/createForBots"],
+      ["mcp/servers/createForOrganization"],
       ["mcp/servers/connect"],
       ["mcp/servers/update"],
       ["mcp/servers/save"],

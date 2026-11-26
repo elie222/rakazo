@@ -6,3 +6,6 @@ export const CONNECTOR_AUTH_UNAVAILABLE = "CONNECTOR_AUTH_UNAVAILABLE";
 export const MCP_OAUTH_CLIENT_REQUIRED = "MCP_OAUTH_CLIENT_REQUIRED";
 
 export const MCP_OAUTH_REDIRECT_MISMATCH = "MCP_OAUTH_REDIRECT_MISMATCH";
+
+/** The organization already shares an MCP server at this address, so adding it again is refused. */
+export const MCP_SERVER_IN_ORGANIZATION = "MCP_SERVER_IN_ORGANIZATION";

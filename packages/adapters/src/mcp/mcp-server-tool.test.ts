@@ -150,7 +150,7 @@ describe("removeMcpServerFromTool", () => {
     );
     expect(tx.mcpServer.delete).toHaveBeenCalledWith({ where: { id: "srv-1" } });
     expect(tx.secret.deleteMany).toHaveBeenCalledWith({
-      where: { id: "sec-1", userId: "user-1" },
+      where: expect.objectContaining({ id: "sec-1" }),
     });
   });
 

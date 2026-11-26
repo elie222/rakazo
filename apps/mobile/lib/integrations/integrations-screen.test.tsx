@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   headerRight: null as (() => ReactNode) | null,
   headerChanged: null as (() => void) | null,
   search: null as { onChangeText: (event: { nativeEvent: { text: string } }) => void } | null,
+  organization: null as { name: string; role: string; memberCount: number } | null,
 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
@@ -51,6 +52,10 @@ vi.mock("../api/api", () => ({
     proc === "marketplace/catalog" ? state.marketplace() : state.rpc(proc, ...args),
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("../spaces/organizations", () => ({
+  useOrganizations: () => ({ data: state.organization }),
+  activeOrganization: (organization: typeof state.organization) => organization ?? undefined,
+}));
 vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: state.authSession }));
 vi.mock("../../components/integrations/plugin-icon", () => ({
   PluginIcon: ({ name }: { name: string }) => <span>{name[0]}</span>,
@@ -250,6 +255,7 @@ beforeEach(() => {
   state.authSession.mockReset().mockResolvedValue({ type: "cancel" });
   queryClient.clear();
   state.headerMenu = false;
+  state.organization = null;
   state.headerRight = null;
   state.search = null;
   state.navigation.setOptions
@@ -1091,6 +1097,74 @@ async function openMcpSource() {
   });
   expect(container.querySelector('input[placeholder="https://example.com/mcp"]')).not.toBeNull();
 }
+
+it("adds an MCP server for the organization when its admin chooses it", async () => {
+  state.organization = { name: "Acme", role: "admin", memberCount: 3 };
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) =>
+    proc === "mcp/servers/createForOrganization"
+      ? Promise.resolve({ id: "org-server", name: "Custom connector", enabled: true })
+      : fallback?.(proc, args),
+  );
+  await openMcpSource();
+  await press("Acme");
+  await press("Bearer");
+  const input = (placeholder: string) =>
+    container.querySelector(`input[placeholder="${placeholder}"]`) as HTMLInputElement;
+  await act(async () => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setValue?.call(input("https://example.com/mcp"), "https://tracker.example.test/mcp");
+    input("https://example.com/mcp").dispatchEvent(new Event("input", { bubbles: true }));
+    setValue?.call(input("Bearer token"), "demo-secret-not-real");
+    input("Bearer token").dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await press("Verify and add");
+
+  expect(state.rpc).toHaveBeenCalledWith(
+    "mcp/servers/createForOrganization",
+    expect.objectContaining({
+      endpoint: "https://tracker.example.test/mcp",
+      secret: "demo-secret-not-real",
+    }),
+    expect.anything(),
+  );
+  expect(state.rpc).not.toHaveBeenCalledWith(
+    "capabilities/install",
+    expect.anything(),
+    expect.anything(),
+  );
+});
+
+it("offers no organization choice to a member who is not an admin", async () => {
+  state.organization = { name: "Acme", role: "member", memberCount: 3 };
+  await openMcpSource();
+  expect(container.textContent).not.toContain("Just me");
+});
+
+it("marks an organization's server and offers its sign-in only to who can manage it", async () => {
+  const fallback = state.rpc.getMockImplementation();
+  state.rpc.mockImplementation((proc: string, args: unknown) =>
+    proc === "mcp/servers/list"
+      ? Promise.resolve([
+          {
+            id: "org-server",
+            name: "Tracker",
+            enabled: true,
+            organization: true,
+            manageable: false,
+            oauthStatus: "reconnect",
+            health: { status: "unknown" },
+          },
+        ])
+      : fallback?.(proc, args),
+  );
+  await render();
+  await act(async () => catalog.resolve([]));
+  await settle();
+  const row = container.querySelector('[data-testid="registered-mcp-server"]');
+  expect(row?.textContent).toContain("Organization");
+  expect(row?.textContent).not.toContain("Reconnect");
+});
 
 it("saves native MCP API key auth as a named encrypted header", async () => {
   const fallback = state.rpc.getMockImplementation();

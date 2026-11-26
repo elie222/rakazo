@@ -7,6 +7,7 @@ import {
   browsablePlugins,
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
+  canManageOrganizationMembers,
   catalogItemAccounts,
   catalogItemKey,
   featuredMcpPresets,
@@ -60,6 +61,7 @@ import { useHeaderSearch, useScreenHeader } from "../../lib/navigation/screen-he
 import { openExternalUrl } from "../../lib/platform/open-url";
 import { queryClient, rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
+import { activeOrganization, useOrganizations } from "../../lib/spaces/organizations";
 
 export default function Integrations() {
   const sideInsets = useSideInsets();
@@ -100,6 +102,7 @@ export default function Integrations() {
       return listRead.queryFn(context);
     },
   };
+  const organization = activeOrganization(useOrganizations().data);
   const serversRead = rpcQuery("mcp/servers/list");
   const installsRead = rpcQuery("capabilities/list");
   const presetsRead = rpcQuery("capabilities/sourcePresets");
@@ -198,6 +201,11 @@ export default function Integrations() {
     setOauthServerId,
     captureFocus,
     onStart: () => closeDetail(),
+    // With no one else in it, a server for the organization is one for the member alone.
+    organizationName:
+      organization && canManageOrganizationMembers(organization) && organization.memberCount > 1
+        ? organization.name
+        : null,
   });
   const pending = accountPending ?? sourcePending;
   const loadFailure = catalogQuery.error ?? connectionsQuery.error;
