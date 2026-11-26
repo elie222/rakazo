@@ -200,6 +200,16 @@ export function rankCatalogEntries(
   return { hits, complete: bestMatched === words.length };
 }
 
+/** How well one entry matches a query, scored as rankCatalogEntries scores it. */
+export function catalogEntryScore(
+  entry: CatalogEntry,
+  query: string,
+): { matched: number; score: number } {
+  const words = searchWords(query);
+  const atStart = catalogScore(entry, query, words, false);
+  return atStart.matched === words.length ? atStart : catalogScore(entry, query, words, true);
+}
+
 /** Exact label first; a model often capitalizes a source name ("Linear" for "linear"). */
 function entriesInGroup(entries: CatalogEntry[], group: string): CatalogEntry[] {
   const exact = entries.filter((entry) => entry.group === group);

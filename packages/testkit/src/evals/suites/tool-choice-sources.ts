@@ -3,6 +3,7 @@ import type { AppEmulator } from "../../apps/app-emulator.js";
 import { FilesEmulator } from "../../apps/files.js";
 import { MailEmulator } from "../../apps/mail.js";
 import { blocksFromText, NotesEmulator } from "../../apps/notes.js";
+import { ScriptedEmulator } from "../../apps/scripted.js";
 import type { EvalCase } from "../cases.js";
 import type { EvalServices } from "../services.js";
 
@@ -40,6 +41,25 @@ const FileSchema = z
     { message: "A spreadsheet takes rows; a document or PDF takes content" },
   );
 
+const ServerSchema = z
+  .object({
+    name: z.string().min(1),
+    tools: z
+      .array(
+        z
+          .object({
+            name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+            description: z.string().min(1),
+            readOnly: z.boolean().optional(),
+            /** What every call of the tool returns. */
+            result: z.unknown(),
+          })
+          .strict(),
+      )
+      .min(1),
+  })
+  .strict();
+
 const NotePageSchema = z
   .object({
     title: z.string().min(1),
@@ -52,7 +72,7 @@ const NotePageSchema = z
 /**
  * Outside content a case puts in front of the bot: what a page fetch or search returns, the
  * messages in a connected mailbox, documents in connected file storage, pages in a connected
- * notes workspace, and files on the bot's own computer.
+ * notes workspace, other tool servers the person added, and files on the bot's own computer.
  */
 export const SourcesSchema = z
   .object({
@@ -69,6 +89,7 @@ export const SourcesSchema = z
     mail: z.array(MailSchema).min(1).optional(),
     files: z.array(FileSchema).min(1).optional(),
     notes: z.array(NotePageSchema).min(1).optional(),
+    servers: z.array(ServerSchema).min(1).optional(),
     computerFiles: z
       .array(z.object({ path: z.string().min(1), content: z.string() }).strict())
       .min(1)
@@ -83,7 +104,7 @@ const age = (count: number, index: number, daysAgo?: number) => daysAgo ?? (coun
 function sourceApps(sources: Sources, now: Date): AppEmulator[] {
   const at = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
   const apps: AppEmulator[] = [];
-  const { mail, files, notes } = sources;
+  const { mail, files, notes, servers } = sources;
   if (mail)
     apps.push(
       new MailEmulator(
@@ -150,6 +171,14 @@ function sourceApps(sources: Sources, now: Date): AppEmulator[] {
         { now },
       ),
     );
+  for (const server of servers ?? [])
+    apps.push(
+      new ScriptedEmulator(
+        server.name,
+        server.tools.map((tool) => ({ ...tool, result: tool.result ?? null })),
+        { now },
+      ),
+    );
   return apps;
 }
 
@@ -158,10 +187,10 @@ export function sourcesCase(
   sources: Sources | undefined,
 ): Pick<EvalCase, "apps" | "configure" | "computerFiles" | "fixtureData"> {
   if (!sources) return {};
-  const { web, mail, files, notes, computerFiles } = sources;
+  const { web, mail, files, notes, servers, computerFiles } = sources;
   return {
     fixtureData: sources,
-    ...(mail || files || notes ? { apps: (now: Date) => sourceApps(sources, now) } : {}),
+    ...(mail || files || notes || servers ? { apps: (now: Date) => sourceApps(sources, now) } : {}),
     ...(web
       ? {
           configure: (services: EvalServices) => {

@@ -797,6 +797,11 @@ export interface AgentRunRequest {
     route?: ConnectorRoute,
     observer?: AgentToolExecutionObserver,
   ) => Promise<unknown>;
+  /**
+   * Finds tools, apps and services this run does not list, for find_tool: by words, or by the
+   * exact ids of hits it returned earlier. Hits come back ranked, at most `limit` of them.
+   */
+  searchTools?: (request: ToolSearchRequest) => Promise<ToolSearchHit[]>;
   /** Called after a tool returns; implementations must not persist raw result contents. */
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /**
@@ -812,6 +817,26 @@ export interface AgentRunRequest {
    * any copy of it is stored, recorded or replayed.
    */
   secrets?: readonly string[];
+}
+
+export type ToolSearchRequest = { query: string; limit: number } | { ids: string[] };
+
+/**
+ * One thing find_tool found. `next` is the tool the model calls for it: use_tool runs it with
+ * `id` as the name, connect_app shows the card that connects app `id`, and service_call runs
+ * paid service `id`.
+ */
+export interface ToolSearchHit {
+  id: string;
+  name: string;
+  description: string;
+  next: "use_tool" | "connect_app" | "service_call";
+  /** Its arguments, for a hit use_tool runs. */
+  inputSchema?: Record<string, unknown>;
+  /** Whatever else the next step needs, such as a paid service's price and params. */
+  details?: Record<string, unknown>;
+  /** The connector that runs it, for a hit use_tool runs. Never shown to the model. */
+  connectorId?: string;
 }
 
 export interface ScriptedTurn {

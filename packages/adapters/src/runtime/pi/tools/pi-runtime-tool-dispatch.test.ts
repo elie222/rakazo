@@ -525,6 +525,7 @@ import {
 } from "../../../runs/assembly/run-replies.prompt.js";
 import { toolCompletionAuditPayload } from "../../../runs/turn/tool-completion-audit.js";
 import { serializeTurnCheckpoint } from "../../../runs/turn/turn-checkpoint.js";
+import { CATALOG_EXECUTE, lazyCatalogTools } from "../../../tools/lazy-tool-catalog.js";
 import { MISSING_TOOL_FINAL_RESPONSE_ERROR, PiAgentRuntime } from "../pi-runtime.js";
 import { providerFailureText } from "../pi-runtime-errors.js";
 import { TOOL_RESULT_TEXT_LIMIT } from "../pi-runtime-limits.js";
@@ -1327,6 +1328,56 @@ describe("Pi connector tool dispatch", () => {
     expect(result.details).toEqual(expected);
     expect(JSON.parse(result.content[0]!.text)).toEqual(expected);
     expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("runs a connector tool find_tool found through that connector's catalog", async () => {
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    // Looked up again by id, as after a pause in another process.
+    const searchTools = vi.fn(async () => [
+      {
+        id: "server-1:get_calendar",
+        name: "get_calendar",
+        description: "Read the calendar.",
+        next: "use_tool" as const,
+        inputSchema: { type: "object" },
+        connectorId: "mcp",
+      },
+    ]);
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "server-1:get_calendar", arguments: { week: "next" } },
+    };
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "what's on the calendar",
+        instructions: "",
+        history: [],
+        tools: [updateBotTool, scheduleCancelTool, ...lazyCatalogTools("connectors", "mcp", "MCP")],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+        searchTools,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+    expect(searchTools).toHaveBeenCalledWith({ ids: ["server-1:get_calendar"] });
+    expect(executeTool).toHaveBeenCalledWith(
+      "connectors_execute_tool",
+      { id: "server-1:get_calendar", arguments: { week: "next" } },
+      expect.any(String),
+      { connectorId: "mcp", toolName: CATALOG_EXECUTE },
+      expect.anything(),
+    );
   });
 
   it("ignores prototype keys when looking up unavailableToolReasons in use_tool", async () => {

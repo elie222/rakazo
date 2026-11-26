@@ -1,4 +1,4 @@
-import type { ConnectorTool } from "@rakazo/adapter-kit";
+import type { ConnectorTool, ToolSearchHit, ToolSearchRequest } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { READ_MEETING_TRANSCRIPT } from "../meetings/meeting-chat.tool-definition.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "../runs/tools/run-tool-selection.js";
@@ -8,10 +8,16 @@ import {
   catalogEntries,
   formatNameIndexText,
   groupedNames,
+  isLazyCatalogControlRoute,
   rankCatalogEntries,
 } from "./lazy-tool-catalog.js";
+import {
+  FIND_TOOL_LIMIT,
+  rankToolSearchHits,
+  shownToolSearchHit,
+} from "./tool-search/tool-search.js";
 
-const FIND_TOOL_LIMIT = 3;
+const FIND_TOOL_LIMIT_PER_SOURCE = 3;
 
 /**
  * Built-in tools the model always sees with full schemas: everyday work, and every tool the
@@ -127,30 +133,86 @@ export function unavailableToolReason(
   return typeof reason === "string" && reason.length > 0 ? reason : undefined;
 }
 
-/** Full definitions of the deferred tools named, or the best matches for a query. */
-export function findTools(
+/** The deferred built-ins named, or the best matches for a query, as find_tool hits. */
+export function findBuiltinTools(
   deferred: readonly ConnectorTool[],
   args: Record<string, unknown>,
-  unavailableToolReasons?: Readonly<Record<string, string>>,
-) {
+): ToolSearchHit[] {
+  const { names, query } = findArguments(args);
+  const found = names.length
+    ? deferred.filter((tool) => names.includes(tool.name))
+    : query
+      ? rankCatalogEntries(searchEntries(deferred), query, FIND_TOOL_LIMIT_PER_SOURCE).hits.map(
+          (entry) => deferred.find((tool) => tool.name === entry.id)!,
+        )
+      : [];
+  return found.map(toolHit);
+}
+
+/** Connector tools the run lists directly, which use_tool also runs by name. */
+function findListedTools(
+  listed: readonly ConnectorTool[],
+  args: Record<string, unknown>,
+): ToolSearchHit[] {
+  const tools = listed.filter((tool) => tool.route && !isLazyCatalogControlRoute(tool.route));
+  const { names, query } = findArguments(args);
+  if (names.length) return tools.filter((tool) => names.includes(tool.name)).map(toolHit);
+  if (!query) return [];
+  return rankCatalogEntries(catalogEntries([...tools]), query, FIND_TOOL_LIMIT_PER_SOURCE).hits.map(
+    (entry) => toolHit(entry.tool),
+  );
+}
+
+function toolHit({ name, description, inputSchema }: ConnectorTool): ToolSearchHit {
+  return { id: name, name, description, inputSchema, next: "use_tool" };
+}
+
+function findArguments(args: Record<string, unknown>) {
   const names = Array.isArray(args.names) ? args.names.map(String) : [];
   const query = String(args.query ?? "")
     .trim()
     .toLowerCase();
-  const found = names.length
-    ? deferred.filter((tool) => names.includes(tool.name))
+  return { names, query };
+}
+
+/**
+ * What find_tool answers: the deferred built-ins, the connector tools listed directly, and what
+ * `search` finds beyond them (held-back connector tools, apps to connect, paid services), named
+ * or best for a query, as one ranked list. `hits` keeps what use_tool needs to run each one.
+ */
+export async function findTools(
+  tools: {
+    deferred: readonly ConnectorTool[];
+    listed?: readonly ConnectorTool[];
+    search?: (request: ToolSearchRequest) => Promise<ToolSearchHit[]>;
+  },
+  args: Record<string, unknown>,
+  unavailableToolReasons?: Readonly<Record<string, string>>,
+) {
+  const { names, query } = findArguments(args);
+  const local = [
+    ...findBuiltinTools(tools.deferred, args),
+    ...findListedTools(tools.listed ?? [], args),
+  ];
+  const localIds = new Set(local.map((hit) => hit.id));
+  const missing = names.filter((name) => !localIds.has(name));
+  const remote = names.length
+    ? missing.length
+      ? ((await tools.search?.({ ids: missing })) ?? [])
+      : []
     : query
-      ? rankCatalogEntries(searchEntries(deferred), query, FIND_TOOL_LIMIT).hits.map(
-          (entry) => deferred.find((tool) => tool.name === entry.id)!,
-        )
+      ? ((await tools.search?.({ query, limit: FIND_TOOL_LIMIT })) ?? [])
       : [];
-  const foundNames = new Set(found.map((tool) => tool.name));
+  const hits = names.length
+    ? [...local, ...remote]
+    : rankToolSearchHits([...local, ...remote], query, FIND_TOOL_LIMIT);
+  const foundNames = new Set(hits.flatMap((hit) => [hit.id, hit.name.toLowerCase()]));
   const unavailableEntries: Array<[string, string]> = [];
   const unavailableNames = new Set<string>();
   const unknown: string[] = [];
   if (names.length) {
     for (const name of names) {
-      if (foundNames.has(name)) continue;
+      if (foundNames.has(name) || foundNames.has(name.toLowerCase())) continue;
       const reason = unavailableToolReason(unavailableToolReasons, name);
       if (reason !== undefined) {
         if (!unavailableNames.has(name)) {
@@ -169,11 +231,14 @@ export function findTools(
     ? Object.fromEntries(unavailableEntries)
     : undefined;
   return {
-    tools: found.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
-    ...(unavailable ? { unavailable } : {}),
-    ...(unknown.length ? { unknown } : {}),
-    ...(found.length || (unavailable && !unknown.length)
-      ? {}
-      : { hint: "Pass names from this tool's list or other words." }),
+    hits,
+    result: {
+      tools: hits.map(shownToolSearchHit),
+      ...(unavailable ? { unavailable } : {}),
+      ...(unknown.length ? { unknown } : {}),
+      ...(hits.length || (unavailable && !unknown.length)
+        ? {}
+        : { hint: "Pass names from this tool's list or other words." }),
+    },
   };
 }
