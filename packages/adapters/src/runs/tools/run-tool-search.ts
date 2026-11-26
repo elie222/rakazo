@@ -16,14 +16,14 @@ export async function searchRunTools(
   ctx: RunContext,
   request: ToolSearchRequest,
 ): Promise<ToolSearchHit[]> {
-  const hits = await searchToolSources(await runSearchSources(ctx), request);
+  const hits = await searchToolSources(runSearchSources(ctx), request);
   // Tool and service descriptions come from outside; the app catalog is the deployment's own.
   const outside = hits.filter((hit) => hit.next !== "connect_app");
   if (outside.length) await markReadOutsideContent(ctx, outside);
   return hits;
 }
 
-async function runSearchSources(ctx: RunContext): Promise<ToolSearchSource[]> {
+function runSearchSources(ctx: RunContext): ToolSearchSource[] {
   const { deps, context, runId } = ctx;
   const offered = (name: string) => ctx.tools.offered.some((tool) => tool.name === name);
   const sources: ToolSearchSource[] = [];
@@ -35,6 +35,6 @@ async function runSearchSources(ctx: RunContext): Promise<ToolSearchSource[]> {
   if (apps.length && offered("connect_app")) sources.push(appCatalogSource(apps, context));
   const paid = ctx.providers.paidServices;
   if (paid && offered("service_call"))
-    sources.push(paidServiceSource(paid, context, await modelCreditBillingEnabled(deps)));
+    sources.push(paidServiceSource(paid, context, () => modelCreditBillingEnabled(deps)));
   return sources;
 }

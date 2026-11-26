@@ -8,17 +8,23 @@ type ShownService = NonNullable<Awaited<ReturnType<typeof describePaidService>>>
 export function paidServiceSource(
   provider: PaidServiceProvider,
   context: AdapterContext,
-  billing: boolean,
+  billing: () => Promise<boolean>,
 ): ToolSearchSource {
   return {
     label: "paid services",
     async search(query, limit) {
-      const services = await findPaidServices(provider, query.slice(0, 200), context, billing);
+      const services = await findPaidServices(
+        provider,
+        query.slice(0, 200),
+        context,
+        await billing(),
+      );
       return services.slice(0, limit).map(serviceHit);
     },
     async find(ids) {
+      const billed = await billing();
       const services = await Promise.all(
-        ids.map((id) => describePaidService(provider, id, context, billing)),
+        ids.map((id) => describePaidService(provider, id, context, billed)),
       );
       return services.filter((service) => service !== undefined).map(serviceHit);
     },
