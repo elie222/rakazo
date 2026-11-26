@@ -609,6 +609,34 @@ describe("latestModelChoices", () => {
     expect(ids(latestModelChoices(sizes, "").latest)).toEqual(["gpt-oss-120b", "gpt-oss-20b"]);
   });
 
+  it("keeps each decimal size of one release", () => {
+    const sizes = [
+      "qwen2.5:0.5b",
+      "qwen2.5:1.5b",
+      "Qwen2.5-0.5B-Instruct",
+      "Qwen2.5-1.5B-Instruct",
+    ];
+    const choices = sizes.map((modelId) => ({
+      key: `local::${modelId}`,
+      label: modelId,
+      provider: "local",
+      providerLabel: "Local",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(choices, "").latest)).toEqual(sizes);
+  });
+
+  it("keeps the newest snapshot of one version whatever the order", () => {
+    const snapshots = ["gpt-4o-2024-08-06", "gpt-4o-2024-11-20", "gpt-4.1"].map((modelId) => ({
+      key: `openai::${modelId}`,
+      label: modelId,
+      provider: "openai",
+      providerLabel: "OpenAI",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(snapshots, "").latest)).toEqual(["gpt-4o-2024-11-20", "gpt-4.1"]);
+  });
+
   it("keeps an older selected model in view", () => {
     const { latest } = latestModelChoices(section, "openrouter::anthropic/claude-opus-4.5");
     expect(ids(latest)).toContain("anthropic/claude-opus-4.5");

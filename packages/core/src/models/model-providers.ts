@@ -451,42 +451,77 @@ export function groupModelChoices(choices: readonly ChatModelChoice[], query: st
 }
 
 /**
- * Splits a sorted section into the newest model of each family and the older ones behind them.
- * The selected model and a connection's own ordered models always stay in view.
+ * Splits a section into the newest model of each family and the older ones behind it, keeping
+ * the section's order. The selected model and a connection's own ordered models stay in view.
  */
 export function latestModelChoices<C extends ChatModelChoice>(
   choices: readonly C[],
   selectedKey: string,
 ): { latest: C[]; older: C[] } {
-  const seen = new Set<string>();
+  const releases = new Map(
+    choices.map((choice) => [
+      choice,
+      choice.preserveModelOrder || !choice.modelId ? null : modelRelease(choice),
+    ]),
+  );
+  const newest = new Map<string, { choice: C; release: ModelRelease }>();
+  for (const [choice, release] of releases) {
+    if (!release) continue;
+    const current = newest.get(release.family);
+    if (!current || compareReleases(release, current.release) > 0) {
+      newest.set(release.family, { choice, release });
+    }
+  }
   const latest: C[] = [];
   const older: C[] = [];
-  for (const choice of choices) {
-    const family = choice.preserveModelOrder || !choice.modelId ? null : modelFamily(choice);
-    if (family === null || !seen.has(family) || choice.key === selectedKey) latest.push(choice);
-    else older.push(choice);
-    if (family !== null) seen.add(family);
+  for (const [choice, release] of releases) {
+    const shown =
+      !release || newest.get(release.family)?.choice === choice || choice.key === selectedKey;
+    (shown ? latest : older).push(choice);
   }
   return { latest, older };
 }
 
-/** A model id without its version, dates or release tags: `claude-sonnet-4-5-20250929` is `claude-sonnet`. */
-function modelFamily(choice: ChatModelChoice): string {
+type ModelRelease = { family: string; version: number[]; date: number[] };
+
+/**
+ * Reads a model id as words, sizes (`120b`, `0.5b`, `4o`), a version and a date:
+ * `claude-sonnet-4-5-20250929` is family `claude-sonnet`, version 4.5, dated 20250929.
+ */
+function modelRelease(choice: ChatModelChoice): ModelRelease {
   const id = (choice.modelId ?? "").toLowerCase();
   const name = id.slice(id.lastIndexOf("/") + 1);
-  const version = MODEL_VERSION.exec(name);
-  const end = version ? version.index + version[0].length : 0;
-  // Digits run into letters name a size or variant (`120b`, `4o`), not a version.
-  const unversioned =
-    version && !/[a-z]/.test(name[end] ?? "")
-      ? name.slice(0, version.index) + name.slice(end)
-      : name;
-  // Once the version is gone, a part of digits alone is a date (`2024-08-06`, `1106`).
-  const family = unversioned
-    .split(/[-_.:]+/)
-    .filter((part) => part && !/^\d+$/.test(part) && !RELEASE_TAGS.has(part))
-    .join("-");
-  return `${choice.provider ?? ""}:${choice.providerLabel ?? ""}:${family}`;
+  const words: string[] = [];
+  const version: number[] = [];
+  const date: number[] = [];
+  for (const part of name.match(/\d+(?:\.\d+)?[a-z][a-z\d]*|[a-z]+|\d+/g) ?? []) {
+    if (!/^\d+$/.test(part)) {
+      if (!RELEASE_TAGS.has(part)) words.push(part);
+    } else if (date.length || part.length >= 4) date.push(Number(part));
+    else version.push(Number(part));
+  }
+  return {
+    family: `${choice.provider ?? ""}:${choice.providerLabel ?? ""}:${words.join("-")}`,
+    version,
+    date,
+  };
+}
+
+/** Higher versions first; within one version an undated id (which follows the newest) beats snapshots. */
+function compareReleases(left: ModelRelease, right: ModelRelease): number {
+  return (
+    compareNumbers(left.version, right.version) ||
+    Number(!left.date.length) - Number(!right.date.length) ||
+    compareNumbers(left.date, right.date)
+  );
+}
+
+function compareNumbers(left: readonly number[], right: readonly number[]): number {
+  for (let index = 0; index < Math.max(left.length, right.length); index++) {
+    const difference = (left[index] ?? -1) - (right[index] ?? -1);
+    if (difference) return difference;
+  }
+  return 0;
 }
 
 const RELEASE_TAGS = new Set(["latest", "preview", "exp"]);
