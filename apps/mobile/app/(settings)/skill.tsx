@@ -1,5 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { formatFileSize } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
@@ -7,13 +8,16 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native/native-action-button";
+import { Chevron } from "../../components/ui/row-accessories";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { useSideInsets } from "../../lib/layout/side-insets";
@@ -30,7 +34,10 @@ description: What this skill does and when the agent should use it.
 Steps the agent should follow.
 `;
 
-/** One skill's SKILL.md: your own skills are edited here, built-in and plugin skills only read. */
+/**
+ * One skill's SKILL.md: your own skills are edited here, built-in and plugin skills only read.
+ * The files kept beside it are listed under it, each opening to be read.
+ */
 export default function SkillScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   // A different skill in the same screen starts from its own content, never the previous one's.
@@ -45,6 +52,15 @@ function SkillEditor({ id }: { id?: string }) {
   const skillRead = formRead(rpcQuery("agentSkills/get", { skillId: id ?? "" }));
   const skillQuery = useQuery({ ...skillRead, enabled: Boolean(id) }, queryClient);
   const skill = skillQuery.data ?? null;
+  // Built-in skills have no files of their own.
+  const filesQuery = useQuery(
+    {
+      ...formRead(rpcQuery("agentSkills/listFiles", { skillId: id ?? "" })),
+      enabled: Boolean(id) && !id?.startsWith("builtin:"),
+    },
+    queryClient,
+  );
+  const files = filesQuery.data ?? [];
   const loading = skillQuery.isFetching && !skill;
   const [edited, setDraft] = useState<string | null>(null);
   const draft = edited ?? skill?.content ?? (id ? "" : NEW_SKILL_TEMPLATE);
@@ -137,6 +153,44 @@ function SkillEditor({ id }: { id?: string }) {
             style={styles.editor}
           />
         )}
+        {skill && filesQuery.error ? (
+          <View style={styles.files}>
+            <Text accessibilityRole="alert" style={styles.error}>
+              {errorText(filesQuery.error, t`Could not load files`)}
+            </Text>
+            <NativeActionButton
+              fill={false}
+              label={t`Retry`}
+              onPress={() => void filesQuery.refetch()}
+              prominence="secondary"
+            />
+          </View>
+        ) : null}
+        {skill && files.length ? (
+          <View testID="skill-files" style={styles.files}>
+            <Text style={styles.section}>{t`Files`}</Text>
+            {files.map((file) => (
+              <Pressable
+                key={file.path}
+                accessibilityRole="button"
+                accessibilityLabel={file.path}
+                onPress={() =>
+                  router.push({
+                    pathname: "/skill-file",
+                    params: { id: skill.id, path: file.path },
+                  })
+                }
+                style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+              >
+                <Text numberOfLines={1} style={[styles.rowTitle, styles.grow]}>
+                  {file.path}
+                </Text>
+                <Text style={styles.secondary}>{formatFileSize(file.bytes)}</Text>
+                <Chevron />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         {error ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
@@ -179,5 +233,21 @@ function createStyles() {
       fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     },
     error: { color: mobileTokens().destructive, fontSize: 13 },
+    files: { gap: 8 },
+    section: { color: native.secondaryLabel, fontSize: 13, fontWeight: "500", marginTop: 6 },
+    row: {
+      minHeight: 48,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 14,
+      backgroundColor: native.fill,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    pressed: { backgroundColor: native.fillPressed },
+    grow: { flex: 1, minWidth: 0 },
+    rowTitle: { color: native.label, fontSize: 15 },
+    secondary: { color: native.secondaryLabel, fontSize: 13 },
   });
 }

@@ -33,6 +33,7 @@ const settingsScreens = new Set([
   "profile",
   "signup-survey",
   "skill",
+  "skill-file",
   "skills",
   "space",
   "spaces",

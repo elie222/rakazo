@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { ORPCError } from "@orpc/client";
-import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps, ReactNode } from "react";
@@ -65,8 +64,7 @@ vi.mock("@rakazo/ui-web", () => {
 });
 
 import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
-import { spaceQueries } from "../../lib/query/query";
-import { AgentSkills, KnowledgeSection } from "./KnowledgeSection";
+import { KnowledgeSection } from "./KnowledgeSection";
 
 const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 let queryClient = newClient();
@@ -86,113 +84,6 @@ async function show(root: Root, node: ReactNode) {
   );
   await settle();
 }
-
-it("disables skill rows while a completed save is refreshing the catalog", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const skill = {
-    id: "skill-fixture",
-    name: "greeting",
-    description: "Greet politely",
-    content: "Hello",
-  };
-  const refresh = deferred<(typeof skill)[]>();
-  api.list.mockResolvedValueOnce([skill]).mockReturnValueOnce(refresh.promise);
-  api.create.mockResolvedValue(skill);
-  api.get.mockResolvedValue(skill);
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  const button = (text: string) => {
-    const found = [...container.querySelectorAll("button")].find((entry) =>
-      entry.textContent?.includes(text),
-    );
-    if (!found) throw new Error(`Missing button: ${text}`);
-    return found;
-  };
-  try {
-    await show(root, <AgentSkills />);
-    await act(async () => button("New skill").click());
-    await act(async () => button("Save").click());
-    expect(api.create).toHaveBeenCalledOnce();
-    expect(api.list).toHaveBeenCalledTimes(2);
-    expect(button("greeting").disabled).toBe(true);
-    await act(async () => button("greeting").click());
-    expect(api.get).not.toHaveBeenCalled();
-    await act(async () => refresh.resolve([skill]));
-    expect(button("greeting").disabled).toBe(false);
-    await act(async () => button("greeting").click());
-    expect(container.querySelector("textarea")?.value).toBe("Hello");
-  } finally {
-    await act(async () => {
-      refresh.resolve([skill]);
-      root.unmount();
-    });
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("badges built-in skills and leaves plugin skills to their plugin", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const catalog: AgentSkillCatalogEntry[] = [
-    {
-      id: "builtin:interrogate",
-      name: "Interrogate",
-      description: "Review a change",
-      source: "builtin",
-      readOnly: true,
-    },
-    {
-      id: "plugin:mail",
-      name: "Triage mail",
-      description: "Sort the inbox",
-      source: "plugin",
-      readOnly: true,
-    },
-    {
-      id: "user-1",
-      name: "greeting",
-      description: "Greet politely",
-      source: "user",
-      readOnly: false,
-    },
-  ];
-  api.list.mockReset();
-  api.get.mockReset();
-  api.list.mockResolvedValueOnce(catalog);
-  api.get.mockImplementation(async ({ skillId }: { skillId: string }) => {
-    const entry = catalog.find((skill) => skill.id === skillId);
-    if (!entry) throw new Error(`Missing skill: ${skillId}`);
-    return { ...entry, content: "Steps", createdAt: "", updatedAt: "" };
-  });
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  const button = (text: string) => {
-    const found = [...container.querySelectorAll("button")].find((entry) =>
-      entry.textContent?.includes(text),
-    );
-    if (!found) throw new Error(`Missing button: ${text}`);
-    return found;
-  };
-  try {
-    await show(root, <AgentSkills />);
-    expect(button("Interrogate").textContent).toContain("Built-in");
-    // Plugin skills are listed by their plugin in the Skills dialog, not one by one here.
-    expect(container.textContent).not.toContain("Triage mail");
-    expect(button("greeting").textContent).not.toContain("Built-in");
-    expect(button("greeting").textContent).not.toContain("Plugin");
-    await act(async () => button("Interrogate").click());
-    expect(container.querySelector("textarea")?.readOnly).toBe(true);
-    expect(container.textContent).toContain("Built-in");
-    expect(button("Close")).toBeTruthy();
-    expect(container.textContent).not.toContain("Delete");
-  } finally {
-    await act(async () => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
 
 it("deletes a bot memory document after confirmation but never MEMORY.md", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -402,47 +293,6 @@ it.each(["missing", "failed"])(
     }
   },
 );
-
-it("opens skills from the composer's cached list and saves back into it", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const entry = (id: string, name: string): AgentSkillCatalogEntry => ({
-    id,
-    name,
-    description: "",
-    source: "user",
-    readOnly: false,
-  });
-  const sharedKey = spaceQueries(null, null).agentSkills.list.queryKey();
-  queryClient.setQueryData(sharedKey, [entry("cached", "cached-skill")]);
-  const resolveRead = deferred<AgentSkillCatalogEntry[]>();
-  api.list
-    .mockReset()
-    .mockImplementationOnce(() => resolveRead.promise)
-    .mockResolvedValueOnce([entry("cached", "cached-skill"), entry("new", "new-skill")]);
-  api.create.mockReset().mockResolvedValue(entry("new", "new-skill"));
-  const host = document.createElement("div");
-  const root = createRoot(host);
-  const button = (text: string) =>
-    [...host.querySelectorAll("button")].find((node) => node.textContent?.includes(text));
-  try {
-    await show(root, <AgentSkills />);
-    expect(button("cached-skill")).toBeTruthy();
-    expect(api.list).toHaveBeenCalledTimes(1);
-    await act(async () => button("New skill")!.click());
-    await act(async () => button("Save")!.click());
-    await settle();
-    await act(async () => resolveRead.resolve([entry("cached", "cached-skill")]));
-    await settle();
-    expect(button("new-skill")).toBeTruthy();
-    expect(queryClient.getQueryData(sharedKey)?.map((skill) => skill.id)).toEqual([
-      "cached",
-      "new",
-    ]);
-  } finally {
-    await act(async () => root.unmount());
-    vi.unstubAllGlobals();
-  }
-});
 
 it("says how much memory no longer reaches the bot", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

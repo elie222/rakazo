@@ -6,15 +6,17 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SkillScreen from "../../app/(settings)/skill";
+import SkillFileScreen from "../../app/(settings)/skill-file";
 import { announceToScreenReader } from "../native/announce";
 import { queryClient } from "../query/query";
 
 vi.mock("../native/announce", () => ({ announceToScreenReader: vi.fn() }));
 
 const mocks = vi.hoisted(() => ({
-  params: {} as { id?: string },
+  params: {} as { id?: string; path?: string },
   options: {} as { title?: string; headerRight?: () => ReactNode },
   back: vi.fn(),
+  push: vi.fn(),
   rpc: vi.fn(),
   alert: vi.fn(),
   t: (text: string, values?: Record<string, unknown>) =>
@@ -40,9 +42,11 @@ vi.mock("../api/api", () => ({
   }),
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("expo-router", () => ({
+  useFocusEffect: () => undefined,
   useLocalSearchParams: () => mocks.params,
-  useRouter: () => ({ back: mocks.back }),
+  useRouter: () => ({ back: mocks.back, push: mocks.push }),
   useNavigation: () => ({
     setOptions: (next: typeof mocks.options) => Object.assign(mocks.options, next),
   }),
@@ -50,6 +54,7 @@ vi.mock("expo-router", () => ({
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
+vi.mock("../../components/ui/row-accessories", () => ({ Chevron: () => null }));
 vi.mock("../../components/native/native-action-button", () => ({
   NativeActionButton: ({
     label,
@@ -70,6 +75,19 @@ vi.mock("react-native", () => {
   return {
     View,
     ScrollView: View,
+    Pressable: ({
+      children,
+      onPress,
+      accessibilityLabel,
+    }: {
+      children?: ReactNode;
+      onPress: () => void;
+      accessibilityLabel?: string;
+    }) => (
+      <button type="button" aria-label={accessibilityLabel} onClick={onPress}>
+        {children}
+      </button>
+    ),
     Text: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
     ActivityIndicator: () => <span role="status" />,
     TextInput: ({
@@ -170,12 +188,16 @@ function hold(write: string) {
   mocks.rpc.mockImplementation((proc: string, body: Record<string, unknown>) =>
     proc === "agentSkills/get"
       ? Promise.resolve(own)
-      : proc === write
-        ? new Promise((resolve, reject) => {
-            finish = (outcome) =>
-              outcome ? reject(outcome) : resolve({ ...own, content: body.content ?? own.content });
-          })
-        : Promise.reject(new Error(`Unexpected ${proc}`)),
+      : proc === "agentSkills/listFiles"
+        ? Promise.resolve([])
+        : proc === write
+          ? new Promise((resolve, reject) => {
+              finish = (outcome) =>
+                outcome
+                  ? reject(outcome)
+                  : resolve({ ...own, content: body.content ?? own.content });
+            })
+          : Promise.reject(new Error(`Unexpected ${proc}`)),
   );
   return {
     finish: (outcome?: Error) => act(async () => finish(outcome)),
@@ -275,7 +297,10 @@ it("creates a new skill from the template and goes back", async () => {
 it("reads the skill again on a later visit instead of showing the earlier copy", async () => {
   mocks.params = { id: own.id };
   const answer = deferred<typeof own>();
-  mocks.rpc.mockResolvedValueOnce(own).mockReturnValueOnce(answer.promise);
+  const reads = [Promise.resolve(own), answer.promise];
+  mocks.rpc.mockImplementation((proc: string) =>
+    proc === "agentSkills/listFiles" ? Promise.resolve([]) : reads.shift(),
+  );
   await render();
   expect(editor().value).toBe(own.content);
   await act(async () => root.render(null));
@@ -366,7 +391,11 @@ it.each(writes)(
     for (const [index, message] of ["Name taken", "Name taken", ""].entries()) {
       const pending = deferred<never>();
       mocks.rpc.mockImplementation((proc: string) =>
-        proc === "agentSkills/get" ? Promise.resolve(own) : pending.promise,
+        proc === "agentSkills/get"
+          ? Promise.resolve(own)
+          : proc === "agentSkills/listFiles"
+            ? Promise.resolve([])
+            : pending.promise,
       );
       await start();
       expect(mocks.rpc).toHaveBeenCalledWith(write, expect.anything(), pinned);
@@ -403,7 +432,11 @@ it.each(writes)(
       await renderWithWrite();
       const pending = deferred<never>();
       mocks.rpc.mockImplementation((proc: string) =>
-        proc === "agentSkills/get" ? Promise.resolve(own) : pending.promise,
+        proc === "agentSkills/get"
+          ? Promise.resolve(own)
+          : proc === "agentSkills/listFiles"
+            ? Promise.resolve([])
+            : pending.promise,
       );
       await start();
       expect(mocks.rpc).toHaveBeenCalledWith(write, expect.anything(), pinned);
@@ -435,4 +468,103 @@ it.each([
   await act(async () => root.render(null));
   await pending.finish();
   expect(mocks.back).not.toHaveBeenCalled();
+});
+
+it("lists the files kept beside a skill and opens one to read", async () => {
+  mocks.params = { id: own.id };
+  mocks.rpc.mockImplementation(async (proc: string, body: Record<string, unknown>) => {
+    if (proc === "agentSkills/get") return own;
+    if (proc === "agentSkills/listFiles")
+      return [
+        { path: "NOTES.md", bytes: 12 },
+        { path: "templates/report.html", bytes: 2048 },
+      ];
+    throw new Error(`Unexpected ${proc} ${JSON.stringify(body)}`);
+  });
+  await act(async () => root.render(<SkillScreen />));
+  await act(flush);
+  await act(flush);
+  expect(mocks.rpc).toHaveBeenCalledWith(
+    "agentSkills/listFiles",
+    { skillId: own.id },
+    expect.anything(),
+  );
+  const rows = [...container.querySelectorAll('[aria-label="templates/report.html"]')];
+  expect(rows).toHaveLength(1);
+  expect(container.textContent).toContain("Files");
+  await act(async () => (rows[0] as HTMLButtonElement).click());
+  expect(mocks.push).toHaveBeenCalledWith({
+    pathname: "/skill-file",
+    params: { id: own.id, path: "templates/report.html" },
+  });
+});
+
+it("shows no files section for a built-in skill and never asks for its files", async () => {
+  mocks.params = { id: "builtin:Interrogate" };
+  mocks.rpc.mockResolvedValue({
+    ...own,
+    id: "builtin:Interrogate",
+    source: "builtin",
+    readOnly: true,
+  });
+  await act(async () => root.render(<SkillScreen />));
+  await act(flush);
+  expect(mocks.rpc).not.toHaveBeenCalledWith(
+    "agentSkills/listFiles",
+    expect.anything(),
+    expect.anything(),
+  );
+  expect(container.textContent).not.toContain("Files");
+});
+
+it("reads one skill file exactly as written, named by its file name", async () => {
+  mocks.params = { id: own.id, path: "templates/report.html" };
+  mocks.rpc.mockResolvedValue({ path: "templates/report.html", content: "<h1>{{title}}</h1>" });
+  await act(async () => root.render(<SkillFileScreen />));
+  await act(flush);
+  expect(mocks.rpc).toHaveBeenCalledWith(
+    "agentSkills/getFile",
+    { skillId: own.id, path: "templates/report.html" },
+    expect.anything(),
+  );
+  expect(mocks.options.title).toBe("report.html");
+  expect(container.textContent).toContain("<h1>{{title}}</h1>");
+  expect(container.textContent).toContain("templates/report.html");
+});
+
+it("says a skill file could not load and retries", async () => {
+  mocks.params = { id: own.id, path: "NOTES.md" };
+  mocks.rpc
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValueOnce({ path: "NOTES.md", content: "Tone" });
+  await act(async () => root.render(<SkillFileScreen />));
+  await act(flush);
+  expect(container.textContent).not.toContain("Tone");
+  const retry = [...container.querySelectorAll("button")].find((b) => b.textContent === "Retry");
+  await act(async () => retry?.click());
+  await act(flush);
+  expect(container.textContent).toContain("Tone");
+});
+
+it("says a skill's files could not load and retries the list", async () => {
+  mocks.params = { id: own.id };
+  let failFiles = true;
+  mocks.rpc.mockImplementation(async (proc: string) => {
+    if (proc === "agentSkills/get") return own;
+    if (proc === "agentSkills/listFiles") {
+      if (failFiles) throw new Error("offline");
+      return [{ path: "NOTES.md", bytes: 4 }];
+    }
+    throw new Error(`Unexpected ${proc}`);
+  });
+  await act(async () => root.render(<SkillScreen />));
+  await act(flush);
+  await act(flush);
+  const retry = [...container.querySelectorAll("button")].find((b) => b.textContent === "Retry");
+  expect(retry).toBeTruthy();
+  failFiles = false;
+  await act(async () => retry?.click());
+  await act(flush);
+  await act(flush);
+  expect(container.querySelector('[aria-label="NOTES.md"]')).not.toBeNull();
 });
