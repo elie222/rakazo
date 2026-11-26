@@ -516,6 +516,8 @@ model Organization {
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
+  mcpServers   McpServer[]
+  secrets      Secret[]
 
   @@unique([slug])
   @@map("organization")
@@ -2333,8 +2335,12 @@ model SpaceMemoryConfig {
 
 model Secret {
   id                String             @id @default(cuid())
-  userId            String
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Null only for an organization's secret.
+  userId            String?
+  user              User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Set for an organization's secret, which every member's runs in its Spaces can use.
+  organizationId    String?
+  organization      Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   spaceId           String?
   space             Space?             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   kind              String
@@ -2346,15 +2352,20 @@ model Secret {
   pageShare         Page?
 
   @@index([userId, spaceId])
+  @@index([organizationId])
   @@map("secrets")
 }
 
+/// A member's server (`userId` and the Space it was added in), or an organization's
+/// (`organizationId` alone), which every member's agents in every Space of it can use.
 model McpServer {
   id            String            @id @default(cuid())
-  spaceId       String
-  space         Space             @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId        String
-  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  spaceId       String?
+  space         Space?            @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId        String?
+  user          User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String?
+  organization  Organization?     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   slug          String
   name          String
   description   String            @default("")
@@ -2389,6 +2400,7 @@ model McpServer {
   allBots       Boolean           @default(false)
 
   @@unique([spaceId, userId, slug])
+  @@unique([organizationId, slug])
   @@index([spaceId, userId])
   @@index([installId])
   @@map("mcp_servers")
