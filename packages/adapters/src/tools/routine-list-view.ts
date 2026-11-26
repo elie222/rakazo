@@ -1,3 +1,4 @@
+import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
 import { endsWholeCharacter, fitTextPage, SERIALIZED_PAGE_LIMIT } from "./text-page.js";
 
 const PROMPT_PREVIEW_CHARS = 200;
@@ -33,7 +34,8 @@ function previewed<Routine extends ListedRoutine>({ lastCheck: _lastCheck, ...ro
 /** What names a routine and reads it, for a list too long to describe each one. */
 const named = (routine: ListedRoutine) => ({
   routineId: routine.routineId,
-  name: routine.name,
+  // A routine made by a tool call may carry a longer name than the limit its edits hold it to.
+  name: routine.name.slice(0, ROUTINE_NAME_MAX_LENGTH),
   active: routine.active,
   promptLength: routine.prompt.length,
   ...(routine.inThisChat === undefined ? {} : { inThisChat: routine.inThisChat }),
