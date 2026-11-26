@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { mkdir } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -36,15 +37,7 @@ describe.skipIf(process.env.RUN_COMPUTER_REPLAY_DOCKER !== "1")(
       }
       const { supervisorApp } = await import("@rakazo/sandbox-supervisor");
       server = serve({ fetch: supervisorApp.fetch, hostname: "127.0.0.1", port: 0 }) as Server;
-      if (!server.listening) {
-        await new Promise<void>((resolve, reject) => {
-          server.once("error", reject);
-          server.once("listening", () => {
-            server.off("error", reject);
-            resolve();
-          });
-        });
-      }
+      if (!server.listening) await once(server, "listening");
       const port = (server.address() as AddressInfo).port;
       sandbox = new DockerSandboxProvider(
         `http://127.0.0.1:${port}`,
