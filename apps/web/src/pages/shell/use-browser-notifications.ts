@@ -17,7 +17,7 @@ import { isReadChangeKind, spaceChanged } from "../../lib/query/space-changes";
 import { organizationsChanged } from "../../lib/spaces/organizations";
 
 type PendingBrowserNotification = {
-  event: Pick<ProductEvent, "id" | "type" | "threadId" | "runId" | "botId" | "payload">;
+  event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "runId" | "botId" | "payload">;
   botId: string;
   botName: string;
   groupId: string | undefined;
@@ -26,6 +26,8 @@ type PendingBrowserNotification = {
   /** Run owner captured while the notification's chat was open, so switching chats before flush keeps ownership. */
   runOwner?: { userId?: string };
 };
+
+type QuestionOwnership = "none" | "viewer" | "other" | "pending";
 
 type SnoozableChat = { id: string; snoozedUntil?: string | null };
 
@@ -144,11 +146,11 @@ export function useBrowserNotifications(
     [snapshotRef],
   );
   // The snooze exception speaks to the person a question waits on. Both ask cards and tool
-  // questions are answered only by the run's own user. A tool question arrives while its run is
-  // already active, so it counts only when the viewer owns that run. An ask card from a
-  // background run can arrive before run.waiting_input adds the run to the live snapshot, so an
-  // unknown run still alerts while a known run counts only when the viewer owns it.
-  const questionWaitsOnViewer = useCallback(
+  // questions are answered only by the run's own user. Current servers attach `runUserId` to
+  // waiting ask/tool_question events; when an older worker omits it and the run is not yet in
+  // the snapshot or stream state (e.g. a background helper ask before `run.waiting_input`, or a
+  // `tool_question` during snapshot recovery), hold delivery as `"pending"` until ownership lands.
+  const questionOwnership = useCallback(
     (
       event: {
         type: string;
@@ -157,21 +159,22 @@ export function useBrowserNotifications(
         payload: Record<string, unknown> & { blocks?: unknown };
       },
       rememberedRunOwner?: { userId?: string },
-    ): boolean => {
-      if (event.type !== "thread.message.created") return false;
+    ): QuestionOwnership => {
+      if (event.type !== "thread.message.created") return "none";
       const blocks = event.payload.blocks;
-      if (!Array.isArray(blocks)) return false;
+      if (!Array.isArray(blocks)) return "none";
+      const waitingBlocks = blocks.filter(isWaitingAskBlock);
+      if (waitingBlocks.length === 0) return "none";
       const me = meIdRef.current;
       const run =
         eventRunOwner(event) ?? liveRunFor(event.runId, event.threadId) ?? rememberedRunOwner;
-      const viewerOwnsRun = !!me && !!run && run.userId === me;
-      return blocks.some(
-        (block) =>
-          isWaitingAskBlock(block) &&
-          ((block as { kind?: unknown }).kind === "tool_question"
-            ? viewerOwnsRun
-            : !run || viewerOwnsRun),
-      );
+      if (run) {
+        return me && run.userId === me ? "viewer" : "other";
+      }
+      if (event.runId) return "pending";
+      return waitingBlocks.some((block) => (block as { kind?: unknown }).kind !== "tool_question")
+        ? "viewer"
+        : "other";
     },
     [liveRunFor],
   );
@@ -246,11 +249,16 @@ export function useBrowserNotifications(
   ) {
     const left = lastActiveChat.current;
     for (const [key, pending] of pendingBrowserNotifications.current) {
-      if (!pending.questionOnly) continue;
       const belongedToLeft = left.groupId
         ? pending.groupId === left.groupId
         : !pending.groupId && left.botId !== undefined && pending.botId === left.botId;
-      if (belongedToLeft) pendingBrowserNotifications.current.delete(key);
+      if (!belongedToLeft) continue;
+      if (pending.questionOnly) {
+        pendingBrowserNotifications.current.delete(key);
+      } else if (!pending.runOwner && pending.event.runId) {
+        // After leaving the chat its live run events stop, so do not leave a mixed reply pending forever.
+        pending.runOwner = { userId: undefined };
+      }
     }
     lastActiveChat.current = {
       botId: activeBotId.current,
@@ -259,8 +267,11 @@ export function useBrowserNotifications(
   }
   const dropPendingQuestions = useCallback((threadId: string) => {
     for (const [key, pending] of pendingBrowserNotifications.current) {
-      if (pending.questionOnly && pending.event.threadId === threadId) {
+      if (pending.event.threadId !== threadId) continue;
+      if (pending.questionOnly) {
         pendingBrowserNotifications.current.delete(key);
+      } else if (!pending.runOwner && pending.event.runId) {
+        pending.runOwner = { userId: undefined };
       }
     }
     for (const [runId, owner] of runOwnersRef.current) {
@@ -273,6 +284,13 @@ export function useBrowserNotifications(
       const snapRuns = snap ? activeThreadRuns(snap) : undefined;
       for (const [key, pending] of pendingBrowserNotifications.current) {
         if (threadId !== undefined && pending.event.threadId !== threadId) continue;
+        const authoritativeSnap =
+          snap &&
+          snap.threadId === pending.event.threadId &&
+          typeof snap.cursor === "number" &&
+          snap.cursor >= pending.event.seq
+            ? snap
+            : undefined;
         if (pending.event.runId) {
           const live =
             snap && snap.threadId === pending.event.threadId
@@ -284,15 +302,39 @@ export function useBrowserNotifications(
             (streamOwner?.threadId === pending.event.threadId ? streamOwner.userId : undefined);
           if (live || (streamOwner && streamOwner.threadId === pending.event.threadId)) {
             pending.runOwner = { userId: ownerUserId };
+          } else if (authoritativeSnap && !pending.runOwner) {
+            // The run is already gone from an authoritative snapshot at or past this event.
+            if (pending.questionOnly) {
+              pendingBrowserNotifications.current.delete(key);
+              continue;
+            }
+            pending.runOwner = { userId: undefined };
           }
         }
-        if (pending.questionOnly && snap && snap.threadId === pending.event.threadId) {
+        if (snap && snap.threadId === pending.event.threadId) {
           const messageId = eventMessageId(pending.event);
           const liveMessage =
             messageId !== undefined
               ? snap.messages.find((candidate) => candidate.id === messageId)
               : undefined;
-          if (liveMessage && !liveMessage.blocks.some(isWaitingAskBlock)) {
+          if (liveMessage) {
+            if (!liveMessage.blocks.some(isWaitingAskBlock)) {
+              if (pending.questionOnly) {
+                pendingBrowserNotifications.current.delete(key);
+                continue;
+              }
+              pending.event = {
+                ...pending.event,
+                payload: { ...pending.event.payload, blocks: liveMessage.blocks },
+              };
+            }
+          } else if (
+            authoritativeSnap &&
+            messageId !== undefined &&
+            (authoritativeSnap.olderCursor === null || authoritativeSnap.messages.length === 0)
+          ) {
+            // An authoritative non-paginated (or empty) snapshot at or past this event without the
+            // message proves the thread was cleared, even before a replayed thread.cleared arrives.
             pendingBrowserNotifications.current.delete(key);
           }
         }
@@ -333,15 +375,13 @@ export function useBrowserNotifications(
           if (liveMessage && !liveMessage.blocks.some(isWaitingAskBlock)) return true;
         }
       }
-      const waitsOnViewer = (event: {
-        type: string;
-        runId?: string;
-        payload: { blocks?: unknown };
-      }) => questionWaitsOnViewer({ ...event, threadId: pending.event.threadId }, pending.runOwner);
+      const ownership = questionOwnership(pending.event, pending.runOwner);
+      if (ownership === "pending") return false;
+      const waits = ownership === "viewer";
       // A reply queued while permission was pending can be snoozed before it is shown.
-      if (snoozedOrdinaryReply(pending.event, chatFor(pending), waitsOnViewer)) return true;
+      if (snoozedOrdinaryReply(pending.event, chatFor(pending), () => waits)) return true;
       const tag = browserNotificationTag(pending.event, {
-        waitingQuestion: waitsOnViewer(pending.event),
+        waitingQuestion: waits,
       });
       const result = deliverNativeBrowserNotification(
         pending.event,
@@ -369,7 +409,21 @@ export function useBrowserNotifications(
       );
       return result !== "pending";
     },
-    [questionWaitsOnViewer, snapshotRef],
+    [questionOwnership, snapshotRef],
+  );
+  const flushReadyNotifications = useCallback(
+    (threadId?: string) => {
+      if (!mounted.current) return;
+      syncPendingFromSnapshot(threadId);
+      if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+      for (const [key, pending] of pendingBrowserNotifications.current) {
+        if (threadId !== undefined && pending.event.threadId !== threadId) continue;
+        if (deliverBrowserNotification(pending)) {
+          pendingBrowserNotifications.current.delete(key);
+        }
+      }
+    },
+    [deliverBrowserNotification, syncPendingFromSnapshot],
   );
   const flushPendingBrowserNotifications = useCallback(() => {
     if (!mounted.current) return;
@@ -380,6 +434,13 @@ export function useBrowserNotifications(
       }
     }
   }, [deliverBrowserNotification, syncPendingFromSnapshot]);
+  const reconcileSnapshot = useCallback(
+    (snap?: ThreadSnapshot | null) => {
+      const targetThreadId = snap?.threadId ?? snapshotRef?.current?.threadId;
+      flushReadyNotifications(targetThreadId);
+    },
+    [flushReadyNotifications, snapshotRef],
+  );
   const notifyBrowserForEvent = useCallback(
     (
       event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "runId" | "botId" | "payload">,
@@ -448,6 +509,9 @@ export function useBrowserNotifications(
           }
         }
       }
+      if (event.type === "run.started" || event.type === "run.waiting_input") {
+        flushReadyNotifications(event.threadId);
+      }
       const botId = event.botId;
       if (typeof botId !== "string") return;
       const eligible = shouldNotifyBrowser(event, {
@@ -470,16 +534,23 @@ export function useBrowserNotifications(
         questionOnly: isQuestionOnlyEvent(event),
         ...(runOwner ? { runOwner: { userId: runOwner.userId } } : {}),
       } satisfies PendingBrowserNotification;
-      const waits = questionWaitsOnViewer(event, pending.runOwner);
+      const ownership = questionOwnership(event, pending.runOwner);
+      const waits = ownership === "viewer";
       // Ordinary replies wait out a snooze. A question still comes through, and a reply that was
       // queued before the snooze is checked again when it is actually shown.
-      if (snoozedOrdinaryReply(event, chatFor(pending), () => waits)) return;
+      if (ownership !== "pending" && snoozedOrdinaryReply(event, chatFor(pending), () => waits)) {
+        return;
+      }
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
+      const hasWaitingAsk = ownership !== "none";
       const tag = browserNotificationTag(event, { waitingQuestion: waits });
-      // Keep waiting questions separate per run while queued so a background helper's ask card
-      // arriving before run.waiting_input cannot overwrite the viewer's own queued ask.
-      const pendingKey = waits ? `${tag}:${event.runId ?? event.id}` : tag;
-      if (Notification.permission === "default") {
+      // Queue waiting questions by message ID so parallel asks or tool questions from the same
+      // run (or a foreign helper's card) never overwrite each other before display, while display
+      // still shares the thread's `:ask` tag.
+      const pendingKey = hasWaitingAsk
+        ? `${event.threadId}:ask:${eventMessageId(event) ?? event.id}`
+        : tag;
+      if (ownership === "pending" || Notification.permission === "default") {
         pendingBrowserNotifications.current.set(pendingKey, pending);
         return;
       }
@@ -489,7 +560,18 @@ export function useBrowserNotifications(
         pendingBrowserNotifications.current.set(pendingKey, pending);
       }
     },
-    [deliverBrowserNotification, liveRunFor, questionWaitsOnViewer, syncPendingFromSnapshot],
+    [
+      deliverBrowserNotification,
+      flushReadyNotifications,
+      liveRunFor,
+      questionOwnership,
+      syncPendingFromSnapshot,
+    ],
   );
-  return { notifyBrowserForEvent, flushPendingBrowserNotifications, dropPendingQuestions };
+  return {
+    notifyBrowserForEvent,
+    flushPendingBrowserNotifications,
+    dropPendingQuestions,
+    reconcileSnapshot,
+  };
 }

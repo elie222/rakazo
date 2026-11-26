@@ -84,6 +84,7 @@ export function useThreadSync({
   refreshBots,
   notifyBrowserForEvent,
   dropPendingQuestions,
+  reconcileSnapshot,
   markBotReadIfVisible,
   markGroupReadOnReply,
   meId,
@@ -104,6 +105,7 @@ export function useThreadSync({
   refreshBots: (includeArchived?: boolean) => Promise<void>;
   notifyBrowserForEvent: ReturnType<typeof useBrowserNotifications>["notifyBrowserForEvent"];
   dropPendingQuestions?: ReturnType<typeof useBrowserNotifications>["dropPendingQuestions"];
+  reconcileSnapshot?: ReturnType<typeof useBrowserNotifications>["reconcileSnapshot"];
   markBotReadIfVisible: (botId: string) => void;
   markGroupReadOnReply: (groupId: string) => void;
   /** The signed-in person: another member's message is new to them, their own is not. */
@@ -230,6 +232,7 @@ export function useThreadSync({
     const transcriptRemounted = scrollElement !== null && scrollElement !== preRequestElement;
     webLogoAvatarActivity.reconcile(snap);
     commitSnapshot(reconciled.snapshot);
+    reconcileSnapshot?.(reconciled.snapshot);
     if (!computerOpenRef.current) commitComputer(null);
     setRoutines([]);
     setRoutinesBotId(null);
@@ -281,6 +284,7 @@ export function useThreadSync({
     );
     webLogoAvatarActivity.reconcile(snap);
     commitSnapshot(reconciled.snapshot);
+    reconcileSnapshot?.(reconciled.snapshot);
     commitComputer(reconciled.computer);
     cacheComputerFor(id, { computer: reconciled.computer });
     if (

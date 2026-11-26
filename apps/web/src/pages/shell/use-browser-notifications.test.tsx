@@ -619,7 +619,7 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toEqual([["Scout", "Message", "thread-g:ask"]]);
   });
 
-  it("announces the viewer's own ask, an unknown-run ask, and the viewer's own pending tool question in a snoozed chat", async () => {
+  it("announces the viewer's own ask, a runless ask, and the viewer's own pending tool question in a snoozed chat", async () => {
     const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     visible = false;
     bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
@@ -641,10 +641,7 @@ describe("useBrowserNotifications chat alerts", () => {
     );
     act(() =>
       hook.notifyBrowserForEvent(
-        {
-          ...reply("bg-ask", [{ kind: "ask", text: "Approve deploy?", status: "pending" }]),
-          runId: "run-background",
-        },
+        reply("bg-ask", [{ kind: "ask", text: "Approve deploy?", status: "pending" }]),
         "thread-b",
         4,
         true,
@@ -1322,6 +1319,337 @@ describe("useBrowserNotifications chat alerts", () => {
       [],
       [{ id: "msg-2", blocks: [{ kind: "ask", text: "Proceed?", status: "answered" }] }],
     );
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
+  });
+
+  it("defers a legacy helper ask until run.waiting_input identifies the owner in a snoozed chat", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    visible = false;
+    groups[0] = { id: "group-g", snoozedUntil: later };
+    setLiveSnapshot("thread-g", []);
+    await open({ groupId: "group-g" });
+
+    // Legacy worker omits payload.runUserId and sends the ask card before run.waiting_input.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "legacy-foreign-ask",
+          type: "thread.message.created",
+          threadId: "thread-g",
+          seq: 5,
+          runId: "run-helper-other",
+          botId: "bot-b",
+          payload: {
+            id: "msg-foreign",
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Other member approval?", status: "pending" }],
+          },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "legacy-own-ask",
+          type: "thread.message.created",
+          threadId: "thread-g",
+          seq: 6,
+          runId: "run-helper-mine",
+          botId: "bot-b",
+          payload: {
+            id: "msg-mine",
+            role: "bot",
+            blocks: [{ kind: "ask", text: "My helper approval?", status: "pending" }],
+          },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    expect(shown()).toEqual([]);
+
+    // Foreign ownership resolves: suppressed by snooze.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "wait-other",
+          type: "run.waiting_input",
+          threadId: "thread-g",
+          seq: 7,
+          runId: "run-helper-other",
+          botId: "bot-b",
+          payload: { userId: "member-2" },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    expect(shown()).toEqual([]);
+
+    // Viewer ownership resolves: delivered immediately with :ask tag.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "wait-mine",
+          type: "run.waiting_input",
+          threadId: "thread-g",
+          seq: 8,
+          runId: "run-helper-mine",
+          botId: "bot-b",
+          payload: { userId: "user-1" },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    expect(shown()).toEqual([["Scout", "My helper approval?", "thread-g:ask"]]);
+  });
+
+  it("delivers a legacy tool question once snapshot recovery supplies the viewer as run owner", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    snapshotRef.current = null;
+    await open({ botId: "bot-b" });
+
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "legacy-tool-q",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 6,
+          runId: "run-recovered",
+          botId: "bot-b",
+          payload: {
+            id: "msg-tq",
+            role: "bot",
+            blocks: [
+              {
+                kind: "tool_question",
+                question: { source: "Calendar", message: "Pick a time", fields: [] },
+                status: "pending",
+                expiresAt: later,
+                publicKey: "key",
+              },
+            ],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    expect(shown()).toEqual([]);
+
+    snapshotRef.current = {
+      threadId: "thread-b",
+      cursor: 6,
+      olderCursor: null,
+      activeRuns: [{ id: "run-recovered", botId: "bot-b", status: "running", userId: "user-1" }],
+      messages: [
+        {
+          id: "msg-tq",
+          blocks: [
+            {
+              kind: "tool_question",
+              question: { source: "Calendar", message: "Pick a time", fields: [] },
+              status: "pending",
+              expiresAt: later,
+              publicKey: "key",
+            },
+          ],
+        },
+      ],
+    } as unknown as ThreadSnapshot;
+    act(() => hook.reconcileSnapshot(snapshotRef.current));
+    expect(shown()).toEqual([["Scout", "Message", "thread-b:ask"]]);
+  });
+
+  it("keeps the first of two parallel tool questions from one run when the second settles before permission", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    setLiveSnapshot("thread-b", [{ id: "run-mine", userId: "user-1" }]);
+    await open({ botId: "bot-b" });
+
+    const makeToolQ = (id: string, msgId: string, seq: number, source: string) => ({
+      id,
+      type: "thread.message.created" as const,
+      threadId: "thread-b",
+      seq,
+      runId: "run-mine",
+      botId: "bot-b",
+      payload: {
+        id: msgId,
+        role: "bot" as const,
+        runUserId: "user-1",
+        blocks: [
+          {
+            kind: "tool_question",
+            question: { source, message: `Question from ${source}`, fields: [] },
+            status: "pending",
+            expiresAt: later,
+            publicKey: "key",
+          },
+        ],
+      },
+    });
+
+    act(() =>
+      hook.notifyBrowserForEvent(
+        makeToolQ("tq-1", "msg-tq-1", 5, "Calendar"),
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        makeToolQ("tq-2", "msg-tq-2", 6, "Jira"),
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "tq-2-settled",
+          type: "thread.message.updated",
+          threadId: "thread-b",
+          seq: 7,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            messageId: "msg-tq-2",
+            blocks: [{ kind: "tool_question", status: "answered" }],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([["Scout", "Message", "thread-b:ask"]]);
+  });
+
+  it("drops a cleared queued ask on an authoritative empty snapshot while preserving older asks across paginated snapshots", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    setLiveSnapshot("thread-b", [{ id: "run-mine", userId: "user-1" }]);
+    await open({ botId: "bot-b" });
+
+    // Paginated snapshot (olderCursor !== null) must not drop an older queued ask absent from the newest page.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "paged-ask",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 5,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            id: "msg-paged",
+            role: "bot",
+            runUserId: "user-1",
+            blocks: [{ kind: "ask", text: "Still waiting?", status: "pending" }],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    snapshotRef.current = {
+      threadId: "thread-b",
+      cursor: 25,
+      olderCursor: 15,
+      activeRuns: [{ id: "run-mine", botId: "bot-b", status: "waiting_input", userId: "user-1" }],
+      messages: [{ id: "msg-newer", blocks: [{ kind: "text", text: "Later note" }] }],
+    } as unknown as ThreadSnapshot;
+    act(() => hook.reconcileSnapshot(snapshotRef.current));
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([["Scout", "Still waiting?", "thread-b:ask"]]);
+
+    // Authoritative empty snapshot (olderCursor === null, cursor >= seq) drops a cleared ask before thread.cleared replays.
+    FakeNotification.shown = [];
+    FakeNotification.permission = "default";
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "cleared-ask",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 30,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            id: "msg-cleared",
+            role: "bot",
+            runUserId: "user-1",
+            blocks: [{ kind: "ask", text: "Cleared before replay?", status: "pending" }],
+          },
+        },
+        "thread-b",
+        25,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    snapshotRef.current = {
+      threadId: "thread-b",
+      cursor: 31,
+      olderCursor: null,
+      activeRuns: [],
+      messages: [],
+    } as unknown as ThreadSnapshot;
+    act(() => hook.reconcileSnapshot(snapshotRef.current));
     FakeNotification.permission = "granted";
     act(() => hook.flushPendingBrowserNotifications());
     expect(shown()).toEqual([]);

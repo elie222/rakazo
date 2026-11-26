@@ -229,21 +229,25 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
     redirectKeepingOverlay,
     openSpaceChat: openSpaceChatRef,
   });
-  const { notifyBrowserForEvent, flushPendingBrowserNotifications, dropPendingQuestions } =
-    useBrowserNotifications(bots, botsRef, {
-      rpc,
-      activeBotId,
-      activeGroupId,
-      notificationSounds: me?.chatPreferences?.notificationSounds,
-      openChat: (alert) => {
-        setMobileSidebarOpen(false);
-        navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
-      },
-      meId: userId,
-      groupsRef,
-      snapshotRef: thread.snapshotRef,
-      roster: rosterSignals,
-    });
+  const {
+    notifyBrowserForEvent,
+    flushPendingBrowserNotifications,
+    dropPendingQuestions,
+    reconcileSnapshot,
+  } = useBrowserNotifications(bots, botsRef, {
+    rpc,
+    activeBotId,
+    activeGroupId,
+    notificationSounds: me?.chatPreferences?.notificationSounds,
+    openChat: (alert) => {
+      setMobileSidebarOpen(false);
+      navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
+    },
+    meId: userId,
+    groupsRef,
+    snapshotRef: thread.snapshotRef,
+    roster: rosterSignals,
+  });
   const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({
     active,
     snapshot,
@@ -289,6 +293,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
     refreshBots,
     notifyBrowserForEvent,
     dropPendingQuestions,
+    reconcileSnapshot,
     markBotReadIfVisible: read.markBotReadIfVisible,
     markGroupReadOnReply: read.markGroupReadOnReply,
     meId: userId,
