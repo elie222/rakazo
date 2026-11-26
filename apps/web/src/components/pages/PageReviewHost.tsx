@@ -171,7 +171,8 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
     draft: draft.isError ? undefined : draft.data,
     reported: anchors,
   });
-  const readerState = draftId ? undefined : page?.readerState;
+  const readerState =
+    draftId || !page || page.version !== latestKnownVersion ? undefined : page.readerState;
   const preview = usePageDocument(
     useReviewedPageContent(pageId, shown),
     "card",

@@ -843,4 +843,60 @@ describe("PageReviewHost comment draft preservation", () => {
     expect(sectionInput()?.value).toBe("");
     expect(commentTextarea()?.value).toBe("");
   });
+
+  it("blocks saving reader state from a cached historical revision whose refresh fails after a newer version is known", async () => {
+    let failV1 = false;
+    rpcState.getReview.mockImplementation(async ({ version }) => {
+      if (version === 1) {
+        if (failV1) throw new Error("Failed to fetch");
+        return makePage({
+          version: 1,
+          currentVersion: 1,
+          readerState: { fields: {}, values: { note: "from-v1" } } as PageReview["readerState"],
+        });
+      }
+      return makePage({
+        version: 2,
+        currentVersion: 2,
+        readerState: { fields: {}, values: { note: "from-v2" } } as PageReview["readerState"],
+      });
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [makeComment({ id: "comment-v1", version: 1, section: "Summary", body: "v1 note" })],
+      nextCursor: null,
+    });
+
+    await mountReview("/review/page-1");
+    expect(viewState.saveReaderState).toBeTypeOf("function");
+
+    // Populate the cached version=1 query with a stale snapshot carrying currentVersion=1 and readerState.
+    await openCommentsPopover();
+    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+    await vi.waitFor(() => {
+      expect(rpcState.getReview).toHaveBeenCalledWith({ pageId: "page-1", version: 1 });
+    });
+    expect(viewState.saveReaderState).toBeUndefined();
+
+    // Return to latest v2 and confirm reader state saving is enabled again.
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+    await vi.waitFor(() => {
+      expect(viewState.saveReaderState).toBeTypeOf("function");
+    });
+
+    // Revisit cached v1 while its refresh fails: v2 is known, so reader state saving must stay disabled.
+    failV1 = true;
+    await openCommentsPopover();
+    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="review-inline-error"]')).not.toBeNull();
+    });
+    expect(viewState.saveReaderState).toBeUndefined();
+    expect(rpcState.saveState).not.toHaveBeenCalled();
+
+    // Returning to latest v2 re-enables reader state saving.
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+    await vi.waitFor(() => {
+      expect(viewState.saveReaderState).toBeTypeOf("function");
+    });
+  });
 });
