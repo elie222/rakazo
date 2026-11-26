@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 import { deadlineSignal } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
@@ -15,7 +15,7 @@ import { createProtectedBrowserProxy } from "./protected-browser-proxy.js";
 
 const docker = promisify(execFile);
 const MAX_BYTES = 2_000_000;
-const engineEnvironment = { PATH: process.env.PATH };
+const engineEnvironment = { PATH: "/usr/local/bin:/usr/bin:/bin" };
 const failure = () => new Error("The protected browser operation failed.");
 
 async function runContainer(engine: string[], name: string, input: string, signal: AbortSignal) {
@@ -55,6 +55,7 @@ export function createProtectedBrowserLauncher({
   image: string;
   seccompProfile: string;
 }): ProtectedBrowserLauncher {
+  if (!isAbsolute(seccompProfile)) throw new Error("An absolute seccomp profile path is required.");
   return async (request: ProtectedBrowserRequest, parent?: AbortSignal) => {
     const signal = deadlineSignal(60_000, parent);
     const input = JSON.stringify(request);

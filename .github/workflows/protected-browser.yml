@@ -25,6 +25,13 @@ jobs:
         run: |
           docker build -t rakazo/protected-browser:base -f infra/sandboxes/protected-browser/Dockerfile .
           curl -fsSL https://raw.githubusercontent.com/microsoft/playwright/v1.64.1/utils/docker/seccomp_profile.json -o /tmp/browser-seccomp.json
+      - name: Run the browser protocol test
+        run: |
+          docker run --rm --init --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --security-opt seccomp=/tmp/browser-seccomp.json \
+            --tmpfs /tmp:rw,nosuid,nodev,size=256m --env HOME=/tmp \
+            --mount "type=bind,source=$PWD/infra/sandboxes/protected-browser/browser.test.mjs,target=/opt/protected-browser/browser.test.mjs,readonly" \
+            --entrypoint node rakazo/protected-browser:base --test browser.test.mjs
       - name: Sign in, resume and refuse private egress
         run: |
           fixture="$(mktemp -d)"
@@ -56,7 +63,7 @@ jobs:
           printf '%s\n' '93.184.216.34 protected-browser-fixture.example.com' \
             '127.0.0.1 private-protected-browser-fixture.example.com' | sudo tee -a /etc/hosts
           sudo ip netns exec browser-fixture "$(command -v node)" \
-            infra/sandboxes/protected-browser/launcher-smoke.mjs fixture \
+            packages/adapters/src/providers/browser/docker/protected-browser-smoke.mjs fixture \
             "$fixture/key.pem" "$fixture/cert.pem" > "$fixture/ready" &
-          timeout 10s bash -c 'until rg -q "^Fixture ready$" "$1"; do sleep 0.2; done' bash "$fixture/ready"
-          pnpm exec tsx infra/sandboxes/protected-browser/launcher-smoke.mjs /tmp/browser-seccomp.json
+          timeout 10s bash -c 'until grep -q "^Fixture ready$" "$1"; do sleep 0.2; done' bash "$fixture/ready"
+          pnpm exec tsx packages/adapters/src/providers/browser/docker/protected-browser-smoke.mjs /tmp/browser-seccomp.json

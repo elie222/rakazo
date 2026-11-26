@@ -13,10 +13,12 @@ export interface ProtectedBrowserStorage {
   origins: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }>;
 }
 
-type BrowserStep = {
-  role: "button" | "checkbox" | "combobox" | "link" | "radio" | "textbox";
-  name: string;
-} & ({ kind: "click" } | { kind: "fill"; text: string });
+type BrowserControlRole = "button" | "checkbox" | "combobox" | "link" | "radio" | "textbox";
+type BrowserStep = { name: string } & (
+  | { kind: "click"; role: BrowserControlRole }
+  | { kind: "fill"; role: BrowserControlRole; text: string }
+  | { kind: "wait"; role: BrowserControlRole | "heading" }
+);
 
 export type ProtectedBrowserRequest = {
   url: string;

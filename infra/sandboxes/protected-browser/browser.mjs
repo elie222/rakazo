@@ -28,7 +28,10 @@ function checkInput(request) {
     throw new Error("Invalid browser steps");
   }
   for (const step of request.steps) {
-    if (!["click", "fill"].includes(step.kind) || !ROLES.has(step.role)) {
+    if (
+      !["click", "fill", "wait"].includes(step.kind) ||
+      !(ROLES.has(step.role) || (step.kind === "wait" && step.role === "heading"))
+    ) {
       throw new Error("Invalid browser step");
     }
     if (typeof step.name !== "string" || !step.name || step.name.length > 300) {
@@ -42,6 +45,10 @@ function checkInput(request) {
 
 async function executeStep(page, step, loginOrigin) {
   const control = page.getByRole(step.role, { name: step.name, exact: true });
+  if (step.kind === "wait") {
+    await control.waitFor({ state: "visible", timeout: TIMEOUT });
+    return;
+  }
   if (step.kind === "click") {
     await control.click({ timeout: TIMEOUT });
     return;
@@ -53,9 +60,12 @@ async function executeStep(page, step, loginOrigin) {
 
   // Resolve the element before checking its document, so a navigation cannot retarget
   // the fill. A detached element handle fails instead of finding a new field.
-  const field = await page
-    .getByLabel(step.name, { exact: true })
-    .elementHandle({ timeout: TIMEOUT });
+  const field = await (step.role === "textbox"
+    ? control.or(
+        page.getByLabel(step.name, { exact: true }).and(page.locator('input[type="password"]')),
+      )
+    : control
+  ).elementHandle({ timeout: TIMEOUT });
   try {
     const frame = await field.ownerFrame();
     if (!frame || webUrl(frame.url()).origin !== loginOrigin) {
@@ -77,6 +87,8 @@ function pageSnapshot(text, ...states) {
       text = text.replaceAll(value, "[redacted]");
       const escaped = encodeURIComponent(value);
       if (escaped !== value) text = text.replaceAll(escaped, "[redacted]");
+      const encodedFormValue = new URLSearchParams([["v", value]]).toString().slice(2);
+      if (encodedFormValue !== value) text = text.replaceAll(encodedFormValue, "[redacted]");
     }
   }
   return text.slice(0, MAX_PAGE);
@@ -104,6 +116,7 @@ export async function runBrowser(chromium, request, launchOptions = {}) {
       }
       return route.continue();
     });
+    await context.routeWebSocket("**/*", (socket) => socket.close());
     const page = await context.newPage();
     await page.goto(url.href, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     const initialStorage = signingIn ? null : await context.storageState();

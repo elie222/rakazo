@@ -19,8 +19,7 @@ if (process.argv[2] === "fixture") {
           return;
         }
         response
-          .writeHead(303, {
-            location: "/",
+          .writeHead(200, {
             "set-cookie": "session=synthetic-cookie; Secure; HttpOnly; Path=/",
           })
           .end();
@@ -35,18 +34,25 @@ if (process.argv[2] === "fixture") {
       response.setHeader("content-type", "text/html");
       response.end(
         request.headers.cookie?.includes("session=synthetic-cookie")
-          ? "<h1>Synthetic account</h1><p>synthetic-cookie</p>"
-          : '<form method="post"><label>Password <input name="password" type="password"></label><button>Sign in</button></form>',
+          ? "<h1>Synthetic account</h1><p>synthetic-cookie synthetic+form+value</p>"
+          : `<form method="post"><label>Password <input name="password" type="password"></label><button>Sign in</button></form>
+             <script>
+               document.querySelector("form").addEventListener("submit", async (event) => {
+                 event.preventDefault();
+                 const response = await fetch("/", { method: "POST", body: new URLSearchParams(new FormData(event.target)) });
+                 if (!response.ok) return;
+                 localStorage.setItem("session", "synthetic form value");
+                 document.body.innerHTML = "<h1>Synthetic account</h1>";
+               });
+             </script>`,
       );
     },
   );
   server.listen(443, "93.184.216.34");
   await once(server, "listening");
-  console.log("Fixture ready");
+  process.stdout.write("Fixture ready\n");
 } else {
-  const { createProtectedBrowserLauncher } = await import(
-    "../../../packages/adapters/src/providers/browser/docker/docker-protected-browser.ts"
-  );
+  const { createProtectedBrowserLauncher } = await import("./docker-protected-browser.ts");
   const run = createProtectedBrowserLauncher({
     image: "rakazo/protected-browser:smoke",
     seccompProfile: process.argv[2],
@@ -58,12 +64,13 @@ if (process.argv[2] === "fixture") {
     steps: [
       { kind: "fill", role: "textbox", name: "Password", text: "synthetic-password" },
       { kind: "click", role: "button", name: "Sign in" },
+      { kind: "wait", role: "heading", name: "Synthetic account" },
     ],
   });
   assert.ok(storageState.cookies.some(({ value }) => value === "synthetic-cookie"));
   const { page } = await run({ mode: "browse", url, storageState, steps: [] });
   assert.match(page, /Synthetic account/);
-  assert.doesNotMatch(page, /synthetic-cookie/);
+  assert.doesNotMatch(page, /synthetic-cookie|synthetic\+form\+value/);
   for (const blocked of [
     "https://169.254.169.254/",
     "https://private-protected-browser-fixture.example.com/",
