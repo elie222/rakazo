@@ -1,4 +1,5 @@
 import type { AdapterContext, PaidServiceProvider, ToolSearchHit } from "@rakazo/adapter-kit";
+import { bestEffort } from "@rakazo/logging";
 import { describePaidService, findPaidServices } from "../../payments/paid-service-tools.js";
 import type { ToolSearchSource } from "./tool-search.js";
 
@@ -24,7 +25,9 @@ export function paidServiceSource(
     async find(ids) {
       const billed = await billing();
       const services = await Promise.all(
-        ids.map((id) => describePaidService(provider, id, context, billed)),
+        ids.map((id) =>
+          bestEffort(`find_tool service ${id}`, describePaidService(provider, id, context, billed)),
+        ),
       );
       return services.filter((service) => service !== undefined).map(serviceHit);
     },
