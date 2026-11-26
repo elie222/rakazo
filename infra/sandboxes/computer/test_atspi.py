@@ -231,6 +231,14 @@ class DescribeTests(unittest.TestCase):
         self.assertTrue(element["secret"])
         self.assertEqual(element["state"], {"disabled": True})
 
+    def test_a_password_field_name_never_reaches_the_model(self):
+        # Some toolkits put what the person typed in the accessible name.
+        node = FakeNode("password text", "hunter2", states=(FakeStateType.EDITABLE,))
+        element = helper.describe(node, WINDOW, "password text", "hunter2")
+        self.assertIsNotNone(element)
+        self.assertEqual(element["name"], "[secret]")
+        self.assertTrue(element["secret"])
+
     def test_returns_none_without_extents(self):
         node = FakeNode("button", "Save")
         node.get_component_iface = lambda: None

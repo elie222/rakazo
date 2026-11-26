@@ -21,6 +21,7 @@ import {
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
+  resolveComputerTargets,
   sandboxKindCapabilities,
   scheduleComputerSleep,
   screenLeaseIdForRun,
@@ -442,6 +443,40 @@ export function computerRoutes(ctx: RouterContext) {
           typeof input.payload.skillId === "string" && input.payload.skillId
             ? input.payload.skillId
             : undefined;
+        // A viewer picked this control earlier; resolve it again so a screen that moved under
+        // them clicks what they chose instead of whatever is at the old point now.
+        const pointerType =
+          (input.payload.type as "move" | "down" | "up" | "click" | undefined) ?? "click";
+        let pointerX = Number(input.payload.x ?? 0);
+        let pointerY = Number(input.payload.y ?? 0);
+        if (
+          input.kind === "pointer" &&
+          pointerType === "click" &&
+          input.target &&
+          deps.sandbox.findElements
+        ) {
+          const screen = computerContext(context.actor, bot.id, "input");
+          const ref = toComputerRef(computer);
+          const [resolved] = await resolveComputerTargets(
+            [
+              {
+                kind: "pointer",
+                x: pointerX,
+                y: pointerY,
+                type: "click",
+                target: input.target,
+              },
+            ],
+            undefined,
+            {
+              find: (request) => deps.sandbox.findElements!(ref, request, screen),
+            },
+          );
+          if (resolved?.kind === "pointer") {
+            pointerX = resolved.x;
+            pointerY = resolved.y;
+          }
+        }
         const mapped = {
           ...(input.kind === "key"
             ? { kind: "key" as const, key: String(input.payload.key ?? ""), sensitive }
@@ -461,8 +496,8 @@ export function computerRoutes(ctx: RouterContext) {
                   }
                 : {
                     kind: "pointer" as const,
-                    x: Number(input.payload.x ?? 0),
-                    y: Number(input.payload.y ?? 0),
+                    x: pointerX,
+                    y: pointerY,
                     button: (input.payload.button as "left" | "right" | undefined) ?? "left",
                     type:
                       (input.payload.type as "move" | "down" | "up" | "click" | undefined) ??

@@ -112,6 +112,8 @@ export function ComputerOverlay({
         botId: bot.id,
         kind: "pointer",
         payload: { x: element.point.x, y: element.point.y, type: "click" },
+        // The server re-resolves it, so a screen that changed under the viewer is not clicked.
+        target: element,
       }),
     onSaved: () => {
       setFindOpen(false);
@@ -132,15 +134,22 @@ export function ComputerOverlay({
   function runFind() {
     const text = query.trim();
     if (!text || find.pending) return;
+    setResults([]);
     find.run(text);
   }
 
   function chooseTarget(element: ComputerElement) {
-    if (!click.pending) click.run(element);
+    if (hasControl && !click.pending) click.run(element);
   }
 
   function runZoom() {
-    if (!zoom.pending) zoom.run({ x: 320, y: 200, w: 640, h: 400 });
+    if (zoom.pending) return;
+    // The middle half of this computer's own screen, whatever its size.
+    const width = computer?.screenWidth ?? 1280;
+    const height = computer?.screenHeight ?? 800;
+    const w = Math.round(width / 2);
+    const h = Math.round(height / 2);
+    zoom.run({ x: Math.round((width - w) / 2), y: Math.round((height - h) / 2), w, h });
   }
 
   return (
@@ -330,7 +339,7 @@ export function ComputerOverlay({
                       variant="ghost"
                       size="sm"
                       className="w-full justify-start gap-2"
-                      disabled={click.pending}
+                      disabled={click.pending || !hasControl}
                       onClick={() => chooseTarget(element)}
                     >
                       <span className="truncate">{element.name || element.role || t`Control`}</span>

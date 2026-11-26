@@ -3,8 +3,8 @@
 
 The adapter runs `rakazo-perception` in the computer; that client forwards one JSON line to the
 Unix socket this server owns and prints the reply. The helper is persistent so AT-SPI state and
-focus events survive between tool calls, and it handles one request at a time: a slow application
-must not make every other display wait.
+focus events survive between tool calls, and a slow application runs out its own deadline in its
+own thread instead of making every other display wait.
 
 The helper reads only role, name, bounds and state. It never reads a control's value, so a saved
 password or a card number cannot reach the model through a tree or a hit test.
@@ -18,6 +18,7 @@ import re
 import shutil
 import socketserver
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from typing import Any
@@ -44,6 +45,7 @@ DEFAULT_DEADLINE_MS = 1000
 COMMAND_TIMEOUT_MS = 2_000
 PROGRAMS = ("git", "gh", "node", "python3", "curl", "unzip", "ffmpeg", "libreoffice")
 SECRET_ROLES = frozenset(("password text", "password"))
+SECRET_NAME = "[secret]"
 DECOR_CLASSES = frozenset(("xfce4-panel", "plank", "xfdesktop"))
 
 SHOWING = Atspi.StateType.SHOWING
@@ -292,7 +294,8 @@ def describe(node: Any, window: dict[str, Any], role: str, name: str) -> dict[st
         "app": window_app(window),
         "window": window["title"],
         "role": clip_text(role, ROLE_LIMIT),
-        "name": clip_text(name, NAME_LIMIT),
+        # A password field's name can echo what the person typed; only its role and place are safe.
+        "name": SECRET_NAME if role in SECRET_ROLES else clip_text(name, NAME_LIMIT),
         "secret": role in SECRET_ROLES,
         "editable": editable(node),
     }
@@ -444,6 +447,9 @@ def find(
     limit = int(request.get("limit") or 30)
     limit = max(1, min(TREE_LIMIT, limit))
     found: list[tuple[int, dict[str, Any]]] = []
+    # A window whose walk stopped at the tree cap or the deadline may hold the control, so the
+    # answer is truncated even when this window contributed no match.
+    truncated = False
     for window in list_windows(display):
         if app is not None and window["app"] != app:
             continue
@@ -452,7 +458,8 @@ def find(
         root = window_root(window)
         if root is None:
             continue
-        elements, _ = walk_elements(root, window, deadline)
+        elements, walk_truncated = walk_elements(root, window, deadline)
+        truncated = truncated or walk_truncated
         for element in elements:
             if role is not None and role not in element["role"].lower():
                 continue
@@ -462,7 +469,7 @@ def find(
     found.sort(key=lambda item: item[0])
     return {
         "elements": [element for _, element in found[:limit]],
-        "truncated": len(found) > limit,
+        "truncated": truncated or len(found) > limit,
     }
 
 
@@ -588,11 +595,19 @@ def handle(request: dict[str, Any]) -> dict[str, Any]:
     except GLib.Error:
         return {"ok": True, "unknown": True}
     except Exception as error:  # noqa: BLE001 - every failure is reported on the reply line
+        print(
+            f"perception {command!r} failed on {display}: {type(error).__name__}: {error}",
+            file=sys.stderr,
+            flush=True,
+        )
         return {"ok": False, "error": f"{type(error).__name__}: {error}"}
 
 
-class PerceptionServer(socketserver.UnixStreamServer):
+class PerceptionServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     allow_reuse_address = True
+    # A request whose application stopped answering runs out its own deadline without holding
+    # another display's request behind it.
+    daemon_threads = True
 
     def process(self, request: dict[str, Any]) -> dict[str, Any]:
         return handle(request)

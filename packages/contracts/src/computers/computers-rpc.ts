@@ -13,6 +13,7 @@ import {
   ComputerScreenSchema,
   ComputerSizeSchema,
   ComputerStatusSchema,
+  ComputerTargetSchema,
   ComputerUpdateSchema,
   ComputerZoomResultSchema,
 } from "./computer.js";
@@ -75,6 +76,11 @@ export const computersRpc = {
           botId: Id,
           kind: z.enum(["key", "pointer", "clipboard", "scroll"]),
           payload: z.record(z.string(), z.unknown()),
+          /**
+           * The control the viewer picked. A pointer click re-resolves it first, so a screen
+           * that changed under them does not click whatever is there now.
+           */
+          target: ComputerTargetSchema.optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),

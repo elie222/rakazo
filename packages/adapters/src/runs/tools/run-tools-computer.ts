@@ -592,7 +592,12 @@ export const computerTools: ToolHandlers = {
     const computer = await ctx.computer.get("tool", name);
     if (!deps.sandbox.zoom) return { error: "Zoom is unavailable on this computer." };
     const observation = await deps.sandbox.zoom(computer, parseComputerZoomRequest(args), context);
-    return formatObservation(ctx, observation, "zoomed the screen");
+    // A crop is the frame the bot already has: it keeps that frame id and never advances the
+    // unchanged-visual guard, or the next target based on the read frame would look stale.
+    const frameId = ctx.state.screen.lastFrameId;
+    return observationToolResult(observation, "zoomed the screen", frameId, {
+      ...(frameId === undefined ? {} : { frameId }),
+    });
   },
   async computer_settle(ctx, call) {
     const { deps, context } = ctx;

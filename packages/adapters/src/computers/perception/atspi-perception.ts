@@ -51,7 +51,8 @@ const PERCEPTION_TIMEOUT_MS = 5_000;
  * short-lived CLI so an application that stops answering cannot hold the adapter's process.
  */
 export class AtspiPerception implements ComputerPerception {
-  private lastObservation: ComputerObservation | undefined;
+  /** The last frame read per computer, so two computers sharing this instance never mix. */
+  private readonly lastObservations = new Map<string, ComputerObservation>();
 
   constructor(
     private readonly host: AtspiPerceptionHost,
@@ -59,13 +60,13 @@ export class AtspiPerception implements ComputerPerception {
   ) {}
 
   /** Keep the last observation for a later zoom, which crops it at device resolution. */
-  remember(observation: ComputerObservation): void {
-    this.lastObservation = observation;
+  remember(computer: ComputerRef, observation: ComputerObservation): void {
+    this.lastObservations.set(computer.id, observation);
   }
 
   async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
     const observation = await this.options.observe(computer, context);
-    this.lastObservation = observation;
+    this.lastObservations.set(computer.id, observation);
     return observation;
   }
 
@@ -117,13 +118,14 @@ export class AtspiPerception implements ComputerPerception {
   }
 
   async zoom(
-    _computer: ComputerRef,
+    computer: ComputerRef,
     request: ComputerZoomRequest,
     context: AdapterContext,
   ): Promise<ComputerObservation | ComputerPerceptionUnknown> {
     context.signal.throwIfAborted();
-    if (this.lastObservation?.frameId !== request.frameId) return { unknown: true };
-    return zoomObservation(this.lastObservation, request);
+    const observation = this.lastObservations.get(computer.id);
+    if (observation?.frameId !== request.frameId) return { unknown: true };
+    return zoomObservation(observation, request);
   }
 
   async capabilities(

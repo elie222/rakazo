@@ -102,6 +102,10 @@ export default function Computer() {
     refreshController,
     bootComputer,
   } = useComputerBoot(botId);
+  const hasControl =
+    computer?.controlHolder === "user" &&
+    computer.controlBotId === botId &&
+    !computer.controlledByOther;
   const {
     open: finderOpen,
     query: findQuery,
@@ -117,7 +121,10 @@ export default function Computer() {
     chooseTarget,
     runZoom,
     closeZoom,
-  } = useComputerFinder(botId);
+  } = useComputerFinder(botId, {
+    hasControl,
+    ...(computer ? { screen: { width: computer.screenWidth, height: computer.screenHeight } } : {}),
+  });
   const [cleaningUp, setCleaningUp] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [screenOriginError, setScreenOriginError] = useState(false);
@@ -148,10 +155,6 @@ export default function Computer() {
   const unreachableScreen =
     computer?.state === "running" && Boolean(screenUrl) && !embeddedScreenUrl;
 
-  const hasControl =
-    computer?.controlHolder === "user" &&
-    computer.controlBotId === botId &&
-    !computer.controlledByOther;
   // Propped open like a laptop, the desktop stays above the fold and the keys go below it.
   const tabletop = hasControl ? tabletopLayout(windowSize.width, windowSize.height, folds) : null;
   const screenVisible =

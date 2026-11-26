@@ -92,7 +92,7 @@ describe("computer finder", () => {
 
     expect(scope.rpc).toHaveBeenCalledWith(
       "computer/input",
-      { botId: "bot-1", kind: "pointer", payload: { x: 40, y: 30, type: "click" } },
+      { botId: "bot-1", kind: "pointer", payload: { x: 40, y: 30, type: "click" }, target: save },
       { requestContext },
     );
     expect(finder.open).toBe(false);

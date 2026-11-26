@@ -392,8 +392,9 @@ describe("semantic computer targets", () => {
   });
 
   it("keeps zoom and settle out of computer_act", () => {
-    expect(() => parseComputerActions([{ kind: "zoom", region: { x: 1, y: 2, w: 3, h: 4 } }]))
-      .toThrow("unsupported computer action zoom");
+    expect(() =>
+      parseComputerActions([{ kind: "zoom", region: { x: 1, y: 2, w: 3, h: 4 } }]),
+    ).toThrow("unsupported computer action zoom");
     expect(() => parseComputerActions([{ kind: "settle", request: { quiet_ms: 200 } }])).toThrow(
       "unsupported computer action settle",
     );

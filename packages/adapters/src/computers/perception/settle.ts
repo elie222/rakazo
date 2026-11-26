@@ -28,6 +28,9 @@ export async function settleScreen(
   const started = now();
   let previous = await options.observe();
   let lastChange: number | null = null;
+  // When the frame was first seen unchanged. A short timeout must not report a screen quiet
+  // before a whole quiet window went by.
+  let quietSince: number | null = null;
   while (now() - started < timeoutMs) {
     signal.throwIfAborted();
     const left = timeoutMs - (now() - started);
@@ -36,9 +39,11 @@ export async function settleScreen(
     if (next.frameId !== previous.frameId) {
       lastChange = now();
       previous = next;
+      quietSince = null;
       continue;
     }
-    if (now() - started >= firstMs) {
+    if (quietSince === null) quietSince = now();
+    if (quietSince - started >= firstMs && now() - quietSince >= quietMs) {
       return {
         changed: [],
         lastChangeMono: lastChange,

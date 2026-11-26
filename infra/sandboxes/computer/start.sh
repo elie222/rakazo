@@ -69,6 +69,9 @@ fi
 # appears a moment after the launcher forks it, and an application that starts before that
 # gives up on accessibility for its whole lifetime, so wait for it before anything can.
 AT_SPI_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/at-spi"
+# A container restart keeps /tmp, so a previous session's bus file would satisfy the wait below
+# before the new bus exists and applications launched then would publish no tree.
+rm -f "$AT_SPI_CACHE"/bus_*
 at_spi_launcher=""
 if [ -x /usr/libexec/at-spi-bus-launcher ]; then
   at_spi_launcher=/usr/libexec/at-spi-bus-launcher
@@ -87,6 +90,12 @@ rm -f /tmp/rakazo/perception.sock
 if [ -x /usr/local/bin/atspi.py ]; then
   RAKAZO_PERCEPTION_SOCKET=/tmp/rakazo/perception.sock \
     /usr/bin/python3 -u /usr/local/bin/atspi.py >/tmp/rakazo/perception.log 2>&1 &
+  # A request that arrives before the helper binds would be answered "unknown" for an
+  # unreadable screen, so the screen is not ready until the socket accepts a connection.
+  for _ in $(seq 1 100); do
+    /usr/bin/python3 -c 'import socket, sys; sys.exit(0 if socket.socket(socket.AF_UNIX).connect_ex("/tmp/rakazo/perception.sock") == 0 else 1)' 2>/dev/null && break
+    sleep 0.05
+  done
 fi
 
 # Chromium's file chooser talks to xdg-desktop-portal over the session bus.

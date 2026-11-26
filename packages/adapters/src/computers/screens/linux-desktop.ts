@@ -267,7 +267,7 @@ export class LinuxDesktop {
       ...(observed.cursor ? { pointer: observed.cursor } : {}),
       cursor: observed.cursor,
     });
-    this.perception.remember(observation);
+    this.perception.remember(computer, observation);
     return observation;
   }
 

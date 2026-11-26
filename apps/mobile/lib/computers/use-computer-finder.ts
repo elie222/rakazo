@@ -4,17 +4,28 @@ import { useState } from "react";
 import { Alert } from "react-native";
 import { useSave } from "../query/query";
 
-/**
- * The middle of the default 1280×800 desktop, so Zoom shows a readable still without the
- * caller having to know the frame's dimensions.
- */
-const ZOOM_REGION = { x: 320, y: 200, w: 640, h: 400 };
+/** The middle half of the computer's own screen, whatever its size. */
+function zoomRegion(screen: { width: number; height: number } | undefined) {
+  const width = screen?.width ?? 1280;
+  const height = screen?.height ?? 800;
+  const w = Math.round(width / 2);
+  const h = Math.round(height / 2);
+  return { x: Math.round((width - w) / 2), y: Math.round((height - h) / 2), w, h };
+}
 
 /**
  * Find on screen, the still Zoom shows, and the click that chooses a found control. Each save
  * reports its own pending and failure state, so the screen only renders what this returns.
+ *
+ * `hasControl` gates the click: without the lease the input RPC is refused, so a result must not
+ * look selectable. `screen` sizes the zoom crop to the computer rather than to a default desktop.
  */
-export function useComputerFinder(botId: string | undefined) {
+export function useComputerFinder(
+  botId: string | undefined,
+  options: { hasControl: boolean; screen?: { width: number; height: number } } = {
+    hasControl: true,
+  },
+) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -42,6 +53,8 @@ export function useComputerFinder(botId: string | undefined) {
         botId: botId ?? "",
         kind: "pointer",
         payload: { x: element.point.x, y: element.point.y, type: "click" },
+        // The server re-resolves it, so a screen that changed under the viewer is not clicked.
+        target: element,
       }),
     onSaved: () => {
       setOpen(false);
@@ -68,6 +81,7 @@ export function useComputerFinder(botId: string | undefined) {
     },
     changeQuery(text: string) {
       setQuery(text);
+      setResults([]);
       find.reset();
     },
     runFind() {
@@ -76,11 +90,11 @@ export function useComputerFinder(botId: string | undefined) {
       find.run(text);
     },
     chooseTarget(element: ComputerElement) {
-      if (!click.pending) click.run(element);
+      if (options.hasControl && !click.pending) click.run(element);
     },
     runZoom() {
       if (!botId || zoom.pending) return;
-      zoom.run(ZOOM_REGION);
+      zoom.run(zoomRegion(options.screen));
     },
     closeZoom() {
       setZoomImage(null);

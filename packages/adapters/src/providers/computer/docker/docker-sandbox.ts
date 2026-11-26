@@ -120,7 +120,8 @@ export class DockerSandboxProvider implements SandboxProvider {
   private stalls = 0;
   /** One check per computer, shared by every caller that needs it meanwhile. */
   private readonly healthChecks = new Map<string, Promise<void>>();
-  private lastObservation: ComputerObservation | undefined;
+  /** The last frame read per computer, so two computers sharing this instance never mix. */
+  private readonly lastObservations = new Map<string, ComputerObservation>();
 
   constructor(
     private readonly supervisorUrl: string,
@@ -514,7 +515,7 @@ export class DockerSandboxProvider implements SandboxProvider {
       cursor: body.cursor,
       activeWindow: body.activeWindow,
     });
-    this.lastObservation = observation;
+    this.lastObservations.set(computer.id, observation);
     return observation;
   }
 
@@ -583,15 +584,14 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   async zoom(
-    _computer: ComputerRef,
+    computer: ComputerRef,
     request: ComputerZoomRequest,
     context: AdapterContext,
   ): Promise<ComputerObservation> {
     context.signal.throwIfAborted();
-    if (this.lastObservation?.frameId !== request.frameId) {
-      throw new ComputerStaleFrameError();
-    }
-    return zoomObservation(this.lastObservation, request);
+    const observation = this.lastObservations.get(computer.id);
+    if (observation?.frameId !== request.frameId) throw new ComputerStaleFrameError();
+    return zoomObservation(observation, request);
   }
 
   async capabilities(

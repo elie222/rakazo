@@ -548,12 +548,15 @@ app.post("/computers/:id/perception", async (c) => {
       signal: c.req.raw.signal,
     });
     if (result.code !== 0) {
-      return c.json({ ok: false, error: result.stderr || "perception failed" }, 200);
+      // An image without the helper, and an application that stopped answering, both mean the
+      // screen could not be read: answer that, so the adapter can fall back to coordinates.
+      return c.json({ ok: true, unknown: true });
     }
     return c.json(JSON.parse(result.stdout));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return c.json({ ok: false, error: message }, 200);
+    logRequestFailure(error);
+    return c.json({ ok: false, error: message }, 500);
   }
 });
 

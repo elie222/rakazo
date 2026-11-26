@@ -9,7 +9,7 @@ import type {
   ComputerTarget,
   ComputerZoomRequest,
 } from "@rakazo/adapter-kit";
-import { scrollDirection } from "@rakazo/core";
+import { ClientError, scrollDirection } from "@rakazo/core";
 import { computerActionCount, MAX_ACTIONS_PER_CALL } from "../../runs/turn/tool-loop.js";
 
 /** Identical visual actions that leave the frame unchanged before computer_act stops repeating them. */
@@ -29,6 +29,11 @@ export type UnchangedVisualStreak = {
 export type ObservationToolOptions = {
   /** Consecutive identical visual actions that left this frame unchanged. */
   unchangedVisualCount?: number;
+  /**
+   * The frame this observation belongs to, when it is the frame the bot already has rather than a
+   * new one, as a zoom crop is. The result keeps that id and never reads as an unchanged screen.
+   */
+  frameId?: string;
 };
 
 export function parseComputerActions(value: unknown): ComputerAction[] {
@@ -159,16 +164,16 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
   return actions;
 }
 
-export class ComputerStaleTargetError extends Error {
+export class ComputerStaleTargetError extends ClientError {
   constructor() {
-    super("The target moved or disappeared; observe again before acting.");
+    super("CONFLICT", "The target moved or disappeared; observe again before acting.");
     this.name = "ComputerStaleTargetError";
   }
 }
 
-export class ComputerPerceptionUnknownError extends Error {
+export class ComputerPerceptionUnknownError extends ClientError {
   constructor() {
-    super("The screen could not be read in time; observe again before acting.");
+    super("CONFLICT", "The screen could not be read in time; observe again before acting.");
     this.name = "ComputerPerceptionUnknownError";
   }
 }
@@ -368,11 +373,12 @@ export function observationToolResult(
   previousFrameId?: string,
   options?: ObservationToolOptions,
 ): AgentToolExecutionResult {
-  const unchanged = previousFrameId === observation.frameId;
+  const frameId = options?.frameId ?? observation.frameId;
+  const unchanged = options?.frameId === undefined && previousFrameId === observation.frameId;
   const unchangedVisualCount = options?.unchangedVisualCount ?? 0;
   const visualLoop = unchanged && unchangedVisualCount >= MAX_CONSECUTIVE_UNCHANGED_VISUAL_ACTIONS;
   const details = {
-    frameId: observation.frameId,
+    frameId,
     capturedAt: observation.capturedAt,
     width: observation.width,
     height: observation.height,
