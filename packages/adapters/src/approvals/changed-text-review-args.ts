@@ -15,11 +15,11 @@ export function isReviewedChanges(value: unknown): value is ReviewedChanges {
 /**
  * What Auto Review sees of an edit to the bot's own instructions (`update_bot`, which carries the
  * text it replaces) or a routine's prompt (`schedule_update`, given the stored prompt, whether the
- * call sends a whole prompt or edits to the stored one): the changed
- * lines with a little context instead of the whole new text, so a small edit to a long text fits
- * the review. Unchanged lines were already in force. The call is reviewed as it was when the old
- * text is unknown or empty, or when the changes leave nothing out: a rewrite or a short text reads
- * best whole, beside the text it replaces.
+ * call sends a whole prompt or edits to the stored one): the changed lines with a little context
+ * instead of the whole new text, so a small edit to a long text fits the review. Unchanged lines
+ * were already in force. The call is reviewed as it was when the old text is unknown or empty, or
+ * when the changes leave nothing out: a rewrite or a short text reads best whole, beside the text
+ * it replaces.
  */
 export function changedTextReviewArgs(
   toolName: string,
@@ -51,7 +51,9 @@ function reshape(
     if (!currentRoutinePrompt?.trim()) return undefined;
     const { promptEdits, ...rest } = args;
     const prompt =
-      typeof args.prompt === "string" ? args.prompt : edited(currentRoutinePrompt, promptEdits);
+      typeof args.prompt === "string" && args.prompt.trim()
+        ? args.prompt
+        : edited(currentRoutinePrompt, promptEdits);
     const changes = prompt === undefined ? undefined : changesOf(currentRoutinePrompt, prompt);
     return changes && { ...rest, prompt: changes };
   }
