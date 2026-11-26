@@ -17,8 +17,48 @@ import { createProtectedBrowserProxy } from "./protected-browser-proxy.js";
 const docker = promisify(execFile);
 // The daemon reserves these names atomically across all API replicas using its socket.
 const CONTAINER_NAMES = ["rakazo-protected-browser-1", "rakazo-protected-browser-2"];
+const SLOT_LABEL = "com.rakazo.protected-browser";
+const BROWSER_TIMEOUT_MS = 60_000;
+const ABANDONED_AFTER_MS = 2 * BROWSER_TIMEOUT_MS;
 const MAX_BYTES = 2_000_000;
 const engineEnvironment = { PATH: "/usr/local/bin:/usr/bin:/bin" };
+
+function runDocker(engine: string[], ...args: string[]) {
+  return docker("docker", [...engine, ...args], {
+    signal: deadlineSignal(5_000),
+    killSignal: "SIGKILL",
+    env: engineEnvironment,
+  });
+}
+
+async function recoverSlot(engine: string[], name: string): Promise<boolean> {
+  try {
+    const { stdout } = await runDocker(
+      engine,
+      "container",
+      "inspect",
+      "--format",
+      `{{.Id}} {{.State.Status}} {{.Created}} {{index .Config.Labels "${SLOT_LABEL}"}}`,
+      name,
+    );
+    const [id, status, created, label] = stdout.trim().split(" ");
+    if (
+      !id ||
+      !/^[a-f0-9]{64}$/.test(id) ||
+      status !== "created" ||
+      label !== "true" ||
+      !created ||
+      !(Date.parse(created) <= Date.now() - ABANDONED_AFTER_MS)
+    )
+      return false;
+    // The ID cannot be reused by another reservation and Docker refuses to remove a running container.
+    await runDocker(engine, "rm", id);
+    return true;
+  } catch {
+    // A competing replica may already have removed it. Retry the atomic name reservation.
+    return true;
+  }
+}
 
 async function runContainer(engine: string[], id: string, input: string, signal: AbortSignal) {
   signal.throwIfAborted();
@@ -71,7 +111,7 @@ export function createProtectedBrowserLauncher({
 }): ProtectedBrowserLauncher {
   if (!isAbsolute(seccompProfile)) throw new Error("An absolute seccomp profile path is required.");
   return async (request: ProtectedBrowserRequest, parent?: AbortSignal) => {
-    const signal = deadlineSignal(60_000, parent);
+    const signal = deadlineSignal(BROWSER_TIMEOUT_MS, parent);
     const input = JSON.stringify(request);
     if (Buffer.byteLength(input) > MAX_BYTES) throw new ProtectedBrowserError("invalid-output");
     let directory: string | undefined;
@@ -90,17 +130,17 @@ export function createProtectedBrowserLauncher({
       await chmod(socket, 0o666);
 
       phase = "container-create";
-      for (const name of CONTAINER_NAMES) {
-        signal.throwIfAborted();
-        try {
-          // Let create report the ID even if the caller disconnects, so cleanup can remove it.
-          const { stdout } = await docker(
-            "docker",
-            [
-              ...engine,
+      slots: for (const name of CONTAINER_NAMES) {
+        for (const recover of [true, false]) {
+          signal.throwIfAborted();
+          try {
+            // Let create report the ID even if the caller disconnects, so cleanup can remove it.
+            const { stdout } = await runDocker(
+              engine,
               "create",
               "--name",
               name,
+              `--label=${SLOT_LABEL}=true`,
               "--interactive",
               "--init",
               "--pull=never",
@@ -122,14 +162,14 @@ export function createProtectedBrowserLauncher({
               "--env=PROTECTED_BROWSER_EGRESS=1",
               "--",
               image,
-            ],
-            { signal: deadlineSignal(5_000), killSignal: "SIGKILL", env: engineEnvironment },
-          );
-          container = { id: stdout.trim(), engine };
-          break;
-        } catch (error) {
-          const stderr = (error as { stderr?: string }).stderr;
-          if (!stderr?.includes(`The container name "/${name}" is already in use`)) throw error;
+            );
+            container = { id: stdout.trim(), engine };
+            break slots;
+          } catch (error) {
+            const stderr = (error as { stderr?: string }).stderr;
+            if (!stderr?.includes(`The container name "/${name}" is already in use`)) throw error;
+            if (!recover || !(await recoverSlot(engine, name))) break;
+          }
         }
       }
       if (!container) throw new ProtectedBrowserError("capacity");
@@ -155,11 +195,7 @@ export function createProtectedBrowserLauncher({
       if (container && !completed)
         await bestEffort(
           "remove protected browser container",
-          docker("docker", [...container.engine, "rm", "--force", container.id], {
-            signal: deadlineSignal(5_000),
-            killSignal: "SIGKILL",
-            env: engineEnvironment,
-          }).then(
+          runDocker(container.engine, "rm", "--force", container.id).then(
             () => undefined,
             (error: { stderr?: string }) => {
               if (!error.stderr?.includes("No such container")) {

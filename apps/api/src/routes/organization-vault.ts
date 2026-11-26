@@ -261,8 +261,8 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
             "A protected sign-in is already in progress for this organization",
           );
         }
-        if (requestSignal?.aborted) requestSignal.throwIfAborted();
-        if (error instanceof LeaseLostError || deadline.aborted) {
+        if (requestSignal?.aborted && error === requestSignal.reason) throw error;
+        if (error instanceof LeaseLostError || (deadline.aborted && error === deadline.reason)) {
           throw new ClientError("SERVICE_UNAVAILABLE", "Protected sign-in timed out");
         }
         throw error;

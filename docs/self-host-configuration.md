@@ -287,6 +287,7 @@ encryption key. Removing a saved session in Rakazo removes its local copy.
 Each organization can run one sign-in at a time. The local container engine can
 run two protected browsers at once, shared by all API replicas using its socket.
 A request that reaches either limit returns immediately and can be retried.
-If the API or engine stops during container creation, check whether
-`rakazo-protected-browser-1` or `rakazo-protected-browser-2` was left behind.
-Remove a leftover stopped container after confirming its sign-in has ended.
+A later sign-in can reclaim a protected browser container that was created
+at least two minutes ago and never started, including after a slow container
+creation or API interruption. If an older deployment left a container behind,
+remove it after confirming its sign-in has ended.
