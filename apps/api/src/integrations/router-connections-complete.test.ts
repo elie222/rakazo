@@ -14,7 +14,7 @@ import { configureProviderTransactionPool, runProviderTransaction } from "@rakaz
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
-import { createRouter, handle } from "../router-test-support.js";
+import { appHandler, createRouter, handle } from "../router-test-support.js";
 
 describe("connections.complete", () => {
   it.each([
@@ -100,19 +100,17 @@ describe("connections.complete", () => {
       const connector = settings
         .providers()
         .find((provider) => provider.describe().id === "composio");
-      const handler = new RPCHandler(
-        createRouter({
-          prisma,
-          connectors: { managed: () => connector },
-          env: {
-            defaultProvider: "fake",
-            defaultModel: "fake-model",
-            webOrigin: "http://127.0.0.1:5173",
-            screenProxySecret: "fake-test-secret",
-            sandboxProvider: "fake",
-          },
-        } as unknown as RouterDeps),
-      );
+      const handler = appHandler({
+        prisma,
+        connectors: { managed: () => connector },
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "fake-test-secret",
+          sandboxProvider: "fake",
+        },
+      } as unknown as RouterDeps);
       const response = await handle(
         handler,
         new Request(`http://127.0.0.1/rpc/connections/${operation}`, {
