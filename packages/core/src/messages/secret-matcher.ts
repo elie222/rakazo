@@ -4,9 +4,11 @@
  */
 export type SecretMatcherStream = {
   /**
-   * Feeds `chunk` starting at stream offset `basePos`, reports every match `[start, end)` ending
-   * in `chunk` via `onMatch`, and returns the longest active prefix length still pending at the
-   * end of `chunk` (always strictly less than the longest pattern length).
+   * Feeds `chunk` starting at stream offset `basePos`, reports match ranges `[start, end)` via
+   * `onMatch` whose union covers every occurrence ending in `chunk` (implementations may omit
+   * contained matches or emit redundant overlapping ranges), and returns the longest active prefix
+   * length still pending at the end of `chunk` (always strictly less than the longest pattern
+   * length).
    *
    * When an unindexed matcher promotes to an indexed automaton mid-stream, `readTail` supplies
    * the retained suffix immediately preceding `basePos` without flattening buffered chunks on
@@ -268,43 +270,12 @@ function buildIndexedMatcher(
   };
 }
 
-let kmpTableBuilds = 0;
-
-/** Total KMP prefix tables built in this process; used by tests to verify table reuse across streams. */
-export function kmpTableBuildCount(): number {
-  return kmpTableBuilds;
-}
-
-function prefixTable(pattern: string): Int32Array {
-  kmpTableBuilds += 1;
-  const fail = new Int32Array(pattern.length);
-  for (let index = 1, matched = 0; index < pattern.length; index += 1) {
-    const code = pattern.charCodeAt(index);
-    while (matched > 0 && pattern.charCodeAt(matched) !== code) matched = fail[matched - 1]!;
-    if (pattern.charCodeAt(matched) === code) matched += 1;
-    fail[index] = matched;
-  }
-  return fail;
-}
-
 /** Scans for each value in turn: memory stays at the text's length, time grows with values × text. */
 function scanningMatcher(values: readonly string[]): SecretMatcher {
   const present = values.filter(Boolean);
-  const count = present.length;
-  const firstCodes = new Uint16Array(count);
-  for (let j = 0; j < count; j += 1) firstCodes[j] = present[j]!.charCodeAt(0);
-  // Lazily built KMP prefix tables shared across every stream created from this matcher.
-  const sharedFails: Array<Int32Array | undefined> = new Array(count);
-  const failFor = (index: number): Int32Array => {
-    let table = sharedFails[index];
-    if (!table) {
-      table = prefixTable(present[index]!);
-      sharedFails[index] = table;
-    }
-    return table;
-  };
+  const createStream = createScanningStreamFactory(present);
   return {
-    empty: count === 0,
+    empty: present.length === 0,
     ranges(text) {
       // Count matches starting and ending at each offset rather than listing every match, so a
       // value that repeats or overlaps itself costs no more than two counters per offset.
@@ -336,125 +307,161 @@ function scanningMatcher(values: readonly string[]): SecretMatcher {
     test(text) {
       return present.some((value) => text.includes(value));
     },
-    createStream() {
-      if (count === 0) return EMPTY_STREAM;
-      const matched = new Int32Array(count);
-      let pending = 0;
+    createStream,
+  };
+}
 
-      return {
-        feed(chunk, basePos, onMatch) {
-          if (chunk.length === 0) return pending;
-          // 128-bit ASCII presence bitset lets idle patterns skip non-matching chunks in O(1).
-          let a0 = 0;
-          let a1 = 0;
-          let a2 = 0;
-          let a3 = 0;
+let kmpTableBuilds = 0;
+
+/** Total KMP prefix tables built in this process; used by tests to verify table reuse across streams. */
+export function kmpTableBuildCount(): number {
+  return kmpTableBuilds;
+}
+
+function streamPrefixTable(pattern: string): Int32Array {
+  kmpTableBuilds += 1;
+  const fail = new Int32Array(pattern.length);
+  for (let index = 1, matched = 0; index < pattern.length; index += 1) {
+    const code = pattern.charCodeAt(index);
+    while (matched > 0 && pattern.charCodeAt(matched) !== code) matched = fail[matched - 1]!;
+    if (pattern.charCodeAt(matched) === code) matched += 1;
+    fail[index] = matched;
+  }
+  return fail;
+}
+
+function createScanningStreamFactory(present: readonly string[]): () => SecretMatcherStream {
+  const count = present.length;
+  const firstCodes = new Uint16Array(count);
+  for (let j = 0; j < count; j += 1) firstCodes[j] = present[j]!.charCodeAt(0);
+  // Lazily built KMP prefix tables shared across every stream created from this matcher.
+  const sharedFails: Array<Int32Array | undefined> = new Array(count);
+  const failFor = (index: number): Int32Array => {
+    let table = sharedFails[index];
+    if (!table) {
+      table = streamPrefixTable(present[index]!);
+      sharedFails[index] = table;
+    }
+    return table;
+  };
+  return () => {
+    if (count === 0) return EMPTY_STREAM;
+    const matched = new Int32Array(count);
+    let pending = 0;
+
+    return {
+      feed(chunk, basePos, onMatch) {
+        if (chunk.length === 0) return pending;
+        // 128-bit ASCII presence bitset lets idle patterns skip non-matching chunks in O(1).
+        let a0 = 0;
+        let a1 = 0;
+        let a2 = 0;
+        let a3 = 0;
+        for (let i = 0; i < chunk.length; i += 1) {
+          const c = chunk.charCodeAt(i);
+          if (c < 128) {
+            if (c < 64) {
+              if (c < 32) a0 |= 1 << c;
+              else a1 |= 1 << (c - 32);
+            } else if (c < 96) {
+              a2 |= 1 << (c - 64);
+            } else {
+              a3 |= 1 << (c - 96);
+            }
+          }
+        }
+        let maxPending = 0;
+        let chunkMatches: Array<[number, number]> | undefined;
+        let matchedPatterns = 0;
+        for (let j = 0; j < count; j += 1) {
+          let m = matched[j]!;
+          const first = firstCodes[j]!;
+          if (m === 0 && first < 128) {
+            const inChunk =
+              first < 64
+                ? first < 32
+                  ? (a0 & (1 << first)) !== 0
+                  : (a1 & (1 << (first - 32))) !== 0
+                : first < 96
+                  ? (a2 & (1 << (first - 64))) !== 0
+                  : (a3 & (1 << (first - 96))) !== 0;
+            if (!inChunk) continue;
+          }
+          const value = present[j]!;
+          const length = value.length;
+          let fail = sharedFails[j];
+          let patternStart = -1;
+          let patternEnd = -1;
           for (let i = 0; i < chunk.length; i += 1) {
-            const c = chunk.charCodeAt(i);
-            if (c < 128) {
-              if (c < 64) {
-                if (c < 32) a0 |= 1 << c;
-                else a1 |= 1 << (c - 32);
-              } else if (c < 96) {
-                a2 |= 1 << (c - 64);
-              } else {
-                a3 |= 1 << (c - 96);
-              }
-            }
-          }
-          let maxPending = 0;
-          let chunkMatches: Array<[number, number]> | undefined;
-          let matchedPatterns = 0;
-          for (let j = 0; j < count; j += 1) {
-            let m = matched[j]!;
-            const first = firstCodes[j]!;
-            if (m === 0 && first < 128) {
-              const inChunk =
-                first < 64
-                  ? first < 32
-                    ? (a0 & (1 << first)) !== 0
-                    : (a1 & (1 << (first - 32))) !== 0
-                  : first < 96
-                    ? (a2 & (1 << (first - 64))) !== 0
-                    : (a3 & (1 << (first - 96))) !== 0;
-              if (!inChunk) continue;
-            }
-            const value = present[j]!;
-            const length = value.length;
-            let fail = sharedFails[j];
-            let patternStart = -1;
-            let patternEnd = -1;
-            for (let i = 0; i < chunk.length; i += 1) {
-              const code = chunk.charCodeAt(i);
-              let matchStart = -1;
-              let matchEnd = -1;
-              if (m === 0) {
-                if (code === first) {
-                  if (length === 1) {
-                    matchStart = basePos + i;
-                    matchEnd = basePos + i + 1;
-                  } else {
-                    m = 1;
-                  }
-                }
-              } else if (m === 1 && !fail) {
-                if (code === value.charCodeAt(1)) {
-                  if (length === 2) {
-                    matchStart = basePos + i - 1;
-                    matchEnd = basePos + i + 1;
-                    m = first === code ? 1 : 0;
-                  } else {
-                    m = 2;
-                  }
-                } else {
-                  m = code === first ? 1 : 0;
-                }
-              } else {
-                if (!fail) fail = failFor(j);
-                while (m > 0 && value.charCodeAt(m) !== code) m = fail[m - 1]!;
-                if (value.charCodeAt(m) === code) m += 1;
-                if (m === length) {
-                  matchStart = basePos + i + 1 - length;
+            const code = chunk.charCodeAt(i);
+            let matchStart = -1;
+            let matchEnd = -1;
+            if (m === 0) {
+              if (code === first) {
+                if (length === 1) {
+                  matchStart = basePos + i;
                   matchEnd = basePos + i + 1;
-                  m = fail[length - 1]!;
-                }
-              }
-              if (matchStart !== -1) {
-                if (patternStart === -1) {
-                  patternStart = matchStart;
-                  patternEnd = matchEnd;
-                } else if (matchStart < patternEnd) {
-                  if (matchEnd > patternEnd) patternEnd = matchEnd;
                 } else {
-                  chunkMatches ??= [];
-                  chunkMatches.push([patternStart, patternEnd]);
-                  patternStart = matchStart;
-                  patternEnd = matchEnd;
+                  m = 1;
                 }
               }
+            } else if (m === 1 && !fail) {
+              if (code === value.charCodeAt(1)) {
+                if (length === 2) {
+                  matchStart = basePos + i - 1;
+                  matchEnd = basePos + i + 1;
+                  m = first === code ? 1 : 0;
+                } else {
+                  m = 2;
+                }
+              } else {
+                m = code === first ? 1 : 0;
+              }
+            } else {
+              if (!fail) fail = failFor(j);
+              while (m > 0 && value.charCodeAt(m) !== code) m = fail[m - 1]!;
+              if (value.charCodeAt(m) === code) m += 1;
+              if (m === length) {
+                matchStart = basePos + i + 1 - length;
+                matchEnd = basePos + i + 1;
+                m = fail[length - 1]!;
+              }
             }
-            if (patternStart !== -1) {
-              matchedPatterns += 1;
-              chunkMatches ??= [];
-              chunkMatches.push([patternStart, patternEnd]);
+            if (matchStart !== -1) {
+              if (patternStart === -1) {
+                patternStart = matchStart;
+                patternEnd = matchEnd;
+              } else if (matchStart < patternEnd) {
+                if (matchEnd > patternEnd) patternEnd = matchEnd;
+              } else {
+                chunkMatches ??= [];
+                chunkMatches.push([patternStart, patternEnd]);
+                patternStart = matchStart;
+                patternEnd = matchEnd;
+              }
             }
-            matched[j] = m;
-            if (m > maxPending) maxPending = m;
           }
-          if (chunkMatches) {
-            if (matchedPatterns > 1 && chunkMatches.length > 1) {
-              chunkMatches.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
-            }
-            for (const [start, end] of chunkMatches) onMatch(start, end);
+          if (patternStart !== -1) {
+            matchedPatterns += 1;
+            chunkMatches ??= [];
+            chunkMatches.push([patternStart, patternEnd]);
           }
-          pending = maxPending;
-          return maxPending;
-        },
-        reset() {
-          matched.fill(0);
-          pending = 0;
-        },
-      };
-    },
+          matched[j] = m;
+          if (m > maxPending) maxPending = m;
+        }
+        if (chunkMatches) {
+          if (matchedPatterns > 1 && chunkMatches.length > 1) {
+            chunkMatches.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+          }
+          for (const [start, end] of chunkMatches) onMatch(start, end);
+        }
+        pending = maxPending;
+        return maxPending;
+      },
+      reset() {
+        matched.fill(0);
+        pending = 0;
+      },
+    };
   };
 }

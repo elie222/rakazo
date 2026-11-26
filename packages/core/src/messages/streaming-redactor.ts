@@ -65,16 +65,39 @@ function matcherForStream(secrets: readonly string[]): SecretMatcher {
   return matcher;
 }
 
+function detachString(value: string): string {
+  if (value.length === 0) return "";
+  // Copying UTF-16 code units through String.fromCharCode breaks V8 SlicedString parent pointers
+  // so retaining a short lookback tail from a multi-megabyte chunk never pins the chunk in memory.
+  if (value.length <= 4096) {
+    const codes = new Array<number>(value.length);
+    for (let index = 0; index < value.length; index += 1) {
+      codes[index] = value.charCodeAt(index);
+    }
+    return String.fromCharCode(...codes);
+  }
+  const parts: string[] = [];
+  for (let start = 0; start < value.length; start += 4096) {
+    const end = Math.min(value.length, start + 4096);
+    const codes = new Array<number>(end - start);
+    for (let index = start; index < end; index += 1) {
+      codes[index - start] = value.charCodeAt(index);
+    }
+    parts.push(String.fromCharCode(...codes));
+  }
+  return parts.join("");
+}
+
 /**
  * Incrementally redacts streamed text chunks against `secrets`.
  *
  * Only the active prefix that could still complete a match for a currently known secret is held
- * back between pushes. If the caller mutates `secrets` mid-stream, the newly registered values
- * protect everything starting inside the currently retained tail or pushed afterwards; text
+ * back between pushes. If the caller appends new values to `secrets` mid-stream, the newly added
+ * values protect everything starting inside the currently retained tail or pushed afterwards; text
  * already emitted before registration cannot be retroactively un-emitted.
  */
 export function createStreamingRedactor(secrets: string[]) {
-  let secretsSnapshot = [...secrets];
+  let syncedSecretCount = secrets.length;
   let matcher = matcherForStream(secrets);
   let stream = matcher.createStream();
   // Held chunks in arrival order; chunks[chunkHead] starts at stream offset `chunkHeadPos`.
@@ -87,14 +110,6 @@ export function createStreamingRedactor(secrets: string[]) {
   let pendingDepth = 0;
   let pendingRanges: Array<[number, number]> = [];
   let pendingHead = 0;
-
-  const sameSecrets = () => {
-    if (secretsSnapshot.length !== secrets.length) return false;
-    for (let index = 0; index < secretsSnapshot.length; index += 1) {
-      if (secretsSnapshot[index] !== secrets[index]) return false;
-    }
-    return true;
-  };
 
   const compactPending = () => {
     if (pendingHead === pendingRanges.length) {
@@ -110,6 +125,8 @@ export function createStreamingRedactor(secrets: string[]) {
     while (chunkHead < chunks.length) {
       const length = chunks[chunkHead]!.length;
       if (chunkHeadPos + length > limit) break;
+      // Clear consumed slot immediately so large chunks are eligible for GC before array compaction.
+      chunks[chunkHead] = "";
       chunkHeadPos += length;
       chunkHead += 1;
     }
@@ -117,7 +134,15 @@ export function createStreamingRedactor(secrets: string[]) {
       chunks.length = 0;
       chunkHead = 0;
       chunkHeadPos = pos;
-    } else if (chunkHead >= 256 && chunkHead * 2 >= chunks.length) {
+      return;
+    }
+    const headChunk = chunks[chunkHead]!;
+    const trim = limit - chunkHeadPos;
+    if (trim > 0 && headChunk.length >= 256 && trim * 2 >= headChunk.length) {
+      chunks[chunkHead] = detachString(headChunk.slice(trim));
+      chunkHeadPos = limit;
+    }
+    if (chunkHead >= 64 && chunkHead * 2 >= chunks.length) {
       chunks = chunks.slice(chunkHead);
       chunkHead = 0;
     }
@@ -176,8 +201,8 @@ export function createStreamingRedactor(secrets: string[]) {
   };
 
   const syncSecrets = () => {
-    if (sameSecrets()) return;
-    secretsSnapshot = [...secrets];
+    if (secrets.length === syncedSecretCount) return;
+    syncedSecretCount = secrets.length;
     matcher = matcherForStream(secrets);
     stream = matcher.createStream();
     pendingRanges.length = 0;
