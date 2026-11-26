@@ -393,6 +393,32 @@ describe("skill tools", () => {
     expect(prisma._store[0]?.name).toBe("Shared");
   });
 
+  it("keeps a routine prompt edited during the skill rename", async () => {
+    const routine = { id: "r1", userId: "user-1", spaceId: "ws-1", prompt: "@Old" };
+    prisma = makePrisma([], [routine]);
+    const created = await skillCreateFromTool(prisma as never, owner, {
+      name: "Old",
+      description: "d",
+      body: "body",
+    });
+    const update = prisma.routine.updateMany.getMockImplementation()!;
+    prisma.routine.updateMany.mockImplementationOnce((args) => {
+      routine.prompt = "Use the instructions in the attachment.";
+      return update(args);
+    });
+    const publishSpaceChange = vi.fn();
+    expect(
+      await skillUpdateFromTool(
+        prisma as never,
+        owner,
+        { skillId: String(created.id), newName: "New" },
+        { publishSpaceChange },
+      ),
+    ).toMatchObject({ ok: true });
+    expect(routine.prompt).toBe("Use the instructions in the attachment.");
+    expect(publishSpaceChange).not.toHaveBeenCalled();
+  });
+
   it("leaves routines alone when another rename got there first", async () => {
     prisma = makePrisma([], [{ id: "r1", userId: "user-1", spaceId: "ws-1", prompt: "@Old" }]);
     const created = await skillCreateFromTool(prisma as never, owner, {

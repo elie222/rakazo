@@ -7,6 +7,7 @@ import {
   withSecretPersistence,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { buildSkillMd } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -14,6 +15,8 @@ import { createAgentSkillsService } from "../bots/agent-skills.js";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
 import { installPlugin } from "./plugin-installs.js";
+
+const actorScope = ({ userId, spaceId }: Actor) => ({ userId, spaceId });
 
 const enabled = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
 const sha = "a".repeat(40);
@@ -240,6 +243,115 @@ describe.skipIf(!enabled)("plugin install lifecycle (PostgreSQL, offline provide
         ).toMatchObject({ description: "Revised" });
       } finally {
         await rpc.agentSkills.remove({ skillId: skill.id });
+      }
+    }),
+  );
+
+  it(
+    "renames organization skill references according to each routine's visible skills",
+    asActor(async () => {
+      const rpc = client();
+      const name = "Shared review";
+      const destination = "Weekly review";
+      const shared = await rpc.agentSkills.create({
+        name,
+        description: "Shared instructions",
+        organization: true,
+      });
+      const fixtures = await runAsSystem("routine skill rename fixture", async () => {
+        const ownerBot = await prisma.bot.create({
+          data: { ...actorScope(actor), name: "Owner bot", color: "blue" },
+        });
+        const teammateBot = await prisma.bot.create({
+          data: { ...actorScope(teammate), name: "Teammate bot", color: "blue" },
+        });
+        const ownerRoutine = await prisma.routine.create({
+          data: {
+            ...actorScope(actor),
+            botId: ownerBot.id,
+            name: "Owner routine",
+            prompt: "Run @Shared review, then @Shared review tools.",
+            crons: [],
+          },
+        });
+        const teammateRoutine = await prisma.routine.create({
+          data: {
+            ...actorScope(teammate),
+            botId: teammateBot.id,
+            name: "Teammate routine",
+            prompt: "Run @Shared review.",
+            crons: [],
+          },
+        });
+        const longer = await prisma.agentSkill.create({
+          data: { ...actorScope(actor), name: "Shared review tools", description: "", content: "" },
+        });
+        const shadow = await prisma.agentSkill.create({
+          data: { ...actorScope(teammate), name: name.toLowerCase(), description: "", content: "" },
+        });
+        const destinationShadow = await prisma.agentSkill.create({
+          data: { ...actorScope(actor), name: destination, description: "", content: "" },
+        });
+        return {
+          ownerBot,
+          teammateBot,
+          ownerRoutine,
+          teammateRoutine,
+          longer,
+          shadow,
+          destinationShadow,
+        };
+      });
+      try {
+        await expect(
+          rpc.agentSkills.update({ skillId: shared.id, name: destination }),
+        ).rejects.toMatchObject({ code: "CONFLICT" });
+        expect(await rpc.agentSkills.get({ skillId: shared.id })).toMatchObject({ name });
+        await prisma.agentSkill.delete({ where: { id: fixtures.destinationShadow.id } });
+        await rpc.agentSkills.update({ skillId: shared.id, name: destination });
+        await runAsSystem("check routine skill references", async () => {
+          expect(
+            await prisma.routine.findUniqueOrThrow({ where: { id: fixtures.ownerRoutine.id } }),
+          ).toMatchObject({ prompt: "Run @Weekly review, then @Shared review tools." });
+          expect(
+            await prisma.routine.findUniqueOrThrow({ where: { id: fixtures.teammateRoutine.id } }),
+          ).toMatchObject({ prompt: "Run @Shared review." });
+        });
+        await runAsTenant(teammate, async () => {
+          await client(teammate).agentSkills.update({
+            skillId: fixtures.shadow.id,
+            content: buildSkillMd({
+              name: "Personal review",
+              description: "Personal instructions",
+              body: "",
+            }),
+          });
+          expect(
+            await prisma.routine.findUniqueOrThrow({ where: { id: fixtures.teammateRoutine.id } }),
+          ).toMatchObject({ prompt: "Run @Personal review." });
+          await prisma.routine.update({
+            where: { id: fixtures.teammateRoutine.id },
+            data: { prompt: "Run @Weekly review." },
+          });
+        });
+        await rpc.agentSkills.update({ skillId: shared.id, name: "Monthly review" });
+        await runAsTenant(teammate, async () => {
+          expect(
+            await prisma.routine.findUniqueOrThrow({ where: { id: fixtures.teammateRoutine.id } }),
+          ).toMatchObject({ prompt: "Run @Monthly review." });
+        });
+      } finally {
+        await rpc.agentSkills.remove({ skillId: shared.id });
+        await runAsSystem("remove routine skill rename fixture", async () => {
+          await prisma.bot.deleteMany({
+            where: { id: { in: [fixtures.ownerBot.id, fixtures.teammateBot.id] } },
+          });
+          await prisma.agentSkill.deleteMany({
+            where: {
+              id: { in: [fixtures.longer.id, fixtures.shadow.id, fixtures.destinationShadow.id] },
+            },
+          });
+        });
       }
     }),
   );

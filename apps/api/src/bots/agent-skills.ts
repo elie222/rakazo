@@ -404,7 +404,7 @@ export function createAgentSkillsService(
               ...personalOrManagedOrganizationItemIn(actor, managedId),
               source: "user",
               // A rename that lost a race must not leave routines pointing at a stale name.
-              ...(renamed ? { name: previousName } : {}),
+              name: previousName,
             },
             data: {
               name: resolved.name,
@@ -412,20 +412,21 @@ export function createAgentSkillsService(
               content: resolved.content,
             },
           });
-          if (result.count === 0 && renamed) {
+          if (result.count === 0) {
             throw new ClientError("CONFLICT", "This skill changed. Reload and try again.");
           }
-          if (result.count === 1 && renamed && existing.userId) {
+          if (result.count === 1 && renamed) {
             const { allSpaces, spaceIds } = spaceAvailability(existing);
-            // The owner's routines in the other spaces the skill is available in sit outside
-            // this request's Space, so read them by owner as the name checks do.
             renamedRoutineSpaces = await runAsSystemInTransaction(
               tx,
-              "owner's routines in the spaces a renamed skill is available in",
+              "routines in the spaces a renamed skill is available in",
               () =>
                 renameSkillInRoutines(
                   tx,
-                  { userId: actor.userId, spaceIds: allSpaces ? null : spaceIds },
+                  existing.organizationId
+                    ? { organizationId: existing.organizationId }
+                    : { userId: actor.userId, spaceIds: allSpaces ? null : spaceIds },
+                  existing.id,
                   previousName,
                   resolved.name,
                 ),
