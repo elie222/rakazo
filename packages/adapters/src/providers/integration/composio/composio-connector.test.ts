@@ -49,6 +49,21 @@ it("lists active accounts once for an owner-scoped identity lookup", async () =>
   expect(proxyExecute).toHaveBeenCalledTimes(2);
 });
 
+it("propagates an unexpected mailbox profile status for retry", async () => {
+  const prepare = composioAccountIdentity(
+    async () => ["account"],
+    async () => ({ proxyExecute: async () => ({ status: 400, data: {} }) }),
+  );
+  const identify = await prepare("gmail", {
+    operationId: "test",
+    traceId: "test",
+    spaceId: "space",
+    userId: "user",
+    signal: new AbortController().signal,
+  });
+  await expect(identify("account")).rejects.toThrow("HTTP 400");
+});
+
 const composioSdkState = vi.hoisted(() => ({
   created: [] as Array<{ userId: string; config: Record<string, unknown> }>,
   directoryFails: false,
