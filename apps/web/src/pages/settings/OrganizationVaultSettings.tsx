@@ -1,5 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { Button, Field, FieldGroup, FieldLabel, Input, SectionHeading } from "@rakazo/ui-web";
+import {
+  Button,
+  Checkbox,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  SectionHeading,
+} from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
 import { passwordManagerIgnore } from "../../components/vault/password-manager-ignore";
@@ -205,15 +213,16 @@ function LoginActions({
                   <Trans>Allowed agents</Trans>
                 </legend>
                 {agents.map((agent) => (
-                  <label key={agent.id} className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
+                  <Field key={agent.id} orientation="horizontal">
+                    <Checkbox
+                      id={`${id}-agent-${agent.id}`}
+                      disabled={save.pending}
                       name="agent"
                       value={agent.id}
                       defaultChecked={login.botIds.includes(agent.id)}
                     />
-                    {agent.name}
-                  </label>
+                    <FieldLabel htmlFor={`${id}-agent-${agent.id}`}>{agent.name}</FieldLabel>
+                  </Field>
                 ))}
               </fieldset>
             )}
