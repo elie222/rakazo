@@ -475,9 +475,12 @@ function modelFamily(choice: ChatModelChoice): string {
   const id = (choice.modelId ?? "").toLowerCase();
   const name = id.slice(id.lastIndexOf("/") + 1);
   const version = MODEL_VERSION.exec(name);
-  const unversioned = version
-    ? name.slice(0, version.index) + name.slice(version.index + version[0].length)
-    : name;
+  const end = version ? version.index + version[0].length : 0;
+  // Digits run into letters name a size or variant (`120b`, `4o`), not a version.
+  const unversioned =
+    version && !/[a-z]/.test(name[end] ?? "")
+      ? name.slice(0, version.index) + name.slice(end)
+      : name;
   // Once the version is gone, a part of digits alone is a date (`2024-08-06`, `1106`).
   const family = unversioned
     .split(/[-_.:]+/)

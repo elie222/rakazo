@@ -598,6 +598,17 @@ describe("latestModelChoices", () => {
     expect(ids(latest)).toEqual(["gpt-5", "gpt-4o"]);
   });
 
+  it("keeps each size of one release", () => {
+    const sizes = ["gpt-oss-120b", "gpt-oss-20b"].map((modelId) => ({
+      key: `openai::${modelId}`,
+      label: modelId,
+      provider: "openai",
+      providerLabel: "OpenAI",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(sizes, "").latest)).toEqual(["gpt-oss-120b", "gpt-oss-20b"]);
+  });
+
   it("keeps an older selected model in view", () => {
     const { latest } = latestModelChoices(section, "openrouter::anthropic/claude-opus-4.5");
     expect(ids(latest)).toContain("anthropic/claude-opus-4.5");
