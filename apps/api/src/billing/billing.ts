@@ -748,19 +748,19 @@ export function createBillingService(deps: {
           organizationOwnerHadTrial(prisma, organizationId, "byok"),
         ]);
         const now = new Date();
-        const free = activeFreeByokTier(credits, account?.status ?? null, now);
+        const subscriptionStatus = account?.status ?? null;
+        const free = activeFreeByokTier(credits, subscriptionStatus, now);
+        const freeAccessUntil = byokFreeUntil(credits, now);
         const freeUntil =
           credits.mode === "byok" &&
           BYOK_TIERS.standard.monthlyPriceCents !== null &&
-          !hasBillingAccess(account?.status ?? null)
-            ? (free?.expiresAt ?? byokFreeUntil(credits, now))
+          !hasBillingAccess(subscriptionStatus) &&
+          !needsBillingPortal(subscriptionStatus)
+            ? freeAccessUntil
             : null;
-        const access = hasModelAccess(credits, account?.status ?? null, now);
+        const access = hasModelAccess(credits, subscriptionStatus, now);
         const freePeriodEnded =
-          !access &&
-          !account?.subscribedAt &&
-          credits.byokFreeUntil !== null &&
-          !byokFreeUntil(credits, now);
+          !access && !account?.subscribedAt && credits.byokFreeUntil !== null && !freeAccessUntil;
         const subscribed = subscribedByokPrice(account);
         const tier = free?.tier ?? subscribed?.tier ?? "standard";
         const hourMicros = deps.sandbox && sandboxDisplayedHourMicros(deps.sandbox);

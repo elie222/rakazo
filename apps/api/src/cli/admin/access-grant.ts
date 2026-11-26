@@ -2,9 +2,10 @@ import type { ByokTier } from "@rakazo/contracts";
 import { BYOK_TIERS, ByokTierSchema } from "@rakazo/contracts";
 import {
   activeFreeByokTier,
-  FREE_BYOK_TIERS_SELECT,
+  FREE_BYOK_ACCOUNT_SELECT,
   hasBillingAccess,
   isOwnerRole,
+  needsBillingPortal,
   publishOrganizationChange,
 } from "@rakazo/db";
 import { applyAccessGrants, createAccessGrant } from "../../auth/access-grants.js";
@@ -61,7 +62,7 @@ async function grantAccess(
         where: { id: organizationId },
         select: {
           modelCredits: {
-            select: { mode: true, byokFreeUntil: true, freeByokTiers: FREE_BYOK_TIERS_SELECT },
+            select: { ...FREE_BYOK_ACCOUNT_SELECT, byokFreeUntil: true },
           },
           billing: { select: { status: true } },
         },
@@ -71,16 +72,22 @@ async function grantAccess(
     await publishOrganizationChange(prisma, realtime, organizationId, [], { waitForPublish: true });
   const credits = organization?.modelCredits;
   const subscriptionStatus = organization?.billing?.status ?? null;
+  const subscriptionTakesPrecedence =
+    hasBillingAccess(subscriptionStatus) || needsBillingPortal(subscriptionStatus);
   const expiry = tier
     ? credits?.freeByokTiers.find((grant) => grant.tier === tier)?.expiresAt
     : credits?.byokFreeUntil;
   const freeUntil = expiry ?? null;
   const counting = tier
     ? activeFreeByokTier(credits, subscriptionStatus)?.tier === tier
-    : credits?.mode === "byok" && !hasBillingAccess(subscriptionStatus);
+    : credits?.mode === "byok" && !subscriptionTakesPrecedence;
   const plan = tier ? `Own-key ${BYOK_TIERS[tier].name} plan` : "Own-key plan";
   const inactive = tier
-    ? " A live subscription or a higher free tier currently sets the benefits."
+    ? subscriptionTakesPrecedence
+      ? " An existing subscription takes precedence."
+      : credits?.mode !== "byok"
+        ? " These benefits apply when using your own API key."
+        : " A higher free tier currently applies."
     : " It counts only while the organization uses its own key without a subscription.";
   const text = freeUntil
     ? `${plan} free until ${freeUntil.toISOString()}.${counting ? "" : inactive}`

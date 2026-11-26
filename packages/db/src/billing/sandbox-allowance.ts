@@ -13,7 +13,7 @@ import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import { runAsSystem, runAsSystemInTransaction } from "../database/row-security.js";
 import type { FreeByokTiers } from "./billing.js";
-import { activeFreeByokTier, FREE_BYOK_TIERS_SELECT, hasBillingAccess } from "./billing.js";
+import { activeFreeByokTier, FREE_BYOK_ACCOUNT_SELECT, hasBillingAccess } from "./billing.js";
 
 /**
  * The own-key tier an organization's computers get: a live own-key subscription's tier, whatever
@@ -53,7 +53,7 @@ export async function sandboxAllowancePlan(
     prisma.organization.findUnique({
       where: { id: organizationId },
       select: {
-        modelCredits: COMPUTER_SIZE_PLAN_SELECT.modelCredits,
+        modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },
         billing: {
           select: {
             creditAmountCents: true,
@@ -198,7 +198,7 @@ export async function speechAllowancePlan(
     prisma.organization.findUnique({
       where: { id: organizationId },
       select: {
-        modelCredits: FREE_TIER_ACCOUNT_SELECT,
+        modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },
         billing: {
           select: {
             creditAmountCents: true,
@@ -257,7 +257,7 @@ export async function mediaAllowancePlan(
     prisma.organization.findUnique({
       where: { id: organizationId },
       select: {
-        modelCredits: FREE_TIER_ACCOUNT_SELECT,
+        modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },
         billing: {
           select: {
             creditAmountCents: true,
@@ -324,17 +324,15 @@ export async function grantComputerAllowance(
   );
 }
 
-const FREE_TIER_ACCOUNT_SELECT = { select: { freeByokTiers: FREE_BYOK_TIERS_SELECT } } as const;
-
 /** What `allowedComputerSizes` reads from an organization. */
 export const COMPUTER_SIZE_PLAN_SELECT = {
-  modelCredits: { select: { mode: true, freeByokTiers: FREE_BYOK_TIERS_SELECT } },
+  modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },
   billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
 } as const;
 
 type ComputerSizePlan =
   | {
-      modelCredits: ({ mode: string | null } & FreeByokTiers) | null;
+      modelCredits: FreeByokTiers | null;
       billing: {
         status: string | null;
         byokTier: string | null;

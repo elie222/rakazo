@@ -23,7 +23,10 @@ export function hasModelAccess(
 ): boolean {
   if (hasBillingAccess(subscriptionStatus)) return true;
   if (credits.mode === "byok")
-    return BYOK_TIERS.standard.monthlyPriceCents === null || byokFreeUntil(credits, now) !== null;
+    return (
+      BYOK_TIERS.standard.monthlyPriceCents === null ||
+      (!needsBillingPortal(subscriptionStatus) && byokFreeUntil(credits, now) !== null)
+    );
   if (credits.balanceMicros > 0n) return true;
   return BYOK_TIERS.standard.monthlyPriceCents === null && credits.mode === "credits";
 }
@@ -33,19 +36,30 @@ export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new
   return credits.byokFreeUntil && credits.byokFreeUntil > now ? credits.byokFreeUntil : null;
 }
 
-export type FreeByokTiers = { freeByokTiers: readonly { tier: string; expiresAt: Date }[] };
+export type FreeByokTiers = {
+  mode: string | null;
+  freeByokTiers: readonly { tier: string; expiresAt: Date }[];
+};
 
-export const FREE_BYOK_TIERS_SELECT = { select: { tier: true, expiresAt: true } } as const;
+export const FREE_BYOK_ACCOUNT_SELECT = {
+  mode: true,
+  freeByokTiers: { select: { tier: true, expiresAt: true } },
+} as const;
 
-/** A live subscription controls its own benefits. Otherwise the highest unexpired grant wins. */
+/** The highest unexpired named grant applies in own-key mode without an ongoing subscription. */
 export function activeFreeByokTier(
   account: FreeByokTiers | null | undefined,
   subscriptionStatus: string | null,
   now = new Date(),
 ) {
-  if (hasBillingAccess(subscriptionStatus)) return null;
+  if (
+    account?.mode !== "byok" ||
+    hasBillingAccess(subscriptionStatus) ||
+    needsBillingPortal(subscriptionStatus)
+  )
+    return null;
   for (const tier of [...ByokTierSchema.options].reverse()) {
-    const grant = account?.freeByokTiers?.find(
+    const grant = account.freeByokTiers?.find(
       (grant) => grant.tier === tier && grant.expiresAt > now,
     );
     if (grant) return { tier, expiresAt: grant.expiresAt };

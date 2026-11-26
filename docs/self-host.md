@@ -241,8 +241,9 @@ out of chat and logs. Each new key is recorded as a `credential.changed`
 Grant complimentary own-key access with `node dist/cli/admin.js access grant <email> <free-months> [standard|pro|max|ultra]`.
 For example, `node dist/cli/admin.js access grant person@example.test 6 max` gives Max benefits for
 six 30-day months without creating a subscription. Grants of the same named tier extend its expiry.
-The highest unexpired named tier applies while there is no live subscription. Omitting the tier
-uses the original Standard access grant.
+The highest unexpired named tier applies while the organization uses its own API key and has no
+active subscription or subscription awaiting billing recovery. Omitting the tier uses the original
+Standard access grant.
 
 Run these from the API container. Omit `--confirm` to preview the target and action.
 

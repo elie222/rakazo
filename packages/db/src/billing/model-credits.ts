@@ -5,7 +5,7 @@ import { MODEL_CREDITS_EXHAUSTED_ERROR, MODEL_UNPRICED_FOR_CREDITS_ERROR } from 
 import type { PrismaClient } from "../database/client.js";
 import { isUniqueViolation } from "../database/prisma-errors.js";
 import type { Prisma } from "../generated/prisma/client.js";
-import { FREE_BYOK_TIERS_SELECT } from "./billing.js";
+import { FREE_BYOK_ACCOUNT_SELECT } from "./billing.js";
 import { enforceModelCreditCap } from "./model-credit-cap.js";
 import {
   allocateCreditLots,
@@ -53,7 +53,7 @@ export async function unexpiredCreditAccount(
       Promise.all([
         tx.modelCreditAccount.findUniqueOrThrow({
           where: { organizationId },
-          include: { freeByokTiers: FREE_BYOK_TIERS_SELECT },
+          include: { freeByokTiers: FREE_BYOK_ACCOUNT_SELECT.freeByokTiers },
         }),
         tx.modelCreditLot.aggregate({ where: live, _sum: { availableMicros: true } }),
         tx.modelCreditLot.aggregate({

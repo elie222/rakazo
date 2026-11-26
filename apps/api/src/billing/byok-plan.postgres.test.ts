@@ -8,6 +8,7 @@ import {
   asSystem,
   billingAccountForOrganization,
   chargeMedia,
+  createBillingAccount,
   createDb,
   planComputerSize,
   spaceHasModelAccess,
@@ -60,6 +61,65 @@ dbTests("own-key plan", () => {
     await prisma.user.delete({ where: { id: userId } });
     await db.prisma.$disconnect();
     await db.pool.end();
+  });
+
+  it("reports when free access ends even if the granted tier expires sooner", async () => {
+    const tierExpiry = new Date(Date.now() + 86_400_000);
+    const accessExpiry = new Date(tierExpiry.getTime() + 86_400_000);
+    await prisma.modelCreditAccount.create({
+      data: {
+        organizationId,
+        mode: "byok",
+        byokFreeUntil: accessExpiry,
+        freeByokTiers: { create: { tier: "max", expiresAt: tierExpiry } },
+      },
+    });
+    try {
+      await expect(service.status(actor)).resolves.toMatchObject({
+        access: true,
+        byokTier: "max",
+        byokFreeUntil: accessExpiry.toISOString(),
+      });
+    } finally {
+      await prisma.modelCreditAccount.delete({ where: { organizationId } });
+    }
+  });
+
+  it("keeps the recoverable subscription visible during a named grant", async () => {
+    const expiry = new Date(Date.now() + 86_400_000);
+    await prisma.modelCreditAccount.create({
+      data: {
+        organizationId,
+        mode: "byok",
+        byokFreeUntil: expiry,
+        freeByokTiers: { create: { tier: "max", expiresAt: expiry } },
+      },
+    });
+    try {
+      await createBillingAccount(prisma, { organizationId, customerId: `recovery-${stamp}` });
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          status: "past_due",
+          subscriptionId: `subscription-${stamp}`,
+          subscribedAt: new Date(),
+          byokTier: "pro",
+          byokInterval: "year",
+          byokPriceCents: BYOK_TIERS.pro.annualPriceCents,
+        },
+      });
+      await expect(service.status(actor)).resolves.toMatchObject({
+        access: false,
+        state: "past_due",
+        byokTier: "pro",
+        byokInterval: "year",
+        byokPriceCents: BYOK_TIERS.pro.annualPriceCents,
+        byokFreeUntil: null,
+      });
+    } finally {
+      await prisma.billingAccount.deleteMany({ where: { organizationId } });
+      await prisma.modelCreditAccount.delete({ where: { organizationId } });
+    }
   });
 
   it("stays free without a checkout during the free period", async () => {

@@ -17,11 +17,13 @@ const WITH_CREATOR = { createdBy: { select: { email: true } } } as const;
 function accessGrantDto(
   row: Prisma.AccessGrantGetPayload<{ include: typeof WITH_CREATOR }>,
 ): AccessGrant {
+  const byokTier = ByokTierSchema.safeParse(row.byokTier).data;
   return {
     id: row.id,
     email: row.email,
     creditCents: row.creditCents,
     freeMonths: row.freeMonths,
+    ...(byokTier && { byokTier }),
     createdBy: row.createdBy?.email ?? null,
     status: row.revokedAt ? "revoked" : row.appliedAt ? "applied" : "pending",
     createdAt: row.createdAt.toISOString(),
