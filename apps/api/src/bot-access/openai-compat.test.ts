@@ -53,10 +53,16 @@ describe("OpenAI-compatible chat", () => {
       ]),
     ).toBe("Watch r/news\nfor launches");
     expect(() => latestUserText([{ role: "system", content: "only a system message" }])).toThrow(
-      "include a user message with text",
+      "end with a user message with text",
     );
+    expect(() =>
+      latestUserText([
+        { role: "user", content: "earlier" },
+        { role: "assistant", content: "reply" },
+      ]),
+    ).toThrow("end with a user message with text");
     expect(() => latestUserText([{ role: "user", content: "   " }])).toThrow(
-      "include a user message with text",
+      "end with a user message with text",
     );
     expect(() => latestUserText([{ role: "user", content: "a".repeat(100_001) }])).toThrow(
       "longer than",

@@ -26,7 +26,8 @@ export type ChatCompletionRequest = z.infer<typeof ChatCompletionRequestSchema>;
  * message is sent; the history and system messages a client repeats are already in the chat.
  */
 export function latestUserText(messages: ChatCompletionRequest["messages"]): string {
-  const message = messages.findLast((entry) => entry.role === "user");
+  // A request that does not end with a user message has nothing new to send.
+  const message = messages.at(-1)?.role === "user" ? messages.at(-1) : undefined;
   const content = message?.content;
   const text = (
     typeof content === "string"
@@ -36,7 +37,7 @@ export function latestUserText(messages: ChatCompletionRequest["messages"]): str
           .map((part) => part.text)
           .join("\n")
   ).trim();
-  if (!text) throw new ClientError("BAD_REQUEST", "messages: include a user message with text");
+  if (!text) throw new ClientError("BAD_REQUEST", "messages: end with a user message with text");
   if (text.length > THREAD_MESSAGE_TEXT_MAX_LENGTH)
     throw new ClientError(
       "BAD_REQUEST",

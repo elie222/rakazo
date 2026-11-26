@@ -25,7 +25,7 @@ function openToolQuestion(
   return (
     block.kind === "tool_question" &&
     block.status === "pending" &&
-    Boolean(block.question?.message) &&
+    Boolean(block.question) &&
     Date.parse(block.expiresAt) > Date.now()
   );
 }
@@ -40,7 +40,7 @@ function questionOf(block: MessageBlock): string | null {
   )
     return block.text;
   // An integration's question waits on the person while the run itself still reads as running.
-  if (openToolQuestion(block)) return block.question.message;
+  if (openToolQuestion(block)) return block.question.message ?? "";
   if (block.kind === "choice" && !block.answerId && Array.isArray(block.options)) {
     const options = block.options.map((option) => `${option.letter}. ${option.label}`);
     return [block.question, ...options].join("\n");

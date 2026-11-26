@@ -243,7 +243,10 @@ export function createBotAccess(deps: BotAccessDeps) {
       return task ? { taskId: task.id, seq: message?.seq } : null;
     });
     if (!own)
-      throw new ClientError("CONFLICT", "The bot is busy with someone else's request; try again");
+      throw new ClientError(
+        "CONFLICT",
+        "The bot is busy with someone else's request. Your message is in its chat, so do not send it again",
+      );
     return own;
   }
 
