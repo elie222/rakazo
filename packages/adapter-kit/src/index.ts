@@ -17,6 +17,7 @@ export * from "./paid-services.js";
 export * from "./partner-program.js";
 export * from "./payments.js";
 export * from "./personal-calendar.js";
+export * from "./phone-network.js";
 export * from "./registry.js";
 export * from "./sandbox-errors.js";
 export * from "./secret-errors.js";
