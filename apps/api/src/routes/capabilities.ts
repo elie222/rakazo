@@ -4,7 +4,6 @@ import {
   applyMcpSourcePreset,
   createPluginMarketplace,
   isTransientFetchError,
-  MCP_SOURCE_PRESETS,
   pluginPreviewDto,
   prepareApiInstall,
   prepareGraphqlInstall,
@@ -13,7 +12,13 @@ import {
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { ConnectionSetupError } from "@rakazo/contracts";
-import { ClientError, comparePlugins, containsSecret, matchesPluginQuery } from "@rakazo/core";
+import {
+  ClientError,
+  comparePlugins,
+  containsSecret,
+  matchesPluginQuery,
+  mcpSourcePresetsFor,
+} from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { AVAILABILITY_SELECT, availableInSpace, itemSecretIn, spaceAvailability } from "@rakazo/db";
 import { requireAdmin } from "../auth/admins.js";
@@ -116,7 +121,9 @@ export function capabilitiesRoutes(ctx: RouterContext) {
           createdAt: row.createdAt.toISOString(),
         }));
       }),
-      sourcePresets: authed.capabilities.sourcePresets.handler(() => MCP_SOURCE_PRESETS),
+      sourcePresets: authed.capabilities.sourcePresets.handler(() =>
+        mcpSourcePresetsFor(deps.env.webOrigin),
+      ),
       catalogSearch: authed.capabilities.catalogSearch.handler(async ({ context, input }) => {
         const baseUrl =
           deps.env.integrationsCatalogUrl ??

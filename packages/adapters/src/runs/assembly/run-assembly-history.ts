@@ -2,6 +2,7 @@ import { botMessageAllowsSilence, userTurnMessageForRun } from "@rakazo/core";
 import { isPartialReplyClientNonce, storedMessageBlocks } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { loadAgentMemoryContext } from "../../memory/memory-context.js";
+import { latestEndedDate } from "../../memory/memory-expiry.js";
 import { PARTIAL_REPLY_NOTE } from "../../messaging/automated-messages.prompt.js";
 import {
   historyWindowSize,
@@ -18,10 +19,15 @@ import {
   neutralizeSpeakerLabels,
 } from "../../runtime/context/history-speakers.js";
 import { loadAgentScratchpadContext } from "../../runtime/context/scratchpad-context.js";
+import { mapTurnTranscript } from "../../runtime/pi/pi-runtime-transcript.js";
 import { loadAgentTicketContext } from "../../tasks/ticket-context.js";
 import type { RunHold } from "../lifecycle/run-attempt.js";
 import { loadCurrentTurnImages } from "../turn/run-turn-images.js";
-import { messageToAgentHistorySegments, messageToAgentHistoryText } from "./reply-context.js";
+import {
+  messageToAgentHistorySegments,
+  messageToAgentHistoryText,
+  messageTranscript,
+} from "./reply-context.js";
 import type { ConnectedRun, RunRecords } from "./run-assembly-records.js";
 import { threadContextForRun } from "./run-instructions.prompt.js";
 import { DELEGATED_EMPTY_NOTICE, runAllowsSilentEmpty } from "./run-replies.prompt.js";
@@ -75,6 +81,18 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
                       })),
                     },
               );
+        // The turn exactly as this bot's model was sent it, so the next request extends it. In a
+        // group, what tools returned and the bot wrote may not pose as a speaker either.
+        const stored =
+          m.role === "bot" && !speaker && replaysToolHistory && !partial
+            ? messageTranscript(m)
+            : undefined;
+        const transcript =
+          stored && speakers
+            ? mapTurnTranscript(stored, (value, kind) =>
+                kind === "result" || kind === "reply" ? neutral(value) : value,
+              )
+            : stored;
         return {
           id: m.id,
           createdAt: m.createdAt?.toISOString(),
@@ -89,6 +107,7 @@ export async function readThreadHistory(hold: RunHold, parts: { records: RunReco
           ...(segments
             ? { segments: partial ? [...segments, { text: PARTIAL_REPLY_NOTE }] : segments }
             : {}),
+          ...(transcript ? { transcript } : {}),
         };
       }),
       summary: thread.historyCompactionSummary,
@@ -118,21 +137,26 @@ export async function loadTurnContext(
     messages,
     messagingChannelRun,
     nonOwnerChatRun,
+    ownerComputerRoutine,
     peerMessage,
     task,
     thread,
     ticketBoardEnabled,
   } = parts.records;
+  // Memory, the scratchpad and tickets hold text other runs and members wrote, which a routine
+  // with its owner's computer never reads.
+  const savedContextHidden = nonOwnerChatRun || ownerComputerRoutine;
   const { context, discoveredPromise, memoryScope, semanticMemory } = parts.connected;
   const { compactedHistory, threadContext } = parts.thread;
   let history = compactedHistory.history.map(
-    ({ id, role, content, createdAt, speaker, segments }) => ({
+    ({ id, role, content, createdAt, speaker, segments, transcript }) => ({
       id,
       createdAt,
       role,
       content,
       ...(speaker ? { speaker } : {}),
       ...(segments ? { segments } : {}),
+      ...(transcript ? { transcript } : {}),
     }),
   );
   const historyMessages = messages
@@ -203,6 +227,7 @@ export async function loadTurnContext(
   const compacted = thread.historyCompactedUpToSeq != null;
   const recallPromise =
     threadContext.includeSemanticRecall &&
+    !ownerComputerRoutine &&
     semanticMemory &&
     memoryScope &&
     capabilities?.recallOnRequestOnly !== true &&
@@ -223,14 +248,18 @@ export async function loadTurnContext(
     await Promise.all([
       discoveredPromise,
       loadCurrentTurnImages(deps, turnBlocks, context),
-      nonOwnerChatRun ? Promise.resolve("") : loadAgentMemoryContext(deps.memory, bot.id, context),
-      nonOwnerChatRun
+      savedContextHidden
+        ? Promise.resolve("")
+        : loadAgentMemoryContext(deps.memory, bot.id, context, {
+            today: latestEndedDate(deps.now?.() ?? new Date()),
+          }),
+      savedContextHidden
         ? Promise.resolve("")
         : loadAgentScratchpadContext(deps, {
             spaceId: run.spaceId,
             botId: bot.id,
           }),
-      nonOwnerChatRun || !ticketBoardEnabled
+      savedContextHidden || !ticketBoardEnabled
         ? Promise.resolve(undefined)
         : loadAgentTicketContext(deps, {
             spaceId: run.spaceId,
@@ -238,7 +267,7 @@ export async function loadTurnContext(
           }),
       recallPromise,
     ]);
-  const semanticMemoryEnabled = Boolean(semanticMemory) && !nonOwnerChatRun;
+  const semanticMemoryEnabled = Boolean(semanticMemory) && !savedContextHidden;
   let recalledMemory = "";
   let recallSucceeded = false;
   if (recalled) {

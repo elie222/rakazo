@@ -39,6 +39,7 @@ import {
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSegmentedControl } from "../native/native-segmented-control";
 import { NativeSymbol } from "../native/native-symbol";
+import { SheetBar, SheetBarClose, SheetBarConfirm } from "../native/sheet-bar";
 import { SettingsRow } from "../settings/settings-group";
 import { MenuPicker } from "../ui/menu-picker";
 import type { LoginFieldRow } from "./login-fields-editor";
@@ -69,6 +70,7 @@ export function VaultItemEditor({
   botsNote,
   onClose,
   onSave,
+  onDismiss,
 }: {
   kind: VaultKind;
   /** The saved item being edited; without one the sheet adds an item. */
@@ -86,6 +88,8 @@ export function VaultItemEditor({
   /** Said under the bots when only some may use it, or when this Space's can't be chosen. */
   botsNote?: string;
   onSave: (save: VaultSave, policy?: VaultPolicy, access?: VaultBots) => Promise<void>;
+  /** Turns a bot's request down without a value; absent outside a request or when this viewer can't. */
+  onDismiss?: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
@@ -171,6 +175,21 @@ export function VaultItemEditor({
   const cancel = () => {
     if (!submitting) close();
   };
+
+  async function dismiss() {
+    if (submitting || !onDismiss) return;
+    clear();
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onDismiss();
+      close();
+    } catch (err) {
+      setError(secretAnswerErrorText(err, t`Could not send answer`));
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   async function submit() {
     if (submitting || !save) return;
@@ -262,22 +281,17 @@ export function VaultItemEditor({
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={cancel}>
       <View accessibilityViewIsModal style={[styles.sheet, sheetPadding]}>
-        <View style={styles.header}>
-          <NativeActionButton
-            disabled={submitting}
-            label={t`Cancel`}
-            onPress={cancel}
-            prominence="plain"
-          />
-          <NativeActionButton
-            disabled={!save}
-            busy={submitting}
-            fill={false}
-            label={t`Save`}
-            onPress={() => void submit()}
-            prominence={save ? "primary" : "plain"}
-          />
-        </View>
+        <SheetBar
+          leading={<SheetBarClose label={t`Cancel`} disabled={submitting} onPress={cancel} />}
+          trailing={
+            <SheetBarConfirm
+              disabled={!save}
+              busy={submitting}
+              label={t`Save`}
+              onPress={() => void submit()}
+            />
+          }
+        />
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
@@ -332,14 +346,17 @@ export function VaultItemEditor({
                 </View>
               )}
               {keyUnreadable ? (
-                <Text style={styles.error}>{t`This authenticator key can't be read.`}</Text>
+                <Text accessibilityLiveRegion="polite" style={styles.error}>
+                  {t`This authenticator key can't be read.`}
+                </Text>
               ) : null}
               {login && typedSites === "invalid" ? (
                 <Text
+                  accessibilityLiveRegion="polite"
                   style={styles.error}
                 >{t`Enter each site as an HTTPS address a login can be saved for.`}</Text>
               ) : login && typedSites === "too_many" ? (
-                <Text style={styles.error}>
+                <Text accessibilityLiveRegion="polite" style={styles.error}>
                   {t`Up to ${ph({ limit: VAULT_ALSO_ON_LIMIT })} sites.`}
                 </Text>
               ) : null}
@@ -615,6 +632,15 @@ export function VaultItemEditor({
               {error}
             </Text>
           ) : null}
+          {onDismiss ? (
+            <NativeActionButton
+              label={t`Dismiss request`}
+              disabled={submitting || closing}
+              fill={false}
+              prominence="plain"
+              onPress={() => void dismiss()}
+            />
+          ) : null}
         </ScrollView>
       </View>
     </Modal>
@@ -638,13 +664,6 @@ function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
     sheet: { flex: 1, backgroundColor: tokens.background },
-    header: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingHorizontal: 20,
-      paddingBottom: 12,
-    },
     content: { paddingHorizontal: 20, paddingBottom: 40, gap: 16 },
     title: { color: tokens.foreground, fontSize: 20, fontWeight: "600" },
     group: { backgroundColor: tokens.muted, borderRadius: 13, overflow: "hidden" },

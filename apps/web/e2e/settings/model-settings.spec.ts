@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import type { ModelRoleSettings } from "@rakazo/contracts";
+import type { MediaModelsView, ModelRoleSettings } from "@rakazo/contracts";
 import {
   captureScreenshot,
   chooseOption,
@@ -315,7 +315,10 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByRole("menuitem", { name: "Manage model", exact: true }).click();
     const modelSettings = page.getByTestId("model-settings-page");
     await expect(modelSettings).toContainText(LOCAL_MODEL_ID);
-    await modelSettings.getByRole("checkbox", { name: "Supports thinking" }).check();
+    await chooseOption(
+      modelSettings.getByRole("combobox", { name: "Thinking", exact: true }),
+      "Max",
+    );
     await modelSettings.getByLabel("Context limit").fill("200000");
     await modelSettings.getByRole("button", { name: "Save", exact: true }).click();
     await expect(modelSettings.getByText("Saved.", { exact: true })).toBeVisible();
@@ -354,22 +357,23 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByRole("button", { name: "Close model settings" }).click();
     await openBotSettings(page);
     const settings = page.getByTestId("bot-settings");
-    // The model row names the model in use and opens the list; each change saves at once.
-    await settings.getByRole("button", { name: /^Model/ }).click();
+    // The bot follows the Space default, so its model row names and checks the endpoint's model.
+    const modelRow = settings.getByRole("button", { name: /^Model/ });
+    await expect(modelRow).toContainText(LOCAL_MODEL_ID);
+    await modelRow.click();
     const localModel = page.getByRole("option", { name: LOCAL_MODEL_ID });
-    await expect(localModel).toBeVisible();
+    await expect(localModel).toHaveAttribute("data-checked", "true");
     await expect(page.getByRole("option", { name: SECOND_MODEL_ID })).toBeVisible();
     await captureScreenshot(page, testInfo, "openai-compatible-model-picker");
-    const modelSaved = page.waitForResponse(
-      (response) => response.url().includes("/rpc/bots/update") && response.ok(),
-    );
-    await localModel.click();
-    await modelSaved;
-    await expect(settings.getByRole("button", { name: /^Model/ })).toContainText(LOCAL_MODEL_ID);
+    await page.keyboard.press("Escape");
+    await expect(localModel).toBeHidden();
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );
-    await chooseOption(settings.getByRole("combobox", { name: "Thinking", exact: true }), "High");
+    // A bot that picks no level shows the one the model's settings chose.
+    const thinking = settings.getByRole("combobox", { name: "Thinking", exact: true });
+    await expect(thinking).toHaveText("Max");
+    await chooseOption(thinking, "High");
     await botSaved;
 
     if (process.env.AGENT_RUNTIME === "pi") {
@@ -409,6 +413,14 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
             authKind: "oauth",
             reconnectRequired: true,
           },
+          {
+            id: "cred-api-key",
+            provider: "anthropic",
+            label: "Anthropic",
+            hasKey: true,
+            isDefault: false,
+            authKind: "api_key",
+          },
         ],
       },
     }),
@@ -416,14 +428,42 @@ test("a rejected subscription sign-in asks to sign in again", async ({ page }, t
 
   await openUserSettings(page, "models");
   await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Sign in again");
+  await expect(page.getByTestId("model-provider-cred-claude")).toContainText("Claude subscription");
+  const apiKey = page.getByTestId("model-provider-cred-api-key");
+  await expect(apiKey).toContainText("Anthropic");
+  await expect(apiKey).not.toContainText("Claude subscription");
   await captureScreenshot(page, testInfo, "model-settings-reconnect-required");
   // The connection's page offers sign-in only because it expired; rename and disconnect end it.
   await page.getByTestId("model-provider-cred-claude").getByRole("button").click();
   const connection = page.getByTestId("model-provider-page");
+  await expect(
+    connection.getByRole("heading", { name: "Claude subscription", exact: true }),
+  ).toBeVisible();
   await expect(connection.getByRole("button", { name: "Sign in again" })).toBeVisible();
   await expect(connection.getByRole("button", { name: "Disconnect" })).toBeVisible();
   await expect(connection.getByRole("button", { name: "Test connection" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "model-connection-page");
+  // Disconnecting says what goes with the connection before it asks.
+  await page.route("**/rpc/models/disconnectPreview", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          mainModel: true,
+          otherChoice: false,
+          usedBy: ["Inbox", "Morning digest"],
+          usedByTotal: 2,
+        },
+      },
+    }),
+  );
+  await connection.getByRole("button", { name: "Disconnect" }).click();
+  const question = page.getByRole("alertdialog");
+  await expect(question).toContainText(
+    "Reconnecting will not restore the main model choice that uses this connection.",
+  );
+  await expect(question).toContainText("Inbox, Morning digest may stop until you reconnect.");
+  await captureScreenshot(page, testInfo, "model-disconnect-warning");
+  await question.getByRole("button", { name: "Cancel" }).click();
 });
 
 test("a refused private model server names the setting that allows it", async ({
@@ -548,6 +588,84 @@ test("model funding connections", async ({ page }, testInfo) => {
   });
 });
 
+test("image and video models are chosen from the connections that make them", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `media-models-${stamp}@rakazo.test`, "password12", "Media Models");
+  await completeOnboarding(page);
+  // A media-capable key connection, without a real key or the provider's live catalog.
+  await page.route("**/rpc/models/credentials", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: unknown[] };
+    await route.fulfill({
+      response,
+      json: {
+        json: [
+          ...body.json,
+          {
+            id: "media-key",
+            provider: "openrouter",
+            label: "OpenRouter",
+            hasKey: true,
+            isDefault: false,
+          },
+        ],
+      },
+    });
+  });
+  const option = (modelId: string, label: string) => ({
+    credentialId: "media-key",
+    modelId,
+    label,
+    provider: "openrouter",
+    connectionLabel: "OpenRouter",
+  });
+  let view: MediaModelsView = {
+    image: {
+      options: [
+        option("openai/gpt-image-2", "OpenAI: GPT Image 2"),
+        option("google/gemini-2.5-flash-image", "Google: Gemini 2.5 Flash Image"),
+      ],
+      selected: { credentialId: "media-key", modelId: "openai/gpt-image-2" },
+    },
+    video: {
+      options: [option("openai/sora-2", "OpenAI: Sora 2")],
+      selected: { credentialId: "media-key", modelId: "openai/sora-2" },
+    },
+  };
+  await page.route("**/rpc/models/media", (route) => route.fulfill({ json: { json: view } }));
+  await page.route("**/rpc/models/setMedia", async (route) => {
+    const { json } = route.request().postDataJSON() as {
+      json: { role: "image" | "video"; credentialId: string; modelId: string };
+    };
+    view = {
+      ...view,
+      [json.role]: {
+        ...view[json.role],
+        selected: { credentialId: json.credentialId, modelId: json.modelId },
+      },
+    };
+    await route.fulfill({ json: { json: view } });
+  });
+  await page.reload();
+  await openUserSettings(page, "models");
+  const image = page.getByRole("button", { name: "Change Image model" });
+  await expect(image).toHaveText("OpenAI: GPT Image 2OpenRouter");
+  await expect(page.getByRole("button", { name: "Change Video model" })).toHaveText(
+    "OpenAI: Sora 2OpenRouter",
+  );
+  await image.click();
+  await page.getByRole("option", { name: "Google: Gemini 2.5 Flash Image" }).click();
+  await expect(image).toHaveText("Google: Gemini 2.5 Flash ImageOpenRouter");
+  expect(view.image.selected).toEqual({
+    credentialId: "media-key",
+    modelId: "google/gemini-2.5-flash-image",
+  });
+  await page.getByTestId("model-role-video").scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "model-settings-media-models");
+});
+
 test("an approval default the deployment pays for reads as included", async ({
   page,
 }, testInfo) => {
@@ -608,7 +726,7 @@ test("an approval default the deployment pays for reads as included", async ({
   expect(settings.primary).toBeNull();
 });
 
-test("a device-code sign-in shows its setup and code before opening the page", async ({
+test("a device-code sign-in shows its setup before issuing the code", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -619,8 +737,10 @@ test("a device-code sign-in shows its setup and code before opening the page", a
     body.json.needsSignupSurvey = false;
     await route.fulfill({ response, json: body });
   });
-  await page.route("**/rpc/models/beginOAuth", (route) =>
-    route.fulfill({
+  let codesIssued = 0;
+  await page.route("**/rpc/models/beginOAuth", (route) => {
+    codesIssued += 1;
+    return route.fulfill({
       json: {
         json: {
           mode: "device-code",
@@ -631,8 +751,8 @@ test("a device-code sign-in shows its setup and code before opening the page", a
           expiresInSeconds: 900,
         },
       },
-    }),
-  );
+    });
+  });
   await page.route("**/rpc/models/completeOAuth", (route) =>
     route.fulfill({ json: { json: { status: "pending" } } }),
   );
@@ -641,7 +761,13 @@ test("a device-code sign-in shows its setup and code before opening the page", a
   await expect(
     page.getByText("Turn on device code sign-in in ChatGPT security settings"),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open settings" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open settings" })).toHaveAttribute(
+    "href",
+    "https://chatgpt.com/#settings/Security",
+  );
+  await expect(page.getByText("Workspace accounts need an admin to turn this on.")).toBeVisible();
+  // The setting comes first, so the code's clock starts only once the person is ready.
+  expect(codesIssued).toBe(0);
   await captureScreenshot(page, testInfo, "onboarding-device-code-setup");
   const opened = page.waitForEvent("popup", { timeout: 1000 }).catch(() => null);
   await page.getByRole("button", { name: "Sign in with ChatGPT" }).click();
@@ -688,6 +814,9 @@ test("a pasted-code sign-in opens its page from a click and then takes the code"
   const open = page.getByRole("link", { name: "Open auth.example.test" });
   await expect(open).toHaveAttribute("href", "https://auth.example.test/oauth/authorize?state=e2e");
   await expect(page.getByRole("textbox", { name: "Code from auth.example.test" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue" })).toBeHidden();
+  // A grey Continue still shows there is a step after signing in.
+  const next = page.getByRole("button", { name: "Continue" });
+  await expect(next).toBeVisible();
+  await expect(next).toBeDisabled();
   await captureScreenshot(page, testInfo, "onboarding-paste-code-sign-in");
 });

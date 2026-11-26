@@ -9,6 +9,7 @@ import {
   avatarEase,
   avatarTrackValue,
 } from "./avatar-clips.js";
+import { shippedHash, shippedRandom } from "./bot-avatar-colors.js";
 
 /**
  * Life for bot avatars, played flat on our shapes. A resting avatar is a still picture;
@@ -91,6 +92,8 @@ export interface AvatarSegment {
   start: number;
   duration: number;
   clip?: AvatarClipName;
+  /** Seconds into the clip or bridge this segment starts, when it picks one up partway. */
+  offset?: number;
   from?: AvatarPose;
   to?: AvatarPose;
 }
@@ -159,6 +162,109 @@ export function avatarSchedule(
   return segments;
 }
 
+/**
+ * The clock every avatar's motion reads, in milliseconds. It is the wall clock, so every
+ * copy of a bot's avatar, on any screen or platform, is at the same point in its motion.
+ */
+export function avatarSharedTimeMs(): number {
+  return Date.now();
+}
+
+/**
+ * How far one bot's motion is shifted on the shared clock, in milliseconds, so different
+ * bots whose loops share their timing do not move in unison.
+ */
+export function avatarPhaseMs(seed: number): number {
+  return seed % 10_000;
+}
+
+/** How long each stretch of a shared timeline runs, in seconds. */
+export const AVATAR_SHARED_WINDOW_SECONDS = 60;
+
+/**
+ * A bot's timeline for the stretch that holds `seconds` (shared clock) and the one after.
+ * Each stretch is drawn from the bot and the stretch's number alone, so every copy of the
+ * avatar plays the same clips wherever it started. A stretch opens by easing from where the
+ * one before left off back to rest, so its clips never depend on that pose. Given `from`,
+ * the pose the avatar shows now, it first eases from there into the shared timeline when
+ * the two differ.
+ */
+export function avatarSharedSchedule(
+  pool: readonly AvatarClipName[],
+  identity: string,
+  seconds: number,
+  from?: AvatarPose,
+): AvatarSegment[] {
+  const index = Math.floor(seconds / AVATAR_SHARED_WINDOW_SECONDS);
+  const previous = sharedWindow(pool, identity, index - 1, AVATAR_REST_POSE);
+  const current = sharedWindow(pool, identity, index, poseAtWindow(previous, index));
+  const next = sharedWindow(pool, identity, index + 1, poseAtWindow(current, index + 1));
+  const segments = [...current, ...next];
+  if (!from) return segments;
+  const shared = avatarSchedulePose(segments, seconds);
+  return differs(unwrap(from, shared), shared) ? easedInto(segments, seconds, from) : segments;
+}
+
+/** `segments` from `seconds`, reached by a bridge from `from` instead of a jump. */
+function easedInto(
+  segments: readonly AvatarSegment[],
+  seconds: number,
+  from: AvatarPose,
+): AvatarSegment[] {
+  const join = seconds + AVATAR_BRIDGE.seconds;
+  const to = avatarSchedulePose(segments, join);
+  let at = -1;
+  while (at + 1 < segments.length && segments[at + 1]!.start <= join) at += 1;
+  const eased: AvatarSegment[] = [
+    { start: seconds, duration: AVATAR_BRIDGE.seconds, from: unwrap(from, to), to },
+  ];
+  const held = segments[at];
+  const into = held ? join - held.start : 0;
+  if (held && into < held.duration) {
+    eased.push({
+      ...held,
+      start: join,
+      duration: held.duration - into,
+      offset: (held.offset ?? 0) + into,
+    });
+  }
+  return [...eased, ...segments.slice(at + 1)];
+}
+
+function poseAtWindow(segments: readonly AvatarSegment[], index: number): AvatarPose {
+  return avatarSchedulePose(segments, index * AVATAR_SHARED_WINDOW_SECONDS);
+}
+
+function sharedWindow(
+  pool: readonly AvatarClipName[],
+  identity: string,
+  index: number,
+  from: AvatarPose,
+): AvatarSegment[] {
+  const start = index * AVATAR_SHARED_WINDOW_SECONDS;
+  const end = start + AVATAR_SHARED_WINDOW_SECONDS;
+  const random = shippedRandom(shippedHash(`avatar-life/v1/${identity}/${pool.join()}/${index}`));
+  const segments: AvatarSegment[] = [
+    {
+      start,
+      duration: AVATAR_BRIDGE.seconds,
+      from: unwrap(from, AVATAR_REST_POSE),
+      to: AVATAR_REST_POSE,
+    },
+  ];
+  let time = start + AVATAR_BRIDGE.seconds;
+  let pose = AVATAR_REST_POSE;
+  while (time < end) {
+    const more = avatarSchedule(pool, time, pose, random).filter((segment) => segment.start < end);
+    const last = more.at(-1);
+    if (!last) break;
+    segments.push(...more);
+    time = last.start + last.duration;
+    pose = avatarSchedulePose(more, time);
+  }
+  return segments;
+}
+
 /** The timeline's pose at `seconds`; holds the last pose past the end. */
 export function avatarSchedulePose(
   segments: readonly AvatarSegment[],
@@ -171,11 +277,12 @@ export function avatarSchedulePose(
     segment = candidate;
   }
   if (!segment) return AVATAR_REST_POSE;
-  const local = Math.min(Math.max(seconds - segment.start, 0), segment.duration);
+  const offset = segment.offset ?? 0;
+  const local = Math.min(Math.max(seconds - segment.start, 0), segment.duration) + offset;
   if (segment.clip) return avatarClipPose(avatarClip(segment.clip), local);
   const from = segment.from ?? AVATAR_REST_POSE;
   const to = segment.to ?? AVATAR_REST_POSE;
-  const eased = avatarEase(AVATAR_BRIDGE.ease, local / segment.duration);
+  const eased = avatarEase(AVATAR_BRIDGE.ease, local / (segment.duration + offset));
   const mix = (a: number, b: number) => a + (b - a) * eased;
   return {
     pitch: mix(from.pitch, to.pitch),

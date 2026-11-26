@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { BotMcpServer, McpServer } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
-import { isRetryableError } from "@rakazo/core";
+import { connectionSharingOrganization, isRetryableError, sameMcpServerAccess } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import {
   Button,
@@ -37,6 +37,7 @@ import { useSpaceQueries } from "../../lib/query/query";
 import { rpc } from "../../lib/query/rpc";
 import type { ErrorDetails } from "../../lib/query/user-error";
 import { errorCode, errorDetails } from "../../lib/query/user-error";
+import { useOrganizations } from "../../lib/spaces/organizations";
 import {
   duplicateEnvNames,
   emptyMcpServerDraft,
@@ -53,13 +54,14 @@ function needsOAuthClient(server: McpServer): boolean {
   return server.health.code === MCP_OAUTH_CLIENT_REQUIRED && !server.oauthClientId;
 }
 
-function sameAccess(a: AgentAccess, b: AgentAccess): boolean {
-  return a.allBots === b.allBots && [...a.botIds].sort().join() === [...b.botIds].sort().join();
-}
-
 function oauthActionLabel(server: McpServer, pending: boolean): string {
   if (pending) return t`Connecting…`;
   return server.oauthStatus === "none" ? t`Connect OAuth` : t`Reconnect OAuth`;
+}
+
+/** Older APIs leave it out, and every server they list is the member's own. */
+function manageable(server: McpServer): boolean {
+  return server.manageable !== false;
 }
 
 export function McpServersOverlay({
@@ -107,6 +109,9 @@ export function McpServersOverlay({
   const mcpBrowser = desktopBridge()?.mcpBrowser;
   const servers = serversQuery.data ?? [];
   const spaceCount = useOwnSpaces().length;
+  const { organizations, activeOrganizationId } = useOrganizations();
+  const organization = organizations.find((candidate) => candidate.id === activeOrganizationId);
+  const organizationName = connectionSharingOrganization(organization);
   const bots = useMemo(
     () => (botsQuery.data ?? []).filter((bot) => !bot.archivedAt),
     [botsQuery.data],
@@ -135,7 +140,7 @@ export function McpServersOverlay({
   useEffect(() => {
     if (!editServerId || openedEditServer.current) return;
     const server = servers.find((item) => item.id === editServerId);
-    if (!server) return;
+    if (!server || !manageable(server)) return;
     openedEditServer.current = true;
     startEditing(server);
   }, [editServerId, servers]);
@@ -194,7 +199,7 @@ export function McpServersOverlay({
     try {
       const config = mcpServerConfig(draft, editing);
       if (editing) {
-        await rpc.mcp.servers.update({
+        const update = {
           id: editing.id,
           config: {
             ...config,
@@ -202,15 +207,19 @@ export function McpServersOverlay({
             description: editing.description,
             enabled: editing.enabled,
           },
-        });
-        if (!sameAccess(draft.access, accessOf(editing)))
-          await rpc.mcp.servers.agents({ id: editing.id, ...draft.access });
+        };
+        await (sameMcpServerAccess(draft.access, accessOf(editing))
+          ? rpc.mcp.servers.update(update)
+          : rpc.mcp.servers.save({ ...update, access: draft.access }));
         await refresh();
         resetForm();
         return;
       }
-      const created = await rpc.mcp.servers.create(config);
-      if (!draft.access.allBots) await rpc.mcp.servers.agents({ id: created.id, ...draft.access });
+      const created = draft.organization
+        ? await rpc.mcp.servers.createForOrganization(config)
+        : draft.access.allBots
+          ? await rpc.mcp.servers.create(config)
+          : await rpc.mcp.servers.createForBots({ config, botIds: draft.access.botIds });
       await refresh();
       resetForm();
       // A remote server is checked in the background; wait for that check so a server
@@ -355,6 +364,7 @@ export function McpServersOverlay({
     const pending = oauthPending === server.id;
     const testing = testingIds.has(server.id);
     const working = server.health.status === "ok" && !testing;
+    const canManage = manageable(server);
     return (
       <li
         key={server.id}
@@ -369,73 +379,86 @@ export function McpServersOverlay({
                 <Plural value={server.health.toolCount} one="# tool" other="# tools" />
               </span>
             ) : null}
+            {server.organization ? (
+              <span className="shrink-0 text-label text-muted-foreground">
+                <Trans>Organization</Trans>
+              </span>
+            ) : null}
           </div>
           <p className="truncate text-label text-muted-foreground">
             {server.endpoint ?? server.command ?? server.slug}
           </p>
           <McpServerHealthLine health={server.health} checking={testing} />
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {server.installId ? null : (
-            <AvailabilityControl
-              kind="mcpServer"
-              id={server.id}
-              availability={server.availability}
-              onChanged={() => serversQuery.refetch()}
-            />
-          )}
-          <AgentAccessControl
-            bots={bots}
-            access={accessOf(server)}
-            disabled={!assignmentsReady}
-            onChange={(access) => void setServerAgents(server, access)}
-          />
-          {signInFirst ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={pending}
-              onClick={() => void connectOAuth(server)}
-            >
-              {oauthActionLabel(server, pending)}
-            </Button>
-          ) : null}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button variant="ghost" size="icon-sm" aria-label={t`Actions for ${server.name}`} />
-              }
-            >
-              <Ellipsis />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={() => startEditing(server)}>
-                <Trans>Edit</Trans>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={testing || server.health.status === "installing"}
-                onClick={() => void testServer(server)}
+        {canManage ? (
+          <div className="flex shrink-0 items-center gap-1">
+            {server.installId || server.organization ? null : (
+              <AvailabilityControl
+                kind="mcpServer"
+                id={server.id}
+                availability={server.availability}
+                onChanged={() => serversQuery.refetch()}
+              />
+            )}
+            {server.organization ? null : (
+              <AgentAccessControl
+                bots={bots}
+                access={accessOf(server)}
+                disabled={!assignmentsReady}
+                onChange={(access) => void setServerAgents(server, access)}
+              />
+            )}
+            {signInFirst ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pending}
+                onClick={() => void connectOAuth(server)}
               >
-                <Trans>Test connection</Trans>
-              </DropdownMenuItem>
-              {oauth && !signInFirst ? (
-                <DropdownMenuItem disabled={pending} onClick={() => void connectOAuth(server)}>
-                  {oauthActionLabel(server, pending)}
+                {oauthActionLabel(server, pending)}
+              </Button>
+            ) : null}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t`Actions for ${server.name}`}
+                  />
+                }
+              >
+                <Ellipsis />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => startEditing(server)}>
+                  <Trans>Edit</Trans>
                 </DropdownMenuItem>
-              ) : null}
-              {oauth && server.oauthStatus !== "none" ? (
-                <DropdownMenuItem disabled={pending} onClick={() => void disconnectOAuth(server)}>
-                  <Trans>Disconnect</Trans>
+                <DropdownMenuItem
+                  disabled={testing || server.health.status === "installing"}
+                  onClick={() => void testServer(server)}
+                >
+                  <Trans>Test connection</Trans>
                 </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onClick={() => setDeleting(server)}>
-                <Trans>Delete</Trans>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+                {oauth && !signInFirst ? (
+                  <DropdownMenuItem disabled={pending} onClick={() => void connectOAuth(server)}>
+                    {oauthActionLabel(server, pending)}
+                  </DropdownMenuItem>
+                ) : null}
+                {oauth && server.oauthStatus !== "none" ? (
+                  <DropdownMenuItem disabled={pending} onClick={() => void disconnectOAuth(server)}>
+                    <Trans>Disconnect</Trans>
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={() => setDeleting(server)}>
+                  <Trans>Delete</Trans>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ) : null}
       </li>
     );
   }
@@ -482,6 +505,7 @@ export function McpServersOverlay({
               stdioEnabled={stdioEnabled}
               bots={bots}
               assignmentsReady={assignmentsReady}
+              organizationName={organizationName}
               oauthClientIdInput={oauthClientIdInput}
               onBack={resetForm}
               onSave={() => void saveServer()}

@@ -36,13 +36,13 @@ import type { FleetCardSummary } from "../approvals/approval-ask.js";
 import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "../approvals/approval-ask.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "../bots/bot-avatar.js";
 import { createdByWhere, managedBotsWhere } from "../bots/child-bots.js";
-import type { UpdateBotPatch } from "../bots/update-bot-patch.js";
 import { argumentGiven, parseUpdateBotPatch } from "../bots/update-bot-patch.js";
 import { stopCancelledGroupRuns } from "../computers/computer-idle.js";
 import { asRecord } from "../integrations/connector-http.js";
 import { resolveModelChoice } from "../models/model-choice.js";
 import type { BotModelChangeDeps } from "../models/model-selection.js";
 import { validateBotModelChange } from "../models/model-selection.js";
+import { routineEndInZone } from "../routines/routine-end.js";
 import {
   hasRoutineEvents,
   NO_ROUTINE_EVENTS,
@@ -60,8 +60,10 @@ import {
   isScheduleValueProvided,
   resolveScheduleTiming,
   scheduleTimingArgs,
+  toolRoutineEnd,
   userTimeZone,
 } from "./schedule-tools.js";
+import { describeRoutineTiming } from "./schedule-update-view.js";
 
 /** The fleet writes resolved up front so an approval card can show what will run. */
 export type FleetApprovalToolName = Exclude<
@@ -363,6 +365,17 @@ async function prepareChildRoutine(
   const resolved = eventsOnly ? undefined : resolveScheduleTiming(timing, timezone);
   if (resolved && !resolved.ok) return refuse(resolved.error);
   if (asksEvents && resolved?.oneShot) return refuse("A one-time schedule takes no events (on).");
+  const end = toolRoutineEnd(
+    isScheduleValueProvided(args.endAt) ? String(args.endAt) : undefined,
+    timezone,
+    {
+      crons: resolved ? [resolved.cron] : [],
+      watch: null,
+      nextRunAt: resolved?.nextRunAt ?? null,
+      events: asksEvents,
+    },
+  );
+  if ("error" in end) return refuse(end.error);
 
   const child = await resolveBot(deps.prisma, run, args);
   if ("error" in child) return child;
@@ -408,6 +421,7 @@ async function prepareChildRoutine(
                 ? { startAt: resolved.nextRunAt.toISOString() }
                 : {}),
             },
+      ...(end.endsAt ? { endAt: end.endsAt.toISOString() } : {}),
       ...(hasRoutineEvents(checked.events) ? { on: events } : {}),
     },
     summary: {
@@ -420,6 +434,7 @@ async function prepareChildRoutine(
                 ? `Runs at ${when}`
                 : `Repeats ${singleLine(resolved.cron)}, next at ${when}`,
             ]),
+        ...(end.endsAt ? [`Ends ${formatTime(end.endsAt, timezone)}`] : []),
         ...eventLine,
         `Prompt: ${prompt}`,
       ],
@@ -479,7 +494,7 @@ const FLEET_GROUP_LIMIT = 100;
 const FLEET_SECTION_LIMIT = 100;
 const FLEET_ROSTER_MAX_LENGTH = 60_000;
 const GROUP_PAGE_SIZE = 200;
-const NOT_FOUND = "That bot or group is no longer available. Call list_fleet and try again.";
+export const NOT_FOUND = "That bot or group is no longer available. Call list_fleet and try again.";
 
 type FleetBot = {
   id: string;
@@ -834,72 +849,6 @@ export async function updateFleetGroup(
 
 const CHILD_CHANGED = "child changed; read it again with list_fleet";
 
-/** `update_bot` with `bot_id`: the profile fields of another bot in the space. */
-export async function updateChildBot(
-  deps: Pick<FleetDeps, "prisma" | "events"> & { runSecrets: readonly string[] },
-  run: FleetRun,
-  args: Record<string, unknown>,
-): Promise<{ ok: true } | { error: string }> {
-  if (argumentGiven(args.artifact_id) || args.use_attached_image === true) {
-    return { error: "artifact_id and use_attached_image work only on yourself." };
-  }
-  if (argumentGiven(args.instructions)) {
-    return { error: "Change another bot's instructions with set_child_instructions." };
-  }
-  const profile = {
-    dailyCheckIns: argumentGiven(args.dailyCheckIns) ? args.dailyCheckIns : undefined,
-    name: argumentGiven(args.name) ? args.name : undefined,
-    description: argumentGiven(args.description) ? args.description : undefined,
-    notifyOnFinish: argumentGiven(args.notifyOnFinish)
-      ? args.notifyOnFinish
-      : argumentGiven(args.notify_on_finish)
-        ? args.notify_on_finish
-        : undefined,
-  };
-  const credential = credentialField(
-    { name: profile.name, description: profile.description },
-    deps.runSecrets,
-  );
-  if (credential) return { error: credential };
-
-  const child = await resolveBot(deps.prisma, run, { bot_id: args.bot_id });
-  if ("error" in child) {
-    return { error: child.error };
-  }
-  if (!child.thread) return { error: NOT_FOUND };
-
-  let patch: UpdateBotPatch = {};
-  if (Object.values(profile).some((value) => value !== undefined)) {
-    const parsed = parseUpdateBotPatch(profile);
-    if ("error" in parsed) return parsed;
-    patch = parsed.patch;
-  }
-  if (argumentGiven(args.color)) {
-    const avatar = await resolveUpdateBotAvatar({
-      color: args.color,
-      sourceImageArtifactIds: [],
-      loadArtifact: async () => null,
-    });
-    if ("error" in avatar) return avatar;
-    patch.color = avatar.color;
-  }
-  if (Object.keys(patch).length === 0) {
-    return {
-      error: "Provide at least one of name, description, notify_on_finish, or color.",
-    };
-  }
-  await commitBotUpdate({
-    prisma: deps.prisma,
-    notify: (threadId, seq) => deps.events.notify(threadId, seq),
-    spaceId: run.spaceId,
-    threadId: child.thread.id,
-    botId: child.id,
-    emitBotUpdated: true,
-    data: patch,
-  });
-  return { ok: true };
-}
-
 /** Replace the approved child's instructions, checking ownership and the version again. */
 export async function setChildInstructions(
   deps: Pick<FleetDeps, "prisma" | "events">,
@@ -1056,6 +1005,7 @@ export async function createChildRoutine(
   const pinnedTimezone = canonical.timezoneFromAccount === true ? undefined : timezone;
   const replayTimezone =
     pinnedTimezone === undefined ? await userTimeZone(deps.prisma, run.userId) : pinnedTimezone;
+  const endAt = text(canonical.endAt);
   const existing = await deps.prisma.routine.findFirst({
     where: {
       spaceId: run.spaceId,
@@ -1068,6 +1018,7 @@ export async function createChildRoutine(
       crons: { equals: cron ? [cron] : [] },
       active: true,
       ...(runAt ? { nextRunAt: new Date(runAt) } : {}),
+      endsAt: endAt ? routineEndInZone(new Date(endAt), timezone, replayTimezone) : null,
       // The identical routine has the approved events too, so a retry returns it instead of a
       // twin. A bot links one chat app, so any chat event on it is the approved one.
       webhookEnabled: on?.webhook === true,
@@ -1084,6 +1035,8 @@ export async function createChildRoutine(
       githubEnabled: true,
       messageProvider: true,
       emailSenders: true,
+      timezone: true,
+      endsAt: true,
     },
   });
   const target = { botId: child.id, botName: singleLine(child.name) };
@@ -1095,6 +1048,7 @@ export async function createChildRoutine(
       cron: existing.crons[0],
       nextRunAt: existing.nextRunAt?.toISOString() ?? null,
       oneShot: Boolean(runAt),
+      ...(existing.endsAt ? { endAt: describeRoutineTiming(existing).endAt } : {}),
       ...eventsResult(existing),
       ...target,
     };
@@ -1110,11 +1064,12 @@ export async function createChildRoutine(
     ...(pinnedTimezone === undefined ? {} : { timezone: pinnedTimezone }),
     schedule,
     ...(on ? { on } : {}),
+    ...(endAt ? { endAt, endTimezone: timezone } : {}),
   });
   return "error" in created ? created : { ...created, ...target };
 }
 
-function actorOf(run: FleetRun): Actor {
+export function actorOf(run: FleetRun): Actor {
   return { spaceId: run.spaceId, userId: run.userId, email: "", isDeploymentOwner: false };
 }
 
@@ -1200,7 +1155,11 @@ async function resolveBots(
 }
 
 /** One active bot in the current user’s space, by `bot_id` or exact `bot_name`. */
-async function resolveBot(prisma: PrismaClient, run: FleetRun, args: Record<string, unknown>) {
+export async function resolveBot(
+  prisma: PrismaClient,
+  run: FleetRun,
+  args: Record<string, unknown>,
+) {
   const id = text(args.bot_id);
   const name = text(args.bot_name);
   if (id && name) return refuse("Pass bot_id or bot_name, not both.");
@@ -1289,7 +1248,7 @@ export function cardName(value: string): string {
 }
 
 /** The first given text field a credential of this run would be redacted from, as a refusal. */
-function credentialField(
+export function credentialField(
   fields: Record<string, unknown>,
   secrets: readonly string[],
 ): string | undefined {
@@ -1307,7 +1266,7 @@ const INVISIBLE_CHARACTERS =
   /[\u{E0000}-\u{E007F}\u200B-\u200F\u2060-\u2064\u202A-\u202E\u2066-\u2069\uFEFF]/u;
 
 /** The first given text field holding characters the card would not show, as a refusal. */
-function invisibleField(fields: Record<string, string>): string | undefined {
+export function invisibleField(fields: Record<string, string>): string | undefined {
   const field = Object.entries(fields).find(([, value]) => INVISIBLE_CHARACTERS.test(value))?.[0];
   return field ? `${field} contains invisible characters.` : undefined;
 }

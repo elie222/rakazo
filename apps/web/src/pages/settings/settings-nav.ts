@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Gauge,
   KeyRound,
+  Layers,
   MessageCircle,
   Monitor,
   Settings,
@@ -26,7 +27,7 @@ export type SettingsNavItem = {
   description?: string;
 };
 
-/** The settings sections this deployment offers, in nav order; Space opens from its own menu. */
+/** The settings sections this deployment offers, in nav order; a Space's own page opens from Spaces. */
 export function useSettingsNavItems(available: {
   messaging: boolean;
   wallet: boolean;
@@ -91,6 +92,12 @@ export function useSettingsNavItems(available: {
     ...(available.labs ? [{ id: "labs" as const, label: t`Labs`, icon: FlaskConical }] : []),
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(available.billing ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
+    {
+      id: "spaces",
+      label: t`Spaces`,
+      icon: Layers,
+      description: t`Spaces keep work apart. Bots, chats, memory and computers never cross between them.`,
+    },
     { id: "organization", label: t`Organization`, icon: Building2 },
     ...(available.updates
       ? [{ id: "updates" as const, label: t`Updates`, icon: CloudDownload }]

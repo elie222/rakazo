@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import type { PageComment } from "@rakazo/contracts";
+import type { PageComment, PageDetail } from "@rakazo/contracts";
 import {
   activeBotId,
   captureScreenshot,
@@ -25,7 +25,7 @@ function Dashboard() {
         <ReplyButton label="Ask about churn" reply="Why did churn change this week?" />
         <CopyButton label="Copy MRR" text="MRR $12,400" />
         <Toggle label={targets ? "Targets shown" : "Show targets"} value={targets} onChange={setTargets} />
-        <Metrics metrics={[{ value: "$12,400", label: "MRR" }, { value: "398", label: "New users" }, { value: "${churn}", label: "Churn", tone: "warning" }, { value: "4.8%", label: "Trial to paid" }]} />
+        <Metrics metrics={[{ value: "$12,400", label: "MRR", icon: "banknote" }, { value: "398", label: "New users", icon: "user-plus" }, { value: "${churn}", label: "Churn", tone: "warning", icon: "trending-down" }, { value: "4.8%", label: "Trial to paid", icon: "percent" }]} />
       </Section>
       <Grid columns={2}>
         <Section heading="Signups over time"><LineChart points={points} ceiling={86} floor={0} labels={["Signups"]} /></Section>
@@ -62,6 +62,11 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   const title = "Calendar layout";
   const source = `function CalendarPage() {
     return <Page width="wide" title="Calendar layout">
+      <Section heading="Daily activity"><CalendarHeatmap from="2026-11-09" to="2026-11-10" days={[
+        { date: "2026-11-09", value: 4 },
+        { date: "2026-11-10", value: 10 },
+        { date: "2026-11-16", value: 1000 }
+      ]} /></Section>
       <Grid columns={2}>
         <Section heading="Week"><WeekView week="2026-11-09" events={[
           { date: "2026-11-09", start: 9, end: 10, title: "Monday event" },
@@ -132,7 +137,284 @@ test("a week calendar keeps its days aligned in a desktop two-column page", asyn
   expect(layout.dayEvent.y - layout.dayColumns[0]!.y).toBeCloseTo(67, 0);
   expect(layout.dayText).toContain("Day event");
   expect(layout.dayText).toContain("9:30");
+  const heatmap = frame.getByRole("img", { name: /highest 10$/ });
+  await expect(heatmap).toBeVisible();
+  const heatmapColors = await heatmap
+    .locator(".rk-day")
+    .evaluateAll((cells) => cells.map((cell) => getComputedStyle(cell).backgroundColor));
+  expect(heatmapColors).toHaveLength(2);
+  expect(new Set(heatmapColors).size).toBe(2);
   await captureScreenshot(page, testInfo, "page-calendar-two-columns");
+});
+
+test("a reader's ticks and notes stay on the page after it reopens", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-state-${Date.now()}@rakazo.test`, "password12", "Packer");
+  await completeOnboarding(page);
+  const title = "Lisbon packing list";
+  const source = `function Trip() {
+    const [notes, setNotes] = usePageState("notes", "");
+    return <Page title="Lisbon packing list" summary="Four nights, carry-on only.">
+      <Section heading="Documents"><Checklist saveAs="documents" items={[
+        { text: "Passport", done: true },
+        { text: "Boarding pass on phone", meta: "Check in opens Thursday" },
+        { text: "Travel insurance card" }
+      ]} /></Section>
+      <Section heading="Notes"><Input label="Anything else" value={notes} onChange={setNotes} placeholder="Add a note" /></Section>
+    </Page>;
+  }
+  export default Trip;`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const pageId = new URL(page.url()).searchParams.get("page")!;
+  let frame = pageFrame(page, title);
+  await frame.getByText("Boarding pass on phone").click();
+  await frame.getByLabel("Anything else").fill("Adapter for EU plugs");
+  await expect
+    .poll(async () => (await rpc<PageDetail>(page, "pages/get", { pageId })).readerState)
+    .toEqual({ documents: { "Boarding pass on phone": true }, notes: "Adapter for EU plugs" });
+
+  await page.reload();
+  frame = pageFrame(page, title);
+  await expect(frame.getByRole("checkbox", { name: "Boarding pass on phone" })).toBeChecked();
+  await expect(frame.getByRole("checkbox", { name: "Travel insurance card" })).not.toBeChecked();
+  await expect(frame.getByLabel("Anything else")).toHaveValue("Adapter for EU plugs");
+  await captureScreenshot(page, testInfo, "page-saved-checklist");
+});
+
+test("a day calendar fits a phone-width page while a week calendar scrolls", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `pages-day-${Date.now()}@rakazo.test`, "password12", "Calendar Reader");
+  await completeOnboarding(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const title = "Calendar on a phone";
+  const source = `function CalendarPage() {
+    const events = [{ start: 9.25, end: 10.25, title: "Design review" }];
+    return <Page title="Calendar on a phone">
+      <Section heading="Day"><DayView start={9} end={11} events={events} /></Section>
+      <Section heading="Day (RTL)"><div dir="rtl"><DayView start={9} end={11} events={events} /></div></Section>
+      <Section heading="Week"><WeekView week="2026-11-09" start={9} end={11} events={[
+        { date: "2026-11-15", start: 9, end: 10, title: "Sunday review" }
+      ]} /></Section>
+    </Page>;
+  }
+  export default CalendarPage;`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const frame = pageFrame(page, title);
+  await expect(frame.locator(".rk-cal-timed")).toHaveCount(3);
+  const layout = await frame.locator(".rk-page").evaluate((root) => {
+    const inside = (outer: Element, inner: Element) => {
+      const a = outer.getBoundingClientRect();
+      const b = inner.getBoundingClientRect();
+      return b.left >= a.left && b.right <= a.right;
+    };
+    const days = [...root.querySelectorAll(".rk-cal-timed:not(.rk-cal-week)")].map((day) => ({
+      overflow: day.scrollWidth - day.clientWidth,
+      axisVisible: inside(day, day.querySelector(".rk-cal-hours span")!),
+      eventVisible: inside(day, day.querySelector(".rk-cal-event")!),
+    }));
+    const week = root.querySelector(".rk-cal-week")!;
+    return { days, weekOverflow: week.scrollWidth - week.clientWidth };
+  });
+  expect(layout.days).toHaveLength(2);
+  for (const day of layout.days) {
+    expect(day).toMatchObject({ axisVisible: true, eventVisible: true });
+    expect(day.overflow).toBeLessThanOrEqual(1);
+  }
+  expect(layout.weekOverflow).toBeGreaterThan(0);
+  await captureScreenshot(page, testInfo, "page-day-calendar-phone");
+});
+
+test("a long Page scrolls in its chat card and opens from the preview", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-scroll-${Date.now()}@rakazo.test`, "password12", "Page Reader");
+  await completeOnboarding(page);
+
+  const title = "Garden plans";
+  const source = `export default function GardenPlans() {
+    return <Page title="Garden plans" summary="A planting plan for the community garden.">
+      <div style={{ minHeight: "100vh" }}>
+        <Section heading="What to plant">
+          {Array.from({ length: 7 }, (_, i) => <Text key={i}>Garden bed {i + 1} has room for two rows of seedlings.</Text>)}
+        </Section>
+      </div>
+      <Section heading="Next steps"><Text>Water the seedlings each morning.</Text></Section>
+    </Page>;
+  }`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+
+  const card = page.getByTestId("page-card").filter({ hasText: title });
+  const preview = card.getByRole("region", { name: `Preview of ${title}` });
+  const fade = card.getByTestId("page-card-preview-fade");
+  const lastLine = pageFrame(page, title).getByText("Water the seedlings each morning.");
+  await expect(preview).toBeVisible({ timeout: 30_000 });
+  await expect(lastLine).toBeAttached();
+  await expect(lastLine).not.toBeInViewport();
+  const viewportHeight = await lastLine.evaluate(() => window.innerHeight);
+  expect(viewportHeight).toBeLessThan(
+    await preview.evaluate((element) => element.clientHeight * 2),
+  );
+
+  await page.mouse.move(0, 0);
+  const transparentScrollbar = "rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)";
+  await expect(preview).toHaveCSS("scrollbar-color", transparentScrollbar);
+  await expect(fade).toBeVisible();
+  await expect(fade).toHaveCSS("height", "100px");
+  const previewWidth = await preview.evaluate((element) => element.clientWidth);
+  await captureScreenshot(page, testInfo, "page-chat-card-idle");
+
+  await preview.hover();
+  await expect(preview).not.toHaveCSS("scrollbar-color", transparentScrollbar);
+  expect(await preview.evaluate((element) => element.clientWidth)).toBe(previewWidth);
+
+  const scrollTop = () => preview.evaluate((element) => element.scrollTop);
+  await card.getByRole("button", { name: `Open ${title}` }).focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(preview).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(scrollTop).toBeGreaterThan(0);
+  await page.keyboard.press("Home");
+  await expect.poll(scrollTop).toBe(0);
+
+  await page.mouse.wheel(0, 2_000);
+  await expect(lastLine).toBeInViewport({ ratio: 0.95 });
+  await expect(fade).toBeHidden();
+  expect(await lastLine.evaluate(() => window.innerHeight)).toBe(viewportHeight);
+  const view = page.getByTestId("page-view");
+  await expect(view).toBeHidden();
+  await captureScreenshot(page, testInfo, "page-chat-card-scrolled");
+
+  await page.mouse.wheel(0, -100);
+  await expect(fade).toBeVisible();
+  await preview.click();
+  await expect(view).toBeVisible();
+  await expect(pageFrame(page, title).getByRole("heading", { name: title })).toBeVisible();
+  await view.getByRole("button", { name: "Close page" }).click();
+  await expect(view).toBeHidden();
+  await expect(preview).toBeFocused();
+});
+
+test("a Page preview grows when an absolute item overflows the document body", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-overflow-${Date.now()}@rakazo.test`, "password12", "Page Reader");
+  await completeOnboarding(page);
+
+  const title = "Planting notes";
+  const source = `export default function PlantingNotes() {
+    const [expanded, setExpanded] = useState(false);
+    return <Page title="Planting notes">
+      <div style={{ height: 100 }}>
+        <button type="button" onClick={() => setExpanded(true)}>Move notes</button>
+        <div style={{ position: "absolute", top: expanded ? 1050 : 36 }}>
+          <Text>Leave room for the beans to climb.</Text>
+        </div>
+      </div>
+    </Page>;
+  }`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+
+  const card = page.getByTestId("page-card").filter({ hasText: title });
+  const preview = card.getByTestId("page-card-preview");
+  const frame = pageFrame(page, title);
+  const note = frame.getByText("Leave room for the beans to climb.");
+  await expect(note).toBeInViewport({ ratio: 0.95, timeout: 30_000 });
+  const bodyHeight = () => note.evaluate(() => document.body.scrollHeight);
+  const initialBodyHeight = await bodyHeight();
+  const overflow = () => preview.evaluate((element) => element.scrollHeight - element.clientHeight);
+  expect(await overflow()).toBeLessThanOrEqual(1);
+
+  const openButton = card.getByRole("button", { name: `Open ${title}` });
+  const view = page.getByTestId("page-view");
+  // The short card's open button covers the preview. Click inside that visible area.
+  await preview.scrollIntoViewIfNeeded();
+  const previewBox = (await preview.boundingBox())!;
+  await page.mouse.click(previewBox.x + previewBox.width / 2, previewBox.y + previewBox.height / 2);
+  await expect(view).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(view).toBeHidden();
+  await expect(openButton).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(view).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(view).toBeHidden();
+
+  // Trigger the page component's own update inside the otherwise inert preview.
+  await frame.locator("button").filter({ hasText: "Move notes" }).dispatchEvent("click");
+  await expect(note).not.toBeInViewport();
+  expect(await bodyHeight()).toBe(initialBodyHeight);
+  await expect.poll(overflow).toBeGreaterThan(500);
+  await preview.hover();
+  await page.mouse.wheel(0, 2_000);
+  await expect(note).toBeInViewport({ ratio: 0.95 });
+  await expect(card.getByTestId("page-card-preview-fade")).toBeHidden();
+});
+
+test("wheel scrolling within a Page preview keeps the chat following new messages", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 650 });
+  const stamp = Date.now();
+  await signup(page, `pages-follow-${stamp}@rakazo.test`, "password12", "Page Reader");
+  await completeOnboarding(page);
+  const botId = await activeBotId(page);
+
+  const title = "Garden checklist";
+  const source = `export default function Checklist() {
+    return <Page title="Garden checklist">
+      {Array.from({ length: 24 }, (_, i) => <Text key={i}>Check the soil in garden bed {i + 1}.</Text>)}
+    </Page>;
+  }`;
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source })}\nthen say Checklist ready.`,
+  );
+  await expect(page.getByText("Checklist ready.", { exact: true }).last()).toBeVisible();
+
+  const transcript = page.getByTestId("transcript");
+  const preview = page.getByRole("region", { name: `Preview of ${title}` });
+  const gapToEnd = () =>
+    transcript.evaluate(
+      (element) => element.scrollHeight - element.scrollTop - element.clientHeight,
+    );
+  const chatTop = () => transcript.evaluate((element) => element.scrollTop);
+  const previewTop = () => preview.evaluate((element) => element.scrollTop);
+  await expect.poll(gapToEnd).toBeLessThan(2);
+  await preview.hover();
+  const initialChatTop = await chatTop();
+  await page.mouse.wheel(0, 300);
+  await expect.poll(previewTop).toBeGreaterThan(200);
+  const innerTop = await previewTop();
+  await page.mouse.wheel(0, -80);
+  await expect.poll(previewTop).toBeLessThan(innerTop);
+  expect(await previewTop()).toBeGreaterThan(0);
+  expect(await chatTop()).toBe(initialChatTop);
+
+  // A send outside this tab exercises follow mode without the composer's own-send snap.
+  const note = `Fresh garden notes ${stamp}`;
+  await rpc(page, "threads/send", {
+    botId,
+    text: `work for 1 second ${note}\nWatering schedule\nTool check\nSeed count\nMulch delivery`,
+    clientNonce: `page-follow-${stamp}`,
+  });
+  await expect(page.getByTestId("message-user-bubble").filter({ hasText: note })).toBeInViewport();
+  await expect.poll(gapToEnd).toBeLessThan(2);
+
+  await preview.hover();
+  await preview.press("Home");
+  await expect.poll(previewTop).toBe(0);
+  const beforeBoundaryWheel = await chatTop();
+  expect(beforeBoundaryWheel).toBeGreaterThan(0);
+  await page.mouse.wheel(0, -180);
+  await expect.poll(chatTop).toBeLessThan(beforeBoundaryWheel);
+  expect(await previewTop()).toBe(0);
 });
 
 test("shared page contents jump below the header and copy fallback", async ({
@@ -205,6 +487,82 @@ test("shared page contents jump below the header and copy fallback", async ({
   expect(
     await outside.locator("[data-page-print]").evaluate((shell) => shell.scrollHeight),
   ).toBeGreaterThan(720);
+  await visitor.close();
+});
+
+test("a page shows the pictures kept with it to its owner and on its shared link", async ({
+  page,
+  browser,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-pictures-${Date.now()}@rakazo.test`, "password12", "Trip Planner");
+  await completeOnboarding(page);
+  const photo = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 675;
+    const draw = canvas.getContext("2d")!;
+    const sky = draw.createLinearGradient(0, 0, 0, 675);
+    sky.addColorStop(0, "#f4b183");
+    sky.addColorStop(0.55, "#c5d7e8");
+    sky.addColorStop(1, "#2f5d7c");
+    draw.fillStyle = sky;
+    draw.fillRect(0, 0, 1200, 675);
+    draw.fillStyle = "#fbe3a1";
+    draw.beginPath();
+    draw.arc(820, 300, 70, 0, Math.PI * 2);
+    draw.fill();
+    draw.fillStyle = "#1d3b52";
+    draw.fillRect(0, 430, 1200, 245);
+    draw.fillStyle = "#3c4a3e";
+    draw.beginPath();
+    draw.moveTo(0, 440);
+    draw.lineTo(260, 300);
+    draw.lineTo(520, 440);
+    draw.fill();
+    return canvas.toDataURL("image/png").split(",")[1]!;
+  });
+  const file = await rpc<{ id: string }>(page, "artifacts/create", {
+    botId: activeBotId(page),
+    name: "harbour.png",
+    mimeType: "image/png",
+    contentBase64: photo,
+  });
+  const title = "Harbour weekend";
+  const source = `export default function Trip() {
+    return <Page title="Harbour weekend" summary="Two nights by the water.">
+      <Image src="image:harbour" alt="The harbour at dusk" caption="The view from the quay" ratio="16/9" />
+      <CardGrid label="Where to stay">
+        <ProductCard title="Quay Hotel" image="image:harbour" price="$180 a night" note="Sea view" />
+        <ProductCard title="Old Town Inn" price="$120 a night" note="Ten minutes on foot" />
+      </CardGrid>
+    </Page>;
+  }`;
+  await send(
+    page,
+    `call save_page with ${JSON.stringify({ title, source, images: { harbour: file.id } })}\nthen say Done.`,
+  );
+  const card = page.getByTestId("page-card");
+  await expect(card).toHaveCount(1, { timeout: 30_000 });
+  await card.getByRole("button", { name: `Open ${title}` }).click();
+  const picture = pageFrame(page, title).getByRole("img", { name: "The harbour at dusk" });
+  await expect(picture).toHaveAttribute("src", /^data:image\/webp;base64,/);
+  await expect(pageFrame(page, title).getByRole("img", { name: "Quay Hotel" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "page-pictures");
+
+  await page.getByTestId("page-view").getByRole("button", { name: "Share" }).click();
+  const share = page.getByTestId("page-share");
+  await share.getByRole("radio", { name: /Anyone with the link/ }).click();
+  const link = share.getByRole("link", { name: "Open link" });
+  await expect(link).toBeVisible();
+  const visitor = await browser.newContext({ reducedMotion: "reduce" });
+  const outside = await visitor.newPage();
+  await outside.setViewportSize({ width: 1280, height: 860 });
+  await outside.goto((await link.getAttribute("href"))!);
+  await expect(
+    pageFrame(outside, title).getByRole("img", { name: "The harbour at dusk" }),
+  ).toHaveAttribute("src", /^data:image\/webp;base64,/);
+  await captureScreenshot(outside, testInfo, "page-public-pictures");
   await visitor.close();
 });
 
@@ -1148,7 +1506,9 @@ test("specific people review a version and lose access when removed", async ({
       .getByRole("textbox", { name: "Comment", exact: true })
       .fill("Add the rollout date.");
     await reviewer.getByRole("button", { name: "Post comment" }).click();
-    await expect(reviewer.getByText("Add the rollout date.", { exact: true })).toBeVisible();
+    await expect(
+      reviewer.getByRole("listitem").getByText("Add the rollout date.", { exact: true }),
+    ).toBeVisible();
     const { items } = await rpc<{ items: PageComment[] }>(reviewer, "pageReviews/comments", {
       pageId,
     });

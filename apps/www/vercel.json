@@ -1,4 +1,5 @@
 {
+  "ignoreCommand": "sh scripts/ignore-build.sh",
   "installCommand": "sh scripts/clone-marketing.sh && corepack pnpm install",
   "redirects": [
     {

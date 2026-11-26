@@ -5,6 +5,7 @@ import type { BotSecretMetadata, SettingsScope } from "@rakazo/contracts";
 import {
   encodeCardSecret,
   encodeLoginSecret,
+  FULL_VAULT_ANSWER,
   noneSkipped,
   VAULT_IMPORT_BATCH_LIMIT,
   VAULT_ITEM_LIMIT,
@@ -959,6 +960,31 @@ describe("an older server", () => {
     expect(buttonIn(editor(), "Save")!.disabled).toBe(false);
   });
 
+  it("marks the authenticator key and other sites invalid, described by their messages", async () => {
+    await render();
+    await startNew("login");
+    await click(buttonIn(editor(), "Add an authenticator key")!);
+    const key = field("Authenticator key");
+    expect(key.getAttribute("aria-invalid")).toBeNull();
+    expect(key.getAttribute("aria-describedby")).toBeNull();
+    await type(key, "not a key");
+    expect(key.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(key.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "This authenticator key can't be read.",
+    );
+    await type(key, "");
+    expect(key.getAttribute("aria-invalid")).toBeNull();
+    await click(buttonIn(editor(), "Add other sites")!);
+    const sites = field("Also on");
+    await type(sites, "http://www.github.com");
+    expect(sites.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(sites.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "Enter each site as an HTTPS address a login can be saved for.",
+    );
+    await type(sites, "https://www.github.com");
+    expect(sites.getAttribute("aria-invalid")).toBeNull();
+  });
+
   it("keeps a typed authenticator key when the save fails", async () => {
     vault.put.mockRejectedValueOnce(new Error("offline"));
     await render();
@@ -996,7 +1022,6 @@ describe("VaultSettings list", () => {
   );
 
   it.each([
-    ["account", []],
     ["account", ["models"]],
     ["space", ["credentials"]],
   ] as const)(
@@ -1207,7 +1232,7 @@ describe("VaultSettings new items", () => {
   });
 
   it("adds a header credential, clears the value, and shows the server's error", async () => {
-    vault.put.mockRejectedValueOnce(new Error("Credential limit reached"));
+    vault.put.mockRejectedValueOnce(new Error(FULL_VAULT_ANSWER));
     await render();
     await startNew("api_key");
     await type(field("Site"), "https://api.example.com");
@@ -1224,7 +1249,7 @@ describe("VaultSettings new items", () => {
       },
       value: FAKE_VALUE,
     });
-    expect(editor()?.textContent).toContain("Credential limit reached");
+    expect(editor()?.textContent).toContain(FULL_VAULT_ANSWER);
     expect((field("Value") as HTMLInputElement).value).toBe("");
     expect(document.body.innerHTML).not.toContain(FAKE_VALUE);
   });

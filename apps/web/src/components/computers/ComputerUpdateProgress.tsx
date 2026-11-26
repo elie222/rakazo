@@ -6,6 +6,7 @@ import { Button, cn, Dialog, DialogContent, DialogTitle, Spinner } from "@rakazo
 import { CheckCircle2, Circle, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { computerUpdates } from "../../lib/computers/computer-updates";
+import { errorText } from "../../lib/query/user-error";
 import { LoadingState } from "../ai/primitives";
 
 export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => void }) {
@@ -17,8 +18,8 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
   const previous = useRef<ComputerUpdate[]>([]);
   const completed = useRef(onCompleted);
   completed.current = onCompleted;
-  // The id of the update whose last Dismiss or Recover failed; the error shows only on that update.
-  const [error, setError] = useState<string | null>(null);
+  // Keep the reason with its update so a late refusal cannot appear on another computer.
+  const [error, setError] = useState<{ id: string; cause: unknown } | null>(null);
   const [recovering, setRecovering] = useState(false);
   useEffect(() => computerUpdates.watch(), []);
   useEffect(() => {
@@ -129,10 +130,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
               </ol>
             ) : null}
             {computerUpdateNeedsAttention(selected) ? (
-              <p
-                role="alert"
-                className="mx-6 my-6 rounded-xl bg-muted px-4 py-4 text-body text-muted-foreground"
-              >
+              <p className="mx-6 my-6 rounded-xl bg-muted px-4 py-4 text-body text-muted-foreground">
                 {selected.status === "interrupted" ? (
                   <Trans>Recovery is unavailable until the previous operation has stopped.</Trans>
                 ) : (
@@ -146,17 +144,22 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                 {labels[COMPUTER_UPDATE_STAGES.indexOf(selected.stage)]}
               </span>
             )}
-            {error === selected.id ? (
-              <p role="alert" className="px-6 pb-3 text-body text-destructive">
-                <Trans>Could not complete action</Trans>
-              </p>
-            ) : null}
+            <p
+              role="alert"
+              className={cn("px-6 text-body text-destructive", error?.id === selected.id && "pb-3")}
+            >
+              {error?.id === selected.id
+                ? errorText(error.cause, t`Could not complete action`)
+                : null}
+            </p>
             <div className="flex justify-end gap-2 border-t border-border px-6 py-4">
               {selected.status === "failed" ? (
                 <Button
                   variant="outline"
                   onClick={() =>
-                    void computerUpdates.dismiss(selected.id).catch(() => setError(selected.id))
+                    void computerUpdates
+                      .dismiss(selected.id)
+                      .catch((cause) => setError({ id: selected.id, cause }))
                   }
                 >
                   <Trans>Dismiss</Trans>
@@ -174,7 +177,7 @@ export function ComputerUpdateProgress({ onCompleted }: { onCompleted: () => voi
                     setError(null);
                     void computerUpdates
                       .start(selected.botId, "recover")
-                      .catch(() => setError(selected.id))
+                      .catch((cause) => setError({ id: selected.id, cause }))
                       .finally(() => setRecovering(false));
                   }}
                 >

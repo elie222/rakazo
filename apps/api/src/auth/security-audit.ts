@@ -17,12 +17,26 @@ type AuditedProcedure = {
  * new credential route is audited by adding a line here instead of a call in its handler.
  */
 export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
+  "apiKeys.create": { type: "credential.created", kind: "api_key" },
+  "apiKeys.revoke": { type: "credential.deleted", kind: "api_key", fields: ["id"] },
   "models.connect": { type: "credential.created", kind: "model", fields: ["provider"] },
+  "models.organizationConnections.create": {
+    type: "credential.created",
+    kind: "organization_model",
+    fields: ["provider"],
+  },
+  "models.organizationConnections.remove": {
+    type: "credential.deleted",
+    kind: "organization_model",
+    fields: ["id"],
+  },
   "models.finishOAuth": { type: "credential.created", kind: "model" },
   "models.disconnect": { type: "credential.deleted", kind: "model", fields: ["provider"] },
   "mcp.servers.create": { type: "credential.created", kind: "mcp" },
+  "mcp.servers.createForBots": { type: "credential.created", kind: "mcp" },
   "mcp.servers.connect": { type: "credential.created", kind: "mcp", fields: ["botId"] },
   "mcp.servers.update": { type: "credential.changed", kind: "mcp", fields: ["id"] },
+  "mcp.servers.save": { type: "credential.changed", kind: "mcp", fields: ["id"] },
   "mcp.servers.remove": { type: "credential.deleted", kind: "mcp", fields: ["id"] },
   "mcp.oauth.complete": { type: "credential.created", kind: "mcp_oauth" },
   "mcp.oauth.disconnect": { type: "credential.deleted", kind: "mcp_oauth", fields: ["serverId"] },

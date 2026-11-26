@@ -1,4 +1,4 @@
-import type { SandboxProvider } from "@rakazo/adapter-kit";
+import type { MediaGenerationProvider, SandboxProvider } from "@rakazo/adapter-kit";
 import type * as Adapters from "@rakazo/adapters";
 import { BillingEmulator, sandboxAllowance } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -7,6 +7,8 @@ import type { PrismaClient } from "@rakazo/db";
 import {
   asSystem,
   billingAccountForOrganization,
+  chargeMedia,
+  createBillingAccount,
   createDb,
   planComputerSize,
   spaceHasModelAccess,
@@ -61,6 +63,65 @@ dbTests("own-key plan", () => {
     await db.pool.end();
   });
 
+  it("reports when free access ends even if the granted tier expires sooner", async () => {
+    const tierExpiry = new Date(Date.now() + 86_400_000);
+    const accessExpiry = new Date(tierExpiry.getTime() + 86_400_000);
+    await prisma.modelCreditAccount.create({
+      data: {
+        organizationId,
+        mode: "byok",
+        byokFreeUntil: accessExpiry,
+        freeByokTiers: { create: { tier: "max", expiresAt: tierExpiry } },
+      },
+    });
+    try {
+      await expect(service.status(actor)).resolves.toMatchObject({
+        access: true,
+        byokTier: "max",
+        byokFreeUntil: accessExpiry.toISOString(),
+      });
+    } finally {
+      await prisma.modelCreditAccount.delete({ where: { organizationId } });
+    }
+  });
+
+  it("keeps the recoverable subscription visible during a named grant", async () => {
+    const expiry = new Date(Date.now() + 86_400_000);
+    await prisma.modelCreditAccount.create({
+      data: {
+        organizationId,
+        mode: "byok",
+        byokFreeUntil: expiry,
+        freeByokTiers: { create: { tier: "max", expiresAt: expiry } },
+      },
+    });
+    try {
+      await createBillingAccount(prisma, { organizationId, customerId: `recovery-${stamp}` });
+      await prisma.billingAccount.update({
+        where: { organizationId },
+        data: {
+          status: "past_due",
+          subscriptionId: `subscription-${stamp}`,
+          subscribedAt: new Date(),
+          byokTier: "pro",
+          byokInterval: "year",
+          byokPriceCents: BYOK_TIERS.pro.annualPriceCents,
+        },
+      });
+      await expect(service.status(actor)).resolves.toMatchObject({
+        access: false,
+        state: "past_due",
+        byokTier: "pro",
+        byokInterval: "year",
+        byokPriceCents: BYOK_TIERS.pro.annualPriceCents,
+        byokFreeUntil: null,
+      });
+    } finally {
+      await prisma.billingAccount.deleteMany({ where: { organizationId } });
+      await prisma.modelCreditAccount.delete({ where: { organizationId } });
+    }
+  });
+
   it("stays free without a checkout during the free period", async () => {
     const freeUntil = new Date(Date.now() + 86_400_000);
     await prisma.modelCreditAccount.create({
@@ -83,6 +144,7 @@ dbTests("own-key plan", () => {
     await expect(service.status(actor)).resolves.toMatchObject({
       access: false,
       byokFreeUntil: null,
+      freePeriodEnded: true,
     });
     await expect(spaceHasModelAccess(prisma, spaceId)).resolves.toBe(false);
   });
@@ -95,12 +157,9 @@ dbTests("own-key plan", () => {
     expect(provider.byokCheckouts.get(customer)?.trialDays).toBeUndefined();
     provider.completeByokCheckout(customer);
     await service.sync(customer);
-    await expect(service.status(actor)).resolves.toMatchObject({
-      access: true,
-      funding: "byok",
-      state: "active",
-      balanceUsd: 0,
-    });
+    const paid = await service.status(actor);
+    expect(paid).toMatchObject({ access: true, funding: "byok", state: "active", balanceUsd: 0 });
+    expect(paid.freePeriodEnded).toBeUndefined();
     await expect(spaceHasModelAccess(prisma, spaceId)).resolves.toBe(true);
     await expect(service.checkout(actor)).rejects.toMatchObject({ code: "CONFLICT" });
   });
@@ -312,7 +371,6 @@ dbTests("own-key plan", () => {
     await service.changeTier(actor, "max");
     expect(await planComputerSize(prisma, computer.id)).toBe("large");
 
-    // A plan set to cancel stays as it is.
     provider.subscriptions.at(-1)!.cancelAtPeriodEnd = true;
     await expect(service.changeTier(actor, "pro")).rejects.toMatchObject({ code: "CONFLICT" });
   });
@@ -348,5 +406,43 @@ dbTests("own-key plan", () => {
     await metered.changeTier(actor, "pro");
     await expect(metered.status(actor)).resolves.toMatchObject({ byokTier: "pro" });
     vi.mocked(sandboxAllowance).mockResolvedValue(null);
+  });
+
+  it("reports the paid plan's media balance apart from computer hours", async () => {
+    const withMedia = createBillingService({
+      prisma,
+      provider,
+      mediaGeneration: {
+        capabilities: { images: true, video: false, offline: false },
+        prices: { imageMicros: 40_000, videoMicros: 0 },
+      } as MediaGenerationProvider,
+      webOrigin: "https://example.test",
+    });
+    await prisma.$transaction((tx) =>
+      chargeMedia(tx, {
+        organizationId,
+        source: `media:${organizationId}`,
+        kind: "image",
+        amountMicros: 380_000,
+      }),
+    );
+    const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
+    await prisma.deploymentSettings.upsert({
+      where: { id: "default" },
+      create: { id: "default", modelCreditsEnabled: true },
+      update: { modelCreditsEnabled: true },
+    });
+    try {
+      await expect(withMedia.status(actor)).resolves.toMatchObject({
+        media: { leftCents: 62, limitCents: 100 },
+      });
+    } finally {
+      if (settings)
+        await prisma.deploymentSettings.update({
+          where: { id: "default" },
+          data: { modelCreditsEnabled: settings.modelCreditsEnabled },
+        });
+      else await prisma.deploymentSettings.delete({ where: { id: "default" } });
+    }
   });
 });

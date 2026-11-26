@@ -1,12 +1,13 @@
 import type { AttachmentMimeType, HistoryToolStep, MessageBlock } from "@rakazo/contracts";
 import {
+  AGENT_IMPORT_ASK_ACTION_ID,
   ATTACHMENT_COUNT_CEILING,
   ATTACHMENT_MAX_BYTES,
-  ATTACHMENT_MAX_COUNT,
   attachmentSizeLabel,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
+import { askOptionLetter, isQuestionAskBlock } from "../asks/ask-kind.js";
 import { sliceWellFormed } from "../primitives/utf8.js";
 import { isApprovalAskBlock, isSecretAskBlock } from "../runs/action-approval.js";
 
@@ -31,9 +32,11 @@ function isWellFormedBase64(value: string): boolean {
   return /^[A-Za-z0-9+/]*$/.test(body);
 }
 
+const DEFAULT_SERVER_ATTACHMENT_COUNT = 10;
+
 export function attachmentCountFromEnv(source: { MAX_ATTACHMENTS_PER_MESSAGE?: string }): number {
   const value = source.MAX_ATTACHMENTS_PER_MESSAGE?.trim();
-  if (!value) return ATTACHMENT_MAX_COUNT;
+  if (!value) return DEFAULT_SERVER_ATTACHMENT_COUNT;
   const count = Number(value);
   if (
     !/^\d+$/.test(value) ||
@@ -290,9 +293,20 @@ function blockHistoryText(block: MessageBlock): string {
       block.detail && !isApprovalAskBlock(block) && !isSecretAskBlock(block)
         ? `\n<draft>\n${block.detail.replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;")}\n</draft>`
         : "";
-    if (block.status !== "answered" || !block.answer) return `${block.text}${detail}`;
+    // The card shows its options lettered, and a typed reply like "A and C" refers to them.
+    // The import button opens a flow rather than answering, so it is not an option here. A
+    // label is kept to one line so it cannot pass for the answer.
+    const options = isQuestionAskBlock(block)
+      ? (block.actions ?? [])
+          .filter((action) => action.id !== AGENT_IMPORT_ASK_ACTION_ID)
+          .map(
+            (action, index) => `\n${askOptionLetter(index)}. ${action.label.replace(/\s+/g, " ")}`,
+          )
+      : [];
+    const question = `${block.text}${options.join("")}${detail}`;
+    if (block.status !== "answered" || !block.answer) return question;
     const choice = block.actions?.find((action) => action.id === block.answer);
-    return `${block.text}${detail}\nAnswer: ${choice?.label ?? block.answer}`;
+    return `${question}\nAnswer: ${choice?.label ?? block.answer}`;
   }
   // The bot needs the outcome of its own call: a missed call is its cue to follow up.
   if (block.kind === "call_request") {
@@ -341,6 +355,8 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".csv": "text/csv",
   ".xls": "application/vnd.ms-excel",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".html": "text/html",
   ".htm": "text/html",
   ".json": "application/json",
@@ -369,6 +385,8 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "text/csv": ".csv",
   "application/vnd.ms-excel": ".xls",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
   "text/html": ".html",
   "application/json": ".json",
   "application/zip": ".zip",
@@ -426,6 +444,26 @@ export function inferAttachmentMimeType(
 
 export function attachmentExtensionForMimeType(mimeType: string): string {
   return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
+}
+
+const OFFICE_MIME_TYPES: ReadonlySet<string> = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+]);
+
+/**
+ * The name an Office file is stored and downloaded under ends in its type's own extension, so a file accepted as a
+ * Word document cannot be saved as "Invoice.docm" (a macro-enabled name) and opened by Office as one. Other types keep
+ * the name they were given.
+ */
+export function attachmentStoredName(name: string, mimeType: string): string {
+  if (!OFFICE_MIME_TYPES.has(mimeType)) return name;
+  const extension = attachmentExtensionForMimeType(mimeType);
+  if (name.toLowerCase().endsWith(extension)) return name;
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  return `${stem}${extension}`;
 }
 
 /** Where a run copies an attached file in the bot's workspace; history tools report the same path. */

@@ -248,6 +248,12 @@ export function toSandboxInput(input: {
   };
 }
 
+function refuseOlderScreenLease(slot: ScreenAssignment, leaseId?: string) {
+  if (leaseId && !canTakeScreenLease(slot.leaseId, leaseId)) {
+    throw new Error("This Team Computer screen is owned by a newer execution.");
+  }
+}
+
 export function nextScreenIndex(
   assigned: Map<string, ScreenAssignment>,
   screenId: string,
@@ -260,13 +266,7 @@ export function nextScreenIndex(
       throw new Error("This Team Computer screen is still being released.");
     }
     if (leaseId) {
-      if (
-        existing.leaseId &&
-        existing.leaseId !== leaseId &&
-        !canTakeScreenLease(existing.leaseId, leaseId)
-      ) {
-        throw new Error("This Team Computer screen is owned by a newer execution.");
-      }
+      refuseOlderScreenLease(existing, leaseId);
       if (existing.leaseId !== leaseId && canTakeScreenLease(existing.leaseId, leaseId)) {
         existing.leaseId = leaseId;
         delete existing.idleAt;
@@ -356,6 +356,18 @@ export async function teardownReleasedScreen(
   } else {
     completeReleasedScreen(assigned, screenId, index);
   }
+}
+
+export async function retryFailedScreenTeardown(
+  assigned: Map<string, ScreenAssignment>,
+  screenId: string,
+  leaseId: string | undefined,
+  stop: (index: number) => Promise<{ code: number; stderr: string }>,
+) {
+  const slot = assigned.get(screenId);
+  if (!slot?.releasing) return;
+  refuseOlderScreenLease(slot, leaseId);
+  await teardownReleasedScreen(assigned, screenId, slot.index, () => stop(slot.index));
 }
 
 export interface ScreenAssignment {
@@ -762,11 +774,17 @@ export function demuxDockerStream(buffer: Buffer): { stdout: string; stderr: str
 
 /**
  * Environment for commands in a computer: the bot's shell tool and the user's terminal share
- * it. Neither exec sets a Docker `User`, so both run as the container's workspace user.
+ * it, including this screen's CDP port. Neither exec sets a Docker `User`, so both run as the
+ * container's workspace user.
  */
-export function computerCommandEnv(layout: { display: string }) {
+export function computerCommandEnv(
+  layout: Pick<ReturnType<typeof screenPorts>, "display" | "debugPort"> | undefined,
+) {
   return [
-    `DISPLAY=${layout.display}`,
+    // Without a screen, clear the container's DISPLAY=:1 so graphical commands fail.
+    ...(layout
+      ? [`DISPLAY=${layout.display}`, `RAKAZO_CDP_PORT=${layout.debugPort}`]
+      : ["DISPLAY="]),
     "HOME=/home/rakazo",
     "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "NPM_CONFIG_PREFIX=/home/rakazo/.local",

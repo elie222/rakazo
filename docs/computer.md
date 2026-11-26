@@ -8,7 +8,8 @@ that needs more than a chat.
 On web and desktop, select the bot's name at the top of its chat and find **Computer** in the bot
 panel. The preview shows the running screen beside the chat. Choose **Open** on the preview for a
 full-window view, or **Wake** if the computer is asleep. The computer also starts when the bot needs
-it and goes to sleep when idle.
+it and goes to sleep when idle. In the full-window view, choose **Save screenshot** to download a
+picture of what the screen shows right now, such as a code or an error you want to keep.
 
 On mobile, tap the bot's name at the top of its chat to open its profile, then tap **Computer**.
 

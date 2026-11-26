@@ -5,6 +5,7 @@ can turn it into a new bot, with its instructions, memory and skills, next to th
 have.
 
 Open **Settings → General** and choose **Import an agent**, then pick where the agent comes from.
+Your first bot's opening question also offers **Move from another assistant**, which opens it.
 Import is available in the web app and the desktop app.
 
 ## From OpenClaw or Hermes
@@ -19,14 +20,19 @@ The folder or backup is read on your device. Only the files the import uses are 
 
 ## From Grok Bot
 
-Grok Bot has no export button, so each Bot writes down its own setup:
+Grok Bot has no export button, so one Bot writes down every Bot's setup:
 
-1. Pick **Grok Bot**, choose **Copy prompt** and send it to the Bot in Grok Bot. It asks the Bot to
-   write its instructions, memory, skills, routines and connected apps as a `grok-bot-export` JSON
-   file, without changing anything or including passwords or keys.
-2. Paste the Bot's whole reply and choose **Continue**, or choose **Choose file** for the file it
-   made. A Bot that split its export into several parts: paste or choose all of them together.
-   When one reply holds several Bots, pick the one to import; import each Bot separately.
+1. Pick **Grok Bot**, choose **Copy prompt** and send it to any Bot in Grok Bot. It asks the Bot to
+   list your Bots, ask the others for their memory, and write each one's instructions, memory,
+   skills, routines and connected apps as a `grok-bot-export` JSON file, all in one `.zip`,
+   without changing anything or including passwords or keys.
+2. Choose **Choose file** for the `.zip` or the files it made, or paste its whole reply and choose
+   **Continue**. A Bot that split its export into several parts: choose or paste all of them
+   together.
+3. Every Bot in the export is ticked. Untick any you don't want and choose **Import**. Each one
+   comes over with what its review would tick by default. Open a Bot with its arrow to review
+   and change its choices before it is imported. If some Bots can't be imported, the others
+   still are, and the list says why for each one left.
 
 Exports written for Hermes Agent's or OpenMausBot's Grok Bot importers use the same format and
 import here too.

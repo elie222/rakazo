@@ -11,7 +11,7 @@ import type { Actor } from "@rakazo/contracts";
 import { CONNECTOR_AUTH_UNAVAILABLE } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
-import { IsolationError, runProviderTransaction } from "@rakazo/db";
+import { connectionIn, IsolationError, runProviderTransaction } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import type { RouterDeps } from "../router.js";
@@ -852,18 +852,22 @@ describe("integration setup authorization", () => {
 
 describe("connection tool listing", () => {
   it.each([true, false])("selects app catalog when available: %s", async (hasCatalog) => {
-    const findFirst = vi.fn(async () => ({
-      id: "connection-1",
-      displayName: "Example",
-      providerRef: "account-1",
-    }));
+    const findMany = vi.fn(async () => [
+      {
+        id: "connection-1",
+        connectorId: "example",
+        provider: "example",
+        displayName: "Example",
+        providerRef: "account-1",
+      },
+    ]);
     const tools = [{ name: "example_action", description: "An action" }];
     const listAppTools = vi.fn(async () => tools);
     const discoverTools = vi.fn(async () => tools);
     const connector = { discoverTools, ...(hasCatalog ? { listAppTools } : {}) };
     const client = createRouterClient(
       createRouter({
-        prisma: { connection: { findFirst } },
+        prisma: { connection: { findMany } },
         connectors: { managed: () => connector },
       } as unknown as RouterDeps),
       {
@@ -871,16 +875,16 @@ describe("connection tool listing", () => {
       },
     );
     expect(await client.connections.tools({ connectorId: "example", provider: "example" })).toEqual(
-      tools,
+      [{ ...tools[0], approvalKey: "example_action" }],
     );
-    expect(findFirst).toHaveBeenCalledWith({
+    expect(findMany).toHaveBeenCalledWith({
       where: {
-        spaceId: "workspace-1",
-        userId: "user-1",
+        ...connectionIn({ spaceId: "workspace-1", userId: "user-1" }),
         connectorId: "example",
-        provider: "example",
+        provider: { equals: "example", mode: "insensitive" },
         status: "connected",
       },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     if (hasCatalog) {
       expect(listAppTools).toHaveBeenCalledWith(expect.anything(), "example");
@@ -903,6 +907,115 @@ describe("connection tool listing", () => {
     }
   });
 
+  it("lists a shared app tool once when the catalog returns it for multiple accounts", async () => {
+    const route = {
+      connectorId: "example",
+      resourceId: "mail",
+      toolName: "send_email",
+    };
+    const listAppTools = vi.fn(async ({ connectedConnections }) =>
+      connectedConnections.flatMap(({ id }: { id: string }) => [
+        {
+          name: `send_email_${id}`,
+          description: "Send an email",
+          route: { ...route, connectionId: id },
+        },
+        ...(id === "connection-2"
+          ? [
+              {
+                name: "export_mail",
+                description: "Export mail",
+                route: { ...route, toolName: "export_mail", connectionId: id },
+              },
+            ]
+          : []),
+      ]),
+    );
+    const client = createRouterClient(
+      createRouter({
+        prisma: {
+          connection: { findMany: async () => [{ id: "connection-1" }, { id: "connection-2" }] },
+        },
+        connectors: { managed: () => ({ listAppTools }) },
+      } as unknown as RouterDeps),
+      { context: { actor: { spaceId: "workspace-1", userId: "user-1" } as never } },
+    );
+
+    expect(await client.connections.tools({ connectorId: "example", provider: "mail" })).toEqual([
+      {
+        name: "send_email",
+        description: "Send an email",
+        approvalKey: 'app-tool/["example","mail","send_email"]',
+      },
+      {
+        name: "export_mail",
+        description: "Export mail",
+        approvalKey: 'app-tool/["example","mail","export_mail"]',
+      },
+    ]);
+  });
+
+  it("retains a write declaration when accounts disagree on a shared tool", async () => {
+    const listAppTools = vi.fn(async ({ connectedConnections }) =>
+      connectedConnections.map(({ id }: { id: string }) => ({
+        name: `list_messages_${id}`,
+        description: "List messages",
+        readOnly: id === "connection-1",
+        route: {
+          connectorId: "example",
+          resourceId: "mail",
+          toolName: "list_messages",
+          connectionId: id,
+        },
+      })),
+    );
+    const client = createRouterClient(
+      createRouter({
+        prisma: {
+          connection: { findMany: async () => [{ id: "connection-1" }, { id: "connection-2" }] },
+        },
+        connectors: { managed: () => ({ listAppTools }) },
+      } as unknown as RouterDeps),
+      { context: { actor: { spaceId: "workspace-1", userId: "user-1" } as never } },
+    );
+
+    expect(await client.connections.tools({ connectorId: "example", provider: "mail" })).toEqual([
+      {
+        name: "list_messages",
+        description: "List messages",
+        readOnly: false,
+        approvalKey: 'app-tool/["example","mail","list_messages"]',
+      },
+    ]);
+  });
+
+  it("returns an RPC error when the app tool catalog fails to load", async () => {
+    const handler = new RPCHandler(
+      createRouter({
+        prisma: { connection: { findMany: async () => [{ id: "connection-1" }] } },
+        connectors: {
+          managed: () => ({
+            listAppTools: vi.fn().mockRejectedValue(new Error("Upstream catalog unavailable")),
+          }),
+        },
+      } as unknown as RouterDeps),
+    );
+    const response = await handle(
+      handler,
+      new Request("https://example.test/rpc/connections/tools", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { connectorId: "example", provider: "example" } }),
+      }),
+      {
+        prefix: "/rpc",
+        context: { actor: { spaceId: "workspace-1", userId: "user-1" } as Actor },
+      },
+    );
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain("Upstream catalog unavailable");
+  });
+
   it("does not report a listing the client cancelled", async () => {
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
@@ -913,7 +1026,7 @@ describe("connection tool listing", () => {
     });
     const client = createRouterClient(
       createRouter({
-        prisma: { connection: { findFirst: async () => ({ id: "connection-1" }) } },
+        prisma: { connection: { findMany: async () => [{ id: "connection-1" }] } },
         connectors: { managed: () => ({ discoverTools: vi.fn(), listAppTools }) },
       } as unknown as RouterDeps),
       {

@@ -3,10 +3,10 @@ import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
-  availableInSpace,
   changeMessageBlocks,
   HOLDS_CHAT,
   IsolationError,
+  mcpServerIn,
   storedMessageBlocks,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -53,10 +53,10 @@ async function threadsForDecision(
   actor: Actor,
   input: McpApprovalResolution,
 ): Promise<ApprovalThread[]> {
-  // Threads are shared by the space, but a card is about one member's own server:
-  // only that member resolves it.
+  // Threads are shared by the space, but a card is about a server the member can use:
+  // their own or their organization's.
   const server = await deps.prisma.mcpServer.findFirst({
-    where: { id: input.serverId, ...availableInSpace(actor) },
+    where: { id: input.serverId, ...mcpServerIn(actor) },
     select: { id: true },
   });
   if (!server) return [];
@@ -218,65 +218,6 @@ export async function revertConnectedMcpApprovals(
   return seqs;
 }
 
-async function closeServerCards(
-  client: Prisma.TransactionClient,
-  actor: Actor,
-  serverId: string,
-): Promise<ThreadSeq[]> {
-  const messages = await client.message.findMany({
-    where: {
-      thread: { spaceId: actor.spaceId },
-      blocks: { array_contains: [{ kind: "mcp_approval", serverId }] },
-    },
-    select: {
-      id: true,
-      botId: true,
-      blocks: true,
-      threadId: true,
-      thread: { select: { botId: true } },
-    },
-  });
-  const seqs: ThreadSeq[] = [];
-  for (const message of messages) {
-    const next = changeMessageBlocks(message, (block) =>
-      isApproval(block, serverId) && block.status !== "dismissed"
-        ? { ...block, status: "dismissed" as const }
-        : block,
-    );
-    if (!next) continue;
-    await client.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
-    const eventBotId = message.botId ?? message.thread?.botId;
-    if (!eventBotId) continue;
-    const event = await appendEventInTransaction(client, {
-      spaceId: actor.spaceId,
-      threadId: message.threadId,
-      botId: eventBotId,
-      type: "thread.message.updated",
-      payload: { messageId: message.id, role: "bot", blocks: next.blocks },
-    });
-    seqs.push({ threadId: message.threadId, seq: event.seq });
-  }
-  return seqs;
-}
-
-/** Deleting a server closes every approval card for it, including cards that
-    were never assigned. */
-export async function dismissMcpServerApprovals(
-  deps: McpApprovalDeps,
-  actor: Actor,
-  serverId: string,
-  tx?: Prisma.TransactionClient,
-): Promise<ThreadSeq[]> {
-  if (tx) return closeServerCards(tx, actor, serverId);
-  const seqs = await withTransactionRetry(() =>
-    deps.prisma.$transaction((client) => closeServerCards(client, actor, serverId), {
-      isolationLevel: "Serializable",
-    }),
-  );
-  for (const event of seqs) await deps.events.notify(event.threadId, event.seq);
-  return seqs;
-}
-
 /** Approving a card in a chat is the user's turn: queue a hidden-prompt run (like
     a call's hang-up) so the bot carries on with the server's tools instead of
     waiting for another message. Skipped while the bot is busy in that chat, no
@@ -313,7 +254,7 @@ export async function queueMcpConnectedRun(
       select: { id: true },
     }),
     tx.mcpServer.findFirst({
-      where: { id: input.serverId, ...availableInSpace(actor) },
+      where: { id: input.serverId, ...mcpServerIn(actor) },
       select: { name: true },
     }),
   ]);

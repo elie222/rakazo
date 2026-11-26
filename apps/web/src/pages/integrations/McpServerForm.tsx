@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, McpServer, McpTransport } from "@rakazo/contracts";
-import { deriveMcpSlug } from "@rakazo/core";
+import {
+  deriveMcpSlug,
+  mcpHeaderEditValid,
+  mcpOAuthClientInput,
+  mcpServerHeaders,
+} from "@rakazo/core";
 import {
   Button,
   Checkbox,
@@ -10,6 +15,7 @@ import {
   FieldLabel,
   FieldTitle,
   Input,
+  OptionSelect,
   SectionHeading,
   Tabs,
   TabsList,
@@ -29,6 +35,8 @@ type EnvRow = { id: number; name: string; value: string; file: boolean };
 /** Everything the add or edit form holds until it is saved. */
 export type McpServerDraft = {
   access: AgentAccess;
+  /** Added for the whole organization instead of only the member. */
+  organization: boolean;
   transport: McpTransport;
   name: string;
   endpoint: string;
@@ -69,6 +77,7 @@ function envName(value: string): string {
 export function emptyMcpServerDraft(transport: McpTransport): McpServerDraft {
   return {
     access: { allBots: true, botIds: [] },
+    organization: false,
     transport,
     name: "",
     endpoint: "",
@@ -128,23 +137,20 @@ export function duplicateEnvNames(envRows: EnvRow[]): Set<string> {
   );
 }
 
-/** The server config a draft saves; an edit sends blank values for stored headers to keep them. */
+/** The server config a draft saves, with the header and OAuth client rules mobile shares. */
 export function mcpServerConfig(draft: McpServerDraft, editing: McpServer | null) {
   const slug = deriveMcpSlug(draft.name);
-  const headers = {
-    ...Object.fromEntries((editing?.headerKeys ?? []).map((key) => [key, ""])),
-    ...(draft.headerValue.trim()
-      ? { [draft.headerName.trim() || "Authorization"]: draft.headerValue.trim() }
-      : {}),
-  };
-  const oauthBase = draft.oauthClientId.trim()
-    ? {
-        clientId: draft.oauthClientId.trim(),
-        clientSecret: draft.oauthClientSecret || undefined,
-        scope: draft.oauthScope.trim() || undefined,
-        authorizationParams: draft.oauthParams.trim() || undefined,
-      }
-    : undefined;
+  const headers = mcpServerHeaders({
+    storedKeys: editing?.headerKeys ?? [],
+    name: draft.headerName,
+    value: draft.headerValue,
+  });
+  const oauthBase = mcpOAuthClientInput({
+    clientId: draft.oauthClientId,
+    clientSecret: draft.oauthClientSecret,
+    scope: draft.oauthScope,
+    params: draft.oauthParams,
+  });
   const envEntries = (file: boolean) =>
     Object.fromEntries(
       draft.envRows
@@ -192,6 +198,7 @@ export function McpServerForm({
   stdioEnabled,
   bots,
   assignmentsReady,
+  organizationName,
   oauthClientIdInput,
   onBack,
   onSave,
@@ -205,6 +212,8 @@ export function McpServerForm({
   stdioEnabled: boolean;
   bots: Bot[];
   assignmentsReady: boolean;
+  /** The organization a new server can be added for, when the member may do so. */
+  organizationName: string | null;
   oauthClientIdInput: RefObject<HTMLInputElement | null>;
   onBack: () => void;
   onSave: () => void;
@@ -256,6 +265,22 @@ export function McpServerForm({
             placeholder="e.g. Mobbin"
           />
         </Field>
+        {!editing && organizationName ? (
+          <Field>
+            <FieldLabel htmlFor="mcp-owner">
+              <Trans>Available to</Trans>
+            </FieldLabel>
+            <OptionSelect
+              id="mcp-owner"
+              value={draft.organization ? "organization" : "me"}
+              onValueChange={(owner) => update({ organization: owner === "organization" })}
+              options={[
+                { value: "me", label: t`Just me` },
+                { value: "organization", label: organizationName },
+              ]}
+            />
+          </Field>
+        ) : null}
         <Tabs
           value={draft.transport}
           onValueChange={(value) => update({ transport: value as McpTransport })}
@@ -539,16 +564,23 @@ export function McpServerForm({
           </div>
         </Disclosure>
       </FieldGroup>
-      <AgentAccessControl
-        bots={bots}
-        access={draft.access}
-        disabled={!assignmentsReady}
-        onChange={(access) => update({ access })}
-      />
+      {draft.organization || editing?.organization ? null : (
+        <AgentAccessControl
+          bots={bots}
+          access={draft.access}
+          disabled={!assignmentsReady}
+          onChange={(access) => update({ access })}
+        />
+      )}
       <Button
         type="button"
         className="w-full"
-        disabled={saving || (draft.transport === "stdio" && duplicateNames.size > 0)}
+        disabled={
+          saving ||
+          (draft.transport === "stdio" && duplicateNames.size > 0) ||
+          (editing !== null &&
+            !mcpHeaderEditValid(editing.headerKeys, draft.headerName, draft.headerValue))
+        }
         onClick={onSave}
       >
         {editing ? (

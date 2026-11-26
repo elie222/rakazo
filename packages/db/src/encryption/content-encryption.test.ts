@@ -62,11 +62,25 @@ describe("withContentEncryption", () => {
         data: { revisions: { create: { revision: 2, content: "x" } } },
       }),
     ).rejects.toThrow(/nested write/);
+    await expect(
+      prisma.thread.create({
+        data: {
+          spaceId: "s",
+          userId: "u",
+          tasks: {
+            create: { spaceId: "s", botId: "b", userId: "u", prompt: "x", status: "queued" },
+          },
+        },
+      }),
+    ).rejects.toThrow(/nested write/);
   });
 
   it("requires encrypted updates to name one row by id", async () => {
     await expect(
       prisma.message.updateMany({ where: { threadId: "t" }, data: { blocks: [] } }),
+    ).rejects.toThrow(/updated by id/);
+    await expect(
+      prisma.task.updateMany({ where: { runs: { some: { id: "r" } } }, data: { prompt: "x" } }),
     ).rejects.toThrow(/updated by id/);
     await expect(
       prisma.memoryDocument.upsert({

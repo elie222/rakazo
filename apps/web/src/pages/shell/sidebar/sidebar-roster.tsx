@@ -1,5 +1,5 @@
 import { i18n } from "@lingui/core";
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, BotSection, Group, Me, Space, ThreadSnapshot } from "@rakazo/contracts";
 import {
@@ -22,12 +22,12 @@ import {
   CircleAlert,
   Globe,
   Lock,
-  MoreHorizontal,
   Pencil,
+  Settings,
   Trash2,
   Users,
 } from "lucide-react";
-import type { RefObject } from "react";
+import { IconTooltip } from "../../../components/IconTooltip";
 import {
   compactRosterStatusLabel,
   rosterHasUndismissedRunError,
@@ -51,8 +51,7 @@ export function SidebarRoster({
   rosterDropAction,
   applyRosterDrop,
   openSpaceChat,
-  spaceMenuAnchor,
-  setSpaceMenu,
+  openSpaceSettings,
   setRenameSectionTarget,
   setDeleteSectionTarget,
   toggleSidebarSection,
@@ -81,8 +80,7 @@ export function SidebarRoster({
   rosterDropAction: (target: RosterDropTarget, sameList: boolean) => RosterDropAction | null;
   applyRosterDrop: (target: RosterDropTarget, sameList: boolean, botIds: string[]) => void;
   openSpaceChat: (spaceId: string, path: string) => void;
-  spaceMenuAnchor: RefObject<HTMLElement | null>;
-  setSpaceMenu: (menu: { id: string; position: { x: number; y: number } }) => void;
+  openSpaceSettings: (spaceId: string) => void;
   setRenameSectionTarget: (target: { section: BotSection; spaceId: string }) => void;
   setDeleteSectionTarget: (target: { section: BotSection; spaceId: string }) => void;
   toggleSidebarSection: (key: string) => void;
@@ -108,7 +106,11 @@ export function SidebarRoster({
         const groupBotIds = group.bots.flatMap((item) =>
           item.kind === "bot" ? [item.chat.id] : [],
         );
-        const hasSpaceActions = group.canOpenSpaceSettings;
+        const settingsLabel = group.canOpenSpaceSettings
+          ? t`Settings for ${group.spaceName}`
+          : null;
+        const chatCount = collapsed ? group.bots.length : 0;
+        const tiles = group.tiles && !mini;
         const headerDropTarget: RosterDropTarget | null =
           group.spaceId === bootstrapMe?.spaceId &&
           !group.emptySpaceId &&
@@ -132,16 +134,12 @@ export function SidebarRoster({
             data-sidebar-group={group.key}
             className={`flex flex-col gap-0.5 ${mini && groupIndex > 0 ? "mt-2 border-t border-sidebar-border pt-2" : ""}`}
           >
-            {!mini && (group.title || hasSpaceActions) ? (
+            {!mini && group.title ? (
               // biome-ignore lint/a11y/useSemanticElements: groups sidebar controls, not form fields; Move to remains the keyboard alternative.
               <div
                 role="group"
                 data-roster-drop={rosterDropKey === headerDropKey ? "true" : undefined}
-                className={`${
-                  group.title && hasSpaceActions
-                    ? "grid pt-3 pb-0.5"
-                    : `flex items-center pt-3 pb-0.5${group.title ? "" : " justify-end"}`
-                } rounded-lg ${rosterDropKey === headerDropKey ? "bg-sidebar-accent" : ""}`}
+                className={`group/header mt-2 grid rounded-lg ${rosterDropKey === headerDropKey ? "bg-sidebar-accent" : ""}`}
                 onDragOver={(event) => {
                   if (!headerDropTarget || !rosterDropAction(headerDropTarget, false)) return;
                   event.preventDefault();
@@ -157,126 +155,107 @@ export function SidebarRoster({
                   applyRosterDrop(headerDropTarget, false, groupBotIds);
                 }}
               >
-                {group.title ? (
-                  // Prefer the section menu over the space menu when both apply;
-                  // the dedicated space-actions button still opens the space menu.
-                  <ContextMenu disabled={!section}>
-                    <ContextMenuTrigger
-                      render={
-                        group.emptySpaceId ? <button type="button" /> : <CollapsibleTrigger />
+                <ContextMenu disabled={!section}>
+                  <ContextMenuTrigger
+                    render={group.emptySpaceId ? <button type="button" /> : <CollapsibleTrigger />}
+                    className="col-start-1 row-start-1 flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-start text-body-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+                    onClick={() => {
+                      if (group.emptySpaceId) {
+                        openSpaceChat(group.emptySpaceId, "/onboarding");
                       }
-                      className={`flex min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-1 text-label font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${hasSpaceActions ? "col-start-1 row-start-1 w-full" : "flex-1"}`}
-                      onClick={() => {
-                        if (group.emptySpaceId) {
-                          openSpaceChat(group.emptySpaceId, "/onboarding");
-                        }
-                      }}
-                      onContextMenu={
-                        section
-                          ? (event) => event.currentTarget.focus()
-                          : hasSpaceActions
-                            ? (event) => {
-                                event.preventDefault();
-                                spaceMenuAnchor.current = event.currentTarget;
-                                setSpaceMenu({
-                                  id: group.spaceId,
-                                  position: { x: event.clientX, y: event.clientY },
-                                });
-                              }
-                            : undefined
-                      }
-                      aria-label={
-                        (group.emptySpaceId
-                          ? t`Open ${headerName(group)}`
-                          : collapsed
-                            ? t`Expand ${headerName(group)}`
-                            : t`Collapse ${headerName(group)}`) +
-                        // The button's own name is what is read, so the globe's meaning joins it.
-                        (group.hasGuests ? `, ${t`Shared with guests`}` : "")
-                      }
+                    }}
+                    onContextMenu={section ? (event) => event.currentTarget.focus() : undefined}
+                    aria-description={
+                      chatCount > 0
+                        ? t`${plural(chatCount, { one: "# chat", other: "# chats" })}`
+                        : undefined
+                    }
+                    aria-label={
+                      (group.emptySpaceId
+                        ? t`Open ${headerName(group)}`
+                        : collapsed
+                          ? t`Expand ${headerName(group)}`
+                          : t`Collapse ${headerName(group)}`) +
+                      // The button's own name is what is read, so the globe's meaning joins it.
+                      (group.hasGuests ? `, ${t`Shared with guests`}` : "")
+                    }
+                  >
+                    <span
+                      className={`flex min-w-0 items-center gap-1.5 truncate ${settingsLabel ? "pe-7" : ""}`}
                     >
-                      <span
-                        className={`flex min-w-0 items-center gap-1.5 truncate ${hasSpaceActions ? "pe-7" : ""}`}
-                      >
-                        {/* People from outside the organization are marked even in a lone Space. */}
-                        {group.hasGuests ? (
-                          <Globe size={11} strokeWidth={2} aria-hidden="true" />
-                        ) : group.showLock ? (
-                          group.shared ? (
-                            <Users size={11} strokeWidth={2} aria-hidden="true" />
-                          ) : (
-                            <Lock size={11} strokeWidth={2} aria-hidden="true" />
-                          )
-                        ) : null}
-                        <span className="truncate">{group.title}</span>
-                        {group.subtitle ? (
-                          <span className="ms-0.5 truncate text-muted-foreground">
-                            {group.subtitle}
+                      {/* People from outside the organization are marked even in a lone Space. */}
+                      {group.hasGuests ? (
+                        <Globe size={11} strokeWidth={2} aria-hidden="true" />
+                      ) : group.showLock ? (
+                        group.shared ? (
+                          <Users size={11} strokeWidth={2} aria-hidden="true" />
+                        ) : (
+                          <Lock size={11} strokeWidth={2} aria-hidden="true" />
+                        )
+                      ) : null}
+                      <span className="truncate">{group.title}</span>
+                      {group.subtitle ? (
+                        <span className="ms-0.5 truncate text-muted-foreground">
+                          {group.subtitle}
+                        </span>
+                      ) : null}
+                    </span>
+                    {group.emptySpaceId ? null : (
+                      <span aria-hidden="true" className="grid shrink-0 place-items-center">
+                        {chatCount > 0 ? (
+                          <span className="col-start-1 row-start-1 hidden tabular-nums group-hover/header:invisible group-has-focus-visible/header:invisible [@media(hover:hover)_and_(pointer:fine)]:block">
+                            {chatCount}
                           </span>
                         ) : null}
-                      </span>
-                      {group.emptySpaceId ? null : (
                         <ChevronDown
                           size={14}
                           strokeWidth={1.8}
-                          className={
-                            collapsed ? "-rotate-90 transition-transform" : "transition-transform"
-                          }
-                          aria-hidden="true"
+                          className={`col-start-1 row-start-1 group-hover/header:visible group-has-focus-visible/header:visible motion-safe:transition-transform [@media(hover:hover)_and_(pointer:fine)]:invisible ${collapsed ? "-rotate-90 rtl:rotate-90" : ""}`}
                         />
-                      )}
-                    </ContextMenuTrigger>
-                    {section ? (
-                      <ContextMenuContent
-                        aria-label={t`Actions for ${section.name}`}
-                        className="w-[220px]"
+                      </span>
+                    )}
+                  </ContextMenuTrigger>
+                  {section ? (
+                    <ContextMenuContent
+                      aria-label={t`Actions for ${section.name}`}
+                      className="w-[220px]"
+                    >
+                      <ContextMenuItem
+                        onClick={() => setRenameSectionTarget({ section, spaceId: group.spaceId })}
                       >
-                        <ContextMenuItem
-                          onClick={() =>
-                            setRenameSectionTarget({ section, spaceId: group.spaceId })
-                          }
-                        >
-                          <Pencil />
-                          {t`Rename section`}
-                        </ContextMenuItem>
-                        <ContextMenuItem
-                          variant="destructive"
-                          onClick={() =>
-                            setDeleteSectionTarget({ section, spaceId: group.spaceId })
-                          }
-                        >
-                          <Trash2 />
-                          {t`Delete section`}
-                        </ContextMenuItem>
-                      </ContextMenuContent>
-                    ) : null}
-                  </ContextMenu>
-                ) : null}
-                {hasSpaceActions ? (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className={
-                      group.title
-                        ? `col-start-1 row-start-1 justify-self-end self-center ${group.emptySpaceId ? "" : "me-6"}`
-                        : undefined
-                    }
-                    aria-label={t`Actions for ${group.spaceName}`}
-                    onClick={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      spaceMenuAnchor.current = event.currentTarget;
-                      setSpaceMenu({
-                        id: group.spaceId,
-                        position: { x: rect.left, y: rect.bottom },
-                      });
-                    }}
-                  >
-                    <MoreHorizontal size={14} aria-hidden="true" />
-                  </Button>
+                        <Pencil />
+                        {t`Rename section`}
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        variant="destructive"
+                        onClick={() => setDeleteSectionTarget({ section, spaceId: group.spaceId })}
+                      >
+                        <Trash2 />
+                        {t`Delete section`}
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  ) : null}
+                </ContextMenu>
+                {settingsLabel ? (
+                  <IconTooltip label={settingsLabel}>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      className={`col-start-1 row-start-1 self-center justify-self-end text-muted-foreground group-hover/header:pointer-events-auto group-hover/header:opacity-100 group-has-focus-visible/header:pointer-events-auto group-has-focus-visible/header:opacity-100 [@media(hover:hover)_and_(pointer:fine)]:pointer-events-none [@media(hover:hover)_and_(pointer:fine)]:opacity-0 ${group.emptySpaceId ? "me-1" : "me-7"}`}
+                      aria-label={settingsLabel}
+                      onClick={() => openSpaceSettings(group.spaceId)}
+                    >
+                      <Settings className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+                    </Button>
+                  </IconTooltip>
                 ) : null}
               </div>
             ) : null}
-            <CollapsibleContent className="flex flex-col gap-0.5">
+            <CollapsibleContent
+              className={
+                tiles ? "grid grid-cols-3 gap-x-1 gap-y-2 pt-1 pb-2" : "flex flex-col gap-0.5"
+              }
+            >
               {group.bots.map((item) => {
                 const selected =
                   (item.kind === "bot" && !inGroup && active?.id === item.chat.id) ||
@@ -289,7 +268,7 @@ export function SidebarRoster({
                   (rosterHasUndismissedRunError(item.chat.runErrorId, dismissedRunErrorIds) ||
                     (active?.id === item.chat.id && Boolean(displayedRunError)));
                 const compactStatusLabel =
-                  (compact || mini) && item.kind === "bot"
+                  (compact || mini || tiles) && item.kind === "bot"
                     ? rowError
                       ? t`Error`
                       : compactRosterStatusLabel(item.chat.status)
@@ -322,17 +301,18 @@ export function SidebarRoster({
                     : item.kind === "group"
                       ? item.chat.members
                       : [];
+                const avatarSize = tiles ? 56 : mini ? 40 : compact ? 28 : 38;
                 const avatar =
                   item.kind === "bot" ? (
                     <BotAvatar
                       avatarSet={item.chat.avatarSet}
                       color={item.chat.color}
                       identity={item.chat.id}
-                      size={mini ? 40 : compact ? 28 : 38}
+                      size={avatarSize}
                       status={item.chat.status}
                     />
                   ) : (
-                    <GroupAvatar members={groupMembers} size={mini ? 40 : compact ? 28 : 38} />
+                    <GroupAvatar members={groupMembers} size={avatarSize} />
                   );
                 const chatTrigger = (
                   <ContextMenuTrigger
@@ -340,11 +320,11 @@ export function SidebarRoster({
                     draggable={item.kind === "bot"}
                     data-roster-bot-id={item.kind === "bot" ? item.chat.id : undefined}
                     data-roster-unread={item.chat.unread ? "true" : undefined}
-                    data-roster-error={rowError && (compact || mini) ? "true" : undefined}
+                    data-roster-error={rowError && (compact || mini || tiles) ? "true" : undefined}
                     aria-current={selected ? "page" : undefined}
                     aria-label={mini ? item.chat.name : undefined}
                     aria-describedby={
-                      mini
+                      mini || tiles
                         ? [
                             item.chat.unread ? `roster-unread-${item.kind}-${item.chat.id}` : null,
                             compactStatusLabel
@@ -406,18 +386,20 @@ export function SidebarRoster({
                     // Focus the row so closing the menu returns focus here.
                     onContextMenu={(event) => event.currentTarget.focus()}
                     className={`flex items-center ${
-                      mini
-                        ? "mx-auto size-12 justify-center rounded-xl"
-                        : compact
-                          ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
-                          : "w-full gap-3 rounded-xl px-2.5 py-[10px]"
+                      tiles
+                        ? "w-full min-w-0 flex-col gap-1.5 rounded-xl px-1 py-2"
+                        : mini
+                          ? "mx-auto size-12 justify-center rounded-xl"
+                          : compact
+                            ? "w-full min-h-11 gap-2 rounded-xl px-2.5 py-1.5"
+                            : "w-full gap-3 rounded-xl px-2.5 py-[10px]"
                     } text-start ${
                       selected || rosterDropKey === rowDropKey
                         ? "bg-sidebar-accent"
                         : "group-hover/row:bg-accent"
                     }`}
                   >
-                    {mini ? (
+                    {mini || tiles ? (
                       <span className="relative shrink-0">
                         {avatar}
                         {rowError ? (
@@ -453,7 +435,21 @@ export function SidebarRoster({
                     ) : (
                       avatar
                     )}
-                    {!mini ? (
+                    {tiles ? (
+                      <span
+                        dir="auto"
+                        className={`w-full truncate text-center text-body-sm text-foreground ${
+                          item.chat.unread ? "font-semibold" : "font-medium"
+                        }`}
+                      >
+                        {item.chat.name}
+                      </span>
+                    ) : null}
+                    {tiles && item.woke ? (
+                      <span data-roster-woke className="text-label font-medium text-foreground/75">
+                        <Trans>Woke</Trans>
+                      </span>
+                    ) : !tiles && !mini ? (
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-1.5">
                           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">

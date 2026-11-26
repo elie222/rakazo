@@ -1,5 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
+import { ApiKeyNameSchema, ApiKeySchema, CreatedApiKeySchema } from "../bot-access/bot-access.js";
 import { BotAvatarSetSchema } from "../bots/bot-avatar.js";
 import { Id } from "../ids.js";
 import { LabFeatureSchema } from "../labs.js";
@@ -10,10 +11,22 @@ import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import { AnalyticsModelSignInStepInput, AnalyticsScreenInput } from "./analytics.js";
 import { AuditEventListInputSchema, AuditEventPageSchema } from "./audit-events.js";
 import { AppBootstrapSchema, MeSchema, SignupSurveySchema } from "./me.js";
-import { AppLocaleSchema, AvatarStyleSchema, TimeZoneSchema } from "./preferences.js";
+import {
+  AccountChatPreferencesPatchSchema,
+  AppLocaleSchema,
+  AvatarStyleSchema,
+  TimeZoneSchema,
+} from "./preferences.js";
 import { SecurityEventListInputSchema, SecurityEventSchema } from "./security-events.js";
 
 export const accountRpc = {
+  /** Keys that let scripts and other agents use the account's bots through the public API. */
+  apiKeys: {
+    list: oc.output(z.array(ApiKeySchema)),
+    /** Needs a recent identity confirmation on this session (IDENTITY_CONFIRMATION_REQUIRED). */
+    create: oc.input(z.object({ name: ApiKeyNameSchema })).output(CreatedApiKeySchema),
+    revoke: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+  },
   analytics: {
     screen: oc.input(AnalyticsScreenInput).output(z.object({ ok: z.literal(true) })),
     /** A step of a subscription sign-in only the app can see. */
@@ -47,6 +60,10 @@ export const accountRpc = {
             avatarStyle: AvatarStyleSchema.optional(),
             /** Restyles every bot not pinned to another set, and is what new bots get. */
             botAvatarSet: BotAvatarSetSchema.optional(),
+            chatPreferences: AccountChatPreferencesPatchSchema.refine(
+              (patch) => Object.values(patch).some((value) => value !== undefined),
+              { message: "Nothing to update" },
+            ).optional(),
             timezone: TimeZoneSchema.nullable().optional(),
             /** The language the app runs in, so emails can be written in it. */
             locale: AppLocaleSchema.optional(),
@@ -57,6 +74,7 @@ export const accountRpc = {
             (input) =>
               input.avatarStyle !== undefined ||
               input.botAvatarSet !== undefined ||
+              input.chatPreferences !== undefined ||
               input.timezone !== undefined ||
               input.locale !== undefined ||
               input.labs !== undefined,
@@ -104,6 +122,7 @@ export const accountRpc = {
           threadId: Id.optional(),
           /** The card's own message, so it is found however far back it is. */
           messageId: Id.optional(),
+          organizationConnectionId: Id.optional(),
           provider: z.string(),
           /** Omitted for the server's default connector. */
           connectorId: z.string().optional(),

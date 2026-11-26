@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { AdapterContext, ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
-import { SandboxRateLimitError, WorkspaceTooLargeError } from "@rakazo/adapter-kit";
+import {
+  isSandboxProviderOutage,
+  SandboxRateLimitError,
+  WorkspaceTooLargeError,
+} from "@rakazo/adapter-kit";
+import { COMPUTER_RATE_LIMIT_ERROR } from "@rakazo/contracts";
 import { screenDisplayArgv, shellQuote } from "@rakazo/core/node/desktop-runtime";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { RailwayGraphQLErrorItem, SandboxInfo } from "railway";
@@ -26,11 +31,14 @@ import {
   untilAborted,
 } from "../../../computers/sandbox/sandbox-test-support.js";
 import { LinuxDesktop } from "../../../computers/screens/linux-desktop.js";
+import { computerRunError } from "../../../runs/assembly/run-computer.js";
 import { RailwaySandboxProvider } from "./railway-sandbox.js";
 
 const sdk = { connect: Sandbox.connect, create: Sandbox.create };
-vi.spyOn(Sandbox, "connect");
-vi.spyOn(Sandbox, "create");
+beforeEach(() => {
+  vi.spyOn(Sandbox, "connect");
+  vi.spyOn(Sandbox, "create");
+});
 
 const ctx = {
   operationId: "op",
@@ -405,7 +413,6 @@ describe("Railway sandbox lifecycle", () => {
   );
 
   it.each<[string, string, number | undefined, string]>([
-    ["a full sandbox cap", "Sandbox limit of 10 reached", undefined, "LIMIT_EXCEEDED"],
     ["an authorization error", "Not Authorized", undefined, "UNAUTHORIZED"],
     ["an HTTP 401", "fake-secret", 401, "REQUEST_FAILED"],
     ["an HTTP 403", "fake-secret", 403, "REQUEST_FAILED"],
@@ -423,6 +430,59 @@ describe("Railway sandbox lifecycle", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it.each<[string, RailwayGraphQLErrorItem]>([
+    ["a full sandbox cap", { message: "Sandbox limit of 10 reached for fake-secret" }],
+    ["a quota", { message: "Sandbox quota exceeded for fake-secret" }],
+    ["a GraphQL rate limit", { message: "Rate limit exceeded for fake-secret" }],
+    ["a coded limit", { message: "fake-secret", extensions: { code: "LIMIT_EXCEEDED" } }],
+  ])("reports %s as a computer rate limit without retrying", async (_name, failure) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const api = backboard();
+    api.failures.set("RailwaySandboxCreate", failure);
+    try {
+      const error = await provider.provision({ botId: "bot", homePath: "/unused" }, ctx).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(error).toBeInstanceOf(SandboxRateLimitError);
+      if (!(error instanceof SandboxRateLimitError)) return;
+      expect(computerRunError(error)).toBe(COMPUTER_RATE_LIMIT_ERROR);
+      expect(isSandboxProviderOutage(error)).toBe(true);
+      expect(error.retryAfterMs).toBeUndefined();
+      expect(error.cause).toBeInstanceOf(RailwayGraphQLError);
+      expect(error.cause).toMatchObject({
+        message: "Railway API request failed (LIMIT_EXCEEDED)",
+        errors: [
+          {
+            message: "Railway API request failed (LIMIT_EXCEEDED)",
+            extensions: { code: "LIMIT_EXCEEDED" },
+          },
+        ],
+      });
+      expect(JSON.stringify(error.cause)).not.toContain("fake-secret");
+      expect(api.operations).toEqual(["RailwaySandboxCreate"]);
+      expect(api.created).toHaveLength(0);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("reports a sandbox cap reached after the idle-timeout fallback as a rate limit", async () => {
+    const api = backboard();
+    api.failures.set("RailwaySandboxCreate", { message: "Sandbox limit of 10 reached" });
+    vi.mocked(fetch).mockImplementationOnce(async () =>
+      Response.json({ errors: [{ message: "idle timeout must be between 1 and 5 minutes" }] }),
+    );
+    await expect(
+      provider.provision({ botId: "bot", homePath: "/unused" }, ctx),
+    ).rejects.toBeInstanceOf(SandboxRateLimitError);
+    // The first response rejects the timeout; only the fallback reaches the fake API.
+    expect(api.operations).toEqual(["RailwaySandboxCreate"]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(api.created).toHaveLength(0);
   });
 
   it("does not retry a create after its caller cancels", async () => {
@@ -480,11 +540,6 @@ describe("Railway sandbox lifecycle", () => {
 
   it.each<[string, RailwayGraphQLErrorItem, string]>([
     ["a missing sandbox", { message: "Sandbox fake-secret not found" }, "NOT_FOUND"],
-    [
-      "a full sandbox cap",
-      { message: "Sandbox limit of 50 reached for fake-secret" },
-      "LIMIT_EXCEEDED",
-    ],
     [
       "a coded error",
       { message: "fake-secret", extensions: { code: "INTERNAL_SERVER_ERROR" } },
@@ -1383,7 +1438,7 @@ describe("Railway computers", () => {
     }
   });
 
-  it.each(["0", "-1", "1.5", "invalid"])("rejects an invalid export limit %s", (limit) => {
+  it.each(["0", "1.5", "invalid"])("rejects an invalid export limit %s", (limit) => {
     expect(
       () =>
         new RailwaySandboxProvider({

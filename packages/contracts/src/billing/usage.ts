@@ -20,11 +20,15 @@ export const UsageRecordSchema = z.object({
   usageSource: z.string().nullable().optional(),
   callId: z.string().nullable().optional(),
   operationId: z.string().nullable().optional(),
-  operationKind: z.enum(["answer", "setup", "retrieval", "subagent", "compaction"]).optional(),
+  operationKind: z
+    .enum(["answer", "setup", "retrieval", "subagent", "compaction", "image", "video"])
+    .optional(),
   parentRunId: z.string().nullable().optional(),
   agentId: z.string().nullable().optional(),
   createdAt: z.string(),
 });
+
+export type UsageRecord = z.infer<typeof UsageRecordSchema>;
 
 /** Token and cost totals are null when any counted call lacks that figure. */
 const UsageTotalsSchema = z.object({
@@ -57,6 +61,8 @@ export type UsageBreakdownInput = z.infer<typeof UsageBreakdownInputSchema>;
 export const UsageBreakdownModelSchema = UsageTotalsSchema.required().extend({
   provider: z.string(),
   model: z.string(),
+  /** Input read from the provider's cache, which `inputTokens` leaves out; null when any call lacks the figure. */
+  cachedTokens: z.number().nullable(),
 });
 export type UsageBreakdownModel = z.infer<typeof UsageBreakdownModelSchema>;
 
@@ -80,14 +86,33 @@ export const UsageBreakdownBotSchema = z.object({
 });
 export type UsageBreakdownBot = z.infer<typeof UsageBreakdownBotSchema>;
 
+export const UsageBreakdownRoutineSchema = UsageTotalsSchema.required().extend({
+  /**
+   * Null for everything no routine started: chats, messages from other bots, background work,
+   * and the runs of a routine that was since deleted.
+   */
+  id: Id.nullable(),
+  name: z.string().nullable(),
+  /** The routine's bot, which tells two routines with one name apart. */
+  botName: z.string().nullable(),
+  runs: z.number(),
+});
+export type UsageBreakdownRoutine = z.infer<typeof UsageBreakdownRoutineSchema>;
+
 export const UsageBreakdownSchema = z.object({
   range: UsageDateRangeSchema,
   /** Each bot with usage in the range, for the bot selector. */
   bots: z.array(UsageBreakdownBotSchema),
   /** Every model used in the range, for the model selector. */
   modelOptions: z.array(z.object({ provider: z.string(), model: z.string() })),
-  totals: UsageTotalsSchema.required().extend({ runs: z.number() }),
+  totals: UsageTotalsSchema.required().extend({
+    runs: z.number(),
+    /** The token total adds up only the calls that reported a count; some did not. */
+    tokensPartial: z.boolean().optional(),
+  }),
   models: z.array(UsageBreakdownModelSchema),
+  /** The selection split by the routine that started each run, largest first. */
+  routines: z.array(UsageBreakdownRoutineSchema),
   /** One point per day, or per month for an all-time history longer than two months. */
   overTimeUnit: z.enum(["day", "month"]),
   overTime: z.array(UsageBreakdownPointSchema),

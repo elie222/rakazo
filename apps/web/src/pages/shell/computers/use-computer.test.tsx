@@ -42,15 +42,20 @@ const singleUseScreen = (signIn: string, view: "view" | "control" = "view"): Scr
 const nextSingleUseScreen = () => singleUseScreen(`code-${++codes}`);
 let screenAnswer: () => ScreenAnswer = nextSingleUseScreen;
 const screenUrl = vi.fn(async () => screenAnswer());
+/** The bot whose chat is open, and the screen each render drew for it. */
+let activeId = "bot-1";
+const activeBotId = { current: activeId };
+let drawn: Array<{ botId: string; url: string | null }> = [];
 
 /** The hook with the frame the panel draws: gone while an error replaces the screen. */
 function Harness() {
   state = useComputerState({
     rpc: { computer: { screenUrl } } as never,
     panel: "settings",
-    activeId: "bot-1",
-    activeBotId: { current: "bot-1" },
+    activeId,
+    activeBotId,
   });
+  drawn.push({ botId: activeId, url: state.screenUrl });
   if (!state.screenUrl || state.screenLoadError) return null;
   // Drawn as the panel and overlay draw it: a held predecessor first, then the live frame.
   return screenFrames(state.screenFrameKey, state.screenUrl, state.heldScreen).map((frame) => (
@@ -84,6 +89,9 @@ async function report(rakazoScreen: string) {
 beforeEach(async () => {
   vi.useFakeTimers();
   codes = 0;
+  activeId = "bot-1";
+  activeBotId.current = activeId;
+  drawn = [];
   screenAnswer = nextSingleUseScreen;
   screenUrl.mockClear();
   vi.stubGlobal(
@@ -163,6 +171,43 @@ it("shows a single-use screen's error only after its reloads stop connecting", a
 it("never caches a single-use screen URL", async () => {
   await read();
   expect(state.computerCacheRef.current.get("bot-1")?.screenUrl).toBeNull();
+});
+
+it("never draws the previous bot's screen for the bot switched to", async () => {
+  // The panel shows the screen; the full window is closed, and its bot follows the chat.
+  await act(async () => {
+    state.setComputerOpen(false);
+    state.setComputerBotId("bot-1");
+  });
+  screenAnswer = () => ({ url: "embedded-screen://first-bot" });
+  await read();
+  expect(state.screenUrl).toBe("embedded-screen://first-bot");
+  // The chat changes first. The new bot's screen is set after that render, while the opened
+  // computer's bot still names the previous one, as the app does.
+  activeId = "bot-2";
+  activeBotId.current = activeId;
+  drawn = [];
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.showCachedComputer("bot-2"));
+  await act(async () => state.setComputerBotId("bot-2"));
+  expect(drawn.length).toBeGreaterThan(0);
+  expect(drawn.every((render) => render.botId === "bot-2" && render.url === null)).toBe(true);
+  screenAnswer = () => ({ url: "embedded-screen://second-bot" });
+  await act(async () => {
+    await state.refreshComputerScreen("bot-2");
+  });
+  expect(state.screenUrl).toBe("embedded-screen://second-bot");
+  // Going back shows the first bot's own cached screen again.
+  activeId = "bot-1";
+  activeBotId.current = activeId;
+  drawn = [];
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.showCachedComputer("bot-1"));
+  expect(drawn.some((render) => render.url === "embedded-screen://second-bot")).toBe(false);
+  // Its cached screen shows at once, before the opened computer's bot has caught up.
+  expect(state.screenUrl).toBe("embedded-screen://first-bot");
+  await act(async () => state.setComputerBotId("bot-1"));
+  expect(state.screenUrl).toBe("embedded-screen://first-bot");
 });
 
 it("replaces a live single-use frame once the server names another screen", async () => {
@@ -605,6 +650,7 @@ it("still reads the screen when the refresh after this tab's release fails", asy
       }),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     return null;
   }
@@ -652,6 +698,7 @@ it("reads the new screen beside the thread refresh after this tab releases contr
       refreshThread,
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     return null;
   }
@@ -722,6 +769,7 @@ it("closes the computer view on Escape, but not on the Escape that ends an IME c
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     // Stands in for the view's "Teach a task" goal box, whose popover lets a composing Escape bubble.
     return (
@@ -783,6 +831,7 @@ it("reads a running computer's screen for the bot panel without keeping it awake
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     return null;
   }
@@ -851,6 +900,7 @@ async function renderTakingControl(
       }),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     return null;
   }
@@ -1041,6 +1091,7 @@ it("offers Upgrade instead of a retry once the computer hours are spent", async 
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
       onUpgrade,
+      onSendError: vi.fn(),
     });
     return <>{controls.computerScreenError}</>;
   }
@@ -1077,6 +1128,7 @@ it("offers Recover for a computer that failed to boot", async () => {
       refreshThread: vi.fn(),
       refreshGroupThread: vi.fn(),
       onUpgrade: vi.fn(),
+      onSendError: vi.fn(),
     });
     return <>{controls.computerScreenError}</>;
   }

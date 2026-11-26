@@ -130,7 +130,7 @@ it("opens each time without the failure from the last attempt", async () => {
   await openFromMenu();
   expect(dialogIsOpen()).toBe(true);
 
-  await click("Docker");
+  await click("Sandbox");
   expect(alertText()).toBe("Computer access was refused");
   expect(button("Check again")).toBeDefined();
 
@@ -150,7 +150,7 @@ it("stays open while a choice or a check is still running", async () => {
   vi.mocked(rpc.me).mockResolvedValueOnce(docker).mockReturnValueOnce(check.promise);
   await renderPrompt();
   await openFromMenu();
-  await click("Docker");
+  await click("Sandbox");
   await act(async () => dialog.onOpenChange?.(false));
   expect(dialogIsOpen()).toBe(true);
 
@@ -179,7 +179,7 @@ it("opens without a failed check from the last attempt", async () => {
   vi.mocked(rpc.me).mockResolvedValueOnce(docker).mockRejectedValueOnce(new Error("Still refused"));
   await renderPrompt();
   await openFromMenu();
-  await click("Docker");
+  await click("Sandbox");
   await click("Check again");
   expect(alertText()).toBe("Still refused");
 

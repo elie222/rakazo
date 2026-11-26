@@ -12,11 +12,11 @@ import { CONTEXT_POLICY_SETTINGS } from "../../runtime/context/runtime-context.j
 import { HISTORY_FORMAT_VERSION } from "../../runtime/pi/pi-runtime-history.js";
 import { TASK_CATALOG_GUIDANCE } from "../../tasks/task-catalog.prompt.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
+import { searchHistoryThisChat } from "../../tools/builtin-memory.tool-definition.js";
 import { messageToAgentHistoryText } from "./reply-context.js";
 import {
   botEmailInstruction,
   COMPUTER_USE_INSTRUCTION,
-  desktopGuardShellInstruction,
   dockerComputerToolInstruction,
   hostComputerInstruction,
   PRIVATE_WORKSPACE_INSTRUCTION,
@@ -48,7 +48,11 @@ export function promptVersionParts() {
         : promptSourceVersion(fileURLToPath(new URL("../../../../../", import.meta.url))),
     historyFormat: HISTORY_FORMAT_VERSION,
     context: CONTEXT_POLICY_SETTINGS,
-    tools: builtinAgentTools.map((tool) => [tool.name, tool.description, tool.inputSchema]),
+    tools: [...builtinAgentTools, searchHistoryThisChat].map((tool) => [
+      tool.name,
+      tool.description,
+      tool.inputSchema,
+    ]),
     computerUse: COMPUTER_USE_INSTRUCTION,
     computers: toolSets.flatMap((disabled) =>
       [true, false].flatMap((heldForTakeover) =>
@@ -65,7 +69,6 @@ export function promptVersionParts() {
       ),
     ),
     hosts: ["wuying", "local"].map((kind) => hostComputerInstruction(kind, host)),
-    desktopGuardShell: desktopGuardShellInstruction(allTools),
     dockerComputer: toolSets.map((disabled) => dockerComputerToolInstruction("docker", disabled)),
     workspaces: [PRIVATE_WORKSPACE_INSTRUCTION, teamWorkspaceInstruction("bot")],
     taskCatalog: TASK_CATALOG_GUIDANCE,
@@ -90,30 +93,33 @@ export function promptVersionParts() {
       replyTo: { id: "m1", threadId: "t", role: "bot", blocks: [{ kind: "text", text: "Hi." }] },
     }),
     instructions: toolSets.flatMap((disabledBuiltinTools) =>
-      (["connected", "offline"] as const).map((userComputer) =>
-        userTurnInstructions({
-          botInstructions: "",
-          groupContext: undefined,
-          messagingContext: undefined,
-          redactedMemoryContext: undefined,
-          redactedScratchpadContext: undefined,
-          hasHistoricalContext: true,
-          historyRetrievalEnabled: true,
-          computerInstruction: "",
-          pageBrowserAllowed: true,
-          workspaceInstruction: "",
-          agentEnvironmentInstruction: undefined,
-          botDirectory: undefined,
-          pluginLine: undefined,
-          agentSkillsLine: "Skills.",
-          taughtSkillsLine: undefined,
-          replyGuidance: runReplyGuidance("user"),
-          disabledBuiltinTools,
-          offeredFleetTools: FLEET_WRITE_TOOL_NAMES,
-          followUpsOffered: true,
-          backgroundHelpersAllowed: true,
-          userComputer,
-        }),
+      (["connected", "offline"] as const).flatMap((userComputer) =>
+        [true, false].map((historyMyChats) =>
+          userTurnInstructions({
+            botInstructions: "",
+            groupContext: undefined,
+            messagingContext: undefined,
+            redactedMemoryContext: undefined,
+            redactedScratchpadContext: undefined,
+            hasHistoricalContext: true,
+            historyRetrievalEnabled: true,
+            historyMyChats,
+            computerInstruction: "",
+            pageBrowserAllowed: true,
+            workspaceInstruction: "",
+            agentEnvironmentInstruction: undefined,
+            botDirectory: undefined,
+            pluginLine: undefined,
+            agentSkillsLine: "Skills.",
+            taughtSkillsLine: undefined,
+            replyGuidance: runReplyGuidance("user"),
+            disabledBuiltinTools,
+            offeredFleetTools: FLEET_WRITE_TOOL_NAMES,
+            followUpsOffered: true,
+            backgroundHelpersAllowed: true,
+            userComputer,
+          }),
+        ),
       ),
     ),
   };

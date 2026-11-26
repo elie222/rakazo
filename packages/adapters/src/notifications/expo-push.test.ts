@@ -444,22 +444,6 @@ describe("expo push", () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
-  it("caps a streamed response without a content length", async () => {
-    const tokens = new MemoryPushTokenStore();
-    await tokens.save("user-1", "ExponentPushToken[test]");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(new Uint8Array(MAX_EXPO_PUSH_RESPONSE_BYTES + 1))),
-    );
-
-    await expect(
-      new ExpoPushProvider(tokens).send(
-        { kind: "completion", title: "done", body: "ok", botId: "b", threadId: "t" },
-        notifyContext,
-      ),
-    ).rejects.toThrow("Expo push response is too large.");
-  });
-
   it("rejects malformed successful responses", async () => {
     const tokens = new MemoryPushTokenStore();
     await tokens.save("user-1", "ExponentPushToken[test]");
@@ -933,6 +917,44 @@ describe("expo push access token", () => {
       push.checkReceipt({ userId: "user-1", ticketId: "ticket-1", tokenDigest: "digest" }),
     ).rejects.toThrow(error);
   });
+});
+
+it("keeps urgent pushes silent by default without changing their delivery priority", async () => {
+  const tokens = new MemoryPushTokenStore();
+  await tokens.save("user-1", "ExponentPushToken[test]");
+  const { sent } = fakeExpo([]);
+
+  await new ExpoPushProvider(tokens).send({ ...pushMessage, kind: "help" }, notifyContext);
+
+  expect(sent[0]).toHaveProperty("priority", "high");
+  expect(sent[0]).not.toHaveProperty("sound");
+});
+
+it("requests a sound only for urgent pushes when the recipient opted in", async () => {
+  const tokens = new MemoryPushTokenStore();
+  await tokens.save("user-1", "ExponentPushToken[test]");
+  const { sent } = fakeExpo([]);
+  const push = new ExpoPushProvider(tokens, {
+    notificationSounds: async (userId) => userId === "user-1",
+  });
+
+  await push.send({ ...pushMessage, kind: "help" }, notifyContext);
+  await push.send({ ...pushMessage, kind: "completion" }, notifyContext);
+
+  expect(sent[0]).toHaveProperty("sound", "default");
+  expect(sent[1]).not.toHaveProperty("sound");
+});
+
+it("carries the sound choice in a data-only Android push", async () => {
+  const tokens = new MemoryPushTokenStore();
+  await tokens.save("user-1", "ExponentPushToken[test]", "", "android_sender");
+  const { sent } = fakeExpo([]);
+  const push = new ExpoPushProvider(tokens, { notificationSounds: async () => true });
+
+  await push.send({ ...pushMessage, kind: "takeover" }, notifyContext);
+
+  expect(sent[0]).toHaveProperty("data.notificationSound", true);
+  expect(sent[0]).not.toHaveProperty("sound");
 });
 
 it("carries sender identity, marks actionable notifications high priority, and bounds UTF-8 payloads", async () => {

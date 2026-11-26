@@ -2,16 +2,20 @@ import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { McpSourcePreset } from "@rakazo/contracts";
+import type { ConnectionOwnerChoice } from "@rakazo/core";
 import { Text, TextInput, View } from "react-native";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
-import { iosAtLeast } from "../../lib/native/native-controls";
+import type { ScreenHeaderMenuProps } from "../../lib/navigation/screen-header";
+import { openExternalUrl } from "../../lib/platform/open-url";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
 import { MenuPicker } from "../ui/menu-picker";
+import { ConnectionOwnerPicker } from "./connection-owner-picker";
 import { createIntegrationsStyles } from "./integrations-styles";
 
 export type SourceAuth = "none" | "bearer" | "header" | "oauth";
 export type SourceKind = "mcp" | "api" | "graphql";
+export type SourceOwner = ConnectionOwnerChoice;
 export type AddCustomOption = {
   id: string;
   label: string;
@@ -19,33 +23,22 @@ export type AddCustomOption = {
   preset?: McpSourcePreset;
 };
 
-/** The Add custom button before Liquid Glass, which puts it in the header instead. */
-export function AddCustomMenu({
-  options,
-  onSelect,
-}: {
-  options: AddCustomOption[];
-  onSelect: (option: AddCustomOption | undefined) => void;
-}) {
+export function AddCustomMenu({ label, items, onSelect }: ScreenHeaderMenuProps) {
   const styles = useThemedStyles(createIntegrationsStyles);
   const scheme = useResolvedAppearance();
-  const { t } = useLingui();
-  if (iosAtLeast(26)) return null;
   return (
     <MenuView
       colorScheme={scheme}
-      title={t`Add custom`}
-      actions={options.map((option) => ({ id: option.id, title: option.label }))}
-      onPressAction={({ nativeEvent }) =>
-        onSelect(options.find((option) => option.id === nativeEvent.event))
-      }
+      title={label}
+      actions={items.map((item) => ({ id: item.id, title: item.label }))}
+      onPressAction={({ nativeEvent }) => onSelect(nativeEvent.event)}
     >
       {/* A plain view: on Android the menu opens from its own Pressable, which a
           nested Pressable would take the touch from. */}
       <View
         accessible
         accessibilityRole="button"
-        accessibilityLabel={t`Add custom`}
+        accessibilityLabel={label}
         style={styles.addCustom}
       >
         <NativeSymbol ios="plus" android="add" size={20} />
@@ -73,6 +66,9 @@ export function AddCustomForm({
   setAuthHeader,
   credential,
   setCredential,
+  organizationName,
+  owner,
+  setOwner,
   busy,
   onAdd,
   onClose,
@@ -94,6 +90,10 @@ export function AddCustomForm({
   setAuthHeader: (next: string) => void;
   credential: string;
   setCredential: (next: string) => void;
+  /** Set when the member may add this server for their organization too. */
+  organizationName: string | null;
+  owner: SourceOwner;
+  setOwner: (next: SourceOwner) => void;
   busy: boolean;
   onAdd: () => void;
   onClose: () => void;
@@ -137,13 +137,15 @@ export function AddCustomForm({
                   ? t`GraphQL endpoint`
                   : t`OpenAPI JSON`}
           </Text>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder={t`Display name`}
-            placeholderTextColor={native.tertiaryLabel}
-            style={styles.input}
-          />
+          {!sourcePreset?.featured ? (
+            <TextInput
+              value={name}
+              onChangeText={setName}
+              placeholder={t`Display name`}
+              placeholderTextColor={native.tertiaryLabel}
+              style={styles.input}
+            />
+          ) : null}
           {!sourcePreset?.url ? (
             <TextInput
               value={url}
@@ -160,6 +162,13 @@ export function AddCustomForm({
               }
               placeholderTextColor={native.tertiaryLabel}
               style={styles.input}
+            />
+          ) : null}
+          {organizationName ? (
+            <ConnectionOwnerPicker
+              organizationName={organizationName}
+              value={owner}
+              onChange={setOwner}
             />
           ) : null}
           {!sourcePreset ? (
@@ -195,15 +204,36 @@ export function AddCustomForm({
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
-              placeholder={sourceAuth === "header" ? t`API key` : t`Bearer token`}
+              placeholder={
+                sourcePreset?.credentialHelpUrl
+                  ? t`Personal access token`
+                  : sourceAuth === "header"
+                    ? t`API key`
+                    : t`Bearer token`
+              }
               placeholderTextColor={native.tertiaryLabel}
               style={styles.input}
+            />
+          ) : null}
+          {sourcePreset?.credentialHelpUrl ? (
+            <NativeActionButton
+              fill={false}
+              label={t`Create a personal access token`}
+              prominence="secondary"
+              onPress={() => {
+                const helpUrl = sourcePreset.credentialHelpUrl;
+                if (helpUrl) void openExternalUrl(helpUrl);
+              }}
             />
           ) : null}
           <View style={styles.accountActions}>
             <NativeActionButton
               busy={busy}
-              label={t`Verify and add`}
+              label={
+                sourcePreset?.featured && sourceAuth === "oauth"
+                  ? t`Save and sign in`
+                  : t`Verify and add`
+              }
               onPress={onAdd}
               prominence="secondary"
             />

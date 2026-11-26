@@ -252,7 +252,6 @@ export function ArtifactsPage() {
   return (
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground/90">
       <header className="app-drag flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3">
-        {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
         {desktopBridge() ? <WindowChrome /> : null}
         <div className="flex min-w-fit flex-1 items-center gap-1">
           <IconTooltip label={t`Back`}>
@@ -1047,7 +1046,7 @@ function PreviewPane({
               <div className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1.5 text-caption text-white">
                 <Lock size={12} strokeWidth={2} />
                 <span>
-                  <Trans>Isolated preview — no access to your account</Trans>
+                  <Trans>Isolated preview: no access to your account</Trans>
                 </span>
               </div>
             ) : null}
@@ -1099,7 +1098,7 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
     case "none":
       return (
         <div className="grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80">
-          <Trans>Preview isn't available for this file type — download it to view it.</Trans>
+          <Trans>Preview isn't available for this file type. Download it to view it.</Trans>
         </div>
       );
   }

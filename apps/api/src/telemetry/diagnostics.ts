@@ -11,8 +11,10 @@ export type DiagnosticsBot = { id: string; spaceId: string; userId: string; arch
 
 export type DiagnosticsServer = {
   id: string;
-  spaceId: string;
-  userId: string;
+  /** Both null for an organization's server. */
+  spaceId: string | null;
+  userId: string | null;
+  organizationId: string | null;
   transport: string;
   enabled: boolean;
   allSpaces: boolean;
@@ -169,8 +171,10 @@ function databaseLines(database: DiagnosticsInput["database"]): string[] {
 function assignmentProblems(assignment: DiagnosticsAssignment, bot: DiagnosticsBot): string[] {
   const { server } = assignment;
   const problems: string[] = [];
+  // A member can let any bot in the Space use their own server, so the bot's maker may differ.
   if (assignment.spaceId !== bot.spaceId) problems.push("space differs from bot");
-  if (assignment.userId !== bot.userId) problems.push("user differs from bot");
+  // An organization's server reaches its members' bots in every one of its Spaces.
+  if (server.organizationId) return problems;
   if (server.userId !== assignment.userId) problems.push("user differs from server");
   if (
     server.spaceId !== assignment.spaceId &&

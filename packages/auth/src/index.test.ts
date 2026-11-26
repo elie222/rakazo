@@ -22,6 +22,9 @@ describe("auth policy", () => {
       "/organization/list",
       "/organization/create-team",
       "/organization/some-future-route",
+      "/api-key/create",
+      "/api-key/list",
+      "/api-key/delete",
     ]) {
       expect(isBlockedAuthPath(path), path).toBe(true);
     }
@@ -123,6 +126,11 @@ describe("authRateLimitOptions", () => {
 
   it("stays off outside production so the test suite can sign in", () => {
     expect(authRateLimitOptions("test").enabled).toBe(false);
+  });
+
+  it("lets an operator override the NODE_ENV default", () => {
+    expect(authRateLimitOptions("development", "true").enabled).toBe(true);
+    expect(authRateLimitOptions("production", "false").enabled).toBe(false);
   });
 });
 

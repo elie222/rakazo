@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { Id } from "../ids.js";
+import { ByokTierSchema } from "./billing.js";
 
 export const AccessGrantInputSchema = z
   .object({
@@ -17,6 +18,7 @@ export const AccessGrantSchema = z.object({
   email: z.string(),
   creditCents: z.number().int(),
   freeMonths: z.number().int(),
+  byokTier: ByokTierSchema.optional(),
   createdBy: z.string().nullable(),
   status: z.enum(["pending", "applied", "revoked"]),
   createdAt: z.string(),

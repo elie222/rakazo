@@ -6,10 +6,10 @@ import {
   BUILTIN_TOOL_NAMES,
 } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
+import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { Button, OptionSelect, SectionHeading, Switch, Textarea, Toggle } from "@rakazo/ui-web";
 import { X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
-import { thinkingLevelLabel } from "../../../lib/models/model-catalog";
 import { ChatModelPicker } from "../chat/chat-model-picker";
 
 export function ComputerModePicker({
@@ -102,7 +102,6 @@ export function ModelRow({
   onModelChange,
   thinkingOptions,
   thinkingLevel,
-  defaultThinkingLevel,
   onThinkingLevelChange,
 }: {
   ids: string;
@@ -111,8 +110,8 @@ export function ModelRow({
   value: string;
   onModelChange: (key: string) => void;
   thinkingOptions: ThinkingLevel[];
-  thinkingLevel: string;
-  defaultThinkingLevel: ThinkingLevel;
+  /** The level in use, the model's default while none is saved. */
+  thinkingLevel: ThinkingLevel;
   onThinkingLevelChange: (level: string) => void;
 }) {
   const { t } = useLingui();
@@ -137,13 +136,10 @@ export function ModelRow({
             className="w-fit max-w-2/3"
             value={thinkingLevel}
             onValueChange={onThinkingLevelChange}
-            options={[
-              { value: "", label: t`Default (${thinkingLevelLabel(defaultThinkingLevel)})` },
-              ...thinkingOptions.map((level) => ({
-                value: level,
-                label: thinkingLevelLabel(level),
-              })),
-            ]}
+            options={thinkingOptions.map((level) => ({
+              value: level,
+              label: thinkingLevelLabel(level),
+            }))}
           />
         </label>
       ) : null}

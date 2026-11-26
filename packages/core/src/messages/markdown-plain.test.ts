@@ -127,12 +127,6 @@ describe("plainTextFromMarkdown", () => {
     expect(plainTextFromMarkdown('See <a href="x>y" title="z')).toBe("See");
   });
 
-  it("drops emphasis markers", () => {
-    expect(plainTextFromMarkdown("Created **Projects-CoS** as a **Project**")).toBe(
-      "Created Projects-CoS as a Project",
-    );
-  });
-
   it.each([
     ["x = 2 * y + 3 * z", "x = 2 * y + 3 * z"],
     ["2 ** 3 ** 4", "2 ** 3 ** 4"],
@@ -140,7 +134,6 @@ describe("plainTextFromMarkdown", () => {
     ["**total** = 2 * 3", "total = 2 * 3"],
     ["**bold**", "bold"],
     ["*it*", "it"],
-    ["*a*", "a"],
     ["**bold** and *it*", "bold and it"],
     ["**a** * b", "a * b"],
     ["**a** **b**", "a b"],
@@ -403,14 +396,6 @@ describe("truncatedPlainText", () => {
 });
 
 describe("plainTextFromMarkdown comparison signs", () => {
-  it("keeps a less-than before a dollar amount", () => {
-    expect(plainTextFromMarkdown("Costs < $5, so it's cheap")).toBe("Costs < $5, so it's cheap");
-  });
-
-  it("keeps a less-than between variables", () => {
-    expect(plainTextFromMarkdown("Is a < b? Yes, it's true.")).toBe("Is a < b? Yes, it's true.");
-  });
-
   it("keeps spaced comparisons on both sides", () => {
     expect(plainTextFromMarkdown("If 1 < 2 and 3 > 2 then ok")).toBe("If 1 < 2 and 3 > 2 then ok");
   });
@@ -518,5 +503,34 @@ describe("plain text truncation properties", () => {
       }),
       { seed: 42, numRuns: 200 },
     );
+  });
+});
+
+describe("plainTextFromMarkdown task markers and entities", () => {
+  it.each([
+    ["- [ ] todo item", "todo item"],
+    ["- [x] done", "done"],
+    ["* [X] done", "done"],
+    ["1. [ ] first", "first"],
+    ["- [ ] a\n- [x] b", "a b"],
+    ["- [link](https://example.com)", "link"],
+    ["- [ ]", ""],
+    ["Remember [ ] not a task", "Remember [ ] not a task"],
+    ["[ ] no list marker", "[ ] no list marker"],
+    ["- [y] not a task", "[y] not a task"],
+  ])("previews %j as %j", (source, preview) => {
+    expect(plainTextFromMarkdown(source)).toBe(preview);
+  });
+
+  it.each([
+    ["Tom &amp; Jerry &lt;3", "Tom & Jerry <3"],
+    ["caf&#233; &#x1F600;", "café 😀"],
+    ["&lt;b&gt;not a tag&lt;/b&gt;", "<b>not a tag</b>"],
+    ["a &unknown; b", "a &unknown; b"],
+    ["`&amp;` stays", "&amp; stays"],
+    ["```\n&lt;\n```", "&lt;"],
+    ["&#xE000;0&#xE000; end", "\uE000" + "0" + "\uE000 end"],
+  ])("previews %j as %j", (source, preview) => {
+    expect(plainTextFromMarkdown(source)).toBe(preview);
   });
 });

@@ -17,6 +17,7 @@ import type {
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
+  BillingInvoiceRefund,
   BillingPlanPayment,
   BillingPrice,
   BillingSubscriptionSnapshot,
@@ -351,6 +352,7 @@ export interface ManagedConnectorProvider
     currentRef: string | null | undefined,
     excludeIds?: string[],
     spaceId?: string,
+    organizationId?: string,
   ): Promise<string | undefined>;
   /** Invalidate an unfinished browser authorization by its request id. */
   cancelAuthorizationRequest?(requestId: string, context: AdapterContext): Promise<void>;
@@ -624,6 +626,16 @@ export interface BillingProvider {
    * Credits never count.
    */
   listPlanPayments?(customerId: string, since: Date): Promise<BillingPlanPayment[]>;
+  /**
+   * Inspects or refunds the card payment for a customer-owned paid invoice, named by its number
+   * or id; without one, the newest paid invoice. Refunds `amountMinor`, or the whole charge.
+   */
+  refundInvoice?(
+    customerId: string,
+    invoice: string | undefined,
+    confirm: boolean,
+    amountMinor?: number,
+  ): Promise<BillingInvoiceRefund | null>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ id: string; url: string }>;

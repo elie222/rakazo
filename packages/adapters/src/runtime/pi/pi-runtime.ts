@@ -61,6 +61,13 @@ import { fallbackSystemPrompt } from "../runtime.prompt.js";
 import { withoutThinkingFrom } from "../thinking-signatures.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import {
+  ANSWERED_ON_RESUME,
+  buildTurnCheckpoint,
+  isTurnEndingAfterToolBatch,
+  serializeCapturedTurnCheckpoint,
+  shouldRecordFinishedToolCall,
+} from "./pi-runtime-checkpoint.js";
+import {
   assistantText,
   messageHasToolCall,
   modelFailure,
@@ -94,6 +101,7 @@ import {
   sameModelTarget,
   thinkingLevelFor,
 } from "./pi-runtime-models.js";
+import { captureTurnTranscript } from "./pi-runtime-transcript.js";
 import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { conversationSessionId, reliableModelStream } from "./stream/pi-runtime-stream.js";
@@ -121,7 +129,6 @@ import { withPiTelemetry } from "./usage/pi-telemetry.js";
 import { observedPiStream } from "./usage/pi-usage.js";
 
 const MAX_REJECTED_REQUESTS = 5;
-const ANSWERED_ON_RESUME = new Set(["ask_user", "request_takeover"]);
 const running = new Map<string, { controller: AbortController; work: Promise<void> }>();
 // Some OpenAI-compatible models return EOS immediately after a tool result
 // instead of taking another assistant turn. A bounded internal follow-up keeps
@@ -337,6 +344,12 @@ export class PiAgentRuntime implements AgentRuntime {
             initialSteering.some((item) => item.images?.length && !item.imageFileFallback),
         );
         seenSteeringIds.push(...initialSteering.map((item) => item.id));
+        // The history messages this turn's transcript stands for: its prompt and its steering.
+        // A steering continuation's source is also one of its steering messages.
+        const turnMessageIds = new Set([
+          ...(request.sourceMessageId ? [request.sourceMessageId] : []),
+          ...initialSteering.map((item) => item.messageId),
+        ]);
         // A computer-mode checkpoint was written by the computer model; keep its thinking.
         const restored = request.turnCheckpoint
           ? restoreTurnCheckpoint(
@@ -344,6 +357,8 @@ export class PiAgentRuntime implements AgentRuntime {
               mode === "computer" && computer ? computer.model : model,
             )
           : undefined;
+        if (restored?.foundConnectorTools)
+          host.foundConnectorTools = new Map(restored.foundConnectorTools);
         const history =
           restored?.messages ??
           toHistory(
@@ -703,12 +718,23 @@ export class PiAgentRuntime implements AgentRuntime {
               }
               handBackFailed = true;
             }
+            // An external abort still lets the run fail; internal stops end the loop cleanly.
+            if (
+              !signal.aborted &&
+              isTurnEndingAfterToolBatch({
+                pausePending: host.pausePending,
+                terminatedReply,
+                toolCallBudgetExceeded: host.toolCallBudget.exceeded,
+              })
+            ) {
+              return { action: "end" };
+            }
             // Steered, so the output reaches the next model request like a tool result. A
             // follow-up waits until the model stops and then costs one model turn each.
             if (finishedShells)
               agent.steer({ role: "user", content: finishedShells, timestamp: Date.now() });
           },
-          prepareNextTurnWithContext: async (turn) => {
+          prepareNextTurnWithContext: async (turn, turnSignal) => {
             const update = computer
               ? {
                   context: {
@@ -727,14 +753,22 @@ export class PiAgentRuntime implements AgentRuntime {
                 }
               : undefined;
             if (!request.claimSteering) return update;
-            // The turn is ending at a terminating result that aborted the agent; no
-            // model request would answer a follow-up claimed now, and a completed run
-            // deletes its claimed steering. Leave the message queued for the next run.
-            if (terminatedReply && !host.pausePending) return update;
+            if (
+              turnSignal?.aborted ||
+              isTurnEndingAfterToolBatch({
+                pausePending: host.pausePending,
+                terminatedReply,
+                toolCallBudgetExceeded: host.toolCallBudget.exceeded,
+              })
+            )
+              return update;
             const steering = await request.claimSteering([...seenSteeringIds]);
             if (steering.length === 0) return update;
             seenSteeringIds.push(...steering.map((item) => item.id));
-            for (const item of steering) representedHistoryIds.add(item.messageId);
+            for (const item of steering) {
+              representedHistoryIds.add(item.messageId);
+              turnMessageIds.add(item.messageId);
+            }
             if (steering.some((item) => item.images?.length && !item.imageFileFallback))
               hasCurrentImages = true;
             const messages = steering.map((item): Message => {
@@ -777,76 +811,29 @@ export class PiAgentRuntime implements AgentRuntime {
         // Pi publishes parallel results into state only after the entire batch.
         // Retain completed siblings separately so a pause can include them now.
         const finishedCalls = new Map<string, Message>();
-        const turnCheckpointAt = (pendingToolCallId: string) => {
-          const messages = sentContext
-            ? [
-                ...sentContext.context.messages,
-                ...agent.state.messages.slice(sentContext.sourceLength),
-              ]
-            : [...agent.state.messages];
-          const assistant = messages.findLast((message) => message.role === "assistant");
-          const sequential =
-            restoringCalls ||
-            (assistant?.role === "assistant" &&
-              assistant.content.some(
-                (call) =>
-                  call.type === "toolCall" &&
-                  tools.find((tool) => tool.name === call.name)?.executionMode === "sequential",
-              ));
-          // A turn paused on a question or takeover gets its answer on resume without running
-          // the call again, so the count it resumes with already includes that call.
-          const answeredOnResume =
-            assistant?.role === "assistant" &&
-            assistant.content.some(
-              (call) =>
-                call.type === "toolCall" &&
-                call.id === pendingToolCallId &&
-                ANSWERED_ON_RESUME.has(call.name),
-            );
-          const toolCallCount = host.toolCallBudget.count + (answeredOnResume ? 1 : 0);
-          return {
-            version: 1 as const,
-            ...(computerMode
-              ? {
-                  computerMode: {
-                    ...computerMode,
-                    main: computerSelection(
-                      mode === "main" ? activeStreamTarget.config : mainTarget.config,
-                    ),
-                  },
-                }
-              : {}),
-            provider: activeStreamTarget.model.provider,
-            model: activeStreamTarget.model.id,
-            systemPrompt,
+        const turnCheckpointAt = (pendingToolCallId: string) =>
+          buildTurnCheckpoint({
+            sentContext,
+            stateMessages: agent.state.messages,
+            restoringCalls,
+            tools,
             pendingToolCallId,
-            ...(toolCallCount > 0 && { toolCallCount }),
-            executionMode: sequential ? ("sequential" as const) : ("parallel" as const),
-            messages: messages as Message[],
-            historyMessageIds: [...representedHistoryIds],
-          };
-        };
+            toolCallCount: host.toolCallBudget.count,
+            computerMode,
+            mainModelConfig: mode === "main" ? activeStreamTarget.config : mainTarget.config,
+            provider: activeStreamTarget.model.provider,
+            modelId: activeStreamTarget.model.id,
+            systemPrompt,
+            representedHistoryIds,
+            foundConnectorTools: host.foundConnectorTools,
+          });
         host.captureCheckpoint = async (toolCallId, executionId) => {
           if (!request.onCheckpoint) return;
           const checkpoint = turnCheckpointAt(toolCallId);
-          const { messages } = checkpoint;
-          await request.onCheckpoint(() => {
-            const unresolved = new Set(unresolvedTurnCheckpointCalls(messages));
-            const siblings = messages.flatMap((message) =>
-              message.role === "assistant"
-                ? message.content.flatMap((call) => {
-                    if (call.type !== "toolCall" || call.id === toolCallId || !unresolved.has(call))
-                      return [];
-                    const result = finishedCalls.get(call.id);
-                    return result ? [result] : [];
-                  })
-                : [],
-            );
-            return serializeTurnCheckpoint({
-              ...checkpoint,
-              messages: [...checkpoint.messages, ...siblings],
-            });
-          }, executionId);
+          await request.onCheckpoint(
+            () => serializeCapturedTurnCheckpoint(checkpoint, toolCallId, finishedCalls),
+            executionId,
+          );
         };
 
         const onAbort = () => {
@@ -863,6 +850,7 @@ export class PiAgentRuntime implements AgentRuntime {
         let currentMessageStreamed = "";
         let toolCalls = 0;
         let toolActivityShowing = false;
+        const runningToolSteps = new Map<string, string>();
         let silentToolContinuations = 0;
         // A reply cut off by a dropped connection continues in the same bubble: no turn break,
         // and a continuation that starts by repeating the end of the cut text loses that repeat.
@@ -886,11 +874,14 @@ export class PiAgentRuntime implements AgentRuntime {
         // Text streamed before this point is tool-turn narration. Only text after
         // it counts as the final reply, including when the completed message omits it.
         let streamedBeforePendingFinal = 0;
-        agent.subscribe(async (event) => {
+        agent.subscribe(async (event, turnSignal) => {
           if (event.type === "tool_execution_end" && isTerminatingReplyResult(event.result)) {
             terminatedReply = terminatingReplyText(event.result) ?? terminatedReply;
           }
-          if (event.type === "tool_execution_end" && !event.result.terminate) {
+          if (
+            event.type === "tool_execution_end" &&
+            shouldRecordFinishedToolCall(event, turnSignal)
+          ) {
             finishedCalls.set(event.toolCallId, {
               role: "toolResult",
               toolCallId: event.toolCallId,
@@ -900,6 +891,15 @@ export class PiAgentRuntime implements AgentRuntime {
               isError: event.isError,
               timestamp: Date.now(),
             });
+          }
+          if (event.type === "tool_execution_end" && runningToolSteps.has(event.toolCallId)) {
+            const shown = [...runningToolSteps.keys()].at(-1) === event.toolCallId;
+            runningToolSteps.delete(event.toolCallId);
+            if (shown && toolActivityShowing) {
+              const next = [...runningToolSteps.values()].at(-1) ?? "";
+              toolActivityShowing = Boolean(next);
+              queue.push({ type: "progress", text: next, activity: true });
+            }
           }
           if (event.type === "message_end") {
             stopThinking();
@@ -911,18 +911,19 @@ export class PiAgentRuntime implements AgentRuntime {
           if (event.type === "tool_execution_start") {
             stopThinking();
             finishedCalls.delete(event.toolCallId);
-            if (host.toolCallBudget.exceeded) return;
+            // Pi 1.6+ still emits start/end for trailing calls after abort so it can record
+            // "Operation aborted"; skip activity and counting for calls that will not execute.
+            if (turnSignal?.aborted || host.toolCallBudget.exceeded) return;
             toolCalls += 1;
+            const step = describeToolActivity(event.toolName, event.args, (name) =>
+              toolsByAgentName.get(name),
+            );
+            runningToolSteps.delete(event.toolCallId);
+            runningToolSteps.set(event.toolCallId, step);
             // Live activity feedback: without this the thread shows a bare
             // "working…" for the whole tool call with nothing actionable.
             toolActivityShowing = true;
-            queue.push({
-              type: "progress",
-              text: describeToolActivity(event.toolName, event.args, (name) =>
-                toolsByAgentName.get(name),
-              ),
-              activity: true,
-            });
+            queue.push({ type: "progress", text: step, activity: true });
           }
           if (event.type === "message_start" && event.message.role === "assistant") {
             host.modelResponses = (host.modelResponses ?? 0) + 1;
@@ -1167,6 +1168,8 @@ export class PiAgentRuntime implements AgentRuntime {
               if (host.pausePending || replayTerminated) break;
             }
             restoringCalls = false;
+            for (const id of request.resumeToolResult?.historyMessageIds ?? [])
+              representedHistoryIds.add(id);
             if (!host.pausePending && !replayTerminated) {
               const addedHistory = withoutSteeringMessages(request.history, initialSteering).filter(
                 (message) => message.id && !representedHistoryIds.has(message.id),
@@ -1349,6 +1352,25 @@ export class PiAgentRuntime implements AgentRuntime {
             streamed = request.emptyResponseText?.trim() || "No response. Try again.";
             queue.push({ type: "text", text: streamed });
           }
+        }
+        // A turn that started fresh and ended in the model's own reply is kept as it was sent.
+        // Only a turn with its person's message in history can stand in for it there.
+        if (
+          request.onTranscript &&
+          request.sourceMessageId &&
+          !restored &&
+          !budgetExceeded &&
+          !terminatedReply
+        ) {
+          const transcript = host.pausePending
+            ? undefined
+            : captureTurnTranscript(
+                sentContext?.context.messages,
+                terminalMessage,
+                [...turnMessageIds],
+                request.sourceMessageId,
+              );
+          if (transcript) request.onTranscript(transcript);
         }
         queue.push(streamed.trim() ? { type: "done", text: streamed } : { type: "done" });
       } catch (error) {

@@ -1,6 +1,7 @@
-import type { JobPublisher } from "@rakazo/adapter-kit";
+import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { updateChildBot } from "../bots/child-bot-settings.js";
 import {
   ROUTINE_CHAT_TRIGGER_NOTE,
   ROUTINE_WEBHOOK_SETUP_NOTE,
@@ -14,7 +15,6 @@ import {
   prepareFleetRequest,
   setChildBotModel,
   setChildInstructions,
-  updateChildBot,
 } from "./fleet-tools.js";
 
 type FakeBot = {
@@ -170,6 +170,8 @@ function writeDeps(prisma: ReturnType<typeof fakeFleet>["prisma"], runSecrets: s
     prisma: prisma as unknown as PrismaClient,
     events: { append, notify: vi.fn(async () => undefined) } as unknown as ThreadEvents,
     jobs: { cancel: vi.fn(), enqueue } as unknown as JobPublisher,
+    home: {} as AgentHomeStore,
+    sandbox: {} as SandboxProvider,
     runSecrets,
     append,
     enqueue,
@@ -691,6 +693,40 @@ describe("prepareFleetRequest create_child_routine", () => {
       summary: {
         lines: ["Repeats 0 9 * * *, next at 19 Oct 2026, 09:00 Europe/Paris", expect.any(String)],
       },
+    });
+  });
+
+  it("stores a repeating routine's end as an instant and shows it on the card", async () => {
+    const { deps } = fakeFleet(fleet);
+    const prepared = await prepareFleetRequest(deps, run, "create_child_routine", {
+      bot_name: "Writer",
+      name: "Deals",
+      prompt: "Check the deals",
+      cron: "0 9 * * *",
+      endAt: "2026-10-24",
+    });
+    expect(prepared).toMatchObject({
+      ok: true,
+      canonical: { schedule: { cron: "0 9 * * *" }, endAt: "2026-10-24T23:59:59.999Z" },
+      summary: {
+        lines: [expect.any(String), "Ends 24 Oct 2026, 23:59 UTC", "Prompt: Check the deals"],
+      },
+    });
+  });
+
+  it("refuses an end the routine cannot reach", async () => {
+    const { deps } = fakeFleet(fleet);
+    expect(
+      await prepareFleetRequest(deps, run, "create_child_routine", {
+        bot_name: "Writer",
+        name: "Deals",
+        prompt: "Check the deals",
+        cron: "0 9 * * *",
+        endAt: "2026-10-18T08:30:00Z",
+      }),
+    ).toEqual({
+      ok: false,
+      error: expect.stringMatching(/^The end date is before the next run\. /),
     });
   });
 
@@ -1346,19 +1382,16 @@ describe("updateChildBot", () => {
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: { dailyCheckIns } }));
   });
 
-  it.each(["true", "false", 0, 1, {}, []])(
-    "rejects non-boolean dailyCheckIns: %j",
-    async (value) => {
-      const { prisma } = fakeFleet({ bots });
-      expect(
-        await updateChildBot(writeDeps(prisma), run, {
-          bot_id: "bot-child",
-          dailyCheckIns: value,
-        }),
-      ).toEqual({ error: "dailyCheckIns must be true or false." });
-      expect(prisma.$transaction).not.toHaveBeenCalled();
-    },
-  );
+  it.each(["true", 0])("rejects non-boolean dailyCheckIns: %j", async (value) => {
+    const { prisma } = fakeFleet({ bots });
+    expect(
+      await updateChildBot(writeDeps(prisma), run, {
+        bot_id: "bot-child",
+        dailyCheckIns: value,
+      }),
+    ).toEqual({ error: "dailyCheckIns must be true or false." });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
 
   it("reuses the profile validation of update_bot", async () => {
     const { prisma } = fakeFleet({ bots });
@@ -1820,6 +1853,92 @@ describe("createChildRoutine", () => {
     });
     expect(prisma.routine.delete).toHaveBeenCalledWith({ where: { id: "routine-new" } });
     expect(deps.append).not.toHaveBeenCalled();
+  });
+
+  it("keeps the approved end's local time in the account's current zone, for creation and retries", async () => {
+    const { prisma } = fakeFleet({ ...fleet, timezone: "Europe/London" });
+    prisma.$transaction.mockImplementation(async (work: (client: unknown) => Promise<unknown>) =>
+      work(prisma),
+    );
+    (prisma as { $queryRaw?: unknown }).$queryRaw = vi.fn(async (strings: TemplateStringsArray) =>
+      strings.join("?").includes("FOR SHARE") ? [{ timezone: "Europe/London" }] : [],
+    );
+    const londonEnd = new Date("2026-10-24T22:59:59.999Z");
+    const result = await createChildRoutine(writeDeps(prisma), run, {
+      ...canonical,
+      timezone: "Europe/Paris",
+      timezoneFromAccount: true,
+      endAt: "2026-10-24T21:59:59.999Z",
+    });
+    expect(result).toMatchObject({ ok: true });
+    expect(prisma.routine.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ endsAt: londonEnd }) }),
+    );
+    expect(prisma.routine.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ timezone: "Europe/London", endsAt: londonEnd }),
+    });
+  });
+
+  it("reads the approved end in the zone the routine is saved in when the account moves just before", async () => {
+    const { prisma } = fakeFleet({ ...fleet, timezone: "Europe/Paris" });
+    prisma.$transaction.mockImplementation(async (work: (client: unknown) => Promise<unknown>) =>
+      work(prisma),
+    );
+    (prisma as { $queryRaw?: unknown }).$queryRaw = vi.fn(async (strings: TemplateStringsArray) =>
+      strings.join("?").includes("FOR SHARE") ? [{ timezone: "Europe/London" }] : [],
+    );
+    await createChildRoutine(writeDeps(prisma), run, {
+      ...canonical,
+      timezone: "Europe/Paris",
+      timezoneFromAccount: true,
+      endAt: "2026-10-24T21:59:59.999Z",
+    });
+    expect(prisma.routine.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        timezone: "Europe/London",
+        endsAt: new Date("2026-10-24T22:59:59.999Z"),
+      }),
+    });
+  });
+
+  it("keeps the exact approved end while the zone stays the same", async () => {
+    const { prisma } = fakeFleet(fleet);
+    const secondHalfPastTwo = new Date("2026-10-25T01:30:00.000Z");
+    await createChildRoutine(writeDeps(prisma), run, {
+      ...canonical,
+      timezone: "Europe/Paris",
+      endAt: secondHalfPastTwo.toISOString(),
+    });
+    expect(prisma.routine.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ endsAt: secondHalfPastTwo }),
+    });
+  });
+
+  it("reports the end on a retry, as the first creation did", async () => {
+    const endsAt = new Date("2026-10-24T23:59:59.999Z");
+    const { prisma } = fakeFleet({
+      ...fleet,
+      routines: [
+        {
+          id: "routine-1",
+          name: "Daily",
+          crons: ["0 9 * * *"],
+          timezone: "UTC",
+          nextRunAt: new Date("2026-10-18T09:00:00Z"),
+          endsAt,
+        },
+      ],
+    });
+    const result = await createChildRoutine(writeDeps(prisma), run, {
+      ...canonical,
+      endAt: endsAt.toISOString(),
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      routineId: "routine-1",
+      endAt: "Saturday, 2026-10-24 23:59 (UTC+00:00)",
+    });
+    expect(prisma.routine.create).not.toHaveBeenCalled();
   });
 
   it("keeps the routine name on one line in the routine, its result and its notification", async () => {

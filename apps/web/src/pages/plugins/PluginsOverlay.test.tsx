@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-import { act } from "react";
+import type { ReactElement, ReactNode } from "react";
+import { act, cloneElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { PluginsOverlay } from "./PluginsOverlay";
@@ -47,14 +49,12 @@ vi.mock("@rakazo/ui-web", async () => {
     ...[
       "Badge",
       "Dialog",
-      "DialogClose",
       "DialogContent",
       "DialogHeader",
       "DialogTitle",
       "Disclosure",
       "DropdownMenu",
       "DropdownMenuContent",
-      "DropdownMenuItem",
       "DropdownMenuSeparator",
       "DropdownMenuTrigger",
       "Field",
@@ -64,6 +64,16 @@ vi.mock("@rakazo/ui-web", async () => {
       "SectionHeading",
       "Spinner",
     ].map((name) => [name, container]),
+    [
+      "DropdownMenuItem",
+      ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) =>
+        createElement("div", { role: "menuitem", onClick }, children),
+    ],
+    [
+      "DialogClose",
+      ({ children, render }: { children?: ReactNode; render: ReactElement }) =>
+        cloneElement(render, undefined, children),
+    ],
     [
       "Button",
       ({
@@ -110,6 +120,9 @@ let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
 beforeEach(() => {
+  // The plugin catalog text both apps share is translated at run time, so it needs a locale.
+  i18n.load("en", {});
+  i18n.activate("en");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   api.connections.catalog.mockReset().mockResolvedValue([]);
@@ -170,17 +183,17 @@ async function type(input: HTMLInputElement, value: string) {
 
 function publicCatalogRow() {
   return Array.from(host.querySelectorAll("button")).find((button) =>
-    button.textContent?.startsWith("Search MCP servers for"),
+    button.textContent?.startsWith("Search public MCP directory for"),
   );
 }
 
 function publicSearches() {
-  return api.capabilities.catalogSearch.mock.calls.filter(
-    (call) => (call[0] as { usePublicCatalog?: boolean }).usePublicCatalog,
-  );
+  return api.capabilities.catalogSearch.mock.calls
+    .map(([input]) => input as { usePublicCatalog?: boolean })
+    .filter((input) => input.usePublicCatalog);
 }
 
-it("offers the public catalog for a search and sends nothing there until it is picked", async () => {
+it("shows public catalog results inline and sends nothing there until asked", async () => {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
@@ -198,16 +211,82 @@ it("offers the public catalog for a search and sends nothing there until it is p
   expect(publicCatalogRow()).toBeUndefined();
 
   await type(searchBox(), " canva ");
-  expect(host.textContent).toContain("No apps match your search.");
-  expect(host.querySelector('[role="status"]')?.textContent).toBe("No apps match your search.");
-  expect(publicCatalogRow()?.textContent).toBe("Search MCP servers for “canva”");
+  expect(host.textContent).toContain("No matches in your current catalogs.");
+  expect(publicCatalogRow()?.textContent).toBe("Search public MCP directory for “canva”");
   expect(publicSearches()).toHaveLength(0);
 
   await act(async () => publicCatalogRow()?.click());
   await vi.waitFor(() => expect(host.textContent).toContain("Canva"));
-  expect(host.textContent).toContain("Add MCP server");
-  expect(searchBox().value).toBe("canva");
-  expect(publicSearches()).toEqual([[{ query: "canva", usePublicCatalog: true }]]);
+  expect(host.textContent).not.toContain("No matches in your current catalogs.");
+  expect(searchBox().value).toBe(" canva ");
+  expect(publicSearches()).toEqual([{ query: "canva", usePublicCatalog: true }]);
+
+  const add = host.querySelector<HTMLButtonElement>('button[aria-label="Add Canva"]');
+  expect(add).not.toBeNull();
+  await act(async () => add?.click());
+  expect(host.textContent).toContain("Verify and add");
+  expect(host.textContent).not.toContain("Save and sign in");
+});
+
+it("shows progress while retrying a failed public directory search", async () => {
+  const retry = deferred<{ enabled: true; results: [] }>();
+  let searches = 0;
+  api.capabilities.catalogSearch.mockImplementation(async ({ usePublicCatalog }) => {
+    if (!usePublicCatalog) return { enabled: false, results: [] };
+    if (++searches === 1) throw new Error("Lookup failed");
+    return retry.promise;
+  });
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  await type(searchBox(), "tracker");
+  await act(async () => publicCatalogRow()?.click());
+  await vi.waitFor(() => expect(host.textContent).toContain("Could not load MCP servers."));
+
+  await act(async () => publicCatalogRow()?.click());
+  await act(flush);
+  const searching = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Searching…",
+  );
+  expect(searching?.disabled).toBe(true);
+  expect(host.textContent).not.toContain("Could not load MCP servers.");
+
+  await act(async () => retry.resolve({ enabled: true, results: [] }));
+  await vi.waitFor(() => expect(host.textContent).toContain("No apps match your search."));
+});
+
+it("opens Manage for an already-added direct MCP source", async () => {
+  const managedCatalog = deferred<[]>();
+  api.connections.catalog.mockReturnValue(managedCatalog.promise);
+  const url = "https://mcp.tracker.example.test/mcp";
+  api.capabilities.sourcePresets.mockResolvedValue([
+    { id: "tracker", name: "Tracker", url, featured: true },
+  ]);
+  api.capabilities.list.mockResolvedValue([
+    { id: "tracker-source", kind: "mcp", source: url, name: "Tracker" },
+  ]);
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await act(flush);
+  expect(api.capabilities.sourcePresets).toHaveBeenCalled();
+  expect(host.querySelector('button[aria-label="Add Tracker"]')).toBeNull();
+
+  await act(async () => managedCatalog.resolve([]));
+  const added = () => host.querySelector<HTMLButtonElement>('button[aria-label="Added: Tracker"]');
+  await vi.waitFor(() => expect(added()).not.toBeNull());
+  await act(async () => added()?.click());
+  expect(host.querySelector('[data-testid="integrations-source-form"]')).toBeNull();
+  expect(host.textContent).toContain("Remove");
 });
 
 it("keeps complete Unicode initials in the connected-app marks", async () => {
@@ -354,4 +433,40 @@ it("leads from an app that is also a chat app here to messaging, and says nothin
   ]);
   await act(async () => hints[0]!.querySelector("button")!.click());
   expect(onOpenMessaging).toHaveBeenCalledOnce();
+});
+
+it("keeps Close outside the wrapping action group so narrow screens still reach it", async () => {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} onOpenTemplates={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  const close = host.querySelector('button[aria-label="Close integrations"]');
+  expect(close).not.toBeNull();
+  const templates = Array.from(host.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes("Templates"),
+  )!;
+  expect(templates.parentElement!.contains(close!)).toBe(false);
+  expect(close!.compareDocumentPosition(templates) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("leaves no empty action row above a form that has no header actions", async () => {
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <PluginsOverlay onClose={() => {}} />
+      </QueryClientProvider>,
+    ),
+  );
+  await vi.waitFor(() => expect(searchBox().disabled).toBe(false));
+  const github = [...host.querySelectorAll('[role="menuitem"]')].find(
+    (item) => item.textContent === "From GitHub",
+  )!;
+  await act(async () => (github as HTMLElement).click());
+  const close = host.querySelector('button[aria-label="Close integrations"]')!;
+  expect(close.parentElement!.querySelector(":scope > div:empty")).toBeNull();
+  expect(host.querySelector('button[aria-label="Add custom"]')).toBeNull();
 });

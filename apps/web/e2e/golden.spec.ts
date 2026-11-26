@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { CONNECTION_LABEL_MAX_LENGTH } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import {
   activeBotId,
   captureScreenshot,
@@ -192,11 +193,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(detail.getByLabel("Account label").nth(1)).toHaveValue(accountName);
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
-  await page
-    .getByTestId("connection-tools")
-    .getByText(/tools?$/)
-    .click();
-  await expect(detail.getByText("Send email", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Send email", { exact: true })).toBeHidden();
+  await detail.getByRole("button", { name: "Other actions", exact: true }).click();
+  const permission = detail.getByRole("combobox", { name: "Send email", exact: true });
+  await expect(permission).toHaveText("Default");
+  await permission.click();
+  await page.getByRole("option", { name: "Block", exact: true }).click();
+  await expect(permission).toHaveText("Block");
   await captureScreenshot(page, testInfo, "11a3-plugin-tools");
 
   await page.getByRole("button", { name: "Close integrations" }).click();
@@ -211,6 +214,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
 
   await detailAgain.getByRole("button", { name: "Remove", exact: true }).last().click();
   await expect(detailAgain.getByLabel("Account label")).toHaveCount(1);
+  await detailAgain.getByRole("button", { name: "Other actions", exact: true }).click();
+  const reopenedPermission = detailAgain.getByRole("combobox", { name: "Send email", exact: true });
+  await expect(reopenedPermission).toHaveText("Block");
+  await reopenedPermission.click();
+  await page.getByRole("option", { name: "Default", exact: true }).click();
+  await expect(reopenedPermission).toHaveText("Default");
+
   await detailAgain.getByRole("button", { name: "Uninstall", exact: true }).click();
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   const gmailRowEmpty = page
@@ -228,14 +238,46 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   const popup = await connectPopup;
   await popup.close();
   await expect(linearRow.getByRole("button", { name: "Added", exact: true })).toBeVisible();
-  await linearRow.getByRole("button", { name: "Added", exact: true }).click();
+  // This is Linear's first detail open, so a cached successful read cannot bypass the mock.
+  const toolsRoute = "**/rpc/connections/tools";
+  const toolsResponse = deferred<void>();
+  await page.route(toolsRoute, async (route) => {
+    if (route.request().postDataJSON()?.json?.provider !== "linear") {
+      await route.fallback();
+      return;
+    }
+    await toolsResponse.promise;
+    await route.fulfill({
+      status: 500,
+      json: {
+        json: {
+          defined: false,
+          code: "INTERNAL_SERVER_ERROR",
+          status: 500,
+          message: "Internal server error",
+        },
+      },
+    });
+  });
   const linearDetail = page.getByTestId("connection-detail");
-  await expect(linearDetail).toBeVisible();
+  try {
+    await linearRow.getByRole("button", { name: "Added", exact: true }).click();
+    await expect(
+      linearDetail.getByRole("status", { name: "Loading tool permissions…" }),
+    ).toBeVisible();
+    await captureScreenshot(page, testInfo, "11b2-plugin-tools-loading");
+  } finally {
+    toolsResponse.resolve();
+  }
+  await expect(linearDetail.getByRole("alert")).toHaveText("Could not load permissions");
+  await expect(linearDetail.getByTestId("connection-tools")).toBeHidden();
+  await captureScreenshot(page, testInfo, "11b3-plugin-tools-unavailable");
+  await page.unroute(toolsRoute);
   await linearDetail.getByRole("button", { name: "Uninstall", exact: true }).click();
   await expect(page.getByTestId("connection-detail")).toHaveCount(0);
   await expect(linearRow.getByRole("button", { name: "Add Linear", exact: true })).toBeVisible();
 
-  // Custom sources live behind one menu: GitHub, then MCP → OpenAPI → GraphQL → Executor.
+  // The Add menu lists custom source kinds before the direct MCP presets.
   await page.getByRole("button", { name: "Add custom", exact: true }).click();
   const addItems = page.getByRole("menuitem");
   await expect(addItems).toHaveText([
@@ -243,6 +285,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     "MCP server",
     "OpenAPI",
     "GraphQL",
+    "GitHub",
+    "Linear",
+    "Notion",
     "Executor",
     "Browse MCP servers",
     "Search by domain",
@@ -265,6 +310,9 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await feed.getByRole("textbox", { name: "Integration domain" }).fill("github.com");
   await feed.getByRole("button", { name: "Search", exact: true }).click();
   await expect(feed.getByText("GitHub", { exact: true })).toBeVisible();
+  // The failure and empty-answer live regions stay mounted, and stay silent while results show.
+  await expect(feed.getByRole("alert")).toBeEmpty();
+  await expect(feed.getByRole("status")).toBeEmpty();
   await captureScreenshot(page, testInfo, "11c-catalog-feed");
 
   await feed.getByRole("button", { name: "MCP Add", exact: true }).click();
@@ -365,9 +413,12 @@ test("sign-in, spawn, and stop work in the shell", async ({ page }, testInfo) =>
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("requestfailed", (request) => {
-    // Leaving a page closes the live streams it held open.
+    // Leaving a page closes its live streams. A live signal replaces any in-flight account read.
+    const pathname = new URL(request.url()).pathname;
     if (
-      request.url().includes("/rpc/notifications/subscribe") &&
+      (pathname === "/rpc/notifications/subscribe" ||
+        pathname === "/rpc/notifications/subscribeCalls" ||
+        pathname === "/rpc/me") &&
       request.failure()?.errorText === "net::ERR_ABORTED"
     )
       return;

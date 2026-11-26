@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "license": "Apache-2.0",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -146,7 +147,7 @@
     }
   },
   "scripts": {
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. packages/core/src"
   },
   "dependencies": {
@@ -164,6 +165,7 @@
     "remark-gfm": "4.0.1",
     "remark-parse": "11.0.0",
     "tldts": "7.4.19",
+    "unicode-segmenter": "0.17.1",
     "unified": "11.0.5",
     "yaml": "2.9.1"
   },

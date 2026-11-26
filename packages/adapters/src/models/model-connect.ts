@@ -27,21 +27,29 @@ import {
 } from "./endpoints/cloudflare-ai-gateway.js";
 import { dataRetentionForConnect } from "./endpoints/data-retention.js";
 import { vertexRoutingForConnect } from "./endpoints/google-vertex-routing.js";
+import type { ListedModelDetails } from "./endpoints/listed-model-details.js";
 import {
   compatibleEndpointPreset,
   normalizeOpenAiCompatibleBaseUrl,
 } from "./endpoints/openai-compatible-url.js";
+import { modelProviderDefinition } from "./model-provider-registry.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { parseModelSecret, serializeModelSecret } from "./model-secret.js";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
 import { connectionModelSettings } from "./model-settings.js";
-import { modelIdSupportsImages, updateModelImageCapabilities } from "./model-vision.js";
+import {
+  catalogKnowsModel,
+  modelIdSupportsImages,
+  updateModelImageCapabilities,
+} from "./model-vision.js";
 
 export type BuildModelConnectOptions = {
   /** Skip writing visionModelIds when prior plaintext was unavailable during key replacement. */
   omitVisionModelIds?: boolean;
   /** Private and loopback endpoints require explicit operator configuration. */
   allowPrivateEndpoint?: boolean;
+  /** What the server's model list says now; left out to keep what it said before. */
+  listedModels?: Record<string, ListedModelDetails>;
 };
 
 /** Reuse saved probe headers only for the endpoint they were saved for. */
@@ -166,6 +174,10 @@ export function buildModelConnectPlaintext(
           ? enabledModelIds.filter((id) => id !== prepared.modelId)
           : enabledModelIds,
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
+      ...listedEnabledModels(
+        options?.listedModels ?? compatiblePrevious?.listedModels,
+        enabledModelIds,
+      ),
       // Settings follow the models the connection still serves.
       ...keptCompatibleModels(
         previous?.kind === "openai_compatible" ? previous.models : undefined,
@@ -303,6 +315,26 @@ function connectMaxTokens(
   return previous;
 }
 
+function listedEnabledModels(
+  listed: Record<string, ListedModelDetails> | undefined,
+  enabledModelIds: readonly string[],
+): { listedModels?: Record<string, ListedModelDetails> } {
+  const kept = enabledModelIds.flatMap((id) => (listed?.[id] ? [[id, listed[id]] as const] : []));
+  return kept.length > 0 ? { listedModels: Object.fromEntries(kept) } : {};
+}
+
+/** What each compatible model runs with, for the apps to show where its own settings are empty. */
+function compatibleModelDefaultsDto(
+  secret: Extract<StoredModelSecret, { kind: "openai_compatible" }>,
+  row: { provider: string; defaultModel?: string | null; supportsImages?: boolean },
+): { modelDefaults?: Record<string, ModelSettings> } {
+  const entries = enabledOpenAiCompatibleModelIds(secret, row.defaultModel)
+    .filter((id) => !catalogKnowsModel(row.provider, id))
+    .map((id) => [id, connectionModelSettings(secret, row.provider, id, row)] as const)
+    .filter(([, defaults]) => Object.keys(defaults).length > 0);
+  return entries.length > 0 ? { modelDefaults: Object.fromEntries(entries) } : {};
+}
+
 function endpointName(baseUrl: string): { endpointName?: string } {
   const preset = compatibleEndpointPreset(baseUrl);
   return preset ? { endpointName: preset.name } : {};
@@ -344,6 +376,9 @@ export function modelCredentialDto(
     id: row.id,
     provider: canonicalPiProviderId(row.provider),
     label: row.label,
+    ...(modelProviderDefinition(row.provider)?.preserveModelOrder
+      ? { preserveModelOrder: true }
+      : {}),
     hasKey: storedModelSecretHasApiKey(plaintext),
     isDefault: row.isDefault ?? false,
     ...(row.defaultModel ? { modelId: row.defaultModel } : {}),
@@ -410,6 +445,7 @@ export function modelCredentialDto(
         operatorVisionModels.has(id),
     ),
     ...(parsed.models ? { modelSettings: parsed.models } : {}),
+    ...compatibleModelDefaultsDto(parsed, row),
     thinkingLevels: compatibleModelThinkingLevels(parsed, row.defaultModel ?? "custom", row),
     modelId: row.defaultModel ?? undefined,
   };

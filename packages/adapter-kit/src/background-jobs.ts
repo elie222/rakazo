@@ -26,6 +26,7 @@ const payloadSchemas = {
   "routine.retry": z.object({ runId: z.string().min(1) }),
   "computer.update": z.object({ updateId: z.string().min(1) }),
   "computer.sleep": z.object({ computerId: z.string().min(1) }),
+  "task.callback": z.object({ taskId: z.string().min(1) }),
   "computer.control-expire": z.object({
     computerId: z.string().min(1),
     leaseId: z.string().min(1),
@@ -95,6 +96,7 @@ const payloadSchemas = {
       "secret_tables",
       "messaging_installation",
       "deployment_computer_provider",
+      "deployment_model",
       "purchase_request",
       "purchase_card",
       "purchase_token",
@@ -109,6 +111,14 @@ const payloadSchemas = {
     ref: z.string().min(1),
   }),
   "connection.cleanup": z.object({
+    spaceId: z.string().min(1),
+    userId: z.string().min(1),
+    connectorId: z.string().min(1),
+    provider: z.string().min(1),
+    ref: z.string().min(1).optional(),
+  }),
+  "connection.organization-cleanup": z.object({
+    organizationId: z.string().min(1),
     spaceId: z.string().min(1),
     userId: z.string().min(1),
     connectorId: z.string().min(1),
@@ -197,6 +207,29 @@ export class RetryJobLaterError extends Error {
   ) {
     super(`Retry no sooner than ${delayMs}ms`, options);
   }
+}
+
+/** Failed deliveries back off between these attempts; the task is rechecked by a new job. */
+export const TASK_CALLBACK_MAX_ATTEMPTS = 8;
+
+/**
+ * A task's callback check. A prompt replaces the pending prompt; the slow recheck has its own key,
+ * so scheduling it never pushes back a prompt that is due now.
+ */
+export function taskCallbackJob(
+  taskId: string,
+  availableAt: Date,
+  kind: "prompt" | "recheck" = "prompt",
+): BackgroundJob {
+  return {
+    name: "task.callback",
+    payload: { taskId },
+    availableAt,
+    replaceKey: `task.callback:${taskId}${kind === "recheck" ? ":recheck" : ""}`,
+    // One task's checks run one at a time, so a slower one never posts an older state last.
+    queueName: `task.callback:${taskId}`,
+    maxAttempts: TASK_CALLBACK_MAX_ATTEMPTS,
+  };
 }
 
 export function runJobKey(runId: string): string {
@@ -439,9 +472,13 @@ export function memoryPurgeHistoryJob(
   };
 }
 
-export function connectionCleanupJobKey(
-  payload: BackgroundJobPayloads["connection.cleanup"],
-): string {
+type ConnectionCleanupPayload = BackgroundJobPayloads["connection.cleanup"] & {
+  organizationId?: string;
+};
+
+export function connectionCleanupJobKey(payload: ConnectionCleanupPayload): string {
+  if (payload.organizationId)
+    return `connection.organization-cleanup:${JSON.stringify([payload.organizationId, payload.connectorId, payload.provider, payload.ref ?? null])}`;
   return `connection.cleanup:${JSON.stringify([payload.spaceId, payload.userId, payload.connectorId, payload.provider, payload.ref ?? null])}`;
 }
 
@@ -454,16 +491,21 @@ export const CONNECTION_CLEANUP_MAX_ATTEMPTS = 125;
 
 /** Without `availableAt` it runs now, which is how a failed direct attempt hands over. */
 export function connectionCleanupJob(
-  payload: BackgroundJobPayloads["connection.cleanup"],
+  payload: ConnectionCleanupPayload,
   availableAt?: Date,
 ): BackgroundJob {
-  return {
-    name: "connection.cleanup",
-    payload,
+  const options = {
     ...(availableAt ? { availableAt } : {}),
     replaceKey: connectionCleanupJobKey(payload),
     maxAttempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
   };
+  return payload.organizationId
+    ? {
+        ...options,
+        name: "connection.organization-cleanup",
+        payload: { ...payload, organizationId: payload.organizationId },
+      }
+    : { ...options, name: "connection.cleanup", payload };
 }
 
 export function machineCleanupJobKey(provider: string, machineId: string): string {

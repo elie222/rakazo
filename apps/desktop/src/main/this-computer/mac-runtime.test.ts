@@ -8,6 +8,7 @@ import type { PinnedDownload, ResolveRuntimeDeps } from "./mac-runtime.js";
 import {
   DownloadError,
   downloadVerified,
+  fetchServerBundle,
   installContainerRuntime,
   installServerBundle,
   nativeStackEligible,
@@ -90,26 +91,37 @@ describe("versionAtLeast", () => {
     expect(versionAtLeast(undefined, "1.7.0")).toBe(false);
     expect(versionAtLeast("unknown", "1.7.0")).toBe(false);
   });
+
+  it.each([
+    ["1.7.0-rc.1", false],
+    ["1.7.0-rc.1+build.7", false],
+    ["1.7.0+build.7", true],
+    ["1.7.1-rc.1", true],
+    ["1.7", true],
+  ])("compares %s against a stable minimum", (version, expected) => {
+    expect(versionAtLeast(version, "1.7.0")).toBe(expected);
+  });
 });
 
 describe("downloadVerified", () => {
   const body = new TextEncoder().encode("pinned contents");
 
   it("moves a matching download into place and reports progress", async () => {
-    const progress: number[] = [];
+    const progress: [number, number][] = [];
     const destination = path.join(dir, "file.bin");
     await downloadVerified(
       {
         fetch: bytesFetch(body),
         signal: new AbortController().signal,
-        onBytes: (_, bytes) => progress.push(bytes),
+        onBytes: (_, bytes, total) => progress.push([bytes, total]),
       },
       "file",
       pinnedFor(body),
       destination,
     );
     expect(await readFile(destination, "utf8")).toBe("pinned contents");
-    expect(progress.at(-1)).toBe(body.length);
+    expect(progress[0]).toEqual([0, body.length]);
+    expect(progress.at(-1)).toEqual([body.length, body.length]);
   });
 
   it.each([
@@ -209,6 +221,22 @@ describe("installers", () => {
     ).resolves.toMatchObject({ dir: server });
   });
 
+  it("unpacks again a version fetched ahead whose hash the app's own pin does not match", async () => {
+    const body = new TextEncoder().encode("signed bundle");
+    await mkdir(path.join(dir, "server-1.1.0"));
+    await writeFile(path.join(dir, "server-1.1.0", ".complete"), "c".repeat(64));
+    const calls: string[][] = [];
+    const run: RunDocker = async (binary, args) => {
+      calls.push([binary, ...args]);
+      return fail();
+    };
+    const { deps } = runtimeDeps(run, { fetch: bytesFetch(body) });
+    await expect(
+      installServerBundle(deps, { version: "1.1.0", download: pinnedFor(body) }),
+    ).rejects.toThrow();
+    expect(calls.map((call) => call.slice(0, 2))).toEqual([["/usr/bin/tar", "-xJf"]]);
+  });
+
   it("accepts only the publisher's notarized signature", () => {
     expect(verifyRuntimeSignature(SIGNED)).toBe(true);
     expect(
@@ -279,45 +307,51 @@ describe("resolveContainerRuntime", () => {
     expect(fake.calls.some((call) => call.includes("start") || call.includes("stop"))).toBe(false);
   });
 
-  it("starts the person's own install with its own defaults when nothing runs", async () => {
-    const fake = fakeRuntime({ userVersion: "1.7.0" });
-    const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
-    await expect(resolveContainerRuntime(deps, async () => ourCli())).resolves.toEqual({
-      cli: USER_CONTAINER_CLI,
-      ours: false,
-    });
-    expect(fake.calls.at(-1)).toEqual([
-      USER_CONTAINER_CLI,
-      "system",
-      "start",
-      "--enable-kernel-install",
-      "--timeout",
-      "120",
-    ]);
-  });
+  it.each(["1.7.0", "1.7.0+build.7"])(
+    "starts the person's own install (%s) with its own defaults when nothing runs",
+    async (userVersion) => {
+      const fake = fakeRuntime({ userVersion });
+      const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
+      await expect(resolveContainerRuntime(deps, async () => ourCli())).resolves.toEqual({
+        cli: USER_CONTAINER_CLI,
+        ours: false,
+      });
+      expect(fake.calls.at(-1)).toEqual([
+        USER_CONTAINER_CLI,
+        "system",
+        "start",
+        "--enable-kernel-install",
+        "--timeout",
+        "120",
+      ]);
+    },
+  );
 
-  it("ignores an install that is too old and starts our own copy in the app's folders", async () => {
-    const fake = fakeRuntime({ userVersion: "1.6.0" });
-    const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
-    await expect(resolveContainerRuntime(deps, async () => ourCli())).resolves.toEqual({
-      cli: ourCli(),
-      ours: true,
-    });
-    expect(fake.calls.at(-1)).toEqual([
-      ourCli(),
-      "system",
-      "start",
-      "--enable-kernel-install",
-      "--timeout",
-      "120",
-      "--install-root",
-      path.join(dir, "container-1.7.1"),
-      "--app-root",
-      path.join(dir, "vm"),
-      "--log-root",
-      path.join(dir, "vm-logs"),
-    ]);
-  });
+  it.each(["1.6.0", "1.7.0-rc.1", "1.7.0-rc.1+build.7"])(
+    "falls back from user runtime %s to our stable copy in the app's folders",
+    async (userVersion) => {
+      const fake = fakeRuntime({ userVersion });
+      const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
+      await expect(resolveContainerRuntime(deps, async () => ourCli())).resolves.toEqual({
+        cli: ourCli(),
+        ours: true,
+      });
+      expect(fake.calls.at(-1)).toEqual([
+        ourCli(),
+        "system",
+        "start",
+        "--enable-kernel-install",
+        "--timeout",
+        "120",
+        "--install-root",
+        path.join(dir, "container-1.7.1"),
+        "--app-root",
+        path.join(dir, "vm"),
+        "--log-root",
+        path.join(dir, "vm-logs"),
+      ]);
+    },
+  );
 
   it("keeps using our running copy while the person has none", async () => {
     const root = path.join(dir, "container-1.7.1");
@@ -416,20 +450,25 @@ describe("resolveContainerRuntime", () => {
     expect(fake.calls.some((call) => call.includes("stop") || call.includes("start"))).toBe(false);
   });
 
-  it("refuses to start beside an outdated system it did not start", async () => {
-    const fake = fakeRuntime({
-      running: { root: "/opt/old", version: "1.6.2" },
-      launchdRoot: "/opt/old",
-      userVersion: "1.7.1",
-    });
-    const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
-    await expect(
-      resolveContainerRuntime(deps, async () => {
-        throw new Error("must not download");
-      }),
-    ).rejects.toBeInstanceOf(RuntimeTooOldError);
-    expect(fake.calls.some((call) => call.includes("stop") || call.includes("start"))).toBe(false);
-  });
+  it.each(["1.6.2", "1.7.0-rc.1"])(
+    "refuses to start beside another system running %s",
+    async (version) => {
+      const fake = fakeRuntime({
+        running: { root: "/opt/old", version },
+        launchdRoot: "/opt/old",
+        userVersion: "1.7.1",
+      });
+      const { deps } = runtimeDeps(fake.run, { exists: fake.exists });
+      await expect(
+        resolveContainerRuntime(deps, async () => {
+          throw new Error("must not download");
+        }),
+      ).rejects.toBeInstanceOf(RuntimeTooOldError);
+      expect(fake.calls.some((call) => call.includes("stop") || call.includes("start"))).toBe(
+        false,
+      );
+    },
+  );
 
   it("replaces an outdated copy of its own", async () => {
     const root = path.join(dir, "container-1.7.1");
@@ -488,6 +527,42 @@ describe("readServerBundle", () => {
     });
     expect(local?.file).toBe(archive);
     expect(local?.version).toMatch(/^local-1-\d+$/);
+  });
+});
+
+describe("fetchServerBundle", () => {
+  const current = {
+    version: "1.0.0",
+    download: pinnedFor(
+      new Uint8Array(),
+      "https://github.com/o/r/releases/download/v1.0.0/rakazo-server-darwin-arm64-1.0.0.tar.xz",
+    ),
+  };
+  const descriptor = (version: string) =>
+    JSON.stringify({
+      url: "https://example.test/b.tar.xz",
+      sha256: "b".repeat(64),
+      size: 1,
+      version,
+    });
+
+  it("reads the descriptor the next release publishes beside its bundle", async () => {
+    const urls: string[] = [];
+    const fetch = async (url: string) => {
+      urls.push(url);
+      return new Response(descriptor("1.1.0"));
+    };
+    const signal = new AbortController().signal;
+    await expect(fetchServerBundle({ fetch, signal }, current, "1.1.0")).resolves.toMatchObject({
+      version: "1.1.0",
+    });
+    expect(urls).toEqual(["https://github.com/o/r/releases/download/v1.1.0/server-bundle.json"]);
+  });
+
+  it("refuses a descriptor for another version", async () => {
+    const fetch = async () => new Response(descriptor("1.2.0"));
+    const signal = new AbortController().signal;
+    await expect(fetchServerBundle({ fetch, signal }, current, "1.1.0")).resolves.toBeNull();
   });
 });
 

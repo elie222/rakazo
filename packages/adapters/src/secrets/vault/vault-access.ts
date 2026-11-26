@@ -2,6 +2,7 @@ import type { SettingsScope, VaultPolicy } from "@rakazo/contracts";
 import {
   BLOCKED_ITEM_ANSWER,
   BotSecretAuth,
+  FULL_VAULT_ANSWER,
   otherSiteOrigin,
   UNCHOSEN_ITEM_ANSWER,
 } from "@rakazo/contracts";
@@ -48,7 +49,7 @@ export class VaultItemRefusedError extends ClientError {
 /** The vault already holds as many items as it may. */
 export class VaultFullError extends VaultItemRefusedError {
   constructor() {
-    super("Credential limit reached");
+    super(FULL_VAULT_ANSWER);
     this.name = "VaultFullError";
   }
 }

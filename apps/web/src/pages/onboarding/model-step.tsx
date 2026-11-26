@@ -54,7 +54,6 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
     needsProject,
     needsRouting,
     notice,
-    oauth,
     provider,
     saveModel,
     selected,
@@ -203,9 +202,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
         </p>
       ) : null}
       {error ? <p className="mt-3 text-body text-destructive">{error}</p> : null}
-      {/* Continue only does something once there is a key to save or credits to buy. */}
-      {oauth ||
-      (billingEnabled && (!connectWay || (connectWay === "subscription" && !acceptsKey))) ? null : (
+      {!billingEnabled || connectWay === "credits" || connectWay === "key" ? (
         <Button
           className="mt-6"
           disabled={!credits && !canSaveModel}
@@ -213,7 +210,7 @@ export function ModelStep({ model, fieldId }: { model: OnboardingModel; fieldId:
         >
           <Trans>Continue</Trans>
         </Button>
-      )}
+      ) : null}
     </div>
   );
 }

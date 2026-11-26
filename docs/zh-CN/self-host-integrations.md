@@ -8,7 +8,7 @@
 
 内置 `web_search` 和 `web_fetch` 默认使用无密钥 HTTP 搜索（DuckDuckGo HTML）和本地 Readability 提取。要选择 [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)，在 `.env` 中设置 `WEB_PROVIDER=parallel` 并重启 API 和 worker。相同的机器人工具会通过 HTTPS MCP 访问 `https://search.parallel.ai/mcp`，返回搜索摘录和提取后的页面 Markdown。无账号或 API 密钥时使用 Fast mode。
 
-该选项会把搜索查询和请求的页面 URL 发送给 Parallel，由其服务器抓取页面。会话统计使用以 `ENCRYPTION_KEY`（API 和 worker 共享）为密钥的内部 ID HMAC；密钥不同的部署会发送不同的会话 ID。轮换该密钥会重置会话 ID；仅开发环境使用的加密密钥回退同样适用于这里。匿名访问有服务限制；限流和提供商错误会返回给机器人，不会切换提供商。按机器人禁用的网页工具保持禁用。设置 `WEB_PROVIDER=keyless-http` 或删除该配置即可回到默认。
+该选项会把搜索查询和请求的页面 URL 发送给 Parallel，由其服务器抓取页面。会话统计使用以 `ENCRYPTION_KEY`（API 和 worker 共享）为密钥的内部 ID HMAC；密钥不同的部署会发送不同的会话 ID。轮换该密钥会重置会话 ID；仅开发环境使用的加密密钥回退同样适用于这里。匿名访问有服务限制；在 API 和 worker 上设置 `PARALLEL_API_KEY` 可以发送 Bearer 令牌并解除限制。限流和提供商错误会返回给机器人，不会切换提供商。按机器人禁用的网页工具保持禁用。设置 `WEB_PROVIDER=keyless-http` 或删除该配置即可回到默认。
 
 要改用 [Keenable](https://docs.keenable.ai)，设置 `WEB_PROVIDER=keenable` 并重启 API 和 worker。相同工具会通过 HTTPS MCP 访问 `https://api.keenable.ai/mcp`，无需账号或 API 密钥，返回搜索摘要和页面 Markdown。该选项会把查询和页面 URL 发送给 Keenable，由其服务器抓取。匿名访问按 IP 限流；在 API 和 worker 上设置 `KEENABLE_API_KEY` 可以发送密钥并解除限制。错误处理、按机器人禁用工具和恢复默认的方式与 Parallel 相同。
 
@@ -43,11 +43,13 @@ Rakazo 会在传入的 access token 快过期前刷新授权并重启进程，�
 
 ## 应用与连接器
 
-设置 `COMPOSIO_API_KEY` 后，插件使用 [Composio](https://composio.dev)。Pipedream 是另一个托管连接器提供商：设置 `PIPEDREAM_CLIENT_ID`、`PIPEDREAM_CLIENT_SECRET`、`PIPEDREAM_PROJECT_ID` 和 `PIPEDREAM_ENVIRONMENT`（`development` 或 `production`），放在 API 和 worker 上。
+要在 Integrations 中提供更大的托管应用目录，请在 API 和 worker 上把 [Composio](https://composio.dev) Platform 项目密钥设为 `COMPOSIO_API_KEY`。Pipedream 是另一个托管连接器提供商。在这两个服务上设置 `PIPEDREAM_CLIENT_ID`、`PIPEDREAM_CLIENT_SECRET`、`PIPEDREAM_PROJECT_ID` 和 `PIPEDREAM_ENVIRONMENT`（`development` 或 `production`）。用更新后的环境重新创建服务。每个人在 Integrations 中授权自己的应用。
+
+用户也可以把个人工具网关作为 MCP 连接接入。内置的 **Executor** 选项使用浏览器登录，并提供此人在其 Executor 组织中配置的应用。[Composio Connect](https://docs.composio.dev/docs/composio-connect) 在 `https://connect.composio.dev/mcp` 提供另一种个人 MCP 连接。它支持兼容 MCP 客户端的浏览器登录，以及基于请求头的客户端使用的 consumer key。
 
 当 Outlook 登录没有请求对应的 `.Shared` 权限时，对共享邮箱的调用会被拒绝；Composio 默认 Outlook 配置创建的连接曾被观察到缺少该权限。要让机器人读取或代发共享邮箱，请在 Composio 控制台创建 Outlook auth config，列出默认权限加上需要的 `.Shared` 变体（`Mail.Read.Shared`、`Mail.ReadWrite.Shared`、`Mail.Send.Shared`），并让新的 Outlook 连接使用该配置。该用户的账号还需要在 Exchange 中拥有邮箱的 Full Access，租户管理员可能需要同意 `.Shared` 权限。新配置只影响新连接，因此修改前已连接的人必须断开并重新连接 Outlook。
 
-`INTEGRATIONS_CATALOG_URL` 让 API 连接器搜索指向兼容 [integrations.sh](https://integrations.sh/) 的目录，例如你托管的镜像。填写 base URL；Rakazo 会追加 `api/search`。
+`INTEGRATIONS_CATALOG_URL` 让 API 连接器搜索指向兼容 [integrations.sh](https://integrations.sh/) 的目录，例如你托管的镜像。填写 base URL。Rakazo 会追加 `api/search`。未设置时，**Search public MCP directory** 仍可按需搜索公共目录。每个服务自行处理授权。
 
 ## 消息应用
 
@@ -58,8 +60,8 @@ Rakazo 会在传入的 access token 快过期前刷新授权并重启进程，�
 | 平台                        | 设置                                                                                                                                                                       |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | iMessage 和 SMS（Sendblue） | `SENDBLUE_API_KEY_ID`、`SENDBLUE_API_SECRET`、`SENDBLUE_SIGNING_SECRET`、`SENDBLUE_PHONE_NUMBER`                                                                           |
-| WhatsApp Business Cloud     | `WHATSAPP_ACCESS_TOKEN`、`WHATSAPP_PHONE_NUMBER_ID`、`WHATSAPP_APP_SECRET`、`WHATSAPP_VERIFY_TOKEN`                                                                        |
-| Telegram                    | `TELEGRAM_BOT_TOKEN`、`TELEGRAM_WEBHOOK_SECRET_TOKEN`                                                                                                                      |
+| WhatsApp Business Cloud     | `WHATSAPP_ACCESS_TOKEN`、`WHATSAPP_PHONE_NUMBER_ID`、`WHATSAPP_APP_SECRET`、`WHATSAPP_VERIFY_TOKEN`；可选 `WHATSAPP_API_URL`、`WHATSAPP_BOT_USERNAME`                      |
+| Telegram                    | `TELEGRAM_BOT_TOKEN`、`TELEGRAM_WEBHOOK_SECRET_TOKEN`；`TELEGRAM_GROUPS=off` 表示仅私聊                                                                                    |
 | iMessage（Photon）          | `PHOTON_PROJECT_ID`、`PHOTON_PROJECT_SECRET`；如用 webhook 而不是流，设置 `PHOTON_WEBHOOK_SECRET`；更多项目用 `PHOTON_PROJECT_ID_<NAME>` 和 `PHOTON_PROJECT_SECRET_<NAME>` |
 | Feishu/Lark                 | `LARK_APP_ID`、`LARK_APP_SECRET`、`LARK_VERIFICATION_TOKEN`；开启事件加密时用 `LARK_ENCRYPT_KEY`；`LARK_DOMAIN`（默认 `feishu`，或 `lark`）                                |
 | Microsoft Teams             | `TEAMS_APP_ID`、`TEAMS_APP_PASSWORD`、`TEAMS_APP_TENANT_ID`（单租户，仅私聊）                                                                                              |

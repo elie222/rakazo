@@ -10,6 +10,7 @@ import {
   credentialForModel,
   filterModelChoices,
   groupModelChoices,
+  latestModelChoices,
   pickCatalogModelId,
   popularModelProvidersFirst,
   resolveSelectableModelId,
@@ -383,9 +384,8 @@ describe("chat model choices", () => {
     },
   ];
 
-  it("puts the space default first, then a saved model no connection offers, then the rest", () => {
-    expect(chatModelChoices(connected, "openai::retired-model", "Space default")).toEqual([
-      { key: "", label: "Space default" },
+  it("puts a model in use that no connection offers first, then the rest", () => {
+    expect(chatModelChoices(connected, "openai::retired-model")).toEqual([
       {
         key: "openai::retired-model",
         label: "retired-model",
@@ -394,25 +394,12 @@ describe("chat model choices", () => {
       },
       ...connected,
     ]);
-    expect(chatModelChoices(connected, connected[1]!.key, "Space default")).toEqual([
-      { key: "", label: "Space default" },
-      ...connected,
-    ]);
-  });
-
-  it("marks the space default with its model's image support", () => {
-    expect(chatModelChoices(connected, "", "Space default", false)[0]).toEqual({
-      key: "",
-      label: "Space default",
-      images: false,
-    });
-    expect(chatModelChoices(connected, "", "Space default")[0]?.images).toBeUndefined();
+    expect(chatModelChoices(connected, connected[1]!.key)).toEqual(connected);
   });
 
   it("matches the label, model id, or provider, ignoring case", () => {
-    const choices = chatModelChoices(connected, "", "Space default (Claude Sonnet)");
+    const choices = chatModelChoices(connected, "");
     expect(filterModelChoices(choices, "  SONNET ").map((choice) => choice.key)).toEqual([
-      "",
       "openrouter::anthropic/claude-sonnet",
     ]);
     expect(filterModelChoices(choices, "openai/").map((choice) => choice.key)).toEqual([
@@ -497,6 +484,276 @@ it("offers Azure catalog models for a credential saved with the old provider id"
   expect(pickCatalogModelId(catalog, "azure-openai-responses", "gpt-4o")).toBe("gpt-4o");
 });
 
+describe("groupModelChoices order", () => {
+  const entry = (id: string) => ({
+    provider: "zai",
+    providerName: "Z.AI",
+    id,
+    label: id.toUpperCase(),
+  });
+
+  it("lists a provider's newest models first", () => {
+    const connected = connectedModelChoices(
+      [{ provider: "zai", label: "Z.AI" }],
+      [entry("glm-4.5"), entry("glm-5"), entry("glm-4.6")],
+    );
+    const sections = groupModelChoices(chatModelChoices(connected, ""), "");
+    expect(sections[0]?.data.map((choice) => choice.modelId)).toEqual([
+      "glm-5",
+      "glm-4.6",
+      "glm-4.5",
+    ]);
+  });
+
+  it("preserves catalog order when the credential declares it", () => {
+    const catalog = [entry("glm-4.5"), entry("glm-5"), entry("glm-4.6")];
+    const connected = connectedModelChoices(
+      [{ provider: "zai", label: "Local", modelId: "glm-5", preserveModelOrder: true }],
+      catalog,
+    );
+    expect(groupModelChoices(connected, "")[0]?.data.map((choice) => choice.modelId)).toEqual([
+      "glm-4.5",
+      "glm-5",
+      "glm-4.6",
+    ]);
+  });
+
+  it("keeps a compatible endpoint's models in the order they were enabled", () => {
+    const connected = connectedModelChoices(
+      [
+        {
+          provider: "custom-endpoint",
+          preserveModelOrder: true,
+          label: "Local",
+          enabledModelIds: ["model-1", "model-3", "model-2"],
+        },
+      ],
+      [],
+    );
+    expect(groupModelChoices(connected, "")[0]?.data.map((choice) => choice.modelId)).toEqual([
+      "model-1",
+      "model-3",
+      "model-2",
+    ]);
+  });
+});
+
+describe("latestModelChoices", () => {
+  const connected = connectedModelChoices(
+    [{ provider: "openrouter", label: "OpenRouter" }],
+    [
+      "anthropic/claude-sonnet-4.5",
+      "anthropic/claude-opus-4.5",
+      "anthropic/claude-sonnet-5.5",
+      "anthropic/claude-sonnet-4-5-20250929",
+      "anthropic/claude-sonnet-latest",
+      "anthropic/claude-opus-5.5",
+      "anthropic/claude-haiku-5.5",
+    ].map((id) => ({ provider: "openrouter", providerName: "OpenRouter", id, label: id })),
+  );
+  const section = groupModelChoices(connected, "")[0]!.data;
+  const ids = (choices: readonly { modelId?: string }[]) => choices.map((c) => c.modelId);
+
+  it("keeps the newest model of each family and puts the rest behind it", () => {
+    const { latest, older } = latestModelChoices(section, "");
+    expect(ids(latest)).toEqual([
+      "anthropic/claude-sonnet-5.5",
+      "anthropic/claude-opus-5.5",
+      "anthropic/claude-haiku-5.5",
+    ]);
+    expect(ids(older)).toEqual([
+      "anthropic/claude-sonnet-4.5",
+      "anthropic/claude-opus-4.5",
+      "anthropic/claude-sonnet-4-5-20250929",
+      "anthropic/claude-sonnet-latest",
+    ]);
+  });
+
+  it("finds the family behind dates with separators or before a release tag", () => {
+    const connected = connectedModelChoices(
+      [{ provider: "openai", label: "OpenAI" }],
+      ["gpt-5", "gpt-4-1106-preview", "gpt-4o", "gpt-4o-2024-08-06"].map((id) => ({
+        provider: "openai",
+        providerName: "OpenAI",
+        id,
+        label: id,
+      })),
+    );
+    const { latest } = latestModelChoices(groupModelChoices(connected, "")[0]!.data, "");
+    expect(ids(latest)).toEqual(["gpt-5", "gpt-4o"]);
+  });
+
+  it("keeps each size of one release", () => {
+    const sizes = ["gpt-oss-120b", "gpt-oss-20b"].map((modelId) => ({
+      key: `openai::${modelId}`,
+      label: modelId,
+      provider: "openai",
+      providerLabel: "OpenAI",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(sizes, "").latest)).toEqual(["gpt-oss-120b", "gpt-oss-20b"]);
+  });
+
+  it("keeps each decimal size of one release", () => {
+    const sizes = [
+      "qwen2.5:0.5b",
+      "qwen2.5:1.5b",
+      "Qwen2.5-0.5B-Instruct",
+      "Qwen2.5-1.5B-Instruct",
+    ];
+    const choices = sizes.map((modelId) => ({
+      key: `local::${modelId}`,
+      label: modelId,
+      provider: "local",
+      providerLabel: "Local",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(choices, "").latest)).toEqual(sizes);
+  });
+
+  it("keeps the newest snapshot of one version whatever the order", () => {
+    const snapshots = ["gpt-4o-2024-08-06", "gpt-4o-2024-11-20", "gpt-4.1"].map((modelId) => ({
+      key: `openai::${modelId}`,
+      label: modelId,
+      provider: "openai",
+      providerLabel: "OpenAI",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(snapshots, "").latest)).toEqual(["gpt-4o-2024-11-20", "gpt-4.1"]);
+  });
+
+  it("reads month and day numbers as a snapshot's date, not its version", () => {
+    const snapshots = [
+      "gemini-2.5-pro-preview-05-06",
+      "gemini-2.5-pro",
+      "command-r-08-2024",
+      "command-r",
+    ].map((modelId) => ({
+      key: `vendor::${modelId}`,
+      label: modelId,
+      provider: "vendor",
+      providerLabel: "Vendor",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(snapshots, "").latest)).toEqual(["gemini-2.5-pro", "command-r"]);
+  });
+
+  it("keeps models that differ by vendor path or local tag", () => {
+    const models = [
+      "vendor-a/chat-5",
+      "vendor-b/chat-5",
+      "llama3.1:8b-instruct-q8_0",
+      "llama3.1:8b-instruct-q4_0",
+    ];
+    const choices = models.map((modelId) => ({
+      key: `local::${modelId}`,
+      label: modelId,
+      provider: "local",
+      providerLabel: "Local",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(choices, "").latest)).toEqual(models);
+  });
+
+  const vendorModels = (modelIds: string[]) =>
+    modelIds.map((modelId) => ({
+      key: `vendor::${modelId}`,
+      label: modelId,
+      provider: "vendor",
+      providerLabel: "Vendor",
+      modelId,
+    }));
+
+  it("orders month-year snapshots by year", () => {
+    const models = vendorModels(["command-r-12-2023", "command-r-08-2024"]);
+    expect(ids(latestModelChoices(models, "").latest)).toEqual(["command-r-08-2024"]);
+  });
+
+  it("keeps a stable alias over its preview and snapshots", () => {
+    const models = vendorModels([
+      "gemini-2.0-flash-exp",
+      "gemini-2.0-flash-001",
+      "gemini-2.0-flash",
+    ]);
+    expect(ids(latestModelChoices(models, "").latest)).toEqual(["gemini-2.0-flash"]);
+  });
+
+  it("reads the version before a full date", () => {
+    const models = vendorModels([
+      "gpt-4.1",
+      "gpt-5-2025-08-07",
+      "o1-preview-2024-09-12",
+      "o1-2024-12-17",
+    ]);
+    expect(ids(latestModelChoices(models, "").latest)).toEqual([
+      "gpt-5-2025-08-07",
+      "o1-2024-12-17",
+    ]);
+  });
+
+  it("keeps an older selected model in view", () => {
+    const { latest } = latestModelChoices(section, "openrouter::anthropic/claude-opus-4.5");
+    expect(ids(latest)).toContain("anthropic/claude-opus-4.5");
+  });
+});
+
+describe("groupModelChoices under a shared heading", () => {
+  it("sorts another provider's models while a compatible endpoint keeps its order", () => {
+    const choices = [
+      {
+        key: "a",
+        label: "x",
+        provider: "custom-endpoint",
+        preserveModelOrder: true,
+        modelId: "model-1",
+        providerLabel: "Shared",
+        modelLabel: "model-1",
+      },
+      {
+        key: "b",
+        label: "x",
+        provider: "custom-endpoint",
+        preserveModelOrder: true,
+        modelId: "model-3",
+        providerLabel: "Shared",
+        modelLabel: "model-3",
+      },
+      {
+        key: "c",
+        label: "x",
+        provider: "zai",
+        modelId: "glm-4.5",
+        providerLabel: "Shared",
+        modelLabel: "glm-4.5",
+      },
+      {
+        key: "d",
+        label: "x",
+        provider: "zai",
+        modelId: "glm-5",
+        providerLabel: "Shared",
+        modelLabel: "glm-5",
+      },
+      {
+        key: "e",
+        label: "x",
+        provider: "custom-endpoint",
+        preserveModelOrder: true,
+        modelId: "model-2",
+        providerLabel: "Shared",
+        modelLabel: "model-2",
+      },
+    ];
+    expect(groupModelChoices(choices, "")[0]?.data.map((choice) => choice.modelId)).toEqual([
+      "glm-5",
+      "glm-4.5",
+      "model-1",
+      "model-3",
+      "model-2",
+    ]);
+  });
+});
+
 describe("groupModelChoices", () => {
   const connected = connectedModelChoices(
     [{ provider: "openrouter", label: "OpenRouter" }],
@@ -521,16 +778,16 @@ describe("groupModelChoices", () => {
       },
     ],
   );
-  const choices = chatModelChoices(connected, "retired::saved", "Space default");
+  const choices = chatModelChoices(connected, "retired::saved");
 
-  it("keeps default and disconnected choices first and groups catalog vendor names", () => {
+  it("keeps a disconnected choice first and groups catalog vendor names", () => {
     const sections = groupModelChoices(choices, "");
     expect(sections.map((section) => section.heading)).toEqual([
       undefined,
       "Anthropic (OpenRouter)",
       "Google (OpenRouter)",
     ]);
-    expect(sections[0]?.data.map((choice) => choice.key)).toEqual(["", "retired::saved"]);
+    expect(sections[0]?.data.map((choice) => choice.key)).toEqual(["retired::saved"]);
     expect(sections[1]?.data.map((choice) => choice.title)).toEqual([
       "Claude Opus",
       "Claude Sonnet",

@@ -40,6 +40,14 @@ export function canManageOrganizationMembers(organization: Organization): boolea
   return organization.role !== "member";
 }
 
+export function connectionSharingOrganization(
+  organization: Organization | undefined,
+): string | null {
+  return organization && organization.memberCount > 1 && canManageOrganizationMembers(organization)
+    ? organization.name
+    : null;
+}
+
 /**
  * Who an address typed into a Space's invite belongs to: someone already in the Space, someone in
  * its organization to add directly, or someone from outside, who joins this Space alone. Null

@@ -126,12 +126,30 @@ export async function deleteAccountContent(
     });
     stage = "done";
 
-    // Pages in Spaces that stay go with the user row; their links' tokens leave the store now.
-    const memberPageSecrets = await deps.prisma.$transaction(async (tx) => {
+    // Pages in Spaces that stay go now; their links' tokens and pictures leave the stores after.
+    const memberPages = { userId, spaceId: { notIn: spaceIds } };
+    const removedPages = await deps.prisma.$transaction(async (tx) => {
       await assertLeaseHeld(tx, lease);
-      return deletePageShareSecrets(tx, { userId, spaceId: { notIn: spaceIds } });
+      const secrets = await deletePageShareSecrets(tx, memberPages);
+      const images = await tx.pageImage.findMany({
+        where: { page: { is: memberPages } },
+        select: { spaceId: true, storageKey: true },
+      });
+      await tx.page.deleteMany({ where: memberPages });
+      return { secrets, images };
     });
-    if (deps.secrets) await forgetPageShareSecrets(deps.secrets, memberPageSecrets);
+    // The rows are gone, so a retry could not find these again; failures only log.
+    const pictureCleanup = await Promise.allSettled(
+      removedPages.images.map(({ spaceId, storageKey }) =>
+        deps.artifacts.remove(
+          storageKey,
+          adapterContext(`account-delete:${userId}`, userId, spaceId),
+        ),
+      ),
+    );
+    for (const result of pictureCleanup)
+      if (result.status === "rejected") getLogger().error("page picture cleanup", result.reason);
+    if (deps.secrets) await forgetPageShareSecrets(deps.secrets, removedPages.secrets);
 
     // Bot deletion cleans these best-effort; here a failure fails the account deletion, and the
     // retry finds the ids again in bot_deletions.
@@ -178,7 +196,7 @@ export async function deleteAccountContent(
 }
 
 type OrganizationDeletionDeps = SpaceDeletionDeps & {
-  billing?: Pick<BillingService, "cancelForDeletedOrganization">;
+  billing?: Pick<BillingService, "cancelOrganizationSubscriptions">;
 };
 
 /**
@@ -247,7 +265,7 @@ export async function deleteOrganization(
     stillLeased();
     await keepOrganizationTrialUse(deps.prisma, organizationId);
     stillLeased();
-    await deps.billing?.cancelForDeletedOrganization(organizationId);
+    await deps.billing?.cancelOrganizationSubscriptions(organizationId);
     billingCancelled = true;
     stillLeased();
     const inOrganization = { spaceId: { in: spaceIds } };

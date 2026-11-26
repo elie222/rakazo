@@ -654,7 +654,7 @@ describe("a shell command's use of its variables", () => {
       stored: { id: "computer-1", kind: "vm" },
     });
     expect(await guarded.run("pkill chromium")).toEqual({
-      error: expect.stringContaining("This command was not run"),
+      error: expect.stringContaining("Not run"),
     });
     // The computer could not start.
     const stopped = shell(db);

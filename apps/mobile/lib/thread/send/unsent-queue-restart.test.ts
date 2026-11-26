@@ -36,8 +36,8 @@ vi.mock("../../api/api", () => ({
   subscribeServerReachable: () => () => {},
 }));
 // Like the server's "me" lookup, the outbox owner needs a session.
-vi.mock("../../integrations/integrations-cache", () => ({
-  integrationsCacheScope: async () => {
+vi.mock("../../api/verified-scope", () => ({
+  verifiedScope: async () => {
     if (!store.get("rakazo.session_token")) throw new Error("Unauthorized");
     return { apiBase: "https://api.example.test", userId: "user-a", spaceId: "space-a" };
   },

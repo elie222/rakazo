@@ -1,11 +1,15 @@
 import * as z from "zod";
 import { Id } from "../ids.js";
 
+export const MAX_TRANSCRIPTION_VOCABULARY_LENGTH = 500;
+
 export const VoiceCatalogEntrySchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
   transcribe: z.boolean(),
+  /** The connection accepts vocabulary hints for transcription. */
+  transcriptionVocabulary: z.boolean().optional(),
   keyless: z.boolean().optional(),
   /** The connection takes an optional speech model id that overrides the provider default. */
   speechModel: z.boolean().optional(),
@@ -14,6 +18,13 @@ export const VoiceCatalogEntrySchema = z.object({
    * optional. Set only for an account that has one.
    */
   modelConnection: z.boolean().optional(),
+  /** The account's model connections to this provider that voice can use instead of a key. */
+  modelConnections: z.array(z.object({ id: z.string(), label: z.string() })).optional(),
+  /**
+   * The Models sign-in button text for this provider, when voice can use a sign-in and the
+   * account has no model connection to it yet. Signing in adds one.
+   */
+  modelSignIn: z.string().optional(),
   /** The provider can list its voices for one language, so the picker may offer a filter. */
   languages: z.boolean().optional(),
   /** The provider lists its speech models, so the model field can suggest them. */
@@ -41,6 +52,8 @@ export const VoiceCredentialSchema = z.object({
   provider: z.string(),
   /** False when the connection authenticates with the account's model connection instead. */
   hasKey: z.boolean(),
+  /** The model connection a connection without a key uses, when it names one. */
+  modelCredentialId: z.string().optional(),
   isDefault: z.boolean(),
   voiceId: z.string(),
   /** Fish speech-model override. Empty uses the deployment default. */
@@ -52,6 +65,7 @@ export const VoiceCredentialSchema = z.object({
   sttEndpoint: z.string().default(""),
   ttsModel: z.string().default(""),
   sttModel: z.string().default(""),
+  transcriptionVocabulary: z.string().optional(),
 });
 export type VoiceCredential = z.infer<typeof VoiceCredentialSchema>;
 

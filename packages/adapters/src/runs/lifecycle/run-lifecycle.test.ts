@@ -32,14 +32,15 @@ import {
   startNextWaitingRun,
 } from "./run-lifecycle.js";
 import { notifyRun } from "./run-notifications.js";
+import { RunOriginUnauthorizedError } from "./run-origin.js";
 
 vi.mock("./run-notifications.js", () => ({ notifyRun: vi.fn(async () => undefined) }));
 vi.mock("../../tasks/background-helpers.js", () => ({
   returnHelperOutcome: vi.fn(async () => undefined),
 }));
 
-function deps(next: { id: string } | null) {
-  const findFirst = vi.fn(async () => next);
+function deps(...found: Array<{ id: string } | null>) {
+  const findFirst = vi.fn(async () => found.shift() ?? null);
   const enqueue = vi.fn(async () => undefined);
   return {
     deps: { prisma: { run: { findFirst } }, jobs: { enqueue } } as unknown as ExecutorDeps,
@@ -49,29 +50,50 @@ function deps(next: { id: string } | null) {
 }
 
 describe("starting the next run waiting for a bot's computer", () => {
-  it("starts the oldest other due run of the bot, leaving failure backoff alone", async () => {
-    vi.useFakeTimers({ now: new Date("2026-10-28T12:00:00Z") });
+  const due = (now: Date) => ({
+    botId: "bot",
+    status: "queued",
+    id: { not: "finished" },
+    OR: [{ wakeAt: null }, { wakeAt: { lte: now } }],
+  });
+  const oldestFirst = [{ createdAt: "asc" }, { id: "asc" }];
+
+  it("starts the oldest due run a person is waiting on, leaving failure backoff alone", async () => {
+    const now = new Date("2026-10-28T12:00:00Z");
+    vi.useFakeTimers({ now });
     try {
-      const f = deps({ id: "waiting" });
+      const f = deps({ id: "person" });
       await startNextWaitingRun(f.deps, "bot", "finished");
-      expect(f.findFirst).toHaveBeenCalledWith({
-        where: {
-          botId: "bot",
-          status: "queued",
-          id: { not: "finished" },
-          OR: [{ wakeAt: null }, { wakeAt: { lte: new Date("2026-10-28T12:00:00Z") } }],
-        },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      expect(f.findFirst).toHaveBeenCalledExactlyOnceWith({
+        where: { ...due(now), trigger: { in: ["user", "follow_up", "reaction", "messaging"] } },
+        orderBy: oldestFirst,
         select: { id: true },
       });
-      expect(f.enqueue).toHaveBeenCalledExactlyOnceWith(runContinueJob("waiting"));
+      expect(f.enqueue).toHaveBeenCalledExactlyOnceWith(runContinueJob("person"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts the oldest other due run when no person is waiting", async () => {
+    const now = new Date("2026-10-28T12:00:00Z");
+    vi.useFakeTimers({ now });
+    try {
+      const f = deps(null, { id: "routine" });
+      await startNextWaitingRun(f.deps, "bot", "finished");
+      expect(f.findFirst).toHaveBeenLastCalledWith({
+        where: due(now),
+        orderBy: oldestFirst,
+        select: { id: true },
+      });
+      expect(f.enqueue).toHaveBeenCalledExactlyOnceWith(runContinueJob("routine"));
     } finally {
       vi.useRealTimers();
     }
   });
 
   it("does nothing when no run is waiting", async () => {
-    const f = deps(null);
+    const f = deps();
     await startNextWaitingRun(f.deps, "bot", "finished");
     expect(f.enqueue).not.toHaveBeenCalled();
   });
@@ -241,6 +263,16 @@ describe("retrying a run whose setup failed", () => {
     const failed = await retry(error());
 
     expect(failed.failedWith).toBe(message);
+    expect(failed.requeueRun).not.toHaveBeenCalled();
+    expect(failed.priorAttempts).not.toHaveBeenCalled();
+    expect(failed.logged).toEqual([expect.objectContaining({ level: "warn" })]);
+  });
+
+  it("ends a delegated run immediately when its conversation no longer authorizes it", async () => {
+    const error = new RunOriginUnauthorizedError();
+    const failed = await retry(error);
+
+    expect(failed.ended).toMatchObject({ outcome: "failed", error: error.message });
     expect(failed.requeueRun).not.toHaveBeenCalled();
     expect(failed.priorAttempts).not.toHaveBeenCalled();
     expect(failed.logged).toEqual([expect.objectContaining({ level: "warn" })]);

@@ -1,12 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
-import { useTimeout } from "@rakazo/chat-ui/hooks";
+import { useListSearch, useTimeout } from "@rakazo/chat-ui/hooks";
 import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import {
+  collapseOlderModels,
   groupModelChoices,
   modelChoiceSearchText,
   modelMark,
-  newestModelsFirst,
 } from "@rakazo/core";
 import { useNavigation } from "expo-router";
 import type { ReactElement } from "react";
@@ -34,17 +34,11 @@ import { useContentBottomInset } from "../../lib/layout/content-bottom-inset";
 import { useFloatingHeaderInset } from "../../lib/layout/floating-header";
 import { useSideInsets } from "../../lib/layout/side-insets";
 import { native, useThemedStyles } from "../../lib/native/native";
-import { useListSearch } from "../../lib/search/use-list-search";
 import { SettingsLabel, SettingsRow } from "../settings/settings-group";
 import { ListSearchInput } from "../ui/list-search-input";
 import { Checkmark } from "../ui/row-accessories";
 import { TextOnlyMark } from "../ui/text-only-mark";
 import { ModelMarkIcon } from "./model-mark";
-
-const newestChoicesFirst = (choices: ChatModelChoice[]) =>
-  newestModelsFirst(choices.map((choice) => ({ id: choice.modelId ?? "", choice }))).map(
-    (entry) => entry.choice,
-  );
 
 /** Searchable grouped model cells shared by chat and connection settings. */
 export function ModelPickerList({
@@ -56,8 +50,11 @@ export function ModelPickerList({
   emptyMessage,
   connectChoices,
   header,
+  latestOnly = false,
 }: {
   choices: readonly ChatModelChoice[] | null;
+  /** List each model's newest version, with the older ones behind Show more. */
+  latestOnly?: boolean;
   /** Settings for the chosen model, above the list so they never need a scroll. */
   header?: ReactElement;
   /** Providers that need a connection first, listed after the models. */
@@ -138,15 +135,20 @@ export function ModelPickerList({
     });
   }, [navigation, t, changeQuery, showSearch]);
 
+  // Older versions of each model wait behind Show more, one provider at a time.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const sections = useMemo(() => {
     if (!choices) return [];
-    const models = groupModelChoices(
+    const grouped = groupModelChoices(
       visible.flatMap((row) => (row.connect ? [] : [row.choice])),
       "",
+    );
+    const models = (
+      latestOnly
+        ? collapseOlderModels(grouped, selectedKey, expanded)
+        : grouped.map((section) => ({ ...section, collapsed: false }))
     ).map((section) => ({
       ...section,
-      // The ungrouped section holds the default and saved choices, which stay first.
-      data: section.heading ? newestChoicesFirst(section.data) : section.data,
       connect: false,
       heading:
         providerLabel && section.heading === providerLabel
@@ -160,9 +162,12 @@ export function ModelPickerList({
       "",
     ).flatMap((section) => section.data);
     return connect.length
-      ? [...models, { key: "connect", heading: undefined, connect: true, data: connect }]
+      ? [
+          ...models,
+          { key: "connect", heading: undefined, collapsed: false, connect: true, data: connect },
+        ]
       : models;
-  }, [choices, visible, providerLabel]);
+  }, [choices, visible, providerLabel, selectedKey, expanded, latestOnly]);
   const opensAtTop = Boolean(header);
   useLayoutEffect(() => {
     const state = initialScroll.current;
@@ -267,7 +272,22 @@ export function ModelPickerList({
           </View>
         ) : null
       }
-      renderSectionFooter={() => <View style={styles.sectionGap} />}
+      renderSectionFooter={({ section }) => (
+        <>
+          {section.collapsed ? (
+            <View style={[styles.cell, styles.last]}>
+              <View style={styles.separator} />
+              <SettingsRow
+                accessibilityRole="button"
+                title={t`Show more`}
+                tinted
+                onPress={() => setExpanded(new Set(expanded).add(section.key))}
+              />
+            </View>
+          ) : null}
+          <View style={styles.sectionGap} />
+        </>
+      )}
       keyExtractor={(choice) => choice.key || "space-default"}
       ItemSeparatorComponent={() => (
         <View style={styles.cell}>
@@ -298,7 +318,7 @@ export function ModelPickerList({
             style={[
               styles.cell,
               index === 0 && styles.first,
-              index === section.data.length - 1 && styles.last,
+              index === section.data.length - 1 && !section.collapsed && styles.last,
             ]}
           >
             <SettingsRow

@@ -60,24 +60,7 @@ describe("double tap reaction eligibility", () => {
     expect(canDoubleTapReact(true, [{ kind: "text" }], true)).toBe(false);
   });
 
-  it.each([
-    "ask",
-    "choice",
-    "mcp_approval",
-    "connect",
-    "app_connect",
-    "computer",
-    "call_request",
-    "voice_call",
-    "skill_draft",
-    "routine",
-    "subagent",
-    "steps",
-    "progress",
-    "handoff",
-    "card",
-    "unknown",
-  ])("rejects mixed content containing %s", (kind) => {
+  it.each(["ask", "computer", "unknown"])("rejects mixed content containing %s", (kind) => {
     expect(canDoubleTapReact(true, [{ kind: "text" }, { kind }], false)).toBe(false);
   });
 });

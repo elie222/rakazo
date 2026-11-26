@@ -262,7 +262,8 @@ jobs:
             const actual = require("node:crypto").createHash("sha256").update(bytes).digest("hex");
             if (actual !== sha256 || bytes.length !== size) throw new Error("server-bundle.json does not match the bundle");
           ' "$RUNNER_TEMP/server-bundle/server-bundle.json" "$bundle"
-          cp "$bundle" apps/desktop/out/
+          # The previous release reads the descriptor beside the bundle to fetch it ahead of updating.
+          cp "$bundle" "$RUNNER_TEMP/server-bundle/server-bundle.json" apps/desktop/out/
 
       - name: Verify packaged native dependencies
         if: runner.os == 'macOS'
@@ -432,6 +433,7 @@ jobs:
             apps/desktop/out/latest*.yml
             apps/desktop/out/*.zip
             apps/desktop/out/rakazo-server-*.tar.xz
+            apps/desktop/out/server-bundle.json
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -477,6 +479,7 @@ jobs:
             case "$platform" in
               macos)
                 test -s "release-artifacts/rakazo-server-darwin-arm64-$RELEASE_VERSION.tar.xz"
+                test -s release-artifacts/server-bundle.json
                 test -f release-artifacts/latest-mac.yml
                 compgen -G 'release-artifacts/*.dmg' >/dev/null
                 compgen -G 'release-artifacts/*.zip' >/dev/null

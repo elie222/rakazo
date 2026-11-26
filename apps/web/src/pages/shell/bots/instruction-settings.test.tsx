@@ -30,7 +30,7 @@ vi.mock("@lingui/react/macro", () => ({
 import { useSpaceQueries } from "../../../lib/query/query";
 import { InstructionSettings } from "./instruction-settings";
 
-const bot = {
+const detail = {
   id: "fixture",
   instructions: "Current",
   instructionHistory: [
@@ -43,7 +43,9 @@ const bot = {
   ],
 } as Bot;
 
-/** Another screen that lists the space's bots, instructions included. */
+const { instructionHistory: _history, ...bot } = detail;
+
+/** Another screen that lists the space's bots. */
 function Roster() {
   useQuery(useSpaceQueries().bots.list.queryOptions());
   return null;
@@ -56,6 +58,7 @@ beforeEach(async () => {
   appLocale.current = "en";
   for (const call of Object.values(api)) call.mockReset();
   api.list.mockResolvedValue([bot]);
+  api.get.mockResolvedValue(detail);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -89,13 +92,21 @@ async function edit(value: string) {
 const leave = () =>
   act(async () => field().dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
 
-it("keeps history behind its label action and restores with the current baseline", async () => {
-  api.restoreInstructions.mockResolvedValue({ ...bot, instructions: "Earlier" });
+it("loads history through the single-bot read and restores with the current baseline", async () => {
+  expect(api.get).toHaveBeenCalledExactlyOnceWith({ botId: bot.id }, expect.anything());
+  api.restoreInstructions.mockResolvedValue({ ...detail, instructions: "Earlier" });
   expect(document.body.textContent).not.toContain("Manual edit");
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Instruction history"]')!.click(),
-  );
-  expect(document.body.textContent).toContain("Manual edit");
+  const trigger = await vi.waitFor(() => {
+    const button = host.querySelector<HTMLButtonElement>('[aria-label="Instruction history"]');
+    expect(button).not.toBeNull();
+    return button!;
+  });
+  await act(async () => trigger.click());
+  const version = [...document.body.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Manual edit"),
+  )!;
+  await act(async () => version.click());
+  expect(document.body.querySelector("pre")?.textContent).toBe("Earlier");
   await act(async () =>
     [...document.body.querySelectorAll("button")]
       .find((button) => button.textContent === "Restore")!
@@ -109,6 +120,17 @@ it("keeps history behind its label action and restores with the current baseline
   expect(host.querySelector("textarea")?.value).toBe("Earlier");
 });
 
+it("names the history dialog after its trigger", async () => {
+  const trigger = await vi.waitFor(() => {
+    const button = host.querySelector<HTMLButtonElement>('[aria-label="Instruction history"]');
+    expect(button).not.toBeNull();
+    return button!;
+  });
+  await act(async () => trigger.click());
+  const dialog = document.body.querySelector('[role="dialog"]')!;
+  expect(dialog.getAttribute("aria-label")).toBe("Instruction history");
+});
+
 it("dates the history in the app language, not the system one", async () => {
   appLocale.current = "fr";
   await act(async () =>
@@ -118,9 +140,12 @@ it("dates the history in the app language, not the system one", async () => {
       </QueryClientProvider>,
     ),
   );
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="Instruction history"]')!.click(),
-  );
+  const trigger = await vi.waitFor(() => {
+    const button = host.querySelector<HTMLButtonElement>('[aria-label="Instruction history"]');
+    expect(button).not.toBeNull();
+    return button!;
+  });
+  await act(async () => trigger.click());
   const created = new Date("2026-10-01T00:00:00Z");
   expect(document.body.textContent).toContain(created.toLocaleString("fr"));
   expect(created.toLocaleString("fr")).not.toBe(created.toLocaleString("en"));

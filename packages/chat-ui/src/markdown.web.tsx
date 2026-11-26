@@ -13,13 +13,14 @@ import {
 } from "react";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import type { HastNode } from "./table-utils";
 import "./markdown.web.css";
 import "./markdown-table.css";
-import { droppedTableHtmlText } from "@rakazo/contracts";
+import { droppedTableHtmlText, linkLabel } from "@rakazo/contracts";
 import { cssVariableName, pageIconBars } from "@rakazo/ui-tokens";
 import {
   AlertDialog,
@@ -41,10 +42,10 @@ import {
   isProseFence,
   LinkFaviconsPausedContext,
   linkFaviconOrigin,
-  linkLabel,
   markdownLinkDisplayParts,
   markdownLinkNeedsPrompt,
   markdownLinkSite,
+  markdownMentionAdded,
   markdownMentionId,
   markdownPageId,
   markRemoteImageLoaded,
@@ -182,9 +183,7 @@ function MarkdownPre({
 }: React.ComponentPropsWithoutRef<"pre"> & { node?: MarkdownHast }) {
   const streamingSource = useContext(StreamingSourceContext);
   const diagram = mermaidFenceSource(node);
-  // Prose an author wrote in a fence reads as prose; code keeps the monospaced font.
   const prose = diagram === undefined && isProseFence(fenceLanguage(node));
-  // An empty fence has nothing to copy.
   const codeBlock = (
     <CodeBlock {...props} copyable={/\S/.test(codeText(codeElement(node)))} prose={prose} />
   );
@@ -578,7 +577,10 @@ function MarkdownAnchor({
   const mentionId = markdownMentionId(href);
   if (mentionId) {
     const name = hastText(node) ?? "";
-    return renderMention?.(mentionId, name) ?? <span>{props.children}</span>;
+    const chip = renderMention?.(mentionId, name);
+    // An added name isn't in the message text, so a selection must not carry it into a quote.
+    if (chip && markdownMentionAdded(href)) return <span className="select-none">{chip}</span>;
+    return chip ?? <span>{props.children}</span>;
   }
   const image = href ? soleRemoteImage(node) : undefined;
   if (image && !remoteImageRenders(image.href, loadRemote, false)) {
@@ -741,7 +743,7 @@ export function LinkifiedText({
   );
 }
 
-const remarkPlugins = [remarkGfm];
+const remarkPlugins = [remarkGfm, remarkBreaks];
 const rehypePlugins = [preserveSkippedTableText];
 
 // MarkdownImage decides what an image source may do, so it receives the source as written.

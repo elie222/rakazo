@@ -1,6 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useListSearch } from "@rakazo/chat-ui/hooks";
 import type { ChatModelChoice, ModelMark } from "@rakazo/core";
-import { groupModelChoices, modelChoiceSearchText, modelMark } from "@rakazo/core";
+import {
+  collapseOlderModels,
+  groupModelChoices,
+  modelChoiceSearchText,
+  modelMark,
+} from "@rakazo/core";
 import {
   Command,
   CommandEmpty,
@@ -20,7 +26,6 @@ import type { ReactNode } from "react";
 import { useId, useMemo, useState } from "react";
 import { ModelMarkIcon } from "../../../components/models/ModelMarkIcon";
 import { TextOnlyMark } from "../../../components/models/TextOnlyMark";
-import { useListSearch } from "../../../lib/use-list-search";
 
 /**
  * A bot's model as one settings row, or as a small button in the message box (`compact`): either
@@ -77,13 +82,19 @@ export function ChatModelPicker({
   const { query, setQuery, showSearch, visible } = useListSearch(choices, {
     text: modelChoiceSearchText,
   });
-  const sections = useMemo(() => groupModelChoices(visible, ""), [visible]);
-  const selected = choices.find((choice) => choice.key === value) ?? choices[0];
+  // Older versions of each model wait behind Show more, one provider at a time.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const sections = useMemo(
+    () => collapseOlderModels(groupModelChoices(visible, ""), value, expanded),
+    [visible, value, expanded],
+  );
+  const selected = choices.find((choice) => choice.key === value);
   const textOnly = selected?.images === false;
-  const model = selectedLabel ?? selected?.label ?? "";
+  const model = selectedLabel ?? selected?.label ?? t`Choose a model`;
 
   // A list closed by its owner (a keyboard shortcut) starts unfiltered next time too.
   if (!open && query) setQuery("");
+  if (!open && expanded.size) setExpanded(new Set());
 
   function openChange(next: boolean) {
     setOpen(next);
@@ -129,7 +140,7 @@ export function ChatModelPicker({
         >
           <Trans>Model</Trans>
           <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
-            <span className="min-w-0 truncate">{selected?.label}</span>
+            <span className="min-w-0 truncate">{model}</span>
             {textOnly ? <TextOnlyMark /> : null}
             <ChevronRightIcon className="size-4 shrink-0 rtl:rotate-180" aria-hidden="true" />
           </span>
@@ -185,8 +196,7 @@ export function ChatModelPicker({
                     <CommandItem
                       key={choice.key}
                       aria-label={choice.label}
-                      // cmdk falls back to the row's text for an empty value.
-                      value={choice.key || "space-default"}
+                      value={choice.key}
                       data-checked={choice.key === value}
                       aria-describedby={choice.images === false ? imagesHintId : undefined}
                       onSelect={() => {
@@ -204,6 +214,15 @@ export function ChatModelPicker({
                       ) : null}
                     </CommandItem>
                   ))}
+                  {section.collapsed ? (
+                    <CommandItem
+                      value={`more:${section.key}`}
+                      className="text-muted-foreground"
+                      onSelect={() => setExpanded(new Set(expanded).add(section.key))}
+                    >
+                      {t`Show more`}
+                    </CommandItem>
+                  ) : null}
                 </CommandGroup>
               ))}
               {onConnect ? (

@@ -82,10 +82,9 @@ export function voiceDeploymentConnectionSupported(
 }
 
 /** Undefined requires explicit operator acceptance of manual cost reconciliation. */
-export function voiceDeploymentUsageUnit(
+export function voiceTranscriptionUsageUnit(
   provider: string,
   model: string,
-  operation: "synthesize" | "transcribe",
 ): VoiceUsage["unit"] | undefined {
-  return knownVoiceProvider(provider)?.deploymentUsageUnit?.(operation, model);
+  return knownVoiceProvider(provider)?.transcriptionUsageUnit?.(model);
 }

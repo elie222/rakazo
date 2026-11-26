@@ -67,8 +67,9 @@ import { AvatarScreenFocus } from "../lib/bots/avatar-life";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
 import { useCallActive } from "../lib/calls/call-session";
 import { startIncomingCalls } from "../lib/calls/incoming-calls";
+import { loadComposerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-preference";
 import { loadComposerModelPickerPreference } from "../lib/composer/composer-model-picker-preference";
-import { bootstrapI18n } from "../lib/i18n/i18n";
+import { bootstrapI18n, refreshDeviceDateFormat } from "../lib/i18n/i18n";
 import { clearLastBot } from "../lib/inbox/last-bot";
 import { clearSavedChats } from "../lib/inbox/saved-chats";
 import { InboxBesideContext } from "../lib/layout/side-insets";
@@ -92,6 +93,7 @@ import {
 import { useNotificationResponses } from "../lib/notifications/open-notification";
 import { invalidateWatchChat } from "../lib/notifications/watch-chat";
 import { startWorkActivities } from "../lib/notifications/work-activity";
+import { subscribeAppState } from "../lib/platform/app-foreground";
 import { setMobileMonitoringScreen } from "../lib/platform/monitoring";
 import {
   completeMobileStartup,
@@ -104,7 +106,8 @@ import {
   subscribeRemoteImages,
 } from "../lib/preferences/remote-images-preference";
 import { loadResponseStreamingPreference } from "../lib/preferences/response-streaming";
-import { clearQueries, resetRpcQueries } from "../lib/query/query";
+import { clearQueries, queryClient, resetRpcQueries } from "../lib/query/query";
+import { clearSavedReads, keepSavedReads } from "../lib/query/saved-reads";
 import {
   loadTrustedLinkSites,
   trustLinkSite,
@@ -118,6 +121,8 @@ capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
 registerSessionDiskCache(clearQueries);
+keepSavedReads(queryClient);
+registerSessionDiskCache(clearSavedReads);
 subscribeAiConsentGranted(() => void resetRpcQueries("aiConsent/status"));
 registerSessionDiskCache((sameAccount) => {
   if (!sameAccount) return clearLastBot();
@@ -321,8 +326,10 @@ function LayoutContent() {
     if (!ready) return;
     return startIncomingCalls();
   }, [ready, callSession]);
-  const screen = analyticsScreen(usePathname());
-  useEffect(() => setMobileMonitoringScreen(screen), [screen]);
+  const pathname = usePathname();
+  const screen = analyticsScreen(pathname);
+  const monitoringScreen = pathname === "/share" ? "share" : screen;
+  useEffect(() => setMobileMonitoringScreen(monitoringScreen), [monitoringScreen]);
   useEffect(() => {
     const surface = Platform.OS;
     if (!ready || !screen || (surface !== "ios" && surface !== "android")) return;
@@ -387,6 +394,14 @@ function LayoutContent() {
 
   useEffect(() => watchForegroundUpdates(), []);
 
+  useEffect(
+    () =>
+      subscribeAppState((state) => {
+        if (state === "active") void refreshDeviceDateFormat();
+      }),
+    [],
+  );
+
   useEffect(() => {
     markMobileStartupMounted();
     void loadHapticsPreference();
@@ -398,6 +413,7 @@ function LayoutContent() {
         ),
         trackMobileStartup("streaming", loadResponseStreamingPreference()),
         trackMobileStartup("images", loadRemoteImagesPreference()),
+        trackMobileStartup("enterToSend", loadComposerEnterToSendPreference()),
         trackMobileStartup("modelPicker", loadComposerModelPickerPreference()),
         trackMobileStartup("inbox", loadInboxWidth()),
       ]).catch(() => undefined),

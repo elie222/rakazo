@@ -37,6 +37,7 @@ import {
   signInNext,
 } from "./lib/auth/sign-in-next";
 import { syncLogOutFailure } from "./lib/auth/sign-out";
+import { releaseSsoAutoStart } from "./lib/auth/sso-auto-start";
 import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/auth/sso-flow";
 import { getLabs, subscribeLabs } from "./lib/bootstrap";
 import { syncWebLogoAvatarIdentity } from "./lib/bots/logo-avatar-activity";
@@ -83,6 +84,9 @@ const AdminAccessPage = lazyComponent(() =>
 );
 const NavLinkPage = lazyComponent(() =>
   import("./pages/NavLinkPage").then((module) => module.NavLinkPage),
+);
+const RedeemPage = lazyComponent(() =>
+  import("./pages/auth/Redeem").then((module) => module.RedeemPage),
 );
 const InvitePage = lazyComponent(() =>
   import("./pages/auth/Invite").then((module) => module.InvitePage),
@@ -134,6 +138,7 @@ function SessionApp() {
   const { pathname, search } = useLocation();
   const screen = analyticsScreen(pathname);
   const analyticsUserId = session.data?.user.id;
+  const sessionCreatedAt = session.data?.session?.createdAt;
   const lastScreen = useRef<string | undefined>(undefined);
   useEffect(() => {
     // A pending session is not a sign-out; startup already tagged the signed-in user.
@@ -159,8 +164,11 @@ function SessionApp() {
     syncWebLogoAvatarIdentity(analyticsUserId ?? null);
     syncCallIdentity(analyticsUserId ?? null);
     syncLogOutFailure(gate === "authenticated");
-    if (gate === "authenticated") rememberSignedIn();
-  }, [gate, analyticsUserId]);
+    if (gate === "authenticated") {
+      rememberSignedIn();
+      if (sessionCreatedAt) releaseSsoAutoStart(new Date(sessionCreatedAt));
+    }
+  }, [gate, analyticsUserId, sessionCreatedAt]);
   useEffect(() => {
     if (gate === "authenticated" || gate === "anonymous") setQueryUser(analyticsUserId ?? null);
   }, [gate, analyticsUserId]);
@@ -313,6 +321,19 @@ function SessionApp() {
                 }
               />
               <Route
+                path="/redeem/:code?"
+                element={
+                  user ? (
+                    <RedeemPage key={pathname} />
+                  ) : (
+                    <Navigate
+                      to={`${hasSignedInBefore() ? "/sign-in" : "/sign-up"}?next=${encodeURIComponent(pathname)}`}
+                      replace
+                    />
+                  )
+                }
+              />
+              <Route
                 path="/admin/access"
                 element={
                   user ? <AdminAccessPage /> : <Navigate to="/sign-in?next=/admin/access" replace />
@@ -325,7 +346,7 @@ function SessionApp() {
                       <Outlet />
                     </SubscriptionGate>
                   ) : (
-                    <Navigate to="/sign-in" replace />
+                    <Navigate to={`/sign-in?next=${encodeURIComponent(pathname)}`} replace />
                   )
                 }
               >

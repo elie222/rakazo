@@ -56,6 +56,10 @@ const DIRECTORY = [
   { slug: "GITHUB", name: "GitHub", logo: null, noAuth: false },
   { slug: CUSTOMER_SUPPORT_PROVIDERS.salesforce, name: "Salesforce", logo: null, noAuth: false },
   { slug: CUSTOMER_SUPPORT_PROVIDERS.zendesk, name: "Zendesk", logo: null, noAuth: false },
+  // Invented apps nobody connects, so cases can name an app that is only in the catalog.
+  { slug: "PAGESNAP", name: "Pagesnap", logo: null, noAuth: false },
+  { slug: "TALLYHAWK", name: "Tallyhawk", logo: null, noAuth: false },
+  { slug: "PARCELBIRD", name: "Parcelbird", logo: null, noAuth: false },
 ];
 
 /**

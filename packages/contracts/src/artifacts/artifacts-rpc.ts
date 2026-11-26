@@ -32,9 +32,12 @@ import {
   PageSectionOccurrence,
   PageVersionNumber,
 } from "./page-collaboration.js";
+import { PageStateSchema } from "./page-reader-state.js";
 import {
   PAGE_LIST_MAX_LIMIT,
   PageDetailSchema,
+  PageImageSourceSchema,
+  PageImagesSchema,
   PageSummarySchema,
   PageTitleSchema,
   PageVisibilitySchema,
@@ -79,7 +82,11 @@ export const artifactsRpc = {
       .input(
         threadTarget.and(
           z.object({
-            name: z.string().min(1).max(ARTIFACT_NAME_MAX_LENGTH),
+            name: z
+              .string()
+              .min(1)
+              .max(ARTIFACT_NAME_MAX_LENGTH)
+              .refine((name) => name.trim().length > 0),
             description: z.string().max(ARTIFACT_DESCRIPTION_MAX_LENGTH).optional(),
             mimeType: z.string().min(1),
             contentBase64: z.string().min(1),
@@ -131,10 +138,16 @@ export const artifactsRpc = {
       .output(z.object({ ok: z.literal(true) })),
     draft: oc
       .input(PageAccessInput.extend({ requestId: Id }))
-      .output(z.object({ code: z.string() })),
+      .output(z.object({ code: z.string(), images: PageImagesSchema })),
+    image: oc
+      .input(PageAccessInput.extend({ version: PageVersionNumber, imageId: Id }))
+      .output(PageImageSourceSchema),
     publish: oc
       .input(PageAccessInput.extend({ requestId: Id }))
       .output(z.object({ version: PageVersionNumber })),
+    saveState: oc
+      .input(PageAccessInput.extend({ values: PageStateSchema }))
+      .output(z.object({ ok: z.literal(true) })),
   },
   /** Pages bots built for the caller in this Space. */
   pages: {

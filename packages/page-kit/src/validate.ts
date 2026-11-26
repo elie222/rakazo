@@ -12,6 +12,7 @@ import {
   PAGE_KIT_MODULE,
   PAGE_MODULES,
 } from "./components.js";
+import { closeIconNames, isPageIcon } from "./icon-names.js";
 import { selfRenderingKitNames, selfRenderingMessage } from "./shadow.js";
 
 export { PAGE_KIT_GUIDE } from "./guide.js";
@@ -44,6 +45,7 @@ const REACT_HOOKS: ReadonlySet<string> = new Set([
   "useInsertionEffect",
   "useLayoutEffect",
   "useMemo",
+  "usePageState",
   "useReducer",
   "useRef",
   "useSource",
@@ -94,9 +96,24 @@ export function checkPageSource(source: string): PageSourceCheck {
   const tags = new Map<string, number>();
   let defaults = 0;
   const blocked = new Set<string>();
+  let tag = "";
+  const icons: { name: string; line: number; tag: string }[] = [];
   tokens.forEach((token, index) => {
     const text = source.slice(token.start, token.end);
     const line = lineOf(token.start);
+    const iconOf =
+      token.type === TokenType.string ? iconTarget(tokens, index, source, tag) : undefined;
+    if (iconOf !== undefined) icons.push({ name: text.slice(1, -1), line, tag: iconOf });
+    if (
+      token.type === TokenType.string &&
+      /^[a-z]/.test(tag) &&
+      text.slice(1).startsWith("image:") &&
+      PICTURE_ATTRIBUTES.has(attributeOf(tokens, index, source))
+    ) {
+      warnings.push(
+        `line ${line}: <${tag}> does not load "${text.slice(1, -1)}"; only kit components resolve image: names, so use <Image src="${text.slice(1, -1)}" />.`,
+      );
+    }
     if (token.type === TokenType._import) {
       const problem = importProblem(tokens, index, source);
       if (problem) errors.push(`line ${line}: ${problem}`);
@@ -120,6 +137,7 @@ export function checkPageSource(source: string): PageSourceCheck {
       const nameToken =
         tokens[index + 1]?.type === TokenType.jsxName ? tokens[index + 1] : undefined;
       const name = nameToken ? source.slice(nameToken.start, nameToken.end) : "";
+      tag = name;
       // A lowercase first letter makes an element, and HTML reads its name in any case.
       const element = /^[a-z]/.test(name) ? name.toLowerCase() : "";
       if (BLOCKED_ELEMENTS.has(element) && !blocked.has(element)) {
@@ -182,6 +200,10 @@ export function checkPageSource(source: string): PageSourceCheck {
   });
   for (const { name, start } of selfRenderingKitNames(tokens, source)) {
     errors.push(`line ${lineOf(start)}: ${selfRenderingMessage(name)}`);
+  }
+  for (const icon of icons) {
+    if (!icon.name || isPageIcon(icon.name) || declared.has(icon.tag)) continue;
+    warnings.push(`line ${icon.line}: ${unknownIconMessage(icon.name)}`);
   }
   for (const [name, line] of tags) {
     if (GIVEN.has(name) || declared.has(name)) continue;
@@ -276,6 +298,48 @@ function importProblem(tokens: Tokens, start: number, source: string): string | 
   return unknown.length
     ? `${unknown.join(", ")} ${unknown.length > 1 ? "are" : "is"} not in the kit. Use ${KIT_LIST}.`
     : undefined;
+}
+
+function iconTarget(
+  tokens: Tokens,
+  index: number,
+  source: string,
+  tag: string,
+): string | undefined {
+  const braced =
+    tokens[index - 1]?.type === TokenType.braceL && tokens[index + 1]?.type === TokenType.braceR;
+  const at = braced ? index - 1 : index;
+  const key = tokens[at - 2];
+  if (!key) return undefined;
+  const word = source.slice(key.start, key.end);
+  if (tokens[at - 1]?.type === TokenType.eq && key.type === TokenType.jsxName) {
+    const kitProp = (word === "icon" && tag === "Callout") || (word === "name" && tag === "Icon");
+    return kitProp ? tag : undefined;
+  }
+  const objectKey =
+    !braced &&
+    tokens[index - 1]?.type === TokenType.colon &&
+    (key.type === TokenType.name || key.type === TokenType.string) &&
+    word.replace(/^["']|["']$/g, "") === "icon";
+  return objectKey ? "" : undefined;
+}
+
+function unknownIconMessage(name: string): string {
+  const close = closeIconNames(name);
+  return `no kit icon is named "${name}", and an unknown icon draws nothing.${close.length ? ` Did you mean ${close.map((icon) => `"${icon}"`).join(", ")}?` : " Pick one from the icon list in the guide."}`;
+}
+
+// Attributes a plain element loads a picture from.
+const PICTURE_ATTRIBUTES = new Set(["src", "poster", "href"]);
+
+/** The attribute a string is the value of, written name="x" or name={"x"}; "" otherwise. */
+function attributeOf(tokens: Tokens, index: number, source: string): string {
+  const braced =
+    tokens[index - 1]?.type === TokenType.braceL && tokens[index + 1]?.type === TokenType.braceR;
+  const at = braced ? index - 1 : index;
+  if (!isJsxAttributeValue(tokens, at)) return "";
+  const name = tokens[at - 2]!;
+  return source.slice(name.start, name.end);
 }
 
 function isJsxAttributeValue(tokens: Tokens, index: number): boolean {

@@ -11,7 +11,7 @@ import {
   creditOfferingFromConnectionId,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
-import { MISSING_MODEL_RUN_ERROR } from "@rakazo/core";
+import { MISSING_MODEL_RUN_ERROR, savedThinkingLevel } from "@rakazo/core";
 import {
   approvedModelCreditOffering,
   modelCreditOfferings,
@@ -24,7 +24,12 @@ import {
   HostedModelCreditsRequiredError,
   hostedModelCreditObserver,
 } from "../../models/credits/model-credit-observer.js";
-import { resolveDeploymentModel } from "../../models/deployment-model.js";
+import type { SavedDeploymentModel } from "../../models/deployment-model.js";
+import {
+  loadAdminDeploymentModelKey,
+  matchingAdminDeploymentModel,
+  resolveDeploymentModel,
+} from "../../models/deployment-model.js";
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_WORKERS_AI_PROVIDER_ID,
@@ -128,13 +133,7 @@ export async function fleetPrepareDeps(
   };
 }
 
-/**
- * The deployment key is a bearer credential for exactly one vendor, so it is handed out
- * only when the provider that won the resolution above is that vendor. A provider named
- * by deployment settings or a bot override gets no key rather than another vendor's.
- */
-function deploymentKeyFor(deps: ExecutorDeps, provider: string): string | undefined {
-  if (!deps.deploymentModelKey) return undefined;
+function operatorModelKey(deps: ExecutorDeps, provider: string) {
   return provider === resolveDeploymentModel().provider ? deps.deploymentModelKey : undefined;
 }
 
@@ -252,6 +251,7 @@ async function resolveModelKeyMaterial(
     secretId: string;
     provider: string;
     defaultModel?: string | null;
+    thinkingLevel?: string | null;
     supportsImages?: boolean;
   } | null,
   provider: string,
@@ -260,7 +260,14 @@ async function resolveModelKeyMaterial(
   {
     requireStoredSecret = false,
     operatorFunded = false,
-  }: { requireStoredSecret?: boolean; creditOfferingId?: string; operatorFunded?: boolean } = {},
+    adminSettings,
+  }: {
+    requireStoredSecret?: boolean;
+    creditOfferingId?: string;
+    operatorFunded?: boolean;
+    /** The same settings snapshot used to choose the deployment fallback. */
+    adminSettings?: SavedDeploymentModel | null;
+  } = {},
 ): Promise<{
   apiKey?: string;
   accountId?: string;
@@ -275,6 +282,8 @@ async function resolveModelKeyMaterial(
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
   contextWindow?: number;
   reasoning?: boolean;
+  /** The level for runs that pick none: the model's own, else its connection's for that model. */
+  thinkingLevel?: string | null;
   maxTokens?: number;
   acceptsImages?: boolean;
   maxImagesPerPrompt?: number;
@@ -309,7 +318,7 @@ async function resolveModelKeyMaterial(
           throw new UnavailableModelForAuthError(UNKNOWN_PROVIDER_MODEL);
         }
         cloudflareProviderEnv({ provider });
-        return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
+        return { apiKey: operatorModelKey(deps, provider), redact: [] };
       }
       const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
@@ -401,6 +410,11 @@ async function resolveModelKeyMaterial(
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
         contextWindow: settings.contextWindow ?? liveCodex?.contextWindow,
         reasoning: liveCodex?.reasoningEfforts.length ? true : settings.reasoning,
+        thinkingLevel: savedThinkingLevel(
+          settings.thinkingLevel,
+          { modelId: credential.defaultModel, thinkingLevel: credential.thinkingLevel },
+          modelId,
+        ),
         maxTokens: settings.maxTokens,
         acceptsImages,
         maxImagesPerPrompt: settings.maxImagesPerPrompt,
@@ -449,13 +463,24 @@ async function resolveModelKeyMaterial(
     return material!;
   }
   cloudflareProviderEnv({ provider });
-  return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
+  const admin = !operatorFunded && matchingAdminDeploymentModel(adminSettings, provider, modelId);
+  return {
+    apiKey:
+      admin && !(await modelCreditBillingEnabled(deps))
+        ? await loadAdminDeploymentModelKey(deps.secretStore, admin.cipher)
+        : operatorModelKey(deps, provider),
+    redact: [],
+  };
 }
 
-/** Translate resolved credentials and capabilities consistently for every run path. */
+/**
+ * Translate resolved credentials and capabilities consistently for every run path. A run that
+ * chose no thinking level runs at the model's own, else its connection's for that model.
+ */
 export function resolvedModelRunFields(
   resolved: Awaited<ReturnType<typeof resolveModelKey>>,
-): Omit<AgentRunRequest["model"], "provider" | "id" | "thinkingLevel"> {
+  thinkingLevel?: string | null,
+): Omit<AgentRunRequest["model"], "provider" | "id"> {
   return {
     connectionId: resolved.connectionId,
     billing: resolved.billing,
@@ -476,6 +501,9 @@ export function resolvedModelRunFields(
     maxTokens: resolved.maxTokens,
     acceptsImages: resolved.acceptsImages,
     maxImagesPerPrompt: resolved.maxImagesPerPrompt,
+    thinkingLevel: (thinkingLevel ??
+      resolved.thinkingLevel ??
+      null) as AgentRunRequest["model"]["thinkingLevel"],
     oauth: resolved.oauth
       ? {
           credential: resolved.oauth,
@@ -519,9 +547,8 @@ export async function resolveConnectedModelKey(
     );
     return { credential: null, resolved };
   }
-  const hostedProvider = (await modelCreditBillingEnabled(deps))
-    ? resolveDeploymentModel().provider
-    : undefined;
+  const billingEnabled = await modelCreditBillingEnabled(deps);
+  const hostedProvider = billingEnabled ? resolveDeploymentModel().provider : undefined;
   const validationError = await validateConnectedModelChoice(
     deps.prisma,
     deps.secretStore,
@@ -530,6 +557,24 @@ export async function resolveConnectedModelKey(
     modelId,
     { hostedProvider, credentialId, codexCatalog: deps.codexCatalog },
   );
+  if (validationError === PINNED_PROVIDER_NOT_CONNECTED && !credentialId && !billingEnabled) {
+    const adminSettings = await deps.prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+    });
+    if (matchingAdminDeploymentModel(adminSettings, provider, modelId)) {
+      const resolved = await resolveModelKey(
+        deps,
+        scope.userId,
+        scope.spaceId,
+        null,
+        provider,
+        modelId,
+        registerSecrets,
+        { adminSettings },
+      );
+      return { credential: null, resolved };
+    }
+  }
   if (validationError) throw new Error(validationError);
   const credential = await findConnectedModelCredential(
     deps.prisma,
@@ -567,7 +612,7 @@ export async function resolveConnectedRunModel(
   /** The connection a role row is pinned to. */
   credentialId?: string,
 ): Promise<AgentRunRequest["model"]> {
-  const { credential, resolved } = await resolveConnectedModelKey(
+  const { resolved } = await resolveConnectedModelKey(
     deps,
     scope,
     provider,
@@ -580,13 +625,7 @@ export async function resolveConnectedRunModel(
     provider,
     id: modelId,
     ...(credentialId ? { connectionId: credentialId } : {}),
-    ...resolvedModelRunFields(resolved),
-    thinkingLevel:
-      ((thinkingLevel !== undefined
-        ? thinkingLevel
-        : credential?.defaultModel === modelId
-          ? credential?.thinkingLevel
-          : null) as AgentRunRequest["model"]["thinkingLevel"]) ?? null,
+    ...resolvedModelRunFields(resolved, thinkingLevel),
   };
 }
 
@@ -651,6 +690,7 @@ export async function resolveRunModel(
     id,
     undefined,
     {
+      adminSettings: settings,
       creditOfferingId: creditOfferingFromConnectionId(selected.connectionId),
       requireStoredSecret: Boolean(
         selected.connectionId && !creditOfferingFromConnectionId(selected.connectionId),
@@ -660,7 +700,6 @@ export async function resolveRunModel(
   return {
     provider,
     id,
-    ...resolvedModelRunFields(resolved),
-    thinkingLevel: thinkingLevel ?? null,
+    ...resolvedModelRunFields(resolved, thinkingLevel),
   };
 }

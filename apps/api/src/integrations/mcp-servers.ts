@@ -7,24 +7,39 @@ import {
   mcpServerHealthDto,
   mcpStdioRefusal,
   recordMcpServerHealth,
+  removeMcpServerInTransaction,
 } from "@rakazo/adapters";
 import type { Actor, McpServer, McpServerConfigInput } from "@rakazo/contracts";
-import { ConnectionSetupError, mcpOAuthEnvReferences } from "@rakazo/contracts";
+import {
+  ConnectionSetupError,
+  MCP_SERVER_IN_ORGANIZATION,
+  mcpOAuthEnvReferences,
+} from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { McpServer as McpServerRow, Prisma } from "@rakazo/db";
-import { assertNameFreeWhereAvailable, itemSecretIn, spaceAvailability } from "@rakazo/db";
+import {
+  assertNameFreeWhereAvailable,
+  managedOrganizationId,
+  organizationServerAt,
+  serverSecretIn,
+  spaceAvailability,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isAdmin } from "../auth/admins.js";
 import type { RouterDeps } from "../router.js";
 import { computerContext } from "../routes/shared.js";
 import { userAddedAvailability } from "../spaces/name-claims.js";
-import { dismissMcpServerApprovals } from "./mcp-approval.js";
 import type { McpSecretMaterial } from "./mcp-material.js";
 import { legacyMcpArgs } from "./mcp-material.js";
+
+/** Who is looking: their Space, and the organization they manage there, if any. */
+export type McpViewer = { spaceId: string; managedOrganizationId: string | null };
 
 export function mcpServerDto(
   row: {
     id: string;
-    spaceId: string;
+    spaceId: string | null;
+    organizationId?: string | null;
     slug: string;
     name: string;
     description: string;
@@ -51,15 +66,18 @@ export function mcpServerDto(
     createdAt: Date;
     updatedAt: Date;
   },
-  oauth: McpOAuthSummary = { status: "none", clientId: null, credential: true },
+  oauth: McpOAuthSummary,
+  viewer: McpViewer,
 ): McpServer {
+  const organizationId = row.organizationId ?? null;
   const keysOf = (value: unknown) =>
     value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
   const envKeys = keysOf(row.env);
   const headerKeys = keysOf(row.headers);
   return {
     id: row.id,
-    spaceId: row.spaceId,
+    // An organization's server is in no one Space; it reads as in the viewer's.
+    spaceId: row.spaceId ?? viewer.spaceId,
     slug: row.slug,
     name: row.name,
     description: row.description,
@@ -73,7 +91,14 @@ export function mcpServerDto(
     installId: row.installId ?? null,
     // A lone OAuth generation marker keeps a secret row without holding a credential.
     hasSecret: row.secretId !== null && oauth.credential,
-    oauthStatus: oauth.status,
+    // A successful remote probe with a saved bearer token needs no OAuth grant.
+    oauthStatus:
+      oauth.status === "reconnect" &&
+      oauth.hasBearerToken &&
+      row.transport !== "stdio" &&
+      row.healthStatus === "ok"
+        ? "none"
+        : oauth.status,
     oauthClientId: oauth.clientId,
     enabled: row.enabled,
     verbatimResults: row.verbatimResults ?? false,
@@ -81,6 +106,8 @@ export function mcpServerDto(
     health: mcpServerHealthDto(row),
     availability: spaceAvailability({ ...row, allSpaces: row.allSpaces ?? false }),
     allBots: row.allBots ?? false,
+    organization: organizationId !== null,
+    manageable: organizationId === null || organizationId === viewer.managedOrganizationId,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -209,16 +236,12 @@ export function mcpCredentialRecords(
   return parsed.headers && parsed.env ? { headers: parsed.headers, env: parsed.env } : null;
 }
 
-export function createMcpServers(
-  deps: RouterDeps,
-  onboardingDeps: Parameters<typeof dismissMcpServerApprovals>[0],
-  mcpOAuth: McpOAuthBroker,
-) {
+export function createMcpServers(deps: RouterDeps, mcpOAuth: McpOAuthBroker) {
   const mcpAwaitsOAuth = async (server: McpServerRow, actor: Actor, oauth: McpOAuthSummary) => {
     if (oauth.status === "connected") return false;
     const secret = server.secretId
       ? await deps.prisma.secret.findFirst({
-          where: { id: server.secretId, ...itemSecretIn(actor) },
+          where: { id: server.secretId, ...serverSecretIn(actor) },
         })
       : null;
     const material: McpSecretMaterial = secret
@@ -278,18 +301,6 @@ export function createMcpServers(
     void probeMcpServer(row, actor);
     return display;
   };
-  const removeMcpServerInTransaction = async (
-    tx: Prisma.TransactionClient,
-    actor: Actor,
-    server: { id: string; secretId: string | null },
-  ) => {
-    const painted = await dismissMcpServerApprovals(onboardingDeps, actor, server.id, tx);
-    await tx.mcpServer.delete({ where: { id: server.id } });
-    if (server.secretId) {
-      await tx.secret.deleteMany({ where: { id: server.secretId, ...itemSecretIn(actor) } });
-    }
-    return painted;
-  };
   const prepareMcpServer = async (actor: Actor, input: McpServerConfigInput) => {
     await assertMcpRemoteEndpoint("endpoint" in input ? input.endpoint : null, deps);
     if (input.transport === "stdio") {
@@ -308,9 +319,14 @@ export function createMcpServers(
     input: McpServerConfigInput,
     stored: Awaited<ReturnType<typeof prepareMcpServer>>,
     // What the user adds reaches all their spaces and agents; an import stays with its agent.
-    options: { everywhere?: boolean } = {},
+    // An organization's server reaches every member's agents in each of its Spaces.
+    options: { everywhere?: boolean; allBots?: boolean; organizationId?: string } = {},
   ) => {
-    if (options.everywhere)
+    const { organizationId } = options;
+    // An import keeps the agent's own copy; what a member adds by hand uses the organization's.
+    if ((organizationId || options.everywhere) && "endpoint" in input)
+      await assertNotInOrganization(tx, actor, input.endpoint);
+    if (options.everywhere && !organizationId)
       await assertNameFreeWhereAvailable(
         tx,
         "mcpServer",
@@ -322,8 +338,9 @@ export function createMcpServers(
       await tx.secret.create({
         data: {
           id: stored.id,
-          userId: actor.userId,
-          spaceId: options.everywhere ? null : actor.spaceId,
+          ...(organizationId
+            ? { organizationId, userId: null, spaceId: null }
+            : { userId: actor.userId, spaceId: options.everywhere ? null : actor.spaceId }),
           kind: "mcp",
           ciphertext: stored.ciphertext,
         },
@@ -331,10 +348,14 @@ export function createMcpServers(
     }
     return tx.mcpServer.create({
       data: {
-        spaceId: actor.spaceId,
-        userId: actor.userId,
-        allSpaces: options.everywhere ?? false,
-        allBots: options.everywhere ?? false,
+        ...(organizationId
+          ? { organizationId, spaceId: null, userId: null, allSpaces: false, allBots: true }
+          : {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              allSpaces: options.everywhere ?? false,
+              allBots: options.allBots ?? options.everywhere ?? false,
+            }),
         slug: input.slug,
         name: input.name,
         description: input.description,
@@ -359,7 +380,11 @@ export function createMcpServers(
   };
   const announceMcpServer = async (row: McpServerRow, actor: Actor) => {
     const oauth = await mcpOAuth.summaryFor(row, actor);
-    return mcpServerDto(await beginMcpProbe(row, actor, oauth), oauth);
+    return mcpServerDto(
+      await beginMcpProbe(row, actor, oauth),
+      oauth,
+      await mcpViewer(deps.prisma, actor),
+    );
   };
   return {
     mcpAwaitsOAuth,
@@ -370,6 +395,31 @@ export function createMcpServers(
     insertMcpServer,
     announceMcpServer,
   };
+}
+
+export async function mcpViewer(
+  prisma: RouterDeps["prisma"],
+  actor: Pick<Actor, "spaceId" | "userId">,
+): Promise<McpViewer> {
+  return {
+    spaceId: actor.spaceId,
+    managedOrganizationId: await managedOrganizationId(prisma, actor),
+  };
+}
+
+/** The organization already shares a server at this address, so adding another is refused. */
+export async function assertNotInOrganization(
+  db: Pick<Prisma.TransactionClient, "mcpServer">,
+  actor: Pick<Actor, "spaceId" | "userId">,
+  endpoint: string,
+  exceptId?: string,
+): Promise<void> {
+  if (await organizationServerAt(db, actor, endpoint, exceptId))
+    throw new ClientError(
+      "CONFLICT",
+      "Your organization already added this MCP server.",
+      MCP_SERVER_IN_ORGANIZATION,
+    );
 }
 
 function isHostNotFound(error: unknown): boolean {

@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
+import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
+import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import type { NavigateFunction } from "react-router-dom";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
@@ -48,29 +51,47 @@ vi.mock("@lingui/react/macro", () => {
 import { rpc } from "../../lib/query/rpc";
 import { OnboardingPage } from "./Onboarding";
 
-const hostedCatalog = [
+const hostedCatalog: ModelCatalogEntry[] = [
   {
     provider: "openai-codex",
     providerName: "OpenAI Codex",
+    subscriptionName: "ChatGPT subscription",
     id: "codex-model",
     label: "Codex model",
+    billing: "Subscription",
     auth: "oauth",
     signIn: "device-code",
   },
   {
     provider: "anthropic",
     providerName: "Anthropic",
+    subscriptionName: "Claude subscription",
     id: "claude-model",
     label: "Claude model",
+    billing: "API key or subscription",
+    auth: "both",
     signIn: "auth-url",
   },
-  { provider: "openai", providerName: "OpenAI", id: "gpt-model", label: "GPT model" },
-  { provider: "mistral", providerName: "Mistral", id: "mistral-model", label: "Mistral model" },
+  {
+    provider: "openai",
+    providerName: "OpenAI",
+    id: "gpt-model",
+    label: "GPT model",
+    billing: "API key",
+  },
+  {
+    provider: "mistral",
+    providerName: "Mistral",
+    id: "mistral-model",
+    label: "Mistral model",
+    billing: "API key",
+  },
   {
     provider: "github-copilot",
     providerName: "GitHub Copilot",
     id: "copilot-model",
     label: "Copilot model",
+    billing: "Subscription",
     auth: "oauth",
     signIn: "device-code",
   },
@@ -79,11 +100,37 @@ const hostedCatalog = [
     providerName: "xAI",
     id: "grok-model",
     label: "Grok model",
+    billing: "API key or subscription",
+    auth: "both",
     signIn: "device-code",
   },
 ];
 
+const roots = new Set<Root>();
+
+function mountRoot(host = document.body.appendChild(document.createElement("div"))) {
+  const root = createRoot(host);
+  roots.add(root);
+  return root;
+}
+
+async function cleanup() {
+  await act(async () => {
+    for (const root of roots) root.unmount();
+    roots.clear();
+    // Session stores defer their cleanup after the last subscriber leaves. Run it
+    // while jsdom still owns window, before restoring real timers and globals.
+    await vi.runOnlyPendingTimersAsync();
+  });
+}
+
 beforeEach(() => {
+  i18n.loadAndActivate({ locale: "en", messages: {} });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json(null)),
+  );
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
     "ResizeObserver",
@@ -95,15 +142,20 @@ beforeEach(() => {
   );
   Element.prototype.scrollIntoView = () => {};
 });
-afterEach(() => {
-  document.body.innerHTML = "";
-  vi.unstubAllGlobals();
+afterEach(async () => {
+  try {
+    await cleanup();
+  } finally {
+    document.body.innerHTML = "";
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  }
 });
 
 it("marks onboarding as usable for the desktop only once a step shows", async () => {
   const host = document.body.appendChild(document.createElement("div"));
-  const root = createRoot(host);
-  // The shell sends a new account to /onboarding, which loads before it picks a step.
+  const root = mountRoot(host);
   await act(async () =>
     root.render(
       <MemoryRouter initialEntries={["/onboarding"]}>
@@ -121,14 +173,13 @@ it("marks onboarding as usable for the desktop only once a step shows", async ()
   );
   expect(host.querySelector("h1")?.textContent).toBe("Connect a model");
   expect(marked()).not.toBeNull();
-  act(() => root.unmount());
 });
 
 it("recovers a failed discovery and searches a long custom endpoint list during onboarding", async () => {
   const probe = vi.mocked(rpc.models.probeOpenAiCompatible);
   probe.mockClear();
   probe.mockRejectedValueOnce(new Error("Temporary discovery failure"));
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  const root = mountRoot();
   await act(async () =>
     root.render(
       <MemoryRouter initialEntries={["/onboarding"]}>
@@ -181,7 +232,6 @@ it("recovers a failed discovery and searches a long custom endpoint list during 
   ]);
   await act(async () => document.querySelector<HTMLElement>("[cmdk-item]")!.click());
   expect(document.querySelector('[aria-label="Models from server"]')?.textContent).toBe("found-10");
-  await act(async () => root.unmount());
 });
 
 it.each([
@@ -197,7 +247,7 @@ it.each([
     router.pathname = useLocation().pathname;
     return null;
   }
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  const root = mountRoot();
   await act(async () =>
     root.render(
       <MemoryRouter initialEntries={["/onboarding"]}>
@@ -214,7 +264,6 @@ it.each([
 
   await act(async () => settle());
   expect(router.pathname).toBe("/sign-in");
-  act(() => root.unmount());
 });
 
 it.each([
@@ -223,7 +272,7 @@ it.each([
 ])("%s", async (_name, botId, path) => {
   vi.mocked(rpc.onboarding.firstBot).mockResolvedValue({ botId });
   const host = document.body.appendChild(document.createElement("div"));
-  const root = createRoot(host);
+  const root = mountRoot(host);
   let pathname = "";
   function Location() {
     pathname = useLocation().pathname;
@@ -245,12 +294,42 @@ it.each([
   );
   await vi.waitFor(() => expect(pathname).toBe(path));
   expect(rpc.onboarding.firstBot).toHaveBeenCalledOnce();
-  act(() => root.unmount());
+});
+
+it("cleans up the account session before the browser globals are torn down", async () => {
+  const removeListener = vi.spyOn(window, "removeEventListener");
+  const root = mountRoot();
+  await act(async () =>
+    root.render(
+      <MemoryRouter initialEntries={["/onboarding"]}>
+        <Routes>
+          <Route path="/onboarding/:step?" element={<OnboardingPage />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+  await act(async () =>
+    account.resolve({ needsModel: true, needsSignupSurvey: false, billingEnabled: false }),
+  );
+  expect(document.querySelector('[aria-label="Account"]')).not.toBeNull();
+
+  await cleanup();
+
+  // Model environment teardown without relying on a race with the real clock.
+  const browserWindow = window;
+  vi.stubGlobal("window", undefined);
+  Reflect.deleteProperty(globalThis, "window");
+  try {
+    await vi.runOnlyPendingTimersAsync();
+  } finally {
+    vi.stubGlobal("window", browserWindow);
+  }
+  expect(removeListener).toHaveBeenCalledWith("storage", expect.any(Function));
 });
 
 it("starts a hosted account by choosing credits, a subscription, or an API key", async () => {
-  vi.mocked(rpc.models.list).mockResolvedValueOnce(hostedCatalog as never);
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  vi.mocked(rpc.models.list).mockResolvedValueOnce(hostedCatalog);
+  const root = mountRoot();
   await act(async () =>
     root.render(
       <MemoryRouter initialEntries={["/onboarding"]}>
@@ -280,6 +359,7 @@ it("starts a hosted account by choosing credits, a subscription, or an API key",
   expect(button("Continue")).toBeUndefined();
 
   await act(async () => choice("Use a subscription")!.click());
+  expect(button("Continue")).toBeUndefined();
   expect(
     [
       ...document.querySelectorAll(
@@ -311,12 +391,11 @@ it("starts a hosted account by choosing credits, a subscription, or an API key",
   expect(document.querySelector('input[type="password"]')).toBeNull();
   await act(async () => button("Continue")!.click());
   expect(rpc.billing.selectFunding).toHaveBeenCalledWith({ funding: "credits", surface: "web" });
-  act(() => root.unmount());
 });
 
 it("keeps the provider list for self-hosted accounts", async () => {
-  vi.mocked(rpc.models.list).mockResolvedValueOnce(hostedCatalog as never);
-  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  vi.mocked(rpc.models.list).mockResolvedValueOnce(hostedCatalog);
+  const root = mountRoot();
   await act(async () =>
     root.render(
       <MemoryRouter initialEntries={["/onboarding"]}>
@@ -342,5 +421,4 @@ it("keeps the provider list for self-hosted accounts", async () => {
     "Mistral",
     "xAI",
   ]);
-  act(() => root.unmount());
 });

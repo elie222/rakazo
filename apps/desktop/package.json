@@ -1,26 +1,24 @@
 {
   "name": "@rakazo/desktop",
   "productName": "Rakazo",
-  "version": "0.13.0",
+  "version": "0.16.0",
   "author": {
     "name": "Rakazo"
   },
   "license": "Apache-2.0",
   "type": "module",
-  "main": "dist/main.js",
+  "main": "dist/launch.js",
   "scripts": {
     "dev": "pnpm build && electron .",
     "build": "node scripts/build.mjs && node scripts/copy-static.mjs && node scripts/build-speech.mjs",
     "pack": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --mac --win --linux",
     "pack:dir": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --dir",
-    "check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.jsdom.json && tsc --noEmit -p e2e/tsconfig.json && tsc --noEmit -p scripts/tsconfig.json",
+    "check": "tsrs --noEmit -p tsconfig.json && tsrs --noEmit -p tsconfig.jsdom.json && tsrs --noEmit -p e2e/tsconfig.json && tsrs --noEmit -p scripts/tsconfig.json",
     "test": "vitest run --root ../.. apps/desktop/src",
     "test:e2e": "pnpm build && playwright test --config e2e/playwright.config.ts",
     "release": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --publish never"
   },
   "dependencies": {
-    "@rakazo/contracts": "workspace:*",
-    "@rakazo/logging": "workspace:*",
     "@sentry/electron": "8.3.0",
     "electron-updater": "6.8.12",
     "koffi": "3.3.7"
@@ -28,7 +26,9 @@
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@rakazo/adapters": "workspace:*",
+    "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
+    "@rakazo/logging": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "electron": "45.2.3",
     "electron-builder": "26.18.1",
@@ -39,6 +39,14 @@
   },
   "build": {
     "appId": "dev.rakazo.desktop",
+    "protocols": [
+      {
+        "name": "Rakazo",
+        "schemes": [
+          "rakazo"
+        ]
+      }
+    ],
     "directories": {
       "output": "out",
       "buildResources": "assets"
@@ -53,6 +61,10 @@
         "to": "web"
       },
       {
+        "from": "assets/app-icons",
+        "to": "app-icons"
+      },
+      {
         "from": "../../infra/compose/docker-compose.images.yml",
         "to": "stack/docker-compose.images.yml"
       },
@@ -63,7 +75,7 @@
     ],
     "extraMetadata": {
       "name": "rakazo",
-      "main": "dist/main.js"
+      "main": "dist/launch.js"
     },
     "mac": {
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",

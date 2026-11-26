@@ -7,6 +7,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
+  list: vi.fn(async () => [] as Array<{ id: string; status: string; manageable: boolean }>),
+  reconnect: vi.fn(async () => ({ connectionId: "shared-connection", authorizationUrl: null })),
   begin: vi.fn(async () => ({ connectionId: "connection", authorizationUrl: null })),
   complete: vi.fn(async () => ({ status: "connected" })),
   mark: vi.fn(async () => ({ ok: true })),
@@ -21,7 +23,12 @@ const calls = vi.hoisted(() => ({
 }));
 vi.mock("../../../lib/query/rpc", () => {
   const rpc = {
-    connections: { begin: calls.begin, complete: calls.complete },
+    connections: {
+      begin: calls.begin,
+      complete: calls.complete,
+      list: calls.list,
+      reconnectOrganization: calls.reconnect,
+    },
     onboarding: {
       appConnected: calls.mark,
       choose: calls.choose,
@@ -154,6 +161,77 @@ it("authorizes a card in a normal chat and marks its thread connected", async ()
     });
     expect(host.textContent).toContain("Connected");
     expect(host.querySelector("button")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("reconnects the organization account named by a chat card", async () => {
+  calls.list.mockResolvedValueOnce([
+    { id: "shared-connection", status: "error", manageable: true },
+  ]);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <AppConnectCard
+          botId="bot"
+          threadId="normal-chat"
+          block={{
+            kind: "app_connect",
+            organizationConnectionId: "shared-connection",
+            connectorId: "fixture",
+            provider: "mail",
+            name: "Mail",
+            description: "",
+            logo: null,
+            status: "pending",
+          }}
+        />,
+      ),
+    );
+    await vi.waitFor(() => expect(host.querySelector("button")?.textContent).toBe("Reconnect"));
+    await act(async () => host.querySelector("button")?.click());
+    expect(calls.reconnect).toHaveBeenCalledWith({ connectionId: "shared-connection" });
+    expect(calls.begin).not.toHaveBeenCalled();
+    expect(calls.mark).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationConnectionId: "shared-connection",
+      }),
+    );
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it.each([
+  ["Gmail", "G"],
+  ["🦞 OpenClaw", "🦞"],
+  ["𠮷野", "𠮷"],
+])("starts a logo-less %s card with a whole first character", async (name, initial) => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <AppConnectCard
+          botId="bot"
+          threadId="normal-chat"
+          block={{
+            kind: "app_connect",
+            connectorId: "fake",
+            provider: "custom",
+            name,
+            description: "",
+            logo: null,
+            status: "pending",
+          }}
+        />,
+      ),
+    );
+    expect(host.querySelector("span.grid")?.textContent).toBe(initial);
   } finally {
     await act(async () => root.unmount());
     host.remove();

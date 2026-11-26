@@ -23,6 +23,7 @@ import {
   ClientError,
   computerUsingRuns,
   isRetryableError,
+  PERSON_RUN_TRIGGERS,
   pollUntil,
 } from "@rakazo/core";
 import { parseScreenLeaseId, screenLeaseId } from "@rakazo/core/node/screen-lease";
@@ -70,6 +71,7 @@ type ComputerUpdateProgress = (
 export const EXECUTION_LEASE_MS = 5 * 60_000;
 const BOOT_WAIT_ATTEMPTS = 40;
 const BOOT_WAIT_MS = 250;
+const SUSPEND_WAIT_MS = 500;
 const RUNNING_CHECK_RETRY_MS = [250, 750];
 /**
  * Dedicated / lease-less boots never write an execution-lease row, so this stamp age is the
@@ -87,11 +89,8 @@ function isAbandonedLifecycleClaim(updatedAt: Date | null | undefined, now = Dat
   return updatedAt instanceof Date && now - updatedAt.getTime() >= BOOT_CLAIM_STALE_MS;
 }
 
-function isLiveSuspending(
-  computer: { state: string; updatedAt?: Date | null },
-  now = Date.now(),
-): boolean {
-  return computer.state === "suspending" && !isAbandonedLifecycleClaim(computer.updatedAt, now);
+function isLiveSuspending(computer: { state: string; updatedAt?: Date | null }): boolean {
+  return computer.state === "suspending" && !isAbandonedLifecycleClaim(computer.updatedAt);
 }
 
 /**
@@ -268,6 +267,14 @@ export async function provisionComputer(
     });
     return new ComputerBusyError();
   };
+  // A run that needs the computer while it goes to sleep holds its execution lease, which turns
+  // the sleep back after its checkpoint; past that point the stop finishes and the run resumes it.
+  if (isLiveSuspending(existing)) {
+    const settled = await waitForSuspendToSettle(deps.prisma, existing, context);
+    if (!settled) throw busy("not_ready");
+    context.signal.throwIfAborted();
+    existing = settled;
+  }
   if (existing.state === "quarantined") throw new ComputerRecoveryRequiredError();
   if (existing.maintenanceId && existing.maintenanceId !== context.operationId)
     throw busy("maintenance");
@@ -826,6 +833,29 @@ async function waitForComputerReady(
   return prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
 }
 
+/** The row once a live suspend has finished or turned back, or null when its claim is abandoned first. */
+async function waitForSuspendToSettle(
+  prisma: PrismaClient,
+  suspending: { id: string; updatedAt: Date },
+  context: AdapterContext,
+) {
+  return pollUntil(
+    async () => {
+      const current = await prisma.computer.findUniqueOrThrow({ where: { id: suspending.id } });
+      const settled =
+        current.state !== "suspending" ||
+        current.updatedAt.getTime() !== suspending.updatedAt.getTime();
+      return settled ? current : undefined;
+    },
+    {
+      intervalMs: SUSPEND_WAIT_MS,
+      timeoutMs: suspending.updatedAt.getTime() + BOOT_CLAIM_STALE_MS - Date.now(),
+      signal: context.signal,
+      onTimeout: () => null,
+    },
+  );
+}
+
 async function rollbackProvisionedComputer(
   sandbox: SandboxProvider,
   computer: ComputerRef,
@@ -960,18 +990,44 @@ export async function acquireDedicatedScreenLeaseFence(
 
 async function lockOwnedRun(
   tx: Prisma.TransactionClient,
-  input: { runId: string; botId: string; workerId: string; runFence: number },
+  input: { computerId: string; runId: string; botId: string; workerId: string; runFence: number },
 ): Promise<void> {
-  const currentRun = await tx.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM runs
+  const now = new Date();
+  const people = [...PERSON_RUN_TRIGGERS];
+  // Background work leaves a free computer to a person's run waiting for it, but keeps one it
+  // holds. A marked person run that the lease row names already had its turn.
+  const currentRun = await tx.$queryRaw<Array<{ yieldsToPerson?: boolean }>>`
+    SELECT (
+      trigger <> ALL(${people})
+      AND NOT EXISTS (
+        SELECT 1 FROM computer_execution_leases
+        WHERE "computerId" = ${input.computerId}
+          AND "botId" = ${input.botId}
+          AND "runId" = ${input.runId}
+          AND "expiresAt" > ${now})
+      AND EXISTS (
+        SELECT 1 FROM runs waiting
+        WHERE waiting."botId" = ${input.botId}
+          AND waiting.id <> ${input.runId}
+          AND waiting.status = 'running'
+          AND waiting.trigger = ANY(${people})
+          AND waiting."computerUseStartedAt" IS NOT NULL
+          AND waiting."leaseExpiresAt" > ${now}
+          AND NOT EXISTS (
+            SELECT 1 FROM computer_execution_leases
+            WHERE "computerId" = ${input.computerId}
+              AND "botId" = ${input.botId}
+              AND "runId" = waiting.id))
+    ) AS "yieldsToPerson"
+    FROM runs
     WHERE id = ${input.runId}
       AND "botId" = ${input.botId}
       AND status = 'running'
       AND "leaseOwner" = ${input.workerId}
       AND "leaseFence" = ${input.runFence}
-      AND "leaseExpiresAt" > ${new Date()}
+      AND "leaseExpiresAt" > ${now}
     FOR UPDATE SKIP LOCKED`;
-  if (currentRun.length !== 1) throw new ComputerBusyError();
+  if (currentRun.length !== 1 || currentRun[0]?.yieldsToPerson) throw new ComputerBusyError();
 }
 
 export async function acquireComputerExecutionLease(
@@ -986,12 +1042,14 @@ export async function acquireComputerExecutionLease(
   if (computer.maintenanceId && computer.maintenanceId !== input.runId)
     throw new ComputerBusyError();
   if (computer.scope !== "team") return null;
-  if (isLiveSuspending(computer)) throw new ComputerBusyError();
+  // A run's lease taken while the computer goes to sleep turns the sleep back after its
+  // checkpoint. API operations have no executing run that could, so they are refused until it ends.
+  const ownsRun = input.workerId !== undefined;
+  if (!ownsRun && isLiveSuspending(computer)) throw new ComputerBusyError();
   return withTransactionRetry(() =>
     prisma.$transaction(async (tx) => {
       // Only the locked current worker claim may reclaim a live same-run lease.
       // API operations have no worker claim and may acquire only new or expired leases.
-      const ownsRun = input.workerId !== undefined;
       if (ownsRun) {
         const assigned = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM bots WHERE id = ${input.botId}
@@ -1020,12 +1078,16 @@ export async function acquireComputerExecutionLease(
         select: { fence: true },
       });
       if (reclaimed) {
-        return validateAcquiredComputerLease(tx, {
-          computerId: input.computerId,
-          botId: input.botId,
-          runId: input.runId,
-          fence: reclaimed.fence,
-        });
+        return validateAcquiredComputerLease(
+          tx,
+          {
+            computerId: input.computerId,
+            botId: input.botId,
+            runId: input.runId,
+            fence: reclaimed.fence,
+          },
+          ownsRun,
+        );
       }
       try {
         const created = await tx.computerExecutionLease.create({
@@ -1038,12 +1100,16 @@ export async function acquireComputerExecutionLease(
           },
           select: { fence: true },
         });
-        return validateAcquiredComputerLease(tx, {
-          computerId: input.computerId,
-          botId: input.botId,
-          runId: input.runId,
-          fence: created.fence,
-        });
+        return validateAcquiredComputerLease(
+          tx,
+          {
+            computerId: input.computerId,
+            botId: input.botId,
+            runId: input.runId,
+            fence: created.fence,
+          },
+          ownsRun,
+        );
       } catch (error) {
         if (isUniqueViolation(error)) throw new ComputerBusyError();
         throw error;
@@ -1055,13 +1121,14 @@ export async function acquireComputerExecutionLease(
 async function validateAcquiredComputerLease(
   prisma: Prisma.TransactionClient,
   lease: ComputerExecutionLease,
+  ownsRun: boolean,
 ): Promise<ComputerExecutionLease> {
   const computer = await prisma.computer.findUniqueOrThrow({
     where: { id: lease.computerId },
     select: { state: true, maintenanceId: true, updatedAt: true },
   });
   if (
-    !isLiveSuspending(computer) &&
+    (ownsRun || !isLiveSuspending(computer)) &&
     (!computer.maintenanceId || computer.maintenanceId === lease.runId)
   )
     return lease;
@@ -1074,10 +1141,25 @@ export async function waitForRunComputerLease(
   input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
   signal: AbortSignal,
 ): Promise<ComputerExecutionLease | null> {
+  let marked = false;
   const outcome = await pollUntil(
     async () => {
       signal.throwIfAborted();
       try {
+        // A person's run marks its wait, which the bot's background runs yield to.
+        if (!marked) {
+          await prisma.run.updateMany({
+            where: {
+              id: input.runId,
+              trigger: { in: [...PERSON_RUN_TRIGGERS] },
+              status: "running",
+              leaseOwner: input.workerId,
+              leaseFence: input.runFence,
+            },
+            data: { computerUseStartedAt: new Date() },
+          });
+          marked = true;
+        }
         const bot = await prisma.bot.findUnique({
           where: { id: input.botId },
           select: { computerId: true, computerSwitching: true, archivedAt: true },

@@ -622,7 +622,6 @@ describe("web external link confirmation", () => {
     await act(async () => {
       buttonNamed(document, "Always open example.test")?.click();
     });
-    // A failed save still opens the link.
     expect(open).toHaveBeenCalledWith(
       "https://docs.example.test/a",
       "_blank",
@@ -750,6 +749,18 @@ describe("web markdown code copy", () => {
   });
 });
 
+describe("web markdown line breaks", () => {
+  it("keeps a single newline inside a paragraph as a line break", () => {
+    const holder = document.createElement("div");
+    holder.innerHTML = renderToStaticMarkup(
+      <ChatMarkdown>{"Which one?\n\nA. First\nB. Second"}</ChatMarkdown>,
+    );
+    const options = holder.querySelectorAll("p")[1];
+    expect(options?.querySelectorAll("br")).toHaveLength(1);
+    expect(options?.textContent).toBe("A. First\nB. Second");
+  });
+});
+
 describe("web markdown prose fences", () => {
   const draft =
     "Dear team, this line of prose is far wider than a bubble, so it wraps instead of scrolling.";
@@ -806,6 +817,23 @@ describe("web markdown mentions", () => {
     expect(html).toContain('<b data-id="bot-1">Planner</b>');
     expect(html).toContain("<span>Other</span>");
     expect(html).not.toContain("<a");
+  });
+
+  it("keeps a mention added in front of the text out of a selection, but not one in the text", () => {
+    const renderMention = (_id: string, name: string) => <b>{name}</b>;
+    const added = renderToStaticMarkup(
+      <ChatMarkdown renderMention={renderMention}>
+        {"[Reporter](rakazo-mention:bot-1#added) I set up the weekly report."}
+      </ChatMarkdown>,
+    );
+    expect(added).toContain('<span class="select-none"><b>Reporter</b></span>');
+    const named = renderToStaticMarkup(
+      <ChatMarkdown renderMention={renderMention}>
+        {"[Reporter](rakazo-mention:bot-1) is ready."}
+      </ChatMarkdown>,
+    );
+    expect(named).toContain("<b>Reporter</b>");
+    expect(named).not.toContain("select-none");
   });
 });
 

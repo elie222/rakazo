@@ -44,7 +44,7 @@ const summary = {
   models: [
     {
       provider: "subscription",
-      model: "example-large",
+      model: "claude-sonnet-4-5",
       inputTokens: 910_000,
       outputTokens: 86_000,
       totalTokens: 996_000,
@@ -69,16 +69,75 @@ const breakdown = {
       modelCalls: 180,
     },
   ],
-  modelOptions: [{ provider: "subscription", model: "example-large" }],
+  modelOptions: [
+    { provider: "subscription", model: "claude-sonnet-4-5" },
+    { provider: "openrouter", model: "google/gemini-2.5-flash-image" },
+    { provider: "retired", model: "opaque-legacy-id" },
+  ],
   totals: {
     runs: 42,
     inputTokens: 910_000,
     outputTokens: 86_000,
     totalTokens: 996_000,
-    costUsd: 4.2,
-    modelCalls: 180,
+    costUsd: 4.44,
+    modelCalls: 186,
   },
-  models: summary.models,
+  models: [
+    ...summary.models.map((model) => ({
+      ...model,
+      inputTokens: model.inputTokens - 10,
+      outputTokens: model.outputTokens - 2,
+      totalTokens: model.totalTokens - 12,
+      costUsd: model.costUsd - 0.001,
+      modelCalls: model.modelCalls - 1,
+      cachedTokens: 0,
+    })),
+    // Images made on the member's own key count no tokens.
+    {
+      provider: "openrouter",
+      model: "google/gemini-2.5-flash-image",
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      costUsd: 0.24,
+      modelCalls: 6,
+      cachedTokens: 0,
+    },
+    {
+      provider: "retired",
+      model: "opaque-legacy-id",
+      inputTokens: 10,
+      outputTokens: 2,
+      totalTokens: 12,
+      costUsd: 0.001,
+      modelCalls: 1,
+      cachedTokens: 0,
+    },
+  ],
+  routines: [
+    {
+      id: "routine-1",
+      name: "Morning brief",
+      botName: "Assistant",
+      runs: 30,
+      inputTokens: 700_000,
+      outputTokens: 60_000,
+      totalTokens: 760_000,
+      costUsd: 3.2,
+      modelCalls: 140,
+    },
+    {
+      id: null,
+      name: null,
+      botName: null,
+      runs: 12,
+      inputTokens: 210_000,
+      outputTokens: 26_000,
+      totalTokens: 236_000,
+      costUsd: 1.24,
+      modelCalls: 46,
+    },
+  ],
   overTimeUnit: "day",
   overTime: [
     {
@@ -108,6 +167,19 @@ const breakdown = {
   ],
 };
 
+const monthlyUsage = Array.from({ length: 30 }, (_, index) => {
+  const day = index + 1;
+  const totalTokens = 12_000 + (day % 7) * 6_000 + (day % 4) * 4_000;
+  return {
+    date: `2026-11-${String(day).padStart(2, "0")}`,
+    inputTokens: totalTokens * 0.9,
+    outputTokens: totalTokens * 0.1,
+    totalTokens,
+    costUsd: totalTokens / 237_000,
+    modelCalls: 6,
+  };
+});
+
 async function enableBilling(route: Route, path: "me" | "bootstrap") {
   const response = await route.fetch();
   const body = (await response.json()) as { json?: Record<string, unknown> };
@@ -135,6 +207,42 @@ const creditStatus: BillingStatus = {
 test("account menu shows the usage hint and Usage shows allowances and credits only when present", async ({
   page,
 }, testInfo) => {
+  await page.route("**/rpc/models/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: unknown[] };
+    await route.fulfill({
+      response,
+      json: {
+        json: [
+          ...body.json,
+          {
+            provider: "subscription",
+            providerName: "Anthropic",
+            id: "claude-sonnet-4-5",
+            label: "Claude Sonnet 4.5",
+            billing: "subscription",
+          },
+        ],
+      },
+    });
+  });
+  const draw = {
+    credentialId: "media-key",
+    modelId: "google/gemini-2.5-flash-image",
+    label: "Google: Gemini 2.5 Flash Image",
+    provider: "openrouter",
+    connectionLabel: "OpenRouter",
+  };
+  await page.route("**/rpc/models/media", (route) =>
+    route.fulfill({
+      json: {
+        json: {
+          image: { options: [draw], selected: draw },
+          video: { options: [], selected: null },
+        },
+      },
+    }),
+  );
   await page.route("**/rpc/usage/limits", (route) => route.fulfill({ json: { json: plans } }));
   await page.route("**/rpc/usage/summary", (route) => route.fulfill({ json: { json: summary } }));
   await page.route("**/rpc/usage/breakdown", (route) => {
@@ -146,10 +254,19 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
         json: {
           ...breakdown,
           range: input.range,
+          overTime: input.range === "30d" ? monthlyUsage : breakdown.overTime,
           ...(filtered
             ? {
-                totals: { ...point, runs: 14 },
-                models: [{ provider: "subscription", model: "example-large", ...point }],
+                totals: { ...point, runs: 14, tokensPartial: true },
+                models: [
+                  {
+                    provider: "subscription",
+                    model: "claude-sonnet-4-5",
+                    ...point,
+                    cachedTokens: 0,
+                  },
+                ],
+                routines: [],
                 overTime: [point],
               }
             : {}),
@@ -179,7 +296,25 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   );
   await expect(cards.nth(1)).toContainText("work@example.com");
   await expect(settings.getByTestId("credit-balance")).toHaveCount(0);
-  await expect(settings.getByRole("cell", { name: /example-large/ })).toBeVisible();
+  await expect(settings.getByRole("cell", { name: /Claude Sonnet 4.5/ })).toBeVisible();
+  await expect(settings.getByRole("cell", { name: /Claude Sonnet 4.5/ })).toContainText(
+    "Anthropic",
+  );
+  const unlisted = settings.getByRole("cell", { name: "Unlisted model", exact: true });
+  await expect(unlisted).toBeVisible();
+  await expect(
+    settings.getByRole("row").filter({ hasText: "Gemini 2.5 Flash Image" }),
+  ).toContainText("$0.24");
+  await expect(settings).not.toContainText("opaque-legacy-id");
+  await unlisted.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "usage-model-labels");
+  const routineUsage = settings.getByRole("table").filter({
+    has: page.getByRole("columnheader", { name: "Routine" }),
+  });
+  await expect(routineUsage.getByRole("row", { name: /Morning brief/ })).toContainText("$3.20");
+  await expect(routineUsage.getByRole("row", { name: /Chats and other work/ })).toBeVisible();
+  await routineUsage.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "usage-by-routine");
   const botFilter = settings.getByRole("combobox", { name: "Bot" });
   await expect(botFilter).toHaveText("All bots");
   await botFilter.click();
@@ -191,6 +326,12 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   );
   await expect(settings.getByText("Usage over time")).toBeVisible();
   await captureScreenshot(page, testInfo, "usage-limits-settings");
+  const bars = settings.getByTestId("usage-bars");
+  const axis = settings.getByTestId("usage-axis");
+  await expect(bars.getByRole("button")).toHaveCount(30);
+  await expect(axis.locator(":scope > span")).toHaveText(["Nov 1", "Nov 30"]);
+  await axis.locator("..").scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "usage-over-time-30-days");
 
   const requests: string[] = [];
   page.on("request", (request) => {
@@ -206,16 +347,18 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
     .poll(() => requests.some((body) => body.includes('"botId":"bot-1"') && body.includes('"7d"')))
     .toBe(true);
   const totals = settings.getByTestId("usage-settings").locator("dl");
-  await expect(totals).toContainText("330,000");
+  // One call in this range reported no token count, so the total is marked as a lower bound.
+  await expect(totals).toContainText("330,000+");
+  await captureScreenshot(page, testInfo, "usage-tokens-partial");
   await expect(totals).toContainText("$1.40");
-  await expect(settings.getByRole("row").filter({ hasText: "example-large" })).toContainText(
+  await expect(settings.getByRole("row").filter({ hasText: "Claude Sonnet 4.5" })).toContainText(
     "300,000",
   );
   await expect(settings.getByRole("button", { name: "Nov 12: 330,000 tokens, $1.40" })).toHaveCount(
     1,
   );
   await captureScreenshot(page, testInfo, "usage-limits-settings-filtered");
-  await settings.getByRole("cell", { name: /example-large/ }).scrollIntoViewIfNeeded();
+  await settings.getByRole("cell", { name: /Claude Sonnet 4.5/ }).scrollIntoViewIfNeeded();
   const bar = settings.getByRole("button", { name: "Nov 12: 330,000 tokens, $1.40" });
   await bar.focus();
   await page.keyboard.press("Shift+Tab");
@@ -240,4 +383,15 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await openUserSettings(page, "usage");
   await expect(page.getByTestId("credit-balance")).toContainText("$12.50 left");
   await captureScreenshot(page, testInfo, "usage-limits-settings-credits");
+
+  // A paid plan's media balance sits beside credits, apart from computer hours.
+  await page.route("**/rpc/billing/status", (route) =>
+    route.fulfill({
+      json: { json: { ...creditStatus, media: { leftCents: 62, limitCents: 100 } } },
+    }),
+  );
+  await page.reload();
+  await openUserSettings(page, "usage");
+  await expect(page.getByTestId("media-balance")).toContainText("$0.62 of $1.00 left");
+  await captureScreenshot(page, testInfo, "usage-media-balance");
 });

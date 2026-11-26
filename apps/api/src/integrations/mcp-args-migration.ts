@@ -1,8 +1,8 @@
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { lockMcpOAuthMaterial, persistPreparedSecret } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
+import { serverSecretOwner } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { serverSecretSpace } from "../spaces/name-claims.js";
 import type { McpSecretMaterial } from "./mcp-material.js";
 import { legacyMcpArgs } from "./mcp-material.js";
 
@@ -22,11 +22,18 @@ export async function moveMcpArgsIntoSecrets(
   for (;;) {
     signal.throwIfAborted();
     const rows = await prisma.mcpServer.findMany({
-      where: { NOT: { args: { equals: [] } }, ...(cursor ? { id: { gt: cursor } } : {}) },
+      // An organization's server never held plaintext arguments.
+      where: {
+        NOT: { args: { equals: [] } },
+        organizationId: null,
+        ...(cursor ? { id: { gt: cursor } } : {}),
+      },
       orderBy: { id: "asc" },
       take: 100,
     });
     for (const row of rows) {
+      const { spaceId, userId } = row;
+      if (!spaceId || !userId) continue;
       if (options.dryRun) {
         counts.planned++;
         continue;
@@ -42,8 +49,8 @@ export async function moveMcpArgsIntoSecrets(
         const stored = await secrets.put(JSON.stringify(material), {
           operationId: "mcp-args-migration",
           traceId: "mcp-args-migration",
-          spaceId: row.spaceId,
-          userId: row.userId,
+          spaceId,
+          userId,
           signal,
         });
         const moved = await persistPreparedSecret(prisma, secrets, stored, () =>
@@ -63,8 +70,9 @@ export async function moveMcpArgsIntoSecrets(
             await tx.secret.create({
               data: {
                 id: stored.id,
-                userId: row.userId,
-                spaceId: secret ? secret.spaceId : await serverSecretSpace(tx, current),
+                ...(secret
+                  ? { userId, spaceId: secret.spaceId }
+                  : await serverSecretOwner(tx, current, { spaceId, userId })),
                 kind: "mcp",
                 ciphertext: stored.ciphertext,
               },

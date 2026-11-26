@@ -12,21 +12,22 @@ import type {
   RakazoDesktopDevice,
 } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
-import type { BrowserWindow, Session } from "electron";
+import type { Session } from "electron";
 import {
   app,
+  BrowserWindow,
   clipboard,
   desktopCapturer,
   dialog,
   nativeImage,
   net,
   powerMonitor,
-  safeStorage,
   session,
   shell,
   systemPreferences,
 } from "electron";
-import { openBrowserAuth } from "./auth/browser-auth.js";
+import { createBrowserAuthHandlers } from "./auth/browser-auth.js";
+import { chooseLinuxKeyring, deviceTokenCipher } from "./auth/device-token-cipher.js";
 import { associatedPasskeyRpIds } from "./auth/passkeys.js";
 import { installSessionPermissions } from "./auth/session-permissions.js";
 import { createUserDeviceAccess, deviceName } from "./auth/user-device.js";
@@ -53,7 +54,12 @@ import {
   writeSetup,
   writeUiLocale,
 } from "./setup/setup-store.js";
-import { destroySetupWindow, registerSetupIpc, showSetupWindow } from "./setup/setup-window.js";
+import {
+  destroySetupWindow,
+  isSetupSaveInProgress,
+  registerSetupIpc,
+  showSetupWindow,
+} from "./setup/setup-window.js";
 import { createBadgeHandler } from "./system/badge.js";
 import { createClipboardHandler } from "./system/clipboard.js";
 import {
@@ -65,6 +71,11 @@ import {
   reportDesktopError,
 } from "./system/monitoring.js";
 import { createSystemSpeech } from "./system/system-speech.js";
+import {
+  confirmRemoteComputerAccess,
+  createComputerAccessHandler,
+  isManagedComputerRequest,
+} from "./this-computer/computer-access.js";
 import {
   createComputerPermissionSetup,
   waitForComputerSetupReturn,
@@ -104,19 +115,19 @@ import {
 } from "./this-computer/local-stack.js";
 import type { ServerBundle } from "./this-computer/mac-runtime.js";
 import { nativeStackEligible, readServerBundle } from "./this-computer/mac-runtime.js";
-import { NativeStackController } from "./this-computer/native-stack.js";
+import { NativeStackController, prefetchForUpdate } from "./this-computer/native-stack.js";
 import {
   StackStopMenuAvailability,
   stopStackLeftBehind,
 } from "./this-computer/stop-local-stack.js";
 import type { ElectronAutoUpdater } from "./updates/auto-update.js";
 import { DesktopUpdateController } from "./updates/auto-update.js";
+import { installedBundleVersion } from "./updates/installed-version.js";
 import { verifyDownloadedLinuxUpdate } from "./updates/linux-update-signature.js";
 import { applicationMenuInstaller, followUpdateState, installUpdate } from "./windows/app-menu.js";
 import { createAppOpener } from "./windows/app-opener.js";
 import {
   createWindow,
-  developmentIcon,
   installBundledRenderer,
   markOnce,
   PROBE_TIMEOUT_MS,
@@ -124,8 +135,10 @@ import {
   remoteServerOrigin,
   resolveSessionForTarget,
   ServerUnavailable,
+  startAppIcon,
 } from "./windows/app-window.js";
-import { revealSecondInstanceWindow, secondInstanceWindow } from "./windows/second-instance.js";
+import { DEEP_LINK_SCHEME } from "./windows/deep-link.js";
+import { registerDeepLinkHandlers } from "./windows/second-instance.js";
 import { registerWindowControls } from "./windows/window-controls.js";
 import { isMcpOAuthServerId, mcpOAuthPartition } from "./windows/window-open.js";
 
@@ -146,10 +159,11 @@ const updaterEnvironment = {
   packaged: app.isPackaged && existsSync(path.join(process.resourcesPath, "app-update.yml")),
   version: app.getVersion(),
   disabled: process.env.RAKAZO_DISABLE_AUTO_UPDATE === "1",
+  installedVersion: process.platform === "darwin" ? installedBundleVersion : undefined,
 };
-let requestingComputerAccess = false;
 let hostScreen: HostScreen | undefined;
 markOnce("rk:main:module-evaluated");
+chooseLinuxKeyring();
 if (PERFORMANCE_USER_DATA) {
   app.setPath("userData", PERFORMANCE_USER_DATA);
   app.setPath("sessionData", path.join(PERFORMANCE_USER_DATA, "session"));
@@ -448,46 +462,6 @@ function syncHostComputerAccess() {
   void desktop.userDevices?.select(remoteServerOrigin()).catch(() => undefined);
   installApplicationMenu();
 }
-/** The trust boundary: only a click on Allow here lets bots use this computer. */
-async function confirmComputerAccess(detail: string) {
-  const options: Electron.MessageBoxOptions = {
-    type: "warning",
-    title: t("Allow local computer access?"),
-    message: t("Allow bots to use this computer?"),
-    detail,
-    buttons: [t("Cancel"), t("Allow")],
-    defaultId: 0,
-    cancelId: 0,
-    noLink: true,
-  };
-  const win =
-    desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed() ? desktop.mainWindow : null;
-  const result = await (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
-  return result.response === 1;
-}
-/** A bot asks while the person may be elsewhere, so bring the prompt to them. */
-function confirmRemoteComputerAccess(host: string) {
-  if (desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed()) {
-    if (!desktop.mainWindow.isVisible()) desktop.mainWindow.show();
-    else if (!desktop.mainWindow.isFocused()) app.dock?.bounce("informational");
-  }
-  return confirmComputerAccess(
-    t(
-      "Bots on {host} can run commands, read and change files, and launch apps with your account’s permissions. You can revoke access in Settings.",
-      { host },
-    ),
-  );
-}
-function deviceTokenCipher() {
-  return {
-    // Linux without a keyring falls back to a fixed key; keep the token off disk there.
-    available: async () =>
-      (await safeStorage.isAsyncEncryptionAvailable()) &&
-      !(process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text"),
-    encrypt: (value: string) => safeStorage.encryptStringAsync(value),
-    decrypt: async (value: Buffer) => (await safeStorage.decryptStringAsync(value)).result,
-  };
-}
 /** Drop the previous app window after the new server is opened and persisted. */
 function commitPendingAppSwitch() {
   syncHostComputerAccess();
@@ -568,20 +542,32 @@ async function recoverFromCrashedSave(
   showSetupWindow(message);
   return message;
 }
+function reopenAppWindow() {
+  if (desktop.currentTargetUrl === null) {
+    showSetupWindow(desktop.setupError);
+    return;
+  }
+  void appOpener.open(desktop.currentTargetUrl).then((opened) => {
+    if (!opened) return;
+    commitPendingAppSwitch();
+    deepLinks?.applyPending();
+  });
+}
+
 // A second launch on Linux/Windows would rerun host-computer setup, overwrite
 // the saved token and restart the local stack under the running instance.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
-if (!hasSingleInstanceLock) {
-  app.quit();
-} else {
-  app.on("second-instance", () => {
-    const win = secondInstanceWindow(desktop.setupWindow, desktop.mainWindow);
-    if (win === null) return;
-    revealSecondInstanceWindow(win);
-  });
-}
+const deepLinks = hasSingleInstanceLock
+  ? registerDeepLinkHandlers(app, {
+      initialArgv: process.argv,
+      isOpening: () => appOpener.busy() || isSetupSaveInProgress(),
+      reopen: reopenAppWindow,
+    })
+  : undefined;
+if (!hasSingleInstanceLock) app.quit();
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
+  if (app.isPackaged) app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME);
   installSessionPermissions(session.defaultSession, permissionTarget);
   const userDataDir = app.getPath("userData");
   startDesktopLocale(
@@ -604,6 +590,7 @@ app.whenReady().then(async () => {
       : undefined,
   );
   followUpdateState(() => installApplicationMenu());
+  desktop.desktopUpdater.subscribe((update) => prefetchForUpdate(desktop.localStack, update));
   const screenDriver = screenDriverRelease(process.platform);
   const screenPermissions: ScreenPermissionApi = {
     isTrustedAccessibilityClient: (prompt) =>
@@ -673,11 +660,6 @@ app.whenReady().then(async () => {
         return { png: fitted.toPNG(), ...fitted.getSize() };
       },
     });
-  try {
-    desktop.hostComputer = await prepareHostComputer(userDataDir, hostScreen);
-  } catch {
-    /* Local access fails closed; Docker remains available. */
-  }
   desktop.userDevices = createUserDeviceAccess({
     userDataDir,
     cipher: deviceTokenCipher(),
@@ -763,57 +745,60 @@ app.whenReady().then(async () => {
     run: runDocker,
     sleep: defaultSleep,
   };
-  const nativeStack = async (bundle: ServerBundle) => {
-    const moving = moveAccepted(await stackFacts());
-    return new NativeStackController({
+  const stackDeps = {
+    stackDir: userStackDir,
+    resourceDir,
+    localWebUrl,
+    imageTag,
+    run: runDocker,
+    exists: existsSync,
+    probe,
+    randomHex,
+    onState,
+  };
+  const nativeStack = (bundle: ServerBundle, moving: boolean) =>
+    new NativeStackController({
+      ...stackDeps,
       hostComputer: desktop.hostComputer?.connection,
-      stackDir: userStackDir,
-      resourceDir,
-      localWebUrl,
-      imageTag,
       serverBundle: bundle,
       nodeBinary: process.execPath,
       env: process.env,
       uid: process.getuid?.() ?? 0,
-      run: runDocker,
       fetch: (url, init) => net.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
-      exists: existsSync,
-      probe,
-      randomHex,
-      onState,
       importFromDocker: moving ? (target) => moveDockerStack(moveDeps, target) : undefined,
     });
+  const dockerStack = () =>
+    new LocalStackController({
+      ...stackDeps,
+      hostComputer: desktop.hostComputer?.connection,
+      platform: process.platform,
+      env: process.env,
+      launchDockerApp: (binary) => launchDockerApp(process.platform, binary),
+      // A confirmed reuse changes no phase; the menu must hear about it separately.
+      onReuseConfirmed: () => stopStackMenu.reuseConfirmed(),
+    });
+  const useStack = async (selected: StackChoice) => {
+    const bundle = selected === "native" ? serverBundle : null;
+    const moving = bundle !== null && moveAccepted(await stackFacts());
+    // The stack can still run with local computer access disabled.
+    desktop.hostComputer = await bestEffort(
+      "start the desktop computer bridge",
+      prepareHostComputer(userDataDir, bundle === null ? "docker" : "native", hostScreen),
+    );
+    desktop.localStack = bundle === null ? dockerStack() : nativeStack(bundle, moving);
+    prefetchForUpdate(desktop.localStack, desktop.desktopUpdater.state());
   };
-  desktop.localStack =
-    choice === "native" && serverBundle !== null
-      ? await nativeStack(serverBundle)
-      : new LocalStackController({
-          hostComputer: desktop.hostComputer?.connection,
-          platform: process.platform,
-          env: process.env,
-          exists: existsSync,
-          run: runDocker,
-          launchDockerApp: (binary) => launchDockerApp(process.platform, binary),
-          stackDir: userStackDir,
-          resourceDir,
-          localWebUrl,
-          imageTag,
-          probe,
-          randomHex,
-          onState,
-          // A confirmed reuse changes no phase; the menu must hear about it separately.
-          onReuseConfirmed: () => stopStackMenu.reuseConfirmed(),
-        });
+  // Setup can read the Docker controller's idle state while the move choice is pending.
+  // Opening or starting the local stack waits for that choice before preparing the bridge.
+  if (choice === "ask") desktop.localStack = dockerStack();
+  else await useStack(choice);
   const settleLocalStack = settleStackWhenNeeded(
     choice,
     async () => {
       const settled = await decideStack();
       return settled === "ask" ? offerDockerMove(userStackDir) : settled;
     },
-    async (settled) => {
-      if (settled === "native" && serverBundle !== null)
-        desktop.localStack = await nativeStack(serverBundle);
-    },
+    useStack,
   );
   if (desktop.currentSetup?.mode === "new") await settleLocalStack();
   const target = resolveStartupTarget({
@@ -832,54 +817,12 @@ app.whenReady().then(async () => {
     markOnce("rk:main:caches-cleared");
   }
 
-  const icon = developmentIcon();
-  if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
+  await startAppIcon(userDataDir);
   installApplicationMenu();
-  const browserAuthAttempts = new Map<string, AbortController>();
-  const cancelBrowserAuth = () => {
-    for (const attempt of browserAuthAttempts.values()) attempt.abort();
-    browserAuthAttempts.clear();
-  };
-  app.on("before-quit", cancelBrowserAuth);
-  handleIpc("desktop.oauth.open", async (event, url) => {
-    if (typeof url !== "string" || url.length > 16_384) throw new Error("Invalid sign-in request.");
-    if (browserAuthAttempts.has(url) || browserAuthAttempts.size >= 8) {
-      throw new Error(t("A sign-in attempt is already active. Cancel it and retry."));
-    }
-    const controller = new AbortController();
-    browserAuthAttempts.set(url, controller);
-    const stop = () => controller.abort();
-    const expiry = setTimeout(stop, 10 * 60_000);
-    expiry.unref();
-    event.sender.once("destroyed", stop);
-    event.sender.once("did-navigate", stop);
-    controller.signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(expiry);
-        event.sender.removeListener("destroyed", stop);
-        event.sender.removeListener("did-navigate", stop);
-        if (browserAuthAttempts.get(url) === controller) browserAuthAttempts.delete(url);
-      },
-      { once: true },
-    );
-    try {
-      await openBrowserAuth(url, {
-        signal: controller.signal,
-        onClose: stop,
-        openExternal: (target) => shell.openExternal(target),
-        onCallback: (callback) => {
-          if (!event.sender.isDestroyed()) event.sender.send("desktop.oauth.callback", callback);
-        },
-      });
-    } catch {
-      controller.abort();
-      throw new Error(t("Could not open browser sign-in. Close other sign-in attempts and retry."));
-    }
-  });
-  handleIpc("desktop.oauth.cancel", (_event, url) => {
-    if (typeof url === "string") browserAuthAttempts.get(url)?.abort();
-  });
+  const browserAuth = createBrowserAuthHandlers((target) => shell.openExternal(target));
+  app.on("before-quit", browserAuth.cancelAll);
+  handleIpc("desktop.oauth.open", browserAuth.open);
+  handleIpc("desktop.oauth.cancel", browserAuth.cancel);
   // Signing an MCP server in again with another account starts from an empty
   // browser: no cookies, no cached login pages, no stored site data.
   handleIpc("desktop.mcpBrowser.clear", async (_event, serverId) => {
@@ -894,55 +837,14 @@ app.whenReady().then(async () => {
       browser.clearCodeCaches({}),
     ]);
   });
-  /** Asked again after each wait: the window may have moved to another server meanwhile. */
-  const isManagedComputerRequest = (event: IpcCaller) =>
-    sentFrom("app", event) &&
-    desktop.currentSetup?.mode === "new" &&
-    appWindowTargets.get(desktop.mainWindow!) === desktop.localStack.webUrl();
-  handleIpc("desktop.computer.requestAccess", async (event) => {
-    if (!isManagedComputerRequest(event) || !desktop.hostComputer)
-      throw new Error(t("Local computer access requires an app-managed local instance."));
-    if (requestingComputerAccess) return false;
-    requestingComputerAccess = true;
-    try {
-      if (!(await desktop.localStack.matchesDesiredStack()) || !isManagedComputerRequest(event))
-        return false;
-      if (desktop.hostComputer.isEnabled()) {
-        await persistHostChoice("this-mac");
-        void bestEffort(
-          "prepare local computer app control",
-          prepareComputerAccess(
-            () => isManagedComputerRequest(event) && desktop.hostComputer?.isEnabled() === true,
-          ),
-        );
-        return isManagedComputerRequest(event) && desktop.hostComputer.isEnabled();
-      }
-      const allowed = await confirmComputerAccess(
-        t(
-          "Bots on this local instance can run commands, read and change files, and launch apps with your account’s permissions. You can revoke access from the app menu.",
-        ),
-      );
-      if (!allowed || !isManagedComputerRequest(event)) return false;
-      desktop.hostComputer.activate(true);
-      await desktop.hostComputer.grant();
-      try {
-        await persistHostChoice("this-mac");
-      } catch (error) {
-        await desktop.hostComputer.revoke();
-        throw error;
-      }
-      installApplicationMenu();
-      void bestEffort(
-        "prepare local computer app control",
-        prepareComputerAccess(
-          () => isManagedComputerRequest(event) && desktop.hostComputer?.isEnabled() === true,
-        ),
-      );
-      return isManagedComputerRequest(event) && desktop.hostComputer.isEnabled();
-    } finally {
-      requestingComputerAccess = false;
-    }
-  });
+  handleIpc(
+    "desktop.computer.requestAccess",
+    createComputerAccessHandler({
+      persistHostChoice: () => persistHostChoice("this-mac"),
+      installApplicationMenu,
+      prepareAccess: prepareComputerAccess,
+    }),
+  );
   handleIpc("desktop.computer.revokeAccess", async (event) => {
     if (isManagedComputerRequest(event)) await revokeLocalComputerAccess();
   });
@@ -1015,28 +917,17 @@ app.whenReady().then(async () => {
         rebuildMenu: () => installApplicationMenu(),
       }),
     settleLocalStack,
+    onAppReady: () => deepLinks?.applyPending(),
   });
 
+  const openInitialServer = async (url: string) => {
+    if (!(await appOpener.open(url))) return;
+    commitPendingAppSwitch();
+    destroySetupWindow();
+  };
+
   // Register before startup awaits so macOS dock clicks during probe/open are handled.
-  app.on("activate", () => {
-    if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
-      desktop.setupWindow.show();
-      desktop.setupWindow.focus();
-      return;
-    }
-    if (desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed()) {
-      clearTimeout(desktop.warmWindowTimer);
-      desktop.mainWindow.show();
-      desktop.mainWindow.focus();
-      return;
-    }
-    if (appOpener.busy()) return;
-    if (desktop.currentTargetUrl === null) showSetupWindow(desktop.setupError);
-    else
-      void appOpener.open(desktop.currentTargetUrl).then((opened) => {
-        if (opened) commitPendingAppSwitch();
-      });
-  });
+  deepLinks?.registerActivate();
 
   if (target.kind === "setup") {
     showSetupWindow();
@@ -1045,10 +936,7 @@ app.whenReady().then(async () => {
     const managedStackReady =
       managedUrl !== null ? await desktop.localStack.matchesDesiredStack() : false;
     if (managedStackReady && managedUrl !== null) {
-      if (await appOpener.open(managedUrl)) {
-        commitPendingAppSwitch();
-        destroySetupWindow();
-      }
+      await openInitialServer(managedUrl);
     } else {
       // Missing, stale, foreign, or owned by another process: reconcile the
       // app-managed stack before any API or computer traffic is allowed.
@@ -1058,10 +946,7 @@ app.whenReady().then(async () => {
   } else if (target.source !== "env") {
     const reachability = await probeServer(target.url, undefined, desktop.currentSetup?.headers);
     if (reachability.ok) {
-      if (await appOpener.open(target.url)) {
-        commitPendingAppSwitch();
-        destroySetupWindow();
-      }
+      await openInitialServer(target.url);
     } else {
       // An unreachable first-launch Cloud lands in setup, where the other servers are.
       showSetupWindow(
@@ -1073,11 +958,9 @@ app.whenReady().then(async () => {
       );
     }
   } else {
-    if (await appOpener.open(target.url)) {
-      commitPendingAppSwitch();
-      destroySetupWindow();
-    }
+    await openInitialServer(target.url);
   }
+  deepLinks?.finishStartup();
 });
 app.on("window-all-closed", () => {
   // A hidden session probe (defaultSessionHasOriginData) can be the only window
@@ -1090,6 +973,15 @@ app.on("quit", (_event, exitCode) => {
 });
 app.on("before-quit", (event) => {
   desktop.quitting = true;
+  // A ready update is staged before quitting; the updater quits again once it is.
+  const installing = desktop.desktopUpdater?.installBeforeQuit();
+  if (installing) {
+    event.preventDefault();
+    // Staging takes a few seconds; the app should look closed meanwhile.
+    for (const window of BrowserWindow.getAllWindows()) window.hide();
+    void installing.then(() => app.quit());
+    return;
+  }
   // Server processes this app runs itself stop with it; quit again once they have.
   if (desktop.localStack instanceof NativeStackController && desktop.localStack.hasProcesses()) {
     event.preventDefault();

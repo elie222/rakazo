@@ -14,19 +14,14 @@ pr=${1:-$(gh pr view --json number -q .number)} || die "no PR for this branch"
 filter=${2:-}
 marker="<!-- rakazo-playwright-screenshots -->"
 
-gallery_url="$(gh api --paginate --slurp "repos/{owner}/{repo}/issues/$pr/comments?per_page=100" |
+comment="$(gh api --paginate --slurp "repos/{owner}/{repo}/issues/$pr/comments?per_page=100" |
   jq -r --arg marker "$marker" '
     [.[][] | select(.user.login == "github-actions[bot]" and (.body | contains($marker)))]
-    | last | .body // ""' |
-  grep -oE 'https://[^)]+/prs/[0-9]+/index\.html' | head -1)" ||
+    | last | .body // ""')"
+screenshots_url="$(grep -oE 'https://[^)]+/runs/[0-9]+-[0-9]+/screenshots/index\.html' <<<"$comment" | head -1)" ||
   die "PR #$pr has no screenshot comment yet; wait for CI to publish it"
-public_base="${gallery_url%/prs/*}"
-
-run="$(curl -fsS "$public_base/history.json" |
-  jq -c --argjson pr "$pr" 'first(.[] | select(.pullRequestNumber == $pr)) // empty')"
-[[ -n "$run" ]] || die "no published run for PR #$pr"
-screenshots_url="$(jq -r .screenshotsUrl <<<"$run")"
-run_sha="$(jq -r .sha <<<"$run")"
+run_sha="$(grep -oE '<!-- screenshot-commit:[0-9a-f]{40} -->' <<<"$comment" | grep -oE '[0-9a-f]{40}' | head -1)" ||
+  die "the screenshot comment on PR #$pr names no commit"
 head_sha="$(gh pr view "$pr" --json headRefOid -q .headRefOid)"
 if [[ "$run_sha" != "$head_sha" ]]; then
   die "latest published run is for ${run_sha:0:7}, PR head is ${head_sha:0:7}; wait for CI to publish the current head"

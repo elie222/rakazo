@@ -15,7 +15,7 @@ This option sends search queries and requested page URLs to Parallel, which retr
 on its servers. Conversation accounting uses an HMAC of internal IDs keyed by
 `ENCRYPTION_KEY` (shared by the API and worker), so deployments with distinct secrets send
 distinct session IDs. Rotating that secret resets the session IDs; the existing development-only
-encryption-key fallback also applies here. Anonymous access has service limits; rate-limit and provider errors are returned
+encryption-key fallback also applies here. Anonymous access has service limits; set `PARALLEL_API_KEY` on the API and worker to send a Bearer token and lift those limits. Rate-limit and provider errors are returned
 to the bot without switching providers. Per-bot disabled web tools remain disabled. Set
 `WEB_PROVIDER=keyless-http` (or remove the setting) to return to the default.
 
@@ -145,10 +145,23 @@ space or owner mismatch that keeps the server's tools from that bot.
 
 ## Apps and connectors
 
-Plugins use [Composio](https://composio.dev) when `COMPOSIO_API_KEY` is set. Pipedream is an
-alternative managed connector provider: set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`,
-`PIPEDREAM_PROJECT_ID` and `PIPEDREAM_ENVIRONMENT` (`development` or `production`). Set them on the
-API and worker.
+To offer a larger managed app catalog in Integrations, set a [Composio](https://composio.dev)
+Platform project key as `COMPOSIO_API_KEY` on the API and worker. Pipedream is another managed
+connector provider. Set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, `PIPEDREAM_PROJECT_ID`
+and `PIPEDREAM_ENVIRONMENT` (`development` or `production`) on both services. Recreate the
+services with the updated environment. People authorize their individual apps from Integrations.
+
+People can also bring a personal tool gateway as an MCP connection. The built-in **Executor**
+option uses browser sign-in and exposes the apps the person has configured in their Executor
+organization. [Composio Connect](https://docs.composio.dev/docs/composio-connect) offers a separate
+personal MCP connection at `https://connect.composio.dev/mcp`. It supports browser sign-in for
+compatible MCP clients and a consumer key for header-based clients.
+
+Browsing and importing plugins reads public repositories through the GitHub API, which gives
+anonymous callers a small hourly quota per address. If plugin previews start to fail, set
+`PLUGIN_GITHUB_TOKEN` on the API. The token is sent only to `api.github.com`.
+Anyone who can browse or import plugins triggers requests using this token, so use only
+a classic token with no scopes to avoid granting private repo or other access.
 
 A call on a shared mailbox is refused when the Outlook sign-in does not request the matching
 `.Shared` permission, and a connection made through Composio's default Outlook setup has been seen
@@ -161,7 +174,8 @@ before the change must disconnect and reconnect Outlook.
 
 `INTEGRATIONS_CATALOG_URL` points API connector search at an
 [integrations.sh](https://integrations.sh/)-compatible catalog, such as a mirror you host. Give the
-base URL; Rakazo appends `api/search`.
+base URL. Rakazo appends `api/search`. With the setting unset, **Search public MCP directory** can still
+search the public directory on demand. Each service handles its own authorization.
 
 ## Messaging apps
 

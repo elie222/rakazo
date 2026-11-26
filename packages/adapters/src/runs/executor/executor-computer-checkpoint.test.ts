@@ -315,7 +315,7 @@ function fixture(runId = "run-1") {
           : [],
       ),
     },
-    userModelCredential: { findFirst: vi.fn(async () => null) },
+    userModelCredential: { findFirst: vi.fn(async () => null), findMany: vi.fn(async () => []) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
         defaultModelProvider: "openrouter",
@@ -330,7 +330,7 @@ function fixture(runId = "run-1") {
     secret: { findMany: vi.fn(async () => []) },
     vaultCredential: { findMany: vi.fn(async () => []) },
     agentSkill: { findMany: vi.fn(async () => []) },
-    scratchpadItem: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     spaceSettingOverride: { findUnique: async () => null },
     userActionApprovalRule: {
       findMany: vi.fn(async () => [

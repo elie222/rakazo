@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { VaultRevealed } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
@@ -50,6 +51,7 @@ vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({})
 vi.mock("../native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../ui/menu-picker", () => ({ MenuPicker: () => null }));
 vi.mock("./login-fields-editor", () => ({ LoginFieldsEditor: () => null }));
+vi.mock("../native/sheet-bar", () => import("../native/sheet-bar.test-support"));
 vi.mock("../native/native-action-button", () => ({
   NativeActionButton: ({ label }: { label: string }) =>
     createElement("button", { type: "button" }, label),
@@ -84,7 +86,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function render(props: { kind: "api_key" | "contact"; item?: VaultItem }) {
+async function render(props: {
+  kind: "api_key" | "contact" | "login";
+  item?: VaultItem;
+  revealed?: VaultRevealed;
+  ask?: boolean;
+}) {
   await act(async () =>
     root.render(
       createElement(VaultItemEditor, { ...props, onClose: () => {}, onSave: async () => {} }),
@@ -101,6 +108,25 @@ it("caps Title and When to use at the lengths the server accepts", async () => {
   await render({ kind: "api_key", item: apiKey });
   expect(input("Title").maxLength).toBe(80);
   expect(input("When to use").maxLength).toBe(200);
+});
+
+it("says why a login's authenticator key can't be saved", async () => {
+  // A saved key opens the key field, so the test can type into it.
+  await render({ kind: "login", revealed: { fields: [], otp: "saved" } });
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
+      input("Authenticator key"),
+      "xyz",
+    );
+    input("Authenticator key").dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(container.textContent).toContain("This authenticator key can't be read.");
+});
+
+it("shows no key error on a chat card, which answers without a key", async () => {
+  await render({ kind: "login", ask: true });
+  expect(container.textContent).not.toContain("Add an authenticator key");
+  expect(container.textContent).not.toContain("This authenticator key can't be read.");
 });
 
 it("caps a contact's Label at the same title length", async () => {

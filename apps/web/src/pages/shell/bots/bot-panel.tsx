@@ -8,6 +8,7 @@ import type {
 } from "@rakazo/contracts";
 import { BOT_NAME_MAX_LENGTH, isBuiltinToolName, resolveBotAvatarSet } from "@rakazo/contracts";
 import { botModelState, modelOptionKey } from "@rakazo/core";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import {
   Button,
   DropdownMenu,
@@ -278,11 +279,18 @@ export function BotSettings({
 
   const {
     selectedModel,
-    selectedModelKey,
+    shownKey,
     choices: modelChoices,
     thinkingLevels: thinkingOptions,
     defaultThinkingLevel,
-  } = botModelState({ credentials, catalog, me, modelKey, spaceDefaultLabel: t`Space default` });
+    savedModelKey,
+    savedThinkingLevel,
+  } = botModelState({
+    credentials,
+    catalog: catalog.map(localizeModelEntry),
+    me,
+    modelKey,
+  });
 
   async function executeSave(
     patchOverrides?: {
@@ -488,13 +496,7 @@ export function BotSettings({
   const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
   const routineCount = routines?.routines.length ?? 0;
   const headerButtons = (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="text-muted-foreground"
-      aria-label={t`Close panel`}
-      onClick={onClose}
-    >
+    <Button variant="floating" size="icon" aria-label={t`Close panel`} onClick={onClose}>
       <X className="size-4.5" strokeWidth={1.75} />
     </Button>
   );
@@ -504,9 +506,8 @@ export function BotSettings({
       {view !== "settings" ? (
         <div className="mb-4 flex items-center justify-between">
           <Button
-            variant="ghost"
+            variant="floating"
             size="icon"
-            className="text-muted-foreground"
             aria-label={t`Back`}
             onClick={() => onViewChange?.("settings")}
           >
@@ -522,17 +523,10 @@ export function BotSettings({
       {view === "pages" ? <PagesList botId={bot.id} /> : null}
       {/* Stays mounted so drafts and the open sections survive a visit to a whole list. */}
       <div hidden={view !== "settings"}>
-        <div className="mb-4 flex items-center justify-end gap-1">
+        <div className="mb-4 flex items-center justify-end gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground"
-                  aria-label={t`More actions`}
-                />
-              }
+              render={<Button variant="floating" size="icon" aria-label={t`More actions`} />}
             >
               <MoreHorizontal className="size-4.5" strokeWidth={1.75} />
             </DropdownMenuTrigger>
@@ -667,15 +661,16 @@ export function BotSettings({
                 ids={ids}
                 containerRef={modelRef}
                 choices={modelChoices}
-                value={selectedModelKey}
+                value={shownKey}
                 onModelChange={(key) => {
-                  setModelKey(key);
+                  setModelKey(savedModelKey(key));
                   setThinkingLevel("");
                 }}
                 thinkingOptions={thinkingOptions}
-                thinkingLevel={thinkingLevel}
-                defaultThinkingLevel={defaultThinkingLevel}
-                onThinkingLevelChange={setThinkingLevel}
+                thinkingLevel={(thinkingLevel || defaultThinkingLevel) as ThinkingLevel}
+                onThinkingLevelChange={(level) =>
+                  setThinkingLevel(savedThinkingLevel(level as ThinkingLevel) ?? "")
+                }
               />
               <SwitchRow
                 id={`${ids}-notify-finish`}

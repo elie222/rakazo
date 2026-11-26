@@ -41,11 +41,15 @@ export interface ContextSelectionOptions {
   /** Never drop current request, steering, approvals or authoritative constraints. */
   protectedIndexes?: readonly number[];
   recentExchanges?: number;
+  /** A user message that rides along with an exchange (a recalled-memory note) without being one. */
+  notAnExchange?: (message: ContextMessage) => boolean;
   /**
    * Exchanges older than recentExchanges stay while the messages before index `before`, where
-   * the current request starts, fit `tokens`.
+   * the current request starts, fit `tokens`. With `anchor`, the kept history starts at the
+   * latest message it accepts at or before where it would start, up to `tokens` further back,
+   * so the start holds across requests instead of moving with every new exchange.
    */
-  earlier?: { before: number; tokens: number };
+  earlier?: { before: number; tokens: number; anchor?: (message: ContextMessage) => boolean };
   cacheWarmth?: "likely-warm" | "likely-cold" | "unknown";
   /** Keep tool protocol intact while shortening oversized result bodies. */
   truncateToolResults?: boolean;
@@ -634,57 +638,61 @@ export function selectContext<T extends ContextMessage>(
   }
   if (used > available) {
     if (options.truncateToolResults !== false) {
-      let shortenedCount = 0;
       let keptVerbatimWhole = false;
-      const shortened = messages.map((message, index) => {
-        if (!protectedGroupIndexes.has(index) || message.role !== "toolResult") return message;
-        const parts = Array.isArray(message.content) ? message.content : undefined;
-        const images =
-          parts?.filter((part) => part && typeof part === "object" && part.type === "image") ?? [];
-        const serialized = parts?.every(
-          (part) =>
-            part && typeof part === "object" && (part.type === "text" || part.type === "image"),
-        )
-          ? parts
-              .filter((part) => part.type === "text" && typeof part.text === "string")
-              .map((part) => part.text)
-              .join("\n")
-          : typeof message.content === "string"
-            ? message.content
-            : JSON.stringify(message.content);
-        if (!serialized || serialized.length <= 256) return message;
-        const group = groups.find((group) => group.indexes.includes(index));
-        const assistant = group ? messages[group.indexes[0]!] : undefined;
-        const nativeCall = Array.isArray(assistant?.content)
-          ? assistant.content.find(
-              (part) => part?.type === "toolCall" && part.id === message.toolCallId,
-            )
-          : undefined;
-        const call = toolCallIdentity(nativeCall, message.toolName);
-        if (isVerbatimMcpResult(call.name, call.arguments, options.verbatimMcpServers)) {
-          keptVerbatimWhole = true;
-          return message;
+      // Shorten long results first; only when that leaves the protected step over budget, shorten the short ones too.
+      for (const floor of [256, 0]) {
+        let shortenedCount = 0;
+        const shortened = messages.map((message, index) => {
+          if (!protectedGroupIndexes.has(index) || message.role !== "toolResult") return message;
+          const parts = Array.isArray(message.content) ? message.content : undefined;
+          const images =
+            parts?.filter((part) => part && typeof part === "object" && part.type === "image") ??
+            [];
+          const serialized = parts?.every(
+            (part) =>
+              part && typeof part === "object" && (part.type === "text" || part.type === "image"),
+          )
+            ? parts
+                .filter((part) => part.type === "text" && typeof part.text === "string")
+                .map((part) => part.text)
+                .join("\n")
+            : typeof message.content === "string"
+              ? message.content
+              : JSON.stringify(message.content);
+          if (!serialized || serialized.length <= floor) return message;
+          const group = groups.find((group) => group.indexes.includes(index));
+          const assistant = group ? messages[group.indexes[0]!] : undefined;
+          const nativeCall = Array.isArray(assistant?.content)
+            ? assistant.content.find(
+                (part) => part?.type === "toolCall" && part.id === message.toolCallId,
+              )
+            : undefined;
+          const call = toolCallIdentity(nativeCall, message.toolName);
+          if (isVerbatimMcpResult(call.name, call.arguments, options.verbatimMcpServers)) {
+            keptVerbatimWhole = true;
+            return message;
+          }
+          const size = Math.max(
+            128,
+            Math.min(Math.floor(serialized.length / 2), Math.floor(available / 4)),
+          );
+          const text = shortenToolResultText(
+            serialized,
+            size,
+            nativeCall ?? { name: message.toolName },
+            { afterUse: index < latestAssistant },
+          );
+          if (text.length >= serialized.length) return message;
+          shortenedCount += 1;
+          return { ...message, content: [{ type: "text", text }, ...images] } as T;
+        });
+        if (shortenedCount) {
+          const retry = selectContext(shortened, options);
+          return {
+            ...retry,
+            truncatedToolResults: Math.max(retry.truncatedToolResults, shortenedCount),
+          };
         }
-        const size = Math.max(
-          128,
-          Math.min(Math.floor(serialized.length / 2), Math.floor(available / 4)),
-        );
-        const text = shortenToolResultText(
-          serialized,
-          size,
-          nativeCall ?? { name: message.toolName },
-          { afterUse: index < latestAssistant },
-        );
-        if (text.length >= serialized.length) return message;
-        shortenedCount += 1;
-        return { ...message, content: [{ type: "text", text }, ...images] } as T;
-      });
-      if (shortenedCount) {
-        const retry = selectContext(shortened, options);
-        return {
-          ...retry,
-          truncatedToolResults: Math.max(retry.truncatedToolResults, shortenedCount),
-        };
       }
       if (keptVerbatimWhole) {
         // Throws the generic error when shortening the kept results would not make it fit either.
@@ -715,20 +723,50 @@ export function selectContext<T extends ContextMessage>(
   const currentStart = options.earlier?.before ?? 0;
   let earlierTokens = 0;
   // Retain a contiguous recent suffix. Skip no holes inside a retained tool group.
+  let windowEnd = -1;
   for (let index = groups.length - 1; index >= 0; index--) {
     const group = groups[index]!;
-    if (group.indexes.some((i) => messages[i]!.role === "user")) exchanges += 1;
+    if (
+      group.indexes.some(
+        (i) => messages[i]!.role === "user" && !options.notAnExchange?.(messages[i]!),
+      )
+    )
+      exchanges += 1;
     if (selected.has(group)) continue;
     const earlier = group.indexes[0]! < currentStart;
     if (
       exchanges > exchangeLimit &&
       (!earlier || earlierTokens + group.tokens > (options.earlier?.tokens ?? 0))
-    )
+    ) {
+      windowEnd = index;
       break;
+    }
     if (used + group.tokens > available) break;
     selected.add(group);
     used += group.tokens;
     if (earlier) earlierTokens += group.tokens;
+  }
+  // Moving the start with every exchange would rewrite the provider's cached prefix each time.
+  const anchor = options.earlier?.anchor;
+  const firstKept = groups.find(
+    (group, index) =>
+      index > windowEnd && selected.has(group) && messages[group.indexes[0]!]!.role !== "system",
+  );
+  if (anchor && windowEnd >= 0 && firstKept && !anchor(messages[firstKept.indexes[0]!]!)) {
+    const extension: Group[] = [];
+    let extra = 0;
+    for (let index = windowEnd; index >= 0; index--) {
+      const group = groups[index]!;
+      if (selected.has(group)) continue;
+      extra += group.tokens;
+      if (extra > (options.earlier?.tokens ?? 0) || used + extra > available) break;
+      extension.push(group);
+      if (anchor(messages[group.indexes[0]!]!)) {
+        for (const kept of extension) selected.add(kept);
+        used += extra;
+        break;
+      }
+    }
   }
   const selectedIndexes = new Set([...selected].flatMap((group) => group.indexes));
   return {

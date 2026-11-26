@@ -3,7 +3,6 @@ import {
   BILLING_CANCELLATION_REASONS,
   ByokIntervalSchema,
   ByokTierSchema,
-  PlanLayoutSchema,
 } from "../billing/billing.js";
 import { RUN_ERROR_KINDS, RunTriggerSchema } from "../runs/runs.js";
 import { SIGNUP_SURVEY_TEAM_SIZES, SIGNUP_SURVEY_USES } from "./me.js";
@@ -26,12 +25,15 @@ export const AnalyticsScreen = z.enum([
   "plans",
 ]);
 export const AnalyticsSurface = z.enum(["web", "desktop", "ios", "android"]);
+/** The app's store version, plus `+` and the short id of the over-the-air update it runs. */
+export const AnalyticsAppVersion = z
+  .string()
+  .max(40)
+  .regex(/^\d+(\.\d+){0,3}(\+[0-9a-f]{8})?$/);
 export const AnalyticsScreenInput = z
   .object({
     screen: AnalyticsScreen,
     surface: AnalyticsSurface,
-    /** On the plans screen: the layout it showed. */
-    planLayout: PlanLayoutSchema.optional(),
   })
   .strict();
 export const AnalyticsBotSetting = z.enum([
@@ -141,7 +143,13 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
       errorKind: AnalyticsErrorKind,
     })
     .strict(),
-  z.object({ name: z.literal("model_connect_started"), ...modelConnect }).strict(),
+  z
+    .object({
+      name: z.literal("model_connect_started"),
+      ...modelConnect,
+      appVersion: AnalyticsAppVersion.optional(),
+    })
+    .strict(),
   z
     .object({
       name: z.literal("model_connected"),

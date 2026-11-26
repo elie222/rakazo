@@ -20,6 +20,11 @@ import {
 } from "./voice.js";
 
 const actor = { userId: "user-1", spaceId: "space-1" } as Actor;
+const voiceOriginEnv = {
+  webOrigin: "https://app.example.test",
+  apiUrl: "https://api.example.test",
+  authUrl: "https://app.example.test",
+};
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -39,7 +44,7 @@ describe("voice HTTP routes answering a typed client error", () => {
       prisma: { spaceSettingOverride: { findUnique: vi.fn().mockRejectedValue(refusal) } },
     } as unknown as VoiceDeps;
     const app = new Hono();
-    mountVoiceHttpRoutes(app, deps, async () => actor);
+    mountVoiceHttpRoutes(app, deps, async () => actor, voiceOriginEnv);
 
     const response = await app.request("/api/voice/speak", {
       method: "POST",
@@ -65,7 +70,7 @@ describe("voice HTTP routes reporting what they answer", () => {
       prisma: { spaceSettingOverride: { findUnique: vi.fn().mockRejectedValue(refusal) } },
     } as unknown as VoiceDeps;
     const app = new Hono();
-    mountVoiceHttpRoutes(app, deps, async () => actor);
+    mountVoiceHttpRoutes(app, deps, async () => actor, voiceOriginEnv);
     await app.request("/api/voice/speak", {
       method: "POST",
       headers: { "content-type": "application/json" },

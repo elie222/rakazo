@@ -8,13 +8,19 @@ import {
   canonicalPiProviderId,
   DEFAULT_MODEL_CONTEXT_WINDOW,
   DEFAULT_MODEL_MAX_TOKENS,
+  DEFAULT_THINKING_LEVEL,
   modelOutputLeavesInputRoom,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
+  ThinkingLevelSchema,
 } from "@rakazo/contracts";
-import { compatibleThinkingLevels } from "./model-providers.js";
+import {
+  clampCatalogThinkingLevel,
+  compatibleThinkingLevels,
+  newestModelsFirst,
+} from "./model-providers.js";
 
 type SettingsCredential = Pick<
   ModelCredential,
@@ -25,6 +31,7 @@ type SettingsCredential = Pick<
   | "reasoning"
   | "visionModelIds"
   | "maxImagesPerPrompt"
+  | "modelDefaults"
 >;
 type SettingsEntry = Pick<ModelCatalogEntry, "live" | "contextWindow" | "maxTokens">;
 
@@ -34,7 +41,8 @@ export type ModelSettingsFields = {
   maxTokens: string;
   images: boolean;
   maxImagesPerPrompt: string;
-  reasoning: boolean;
+  /** "off" when the model does not think. */
+  thinkingLevel: ThinkingLevel;
 };
 
 /** A field whose number is out of range; each app words the message. */
@@ -162,46 +170,41 @@ export function connectionModels(
 }
 
 /**
- * The version a model id starts with, such as `[6, 1]` for `gpt-6.1-sol` or `[4, 5]` for
- * `x-4-5`. A part followed by letters is a size or variant, as in `llama-3-8b`, not a version.
+ * The values a model runs with when its fields are left empty. `runs` is what the server says a
+ * compatible model runs with (`modelDefaults`).
  */
-function modelVersion(id: string): number[] {
-  const match = /\d+(?:[.-]\d{1,2}(?![\da-z]))*/i.exec(id);
-  return match ? match[0].split(/[.-]/).map(Number) : [];
-}
-
-/** Models with a higher version in their id first; the catalog's order otherwise stays. */
-export function newestModelsFirst<T extends { id: string }>(models: readonly T[]): T[] {
-  const versions = new Map(models.map((model) => [model.id, modelVersion(model.id)]));
-  return [...models].sort((left, right) => {
-    const a = versions.get(left.id) ?? [];
-    const b = versions.get(right.id) ?? [];
-    for (let index = 0; index < Math.max(a.length, b.length); index++) {
-      const difference = (b[index] ?? -1) - (a[index] ?? -1);
-      if (difference) return difference;
-    }
-    return 0;
-  });
-}
-
-/** The values a model runs with when its fields are left empty. */
 export function modelSettingsDefaults(
   provider: string,
   entry: SettingsEntry | undefined,
+  runs?: ModelSettings,
 ): { contextWindow?: number; maxTokens?: number } {
   if (provider === OPENAI_COMPATIBLE_PROVIDER_ID)
-    return { contextWindow: DEFAULT_MODEL_CONTEXT_WINDOW, maxTokens: DEFAULT_MODEL_MAX_TOKENS };
+    return {
+      contextWindow: runs?.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW,
+      maxTokens: runs?.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS,
+    };
   return { contextWindow: entry?.contextWindow, maxTokens: entry?.maxTokens };
 }
 
 /**
  * The settings a model on this connection runs with: its own, else the values that were saved
- * for the whole connection before models had their own.
+ * for the whole connection before models had their own. Image input and thinking fall back to
+ * what the model does by default; limits stay empty so a form saves only the ones someone set.
  */
 export function credentialModelSettings(
   credential: SettingsCredential,
   modelId: string,
 ): ModelSettings {
+  const saved = savedModelSettings(credential, modelId);
+  const runs = credential.modelDefaults?.[modelId];
+  return {
+    ...(runs?.images !== undefined ? { images: runs.images } : {}),
+    ...(runs?.reasoning !== undefined ? { reasoning: runs.reasoning } : {}),
+    ...saved,
+  };
+}
+
+function savedModelSettings(credential: SettingsCredential, modelId: string): ModelSettings {
   const own = credential.modelSettings?.[modelId];
   if (own) return own;
   const compatible = credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID;
@@ -238,20 +241,74 @@ export function modelThinkingLevels(
 }
 
 /**
+ * The levels a model's settings may pick for it to think at, "off" first: the ones a listed model
+ * borrows from the catalog, else the ones its live entry offers, else its endpoint's.
+ */
+export function modelSettingsThinkingLevels(
+  credential: Pick<ModelCredential, "apiProtocol">,
+  entry: Pick<ModelCatalogEntry, "defaultCapabilities" | "thinkingLevels"> | undefined,
+): ThinkingLevel[] {
+  const levels =
+    (entry?.defaultCapabilities
+      ? entry.defaultCapabilities.thinkingLevels
+      : entry?.thinkingLevels) ?? compatibleThinkingLevels(credential.apiProtocol);
+  return ["off", ...levels.filter((level) => level !== "off")];
+}
+
+/**
+ * The level a model runs at when no chat, bot or role picks one, before the runtime's default:
+ * its own, else the one its connection keeps for the connection's own model. Unknown stored
+ * levels are ignored.
+ */
+export function savedThinkingLevel(
+  own: ThinkingLevel | undefined,
+  connection: { modelId?: string | null; thinkingLevel?: string | null } | undefined,
+  modelId: string | null | undefined,
+): ThinkingLevel | null {
+  if (own) return own;
+  if (!modelId || connection?.modelId !== modelId) return null;
+  return ThinkingLevelSchema.safeParse(connection.thinkingLevel).data ?? null;
+}
+
+/**
+ * The level a model thinks at when no chat, bot or role picks one, moved to the nearest of
+ * `levels` when given, as the runtime does.
+ */
+export function modelDefaultThinkingLevel(
+  credential: (SettingsCredential & Pick<ModelCredential, "modelId" | "thinkingLevel">) | undefined,
+  modelId: string | null | undefined,
+  levels?: readonly ThinkingLevel[],
+): ThinkingLevel {
+  const own = credential && modelId ? credentialModelSettings(credential, modelId) : undefined;
+  const level =
+    savedThinkingLevel(own?.thinkingLevel, credential, modelId) ?? DEFAULT_THINKING_LEVEL;
+  return (clampCatalogThinkingLevel(level, levels) as ThinkingLevel | null) ?? level;
+}
+
+/**
  * The fields for a model's settings. Without its own answer for image input or thinking, a
- * switch shows what the model already does, so saving a limit never turns either off.
+ * field shows what the model already does, so saving a limit never changes either. `thinking`
+ * is the level the model runs at and the levels its picker offers.
  */
 export function modelSettingsFields(
   settings: ModelSettings,
   entry?: Pick<ModelCatalogEntry, "images" | "reasoning" | "defaultCapabilities">,
+  thinking: { level: ThinkingLevel; levels?: readonly ThinkingLevel[] } = {
+    level: DEFAULT_THINKING_LEVEL,
+  },
 ): ModelSettingsFields {
+  const reasoning = settings.reasoning ?? (entry?.defaultCapabilities ?? entry)?.reasoning ?? false;
+  const level = clampCatalogThinkingLevel(
+    settings.thinkingLevel ?? thinking.level,
+    thinking.levels,
+  );
   return {
     contextWindow: settings.contextWindow !== undefined ? String(settings.contextWindow) : "",
     maxTokens: settings.maxTokens !== undefined ? String(settings.maxTokens) : "",
     images: settings.images ?? (entry?.defaultCapabilities ?? entry)?.images ?? false,
     maxImagesPerPrompt:
       settings.maxImagesPerPrompt !== undefined ? String(settings.maxImagesPerPrompt) : "",
-    reasoning: settings.reasoning ?? (entry?.defaultCapabilities ?? entry)?.reasoning ?? false,
+    thinkingLevel: reasoning && level ? (level as ThinkingLevel) : "off",
   };
 }
 
@@ -259,13 +316,20 @@ export type ModelSettingsRequest =
   | { status: "invalid"; field: ModelSettingsInvalidField }
   | { status: "ready"; settings: ModelSettings };
 
-/** The settings a form saves. Empty fields follow the model card. */
+/**
+ * The settings a form saves. Empty fields follow the model card. `followedThinkingLevel` is the
+ * level the form opened at for a model without its own; saving it unchanged keeps the model
+ * following its connection's level and the default.
+ */
 export function modelSettingsRequest(input: {
   fields: ModelSettingsFields;
   provider: string;
   entry: SettingsEntry | undefined;
+  /** What the server says a compatible model runs with. */
+  runs?: ModelSettings;
+  followedThinkingLevel?: ThinkingLevel;
 }): ModelSettingsRequest {
-  const { fields, provider, entry } = input;
+  const { fields, provider, entry, runs, followedThinkingLevel } = input;
   const settings: ModelSettings = {};
   if (fields.contextWindow.trim()) {
     const contextWindow = parseModelContextWindow(fields.contextWindow.trim());
@@ -277,7 +341,7 @@ export function modelSettingsRequest(input: {
     if (maxTokens === undefined) return { status: "invalid", field: "maxTokens" };
     settings.maxTokens = maxTokens;
   }
-  const defaults = modelSettingsDefaults(provider, entry);
+  const defaults = modelSettingsDefaults(provider, entry, runs);
   if (
     (settings.maxTokens !== undefined || settings.contextWindow !== undefined) &&
     !modelOutputLeavesInputRoom(
@@ -288,7 +352,9 @@ export function modelSettingsRequest(input: {
     return { status: "invalid", field: "outputRoom" };
   if (modelCapabilitiesConfigurable(provider, entry)) {
     settings.images = fields.images;
-    settings.reasoning = fields.reasoning;
+    settings.reasoning = fields.thinkingLevel !== "off";
+    if (settings.reasoning && fields.thinkingLevel !== followedThinkingLevel)
+      settings.thinkingLevel = fields.thinkingLevel;
   }
   if (fields.images && fields.maxImagesPerPrompt.trim()) {
     const maxImagesPerPrompt = parseModelMaxImagesPerPrompt(fields.maxImagesPerPrompt.trim());

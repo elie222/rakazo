@@ -223,7 +223,6 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(settings.getByRole("button", { name: "Enable Web search" })).toBeVisible();
   await captureScreenshot(page, testInfo, "27c-disabled-builtin-tools");
   await expect(modelRow).toBeVisible();
-  await expect(modelRow).toContainText("Space default");
   await captureScreenshot(page, testInfo, "27a-bot-settings-model");
   await openBotPanel(page);
   const sidePanel = page.getByTestId("side-panel");

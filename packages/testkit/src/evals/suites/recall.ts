@@ -1472,17 +1472,18 @@ function toolHeavyFixture(): HistoryFixture {
     forbidden: [],
   };
 }
-/** Checked the asked fact on the computer in the graded reply: a command matching `command`. */
-const checkedNow = (e: Evidence, command: RegExp) =>
-  check(
+/** Checked the asked fact in the graded reply: a shell command matching `command`, after a call to a tool matching `after` when given. */
+const checkedNow = (e: Evidence, command: RegExp, after?: RegExp) => {
+  const calls = e.toolCalls.filter((call) => call.step === e.finalStep);
+  const start = after ? calls.findIndex((call) => after.test(call.name)) : -1;
+  return check(
     "checked-now",
-    e.toolCalls.some(
-      (call) =>
-        call.step === e.finalStep &&
-        call.name === "shell" &&
-        command.test(String(call.args.command ?? "")),
-    ),
+    (!after || start >= 0) &&
+      calls
+        .slice(start + 1)
+        .some((call) => call.name === "shell" && command.test(String(call.args.command ?? ""))),
   );
+};
 const UPTIME_CHECK = /\buptime\b|\/proc\/uptime|\bwho\s+-b\b|\blast\s+reboot\b/;
 
 /** The last exchange (seq 22-23) is the egg answer, so "visible" stays in every strategy's view. */
@@ -1670,6 +1671,17 @@ const StepsSchema = z.array(z.unknown()).transform((steps, ctx): HistoryToolStep
   ctx.addIssue({ code: "custom", message: "steps must be stored tool steps" });
   return z.NEVER;
 });
+const Pattern = z
+  .string()
+  .min(1)
+  .refine((source) => {
+    try {
+      new RegExp(source, "i");
+      return true;
+    } catch {
+      return false;
+    }
+  }, "must be a valid regular expression");
 const RecallFileCaseSchema = z.object({
   id: z.string().regex(/^recall-file-[a-z0-9-]+$/),
   purpose: z.string().min(1),
@@ -1691,24 +1703,12 @@ const RecallFileCaseSchema = z.object({
   ask: z.string().min(1),
   /**
    * `needs-tool`: the reply must run a shell command matching `command` (a regular expression
-   * source), the check the ask needs. A `rubric` names
+   * source), the check the ask needs, and with `after` only once it has called a tool whose name
+   * matches that. A `rubric` names
    * one of the suite's calibrated judge rubrics to grade the reply's meaning instead.
    */
   expect: z.union([
-    z.object({
-      kind: z.literal("needs-tool"),
-      command: z
-        .string()
-        .min(1)
-        .refine((source) => {
-          try {
-            new RegExp(source, "i");
-            return true;
-          } catch {
-            return false;
-          }
-        }, "command must be a valid regular expression"),
-    }),
+    z.object({ kind: z.literal("needs-tool"), command: Pattern, after: Pattern.optional() }),
     z.object({ kind: z.literal("rubric"), rubric: z.enum(Object.keys(rubrics) as [RecallRubric]) }),
   ]),
   /** Scripted shell checks, as regular expression sources, tried before the shared ones. */
@@ -1773,7 +1773,15 @@ function recallCaseFromFile(entry: RecallFileCase): EvalCase {
     connections: [],
     steps: [{ ask: entry.ask }],
     grade: (e) =>
-      expect.kind === "needs-tool" ? [checkedNow(e, new RegExp(expect.command, "i"))] : [],
+      expect.kind === "needs-tool"
+        ? [
+            checkedNow(
+              e,
+              new RegExp(expect.command, "i"),
+              expect.after ? new RegExp(expect.after, "i") : undefined,
+            ),
+          ]
+        : [],
     ...(expect.kind === "rubric"
       ? {
           // An install rubric judges the reply against this case's own chat and checks.

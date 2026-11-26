@@ -2,6 +2,7 @@ import { pageKitPalette } from "@rakazo/ui-tokens";
 import type { CSSProperties, ReactNode } from "react";
 import { Children, useEffect, useId, useRef, useState } from "react";
 import { LinkButton, linkUrl, ReplyButton } from "./controls.js";
+import { graphemes } from "./graphemes.js";
 import { openViaHost } from "./inline.js";
 import type { Words } from "./labels.js";
 import { useWords } from "./labels.js";
@@ -9,11 +10,26 @@ import { useWords } from "./labels.js";
 const text = (value: unknown) =>
   typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 
+const DATA_IMAGE = /^data:image\/[a-z0-9.+-]+[;,]/i;
+const PAGE_IMAGE = "image:";
+let pageImages = new Map<string, string>();
+
+export function setPageImages(images: unknown) {
+  pageImages = new Map(
+    images && typeof images === "object"
+      ? Object.entries(images).filter(
+          (entry): entry is [string, string] =>
+            typeof entry[1] === "string" && DATA_IMAGE.test(entry[1]),
+        )
+      : [],
+  );
+}
+
 /** The viewer loads nothing from the network, so pictures come embedded in the page. */
 function imageSource(value: unknown): string | undefined {
-  return typeof value === "string" && /^data:image\/[a-z0-9.+-]+[;,]/i.test(value)
-    ? value
-    : undefined;
+  if (typeof value !== "string") return undefined;
+  if (value.startsWith(PAGE_IMAGE)) return pageImages.get(value.slice(PAGE_IMAGE.length));
+  return DATA_IMAGE.test(value) ? value : undefined;
 }
 
 /** Sound and video may also be a blob the page made itself. */
@@ -36,23 +52,24 @@ export function aspectRatio(value: unknown): number | undefined {
 const px = (value: unknown) =>
   typeof value === "number" && value > 0 && Number.isFinite(value) ? value : undefined;
 
-/** A soft fill shows until the picture has drawn, then it fades in; it never waits forever. */
-function Picture({
-  src,
-  alt,
-  fit,
-  style,
-}: {
+type PictureProps = {
   src: string;
   alt: string;
   fit?: "contain" | "cover";
   style?: CSSProperties;
-}) {
+};
+
+/** A soft fill shows until the current picture has drawn, then it fades in. */
+function Picture(props: PictureProps) {
+  return <PictureSource key={props.src} {...props} />;
+}
+
+function PictureSource({ src, alt, fit, style }: PictureProps) {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setLoaded(true), 8000);
     return () => clearTimeout(timer);
-  }, [src]);
+  }, []);
   return (
     <div className="rk-picture" data-loading={!loaded || undefined} style={style}>
       <img
@@ -529,13 +546,13 @@ function StoreLine({ item }: { item: ProductItem }) {
     .filter(Boolean)
     .join(", ")
     .replace(", Rated", ", rated");
-  const mark = text(item.storeMark) || store.slice(0, 1).toUpperCase();
+  const mark = text(item.storeMark) || (graphemes(store)[0] ?? "").toUpperCase();
   return (
     <div className="rk-store" role="img" aria-label={label}>
       {store ? (
         <>
           <span className="rk-store-mark" aria-hidden="true">
-            {mark.slice(0, 2)}
+            {graphemes(mark).slice(0, 2).join("")}
           </span>
           <span>{store}</span>
         </>
@@ -582,7 +599,9 @@ export function ProductCard({
   const title = text(item.title);
   if (!title) return null;
   const href = linkUrl(item.href);
-  const pictures = (Array.isArray(photos) ? photos : []).filter((photo) => imageSource(photo));
+  const pictures = (Array.isArray(photos) ? photos : []).flatMap(
+    (photo) => imageSource(photo) ?? [],
+  );
   const src = imageSource(item.image) ?? pictures[0];
   const height = px(imageHeight) ?? (compact ? 140 : 240);
   const media =

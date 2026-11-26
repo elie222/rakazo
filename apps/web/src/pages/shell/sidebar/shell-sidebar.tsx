@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, Group, NavLink } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
+import { formatBillingDate } from "@rakazo/i18n/billing";
 import {
   Button,
   InputGroup,
@@ -10,7 +11,7 @@ import {
   Sidebar,
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
-import type { ReactNode, UIEvent } from "react";
+import type { ReactNode, Ref, UIEvent } from "react";
 import { useState } from "react";
 import { PasskeyOffer } from "../../../components/account/PasskeyOffer";
 import { useUsageHint } from "../../../components/billing/PlanUsage";
@@ -18,7 +19,6 @@ import { useBilling } from "../../../components/billing/SubscriptionGate";
 import { CreateOrganizationDialog } from "../../../components/spaces/CreateOrganizationDialog";
 import { InviteDialog } from "../../../components/spaces/InviteDialog";
 import { useSignOut } from "../../../lib/auth/sign-out";
-import { formatBillingDate } from "../../../lib/billing/billing";
 import type { BotsSidebarDensity } from "../../../lib/preferences/bots-sidebar-density-pref";
 import { useQueryUserId } from "../../../lib/query/query";
 import { switchOrganization, useOrganizations } from "../../../lib/spaces/organizations";
@@ -58,6 +58,7 @@ type User = { name?: string | null; email?: string; image?: string | null };
 
 /** The bots sidebar: a drawer on phones, collapsible to icons elsewhere. */
 export function ShellSidebar({
+  scrollRef,
   isMobile,
   mobileOpen,
   setMobileOpen,
@@ -75,6 +76,7 @@ export function ShellSidebar({
   setPanel,
   navigate,
   setNewSpaceOpen,
+  openAgentImport,
   setCreateBotOpen,
   chatMenu,
   roster,
@@ -88,6 +90,7 @@ export function ShellSidebar({
   openSkills,
   openSpaceChat,
 }: {
+  scrollRef: Ref<HTMLDivElement>;
   isMobile: boolean;
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
@@ -105,6 +108,7 @@ export function ShellSidebar({
   setPanel: (panel: Panel) => void;
   navigate: (path: string) => void;
   setNewSpaceOpen: (open: boolean) => void;
+  openAgentImport: () => void;
   setCreateBotOpen: (open: boolean) => void;
   chatMenu: ChatMenuState;
   roster: ReactNode;
@@ -192,6 +196,7 @@ export function ShellSidebar({
           setPanel={setPanel}
           navigate={navigate}
           setNewSpaceOpen={setNewSpaceOpen}
+          openAgentImport={openAgentImport}
           setCreateBotOpen={setCreateBotOpen}
         />
         {mini ||
@@ -255,6 +260,7 @@ export function ShellSidebar({
           </InputGroup>
         )}
         <div
+          ref={scrollRef}
           onScroll={resetFadeWhenUnscrollable}
           className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5"
         >

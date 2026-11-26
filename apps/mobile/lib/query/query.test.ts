@@ -1,7 +1,14 @@
 import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryObserver } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { accountRpcQuery, formRead, queryClient, resetRpcQueries, rpcQuery } from "./query";
+import {
+  accountRpcQuery,
+  formRead,
+  queryClient,
+  refreshRpcQueries,
+  resetRpcQueries,
+  rpcQuery,
+} from "./query";
 
 const scope = vi.hoisted(() => ({
   apiBase: "https://app.example.test",
@@ -123,4 +130,25 @@ describe("formRead", () => {
     expect(await visit()).toEqual({ opened: undefined, read: "second visit" });
     expect(queryClient.getQueryData(shared.queryKey)).toBe("another screen's copy");
   });
+});
+
+it("refreshes completed runs when a notification overtakes the first read", async () => {
+  const first = deferred<{ runs: { status: string }[] }>();
+  scope.rpc
+    .mockImplementationOnce(() => first.promise)
+    .mockResolvedValue({ runs: [{ status: "completed" }] });
+  const query = rpcQuery("runs/list", { filter: "recent" });
+  const observer = new QueryObserver(queryClient, query);
+  const stop = observer.subscribe(() => {});
+  try {
+    await vi.waitFor(() => expect(scope.rpc).toHaveBeenCalledTimes(1));
+    const changed = refreshRpcQueries("runs/list");
+    first.resolve({ runs: [{ status: "running" }] });
+    await changed;
+    await vi.waitFor(() =>
+      expect(queryClient.getQueryData(query.queryKey)).toEqual({ runs: [{ status: "completed" }] }),
+    );
+  } finally {
+    stop();
+  }
 });

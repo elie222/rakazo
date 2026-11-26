@@ -1,52 +1,33 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type {
-  ConnectionCatalogItem,
-  McpServer,
-  McpServerConnection,
-  PluginMarketplaceEntry,
-} from "@rakazo/contracts";
+import type { ConnectionCatalogItem, McpServer, PluginMarketplaceEntry } from "@rakazo/contracts";
 import { mcpServerConnection } from "@rakazo/contracts";
-import { catalogItemKey } from "@rakazo/core";
+import { catalogItemAccounts, catalogItemKey } from "@rakazo/core";
+import { mcpServerStatusLabel } from "@rakazo/i18n/plugin-catalog";
 import { Button, SectionHeading } from "@rakazo/ui-web";
 import { Check, ChevronLeft, CircleAlert, TriangleAlert } from "lucide-react";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { ROW_BUTTON, ROW_HOVER, ROW_SHELL } from "../../components/integrations/plugin-marketplace";
+import { useCatalogIconVisibility } from "../../components/integrations/use-catalog-icon-visibility";
 import type { PluginConnections } from "./use-plugin-connections";
 
 export function ConnectorIcon({ name, logo }: { name: string; logo?: string | null }) {
-  return logo ? (
+  const { ready, placeholderRef } = useCatalogIconVisibility(Boolean(logo));
+  return logo && ready ? (
     <img
       src={logo}
       alt=""
-      loading="lazy"
       decoding="async"
       className="h-9 w-9 shrink-0 rounded-xl bg-accent object-contain"
     />
   ) : (
     <div
+      ref={placeholderRef}
       aria-hidden="true"
       className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent text-body font-semibold text-foreground"
     >
       {Array.from(name)[0]}
     </div>
   );
-}
-
-function connectionLabel(state: McpServerConnection): ReactElement {
-  switch (state) {
-    case "disabled":
-      return <Trans>Disabled</Trans>;
-    case "needs_client":
-      return <Trans>Needs an OAuth client ID</Trans>;
-    case "needs_sign_in":
-      return <Trans>Needs sign-in</Trans>;
-    case "not_working":
-      return <Trans>Not working</Trans>;
-    case "connected":
-      return <Trans>Connected</Trans>;
-    case "not_connected":
-      return <Trans>Not connected</Trans>;
-  }
 }
 
 export function ConnectionStatus({ server }: { server: McpServer }) {
@@ -71,7 +52,7 @@ export function ConnectionStatus({ server }: { server: McpServer }) {
   return (
     <span className={`flex min-w-0 items-center gap-1 text-body-sm ${tone}`}>
       {Icon ? <Icon aria-hidden="true" className="size-3.5 shrink-0" /> : null}
-      <span className="truncate">{connectionLabel(state)}</span>
+      <span className="truncate">{mcpServerStatusLabel(state)}</span>
     </span>
   );
 }
@@ -104,6 +85,7 @@ export type TileContext = {
   /** Managed apps whose brand also has a plugin, keyed by catalog item. */
   pluginForApp: Map<string, PluginMarketplaceEntry>;
   onOpenApp: (item: ConnectionCatalogItem) => void;
+  organizationName?: string | null;
   onOpenDetail: (item: ConnectionCatalogItem) => void;
   /** Opens where a chat app is set up; absent where that cannot be reached. */
   onOpenChatApp?: () => void;
@@ -131,6 +113,11 @@ export function CatalogTile({
   const title = (
     <div className="min-w-0 flex-1 text-start">
       <div className="truncate text-body-lg font-medium text-foreground">{label}</div>
+      {catalogItemAccounts(connections.connections, item).some((row) => row.organization) ? (
+        <div className="text-body-sm text-muted-foreground">
+          <Trans>Organization</Trans>
+        </div>
+      ) : null}
     </div>
   );
   const tile = (
@@ -220,7 +207,8 @@ function CatalogActions({
       disabled={connecting}
       onClick={(event) => {
         event.stopPropagation();
-        void connections.connect(item);
+        if (context.organizationName) onOpenDetail(item);
+        else connections.connect(item);
       }}
     >
       {connecting ? <Trans>Adding…</Trans> : <Trans>Add</Trans>}

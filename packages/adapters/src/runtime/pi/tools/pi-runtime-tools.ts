@@ -1,6 +1,5 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
-import { validateToolArguments } from "@earendil-works/pi-ai";
 import type {
   AdapterContext,
   AgentRunRequest,
@@ -22,6 +21,7 @@ import {
 import type { FinishedShellCommand } from "../../../computers/sandbox/shell-command-stream.js";
 import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
+import { NO_RESPONSE } from "../../../runs/assembly/silent-reply.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
 import { settleMsArg, textContentArg } from "../../../runs/turn/tool-text.js";
 import {
@@ -32,6 +32,7 @@ import {
 } from "../../../secrets/bot-secrets.js";
 import { FIND_TOOL, USE_TOOL } from "../../../tools/builtin.tool-definition.js";
 import { findTools, partitionTools } from "../../../tools/builtin-tool-bridge.js";
+import { CATALOG_EXECUTE } from "../../../tools/lazy-tool-catalog.js";
 import { SCHEDULE_TOOL_NAMES } from "../../../tools/schedule-tools.js";
 import { positiveIntegerArg } from "../../../tools/workspace-file-tools.js";
 import { shortenToolResultText } from "../../context/context-selection.js";
@@ -47,6 +48,7 @@ import type { RuntimeModelTarget } from "../pi-runtime-models.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "../usage/pi-telemetry.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import { parametersFor, prepareFleetArguments } from "./pi-runtime-tool-parameters.js";
+import { useToolAgentTool } from "./pi-runtime-use-tool.js";
 
 export interface ToolCallBudget {
   count: number;
@@ -76,8 +78,10 @@ export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): numbe
 
 export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
   const { listed, deferred } = partitionTools(toolDefs);
-  const tools = namedAgentTools(listed).map(({ tool, name }) =>
-    toAgentTool(tool, host, name, { deferred }),
+  const named = namedAgentTools(listed);
+  const listedByExposedName = named.map(({ tool, name }) => ({ ...tool, name }));
+  const tools = named.map(({ tool, name }) =>
+    toAgentTool(tool, host, name, { deferred, listed: listedByExposedName }),
   );
   if (!deferred.length) return tools;
   const runnable = new Map(
@@ -85,8 +89,16 @@ export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost)
       .filter((tool) => tool.name !== FIND_TOOL && tool.name !== USE_TOOL)
       .map((tool) => [tool.name, tool]),
   );
+  // A connector's held-back tools run through its catalog, as find_tool found them.
+  const catalogRunners = new Map(
+    named.flatMap(({ tool, name }) =>
+      tool.route && !tool.route.resourceId && tool.route.toolName === CATALOG_EXECUTE
+        ? [[tool.route.connectorId, toAgentTool(tool, host, name, { viaUseTool: true })] as const]
+        : [],
+    ),
+  );
   return tools.map((tool) =>
-    tool.name === USE_TOOL ? useToolAgentTool(tool, runnable, host) : tool,
+    tool.name === USE_TOOL ? useToolAgentTool(tool, runnable, catalogRunners, host) : tool,
   );
 }
 
@@ -98,51 +110,6 @@ const PAGE_CHANGING_TOOL_NAMES = new Set([
   "browser_navigate",
   "browser_act",
 ]);
-
-/**
- * Unwraps to the real tool before anything else, so its gate, approvals, checkpoint, audit
- * and activity all name that tool exactly as a direct call would.
- */
-function useToolAgentTool(
-  wrapper: AgentTool,
-  runnable: ReadonlyMap<string, AgentTool>,
-  host: ToolHost,
-): AgentTool {
-  return {
-    ...wrapper,
-    // Deferred schedule and memory tools must not race a sibling call.
-    executionMode: "sequential",
-    execute: async (toolCallId, params, signal, onUpdate) => {
-      const { name, arguments: args } = params as { name: string; arguments?: unknown };
-      const tool = runnable.get(name);
-      if (!tool) {
-        host.queue.push({
-          type: "tool",
-          name: USE_TOOL,
-          args: params as Record<string, unknown>,
-          executionId: JSON.stringify([
-            "pi-tool",
-            host.agentNamespace ?? "main",
-            providerToolCallId(host.providerToolCallIds, toolCallId),
-          ]),
-          response: host.modelResponses,
-        });
-        throw new Error(
-          host.request.unavailableToolReasons?.[name] ??
-            `${name} is not available. Use a name find_tool lists.`,
-        );
-      }
-      const prepared = tool.prepareArguments?.(args ?? {}) ?? args ?? {};
-      const validated = validateToolArguments(tool, {
-        type: "toolCall",
-        id: toolCallId,
-        name,
-        arguments: prepared as never,
-      });
-      return tool.execute(toolCallId, validated, signal, onUpdate);
-    },
-  };
-}
 
 /** Each tool's definition under the name the model calls it, as toAgentTools exposes it. */
 export function agentToolDefinitions(toolDefs: readonly ConnectorTool[]) {
@@ -265,6 +232,7 @@ export function describeToolActivity(
     return record.help === true ? "Reading the page kit reference" : "Writing the page code";
   }
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
+  if (toolName === "remove_mcp_server") return `Removing MCP server: ${detail(record.name)}`;
   if (toolName === "computer_observe") return "Looking at the screen";
   if (toolName === "browser_navigate")
     return `Opening page: ${detail(redactActivityUrl(record.url))}`;
@@ -282,7 +250,7 @@ export function describeToolActivity(
   if (toolName === "set_child_bot_model") return "Setting a bot's model";
   if (toolName === "create_child_routine") return `Scheduling routine: ${detail(record.name)}`;
   if (toolName === "remember") return "Saving a note to memory";
-  if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
+  if (toolName === "delete_shared_memory") return `Deleting shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
   if (toolName === "service_search") return `Finding a service: ${detail(record.query)}`;
@@ -383,7 +351,11 @@ function toAgentTool(
   tool: ConnectorTool,
   host: ToolHost,
   exposedName: string,
-  { deferred = [], viaUseTool = false }: { deferred?: ConnectorTool[]; viaUseTool?: boolean } = {},
+  {
+    deferred = [],
+    listed = [],
+    viaUseTool = false,
+  }: { deferred?: ConnectorTool[]; listed?: ConnectorTool[]; viaUseTool?: boolean } = {},
 ): AgentTool {
   return {
     name: exposedName,
@@ -407,8 +379,9 @@ function toAgentTool(
       const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       if (tool.name === "remember") {
         return {
-          content: String(raw.content ?? ""),
-          ...(typeof raw.old_text === "string" && raw.old_text ? { old_text: raw.old_text } : {}),
+          operations: raw.operations,
+          ...(typeof raw.path === "string" && raw.path.trim() ? { path: raw.path } : {}),
+          ...(raw.shared === true ? { shared: true } : {}),
         };
       }
       if (tool.name === "request_takeover") {
@@ -586,6 +559,12 @@ function toAgentTool(
                 ) {
                   throw new Error("ask_user requires two to four unique, non-empty options");
                 }
+                if (typeof args.question !== "string" || args.question.trim().length === 0) {
+                  // A blank question is a card nobody can answer, not a way to end quietly.
+                  throw new Error(
+                    `ask_user requires a question for the person. To finish without a message where staying silent is allowed, reply exactly ${NO_RESPONSE} instead.`,
+                  );
+                }
                 host.pausePending = true;
                 host.queue.push({
                   type: "ask",
@@ -640,10 +619,19 @@ function toAgentTool(
                   host.computerModeAllowed && !host.computerModeAllowed()
                     ? deferred.filter((candidate) => !COMPUTER_MODE_TOOLS.has(candidate.name))
                     : deferred;
-                const found = findTools(findable, args);
+                const { hits, result } = await findTools(
+                  { deferred: findable, listed, search: host.request.searchTools },
+                  args,
+                  host.request.unavailableToolReasons,
+                );
+                for (const hit of hits) {
+                  if (!hit.connectorId) continue;
+                  host.foundConnectorTools ??= new Map();
+                  host.foundConnectorTools.set(hit.id, hit.connectorId);
+                }
                 return {
-                  content: [{ type: "text", text: JSON.stringify(found) }],
-                  details: found,
+                  content: [{ type: "text", text: JSON.stringify(result) }],
+                  details: result,
                 };
               }
               if (host.request.executeTool) {
@@ -839,6 +827,8 @@ export interface ToolHost {
   pendingShells: Array<Promise<FinishedShellCommand>>;
   /** Model responses started by the main agent. Helpers reset it, so each of their calls counts. */
   modelResponses?: number;
+  /** Connector tools find_tool found this turn, by id, for use_tool to run. */
+  foundConnectorTools?: Map<string, string>;
 }
 
 export function toolCallBudgetExceededMessage(limit: number) {

@@ -1,15 +1,31 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
 import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
-import { cronFromPreset, isOneShotRoutineCrons } from "@rakazo/core";
-import { Button, Input, Switch, Textarea } from "@rakazo/ui-web";
+import { cronFromPreset, isOneShotRoutineCrons, routineCanEnd, wallClock } from "@rakazo/core";
+import {
+  Button,
+  Field,
+  FieldLabel,
+  Input,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+  Switch,
+  Textarea,
+} from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, X } from "lucide-react";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { useIdentityConfirmation } from "../../components/account/ConfirmIdentityDialog";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useSpaceQueries } from "../../lib/query/query";
 import type { RoutineDraftState } from "../../lib/routines/routine-draft";
-import { routineNeedsOneShotArm } from "../../lib/routines/routine-draft";
+import {
+  routineDraftDirty,
+  routineDraftEventTriggered,
+  routineNeedsOneShotArm,
+} from "../../lib/routines/routine-draft";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
 import { RoutineOwnerNote } from "./routine-editor/access-note";
@@ -71,6 +87,16 @@ export function RoutineEditor({
 }) {
   const { t } = useLingui();
   const fieldId = useId();
+  // Going back or closing with unsaved edits asks first; a clean editor leaves at once.
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  // The run time a one-time routine starts with is made from the clock, so remember it per routine.
+  // Only an unarmed one-time routine starts with one; any other keeps an edit made while saving.
+  const openedRunAt = () =>
+    editing && routineNeedsOneShotArm(editing, editing.crons) ? draft.runAtLocal : "";
+  const [opened, setOpened] = useState(() => ({ editing, runAtLocal: openedRunAt() }));
+  if (opened.editing !== editing) setOpened({ editing, runAtLocal: openedRunAt() });
+  const leave = (exit: () => void) =>
+    routineDraftDirty(draft, editing, opened.runAtLocal) ? setLeaving(() => exit) : exit();
   const { withIdentityConfirmation, identityDialog } = useIdentityConfirmation();
   // Closing the confirmation is a choice, and other failures show as the editor's error.
   const revealWebhook = () => void withIdentityConfirmation(onRevealWebhook).catch(() => undefined);
@@ -98,8 +124,13 @@ export function RoutineEditor({
   const canTest = Boolean(editing) && !saving && !running;
   // Only the owner changes another member's routine; anyone may still turn it on or off.
   const readOnly = editing?.editable === false;
-  const needsOneShotArm =
-    editing != null && routineNeedsOneShotArm(editing, draft.schedules.map(cronFromPreset));
+  const draftCrons = draft.schedules.map(cronFromPreset);
+  const needsOneShotArm = editing != null && routineNeedsOneShotArm(editing, draftCrons);
+  const repeats = routineCanEnd(
+    draftCrons,
+    draft.watch !== null,
+    routineDraftEventTriggered(draft),
+  );
 
   return (
     <div>
@@ -107,7 +138,7 @@ export function RoutineEditor({
         <Button
           variant="ghost"
           size="icon"
-          onClick={onBack}
+          onClick={() => leave(onBack)}
           className="text-muted-foreground"
           aria-label={t`Back`}
         >
@@ -119,7 +150,7 @@ export function RoutineEditor({
         <Button
           variant="ghost"
           size="icon"
-          onClick={onClose}
+          onClick={() => leave(onClose)}
           className="text-muted-foreground"
           aria-label={t`Close`}
         >
@@ -193,7 +224,12 @@ export function RoutineEditor({
           <div className="flex items-center gap-2">
             <Trans>When to run</Trans>
             <span className="text-label text-muted-foreground/70">{timezone}</span>
-            <RoutineModelSettings draft={draft} onChange={onChange} fieldId={fieldId} />
+            <RoutineModelSettings
+              draft={draft}
+              onChange={onChange}
+              fieldId={fieldId}
+              computerOffered={editing?.useComputer !== undefined}
+            />
           </div>
 
           <div className="mt-2 space-y-2">
@@ -270,6 +306,34 @@ export function RoutineEditor({
               />
             ) : null}
 
+            {repeats ? (
+              <Field>
+                <FieldLabel htmlFor={`${fieldId}-ends`} className="font-normal">
+                  <Trans>Ends</Trans>
+                </FieldLabel>
+                <InputGroup>
+                  <InputGroupInput
+                    id={`${fieldId}-ends`}
+                    type="date"
+                    value={draft.endsOn}
+                    min={wallClock(new Date(), timezone).slice(0, 10)}
+                    onChange={(e) => onChange({ ...draft, endsOn: e.target.value })}
+                  />
+                  {draft.endsOn && !readOnly ? (
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton
+                        size="icon-sm"
+                        aria-label={t`Remove end date`}
+                        onClick={() => onChange({ ...draft, endsOn: "" })}
+                      >
+                        <X />
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  ) : null}
+                </InputGroup>
+              </Field>
+            ) : null}
+
             {needsOneShotArm ? (
               <label
                 htmlFor={`${fieldId}-run-at`}
@@ -324,6 +388,17 @@ export function RoutineEditor({
 
       {editing ? <RoutineRunHistory key={editing.id} routineId={editing.id} /> : null}
       {identityDialog}
+      <ConfirmDialog
+        open={leaving !== null}
+        onCancel={() => setLeaving(null)}
+        title={<Trans>Discard unsaved changes?</Trans>}
+        confirmLabel={<Trans>Discard</Trans>}
+        onConfirm={() => {
+          const exit = leaving;
+          setLeaving(null);
+          exit?.();
+        }}
+      />
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   ProductCard,
   ProductRows,
   RatingSummary,
+  setPageImages,
   Video,
   WatchCard,
 } from "./media.js";
@@ -40,6 +41,7 @@ beforeEach(() => {
   Element.prototype.scrollTo ??= () => {};
 });
 afterEach(() => {
+  setPageImages(undefined);
   host.remove();
   document.documentElement.removeAttribute("data-reply");
   vi.restoreAllMocks();
@@ -54,6 +56,25 @@ const all = (selector: string) => [...host.querySelectorAll<HTMLElement>(selecto
 const click = (element: Element | null) => act(() => (element as HTMLElement).click());
 
 describe("media", () => {
+  it("shows a picture the host read for its name, and leaves out names it has none for", () => {
+    setPageImages({ hotel: PNG, script: "javascript:alert(1)" });
+    render(
+      <>
+        <Image src="image:hotel" alt="Hotel" />
+        <Image src="image:script" alt="Not a picture" />
+        <Image src="image:missing" alt="Missing" />
+        <Image src="image:constructor" alt="Prototype" />
+        <Gallery photos={[{ src: "image:hotel", alt: "Lobby" }, { src: "image:missing" }]} />
+        <ProductCard title="Quay Hotel" photos={["image:hotel", "image:missing"]} />
+      </>,
+    );
+    expect(all("img").map((img) => [img.getAttribute("src"), img.getAttribute("alt")])).toEqual([
+      [PNG, "Hotel"],
+      [PNG, "Lobby"],
+      [PNG, "Quay Hotel"],
+    ]);
+  });
+
   it("shows only embedded pictures and sound, never a network address", () => {
     render(
       <>
@@ -102,6 +123,20 @@ describe("media", () => {
     expect(q("video")).toBeNull();
     act(() => root.render(<Video src="data:video/webm;base64,Qg==" />));
     expect(q("video")).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("restores the placeholder when replacing an already drawn picture", () => {
+    const root = createRoot(host.appendChild(document.createElement("div")));
+    const loading = () => q(".rk-picture")!.hasAttribute("data-loading");
+    act(() => root.render(<Image src={PNG} alt="Harbour" />));
+    act(() => q("img")!.dispatchEvent(new Event("load")));
+    act(() => root.render(<Image src={PNG} alt="Updated" />));
+    expect(loading()).toBe(false);
+    act(() => root.render(<Image src="data:image/png;base64,QQ==" alt="Updated" />));
+    expect(loading()).toBe(true);
+    act(() => q("img")!.dispatchEvent(new Event("load")));
+    expect(loading()).toBe(false);
     act(() => root.unmount());
   });
 
@@ -247,6 +282,22 @@ describe("cards and people", () => {
     // The pill says only "View" so it never wraps; the link's name still says what it opens.
     expect(q("a")!.textContent).toBe("View");
     expect(q("a")!.getAttribute("aria-label")).toBe("View Linen shirt");
+  });
+
+  it.each([
+    { store: "Shop", storeMark: undefined, mark: "S" },
+    { store: "🍎 Shop", storeMark: undefined, mark: "🍎" },
+    { store: "𝒜pple Shop", storeMark: undefined, mark: "𝒜" },
+    { store: "Shop", storeMark: "A🍎", mark: "A🍎" },
+    { store: "🇨🇦 Shop", storeMark: undefined, mark: "🇨🇦" },
+    { store: "👩‍💻 Dev", storeMark: undefined, mark: "👩‍💻" },
+    { store: "Shop", storeMark: "🇨🇦🇺🇸🇲🇽", mark: "🇨🇦🇺🇸" },
+  ])("draws a whole store mark, never half a character: $store -> $mark", (row) => {
+    render(<ProductCard {...item} store={row.store} storeMark={row.storeMark} />);
+    const mark = q(".rk-store-mark")!.textContent!;
+    expect(mark).toBe(row.mark);
+    // encodeURIComponent throws on a lone surrogate, so this proves the mark is well formed.
+    expect(() => encodeURIComponent(mark)).not.toThrow();
   });
 
   it("makes a compact card one link and drops products and tiles with nothing to show", () => {

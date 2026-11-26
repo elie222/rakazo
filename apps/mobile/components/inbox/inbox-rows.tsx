@@ -18,6 +18,7 @@ import type { MobileBot, MobileBotSection, MobileGroup } from "../../lib/api/mob
 import { androidRipple } from "../../lib/appearance/ripple";
 import { AvatarRow } from "../../lib/bots/avatar-life";
 import { mobileLogoAvatarActivity } from "../../lib/bots/logo-avatar-activity";
+import { useDateLocale } from "../../lib/i18n/i18n";
 import { formatSnoozeWake, formatThreadTime } from "../../lib/inbox/inbox";
 import type { PinnedChat } from "../../lib/inbox/inbox-spaces";
 import { botNeedsAttention } from "../../lib/inbox/inbox-spaces";
@@ -30,6 +31,7 @@ import { GroupAvatar } from "../bots/group-avatar";
 import { NativeSymbol } from "../native/native-symbol";
 import { DragSafePressable } from "../ui/drag-safe-pressable";
 import type { BotOrganizationUpdate } from "./bot-organize-modal";
+import { ChatTileMenu } from "./chat-tile-menu";
 import { createInboxStyles, INBOX_ROW } from "./inbox-styles";
 import { InboxSwipeRow } from "./inbox-swipe-row";
 
@@ -215,7 +217,10 @@ export function SectionChevron({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-/** Android pinned chats open with a tap and organize with a long press. */
+/**
+ * Pinned chats as avatar tiles above the list. A tap opens one; a long press organizes it, with
+ * the row's context menu on iOS and the organize sheet elsewhere.
+ */
 export const PinnedTiles = memo(function PinnedTiles({
   chats,
   onOpenBot,
@@ -224,71 +229,114 @@ export const PinnedTiles = memo(function PinnedTiles({
   onLongPressGroup,
   onBotAction,
   onGroupAction,
+  sectionsOf,
+  onOrganize,
+  onEditSection,
+  onSnooze,
 }: {
   chats: PinnedChat[];
   onOpenBot: (bot: MobileBot | SpaceBot) => void;
   onOpenGroup: (group: MobileGroup | SpaceGroup) => void;
-  onLongPressBot: (bot: MobileBot | SpaceBot) => void;
-  onLongPressGroup: (group: MobileGroup | SpaceGroup) => void;
+  /** Without them a long press opens the tile's context menu. */
+  onLongPressBot?: (bot: MobileBot | SpaceBot) => void;
+  onLongPressGroup?: (group: MobileGroup | SpaceGroup) => void;
   onBotAction: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
   onGroupAction: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
-}) {
+  /** The sections of the chat's space, which its menu can move it between. */
+  sectionsOf: (spaceId: string | undefined) => readonly MobileBotSection[];
+} & Omit<RowMenuProps, "sections">) {
   const { i18n } = useLingui();
   const styles = useThemedStyles(createInboxStyles);
   const selectedId = useContext(SelectedChatContext);
-  // Three tiles share the row, so a narrow pane shrinks the avatars instead of overlapping them.
+  // Three tiles share the row and each avatar fills its tile, up to a cap for wide panes.
   const [rowWidth, setRowWidth] = useState(0);
-  const avatarSize = rowWidth > 0 ? Math.min(84, Math.floor((rowWidth - 16) / 3 - 8)) : 84;
+  const tileWidth = rowWidth > 0 ? Math.floor((rowWidth - 16) / 3) : undefined;
+  const avatarSize = tileWidth ? Math.min(PINNED_AVATAR_MAX, tileWidth - 12) : PINNED_AVATAR_MAX;
   return (
     <View
       style={styles.pinnedTiles}
       onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)}
     >
       {chats.map((chat) => {
-        const id = chat.kind === "bot" ? chat.bot.id : chat.group.id;
-        const name = chat.kind === "bot" ? chat.bot.name : chat.group.name;
-        const actions = inboxRowActionList(chat.kind === "bot" ? chat.bot : chat.group);
+        const target =
+          chat.kind === "bot"
+            ? { kind: chat.kind, chat: chat.bot }
+            : { kind: chat.kind, chat: chat.group };
+        const { id, name } = target.chat;
+        const actions = inboxRowActionList(target.chat);
         const runAction = (action: InboxRowAction) =>
           chat.kind === "bot" ? onBotAction(action, chat.bot) : onGroupAction(action, chat.group);
-        const organize = () =>
-          chat.kind === "bot" ? onLongPressBot(chat.bot) : onLongPressGroup(chat.group);
+        const organize =
+          chat.kind === "bot"
+            ? onLongPressBot && (() => onLongPressBot(chat.bot))
+            : onLongPressGroup && (() => onLongPressGroup(chat.group));
+        const sections = sectionsOf(target.chat.spaceId);
         return (
-          <Pressable
+          <ChatTileMenu
             key={`${chat.kind}-${id}`}
-            accessibilityRole="button"
-            accessibilityLabel={name}
-            accessibilityState={{ selected: selectedId === id }}
-            accessibilityActions={actions.map((action) => ({
-              name: action,
-              label: i18n._(INBOX_ROW_ACTIONS[action].label),
-            }))}
-            onAccessibilityAction={(event) => {
-              const action = actions.find((item) => item === event.nativeEvent.actionName);
-              if (action) runAction(action);
+            width={tileWidth}
+            unread={target.chat.unread}
+            pinned
+            notifyOnFinish={chat.kind === "bot" ? chat.bot.notifyOnFinish : undefined}
+            sectionId={target.chat.sectionId}
+            sections={sections}
+            preview={{
+              title: name,
+              message: target.chat.preview,
+              avatar:
+                chat.kind === "bot" ? (
+                  <BotAvatar
+                    color={chat.bot.color || FALLBACK_COLOR}
+                    avatarSet={chat.bot.avatarSet}
+                    identity={chat.bot.id}
+                    size={32}
+                  />
+                ) : (
+                  <GroupAvatar members={chat.group.members} size={32} />
+                ),
             }}
-            onPress={() => (chat.kind === "bot" ? onOpenBot(chat.bot) : onOpenGroup(chat.group))}
-            onLongPress={organize}
-            style={({ pressed }) => [
-              styles.pinnedTile,
-              selectedId === id ? { backgroundColor: native.fillPressed } : null,
-              pressed && styles.rowPressed,
-            ]}
+            onAction={runAction}
+            onOrganize={(update) => onOrganize(target.kind, target.chat, update)}
+            onEditSection={(mode) => onEditSection(target.kind, target.chat, mode, sections)}
+            onSnooze={onSnooze && ((until) => onSnooze(target.kind, target.chat, until))}
           >
-            {chat.kind === "bot" ? (
-              <BotAvatar
-                color={chat.bot.color || FALLBACK_COLOR}
-                avatarSet={chat.bot.avatarSet}
-                identity={chat.bot.id}
-                size={avatarSize}
-                status={chat.bot.status}
-                muted={chat.bot.notifyOnFinish === false}
-                motion="lazy"
-              />
-            ) : (
-              <GroupAvatar members={chat.group.members} size={avatarSize} />
-            )}
-            <PinnedName chat={chat} name={name} />
-          </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={name}
+              accessibilityState={{ selected: selectedId === id }}
+              accessibilityActions={actions.map((action) => ({
+                name: action,
+                label: i18n._(INBOX_ROW_ACTIONS[action].label),
+              }))}
+              onAccessibilityAction={(event) => {
+                const action = actions.find((item) => item === event.nativeEvent.actionName);
+                if (action) runAction(action);
+              }}
+              onPress={() => (chat.kind === "bot" ? onOpenBot(chat.bot) : onOpenGroup(chat.group))}
+              onLongPress={organize ?? holdForMenu}
+              style={({ pressed }) => [
+                styles.pinnedTile,
+                { width: tileWidth ?? "33.33%" },
+                selectedId === id ? { backgroundColor: native.fillPressed } : null,
+                pressed && styles.rowPressed,
+              ]}
+            >
+              {chat.kind === "bot" ? (
+                <BotAvatar
+                  color={chat.bot.color || FALLBACK_COLOR}
+                  avatarSet={chat.bot.avatarSet}
+                  identity={chat.bot.id}
+                  size={avatarSize}
+                  status={chat.bot.status}
+                  muted={chat.bot.notifyOnFinish === false}
+                  motion="lazy"
+                />
+              ) : (
+                <GroupAvatar members={chat.group.members} size={avatarSize} />
+              )}
+              <PinnedName chat={chat} name={name} />
+            </Pressable>
+          </ChatTileMenu>
         );
       })}
     </View>
@@ -303,6 +351,8 @@ function PinnedName({ chat, name }: { chat: PinnedChat; name: string }) {
     </Text>
   );
 }
+
+const PINNED_AVATAR_MAX = 120;
 
 // The iOS row menu opens on a long press; a press handler without onLongPress would still open the
 // chat when the finger lifts.
@@ -331,15 +381,17 @@ export type RowMenuProps = {
 };
 
 /** The row's time slot: when a snoozed chat wakes, that it woke, or its last activity. */
-function chatTime(
+function useChatTime(
   chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
   day: number,
   now: number,
   woke: string,
 ) {
-  if (chat.snoozedUntil && chatSnoozed(chat, now)) return formatSnoozeWake(chat.snoozedUntil);
+  const locale = useDateLocale();
+  if (chat.snoozedUntil && chatSnoozed(chat, now))
+    return formatSnoozeWake(chat.snoozedUntil, new Date(), locale);
   if (chatWoke(chat, now)) return woke;
-  return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
+  return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day), locale) : "";
 }
 
 /** A chat row with the iOS swipe actions and context menu; other platforms get the row as is. */
@@ -422,7 +474,7 @@ export const BotRow = memo(function BotRow({
 } & RowMenuProps) {
   const { t } = useLingui();
   const preview = previewSnippet(bot.preview, 40) || t`No messages yet`;
-  const time = chatTime(bot, day, now, t`Woke`);
+  const time = useChatTime(bot, day, now, t`Woke`);
   const working = isRunWorking(bot.status);
   const waiting = useWaitingOnYou(bot);
   // Spelled out because an explicit label replaces the one built from the row's children.
@@ -508,7 +560,7 @@ export const GroupRow = memo(function GroupRow({
   const { t } = useLingui();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
-  const time = chatTime(group, day, now, t`Woke`);
+  const time = useChatTime(group, day, now, t`Woke`);
   const runAction = (action: InboxRowAction) => onAction?.(action, group);
   const row = (
     <ConversationRow

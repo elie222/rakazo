@@ -22,6 +22,7 @@ import {
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { completeRun } from "../lifecycle/run-complete.js";
 import { failRun, handoffEndedTurn, requeueRunAfterDatabaseOutage } from "../lifecycle/run-fail.js";
+import { searchRunTools } from "../tools/run-tool-search.js";
 import { followUpsOffered, offeredFleetTools } from "../tools/run-tool-selection.js";
 import { applyTool } from "../tools/run-tools.js";
 import { consumeRunEvents } from "./run-turn.js";
@@ -137,10 +138,12 @@ function modelTurnRequest(
   const {
     agentSkillsLine,
     botDirectory,
-    historicalContext,
+    hasHistoricalContext,
     pluginLine,
     prompt,
     runtimeHistory,
+    resumeHistoryMessageIds,
+    resumeAnswerReplyContexts,
     taskPrompt,
     taughtSkillsLine,
     turnCheckpoint,
@@ -217,10 +220,11 @@ function modelTurnRequest(
       redactedScratchpadContext,
       currentTurnDataInPrompt,
       redactedTicketContext: ticketContext ? redactSecrets(ticketContext, runSecrets) : undefined,
-      hasHistoricalContext: historicalContext.length > 0,
+      hasHistoricalContext,
       // A background helper is not offered the history tools, so it gets no guidance on them.
       historyRetrievalEnabled:
         contextStrategy !== "current" && tools.some((tool) => tool.name === "search_history"),
+      historyMyChats: ctx.source.myChatsAllowed,
       computerInstruction,
       pageBrowserAllowed,
       taskCatalogInstruction,
@@ -326,6 +330,7 @@ function modelTurnRequest(
       effects.pendingTurnCheckpoints.set(executionId, capture);
     },
     resumeToolResult: {
+      historyMessageIds: resumeHistoryMessageIds,
       content: [{ type: "text", text: takeoverResume?.promptNote ?? taskPrompt }],
     },
     script,
@@ -335,10 +340,14 @@ function modelTurnRequest(
       ? undefined
       : (name, args, executionId, route, observer) =>
           applyTool(ctx, name, args, executionId, route, observer),
+    searchTools: scripted ? undefined : (request) => searchRunTools(ctx, request),
     resolveModel: scripted
       ? undefined
       : (provider, modelId) =>
           resolveConnectedModel(run, provider, modelId, (values) => runSecrets.push(...values)),
+    onTranscript: (transcript) => {
+      state.reply.transcript = transcript;
+    },
     onToolCompleted: (completion) => {
       if (effects.restoredPending?.executionId === completion.executionId)
         effects.restoredPending = undefined;
@@ -379,6 +388,7 @@ function modelTurnRequest(
         {
           messageId: currentTurnMessage?.id,
           hasImages: Boolean(currentTurnImages?.length),
+          resumeAnswerReplyContexts,
         },
       ),
   };

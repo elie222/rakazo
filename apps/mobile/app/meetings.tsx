@@ -11,9 +11,11 @@ import {
   SettingsInputRow,
   SettingsRow,
 } from "../components/settings/settings-group";
+import { LoadFailure } from "../components/ui/load-failure";
 import { useSpaceChanges } from "../lib/api/roster-signals";
 import { errorText } from "../lib/api/user-error";
 import { mobileTokens } from "../lib/appearance/appearance";
+import { useDateLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useThemedStyles } from "../lib/native/native";
 import { useScreenHeader } from "../lib/navigation/screen-header";
@@ -22,6 +24,7 @@ import { useScreenQuery } from "../lib/query/screen-query";
 
 export default function MeetingsScreen() {
   const { t } = useLingui();
+  const dateLocale = useDateLocale();
   const router = useRouter();
   const { botId = "" } = useLocalSearchParams<{ botId?: string }>();
   const [url, setUrl] = useState("");
@@ -51,6 +54,7 @@ export default function MeetingsScreen() {
   });
   const busy = join.pending || leave.pending;
   const error = join.error ?? leave.error ?? list.error;
+  const errorMessage = error ? errorText(error, t`Could not update meetings`) : "";
   useScreenHeader({ title: t`Meetings` });
 
   return (
@@ -92,9 +96,14 @@ export default function MeetingsScreen() {
       ) : list.data || !botId ? (
         <Text style={styles.note}>{t`Meeting joins are unavailable.`}</Text>
       ) : null}
-      {error ? (
+      {list.error && !list.data ? (
+        <LoadFailure
+          message={errorMessage}
+          onRetry={() => void list.refetch({ cancelRefetch: false })}
+        />
+      ) : errorMessage ? (
         <Text accessibilityRole="alert" style={styles.error}>
-          {errorText(error, t`Could not update meetings`)}
+          {errorMessage}
         </Text>
       ) : null}
       {!list.error && list.data?.meetings.length ? (
@@ -102,13 +111,14 @@ export default function MeetingsScreen() {
           {list.data.meetings.map((meeting) => {
             const canRead = meeting.transcriptAvailable;
             const canLeave = canLeaveMeeting(meeting.status);
-            const status = meeting.error ?? meetingStatusLabel(meeting.status);
+            const time =
+              canRead || !canLeave ? meetingTime(meeting.createdAt, dateLocale) : undefined;
             return (
               <SettingsRow
                 key={meeting.id}
                 title={meetingPlatformLabel(meeting.platform)}
-                detail={canRead ? meetingTime(meeting.createdAt) : status}
-                value={canRead || canLeave ? undefined : meetingTime(meeting.createdAt)}
+                detail={canRead ? time : (meeting.error ?? meetingStatusLabel(meeting.status))}
+                value={canRead ? undefined : time}
                 chevron={canRead ? "right" : undefined}
                 accessibilityRole={canRead ? "button" : undefined}
                 accessibilityHint={canRead ? t`View transcript` : undefined}

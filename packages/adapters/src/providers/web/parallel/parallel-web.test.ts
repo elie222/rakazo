@@ -1,6 +1,6 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { callRemoteMcpTool } from "../../../mcp/remote-mcp.js";
 import { MAX_WEB_FETCH_OFFSET } from "../../../web/web-limits.js";
 import { createWebProvider, resolveWebProviderKind } from "../../../web/web-provider-factory.js";
@@ -16,6 +16,8 @@ const context: AdapterContext = {
   botId: "bot",
   signal: new AbortController().signal,
 };
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("optional Parallel web provider", () => {
   it.each(["structured", "text", "duplicated", "utf8"])(
@@ -200,6 +202,7 @@ describe("optional Parallel web provider", () => {
   it.each([false, true])(
     "maps MCP results through the selected web tool (text-only=%s)",
     async (textOnly) => {
+      vi.stubEnv("PARALLEL_API_KEY", "");
       const peer = parallelMcpFixture({ textOnly });
       const provider = createWebProvider(
         resolveWebProviderKind({ WEB_PROVIDER: "parallel" }),
@@ -231,6 +234,20 @@ describe("optional Parallel web provider", () => {
       expect(() => createWebProvider("invalid")).toThrow("Unknown web provider");
     },
   );
+
+  it("sends PARALLEL_API_KEY only to the Parallel endpoint", async () => {
+    vi.stubEnv("PARALLEL_API_KEY", " synthetic-key ");
+    const peer = parallelMcpFixture();
+    await new ParallelWebProvider(peer.network).search({ query: "question" }, context);
+    expect(peer.requests.length).toBeGreaterThan(1);
+    for (const request of peer.requests) {
+      expect(request.url).toBe("https://search.parallel.ai/mcp");
+      expect(request.headers.get("authorization")).toBe("Bearer synthetic-key");
+      expect(request.headers.get("user-agent")).toBe(
+        "Rakazo/0.1 (+https://github.com/elie222/rakazo; web tools)",
+      );
+    }
+  });
 
   it("maps page markdown, caps content and keeps conversation accounting stable", async () => {
     const peer = parallelMcpFixture();

@@ -112,7 +112,10 @@ export function organizationRole(role: string): OrganizationRole {
 }
 
 /** Serializes one organization's membership changes, so each check holds until it commits. */
-async function lockOrganizationMembers(tx: Prisma.TransactionClient, organizationId: string) {
+export async function lockOrganizationMembers(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+) {
   await lockKey(tx, `organization-members:${organizationId}`);
 }
 
@@ -634,18 +637,16 @@ export async function forgetRevokedMember(
   });
 }
 
-/** Organizations the user belongs to as a full member without owning them. */
-export async function joinedOrganizationIds(
+/** Organizations where the user is a full member, including those they own. */
+export async function fullMembershipOrganizationIds(
   prisma: Pick<PrismaClient, "member">,
   userId: string,
 ): Promise<string[]> {
   const memberships = await prisma.member.findMany({
     where: { userId, role: { not: GUEST_ROLE } },
-    select: { organizationId: true, role: true },
+    select: { organizationId: true },
   });
-  return memberships
-    .filter((membership) => !isOwnerRole(membership.role))
-    .map((membership) => membership.organizationId);
+  return memberships.map((membership) => membership.organizationId);
 }
 
 /**

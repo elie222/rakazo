@@ -1,6 +1,8 @@
 import Foundation
 import OSLog
+import Security
 import UIKit
+import ImageIO
 import WatchConnectivity
 
 /// Uses the phone's existing session and server. Credentials never cross WatchConnectivity.
@@ -16,6 +18,14 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   private var scopedSession: RakazoSession?
   private var spaceId: String?
   private var chats: [WatchChat] = []
+  /// The recording the watch is sending in parts.
+  private var upload: (id: UUID, next: Int, audio: Data)?
+  /// Where each chat's last read left off, so a wait hears only what came after it.
+  private var cursors: [String: Int] = [:]
+  /// Small avatar copies of the listed chats, kept with a fingerprint of the picture they came
+  /// from, so reloads skip decoding.
+  private var avatars: [String: (source: Int, data: Data?)] = [:]
+  private var waiting: Task<Bool, Error>?
 
   private enum Change: String { case chat, roster, space, sessionUnavailable, sessionReady }
 
@@ -23,6 +33,17 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     guard WCSession.isSupported() else { return }
     WCSession.default.delegate = self
     WCSession.default.activate()
+    keepSessionReadableWhileLocked()
+    // Leaving the foreground comes before the lock, so items the app created meanwhile
+    // (a new Space choice, server headers) are covered too.
+    for name in [
+      UIApplication.protectedDataDidBecomeAvailableNotification,
+      UIApplication.willResignActiveNotification,
+    ] {
+      _ = NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) {
+        [weak self] _ in DispatchQueue.main.async { self?.keepSessionReadableWhileLocked() }
+      }
+    }
     // The relay lives for the process. Enqueue session changes in order without making
     // the React Native thread wait on the main queue.
     _ = NotificationCenter.default.addObserver(
@@ -36,6 +57,7 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   }
 
   private func chatChanged(_ change: Change, selectedSpace: String?) {
+    keepSessionReadableWhileLocked()
     switch change {
     case .sessionUnavailable:
       sessionReady = false
@@ -55,12 +77,35 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     publishRevision()
   }
 
+  /// The watch asks while the iPhone sleeps, so the session items expo-secure-store saved as
+  /// readable only while unlocked become readable after the first unlock. A new sign-in saves
+  /// fresh items, so this runs again on every session change.
+  private func keepSessionReadableWhileLocked() {
+    let keys = ["rakazo.session_token", "rakazo.api_base", "rakazo.space_id", "rakazo.server_headers"]
+    for key in keys {
+      for service in ["app:no-auth", "app"] {
+        let query: [String: Any] = [
+          kSecClass as String: kSecClassGenericPassword,
+          kSecAttrService as String: service,
+          kSecAttrAccount as String: Data(key.utf8),
+        ]
+        SecItemUpdate(
+          query as CFDictionary,
+          [kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock] as CFDictionary)
+      }
+    }
+  }
+
   private func clearScope() {
     identityRevision = UUID()
     scope = nil
     scopedSession = nil
     spaceId = nil
     chats = []
+    upload = nil
+    cursors = [:]
+    avatars = [:]
+    waiting?.cancel()
   }
 
   private func publishRevision() {
@@ -93,9 +138,14 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     replyHandler: @escaping (Data) -> Void
   ) {
     Task { @MainActor in
+      // A watch message wakes the app in the background; finish the answer before it suspends.
+      let background = UIApplication.shared.beginBackgroundTask(withName: "WatchRequest") {
+        self.waiting?.cancel()
+      }
+      defer { UIApplication.shared.endBackgroundTask(background) }
       var response: WatchReply
       do {
-        guard data.count <= 32_768 else { throw WatchFailure.rejected }
+        guard data.count <= 65_536 else { throw WatchFailure.rejected }
         let request = try JSONDecoder().decode(WatchRequest.self, from: data)
         response = try await handle(request)
       } catch let error as WatchFailure {
@@ -118,9 +168,14 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   }
 
   private func currentSession() throws -> RakazoSession {
-    guard UIApplication.shared.isProtectedDataAvailable else { throw WatchFailure.unlockPhone }
     guard sessionReady else { throw WatchFailure.signIn }
-    let session = try RakazoSession.load()
+    let session: RakazoSession
+    do {
+      session = try RakazoSession.load()
+    } catch MessageBotError.signedOut where !UIApplication.shared.isProtectedDataAvailable {
+      // Before the first unlock after a restart, the Keychain stays closed.
+      throw WatchFailure.unlockPhone
+    }
     guard let selectedSpace else { return session }
     // The app announces its selection before the Keychain write completes.
     return RakazoSession(
@@ -137,12 +192,24 @@ final class WatchRelay: NSObject, WCSessionDelegate {
   private func handle(_ request: WatchRequest) async throws -> WatchReply {
     let revision = identityRevision
     let session = try currentSession()
+    // A recording's earlier parts only wait for the last one, which checks the account.
+    if request.action == .transcribe, let part = request.part, part + 1 < request.parts ?? 0 {
+      guard let scope, request.scope == scope, let scopedSession, sameSession(scopedSession, session),
+        let chat = request.chat, chats.contains(chat)
+      else { throw WatchFailure.reload }
+      _ = try receive(request)
+      return WatchReply()
+    }
     let userId = try await session.currentUserId()
     try verify(session, revision: revision)
 
     if request.action == .chats {
+      async let voice: WatchVoiceStatus = session.rpc(
+        "voice/status", [:], spaceId: session.selectedSpaceId, timeout: 8)
       let list: WatchSpace = try await session.rpc(
         "spaces/list", [:], spaceId: session.selectedSpaceId, timeout: 8)
+      // Unknown when the status cannot be read: the watch still offers to listen.
+      let transcribe = (try? await voice)?.transcribe
       try verify(session, revision: revision)
       if scopedSession.map({ sameSession($0, session) }) != true || spaceId != list.current.id {
         scope = UUID()
@@ -151,10 +218,47 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       }
       let entries = list.current.bots.map { (WatchChat.Kind.bot, $0) }
         + list.current.groups.map { (WatchChat.Kind.group, $0) }
-      chats = entries.filter { $0.1.archivedAt == nil }
-        .sorted { $0.1.updatedAt > $1.1.updatedAt }
-        .map { WatchChat(kind: $0.0, id: $0.1.id, name: $0.1.name) }
-      return WatchReply(scope: scope, chats: chats)
+      var avatarBudget = 16_000
+      let open = entries.filter { $0.1.archivedAt == nil }
+      let sorted = open.sorted { $0.1.updatedAt > $1.1.updatedAt }
+      // The chat a complication opened stays listed, so the watch can open it.
+      let pinned = request.chat.flatMap { chat in
+        sorted.first { $0.0 == chat.kind && $0.1.id == chat.id }
+      }
+      var listed = Array(sorted.prefix(60))
+      if let pinned, !listed.contains(where: { $0.1.id == pinned.1.id }) { listed.append(pinned) }
+      var rows = listed
+        .map { kind, entry in
+          var row = WatchChatRow(
+            chat: WatchChat(kind: kind, id: entry.id, name: entry.name),
+            preview: String(entry.preview?.prefix(100) ?? ""), updatedAt: entry.updatedAt)
+          if let color = entry.color {
+            row.color = watchColor(color)
+            // Once the budget is spent, no further picture would fit, so skip decoding them.
+            if avatarBudget >= 1_500, let avatar = cachedAvatar(entry.id, color),
+              avatar.count <= avatarBudget
+            {
+              avatarBudget -= avatar.count
+              row.avatar = avatar
+            }
+          }
+          return row
+        }
+      avatars = avatars.filter { id, _ in rows.contains { $0.id == id } }
+      let bots = sorted.filter { $0.0 == .bot }.prefix(100).map {
+        WatchBot(id: $0.1.id, name: String($0.1.name.prefix(60)), color: $0.1.color.flatMap(watchColor))
+      }
+      // A watch message carries about 64 KB: drop pictures, then the oldest chats, to fit.
+      let encoder = JSONEncoder()
+      while let data = try? encoder.encode(WatchReply(scope: scope, chats: rows, bots: bots)),
+        data.count > 60_000, !rows.isEmpty
+      {
+        if let index = rows.lastIndex(where: { $0.avatar != nil }) { rows[index].avatar = nil }
+        else if let index = rows.lastIndex(where: { $0.id != pinned?.1.id }) { rows.remove(at: index) }
+        else { break }
+      }
+      chats = rows.map(\.chat)
+      return WatchReply(scope: scope, chats: rows, bots: bots, transcribe: transcribe)
     }
 
     guard let scope, request.scope == scope, let scopedSession, sameSession(scopedSession, session),
@@ -165,11 +269,38 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     if request.action == .thread {
       let thread = try await readThread(target, session: session, spaceId: spaceId)
       try verify(session, revision: revision)
+      cursors[chat.id] = thread.cursor
       return WatchReply(
         messages: thread.watchMessages(for: userId),
         botWorking: thread.activeRuns?.contains {
           ["queued", "leased", "running"].contains($0.status)
         } == true)
+    }
+
+    if request.action == .transcribe {
+      guard let audio = try receive(request) else { return WatchReply() }
+      try await session.requireConsent(target, uses: ["voice"], spaceId: spaceId, timeout: 8)
+      try verify(session, revision: revision)
+      let text = try await transcribe(audio, session: session, spaceId: spaceId)
+      try verify(session, revision: revision)
+      return WatchReply(text: text)
+    }
+
+    if request.action == .wait {
+      // Without a read to start from, the watch reads first.
+      guard let cursor = cursors[chat.id] else { return WatchReply(changed: true) }
+      // The watch shows one chat at a time, so a new wait replaces the last.
+      waiting?.cancel()
+      let wait = Task {
+        // Under the time a watch message and a background wake allow.
+        try await session.waitForThreadEvent(
+          target, after: cursor, spaceId: spaceId, timeout: 20
+        ) { Self.changes.contains($0.type) }
+      }
+      waiting = wait
+      let changed = try await wait.value
+      try verify(session, revision: revision)
+      return WatchReply(changed: changed ? true : nil)
     }
 
     guard let text = request.text?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -197,11 +328,17 @@ final class WatchRelay: NSObject, WCSessionDelegate {
       input["messageId"] = message.id
       input["answer"] = text
       try await write("threads/answer", input, session: session, spaceId: spaceId, failure: .answerUnconfirmed)
-    case .chats, .thread:
+    case .chats, .thread, .wait, .transcribe:
       throw WatchFailure.rejected
     }
     return WatchReply()
   }
+
+  /// Events after which the watch's copy of a chat is out of date.
+  private static let changes: Set<String> = [
+    "thread.message.created", "thread.message.updated", "thread.cleared", "thread.ask", "run.waiting_input",
+    "run.completed", "run.failed", "run.cancelled", "computer.takeover.requested",
+  ]
 
   private func readThread(
     _ target: [String: String], session: RakazoSession, spaceId: String
@@ -211,6 +348,84 @@ final class WatchRelay: NSObject, WCSessionDelegate {
     } catch MessageBotError.rejected(let status, _) where status == 403 || status == 404 {
       throw WatchFailure.reload
     }
+  }
+
+  /// Adds one part of a recording, answering the whole recording once its last part arrives.
+  private func receive(_ request: WatchRequest) throws -> Data? {
+    guard let id = request.nonce, let audio = request.audio, let part = request.part,
+      let parts = request.parts, (1...16).contains(parts), (0..<parts).contains(part)
+    else { throw WatchFailure.rejected }
+    if part == 0 { upload = (id, 0, Data()) }
+    // A late part of a dismissed recording is refused without touching the current one.
+    guard var current = upload, current.id == id else { throw WatchFailure.rejected }
+    guard current.next == part, current.audio.count + audio.count <= 640_000 else {
+      upload = nil
+      throw WatchFailure.rejected
+    }
+    current.audio.append(audio)
+    current.next += 1
+    upload = part == parts - 1 ? nil : current
+    return part == parts - 1 ? current.audio : nil
+  }
+
+  /// Turns speech into text with the voice provider the account set up, as the app's dictation does.
+  private func transcribe(_ audio: Data, session: RakazoSession, spaceId: String) async throws -> String {
+    var body: [String: Any] = ["audioBase64": audio.base64EncodedString(), "mimeType": "audio/m4a"]
+    // Without a language the provider guesses one, and a short clip can come back in another.
+    if let language = Locale.current.language.languageCode?.identifier { body["language"] = language }
+    let (status, data): (Int, Data)
+    do {
+      (status, data) = try await session.post("/api/voice/transcribe", body, spaceId: spaceId, timeout: 30)
+    } catch MessageBotError.signedOut {
+      throw WatchFailure.signIn
+    } catch {
+      throw WatchFailure.voiceFailed
+    }
+    let reply = try? JSONDecoder().decode(WatchTranscript.self, from: data)
+    switch status {
+    case 200..<300:
+      guard let reply else { throw WatchFailure.voiceFailed }
+      return reply.text ?? ""
+    // The server answers 409 when no voice provider is set up.
+    case 409: throw WatchFailure.noVoice
+    case 403 where reply?.code == "AI_CONSENT_REQUIRED": throw WatchFailure.consent
+    // The voice provider account refused, for example out of credit: retrying will not help.
+    case 402, 403: throw WatchFailure.voiceAccount
+    default: throw WatchFailure.voiceFailed
+    }
+  }
+
+  /// The six-digit hex a bot's color starts with, if it is a color.
+  private func watchColor(_ value: String) -> String? {
+    guard let match = value.range(of: #"^#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})(?![0-9a-fA-F])"#,
+      options: .regularExpression)
+    else { return nil }
+    let digits = value[match].dropFirst()
+    return "#" + (digits.count == 3 ? digits.map { "\($0)\($0)" }.joined() : String(digits))
+  }
+
+  private func cachedAvatar(_ id: String, _ value: String) -> Data? {
+    // Hashing is seeded per process, which is fine for an in-memory cache.
+    let source = value.hashValue
+    if let cached = avatars[id], cached.source == source { return cached.data }
+    let data = watchAvatar(value)
+    avatars[id] = (source, data)
+    return data
+  }
+
+  /// A small copy of a picture avatar; drawn avatars show as their color on the watch.
+  private func watchAvatar(_ value: String) -> Data? {
+    guard value.hasPrefix("data:image/"), let comma = value.firstIndex(of: ","),
+      let data = Data(base64Encoded: String(value[value.index(after: comma)...])),
+      let source = CGImageSourceCreateWithData(data as CFData, nil),
+      // Decodes straight to the small size, whatever the picture's own dimensions.
+      let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: 64,
+      ] as CFDictionary)
+    else { return nil }
+    return UIImage(cgImage: thumbnail).jpegData(compressionQuality: 0.7)
   }
 
   private func canAnswer(_ prompt: WatchPrompt, _ answer: String) -> Bool {
@@ -240,6 +455,13 @@ final class WatchRelay: NSObject, WCSessionDelegate {
 
 private struct WatchAcknowledgement: Decodable {}
 
+private struct WatchVoiceStatus: Decodable { let transcribe: Bool }
+
+private struct WatchTranscript: Decodable {
+  let text: String?
+  let code: String?
+}
+
 private struct WatchSpace: Decodable {
   struct Current: Decodable {
     let id: String
@@ -249,6 +471,8 @@ private struct WatchSpace: Decodable {
   struct Chat: Decodable {
     let id: String
     let name: String
+    let color: String?
+    let preview: String?
     let updatedAt: String
     let archivedAt: String?
   }

@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Me, SettingsScope, ThinkingLevel } from "@rakazo/contracts";
 import {
-  connectionDisplayName,
+  modelConnectionNames,
   modelRoutingDirty,
+  providerDisplayName,
   savedCompatibleEndpointMatches,
 } from "@rakazo/contracts";
 import {
@@ -17,10 +18,11 @@ import {
   savedCompatibleModelIds,
 } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
+import { modelDisconnectWarning } from "@rakazo/i18n/model-disconnect";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCopyText } from "../../lib/copy-text";
-import { providerDisplayName } from "../../lib/models/localized-provider-hint";
 import type { ModelCatalogEntry } from "../../lib/models/model-auth";
 import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
 import { analyticsSurface } from "../../lib/platform/desktop";
@@ -138,13 +140,19 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   } = useModelOAuthSignIn({
     onClearError: () => setError(null),
     onError: setError,
-    onFinished: async (_controller, credentialId) => {
+    onFinished: async (_controller, saved) => {
       // A new account's later saves update it rather than adding another.
-      setCredentialId(credentialId);
-      await refresh();
+      setCredentialId(saved.id);
+      // A new subscription can save a stronger model than the one the form showed.
+      await refresh({ modelId: saved.modelId });
       const started = oauthChoiceRef.current;
       oauthChoiceRef.current = null;
-      if (started) await started.intent?.onConnected?.({ ...started.choice, credentialId });
+      if (started)
+        await started.intent?.onConnected?.({
+          ...started.choice,
+          modelId: saved.modelId ?? started.choice.modelId,
+          credentialId: saved.id,
+        });
     },
   });
   const copyOAuthCode = (code: string) => {
@@ -161,9 +169,11 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
   async function refresh({
     keepForm = false,
     reuse = false,
+    modelId: savedModelId,
   }: {
     keepForm?: boolean;
     reuse?: boolean;
+    modelId?: string;
   } = {}) {
     const refreshRevision = ++refreshRevisionRef.current;
     const selectionRevision = keepForm ? -1 : selectionRevisionRef.current;
@@ -173,7 +183,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       fetchFresh(queryClient, meQuery, { reuse }),
     ]);
     if (refreshRevision !== refreshRevisionRef.current) return undefined;
-    applyLoaded(nextCatalog, nextCredentials, nextMe, selectionRevision);
+    applyLoaded(nextCatalog, nextCredentials, nextMe, selectionRevision, savedModelId);
     return nextCredentials;
   }
 
@@ -183,6 +193,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     nextCredentials: typeof credentials,
     nextMe: Me,
     selectionRevision: number,
+    savedModelId?: string,
   ) {
     const nextProvider =
       provider && nextCatalog.some((entry) => entry.provider === provider)
@@ -198,7 +209,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       provider: nextProvider,
       credential: nextCredential,
       defaults: nextMe,
-      current: modelId,
+      current: savedModelId ?? modelId,
     });
     if (selectionRevision === selectionRevisionRef.current) {
       resetOpenAiCompatibleProbe();
@@ -233,7 +244,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     };
   }, []);
 
-  const groups = useMemo(() => {
+  const groups = (() => {
     const grouped = new Map<string, ModelCatalogEntry[]>();
     for (const entry of catalog) {
       const entries = grouped.get(entry.provider) ?? [];
@@ -243,32 +254,40 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     return popularModelProvidersFirst(
       [...grouped].map(([id, entries]) => ({
         id,
-        name: providerDisplayName(
-          id,
-          entries[0]?.providerName ?? id,
-          credentials.find((entry) => entry.provider === id)?.authKind,
-        ),
+        name: providerDisplayName(localizeModelEntry(entries[0] ?? { provider: id })),
         entries,
       })),
       (group) => group.id,
       (group) => group.name,
     );
-  }, [catalog, credentials]);
+  })();
   const credentialByProvider = useMemo(
     () => new Map(credentials.map((entry) => [entry.provider, entry])),
     [credentials],
   );
   selectedLabelRef.current = selected?.label;
+  const selectedEntry = localizeModelEntry(modelsForProvider[0] ?? { provider });
   const selectedProviderName =
-    endpointPreset?.name ?? groups.find((group) => group.id === provider)?.name ?? provider;
+    endpointPreset?.name ?? providerDisplayName(selectedEntry, credential?.authKind);
   const selectedConnectionName = credential
-    ? connectionDisplayName(
-        credential,
-        groups.find((group) => group.id === provider)?.name ?? provider,
-        modelsForProvider[0]?.providerName ? [modelsForProvider[0].providerName] : [],
-      )
+    ? modelConnectionNames(selectedEntry, credential).connectionName
     : selectedProviderName;
   const disconnectName = selectedConnectionName;
+  // Read when the question opens. A failed read must not keep Disconnect disabled.
+  const disconnectPreview = useQuery({
+    ...queries.models.disconnectPreview.queryOptions({
+      input: { provider: credential?.provider ?? "", credentialId: credential?.id ?? "" },
+    }),
+    enabled: confirmDisconnect && Boolean(credential),
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+  });
+  const disconnectPreviewLoading = confirmDisconnect && disconnectPreview.isFetching;
+  // A read that failed leaves the plain question, never a warning kept from an earlier one.
+  const disconnectWarning = modelDisconnectWarning(
+    disconnectPreview.isError ? null : (disconnectPreview.data ?? null),
+  );
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
@@ -363,7 +382,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       credential,
       credentialId: credential?.id ?? null,
       settingsOnly,
-      ...(intent ? { makeDefault: { makeDefault: intent.makeDefault, scope } } : {}),
+      // Always explicit: a save from a provider page has no intent and must not move the main model.
+      makeDefault: { makeDefault: intent?.makeDefault ?? false, scope },
     });
     if (request.status === "incomplete") return;
     const { input, savingWithoutKey, activeModelId } = request;
@@ -437,7 +457,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
       provider: selected.provider,
       credentialId: credential?.id ?? null,
       modelId: selected.id,
-      ...(intent ? { makeDefault: intent.makeDefault, scope } : {}),
+      makeDefault: intent?.makeDefault ?? false,
+      scope,
       thinkingLevel: clampCatalogThinkingLevel(
         thinkingLevel,
         selected.thinkingLevels,
@@ -470,6 +491,8 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     currentEntry,
     disconnectCredential,
     disconnectName,
+    disconnectPreviewLoading,
+    disconnectWarning,
     groups,
     handleClose,
     hostCredentialSource,

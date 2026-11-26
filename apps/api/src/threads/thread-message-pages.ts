@@ -97,8 +97,6 @@ export async function loadMessagePage(
         olderCursor: hasOlder ? (pageRows[0]?.seq ?? null) : null,
       };
     }
-    // TODO: only rescan when a raw page is entirely peer output. Consider a run relation if
-    // long peer-only histories make this path hot.
     cursor = pageRows[0]?.seq;
   }
 }

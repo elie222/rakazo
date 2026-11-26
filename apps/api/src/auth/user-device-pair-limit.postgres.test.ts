@@ -64,11 +64,11 @@ describe.skipIf(!databaseUrl)("pairing holds the per-user device limit under rac
     return { signIn };
   }
 
-  const pairRequest = (cookie: string, name: string) =>
+  const pairRequest = (cookie: string, name: string, pairingKey?: string) =>
     handles.app.request(USER_DEVICE_PAIR_PATH, {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ name, platform: "darwin" }),
+      body: JSON.stringify({ name, platform: "darwin", pairingKey }),
     });
 
   async function pair(cookie: string) {
@@ -76,6 +76,34 @@ describe.skipIf(!databaseUrl)("pairing holds the per-user device limit under rac
     expect(response.status).toBe(201);
     return (await response.json()) as { userId: string };
   }
+
+  it("recovers concurrent retries of the same pairing at the device limit", async () => {
+    const owner = await newAccount();
+    const cookie = await owner.signIn();
+    for (let index = 0; index < USER_DEVICE_LIMIT - 1; index += 1) await pair(cookie);
+    const token = "c".repeat(64);
+    const responses = await Promise.all([
+      pairRequest(cookie, "Desktop", token),
+      pairRequest(cookie, "Desktop", token),
+    ]);
+    expect(responses.map((response) => response.status)).toEqual([201, 201]);
+    const [first, second] = await Promise.all(responses.map((response) => response.json()));
+    expect(second).toEqual(first);
+    expect((await pairRequest(cookie, "Desktop", token)).status).toBe(201);
+    expect((await pairRequest(cookie, "Another desktop")).status).toBe(409);
+  });
+
+  it("isolates the same retry key raced by different accounts", async () => {
+    const first = await newAccount();
+    const second = await newAccount();
+    const cookies = await Promise.all([first.signIn(), second.signIn()]);
+    const responses = await Promise.all(
+      cookies.map((cookie) => pairRequest(cookie, "Desktop", "d".repeat(64))),
+    );
+    expect(responses.map((response) => response.status)).toEqual([201, 201]);
+    const [a, b] = await Promise.all(responses.map((response) => response.json()));
+    expect(a.token).not.toBe(b.token);
+  });
 
   it("keeps exactly the limit when two pairings race at it", async () => {
     const owner = await newAccount();

@@ -560,8 +560,6 @@ export const BotSecretPutInput = z.object({
 });
 export type BotSecretPutInput = z.infer<typeof BotSecretPutInput>;
 
-// ---- Cards and contacts ----
-
 /** Trimmed text, or undefined when empty, so an untouched form field is not saved as "". */
 function optionalText(max: number) {
   return z
@@ -817,6 +815,11 @@ export const BLOCKED_ITEM_ANSWER =
 /** As BLOCKED_ITEM_ANSWER, for an item allowed but limited to other bots. */
 export const UNCHOSEN_ITEM_ANSWER =
   "This bot can't use this item. Change it in the Vault, or dismiss the request.";
+/**
+ * As BLOCKED_ITEM_ANSWER, for an answer whose new item doesn't fit in a full vault. Bots read this
+ * error too, so it stays the server's short text and the card shows its own removal guidance.
+ */
+export const FULL_VAULT_ANSWER = "Credential limit reached";
 
 export const SecretHttpRequest = z
   .object({

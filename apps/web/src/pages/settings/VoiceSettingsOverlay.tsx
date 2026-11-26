@@ -10,30 +10,38 @@ import type {
 import {
   DEFAULT_COMPATIBLE_STT_MODEL,
   DEFAULT_COMPATIBLE_TTS_MODEL,
+  MAX_TRANSCRIPTION_VOCABULARY_LENGTH,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  savedVoiceTranscriptionVocabulary,
   voiceConnectionForm,
 } from "@rakazo/contracts";
 import { fetchFresh } from "@rakazo/core/query";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import {
   Button,
   Dialog,
   DialogClose,
   DialogContent,
   DialogTitle,
+  Disclosure,
   Field,
   FieldLabel,
   Input,
   OptionSelect,
   Spinner,
+  SwitchField,
 } from "@rakazo/ui-web";
 import { useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { callAutoLanguage } from "../../lib/calls/call-language-preference";
 import { useCallSession } from "../../lib/calls/call-session";
 import { speaker } from "../../lib/calls/tts";
+import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
 import { useSpaceQueries } from "../../lib/query/query";
 import { useBoundSpaceId, useSpaceRpc } from "../../lib/query/space-rpc";
 import { errorText } from "../../lib/query/user-error";
+import { VoiceModelConnectionActions } from "./voice-model-connection-actions";
 
 export function VoiceSettingsOverlay({
   onClose,
@@ -72,12 +80,14 @@ export function VoiceSettingsOverlay({
   });
   const { t } = useLingui();
   const call = useCallSession();
+  const autoLanguage = callAutoLanguage.use();
   const apiKeyId = useId();
   const voiceSelectId = useId();
   const speechModelId = useId();
   const baseUrlId = useId();
   const ttsModelId = useId();
   const sttModelId = useId();
+  const transcriptionVocabularyId = useId();
   const sttBaseUrlId = useId();
   const sttApiKeyId = useId();
   const providerSelectId = useId();
@@ -107,6 +117,7 @@ export function VoiceSettingsOverlay({
   const [speechModel, setSpeechModel] = useState(cached?.credential?.speechModel ?? "");
   const [baseUrl, setBaseUrl] = useState(cached?.credential?.endpoint ?? "");
   const [ttsModel, setTtsModel] = useState(cached?.credential?.ttsModel ?? "");
+  const [transcriptionVocabulary, setTranscriptionVocabulary] = useState<string>();
   const [sttModel, setSttModel] = useState(cached?.credential?.sttModel ?? "");
   const [sttBaseUrl, setSttBaseUrl] = useState(cached?.credential?.sttEndpoint ?? "");
   const [sttApiKey, setSttApiKey] = useState("");
@@ -116,6 +127,7 @@ export function VoiceSettingsOverlay({
     baseUrl,
     ttsModel,
     sttModel,
+    transcriptionVocabulary,
     sttBaseUrl,
     apiKey,
     sttApiKey,
@@ -125,6 +137,7 @@ export function VoiceSettingsOverlay({
     baseUrl,
     ttsModel,
     sttModel,
+    transcriptionVocabulary,
     sttBaseUrl,
     apiKey,
     sttApiKey,
@@ -135,8 +148,32 @@ export function VoiceSettingsOverlay({
   const [pending, setPending] = useState<"connect" | "disconnect" | "voice" | "test" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // With a model connection on offer, the key form stays folded until asked for.
+  const [keyShownFor, setKeyShownFor] = useState<string | null>(null);
+  // The Models sign-in saves a model connection, which this provider's voice then uses.
+  const signIn = useModelOAuthSignIn({
+    onClearError: () => setError(null),
+    onError: setError,
+    onFinished: async (controller, saved) => {
+      // Models lists the new connection too; nothing signals it, so its reads go stale here.
+      void queryClient.invalidateQueries({ queryKey: queries.models.credentials.queryKey() });
+      void queryClient.invalidateQueries({ queryKey: queries.models.list.queryKey() });
+      if (controller.signal.aborted || (await connect(saved.id))) return;
+      // The sign-in saved the model connection; it should show as one to use, not another sign-in.
+      await bestEffort(
+        "refresh voice after model sign-in",
+        refresh(providerRef.current, { keepForm: true }),
+      );
+    },
+  });
+  const signingIn = signIn.oauthPending || signIn.oauth !== null;
 
   const busy = pending !== null;
+
+  // Opening the fold swaps the summary for the form, so focus moves to the key field.
+  useEffect(() => {
+    if (keyShownFor) document.getElementById(apiKeyId)?.focus();
+  }, [keyShownFor, apiKeyId]);
 
   useEffect(() => {
     return () => onBusyChange?.(false);
@@ -172,6 +209,7 @@ export function VoiceSettingsOverlay({
     if (!keep("baseUrl")) setBaseUrl(cred?.endpoint ?? "");
     if (!keep("ttsModel")) setTtsModel(cred?.ttsModel ?? "");
     if (!keep("sttModel")) setSttModel(cred?.sttModel ?? "");
+    if (!keep("transcriptionVocabulary")) setTranscriptionVocabulary(undefined);
     if (!keep("sttBaseUrl")) setSttBaseUrl(cred?.sttEndpoint ?? "");
     if (!cred) return Promise.resolve();
     return queryClient
@@ -287,19 +325,23 @@ export function VoiceSettingsOverlay({
   // Connections are managed from the account; a Space can still connect one it lacks.
   const managesConnection = scope === "account" || !credential;
   const keyless = Boolean(selected?.keyless);
-  const { keyOptional, linked, canConnect } = voiceConnectionForm({
+  const { linked, canConnect, modelConnections, modelSignIn } = voiceConnectionForm({
     entry: selected,
     credential,
     apiKey,
     baseUrl,
   });
+  const offersModelConnection = modelConnections.length > 0 || Boolean(modelSignIn);
+  const keyFolded =
+    !linked && !credential?.hasKey && offersModelConnection && keyShownFor !== selected?.id;
 
-  async function connectKey() {
-    if (!selected || !canConnect) return;
+  /** Connects with the key form, or through the account's model connection when given one. */
+  async function connect(modelCredentialId?: string): Promise<boolean> {
+    if (!selected || (!modelCredentialId && !canConnect)) return false;
     setError(null);
     setNotice(null);
     // What this connect carries; anything typed after this point was not saved.
-    const sentApiKey = apiKey;
+    const sentApiKey = modelCredentialId ? "" : apiKey;
     const sentSttApiKey = sttApiKey;
     const sent = connection.current;
     markPending("connect");
@@ -310,6 +352,7 @@ export function VoiceSettingsOverlay({
           scope,
           provider: selected.id,
           apiKey: sentApiKey.trim(),
+          ...(modelCredentialId ? { modelCredentialId } : {}),
           // The server drops this voice when the address or speech model really changed.
           voiceId: voiceId || undefined,
           ...(selected.speechModel ? { speechModel: speechModel.trim() } : {}),
@@ -318,6 +361,10 @@ export function VoiceSettingsOverlay({
                 baseUrl: baseUrl.trim(),
                 ttsModel: ttsModel.trim() || undefined,
                 sttModel: sttModel.trim() || undefined,
+                ...(selected.transcriptionVocabulary &&
+                edited.current.has("transcriptionVocabulary")
+                  ? { transcriptionVocabulary }
+                  : {}),
                 sttBaseUrl: sttBaseUrl.trim(),
                 sttApiKey: sentSttApiKey.trim(),
               }
@@ -325,7 +372,7 @@ export function VoiceSettingsOverlay({
         });
       } catch (err) {
         setError(errorText(err, t`Could not connect this voice provider`));
-        return;
+        return false;
       }
       // A key typed while the connect ran was not saved; keep it for the next try.
       setApiKey((current) => (current === sentApiKey ? "" : current));
@@ -341,6 +388,10 @@ export function VoiceSettingsOverlay({
       // A key typed meanwhile stays pinned to the address it was typed for.
       if (connection.current.apiKey !== sent.apiKey) edited.current.add("baseUrl");
       if (connection.current.sttApiKey !== sent.sttApiKey) edited.current.add("sttBaseUrl");
+      if (connection.current.transcriptionVocabulary !== sent.transcriptionVocabulary) {
+        edited.current.add("baseUrl");
+        edited.current.add("sttBaseUrl");
+      }
       setNotice(t`Connected ${selected.name}.`);
       // The saved connection (the server may have picked another voice for a new address) shows
       // at once in untouched fields, so a failed read after it cannot leave stale values to send.
@@ -354,6 +405,7 @@ export function VoiceSettingsOverlay({
       await refresh(selected.id, { keepForm: true }).catch((err: unknown) =>
         setError(errorText(err, t`Could not load voice settings`)),
       );
+      return true;
     } finally {
       markPending(null);
     }
@@ -513,7 +565,7 @@ export function VoiceSettingsOverlay({
           <OptionSelect
             id={providerSelectId}
             value={provider}
-            disabled={busy}
+            disabled={busy || signingIn}
             options={catalog.map((entry) => ({
               value: entry.id,
               label: credentials.some((cred) => cred.provider === entry.id)
@@ -537,6 +589,26 @@ export function VoiceSettingsOverlay({
         <>
           {managesConnection ? (
             <>
+              <VoiceModelConnectionActions
+                provider={selected.id}
+                choices={modelConnections}
+                signInLabel={modelSignIn}
+                linked={linked}
+                disabled={busy || signingIn}
+                signIn={signIn}
+                onChoose={connect}
+              />
+              {keyFolded ? (
+                // Only the summary shows here; opening it swaps in the key form below.
+                <Disclosure
+                  className="mt-5 text-body-sm leading-[1.5] text-muted-foreground"
+                  open={false}
+                  onOpenChange={() => setKeyShownFor(selected.id)}
+                  summary={<Trans>Or paste an API key</Trans>}
+                >
+                  {null}
+                </Disclosure>
+              ) : null}
               {selfHosted ? (
                 <Field className="mt-5">
                   <FieldLabel htmlFor={baseUrlId}>
@@ -556,7 +628,7 @@ export function VoiceSettingsOverlay({
                   />
                 </Field>
               ) : null}
-              {keyless || linked ? null : (
+              {keyless || linked || keyFolded ? null : (
                 <Field className="mt-5">
                   <FieldLabel htmlFor={apiKeyId}>
                     <Trans>API key</Trans>
@@ -572,7 +644,7 @@ export function VoiceSettingsOverlay({
                       setApiKey(event.target.value);
                     }}
                     placeholder={
-                      selfHosted || keyOptional
+                      selfHosted
                         ? t`Optional`
                         : credential
                           ? t`Paste a replacement key`
@@ -617,6 +689,30 @@ export function VoiceSettingsOverlay({
                       placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
                     />
                   </Field>
+                  {selected.transcriptionVocabulary ? (
+                    <Field className="mt-5">
+                      <FieldLabel htmlFor={transcriptionVocabularyId}>
+                        <Trans>Transcription vocabulary</Trans>
+                      </FieldLabel>
+                      <Input
+                        id={transcriptionVocabularyId}
+                        autoComplete="off"
+                        spellCheck={false}
+                        maxLength={MAX_TRANSCRIPTION_VOCABULARY_LENGTH}
+                        placeholder={t`Names and terms (optional)`}
+                        value={
+                          transcriptionVocabulary ??
+                          savedVoiceTranscriptionVocabulary(credential, baseUrl, sttBaseUrl)
+                        }
+                        onChange={(event) => {
+                          edited.current.add("transcriptionVocabulary");
+                          edited.current.add("baseUrl");
+                          edited.current.add("sttBaseUrl");
+                          setTranscriptionVocabulary(event.target.value);
+                        }}
+                      />
+                    </Field>
+                  ) : null}
                   <Field className="mt-5">
                     <FieldLabel htmlFor={sttBaseUrlId}>
                       <Trans>Transcription server URL</Trans>
@@ -655,12 +751,13 @@ export function VoiceSettingsOverlay({
                   ) : null}
                 </>
               ) : null}
-              {(keyless && credential) || linked ? null : (
+              {(keyless && credential) || linked || keyFolded ? null : (
                 <Button
                   type="button"
                   className="mt-3"
-                  disabled={busy || !canConnect}
-                  onClick={() => void connectKey()}
+                  variant={offersModelConnection ? "outline" : "default"}
+                  disabled={busy || signingIn || !canConnect}
+                  onClick={() => void connect()}
                 >
                   {/* A keyless option has nothing to connect; choosing it turns voice on. */}
                   {pending === "connect" ? (
@@ -682,7 +779,8 @@ export function VoiceSettingsOverlay({
                   variant="outline"
                   size="sm"
                   className="mt-3"
-                  disabled={busy}
+                  // A sign-in finishing after a disconnect would connect voice again.
+                  disabled={busy || signingIn}
                   onClick={() => void disconnectProvider()}
                 >
                   {pending === "disconnect" ? (
@@ -812,6 +910,14 @@ export function VoiceSettingsOverlay({
           ) : null}
         </>
       ) : null}
+      {scope === "account" ? (
+        <SwitchField
+          className="mt-6"
+          label={t`Detect call language automatically`}
+          checked={autoLanguage}
+          onCheckedChange={(checked) => callAutoLanguage.set(checked)}
+        />
+      ) : null}
     </>
   );
 
@@ -867,6 +973,13 @@ function selectedProvider(
 const NO_VOICES: VoiceInfo[] = [];
 const NO_MODELS: VoiceModelInfo[] = [];
 
-const CONNECTION_FIELDS = ["speechModel", "baseUrl", "ttsModel", "sttModel", "sttBaseUrl"] as const;
+const CONNECTION_FIELDS = [
+  "speechModel",
+  "baseUrl",
+  "ttsModel",
+  "sttModel",
+  "sttBaseUrl",
+  "transcriptionVocabulary",
+] as const;
 
 type EditableField = "voiceId" | (typeof CONNECTION_FIELDS)[number];

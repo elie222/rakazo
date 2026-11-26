@@ -1,5 +1,11 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
-import { BOT_INSTRUCTIONS_MAX_LENGTH, ThinkingLevelSchema } from "@rakazo/contracts";
+import {
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  ComputerModeSchema,
+  MemoryScopeSchema,
+  ReplyModeSchema,
+  ThinkingLevelSchema,
+} from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { Type } from "typebox";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../../approvals/approval-ask.js";
@@ -78,9 +84,6 @@ function builtinParameters(tool: ConnectorTool) {
       }),
     });
   }
-  if (tool.name === "remember") {
-    return Type.Object({ content: Type.String(), old_text: Type.Optional(Type.String()) });
-  }
   if (tool.name === "shell" || tool.name === "user_computer_shell") {
     return Type.Object({
       command: Type.String(),
@@ -123,6 +126,12 @@ function builtinParameters(tool: ConnectorTool) {
       thinkingLevel: Type.Optional(stringEnum(ThinkingLevelSchema.options, {})),
       readAloud: Type.Optional(Type.Boolean()),
       voice: Type.Optional(Type.String()),
+      replyMode: Type.Optional(stringEnum(ReplyModeSchema.options, {})),
+      teamChatAmbientEnabled: Type.Optional(Type.Boolean()),
+      teamChatRules: Type.Optional(Type.String()),
+      memoryScope: Type.Optional(stringEnum(MemoryScopeSchema.options, {})),
+      disableTools: Type.Optional(Type.Array(Type.String())),
+      computer: Type.Optional(stringEnum(ComputerModeSchema.options, {})),
       bot_id: Type.Optional(Type.String()),
     });
   }
@@ -411,14 +420,25 @@ const FLEET_STRING_ARGS = [
   "section",
   "instructions",
   "expected_version",
+  "replyMode",
+  "teamChatRules",
+  "memoryScope",
+  "computer",
 ] as const;
-const FLEET_LIST_ARGS = ["bot_ids", "bot_names", "add_bot_ids", "remove_bot_ids"] as const;
+const FLEET_LIST_ARGS = [
+  "bot_ids",
+  "bot_names",
+  "add_bot_ids",
+  "remove_bot_ids",
+  "disableTools",
+] as const;
 const FLEET_FLAG_ARGS = [
   "pinned",
   "clear_section",
   "clear",
   "use_attached_image",
   "readAloud",
+  "teamChatAmbientEnabled",
 ] as const;
 
 /**
@@ -473,7 +493,8 @@ function enumUnion(values: readonly unknown[], options: FieldOptions = {}) {
 }
 
 export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
-  const definition = spec && typeof spec === "object" ? (spec as Record<string, unknown>) : {};
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) return Type.String();
+  const definition = spec as Record<string, unknown>;
   const options = fieldOptions(definition);
   // Nested intersections need the same preservation as root schemas; otherwise an
   // allOf-only field falls back to string and loses its sibling constraints.
@@ -523,6 +544,11 @@ export function jsonField(spec: unknown): ReturnType<typeof Type.String> {
       definition.type.map((type) => jsonField({ ...member, type })),
       options,
     ) as never;
+  }
+  // An annotation-only field accepts any JSON value. Other unrecognized schemas,
+  // including references that could not be inlined, keep the string fallback.
+  if (Object.keys(definition).every((key) => key === "description" || key === "title")) {
+    return Type.Unknown({ ...definition }) as never;
   }
   const type = "type" in definition ? String(definition.type) : "string";
   if (type === "null") return Type.Null(options) as never;

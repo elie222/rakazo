@@ -1,17 +1,20 @@
 import type { ModelCredential } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { newestModelsFirst } from "./model-providers.js";
 import {
   catalogEntryFor,
   connectionModels,
   connectionServesModel,
   credentialModelSettings,
   modelCapabilitiesConfigurable,
+  modelDefaultThinkingLevel,
   modelSettingsDefaults,
   modelSettingsEditable,
   modelSettingsFields,
   modelSettingsRequest,
+  modelSettingsThinkingLevels,
   modelThinkingLevels,
-  newestModelsFirst,
+  savedThinkingLevel,
 } from "./model-settings-form.js";
 
 const COMPATIBLE = "openai-compatible";
@@ -32,7 +35,7 @@ const fields = {
   maxTokens: "",
   images: false,
   maxImagesPerPrompt: "",
-  reasoning: false,
+  thinkingLevel: "off" as const,
 };
 
 describe("modelCapabilitiesConfigurable", () => {
@@ -91,14 +94,15 @@ describe("credentialModelSettings", () => {
 });
 
 describe("modelSettingsFields", () => {
-  it("starts unset switches from what the model already does, so a limit save keeps them", () => {
+  it("starts unset fields from what the model already does, so a limit save keeps them", () => {
     const fields = modelSettingsFields({ maxTokens: 1_024 }, { images: true, reasoning: true });
-    expect(fields).toMatchObject({ images: true, reasoning: true });
+    expect(fields).toMatchObject({ images: true, thinkingLevel: "medium" });
     expect(
       modelSettingsRequest({
         fields: { ...fields, maxTokens: "2048" },
         provider: "zai",
         entry: { live: true },
+        followedThinkingLevel: fields.thinkingLevel,
       }),
     ).toEqual({
       status: "ready",
@@ -107,12 +111,109 @@ describe("modelSettingsFields", () => {
     expect(modelSettingsFields({ images: false }, { images: true }).images).toBe(false);
   });
 
+  it("shows the level a thinking model runs at, and off for one that does not think", () => {
+    expect(modelSettingsFields({ reasoning: true, thinkingLevel: "max" }).thinkingLevel).toBe(
+      "max",
+    );
+    expect(
+      modelSettingsFields({ reasoning: true }, undefined, { level: "low" }).thinkingLevel,
+    ).toBe("low");
+    expect(modelSettingsFields({ reasoning: false }, { reasoning: true }).thinkingLevel).toBe(
+      "off",
+    );
+    expect(modelSettingsFields({}).thinkingLevel).toBe("off");
+  });
+
+  it("shows only a level the picker offers, so saving a limit keeps what the model runs at", () => {
+    const levels = ["low", "high"] as const;
+    const shown = modelSettingsFields({ reasoning: true }, undefined, { level: "medium", levels });
+    expect(shown.thinkingLevel).toBe("high");
+    expect(
+      modelSettingsFields({ reasoning: true, thinkingLevel: "max" }, undefined, {
+        level: "medium",
+        levels,
+      }).thinkingLevel,
+    ).toBe("high");
+    const kept = modelSettingsFields({ reasoning: true }, undefined, { level: "low", levels });
+    expect(
+      modelSettingsRequest({
+        fields: { ...kept, maxTokens: "2048" },
+        provider: COMPATIBLE,
+        entry: undefined,
+      }),
+    ).toMatchObject({ settings: { maxTokens: 2_048, reasoning: true, thinkingLevel: "low" } });
+  });
+
   it("shows unset limits as empty fields", () => {
     expect(modelSettingsFields({ maxTokens: 1_024, images: true })).toEqual({
       ...fields,
       maxTokens: "1024",
       images: true,
     });
+  });
+});
+
+describe("modelSettingsThinkingLevels", () => {
+  it("offers off and every level the model could think at", () => {
+    expect(modelSettingsThinkingLevels({}, undefined)).toEqual([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(modelSettingsThinkingLevels({ apiProtocol: "anthropic-messages" }, undefined)).toEqual([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(
+      modelSettingsThinkingLevels(
+        {},
+        { defaultCapabilities: { thinkingLevels: ["off", "low", "high", "max"] } },
+      ),
+    ).toEqual(["off", "low", "high", "max"]);
+    expect(modelSettingsThinkingLevels({}, { thinkingLevels: ["low", "high"] })).toEqual([
+      "off",
+      "low",
+      "high",
+    ]);
+  });
+});
+
+describe("savedThinkingLevel", () => {
+  it("takes the model's own level, else its connection's for that model, ignoring unknown ones", () => {
+    const connection = { modelId: "served", thinkingLevel: "high" };
+    expect(savedThinkingLevel("max", connection, "served")).toBe("max");
+    expect(savedThinkingLevel(undefined, connection, "served")).toBe("high");
+    expect(savedThinkingLevel(undefined, connection, "other")).toBeNull();
+    expect(
+      savedThinkingLevel(undefined, { ...connection, thinkingLevel: "turbo" }, "served"),
+    ).toBeNull();
+  });
+});
+
+describe("modelDefaultThinkingLevel", () => {
+  it("prefers the model's own level, then the connection's for its own model, then medium", () => {
+    const own = credential({
+      provider: COMPATIBLE,
+      modelId: "thinker",
+      thinkingLevel: "low",
+      modelSettings: { thinker: { reasoning: true, thinkingLevel: "max" } },
+    });
+    expect(modelDefaultThinkingLevel(own, "thinker")).toBe("max");
+    expect(modelDefaultThinkingLevel({ ...own, modelSettings: undefined }, "thinker")).toBe("low");
+    expect(modelDefaultThinkingLevel(own, "other")).toBe("medium");
+    expect(modelDefaultThinkingLevel(credential(), "other")).toBe("medium");
+    expect(modelDefaultThinkingLevel(undefined, null)).toBe("medium");
+  });
+
+  it("names the level the runtime moves the default to when the model lacks it", () => {
+    expect(modelDefaultThinkingLevel(undefined, "thinker", ["high"])).toBe("high");
   });
 });
 
@@ -126,11 +227,23 @@ describe("modelSettingsRequest", () => {
     });
   });
 
+  it("saves a model that does not think without a level", () => {
+    expect(modelSettingsRequest({ fields, provider: COMPATIBLE, entry: undefined })).toEqual({
+      status: "ready",
+      settings: { images: false, reasoning: false },
+    });
+  });
+
   it("saves capabilities only where they can be set, and an image limit wherever images are read", () => {
-    const on = { ...fields, images: true, reasoning: true, maxImagesPerPrompt: " 8 " };
+    const on = {
+      ...fields,
+      images: true,
+      thinkingLevel: "max" as const,
+      maxImagesPerPrompt: " 8 ",
+    };
     expect(modelSettingsRequest({ fields: on, provider: "zai", entry: live })).toEqual({
       status: "ready",
-      settings: { images: true, reasoning: true, maxImagesPerPrompt: 8 },
+      settings: { images: true, reasoning: true, thinkingLevel: "max", maxImagesPerPrompt: 8 },
     });
     expect(modelSettingsRequest({ fields: on, provider: "zai", entry: {} })).toEqual({
       status: "ready",
@@ -262,7 +375,7 @@ describe("connection-specific live capabilities", () => {
     const other = credential();
     expect(modelSettingsFields(credentialModelSettings(other, "live-model"), entry)).toMatchObject({
       images: false,
-      reasoning: false,
+      thinkingLevel: "off",
     });
     expect(
       modelThinkingLevels(other, { ...entry, thinkingLevels: ["low", "high"] }, "live-model"),

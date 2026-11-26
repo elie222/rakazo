@@ -131,7 +131,6 @@ export function RoutineList({
                     />
                   </HStack>
                 </VStack>
-                {/* While a delete is in flight, no row offers it. */}
                 {canDelete ? (
                   <SwipeActions.Actions allowsFullSwipe={false}>
                     <Button

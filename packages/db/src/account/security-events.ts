@@ -45,6 +45,7 @@ const FAILURE_TYPES = new Set<SecurityEventType>([
 const NOT_AUDITED = new Set<SecurityEventType>([...FAILURE_TYPES, "deployment.settings.changed"]);
 /** Done to an account by the directory or the operator (`metadata.by`), not by the account itself. */
 const DONE_TO_ACCOUNT = new Set<SecurityEventType>([
+  "auth.account.delete_requested",
   "auth.account.deactivated",
   "auth.account.reactivated",
 ]);
@@ -110,7 +111,11 @@ export async function recordSecurityEvent(input: SecurityEventInput): Promise<vo
                 target: { type: "user", id: userId },
               }
             : {
-                actor: { type: "user", id: userId },
+                // The operator acted from the server on the account's behalf, not the account.
+                actor:
+                  by === "operator"
+                    ? { type: "system", label: "operator" }
+                    : { type: "user", id: userId },
                 target: typeof kind === "string" ? { type: kind } : undefined,
               }),
           spaceId: event.spaceId,

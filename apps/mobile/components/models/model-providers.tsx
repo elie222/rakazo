@@ -3,10 +3,12 @@ import { useLingui } from "@lingui/react/macro";
 import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
-  connectionDisplayName,
   MAX_MODEL_CONNECTION_LABEL,
+  modelConnectionNames,
 } from "@rakazo/contracts";
+import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { Alert, Platform } from "react-native";
+import { useConfirmModelDisconnect } from "../../lib/models/model-disconnect";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 import { RowMenu } from "./model-role-settings";
 
@@ -27,15 +29,19 @@ export function ModelProviders({
   onDisconnect: (credential: ModelCredential) => void;
 }) {
   const { t } = useLingui();
-  const providerName = (credential: ModelCredential) =>
+  const confirmModelDisconnect = useConfirmModelDisconnect();
+  const catalogEntry = (credential: ModelCredential) =>
     catalog.find(
       (entry) =>
         canonicalPiProviderId(entry.provider) === canonicalPiProviderId(credential.provider),
-    )?.providerName ?? credential.provider;
+    );
   const rows = credentials
     .map((credential) => {
-      const provider = providerName(credential);
-      const name = connectionDisplayName(credential, provider);
+      const entry = catalogEntry(credential);
+      const { providerName: provider, connectionName: name } = modelConnectionNames(
+        localizeModelEntry(entry ?? { provider: credential.provider }),
+        credential,
+      );
       return {
         credential,
         name,
@@ -69,10 +75,7 @@ export function ModelProviders({
         credential.label,
       );
     else if (id === "disconnect")
-      Alert.alert(t`Disconnect ${name}?`, t`This removes the connection from every space.`, [
-        { text: t`Cancel`, style: "cancel" },
-        { text: t`Disconnect`, style: "destructive", onPress: () => onDisconnect(credential) },
-      ]);
+      void confirmModelDisconnect(name, credential, () => onDisconnect(credential));
   }
 
   return (
