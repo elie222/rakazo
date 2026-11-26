@@ -882,6 +882,34 @@ describe("NativeStackController", () => {
     expect(imported).toHaveLength(2);
     await third.stop();
   });
+
+  it("keeps unfinished native services tracked and stops postgres if another service stop rejects", async () => {
+    const runtime = fakeRuntime();
+    const { deps, children } = harness({}, runtime);
+    const stack = new NativeStackController(deps);
+    expect((await stack.start()).phase).toBe("ready");
+
+    // Replace api.pid with a directory so unlinking api.pid fails during stop.
+    const apiPidPath = path.join(deps.stackDir, "run", "api.pid");
+    await rm(apiPidPath, { force: true });
+    await mkdir(apiPidPath);
+
+    await expect(stack.stop()).rejects.toThrow();
+    expect(stack.state()).toMatchObject({
+      phase: "failed",
+      failedOperation: "stop",
+    });
+    // Postgres was still stopped, while the unfinished api service stayed tracked for Retry.
+    const postgres = children.find((child) => child.args.includes(DATABASE_CONTAINER));
+    expect(postgres?.signals).toContain("SIGINT");
+    expect(runtime.database?.running).toBe(false);
+    await expect(stack.stop()).rejects.toThrow();
+
+    // Clear the blocking directory and retry stop: succeeds and clears remaining services.
+    await rm(apiPidPath, { recursive: true, force: true });
+    expect((await stack.stop()).phase).toBe("idle");
+    expect(stack.hasProcesses()).toBe(false);
+  });
 });
 
 describe("postgresAnswers", () => {

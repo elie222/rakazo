@@ -886,4 +886,38 @@ describe("setup", () => {
     expect(ui.starts()).toBe(1);
     expect(ui.stops()).toBe(0);
   });
+
+  it("keeps saved Cloud selected while an old local stack is stopping and ignores a late background stop failure", async () => {
+    const ui = mount({ mode: "existing", serverUrl: CLOUD_URL });
+    await flush();
+    // Old local stack is still reporting ready while background stop runs after leaving This computer.
+    ui.resolveStackState(stackState("ready"));
+    await flush();
+
+    expect(
+      document.querySelector<HTMLInputElement>('input[name="mode"][value="cloud"]')?.checked,
+    ).toBe(true);
+    expect(element("stack").hidden).toBe(true);
+    expect(element("continue").textContent).toBe("Continue");
+
+    // User switches to This computer before the background stop finishes, then the stop fails live.
+    selectMode("new");
+    await flush();
+    const lateFailure: DesktopLocalStackState = {
+      ...stackState("failed"),
+      failedOperation: "stop",
+      message: "Could not stop the local stack. Check that Docker is running, then try again.",
+    };
+    ui.pushStackState(lateFailure);
+    ui.resolveStackState(lateFailure);
+    await flush();
+
+    expect(element("stack").hidden).toBe(true);
+    expect(element("continue").textContent).toBe("Continue");
+    expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+    submitForm();
+    await flush();
+    expect(ui.starts()).toBe(1);
+    expect(ui.stops()).toBe(0);
+  });
 });

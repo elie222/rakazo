@@ -488,4 +488,30 @@ describe("desktop.setup.stack.stop", () => {
       desktop.localStack = previousStack;
     }
   });
+
+  it("reloads setup after a failed save when Quit and Stop Bots failed mid-save", async () => {
+    const previousStack = desktop.localStack;
+    desktop.localStack = {
+      webUrl: () => "http://127.0.0.1:47000",
+    } as unknown as typeof desktop.localStack;
+    try {
+      const save = mocks.invoke.get("desktop.setup.save")?.(page.event, {
+        mode: "existing",
+        serverUrl: SERVER,
+        headers: {},
+      });
+      // Quit and Stop Bots fails while the save is still pending.
+      showSetupWindow("Could not stop the local stack.", { quitAfterStop: true });
+      expect(page.reload).not.toHaveBeenCalled();
+
+      opening.resolve(false);
+      await save;
+      expect(page.reload).toHaveBeenCalledOnce();
+      expect(mocks.invoke.get("desktop.setup.state")?.(page.event)).toMatchObject({
+        stopToQuit: true,
+      });
+    } finally {
+      desktop.localStack = previousStack;
+    }
+  });
 });

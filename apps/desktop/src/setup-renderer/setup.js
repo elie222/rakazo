@@ -226,6 +226,12 @@
     }
   }
 
+  function isBackgroundStopFailure(stack) {
+    return (
+      stack !== null && stack.phase === "failed" && stack.failedOperation === "stop" && !stopToQuit
+    );
+  }
+
   function renderStack(stack) {
     const { phase } = stack;
     // A background re-check for Docker would flash "Getting ready…"; keep the waiting view until it
@@ -233,6 +239,13 @@
     if (phase === "checking-docker" && dockerRechecking) return;
     dockerRechecking = false;
     lastStack = stack;
+    if (isBackgroundStopFailure(stack)) {
+      stackSection.hidden = true;
+      continueButton.hidden = false;
+      continueButton.textContent = t("Continue");
+      setBusy(false);
+      return;
+    }
     stackSection.hidden = phase === "idle";
     continueButton.hidden = phase === "docker-not-running";
     if (phase === "idle") {
@@ -597,14 +610,19 @@
       }
       // A relaunch with the stack down starts it before this window opens; show that
       // attempt instead of the saved mode, and follow it while it is still running.
-      // A failed background stop from leaving This computer must not hijack Change Server.
+      // A local stack that is still running or failed to stop in the background after leaving
+      // This computer must not hijack Change Server away from the saved server choice.
       const stack = await bridge.stack.state();
-      const backgroundStopFailure =
+      const leftBehindStack =
+        state.saved !== null &&
+        state.saved.mode !== "new" &&
+        !stopToQuit &&
+        stack?.phase === "ready";
+      const attached =
         stack !== null &&
-        stack.phase === "failed" &&
-        stack.failedOperation === "stop" &&
-        !stopToQuit;
-      const attached = stack !== null && stack.phase !== "idle" && !backgroundStopFailure;
+        stack.phase !== "idle" &&
+        !isBackgroundStopFailure(stack) &&
+        !leftBehindStack;
       if (attached) document.getElementById("mode-new").checked = true;
       syncPanels();
       setBusy(false);

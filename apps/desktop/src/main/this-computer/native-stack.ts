@@ -975,13 +975,22 @@ export class NativeStackController extends StackLifecycle {
   private async stopServices() {
     this.background?.abort();
     this.background = null;
-    const services = this.services;
-    this.services = [];
+    const services = [...this.services];
     const database = services.filter((service) => service.spec.name === "postgres");
-    await Promise.all(
-      services.filter((service) => !database.includes(service)).map((service) => service.stop()),
+    const others = services.filter((service) => !database.includes(service));
+    const stopService = async (service: Service, graceMs?: number) => {
+      await service.stop(graceMs);
+      const index = this.services.indexOf(service);
+      if (index !== -1) this.services.splice(index, 1);
+    };
+    const otherResults = await Promise.allSettled(others.map((service) => stopService(service)));
+    const dbResults = await Promise.allSettled(
+      database.map((service) => stopService(service, 30_000)),
     );
-    await Promise.all(database.map((service) => service.stop(30_000)));
+    const failure = [...otherResults, ...dbResults].find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) throw failure.reason;
   }
 
   /** A launch that crashed can leave its processes running; stop any whose command is ours. */

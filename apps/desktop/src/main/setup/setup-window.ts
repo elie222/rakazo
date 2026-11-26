@@ -17,6 +17,7 @@ let setupSaveInProgress = false;
 let stackStopInProgress = false;
 let quitAfterStackStop = false;
 let reloadSetupAfterStop = false;
+let reloadSetupAfterSave = false;
 let onAppReadyCallback: (() => void) | undefined;
 
 export function isSetupSaveInProgress(): boolean {
@@ -44,6 +45,7 @@ function createSetupWindow() {
       desktop.setupWindow = null;
       quitAfterStackStop = false;
       reloadSetupAfterStop = false;
+      reloadSetupAfterSave = false;
     }
     // Closing setup without saving restores a connected session (Change Server cancel).
     restoreAppWindowAfterSetup();
@@ -64,10 +66,12 @@ export function showSetupWindow(
 
   let win: BrowserWindow;
   if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
-    // A save the page is awaiting answers with the error itself; reloading would drop what was typed.
-    // Reload when an error arrives or when quit intent changes (for example Change Rakazo Server
-    // clicked while a failed stop-and-quit retry window is open), deferring until an active stop finishes.
-    if (!setupSaveInProgress && (error !== null || quitChanged)) {
+    // A save the page is awaiting answers with its own error; reloading mid-save would drop what
+    // was typed. If quit intent changed during a save (for example Quit and Stop Bots failed while
+    // saving), defer the reload until the save finishes so the renderer picks up stopToQuit.
+    if (setupSaveInProgress) {
+      if (quitChanged) reloadSetupAfterSave = true;
+    } else if (error !== null || quitChanged) {
       if (stackStopInProgress) reloadSetupAfterStop = true;
       else desktop.setupWindow.reload();
     }
@@ -113,6 +117,7 @@ export function destroySetupWindow() {
   desktop.setupWindow = null;
   quitAfterStackStop = false;
   reloadSetupAfterStop = false;
+  reloadSetupAfterSave = false;
   if (setup !== null && !setup.isDestroyed()) setup.destroy();
 }
 type SetupIpcDeps = {
@@ -186,6 +191,7 @@ export function registerSetupIpc({
       return { ok: false, error: t("A connection attempt is already running.") };
     setupSaveInProgress = true;
     quitAfterStackStop = false;
+    reloadSetupAfterSave = false;
     desktop.setupError = null;
     const previousSetup = desktop.currentSetup;
     const previousUrl = desktop.currentTargetUrl;
@@ -226,7 +232,7 @@ export function registerSetupIpc({
         syncHostComputerAccess();
         // The opener reports why through showSetupWindow; hand it to the page as this answer.
         const detail = desktop.setupError;
-        desktop.setupError = null;
+        if (!reloadSetupAfterSave) desktop.setupError = null;
         return {
           ok: false,
           error:
@@ -273,8 +279,11 @@ export function registerSetupIpc({
         rendererWatch?.dispose();
       }
     } finally {
+      const shouldReload = reloadSetupAfterSave;
+      reloadSetupAfterSave = false;
       setupSaveInProgress = false;
       if (desktop.setupWindow === null) onAppReadyCallback?.();
+      else if (shouldReload && !desktop.setupWindow.isDestroyed()) desktop.setupWindow.reload();
     }
   });
 
