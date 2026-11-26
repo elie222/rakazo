@@ -1,6 +1,7 @@
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, MessageBlock } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { assertThreadImageInput } from "./thread-image-admission.js";
 import type { ThreadTarget } from "./thread-target.js";
 import { sendThreadMessage } from "./thread-target.js";
 
@@ -586,4 +587,52 @@ describe("current image send admission", () => {
     expect(enqueue).not.toHaveBeenCalled();
     expect(releaseTakeover).not.toHaveBeenCalled();
   });
+});
+
+const actor = { userId: "member", spaceId: "space" } as Actor;
+const image = [{ kind: "image" }] as MessageBlock[];
+
+function organizationModel(supportsImages: boolean) {
+  return {
+    bot: {
+      findFirst: async () => ({ modelProvider: null, modelId: null, thinkingLevel: null }),
+    },
+    spaceMember: {
+      findUnique: async () => ({
+        organizationModelConnectionId: "shared",
+        organizationModelProvider: "openai-compatible",
+        organizationModelId: "fixture-vision-model",
+      }),
+    },
+    organizationModelConnection: {
+      findFirst: vi.fn(async () => ({ secretId: "fixture", ciphertext: "sealed", supportsImages })),
+    },
+    deploymentSettings: { findUnique: async () => null },
+  };
+}
+
+it("uses the organization image setting without runtime configuration", async () => {
+  const prisma = organizationModel(true);
+  await expect(
+    assertThreadImageInput(prisma as unknown as PrismaClient, actor, "bot", image),
+  ).resolves.toBeUndefined();
+  expect(prisma.organizationModelConnection.findFirst).toHaveBeenCalledOnce();
+});
+
+it("uses the selected connection's per-model image setting when secrets are available", async () => {
+  const prisma = organizationModel(true);
+  await expect(
+    assertThreadImageInput(prisma as unknown as PrismaClient, actor, "bot", image, undefined, {
+      deployment: null,
+      secrets: {
+        load: async () =>
+          JSON.stringify({
+            kind: "openai_compatible",
+            baseUrl: "https://models.example.test",
+            apiKey: "fixture-key",
+            models: { "fixture-vision-model": { images: false } },
+          }),
+      },
+    }),
+  ).rejects.toMatchObject({ code: "CONFLICT" });
 });

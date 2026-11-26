@@ -12,7 +12,6 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { MISSING_MODEL_RUN_ERROR, savedThinkingLevel } from "@rakazo/core";
-import { organizationModelConnectionIn, runAsSystem } from "@rakazo/db";
 import {
   approvedModelCreditOffering,
   modelCreditOfferings,
@@ -55,6 +54,7 @@ import {
   ORGANIZATION_MODEL_CONNECTION_PREFIX,
   resolveMemberMainModel,
   selectConfiguredModel,
+  selectedOrganizationModelConnection,
 } from "../../models/model-roles.js";
 import type { StoredModelSecret } from "../../models/model-secret.js";
 import { modelBilling, parseModelSecret, secretValuesToRedact } from "../../models/model-secret.js";
@@ -258,8 +258,8 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
   };
 }
 
-async function resolveOrganizationModelKey(
-  deps: ExecutorDeps,
+export async function resolveOrganizationModelKey(
+  deps: Pick<ExecutorDeps, "prisma" | "secretStore" | "mcpAllowPrivateEndpoint">,
   scope: { userId: string; spaceId: string },
   connectionId: string,
   provider: string,
@@ -273,11 +273,12 @@ async function resolveOrganizationModelKey(
 > {
   if (!modelProviderAllowed(modelProviderAllowlist(), provider))
     throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
-  const id = connectionId.slice(ORGANIZATION_MODEL_CONNECTION_PREFIX.length);
-  const row = await runAsSystem("authorize the selected organization model for this run", () =>
-    deps.prisma.organizationModelConnection.findFirst({
-      where: { id, provider, modelId, ...organizationModelConnectionIn(scope, id) },
-    }),
+  const row = await selectedOrganizationModelConnection(
+    deps.prisma,
+    scope,
+    connectionId,
+    provider,
+    modelId,
   );
   if (!row)
     throw new UnavailableModelForAuthError(

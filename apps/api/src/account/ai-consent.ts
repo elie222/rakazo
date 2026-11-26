@@ -4,9 +4,11 @@ import {
   cloudAgentForActor,
   cloudAgentsEnabled,
   cloudAgentsForActor,
+  ORGANIZATION_MODEL_CONNECTION_PREFIX,
   parseModelSecret,
   resolveMemberMainModel,
   selectConfiguredModel,
+  selectedOrganizationModelConnection,
   toStringRecord,
 } from "@rakazo/adapters";
 import type {
@@ -204,7 +206,12 @@ export async function aiConsentStatus(
         selected
           .filter((model) => model.provider)
           .map((model) => [
-            JSON.stringify([model.provider, model.id, model.credential?.secretId]),
+            JSON.stringify([
+              model.provider,
+              model.id,
+              model.credential?.secretId,
+              model.connectionId,
+            ]),
             model,
           ]),
       ).values(),
@@ -234,10 +241,23 @@ export async function aiConsentStatus(
       ),
     );
     for (const model of models) {
+      let baseUrl = model.credential ? baseUrls.get(model.credential.secretId) : undefined;
+      if (model.id && model.connectionId?.startsWith(ORGANIZATION_MODEL_CONNECTION_PREFIX)) {
+        const row = await selectedOrganizationModelConnection(
+          deps.prisma,
+          actor,
+          model.connectionId,
+          model.provider!,
+          model.id,
+        );
+        if (!row) continue;
+        const secret = parseModelSecret(await deps.secrets.load(row.ciphertext, row.secretId));
+        if (secret.kind === "openai_compatible") baseUrl = secret.baseUrl;
+      }
       add(
         aiRecipient({
           provider: model.provider!,
-          baseUrl: model.credential ? baseUrls.get(model.credential.secretId) : undefined,
+          baseUrl,
           use: "model",
         }),
       );

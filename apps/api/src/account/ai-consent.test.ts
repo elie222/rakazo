@@ -21,6 +21,8 @@ function setup() {
   const deps = {
     env: { agentRuntime: "scripted" },
     prisma: {
+      spaceMember: { findUnique: vi.fn(async () => null) },
+      organizationModelConnection: { findFirst: vi.fn(async () => null) },
       userModelPreference: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       spaceSettingOverride: { findUnique: vi.fn(async () => null) },
       userModelRoleChoice: { findMany: vi.fn(async () => []) },
@@ -44,6 +46,42 @@ function setup() {
   return { deps, upsert, actor: { userId: "user", spaceId: "space" } as Actor };
 }
 describe("consent grants", () => {
+  it("requires fresh consent when the selected organization endpoint changes", async () => {
+    const { deps, actor } = setup();
+    deps.env.agentRuntime = "pi";
+    vi.mocked(deps.prisma.spaceMember.findUnique).mockResolvedValue({
+      organizationModelConnectionId: "shared-model",
+      organizationModelProvider: "openai-compatible",
+      organizationModelId: "fixture-model",
+    } as never);
+    vi.mocked(deps.prisma.organizationModelConnection.findFirst).mockResolvedValue({
+      secretId: "fixture-secret",
+      ciphertext: "fixture-cipher",
+    } as never);
+    const load = vi.fn();
+    deps.secrets = { load } as never;
+    const disclosure = async (path: string) => {
+      load.mockResolvedValue(
+        JSON.stringify({
+          kind: "openai_compatible",
+          baseUrl: `https://models.example.test/${path}`,
+          apiKey: "fixture-model-key",
+        }),
+      );
+      const status = await aiConsentStatus(deps, actor, { uses: ["model"] });
+      return status.recipients[0]!;
+    };
+    const first = await disclosure("first");
+    vi.mocked(deps.prisma.aiDataConsent.findMany).mockResolvedValue([
+      { recipientKey: first.key },
+    ] as never);
+    const moved = await disclosure("second");
+    expect(first.name).toContain("(https://models.example.test)");
+    expect(moved.name).toBe(first.name);
+    expect(moved.key).not.toBe(first.key);
+    expect(moved.allowed).toBe(false);
+  });
+
   it("includes reachable helper models and cloud services for a targeted send", async () => {
     const { deps, actor } = setup();
     deps.env.agentRuntime = "pi";

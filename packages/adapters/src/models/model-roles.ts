@@ -7,7 +7,7 @@ import type {
 } from "@rakazo/contracts";
 import { backupChoiceKey, modelRoleConnectionId, usableModelId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { appliedModelRole } from "@rakazo/db";
+import { appliedModelRole, organizationModelConnectionIn, runAsSystem } from "@rakazo/db";
 import { resolveAutoReviewChecker } from "../approvals/auto-review.js";
 import { approvedModelCreditOffering, modelCreditOfferings } from "../model-credits/offerings.js";
 import type { SavedDeploymentModel } from "./deployment-model.js";
@@ -94,12 +94,29 @@ export type MemberMainModel = ModelRoleChoice & {
   organizationConnectionId?: string;
 };
 
-/** The member's main model and the connection that serves it, resolved as validation does. */
-export async function resolveMemberMainModel(
-  deps: { prisma: PrismaClient; secretStore: Pick<SecretStore, "load"> },
+export async function selectedOrganizationModelConnection(
+  prisma: PrismaClient,
+  scope: { userId: string; spaceId: string },
+  connectionId: string,
+  provider: string,
+  modelId: string,
+) {
+  if (!connectionId.startsWith(ORGANIZATION_MODEL_CONNECTION_PREFIX)) return null;
+  const id = connectionId.slice(ORGANIZATION_MODEL_CONNECTION_PREFIX.length);
+  return runAsSystem("authorize the selected organization model", () =>
+    prisma.organizationModelConnection.findFirst({
+      where: { id, provider, modelId, ...organizationModelConnectionIn(scope, id) },
+      select: { ciphertext: true, secretId: true, supportsImages: true },
+    }),
+  );
+}
+
+/** The member's explicit organization selection, before checking connection access. */
+export async function memberOrganizationMainModel(
+  prisma: PrismaClient,
   scope: { userId: string; spaceId: string },
 ): Promise<MemberMainModel | null> {
-  const organization = await deps.prisma.spaceMember?.findUnique?.({
+  const organization = await prisma.spaceMember?.findUnique?.({
     where: { spaceId_userId: { spaceId: scope.spaceId, userId: scope.userId } },
     select: {
       organizationModelConnectionId: true,
@@ -119,6 +136,16 @@ export async function resolveMemberMainModel(
       organizationConnectionId: organization.organizationModelConnectionId,
     };
   }
+  return null;
+}
+
+/** The member's main model and the connection that serves it, resolved as validation does. */
+export async function resolveMemberMainModel(
+  deps: { prisma: PrismaClient; secretStore: Pick<SecretStore, "load"> },
+  scope: { userId: string; spaceId: string },
+): Promise<MemberMainModel | null> {
+  const organization = await memberOrganizationMainModel(deps.prisma, scope);
+  if (organization) return organization;
   const { primary } = await appliedModelRole(deps.prisma, scope, "main");
   if (!primary) return null;
   const credential = primary.creditOfferingId

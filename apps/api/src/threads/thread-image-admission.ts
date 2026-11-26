@@ -7,14 +7,17 @@ import {
   connectionModelSettings,
   findConnectedModelCredential,
   knownModelImageInput,
+  memberOrganizationMainModel,
   modelAcceptsImageInput,
   modelProviderAllowed,
   modelProviderAllowlist,
+  ORGANIZATION_MODEL_CONNECTION_PREFIX,
   parseModelSecret,
   resolveMemberMainModel,
   runModelChoice,
   runtimeModelAcceptsImages,
   selectConfiguredModel,
+  selectedOrganizationModelConnection,
 } from "@rakazo/adapters";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
@@ -55,19 +58,20 @@ export async function assertThreadImageInput(
   if (!bot) return;
   // A running turn has already selected its model, including any backup switch.
   const running = run?.status === "running" && run.modelProvider && run.modelId;
-  const override = running ? run : run ? runModelChoice(run, bot) : bot;
-  const overrideCredential =
-    override.modelProvider && override.modelId
+  const override = run ? runModelChoice(run, bot) : bot;
+  const credentialFor = (choice: ModelChoice) =>
+    choice.modelProvider && choice.modelId
       ? configuration
-        ? await findConnectedModelCredential(
+        ? findConnectedModelCredential(
             prisma,
             configuration.secrets,
             actor,
-            override.modelProvider,
-            override.modelId,
+            choice.modelProvider,
+            choice.modelId,
           )
-        : await findModelCredential(prisma, actor, override.modelProvider, override.modelId)
+        : findModelCredential(prisma, actor, choice.modelProvider, choice.modelId)
       : null;
+  const overrideCredential = await credentialFor(override);
   const selected = selectConfiguredModel({
     override,
     overrideCredential,
@@ -86,7 +90,42 @@ export async function assertThreadImageInput(
   // A refused provider's run fails with the allowlist's own refusal, so it is not probed here.
   if (!modelProviderAllowed(modelProviderAllowlist(), provider)) return;
   let supportsImages = knownModelImageInput(provider, id);
-  const credential = running ? overrideCredential : selected.credential;
+  const organizationConnection =
+    selected.provider === provider &&
+    selected.id === id &&
+    selected.connectionId?.startsWith(ORGANIZATION_MODEL_CONNECTION_PREFIX)
+      ? await selectedOrganizationModelConnection(
+          prisma,
+          actor,
+          selected.connectionId,
+          provider,
+          id,
+        )
+      : undefined;
+  const credential =
+    organizationConnection !== undefined
+      ? null
+      : running && (override.modelProvider !== provider || override.modelId !== id)
+        ? await credentialFor(run)
+        : running
+          ? overrideCredential
+          : selected.credential;
+  if (organizationConnection && supportsImages === undefined) {
+    if (configuration) {
+      const secret = parseModelSecret(
+        await configuration.secrets.load(
+          organizationConnection.ciphertext,
+          organizationConnection.secretId,
+        ),
+      );
+      supportsImages = connectionModelSettings(secret, provider, id, {
+        defaultModel: id,
+        supportsImages: organizationConnection.supportsImages,
+      }).images;
+    } else {
+      supportsImages = organizationConnection.supportsImages ?? undefined;
+    }
+  }
   if (supportsImages === undefined && configuration && credential) {
     // A model the catalog cannot describe reads images when its settings say so; without
     // one its capability is unknown, so the user is asked to configure it.
@@ -111,7 +150,9 @@ export async function assertThreadImageInput(
       : undefined;
     if (live?.supportsImages !== undefined) supportsImages = live.supportsImages;
   }
-  const unknownInput = supportsImages === undefined && !runtimeModelAcceptsImages(provider, id);
+  const unknownInput =
+    organizationConnection === null ||
+    (supportsImages === undefined && !runtimeModelAcceptsImages(provider, id));
   if (supportsImages === false || unknownInput)
     throw new ORPCError("CONFLICT", {
       message: unknownInput ? MODEL_IMAGE_INPUT_UNKNOWN : MODEL_IMAGE_INPUT_ERROR,
@@ -149,12 +190,16 @@ async function legacyImageInput(prisma: PrismaClient, actor: Actor, credentialId
 
 /** The main model as resolveMemberMainModel picks it, without reading secrets. */
 async function mainModelWithoutSecrets(prisma: PrismaClient, actor: Actor) {
+  const organization = await memberOrganizationMainModel(prisma, actor);
+  if (organization) return organization;
   const { primary } = await appliedModelRole(prisma, actor, "main");
   if (!primary) return null;
   return {
     ...primary,
-    credential: primary.credentialId
-      ? await findModelCredentialById(prisma, actor, primary.credentialId, primary.provider)
-      : await findModelCredential(prisma, actor, primary.provider, primary.modelId),
+    credential: primary.creditOfferingId
+      ? null
+      : primary.credentialId
+        ? await findModelCredentialById(prisma, actor, primary.credentialId, primary.provider)
+        : await findModelCredential(prisma, actor, primary.provider, primary.modelId),
   };
 }

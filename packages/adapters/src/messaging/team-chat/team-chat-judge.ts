@@ -25,13 +25,18 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "../../models/model-provider-allowlist.js";
-import { deploymentModelRole, resolveMemberMainModel } from "../../models/model-roles.js";
+import {
+  deploymentModelRole,
+  ORGANIZATION_MODEL_CONNECTION_PREFIX,
+  resolveMemberMainModel,
+} from "../../models/model-roles.js";
 import { modelBilling, secretValuesToRedact } from "../../models/model-secret.js";
 import {
   hasHostedModelCredits,
   validateCreditOfferingChoice,
 } from "../../models/model-selection.js";
 import { connectionModelSettings } from "../../models/model-settings.js";
+import { resolvedModelRunFields, resolveOrganizationModelKey } from "../../runs/turn/run-model.js";
 import {
   cleanLine,
   renderTeamChatEngagementPrompt,
@@ -119,16 +124,20 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
   constructor(private readonly deps: ModelTeamChatEngagementJudgeDeps) {}
 
   async decide(input: TeamChatEngagementInput): Promise<TeamChatEngagementDecision> {
-    let secretsToRedact: string[] = [];
+    const secretsToRedact: string[] = [];
     try {
-      const resolved = await this.resolveModel(input.bot);
+      const resolved = await this.resolveModel(input.bot, (values) =>
+        secretsToRedact.push(...values),
+      );
       if (!resolved) return { act: false };
-      secretsToRedact = secretValuesToRedact({
-        kind: "openai_compatible",
-        baseUrl: resolved.model.baseUrl ?? "",
-        apiKey: resolved.model.apiKey,
-        headers: resolved.model.headers,
-      });
+      secretsToRedact.push(
+        ...secretValuesToRedact({
+          kind: "openai_compatible",
+          baseUrl: resolved.model.baseUrl ?? "",
+          apiKey: resolved.model.apiKey,
+          headers: resolved.model.headers,
+        }),
+      );
       // Standing rules can be time-based ("only during work hours"): judge them in the owner's zone.
       let ownerTimeZone: string | null | undefined;
       try {
@@ -201,7 +210,10 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     }
   }
 
-  private async resolveModel(bot: TeamChatEngagementInput["bot"]): Promise<{
+  private async resolveModel(
+    bot: TeamChatEngagementInput["bot"],
+    registerSecrets: (values: string[]) => void,
+  ): Promise<{
     model: AgentRunModel;
   } | null> {
     const settings = await this.deps.prisma.deploymentSettings.findUnique({
@@ -235,7 +247,8 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     // The member's main model runs on its connection, or on funded deployment credits.
     const main =
       member &&
-      (member.creditOfferingId ||
+      (member.organizationConnectionId ||
+        member.creditOfferingId ||
         member.credentialId ||
         member.credential ||
         (settings?.modelCreditsEnabled &&
@@ -257,6 +270,28 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
     const provider = pinned ? requestedProvider : (mainModel ?? fallback)?.provider;
     const modelId = pinned ? requestedModel : (mainModel ?? fallback)?.modelId;
     if (!provider || !modelId) return null;
+
+    if (!pinned && member?.organizationConnectionId) {
+      const resolved = await resolveOrganizationModelKey(
+        {
+          prisma: this.deps.prisma,
+          secretStore: this.deps.secrets,
+          mcpAllowPrivateEndpoint: this.deps.allowPrivateEndpoint,
+        },
+        scope,
+        `${ORGANIZATION_MODEL_CONNECTION_PREFIX}${member.organizationConnectionId}`,
+        member.provider,
+        member.modelId,
+        registerSecrets,
+      );
+      return {
+        model: {
+          provider: member.provider,
+          id: member.modelId,
+          ...resolvedModelRunFields(resolved),
+        },
+      };
+    }
 
     const hosted =
       settings?.modelCreditsEnabled &&

@@ -17,6 +17,58 @@ class ModelTeamChatEngagementJudge extends Judge {
 }
 
 describe("team chat engagement judge", () => {
+  it("uses the selected organization key even when hosted credits are enabled", async () => {
+    const run = vi.fn(async function* (_request: AgentRunRequest) {
+      yield { type: "done", text: '{"act":true}' };
+    });
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: {
+        deploymentSettings: { findUnique: async () => ({ modelCreditsEnabled: true }) },
+        spaceMember: {
+          findUnique: async () => ({
+            organizationModelConnectionId: "shared",
+            organizationModelProvider: "openai",
+            organizationModelId: "fixture-model",
+          }),
+        },
+        organizationModelConnection: {
+          findFirst: async () => ({
+            ciphertext: "sealed",
+            secretId: "fixture",
+            supportsImages: false,
+          }),
+        },
+      } as never,
+      runtime: { run } as never,
+      secrets: { load: async () => "fixture-organization-key" } as never,
+      deploymentProvider: "openai",
+      deploymentModel: "deployment-model",
+      deploymentModelKey: "fixture-deployment-key",
+    });
+    await expect(
+      judge.decide({
+        bot: {
+          id: "bot",
+          spaceId: "space",
+          userId: "member",
+          name: "Fixture",
+          modelProvider: null,
+          modelId: null,
+        },
+        channelId: "channel",
+        rules: "",
+        messages: [],
+      }),
+    ).resolves.toEqual({ act: true });
+    expect(run.mock.calls[0]?.[0].model).toMatchObject({
+      id: "fixture-model",
+      apiKey: "fixture-organization-key",
+      connectionId: "organization:shared",
+      billing: "organization",
+      callObserver: undefined,
+    });
+  });
+
   it("keeps saved project routing when deciding whether to engage", async () => {
     const prisma = {
       user: { findUnique: vi.fn(async () => null) },
