@@ -54,7 +54,11 @@ import {
 } from "../tools/lazy-tool-catalog.js";
 import { mcpToolAppResourceUri, readMcpApp } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
-import { UNAVAILABLE_TOOL, unavailableTool } from "./mcp-connector.tool-definition.js";
+import {
+  mcpCatalogGroup,
+  UNAVAILABLE_TOOL,
+  unavailableTool,
+} from "./mcp-connector.tool-definition.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import {
   accessTokenExpiresAt,
@@ -575,7 +579,7 @@ export class McpConnector implements ConnectorProvider {
                 resourceId: assignment.serverId,
                 resourceRevision: assignment.server.revision,
                 toolName: tool.name,
-                catalogGroup: assignment.server.slug,
+                catalogGroup: mcpCatalogGroup(assignment.server),
                 appResourceUri: mcpToolAppResourceUri(tool),
               },
             }));

@@ -125,7 +125,8 @@ export function searchCatalog(
         return {
           group: groupFilter,
           names: [],
-          error: "Unknown or empty group",
+          error:
+            "Unknown or empty group. This catalog only includes the sources it lists, so a missing group does not mean a tool is unavailable elsewhere.",
         };
       }
       const group = scoped[0]!.group;
@@ -164,7 +165,7 @@ export function searchCatalog(
   return {
     tools: hits,
     groups: groupedNames(entries).map(({ group, names }) => ({ group, count: names.length })),
-    hint: "No tool matches every word. Try other words or pass group. Built-in tools are not in this catalog.",
+    hint: "No tool in this catalog matches every word. Try other words or pass group. Built-in tools are not in this catalog, and neither are other connected apps. An empty result does not mean a tool is unavailable elsewhere.",
   };
 }
 

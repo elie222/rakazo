@@ -748,6 +748,44 @@ describe("MCP connector session cache", () => {
     }
   });
 
+  it("labels a spilled catalog with the server name when the slug is opaque", async () => {
+    const slug = "integration-aaa231a9";
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER, slug, name: "Docs" } };
+    vi.stubGlobal(
+      "fetch",
+      mcpFetch({
+        failNext: false,
+        initializations: 0,
+        tools: Array.from({ length: DIRECT_TOOL_LIMIT + 1 }, (_, index) => ({
+          name: `tool_${index}`,
+          inputSchema: { type: "object" },
+        })),
+      }),
+    );
+    const connector = new McpConnector(
+      {
+        mcpServer: NO_SHARED_SERVERS,
+        botMcpServer: {
+          findMany: vi.fn().mockResolvedValue([assignment]),
+          findFirst: vi.fn().mockResolvedValue(assignment),
+        },
+      } as never,
+      {} as never,
+      { network: TEST_NETWORK },
+    );
+    const tools = await connector.discoverTools({
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never);
+    const search = tools.find((tool) => tool.name === "connectors_search_tools");
+    expect(search?.description).toContain("Docs:");
+    expect(search?.description).toContain("sources listed here only");
+    expect(search?.description).not.toContain(slug);
+    await connector.close();
+  });
+
   it("records a discovery failure as a failed tool completion", async () => {
     vi.stubGlobal("fetch", mcpFetch({ failNext: true, initializations: 0 }));
     const append = vi.fn().mockResolvedValue(undefined);
