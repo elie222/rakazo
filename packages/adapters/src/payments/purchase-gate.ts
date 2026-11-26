@@ -165,11 +165,22 @@ function purchaseProbe(name: string, args: Record<string, unknown>) {
   for (const raw of actions) {
     const step = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
     const kind = String(step.kind);
-    const own =
-      typeof step.x === "number" && typeof step.y === "number"
-        ? // Rounded as the desktop rounds it before pressing.
-          { x: Math.round(step.x), y: Math.round(step.y) }
+    // A semantic target presses the control it names: its point is where the click lands, so the
+    // check judges that spot instead of treating the press as unplaced and skipping it.
+    const target =
+      step.target && typeof step.target === "object"
+        ? (step.target as { point?: { x?: unknown; y?: unknown } })
         : undefined;
+    const ownsPoint =
+      (typeof step.x === "number" && typeof step.y === "number") ||
+      (typeof target?.point?.x === "number" && typeof target.point.y === "number");
+    const own = ownsPoint
+      ? // Rounded as the desktop rounds it before pressing.
+        {
+          x: Math.round(Number(step.x ?? target?.point?.x)),
+          y: Math.round(Number(step.y ?? target?.point?.y)),
+        }
+      : undefined;
     if (kind !== "move") acts += 1;
     if (kind === "move") {
       pointer = own ?? pointer;

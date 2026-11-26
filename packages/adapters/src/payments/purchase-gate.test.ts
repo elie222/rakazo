@@ -53,6 +53,20 @@ describe("purchase detection for the page tools", () => {
       expect.objectContaining({ desktop: true, enter: false, points: [{ x: 1, y: 2 }] }),
       expect.anything(),
     );
+    // A target presses the control it names, so the check judges that control's point.
+    expect(
+      await act([
+        {
+          kind: "click",
+          target: { point: { x: 40, y: 50 }, source: "ax", name: "Buy", role: "push button" },
+        },
+      ]),
+    ).toMatchObject({ site: "shop.example.test" });
+    expect(check).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ points: [{ x: 40, y: 50 }], unplaced: false }),
+      expect.anything(),
+    );
     await act([{ kind: "key", key: "Return" }]);
     expect(check).toHaveBeenLastCalledWith(
       expect.anything(),
@@ -60,7 +74,7 @@ describe("purchase detection for the page tools", () => {
       expect.anything(),
     );
     await act([{ kind: "type", text: "4242\n" }]);
-    expect(check).toHaveBeenCalledTimes(3);
+    expect(check).toHaveBeenCalledTimes(4);
     check.mockClear();
     await act([
       { kind: "move", x: 7, y: 8 },
