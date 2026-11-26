@@ -286,6 +286,7 @@ export function useBrowserNotifications(
     };
   }, [rpc]);
   const notifiedBrowserEvents = useRef(new Set<string>());
+  const latestNotifiedTagSeq = useRef(new Map<string, number>());
   const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
   const lastActiveChat = useRef<{ botId?: string; groupId?: string }>({
     botId: activeBotId.current,
@@ -401,6 +402,7 @@ export function useBrowserNotifications(
     return () => {
       mounted.current = false;
       pendingBrowserNotifications.current.clear();
+      latestNotifiedTagSeq.current.clear();
       runOwnersRef.current.clear();
       serverSnapshotRef.current = null;
     };
@@ -416,6 +418,14 @@ export function useBrowserNotifications(
       if (notifiedBrowserEvents.current.has(pending.event.id)) return { action: "drop" };
       const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
       if (!currentBot || typeof Notification === "undefined") return { action: "drop" };
+      const enabled = pending.groupId !== undefined || currentBot.notifyOnFinish;
+      if (
+        !enabled ||
+        Notification.permission === "denied" ||
+        (document.visibilityState === "visible" && document.hasFocus())
+      ) {
+        return { action: "drop" };
+      }
       if (reconcilePendingEntry(pending) === "drop") return { action: "drop" };
       // Drop a queued question-only card once it has expired or settled.
       if (pending.questionOnly) {
@@ -423,16 +433,20 @@ export function useBrowserNotifications(
         if (!Array.isArray(blocks) || !blocks.some(isWaitingAskBlock)) return { action: "drop" };
       }
       const ownership = questionOwnership(pending.event, pending.runOwner);
-      if (ownership === "pending") return { action: "hold" };
+      if (ownership === "pending" || Notification.permission === "default") {
+        return { action: "hold" };
+      }
       const waits = ownership === "viewer";
       // A reply queued while permission was pending can be snoozed before it is shown.
       if (snoozedOrdinaryReply(pending.event, chatFor(pending), () => waits)) {
         return { action: "drop" };
       }
-      return {
-        action: "deliver",
-        tag: browserNotificationTag(pending.event, { waitingQuestion: waits }),
-      };
+      const tag = browserNotificationTag(pending.event, { waitingQuestion: waits });
+      const latestShownSeq = latestNotifiedTagSeq.current.get(tag);
+      if (latestShownSeq !== undefined && pending.event.seq < latestShownSeq) {
+        return { action: "drop" };
+      }
+      return { action: "deliver", tag };
     },
     [questionOwnership, reconcilePendingEntry],
   );
@@ -467,22 +481,20 @@ export function useBrowserNotifications(
           },
         },
       );
+      if (result === "delivered") {
+        const previousSeq = latestNotifiedTagSeq.current.get(evaluated.tag);
+        if (previousSeq === undefined || pending.event.seq > previousSeq) {
+          latestNotifiedTagSeq.current.set(evaluated.tag, pending.event.seq);
+        }
+      }
       return result !== "pending";
     },
     [evaluatePendingEntry],
   );
   const flushQueuedNotifications = useCallback(
-    (threadId?: string, requireGranted = false) => {
+    (threadId?: string) => {
       if (!mounted.current) return;
       syncPendingFromSnapshot(threadId);
-      if (
-        requireGranted &&
-        (typeof Notification === "undefined" || Notification.permission !== "granted")
-      ) {
-        return;
-      }
-      const canSettle =
-        typeof Notification === "undefined" || Notification.permission !== "default";
       const readyByTag = new Map<string, { key: string; pending: PendingBrowserNotification }>();
       const losers: Array<{ key: string; eventId: string }> = [];
       for (const [key, pending] of pendingBrowserNotifications.current) {
@@ -492,7 +504,7 @@ export function useBrowserNotifications(
           pendingBrowserNotifications.current.delete(key);
           continue;
         }
-        if (evaluated.action === "hold" || !canSettle) continue;
+        if (evaluated.action === "hold") continue;
         const previous = readyByTag.get(evaluated.tag);
         if (!previous) {
           readyByTag.set(evaluated.tag, { key, pending });
@@ -519,11 +531,11 @@ export function useBrowserNotifications(
     [deliverBrowserNotification, evaluatePendingEntry, syncPendingFromSnapshot],
   );
   const flushReadyNotifications = useCallback(
-    (threadId?: string) => flushQueuedNotifications(threadId, true),
+    (threadId?: string) => flushQueuedNotifications(threadId),
     [flushQueuedNotifications],
   );
   const flushPendingBrowserNotifications = useCallback(
-    () => flushQueuedNotifications(undefined, false),
+    () => flushQueuedNotifications(undefined),
     [flushQueuedNotifications],
   );
   const reconcileSnapshot = useCallback(
@@ -568,6 +580,11 @@ export function useBrowserNotifications(
         for (const [key, queued] of pendingBrowserNotifications.current) {
           if (queued.event.threadId === event.threadId) {
             pendingBrowserNotifications.current.delete(key);
+          }
+        }
+        for (const tag of latestNotifiedTagSeq.current.keys()) {
+          if (tag === event.threadId || tag.startsWith(`${event.threadId}:`)) {
+            latestNotifiedTagSeq.current.delete(tag);
           }
         }
         for (const [runId, owner] of runOwnersRef.current) {

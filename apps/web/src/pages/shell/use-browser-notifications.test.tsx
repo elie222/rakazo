@@ -2178,6 +2178,196 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toEqual([["Scout", "Newest reply", "thread-g"]]);
   });
 
+  it("drops an older pending-owner foreign question once a newer reply has already displayed on the same tag", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    visible = false;
+    groups[0] = { id: "group-g" };
+    snapshotRef.current = null;
+    await open({ groupId: "group-g" });
+
+    // Older legacy tool question without runUserId is held pending ownership.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "legacy-older-tq",
+          type: "thread.message.created",
+          threadId: "thread-g",
+          seq: 6,
+          runId: "run-other-legacy",
+          botId: "bot-b",
+          payload: {
+            id: "msg-older-tq",
+            role: "bot",
+            blocks: [
+              {
+                kind: "tool_question",
+                question: { source: "Calendar", message: "Older prompt", fields: [] },
+                status: "pending",
+                expiresAt: later,
+                publicKey: "key",
+              },
+            ],
+          },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    expect(shown()).toEqual([]);
+
+    // Newer reply displays immediately under thread-g.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "newer-displayed-reply",
+          type: "thread.message.created",
+          threadId: "thread-g",
+          seq: 7,
+          runId: "run-other-legacy",
+          botId: "bot-b",
+          payload: {
+            id: "msg-newer-reply",
+            role: "bot",
+            blocks: [{ kind: "text", text: "Newer displayed reply" }],
+          },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      ),
+    );
+    expect(shown()).toEqual([["Scout", "Newer displayed reply", "thread-g"]]);
+
+    // Snapshot resolves the older tool question as belonging to another member: must NOT replace seq 7.
+    const snap = {
+      threadId: "thread-g",
+      cursor: 7,
+      olderCursor: null,
+      activeRuns: [{ id: "run-other-legacy", botId: "bot-b", status: "running", userId: "user-2" }],
+      messages: [
+        {
+          id: "msg-older-tq",
+          blocks: [
+            {
+              kind: "tool_question",
+              question: { source: "Calendar", message: "Older prompt", fields: [] },
+              status: "pending",
+              expiresAt: later,
+              publicKey: "key",
+            },
+          ],
+        },
+        { id: "msg-newer-reply", blocks: [{ kind: "text", text: "Newer displayed reply" }] },
+      ],
+    } as unknown as ThreadSnapshot;
+    snapshotRef.current = snap;
+    act(() => hook.reconcileSnapshot(snap));
+    expect(shown()).toEqual([["Scout", "Newer displayed reply", "thread-g"]]);
+  });
+
+  it("discards queued alerts on flush when the tab is focused or permission is denied, even with default permission or pending owner", async () => {
+    FakeNotification.permission = "default";
+    visible = false;
+    focused = false;
+    await open({ botId: "bot-b" });
+
+    // Queue a reply in the background while permission is default.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "bg-reply",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 5,
+          botId: "bot-b",
+          payload: {
+            id: "msg-bg-reply",
+            role: "bot",
+            blocks: [{ kind: "text", text: "Queued in background" }],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+
+    // User focuses the tab and dismisses the permission prompt (stays "default").
+    visible = true;
+    focused = true;
+    act(() => hook.flushPendingBrowserNotifications());
+
+    // Later in the background, user grants permission: the previously viewed reply must stay gone.
+    visible = false;
+    focused = false;
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
+
+    // Separately, queue a legacy pending-owner ask while permission is default, then deny permission.
+    FakeNotification.permission = "default";
+    snapshotRef.current = null;
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "denied-pending-owner",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 6,
+          runId: "run-denied-legacy",
+          botId: "bot-b",
+          payload: {
+            id: "msg-denied-ask",
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Should be discarded on deny?", status: "pending" }],
+          },
+        },
+        "thread-b",
+        5,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+
+    FakeNotification.permission = "denied";
+    act(() => hook.flushPendingBrowserNotifications());
+
+    // Later permission is granted and ownership resolves: the denied ask must not reappear.
+    FakeNotification.permission = "granted";
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "denied-legacy-wait",
+          type: "run.waiting_input",
+          threadId: "thread-b",
+          seq: 7,
+          runId: "run-denied-legacy",
+          botId: "bot-b",
+          payload: { userId: "user-1" },
+        },
+        "thread-b",
+        5,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    expect(shown()).toEqual([]);
+  });
+
   it("closes the stream when the shell unmounts", async () => {
     await open({ botId: "bot-a" });
     act(() => root.unmount());
