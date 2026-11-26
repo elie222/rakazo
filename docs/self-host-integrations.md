@@ -150,6 +150,11 @@ alternative managed connector provider: set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CL
 `PIPEDREAM_PROJECT_ID` and `PIPEDREAM_ENVIRONMENT` (`development` or `production`). Set them on the
 API and worker.
 
+Browsing and importing plugins reads public repositories through the GitHub API, which gives
+anonymous callers a small hourly quota per address. If plugin previews start to fail, set
+`PLUGIN_GITHUB_TOKEN` on the API. A token with no scopes is enough, and it is sent
+to `api.github.com` only.
+
 A call on a shared mailbox is refused when the Outlook sign-in does not request the matching
 `.Shared` permission, and a connection made through Composio's default Outlook setup has been seen
 to lack it. To let a bot read or send from one, create an Outlook auth config in the Composio
