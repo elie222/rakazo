@@ -653,6 +653,23 @@ describe("latestModelChoices", () => {
     expect(ids(latestModelChoices(snapshots, "").latest)).toEqual(["gemini-2.5-pro", "command-r"]);
   });
 
+  it("keeps models that differ by vendor path or local tag", () => {
+    const models = [
+      "vendor-a/chat-5",
+      "vendor-b/chat-5",
+      "llama3.1:8b-instruct-q8_0",
+      "llama3.1:8b-instruct-q4_0",
+    ];
+    const choices = models.map((modelId) => ({
+      key: `local::${modelId}`,
+      label: modelId,
+      provider: "local",
+      providerLabel: "Local",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(choices, "").latest)).toEqual(models);
+  });
+
   it("keeps an older selected model in view", () => {
     const { latest } = latestModelChoices(section, "openrouter::anthropic/claude-opus-4.5");
     expect(ids(latest)).toContain("anthropic/claude-opus-4.5");

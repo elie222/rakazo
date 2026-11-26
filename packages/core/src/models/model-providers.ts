@@ -505,12 +505,16 @@ export function collapseOlderModels<
 type ModelRelease = { family: string; version: number[]; date: number[] };
 
 /**
- * Reads a model id as words, sizes (`120b`, `0.5b`, `4o`), a version and a date:
+ * Reads a model id as its vendor path, words, sizes (`120b`, `0.5b`, `4o`), a version, a date and
+ * a local tag:
  * `claude-sonnet-4-5-20250929` is family `claude-sonnet`, version 4.5, dated 20250929.
  */
 function modelRelease(choice: ChatModelChoice): ModelRelease {
   const id = (choice.modelId ?? "").toLowerCase();
-  const name = id.slice(id.lastIndexOf("/") + 1);
+  // A vendor path (`anthropic/`) and a local tag (`:8b-instruct-q4_0`) name different models
+  // rather than releases, so they stay whole in the family.
+  const vendor = id.slice(0, id.lastIndexOf("/") + 1);
+  const [name = "", tag] = id.slice(vendor.length).split(/:(.*)/s);
   const words: string[] = [];
   const version: number[] = [];
   const date: number[] = [];
@@ -532,7 +536,7 @@ function modelRelease(choice: ChatModelChoice): ModelRelease {
     } else version.push(Number(part));
   }
   return {
-    family: `${choice.provider ?? ""}:${choice.providerLabel ?? ""}:${words.join("-")}`,
+    family: `${choice.provider ?? ""}:${choice.providerLabel ?? ""}:${vendor}${words.join("-")}:${tag ?? ""}`,
     version,
     date,
   };
