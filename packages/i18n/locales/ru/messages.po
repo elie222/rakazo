@@ -40,7 +40,7 @@ msgstr "{0, plural, one {# бесплатный месяц} few {# беспла�
 #. placeholder {0}: images.length
 #: apps/mobile/components/media/image-attachment-deck.tsx
 msgid "{0, plural, one {# image} other {# images}}"
-msgstr ""
+msgstr "{0, plural, one {# изображение} few {# изображения} many {# изображений} other {# изображения}}"
 
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -67,7 +67,7 @@ msgstr "{0, plural, one {# инструмент} few {# инструмента} 
 #. placeholder {0}: images.length
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "{0, plural, one {Show all # picture} other {Show all # pictures}}"
-msgstr ""
+msgstr "{0, plural, one {Показать все # изображение} few {Показать все # изображения} many {Показать все # изображений} other {Показать все # изображения}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
@@ -114,7 +114,7 @@ msgstr "Обработка {0}"
 #. placeholder {0}: formatBillingAmount(added, "USD", i18n.locale)
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "{0} in credits added"
-msgstr ""
+msgstr "Добавлено кредитов на {0}"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/components/call/IncomingCall.tsx
@@ -4197,7 +4197,7 @@ msgstr "Не удалось прочитать эти файлы"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Could not redeem the code"
-msgstr ""
+msgstr "Не удалось активировать код"
 
 #: apps/mobile/lib/board/board.ts
 msgid "Could not refresh the board. {detail}"
@@ -7968,7 +7968,7 @@ msgstr "Следующая страница"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Next picture"
-msgstr ""
+msgstr "Следующее изображение"
 
 #: apps/mobile/app/routine.tsx
 #: packages/i18n/src/routine-approval.ts
@@ -8570,7 +8570,7 @@ msgstr "Открыть навигацию"
 #. placeholder {1}: images.length
 #: apps/mobile/components/media/image-attachment-deck.tsx
 msgid "Open photo {0} of {1}"
-msgstr ""
+msgstr "Открыть фото {0} из {1}"
 
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/pages/auth/Invite.tsx
@@ -9111,7 +9111,7 @@ msgstr "Предыдущая страница"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Previous picture"
-msgstr ""
+msgstr "Предыдущее изображение"
 
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Previous settings sections"
@@ -9287,7 +9287,7 @@ msgstr "Реакции"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Read aloud"
-msgstr ""
+msgstr "Прочитать вслух"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Read calendar events?"
@@ -9477,11 +9477,11 @@ msgstr "Найм и HR"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Redeem"
-msgstr ""
+msgstr "Активировать"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Redeem a code"
-msgstr ""
+msgstr "Активировать код"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
@@ -11199,7 +11199,7 @@ msgstr "Сортирует новые письма и готовит черно�
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sound for alerts that need attention"
-msgstr ""
+msgstr "Звук для оповещений, требующих внимания"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
@@ -11396,7 +11396,7 @@ msgstr "Больше не присоединяться к этой серии"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Stop reading aloud"
-msgstr ""
+msgstr "Остановить чтение вслух"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
@@ -13331,7 +13331,7 @@ msgstr "С вашей карты не списаны средства"
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "Your changes aren't saved. Check your connection."
-msgstr ""
+msgstr "Изменения не сохранены. Проверьте подключение."
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx

@@ -40,7 +40,7 @@ msgstr "{0, plural, other {#개월 무료}}"
 #. placeholder {0}: images.length
 #: apps/mobile/components/media/image-attachment-deck.tsx
 msgid "{0, plural, one {# image} other {# images}}"
-msgstr ""
+msgstr "{0, plural, other {이미지 #개}}"
 
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -67,7 +67,7 @@ msgstr "{0, plural, other {도구 #개}}"
 #. placeholder {0}: images.length
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "{0, plural, one {Show all # picture} other {Show all # pictures}}"
-msgstr ""
+msgstr "{0, plural, other {이미지 #개 모두 보기}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
@@ -114,7 +114,7 @@ msgstr "{0} 처리 방식"
 #. placeholder {0}: formatBillingAmount(added, "USD", i18n.locale)
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "{0} in credits added"
-msgstr ""
+msgstr "{0} 크레딧이 추가되었습니다"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/components/call/IncomingCall.tsx
@@ -4197,7 +4197,7 @@ msgstr "이 파일을 읽지 못했습니다"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Could not redeem the code"
-msgstr ""
+msgstr "코드를 등록하지 못했습니다"
 
 #: apps/mobile/lib/board/board.ts
 msgid "Could not refresh the board. {detail}"
@@ -7968,7 +7968,7 @@ msgstr "다음 페이지"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Next picture"
-msgstr ""
+msgstr "다음 이미지"
 
 #: apps/mobile/app/routine.tsx
 #: packages/i18n/src/routine-approval.ts
@@ -8570,7 +8570,7 @@ msgstr "메뉴 열기"
 #. placeholder {1}: images.length
 #: apps/mobile/components/media/image-attachment-deck.tsx
 msgid "Open photo {0} of {1}"
-msgstr ""
+msgstr "사진 {0}/{1} 열기"
 
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/pages/auth/Invite.tsx
@@ -9111,7 +9111,7 @@ msgstr "이전 페이지"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Previous picture"
-msgstr ""
+msgstr "이전 이미지"
 
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Previous settings sections"
@@ -9287,7 +9287,7 @@ msgstr "반응"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Read aloud"
-msgstr ""
+msgstr "소리 내어 읽기"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Read calendar events?"
@@ -9477,11 +9477,11 @@ msgstr "채용 및 인사"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Redeem"
-msgstr ""
+msgstr "등록"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Redeem a code"
-msgstr ""
+msgstr "코드 등록"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
@@ -11199,7 +11199,7 @@ msgstr "새 이메일을 분류하고 답장 초안을 작성합니다"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sound for alerts that need attention"
-msgstr ""
+msgstr "확인 필요 알림 소리"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
@@ -11396,7 +11396,7 @@ msgstr "이 시리즈 참여 중지"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Stop reading aloud"
-msgstr ""
+msgstr "읽기 중지"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
@@ -13331,7 +13331,7 @@ msgstr "카드로 결제되지 않았습니다"
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "Your changes aren't saved. Check your connection."
-msgstr ""
+msgstr "변경 사항이 저장되지 않았습니다. 연결을 확인하세요."
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx

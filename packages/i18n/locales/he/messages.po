@@ -40,7 +40,7 @@ msgstr "{0, plural, one {חודש חינם אחד} two {# חודשים חינם}
 #. placeholder {0}: images.length
 #: apps/mobile/components/media/image-attachment-deck.tsx
 msgid "{0, plural, one {# image} other {# images}}"
-msgstr ""
+msgstr "{0, plural, one {# תמונה} two {# תמונות} other {# תמונות}}"
 
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -67,7 +67,7 @@ msgstr "{0, plural, one {כלי אחד} two {# כלים} other {# כלים}}"
 #. placeholder {0}: images.length
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "{0, plural, one {Show all # picture} other {Show all # pictures}}"
-msgstr ""
+msgstr "{0, plural, one {הצגת # תמונה} two {הצגת כל # התמונות} other {הצגת כל # התמונות}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
@@ -114,7 +114,7 @@ msgstr "טיפול של {0}"
 #. placeholder {0}: formatBillingAmount(added, "USD", i18n.locale)
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "{0} in credits added"
-msgstr ""
+msgstr "נוספו קרדיטים בשווי {0}"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/components/call/IncomingCall.tsx
@@ -4197,7 +4197,7 @@ msgstr "לא ניתן לקרוא את הקבצים האלה"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Could not redeem the code"
-msgstr ""
+msgstr "לא ניתן לממש את הקוד"
 
 #: apps/mobile/lib/board/board.ts
 msgid "Could not refresh the board. {detail}"
@@ -7968,7 +7968,7 @@ msgstr "העמוד הבא"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Next picture"
-msgstr ""
+msgstr "התמונה הבאה"
 
 #: apps/mobile/app/routine.tsx
 #: packages/i18n/src/routine-approval.ts
@@ -8570,7 +8570,7 @@ msgstr "פתיחת הניווט"
 #. placeholder {1}: images.length
 #: apps/mobile/components/media/image-attachment-deck.tsx
 msgid "Open photo {0} of {1}"
-msgstr ""
+msgstr "פתיחת תמונה {0} מתוך {1}"
 
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/pages/auth/Invite.tsx
@@ -9111,7 +9111,7 @@ msgstr "העמוד הקודם"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Previous picture"
-msgstr ""
+msgstr "התמונה הקודמת"
 
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Previous settings sections"
@@ -9287,7 +9287,7 @@ msgstr "אמוג׳י"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Read aloud"
-msgstr ""
+msgstr "הקראה"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Read calendar events?"
@@ -9477,11 +9477,11 @@ msgstr "גיוס ומשאבי אנוש"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Redeem"
-msgstr ""
+msgstr "מימוש"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Redeem a code"
-msgstr ""
+msgstr "מימוש קוד"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
@@ -11199,7 +11199,7 @@ msgstr "ממיין אימיילים חדשים ומנסח טיוטות לתשו�
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sound for alerts that need attention"
-msgstr ""
+msgstr "צליל להתראות שדורשות תשומת לב"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
@@ -11396,7 +11396,7 @@ msgstr "הפסקת ההצטרפות לסדרה הזו"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Stop reading aloud"
-msgstr ""
+msgstr "הפסקת ההקראה"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
@@ -13331,7 +13331,7 @@ msgstr "הכרטיס שלך לא חויב"
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "Your changes aren't saved. Check your connection."
-msgstr ""
+msgstr "השינויים לא נשמרו. בדקו את החיבור."
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx

@@ -40,7 +40,7 @@ msgstr "{0, plural, one {# mês grátis} other {# meses grátis}}"
 #. placeholder {0}: images.length
 #: apps/mobile/components/media/image-attachment-deck.tsx
 msgid "{0, plural, one {# image} other {# images}}"
-msgstr ""
+msgstr "{0, plural, one {# imagem} other {# imagens}}"
 
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -67,7 +67,7 @@ msgstr "{0, plural, one {# ferramenta} other {# ferramentas}}"
 #. placeholder {0}: images.length
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "{0, plural, one {Show all # picture} other {Show all # pictures}}"
-msgstr ""
+msgstr "{0, plural, one {Mostrar # imagem} other {Mostrar todas as # imagens}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
@@ -114,7 +114,7 @@ msgstr "Tratamento de {0}"
 #. placeholder {0}: formatBillingAmount(added, "USD", i18n.locale)
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "{0} in credits added"
-msgstr ""
+msgstr "{0} em créditos adicionados"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/components/call/IncomingCall.tsx
@@ -4197,7 +4197,7 @@ msgstr "Não foi possível ler estes arquivos"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Could not redeem the code"
-msgstr ""
+msgstr "Não foi possível resgatar o código"
 
 #: apps/mobile/lib/board/board.ts
 msgid "Could not refresh the board. {detail}"
@@ -7968,7 +7968,7 @@ msgstr "Próxima página"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Next picture"
-msgstr ""
+msgstr "Próxima imagem"
 
 #: apps/mobile/app/routine.tsx
 #: packages/i18n/src/routine-approval.ts
@@ -8570,7 +8570,7 @@ msgstr "Abrir a navegação"
 #. placeholder {1}: images.length
 #: apps/mobile/components/media/image-attachment-deck.tsx
 msgid "Open photo {0} of {1}"
-msgstr ""
+msgstr "Abrir foto {0} de {1}"
 
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/pages/auth/Invite.tsx
@@ -9111,7 +9111,7 @@ msgstr "Página anterior"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Previous picture"
-msgstr ""
+msgstr "Imagem anterior"
 
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Previous settings sections"
@@ -9287,7 +9287,7 @@ msgstr "Reações"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Read aloud"
-msgstr ""
+msgstr "Ler em voz alta"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Read calendar events?"
@@ -9477,11 +9477,11 @@ msgstr "Recrutamento e RH"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Redeem"
-msgstr ""
+msgstr "Resgatar"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Redeem a code"
-msgstr ""
+msgstr "Resgatar um código"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
@@ -11199,7 +11199,7 @@ msgstr "Organiza e-mails novos e redige as respostas"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sound for alerts that need attention"
-msgstr ""
+msgstr "Som para alertas que precisam de atenção"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
@@ -11396,7 +11396,7 @@ msgstr "Parar de entrar nesta série"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Stop reading aloud"
-msgstr ""
+msgstr "Parar de ler em voz alta"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
@@ -13331,7 +13331,7 @@ msgstr "Seu cartão não foi cobrado"
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "Your changes aren't saved. Check your connection."
-msgstr ""
+msgstr "Suas alterações não foram salvas. Verifique sua conexão."
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx

@@ -40,7 +40,7 @@ msgstr "{0, plural, one {# gratis maand} other {# gratis maanden}}"
 #. placeholder {0}: images.length
 #: apps/mobile/components/media/image-attachment-deck.tsx
 msgid "{0, plural, one {# image} other {# images}}"
-msgstr ""
+msgstr "{0, plural, one {# afbeelding} other {# afbeeldingen}}"
 
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
@@ -67,7 +67,7 @@ msgstr "{0, plural, one {# tool} other {# tools}}"
 #. placeholder {0}: images.length
 #: apps/web/src/pages/shell/chat/image-gallery.tsx
 msgid "{0, plural, one {Show all # picture} other {Show all # pictures}}"
-msgstr ""
+msgstr "{0, plural, one {# afbeelding tonen} other {Alle # afbeeldingen tonen}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
@@ -114,7 +114,7 @@ msgstr "{0} afhandeling"
 #. placeholder {0}: formatBillingAmount(added, "USD", i18n.locale)
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "{0} in credits added"
-msgstr ""
+msgstr "{0} aan tegoed toegevoegd"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/components/call/IncomingCall.tsx
@@ -4197,7 +4197,7 @@ msgstr "Deze bestanden konden niet worden gelezen"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Could not redeem the code"
-msgstr ""
+msgstr "Code inwisselen mislukt"
 
 #: apps/mobile/lib/board/board.ts
 msgid "Could not refresh the board. {detail}"
@@ -7968,7 +7968,7 @@ msgstr "Volgende pagina"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Next picture"
-msgstr ""
+msgstr "Volgende afbeelding"
 
 #: apps/mobile/app/routine.tsx
 #: packages/i18n/src/routine-approval.ts
@@ -8570,7 +8570,7 @@ msgstr "Navigatie openen"
 #. placeholder {1}: images.length
 #: apps/mobile/components/media/image-attachment-deck.tsx
 msgid "Open photo {0} of {1}"
-msgstr ""
+msgstr "Foto {0} van {1} openen"
 
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/pages/auth/Invite.tsx
@@ -9111,7 +9111,7 @@ msgstr "Vorige pagina"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 msgid "Previous picture"
-msgstr ""
+msgstr "Vorige afbeelding"
 
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Previous settings sections"
@@ -9287,7 +9287,7 @@ msgstr "Reacties"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Read aloud"
-msgstr ""
+msgstr "Voorlezen"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Read calendar events?"
@@ -9477,11 +9477,11 @@ msgstr "Werving & HR"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Redeem"
-msgstr ""
+msgstr "Inwisselen"
 
 #: apps/web/src/pages/auth/Redeem.tsx
 msgid "Redeem a code"
-msgstr ""
+msgstr "Code inwisselen"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
@@ -11199,7 +11199,7 @@ msgstr "Sorteert nieuwe e-mail en schrijft conceptantwoorden"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Sound for alerts that need attention"
-msgstr ""
+msgstr "Geluid voor meldingen die aandacht vragen"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
@@ -11396,7 +11396,7 @@ msgstr "Niet meer aan deze reeks deelnemen"
 
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Stop reading aloud"
-msgstr ""
+msgstr "Stop met voorlezen"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
@@ -13331,7 +13331,7 @@ msgstr "Je kaart is niet belast"
 #: apps/web/src/components/pages/PageReviewHost.tsx
 #: apps/web/src/components/pages/PageViewHost.tsx
 msgid "Your changes aren't saved. Check your connection."
-msgstr ""
+msgstr "Je wijzigingen zijn niet opgeslagen. Controleer je verbinding."
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
