@@ -24,8 +24,15 @@ test("redacts individual session values in nested JSON storage", () => {
     ],
   };
   assert.equal(
-    pageSnapshot("Orders synthetic nested/token synthetic%20nested%2Ftoken", state),
+    pageSnapshot("Orders synthetic nested/token synthetic%20nested%2Ftoken", [state]),
     "Orders [redacted] [redacted]",
+  );
+});
+
+test("redacts a session value without persisting browser session storage", () => {
+  assert.equal(
+    pageSnapshot("Orders synthetic+session+value", [], ["synthetic session value"]),
+    "Orders [redacted]",
   );
 });
 
@@ -78,7 +85,9 @@ test("a fresh protected browser resumes the synthetic signed-in session", async 
         res.setHeader("Content-Type", "text/html");
         if (req.headers.cookie === `session=${fixtureCookie}`) {
           const heading = req.url === "/orders" ? "Signed-in orders" : "Signed-in fixture";
-          res.end(`<h1>${heading}</h1><a href="/orders">Orders</a><p>${fixtureCookie}</p>`);
+          res.end(
+            `<h1>${heading}</h1><a href="/orders">Orders</a><p>${fixtureCookie}</p><script>sessionStorage.setItem("session", "synthetic-tab-value");</script><p>synthetic-tab-value</p>`,
+          );
           return;
         }
         res.end(
@@ -127,7 +136,10 @@ test("a fresh protected browser resumes the synthetic signed-in session", async 
       launch,
     );
     assert.match(result.page, /Signed-in orders/);
-    assert.doesNotMatch(result.page, /synthetic-session-cookie|synthetic-password/);
+    assert.doesNotMatch(
+      result.page,
+      /synthetic-session-cookie|synthetic-password|synthetic-tab-value/,
+    );
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     await rm(dir, { recursive: true, force: true });

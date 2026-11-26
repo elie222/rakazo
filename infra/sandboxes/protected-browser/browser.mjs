@@ -85,11 +85,14 @@ async function executeStep(page, step, loginOrigin) {
   }
 }
 
-export function pageSnapshot(text, ...states) {
-  const values = states.flatMap((storage) => [
-    ...storage.cookies.map(({ value }) => value),
-    ...storage.origins.flatMap(({ localStorage }) => localStorage.map(({ value }) => value)),
-  ]);
+export function pageSnapshot(text, states, sessionValues = []) {
+  const values = [
+    ...sessionValues,
+    ...states.flatMap((storage) => [
+      ...storage.cookies.map(({ value }) => value),
+      ...storage.origins.flatMap(({ localStorage }) => localStorage.map(({ value }) => value)),
+    ]),
+  ];
   const secrets = new Set();
   while (values.length) {
     const value = values.pop();
@@ -114,6 +117,18 @@ export function pageSnapshot(text, ...states) {
     if (encodedFormValue !== value) text = text.replaceAll(encodedFormValue, "[redacted]");
   }
   return text.slice(0, MAX_PAGE);
+}
+
+async function sessionValues(page) {
+  const values = await Promise.all(
+    page.frames().map((frame) =>
+      frame.evaluate(() => {
+        if (self.origin === "null") return [];
+        return Object.values(sessionStorage);
+      }),
+    ),
+  );
+  return values.flat();
 }
 
 /** One private invocation. The caller keeps storageState on the trusted side of the tool boundary. */
@@ -152,9 +167,12 @@ export async function runBrowser(chromium, request, launchOptions = {}) {
       throw new SignInRejectedError("Sign-in success condition was already visible");
     }
     const initialStorage = signingIn ? null : await context.storageState();
+    let initialSessionValues = signingIn ? [] : await sessionValues(page);
     for (const step of request.steps) {
       try {
         await executeStep(page, step, signingIn ? url.origin : undefined);
+        if (!signingIn)
+          initialSessionValues = initialSessionValues.concat(await sessionValues(page));
       } catch (error) {
         if (signingIn && error instanceof Error && error.name === "TimeoutError") {
           throw new SignInRejectedError("Sign-in step did not complete");
@@ -181,7 +199,11 @@ export async function runBrowser(chromium, request, launchOptions = {}) {
     const snapshot = await page.locator("body").ariaSnapshot({ timeout: TIMEOUT });
     return {
       storageState,
-      page: pageSnapshot(snapshot, request.storageState, initialStorage, storageState),
+      page: pageSnapshot(
+        snapshot,
+        [request.storageState, initialStorage, storageState],
+        initialSessionValues.concat(await sessionValues(page)),
+      ),
     };
   } finally {
     await browser.close();
