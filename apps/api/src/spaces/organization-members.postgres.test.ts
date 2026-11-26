@@ -185,6 +185,46 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     await db.pool.end();
   });
 
+  it("restricts organization login management to the active organization's admins", async () => {
+    const owner = await person("vault-owner");
+    const member = await person("vault-member");
+    const memberActor = await join(owner, member);
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test/sign-in",
+      botIds: [],
+    });
+    expect(created).toMatchObject({
+      status: 200,
+      json: { name: "Example account", origin: "https://example.test", botIds: [] },
+    });
+    expect((await call(memberActor, "organizations/vault/list", undefined)).status).toBe(403);
+    const loginId = created.json.id;
+    expect((await call(member.actor, "organizations/vault/remove", { loginId })).status).toBe(404);
+    expect((await call(owner.actor, "organizations/vault/remove", { loginId })).status).toBe(200);
+  });
+
+  it("replaces grants and rejects agents from a different organization", async () => {
+    const owner = await person("grant-owner");
+    const outsider = await person("grant-outsider");
+    const agent = (person: Person) =>
+      system.bot.create({
+        data: { spaceId: person.actor.spaceId, userId: person.id, name: "Test", color: "blue" },
+      });
+    const [allowed, foreign] = await Promise.all([agent(owner), agent(outsider)]);
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [allowed.id],
+    });
+    expect(created).toMatchObject({ status: 200, json: { botIds: [allowed.id] } });
+    const loginId = created.json.id;
+    const replace = (botIds: string[]) =>
+      call(owner.actor, "organizations/vault/setAgents", { loginId, botIds });
+    expect((await replace([foreign.id])).status).toBe(400);
+    expect(await replace([])).toMatchObject({ status: 200, json: { botIds: [] } });
+  });
+
   it("emails an invitation the invited address alone can accept, once", async () => {
     const owner = await person("owner");
     const invitee = await person("invitee");
