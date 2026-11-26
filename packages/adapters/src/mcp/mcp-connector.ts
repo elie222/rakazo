@@ -990,6 +990,17 @@ export class McpConnector implements ConnectorProvider {
     await closeEntry(entry);
   }
 
+  private readCurrentSecretPointer(server: McpServer, context: AdapterContext) {
+    return this.prisma.mcpServer.findFirst({
+      where: {
+        id: server.id,
+        revision: server.revision,
+        ...personalOrOrganizationItemIn(context),
+      },
+      select: { secretId: true },
+    });
+  }
+
   /**
    * Streamable HTTP servers answer 404 for a session they expired or lost on restart; many
    * (including the SDK's own "Server not initialized") answer 400 naming the session instead.
@@ -1011,14 +1022,7 @@ export class McpConnector implements ConnectorProvider {
         if (retriedRotation) {
           // A further rotation may have happened before this connection registered its ref.
           // Verify the adopted record once; a mismatch exhausts the existing retry budget.
-          const current = await this.prisma.mcpServer.findFirst({
-            where: {
-              id: server.id,
-              revision: server.revision,
-              ...personalOrOrganizationItemIn(context),
-            },
-            select: { secretId: true },
-          });
+          const current = await this.readCurrentSecretPointer(server, context);
           if (
             !current ||
             (current.secretId ?? undefined) !== this.sessions.get(sessionKey)?.recordId
@@ -1035,14 +1039,7 @@ export class McpConnector implements ConnectorProvider {
         retriedRotation = true;
         // Cleanup may leave the old secret row readable after the server moved on.
         // Retry from its current pointer, rather than reconnecting with that old row.
-        const current = await this.prisma.mcpServer.findFirst({
-          where: {
-            id: server.id,
-            revision: server.revision,
-            ...personalOrOrganizationItemIn(context),
-          },
-          select: { secretId: true },
-        });
+        const current = await this.readCurrentSecretPointer(server, context);
         if (!current) throw error;
         // Keep the caller's snapshot current too: execute reads the app resource
         // with this same object after the tool call has recovered its session.
@@ -1207,14 +1204,7 @@ export class McpConnector implements ConnectorProvider {
         : null;
       if (server.secretId && !secret) {
         // OAuth refresh replaces the secret without updating this run's server snapshot.
-        const current = await this.prisma.mcpServer.findFirst({
-          where: {
-            id: server.id,
-            revision: server.revision,
-            ...personalOrOrganizationItemIn(context),
-          },
-          select: { secretId: true },
-        });
+        const current = await this.readCurrentSecretPointer(server, context);
         // The server was edited, reconnected or removed from the space after this run read it.
         // Re-adding it keeps its revision, so only wait briefly.
         if (!current)

@@ -15,9 +15,9 @@ import {
   pluginSite,
   selectPluginInstall,
 } from "@rakazo/core";
-import { Button, Checkbox, Spinner } from "@rakazo/ui-web";
+import { Button, Checkbox, Field, FieldLabel, Spinner } from "@rakazo/ui-web";
 import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { connectMcpOauth } from "../../lib/integrations/mcp-connect";
 import { rpc } from "../../lib/query/rpc";
 import type { ErrorDetails } from "../../lib/query/user-error";
@@ -180,6 +180,7 @@ export function PluginDetail({
   const { t } = useLingui();
   const organizationList = useOrganizations();
   const canShare = canShareWithOrganization(activeOrganizationForSpace(organizationList));
+  const organizationScopeId = useId();
   const [forOrganization, setForOrganization] = useState(false);
   const [preview, setPreview] = useState<PluginPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -463,15 +464,17 @@ export function PluginDetail({
       ) : null}
 
       {!managed && canShare && !selection.installId ? (
-        <label htmlFor="organization-item-scope" className="flex items-center gap-2 text-body">
+        <Field orientation="horizontal">
           <Checkbox
-            id="organization-item-scope"
+            id={organizationScopeId}
             checked={forOrganization}
             onCheckedChange={setForOrganization}
             disabled={busy}
           />
-          <Trans>Install for organization</Trans>
-        </label>
+          <FieldLabel htmlFor={organizationScopeId}>
+            <Trans>Install for organization</Trans>
+          </FieldLabel>
+        </Field>
       ) : null}
       {install?.organization && selection.installId ? (
         <p className="text-body-sm text-muted-foreground">

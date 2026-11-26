@@ -4,11 +4,20 @@ import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo
 import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
 import { activeOrganizationForSpace, canShareWithOrganization } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
-import { Badge, Button, Checkbox, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
+import {
+  Badge,
+  Button,
+  Checkbox,
+  Field,
+  FieldLabel,
+  SectionHeading,
+  Skeleton,
+  Textarea,
+} from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   AvailabilityControl,
   AvailabilityLabel,
@@ -334,6 +343,7 @@ Steps the agent should follow.
 export function AgentSkills() {
   const organizationList = useOrganizations();
   const canShare = canShareWithOrganization(activeOrganizationForSpace(organizationList));
+  const organizationScopeId = useId();
   const [forOrganization, setForOrganization] = useState(false);
 
   const rpc = useSpaceRpc();
@@ -479,15 +489,17 @@ export function AgentSkills() {
           ))
         : null}
       {creating && canShare ? (
-        <label htmlFor="organization-item-scope" className="mb-3 flex items-center gap-2 text-body">
+        <Field orientation="horizontal" className="mb-3">
           <Checkbox
-            id="organization-item-scope"
+            id={organizationScopeId}
             checked={forOrganization}
             onCheckedChange={setForOrganization}
             disabled={busy}
           />
-          <Trans>Share with organization</Trans>
-        </label>
+          <FieldLabel htmlFor={organizationScopeId}>
+            <Trans>Share with organization</Trans>
+          </FieldLabel>
+        </Field>
       ) : null}
       {editorOpen ? (
         <div className="pb-2">
