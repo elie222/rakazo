@@ -12,6 +12,11 @@ const INVITE_PATH =
 
 const BOT_CHAT_PREFIX = "/app/";
 
+/** Whether the destination is an invite or code the person came to redeem. */
+export function isInviteDestination(next: string | null): boolean {
+  return next !== null && INVITE_PATH.test(next);
+}
+
 /** The page sign-in or sign-up may return to; anything else is ignored, so `next` can't redirect off the app. */
 export function signInNext(next: string | null): string | null {
   if (!next) return null;
