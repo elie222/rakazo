@@ -164,10 +164,10 @@ function setFieldValue(element: HTMLInputElement | HTMLTextAreaElement, value: s
 let root: Root;
 let queryClient: QueryClient;
 
-async function mountReview(initialEntry = "/review/page-1") {
+async function mountReview(initialEntry = "/review/page-1", staleTime = 0) {
   queryClient = new QueryClient({
     defaultOptions: {
-      queries: { retry: false },
+      queries: { retry: false, staleTime },
     },
   });
   root = createRoot(document.body.appendChild(document.createElement("div")));
@@ -607,6 +607,47 @@ describe("PageReviewHost comment draft preservation", () => {
     expect(rpcState.addComment).toHaveBeenCalledWith(
       expect.objectContaining({ pageId: "page-1", version: 2 }),
     );
+  });
+
+  it("refetches an outdated latest cache inside the 30s staleTime window when clicking Back to latest and retries if offline", async () => {
+    let phase: "v1" | "v2-offline-latest" | "v2" = "v1";
+    rpcState.getReview.mockImplementation(async ({ version }) => {
+      if (version === 1) return makePage({ version: 1, currentVersion: 2 });
+      if (phase === "v1") return makePage({ version: 1, currentVersion: 1 });
+      if (phase === "v2-offline-latest") throw new Error("Failed to fetch");
+      return makePage({ version: 2, currentVersion: 2, title: "Launch Plan v2" });
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [makeComment({ id: "c-v1", version: 1, section: "Summary" })],
+      nextCursor: null,
+    });
+
+    // Mount with the production 30s staleTime so latest caches v1 as fresh.
+    await mountReview("/review/page-1", 30_000);
+    await openCommentsPopover();
+
+    // Open historical revision 1, which reports currentVersion: 2 while latest cache still holds v1.
+    phase = "v2-offline-latest";
+    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+
+    // Clicking Back to latest while offline attempts a refetch and keeps Back to latest visible.
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+    expect(document.querySelector("h1")?.textContent).toBe("Launch Plan");
+    expect(
+      [...document.querySelectorAll("button")].find((button) =>
+        button.textContent?.includes("Back to latest"),
+      ),
+    ).toBeDefined();
+
+    // Clicking Back to latest again once back online retries and loads v2.
+    phase = "v2";
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+    expect(document.querySelector("h1")?.textContent).toBe("Launch Plan v2");
+    expect(
+      [...document.querySelectorAll("button")].find((button) =>
+        button.textContent?.includes("Back to latest"),
+      ),
+    ).toBeUndefined();
   });
 
   it("unmounts the page on 404 or 403 and keeps it hidden across a failed retry until authorized again", async () => {

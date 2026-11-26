@@ -239,7 +239,16 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
               commentSave={commentSave}
               onVersion={(version, anchor) => {
                 setAnchors(undefined);
-                setRevision(version !== undefined && anchor ? { version, anchor } : undefined);
+                if (version !== undefined && anchor) {
+                  setRevision({ version, anchor });
+                  return;
+                }
+                setRevision(undefined);
+                void queryClient.invalidateQueries({
+                  queryKey: queries.pageReviews.get.queryKey({
+                    input: { pageId, version: undefined },
+                  }),
+                });
               }}
               onDraft={setDraftId}
             />
