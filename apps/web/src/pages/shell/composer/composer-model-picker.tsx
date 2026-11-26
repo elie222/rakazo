@@ -186,7 +186,8 @@ export function ComposerModelPicker({
                         // A model save resets thinking, so a level picked meanwhile would be lost.
                         disabled={saveModel.pending}
                         onSelect={() => {
-                          if (option !== level) saveThinking.run(savedThinkingLevel(option));
+                          const saved = savedThinkingLevel(option);
+                          if (saved !== thinking) saveThinking.run(saved);
                           close();
                         }}
                       >
