@@ -11,6 +11,7 @@ function fixture(group = false) {
   const model = { modelProvider: "openrouter", modelId: "deepseek/deepseek-v4-pro" };
   const tx = {
     space: { findUnique: vi.fn(async () => null) },
+    spaceMember: { findUnique: vi.fn(async () => null) },
     user: { findMany: vi.fn().mockResolvedValue([]) },
     secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "synthetic" }) },
     $executeRaw: vi.fn(async () => 0),
