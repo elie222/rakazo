@@ -111,6 +111,7 @@ async function rewriteCards(
   threads: ApprovalThread[],
   input: { botId?: string; serverId: string; status: ApprovalBlock["status"] },
   selectable: (block: ApprovalBlock) => boolean,
+  options: { leaveOthersCards?: boolean } = {},
 ): Promise<{ seqs: ThreadSeq[]; flipped: number; dismissed: boolean; connected: boolean }> {
   const seqs: ThreadSeq[] = [];
   let flipped = 0;
@@ -119,12 +120,16 @@ async function rewriteCards(
   for (const thread of threads) {
     const messages = await tx.message.findMany({
       where: { threadId: thread.id },
-      select: { id: true, botId: true, blocks: true },
+      select: { id: true, botId: true, runId: true, blocks: true },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
+    const someoneElses = options.leaveOthersCards
+      ? await askedBySomeoneElse(tx, actor, thread.id, messages)
+      : () => false;
     for (const message of messages) {
       if (message.botId && message.botId !== input.botId) continue;
+      if (someoneElses(message.runId)) continue;
       const blocks = storedMessageBlocks(message);
       const matching = blocks.filter((block): block is ApprovalBlock =>
         isApproval(block, input.serverId),
@@ -158,11 +163,31 @@ async function rewriteCards(
   return { seqs, flipped, dismissed, connected };
 }
 
+/** An organization's server is shared, but a card its sign-in posted belongs to the member whose
+    run hit it: another member's decision leaves it open for them to answer and carry on. */
+async function askedBySomeoneElse(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  threadId: string,
+  messages: { runId: string | null }[],
+): Promise<(runId: string | null) => boolean> {
+  const runIds = messages.flatMap((message) => (message.runId ? [message.runId] : []));
+  const runs = runIds.length
+    ? await tx.run.findMany({
+        where: { id: { in: runIds }, threadId },
+        select: { id: true, userId: true },
+      })
+    : [];
+  const askers = new Map(runs.map((run) => [run.id, run.userId]));
+  return (runId) => runId !== null && askers.has(runId) && askers.get(runId) !== actor.userId;
+}
+
 /** Flip every open mcp_approval card for this server. The read, the writes,
     and `effect` share one serializable transaction. A card decision (one that
     passes threadId) sees `assign: false` when a dismissal already won, so that
     race does not create an assignment. Settings approval omits threadId and
-    still assigns. */
+    still assigns. Cards another member's run posted stay as they are, so
+    `resolved` never starts a run for someone else's request. */
 export async function resolveMcpApprovalCards<T>(
   deps: McpApprovalDeps,
   actor: Actor,
@@ -177,7 +202,9 @@ export async function resolveMcpApprovalCards<T>(
           input.threadId === undefined
             ? (block: ApprovalBlock) => block.status !== "connected"
             : isOpen;
-        const painted = await rewriteCards(tx, actor, threads, input, selectable);
+        const painted = await rewriteCards(tx, actor, threads, input, selectable, {
+          leaveOthersCards: true,
+        });
         const dismissalWon =
           input.threadId !== undefined &&
           painted.flipped === 0 &&
