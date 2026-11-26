@@ -143,6 +143,12 @@ jobs:
       - name: Preview startup tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/preview/start.test.py
+      - name: Install accessibility bindings
+        if: steps.areas.outputs.all_packages != 'false'
+        run: |
+          python3 -c 'import gi' 2>/dev/null && exit 0
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3-gi gir1.2-atspi-2.0
       - name: Computer perception helper tests
         if: steps.areas.outputs.all_packages != 'false'
         run: python3 infra/sandboxes/computer/test_atspi.py
