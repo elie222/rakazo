@@ -5,11 +5,11 @@ import { SUBMIT_PLUGIN_URL } from "@rakazo/contracts";
 import {
   addedMcpEndpoints,
   browsablePlugins,
+  browseMcpPresets,
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
   catalogItemAccounts,
   catalogItemKey,
-  featuredMcpPresets,
   filterConnectionCatalogItems,
   filterPluginBrands,
   filterPlugins,
@@ -246,7 +246,7 @@ export default function Integrations() {
   const directPresets =
     category || !directReady
       ? []
-      : featuredMcpPresets(sourcePresets, query).filter(
+      : browseMcpPresets(sourcePresets, query).filter(
           ({ name }) => !catalog.some((item) => item.name.toLowerCase() === name.toLowerCase()),
         );
   const showFeatured = !query.trim();
