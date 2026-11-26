@@ -6,6 +6,7 @@ import path from "node:path";
 import { bestEffort } from "@rakazo/logging";
 import type Docker from "dockerode";
 import type { z } from "zod";
+import { warnNearLimits } from "./computer-limits.js";
 import type { computerActionSchema } from "./supervisor-logic.js";
 import {
   containerActionSteps,
@@ -88,26 +89,43 @@ export type ReadContainerFileOutcome =
   | { kind: "error"; stderr: string }
   | { kind: "stream"; body: ReadableStream<Uint8Array> };
 
+interface ContainerCommandOptions {
+  workingDir?: string;
+  env?: string[];
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  /** Written to stdin without closing it; requires `signal`, whose abort closes stdin. */
+  stdin?: string;
+  /**
+   * Live stdout/stderr sink. When set, output streams directly without buffering the full
+   * result in memory, and the returned `stdout` and `stderr` are empty strings.
+   */
+  onOutput?: (chunk: { stream: "stdout" | "stderr"; data: string }) => void;
+  /** Exposes flow control on the Docker exec stream for streaming callers. */
+  onStream?: (controls: { pause: () => void; resume: () => void }) => void;
+  /** Maximum raw bytes buffered when `onOutput` is not provided. */
+  maxOutputBytes?: number;
+}
+
 export async function runContainerCommand(
   container: Docker.Container,
   argv: string[],
-  options: {
-    workingDir?: string;
-    env?: string[];
-    timeoutMs?: number;
-    signal?: AbortSignal;
-    /** Written to stdin without closing it; requires `signal`, whose abort closes stdin. */
-    stdin?: string;
-    /**
-     * Live stdout/stderr sink. When set, output streams directly without buffering the full
-     * result in memory, and the returned `stdout` and `stderr` are empty strings.
-     */
-    onOutput?: (chunk: { stream: "stdout" | "stderr"; data: string }) => void;
-    /** Exposes flow control on the Docker exec stream for streaming callers. */
-    onStream?: (controls: { pause: () => void; resume: () => void }) => void;
-    /** Maximum raw bytes buffered when `onOutput` is not provided. */
-    maxOutputBytes?: number;
-  } = {},
+  options: ContainerCommandOptions = {},
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  try {
+    const result = await execContainerCommand(container, argv, options);
+    if (result.code !== 0) warnNearLimits(container);
+    return result;
+  } catch (error) {
+    warnNearLimits(container);
+    throw error;
+  }
+}
+
+async function execContainerCommand(
+  container: Docker.Container,
+  argv: string[],
+  options: ContainerCommandOptions = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   if (options.stdin !== undefined && !options.signal) throw new Error("stdin requires a signal");
   options.signal?.throwIfAborted();
@@ -746,7 +764,21 @@ export async function writeContainerFile(
   target: string,
   content: Buffer,
   executable = false,
-) {
+): Promise<void> {
+  try {
+    await writeFileInContainer(container, target, content, executable);
+  } catch (error) {
+    warnNearLimits(container);
+    throw error;
+  }
+}
+
+async function writeFileInContainer(
+  container: Docker.Container,
+  target: string,
+  content: Buffer,
+  executable: boolean,
+): Promise<void> {
   const script = [
     "import os, sys",
     "target = sys.argv[1]",

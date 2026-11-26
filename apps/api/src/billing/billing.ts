@@ -70,7 +70,7 @@ import {
   unexpiredCreditAccount,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
-import { applyAccessGrants } from "../auth/access-grants.js";
+import { applyAccessGrants, grantCreditCode } from "../auth/access-grants.js";
 import type { ScheduleLifecycleEmail } from "../email/lifecycle-email.js";
 import {
   byokTierOffers,
@@ -82,13 +82,13 @@ import {
 import type { UnderLease } from "./checkout-lease.js";
 import { withCheckoutLease } from "./checkout-lease.js";
 import { readCloudComputers, readComputerUsage, saveCloudComputerSize } from "./computer-usage.js";
+import type { CreditCode } from "./credit-codes.js";
 import { createPartnerSales } from "./partner-sales.js";
 import { schedulePlanStartEmails } from "./plan-start-emails.js";
 import { createReferrals } from "./referrals.js";
 import { trialOutcome } from "./trial-outcome.js";
 
 export { TRIAL_DAYS };
-/** An invited organization's first trial. */
 export const INVITED_TRIAL_DAYS = INVITED_TRIAL_WEEKS * 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
 
@@ -149,6 +149,8 @@ export interface BillingService {
     expectedCustomerId?: string,
   ): Promise<void>;
   claimReferral(actor: Actor, code: string): Promise<void>;
+  /** Owners only: adds a credit code's credits to the organization, once per account. */
+  redeemCreditCode(actor: Actor, code: CreditCode): Promise<void>;
 }
 
 export function createBillingService(deps: {
@@ -169,7 +171,6 @@ export function createBillingService(deps: {
   const { prisma, provider } = deps;
   const appUrl = `${deps.webOrigin}/app`;
   const returnUrl = `${deps.webOrigin}${BILLING_RETURN_PATH}`;
-  /** A mobile checkout returns through the API either way, which hands back to the app. */
   const mobileReturnUrl = `${returnUrl}?client=mobile`;
   const modelCredits = provider.describe().capabilities.modelCredits === true;
   const referrals = createReferrals(deps);
@@ -233,7 +234,6 @@ export function createBillingService(deps: {
     await pull(account.customerId);
   }
 
-  /** Reads the provider's subscription and credit purchases into the account. */
   async function pull(customerId: string): Promise<void> {
     if (modelCredits && provider.listCreditPurchases) {
       const account = await prisma.billingAccount.findUnique({ where: { customerId } });
@@ -752,12 +752,19 @@ export function createBillingService(deps: {
           !hasBillingAccess(account?.status ?? null)
             ? byokFreeUntil(credits)
             : null;
+        const access = hasModelAccess(credits, account?.status ?? null);
+        const freePeriodEnded =
+          !access &&
+          !account?.subscribedAt &&
+          credits.byokFreeUntil !== null &&
+          !byokFreeUntil(credits);
         const subscribed = subscribedByokPrice(account);
         const tier = subscribed?.tier ?? "standard";
         const hourMicros = deps.sandbox && sandboxDisplayedHourMicros(deps.sandbox);
         const offers = byokTierOffers(Boolean(sized), hourMicros);
         return {
-          access: hasModelAccess(credits, account?.status ?? null),
+          access,
+          ...(freePeriodEnded && { freePeriodEnded: true as const }),
           funding:
             credits.mode === "byok"
               ? "byok"
@@ -951,6 +958,16 @@ export function createBillingService(deps: {
     async claimReferral(actor, code) {
       const { organizationId, isOwner } = await organization(actor);
       if (isOwner) await referrals.claim(organizationId, code, actor.userId);
+    },
+
+    async redeemCreditCode(actor, code) {
+      const { organizationId } = await managedOrganization(actor);
+      const credited = await grantCreditCode(prisma, {
+        userId: actor.userId,
+        organizationId,
+        code,
+      });
+      await publishOrganizationChange(prisma, deps.realtime, credited);
     },
 
     async cancelForDeletedUser(userId) {

@@ -2,7 +2,12 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot } from "@rakazo/contracts";
 import { BOT_COLOR_LIST, BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
 import type { AgentImportAssistant } from "@rakazo/core";
-import { AGENT_IMPORT_ASSISTANTS, AGENT_IMPORT_PROMPT, GROK_BOT_EXPORT_PROMPT } from "@rakazo/core";
+import {
+  AGENT_IMPORT_ASSISTANTS,
+  AGENT_IMPORT_PROMPT,
+  agentImportSelection,
+  GROK_BOT_EXPORT_PROMPT,
+} from "@rakazo/core";
 import { Button, CopyTextFallback, Spinner, Textarea, useCopyText } from "@rakazo/ui-web";
 import { ArrowLeft, Check, Copy, MessagesSquare, X } from "lucide-react";
 import type { ReactNode } from "react";
@@ -10,6 +15,7 @@ import { useCallback, useId, useState } from "react";
 import { rpc } from "../../../lib/query/rpc";
 import { useEventListener } from "../../../lib/use-event-listener";
 import { AgentImportPlanReview } from "./agent-import-plan";
+import { GrokBotPicker } from "./grok-bot-picker";
 import { useAgentImportSource } from "./use-agent-import-source";
 
 /** What the import comes from: a named assistant, or any other one that can answer a prompt. */
@@ -65,6 +71,7 @@ function PromptReplySteps({
   accept,
   multiple = false,
   busy,
+  locked = false,
   onContinue,
   onFiles,
   onCancelRead,
@@ -79,6 +86,8 @@ function PromptReplySteps({
   accept: string;
   multiple?: boolean;
   busy: boolean;
+  /** While bots are being created from this reply, it cannot change under them. */
+  locked?: boolean;
   onContinue: () => void;
   onFiles: (files: FileList | null) => void;
   onCancelRead: () => void;
@@ -144,6 +153,7 @@ function PromptReplySteps({
             id={replyId}
             value={reply}
             onChange={(event) => onReplyChange(event.target.value)}
+            readOnly={locked}
             rows={6}
             className="mt-2 max-h-64"
           />
@@ -220,9 +230,11 @@ export function AgentImportForm({
     previewGrokReply,
     previewGrokBot,
     pickGrokFiles,
+    grokBatch,
+    setGrokBatch,
+    grokKeys,
+    cancelRead,
     stopReading,
-    selectedInstructions,
-    chosen,
     modelUsable,
     ready,
   } = source;
@@ -258,23 +270,7 @@ export function AgentImportForm({
         // The review has no field for it, so an over-long suggestion is cut, never refused.
         description: description.trim().slice(0, BOT_DESCRIPTION_MAX_LENGTH),
         computerMode: "team",
-        selection: {
-          instructions: selectedInstructions.map((item) => item.id),
-          memory: plan.memory
-            .filter((item) => !unchecked.has(item.id))
-            .map((item) => ({ id: item.id, destination: destinations[item.id] ?? "bot" })),
-          skills: chosen(plan.skills)
-            .filter((item) => item.status.kind !== "unsupported")
-            .map((item) => item.id),
-          model: Boolean(plan.model && modelUsable && !unchecked.has(plan.model.id)),
-          mcpServers: chosen(plan.mcpServers)
-            .filter((item) => item.status.kind !== "unsupported")
-            .map((item) => item.id),
-          routines: chosen(plan.routines).map((item) => item.id),
-          apiKeys: chosen(plan.apiKeys).map((item) => item.id),
-          // Not asked about: what the import cannot set up always goes to the new bot's chat.
-          leftovers: chosen(plan.leftovers).map((item) => item.id),
-        },
+        selection: agentImportSelection(plan, { unchecked, destinations, modelUsable }),
       });
       onCreated(bot);
     } catch (err) {
@@ -285,10 +281,15 @@ export function AgentImportForm({
   }
 
   function back() {
-    stopReading();
     setError(null);
-    if (plan) setPlan(null);
-    else setOrigin(null);
+    // From one Bot's review, back to the Bots its export listed.
+    if (plan) {
+      cancelRead();
+      setPlan(null);
+    } else {
+      stopReading();
+      setOrigin(null);
+    }
   }
 
   function step() {
@@ -382,31 +383,26 @@ export function AgentImportForm({
           stopReading();
           setGrokReply(reply);
         }}
-        accept=".json,.md,.txt,application/json,text/plain,text/markdown"
+        accept=".json,.md,.txt,.zip,application/json,text/plain,text/markdown,application/zip"
         multiple
-        busy={busy}
+        busy={busy || creating}
+        locked={creating}
         onContinue={() => void previewGrokReply(grokReply)}
         onFiles={(list) => void pickGrokFiles(list)}
         onCancelRead={stopReading}
       >
         {grokBots.length > 1 ? (
-          <>
-            <p className="mt-4 text-body-sm text-muted-foreground">
-              <Trans>Which Bot?</Trans>
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {grokBots.map((bot, index) => (
-                <Button
-                  key={`${bot.exportId ?? bot.name}:${index}`}
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void previewGrokBot(bot)}
-                >
-                  {bot.name}
-                </Button>
-              ))}
-            </div>
-          </>
+          <GrokBotPicker
+            bots={grokBots}
+            batch={grokBatch}
+            setBatch={setGrokBatch}
+            keys={grokKeys}
+            busy={busy}
+            onReview={(bot) => void previewGrokBot(bot)}
+            onCreatingChange={setCreating}
+            onImported={onCreated}
+            onError={(err) => failure(err, t`Could not create bots`)}
+          />
         ) : null}
       </PromptReplySteps>
     );

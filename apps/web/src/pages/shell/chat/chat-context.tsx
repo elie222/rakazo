@@ -8,9 +8,10 @@ import {
 } from "@rakazo/core";
 import { cn } from "@rakazo/ui-web";
 import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
 import { useArtifactImage } from "../../../lib/pages/use-artifact-image";
+import { useNearViewport } from "../../../lib/use-near-viewport";
 
 function ReplyThumbnail({
   attachment,
@@ -21,28 +22,9 @@ function ReplyThumbnail({
   attachment: NonNullable<ReplyPreview["attachment"]>;
   target: ArtifactTarget;
 }) {
-  const [visible, setVisible] = useState(!lazy);
   const container = useRef<HTMLSpanElement>(null);
+  const visible = useNearViewport(container, lazy);
   const src = useArtifactImage(target, attachment.artifactId, visible);
-  useEffect(() => {
-    if (!lazy) return;
-    const element = container.current;
-    if (!element || typeof IntersectionObserver === "undefined") {
-      setVisible(true);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setVisible(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "320px" },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [lazy]);
   return (
     <span
       ref={container}

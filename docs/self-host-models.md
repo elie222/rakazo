@@ -128,7 +128,9 @@ Unset, calls are sent as soon as they are ready. Like the other token limits, a 
 a positive integer is rejected when the local provider is configured.
 
 Rakazo keeps a run's earlier messages unchanged between calls so a server's prompt cache keeps
-hitting, and trims old page state only when that saves more than the cache would. A server without
+hitting, and trims old page state only when that saves more than the cache would. A new message in
+the same chat starts with the previous turn exactly as it was sent, so the cache carries over
+between turns too. A server without
 prompt caching (several hosted gateways and confidential-compute endpoints report no cached
 tokens) gets nothing from that, and old page snapshots are only sent again on every call. Set
 `RAKAZO_LOCAL_PROMPT_CACHE=off` to declare this: stale page state is then trimmed once about 3,000
@@ -153,7 +155,8 @@ that only you use can run its deployment model through the official Claude Code 
 or refreshes your Claude sign-in, and every request to Anthropic is the CLI's own. Rakazo keeps the
 conversation, tools, memory and approvals: the CLI only answers as the model, with its own tools,
 settings and project files turned off. Each model turn continues the CLI's saved session from the
-turn before, so its prompt cache carries over, and Rakazo removes each session once it moves on.
+turn before, including the first turn of a new message in the same chat, so its prompt cache
+carries over, and Rakazo removes each session once it moves on.
 
 What it needs:
 
@@ -188,6 +191,87 @@ other server secrets, including `ANTHROPIC_API_KEY`, are never passed to it, so 
 own sign-in. `RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1` adds only `CLAUDE_CODE_OAUTH_TOKEN`, which the CLI
 reads and Rakazo does not. Only the deployment model runs on Claude Code; it is not offered as a
 connection in **Settings → Models**.
+
+## OpenCode CLI
+
+A server that only you use can run its bots through the official OpenCode CLI, so models and plans
+that OpenCode offers only in its own app, such as its free models, work for your bots. For each
+turn Rakazo starts `opencode acp` on the server and talks to it over the Agent Client Protocol, the
+same way an editor does. OpenCode runs the bot's turn itself, and Rakazo keeps the chat, memory and
+approvals: OpenCode gets the bot's instructions as its system prompt and Rakazo's tools through a
+private connection on this machine, and every tool call goes through Rakazo's approvals as usual.
+OpenCode's own tools, plugins, MCP servers, skills and instruction files are turned off, and a turn
+in which OpenCode tries to use one of its own tools is stopped. Rakazo never reads, stores or
+refreshes your OpenCode sign-in.
+
+What it needs:
+
+- The API and worker running from a source checkout on your own computer, as the same OS user as
+  the CLI. OpenCode can reach that computer's files and network, so this is only for your own
+  machine: the official Docker images and hosted servers do not include it.
+- OpenCode on that user's `PATH`. Its free models need no sign-in; for a plan or provider, sign in
+  once in a terminal as that user with `opencode auth login`.
+- One account on the server. The CLI's sign-in and plan are one person's, and the CLI runs with
+  that person's access to the computer, so Rakazo refuses OpenCode runs while the server has more
+  than one account (people who only message bots from chat apps do not count) or bills for model
+  usage.
+
+The desktop app's **This computer** server is not covered yet: it has no setting for a
+deployment model, and it looks for commands only in a few standard folders, which do not include
+where OpenCode's own installer puts it. Run from a source checkout instead.
+
+```env
+PI_DEFAULT_PROVIDER=opencode-cli
+PI_DEFAULT_CREDENTIALS=host
+PI_DEFAULT_MODEL=opencode/big-pickle
+```
+
+Use a model id from `opencode models`. Each chat continues OpenCode's session from its previous
+turn, so OpenCode keeps its context and prompt cache; after a restart, the next turn starts a new
+session with the recent chat. Bots on OpenCode can use their computer's screen and see the images
+people send, through the same tools and approvals as any bot, when the model OpenCode runs takes
+images. Rakazo goes by its own model list where it knows the model, so a text-only model gets
+neither. Usage counts against your OpenCode plan or provider, and Rakazo shows no cost
+for these runs. Your use of OpenCode and of the models it reaches is covered by their own terms.
+
+The CLI runs in a private working folder with an allowlisted environment: API keys and other server
+secrets are never passed to it. Only the deployment model runs on OpenCode; it is not offered as a
+connection in **Settings → Models**.
+
+## Antigravity CLI
+
+A server that only you use can run its bots through Google's official Antigravity CLI (`agy`), so
+a Google plan that covers Antigravity works for your bots. For each turn Rakazo starts `agy acp`
+on the server and talks to it over the Agent Client Protocol, as described for
+[OpenCode](#opencode-cli): the CLI runs the bot's turn with Rakazo's tools and approvals, and
+Rakazo keeps the chat and memory. Every session turns off all of the CLI's built-in tools, and a
+turn in which it tries to use one is stopped. The CLI adds the bot's instructions to its own
+system prompt rather than replacing it. Rakazo never reads or refreshes your Google sign-in.
+
+What it needs:
+
+- The API and worker running from a source checkout on your own computer, as the same OS user as
+  the CLI. As with OpenCode, this is only for your own machine.
+- `agy` on that user's `PATH`, signed in once in a terminal as that user with `agy acp --login`.
+  Rakazo finds that sign-in in the default `~/.gemini`, so leave `GEMINI_HOME` unset when you sign
+  in.
+- One account on the server, as with the other CLI routes.
+
+```env
+PI_DEFAULT_PROVIDER=antigravity-cli
+PI_DEFAULT_CREDENTIALS=host
+PI_DEFAULT_MODEL=<a model the CLI offers>
+```
+
+The CLI runs with a home folder of Rakazo's own in place of `~/.gemini`, linked only to the files
+it keeps its sign-in in, so your Antigravity hooks, MCP servers, skills and other settings stay out
+of the bot's turns. A sign-in the CLI saves there when it refreshes is replaced by the link again
+before the next turn, so signing out or switching accounts with `agy` reaches your bots.
+
+If the model id is not one the CLI offers, the run's error lists the ones it does. Bots on
+Antigravity can use their computer's screen and see the images people send, as on OpenCode. Usage
+counts against your Google plan, and Rakazo shows no cost for these runs. Your use is covered by
+[Google's Antigravity terms](https://antigravity.google/terms).
 
 ## Ollama Cloud
 
@@ -266,7 +350,8 @@ automatically uses cache-aware context:
 recent history remains bounded on a cold request, and subsequent requests keep
 that selected prefix while it is likely warm and fits the context budget.
 Connections with unknown retention or `retentionMode: "none"` retain the default
-retrieval policy. An explicit executor context strategy still takes precedence.
+retrieval policy, whose kept history starts at the same message for several exchanges in a row
+instead of moving with each one, so the cached prefix holds. An explicit executor context strategy still takes precedence.
 Callers without usable history-retrieval tools keep fitting original history
 under the model's context budget instead of replacing it with snapshots.
 

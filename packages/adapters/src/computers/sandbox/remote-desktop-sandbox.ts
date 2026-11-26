@@ -416,7 +416,6 @@ export class RemoteDesktopSandboxProvider extends LinuxDesktopSandbox implements
       unsafeStop = isSandboxUnsafeStopError(error);
       if (unsafeStop) throw error;
       context.signal.throwIfAborted();
-      // A deleted computer is not ready.
       if (isSandboxGoneError(error)) throw error;
     } finally {
       clearTimeout(timer);

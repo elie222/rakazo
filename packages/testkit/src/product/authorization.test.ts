@@ -343,6 +343,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/remove", { botId: "missing-bot" }],
       ["bots/removePreview", { botId: "missing-bot" }],
       ["bots/importCreate"],
+      [
+        "bots/importMany",
+        {
+          agents: [{ importKey: "import-key-1", files: [{ path: "SOUL.md", content: "Calm." }] }],
+        },
+      ],
       ["bots/importSetupState"],
       ["bots/templates"],
       ["bots/createFromTemplate", { templateId: "morning-briefing", version: 1 }],
@@ -594,6 +600,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/switchToYearly"],
       ["billing/changeTier"],
       ["billing/claimReferral"],
+      ["billing/redeemCreditCode", { code: "NOT-A-REAL-CODE" }],
       ["accessGrants/list"],
       ["accessGrants/create"],
       ["accessGrants/revoke"],

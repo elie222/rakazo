@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync } from "node:fs";
+import { mkdirSync, symlinkSync } from "node:fs";
 import { readdir, readFile, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { bestEffort } from "@rakazo/logging";
+import { privateFolder } from "../../../cli-models/cli-process.js";
 
 /**
  * The CLI adds its own reminders (the date, its token budget) to the newest message of each
@@ -150,32 +150,6 @@ export function forgetSessionFiles(session: SessionPlace): void {
       await rm(join(folder, session.id), { recursive: true, force: true });
     })(),
   );
-}
-
-/**
- * This OS user's private folder of this name, the same in every process, or else a new one of
- * this process's own (when the shared one belongs to someone else, or is not empty when it must be).
- */
-function privateFolder(name: string, empty: boolean): () => string {
-  let own: string | undefined;
-  return () => {
-    const uid = process.getuid?.();
-    const folder = join(tmpdir(), `${name}-${uid ?? "user"}`);
-    try {
-      mkdirSync(folder, { mode: 0o700 });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    }
-    const info = lstatSync(folder);
-    // Windows has no owner or mode bits here; its temp folder is already the user's own.
-    const mine =
-      info.isDirectory() && (uid === undefined || (info.uid === uid && (info.mode & 0o077) === 0));
-    if (mine && (!empty || readdirSync(folder).length === 0)) {
-      return folder;
-    }
-    own ??= mkdtempSync(join(tmpdir(), `${name}-`));
-    return own;
-  };
 }
 
 /** The CLI names its working folder in the first message, so every turn uses the same empty one. */

@@ -189,6 +189,8 @@ export type FinalizeRunInput = FinalizeRunBase &
         /** Steps may carry their tool and kept calls; they are stored apart from the blocks. */
         blocks: MessageBlock[];
         markUnread?: boolean;
+        /** The runtime's record of the turn as sent, kept with the reply's tool history. */
+        transcript?: string;
       }
     | {
         outcome: "failed";
@@ -892,11 +894,15 @@ async function finalizeRunOnce(
       input.outcome === "failed" && (await settleFailedRunSteering(tx, input, writableRun?.userId));
     let firstResponse = false;
     // Clients get the blocks without the kept calls, in the message and in its event alike.
-    const { blocks: replyBlocks, toolHistory } = splitToolHistory(
+    const { blocks: replyBlocks, toolHistory: steps } = splitToolHistory(
       input.outcome === "completed"
         ? completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now)
         : (input.partialReply ?? []),
     );
+    const toolHistory =
+      input.outcome === "completed" && input.transcript
+        ? { steps: steps?.steps ?? [], transcript: input.transcript }
+        : steps;
     if (replyBlocks.length > 0) {
       const message = await createThreadMessageInTransaction(tx, {
         threadId: input.threadId,
