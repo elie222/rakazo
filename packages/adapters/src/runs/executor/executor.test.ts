@@ -4,7 +4,7 @@ import type { MessageBlock } from "@rakazo/contracts";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isOwnerStartedRun, ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
-import { RunHistoryWriteError } from "@rakazo/db";
+import { personalOrOrganizationItemIn, RunHistoryWriteError } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { describe, expect, it, vi } from "vitest";
 import { parseUpdateBotPatch } from "../../bots/update-bot-patch.js";
@@ -2825,9 +2825,11 @@ description: Prepare standup notes
     expect(createdPrompt).toContain("Use skill: Daily standup");
     expect(createdPrompt).toContain("Summarize wins");
     expect(createdPrompt).not.toMatch(/@Daily standup/);
-    // Routines run as their owner: only the owner's skills, and the claim names the owner.
+    // A routine resolves skills and claims the run as its owner.
     expect(prisma.agentSkill.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ userId: "user-1" }) }),
+      expect.objectContaining({
+        where: personalOrOrganizationItemIn({ userId: "user-1", spaceId: "ws-1" }),
+      }),
     );
     expect(claim).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ userId: "user-1" }) }),
