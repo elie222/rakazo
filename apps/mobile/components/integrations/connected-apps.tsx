@@ -10,6 +10,7 @@ import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
+import { Chevron } from "../ui/row-accessories";
 import { ConnectorIcon } from "./connector-icon";
 import { createIntegrationsStyles, LOGO_SIZE } from "./integrations-styles";
 import { PluginIcon } from "./plugin-icon";
@@ -132,6 +133,10 @@ export function SavedServerRow({
   );
 }
 
+export function sourceKindLabel(source: Pick<CapabilityInstall, "kind">) {
+  return source.kind === "api" ? "OpenAPI" : source.kind === "graphql" ? "GraphQL" : "MCP";
+}
+
 /** What this account already has: plugins with a connector, saved servers, then custom sources. */
 export function ConnectedApps({
   connectorPlugins,
@@ -145,7 +150,6 @@ export function ConnectedApps({
   onOpenPlugin,
   onAuthorize,
   onRetry,
-  onRemoveSource,
 }: {
   connectorPlugins: CapabilityInstall[];
   mcpServers: McpServer[];
@@ -159,8 +163,8 @@ export function ConnectedApps({
   onOpenPlugin: (params: PluginParams) => void;
   onAuthorize: (serverId: string) => void;
   onRetry: () => void;
-  onRemoveSource: (source: CapabilityInstall) => void;
 }) {
+  const router = useRouter();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
   const apps = connectorPlugins.length + standaloneServers.length + sources.length;
@@ -203,23 +207,24 @@ export function ConnectedApps({
         />
       ))}
       {sources.map((source) => (
-        <View key={source.id} testID="tool-source" style={styles.row}>
+        <Pressable
+          key={source.id}
+          testID="tool-source"
+          accessibilityRole="button"
+          onPress={() => router.push({ pathname: "/tool-source", params: { id: source.id } })}
+          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+        >
           <ConnectorIcon name={source.name} size={LOGO_SIZE} />
           <View style={styles.grow}>
             <Text numberOfLines={1} style={styles.title}>
               {source.name}
             </Text>
             <Text numberOfLines={1} style={styles.secondary}>
-              {source.kind === "api" ? "OpenAPI" : source.kind === "graphql" ? "GraphQL" : "MCP"}
+              {sourceKindLabel(source)}
             </Text>
           </View>
-          <NativeActionButton
-            fill={false}
-            label={pending === source.id ? t`Removing…` : t`Remove`}
-            onPress={() => onRemoveSource(source)}
-            prominence="destructive"
-          />
-        </View>
+          <Chevron />
+        </Pressable>
       ))}
     </View>
   );

@@ -347,6 +347,9 @@ function toolUsageLine(parts: {
     pageWorkClause(parts.pageBrowserAllowed, disabled),
     webLookupClause(disabled),
     ...secretGuidance(disabled),
+    builtinOffered(disabled, "ask_user")
+      ? "When you would end your reply asking the user to choose, call ask_user with the two to four best options instead of listing them in text."
+      : undefined,
     builtinOffered(disabled, "connect_app")
       ? "Use connect_app when an app needs connecting or the user asks to connect one, then wait for them."
       : undefined,

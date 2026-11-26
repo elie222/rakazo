@@ -37,6 +37,7 @@ describe("parseAdminArgs", () => {
     [["billing", "cancel", "person@example.test", "a", "b", "--confirm"]],
     [["billing", "refund", "person@example.test", "--confirm"]],
     [["access", "grant", "person@example.test", "13"]],
+    [["access", "grant", "person@example.test", "6", "premium"]],
   ])("refuses %j", (argv) => {
     expect(parseAdminArgs(argv)).toBeNull();
   });

@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import type { CapabilityInstall, McpSourcePreset } from "@rakazo/contracts";
+import type { McpSourcePreset } from "@rakazo/contracts";
 import type { CatalogMcpServer } from "@rakazo/core";
 import { customMcpServerInput } from "@rakazo/core";
 import type { QueryKey } from "@tanstack/react-query";
@@ -11,7 +11,7 @@ import type { AddCustomOption, SourceAuth, SourceKind } from "./add-custom-integ
 
 /**
  * The Integrations screen's Add custom flow: what it offers, the GitHub or source form's fields,
- * and adding or removing a custom source.
+ * and adding a custom source.
  */
 export function useCustomSourceForm({
   sourcePresets,
@@ -22,7 +22,7 @@ export function useCustomSourceForm({
   onStart,
 }: {
   sourcePresets: McpSourcePreset[];
-  /** What a source added or removed makes out of date. */
+  /** What an added source makes out of date. */
   stale: readonly QueryKey[];
   authorizeMcp: (serverId: string) => void;
   setOauthServerId: (serverId: string) => void;
@@ -92,19 +92,7 @@ export function useCustomSourceForm({
       if (created.focused()) authorizeMcp(created.serverId);
     },
   });
-  const remove = useSave({
-    save: (source: CapabilityInstall, send) => send("capabilities/remove", { id: source.id }),
-    stale,
-  });
-  const sourceError = add.error
-    ? errorText(add.error, t`Could not add source`)
-    : remove.error
-      ? errorText(remove.error, t`Could not remove source`)
-      : null;
-  function clearSourceError() {
-    add.reset();
-    remove.reset();
-  }
+  const sourceError = add.error ? errorText(add.error, t`Could not add source`) : null;
 
   const addOptions: AddCustomOption[] = [
     { id: "github", label: t`From GitHub`, kind: "github" },
@@ -123,7 +111,7 @@ export function useCustomSourceForm({
     formOpened.current += 1;
     setAdding(null);
     setSourceKind(null);
-    clearSourceError();
+    add.reset();
     setName("");
     setUrl("");
     setCredential("");
@@ -134,7 +122,7 @@ export function useCustomSourceForm({
     setAdding("source");
     setSourceKind(kind);
     setSourcePreset(preset);
-    clearSourceError();
+    add.reset();
     setName(preset?.name ?? "");
     setUrl(preset?.url ?? preset?.defaultUrl ?? "");
     setCredential("");
@@ -145,7 +133,7 @@ export function useCustomSourceForm({
   function startAdding(option: AddCustomOption | undefined) {
     if (!option) return;
     onStart();
-    clearSourceError();
+    add.reset();
     if (option.kind === "github") {
       formOpened.current += 1;
       setSourceKind(null);
@@ -165,12 +153,8 @@ export function useCustomSourceForm({
       setSourceAuth(auth?.type ?? "none");
       setAuthHeader(auth?.headerName ?? "x-api-key");
     },
-    removeSource(source: CapabilityInstall) {
-      clearSourceError();
-      remove.run(source);
-    },
-    /** What a pending add or remove is working on: "source", or the source being removed. */
-    pending: add.pending ? "source" : remove.pending ? (remove.input?.id ?? null) : null,
+    /** "source" while an add is pending. */
+    pending: add.pending ? "source" : null,
     /** The open form's fields and handlers, as AddCustomForm takes them. */
     formProps: {
       gitUrl,
@@ -190,7 +174,7 @@ export function useCustomSourceForm({
       setCredential,
       onAdd: () => {
         if (!sourceKind) return;
-        clearSourceError();
+        add.reset();
         add.run(sourceKind);
       },
       onClose: closeAdding,

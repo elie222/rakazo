@@ -24,6 +24,7 @@ const state = vi.hoisted(() => ({
   navigation: { setOptions: vi.fn() },
   headerRight: null as (() => ReactNode) | null,
   headerChanged: null as (() => void) | null,
+  search: null as { onChangeText: (event: { nativeEvent: { text: string } }) => void } | null,
 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
@@ -178,8 +179,16 @@ vi.mock("react-native", () => {
       ) : (
         <span>{children}</span>
       ),
-    Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
-      <button type="button" onClick={onPress}>
+    Pressable: ({
+      children,
+      onPress,
+      testID,
+    }: {
+      children: ReactNode;
+      onPress: () => void;
+      testID?: string;
+    }) => (
+      <button type="button" data-testid={testID} onClick={onPress}>
         {children}
       </button>
     ),
@@ -242,14 +251,22 @@ beforeEach(() => {
   queryClient.clear();
   state.headerMenu = false;
   state.headerRight = null;
+  state.search = null;
   state.navigation.setOptions
     .mockReset()
-    .mockImplementation((options: { headerRight?: () => ReactNode }) => {
-      if ("headerRight" in options) {
-        state.headerRight = options.headerRight ?? null;
-        state.headerChanged?.();
-      }
-    });
+    .mockImplementation(
+      (options: {
+        headerRight?: () => ReactNode;
+        headerSearchBarOptions?: typeof state.search;
+      }) => {
+        if ("headerSearchBarOptions" in options)
+          state.search = options.headerSearchBarOptions ?? null;
+        if ("headerRight" in options) {
+          state.headerRight = options.headerRight ?? null;
+          state.headerChanged?.();
+        }
+      },
+    );
   state.push.mockReset();
   state.marketplace
     .mockReset()
@@ -311,7 +328,7 @@ async function typeLabel(value: string) {
 
 it("keeps Search visible and shows rows on a cold load until the first success", async () => {
   await render();
-  expect(container.querySelector('input[placeholder="Search apps"]')).not.toBeNull();
+  expect(state.search).not.toBeNull();
   expect(container.querySelector('[data-testid="integrations-loading"]')?.children).toHaveLength(8);
   await act(async () => catalog.resolve([item]));
   await settle();
@@ -591,7 +608,7 @@ it.each(["Remove", "Uninstall"])(
     expect(container.textContent).toContain("Could not load integrations");
     expect(container.textContent).not.toContain("Could not revoke connection");
     if (action === "Uninstall") {
-      expect(container.querySelector('input[placeholder="Search apps"]')).not.toBeNull();
+      expect(button("Back")).toBeUndefined();
     } else {
       expect(state.rpc.mock.calls.filter(([proc]) => proc === "connections/tools")).toHaveLength(
         toolsCalls + 1,
@@ -636,7 +653,7 @@ it.each(["Add another", "Remove", "Uninstall"])(
     expect(button(action)).toBeDefined();
     await act(async () => button(action)?.click());
     await settle();
-    expect(container.querySelector('input[placeholder="Search apps"]')).toBeNull();
+    expect(button("Back")).toBeDefined();
     expect(container.textContent).not.toContain("Could not load integrations");
     expect(container.textContent).toContain("Operation rejected");
   },
@@ -665,10 +682,10 @@ it("keeps sources loading when a rename cancels the catalog refresh", async () =
     ]),
   );
   await act(async () => button("Back")?.click());
-  expect(container.querySelector('[data-testid="tool-source"]')?.textContent).toContain(
-    "Installed source",
-  );
-  expect(button("Remove")).toBeDefined();
+  const source = container.querySelector<HTMLElement>('[data-testid="tool-source"]');
+  expect(source?.textContent).toContain("Installed source");
+  await act(async () => source?.click());
+  expect(state.push).toHaveBeenCalledWith({ pathname: "/tool-source", params: { id: "source-a" } });
 });
 
 it("keeps loaded plugins showing while the screen reads them again", async () => {
@@ -833,14 +850,7 @@ it("shows registered MCP servers with connector initials and sentence case statu
     rows[4]?.querySelector('[data-symbol="exclamationmark.triangle"]')?.getAttribute("data-color"),
   ).toBe("orange");
 
-  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
-      search,
-      "saved",
-    );
-    search.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await searchFor("saved");
   const matches = container.querySelectorAll('[data-testid="registered-mcp-server"]');
   expect([...matches].map((row) => row.textContent)).toEqual(["SSaved serverConnected"]);
   expect(container.textContent?.match(/Saved server/g)).toHaveLength(1);
@@ -1529,20 +1539,32 @@ it("keeps an app open when its uninstall finishes on a later visit", async () =>
   await render();
   await act(async () => revoked.resolve({ ok: true }));
   await settle();
-  expect(container.querySelector('input[placeholder="Search apps"]')).toBeNull();
+  expect(button("Back")).toBeDefined();
 });
 
 it("closes an open app for good when another Space is selected", async () => {
   cached([item], [account]);
   await render();
   await act(async () => button("Added")?.click());
-  expect(container.querySelector('input[placeholder="Search apps"]')).toBeNull();
+  expect(button("Back")).toBeDefined();
   state.space = "space-b";
   await render();
   state.space = "space-a";
   cached([item], [account]);
   await render();
-  expect(container.querySelector('input[placeholder="Search apps"]')).not.toBeNull();
+  expect(button("Back")).toBeUndefined();
+});
+
+it("keeps the search over an open app and returns to the results on a new search", async () => {
+  cached([item], [account]);
+  await render();
+  await searchFor("example");
+  await act(async () => button("Added")?.click());
+  expect(button("Back")).toBeDefined();
+  expect(state.search).not.toBeNull();
+  await searchFor("exam");
+  expect(button("Back")).toBeUndefined();
+  expect(container.textContent).toContain("Example app");
 });
 
 it("clears a failed add when another type is picked from the header menu", async () => {
@@ -1553,7 +1575,8 @@ it("clears a failed add when another type is picked from the header menu", async
   );
   const pick = (label: string) =>
     act(async () =>
-      state.navigation.setOptions.mock.lastCall?.[0]
+      state.navigation.setOptions.mock.calls
+        .findLast(([options]) => options.unstable_headerRightItems)?.[0]
         .unstable_headerRightItems()[0]
         .menu.items.find((entry: { label: string }) => entry.label === label)
         .onPress(),
@@ -1569,11 +1592,7 @@ it("clears a failed add when another type is picked from the header menu", async
 });
 
 async function searchFor(text: string) {
-  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, text);
-    search.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await act(async () => state.search?.onChangeText({ nativeEvent: { text } }));
 }
 
 const catalogResult = (auth: { type: string } | null) => ({

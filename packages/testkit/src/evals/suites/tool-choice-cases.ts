@@ -466,6 +466,26 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { calls: [{ tool: "ask_user" }] },
   },
   {
+    id: "ask-choice-unrequested",
+    area: "ask",
+    kind: "guard",
+    purpose:
+      "Offer a choice the user must make as options, even when they did not ask for buttons.",
+    priorTurns: ["Write a two-sentence announcement for our app's new dark mode."],
+    prompt: "Good. Now I need a version for a different channel.",
+    expect: { calls: [{ tool: "ask_user" }] },
+  },
+  {
+    id: "ask-choice-pick",
+    area: "ask",
+    kind: "guard",
+    purpose:
+      "Offer suggestions the user picks from as options, even when they did not ask for buttons.",
+    prompt:
+      "I want to try a new hobby this weekend. Pitch me a few ideas and we'll plan whichever I pick.",
+    expect: { calls: [{ tool: "ask_user" }] },
+  },
+  {
     id: "subagent-delegate",
     area: "subagents",
     kind: "guard",

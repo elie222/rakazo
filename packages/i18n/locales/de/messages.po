@@ -37,6 +37,11 @@ msgstr "{0, plural, one {# Gratismonat verdient} other {# Gratismonate verdient}
 msgid "{0, plural, one {# free month} other {# free months}}"
 msgstr "{0, plural, one {# Gratismonat} other {# Gratismonate}}"
 
+#. placeholder {0}: images.length
+#: apps/mobile/components/media/image-attachment-deck.tsx
+msgid "{0, plural, one {# image} other {# images}}"
+msgstr "{0, plural, one {# Bild} other {# Bilder}}"
+
 #. placeholder {0}: skills.length - shownSkills.length
 #: apps/web/src/components/integrations/plugin-marketplace.tsx
 msgid "{0, plural, one {# more} other {# more}}"
@@ -58,6 +63,11 @@ msgstr "{0, plural, one {# Space} other {# Spaces}}"
 #: apps/web/src/pages/integrations/McpServersOverlay.tsx
 msgid "{0, plural, one {# tool} other {# tools}}"
 msgstr "{0, plural, one {# Tool} other {# Tools}}"
+
+#. placeholder {0}: images.length
+#: apps/web/src/pages/shell/chat/image-gallery.tsx
+msgid "{0, plural, one {Show all # picture} other {Show all # pictures}}"
+msgstr "{0, plural, one {# Bild anzeigen} other {Alle # Bilder anzeigen}}"
 
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: apps/web/src/components/models/SubscriptionSignInSteps.tsx
@@ -100,6 +110,11 @@ msgstr "{0} GB"
 #: apps/web/src/pages/settings/ExternalConversationSettings.tsx
 msgid "{0} handling"
 msgstr "Umgang mit {0}"
+
+#. placeholder {0}: formatBillingAmount(added, "USD", i18n.locale)
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "{0} in credits added"
+msgstr "{0} Guthaben hinzugefügt"
 
 #. placeholder {0}: bot.name
 #: apps/web/src/components/call/IncomingCall.tsx
@@ -978,7 +993,7 @@ msgstr "Zugriffstoken (optional)"
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/paywall.tsx
 #: apps/mobile/components/inbox/inbox-header.tsx
-#: apps/mobile/lib/inbox/use-inbox-header.ts
+#: apps/mobile/components/inbox/inbox-toolbar.tsx
 #: apps/web/src/components/account/AccountMenu.tsx
 #: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 msgid "Account"
@@ -2859,6 +2874,7 @@ msgstr "Cloud-Computer"
 #: apps/mobile/components/vault/confirm-identity.tsx
 #: apps/web/src/components/account/ConfirmIdentityDialog.tsx
 #: apps/web/src/components/messages/SecretAskCard.tsx
+#: apps/web/src/pages/auth/Redeem.tsx
 msgid "Code"
 msgstr "Code"
 
@@ -4092,7 +4108,7 @@ msgid "Could not open computer"
 msgstr "Computer konnte nicht geöffnet werden"
 
 #: apps/mobile/app/peer-chat.tsx
-#: apps/mobile/components/thread/message-bubble.tsx
+#: apps/mobile/components/media/attachment-file.tsx
 msgid "Could not open file"
 msgstr "Datei konnte nicht geöffnet werden"
 
@@ -4178,6 +4194,10 @@ msgstr "Modellserver konnte nicht erreicht werden"
 #: apps/web/src/pages/shell/bots/use-agent-import-source.ts
 msgid "Could not read these files"
 msgstr "Diese Dateien konnten nicht gelesen werden"
+
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "Could not redeem the code"
+msgstr "Der Code konnte nicht eingelöst werden"
 
 #: apps/mobile/lib/board/board.ts
 msgid "Could not refresh the board. {detail}"
@@ -5912,6 +5932,7 @@ msgstr "Fehlerbehandlung"
 msgid "Fields to compare (optional)"
 msgstr "Zu vergleichende Felder (optional)"
 
+#: apps/mobile/components/media/attachment-file.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
 #: apps/mobile/lib/thread/send/thread-attachments.ts
 #: apps/web/src/pages/integrations/McpServerForm.tsx
@@ -6620,6 +6641,7 @@ msgstr "Integrationsdomain"
 
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/mobile/app/(settings)/account.tsx
+#: apps/mobile/components/inbox/inbox-toolbar.tsx
 #: apps/web/src/pages/plugins/PluginsOverlay.tsx
 msgid "Integrations"
 msgstr "Integrationen"
@@ -7000,6 +7022,7 @@ msgid "Loading calendar…"
 msgstr "Kalender wird geladen…"
 
 #: apps/mobile/components/media/image-artifact-viewer.tsx
+#: apps/mobile/components/media/image-attachment-deck.tsx
 #: apps/mobile/components/media/inline-image-attachment.tsx
 msgid "Loading image…"
 msgstr "Bild wird geladen…"
@@ -7943,6 +7966,10 @@ msgstr "Nächster oder vorheriger Bot"
 msgid "Next page"
 msgstr "Nächste Seite"
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Next picture"
+msgstr "Nächstes Bild"
+
 #: apps/mobile/app/routine.tsx
 #: packages/i18n/src/routine-approval.ts
 msgid "Next run"
@@ -8318,6 +8345,7 @@ msgstr "Benachrichtigungseinstellungen"
 #: apps/mobile/app/(settings)/general.tsx
 #: apps/mobile/app/bot-profile.tsx
 #: apps/mobile/app/bot-settings.tsx
+#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
 #: apps/web/src/pages/shell/bots/bot-panel.tsx
 msgid "Notifications"
 msgstr "Benachrichtigungen"
@@ -8538,9 +8566,16 @@ msgstr "Link öffnen"
 msgid "Open navigation"
 msgstr "Navigation öffnen"
 
+#. placeholder {0}: index + 1
+#. placeholder {1}: images.length
+#: apps/mobile/components/media/image-attachment-deck.tsx
+msgid "Open photo {0} of {1}"
+msgstr "Foto {0} von {1} öffnen"
+
 #: apps/web/src/components/pages/PublicPageShell.tsx
 #: apps/web/src/pages/auth/Invite.tsx
 #: apps/web/src/pages/auth/JoinOrganization.tsx
+#: apps/web/src/pages/auth/Redeem.tsx
 #: apps/web/src/pages/SharedPage.tsx
 msgid "Open Rakazo"
 msgstr "Rakazo öffnen"
@@ -9074,6 +9109,10 @@ msgstr "Vorheriger Treffer"
 msgid "Previous page"
 msgstr "Vorherige Seite"
 
+#: apps/mobile/components/media/image-artifact-viewer.tsx
+msgid "Previous picture"
+msgstr "Vorheriges Bild"
+
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 msgid "Previous settings sections"
 msgstr "Vorherige Einstellungsbereiche"
@@ -9245,6 +9284,10 @@ msgstr "Reagieren"
 #: apps/web/src/pages/shell/chat/message-hover-actions.tsx
 msgid "Reactions"
 msgstr "Reaktionen"
+
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+msgid "Read aloud"
+msgstr "Vorlesen"
 
 #: apps/mobile/lib/personal-calendar/device-calendar.ts
 msgid "Read calendar events?"
@@ -9431,6 +9474,14 @@ msgstr "Computer wird neu erstellt"
 #: packages/i18n/src/plugin-catalog.ts
 msgid "Recruiting & HR"
 msgstr "Recruiting & HR"
+
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "Redeem"
+msgstr "Einlösen"
+
+#: apps/web/src/pages/auth/Redeem.tsx
+msgid "Redeem a code"
+msgstr "Code einlösen"
 
 #: apps/web/src/pages/integrations/McpServerForm.tsx
 msgid "Redirect URI"
@@ -11145,6 +11196,11 @@ msgstr "Nach {column} sortiert, absteigend"
 msgid "Sorts new email and drafts the replies"
 msgstr "Sortiert neue E-Mails und entwirft die Antworten"
 
+#: apps/mobile/app/(settings)/general.tsx
+#: apps/web/src/pages/settings/AccountSettingsOverlay.tsx
+msgid "Sound for alerts that need attention"
+msgstr "Ton für Hinweise, die Aufmerksamkeit erfordern"
+
 #: apps/mobile/app/(settings)/_layout.tsx
 #: apps/web/src/pages/settings/SettingsOverlay.tsx
 #: packages/i18n/src/identity-display.ts
@@ -11188,17 +11244,9 @@ msgstr "Spaces trennen Arbeit voneinander. Bots, Chats, Erinnerungen und Compute
 msgid "Spaces only they use pass to you."
 msgstr "Spaces, die nur diese Person nutzt, gehen an dich über."
 
-#: apps/web/src/pages/shell/chat/message-view.tsx
-msgid "Speak"
-msgstr "Vorlesen"
-
 #: apps/mobile/components/thread/message-row.tsx
 msgid "Speak message"
 msgstr "Nachricht vorlesen"
-
-#: apps/web/src/pages/shell/chat/message-view.tsx
-msgid "Speak this reply"
-msgstr "Diese Antwort vorlesen"
 
 #: apps/web/src/components/call/CallCard.tsx
 msgid "Speaking"
@@ -11332,7 +11380,6 @@ msgstr "Schritte"
 #: apps/mobile/components/thread/special-message-card.tsx
 #: apps/web/src/components/messages/SubagentCard.tsx
 #: apps/web/src/pages/routines/RoutineList.tsx
-#: apps/web/src/pages/shell/chat/message-view.tsx
 #: apps/web/src/pages/shell/composer/composer-parts.tsx
 #: apps/web/src/pages/shell/computers/computer-overlay.tsx
 msgid "Stop"
@@ -11347,9 +11394,9 @@ msgstr "Diktieren beenden"
 msgid "Stop joining this series"
 msgstr "Dieser Serie nicht mehr beitreten"
 
-#: apps/web/src/pages/shell/chat/message-view.tsx
-msgid "Stop speaking"
-msgstr "Vorlesen stoppen"
+#: apps/web/src/pages/shell/chat/message-hover-actions.tsx
+msgid "Stop reading aloud"
+msgstr "Vorlesen beenden"
 
 #: apps/web/src/components/teach/TeachRecordingChrome.tsx
 msgid "Stop teaching"
@@ -12369,6 +12416,7 @@ msgstr "Erneut versuchen"
 #: apps/mobile/app/space-members.tsx
 #: apps/mobile/components/bots/bot-profile-menu.tsx
 #: apps/mobile/components/inbox/organization-menu.tsx
+#: apps/mobile/components/media/attachment-file.tsx
 #: apps/mobile/components/media/audio-attachment.tsx
 #: apps/mobile/components/media/image-artifact-viewer.tsx
 #: apps/mobile/components/thread/message-bubble.tsx
@@ -13277,6 +13325,13 @@ msgstr "Deine Karte wird heute mit der anteiligen Differenz belastet."
 #: apps/web/src/components/billing/ModelCredits.tsx
 msgid "Your card was not charged"
 msgstr "Deine Karte wurde nicht belastet"
+
+#: apps/mobile/app/page-review.tsx
+#: apps/mobile/app/page.tsx
+#: apps/web/src/components/pages/PageReviewHost.tsx
+#: apps/web/src/components/pages/PageViewHost.tsx
+msgid "Your changes aren't saved. Check your connection."
+msgstr "Deine Änderungen sind nicht gespeichert. Prüfe deine Verbindung."
 
 #: apps/mobile/app/computer.tsx
 #: apps/web/src/pages/shell/computers/use-computer-controls.tsx
