@@ -287,7 +287,7 @@ describe("setup preload bridge", () => {
       "state",
       "test",
     ]);
-    expect(Object.keys(bridge.stack).sort()).toEqual(["onChange", "start", "state"]);
+    expect(Object.keys(bridge.stack).sort()).toEqual(["onChange", "start", "state", "stop"]);
 
     await bridge.state();
     await bridge.test("http://127.0.0.1:5173");
@@ -296,6 +296,7 @@ describe("setup preload bridge", () => {
     await bridge.openLink("docker-download");
     await bridge.stack.state();
     await bridge.stack.start();
+    await bridge.stack.stop();
     expect(invoke.mock.calls.map(([channel]) => channel)).toEqual([
       "desktop.setup.state",
       "desktop.setup.test",
@@ -304,6 +305,7 @@ describe("setup preload bridge", () => {
       "desktop.setup.openLink",
       "desktop.setup.stack.state",
       "desktop.setup.stack.start",
+      "desktop.setup.stack.stop",
     ]);
     expect(invoke).toHaveBeenCalledWith("desktop.setup.openLink", "docker-download");
 

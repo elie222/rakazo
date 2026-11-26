@@ -115,6 +115,7 @@ export const ipcChannels = {
   "desktop.setup.save": setupPage<RakazoSetup["save"]>(SETUP_NOT_ACTIVE),
   "desktop.setup.stack.start": setupPage<RakazoSetup["stack"]["start"]>(REJECTS),
   "desktop.setup.stack.state": setupPage<RakazoSetup["stack"]["state"]>(REJECTS),
+  "desktop.setup.stack.stop": setupPage<RakazoSetup["stack"]["stop"]>(REJECTS),
   "desktop.setup.state": setupPage<RakazoSetup["state"]>(REJECTS),
   "desktop.setup.test": setupPage<RakazoSetup["test"]>(SETUP_NOT_ACTIVE),
 };

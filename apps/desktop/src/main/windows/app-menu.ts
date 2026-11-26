@@ -103,12 +103,14 @@ function updateMenuLabel(phase: DesktopUpdateState["phase"] | undefined) {
 }
 type MenuActions = {
   revokeLocalComputerAccess: ReturnType<typeof createLocalComputerChoice>["revoke"];
+  syncHostComputerAccess: () => void;
   updaterEnvironment: Parameters<typeof updaterSupport>[0];
 };
 
 /** The app menu's installer. It runs again whenever what the menu shows changes. */
 export function applicationMenuInstaller({
   revokeLocalComputerAccess,
+  syncHostComputerAccess,
   updaterEnvironment,
 }: MenuActions) {
   return function installApplicationMenu() {
@@ -148,10 +150,28 @@ export function applicationMenuInstaller({
       stackRunning: desktop.localStack.managedStackRunning(),
       stop: () => {
         desktop.hostComputer?.activate(false);
-        return desktop.localStack.stop().then((state) => {
-          if (state.phase === "failed") showSetupWindow(state.message);
-          return state;
-        });
+        return desktop.localStack.stop().then(
+          (state) => {
+            if (state.phase === "failed") {
+              syncHostComputerAccess();
+              showSetupWindow(state.message, { quitAfterStop: true });
+            }
+            return state;
+          },
+          (error: unknown) => {
+            syncHostComputerAccess();
+            const state = desktop.localStack.state?.();
+            showSetupWindow(
+              state?.phase === "failed" && state.message
+                ? state.message
+                : t(
+                    "Could not stop the local stack. Check that Docker is running, then try again.",
+                  ),
+              { quitAfterStop: true },
+            );
+            throw error;
+          },
+        );
       },
       quit: () => app.quit(),
       rebuildMenu: () => installApplicationMenu(),

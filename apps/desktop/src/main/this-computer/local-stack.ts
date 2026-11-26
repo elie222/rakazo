@@ -248,12 +248,12 @@ export function reduceStackState(
 ): DesktopLocalStackState {
   if (event.type === "check-start") {
     return {
-      ...state,
       phase: "checking-docker",
       message: null,
       output: [],
       layerBytes: {},
       layerTotals: {},
+      imageTag: state.imageTag,
     };
   }
   // Terminal phases only leave through the next check-start.
@@ -306,6 +306,7 @@ export function reduceStackState(
       return {
         ...state,
         phase: "failed",
+        failedOperation: "start",
         message: event.message,
         output: [...state.output, ...(event.output ?? [])].slice(-STACK_OUTPUT_LINES),
       };
@@ -488,6 +489,17 @@ export abstract class StackLifecycle implements StackController {
     this.running = null;
     const stopping = Promise.all(settled)
       .then(() => this.shutdown())
+      .catch((error: unknown) => {
+        this.setState({
+          ...this.current,
+          phase: "failed",
+          failedOperation: "stop",
+          message: t(
+            "Could not stop the local stack. Check that Docker is running, then try again.",
+          ),
+        });
+        throw error;
+      })
       .then(() => this.current)
       .finally(() => {
         if (this.stopping === stopping) this.stopping = null;
@@ -596,6 +608,7 @@ export class LocalStackController extends StackLifecycle {
         : {
             ...this.current,
             phase: "failed",
+            failedOperation: "stop",
             message: t(
               "Could not stop the local stack. Check that Docker is running, then try again.",
             ),

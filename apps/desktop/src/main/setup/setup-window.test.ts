@@ -1,5 +1,5 @@
 import { deferred } from "@rakazo/core/test-async";
-import { BrowserWindow } from "electron";
+import { app, BrowserWindow } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { desktop } from "../desktop-state.js";
 import type { IpcCaller } from "../ipc/ipc.js";
@@ -40,6 +40,8 @@ function fakeWindow() {
 let page: ReturnType<typeof fakeWindow>;
 let opening: ReturnType<typeof deferred<boolean>>;
 const settleLocalStack = vi.fn<() => Promise<void>>();
+const syncHostComputerAccess = vi.fn();
+const rebuildMenu = vi.fn();
 const onAppReady = vi.fn();
 const recoverFromCrashedSave = vi.fn<() => Promise<string>>();
 
@@ -47,6 +49,9 @@ beforeEach(() => {
   page = fakeWindow();
   opening = deferred<boolean>();
   settleLocalStack.mockReset().mockResolvedValue(undefined);
+  syncHostComputerAccess.mockReset();
+  rebuildMenu.mockReset();
+  vi.mocked(app.quit).mockReset();
   onAppReady.mockReset();
   recoverFromCrashedSave.mockReset();
   desktop.setupWindow = page as unknown as BrowserWindow;
@@ -59,11 +64,12 @@ beforeEach(() => {
     appOpener: { busy: () => false, open: () => opening.promise },
     probeServer: async () => ({ ok: true }),
     configureHeaderSession: vi.fn(),
-    syncHostComputerAccess: vi.fn(),
+    syncHostComputerAccess,
     commitPendingAppSwitch: vi.fn(),
     abandonPendingAppSwitch: vi.fn(),
     recoverFromCrashedSave,
     stopStackLeftBehind: vi.fn(),
+    rebuildMenu,
     settleLocalStack,
     onAppReady,
   } as unknown as Parameters<typeof registerSetupIpc>[0]);
@@ -210,5 +216,276 @@ describe("app readiness after setup", () => {
     opening.resolve(true);
     await expect(result).resolves.toMatchObject({ ok: false });
     expect(onAppReady).not.toHaveBeenCalled();
+  });
+});
+
+describe("desktop.setup.stack.stop", () => {
+  it("restores host computer access and stays open when retrying stop fails", async () => {
+    const previousStack = desktop.localStack;
+    const previousHost = desktop.hostComputer;
+    const activate = vi.fn();
+    const failed = {
+      phase: "failed" as const,
+      failedOperation: "stop" as const,
+      message: "Could not stop the local stack. Check that Docker is running, then try again.",
+      output: [],
+      layerBytes: {},
+      layerTotals: {},
+      imageTag: "v1.0.0",
+    };
+    desktop.hostComputer = { activate } as unknown as typeof desktop.hostComputer;
+    desktop.localStack = {
+      stop: vi.fn(async () => failed),
+    } as unknown as typeof desktop.localStack;
+
+    try {
+      showSetupWindow(failed.message, { quitAfterStop: true });
+      const result = await mocks.invoke.get("desktop.setup.stack.stop")?.(page.event);
+      expect(result).toEqual(failed);
+      expect(activate).toHaveBeenCalledWith(false);
+      expect(rebuildMenu).toHaveBeenCalledTimes(2);
+      expect(syncHostComputerAccess).toHaveBeenCalledOnce();
+      expect(desktop.setupError).toBe(failed.message);
+      expect(app.quit).not.toHaveBeenCalled();
+    } finally {
+      desktop.localStack = previousStack;
+      desktop.hostComputer = previousHost;
+    }
+  });
+
+  it("restores host computer access and rebuilds the menu when retrying stop rejects", async () => {
+    const previousStack = desktop.localStack;
+    const previousHost = desktop.hostComputer;
+    const activate = vi.fn();
+    desktop.hostComputer = { activate } as unknown as typeof desktop.hostComputer;
+    desktop.localStack = {
+      stop: vi.fn(async () => {
+        throw new Error("docker crashed");
+      }),
+    } as unknown as typeof desktop.localStack;
+
+    try {
+      showSetupWindow("Could not stop the local stack.", { quitAfterStop: true });
+      await expect(mocks.invoke.get("desktop.setup.stack.stop")?.(page.event)).rejects.toThrow(
+        "docker crashed",
+      );
+      expect(activate).toHaveBeenCalledWith(false);
+      expect(syncHostComputerAccess).toHaveBeenCalledOnce();
+      expect(rebuildMenu).toHaveBeenCalledTimes(2);
+      expect(desktop.setupError).toBe(
+        "Could not stop the local stack. Check that Docker is running, then try again.",
+      );
+      expect(app.quit).not.toHaveBeenCalled();
+    } finally {
+      desktop.localStack = previousStack;
+      desktop.hostComputer = previousHost;
+    }
+  });
+
+  it("blocks concurrent setup.save and stack.start while a stop retry is in flight", async () => {
+    const previousStack = desktop.localStack;
+    const previousHost = desktop.hostComputer;
+    const stopGate = deferred<{
+      phase: "failed";
+      failedOperation: "stop";
+      message: string;
+      output: string[];
+      layerBytes: Record<string, number>;
+      layerTotals: Record<string, number>;
+      imageTag: string;
+    }>();
+    const start = vi.fn();
+    const failed = {
+      phase: "failed" as const,
+      failedOperation: "stop" as const,
+      message: "Could not stop the local stack. Check that Docker is running, then try again.",
+      output: [],
+      layerBytes: {},
+      layerTotals: {},
+      imageTag: "v1.0.0",
+    };
+    desktop.hostComputer = { activate: vi.fn() } as unknown as typeof desktop.hostComputer;
+    desktop.localStack = {
+      state: () => failed,
+      start,
+      stop: vi.fn(() => stopGate.promise),
+    } as unknown as typeof desktop.localStack;
+
+    try {
+      const pendingStop = mocks.invoke.get("desktop.setup.stack.stop")?.(page.event);
+      const saveResult = await mocks.invoke.get("desktop.setup.save")?.(page.event, {
+        mode: "existing",
+        serverUrl: "https://cloud.example",
+      });
+      expect(saveResult).toEqual({
+        ok: false,
+        error: "A connection attempt is already running.",
+      });
+      await mocks.invoke.get("desktop.setup.stack.start")?.(page.event);
+      expect(start).not.toHaveBeenCalled();
+
+      stopGate.resolve(failed);
+      await pendingStop;
+    } finally {
+      desktop.localStack = previousStack;
+      desktop.hostComputer = previousHost;
+    }
+  });
+
+  it("quits without restoring host computer access when retrying stop succeeds", async () => {
+    const previousStack = desktop.localStack;
+    const previousHost = desktop.hostComputer;
+    const activate = vi.fn();
+    const idle = {
+      phase: "idle" as const,
+      message: null,
+      output: [],
+      layerBytes: {},
+      layerTotals: {},
+      imageTag: "v1.0.0",
+    };
+    desktop.hostComputer = { activate } as unknown as typeof desktop.hostComputer;
+    desktop.localStack = {
+      webUrl: () => "http://127.0.0.1:47000",
+      stop: vi.fn(async () => idle),
+    } as unknown as typeof desktop.localStack;
+
+    try {
+      showSetupWindow(
+        "Could not stop the local stack. Check that Docker is running, then try again.",
+        { quitAfterStop: true },
+      );
+      const state = mocks.invoke.get("desktop.setup.state")?.(page.event);
+      expect(state).toMatchObject({ stopToQuit: true });
+      const result = await mocks.invoke.get("desktop.setup.stack.stop")?.(page.event);
+      expect(result).toEqual(idle);
+      expect(activate).toHaveBeenCalledWith(false);
+      expect(syncHostComputerAccess).not.toHaveBeenCalled();
+      expect(desktop.setupError).toBeNull();
+      expect(app.quit).toHaveBeenCalledOnce();
+    } finally {
+      desktop.localStack = previousStack;
+      desktop.hostComputer = previousHost;
+    }
+  });
+
+  it("does not quit or expose stopToQuit when setup opened without quit intent", async () => {
+    const previousStack = desktop.localStack;
+    const previousHost = desktop.hostComputer;
+    const activate = vi.fn();
+    const idle = {
+      phase: "idle" as const,
+      message: null,
+      output: [],
+      layerBytes: {},
+      layerTotals: {},
+      imageTag: "v1.0.0",
+    };
+    desktop.hostComputer = { activate } as unknown as typeof desktop.hostComputer;
+    desktop.localStack = {
+      webUrl: () => "http://127.0.0.1:47000",
+      stop: vi.fn(async () => idle),
+    } as unknown as typeof desktop.localStack;
+
+    try {
+      showSetupWindow();
+      const state = mocks.invoke.get("desktop.setup.state")?.(page.event) as {
+        stopToQuit?: boolean;
+      };
+      expect(state.stopToQuit).toBeUndefined();
+      const result = await mocks.invoke.get("desktop.setup.stack.stop")?.(page.event);
+      expect(result).toEqual(idle);
+      expect(syncHostComputerAccess).toHaveBeenCalledOnce();
+      expect(app.quit).not.toHaveBeenCalled();
+    } finally {
+      desktop.localStack = previousStack;
+      desktop.hostComputer = previousHost;
+    }
+  });
+
+  it("reloads the reused setup window when Change Rakazo Server clears quit intent", () => {
+    const previousStack = desktop.localStack;
+    desktop.localStack = {
+      webUrl: () => "http://127.0.0.1:47000",
+    } as unknown as typeof desktop.localStack;
+    try {
+      showSetupWindow("Could not stop the local stack.", { quitAfterStop: true });
+      page.reload.mockClear();
+      showSetupWindow();
+      expect(page.reload).toHaveBeenCalledOnce();
+      expect(mocks.invoke.get("desktop.setup.state")?.(page.event)).not.toMatchObject({
+        stopToQuit: true,
+      });
+    } finally {
+      desktop.localStack = previousStack;
+    }
+  });
+
+  it("cancels quit and reloads after stop settles if Change Rakazo Server is chosen mid-retry", async () => {
+    const previousStack = desktop.localStack;
+    const previousHost = desktop.hostComputer;
+    const stopGate = deferred<{
+      phase: "idle";
+      message: null;
+      output: string[];
+      layerBytes: Record<string, number>;
+      layerTotals: Record<string, number>;
+      imageTag: string;
+    }>();
+    desktop.hostComputer = { activate: vi.fn() } as unknown as typeof desktop.hostComputer;
+    desktop.localStack = {
+      webUrl: () => "http://127.0.0.1:47000",
+      stop: vi.fn(() => stopGate.promise),
+    } as unknown as typeof desktop.localStack;
+
+    try {
+      showSetupWindow("Could not stop the local stack.", { quitAfterStop: true });
+      page.reload.mockClear();
+      const pendingStop = mocks.invoke.get("desktop.setup.stack.stop")?.(page.event);
+
+      // User opens Change Rakazo Server while the stop retry is still running.
+      showSetupWindow();
+      expect(page.reload).not.toHaveBeenCalled();
+
+      stopGate.resolve({
+        phase: "idle",
+        message: null,
+        output: [],
+        layerBytes: {},
+        layerTotals: {},
+        imageTag: "v1.0.0",
+      });
+      await pendingStop;
+
+      expect(app.quit).not.toHaveBeenCalled();
+      expect(syncHostComputerAccess).toHaveBeenCalledOnce();
+      expect(page.reload).toHaveBeenCalledOnce();
+    } finally {
+      desktop.localStack = previousStack;
+      desktop.hostComputer = previousHost;
+    }
+  });
+
+  it("clears quit intent when the user attempts to save another server", async () => {
+    const previousStack = desktop.localStack;
+    desktop.localStack = {
+      webUrl: () => "http://127.0.0.1:47000",
+    } as unknown as typeof desktop.localStack;
+    try {
+      showSetupWindow("Could not stop the local stack.", { quitAfterStop: true });
+      page.reload.mockClear();
+      const save = mocks.invoke.get("desktop.setup.save")?.(page.event, {
+        mode: "existing",
+        serverUrl: SERVER,
+        headers: {},
+      });
+      opening.resolve(false);
+      await save;
+      expect(mocks.invoke.get("desktop.setup.state")?.(page.event)).not.toMatchObject({
+        stopToQuit: true,
+      });
+    } finally {
+      desktop.localStack = previousStack;
+    }
   });
 });

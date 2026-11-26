@@ -220,6 +220,8 @@ export interface DesktopSetupState {
   saved: DesktopSetup | null;
   /** Present when a saved or newly selected server could not be reopened. */
   error?: string;
+  /** True when setup opened after a failed "Quit and Stop Bots" action and Retry should retry stopping and quit. */
+  stopToQuit?: boolean;
 }
 
 export interface DesktopReachability {
@@ -255,6 +257,8 @@ export type DesktopLocalStackPhase =
 
 export interface DesktopLocalStackState {
   phase: DesktopLocalStackPhase;
+  /** Which stack operation ended in `failed`, when `phase` is `"failed"`. */
+  failedOperation?: "start" | "stop";
   /** One actionable sentence; null while the stack is progressing normally. */
   message: string | null;
   /** Bounded tail of docker output for the current attempt. */
@@ -290,6 +294,8 @@ export interface RakazoSetup {
     state: () => Promise<DesktopLocalStackState>;
     /** Starts (or retries) the stack; a no-op while a start is already in flight. */
     start: () => Promise<DesktopLocalStackState>;
+    /** Retries stopping the managed stack and quits once it stops. */
+    stop: () => Promise<DesktopLocalStackState>;
     /** Fires on every state change so progress never depends on a renderer timer. */
     onChange: (listener: (state: DesktopLocalStackState) => void) => void;
   };
