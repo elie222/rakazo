@@ -124,6 +124,8 @@ const payloadSchemas = {
     connectorId: z.string().min(1),
     provider: z.string().min(1),
     connectionId: z.string().min(1),
+    removeUnreferenced: z.literal(true).optional(),
+    legacyIssuedAt: z.iso.datetime().optional(),
   }),
   "connection.organization-cleanup": z.object({
     organizationId: z.string().min(1),

@@ -1175,6 +1175,8 @@ export interface BackgroundJobPayloads {
     connectorId: string;
     provider: string;
     connectionId: string;
+    removeUnreferenced?: true;
+    legacyIssuedAt?: string;
   };
   /** Separate task so previous workers cannot treat an organization's account as personal. */
   "connection.organization-cleanup": {

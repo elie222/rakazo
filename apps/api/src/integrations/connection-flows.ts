@@ -960,10 +960,13 @@ export async function reconnectOrganizationConnection(
 ) {
   const row = await findManagedConnection(deps.prisma, context.actor, connectionId);
   if (!row?.organizationId || row.status === "revoked") throw new IsolationError();
-  if (row.status === "pending" && row.providerRef) {
+  if (row.status === "pending") {
+    requireNoPendingSignIn(!row.providerRef);
     const completed = await completeConnection(deps, context, { connectionId });
     if (completed.status === "connected")
       return { connectionId: completed.id, authorizationUrl: null };
+    if (completed.status === "revoked") throw new IsolationError();
+    requireNoPendingSignIn(completed.status === "pending");
   }
   if (row.status === "connected") {
     const connector = deps.connectors.managed(row.connectorId);

@@ -6,6 +6,7 @@ import { ORGANIZATION_CONNECTION_NAME_TAKEN } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { deleteOrganization } from "../account/account-deletion.js";
 import type { RouterDeps } from "../router.js";
 import { createRouter } from "../router.js";
 
@@ -442,6 +443,30 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     });
     expect(connector.begin).not.toHaveBeenCalled();
   });
+  it("preserves a pending shared sign-in when identity lookup fails during reconnect", async () => {
+    const admin = client("admin", second);
+    const { connectionId } = await admin.beginForOrganization({
+      ...request,
+      displayName: "Pending shared inbox",
+    });
+    const read = () =>
+      runAsSystem("read the pending sign-in fixture", () =>
+        prisma.connection.findUniqueOrThrow({ where: { id: connectionId } }),
+      );
+    const original = await read();
+    vi.mocked(connector.resolveConnectedAccountId!).mockResolvedValueOnce("pending-account");
+    vi.mocked(connector.connectedAccountIdentity!).mockRejectedValueOnce(
+      new Error("provider unavailable"),
+    );
+    vi.mocked(connector.begin).mockClear();
+    await expect(admin.reconnectOrganization({ connectionId })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(await read()).toEqual(original);
+    expect(connector.begin).not.toHaveBeenCalled();
+    await admin.revoke({ connectionId });
+  });
+
   it("allows just one overlapping shared sign-in without request correlation", async () => {
     const snapshot = vi.fn(async () => []);
     connector.listAccountsBeforeSignIn = snapshot;
@@ -536,6 +561,88 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
       await expect(admin.beginForOrganization(app)).rejects.toMatchObject({ code: "CONFLICT" });
     } finally {
       delete connector.listAccountsBeforeSignIn;
+    }
+  });
+  it("cleans up shared accounts and a hosted link after organization deletion", async () => {
+    const org = `deleting-${suffix}`;
+    const ownerId = user("outsider");
+    const connectors = new ConnectorRegistry([connector]);
+    const jobs = { enqueueIn, enqueue: vi.fn(), cancelIn: vi.fn() };
+    const expiresAt = new Date(Date.now() + 60_000);
+    const revokeUnreferencedAccounts = vi.fn(async () => {});
+    connector.revokeUnreferencedAccounts = revokeUnreferencedAccounts;
+    const cancelAuthorizationRequest = vi.fn<
+      NonNullable<ManagedConnectorProvider["cancelAuthorizationRequest"]>
+    >(async () => {});
+    connector.cancelAuthorizationRequest = cancelAuthorizationRequest;
+    enqueueIn.mockClear();
+    try {
+      await runAsSystem("delete an organization with shared connection fixtures", async () => {
+        await prisma.organization.create({
+          data: { id: org, name: "Deleting", slug: org, createdAt: new Date() },
+        });
+        await prisma.space.create({
+          data: { id: org, organizationId: org, name: "Deleting", isDefault: true },
+        });
+        await prisma.member.create({
+          data: {
+            id: org,
+            organizationId: org,
+            userId: ownerId,
+            role: "owner",
+            createdAt: new Date(),
+          },
+        });
+        for (const [provider, providerRef, status, metadata] of [
+          ["exact", "active-account", "connected", {}],
+          ["exact", "pending-request", "pending", {}],
+          [
+            "hosted",
+            "hosted",
+            "revoked",
+            { expiresAt: expiresAt.toISOString(), priorAccountIds: [] },
+          ],
+        ] as const) {
+          await prisma.connection.create({
+            data: {
+              organizationId: org,
+              connectorId: "fixture",
+              provider,
+              providerRef,
+              status,
+              displayName: providerRef,
+              metadata: { ...metadata },
+            },
+          });
+        }
+        await deleteOrganization(
+          { prisma, connectors, jobs } as unknown as Parameters<typeof deleteOrganization>[0],
+          ownerId,
+          org,
+        );
+        expect(await prisma.connection.count({ where: { organizationId: org } })).toBe(0);
+        expect(cancelAuthorizationRequest.mock.calls.map(([ref]) => ref).sort()).toEqual([
+          "active-account",
+          "pending-request",
+        ]);
+        expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
+        const job = enqueueIn.mock.calls
+          .map(([, job]) => job)
+          .find((job) => job.name === "connection.hosted-sign-in-cleanup");
+        expect(job.availableAt).toEqual(expiresAt);
+        await retryConnectionCleanup({ prisma, connectors, jobs }, job.payload);
+        expect(revokeUnreferencedAccounts).toHaveBeenCalledWith(
+          "hosted",
+          [],
+          expect.objectContaining({ organizationId: org }),
+        );
+      });
+    } finally {
+      delete connector.cancelAuthorizationRequest;
+      delete connector.revokeUnreferencedAccounts;
+      await runAsSystem("remove the organization deletion fixture", () =>
+        prisma.organization.deleteMany({ where: { id: org } }),
+      );
     }
   });
 });

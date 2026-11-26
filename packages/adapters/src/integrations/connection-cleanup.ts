@@ -450,7 +450,14 @@ export async function retryConnectionCleanup(
     connectors: Pick<ConnectorRegistry, "managed">;
     jobs: Pick<JobPublisher, "enqueue">;
   },
-  payload: ConnectionCleanup & { connectionId?: string },
+  payload: ConnectionCleanup &
+    Partial<
+      Pick<
+        BackgroundJobPayloads["connection.hosted-sign-in-cleanup"],
+        "connectionId" | "removeUnreferenced" | "legacyIssuedAt"
+      >
+    >,
+  directJobs?: Pick<JobPublisher, "cancelIn">,
 ): Promise<void> {
   const configured = deps.connectors.managed(payload.connectorId);
   if (!configured) {
@@ -470,9 +477,21 @@ export async function retryConnectionCleanup(
     throw new RetryJobLaterError(CONNECTION_CLEANUP_NO_CREDENTIALS_RETRY_MS, {
       cause: new Error("The connector has no credentials to remove the authorization with"),
     });
+  if (payload.legacyIssuedAt && connector.legacySignInLifetimeMs) {
+    const remaining =
+      Date.parse(payload.legacyIssuedAt) + connector.legacySignInLifetimeMs - Date.now();
+    if (remaining > 0) throw new RetryJobLaterError(remaining);
+  }
   const outcome = await whileScopeIsFree(deps.prisma, payload, async (tx) => {
     // Credentials saved between preparing them and taking the lock: the next try has the new ones.
     if (prepared.recheck && !(await prepared.recheck(tx))) return "busy" as const;
+    if (payload.removeUnreferenced)
+      return dropUnreferencedAccounts(
+        tx,
+        connector,
+        payload,
+        cleanupContext(payload, "connection.cleanup"),
+      );
     if (payload.connectionId) {
       const row = await tx.connection.findFirst({
         where: {
@@ -493,7 +512,15 @@ export async function retryConnectionCleanup(
       return "done" as const;
     }
     // A flow that ran since the failure may have saved this account on a row, which owns it now.
-    return dropLeftover(tx, connector, payload, cleanupContext(payload, "connection.cleanup"));
+    const result = await dropLeftover(
+      tx,
+      connector,
+      payload,
+      cleanupContext(payload, "connection.cleanup"),
+    );
+    if (result === "done" && directJobs)
+      await directJobs.cancelIn(tx, connectionCleanupJobKey(payload));
+    return result;
   });
   if (outcome === "busy") {
     if (payload.connectionId) throw new RetryJobLaterError(CONNECTION_CLEANUP_SLOT_WAIT_MS);

@@ -12,25 +12,25 @@ export async function findDuplicateAccount(
   context: AdapterContext,
 ) {
   if (!connector.prepareAccountIdentityLookup && !connector.connectedAccountIdentity) return;
+  const siblings = await tx.connection.findMany({
+    where: {
+      ...connectionOwnerWhere(context),
+      connectorId: current.connectorId,
+      provider: { equals: current.provider, mode: "insensitive" },
+      status: "connected",
+      id: { not: current.id },
+    },
+  });
+  const candidates = siblings.flatMap((sibling) => {
+    const ref = sibling.providerRef;
+    return ref && ref !== sibling.provider && ref !== accountId ? [{ sibling, ref }] : [];
+  });
   try {
     const identify = connector.prepareAccountIdentityLookup
       ? await connector.prepareAccountIdentityLookup(current.provider, context)
       : (ref: string) => connector.connectedAccountIdentity?.(current.provider, ref, context);
     const identity = await identify(accountId);
     if (!identity) return;
-    const siblings = await tx.connection.findMany({
-      where: {
-        ...connectionOwnerWhere(context),
-        connectorId: current.connectorId,
-        provider: { equals: current.provider, mode: "insensitive" },
-        status: "connected",
-        id: { not: current.id },
-      },
-    });
-    const candidates = siblings.flatMap((sibling) => {
-      const ref = sibling.providerRef;
-      return ref && ref !== sibling.provider && ref !== accountId ? [{ sibling, ref }] : [];
-    });
     const identities = await mapConcurrent(candidates, 4, async ({ ref }) => identify(ref));
     return candidates.find((_, index) => identities[index] === identity)?.sibling;
   } catch (error) {
