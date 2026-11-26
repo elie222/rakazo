@@ -2609,6 +2609,8 @@ model OrganizationLogin {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
   origin         String
+  sessionCipher  String?
+  sessionVersion Int @default(0)
   grants         OrganizationLoginGrant[]
 
   @@index([organizationId])

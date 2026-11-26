@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
+import type { ProtectedBrowserLauncher } from "@rakazo/adapters";
+import { EncryptedSecretStore } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   acceptOrganizationInvitation,
@@ -32,6 +35,30 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let system: PrismaClient;
   let handler: RPCHandler<Record<string, unknown>>;
+  const encryption = new EncryptedSecretStore("fake-organization-session-key");
+  const siteStorage = {
+    cookies: [],
+    origins: [
+      {
+        origin: "https://example.test",
+        localStorage: [{ name: "session", value: "fake-session-value" }],
+      },
+      {
+        origin: "https://unrelated.example.test",
+        localStorage: [{ name: "session", value: "fake-unrelated-value" }],
+      },
+    ],
+  };
+  const launch = vi.fn<ProtectedBrowserLauncher>(async () => ({ storageState: siteStorage }));
+  const signInInput = {
+    url: "https://example.test/sign-in",
+    steps: [
+      { kind: "fill", role: "textbox", name: "Password", text: "fake-password" },
+      { kind: "click", role: "button", name: "Sign in" },
+      { kind: "wait", role: "heading", name: "Account" },
+    ],
+  };
+
   const syncSeats = vi.fn(async (_organizationId: string) => undefined);
   const publishRosterChange = vi.fn(async (_change: unknown) => undefined);
   /** The topics organization signals went to, as the fanout received them. */
@@ -149,6 +176,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     installAuditEventStore(prisma);
     const deps = {
       prisma,
+      organizationLoginBrowser: { launch, encryption },
       billing: { syncSeats },
       email,
       jobs: { cancel: vi.fn(async () => undefined), enqueue: vi.fn(async () => undefined) },
@@ -199,9 +227,112 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       json: { name: "Example account", origin: "https://example.test", botIds: [] },
     });
     expect((await call(memberActor, "organizations/vault/list", undefined)).status).toBe(403);
-    const loginId = created.json.id;
+    const loginId = created.json.id as string;
     expect((await call(member.actor, "organizations/vault/remove", { loginId })).status).toBe(404);
     expect((await call(owner.actor, "organizations/vault/remove", { loginId })).status).toBe(200);
+  });
+
+  it("persists only same-site session data, encrypted and absent from RPC responses", async () => {
+    const owner = await person("session-owner");
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    const loginId = created.json.id as string;
+    const signedIn = await call(owner.actor, "organizations/vault/signIn", {
+      loginId,
+      ...signInInput,
+    });
+    expect(signedIn).toMatchObject({ status: 200, json: { id: loginId, hasSession: true } });
+    expect(signedIn.json).not.toHaveProperty("sessionCipher");
+    const row = await system.organizationLogin.findUniqueOrThrow({ where: { id: loginId } });
+    expect(row.sessionCipher).toMatch(/^v2:/);
+    const decoded = await encryption.load(row.sessionCipher!, loginId);
+    expect(JSON.parse(decoded)).toEqual({ cookies: [], origins: [siteStorage.origins[0]] });
+  });
+
+  it("keeps a session revoked if a pending sign-in finishes afterward", async () => {
+    const owner = await person("revoke-owner");
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    const loginId = created.json.id as string;
+    const browserStarted = deferred<void>();
+    const browserFinished = deferred<{ storageState: typeof siteStorage }>();
+    launch.mockImplementationOnce(() => {
+      browserStarted.resolve();
+      return browserFinished.promise;
+    });
+    const pending = call(owner.actor, "organizations/vault/signIn", { loginId, ...signInInput });
+    await browserStarted.promise;
+    const revoked = await call(owner.actor, "organizations/vault/revokeSession", { loginId });
+    browserFinished.resolve({ storageState: siteStorage });
+    expect(revoked).toMatchObject({ status: 200, json: { hasSession: false } });
+    expect((await pending).status).toBe(409);
+    const row = await system.organizationLogin.findUniqueOrThrow({ where: { id: loginId } });
+    expect(row.sessionCipher).toBeNull();
+  });
+
+  it("keeps the first committed session when two admins sign in at once", async () => {
+    const owner = await person("concurrent-owner");
+    const admin = await person("concurrent-admin");
+    const adminActor = await join(owner, admin);
+    await system.member.update({
+      where: { organizationId_userId: { organizationId: owner.organizationId, userId: admin.id } },
+      data: { role: "admin" },
+    });
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    const loginId = created.json.id as string;
+    const browserStarted = deferred<void>();
+    const browserFinished = deferred<{ storageState: typeof siteStorage }>();
+    launch.mockImplementationOnce(() => {
+      browserStarted.resolve();
+      return browserFinished.promise;
+    });
+
+    const pending = call(owner.actor, "organizations/vault/signIn", { loginId, ...signInInput });
+    await browserStarted.promise;
+    const committed = await call(adminActor, "organizations/vault/signIn", {
+      loginId,
+      ...signInInput,
+    });
+    browserFinished.resolve({ storageState: siteStorage });
+    expect(committed.status).toBe(200);
+    expect((await pending).status).toBe(409);
+    expect(
+      await system.organizationLogin.findUniqueOrThrow({ where: { id: loginId } }),
+    ).toMatchObject({ sessionVersion: 1 });
+  });
+
+  it("rejects unauthorized sign-ins before invoking the launcher", async () => {
+    const owner = await person("protected-owner");
+    const member = await person("protected-member");
+    const memberActor = await join(owner, member);
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    const input = { loginId: created.json.id, ...signInInput };
+    const previousCalls = launch.mock.calls.length;
+    expect((await call(memberActor, "organizations/vault/signIn", input)).status).toBe(403);
+    expect((await call(member.actor, "organizations/vault/signIn", input)).status).toBe(404);
+    expect(
+      (
+        await call(owner.actor, "organizations/vault/signIn", {
+          ...input,
+          url: "https://other.example.test",
+        })
+      ).status,
+    ).toBe(400);
+    expect(launch.mock.calls).toHaveLength(previousCalls);
   });
 
   it("replaces grants and rejects agents from a different organization", async () => {
@@ -218,7 +349,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       botIds: [allowed.id],
     });
     expect(created).toMatchObject({ status: 200, json: { botIds: [allowed.id] } });
-    const loginId = created.json.id;
+    const loginId = created.json.id as string;
     const replace = (botIds: string[]) =>
       call(owner.actor, "organizations/vault/setAgents", { loginId, botIds });
     expect((await replace([foreign.id])).status).toBe(400);

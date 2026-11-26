@@ -158,6 +158,7 @@ import { settleWithTimeout } from "./messaging/team-chat-startup.js";
 import { recordSignInEnded } from "./models/model-connect-analytics.js";
 import { createRouter, routerEnv } from "./router.js";
 import { handleHttpError } from "./rpc-errors.js";
+import { organizationLoginBrowser } from "./spaces/organization-login-browser.js";
 import type { SpaceDeletionDeps } from "./spaces/space-deletion.js";
 import { afterSpaceDeparture } from "./spaces/space-departure.js";
 import { cspReportRoutes } from "./telemetry/csp-report.js";
@@ -669,6 +670,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
 
   const router = createRouter({
+    organizationLoginBrowser: await organizationLoginBrowser(env.encryptionKey),
     // Only computers people paired: nothing clears a routine's "Use my computer" when this
     // server's own screen is turned off and on again.
     userDevices: userDevicesOverride ?? userDevices,
