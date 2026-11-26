@@ -127,6 +127,13 @@ describe("app catalog source", () => {
   });
 });
 
+describe("app catalog source with an app two catalogs list", () => {
+  it("finds the slug only one of them uses", async () => {
+    const apps = catalogOf([app("Pagesnap"), { ...app("Pagesnap"), slug: "pagesnap_v2" }]);
+    expect((await apps.find(["pagesnap_v2"])).map((hit) => hit.id)).toEqual(["pagesnap_v2"]);
+  });
+});
+
 describe("connector catalog source", () => {
   const calendar: ConnectorTool = {
     name: "mcp__workbench__get_release_calendar",

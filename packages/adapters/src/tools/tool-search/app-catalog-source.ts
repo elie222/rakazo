@@ -56,11 +56,12 @@ export function appCatalogSource(
     },
     async find(ids) {
       const wanted = new Set(ids.map((id) => id.toLowerCase()));
-      return dedupe(await catalog())
-        .filter(
+      // Matched before deduplicating, so a slug only one catalog uses is still found.
+      return dedupe(
+        (await catalog()).filter(
           (entry) => wanted.has(entry.slug.toLowerCase()) || wanted.has(entry.name.toLowerCase()),
-        )
-        .map(appHit);
+        ),
+      ).map(appHit);
     },
   };
 }
