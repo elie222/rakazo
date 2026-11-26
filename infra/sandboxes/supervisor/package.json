@@ -15,11 +15,11 @@
     "test": "vitest run --root ../../.. infra/sandboxes/supervisor/src"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.6",
+    "@hono/node-server": "2.1.11",
     "@rakazo/core": "workspace:*",
     "@rakazo/logging": "workspace:*",
     "dockerode": "5.0.1",
-    "hono": "4.13.17",
+    "hono": "4.13.21",
     "tsx": "4.23.15",
     "zod": "4.6.7"
   },

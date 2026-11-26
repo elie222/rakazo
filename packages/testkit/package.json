@@ -11,7 +11,7 @@
     "test": "vitest run --root ../.. packages/testkit/src"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.6",
+    "@hono/node-server": "2.1.11",
     "@lingui/core": "6.12.0",
     "@lingui/message-utils": "6.12.0",
     "@modelcontextprotocol/sdk": "1.32.2",
