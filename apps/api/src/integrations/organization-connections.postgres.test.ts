@@ -516,6 +516,74 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     }
   });
 
+  it.each(["complete", "begin"] as const)(
+    "retires an expired shared sign-in through %s without touching the existing account",
+    async (entryPoint) => {
+      const app = {
+        ...request,
+        provider: `fixture-expired-${entryPoint}`,
+        displayName: "Expired link",
+      };
+      const admin = client("admin", second);
+      const owner = client("owner");
+      const existing = await owner.beginForOrganization(app);
+      vi.mocked(connector.resolveConnectedAccountId!).mockResolvedValueOnce("known-mailbox");
+      await owner.complete({ connectionId: existing.connectionId });
+
+      const expiresAt = new Date(Date.now() + 60_000).toISOString();
+      const link = {
+        authorizationUrl: "https://authorization.example.test/",
+        state: app.provider,
+        expiresAt,
+      };
+      const resolve = vi.mocked(connector.resolveConnectedAccountId!);
+      connector.listAccountsBeforeSignIn = async () => ["known-mailbox"];
+      vi.mocked(connector.begin).mockResolvedValueOnce(link);
+      try {
+        const { connectionId } = await admin.beginForOrganization(app);
+        resolve.mockImplementationOnce(async (_user, _slug, _ref, excluded) =>
+          excluded?.includes("known-mailbox") ? undefined : "known-mailbox",
+        );
+        expect(await admin.complete({ connectionId, code: "unverified" })).toMatchObject({
+          status: "pending",
+        });
+        const expiry = new Date(0);
+        await runAsSystem("expire the hosted sign-in fixture", () =>
+          prisma.connection.update({
+            where: { id: connectionId },
+            data: {
+              metadata: { expiresAt: expiry.toISOString(), priorAccountIds: ["known-mailbox"] },
+            },
+          }),
+        );
+
+        vi.mocked(connector.revoke).mockClear();
+        if (entryPoint === "complete") {
+          expect(await admin.complete({ connectionId })).toMatchObject({ status: "revoked" });
+        }
+        vi.mocked(connector.begin).mockResolvedValueOnce(link);
+        expect(await owner.beginForOrganization(app)).toMatchObject({
+          authorizationUrl: link.authorizationUrl,
+        });
+        expect(await admin.complete({ connectionId })).toMatchObject({ status: "revoked" });
+        expect(enqueueIn).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({
+            name: "connection.hosted-sign-in-cleanup",
+            availableAt: expiry,
+            payload: expect.objectContaining({ organizationId: team, connectionId }),
+          }),
+        );
+        expect(await owner.complete({ connectionId: existing.connectionId })).toMatchObject({
+          status: "connected",
+        });
+        expect(connector.revoke).not.toHaveBeenCalled();
+      } finally {
+        delete connector.listAccountsBeforeSignIn;
+      }
+    },
+  );
+
   it("waits for a recently cancelled legacy link without a recorded expiry", async () => {
     connector.listAccountsBeforeSignIn = async () => [];
     Object.assign(connector, { legacySignInLifetimeMs: 60_000 });
