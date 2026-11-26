@@ -6,6 +6,29 @@ import { sliceWellFormed } from "../primitives/utf8.js";
 export type ConnectionOwnerChoice = "me" | "organization";
 export type CatalogConnectionTarget = ConnectionOwnerChoice | { reconnectId: string };
 
+type CatalogBeginInput = { connectorId: string; provider: string; displayName: string };
+type CatalogBeginResult = Promise<{ connectionId: string; authorizationUrl: string | null }>;
+
+export function catalogConnectionBegin(
+  item: ConnectionCatalogItem,
+  target: CatalogConnectionTarget,
+  rpc: {
+    begin: (input: CatalogBeginInput) => CatalogBeginResult;
+    beginForOrganization: (input: CatalogBeginInput) => CatalogBeginResult;
+    reconnectOrganization: (input: { connectionId: string }) => CatalogBeginResult;
+  },
+) {
+  return (input: CatalogBeginInput) => {
+    if (target === "me") return rpc.begin(input);
+    if (target === "organization")
+      return rpc.beginForOrganization({
+        ...input,
+        displayName: connectionLabelFrom(item.name, item.slug),
+      });
+    return rpc.reconnectOrganization({ connectionId: target.reconnectId });
+  };
+}
+
 type CatalogRef = Pick<ConnectionCatalogItem, "connectorId" | "slug">;
 
 export function catalogItemKey(item: CatalogRef) {
@@ -111,11 +134,7 @@ export async function connectCatalogItem(
   item: ConnectionCatalogItem,
   connections: readonly Connection[],
   deps: {
-    begin: (input: {
-      connectorId: string;
-      provider: string;
-      displayName: string;
-    }) => Promise<{ connectionId: string; authorizationUrl: string | null }>;
+    begin: (input: CatalogBeginInput) => CatalogBeginResult;
     complete: (input: { connectionId: string }) => Promise<Connection>;
     openUrl: (url: string) => unknown;
     signal: AbortSignal;

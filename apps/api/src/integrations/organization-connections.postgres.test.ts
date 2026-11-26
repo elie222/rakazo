@@ -179,6 +179,14 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     }
   });
 
+  it("shares a provider health lookup between simultaneous list requests", async () => {
+    const lookup = vi.mocked(connector.listConnectedRefs!);
+    lookup.mockClear();
+    const member = client("member", second);
+    await Promise.all([member.list(), member.list()]);
+    expect(lookup).toHaveBeenCalledTimes(1);
+  });
+
   it("lets a member write a shared credential during use", async () => {
     const updated = await runAsTenant(identity("member", second), () =>
       prisma.secret.update({
@@ -246,5 +254,20 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
       expect.objectContaining({ organizationId: team }),
     );
     expect(await client("member", second).list()).toHaveLength(4);
+  });
+
+  it("finishes an existing sign-in when an admin reconnects a pending account", async () => {
+    const admin = client("admin", second);
+    const { connectionId } = await admin.beginForOrganization({
+      ...request,
+      provider: "calendar",
+      displayName: "Shared calendar",
+    });
+    vi.mocked(connector.begin).mockClear();
+    await expect(admin.reconnectOrganization({ connectionId })).resolves.toEqual({
+      connectionId,
+      authorizationUrl: null,
+    });
+    expect(connector.begin).not.toHaveBeenCalled();
   });
 });

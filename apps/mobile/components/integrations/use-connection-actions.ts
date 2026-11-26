@@ -2,10 +2,10 @@ import { useLingui } from "@lingui/react/macro";
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import type { CatalogConnectionTarget } from "@rakazo/core";
 import {
+  catalogConnectionBegin,
   catalogItemAccounts,
   catalogItemKey,
   connectCatalogItem,
-  connectionLabelFrom,
 } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import type { DataTag, QueryKey } from "@tanstack/react-query";
@@ -124,15 +124,11 @@ export function useConnectionActions({
       connectionAttempt.current = controller;
       try {
         const result = await connectCatalogItem(item, connections, {
-          begin: (input) =>
-            target === "me"
-              ? send("connections/begin", input)
-              : target === "organization"
-                ? send("connections/beginForOrganization", {
-                    ...input,
-                    displayName: connectionLabelFrom(item.name, item.slug),
-                  })
-                : send("connections/reconnectOrganization", { connectionId: target.reconnectId }),
+          begin: catalogConnectionBegin(item, target, {
+            begin: (input) => send("connections/begin", input),
+            beginForOrganization: (input) => send("connections/beginForOrganization", input),
+            reconnectOrganization: (input) => send("connections/reconnectOrganization", input),
+          }),
           complete: (input) => send("connections/complete", input),
           openUrl: (url) => Linking.openURL(url),
           signal: controller.signal,
@@ -153,12 +149,14 @@ export function useConnectionActions({
       }
     },
     stale,
-    onSaved: ({ status, focused, organizationConnectionId }, { item }) => {
+    onSaved: ({ status, focused, organizationConnectionId }, { item, target }) => {
       if (status === "connected") void notifyAppConnected(item, focused, organizationConnectionId);
       if (status === "pending")
         Alert.alert(
           t`Connection pending`,
-          t`Finish connecting in the browser, then refresh this page.`,
+          target === "me"
+            ? t`Finish connecting in the browser, then refresh this page.`
+            : t`Finish connecting in the browser. If the connection stays pending, select Reconnect.`,
         );
       startNextConnect();
     },

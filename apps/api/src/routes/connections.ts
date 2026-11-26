@@ -8,7 +8,13 @@ import {
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { AppPermissionTool } from "@rakazo/core";
-import { appToolApprovalKey, availableChatApps, isAvailableChatApp } from "@rakazo/core";
+import {
+  appToolApprovalKey,
+  availableChatApps,
+  deadlineSignal,
+  isAvailableChatApp,
+  withAbort,
+} from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
   connectionIn,
@@ -138,6 +144,49 @@ async function reconcileConnections(
 
 export function connectionsRoutes(ctx: RouterContext) {
   const { deps, authed } = ctx;
+  const healthChecks = new Map<
+    string,
+    {
+      expiresAt: number;
+      result: Promise<Awaited<ReturnType<typeof loadOrganizationReconnectCheck>> | undefined>;
+    }
+  >();
+
+  function organizationHealth(
+    actor: Actor,
+    organizationId: string,
+    connectorId: string,
+    rows: { id: string; updatedAt: Date }[],
+  ) {
+    const provider = deps.connectors.managed(connectorId);
+    if (!provider) return;
+    // A saved connection change needs a fresh check, even when the provider kept its account ID.
+    const key = JSON.stringify([
+      organizationId,
+      connectorId,
+      rows.map(({ id, updatedAt }) => `${id}:${updatedAt.getTime()}`).sort(),
+    ]);
+    const now = Date.now();
+    const existing = healthChecks.get(key);
+    if (existing && existing.expiresAt > now) return existing.result;
+
+    // Every client receiving the same change shares the same bounded provider request.
+    const signal = deadlineSignal(4_000);
+    const adapterContext = connectionContext(
+      { ...actor, organizationId },
+      "connections.list",
+      signal,
+    );
+    const result = bestEffort(
+      "check organization app sign-ins",
+      withAbort(loadOrganizationReconnectCheck(provider, adapterContext), signal),
+    );
+    healthChecks.delete(key);
+    healthChecks.set(key, { expiresAt: now + 30_000, result });
+    if (healthChecks.size > 1_000) healthChecks.delete(healthChecks.keys().next().value!);
+    return result;
+  }
+
   return {
     connections: {
       catalog: authed.connections.catalog.handler(async ({ context, input }) => {
@@ -197,28 +246,27 @@ export function connectionsRoutes(ctx: RouterContext) {
         const managed = rows.some((row) => row.organizationId)
           ? await managedOrganizationId(deps.prisma, context.actor)
           : null;
-        const shared = rows.filter((row) => row.organizationId && row.status === "connected");
+        const shared = rows.filter(
+          (row) =>
+            row.organizationId &&
+            row.status === "connected" &&
+            row.providerRef &&
+            row.providerRef !== row.provider,
+        );
         const reconnect = new Map<
           string,
           Awaited<ReturnType<typeof loadOrganizationReconnectCheck>>
         >();
         await Promise.all(
           [...new Set(shared.map((row) => row.connectorId))].map(async (connectorId) => {
-            const provider = deps.connectors.managed(connectorId);
-            const organizationId = shared.find(
-              (row) => row.connectorId === connectorId,
-            )?.organizationId;
-            if (!provider || !organizationId) return;
-            const unhealthy = await bestEffort(
-              "check organization app sign-ins",
-              loadOrganizationReconnectCheck(
-                provider,
-                connectionContext(
-                  { ...context.actor, organizationId },
-                  "connections.list",
-                  context.signal,
-                ),
-              ),
+            const owned = shared.filter((row) => row.connectorId === connectorId);
+            const organizationId = owned[0]?.organizationId;
+            if (!organizationId) return;
+            const unhealthy = await organizationHealth(
+              context.actor,
+              organizationId,
+              connectorId,
+              owned,
             );
             if (unhealthy) reconnect.set(connectorId, unhealthy);
           }),

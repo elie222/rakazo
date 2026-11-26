@@ -809,6 +809,10 @@ export async function reconnectOrganizationConnection(
 ) {
   const row = await findManagedConnection(deps.prisma, context.actor, connectionId);
   if (!row?.organizationId || row.status === "revoked") throw new IsolationError();
+  if (row.status === "pending" && row.providerRef) {
+    const completed = await completeConnection(deps, context, { connectionId });
+    if (completed.status === "connected") return { connectionId, authorizationUrl: null };
+  }
   if (row.status === "connected") {
     const connector = deps.connectors.managed(row.connectorId);
     if (!connector) throw new ClientError("BAD_REQUEST", "Integration provider is not configured");

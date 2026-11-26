@@ -7,12 +7,12 @@ import type {
 } from "@rakazo/contracts";
 import type { CatalogConnectionTarget } from "@rakazo/core";
 import {
+  catalogConnectionBegin,
   catalogItemAccounts,
   catalogItemKey,
   catalogWithOrganizationConnections,
   connectCatalogItem,
   connectedAppMarks,
-  connectionLabelFrom,
   isCatalogItemConnected,
 } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
@@ -182,15 +182,7 @@ export function usePluginConnections({
       connectionAttempt.current = controller;
       try {
         const result = await connectCatalogItem(item, connections, {
-          begin: (input) =>
-            target === "me"
-              ? client.connections.begin(input)
-              : target === "organization"
-                ? client.connections.beginForOrganization({
-                    ...input,
-                    displayName: connectionLabelFrom(item.name, item.slug),
-                  })
-                : client.connections.reconnectOrganization({ connectionId: target.reconnectId }),
+          begin: catalogConnectionBegin(item, target, client.connections),
           complete: (input) => client.connections.complete(input),
           openUrl: (url) => window.open(url, "rakazo-plugin-connect", "noopener,noreferrer"),
           signal: controller.signal,
@@ -213,10 +205,12 @@ export function usePluginConnections({
       }
     },
     stale,
-    onSaved: (result, { item }) => {
+    onSaved: (result, { item, target }) => {
       if (result.status === "pending")
         setNotice(
-          t`Connection to ${item.name} is still pending. You can close this and check again.`,
+          target === "me"
+            ? t`Connection to ${item.name} is still pending. You can close this and check again.`
+            : t`Finish signing in to ${item.name} in the browser. If the connection stays pending, select Reconnect.`,
         );
     },
   });
