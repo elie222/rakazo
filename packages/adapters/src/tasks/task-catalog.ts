@@ -69,9 +69,10 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
       notes: task.notes,
       source: "scratchpad",
     })),
-    routines: schedules.routines,
+    // Ahead of the routines, so a result clipped for length still says the list continues.
     ...(schedules.note ? { routinesNote: schedules.note } : {}),
     ...("nextRoutineOffset" in schedules ? { nextRoutineOffset: schedules.nextRoutineOffset } : {}),
+    routines: schedules.routines,
     taughtSkills: taughtSkills.map((skill) => ({
       id: skill.id,
       name: skill.name,

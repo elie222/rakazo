@@ -347,21 +347,13 @@ export const workTools: ConnectorTool[] = [
   {
     name: "schedule_list",
     description:
-      "List this bot's active and inactive schedules (routines), or another bot's. A long prompt comes as a preview with promptLength: routineId reads that routine in full, passing promptNextOffset as promptOffset until it is null.",
+      "List this bot's active and inactive schedules (routines), or another bot's. A long prompt comes as a preview with promptLength: routineId reads it in full.",
     inputSchema: {
       type: "object",
       properties: {
-        routineId: { type: "string", description: "Read only this routine, its prompt in full." },
-        promptOffset: {
-          type: "integer",
-          minimum: 0,
-          description: "With routineId: the promptNextOffset of the page before.",
-        },
-        routineOffset: {
-          type: "integer",
-          minimum: 0,
-          description: "The nextRoutineOffset of a list that did not fit one result.",
-        },
+        routineId: { type: "string" },
+        promptOffset: { type: "integer", description: "Continue from promptNextOffset." },
+        routineOffset: { type: "integer", description: "Continue from nextRoutineOffset." },
         ...otherBotRoutineProperties,
       },
     },
@@ -369,7 +361,7 @@ export const workTools: ConnectorTool[] = [
   {
     name: "schedule_update",
     description:
-      "Edit one of this bot's schedules, or another bot's by bot_id or exact bot_name, by routineId instead of cancelling and recreating it. Send only what changes. prompt replaces the whole prompt, so first read every page of it with schedule_list in this turn. Timing fields replace the current timing; startAt alone moves the next run of the current repeat. active false pauses it. The result's changes lists each field that changed with its before and after; the prompt is returned only there. A watch has no timing fields; everyMinutes changes how often it checks. on replaces the routine's events; {} removes them.",
+      "Edit one of this bot's schedules, or another bot's by bot_id or exact bot_name, by routineId instead of cancelling and recreating it. Send only what changes. prompt replaces the whole prompt: first read all of it with schedule_list in this turn. Timing fields replace the current timing; startAt alone moves the next run of the current repeat. active false pauses it. The result's changes lists each field that changed with its before and after; the prompt is returned only there. A watch has no timing fields; everyMinutes changes how often it checks. on replaces the routine's events; {} removes them.",
     inputSchema: {
       type: "object",
       properties: {
