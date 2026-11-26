@@ -800,10 +800,12 @@ export interface AgentRunRequest {
   ) => Promise<unknown>;
   /**
    * Finds tools, apps and services this run does not list, for find_tool: by words, or by the
-   * exact ids of hits it returned earlier. A search answers the final ranked list, at most
+   * exact names. A search answers the final ranked list, at most
    * `limit` hits, so what it marks as read from outside is only what the model is shown.
    */
   searchTools?: (request: ToolSearchRequest) => Promise<ToolSearchHit[]>;
+  /** Resolves a held-back connector tool when its search hit is no longer in memory. */
+  resolveConnectorTool?: (id: string) => Promise<string | undefined>;
   /** Called after a tool returns; implementations must not persist raw result contents. */
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /**

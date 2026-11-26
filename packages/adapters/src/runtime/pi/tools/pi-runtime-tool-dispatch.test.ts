@@ -1333,16 +1333,8 @@ describe("Pi connector tool dispatch", () => {
   it("runs a connector tool find_tool found through that connector's catalog", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     // Looked up again by id, as after a pause in another process.
-    const searchTools = vi.fn(async () => [
-      {
-        id: "server-1:get_calendar",
-        name: "get_calendar",
-        description: "Read the calendar.",
-        next: "use_tool" as const,
-        inputSchema: { type: "object" },
-        connectorId: "mcp",
-      },
-    ]);
+    const resolveConnectorTool = vi.fn(async () => "mcp");
+    const searchTools = vi.fn(async () => []);
     fakeAgentState.invoke = {
       name: "use_tool",
       args: { name: "server-1:get_calendar", arguments: { week: "next" } },
@@ -1359,6 +1351,7 @@ describe("Pi connector tool dispatch", () => {
         model: { provider: "test", id: "dispatch-test-model" },
         executeTool,
         searchTools,
+        resolveConnectorTool,
       },
       {
         operationId: "1",
@@ -1370,7 +1363,8 @@ describe("Pi connector tool dispatch", () => {
     )) {
       // Exhaust the runtime event stream so tool execution completes.
     }
-    expect(searchTools).toHaveBeenCalledWith({ ids: ["server-1:get_calendar"] });
+    expect(searchTools).not.toHaveBeenCalled();
+    expect(resolveConnectorTool).toHaveBeenCalledWith("server-1:get_calendar");
     expect(executeTool).toHaveBeenCalledWith(
       "connectors_execute_tool",
       { id: "server-1:get_calendar", arguments: { week: "next" } },

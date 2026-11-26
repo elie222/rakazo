@@ -22,7 +22,7 @@ import {
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { completeRun } from "../lifecycle/run-complete.js";
 import { failRun, handoffEndedTurn, requeueRunAfterDatabaseOutage } from "../lifecycle/run-fail.js";
-import { searchRunTools } from "../tools/run-tool-search.js";
+import { resolveConnectorTool, searchRunTools } from "../tools/run-tool-search.js";
 import { followUpsOffered, offeredFleetTools } from "../tools/run-tool-selection.js";
 import { applyTool } from "../tools/run-tools.js";
 import { consumeRunEvents } from "./run-turn.js";
@@ -341,6 +341,7 @@ function modelTurnRequest(
       : (name, args, executionId, route, observer) =>
           applyTool(ctx, name, args, executionId, route, observer),
     searchTools: scripted ? undefined : (request) => searchRunTools(ctx, request),
+    resolveConnectorTool: scripted ? undefined : (id) => resolveConnectorTool(ctx, id),
     resolveModel: scripted
       ? undefined
       : (provider, modelId) =>

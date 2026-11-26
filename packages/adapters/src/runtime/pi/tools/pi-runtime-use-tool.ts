@@ -72,10 +72,7 @@ async function catalogRunnerFor(
   host: ToolHost,
 ): Promise<AgentTool | undefined> {
   if (!catalogRunners.size) return undefined;
-  const hit =
-    host.foundTools?.get(id) ??
-    (await host.request.searchTools?.({ ids: [id] }))?.find(
-      (candidate) => candidate.id === id && candidate.next === "use_tool",
-    );
-  return hit?.connectorId ? catalogRunners.get(hit.connectorId) : undefined;
+  const connectorId =
+    host.foundTools?.get(id)?.connectorId ?? (await host.request.resolveConnectorTool?.(id));
+  return connectorId ? catalogRunners.get(connectorId) : undefined;
 }
