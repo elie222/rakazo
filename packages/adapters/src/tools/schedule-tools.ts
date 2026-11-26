@@ -1001,15 +1001,19 @@ async function createWatchFromTool(
 }
 
 /**
- * List bot routines (every member's) from every chat. In a group, each says whether it posts
- * in that group (`inThisChat`), the only ones the group can change.
+ * List bot routines (every member's) from every chat, or the one `routineId` names. In a group,
+ * each says whether it posts in that group (`inThisChat`), the only ones the group can change.
  */
 export async function listSchedulesFromTool(
   deps: Pick<ScheduleToolDeps, "prisma">,
-  input: { spaceId: string; botId: string; groupThreadId?: string },
+  input: { spaceId: string; botId: string; groupThreadId?: string; routineId?: string },
 ) {
   const rows = await deps.prisma.routine.findMany({
-    where: { spaceId: input.spaceId, botId: input.botId },
+    where: {
+      spaceId: input.spaceId,
+      botId: input.botId,
+      ...(input.routineId ? { id: input.routineId } : {}),
+    },
     orderBy: { createdAt: "desc" },
   });
   return {

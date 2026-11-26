@@ -14,6 +14,8 @@ import { prepareAllowedThinkingLevels, validateBotModelChange } from "../models/
 import { OPENAI_COMPATIBLE_VOICE_PROVIDER_ID } from "../providers/voice/openai-compatible/openai-compatible-voice.js";
 import type { FleetPrepareDeps } from "../tools/fleet-tools.js";
 import { botModelLabel } from "../tools/fleet-tools.js";
+import type { TextPaging } from "../tools/text-page.js";
+import { fitTextPage, SERIALIZED_PAGE_LIMIT } from "../tools/text-page.js";
 import { createVoiceProvider } from "../voice/voice-factory.js";
 import { resolveVoiceKey } from "../voice/voice-model-connection.js";
 
@@ -40,21 +42,6 @@ export type OwnBotSettingsRow = {
 const MODELS_PER_PROVIDER = 15;
 /** Serialized characters the model list may take, so connections cannot crowd out the rest of a read. */
 const MODELS_LISTED_CHARS = 4_000;
-/** Largest instructions page a settings read returns; the rest come on request by offset. */
-const INSTRUCTIONS_PAGE_SIZE = 8_000;
-/**
- * Ceiling for the whole serialized result of a paged read. The page competes with the description
- * and JSON escaping for the same budget, so the page shrinks until the result fits — with
- * headroom under the generic tool-result cut.
- */
-const SERIALIZED_PAGE_LIMIT = 10_000;
-
-/** A page must not end inside a UTF-16 surrogate pair. */
-const endsWholeCharacter = (text: string, end: number) => {
-  const last = text.charCodeAt(end - 1);
-  return last < 0xd800 || last > 0xdbff;
-};
-
 /** `update_bot` with no fields: this bot's settings and the values it may set. */
 export async function readOwnBotSettings(
   deps: FleetPrepareDeps,
@@ -106,10 +93,7 @@ export async function readOwnBotSettings(
     ids: listed,
     ...(ids.length > listed.length ? { more: ids.length - listed.length } : {}),
   }));
-  const settings = (
-    instructions: string,
-    paging: { length: number; nextOffset: number | null } | null,
-  ) => ({
+  const settings = (instructions: string, paging: TextPaging | null) => ({
     name: bot.name,
     description: bot.description,
     instructions,
@@ -139,34 +123,11 @@ export async function readOwnBotSettings(
   });
   const whole = settings(bot.instructions, null);
   if (JSON.stringify(whole).length <= SERIALIZED_PAGE_LIMIT) return whole;
-  const total = bot.instructions.length;
-  const paged = (end: number) =>
-    settings(bot.instructions.slice(instructionsOffset, end), {
-      length: total,
-      nextOffset: end < total ? end : null,
-    });
-  // Serialized length only grows as the page grows, so the largest fitting end is a search.
-  let low = instructionsOffset + 1;
-  let high = Math.min(instructionsOffset + INSTRUCTIONS_PAGE_SIZE, total);
-  let end = low;
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    if (JSON.stringify(paged(mid)).length <= SERIALIZED_PAGE_LIMIT) {
-      end = mid;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
-  }
-  if (end < total && !endsWholeCharacter(bot.instructions, end)) end -= 1;
-  // The rest of the settings can leave no room for any instructions; a page that does not
-  // advance would send the model back to the same offset forever.
-  if (end <= instructionsOffset || JSON.stringify(paged(end)).length > SERIALIZED_PAGE_LIMIT) {
-    return {
+  return (
+    fitTextPage(bot.instructions, instructionsOffset, settings) ?? {
       error: "Your settings are too large to read your instructions: shorten your description.",
-    };
-  }
-  return paged(end);
+    }
+  );
 }
 
 /** The voices the settings screen offers: those of the user's default voice connection here. */

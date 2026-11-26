@@ -23,6 +23,7 @@ import {
   updateTicket,
 } from "../../tasks/ticket-tools.js";
 import { cardName } from "../../tools/fleet-tools.js";
+import { fitRoutineList, readRoutine } from "../../tools/routine-list-view.js";
 import type { ScheduleToolDeps } from "../../tools/schedule-tools.js";
 import {
   cancelScheduleFromTool,
@@ -234,13 +235,20 @@ export const taskTools: ToolHandlers = {
   },
   async schedule_list(ctx, call) {
     const { deps, run } = ctx;
-    const target = await routinesTarget(ctx, call.name, call.args);
+    const { args } = call;
+    const target = await routinesTarget(ctx, call.name, args);
     if ("error" in target) return target;
-    return listSchedulesFromTool(deps, {
+    const routineId = isScheduleValueProvided(args.routineId) ? String(args.routineId).trim() : "";
+    const offset = isScheduleValueProvided(args.promptOffset) ? Number(args.promptOffset) : 0;
+    if (!Number.isInteger(offset) || offset < 0)
+      return { error: "promptOffset must be a whole number of 0 or more." };
+    const listed = await listSchedulesFromTool(deps, {
       spaceId: run.spaceId,
       botId: target.botId,
       ...(target.groupThreadId ? { groupThreadId: target.groupThreadId } : {}),
+      ...(routineId ? { routineId } : {}),
     });
+    return routineId ? readRoutine(listed, offset) : fitRoutineList(listed);
   },
   async schedule_cancel(ctx, call) {
     const { deps, run } = ctx;
