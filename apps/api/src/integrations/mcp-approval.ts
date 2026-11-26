@@ -1,5 +1,5 @@
 import type { Actor, MessageBlock } from "@rakazo/contracts";
-import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
+import { ClientError, QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -38,6 +38,13 @@ export type ThreadSeq = {
   threadId: string;
   seq: number;
 };
+
+/** A card a member's run posted is answered by that member, even for an organization's server. */
+export class McpCardOfAnotherMemberError extends ClientError {
+  constructor() {
+    super("FORBIDDEN", "Only the person who asked can answer this card.");
+  }
+}
 
 type ApprovalBlock = Extract<MessageBlock, { kind: "mcp_approval" }>;
 
@@ -112,9 +119,16 @@ async function rewriteCards(
   input: { botId?: string; serverId: string; status: ApprovalBlock["status"] },
   selectable: (block: ApprovalBlock) => boolean,
   options: { leaveOthersCards?: boolean } = {},
-): Promise<{ seqs: ThreadSeq[]; flipped: number; dismissed: boolean; connected: boolean }> {
+): Promise<{
+  seqs: ThreadSeq[];
+  flipped: number;
+  dismissed: boolean;
+  connected: boolean;
+  othersCards: boolean;
+}> {
   const seqs: ThreadSeq[] = [];
   let flipped = 0;
+  let othersCards = false;
   let dismissed = false;
   let connected = false;
   for (const thread of threads) {
@@ -129,7 +143,11 @@ async function rewriteCards(
       : () => false;
     for (const message of messages) {
       if (message.botId && message.botId !== input.botId) continue;
-      if (someoneElses(message.runId)) continue;
+      if (someoneElses(message.runId)) {
+        if (storedMessageBlocks(message).some((block) => isApproval(block, input.serverId)))
+          othersCards = true;
+        continue;
+      }
       const blocks = storedMessageBlocks(message);
       const matching = blocks.filter((block): block is ApprovalBlock =>
         isApproval(block, input.serverId),
@@ -160,7 +178,7 @@ async function rewriteCards(
       seqs.push({ threadId: thread.id, seq: event.seq });
     }
   }
-  return { seqs, flipped, dismissed, connected };
+  return { seqs, flipped, dismissed, connected, othersCards };
 }
 
 /** An organization's server is shared, but a card its sign-in posted belongs to the member whose
@@ -187,7 +205,8 @@ async function askedBySomeoneElse(
     passes threadId) sees `assign: false` when a dismissal already won, so that
     race does not create an assignment. Settings approval omits threadId and
     still assigns. Cards another member's run posted stay as they are, so
-    `resolved` never starts a run for someone else's request. */
+    `resolved` never starts a run for someone else's request, and a card
+    decision that finds only such a card is refused. */
 export async function resolveMcpApprovalCards<T>(
   deps: McpApprovalDeps,
   actor: Actor,
@@ -210,6 +229,16 @@ export async function resolveMcpApprovalCards<T>(
           painted.flipped === 0 &&
           !painted.connected &&
           painted.dismissed;
+        // The only card here is another member's: answering it is theirs, so nothing is saved
+        // and the card stays open rather than looking answered to this member.
+        if (
+          input.threadId !== undefined &&
+          painted.othersCards &&
+          painted.flipped === 0 &&
+          !painted.connected &&
+          !painted.dismissed
+        )
+          throw new McpCardOfAnotherMemberError();
         const assign = !dismissalWon;
         const resolved = painted.flipped > 0;
         const value = effect ? await effect(tx, { assign, resolved }) : undefined;

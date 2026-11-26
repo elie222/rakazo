@@ -152,14 +152,16 @@ describe.skipIf(!enabled)("approving an organization MCP server's card (PostgreS
     });
   }
 
-  it("leaves another member's card open and starts no run for them", async () => {
+  it("refuses another member's card, leaving it open with no run started", async () => {
     const { botId, serverId, threadId, cardRunId, cardId } = await reconnectCard();
     const other = member(otherId);
     const jobs = { enqueue: vi.fn(async () => undefined) };
 
-    await runAsTenant(other, () =>
-      client(other, jobs).mcp.assignments.approve({ botId, serverId, threadId }),
-    );
+    await expect(
+      runAsTenant(other, () =>
+        client(other, jobs).mcp.assignments.approve({ botId, serverId, threadId }),
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     const { runs, card } = await runAsSystem("mcp approval fixture", async () => ({
       runs: await prisma.run.findMany({ where: { threadId, id: { not: cardRunId } } }),
