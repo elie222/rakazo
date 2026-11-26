@@ -28,17 +28,6 @@ const login = z.object({
   hasSession: z.boolean(),
 });
 const controlName = z.string().trim().min(1).max(300);
-const signInStep = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("fill"),
-    role: z.literal("textbox"),
-    name: controlName,
-    text: z.string().min(1).max(4096),
-  }),
-  z.object({ kind: z.literal("click"), role: z.literal("button"), name: controlName }),
-  z.object({ kind: z.literal("wait"), role: z.literal("heading"), name: controlName }),
-]);
-
 export const organizationVaultRpc = {
   settings: oc.output(
     z.object({
@@ -49,10 +38,17 @@ export const organizationVaultRpc = {
   ),
   signIn: oc
     .input(
-      loginId.extend({
-        url: z.string().trim().max(2048),
-        steps: z.array(signInStep).min(3).max(10),
-      }),
+      loginId
+        .extend({
+          url: z.string().trim().min(1).max(2048),
+          usernameLabel: controlName,
+          username: z.string().min(1).max(4096),
+          passwordLabel: controlName,
+          password: z.string().min(1).max(4096),
+          submitLabel: controlName,
+          successHeading: controlName,
+        })
+        .strict(),
     )
     .output(login),
   revokeSession: oc.input(loginId).output(login),

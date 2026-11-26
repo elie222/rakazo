@@ -30,6 +30,16 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
     kind: "organization_model",
     fields: ["id"],
   },
+  "organizations.vault.signIn": {
+    type: "credential.changed",
+    kind: "organization_login_session",
+    fields: ["loginId"],
+  },
+  "organizations.vault.revokeSession": {
+    type: "credential.deleted",
+    kind: "organization_login_session",
+    fields: ["loginId"],
+  },
   "models.finishOAuth": { type: "credential.created", kind: "model" },
   "models.disconnect": { type: "credential.deleted", kind: "model", fields: ["provider"] },
   "mcp.servers.create": { type: "credential.created", kind: "mcp" },

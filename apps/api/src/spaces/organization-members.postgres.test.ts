@@ -53,11 +53,12 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
   const launch = vi.fn<ProtectedBrowserLauncher>(async () => ({ storageState: siteStorage }));
   const signInInput = {
     url: "https://example.test/sign-in",
-    steps: [
-      { kind: "fill", role: "textbox", name: "Password", text: "fake-password" },
-      { kind: "click", role: "button", name: "Sign in" },
-      { kind: "wait", role: "heading", name: "Account" },
-    ],
+    usernameLabel: "Username",
+    username: "fake-username",
+    passwordLabel: "Password",
+    password: " fake-password ",
+    submitLabel: "Sign in",
+    successHeading: "Account",
   };
 
   const syncSeats = vi.fn(async (_organizationId: string) => undefined);
@@ -245,12 +246,86 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
       loginId,
       ...signInInput,
     });
+    expect(launch).toHaveBeenLastCalledWith(
+      {
+        mode: "sign-in",
+        url: signInInput.url,
+        steps: [
+          { kind: "fill", role: "textbox", name: "Username", text: "fake-username" },
+          { kind: "fill", role: "textbox", name: "Password", text: " fake-password " },
+          { kind: "click", role: "button", name: "Sign in" },
+          { kind: "wait", role: "heading", name: "Account" },
+        ],
+      },
+      expect.any(AbortSignal),
+    );
     expect(signedIn).toMatchObject({ status: 200, json: { id: loginId, hasSession: true } });
     expect(signedIn.json).not.toHaveProperty("sessionCipher");
     const row = await system.organizationLogin.findUniqueOrThrow({ where: { id: loginId } });
     expect(row.sessionCipher).toMatch(/^v2:/);
     const decoded = await encryption.load(row.sessionCipher!, loginId);
     expect(JSON.parse(decoded)).toEqual({ cookies: [], origins: [siteStorage.origins[0]] });
+  });
+
+  it("rejects caller-supplied browser steps before launch", async () => {
+    const owner = await person("script-owner");
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    const previousCalls = launch.mock.calls.length;
+    const result = await call(owner.actor, "organizations/vault/signIn", {
+      loginId: created.json.id,
+      ...signInInput,
+      steps: [{ kind: "click", role: "button", name: "Other action" }],
+    });
+    expect(result.status).toBe(400);
+    expect(launch.mock.calls).toHaveLength(previousCalls);
+  });
+
+  it("audits committed session saves and revocations with only safe metadata", async () => {
+    const owner = await person("session-audit-owner");
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    const loginId = created.json.id as string;
+    expect(
+      (await call(owner.actor, "organizations/vault/signIn", { loginId, ...signInInput })).status,
+    ).toBe(200);
+    expect((await call(owner.actor, "organizations/vault/revokeSession", { loginId })).status).toBe(
+      200,
+    );
+    expect(
+      await system.auditEvent.findMany({
+        where: { organizationId: owner.organizationId, targetType: "organization_login_session" },
+        select: { action: true, actorId: true, spaceId: true, metadata: true },
+        orderBy: { action: "asc" },
+      }),
+    ).toEqual([
+      {
+        action: "credential.changed",
+        actorId: owner.id,
+        spaceId: owner.actor.spaceId,
+        metadata: {
+          procedure: "organizations.vault.signIn",
+          kind: "organization_login_session",
+          loginId,
+        },
+      },
+      {
+        action: "credential.deleted",
+        actorId: owner.id,
+        spaceId: owner.actor.spaceId,
+        metadata: {
+          procedure: "organizations.vault.revokeSession",
+          kind: "organization_login_session",
+          loginId,
+        },
+      },
+    ]);
   });
 
   it.each([
@@ -296,6 +371,11 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     expect((await pending).status).toBe(409);
     const row = await system.organizationLogin.findUniqueOrThrow({ where: { id: loginId } });
     expect(row.sessionCipher).toBeNull();
+    expect(
+      await system.auditEvent.count({
+        where: { organizationId: owner.organizationId, action: "credential.changed" },
+      }),
+    ).toBe(0);
   });
 
   it("keeps the first committed session when two admins sign in at once", async () => {

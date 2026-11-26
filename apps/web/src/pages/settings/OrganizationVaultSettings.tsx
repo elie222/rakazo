@@ -145,23 +145,13 @@ function LoginActions({
       }
       return rpc.organizations.vault.signIn({
         loginId,
-        url: String(data.get("url")),
-        steps: [
-          {
-            kind: "fill",
-            role: "textbox",
-            name: String(data.get("usernameLabel")),
-            text: String(data.get("username")),
-          },
-          {
-            kind: "fill",
-            role: "textbox",
-            name: String(data.get("passwordLabel")),
-            text: String(data.get("password")),
-          },
-          { kind: "click", role: "button", name: String(data.get("submitLabel")) },
-          { kind: "wait", role: "heading", name: String(data.get("successHeading")) },
-        ],
+        url: String(data.get("url") ?? ""),
+        usernameLabel: String(data.get("usernameLabel") ?? ""),
+        username: String(data.get("username") ?? ""),
+        passwordLabel: String(data.get("passwordLabel") ?? ""),
+        password: String(data.get("password") ?? ""),
+        submitLabel: String(data.get("submitLabel") ?? ""),
+        successHeading: String(data.get("successHeading") ?? ""),
       });
     },
     stale: [stale],

@@ -151,18 +151,6 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
       if (!url || url.origin !== login.origin || url.username || url.password) {
         throw new ClientError("BAD_REQUEST", "Enter a sign-in page on the saved site");
       }
-      const successStep = input.steps.at(-1);
-      if (
-        !input.steps.some((step) => step.kind === "fill") ||
-        input.steps.at(-2)?.kind !== "click" ||
-        successStep?.kind !== "wait"
-      ) {
-        throw new ClientError(
-          "BAD_REQUEST",
-          "Provide a sign-in field, a submit button and a signed-in heading",
-        );
-      }
-
       const signal = deadlineSignal(100_000, requestSignal);
       let state: Awaited<ReturnType<typeof browser.launch>>["storageState"];
       try {
@@ -170,7 +158,12 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
           {
             mode: "sign-in",
             url: url.href,
-            steps: [...input.steps.slice(0, -1), successStep],
+            steps: [
+              { kind: "fill", role: "textbox", name: input.usernameLabel, text: input.username },
+              { kind: "fill", role: "textbox", name: input.passwordLabel, text: input.password },
+              { kind: "click", role: "button", name: input.submitLabel },
+              { kind: "wait", role: "heading", name: input.successHeading },
+            ],
           },
           signal,
         ));
