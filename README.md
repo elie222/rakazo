@@ -143,7 +143,8 @@ Put HTTPS in front of port 5173; [docs/self-host-production.md](./docs/self-host
 covers the Caddy setup and host hardening. In the desktop app choose **Existing instance** and enter
 the `https://` address.
 
-Or [deploy on Railway](https://railway.com/new/template/rakazo-template); see the [Railway setup guide](./infra/railway/README.md).
+Or [deploy on Railway](https://railway.com/new/template/rakazo-template) ([setup guide](./infra/railway/README.md))
+or [deploy to Render](https://render.com/deploy?repo=https://github.com/elie222/rakazo) ([setup guide](./infra/render/README.md)).
 
 ## Local development (source checkout)
 

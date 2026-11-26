@@ -7,13 +7,15 @@ import type {
 } from "@rakazo/contracts";
 import { backupChoiceKey, modelRoleConnectionId, usableModelId } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
-import { appliedModelRole } from "@rakazo/db";
+import { appliedModelRole, organizationModelConnectionIn, runAsSystem } from "@rakazo/db";
 import { resolveAutoReviewChecker } from "../approvals/auto-review.js";
 import { approvedModelCreditOffering, modelCreditOfferings } from "../model-credits/offerings.js";
 import type { SavedDeploymentModel } from "./deployment-model.js";
 import { adminDeploymentModel } from "./deployment-model.js";
 import type { ModelChoice, ModelCredential } from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
+
+export const ORGANIZATION_MODEL_CONNECTION_PREFIX = "organization:";
 
 /** The deployment's configuration that stands in for a member who chose nothing. */
 export type DeploymentModelDefaults = {
@@ -89,13 +91,61 @@ export async function effectiveModelRole(
 export type MemberMainModel = ModelRoleChoice & {
   /** The connection that serves it; null when only the deployment can. */
   credential: ModelCredential;
+  organizationConnectionId?: string;
 };
+
+export async function selectedOrganizationModelConnection(
+  prisma: PrismaClient,
+  scope: { userId: string; spaceId: string },
+  connectionId: string,
+  provider: string,
+  modelId: string,
+) {
+  if (!connectionId.startsWith(ORGANIZATION_MODEL_CONNECTION_PREFIX)) return null;
+  const id = connectionId.slice(ORGANIZATION_MODEL_CONNECTION_PREFIX.length);
+  return runAsSystem("authorize the selected organization model", () =>
+    prisma.organizationModelConnection.findFirst({
+      where: { id, provider, modelId, ...organizationModelConnectionIn(scope, id) },
+      select: { ciphertext: true, secretId: true, supportsImages: true },
+    }),
+  );
+}
+
+/** The member's explicit organization selection, before checking connection access. */
+export async function memberOrganizationMainModel(
+  prisma: PrismaClient,
+  scope: { userId: string; spaceId: string },
+): Promise<MemberMainModel | null> {
+  const organization = await prisma.spaceMember.findUnique({
+    where: { spaceId_userId: { spaceId: scope.spaceId, userId: scope.userId } },
+    select: {
+      organizationModelConnectionId: true,
+      organizationModelProvider: true,
+      organizationModelId: true,
+    },
+  });
+  if (
+    organization?.organizationModelConnectionId &&
+    organization.organizationModelProvider &&
+    organization.organizationModelId
+  ) {
+    return {
+      provider: organization.organizationModelProvider,
+      modelId: organization.organizationModelId,
+      credential: null,
+      organizationConnectionId: organization.organizationModelConnectionId,
+    };
+  }
+  return null;
+}
 
 /** The member's main model and the connection that serves it, resolved as validation does. */
 export async function resolveMemberMainModel(
   deps: { prisma: PrismaClient; secretStore: Pick<SecretStore, "load"> },
   scope: { userId: string; spaceId: string },
 ): Promise<MemberMainModel | null> {
+  const organization = await memberOrganizationMainModel(deps.prisma, scope);
+  if (organization) return organization;
   const { primary } = await appliedModelRole(deps.prisma, scope, "main");
   if (!primary) return null;
   const credential = primary.creditOfferingId
@@ -141,7 +191,7 @@ export function selectConfiguredModel(input: {
   const useMain =
     !useOverride &&
     main !== null &&
-    (Boolean(main.credentialId || main.creditOfferingId) ||
+    (Boolean(main.credentialId || main.creditOfferingId || main.organizationConnectionId) ||
       runnable(main.provider, main.credential, main.modelId));
   const fallback = deploymentModelRole("main", input.defaults).primary;
   const selected = useOverride
@@ -155,7 +205,9 @@ export function selectConfiguredModel(input: {
           provider: main.provider,
           id: main.modelId,
           credential: main.credential,
-          connectionId: modelRoleConnectionId(main),
+          connectionId: main.organizationConnectionId
+            ? `${ORGANIZATION_MODEL_CONNECTION_PREFIX}${main.organizationConnectionId}`
+            : modelRoleConnectionId(main),
         }
       : { provider: fallback?.provider, id: fallback?.modelId ?? null, credential: null };
   // The main model's effort belongs to that model, so an override of the same model keeps it.

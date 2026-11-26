@@ -31,7 +31,10 @@ import { teamWorkspaceInstruction } from "../../computers/screens/computer-suppo
 import type { RunMediaSources } from "../../media/media-sources.js";
 import { approvedModelCreditOffering } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
-import { selectConfiguredModel } from "../../models/model-roles.js";
+import {
+  ORGANIZATION_MODEL_CONNECTION_PREFIX,
+  selectConfiguredModel,
+} from "../../models/model-roles.js";
 import {
   findConnectedModelCredential,
   PINNED_PROVIDER_NOT_CONNECTED,
@@ -177,6 +180,9 @@ export async function startTurnModel(
     { settings, deployment: runDeployment },
     scripted,
     registerRunSecrets,
+    (pinnedComputerModels?.main.connectionId ?? selected.connectionId)?.startsWith(
+      ORGANIZATION_MODEL_CONNECTION_PREFIX,
+    ),
   );
   const started = await startRunModel(
     deps,

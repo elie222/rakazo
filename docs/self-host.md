@@ -116,6 +116,13 @@ secrets: `docker compose exec api sh /run/rakazo-secrets/start node dist/cli/adm
 If the installer, Compose downloads, or image pulls are blocked, use the
 [restricted-network guide](./self-host-restricted-network.md) for mirror settings and local files.
 
+## Hosting platforms
+
+To run Rakazo without managing a server, [deploy on Railway](https://railway.com/new/template/rakazo-template)
+([setup guide](../infra/railway/README.md)) or
+[deploy to Render](https://render.com/deploy?repo=https://github.com/elie222/rakazo)
+([setup guide](../infra/render/README.md)).
+
 ## Any VPS: paste user data
 
 Hosts such as DigitalOcean, Vultr, Akamai (Linode), Hetzner and Hostinger take a cloud-init

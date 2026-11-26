@@ -327,6 +327,7 @@ describe("model roles", () => {
           thinkingLevel: null,
         },
       ]),
+      spaceMember: { findUnique: vi.fn(async () => null) },
       userModelPreference: { findMany: vi.fn(async () => preferences) },
       userModelCredential: { findMany: vi.fn(async () => [connectionA, connectionB]) },
       secret: {

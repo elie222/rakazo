@@ -634,6 +634,7 @@ export type ModelBilling =
   | "subscription"
   | "api_key"
   | "custom_endpoint"
+  | "organization"
   | "credits"
   | "deployment";
 

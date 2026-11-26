@@ -511,6 +511,7 @@ model Organization {
   spaces       Space[]
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
+  modelConnections OrganizationModelConnection[]
   computerAllowanceGrants ComputerAllowanceGrant[]
   mediaCharges MediaCharge[]
   referralCode ReferralCode?
@@ -523,6 +524,22 @@ model Organization {
 
   @@unique([slug])
   @@map("organization")
+}
+
+model OrganizationModelConnection {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider       String
+  modelId        String
+  label          String
+  secretId       String
+  ciphertext     String
+  supportsImages Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("organization_model_connections")
 }
 
 model BillingAccount {
@@ -817,6 +834,9 @@ model SpaceMember {
   member           Member                 @relation(fields: [organizationId, userId], references: [organizationId, userId], onDelete: Cascade)
   role             String                 @default("member")
   createdAt        DateTime
+  organizationModelConnectionId String?
+  organizationModelProvider String?
+  organizationModelId String?
   modelPreferences SpaceModelPreference[]
   voicePreferences SpaceVoicePreference[]
   aiDataConsents AiDataConsent[]
