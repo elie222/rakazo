@@ -14,6 +14,7 @@ import type { AutoReviewCandidate } from "../../approvals/auto-review-backups.js
 import { reviewWithBackups } from "../../approvals/auto-review-backups.js";
 import { changedTextReviewArgs } from "../../approvals/changed-text-review-args.js";
 import type { RunContext, RunTrust } from "../assembly/run-context.js";
+import { addRunSecrets } from "../assembly/run-context.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { autoReviewCheckerProvider, includedAutoReviewChecker } from "../turn/run-auto-review.js";
 import { currentRoutinePrompt, reviewOwnerContext } from "./run-review-context.js";
@@ -141,7 +142,7 @@ export async function reviewToolCall(
         {
           injectedReview,
           memberChecker: candidate.role !== "default",
-          registerSecrets: (values) => ctx.secrets.push(...values),
+          registerSecrets: (values) => addRunSecrets(ctx, values),
         },
         candidate,
       );

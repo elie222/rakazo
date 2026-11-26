@@ -9,6 +9,7 @@ import { backgroundHelpersAllowed } from "../../tasks/background-helpers.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import { promptVersion } from "../assembly/prompt-version.js";
 import type { AssembledTurn } from "../assembly/run-assembly.js";
+import { addRunSecrets } from "../assembly/run-context.js";
 import {
   botEmailInstruction,
   currentTurnDataPrompt,
@@ -282,7 +283,7 @@ function modelTurnRequest(
               { userId: run.userId, spaceId: run.spaceId },
               provider,
               modelId,
-              (values) => runSecrets.push(...values),
+              (values) => addRunSecrets(ctx, values),
               true,
               fallbackModels.find(
                 (candidate) =>
@@ -342,7 +343,7 @@ function modelTurnRequest(
     resolveModel: scripted
       ? undefined
       : (provider, modelId) =>
-          resolveConnectedModel(run, provider, modelId, (values) => runSecrets.push(...values)),
+          resolveConnectedModel(run, provider, modelId, (values) => addRunSecrets(ctx, values)),
     onTranscript: (transcript) => {
       state.reply.transcript = transcript;
     },

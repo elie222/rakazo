@@ -67,6 +67,8 @@ export type ApprovalCardOptions = {
   reviewReason?: string;
   summary?: FleetCardSummary;
   batch?: ToolBatch;
+  /** Instruction text keeps short command values while other card fields use the full set. */
+  instructionSecrets?: string[];
   /** The approval asks every time, so the card never offers Always allow. */
   onceOnly?: boolean;
   outgoingDraft?: ConnectorTool["outgoingDraft"];
@@ -81,6 +83,7 @@ export function buildApprovalAskBlock(
   options?: ApprovalCardOptions,
 ): MessageBlock {
   const onceOnly = toolRequiresExplicitApproval(toolName) || Boolean(options?.onceOnly);
+  const instructionSecrets = options?.instructionSecrets ?? secrets;
   const draft = options?.allowOutgoingDraft
     ? outgoingDraftForApproval(options, args, secrets)
     : undefined;
@@ -113,7 +116,10 @@ export function buildApprovalAskBlock(
         ? truncate(redactSecrets(options.reviewReason.trim(), secrets), MAX_APPROVAL_SUMMARY_LENGTH)
         : undefined;
     const lines = truncate(
-      redactSecrets(options.summary.lines.join("\n"), secrets),
+      redactSecrets(
+        options.summary.lines.join("\n"),
+        toolName === "set_child_instructions" ? instructionSecrets : secrets,
+      ),
       reason
         ? Math.max(0, approvalDetailLength(toolName) - reason.length - 2)
         : approvalDetailLength(toolName),
@@ -175,16 +181,16 @@ export function buildApprovalAskBlock(
   }
   // Only an instruction change held for approval carries the text it replaces.
   if (toolName === "update_bot" && typeof args.previousInstructions === "string") {
-    const before = redactSecrets(String(args.previousInstructions ?? ""), secrets);
-    const after = redactSecrets(String(args.instructions ?? ""), secrets);
-    const reason = redactSecrets(String(args.reason), secrets);
+    const before = redactSecrets(String(args.previousInstructions ?? ""), instructionSecrets);
+    const after = redactSecrets(String(args.instructions ?? ""), instructionSecrets);
+    const reason = redactSecrets(String(args.reason), instructionSecrets);
     return {
       kind: "ask",
       approvalEffectId: effectId,
       text: "Update instructions?",
       detail: instructionUpdateDiff(before, after),
       instructionUpdate: {
-        botId: String(args.botId ?? ""),
+        botId: redactSecrets(String(args.botId ?? ""), secrets),
         before,
         after,
         reason,

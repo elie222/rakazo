@@ -59,6 +59,8 @@ import { SCHEDULE_TOOL_NAMES } from "../../tools/schedule-tools.js";
 import { SKILL_TOOL_NAMES } from "../../tools/skill-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
 import {
+  instructionCredentialMatch,
+  instructionRedactionSecrets,
   markReadOutsideContent,
   neverAsks,
   OWN_INSTRUCTIONS_BASELINE_UNKNOWN_ERROR,
@@ -109,6 +111,21 @@ type ToolError = { error: string };
 
 /** A prepare-step refusal: a plain error, or a result that ends the turn on a repeat. */
 type PrepareRefusal = ToolError | TerminatingToolResult;
+
+function instructionCredentialRefusal(
+  match: ReturnType<typeof instructionCredentialMatch>,
+): PrepareRefusal | undefined {
+  if (match === "command_variable") {
+    return refusal(
+      "instructions_contain_command_variable",
+      "Instructions cannot contain a command variable value.",
+    );
+  }
+  if (match === "credential") {
+    return refusal("instructions_contain_credentials", "Instructions cannot contain credentials.");
+  }
+  return undefined;
+}
 
 /**
  * Resolve catalog and bound connector routes, and line the call up with the next approved
@@ -580,12 +597,21 @@ export async function prepareToolRequest(
   if (isFleetApprovalTool(name) && nextApprovedTool !== name) {
     // Resolve names, members, model and schedule now; an approved replay runs the stored
     // request above and never resolves them again.
+    let fleetSecrets: readonly string[] = ctx.secrets;
+    if (name === "set_child_instructions") {
+      const instructions = args.instructions;
+      if (typeof instructions === "string") {
+        const refused = instructionCredentialRefusal(instructionCredentialMatch(ctx, instructions));
+        if (refused) return refused;
+      }
+      fleetSecrets = instructionRedactionSecrets(ctx);
+    }
     const prepared = await prepareFleetRequest(
       await fleetPrepareDeps(deps, run),
       ctx.fleetRun,
       name,
       args,
-      ctx.secrets,
+      fleetSecrets,
     );
     if (!prepared.ok) return refusal("bot_management_request_invalid", prepared.error);
     args = prepared.canonical;
@@ -905,8 +931,10 @@ async function prepareOwnBotUpdate(
       "instructions_too_long",
       `instructions must be at most ${BOT_INSTRUCTIONS_MAX_LENGTH} characters.`,
     );
-  if (redactSecrets(instructions, ctx.secrets) !== instructions)
-    return refusal("instructions_contain_credentials", "Instructions cannot contain credentials.");
+  const credentialRefusal = instructionCredentialRefusal(
+    instructionCredentialMatch(ctx, instructions),
+  );
+  if (credentialRefusal) return credentialRefusal;
   request.args = { ...args, instructions };
   if (unguarded) return undefined;
   // A run someone else started acts with their authority, and its card is theirs to answer. A new

@@ -9,6 +9,11 @@ import { installAuditEventStore } from "@rakazo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { redactAgentCommandResult } from "../computers/sandbox/agent-environment.js";
 import { DesktopSandboxProvider } from "../providers/computer/desktop/desktop-sandbox.js";
+import {
+  addCommandVariableValues,
+  addRunSecrets,
+  addRunSecretValues,
+} from "../runs/assembly/run-context.js";
 import { computerTools } from "../runs/tools/run-tools-computer.js";
 import {
   forgetBotSecret,
@@ -375,10 +380,10 @@ describe("shell command environment", () => {
     });
     expect(env).toEqual({ GOOD_TOKEN: "fake-good-token" });
     expect(unsetEnv).toEqual(["CLI_TOKEN"]);
-    expect(registerRedactions).toHaveBeenCalledExactlyOnceWith([
-      "fake-good-token",
-      Buffer.from("fake-good-token").toString("base64"),
-    ]);
+    expect(registerRedactions).toHaveBeenCalledExactlyOnceWith(
+      ["fake-good-token", Buffer.from("fake-good-token").toString("base64")],
+      ["fake-good-token", Buffer.from("fake-good-token").toString("base64")],
+    );
   });
 
   it("removes a failed bot credential from the desktop host environment", async () => {
@@ -432,10 +437,22 @@ describe("shell command environment", () => {
     const db = fakeDatabase();
     const value = "fake token/with+chars=";
     await save(db, "api-token", value);
-    const runSecrets = (await loadCommandVariables(db.prisma, secretStore, scope)).redactions;
+    const loaded = await loadCommandVariables(db.prisma, secretStore, scope);
+    const runSecrets = loaded.redactions;
     const forms = [value, Buffer.from(value).toString("base64"), encodeURIComponent(value)];
     const redacted = redactSecrets(forms.join("\n"), runSecrets);
     for (const form of forms) expect(redacted).not.toContain(form);
+    for (const form of forms) expect(loaded.shortInstructionRedactions).not.toContain(form);
+  });
+
+  it("keeps short command values out of instructions checks but not output redaction", async () => {
+    const db = fakeDatabase();
+    await save(db, "release-name", "release");
+
+    const loaded = await loadCommandVariables(db.prisma, secretStore, scope);
+
+    expect(loaded.redactions).toContain("release");
+    expect(loaded.shortInstructionRedactions).toContain("release");
   });
 
   it("redacts base64 and URL-encoded forms of a bot variable from command output", async () => {
@@ -580,6 +597,8 @@ describe("a shell command's use of its variables", () => {
         get: vi.fn(async () => computer),
       },
       secrets: [] as string[],
+      commandVariableRedactions: new Set<string>(),
+      shortCommandVariableRedactions: new Set<string>(),
       state: {
         vaultUses: new Set<string>(),
         reply: { pendingProgress: "", redactor: createStreamingRedactor([]) },
@@ -641,6 +660,61 @@ describe("a shell command's use of its variables", () => {
     await run();
     expect(rows).toHaveLength(4);
     expect(JSON.stringify(rows)).not.toContain("fake-shell-token");
+  });
+
+  it("updates instruction exclusions when a command variable changes during a run", async () => {
+    const db = fakeDatabase();
+    await save(db, "release-name", "release");
+    const { ctx, run } = shell(db);
+
+    await run();
+    expect(ctx.commandVariableRedactions).toContain("release");
+    expect(ctx.shortCommandVariableRedactions).toContain("release");
+
+    const longValue = "long-command-value-for-release";
+    await save(db, "release-name", longValue);
+    await run();
+    expect(ctx.commandVariableRedactions).toContain(longValue);
+    expect(ctx.shortCommandVariableRedactions).not.toContain(longValue);
+  });
+
+  it("treats a command value shared with another credential as a credential", async () => {
+    const db = fakeDatabase();
+    await save(db, "release-name", "release");
+    const { ctx, run } = shell(db);
+
+    await run();
+    expect(ctx.commandVariableRedactions).toContain("release");
+    expect(ctx.shortCommandVariableRedactions).toContain("release");
+
+    addRunSecrets(ctx as never, ["release"]);
+    expect(ctx.commandVariableRedactions).not.toContain("release");
+    expect(ctx.shortCommandVariableRedactions).not.toContain("release");
+
+    await run();
+    expect(ctx.commandVariableRedactions).not.toContain("release");
+    expect(ctx.shortCommandVariableRedactions).not.toContain("release");
+  });
+
+  it("keeps setup-time command and credential sources classified in either order", () => {
+    const commandFirst = {
+      secrets: [] as string[],
+      commandVariableRedactions: new Set<string>(),
+      shortCommandVariableRedactions: new Set<string>(),
+    };
+    addCommandVariableValues(commandFirst, ["release"], ["release"]);
+    addRunSecretValues(commandFirst, ["release"]);
+    expect(commandFirst.commandVariableRedactions).not.toContain("release");
+    expect(commandFirst.shortCommandVariableRedactions).not.toContain("release");
+
+    const credentialFirst = {
+      secrets: ["release"],
+      commandVariableRedactions: new Set<string>(),
+      shortCommandVariableRedactions: new Set<string>(),
+    };
+    addCommandVariableValues(credentialFirst, ["release"], ["release"]);
+    expect(credentialFirst.commandVariableRedactions).not.toContain("release");
+    expect(credentialFirst.shortCommandVariableRedactions).not.toContain("release");
   });
 
   it("records nothing for a command the computer never got, or a redaction-only load", async () => {

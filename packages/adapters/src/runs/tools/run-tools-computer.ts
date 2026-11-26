@@ -65,7 +65,7 @@ import {
   vaultLoginUseOf,
 } from "../../secrets/vault/vault-card-use.js";
 import type { RunContext } from "../assembly/run-context.js";
-import { addRunSecrets, recordVaultUse } from "../assembly/run-context.js";
+import { addCommandRunSecrets, addRunSecrets, recordVaultUse } from "../assembly/run-context.js";
 import { builtinOffered } from "../assembly/run-instructions.prompt.js";
 import { computerScreenToolResult } from "../lifecycle/run-lifecycle.js";
 import { awaitScreenTurn } from "../turn/screen-turn.js";
@@ -551,7 +551,8 @@ export const computerTools: ToolHandlers = {
       prisma: deps.prisma,
       secretStore: deps.secretStore,
       scope: run,
-      registerRedactions: (values) => addRunSecrets(ctx, values),
+      registerRedactions: (values, shortInstructionRedactions) =>
+        addCommandRunSecrets(ctx, values, shortInstructionRedactions),
       // The run hid the values it loaded at its start, which refused to start without them.
       keyOutage: "unset",
     });

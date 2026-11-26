@@ -18,7 +18,7 @@ import type {
   ToolStepCall,
 } from "@rakazo/contracts";
 import type { ToolStepOutcome } from "@rakazo/core";
-import { createStreamingRedactor, toolResultTaintsRun } from "@rakazo/core";
+import { createStreamingRedactor, redactSecrets, toolResultTaintsRun } from "@rakazo/core";
 import {
   isToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -331,7 +331,19 @@ export interface RunProviders {
  * {@link RunState}. Created once per attempt in continueRun and passed whole to tools and
  * the turn loop instead of closing over dozens of locals.
  */
-export interface RunContext {
+export interface RunSecretState {
+  /** Every value redacted from what this run shows or stores. Grows during the run. */
+  secrets: string[];
+  /** Every redaction form whose only source is a command variable, whether long or short. */
+  commandVariableRedactions: Set<string>;
+  /**
+   * Command forms short enough to occur inside ordinary instruction text. They still redact
+   * command output, but the instructions credential check ignores their command-variable origin.
+   */
+  shortCommandVariableRedactions: Set<string>;
+}
+
+export interface RunContext extends RunSecretState {
   deps: ExecutorDeps;
   providers: RunProviders;
   run: Run;
@@ -348,8 +360,6 @@ export interface RunContext {
   /** Stops the model and its next tool calls; the run's own signal stays live to save and finish. */
   runtimeAbortController: AbortController;
   fleetRun: FleetRun;
-  /** Every value redacted from what this run shows or stores. Grows during the run. */
-  secrets: string[];
   source: RunSource;
   computer: RunComputerContext;
   tools: RunTools;
@@ -401,14 +411,97 @@ export async function settleRunningHelpers(
   }
 }
 
+function extendRunSecretValues(ctx: RunSecretState, values: string[]) {
+  const additions = values.filter((value) => !ctx.secrets.includes(value));
+  if (additions.length === 0) return false;
+  ctx.secrets.push(...additions);
+  return true;
+}
+
+function refreshRunRedactor(ctx: RunContext) {
+  const { reply } = ctx.state;
+  reply.pendingProgress += reply.redactor.finish();
+  reply.redactor = createStreamingRedactor(ctx.secrets);
+}
+
+/** Register secrets before a run context exists, preserving their source classification. */
+export function addRunSecretValues(ctx: RunSecretState, values: string[]) {
+  for (const value of values) {
+    // Older tests and external callers may still provide only the run's secrets array.
+    ctx.commandVariableRedactions?.delete(value);
+    ctx.shortCommandVariableRedactions?.delete(value);
+  }
+  return extendRunSecretValues(ctx, values);
+}
+
 /** Redact values a tool just revealed, including in progress already buffered. */
 export function addRunSecrets(ctx: RunContext, values: string[]) {
-  const { reply } = ctx.state;
-  const additions = values.filter((value) => !ctx.secrets.includes(value));
-  if (additions.length === 0) return;
-  reply.pendingProgress += reply.redactor.finish();
-  ctx.secrets.push(...additions);
-  reply.redactor = createStreamingRedactor(ctx.secrets);
+  if (addRunSecretValues(ctx, values)) refreshRunRedactor(ctx);
+}
+
+/** Register command forms before a run context exists. */
+export function addCommandVariableValues(
+  ctx: RunSecretState,
+  values: string[],
+  shortInstructionRedactions: string[],
+) {
+  const shortInstructionSet = new Set(shortInstructionRedactions);
+  const additions = new Set(
+    values.filter(
+      (value) => !ctx.secrets.includes(value) || ctx.commandVariableRedactions.has(value),
+    ),
+  );
+  for (const value of additions) {
+    const wasCommandOnly = ctx.commandVariableRedactions.has(value);
+    ctx.commandVariableRedactions.add(value);
+    // A form shared by a long command value stays sensitive, even if another short
+    // value produces the same form. Shortness only survives across command-only calls.
+    if (!wasCommandOnly) {
+      if (shortInstructionSet.has(value)) ctx.shortCommandVariableRedactions.add(value);
+      else ctx.shortCommandVariableRedactions.delete(value);
+    } else if (!shortInstructionSet.has(value)) {
+      ctx.shortCommandVariableRedactions.delete(value);
+    }
+  }
+  return extendRunSecretValues(ctx, values);
+}
+
+/** Register command forms for output redaction, while keeping their instructions check separate. */
+export function addCommandRunSecrets(
+  ctx: RunContext,
+  values: string[],
+  shortInstructionRedactions: string[],
+) {
+  if (addCommandVariableValues(ctx, values, shortInstructionRedactions)) refreshRunRedactor(ctx);
+}
+
+export type InstructionCredentialMatch = "command_variable" | "credential";
+
+/** Redactions from sources other than command variables, including overlapping credential values. */
+export function instructionRedactionSecrets(
+  ctx: Pick<RunSecretState, "secrets" | "commandVariableRedactions">,
+): string[] {
+  return ctx.secrets.filter((value) => !ctx.commandVariableRedactions.has(value));
+}
+
+/** What kind of saved credential an instruction change would expose, without returning the value. */
+export function instructionCredentialMatch(
+  ctx: Pick<
+    RunSecretState,
+    "secrets" | "commandVariableRedactions" | "shortCommandVariableRedactions"
+  >,
+  instructions: string,
+): InstructionCredentialMatch | undefined {
+  const sensitiveCommandForms = [...ctx.commandVariableRedactions].filter(
+    (value) => !ctx.shortCommandVariableRedactions.has(value),
+  );
+  if (redactSecrets(instructions, sensitiveCommandForms) !== instructions) {
+    return "command_variable";
+  }
+  if (redactSecrets(instructions, instructionRedactionSecrets(ctx)) !== instructions) {
+    return "credential";
+  }
+  return undefined;
 }
 
 // Once per item and site per attempt: a sign-in types several fields, and a card's approval resumes

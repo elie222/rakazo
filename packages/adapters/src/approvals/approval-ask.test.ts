@@ -236,6 +236,31 @@ it("redacts known secrets in instruction approval details and editable metadata"
   expect(JSON.stringify(block)).not.toContain("fake-token");
 });
 
+it("keeps short command values in instruction text but not in other card fields", () => {
+  const block = buildApprovalAskBlock(
+    "effect-1",
+    "update_bot",
+    {
+      botId: "release",
+      previousInstructions: "release old credential",
+      instructions: "release new credential",
+      reason: "release reason",
+    },
+    ["release", "credential"],
+    { instructionSecrets: ["credential"] },
+  );
+
+  expect(block).toMatchObject({
+    instructionUpdate: {
+      botId: "[redacted]",
+      before: "release old [redacted]",
+      after: "release new [redacted]",
+      reason: "release reason",
+    },
+  });
+  expect(block.kind === "ask" ? block.detail : "").toContain("release");
+});
+
 describe("bot management approval cards", () => {
   it.each([
     "create_group",
@@ -289,6 +314,21 @@ describe("bot management approval cards", () => {
     expect(approvalDetailLength("set_child_instructions")).toBeGreaterThanOrEqual(
       lines.join("\n").length,
     );
+  });
+
+  it("uses the instruction secrets only for an instruction summary's text lines", () => {
+    const block = buildApprovalAskBlock("effect-1", "set_child_instructions", {}, ["release"], {
+      summary: {
+        title: "Replace release instructions?",
+        lines: ["Old length: 0 characters", "", "Include a release note in the reply."],
+      },
+      instructionSecrets: [],
+    });
+
+    expect(block).toMatchObject({
+      text: "Replace [redacted] instructions?",
+      detail: "Old length: 0 characters\n\nInclude a release note in the reply.",
+    });
   });
 
   it("carries a payment's receipt with secrets redacted", () => {
