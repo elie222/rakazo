@@ -62,6 +62,8 @@ export type UserComputerAccess = {
   webhookChains: boolean;
   /** Chat apps whose platform vouches for each sender; only their linked messages count. */
   verifiedChatApps?: readonly string[];
+  /** A routine run keeps the computer without asking again after it read outside content. */
+  routinesAfterOutsideContent?: boolean;
 };
 
 export const NO_USER_COMPUTER_ACCESS: UserComputerAccess = {
@@ -380,7 +382,8 @@ export async function botChainFromOwner(
  * this space traces back to that approval. Removing every paired computer ends it, so pairing again
  * asks again. Screen control is approved per app. A routine runs unattended, so once it has read
  * outside content, such as a fetched page, every call asks again whatever the mode or earlier
- * approvals. The owner's own computer output does not count, so a routine can take several steps.
+ * approvals, unless the server lets routines go on after outside content. The owner's own
+ * computer output does not count, so a routine can take several steps.
  */
 export async function userComputerGate(
   ctx: RunContext,
@@ -390,7 +393,12 @@ export async function userComputerGate(
   mode: ApprovalMode,
 ): Promise<"deny" | "allow" | "ask"> {
   if (blocked) return "deny";
-  if (ctx.run.trigger === "routine" && (await isRunTaintedBeyondOwnComputer(ctx))) return "ask";
+  if (
+    ctx.run.trigger === "routine" &&
+    !ctx.deps.userComputerAccess?.routinesAfterOutsideContent &&
+    (await isRunTaintedBeyondOwnComputer(ctx))
+  )
+    return "ask";
   // Pairing the desktop was the owner's consent; Never ask does not ask again.
   if (mode === "never") return "allow";
   const { deps, run } = ctx;

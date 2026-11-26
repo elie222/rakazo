@@ -282,6 +282,11 @@ async function main() {
         process.env.USER_DEVICES_ALLOW_WEBHOOK_CHAINS,
         false,
       ),
+      routinesAfterOutsideContent: parseEnvFlag(
+        "USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT",
+        process.env.USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT,
+        false,
+      ),
     },
     paymentWallet,
     stoppingSignal: shutdown.signal,

@@ -4931,6 +4931,26 @@ describe("user_computer_shell", () => {
       expect(requests.map(({ request }) => request.method)).toContain("execute");
     });
 
+    it("runs on after a fetched page in Never ask when the server lets routines go on after outside content", async () => {
+      const { gateway, requests } = devices();
+      const prompt = "Check the backups listed at https://status.example.com/";
+      const f = fixture({
+        ...ownRoutine,
+        prompt,
+        routineRow: { computerPromptHash: routineComputerFingerprint(prompt, []) },
+        userDevices: gateway,
+        userComputerAccess: { ...NO_USER_COMPUTER_ACCESS, routinesAfterOutsideContent: true },
+        skipApprovals: true,
+      });
+      f.setCalls([
+        { name: "web_fetch", args: { url: "https://status.example.com/" }, executionId: "call-1" },
+        call("ls", "call-2"),
+      ]);
+      await f.run();
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(requests.map(({ request }) => request.method)).toContain("execute");
+    });
+
     // Its own computer's output is not outside content for this rule, so it can take several steps.
     it("takes several steps on the computer in Never ask without asking", async () => {
       const { gateway, requests } = devices();

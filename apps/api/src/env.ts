@@ -111,6 +111,11 @@ export interface AppEnv extends MessagingEnvironmentValues {
    * when it started at a webhook, Git event or email their routine received. Default off.
    */
   userDevicesAllowWebhookChains: boolean;
+  /**
+   * USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT=true lets a routine run keep using the
+   * owner's computer without asking again after it read outside content. Default off.
+   */
+  userDevicesAllowRoutinesAfterOutsideContent: boolean;
   /** COMPUTER_SETTINGS_ENABLED=true lets Settings choose where computers run. Default off. */
   computerSettingsEnabled: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
@@ -210,6 +215,7 @@ export function userComputerAccess(env: AppEnv) {
     ownBots: env.userDevicesAllowOwnBots,
     messaging: env.userDevicesAllowMessaging,
     webhookChains: env.userDevicesAllowWebhookChains,
+    routinesAfterOutsideContent: env.userDevicesAllowRoutinesAfterOutsideContent,
   };
 }
 
@@ -353,6 +359,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     userDevicesAllowWebhookChains: parseEnvFlag(
       "USER_DEVICES_ALLOW_WEBHOOK_CHAINS",
       source.USER_DEVICES_ALLOW_WEBHOOK_CHAINS,
+      false,
+    ),
+    userDevicesAllowRoutinesAfterOutsideContent: parseEnvFlag(
+      "USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT",
+      source.USER_DEVICES_ALLOW_ROUTINES_AFTER_OUTSIDE_CONTENT,
       false,
     ),
     computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",
