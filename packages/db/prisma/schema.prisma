@@ -833,6 +833,9 @@ model SpaceMember {
   member           Member                 @relation(fields: [organizationId, userId], references: [organizationId, userId], onDelete: Cascade)
   role             String                 @default("member")
   createdAt        DateTime
+  organizationModelConnectionId String?
+  organizationModelProvider String?
+  organizationModelId String?
   modelPreferences SpaceModelPreference[]
   voicePreferences SpaceVoicePreference[]
   aiDataConsents AiDataConsent[]
