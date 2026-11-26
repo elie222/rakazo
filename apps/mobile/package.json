@@ -63,6 +63,7 @@
     "expo-keep-awake": "58.0.4",
     "expo-linking": "58.0.17",
     "expo-localization": "58.0.5",
+    "expo-media-library": "58.0.14",
     "expo-modules-core": "58.1.0",
     "expo-notifications": "58.1.9",
     "expo-router": "58.0.32",
@@ -91,7 +92,8 @@
     "react-native-web": "0.21.4",
     "react-native-webview": "14.0.1",
     "react-native-worklets": "0.13.0",
-    "expo-apple-authentication": "58.0.3"
+    "expo-apple-authentication": "58.0.3",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@lingui/babel-plugin-lingui-macro": "6.12.0",

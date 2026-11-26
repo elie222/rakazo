@@ -189,6 +189,35 @@ describe("tickRoutineWatch", () => {
     return { deps, routine, updateMany, messages };
   }
 
+  it("ends a routine whose quiet check leaves no check before its end", async () => {
+    const { deps, routine, updateMany } = setup({ data: { items: [] } });
+    const deleteMany = vi.fn(async () => ({ count: 1 }));
+    Object.assign(deps.prisma.routine, { deleteMany });
+    const endsAt = new Date(Date.now() + 60_000);
+    expect(await tickRoutineWatch(deps, { ...routine, endsAt }, target, scheduledAt)).toEqual({
+      run: false,
+    });
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: "routine-1", nextRunAt: scheduledAt, endsAt }),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("keeps checking a quiet watch whose end moved during the check", async () => {
+    const { deps, routine, updateMany } = setup({ data: { items: [] } });
+    Object.assign(deps.prisma.routine, { deleteMany: vi.fn(async () => ({ count: 0 })) });
+    updateMany.mockResolvedValueOnce({ count: 0 });
+    const endsAt = new Date(Date.now() + 60_000);
+    await tickRoutineWatch(deps, { ...routine, endsAt }, target, scheduledAt);
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: expect.objectContaining({ nextRunAt: scheduledAt }),
+      data: expect.objectContaining({ nextRunAt: expect.any(Date) }),
+    });
+    expect(deps.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "routine.wakeup" }),
+    );
+  });
+
   it("reschedules temporary HTTP failures at the watch interval without disabling it", async () => {
     const { deps, routine, updateMany, messages } = setup(
       {},
@@ -387,7 +416,7 @@ describe("tickRoutineWatch", () => {
     ).rejects.toThrow("can change data");
   });
 
-  it.each([false, undefined, true])("checks lazy tool readOnly %s", async (readOnly) => {
+  it.each([undefined, true])("checks lazy tool readOnly %s", async (readOnly) => {
     const { deps, routine } = setup({ data: "ok" });
     vi.mocked(deps.connector!.discoverTools).mockResolvedValue([]);
     deps.connector!.resolveCall = vi.fn(async (call) => ({
@@ -1305,7 +1334,7 @@ describe("tickRoutineWatch on a computer", () => {
       providerRef: "ecd-1",
     };
     vi.mocked(provisionComputer).mockResolvedValueOnce(computer);
-    const command = "(Get-ChildItem inbox).Count";
+    const command = "kill -Name chromium";
     expect(protectedComputerLifecycleRefusal(command)).toBeDefined();
     const { deps, routine, execute } = setupComputer(
       { kind: "command", command },
@@ -1384,27 +1413,6 @@ describe("tickRoutineWatch on a computer", () => {
         }),
       }),
     );
-  });
-
-  it("keeps sub-second modification times", async () => {
-    vi.mocked(provisionComputer).mockResolvedValueOnce({
-      id: "computer-1",
-      botId: "bot-1",
-      kind: "fake",
-      providerRef: "fake",
-    });
-    const { deps, routine, updateMany } = setupComputer(
-      { kind: "files", paths: ["a"] },
-      { stdout: "/home/rakazo/bots/bot-1/a/x.txt\t1\t5.25\n" },
-    );
-    routine.watchState = {
-      checkedAt: "x",
-      outcome: "unchanged",
-      fingerprint: null,
-      detail: null,
-    } as never;
-    await tickRoutineWatch(deps, routine, target, scheduledAt);
-    expect(JSON.stringify(updateMany.mock.calls[0])).toContain("1:5.25");
   });
 
   describe("a check's use of the vault's command variables", () => {

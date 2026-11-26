@@ -3,6 +3,7 @@ import {
   abortableDelay,
   MAX_TRANSCRIPTION_RESPONSE_BYTES,
   readJsonObjectWithin,
+  recognitionLocaleTag,
 } from "@rakazo/core";
 import type { AudioRecorder } from "expo-audio";
 import { File } from "expo-file-system";
@@ -10,6 +11,7 @@ import { Platform } from "react-native";
 import type { ApiRequestContext } from "../api/api";
 import { fetchServer } from "../api/server-headers";
 import { errorText, voiceAccountErrorText } from "../api/user-error";
+import { deviceLanguage, getActiveUiLocale } from "../i18n/i18n";
 import { ensureVoiceConsent, setDictationAudio } from "./voice";
 
 /** A recorded clip, ready to send to the voice provider. */
@@ -31,6 +33,18 @@ const MAX_CLIP_MS = 30_000;
 /** A dictated message stays well inside the server's transcription size limit. */
 const MAX_DICTATION_MS = 5 * 60_000;
 
+/**
+ * Asks only when the microphone is not allowed yet: Android opens its prompt even for a granted
+ * permission, and the app leaving for it ends a dictation already listening.
+ */
+export async function microphonePermission(signal: AbortSignal): Promise<{ granted: boolean }> {
+  const { AudioModule } = await import("expo-audio");
+  const current = await AudioModule.getRecordingPermissionsAsync();
+  // A session that ended meanwhile must not open the prompt.
+  if (current.granted || signal.aborted) return current;
+  return AudioModule.requestRecordingPermissionsAsync();
+}
+
 // A dictation that finishes late must not switch recording off under the next one's recorder.
 let recordingTurn: AbortSignal | undefined;
 
@@ -46,7 +60,7 @@ export async function recordClip(
 ): Promise<VoiceClip | null> {
   const { AudioModule, RecordingPresets } = await import("expo-audio");
   if (signal.aborted) return null;
-  const permission = await AudioModule.requestRecordingPermissionsAsync();
+  const permission = await microphonePermission(signal);
   // The call can end while the microphone prompt is open.
   if (signal.aborted) return null;
   if (!permission.granted)
@@ -147,10 +161,13 @@ export async function transcribeClip(
   clip: VoiceClip,
   signal: AbortSignal,
   requestContext: ApiRequestContext,
-  currentCallId?: string,
+  { callId, autoLanguage = false }: { callId?: string; autoLanguage?: boolean } = {},
 ): Promise<string> {
   await ensureVoiceConsent(requestContext);
   const { apiBase, headers } = requestContext;
+  const language = autoLanguage
+    ? undefined
+    : recognitionLocaleTag(getActiveUiLocale(), await deviceLanguage());
   const res = await fetchServer(
     `${apiBase}/api/voice/transcribe`,
     {
@@ -159,7 +176,8 @@ export async function transcribeClip(
       body: JSON.stringify({
         audioBase64: clip.base64,
         mimeType: clip.mimeType,
-        callId: currentCallId,
+        language,
+        callId,
       }),
       signal,
     },

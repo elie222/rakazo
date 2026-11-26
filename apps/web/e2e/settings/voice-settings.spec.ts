@@ -9,6 +9,24 @@ import {
   signup,
 } from "../helpers/helpers";
 
+test("Voice offers subscription sign-in and reveals the API-key field on request", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `voice-sign-in-${Date.now()}@rakazo.test`, "password12", "Voice Preview");
+  await completeOnboarding(page);
+  await openUserSettings(page, "voice");
+  const voice = page.getByTestId("voice-settings");
+  await chooseOption(voice.getByRole("combobox", { name: "Provider" }), "xAI");
+  await expect(voice.getByRole("button", { name: /^Sign in with / })).toBeVisible();
+  const key = voice.getByLabel("API key", { exact: true });
+  const revealKey = voice.getByRole("button", { name: "Or paste an API key" });
+  await expect(revealKey).toBeVisible();
+  await expect(key).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "voice-subscription-sign-in");
+  await revealKey.click();
+  await expect(key).toBeFocused();
+});
+
 test("a self-hosted voice connection offers a separate transcription server", async ({
   page,
 }, testInfo) => {
@@ -23,8 +41,27 @@ test("a self-hosted voice connection offers a separate transcription server", as
   await expect(voice.getByLabel("Transcription API key")).toHaveCount(0);
   await voice.getByLabel("Transcription server URL").fill("http://127.0.0.1:8881/v1");
   await expect(voice.getByLabel("Transcription API key")).toBeVisible();
+  const vocabulary = voice.getByLabel("Transcription vocabulary", { exact: true });
+  await expect(vocabulary).toBeVisible();
+  await vocabulary.fill("Acme, Xyla");
   await voice.getByLabel("Transcription API key").scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "voice-self-hosted-transcription-server");
+});
+
+test("automatic call language is opt-in and persists on this device", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `voice-language-${Date.now()}@rakazo.test`, "password12", "Voice Preview");
+  await completeOnboarding(page);
+  await openUserSettings(page, "voice");
+  const setting = page.getByRole("switch", { name: "Detect call language automatically" });
+  await expect(setting).not.toBeChecked();
+  await setting.click();
+  await expect(setting).toBeChecked();
+  await setting.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "voice-automatic-language");
+  await page.reload();
+  await expect(setting).toBeChecked();
 });
 
 test("read-aloud asks before sharing voice data and cancel sends no speech", async ({
@@ -69,9 +106,12 @@ test("read-aloud asks before sharing voice data and cancel sends no speech", asy
     if (new URL(request.url()).pathname === "/api/voice/speak") speechRequests += 1;
     if (new URL(request.url()).pathname === "/rpc/aiConsent/allow") grants += 1;
   });
-  const speak = reply.getByRole("button", { name: "Speak this reply" });
-  await expect(speak).toBeEnabled();
-  await speak.click();
+  const message = page.locator("[data-message-id]").filter({ has: reply }).last();
+  const readAloud = page.getByRole("menuitem", { name: "Read aloud" });
+  await message.hover();
+  await message.getByRole("button", { name: "More" }).click();
+  await expect(readAloud).toBeEnabled();
+  await readAloud.click();
   const disclosure = page.getByRole("alertdialog");
   await expect(
     disclosure.getByRole("heading", { name: "Share voice data with Example speech server?" }),
@@ -85,7 +125,9 @@ test("read-aloud asks before sharing voice data and cancel sends no speech", asy
   await captureScreenshot(page, testInfo, "voice-data-sharing-disclosure");
   await disclosure.getByRole("button", { name: "Cancel" }).click();
   await expect(disclosure).toBeHidden();
-  await expect(speak).toBeEnabled();
+  await message.hover();
+  await message.getByRole("button", { name: "More" }).click();
+  await expect(readAloud).toBeEnabled();
   expect(speechRequests).toBe(0);
   expect(grants).toBe(0);
 });

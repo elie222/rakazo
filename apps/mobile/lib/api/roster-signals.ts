@@ -61,6 +61,13 @@ async function follow(signal: AbortSignal) {
         (kind) => {
           if (connection.signal.aborted) return;
           if (kind === "runs") invalidateWatchChat();
+          if (kind === "preferences") {
+            void refreshRpcQueries("me");
+            void refreshRpcQueries("approvalRules/list");
+            void refreshRpcQueries("approvalRules/effective");
+            void refreshRpcQueries("autoReview/get");
+            void refreshRpcQueries("spaceSettings/overrides");
+          }
           if (kind === "deploymentModel") {
             void refreshRpcQueries("me");
             void refreshRpcQueries("models/role");

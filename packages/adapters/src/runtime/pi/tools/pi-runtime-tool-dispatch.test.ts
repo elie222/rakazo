@@ -15,6 +15,7 @@ const fakeAgentState = vi.hoisted(() => ({
     | "background-subagent"
     | "parent-limit"
     | "parent-parallel"
+    | "parallel-steps"
     | "ask-pause"
     | "nested-ask-pause"
     | "tools-then-empty-failure"
@@ -148,7 +149,12 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
             content: [{ type: "toolCall", id: "call-1", name: target.name, arguments: args }],
           },
         });
-        this.emit({ type: "tool_execution_start", toolName: target.name, args });
+        this.emit({
+          type: "tool_execution_start",
+          toolCallId: "call-1",
+          toolName: target.name,
+          args,
+        });
         const result = await target.execute("call-1", args);
         fakeAgentState.toolResult = result;
         this.emit({
@@ -319,6 +325,30 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
           if (this.aborted) break;
           await shell.execute(`shell-${index}`, args);
         }
+        return;
+      }
+
+      if (fakeAgentState.mode === "parallel-steps") {
+        const result = { content: [] };
+        const start = (toolCallId: string, command: string) =>
+          this.emit({
+            type: "tool_execution_start",
+            toolCallId,
+            toolName: "shell",
+            args: { command },
+          });
+        const end = (toolCallId: string) =>
+          this.emit({
+            type: "tool_execution_end",
+            toolCallId,
+            toolName: "shell",
+            result,
+            isError: false,
+          });
+        start("call-a", "echo a");
+        start("call-b", "echo b");
+        end("call-b");
+        end("call-a");
         return;
       }
 
@@ -1254,6 +1284,124 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("forwards unavailableToolReasons to find_tool", async () => {
+    const reason = "schedule_update is not available in routine runs.";
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    fakeAgentState.invoke = {
+      name: "find_tool",
+      args: { names: ["schedule_update"] },
+    };
+
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "update the routine",
+        instructions: "",
+        history: [],
+        tools: [updateBotTool, scheduleCancelTool],
+        unavailableToolReasons: { schedule_update: reason },
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+
+    const expected = {
+      tools: [],
+      unavailable: { schedule_update: reason },
+    };
+    const result = fakeAgentState.toolResult as {
+      content: Array<{ type: string; text: string }>;
+      details: Record<string, unknown>;
+    };
+    expect(result.details).toEqual(expected);
+    expect(JSON.parse(result.content[0]!.text)).toEqual(expected);
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("ignores prototype keys when looking up unavailableToolReasons in use_tool", async () => {
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "toString", arguments: {} },
+    };
+
+    const runProto = async () => {
+      for await (const _event of new PiAgentRuntime().run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "r",
+          prompt: "call prototype name",
+          instructions: "",
+          history: [],
+          tools: [updateBotTool, scheduleCancelTool],
+          unavailableToolReasons: {
+            schedule_update: "schedule_update is not available in routine runs.",
+          },
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool,
+        },
+        {
+          operationId: "2",
+          traceId: "2",
+          spaceId: "w",
+          userId: "u",
+          signal: new AbortController().signal,
+        },
+      )) {
+        // Exhaust the runtime event stream so tool execution completes.
+      }
+    };
+
+    await expect(runProto()).rejects.toThrow(
+      "toString is not available. Use a name find_tool lists.",
+    );
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("keeps remember's shared flag through argument preparation", async () => {
+    const remember = builtinAgentTools.find((tool) => tool.name === "remember")!;
+    await new PiAgentRuntime()
+      .run(
+        {
+          botId: "b",
+          threadId: "t",
+          runId: "r",
+          prompt: "remember this for every bot",
+          instructions: "",
+          history: [],
+          tools: [remember],
+          model: { provider: "test", id: "dispatch-test-model" },
+          executeTool: vi.fn(async () => ({ ok: true })),
+        },
+        {
+          operationId: "1",
+          traceId: "1",
+          spaceId: "w",
+          userId: "u",
+          signal: new AbortController().signal,
+        },
+      )
+      [Symbol.asyncIterator]()
+      .next();
+    const prepare = fakeAgentState.tools.find((tool) => tool.name === "remember")!
+      .prepareArguments!;
+    const operations = [{ action: "add", content: "Invoices go to Dana." }];
+
+    expect(prepare({ shared: true, operations })).toEqual({ shared: true, operations });
+  });
+
   it("runs schedule tools, remember and request_secret sequentially", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const runtime = new PiAgentRuntime();
@@ -2145,6 +2293,68 @@ describe("Pi connector tool dispatch", () => {
       type: "done",
       text: "I stopped after reaching the limit of 80 tool calls in this turn. Send another message to continue.",
     });
+  });
+
+  it("clears the step it showed once the tool ends", async () => {
+    fakeAgentState.mode = "terminating-tool";
+    const runtime = new PiAgentRuntime();
+    const events: Array<{ type: string; text?: string; activity?: boolean }> = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "cleared-step",
+        prompt: "change your model",
+        instructions: "Use shell.",
+        history: [],
+        tools: [shellTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => terminatingToolResult(TERMINATING_REPLY, {})),
+      },
+      {
+        operationId: "cleared-step",
+        traceId: "cleared-step",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      events.push(event as (typeof events)[number]);
+    }
+
+    const steps = events.filter((event) => event.type === "progress" && event.activity);
+    expect(steps.map((event) => Boolean(event.text))).toEqual([true, false]);
+  });
+
+  it("shows a still-running parallel call's step when the shown one ends first", async () => {
+    fakeAgentState.mode = "parallel-steps";
+    const runtime = new PiAgentRuntime();
+    const steps: string[] = [];
+
+    for await (const event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "parallel-steps",
+        prompt: "run both",
+        instructions: "Use shell.",
+        history: [],
+        tools: [shellTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+      },
+      {
+        operationId: "parallel-steps",
+        traceId: "parallel-steps",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      if (event.type === "progress" && event.activity) steps.push(event.text);
+    }
+
+    expect(steps).toEqual(["Running: echo a", "Running: echo b", "Running: echo a", ""]);
   });
 
   it("ends the run with the reply a terminating tool result carries", async () => {

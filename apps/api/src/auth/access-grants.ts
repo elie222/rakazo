@@ -1,8 +1,15 @@
 import { ORPCError } from "@orpc/server";
 import type { AccessGrant, AccessGrantInput } from "@rakazo/contracts";
 import { AccessGrantInputSchema } from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { extendByokFreePeriod, FREE_MONTH_DAYS, reconcileCreditPurchase } from "@rakazo/db";
+import {
+  extendByokFreePeriod,
+  FREE_MONTH_DAYS,
+  isUniqueViolation,
+  reconcileCreditPurchase,
+} from "@rakazo/db";
+import type { CreditCode } from "../billing/credit-codes.js";
 
 const LIST_LIMIT = 200;
 const WITH_CREATOR = { createdBy: { select: { email: true } } } as const;
@@ -24,6 +31,8 @@ function accessGrantDto(
 
 export async function listAccessGrants(prisma: PrismaClient): Promise<AccessGrant[]> {
   const rows = await prisma.accessGrant.findMany({
+    // Code redemptions are applied as they are made, so only grants an admin wrote are listed.
+    where: { code: null },
     orderBy: { createdAt: "desc" },
     take: LIST_LIMIT,
     include: WITH_CREATOR,
@@ -33,7 +42,7 @@ export async function listAccessGrants(prisma: PrismaClient): Promise<AccessGran
 
 export async function createAccessGrant(
   prisma: PrismaClient,
-  createdById: string,
+  createdById: string | null,
   input: AccessGrantInput,
 ): Promise<AccessGrant> {
   const data = AccessGrantInputSchema.parse(input);
@@ -104,4 +113,46 @@ export async function applyAccessGrants(
       });
     });
   }
+}
+
+/**
+ * Grants the code's credits to the organization the account owns, once per account, and returns
+ * the organization credited.
+ */
+export async function grantCreditCode(
+  prisma: PrismaClient,
+  input: { userId: string; organizationId: string; code: CreditCode },
+): Promise<string> {
+  const { code, creditCents, maxClaims } = input.code;
+  const user = await prisma.user.findUnique({
+    where: { id: input.userId },
+    select: { email: true, emailVerified: true },
+  });
+  if (!user?.emailVerified)
+    throw new ClientError("FORBIDDEN", "Verify your email to redeem a code");
+  const email = user.email.toLowerCase();
+  const redeemed = await prisma.accessGrant.findUnique({
+    where: { code_email: { code, email } },
+    select: { appliedAt: true, organizationId: true },
+  });
+  if (redeemed?.appliedAt)
+    throw new ClientError("CONFLICT", "You already redeemed this code", "CREDIT_CODE_REDEEMED");
+  // A redemption saved but not yet applied is finished below rather than refused.
+  if (!redeemed) {
+    // Concurrent redemptions can pass the limit by a few; the per-account limit is exact.
+    if (maxClaims !== null && (await prisma.accessGrant.count({ where: { code } })) >= maxClaims)
+      throw new ClientError("CONFLICT", "This code has been fully redeemed", "CREDIT_CODE_USED_UP");
+    try {
+      await prisma.accessGrant.create({
+        data: { email, code, creditCents, organizationId: input.organizationId },
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      throw new ClientError("CONFLICT", "You already redeemed this code", "CREDIT_CODE_REDEEMED");
+    }
+  }
+  // A saved redemption goes to the organization it was made for.
+  const organizationId = redeemed?.organizationId ?? input.organizationId;
+  await applyAccessGrants(prisma, { userId: input.userId, email, organizationId });
+  return organizationId;
 }

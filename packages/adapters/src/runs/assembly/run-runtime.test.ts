@@ -3,6 +3,7 @@ import { resolveEncryptionKey } from "@rakazo/core/node/secrets-guard";
 import { describe, expect, it } from "vitest";
 import { mcpStdioOptionsFromEnv } from "../../mcp/mcp-connector.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
+import { webOriginFromEnv } from "../../server/server-foundation.js";
 import { workspaceSaveLimits } from "../../storage/workspace-save-policy.js";
 import { deploymentLabsFromEnv } from "../labs-env.js";
 import { runRuntimeEnvFromProcess } from "./run-runtime.js";
@@ -38,6 +39,7 @@ function previousWorkerValues(source: NodeJS.ProcessEnv) {
     maxUploadSizeBytes: uploadSizeFromEnv(source),
     workspaceSaveLimits: workspaceSaveLimits(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
+    webOrigin: webOriginFromEnv(source),
   };
 }
 
@@ -71,7 +73,15 @@ describe("runRuntimeEnvFromProcess", () => {
     },
     { NODE_ENV: "test", INBOUND_EMAIL_DOMAIN: "  ", PIPEDREAM_ENVIRONMENT: "staging" },
   ])("reads the values the worker read before (%#)", (source) => {
-    expect(runRuntimeEnvFromProcess(source)).toEqual(previousWorkerValues(source));
+    const { maxAttachmentsPerMessage: _, ...env } = runRuntimeEnvFromProcess(source);
+    expect(env).toEqual(previousWorkerValues(source));
+  });
+
+  it("reads the configured attachment count for the worker", () => {
+    expect(
+      runRuntimeEnvFromProcess({ NODE_ENV: "test", MAX_ATTACHMENTS_PER_MESSAGE: "7" })
+        .maxAttachmentsPerMessage,
+    ).toBe(7);
   });
 
   it("reads the computer save limit and rejects a bad one", () => {

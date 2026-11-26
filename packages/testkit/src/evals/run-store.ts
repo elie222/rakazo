@@ -161,7 +161,11 @@ export class RunStore {
       },
       costUsd: {
         // The bot's new calls and the judge's, which a regrade alone still pays for.
-        new: sumNullable(report.workflowTotals?.costUsd ?? null, report.judge?.costUsd ?? 0),
+        // A judge on the person's own plan records its cost as unknown, which leaves the total unknown.
+        new: sumNullable(
+          report.workflowTotals?.costUsd ?? null,
+          report.judge?.costUsd === null ? null : (report.judge?.costUsd ?? 0),
+        ),
         trials: sumCosts(attempted),
       },
       cases: Object.fromEntries(

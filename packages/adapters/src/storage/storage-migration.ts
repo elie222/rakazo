@@ -9,7 +9,26 @@ import type { PushTokenStore } from "../notifications/push-token-store.js";
 import { PushSessionEndedError } from "../notifications/push-token-store.js";
 import type { LocalArtifactStore } from "./artifacts.js";
 
-/** Verify the new bytes before atomically moving the database pointer. Keep originals. */
+type StoredFile = {
+  id: string;
+  storageKey: string;
+  spaceId: string;
+  userId: string;
+  name: string;
+  mimeType: string;
+};
+
+const LOCAL_ONLY = {
+  NOT: [
+    { storageKey: { startsWith: "object:" } },
+    { storageKey: { startsWith: MEETING_TRANSCRIPT_STORAGE_PREFIX } },
+  ],
+};
+
+/**
+ * Verify the new bytes before atomically moving the database pointer. Keep originals. Covers
+ * chat files and the pictures pages show, which share the artifact store.
+ */
 export async function migrateLocalArtifacts(
   prisma: PrismaClient,
   local: LocalArtifactStore,
@@ -20,68 +39,98 @@ export async function migrateLocalArtifacts(
     throw new Error("Configure object storage before migrating artifacts");
   return runAsSystem("migrate local artifact contents to encrypted object storage", async () => {
     const counts = { migrated: 0, pending: 0 };
-    let cursor: string | undefined;
-    for (;;) {
-      signal.throwIfAborted();
-      const rows = await prisma.artifact.findMany({
-        where: {
-          NOT: [
-            { storageKey: { startsWith: "object:" } },
-            { storageKey: { startsWith: MEETING_TRANSCRIPT_STORAGE_PREFIX } },
-          ],
-          ...(cursor ? { id: { gt: cursor } } : {}),
-        },
-        orderBy: { id: "asc" },
-        take: 100,
-        select: {
-          id: true,
-          storageKey: true,
-          spaceId: true,
-          userId: true,
-          name: true,
-          mimeType: true,
-        },
-      });
-      if (!rows.length) return counts;
-      for (const row of rows) {
-        cursor = row.id;
-        if (dryRun) {
-          counts.pending++;
-          continue;
+    const tables = [
+      {
+        rows: (cursor?: string) =>
+          prisma.artifact.findMany({
+            where: { ...LOCAL_ONLY, ...(cursor ? { id: { gt: cursor } } : {}) },
+            orderBy: { id: "asc" },
+            take: 100,
+            select: {
+              id: true,
+              storageKey: true,
+              spaceId: true,
+              userId: true,
+              name: true,
+              mimeType: true,
+            },
+          }),
+        point: (row: StoredFile, storageKey: string) =>
+          prisma.artifact.updateMany({
+            where: { id: row.id, spaceId: row.spaceId, storageKey: row.storageKey },
+            data: { storageKey },
+          }),
+      },
+      {
+        rows: async (cursor?: string): Promise<StoredFile[]> =>
+          (
+            await prisma.pageImage.findMany({
+              where: { ...LOCAL_ONLY, ...(cursor ? { id: { gt: cursor } } : {}) },
+              orderBy: { id: "asc" },
+              take: 100,
+              select: {
+                id: true,
+                storageKey: true,
+                spaceId: true,
+                mimeType: true,
+                page: { select: { userId: true } },
+              },
+            })
+          ).map(({ page, ...row }) => ({ ...row, userId: page.userId, name: `${row.id}.webp` })),
+        point: (row: StoredFile, storageKey: string) =>
+          prisma.pageImage.updateMany({
+            where: { id: row.id, spaceId: row.spaceId, storageKey: row.storageKey },
+            data: { storageKey },
+          }),
+      },
+    ];
+    for (const table of tables) {
+      let cursor: string | undefined;
+      for (;;) {
+        signal.throwIfAborted();
+        const rows = await table.rows(cursor);
+        if (!rows.length) break;
+        for (const row of rows) {
+          cursor = row.id;
+          if (dryRun) {
+            counts.pending++;
+            continue;
+          }
+          const context: AdapterContext = {
+            spaceId: row.spaceId,
+            userId: row.userId,
+            operationId: "artifact.migrate",
+            traceId: "artifact.migrate",
+            signal,
+          };
+          let bytes: Uint8Array;
+          try {
+            bytes = await local.get(row.storageKey, context);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+            // The file can belong to another original volume. Keep scanning this one.
+            counts.pending++;
+            continue;
+          }
+          const saved = await target.put(
+            { name: row.name, mimeType: row.mimeType, bytes },
+            context,
+          );
+          try {
+            if (!Buffer.from(await target.get(saved.id, context)).equals(Buffer.from(bytes)))
+              throw new Error("Artifact migration verification failed");
+          } catch (error) {
+            await target.remove(saved.id, context);
+            throw error;
+          }
+          // A failed DB response may hide a committed update: leave the object on errors.
+          const updated = await table.point(row, saved.id);
+          if (updated.count) counts.migrated++;
+          else await target.remove(saved.id, context);
         }
-        const context: AdapterContext = {
-          spaceId: row.spaceId,
-          userId: row.userId,
-          operationId: "artifact.migrate",
-          traceId: "artifact.migrate",
-          signal,
-        };
-        let bytes: Uint8Array;
-        try {
-          bytes = await local.get(row.storageKey, context);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-          // The file can belong to another original volume. Keep scanning this one.
-          counts.pending++;
-          continue;
-        }
-        const saved = await target.put({ name: row.name, mimeType: row.mimeType, bytes }, context);
-        try {
-          if (!Buffer.from(await target.get(saved.id, context)).equals(Buffer.from(bytes)))
-            throw new Error("Artifact migration verification failed");
-        } catch (error) {
-          await target.remove(saved.id, context);
-          throw error;
-        }
-        // A failed DB response may hide a committed update: leave the object on errors.
-        const updated = await prisma.artifact.updateMany({
-          where: { id: row.id, spaceId: row.spaceId, storageKey: row.storageKey },
-          data: { storageKey: saved.id },
-        });
-        if (updated.count) counts.migrated++;
-        else await target.remove(saved.id, context);
       }
     }
+    return counts;
   });
 }
 

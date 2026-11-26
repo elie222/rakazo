@@ -1,6 +1,6 @@
 import { oc } from "@orpc/contract";
 import * as z from "zod";
-import { AnalyticsSurface } from "../account/analytics.js";
+import { AnalyticsAppVersion, AnalyticsSurface } from "../account/analytics.js";
 import { Id } from "../ids.js";
 import { AccessGrantInputSchema, AccessGrantSchema } from "./access-grants.js";
 import {
@@ -51,6 +51,7 @@ export const billingRpc = {
           funding: z.enum(["byok", "credits"]),
           client: BillingClientSchema,
           surface: AnalyticsSurface.optional(),
+          appVersion: AnalyticsAppVersion.optional(),
           /** Billing period of the own-key plan's checkout; monthly when omitted. */
           interval: ByokIntervalSchema.optional(),
           /** The own-key plan's tier; Standard when omitted. */
@@ -96,6 +97,10 @@ export const billingRpc = {
     claimReferral: oc
       .input(z.object({ code: z.string().min(1).max(64) }))
       .output(z.object({ ok: z.literal(true) })),
+    /** Owners only: adds a credit code's credits to the organization, once per account. */
+    redeemCreditCode: oc
+      .input(z.object({ code: z.string().trim().min(1).max(64) }))
+      .output(z.object({ creditCents: z.number().int().positive() })),
   },
   /** Admins only, on deployments that sell model credits. */
   accessGrants: {

@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall, McpServer } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn } from "@rakazo/contracts";
 import { mcpServerStatusLabel } from "@rakazo/i18n/plugin-catalog";
+import { useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
@@ -68,6 +69,7 @@ export function SavedServerRow({
   oauthServerId: string | null;
   onAuthorize: (serverId: string) => void;
 }) {
+  const router = useRouter();
   const styles = useThemedStyles(createIntegrationsStyles);
   const { t } = useLingui();
   const state = mcpServerConnection(server);
@@ -90,23 +92,30 @@ export function SavedServerRow({
           ? { ios: "exclamationmark.circle", android: "alert-circle-outline" as const }
           : null;
   return (
+    // Connect sits beside the row's button, not inside it, so VoiceOver reaches both.
     <View testID="registered-mcp-server" style={styles.row}>
-      <ConnectorIcon name={server.name} size={LOGO_SIZE} />
-      <Text numberOfLines={1} style={[styles.title, styles.grow]}>
-        {server.name}
-      </Text>
-      <View style={styles.connectionStatus}>
-        {symbol ? (
-          <View
-            accessible={false}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          >
-            <NativeSymbol {...symbol} size={14} color={color} />
-          </View>
-        ) : null}
-        <Text style={[styles.secondary, { color }]}>{mcpServerStatusLabel(state)}</Text>
-      </View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push({ pathname: "/mcp-server", params: { id: server.id } })}
+        style={({ pressed }) => [styles.rowLink, pressed && styles.dimmed]}
+      >
+        <ConnectorIcon name={server.name} size={LOGO_SIZE} />
+        <Text numberOfLines={1} style={[styles.title, styles.grow]}>
+          {server.name}
+        </Text>
+        <View style={styles.connectionStatus}>
+          {symbol ? (
+            <View
+              accessible={false}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              <NativeSymbol {...symbol} size={14} color={color} />
+            </View>
+          ) : null}
+          <Text style={[styles.secondary, { color }]}>{mcpServerStatusLabel(state)}</Text>
+        </View>
+      </Pressable>
       {server.enabled &&
       state !== "connected" &&
       state !== "needs_client" &&

@@ -1,6 +1,7 @@
 (() => {
   const bridge = window.rakazoSetup;
   document.documentElement.dataset.platform = bridge?.platform ?? "browser";
+  const lang = bridge?.locale?.lang ?? "en";
   const messages = bridge?.locale?.messages ?? {};
 
   /** Core's `translate`, which this plain page cannot import: English-keyed, `{name}` placeholders. */
@@ -14,7 +15,7 @@
 
   /** The page is written in English; it switches to the app's language before it first paints. */
   function translatePage() {
-    document.documentElement.lang = bridge?.locale?.lang ?? "en";
+    document.documentElement.lang = lang;
     document.documentElement.dir = bridge?.locale?.dir ?? "ltr";
     document.title = t(document.title);
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -78,8 +79,8 @@
     "waiting-healthy": 0.92,
     ready: 1,
   };
-  /** Docker reports bytes pulled but never a total, so the bar approaches the next phase without reaching it. */
   const PULL_SPAN = 0.6;
+  /** Docker reports bytes pulled but never a total, so its pulls approach the next phase without reaching it. */
   const PULL_SCALE_BYTES = 1.2e9;
 
   let defaultLocalUrl = "";
@@ -140,21 +141,38 @@
     return phase === "docker-missing" || phase === "docker-not-running";
   }
 
-  function downloadedBytes(stack) {
-    return Object.values(stack.layerBytes ?? {}).reduce((total, bytes) => total + bytes, 0);
+  /** Downloads with a known size are measured against it; the rest count only while none has one. */
+  function downloadProgress(stack) {
+    const totals = stack.layerTotals ?? {};
+    let done = 0;
+    let unsized = 0;
+    for (const [name, bytes] of Object.entries(stack.layerBytes ?? {})) {
+      if (name in totals) done += bytes;
+      else unsized += bytes;
+    }
+    const total = Object.values(totals).reduce((sum, size) => sum + size, 0);
+    return { done, total, unsized };
   }
 
+  const wholeSize = new Intl.NumberFormat(lang, { maximumFractionDigits: 0 });
+  const gigabytes = new Intl.NumberFormat(lang, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+
   function formatBytes(bytes) {
-    if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-    if (bytes >= 1e6) return `${Math.round(bytes / 1e6)} MB`;
-    if (bytes >= 1e3) return `${Math.round(bytes / 1e3)} kB`;
-    return `${Math.round(bytes)} B`;
+    if (bytes >= 1e9) return `${gigabytes.format(bytes / 1e9)} GB`;
+    if (bytes >= 1e6) return `${wholeSize.format(bytes / 1e6)} MB`;
+    if (bytes >= 1e3) return `${wholeSize.format(bytes / 1e3)} kB`;
+    return `${wholeSize.format(bytes)} B`;
   }
 
   function progressFor(stack) {
     const base = PHASE_PROGRESS[stack.phase] ?? 0;
     if (stack.phase !== "pulling") return base;
-    return base + PULL_SPAN * (1 - Math.exp(-downloadedBytes(stack) / PULL_SCALE_BYTES));
+    const { done, total, unsized } = downloadProgress(stack);
+    if (total > 0) return base + PULL_SPAN * Math.min(1, done / total);
+    return base + PULL_SPAN * (1 - Math.exp(-unsized / PULL_SCALE_BYTES));
   }
 
   function renderProgress(stack) {
@@ -165,19 +183,26 @@
       stackProgressFill.style.width = "0%";
       return;
     }
-    // A retry restarts at its phase; otherwise the bar only ever moves forward.
-    lastProgress =
-      stack.phase === "checking-docker"
-        ? progressFor(stack)
-        : Math.max(lastProgress, progressFor(stack));
+    // A retry restarts at its phase, and a download whose size arrives late grows the total, so
+    // measured bytes are shown as they are; otherwise the bar only ever moves forward.
+    const exact =
+      stack.phase === "checking-docker" ||
+      (stack.phase === "pulling" && downloadProgress(stack).total > 0);
+    lastProgress = exact ? progressFor(stack) : Math.max(lastProgress, progressFor(stack));
     const percent = (lastProgress * 100).toFixed(1);
     stackProgressFill.style.width = `${percent}%`;
     stackProgress.setAttribute("aria-valuenow", percent);
   }
 
+  function downloadDetail(stack) {
+    const { done, total, unsized } = downloadProgress(stack);
+    if (total > 0)
+      return t("{done} of {total}", { done: formatBytes(done), total: formatBytes(total) });
+    return unsized > 0 ? t("{size} downloaded", { size: formatBytes(unsized) }) : "";
+  }
+
   function renderDetails(stack) {
-    const bytes = stack.phase === "pulling" ? downloadedBytes(stack) : 0;
-    stackDetail.textContent = bytes > 0 ? t("{size} downloaded", { size: formatBytes(bytes) }) : "";
+    stackDetail.textContent = stack.phase === "pulling" ? downloadDetail(stack) : "";
 
     // A new attempt clears the output, so drop an expansion the person did not ask for.
     if (stack.phase === "checking-docker" && detailsOpenedByFailure) {

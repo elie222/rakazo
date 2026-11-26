@@ -15,6 +15,7 @@ import { SpaceSettingOverrides } from "./SpaceSettingOverrides";
  */
 export function SpaceSettingsPanel({
   space,
+  lone = false,
   onRename,
   onDelete,
   onLeft,
@@ -22,6 +23,8 @@ export function SpaceSettingsPanel({
   onBusyChange,
 }: {
   space: SettingsSpace;
+  /** The only Space follows the account, so its overrides show only once one was customized. */
+  lone?: boolean;
   onRename: (name: string, client: RpcClient) => Promise<void>;
   onDelete: () => Promise<void>;
   /** After leaving, with the space the server moved this person to. */
@@ -48,7 +51,6 @@ export function SpaceSettingsPanel({
   function save() {
     const trimmed = draft.trim();
     if (pending) return;
-    // An empty or unchanged name keeps the current one without a request.
     if (!trimmed || trimmed === space.name) {
       setDraft(space.name);
       rename.reset();
@@ -103,7 +105,11 @@ export function SpaceSettingsPanel({
         </SettingsGroup>
       ) : null}
       <SpaceMembersSettings space={space} onLeft={onLeft} />
-      <SpaceSettingOverrides onClose={onClose} onBusyChange={setOverridesBusy} />
+      <SpaceSettingOverrides
+        hideUntilCustomized={lone}
+        onClose={onClose}
+        onBusyChange={setOverridesBusy}
+      />
       {space.canDelete ? (
         <Button
           variant="destructive"

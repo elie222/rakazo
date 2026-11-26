@@ -15,23 +15,17 @@ See the [official OpenAI authentication documentation](https://learn.chatgpt.com
 
 ## Claude
 
-**Yes, through the official Claude Code CLI when you self-host from a source checkout for yourself.**
-Sign in to Claude Code with your own account. Run Rakazo's API and worker on the same machine as
-the CLI, as the same OS user. The official Docker images and desktop app's local stack do not
-support this integration. See [Claude Code CLI](./self-host-models.md#claude-code-cli) for setup.
+**Yes, through Claude sign-in.** Open **Settings → Models**, find **Anthropic**, and choose
+**Sign in with Claude**. You need a Claude Pro or Max plan. Usage counts against your plan's
+limits.
 
-Rakazo invokes the installed CLI without reading or storing your Claude credentials. CLI usage
-counts against your subscription limits. Anthropic confirms this in its
-[subscription usage guidance](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan).
+Connecting an **Anthropic API key** instead uses separate API billing, not your subscription allowance.
 
-**For Rakazo's hosted plan and shared servers, use an Anthropic API key.** Rakazo currently limits
-its CLI integration to a server with one account and no model-usage billing. This is a Rakazo
-restriction; it does not mean Anthropic prohibits every hosted Claude Code setup.
-
-Rakazo's separate in-app Claude sign-in option is not this CLI integration. Anthropic prohibits
-third-party apps from collecting Claude credentials or offering their own Claude account login.
-Sign in through the official CLI instead. Your use remains subject to Anthropic's
+Your use remains subject to Anthropic's terms, including its
 [authentication and credential rules](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use).
+
+If you self-host from a source checkout for yourself, you can also run models through the official
+[Claude Code CLI](./self-host-models.md#claude-code-cli), signed in on the host with your own account.
 
 ## OpenCode
 
@@ -44,14 +38,20 @@ bot's workflow.
 
 **OpenCode Zen / pay-as-you-go** uses the **OpenCode** provider instead. Connect its API key;
 usage comes from your OpenCode credit balance rather than Go's allowance. Its free-tier chat
-models require the OpenCode app and are not offered in Rakazo. See [OpenCode's model documentation](https://opencode.ai/docs/console/models/).
+models require the OpenCode app and are not offered as a connection. See [OpenCode's model documentation](https://opencode.ai/docs/console/models/).
+
+If you run Rakazo from a source checkout for yourself, your bots can also run through the official
+[OpenCode CLI](./self-host-models.md#opencode-cli), which reaches its free models and the plans you
+sign in to there.
 
 ## Other subscriptions
 
 Check the exact plan before connecting or buying it:
 
 - **Gemini:** API keys use the Gemini API's own [billing tiers and limits](https://ai.google.dev/gemini-api/docs/billing).
-  Do not assume a Google AI app subscription funds API requests.
+  Do not assume a Google AI app subscription funds API requests. If you run Rakazo from a source
+  checkout for yourself, a Google plan that covers Antigravity can run your bots through the official
+  [Antigravity CLI](./self-host-models.md#antigravity-cli).
 - **Kimi:** Code membership and Moonshot's general API have different keys, endpoints, and billing.
   Check the [Kimi account documentation](https://www.kimi.ai/help/kimi-code/faq) for your plan.
 - **Copilot, Grok, and other coding plans:** check the provider's current terms, eligible clients,

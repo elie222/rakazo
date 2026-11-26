@@ -180,17 +180,18 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const transcript = page.getByTestId("transcript");
   await expect(transcript.getByText("Researcher", { exact: true }).first()).toBeVisible();
   await expect(transcript.getByText("Research Writer", { exact: true }).first()).toBeVisible();
-  const researcherSpeak = transcript
-    .locator("div")
+  const researcherMessage = transcript
+    .locator("[data-message-id]")
     .filter({ has: page.getByText("Researcher", { exact: true }) })
-    .filter({ has: page.getByRole("button", { name: "Speak this reply" }) })
-    .first()
-    .getByRole("button", { name: "Speak this reply" });
+    .filter({ has: page.getByTestId("message-bot-bubble") })
+    .first();
+  await researcherMessage.hover();
+  await researcherMessage.getByRole("button", { name: "More" }).click();
   const [speechRequest] = await Promise.all([
     page.waitForRequest(
       (request) => request.url().includes("/api/voice/speak") && request.method() === "POST",
     ),
-    researcherSpeak.click(),
+    page.getByRole("menuitem", { name: "Read aloud" }).click(),
   ]);
   expect(speechRequest.postDataJSON()).toMatchObject({ botId: researcherId });
   await captureScreenshot(page, testInfo, "group-transcript");
@@ -283,6 +284,24 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   const markdownDialog = page.getByRole("dialog", { name: "group-preview.md" });
   await expect(markdownDialog.getByRole("heading", { name: "Group artifact" })).toBeVisible();
   await markdownDialog.getByRole("button", { name: "Close preview" }).click();
+
+  await expect(page.getByTestId("chat-top-fade")).toBeVisible();
+  await transcript.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect.poll(() => transcript.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  const originalTheme = await page.locator("html").getAttribute("data-theme");
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate(
+      (value) => document.documentElement.setAttribute("data-theme", value),
+      theme,
+    );
+    await captureScreenshot(page, testInfo, `chat-top-fade-scrolled-${theme}`);
+  }
+  await page.evaluate((theme) => {
+    if (theme === null) document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", theme);
+  }, originalTheme);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();

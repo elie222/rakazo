@@ -22,8 +22,11 @@ it("returns to integration setup, plugin admin, MCP sign-in and invite links onl
   expect(signInNext("/invite/")).toBeNull();
 });
 
-it("starts a new account in onboarding unless it came for an invite or invitation", () => {
+it("starts a new account in onboarding unless it came for an invite, invitation or code", () => {
   expect(newAccountDestination("/invite/abc_DEF-123")).toBe("/invite/abc_DEF-123");
+  expect(newAccountDestination("/redeem/SPRING-CODE")).toBe("/redeem/SPRING-CODE");
+  expect(newAccountDestination("/redeem")).toBe("/redeem");
+  expect(newAccountDestination("/redeem/SPRING-CODE/")).toBe("/redeem/SPRING-CODE/");
   expect(newAccountDestination("/join/abc_DEF-123")).toBe("/join/abc_DEF-123");
   expect(newAccountDestination("/integrations/setup")).toBe("/onboarding");
   expect(newAccountDestination(null)).toBe("/onboarding");
@@ -34,4 +37,9 @@ it("returns to a Page review or the shared Pages list, including a trailing slas
     expect(signInNext(next)).toBe(next);
   for (const next of ["//review/page-1", "/review//", "/review/../app", "/review/%2fapp"])
     expect(signInNext(next)).toBeNull();
+});
+
+it("returns to a bot's chat", () => {
+  expect(signInNext("/app/bot_1-A")).toBe("/app/bot_1-A");
+  expect(signInNext("/app/bot/../../admin")).toBeNull();
 });

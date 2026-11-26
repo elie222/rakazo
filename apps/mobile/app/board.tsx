@@ -1,6 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
 import type { Ticket, TicketStatus } from "@rakazo/contracts";
+import { useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import { NativeActionButton } from "../components/native/native-action-button";
 import { LoadFailure } from "../components/ui/load-failure";
 import { errorText } from "../lib/api/user-error";
 import { boardSections } from "../lib/board/board";
@@ -9,12 +11,15 @@ import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useThemedStyles } from "../lib/native/native";
 import { queryClient, rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
+import { useBackToSettings } from "../lib/settings/back-to-settings";
 
 /** The Space's ticket board: every column, with the status changed in place. */
 export default function BoardScreen() {
+  useBackToSettings();
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const sideInsets = useSideInsets();
+  const [refreshingEmpty, setRefreshingEmpty] = useState(false);
   const listRead = rpcQuery("tickets/list", {});
   const list = useScreenQuery(listRead);
   const move = useSave({
@@ -35,9 +40,17 @@ export default function BoardScreen() {
   });
   const tickets = list.data?.tickets;
   const error = list.error ? errorText(list.error, t`Try again.`) : "";
-  const loading = !tickets && (list.isFetching || !list.error);
 
   if (!tickets || tickets.length === 0) {
+    const loading = !tickets && (list.isFetching || !list.error);
+    async function refreshEmpty() {
+      setRefreshingEmpty(true);
+      try {
+        await list.refetch({ cancelRefetch: false });
+      } finally {
+        setRefreshingEmpty(false);
+      }
+    }
     return (
       <View style={[styles.centered, sideInsets]}>
         {loading ? (
@@ -45,7 +58,16 @@ export default function BoardScreen() {
         ) : error ? (
           <LoadFailure message={error} onRetry={() => void list.refetch()} />
         ) : (
-          <Text style={styles.message}>{t`No tickets yet.`}</Text>
+          <View style={styles.empty}>
+            <Text style={styles.message}>{t`No tickets yet.`}</Text>
+            <NativeActionButton
+              label={t`Refresh`}
+              busy={refreshingEmpty}
+              fill={false}
+              prominence="secondary"
+              onPress={() => void refreshEmpty()}
+            />
+          </View>
         )}
       </View>
     );
@@ -73,6 +95,7 @@ function createStyles() {
       paddingHorizontal: 32,
       backgroundColor: native.groupedPage,
     },
+    empty: { alignItems: "center", gap: 8 },
     message: { color: native.secondaryLabel, fontSize: 17, textAlign: "center" },
   });
 }

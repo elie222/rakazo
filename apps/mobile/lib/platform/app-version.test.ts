@@ -100,4 +100,14 @@ describe("app version footer helpers", () => {
     const { getAppVersionInfo } = await import("./app-version");
     expect(getAppVersionInfo().update).toEqual({ kind: "embedded" });
   });
+
+  it("names the running update after the store version for measurement", async () => {
+    application.nativeApplicationVersion = "1.0.17";
+    const { analyticsAppVersion } = await import("./app-version");
+    expect(analyticsAppVersion()).toBe("1.0.17");
+    updates.isEnabled = true;
+    updates.isEmbeddedLaunch = false;
+    updates.updateId = "EE3D3F95-BE92-4AB4-9A30-D7FA2E4E74FF";
+    expect(analyticsAppVersion()).toBe("1.0.17+ee3d3f95");
+  });
 });

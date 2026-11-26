@@ -5,7 +5,9 @@ import { chatWoke } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button } from "@rakazo/ui-web";
 import { useIsMobile } from "@rakazo/ui-web/hooks/use-mobile";
+import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import type { Ref } from "react";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CallCard } from "../components/call/CallCard";
@@ -14,24 +16,18 @@ import { ComputerUpdateProgress } from "../components/computers/ComputerUpdatePr
 import { PageLoading } from "../components/PageLoading";
 import { PageViewHost } from "../components/pages/PageViewHost";
 import { authClient } from "../lib/auth/auth";
-import { peekBootstrapSeed } from "../lib/bootstrap";
 import { toolActivityPreference } from "../lib/chat/tool-activity-preference";
 import { composerEnterToSendPreference } from "../lib/composer/composer-enter-to-send-pref";
-import { composerModelPickerPreference } from "../lib/models/composer-model-picker-preference";
 import { PagesProvider, usePagesForChat } from "../lib/pages/pages";
 import { desktopBridge } from "../lib/platform/desktop";
 import { usePreloadRecoveryState } from "../lib/platform/preload-recovery";
 import { botsSidebarDensityPreference } from "../lib/preferences/bots-sidebar-density-pref";
-import {
-  lastChatKey,
-  lastChatOf,
-  queryClient,
-  spaceQueries,
-  spaceSeedKey,
-} from "../lib/query/query";
+import { chatPreferencesQuery, useChatPreferences } from "../lib/preferences/chat-preferences";
+import { queryClient, spaceQueries } from "../lib/query/query";
 import type { RpcClient } from "../lib/query/rpc";
 import { createSpaceRpc, selectedSpaceId } from "../lib/query/rpc";
 import { SpaceRpcProvider } from "../lib/query/space-rpc";
+import { InboundOriginProvider } from "../lib/routines/inbound-url";
 import type { CreateBotDialogInput } from "./shell/bots/create-bot-dialog";
 import { useTeaching } from "./shell/bots/use-teaching";
 import { ChatColumn } from "./shell/chat/chat-column";
@@ -67,10 +63,16 @@ import { SnoozedChats } from "./shell/sidebar/snoozed-chats";
 import { useChatSnooze } from "./shell/sidebar/use-chat-snooze";
 import { useMobileSidebar } from "./shell/sidebar/use-mobile-sidebar";
 import { useSidebarExpansion } from "./shell/sidebar/use-sidebar-expansion";
+import { useSidebarScroll } from "./shell/sidebar/use-sidebar-scroll";
 import { useSidebarSearch } from "./shell/sidebar/use-sidebar-search";
 import { useSidebarView } from "./shell/sidebar/use-sidebar-view";
 import { useSnoozeClock } from "./shell/sidebar/use-snooze-clock";
-import { useRosterDrop, useSpaceBootstrap, useSpaceRoster } from "./shell/sidebar/use-space-roster";
+import {
+  useRosterDrop,
+  useSpaceBootstrap,
+  useSpaceRoster,
+  useSpaceRosterSeed,
+} from "./shell/sidebar/use-space-roster";
 import { useSpaceEpoch } from "./shell/space-switch";
 import { TimezonePrompt, withSavedTimezone } from "./shell/timezone-prompt";
 import { useActiveChat } from "./shell/use-active-chat";
@@ -90,12 +92,13 @@ import { useSpaceActions } from "./shell/use-space-actions";
 import { useOpenSpaceChat } from "./shell/use-space-switch";
 
 export function ShellPage() {
-  // A new key per space switch, so nothing from the previous space survives it.
+  // Reset the Space's shell while keeping the scroll position of the shared roster.
   const spaceEpoch = useSpaceEpoch();
-  return <SpaceShell key={spaceEpoch} />;
+  const sidebarScrollRef = useSidebarScroll();
+  return <SpaceShell key={spaceEpoch} sidebarScrollRef={sidebarScrollRef} />;
 }
 
-function SpaceShell() {
+function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement> }) {
   const { botId, groupId } = useParams();
   const [shellSpaceId] = useState(selectedSpaceId);
   const [rpc] = useState(() => createSpaceRpc(shellSpaceId));
@@ -103,15 +106,7 @@ function SpaceShell() {
   const userId = session.data?.user.id;
   // Held from the first render, so Cmd/Ctrl+N works before the sidebar has data.
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
-  // A revisited space, or the shell reopened from another page, starts from what it showed
-  // last time while its fresh bootstrap loads.
-  const [{ seed, startChat }] = useState(() => {
-    const primed = peekBootstrapSeed(botId);
-    if (primed) return { seed: primed, startChat: undefined };
-    const cached = queryClient.getQueryData(spaceSeedKey(userId ?? null, shellSpaceId));
-    const lastChat = queryClient.getQueryData(lastChatKey(userId ?? null, shellSpaceId));
-    return { seed: cached, startChat: botId || groupId ? undefined : lastChatOf(cached, lastChat) };
-  });
+  const { seed, startChat } = useSpaceRosterSeed(userId ?? null, shellSpaceId, botId, groupId);
   const {
     navigate,
     navigationRevision,
@@ -160,12 +155,16 @@ function SpaceShell() {
   });
   const { collapsedSidebarSections, toggleSidebarSection } = useSidebarExpansion(userId);
   const search = useSidebarSearch({ rpc, navigate });
-  const thread = useThreadState();
-  const { snapshot } = thread;
-  const showToolActivity = toolActivityPreference.use();
-  const botsSidebarDensity = botsSidebarDensityPreference.use();
+  const { data: me } = useQuery({
+    ...chatPreferencesQuery(queries, userId),
+    placeholderData: bootstrapMe && bootstrapMe.userId === userId ? bootstrapMe : undefined,
+  });
+  const chatPreferences = useChatPreferences(me?.chatPreferences);
   const enterToSend = composerEnterToSendPreference.use();
-  const showComposerModel = composerModelPickerPreference.use();
+  const showToolActivity = toolActivityPreference.use();
+  const thread = useThreadState(chatPreferences.streamReplies);
+  const { snapshot } = thread;
+  const botsSidebarDensity = botsSidebarDensityPreference.use();
   const rightPanel = useRightPanel({ searchParams, setSearchParams });
   const { panel, setPanel, modelFocusRequest, setModelFocusRequest } = rightPanel;
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
@@ -201,7 +200,6 @@ function SpaceShell() {
     searchQuery: search.query,
     now: snoozeNow,
   });
-
   const { inGroup, routeChat, active, activeGroup, activeBotId, activeGroupId, userBubble } =
     useActiveChat({ botId, groupId, startChat, bots, groups, now: snoozeNow });
   const selectBot = useCallback(
@@ -238,6 +236,7 @@ function SpaceShell() {
       rpc,
       activeBotId,
       activeGroupId,
+      notificationSounds: me?.chatPreferences?.notificationSounds,
       openChat: (alert) => {
         setMobileSidebarOpen(false);
         navigate(alert.groupId ? `/app/g/${alert.groupId}` : `/app/${alert.botId}`);
@@ -252,6 +251,7 @@ function SpaceShell() {
     snapshot,
     callBotId: call?.botId,
     activeBotId,
+    openVoiceSettings: () => openSettings("voice"),
   });
   const read = useChatRead({ rpc, active, groupId, activeGroup, setBots, setGroups });
   // A chat that wakes while it is open is already seen: read it, which ends the snooze.
@@ -309,6 +309,7 @@ function SpaceShell() {
     active,
     activeBotId,
     timezone: bootstrapMe?.timezone,
+    inboundOrigin: bootstrapMe?.inboundOrigin,
     setBots,
     refreshThread,
     openGroup: (id) => navigate(`/app/g/${id}`),
@@ -325,7 +326,7 @@ function SpaceShell() {
   const recordingSkill = activeTaughtSkills.find((skill) => skill.status === "recording") ?? null;
   const modelShortcuts = useComposerModelShortcuts({
     botId: inGroup ? undefined : active?.id,
-    enabled: showComposerModel && !recordingSkill,
+    enabled: chatPreferences.composerModelPicker && !recordingSkill,
   });
   const {
     chatPanelOpen,
@@ -647,6 +648,7 @@ function SpaceShell() {
         />
       ) : null}
       <ShellSidebar
+        scrollRef={sidebarScrollRef}
         isMobile={isMobileSidebar}
         mobileOpen={mobileSidebarOpen}
         setMobileOpen={setMobileSidebarOpen}
@@ -679,8 +681,7 @@ function SpaceShell() {
             rosterDropAction={rosterDrop.rosterDropAction}
             applyRosterDrop={rosterDrop.applyRosterDrop}
             openSpaceChat={openSpaceChat}
-            spaceMenuAnchor={dialogs.spaceMenuAnchor}
-            setSpaceMenu={dialogs.setSpaceMenu}
+            openSpaceSettings={openSpaceSettings}
             setRenameSectionTarget={dialogs.setRenameSectionTarget}
             setDeleteSectionTarget={dialogs.setDeleteSectionTarget}
             toggleSidebarSection={toggleSidebarSection}
@@ -767,7 +768,7 @@ function SpaceShell() {
             running={composerRunning}
             enterToSend={enterToSend}
             sendColors={userBubble}
-            modelPicker={showComposerModel ? modelShortcuts.pickerProps : null}
+            modelPicker={chatPreferences.composerModelPicker ? modelShortcuts.pickerProps : null}
             onBotSaved={(updated) =>
               setBots((current) => current.map((bot) => (bot.id === updated.id ? updated : bot)))
             }
@@ -798,8 +799,8 @@ function SpaceShell() {
             scrollRef={thread.messageScroll}
             scrollRequest={scrollRequest}
             onScrollRequestHandled={clearScrollRequest}
-            followRequest={composer.sentCount}
             {...view.transcriptProps}
+            {...composer.transcriptProps}
             markedUnreadMessageId={read.markedUnreadMessageId}
             showToolActivity={showToolActivity}
             unreadAfterSeq={read.unreadAfterSeq}
@@ -889,7 +890,6 @@ function SpaceShell() {
         <ShellDialogs
           dialogs={dialogs}
           rpc={rpc}
-          spaces={spaces}
           bots={bots}
           activeId={active?.id}
           activeGroupId={activeGroup?.id}
@@ -897,8 +897,6 @@ function SpaceShell() {
           navigate={navigate}
           setPanel={setPanel}
           refreshBots={refreshBots}
-          removeSpace={removeSpace}
-          openSpaceSettings={openSpaceSettings}
           closeMobileSidebar={() => setMobileSidebarOpen(false)}
           createBot={createBot}
           botAvatarSet={bootstrapMe?.botAvatarSet ?? DEFAULT_NEW_BOT_AVATAR_SET}
@@ -916,7 +914,6 @@ function SpaceShell() {
           onConnectedAppsChange={setFooterLogos}
           onOpenBot={(bot) => {
             openCreatedBot(bot);
-            // As after any new bot: the Space's sections and counts come from the server.
             void bestEffort("refresh bots after opening one", refreshBots());
           }}
         />
@@ -946,6 +943,7 @@ function SpaceShell() {
           setPeerConversation={setPeerConversation}
           active={active}
           peerBot={view.resolveBot}
+          openNewSpace={() => dialogs.setNewSpaceOpen(true)}
         />
       </Suspense>
 
@@ -954,7 +952,7 @@ function SpaceShell() {
         onOpenChange={setShortcutsOpen}
         host={{ desktop: Boolean(desktopBridge()), apple: isApplePlatform() }}
         dictation={Boolean(bootstrapMe?.phoneCallsEnabled)}
-        modelPicker={showComposerModel}
+        modelPicker={chatPreferences.composerModelPicker}
       />
 
       {computerOpen && computerBot ? (
@@ -984,7 +982,9 @@ function SpaceShell() {
   return (
     <SpaceRpcProvider spaceId={shellSpaceId}>
       {initialBotsLoaded || initialLoadFailed ? (
-        <PagesProvider value={pages}>{shell}</PagesProvider>
+        <InboundOriginProvider value={bootstrapMe?.inboundOrigin}>
+          <PagesProvider value={pages}>{shell}</PagesProvider>
+        </InboundOriginProvider>
       ) : (
         <PageLoading />
       )}

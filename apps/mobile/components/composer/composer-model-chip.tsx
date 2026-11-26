@@ -17,7 +17,7 @@ export function TrailingControls({ stacked, children }: { stacked: boolean; chil
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "flex-end",
-        gap: 6,
+        gap: 12,
         paddingBottom: 8,
       }}
     >
@@ -50,14 +50,14 @@ export function ModelChip({
         {
           flexDirection: "row",
           alignItems: "center",
-          gap: 3,
-          height: 28,
+          gap: 4,
+          height: 32,
           flexShrink: 1,
         },
         style,
       ]}
     >
-      <ModelMarkIcon mark={model.mark} size={15} color={tokens.foreground} />
+      <ModelMarkIcon mark={model.mark} size={18} color={tokens.foreground} />
       {full ? (
         <Text numberOfLines={1} style={{ color: tokens.foreground, fontSize: 14, flexShrink: 1 }}>
           {name}

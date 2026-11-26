@@ -8,6 +8,7 @@ import {
 } from "@rakazo/contracts";
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { Alert, Platform } from "react-native";
+import { useConfirmModelDisconnect } from "../../lib/models/model-disconnect";
 import { SettingsGroup, SettingsRow } from "../settings/settings-group";
 import { RowMenu } from "./model-role-settings";
 
@@ -28,6 +29,7 @@ export function ModelProviders({
   onDisconnect: (credential: ModelCredential) => void;
 }) {
   const { t } = useLingui();
+  const confirmModelDisconnect = useConfirmModelDisconnect();
   const catalogEntry = (credential: ModelCredential) =>
     catalog.find(
       (entry) =>
@@ -73,10 +75,7 @@ export function ModelProviders({
         credential.label,
       );
     else if (id === "disconnect")
-      Alert.alert(t`Disconnect ${name}?`, t`This removes the connection from every space.`, [
-        { text: t`Cancel`, style: "cancel" },
-        { text: t`Disconnect`, style: "destructive", onPress: () => onDisconnect(credential) },
-      ]);
+      void confirmModelDisconnect(name, credential, () => onDisconnect(credential));
   }
 
   return (

@@ -20,11 +20,13 @@ import { installPageBrowserCommand, privatePageInput } from "../../browser/page-
 import { shouldSkipPortableWorkspaceFile } from "../../storage/workspace-save-policy.js";
 import { sandboxIdleMs } from "../computer-idle.js";
 import { writePortableFilesInBatches } from "../computer-workspace.js";
+import { PAGE_BROWSER_INTERRUPTED } from "../screens/computer-screens.js";
 import {
   normalizeWorkspacePath,
   shellQuote,
   workspaceCwd,
   workspacePath,
+  workspaceRelativePath,
 } from "../screens/computer-support.js";
 import {
   LinuxDesktop,
@@ -414,7 +416,6 @@ export class RemoteDesktopSandboxProvider extends LinuxDesktopSandbox implements
       unsafeStop = isSandboxUnsafeStopError(error);
       if (unsafeStop) throw error;
       context.signal.throwIfAborted();
-      // A deleted computer is not ready.
       if (isSandboxGoneError(error)) throw error;
     } finally {
       clearTimeout(timer);
@@ -475,7 +476,7 @@ export class RemoteDesktopSandboxProvider extends LinuxDesktopSandbox implements
         if (isSandboxGoneError(error) || unsafeStop) throw error;
         context.signal.throwIfAborted();
         // The bot gets the page tools' own failure, never the provider's error text.
-        throw new Error("Page browser unavailable or interrupted");
+        throw new Error(PAGE_BROWSER_INTERRUPTED);
       }
       context.signal.throwIfAborted();
       return { code: result.exitCode, stdout: result.stdout };
@@ -563,7 +564,7 @@ export class RemoteDesktopSandboxProvider extends LinuxDesktopSandbox implements
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeWorkspacePath(directory);
+    const relative = workspaceRelativePath(REMOTE_WORKSPACE, directory);
     const entries = await this.use(computer, (desktop) =>
       desktop.files.list(workspacePath(REMOTE_WORKSPACE, relative), { signal: context.signal }),
     );

@@ -21,7 +21,7 @@ import {
 } from "@rakazo/ui-web/components/ui/table";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { RefObject } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSpaceQueries } from "../../lib/query/query";
 import { usageModelKey, usageModelLabels } from "./usage-model-labels";
 
@@ -49,7 +49,19 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   });
 
   const catalogQuery = useQuery(queries.models.list.queryOptions());
-  const catalog = catalogQuery.data ?? NO_CATALOG;
+  // Image and video models are not chat models, so their names come from the media lists.
+  const { data: media } = useQuery(queries.models.media.queryOptions({ input: {} }));
+  const catalog = useMemo(
+    () => [
+      ...(catalogQuery.data ?? NO_CATALOG),
+      ...(media ? [...media.image.options, ...media.video.options] : []).map((option) => ({
+        provider: option.provider,
+        id: option.modelId,
+        label: option.label,
+      })),
+    ],
+    [catalogQuery.data, media],
+  );
   const fallbackLabel =
     catalogQuery.data !== undefined
       ? t`Unlisted model`
@@ -74,6 +86,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
   const fresh = isPlaceholderData || isError ? undefined : data;
   const bots = data?.bots ?? (selectedBot ? [selectedBot] : []);
   const models = fresh?.models ?? [];
+  const routines = fresh?.routines?.some((row) => row.id) ? fresh.routines : [];
   const overTime = fresh?.overTime ?? [];
   const monthly = fresh?.overTimeUnit === "month";
   const totals = fresh?.totals;
@@ -313,6 +326,48 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
           <Trans>No usage for this selection.</Trans>
         </p>
       )}
+
+      {routines.length > 0 ? (
+        <div className="rounded-xl border border-border px-2">
+          <Table className="text-body">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="text-muted-foreground">
+                  <Trans>Routine</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Runs</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Tokens</Trans>
+                </TableHead>
+                <TableHead className="text-right text-muted-foreground">
+                  <Trans>Cost</Trans>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {routines.map((row) => (
+                <TableRow key={row.id ?? "none"} className="hover:bg-transparent">
+                  <TableCell>
+                    <div className="text-foreground">
+                      {row.id ? row.name : <Trans>Chats and other work</Trans>}
+                    </div>
+                    {row.botName ? (
+                      <div className="text-label text-muted-foreground">{row.botName}</div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{number(row.runs)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {number(row.totalTokens)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{cost(row.costUsd)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
     </div>
   );
 }

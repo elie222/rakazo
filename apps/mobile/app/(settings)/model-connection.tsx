@@ -32,7 +32,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  Alert,
   Keyboard,
   Linking,
   ScrollView,
@@ -60,7 +59,8 @@ import {
   MODEL_CONNECT_TIMEOUT_MS,
   modelConnectionRequest,
 } from "../../lib/models/model-connection-request";
-import { analyticsSurface } from "../../lib/native/analytics-surface";
+import { useConfirmModelDisconnect } from "../../lib/models/model-disconnect";
+import { analyticsClient } from "../../lib/native/analytics-surface";
 import { native, useThemedStyles } from "../../lib/native/native";
 import { useScreenHeader } from "../../lib/navigation/screen-header";
 import { ACCOUNT_SETTINGS, settingsRpc } from "../../lib/query/settings-target";
@@ -84,6 +84,7 @@ export default function ModelConnection() {
   // A new connection is managed by its id once it is saved, so later saves update it.
   const [credentialId, setCredentialId] = useState(request?.credentialId ?? null);
   const credentialIdRef = useRef(credentialId);
+  const confirmModelDisconnect = useConfirmModelDisconnect();
   credentialIdRef.current = credentialId;
   const { t } = useLingui();
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
@@ -243,7 +244,7 @@ export default function ModelConnection() {
     onSaved: adoptSavedCredential,
     modelId,
     load,
-    finishConnecting,
+    finishConnecting: finishSaved,
     publishFeedback,
     clearFeedback,
   });
@@ -423,7 +424,7 @@ export default function ModelConnection() {
     try {
       const saved = await rpc(
         "models/connect",
-        { ...connect.input, surface: analyticsSurface() },
+        { ...connect.input, ...analyticsClient() },
         { timeoutMs: MODEL_CONNECT_TIMEOUT_MS },
       );
       adoptSavedCredential(saved);
@@ -433,7 +434,7 @@ export default function ModelConnection() {
       setApiKey("");
       let refreshGeneration = loadGeneration.current;
       try {
-        if (!savingWithoutKey && (await finishConnecting(activeModelId, saved.id))) return;
+        if (!savingWithoutKey && (await finishSaved(activeModelId, saved.id))) return;
         const refresh = load({ modelId });
         refreshGeneration = loadGeneration.current;
         await refresh;
@@ -467,6 +468,18 @@ export default function ModelConnection() {
     });
     if (next) router.replace(next);
     else router.back();
+    return true;
+  }
+
+  /** A connection saved for another screen, by sign-in or key, continues there. */
+  async function finishSaved(
+    connectedModelId: string,
+    connectedCredentialId: string,
+  ): Promise<boolean> {
+    if (!request?.onSaved) return finishConnecting(connectedModelId, connectedCredentialId);
+    if (modelConnectionRequest(requestId) !== request) return true;
+    request.onSaved(connectedCredentialId);
+    router.back();
     return true;
   }
 
@@ -801,17 +814,10 @@ export default function ModelConnection() {
         fill={false}
         label={pending === "disconnect" ? t`Disconnecting…` : t`Disconnect`}
         onPress={() => {
-          Alert.alert(
-            t`Disconnect ${ph({ name: selectedProviderLabel })}?`,
-            t`This removes the connection from every space.`,
-            [
-              { text: t`Cancel`, style: "cancel" },
-              {
-                text: t`Disconnect`,
-                style: "destructive",
-                onPress: () => void disconnectCredential(),
-              },
-            ],
+          void confirmModelDisconnect(
+            selectedProviderLabel,
+            credential,
+            () => void disconnectCredential(),
           );
         }}
         prominence="destructive"

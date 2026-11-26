@@ -1081,7 +1081,6 @@ describe("native trusted link sites", () => {
     await act(async () => {
       buttons[1]!.onPress?.();
     });
-    // A failed save still opens the link.
     await vi.waitFor(() => {
       expect(linking.openURL).toHaveBeenCalledWith("https://docs.example.test/a");
     });

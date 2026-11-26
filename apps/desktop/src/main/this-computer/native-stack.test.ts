@@ -7,6 +7,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
+import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunDocker } from "./docker-cli.js";
 import { STACK_ENV_TEMPLATE, STACK_WEB_URL_FILE } from "./local-stack.js";
@@ -227,6 +228,44 @@ describe("choosePort", () => {
 });
 
 describe("NativeStackController", () => {
+  it("fills in CLI locations missing from the inherited PATH for the API and worker", async () => {
+    const { deps, byName } = harness({
+      env: {
+        HOME: "/Users/someone",
+        PATH: "/custom/bin:/usr/bin::/bin:/custom/bin:/usr/sbin:/sbin",
+      },
+    });
+    const controller = new NativeStackController(deps);
+    expect((await controller.start()).phase).toBe("ready");
+    await controller.stop();
+
+    for (const name of ["apps/api/dist/index.js", "apps/worker/dist/index.js"]) {
+      expect(byName(name)[0]?.env.PATH?.split(":")).toEqual([
+        "/custom/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+        "/Users/someone/.local/bin",
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+      ]);
+    }
+  });
+
+  it("uses the PATH set in stack/.env for the API and worker", async () => {
+    await mkdir(stackDir, { recursive: true });
+    await writeFile(path.join(stackDir, ".env"), `${TEMPLATE}PATH=/configured/bin:/usr/bin\n`);
+    const { deps, byName } = harness();
+    const controller = new NativeStackController(deps);
+    expect((await controller.start()).phase).toBe("ready");
+    await controller.stop();
+
+    for (const name of ["apps/api/dist/index.js", "apps/worker/dist/index.js"]) {
+      expect(byName(name)[0]?.env.PATH).toBe("/configured/bin:/usr/bin");
+    }
+  });
+
   it("offers the stop item from the moment start begins, before Postgres is up", async () => {
     const { deps } = harness({
       hostComputer: { url: "http://127.0.0.1:47000", token: "host-token" },
@@ -374,6 +413,81 @@ describe("NativeStackController", () => {
     expect((await controller.start()).phase).toBe("ready");
     expect(existsSync(path.join(runtimeDir, "container-1.6.0"))).toBe(true);
     expect(existsSync(path.join(runtimeDir, "server-0.9.0"))).toBe(false);
+    await controller.stop();
+  });
+
+  it("fetches a downloaded update's server bundle once ready and keeps it through pruning", async () => {
+    const release = "https://github.com/o/r/releases/download";
+    const next = { url: `${release}/v1.1.0/b.tar.xz`, sha256: "b".repeat(64), size: 9 };
+    const { deps } = harness();
+    const installed: string[] = [];
+    const controller = new NativeStackController({
+      ...deps,
+      serverBundle: {
+        version: "1.0.0",
+        download: { url: `${release}/v1.0.0/a.tar.xz`, sha256: "a".repeat(64), size: 9 },
+      },
+      fetch: async (url) =>
+        new Response(
+          url === `${release}/v1.1.0/server-bundle.json`
+            ? JSON.stringify({ ...next, version: "1.1.0" })
+            : "{}",
+        ),
+      installers: {
+        ...deps.installers,
+        server: async (runtimeDeps, bundle) => {
+          installed.push(bundle.download?.url ?? "");
+          return deps.installers!.server!(runtimeDeps, bundle);
+        },
+      },
+    });
+    controller.prefetchServerBundle("1.1.0");
+    await controller.start();
+    await vi.waitFor(() => expect(installed).toEqual([`${release}/v1.0.0/a.tar.xz`, next.url]));
+
+    const prefetched = path.join(stackDir, "runtime", "server-1.1.0");
+    await mkdir(prefetched);
+    await controller.stop();
+    await controller.start();
+    expect(existsSync(prefetched)).toBe(true);
+    await controller.stop();
+  });
+
+  it("fetches a newer update's server bundle once the older prefetch finishes", async () => {
+    const release = "https://github.com/o/r/releases/download";
+    const { deps } = harness();
+    const first = deferred();
+    const installed: string[] = [];
+    const controller = new NativeStackController({
+      ...deps,
+      serverBundle: {
+        version: "1.0.0",
+        download: { url: `${release}/v1.0.0/a.tar.xz`, sha256: "a".repeat(64), size: 9 },
+      },
+      fetch: async (url) => {
+        const version = /\/v([\d.]+)\/server-bundle\.json$/.exec(url)?.[1];
+        const download = {
+          url: `${release}/v${version}/b.tar.xz`,
+          sha256: "b".repeat(64),
+          size: 9,
+        };
+        return new Response(version ? JSON.stringify({ ...download, version }) : "{}");
+      },
+      installers: {
+        ...deps.installers,
+        server: async (runtimeDeps, bundle) => {
+          installed.push(bundle.version);
+          if (bundle.version === "1.1.0") await first.promise;
+          return deps.installers!.server!(runtimeDeps, bundle);
+        },
+      },
+    });
+    await controller.start();
+    controller.prefetchServerBundle("1.1.0");
+    await vi.waitFor(() => expect(installed).toContain("1.1.0"));
+    controller.prefetchServerBundle("1.2.0");
+    first.resolve();
+    await vi.waitFor(() => expect(installed).toEqual(["1.0.0", "1.1.0", "1.2.0"]));
     await controller.stop();
   });
 

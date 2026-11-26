@@ -135,3 +135,12 @@ describe("settings links", () => {
     unregister();
   });
 });
+
+it("keeps Settings return markers out of incoming links", () => {
+  expect(
+    redirectSystemPath({
+      path: "rakazo:///space-members?spaceId=space-1&fromSettings=%2Fspaces#members",
+      initial: false,
+    }),
+  ).toBe("rakazo:///space-members?spaceId=space-1#members");
+});

@@ -11,7 +11,7 @@ import {
   Sidebar,
 } from "@rakazo/ui-web";
 import { Search, SlidersHorizontal } from "lucide-react";
-import type { ReactNode, UIEvent } from "react";
+import type { ReactNode, Ref, UIEvent } from "react";
 import { useState } from "react";
 import { PasskeyOffer } from "../../../components/account/PasskeyOffer";
 import { useUsageHint } from "../../../components/billing/PlanUsage";
@@ -58,6 +58,7 @@ type User = { name?: string | null; email?: string; image?: string | null };
 
 /** The bots sidebar: a drawer on phones, collapsible to icons elsewhere. */
 export function ShellSidebar({
+  scrollRef,
   isMobile,
   mobileOpen,
   setMobileOpen,
@@ -89,6 +90,7 @@ export function ShellSidebar({
   openSkills,
   openSpaceChat,
 }: {
+  scrollRef: Ref<HTMLDivElement>;
   isMobile: boolean;
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
@@ -258,6 +260,7 @@ export function ShellSidebar({
           </InputGroup>
         )}
         <div
+          ref={scrollRef}
           onScroll={resetFadeWhenUnscrollable}
           className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5"
         >

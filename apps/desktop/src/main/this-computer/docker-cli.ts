@@ -241,6 +241,9 @@ export function runDocker(
   if (!executable || !argv) {
     return Promise.resolve({ code: 1, stdout: "", stderr: "command rejected\n" });
   }
+  if (options.signal?.aborted) {
+    return Promise.resolve({ code: 130, stdout: "", stderr: "" });
+  }
   return new Promise((resolve) => {
     const child = spawn(executable, argv, {
       cwd: options.cwd,

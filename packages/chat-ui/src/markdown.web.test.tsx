@@ -622,7 +622,6 @@ describe("web external link confirmation", () => {
     await act(async () => {
       buttonNamed(document, "Always open example.test")?.click();
     });
-    // A failed save still opens the link.
     expect(open).toHaveBeenCalledWith(
       "https://docs.example.test/a",
       "_blank",

@@ -101,6 +101,7 @@ import {
   sameModelTarget,
   thinkingLevelFor,
 } from "./pi-runtime-models.js";
+import { captureTurnTranscript } from "./pi-runtime-transcript.js";
 import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 import { conversationSessionId, reliableModelStream } from "./stream/pi-runtime-stream.js";
@@ -343,6 +344,12 @@ export class PiAgentRuntime implements AgentRuntime {
             initialSteering.some((item) => item.images?.length && !item.imageFileFallback),
         );
         seenSteeringIds.push(...initialSteering.map((item) => item.id));
+        // The history messages this turn's transcript stands for: its prompt and its steering.
+        // A steering continuation's source is also one of its steering messages.
+        const turnMessageIds = new Set([
+          ...(request.sourceMessageId ? [request.sourceMessageId] : []),
+          ...initialSteering.map((item) => item.messageId),
+        ]);
         // A computer-mode checkpoint was written by the computer model; keep its thinking.
         const restored = request.turnCheckpoint
           ? restoreTurnCheckpoint(
@@ -756,7 +763,10 @@ export class PiAgentRuntime implements AgentRuntime {
             const steering = await request.claimSteering([...seenSteeringIds]);
             if (steering.length === 0) return update;
             seenSteeringIds.push(...steering.map((item) => item.id));
-            for (const item of steering) representedHistoryIds.add(item.messageId);
+            for (const item of steering) {
+              representedHistoryIds.add(item.messageId);
+              turnMessageIds.add(item.messageId);
+            }
             if (steering.some((item) => item.images?.length && !item.imageFileFallback))
               hasCurrentImages = true;
             const messages = steering.map((item): Message => {
@@ -837,6 +847,7 @@ export class PiAgentRuntime implements AgentRuntime {
         let currentMessageStreamed = "";
         let toolCalls = 0;
         let toolActivityShowing = false;
+        const runningToolSteps = new Map<string, string>();
         let silentToolContinuations = 0;
         // A reply cut off by a dropped connection continues in the same bubble: no turn break,
         // and a continuation that starts by repeating the end of the cut text loses that repeat.
@@ -878,6 +889,15 @@ export class PiAgentRuntime implements AgentRuntime {
               timestamp: Date.now(),
             });
           }
+          if (event.type === "tool_execution_end" && runningToolSteps.has(event.toolCallId)) {
+            const shown = [...runningToolSteps.keys()].at(-1) === event.toolCallId;
+            runningToolSteps.delete(event.toolCallId);
+            if (shown && toolActivityShowing) {
+              const next = [...runningToolSteps.values()].at(-1) ?? "";
+              toolActivityShowing = Boolean(next);
+              queue.push({ type: "progress", text: next, activity: true });
+            }
+          }
           if (event.type === "message_end") {
             stopThinking();
             // Before any copy is kept: the recording below, and the checkpoint and provider
@@ -892,16 +912,15 @@ export class PiAgentRuntime implements AgentRuntime {
             // "Operation aborted"; skip activity and counting for calls that will not execute.
             if (turnSignal?.aborted || host.toolCallBudget.exceeded) return;
             toolCalls += 1;
+            const step = describeToolActivity(event.toolName, event.args, (name) =>
+              toolsByAgentName.get(name),
+            );
+            runningToolSteps.delete(event.toolCallId);
+            runningToolSteps.set(event.toolCallId, step);
             // Live activity feedback: without this the thread shows a bare
             // "working…" for the whole tool call with nothing actionable.
             toolActivityShowing = true;
-            queue.push({
-              type: "progress",
-              text: describeToolActivity(event.toolName, event.args, (name) =>
-                toolsByAgentName.get(name),
-              ),
-              activity: true,
-            });
+            queue.push({ type: "progress", text: step, activity: true });
           }
           if (event.type === "message_start" && event.message.role === "assistant") {
             host.modelResponses = (host.modelResponses ?? 0) + 1;
@@ -1330,6 +1349,25 @@ export class PiAgentRuntime implements AgentRuntime {
             streamed = request.emptyResponseText?.trim() || "No response. Try again.";
             queue.push({ type: "text", text: streamed });
           }
+        }
+        // A turn that started fresh and ended in the model's own reply is kept as it was sent.
+        // Only a turn with its person's message in history can stand in for it there.
+        if (
+          request.onTranscript &&
+          request.sourceMessageId &&
+          !restored &&
+          !budgetExceeded &&
+          !terminatedReply
+        ) {
+          const transcript = host.pausePending
+            ? undefined
+            : captureTurnTranscript(
+                sentContext?.context.messages,
+                terminalMessage,
+                [...turnMessageIds],
+                request.sourceMessageId,
+              );
+          if (transcript) request.onTranscript(transcript);
         }
         queue.push(streamed.trim() ? { type: "done", text: streamed } : { type: "done" });
       } catch (error) {

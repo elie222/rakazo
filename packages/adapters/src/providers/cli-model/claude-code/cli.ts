@@ -1,70 +1,23 @@
-import type { ChildProcess } from "node:child_process";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { cliEnv, stopProcessTree } from "../../../cli-models/cli-process.js";
 
 /**
  * Runs the official `claude` executable found on the server's PATH, exactly as installed. Rakazo
  * never signs it in, never reads its sign-in, and never passes it a key: the operator signs in
- * once with `claude auth login`, and every model request is the CLI's own.
+ * once with `claude auth login`, or opts in to the CLI's own headless token below, and every
+ * model request is the CLI's own.
  */
 export const CLAUDE_CODE_COMMAND = "claude";
 
 /** The oldest CLI whose stream-json history replay and tool switches this bridge relies on. */
 export const CLAUDE_CODE_MIN_VERSION = "2.1.280";
 
-/** What the CLI needs to find its own sign-in, reach the network and run; nothing else. */
-const PASSTHROUGH_ENV = new Set([
-  "PATH",
-  "HOME",
-  "USER",
-  "LOGNAME",
-  "SHELL",
-  "LANG",
-  "LANGUAGE",
-  "LC_ALL",
-  "LC_COLLATE",
-  "LC_CTYPE",
-  "LC_MESSAGES",
-  "LC_MONETARY",
-  "LC_NUMERIC",
-  "LC_TIME",
-  "LC_ADDRESS",
-  "LC_IDENTIFICATION",
-  "LC_MEASUREMENT",
-  "LC_NAME",
-  "LC_PAPER",
-  "LC_TELEPHONE",
-  "TZ",
-  "TMPDIR",
-  "XDG_CONFIG_HOME",
-  "XDG_RUNTIME_DIR",
-  // Set only by an operator who keeps the CLI's sign-in somewhere other than its default.
-  "CLAUDE_CONFIG_DIR",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-  "NODE_EXTRA_CA_CERTS",
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-  // Windows essentials.
-  "Path",
-  "PATHEXT",
-  "SYSTEMROOT",
-  "SystemRoot",
-  "WINDIR",
-  "COMSPEC",
-  "TEMP",
-  "TMP",
-  "USERPROFILE",
-  "HOMEDRIVE",
-  "HOMEPATH",
-  "APPDATA",
-  "LOCALAPPDATA",
-  "PROGRAMDATA",
-]);
+/**
+ * The CLI's own headless sign-in. Passed through, unread, only when the operator sets
+ * RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1 for a server whose CLI cannot sign in interactively.
+ */
+const OPT_IN_TOKEN_NAME = "CLAUDE_CODE_OAUTH_TOKEN";
 
 /**
  * Documented CLI settings. Rakazo owns the conversation, its compaction, memory and instructions,
@@ -81,34 +34,25 @@ const BRIDGE_ENV = {
 
 /**
  * The child's whole environment, built from an allowlist. API keys, OAuth tokens and every other
- * server secret stay out, so the CLI can only use the sign-in its operator made.
+ * server secret stay out, so the CLI can only use the sign-in its operator made (with the opt-in,
+ * that includes the CLI's own token).
  */
 export function claudeCodeEnv(
   source: NodeJS.ProcessEnv = process.env,
   extra: Record<string, string> = {},
+  emptyConfigDir?: () => string,
 ): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (value !== undefined && PASSTHROUGH_ENV.has(key)) {
-      env[key] = value;
-    }
-  }
-  return { ...env, ...BRIDGE_ENV, ...extra };
-}
-
-const stoppedProcesses = new WeakSet<ChildProcess>();
-
-/** The CLI owns no persistent state; stop its group immediately after the model turn. */
-function stopProcessTree(child: ChildProcess): void {
-  if (stoppedProcesses.has(child)) return;
-  stoppedProcesses.add(child);
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  try {
-    if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL");
-    else child.kill("SIGKILL");
-  } catch {
-    // Already gone.
-  }
+  // Set only by an operator who keeps the CLI's sign-in somewhere other than its default.
+  const env = cliEnv(source, ["CLAUDE_CONFIG_DIR"]);
+  const token =
+    source.RAKAZO_CLAUDE_CODE_SETUP_TOKEN === "1" ? source[OPT_IN_TOKEN_NAME] : undefined;
+  if (!token) return { ...env, ...BRIDGE_ENV, ...extra };
+  // The token needs no stored profile, and the CLI tells the model the profile's email, so each
+  // turn gets a new config dir with none.
+  const config: Record<string, string> = emptyConfigDir
+    ? { CLAUDE_CONFIG_DIR: emptyConfigDir() }
+    : {};
+  return { ...env, [OPT_IN_TOKEN_NAME]: token, ...config, ...BRIDGE_ENV, ...extra };
 }
 
 export interface ClaudeCodeProcess {

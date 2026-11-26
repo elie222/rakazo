@@ -2,6 +2,14 @@ name: release-google-play
 
 on:
   workflow_dispatch:
+    inputs:
+      track:
+        description: Internal testing reaches testers in minutes; production goes to Google review
+        type: choice
+        options:
+          - production
+          - internal
+        default: production
   workflow_call:
 
 permissions:
@@ -68,9 +76,10 @@ jobs:
       - name: Check bundle optimization
         run: python3 .github/scripts/check-android-bundle.py "$RUNNER_TEMP/rakazo.aab"
       # EAS holds the upload key and the Google service account. Nothing private is written to Git.
-      - name: Submit to Google Play production
+      - name: Submit to Google Play
         working-directory: apps/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           BUILD_ID: ${{ steps.build.outputs.id }}
-        run: pnpm exec eas submit --platform android --profile production --id "$BUILD_ID" --non-interactive --wait
+          TRACK: ${{ inputs.track || 'production' }}
+        run: pnpm exec eas submit --platform android --profile "$TRACK" --id "$BUILD_ID" --non-interactive --wait

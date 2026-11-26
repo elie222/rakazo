@@ -3,12 +3,13 @@ import { hashKey, isCancelledError } from "@tanstack/query-core";
 
 /**
  * Writes what a save confirmed. An older read still in flight is cancelled first, or it could
- * land afterwards and put the value from before the save back on screen.
+ * land afterwards and put the value from before the save back on screen. Return undefined from
+ * the updater to leave the cache alone.
  */
 export async function writeSaved<T, E>(
   client: QueryClient,
   queryKey: DataTag<QueryKey, T, E>,
-  update: (current: T | undefined) => T,
+  update: (current: T | undefined) => T | undefined,
 ): Promise<void> {
   await client.cancelQueries({ queryKey, exact: true });
   client.setQueryData(queryKey, update);

@@ -1,6 +1,8 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { useNavigation, usePreventRemove, useRouter } from "expo-router";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
+import { useIsFocused, useNavigation, usePreventRemove } from "expo-router";
+import { StackActions } from "expo-router/react-navigation";
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { Image, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,69 +11,107 @@ import { NativeSymbol } from "../components/native/native-symbol";
 import type { MobileBot } from "../lib/api/mobile-types";
 import {
   cancelIncomingShare,
+  chooseIncomingShareThread,
   getIncomingShare,
   subscribeIncomingShare,
 } from "../lib/composer/incoming-share";
 import { sharePreview } from "../lib/composer/share-preview";
 import { useMobileTokens } from "../lib/native/native";
+import { recordMobileShareAction, reportMobileError } from "../lib/platform/monitoring";
 import { HomeSession } from "./index";
 
+type LeaveAttempt = {
+  action: "select" | "close" | "sign_in";
+  navigate: () => void;
+  releaseChoice?: () => void;
+};
+
+const TRANSITION_TIMEOUT_MS = 2_000;
+
 export default function ShareRoute() {
-  const router = useRouter();
   const navigation = useNavigation();
+  const focused = useIsFocused();
   const share = useSyncExternalStore(subscribeIncomingShare, getIncomingShare);
   const leaving = useRef(false);
-  const [onLeave, setOnLeave] = useState<(() => void) | null>(null);
+  const [attempt, setAttempt] = useState<LeaveAttempt | null>(null);
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const { t } = useLingui();
-  const allowRemoval = usePreventRemove(!onLeave, ({ data, repeat }) => {
+  const allowRemoval = usePreventRemove(!attempt, ({ data, repeat }) => {
     const payload = data.action.payload;
     // Authentication temporarily replaces the picker; sign-in returns here with the share.
     if (payload && "name" in payload && payload.name === "sign-in") {
-      leave(repeat);
+      leave({ action: "sign_in", navigate: repeat });
       return;
     }
     close();
   });
-  const leave = (navigate: () => void) => {
+  const leave = (next: LeaveAttempt) => {
     if (leaving.current) return;
     leaving.current = true;
-    setOnLeave(() => navigate);
+    setAttempt(next);
     allowRemoval();
   };
   // The prevention registry is React state too: same-tick navigation still sees the guard.
   useEffect(() => {
-    onLeave?.();
-  }, [onLeave]);
+    if (!attempt) return;
+    recordMobileShareAction(attempt.action);
+    attempt.navigate();
+  }, [attempt]);
+  useTimeout(
+    () => {
+      // The picker can still be mounted when the destination already owns focus.
+      if (!attempt || !navigation.isFocused()) return;
+      attempt.releaseChoice?.();
+      leaving.current = false;
+      setAttempt(null);
+      reportMobileError(new Error("Share picker navigation did not complete"), "mobile.share", {
+        screen: "share",
+        action: attempt.action,
+      });
+    },
+    attempt && focused ? TRANSITION_TIMEOUT_MS : null,
+    attempt,
+  );
   const close = () => {
     if (leaving.current) return;
     cancelIncomingShare();
-    leave(() => router.dismissTo("/"));
+    leave({
+      action: "close",
+      navigate: () => {
+        const stack = navigation.getState();
+        if (!stack) return;
+        // Dismiss just this picker. A screen underneath may have an unsaved draft.
+        const action = stack.index > 0 ? StackActions.pop() : StackActions.replace("index");
+        navigation.dispatch({ ...action, target: stack.key });
+      },
+    });
   };
-  const closeOnce = useEffectEvent(() => {
-    if (!leaving.current) close();
-  });
+  const closeOnce = useEffectEvent(close);
 
   useEffect(() => {
-    if (!share) closeOnce();
-  }, [share]);
+    if (!share && focused) closeOnce();
+  }, [share, focused]);
 
   const open = (bot: Pick<MobileBot, "id" | "name">) => {
-    // Removal must preserve the share for thread.tsx to claim it.
-    if (!getIncomingShare()) return;
-    leave(() =>
-      navigation.dispatch({
-        type: "RESET",
-        payload: {
-          index: 1,
-          routes: [
-            { name: "index" },
-            { name: "thread", params: { botId: bot.id, name: bot.name } },
-          ],
-        },
-      }),
-    );
+    if (leaving.current) return;
+    const releaseChoice = chooseIncomingShareThread(bot.id);
+    if (!releaseChoice) return;
+    leave({
+      action: "select",
+      releaseChoice,
+      navigate: () => {
+        const stack = navigation.getState();
+        if (!stack) return;
+        const previous = stack.routes[stack.index - 1];
+        const params = previous?.params;
+        const action =
+          previous?.name === "thread" && params && "botId" in params && params.botId === bot.id
+            ? StackActions.pop()
+            : StackActions.replace("thread", { botId: bot.id, name: bot.name });
+        navigation.dispatch({ ...action, target: stack.key });
+      },
+    });
   };
   const preview = share ? sharePreview(share) : null;
 

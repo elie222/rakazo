@@ -1,7 +1,6 @@
 {
   "apps/mobile/app/(settings)/account.tsx": 5,
   "apps/mobile/app/(settings)/archived-bots.tsx": 3,
-  "apps/mobile/app/(settings)/integrations.tsx": 8,
   "apps/mobile/app/(settings)/model-connection.tsx": 7,
   "apps/mobile/app/(settings)/vault.tsx": 11,
   "apps/mobile/app/(settings)/voice.tsx": 6,
@@ -9,7 +8,6 @@
   "apps/mobile/app/computer.tsx": 7,
   "apps/mobile/app/pages.tsx": 1,
   "apps/mobile/components/cards/AppConnectCard.tsx": 3,
-  "apps/mobile/components/integrations/use-connection-actions.ts": 6,
-  "apps/mobile/components/integrations/use-custom-source-form.ts": 3,
+  "apps/mobile/components/integrations/use-connection-actions.ts": 1,
   "apps/mobile/components/models/model-role-settings.tsx": 1
 }

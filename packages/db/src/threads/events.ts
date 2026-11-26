@@ -76,9 +76,9 @@ import type { ClaimedSteeringMessage, ClaimSteeringInput } from "./thread-steeri
 import {
   claimSteering,
   createPendingSteeringRun,
-  discardAnsweredSteering,
   hasChannelMessage,
   releaseUnreadHandovers,
+  settleFailedRunSteering,
 } from "./thread-steering.js";
 import type {
   AnswerTakeoverRequestInput,
@@ -189,10 +189,13 @@ export type FinalizeRunInput = FinalizeRunBase &
         /** Steps may carry their tool and kept calls; they are stored apart from the blocks. */
         blocks: MessageBlock[];
         markUnread?: boolean;
+        /** The runtime's record of the turn as sent, kept with the reply's tool history. */
+        transcript?: string;
       }
     | {
         outcome: "failed";
         error: string;
+        retryable?: boolean;
         /** Reply text the user saw streaming before the failure, kept as a bot message. */
         partialReply?: MessageBlock[];
       }
@@ -887,31 +890,19 @@ async function finalizeRunOnce(
     });
     if (task.count !== 1) throw new Error("Run task was not available to finalize");
 
-    if (input.outcome === "failed") {
-      // Before the partial reply below is saved: a reply the failure cut short answers no
-      // steering, so the steering it was answering still gets a run of its own.
-      await discardAnsweredSteering(tx, input);
-      const { sourceMessage } = await tx.run.findUniqueOrThrow({
-        where: { id: input.runId },
-        select: { sourceMessage: { select: { seq: true } } },
-      });
-      // A continuation's source is the newest steering it was created for. Only newer
-      // messages justify another run after failure, even if setup failed before claiming.
-      await tx.steeringMessage.updateMany({
-        where: {
-          runId: input.runId,
-          message: sourceMessage ? { seq: { gt: sourceMessage.seq } } : undefined,
-        },
-        data: { runId: null },
-      });
-    }
+    const retryable =
+      input.outcome === "failed" && (await settleFailedRunSteering(tx, input, writableRun?.userId));
     let firstResponse = false;
     // Clients get the blocks without the kept calls, in the message and in its event alike.
-    const { blocks: replyBlocks, toolHistory } = splitToolHistory(
+    const { blocks: replyBlocks, toolHistory: steps } = splitToolHistory(
       input.outcome === "completed"
         ? completedRunBlocks(input.blocks, writableRun?.startedAt ?? null, now)
         : (input.partialReply ?? []),
     );
+    const toolHistory =
+      input.outcome === "completed" && input.transcript
+        ? { steps: steps?.steps ?? [], transcript: input.transcript }
+        : steps;
     if (replyBlocks.length > 0) {
       const message = await createThreadMessageInTransaction(tx, {
         threadId: input.threadId,
@@ -940,7 +931,10 @@ async function finalizeRunOnce(
       botId: input.botId,
       type: input.outcome === "completed" ? "run.completed" : "run.failed",
       runId: input.runId,
-      payload: input.outcome === "completed" ? {} : { error: input.error },
+      payload:
+        input.outcome === "completed"
+          ? {}
+          : { error: input.error, ...(retryable ? { retryable: true } : {}) },
     });
     await tx.event.deleteMany({
       where: { runId: input.runId, ...transientRunEventsWhere() },

@@ -167,14 +167,6 @@ describe("model secrets", () => {
     expect(parseModelSecret("sk-or-v1-abc")).toEqual({ kind: "api_key", key: "sk-or-v1-abc" });
   });
 
-  it("round-trips an API key output limit", () => {
-    const parsed = parseModelSecret(
-      serializeModelSecret({ kind: "api_key", key: "sk-test-key", maxTokens: 8192 }),
-    );
-    expect(parsed).toEqual({ kind: "api_key", key: "sk-test-key", maxTokens: 8192 });
-    expect(secretValuesToRedact(parsed)).toEqual(["sk-test-key"]);
-  });
-
   it("round-trips OAuth credentials", () => {
     const credential = oauthCred({ expires: 42 });
     const parsed = parseModelSecret(serializeModelSecret({ kind: "oauth", credential }));

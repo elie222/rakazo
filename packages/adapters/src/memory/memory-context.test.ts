@@ -71,7 +71,9 @@ describe("agent memory context", () => {
       ),
     );
 
-    const result = await loadAgentMemoryContext(storeWith(read), "bot-1", context, 300);
+    const result = await loadAgentMemoryContext(storeWith(read), "bot-1", context, {
+      maxBytes: 300,
+    });
 
     expect(Buffer.byteLength(result ?? "", "utf8")).toBeLessThanOrEqual(300);
     expect(result).toContain("## Your memory: new.md");
@@ -111,6 +113,107 @@ describe("agent memory context", () => {
     expect(result).not.toContain("shared fact");
     expect(result).not.toContain("�");
     expect(result?.endsWith("</durable_memory>")).toBe(true);
+  });
+
+  it("moves entries whose end date has passed to the archive and never shows the archive", async () => {
+    const memory =
+      "Plumbing goes to Flowright. (saved 2026-03-01)\nNo visits to flat 3. (saved 2026-03-05, ends 2026-03-19)\nNo calls before 10. (saved 2026-03-05, ends 2026-03-20)\nQuote 7 days. (saved 2026-03-05, ends when the backlog clears)\n";
+    const documents = {
+      "MEMORY.md": document("index", "MEMORY.md", memory, 4, "2026-03-05T12:00:00.000Z"),
+      "ARCHIVE.md": document(
+        "archive",
+        "ARCHIVE.md",
+        "Old rule. (saved 2026-01-01, ends 2026-01-02)\n",
+        2,
+        "2026-01-03T12:00:00.000Z",
+      ),
+      "USER.md": document(
+        "user",
+        "USER.md",
+        "Away until the 12th. (saved 2026-03-01, ends 2026-03-12)\n",
+        1,
+        "2026-03-01T12:00:00.000Z",
+      ),
+    };
+    const read = vi.fn(async ({ scope }: { scope: "bot" | "user" }) =>
+      snapshot(scope === "user" ? [] : Object.values(documents)),
+    );
+    const store = storeWith(read);
+
+    const result = await loadAgentMemoryContext(store, "bot-1", context, { today: "2026-03-20" });
+
+    expect(result).not.toContain("flat 3");
+    expect(result).not.toContain("Old rule");
+    expect(result).not.toContain("Away until");
+    expect(store.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "USER.md", content: "" }),
+      context,
+    );
+    expect(result).toContain("No calls before 10.");
+    expect(result).toContain("Quote 7 days.");
+    expect(store.commit).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        path: "ARCHIVE.md",
+        content:
+          "Old rule. (saved 2026-01-01, ends 2026-01-02)\nNo visits to flat 3. (saved 2026-03-05, ends 2026-03-19)\nAway until the 12th. (saved 2026-03-01, ends 2026-03-12)\n",
+        expectedRevision: 2,
+      }),
+      context,
+    );
+    expect(store.commit).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        path: "MEMORY.md",
+        content:
+          "Plumbing goes to Flowright. (saved 2026-03-01)\nNo calls before 10. (saved 2026-03-05, ends 2026-03-20)\nQuote 7 days. (saved 2026-03-05, ends when the backlog clears)\n",
+        expectedRevision: 4,
+      }),
+      context,
+    );
+  });
+
+  it("moves ended shared entries to the Space's own archive", async () => {
+    const shared = [
+      document(
+        "shared",
+        "MEMORY.md",
+        "Invoices go to Dana. (saved 2026-03-01)\nNo client sends this week. (saved 2026-03-05, ends 2026-03-09)\n",
+        3,
+        "2026-03-05T12:00:00.000Z",
+      ),
+      document("shared-archive", "ARCHIVE.md", "Old team rule.\n", 1, "2026-01-03T12:00:00.000Z"),
+    ];
+    const read = vi.fn(async ({ scope }: { scope: "bot" | "user" }) =>
+      snapshot(scope === "user" ? shared : []),
+    );
+    const store = storeWith(read);
+
+    const result = await loadAgentMemoryContext(store, "bot-1", context, { today: "2026-03-20" });
+
+    expect(result).toContain("Invoices go to Dana.");
+    expect(result).not.toContain("No client sends");
+    expect(result).not.toContain("Old team rule");
+    expect(store.commit).toHaveBeenNthCalledWith(
+      1,
+      {
+        scope: "user",
+        path: "ARCHIVE.md",
+        content: "Old team rule.\nNo client sends this week. (saved 2026-03-05, ends 2026-03-09)\n",
+        expectedRevision: 1,
+      },
+      context,
+    );
+    expect(store.commit).toHaveBeenNthCalledWith(
+      2,
+      {
+        scope: "user",
+        path: "MEMORY.md",
+        content: "Invoices go to Dana. (saved 2026-03-01)\n",
+        expectedRevision: 3,
+      },
+      context,
+    );
   });
 
   it("omits the memory block when neither scope has documents", async () => {
@@ -264,6 +367,14 @@ describe("memory prompt budget", () => {
     expect(backward.text).toBe(forward.text);
     expect(backward.plan.documents.map((entry) => entry.revision)).toEqual(
       forward.plan.documents.map((entry) => entry.revision),
+    );
+  });
+
+  it("tells the bot to make room in the same save when private memory is nearly full", () => {
+    const { text } = buildAgentMemoryPrompt([doc("bot", "MEMORY.md", "x".repeat(3700), 1, OLD)]);
+
+    expect(text).toContain(
+      "(revision 1, 3700 of 4096 bytes, nearly full: make room in the same remember call by removing what ended or is outdated, merging duplicates and rewriting dated histories as how things now stand, never by abbreviating)",
     );
   });
 

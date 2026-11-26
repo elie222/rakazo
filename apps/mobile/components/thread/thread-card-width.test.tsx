@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type { MessageBlock } from "@rakazo/contracts";
 import { separateAskAnswers } from "@rakazo/core";
 import type { ComponentProps, ReactNode, Ref } from "react";
@@ -138,6 +139,7 @@ vi.mock("../native/native-action-button", () => ({
 // Cards this file doesn't exercise; each has its own tests.
 vi.mock("./ask-block", () => ({ AskBlock: () => null }));
 vi.mock("../cards/AppConnectCard", () => ({ AppConnectCard: () => null }));
+vi.mock("./routine-event-row", () => ({ RoutineEventRows: () => null }));
 vi.mock("../media/audio-attachment", () => ({ AudioAttachment: () => null }));
 vi.mock("../cards/ChoiceCard", () => ({ ChoiceCard: () => null }));
 vi.mock("../cards/ImportSetupCard", () => ({ ImportSetupCard: () => null }));
@@ -148,6 +150,28 @@ vi.mock("../media/inline-image-attachment", () => ({
   InlineImageAttachment: ({ name, onOpen }: { name: string; onOpen: () => void }) => (
     <button type="button" aria-label={name} onClick={onOpen} />
   ),
+}));
+vi.mock("../media/image-attachment-deck", () => ({
+  ImageAttachmentDeck: ({
+    images,
+    onOpen,
+  }: {
+    images: { artifactId: string; name: string; mimeType: string }[];
+    onOpen: (image: unknown, images: unknown[]) => void;
+  }) => {
+    const gallery = images.map(({ artifactId, name, mimeType }) => ({
+      artifactId,
+      name,
+      mimeType,
+    }));
+    return (
+      <button
+        type="button"
+        aria-label={images.map((image) => image.name).join(" ")}
+        onClick={() => onOpen(gallery[0], gallery)}
+      />
+    );
+  },
 }));
 vi.mock("../cards/change-undo", () => ({
   ChangeUndo: () => null,
@@ -268,15 +292,15 @@ describe("thread cards", () => {
         role,
       );
       const outer = container.firstElementChild!;
-      for (const name of ["photo.png", "screenshot.png"]) {
-        const image = container.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
-        for (const frame of [image.parentElement, outer]) {
-          const style = styleOf(frame);
-          expect(style).not.toHaveProperty("backgroundColor");
-          expect(style).not.toHaveProperty("borderWidth");
-          expect(style).not.toHaveProperty("paddingHorizontal");
-          expect(style).not.toHaveProperty("paddingVertical");
-        }
+      const deck = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="photo.png screenshot.png"]',
+      )!;
+      for (const frame of [deck.parentElement, outer]) {
+        const style = styleOf(frame);
+        expect(style).not.toHaveProperty("backgroundColor");
+        expect(style).not.toHaveProperty("borderWidth");
+        expect(style).not.toHaveProperty("paddingHorizontal");
+        expect(style).not.toHaveProperty("paddingVertical");
       }
       expect(styleOf(outer.firstElementChild)).toMatchObject({
         borderRadius: 20,
@@ -288,14 +312,14 @@ describe("thread cards", () => {
         paddingHorizontal: 14,
         paddingVertical: 12,
       });
-      act(() =>
-        container.querySelector<HTMLButtonElement>('button[aria-label="screenshot.png"]')!.click(),
+      act(() => deck.click());
+      expect(onPreviewImage).toHaveBeenCalledWith(
+        { artifactId: "image-1", name: "photo.png", mimeType: "image/png" },
+        [
+          { artifactId: "image-1", name: "photo.png", mimeType: "image/png" },
+          { artifactId: "image-2", name: "screenshot.png", mimeType: "image/png" },
+        ],
       );
-      expect(onPreviewImage).toHaveBeenCalledWith({
-        artifactId: "image-2",
-        name: "screenshot.png",
-        mimeType: "image/png",
-      });
     },
   );
 
@@ -582,6 +606,31 @@ describe("thread cards", () => {
       expect(style.fontSize).toBe(fontSize);
     },
   );
+
+  it("opens the previous instructions on a routine approval", () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    const card = renderAsk(
+      {
+        approvalEffectId: "effect-1",
+        routineUpdate: {
+          changes: [{ field: "prompt", before: "Order ten", after: "Order five" }],
+        },
+        actions: [
+          { id: "allow", label: "Allow once" },
+          { id: "deny", label: "Deny" },
+        ],
+      },
+      true,
+    );
+    const previous = [...card!.querySelectorAll("button")].find(
+      (button) => button.textContent === "Previous instructions",
+    );
+    expect(card?.textContent).toContain("Order five");
+    expect(card?.textContent).not.toContain("Order ten");
+    act(() => previous!.click());
+    expect(card?.textContent).toContain("Order ten");
+  });
 
   it("bounds the MCP approval card the same way", () => {
     act(() =>
