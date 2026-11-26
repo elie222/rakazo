@@ -470,7 +470,7 @@ export function latestModelChoices<C extends ChatModelChoice>(
   return { latest, older };
 }
 
-/** A model id without its version, date or release tag: `claude-sonnet-4-5-20250929` is `claude-sonnet`. */
+/** A model id without its version, dates or release tags: `claude-sonnet-4-5-20250929` is `claude-sonnet`. */
 function modelFamily(choice: ChatModelChoice): string {
   const id = (choice.modelId ?? "").toLowerCase();
   const name = id.slice(id.lastIndexOf("/") + 1);
@@ -478,14 +478,15 @@ function modelFamily(choice: ChatModelChoice): string {
   const unversioned = version
     ? name.slice(0, version.index) + name.slice(version.index + version[0].length)
     : name;
+  // Once the version is gone, a part of digits alone is a date (`2024-08-06`, `1106`).
   const family = unversioned
-    .replace(/[-_.]\d{4,8}$/, "")
-    .replace(/[-_.:](latest|preview)$/, "")
-    .replace(/[-_.:]+/g, "-")
-    .replace(/^-|-$/g, "");
+    .split(/[-_.:]+/)
+    .filter((part) => part && !/^\d+$/.test(part) && !RELEASE_TAGS.has(part))
+    .join("-");
   return `${choice.provider ?? ""}:${choice.providerLabel ?? ""}:${family}`;
 }
 
+const RELEASE_TAGS = new Set(["latest", "preview", "exp"]);
 const MODEL_VERSION = /\d+(?:[.-]\d{1,2}(?![\da-z]))*/i;
 
 /**

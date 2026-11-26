@@ -584,6 +584,20 @@ describe("latestModelChoices", () => {
     ]);
   });
 
+  it("finds the family behind dates with separators or before a release tag", () => {
+    const connected = connectedModelChoices(
+      [{ provider: "openai", label: "OpenAI" }],
+      ["gpt-5", "gpt-4-1106-preview", "gpt-4o", "gpt-4o-2024-08-06"].map((id) => ({
+        provider: "openai",
+        providerName: "OpenAI",
+        id,
+        label: id,
+      })),
+    );
+    const { latest } = latestModelChoices(groupModelChoices(connected, "")[0]!.data, "");
+    expect(ids(latest)).toEqual(["gpt-5", "gpt-4o"]);
+  });
+
   it("keeps an older selected model in view", () => {
     const { latest } = latestModelChoices(section, "openrouter::anthropic/claude-opus-4.5");
     expect(ids(latest)).toContain("anthropic/claude-opus-4.5");

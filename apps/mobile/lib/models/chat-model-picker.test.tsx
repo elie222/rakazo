@@ -90,15 +90,18 @@ const mocks = vi.hoisted(() => ({
 }));
 
 /** The deployment's approval model, shown when the member chose none. */
-const APPROVAL_DEFAULT = { provider: "openrouter", modelId: "vendor/model-1" };
+const APPROVAL_DEFAULT = { provider: "openrouter", modelId: "vendor/model-1a" };
 const CREDENTIAL_ID = "credential-fixture";
 const WORK_CREDENTIAL_ID = "credential-work";
+
+/** Each fixture model is its own family (`model-1a`, `model-2b`, ...), so none waits behind Show more. */
+const modelId = (n: number) => `vendor/model-${n}${String.fromCharCode(96 + n)}`;
 
 const catalog = Array.from({ length: 11 }, (_, index) => ({
   provider: "openrouter",
   providerName: "OpenRouter",
   subscriptionName: "Example subscription",
-  id: `vendor/model-${index + 1}`,
+  id: modelId(index + 1),
   label: `Model ${index + 1}`,
   billing: "",
   auth: "api-key",
@@ -169,7 +172,7 @@ vi.mock("../api/api", () => ({
         maxTokens: mocks.savedMaxTokens,
         accountId: mocks.savedAccountId,
         gatewayId: mocks.savedGatewayId,
-        modelId: "vendor/model-1",
+        modelId: "vendor/model-1a",
         hasKey: true,
       };
     }
@@ -194,7 +197,7 @@ vi.mock("../api/api", () => ({
         id: CREDENTIAL_ID,
         provider: "openrouter",
         label: "OpenRouter",
-        modelId: "vendor/model-1",
+        modelId: "vendor/model-1a",
         hasKey: false,
         authKind: "oauth",
       };
@@ -236,7 +239,7 @@ vi.mock("../api/api", () => ({
         userId: "user-fixture",
         spaceId: "space-fixture",
         defaultProvider: cloudflare?.provider ?? "openrouter",
-        defaultModel: "vendor/model-1",
+        defaultModel: "vendor/model-1a",
         hostCredentialProvider: mocks.serverCredentials ? "openrouter" : undefined,
       };
     if (procedure === "models/list")
@@ -295,7 +298,7 @@ vi.mock("../api/api", () => ({
                 : mocks.workers
                   ? { accountId: mocks.savedAccountId }
                   : {}),
-              modelId: "vendor/model-1",
+              modelId: "vendor/model-1a",
               isDefault: true,
               thinkingLevel: "high",
               reconnectRequired: mocks.reconnectRequired,
@@ -717,7 +720,7 @@ describe("chat settings model row", () => {
   it("stages the model the list hands back until Save", async () => {
     mocks.params = { botId: "bot-fixture" };
     await render();
-    mocks.params = { botId: "bot-fixture", model: "openrouter::vendor/model-3" };
+    mocks.params = { botId: "bot-fixture", model: "openrouter::vendor/model-3c" };
     await act(async () => root.render(<BotSettingsScreen />));
     expect(mocks.setParams).toHaveBeenCalledWith({ model: undefined });
     const row = container.querySelector('button[aria-label="Model"]');
@@ -728,7 +731,7 @@ describe("chat settings model row", () => {
     );
     await act(async () => save!.click());
     expect(mocks.update).toHaveBeenCalledWith(
-      expect.objectContaining({ modelProvider: "openrouter", modelId: "vendor/model-3" }),
+      expect.objectContaining({ modelProvider: "openrouter", modelId: "vendor/model-3c" }),
     );
   });
 });
@@ -761,7 +764,7 @@ describe("chat model list", () => {
   );
 
   it("checks the current model, filters by name or id, and returns the pick", async () => {
-    mocks.params = { botId: "bot-fixture", value: "openrouter::vendor/model-2" };
+    mocks.params = { botId: "bot-fixture", value: "openrouter::vendor/model-2b" };
     await act(async () => root.render(<BotModelScreen />));
     expect(rows()).toHaveLength(12);
     expect(mocks.setOptions.mock.lastCall![0].headerSearchBarOptions).toMatchObject({
@@ -789,13 +792,13 @@ describe("chat model list", () => {
       "Model 10",
       "Model 1",
     ]);
-    search("vendor/model-7");
+    search("vendor/model-7g");
     expect(rows().map((row) => row.textContent)).toEqual(["Model 7"]);
 
     act(() => (rows()[0] as HTMLButtonElement).click());
     expect(mocks.dismissTo).toHaveBeenCalledExactlyOnceWith({
       pathname: "/bot-settings",
-      params: { botId: "bot-fixture", model: "openrouter::vendor/model-7" },
+      params: { botId: "bot-fixture", model: "openrouter::vendor/model-7g" },
     });
   });
 
@@ -805,17 +808,17 @@ describe("chat model list", () => {
     const initialList = container.querySelector("ul");
     expect(initialList).not.toBeNull();
 
-    search("vendor/model-7");
+    search("vendor/model-7g");
     const filteredList = container.querySelector("ul");
     expect(filteredList).not.toBe(initialList);
-    search("vendor/model-7");
+    search("vendor/model-7g");
     expect(container.querySelector("ul")).toBe(filteredList);
     search("no such model");
     const emptyList = container.querySelector("ul");
     expect(emptyList).not.toBe(filteredList);
     search("no such model");
     expect(container.querySelector("ul")).toBe(emptyList);
-    search("vendor/model-2");
+    search("vendor/model-2b");
     const nextList = container.querySelector("ul");
     expect(nextList).not.toBe(emptyList);
     act(() => mocks.setOptions.mock.lastCall![0].headerSearchBarOptions.onCancelButtonPress());
@@ -1000,7 +1003,7 @@ describe("provider connection screen", () => {
     );
     expect(onConnected).toHaveBeenCalledWith({
       provider: "openrouter",
-      modelId: "vendor/model-1",
+      modelId: "vendor/model-1a",
       credentialId: CREDENTIAL_ID,
     });
     expect(mocks.replace).toHaveBeenCalledWith({
@@ -1221,7 +1224,7 @@ describe("provider connection settings saves", () => {
 });
 
 describe("model role lists", () => {
-  const model = (index: number) => ({ provider: "openrouter", modelId: `vendor/model-${index}` });
+  const model = (index: number) => ({ provider: "openrouter", modelId: modelId(index) });
   /** A row picked from the list runs on the connection it was listed under. */
   const pinned = (index: number) => ({ ...model(index), credentialId: CREDENTIAL_ID });
   const section = (title: string) =>
@@ -1326,7 +1329,7 @@ describe("model role lists", () => {
         .filter((row) => row.getAttribute("aria-selected") === "true")
         .map((row) => row.textContent),
     ).toEqual(["Model 2"]);
-    searchModels("vendor/model-5");
+    searchModels("vendor/model-5e");
     await act(async () => pickerRows()[0]!.click());
     expect(roleSaves()).toEqual([{ backups: [pinned(5), model(3)] }]);
   });
@@ -1475,7 +1478,7 @@ describe("model role lists", () => {
       (next as { params: { requestId: string } }).params.requestId,
     )!;
     expect(picker.selectedKey).toBe(
-      JSON.stringify(["openrouter", "vendor/model-1", CREDENTIAL_ID]),
+      JSON.stringify(["openrouter", "vendor/model-1a", CREDENTIAL_ID]),
     );
     expect(picker.choices).toHaveLength(11);
     await act(async () => picker.onSelect(picker.choices[0]!));
@@ -1488,7 +1491,7 @@ describe("model role lists", () => {
     expect(mocks.setOptions).toHaveBeenCalledWith({ title: "Approval model" });
     expect(pickerRows()[0]?.textContent).toBe("Model 1");
     expect(pickerRows()[0]?.getAttribute("aria-selected")).toBe("true");
-    searchModels("vendor/model-2");
+    searchModels("vendor/model-2b");
     await act(async () => pickerRows()[0]!.click());
     expect(rowTitles("Approval model")).toEqual(["Model 2"]);
     act(() => rowButton("Approval model", "Model 2").click());
@@ -1850,7 +1853,7 @@ describe("shared model picker presentation", () => {
 describe("several connections for one provider", () => {
   const model = (index: number, credentialId?: string) => ({
     provider: "openrouter",
-    modelId: `vendor/model-${index}`,
+    modelId: modelId(index),
     ...(credentialId ? { credentialId } : {}),
   });
   const section = (title: string) =>
@@ -1887,10 +1890,10 @@ describe("several connections for one provider", () => {
     ]);
     // The running model is offered again on the other account.
     const picker = modelPickerRequest(mocks.params.requestId!)!;
-    expect(picker.choices.filter((choice) => choice.modelId === "vendor/model-1")).toHaveLength(1);
+    expect(picker.choices.filter((choice) => choice.modelId === "vendor/model-1a")).toHaveLength(1);
     const work = picker.choices.find(
       (choice) =>
-        choice.providerLabel === "OpenRouter (Work)" && choice.modelId === "vendor/model-1",
+        choice.providerLabel === "OpenRouter (Work)" && choice.modelId === "vendor/model-1a",
     )!;
     await act(async () => picker.onSelect(work));
     expect(roleSaves()).toEqual([{ backups: [model(1, WORK_CREDENTIAL_ID)] }]);
