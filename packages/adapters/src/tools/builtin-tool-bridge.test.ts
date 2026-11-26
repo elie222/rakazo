@@ -56,17 +56,20 @@ describe("built-in tool bridge", () => {
     ]);
     // request_secret carries the card and contact kinds; update_bot carries instructions paging;
     // the history tools point at files from earlier messages; a watch says it takes no other timing;
-    // read_file takes a line range; ask_user carries the content being decided about;
+    // read_file takes a line range; ask_user carries the content being decided about, and says
+    // the person can still type their own answer;
     // search_history lists earlier tool work by kind without a keyword; message_bot is the
     // most used deferred tool, and a lookup before each message cost a step; schedule_create says
     // whether a routine runs in its chat, and takes the events (webhook, Git, chat, email) a
     // routine can start on, saying a Git event needs no connected app; schedule_list reaches a
     // managed bot's routines; update_bot carries the settings its owner can change;
     // update_preferences includes the chat model picker and reply streaming; remember takes a
-    // list of operations so one call can make room and add, each with an optional end; shell
-    // says to open the bot's screen when a graphical program finds no display; find_tool names
-    // the deferred write_draft.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(37_059);
+    // list of operations so one call can make room and add, each with an optional end, and edits
+    // the Space's shared memory too, and says what stays out of memory and how to make room
+    // without abbreviating; shell says to open the bot's screen when a graphical program
+    // finds no display; schedule_create takes an end date for a repeat or watch, so a limited
+    // stretch is one routine; find_tool names the deferred write_draft.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(38_335);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );
@@ -129,6 +132,39 @@ describe("built-in tool bridge", () => {
     expect(listed.find((tool) => tool.name === FIND_TOOL)!.description).not.toContain(
       "render_plot",
     );
+  });
+
+  it("reports unavailable built-in reasons in find_tool without leaking prototype keys", () => {
+    const { deferred } = partitionTools(
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger: "routine",
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+      }),
+    );
+    const reason = "schedule_update is not available in routine runs.";
+    const reasons = { schedule_update: reason, render_plot: "stale reason" };
+
+    const onlyUnavailable = findTools(deferred, { names: ["schedule_update"] }, reasons);
+    expect(onlyUnavailable).toEqual({
+      tools: [],
+      unavailable: { schedule_update: reason },
+    });
+
+    const mixed = findTools(
+      deferred,
+      { names: ["render_plot", "schedule_update", "nope", "toString"] },
+      reasons,
+    );
+    expect(mixed.tools.map((tool) => tool.name)).toEqual(["render_plot"]);
+    expect(mixed.unavailable).toEqual({ schedule_update: reason });
+    expect(mixed.unknown).toEqual(["nope", "toString"]);
+    expect(mixed).not.toHaveProperty("hint");
+
+    const byQuery = findTools(deferred, { query: "SCHEDULE_UPDATE" }, reasons);
+    expect(byQuery.unavailable).toEqual({ schedule_update: reason });
   });
 
   it("shows the real tool as activity", () => {

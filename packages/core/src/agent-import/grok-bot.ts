@@ -28,53 +28,6 @@ export const GROK_BOT_EXPORT_FORMAT = "grok-bot-export";
 /** Raw pasted reply or chosen files, before one Bot is picked. */
 export const GROK_BOT_REPLY_MAX_LENGTH = AGENT_IMPORT_MAX_TOTAL_LENGTH;
 
-/**
- * Grok Bot has no export button, so each Bot writes its own setup. Model-facing text pasted
- * into another product, so it stays in English. Keep its fields in sync with `readBot`.
- */
-export const GROK_BOT_EXPORT_PROMPT = `I am moving you to another assistant app and need a complete, machine-readable copy of your setup. Do not change, pause or delete anything.
-
-Write one JSON document in exactly this shape. Save it as grok-bot-export-<your name>.json (lowercase, spaces as hyphens) and attach it to your reply. If you cannot attach files, reply with the whole document in a single \`\`\`json code block.
-
-{
-  "format": "${GROK_BOT_EXPORT_FORMAT}",
-  "version": 1,
-  "bots": [
-    {
-      "export_id": "a unique identifier for this Bot; repeat it in every split part",
-      "name": "your name",
-      "title": "your job title, or empty",
-      "description": "one line about what you do, or empty",
-      "instructions": "your full role, job description and standing rules, word for word where you can",
-      "memories": ["one thing you remember about the work per string"],
-      "user_facts": ["one fact you know about me (name, time zone, preferences) per string"],
-      "skills": [
-        {"name": "skill name", "description": "when to use it",
-         "instructions": "the COMPLETE skill text: every step, rule and output format, word for word"}
-      ],
-      "routines": [
-        {"name": "routine name",
-         "instruction": "the COMPLETE instruction the routine runs, word for word",
-         "trigger": "schedule | slack | github | linear | sentry | pagerduty | email | webhook | other",
-         "schedule_cron": "5-field cron in the routine's time zone, e.g. 0 8 * * 1-5 (empty when not on a schedule)",
-         "schedule_text": "when it runs, in words",
-         "timezone": "IANA time zone, e.g. America/New_York",
-         "skills": ["names of skills this routine uses"],
-         "trigger_details": "for other triggers: channel, repository, phrase, senders and so on"}
-      ],
-      "apps": [{"name": "connected app or MCP server", "mcp_url": "its remote MCP URL, or empty"}]
-    }
-  ]
-}
-
-Rules:
-- Include every routine you own, paused ones too, and every skill enabled for you, with full text rather than summaries.
-- If you cannot read something, leave it out and tell me what you left out. Never guess or fill it in from memory.
-- Never include passwords, API keys, tokens, webhook secrets, cookies or card numbers.
-- Output valid JSON only, with no comments.
-- Export one Bot at a time. If it is too long for one message or file, split it into several documents with the same bot name. Keep every skill and routine complete in one part; never split an individual skill or routine.
-`;
-
 export type GrokBotExportErrorCode = "not_export" | "cut_off" | "too_large" | "newer_version";
 
 export class GrokBotExportError extends Error {

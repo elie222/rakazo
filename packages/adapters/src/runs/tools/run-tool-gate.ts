@@ -1,14 +1,15 @@
 import type { AgentToolExecutionObserver, ConnectorCall } from "@rakazo/adapter-kit";
 import {
   approvalModeFromPreference,
+  approvalRuleLabel,
   batchActions,
   clicksBeforeTyping,
   connectorKindFromToolName,
   connectorReadRequiresApproval,
+  connectorToolApprovalIdentity,
   connectorToolRequiresApproval,
   decisiveActionApprovalRules,
   displayName,
-  humanizeToolName,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
   ownComputerActionNeedsReview,
@@ -71,6 +72,7 @@ import {
 } from "../lifecycle/run-effects.js";
 import { enqueueSteeringContinuation, renewRunLease } from "../lifecycle/run-lifecycle.js";
 import { notifyRun } from "../lifecycle/run-notifications.js";
+import { publishNarrationBeforeAsk } from "../lifecycle/run-progress.js";
 import { refusal } from "../turn/tool-refusal.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { ToolRequest } from "./run-tool-request.js";
@@ -141,7 +143,10 @@ export async function gateToolCall(
   // check look at each action, never the batch tool. An entry naming no action asks.
   const batch = connectorTool?.batch ? batchActions(connectorTool.batch, args) : undefined;
   const unidentifiedAction = Boolean(batch && !batch.complete);
-  const approvalName = connectorCall.route?.connectionId ? connectorCall.route.toolName : name;
+  const { name: approvalName, aliases: approvalAliases } = connectorToolApprovalIdentity(
+    name,
+    connectorCall.route,
+  );
   const approvalToolNames = batch?.actions.length ? batch.actions : [approvalName];
   // Search and load return a list or a schema. They never call the connector.
   const catalogControlRead =
@@ -325,7 +330,7 @@ export async function gateToolCall(
   const resolvedRules = resolveActionApprovalForTools({
     tools: approvalToolNames.map((toolName) => ({
       name: toolName,
-      aliases: toolName === approvalName && approvalName !== name ? [name] : undefined,
+      aliases: toolName === approvalName ? approvalAliases : undefined,
       connectorKind:
         toolName === approvalName
           ? connectorKind
@@ -681,7 +686,7 @@ export async function gateToolCall(
 function blockingRuleSuffix(resolved: ReturnType<typeof resolveActionApprovalForTools>): string {
   const labels = decisiveActionApprovalRules(resolved).map((rule) => {
     const value = rule.matchValue.trim().replace(/\s+/g, " ");
-    return JSON.stringify(rule.matchKind === "site" ? value : humanizeToolName(value));
+    return JSON.stringify(approvalRuleLabel({ ...rule, matchValue: value }));
   });
   if (labels.length === 0) return "";
   return ` by the saved ${labels.length === 1 ? "rule" : "rules"} ${labels.join(", ")}`;
@@ -772,6 +777,10 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
   if (!(await renewRunLease(deps, runId, ctx.workerId, ctx.fence))) {
     // Another worker owns the run now; exit without leaving a local pause card.
     return pauseForApproval(ctx);
+  }
+  if (ctx.replyMode === "chat") {
+    // Keep narration above the card so it reads as context for the approval.
+    await publishNarrationBeforeAsk(ctx);
   }
   await ctx.computer.checkpoint.flush();
   await persistTurnCheckpoint(ctx, executionId);

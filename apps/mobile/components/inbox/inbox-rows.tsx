@@ -18,6 +18,7 @@ import type { MobileBot, MobileBotSection, MobileGroup } from "../../lib/api/mob
 import { androidRipple } from "../../lib/appearance/ripple";
 import { AvatarRow } from "../../lib/bots/avatar-life";
 import { mobileLogoAvatarActivity } from "../../lib/bots/logo-avatar-activity";
+import { useDateLocale } from "../../lib/i18n/i18n";
 import { formatSnoozeWake, formatThreadTime } from "../../lib/inbox/inbox";
 import type { PinnedChat } from "../../lib/inbox/inbox-spaces";
 import { botNeedsAttention } from "../../lib/inbox/inbox-spaces";
@@ -247,10 +248,10 @@ export const PinnedTiles = memo(function PinnedTiles({
   const { i18n } = useLingui();
   const styles = useThemedStyles(createInboxStyles);
   const selectedId = useContext(SelectedChatContext);
-  // Three tiles share the row, so a narrow pane shrinks the avatars instead of overlapping them.
+  // Three tiles share the row and each avatar fills its tile, up to a cap for wide panes.
   const [rowWidth, setRowWidth] = useState(0);
   const tileWidth = rowWidth > 0 ? Math.floor((rowWidth - 16) / 3) : undefined;
-  const avatarSize = tileWidth ? Math.min(84, tileWidth - 8) : 84;
+  const avatarSize = tileWidth ? Math.min(PINNED_AVATAR_MAX, tileWidth - 12) : PINNED_AVATAR_MAX;
   return (
     <View
       style={styles.pinnedTiles}
@@ -351,6 +352,8 @@ function PinnedName({ chat, name }: { chat: PinnedChat; name: string }) {
   );
 }
 
+const PINNED_AVATAR_MAX = 120;
+
 // The iOS row menu opens on a long press; a press handler without onLongPress would still open the
 // chat when the finger lifts.
 const holdForMenu = () => undefined;
@@ -378,15 +381,17 @@ export type RowMenuProps = {
 };
 
 /** The row's time slot: when a snoozed chat wakes, that it woke, or its last activity. */
-function chatTime(
+function useChatTime(
   chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
   day: number,
   now: number,
   woke: string,
 ) {
-  if (chat.snoozedUntil && chatSnoozed(chat, now)) return formatSnoozeWake(chat.snoozedUntil);
+  const locale = useDateLocale();
+  if (chat.snoozedUntil && chatSnoozed(chat, now))
+    return formatSnoozeWake(chat.snoozedUntil, new Date(), locale);
   if (chatWoke(chat, now)) return woke;
-  return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day)) : "";
+  return chat.updatedAt ? formatThreadTime(chat.updatedAt, new Date(day), locale) : "";
 }
 
 /** A chat row with the iOS swipe actions and context menu; other platforms get the row as is. */
@@ -469,7 +474,7 @@ export const BotRow = memo(function BotRow({
 } & RowMenuProps) {
   const { t } = useLingui();
   const preview = previewSnippet(bot.preview, 40) || t`No messages yet`;
-  const time = chatTime(bot, day, now, t`Woke`);
+  const time = useChatTime(bot, day, now, t`Woke`);
   const working = isRunWorking(bot.status);
   const waiting = useWaitingOnYou(bot);
   // Spelled out because an explicit label replaces the one built from the row's children.
@@ -555,7 +560,7 @@ export const GroupRow = memo(function GroupRow({
   const { t } = useLingui();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
-  const time = chatTime(group, day, now, t`Woke`);
+  const time = useChatTime(group, day, now, t`Woke`);
   const runAction = (action: InboxRowAction) => onAction?.(action, group);
   const row = (
     <ConversationRow

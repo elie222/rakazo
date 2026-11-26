@@ -9,9 +9,10 @@ import type {
   MessageReaction,
   ThreadMessage,
 } from "@rakazo/contracts";
+import { consecutiveImageRun } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import { isPeerReceiptBlocks, isToolActivityBlock, otherAuthor } from "@rakazo/core";
-import { BotAvatar, Button, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
+import { BotAvatar, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { CollaborationMarker } from "../../../components/ai/CollaborationMarker";
@@ -48,6 +49,8 @@ import type { ImportSetupTarget } from "../bots/import-setup-card";
 import { ImportSetupCard } from "../bots/import-setup-card";
 import { ReplyLine } from "./chat-context";
 import { FALLBACK_BOT_COLOR, previewMessageText } from "./chat-shared";
+import type { GalleryImage } from "./image-gallery";
+import { MessageImageRow } from "./image-gallery";
 import {
   AppConnectCard,
   ArtifactImage,
@@ -201,7 +204,6 @@ export const MessageView = memo(function MessageView({
     },
     [mentions, onOpenBot, peerBot],
   );
-  const speak = () => onSpeak(message);
   const replyBotId = message.replyPreview?.botId ?? replyParent?.botId;
   const author = message.role === "user" ? otherAuthor(message.author, meId) : undefined;
   const replyAuthor = otherAuthor(message.replyPreview?.author ?? replyParent?.author, meId);
@@ -252,6 +254,7 @@ export const MessageView = memo(function MessageView({
   // Anchored below the speaker and reply line so the rail centers on the bubble itself.
   // A message with text and attachments anchors it on its first text bubble.
   const textAnchorIndex = message.blocks.findIndex((block) => block.kind === "text");
+  const hasText = textAnchorIndex !== -1;
   const hoverAnchorIndex =
     textAnchorIndex === -1
       ? message.blocks.findIndex((block) => block.kind === "ask")
@@ -266,6 +269,11 @@ export const MessageView = memo(function MessageView({
       onMarkUnread={onMarkUnread}
       markedUnread={markedUnread}
       onReact={onReact}
+      speech={
+        voiceReady && !isLive && hasText && message.role !== "user"
+          ? { speaking, disabled: callHoldsSpeaker && !speaking, onSpeak: () => onSpeak(message) }
+          : undefined
+      }
     />
   );
   if (isNarration) {
@@ -326,19 +334,6 @@ export const MessageView = memo(function MessageView({
                 }
                 return null;
               })}
-              {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
-                <Button
-                  variant="text"
-                  size="xs"
-                  aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
-                  // Stopping the speech in progress stays available; a call blocks new reads.
-                  disabled={callHoldsSpeaker && !speaking}
-                  onClick={speak}
-                  className="font-normal"
-                >
-                  {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-                </Button>
-              ) : null}
             </div>
           </div>
           {hoverActions}
@@ -569,16 +564,28 @@ export const MessageView = memo(function MessageView({
             );
           }
           if (block.kind === "image") {
+            // A message's pictures sit in one row, so only the first of a run draws it.
+            const run = consecutiveImageRun(blocks, i);
+            if (!run) return null;
+            const pictures: GalleryImage[] = run.map((next) => ({
+              artifactId: next.artifactId,
+              name: next.name,
+              target: artifactTarget,
+            }));
             return (
               <div
                 key={i}
                 className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                <ArtifactImage
-                  target={artifactTarget}
-                  artifactId={block.artifactId}
-                  name={block.name}
-                />
+                {pictures.length === 1 ? (
+                  <ArtifactImage
+                    target={artifactTarget}
+                    artifactId={block.artifactId}
+                    name={block.name}
+                  />
+                ) : (
+                  <MessageImageRow images={pictures} />
+                )}
               </div>
             );
           }
@@ -640,19 +647,6 @@ export const MessageView = memo(function MessageView({
                       {block.text}
                     </ChatMarkdown>
                   </div>
-                  {voiceReady ? (
-                    <Button
-                      variant="text"
-                      size="xs"
-                      aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
-                      // Stopping the speech in progress stays available; a call blocks new reads.
-                      disabled={callHoldsSpeaker && !speaking}
-                      onClick={speak}
-                      className="mt-2 font-normal"
-                    >
-                      {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-                    </Button>
-                  ) : null}
                 </div>
                 {i === hoverAnchorIndex ? hoverActions : null}
               </div>

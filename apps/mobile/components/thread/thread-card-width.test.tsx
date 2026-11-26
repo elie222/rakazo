@@ -152,6 +152,28 @@ vi.mock("../media/inline-image-attachment", () => ({
     <button type="button" aria-label={name} onClick={onOpen} />
   ),
 }));
+vi.mock("../media/image-attachment-deck", () => ({
+  ImageAttachmentDeck: ({
+    images,
+    onOpen,
+  }: {
+    images: { artifactId: string; name: string; mimeType: string }[];
+    onOpen: (image: unknown, images: unknown[]) => void;
+  }) => {
+    const gallery = images.map(({ artifactId, name, mimeType }) => ({
+      artifactId,
+      name,
+      mimeType,
+    }));
+    return (
+      <button
+        type="button"
+        aria-label={images.map((image) => image.name).join(" ")}
+        onClick={() => onOpen(gallery[0], gallery)}
+      />
+    );
+  },
+}));
 vi.mock("../cards/change-undo", () => ({
   ChangeUndo: () => null,
   isUndoableChange: () => false,
@@ -271,15 +293,15 @@ describe("thread cards", () => {
         role,
       );
       const outer = container.firstElementChild!;
-      for (const name of ["photo.png", "screenshot.png"]) {
-        const image = container.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
-        for (const frame of [image.parentElement, outer]) {
-          const style = styleOf(frame);
-          expect(style).not.toHaveProperty("backgroundColor");
-          expect(style).not.toHaveProperty("borderWidth");
-          expect(style).not.toHaveProperty("paddingHorizontal");
-          expect(style).not.toHaveProperty("paddingVertical");
-        }
+      const deck = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="photo.png screenshot.png"]',
+      )!;
+      for (const frame of [deck.parentElement, outer]) {
+        const style = styleOf(frame);
+        expect(style).not.toHaveProperty("backgroundColor");
+        expect(style).not.toHaveProperty("borderWidth");
+        expect(style).not.toHaveProperty("paddingHorizontal");
+        expect(style).not.toHaveProperty("paddingVertical");
       }
       expect(styleOf(outer.firstElementChild)).toMatchObject({
         borderRadius: 20,
@@ -291,14 +313,14 @@ describe("thread cards", () => {
         paddingHorizontal: 14,
         paddingVertical: 12,
       });
-      act(() =>
-        container.querySelector<HTMLButtonElement>('button[aria-label="screenshot.png"]')!.click(),
+      act(() => deck.click());
+      expect(onPreviewImage).toHaveBeenCalledWith(
+        { artifactId: "image-1", name: "photo.png", mimeType: "image/png" },
+        [
+          { artifactId: "image-1", name: "photo.png", mimeType: "image/png" },
+          { artifactId: "image-2", name: "screenshot.png", mimeType: "image/png" },
+        ],
       );
-      expect(onPreviewImage).toHaveBeenCalledWith({
-        artifactId: "image-2",
-        name: "screenshot.png",
-        mimeType: "image/png",
-      });
     },
   );
 

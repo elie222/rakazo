@@ -344,6 +344,9 @@ function modelTurnRequest(
       ? undefined
       : (provider, modelId) =>
           resolveConnectedModel(run, provider, modelId, (values) => runSecrets.push(...values)),
+    onTranscript: (transcript) => {
+      state.reply.transcript = transcript;
+    },
     onToolCompleted: (completion) => {
       if (effects.restoredPending?.executionId === completion.executionId)
         effects.restoredPending = undefined;

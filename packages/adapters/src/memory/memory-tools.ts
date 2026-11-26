@@ -70,7 +70,7 @@ export function editMemory(
   if (bytes > maxBytes && bytes > byteLength(existing)) {
     const over = bytes - maxBytes;
     return {
-      error: `Memory is full: this would be ${over} bytes over the ${maxBytes}-byte limit, so nothing was saved. Send one remember call whose operations remove or shorten entries to free at least ${over} bytes and also make this change.`,
+      error: `Memory is full: this would be ${over} bytes over the ${maxBytes}-byte limit, so nothing was saved. Send one remember call that makes this change and frees at least ${over} bytes by removing what ended or is outdated, merging duplicates, rewriting dated histories as how things now stand, or moving detail to a file, never by abbreviating.`,
       entries: entriesOf(existing),
     };
   }

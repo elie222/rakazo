@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import type { PageBlock } from "../../lib/pages/page-cards";
-import { useOpenPage, usePageDocument } from "../../lib/pages/pages";
+import { useOpenPage, usePageDocument, useReviewedPageContent } from "../../lib/pages/pages";
 import { useSpaceQueries } from "../../lib/query/query";
 import { errorCode } from "../../lib/query/user-error";
 import { PageCard } from "./PageCard";
@@ -39,7 +39,7 @@ export function PageBlockCard({
     }
   }, [updated, currentVersion, block.version, block.pageId, queries, queryClient]);
   const shown = updated ? saved.data : current.data;
-  const viewer = usePageDocument(shown?.code);
+  const viewer = usePageDocument(useReviewedPageContent(block.pageId, shown));
   const deleted = errorCode(current.error) === "NOT_FOUND";
   const unread = shown === undefined && (updated ? saved.isError : current.isError);
   return (

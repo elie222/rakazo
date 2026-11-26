@@ -271,6 +271,44 @@ export async function discardAnsweredSteering(
   });
 }
 
+/** Release steering a failed reply never answered. Return whether its source can be retried. */
+export async function settleFailedRunSteering(
+  tx: Prisma.TransactionClient,
+  input: { runId: string; threadId: string; retryable?: boolean },
+  userId: string | undefined,
+): Promise<boolean> {
+  // Do this before the partial reply is saved: a reply the failure cut short answers no steering.
+  await discardAnsweredSteering(tx, input);
+  const { sourceMessage } = await tx.run.findUniqueOrThrow({
+    where: { id: input.runId },
+    select: {
+      sourceMessage: { select: { seq: true, role: true, threadId: true, authorUserId: true } },
+    },
+  });
+  // A continuation's source is the newest steering it was created for. Only newer
+  // messages justify another run after failure, even if setup failed before claiming.
+  await tx.steeringMessage.updateMany({
+    where: {
+      runId: input.runId,
+      message: sourceMessage ? { seq: { gt: sourceMessage.seq } } : undefined,
+    },
+    data: { runId: null },
+  });
+  if (
+    !input.retryable ||
+    sourceMessage?.role !== "user" ||
+    sourceMessage.threadId !== input.threadId ||
+    sourceMessage.authorUserId !== userId
+  ) {
+    return false;
+  }
+  const newer = await tx.message.findFirst({
+    where: { threadId: input.threadId, role: "user", seq: { gt: sourceMessage.seq } },
+    select: { id: true },
+  });
+  return !newer;
+}
+
 /**
  * Queue one follow-up when this bot still has unclaimed steering and no live run. A Space being
  * deleted gets it too: its messages were accepted, and the executor holds the run until the

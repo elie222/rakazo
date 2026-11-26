@@ -121,8 +121,22 @@ function bridgeTools(deferred: readonly ConnectorTool[]): ConnectorTool[] {
   return bridgeToolDefinitions(formatNameIndexText(groupedNames(searchEntries(deferred))));
 }
 
+/** Prototype-safe lookup for why a built-in tool was not offered to the run. */
+export function unavailableToolReason(
+  reasons: Readonly<Record<string, string>> | undefined,
+  name: string,
+): string | undefined {
+  if (!reasons || !Object.hasOwn(reasons, name)) return undefined;
+  const reason = reasons[name];
+  return typeof reason === "string" && reason.length > 0 ? reason : undefined;
+}
+
 /** Full definitions of the deferred tools named, or the best matches for a query. */
-export function findTools(deferred: readonly ConnectorTool[], args: Record<string, unknown>) {
+export function findTools(
+  deferred: readonly ConnectorTool[],
+  args: Record<string, unknown>,
+  unavailableToolReasons?: Readonly<Record<string, string>>,
+) {
   const names = Array.isArray(args.names) ? args.names.map(String) : [];
   const query = String(args.query ?? "")
     .trim()
@@ -134,10 +148,36 @@ export function findTools(deferred: readonly ConnectorTool[], args: Record<strin
           (entry) => deferred.find((tool) => tool.name === entry.id)!,
         )
       : [];
-  const unknown = names.filter((name) => !found.some((tool) => tool.name === name));
+  const foundNames = new Set(found.map((tool) => tool.name));
+  const unavailableEntries: Array<[string, string]> = [];
+  const unavailableNames = new Set<string>();
+  const unknown: string[] = [];
+  if (names.length) {
+    for (const name of names) {
+      if (foundNames.has(name)) continue;
+      const reason = unavailableToolReason(unavailableToolReasons, name);
+      if (reason !== undefined) {
+        if (!unavailableNames.has(name)) {
+          unavailableNames.add(name);
+          unavailableEntries.push([name, reason]);
+        }
+      } else {
+        unknown.push(name);
+      }
+    }
+  } else if (query && !foundNames.has(query)) {
+    const reason = unavailableToolReason(unavailableToolReasons, query);
+    if (reason !== undefined) unavailableEntries.push([query, reason]);
+  }
+  const unavailable = unavailableEntries.length
+    ? Object.fromEntries(unavailableEntries)
+    : undefined;
   return {
     tools: found.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+    ...(unavailable ? { unavailable } : {}),
     ...(unknown.length ? { unknown } : {}),
-    ...(found.length ? {} : { hint: "Pass names from this tool's list or other words." }),
+    ...(found.length || (unavailable && !unknown.length)
+      ? {}
+      : { hint: "Pass names from this tool's list or other words." }),
   };
 }

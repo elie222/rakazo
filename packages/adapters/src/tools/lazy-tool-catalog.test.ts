@@ -236,7 +236,7 @@ describe("lazy tool catalog", () => {
         { group: "github", count: githubTools.length },
         { group: "linear", count: linearTools.length },
       ],
-      hint: expect.stringContaining("Built-in tools are not in this catalog"),
+      hint: "No tool in this catalog matches every word. Try other words or pass group. Built-in tools are not in this catalog, and neither are other connected apps. An empty result does not mean a tool is unavailable elsewhere.",
     });
   });
 
@@ -245,7 +245,9 @@ describe("lazy tool catalog", () => {
     const result = searchCatalog(entries, { query: "read_file" });
     expect(result).toMatchObject({
       groups: expect.arrayContaining([{ group: "github", count: githubTools.length }]),
-      hint: expect.stringContaining("Built-in tools are not in this catalog"),
+      hint: expect.stringContaining(
+        "An empty result does not mean a tool is unavailable elsewhere",
+      ),
     });
     expect("tools" in result && result.tools.length).toBeGreaterThan(0);
     expect(searchCatalog(entries, { query: "linear issue" })).not.toHaveProperty("hint");
@@ -293,7 +295,8 @@ describe("lazy tool catalog", () => {
     expect(searchCatalog(catalogEntries(multiGroupTools()), { group: "missing" })).toEqual({
       group: "missing",
       names: [],
-      error: "Unknown or empty group",
+      error:
+        "Unknown or empty group. This catalog only includes the sources it lists, so a missing group does not mean a tool is unavailable elsewhere.",
     });
   });
 
@@ -800,14 +803,15 @@ describe("catalog wrapper tool definitions", () => {
       {
         name: "installed_search_tools",
         description:
-          "Search connected API tools. Empty query lists names by source. Pass group to expand one source.\ngmail:\n  list, read, send\nhubspot:\n  get_deal, list_contacts",
+          "Search connected API tools from the sources listed here only. Other connected tools are separate, so an empty result does not mean one is unavailable. Empty query lists names by source. Pass group to expand one source.\ngmail:\n  list, read, send\nhubspot:\n  get_deal, list_contacts",
         inputSchema: {
           type: "object",
           properties: {
             query: {
               type: "string",
               maxLength: 200,
-              description: "Words describing the tool to find. Omit to list names by source.",
+              description:
+                "Words describing the tool to find in the listed sources. Omit to list names by source.",
             },
             group: {
               type: "string",
@@ -845,7 +849,7 @@ describe("catalog wrapper tool definitions", () => {
 
   it("describes search without an index, and with sources when the names do not fit", () => {
     expect(lazyCatalogTools("connectors", "mcp", "MCP")[0]?.description).toBe(
-      "Search connected MCP tools. Empty query lists sources. Pass group to list names in one source, or query to search.",
+      "Search connected MCP tools from the sources listed here only. Other connected tools are separate, so an empty result does not mean one is unavailable. Empty query lists sources. Pass group to list names in one source, or query to search.",
     );
     const big = (group: string): ConnectorTool[] =>
       Array.from({ length: 120 }, (_, index) => ({
@@ -869,13 +873,13 @@ describe("catalog wrapper tool definitions", () => {
       lazyCatalogTools("connectors", "mcp", "MCP", catalogEntries([...big("a"), ...big("b")]))[0]
         ?.description,
     ).toBe(
-      "Search connected MCP tools. Empty query lists sources. Pass group to list names in one source, or query to search.\nSources: a (120), b (120)",
+      "Search connected MCP tools from the sources listed here only. Other connected tools are separate, so an empty result does not mean one is unavailable. Empty query lists sources. Pass group to list names in one source, or query to search.\nSources: a (120), b (120)",
     );
     expect(
       lazyCatalogTools("connectors", "mcp", "MCP", catalogEntries([...big("a"), small]))[0]
         ?.description,
     ).toBe(
-      "Search connected MCP tools. Empty query lists sources. Pass group to list names in one source, or query to search.\nSources: a (120), notes (1)\nnotes:\n  add",
+      "Search connected MCP tools from the sources listed here only. Other connected tools are separate, so an empty result does not mean one is unavailable. Empty query lists sources. Pass group to list names in one source, or query to search.\nSources: a (120), notes (1)\nnotes:\n  add",
     );
   });
 });

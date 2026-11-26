@@ -161,6 +161,8 @@ export interface ReplyState {
   assistantTurnBreakPending: boolean;
   /** Replaced whenever a secret is added, so streamed progress hides it too. */
   redactor: ReturnType<typeof createStreamingRedactor>;
+  /** The runtime's record of the turn as sent, stored with the final reply. */
+  transcript?: string;
 }
 
 export interface ApprovalState {
@@ -203,6 +205,8 @@ export interface RunState {
   effects: EffectState;
   screen: ScreenState;
   toolCallStreak: LoopGuardStreak;
+  /** Set before the attempt enters a tool, including calls not yet streamed to the chat. */
+  toolStarted?: true;
   /** Result fingerprints of finished calls, read when the next call is tracked. */
   toolResults: Map<string, string>;
   /** Calls refused before their tool ran, by execution id, for the log of a loop one causes. */

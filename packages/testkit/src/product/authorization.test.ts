@@ -8,7 +8,8 @@ import {
   PrismaPushTokenStore,
 } from "@rakazo/adapters";
 import type { createApp } from "@rakazo/api/app";
-import type { appContract, Space, SpaceNavigation } from "@rakazo/contracts";
+import type { appContract, RpcOutput, Space, SpaceNavigation } from "@rakazo/contracts";
+import { APPROVAL_RULES_CHANGED } from "@rakazo/contracts";
 import {
   claimSpaceDeletionForMember,
   deleteClaimedSpaceForMember,
@@ -268,6 +269,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/probeCatalog"],
       ["models/rename"],
       ["models/saveModelSettings"],
+      ["models/disconnectPreview"],
       ["models/disconnect"],
       ["models/deployment/get"],
       ["models/deployment/update", { provider: null }],
@@ -341,6 +343,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/remove", { botId: "missing-bot" }],
       ["bots/removePreview", { botId: "missing-bot" }],
       ["bots/importCreate"],
+      [
+        "bots/importMany",
+        {
+          agents: [{ importKey: "import-key-1", files: [{ path: "SOUL.md", content: "Calm." }] }],
+        },
+      ],
       ["bots/importSetupState"],
       ["bots/templates"],
       ["bots/createFromTemplate", { templateId: "morning-briefing", version: 1 }],
@@ -400,6 +408,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["threads/stop", { botId: "missing-bot" }],
       ["threads/stopHelper", { botId: "missing-bot", messageId: "missing-message" }],
+      ["threads/retry", { botId: "missing-bot", runId: "missing-run" }],
       ["threads/clear", { botId: "missing-bot" }],
       ["threads/followUp", { botId: "missing-bot", text: "Nope" }],
       [
@@ -511,6 +520,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/rename"],
       ["connections/tools"],
       ["approvalRules/list"],
+      ["approvalRules/effective"],
       ["approvalRules/set", { effect: "deny", matchKind: "tool", matchValue: "gmail_send_email" }],
       ["approvalRules/remove", { id: "missing-rule" }],
       ["artifacts/list", { botId: "missing-bot" }],
@@ -531,6 +541,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["pageReviews/askRevision"],
       ["pageReviews/draft"],
       ["pageReviews/publish"],
+      ["pageReviews/saveState"],
+      ["pageReviews/image"],
       ["pages/list"],
       ["pages/get"],
       ["pages/rename"],
@@ -588,6 +600,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["billing/switchToYearly"],
       ["billing/changeTier"],
       ["billing/claimReferral"],
+      ["billing/redeemCreditCode", { code: "NOT-A-REAL-CODE" }],
       ["accessGrants/list"],
       ["accessGrants/create"],
       ["accessGrants/revoke"],
@@ -810,6 +823,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["threads/send", { botId: ownerBot.id, artifactIds: [ownerArtifact.id] }],
       ["threads/stop", { botId: ownerBot.id }],
       ["threads/stopHelper", { botId: ownerBot.id, messageId: "missing-message" }],
+      ["threads/retry", { botId: ownerBot.id, runId: ownerRun.id }],
       ["threads/clear", { botId: ownerBot.id }],
       ["threads/followUp", { botId: ownerBot.id, text: "intruder follow-up" }],
       [
@@ -1297,6 +1311,62 @@ describeWithDatabase("API authorization and resource isolation", () => {
         where: { id: ownerRule.id },
       }),
     ).not.toBeNull();
+  });
+
+  it("rejects a rule edit after a Space stops following the displayed Account copy", async () => {
+    const cookie = await signup(app, `approval-target-${stamp}@rakazo.test`, "Approval Target");
+    const { spaceId } = await rpc<Actor>(app, cookie, "me");
+    const rule = { effect: "deny", matchKind: "tool", matchValue: "example_send" };
+    const accountRule = await rpc<RpcOutput<"approvalRules/set">>(
+      app,
+      cookie,
+      "approvalRules/set",
+      rule,
+      spaceId,
+    );
+    const read = () =>
+      rpc<RpcOutput<"approvalRules/effective">>(
+        app,
+        cookie,
+        "approvalRules/effective",
+        {},
+        spaceId,
+      );
+    const displayed = await read();
+    expect(displayed.target).toEqual({ scope: "account", spaceId });
+
+    await rpc(
+      app,
+      cookie,
+      "spaceSettings/setOverride",
+      { setting: "confirmations", enabled: true },
+      spaceId,
+    );
+    await rpc(app, cookie, "autoReview/set", { mode: "never", scope: "space" }, spaceId);
+    const response = await raw(
+      app,
+      cookie,
+      "approvalRules/set",
+      {
+        ...rule,
+        effect: "always_allow",
+        expectedTarget: displayed.target,
+      },
+      spaceId,
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ json: { code: APPROVAL_RULES_CHANGED } });
+    const current = await read();
+    expect(current).toMatchObject({
+      target: { scope: "space", spaceId },
+      mode: "never",
+      rules: [rule],
+    });
+    expect(current.rules[0]?.id).not.toBe(accountRule.id);
+    await expect(
+      rpc(app, cookie, "approvalRules/list", { scope: "account" }, spaceId),
+    ).resolves.toEqual([accountRule]);
   });
 
   it("keeps space data and computers behind the selected space boundary", async () => {

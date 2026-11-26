@@ -12,8 +12,9 @@ test("an admin grants free access to an email", async ({ page }, testInfo) => {
     {
       id: "grant-qa",
       email: "qa@example.test",
-      creditCents: 10_000,
-      freeMonths: 0,
+      creditCents: 0,
+      freeMonths: 6,
+      byokTier: "max",
       createdBy: admin,
       status: "applied",
       createdAt: "2026-10-01T09:00:00.000Z",
@@ -53,6 +54,7 @@ test("an admin grants free access to an email", async ({ page }, testInfo) => {
   await page.goto("/admin/access");
   const list = page.getByTestId("access-grants");
   await expect(list.getByRole("listitem")).toHaveCount(1);
+  await expect(list.getByRole("listitem", { name: "qa@example.test" })).toContainText("Max");
   const grant = page.getByRole("button", { name: "Grant", exact: true });
   await page.getByLabel("Email").fill("friend@example.test");
   await expect(grant).toBeDisabled();

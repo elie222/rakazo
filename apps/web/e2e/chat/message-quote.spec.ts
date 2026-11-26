@@ -113,7 +113,6 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   await expect(replyChip).toContainText(/forty two percent/);
   await expect(replyChip).toContainText("**forty two percent**");
 
-  // A new selection replaces the quote even within the same message and focuses the composer.
   await sourceRow.click();
   await selectAndRelease(page, sourceRow, "growth");
   await expect(quoteButton).toBeVisible();

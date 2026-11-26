@@ -65,7 +65,8 @@ export function ModelSettingsPanel({
     },
   });
   const pending = persist.pending;
-  const defaults = modelSettingsDefaults(provider, entry);
+  const runs = credential.modelDefaults?.[modelId];
+  const defaults = modelSettingsDefaults(provider, entry, runs);
   const capabilities = modelCapabilitiesConfigurable(provider, entry);
   const dirty = (Object.keys(fields) as (keyof Fields)[]).some((key) => fields[key] !== saved[key]);
 
@@ -90,6 +91,7 @@ export function ModelSettingsPanel({
       fields,
       provider,
       entry,
+      runs,
       followedThinkingLevel: own.thinkingLevel ? undefined : saved.thinkingLevel,
     });
     if (request.status === "invalid") {

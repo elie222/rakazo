@@ -597,6 +597,56 @@ describe("schedule tool persistence", () => {
     );
   });
 
+  describe("with an end", () => {
+    beforeEach(() => vi.useFakeTimers({ now: new Date("2026-11-23T12:00:00Z") }));
+    afterEach(() => vi.useRealTimers());
+
+    function dailyUntil(endAt: string) {
+      const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+        id: "routine-1",
+        ...args.data,
+      }));
+      const deps = {
+        prisma: { routine: { create, findMany: noRoutines } },
+        events: { append: vi.fn(async () => undefined) },
+        jobs: { enqueue: vi.fn(async () => undefined) },
+      } as unknown as Parameters<typeof createScheduleFromTool>[0];
+      const created = createScheduleFromTool(deps, {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        threadId: "thread-1",
+        name: "Black Friday deals",
+        prompt: "Check the deals",
+        timezone: "America/New_York",
+        schedule: { cron: "0 9 * * *" },
+        endAt,
+      });
+      return { create, created };
+    }
+
+    it("saves a date alone as the end of that day in the routine's timezone", async () => {
+      const { create, created } = dailyUntil("2026-11-30");
+      await expect(created).resolves.toMatchObject({
+        ok: true,
+        endAt: "Monday, 2026-11-30 23:59 (UTC-05:00)",
+      });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ endsAt: new Date("2026-12-01T04:59:59.999Z") }),
+        }),
+      );
+    });
+
+    it("refuses an end before the first run without saving", async () => {
+      const { create, created } = dailyUntil("2026-11-23T08:00");
+      await expect(created).resolves.toEqual({
+        error: expect.stringContaining("The end date is before the next run."),
+      });
+      expect(create).not.toHaveBeenCalled();
+    });
+  });
+
   it("createScheduleFromTool creates the routine for the target bot and thread", async () => {
     const append = vi.fn(async () => undefined);
     const enqueue = vi.fn(async () => undefined);
@@ -1344,6 +1394,39 @@ describe("updateScheduleFromTool", () => {
     });
   });
 
+  it("sets an end and removes it with none", async () => {
+    const { updateMany, update } = setup();
+    const endsAt = new Date("2026-11-30T22:59:59.999Z");
+    await expect(update({ endAt: "2026-11-30" })).resolves.toMatchObject({
+      ok: true,
+      endAt: "Monday, 2026-11-30 23:59 (UTC+01:00)",
+      changes: { endAt: { before: null, after: "Monday, 2026-11-30 23:59 (UTC+01:00)" } },
+    });
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: expect.objectContaining({ nextRunAt: weekly.nextRunAt }),
+      data: expect.objectContaining({ endsAt }),
+    });
+
+    const ending = setup({ ...weekly, endsAt });
+    await expect(ending.update({ endAt: "none" })).resolves.toMatchObject({ ok: true });
+    expect(ending.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ endsAt: null }) }),
+    );
+  });
+
+  it("refuses an end before the next run, or a retime past the end", async () => {
+    const { updateMany, update } = setup();
+    await expect(update({ endAt: "2026-10-25" })).resolves.toEqual({
+      error: expect.stringContaining("The end date is before the next run."),
+    });
+    const ending = setup({ ...weekly, endsAt: new Date("2026-10-25T00:00:00Z") });
+    await expect(ending.update({ schedule: { cron: "0 9 * * 1" } })).resolves.toEqual({
+      error: expect.stringContaining("The end date is before the next run."),
+    });
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(ending.updateMany).not.toHaveBeenCalled();
+  });
+
   it("moves the first run of the current repeat with startAt alone", async () => {
     const { updateMany, enqueue, update } = setup();
     const first = new Date("2026-11-02T09:00:00.000Z");
@@ -1446,6 +1529,54 @@ describe("updateScheduleFromTool", () => {
       timezone: "UTC",
       nextRunAt: "2026-11-02T09:00:00.000Z",
     });
+  });
+
+  it("renames a routine on its last run without resuming its schedule", async () => {
+    const { updateMany, enqueue, update } = setup({
+      ...weekly,
+      nextRunAt: null,
+      endsAt: new Date("2026-10-25T00:00:00Z"),
+    });
+    await expect(update({ name: "Last groceries" })).resolves.toMatchObject({ ok: true });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { name: "Last groceries" } }),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("changes the timing of a routine on its last run without resuming it", async () => {
+    const { updateMany, update } = setup({
+      ...weekly,
+      nextRunAt: null,
+      endsAt: new Date("2026-10-20T05:00:00Z"),
+    });
+    await expect(update({ schedule: { cron: "0 9 * * 2" } })).resolves.toMatchObject({
+      ok: true,
+      nextRunAt: null,
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ crons: ["0 9 * * 2"], nextRunAt: null }),
+      }),
+    );
+  });
+
+  it("resumes a routine on its last run when its end moves later", async () => {
+    const { updateMany, enqueue, update } = setup({
+      ...weekly,
+      nextRunAt: null,
+      endsAt: new Date("2026-10-25T00:00:00Z"),
+    });
+    await expect(update({ endAt: "2026-12-31" })).resolves.toMatchObject({
+      ok: true,
+      nextRunAt: "2026-10-26T09:00:00.000Z",
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ nextRunAt: new Date("2026-10-26T09:00:00.000Z") }),
+      }),
+    );
+    expect(enqueue).toHaveBeenCalledOnce();
   });
 
   it("pauses with active false and cancels the wakeup", async () => {
@@ -1802,6 +1933,51 @@ describe("changeUserTimezone", () => {
     });
   });
 
+  it("keeps a routine on its last run without a next run", async () => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Deals",
+        crons: ["0 9 * * *"],
+        timezone: "Africa/Cairo",
+        active: true,
+        watch: null,
+        nextRunAt: null,
+        endsAt: new Date(Date.now() + 60 * 60_000),
+      },
+    ]);
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({ timezone: "Europe/London", nextRunAt: null });
+  });
+
+  it("keeps a routine's end on the same local day when the zone moves", async () => {
+    const { deps, rows } = account([
+      {
+        spaceId: base.spaceId,
+        botId: base.botId,
+        userId: base.userId,
+        name: "Deals",
+        crons: ["0 9 * * *"],
+        timezone: "Africa/Cairo",
+        active: false,
+        watch: null,
+        nextRunAt: null,
+        endsAt: new Date("2031-11-30T21:59:59.999Z"),
+      },
+    ]);
+
+    await changeUserTimezone(deps, "user-1", "Europe/London");
+
+    expect(rows[0]).toMatchObject({
+      timezone: "Europe/London",
+      endsAt: new Date("2031-11-30T23:59:59.999Z"),
+    });
+  });
+
   it("moves nothing when the account had no saved zone", async () => {
     const { deps, rows, user } = account([
       {
@@ -1946,6 +2122,7 @@ describe("schedule tools with events", () => {
     const prisma = accountZonePrisma(
       {
         routine: { create, findMany: noRoutines },
+        user: { findUnique: vi.fn(async () => null) },
         bot: {
           findFirst: vi.fn(async () => ({ id: "bot-1", userId: options.botUserId ?? "user-1" })),
           findUnique: vi.fn(async () => ({ ...stored })),
@@ -1968,6 +2145,27 @@ describe("schedule tools with events", () => {
     } as unknown as Parameters<typeof createScheduleFromTool>[0];
     return { deps, create, enqueue, put, key, notices };
   }
+
+  it("refuses an end on a routine events start, before making its webhook key", async () => {
+    const { deps, create, put } = eventDeps();
+    const result = await createScheduleFromTool(deps, {
+      ...owner,
+      ...scheduleCreateFields({
+        name: "Deploys",
+        prompt: "Summarize the deploy",
+        cron: "0 9 * * *",
+        on: { webhook: true },
+        endAt: "2031-01-01",
+      }),
+    });
+    expect(result).toEqual({
+      error: expect.stringContaining(
+        "A routine with webhook, Git, chat or email triggers can't have an end date.",
+      ),
+    });
+    expect(put).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+  });
 
   it("creates a routine only a webhook starts, and keeps its key from the result", async () => {
     const { deps, create, enqueue, put, key, notices } = eventDeps();

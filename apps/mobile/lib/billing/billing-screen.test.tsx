@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("../platform/app-version", () => ({ analyticsAppVersion: () => undefined }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
-vi.mock("../i18n/i18n", () => ({ dateLocaleForUi: () => mocks.locale }));
+vi.mock("../i18n/i18n", () => ({ useDateLocale: () => mocks.locale }));
 vi.mock("./referral", () => ({ rememberReferral: vi.fn() }));
 vi.mock("../settings/settings-sheet", () => ({ openFromSettingsSheet: vi.fn() }));
 vi.mock("expo-web-browser", () => ({ openAuthSessionAsync: mocks.openAuthSessionAsync }));

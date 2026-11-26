@@ -4,18 +4,19 @@ import { formatCron, redactSecrets, sliceWellFormed } from "@rakazo/core";
 import type { routineEventsView } from "../routines/routine-triggers.js";
 import { localDateTime } from "../runs/assembly/current-time.prompt.js";
 
-/** The stored timing as the bot should report it: in the routine's timezone, with the next run. */
+/** The stored timing as the bot should report it: in the routine's timezone, with the next run and end. */
 export function describeRoutineTiming(row: {
   crons: string[];
   timezone: string;
   nextRunAt: Date | null;
+  endsAt?: Date | null;
 }) {
+  const local = (at: Date) => localDateTime(at, row.timezone) ?? at.toISOString();
   return {
     timezone: row.timezone,
     ...(row.crons.length ? { schedule: row.crons.map((cron) => formatCron(cron)).join("; ") } : {}),
-    nextRun: row.nextRunAt
-      ? (localDateTime(row.nextRunAt, row.timezone) ?? row.nextRunAt.toISOString())
-      : null,
+    nextRun: row.nextRunAt ? local(row.nextRunAt) : null,
+    ...(row.endsAt ? { endAt: local(row.endsAt) } : {}),
   };
 }
 
@@ -28,6 +29,7 @@ export type RoutineView = {
   timezone: string;
   schedule?: string;
   nextRun: string | null;
+  endAt?: string;
   everyMinutes?: number;
   on: ReturnType<typeof routineEventsView>;
 };
@@ -43,6 +45,7 @@ export function routineChanges(before: RoutineView, after: RoutineView) {
     "timezone",
     "schedule",
     "nextRun",
+    "endAt",
     "everyMinutes",
     "on",
   ] as const) {

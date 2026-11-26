@@ -21,14 +21,14 @@ name: Bots
 - takeScreenshot: 02-routines
 - openLink: "rakazo:///bot-model?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
 - extendedWaitUntil:
-    visible: ".*Space default.*"
+    visible: ".*Fable.*"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 03-bot-model
 - openLink: "rakazo:///chat-model?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
 - extendedWaitUntil:
-    visible: ".*Space default.*"
+    visible: ".*Fable.*"
     timeout: 15000
 - waitForAnimationToEnd:
     timeout: 3000

@@ -97,7 +97,6 @@ afterEach(async () => {
 it("marks onboarding as usable for the desktop only once a step shows", async () => {
   const host = document.body.appendChild(document.createElement("div"));
   const root = mountRoot(host);
-  // The shell sends a new account to /onboarding, which loads before it picks a step.
   await act(async () =>
     root.render(
       <MemoryRouter initialEntries={["/onboarding"]}>

@@ -13,6 +13,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { LabFeature } from "@rakazo/contracts";
 import {
+  attachmentCountFromEnv,
   availableChatApps,
   messagingProviderName,
   phoneCallSettings,
@@ -64,6 +65,7 @@ import {
   PipedreamConnector,
   pipedreamConfigFromEnv,
 } from "../../providers/integration/pipedream/pipedream-connector.js";
+import { deleteStrandedEndedRoutines } from "../../routines/routine-end.js";
 import { createStrategicInitiativeReconciler } from "../../routines/strategic-initiative.js";
 import { localModelsApiKey } from "../../runtime/pi/models/pi-local-provider-id.js";
 import type { SecretCleanupDeps } from "../../secrets/secret-cleanup.js";
@@ -101,6 +103,7 @@ export interface RunRuntimeEnv extends PipedreamEnvironmentValues {
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
   maxUploadSizeBytes: number;
+  maxAttachmentsPerMessage: number;
   /** What one computer save may copy; read once from `WORKSPACE_SAVE_MAX_GB`. */
   workspaceSaveLimits: WorkspaceExportLimits;
   /** Only names a bot's address to it; the API receives the mail. */
@@ -138,6 +141,7 @@ export function runRuntimeEnvFromProcess(source: NodeJS.ProcessEnv): RunRuntimeE
     deploymentLabs: deploymentLabsFromEnv(source),
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    maxAttachmentsPerMessage: attachmentCountFromEnv(source),
     workspaceSaveLimits: workspaceSaveLimits(source),
     inboundEmailDomain: source.INBOUND_EMAIL_DOMAIN?.trim().toLowerCase() || undefined,
     webOrigin: webOriginFromEnv(source),
@@ -238,6 +242,7 @@ type SetByRunRuntime =
   | "phoneCallCooldownMinutes"
   | "inboundEmailDomain"
   | "maxUploadSizeBytes"
+  | "maxAttachmentsPerMessage"
   | "messaging"
   | "messagingDelivery";
 
@@ -306,6 +311,7 @@ export function createRunRuntime(
     ...executorDeps,
     runtime,
     maxUploadSizeBytes: env.maxUploadSizeBytes,
+    maxAttachmentsPerMessage: env.maxAttachmentsPerMessage,
     connector: connectors.stack.connector,
     connectors: connectors.stack.connector,
     userCloudAgents: connectors.userCloudAgents,
@@ -446,5 +452,6 @@ export function createRunReconciler(
       { intervalMs: 60_000 },
     ),
     reconcileIdleComputers: createIdleComputerSweeper({ prisma, jobs }),
+    reconcileEndedRoutines: () => deleteStrandedEndedRoutines({ prisma, events: deps.events }),
   });
 }

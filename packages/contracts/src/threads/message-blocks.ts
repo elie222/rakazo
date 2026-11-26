@@ -50,7 +50,14 @@ const ChartBlock = z
   });
 
 /** What a routine row in the chat says happened. */
-export const RoutineEventChange = z.enum(["created", "updated", "enabled", "disabled", "deleted"]);
+export const RoutineEventChange = z.enum([
+  "created",
+  "updated",
+  "enabled",
+  "disabled",
+  "deleted",
+  "ended",
+]);
 export type RoutineEventChange = z.infer<typeof RoutineEventChange>;
 
 /**
@@ -457,6 +464,12 @@ export type ToolStepCall = z.infer<typeof ToolStepCallSchema>;
  */
 export const ToolHistorySchema = z.object({
   steps: z.array(z.object({ tool: z.string(), calls: z.array(ToolStepCallSchema) }).nullable()),
+  /**
+   * The turn this reply ended, exactly as the model was sent it and answered (opaque, written by
+   * the runtime), so the bot's next turn can send it unchanged and the provider can reuse it
+   * from its prompt cache.
+   */
+  transcript: z.string().optional(),
 });
 export type ToolHistory = z.infer<typeof ToolHistorySchema>;
 /** A step as a run replays it: what the UI shows, with its tool and kept calls when it has them. */
@@ -464,3 +477,26 @@ export type HistoryToolStep = Extract<MessageBlock, { kind: "steps" }>["steps"][
   tool?: string;
   calls?: ToolStepCall[];
 };
+
+/**
+ * The run of consecutive pictures that starts at `index`, or null when `index` is not a picture or
+ * not the first of its run. A lone picture is a run of one. Web and mobile both group a message's
+ * pictures by it; `isPicture` narrows which image blocks a client draws as pictures.
+ */
+export function consecutiveImageRun<T extends { kind: string }>(
+  items: readonly T[],
+  index: number,
+  isPicture: (item: T) => boolean = () => true,
+): (T & { kind: "image" })[] | null {
+  const matches = (item: T | undefined): item is T & { kind: "image" } =>
+    item?.kind === "image" && isPicture(item);
+  const first = items[index];
+  if (!matches(first) || matches(items[index - 1])) return null;
+  const pictures = [first];
+  for (let at = index + 1; at < items.length; at += 1) {
+    const item = items[at];
+    if (!matches(item)) break;
+    pictures.push(item);
+  }
+  return pictures;
+}

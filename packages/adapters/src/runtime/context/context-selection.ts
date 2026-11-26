@@ -41,11 +41,15 @@ export interface ContextSelectionOptions {
   /** Never drop current request, steering, approvals or authoritative constraints. */
   protectedIndexes?: readonly number[];
   recentExchanges?: number;
+  /** A user message that rides along with an exchange (a recalled-memory note) without being one. */
+  notAnExchange?: (message: ContextMessage) => boolean;
   /**
    * Exchanges older than recentExchanges stay while the messages before index `before`, where
-   * the current request starts, fit `tokens`.
+   * the current request starts, fit `tokens`. With `anchor`, the kept history starts at the
+   * latest message it accepts at or before where it would start, up to `tokens` further back,
+   * so the start holds across requests instead of moving with every new exchange.
    */
-  earlier?: { before: number; tokens: number };
+  earlier?: { before: number; tokens: number; anchor?: (message: ContextMessage) => boolean };
   cacheWarmth?: "likely-warm" | "likely-cold" | "unknown";
   /** Keep tool protocol intact while shortening oversized result bodies. */
   truncateToolResults?: boolean;
@@ -719,20 +723,50 @@ export function selectContext<T extends ContextMessage>(
   const currentStart = options.earlier?.before ?? 0;
   let earlierTokens = 0;
   // Retain a contiguous recent suffix. Skip no holes inside a retained tool group.
+  let windowEnd = -1;
   for (let index = groups.length - 1; index >= 0; index--) {
     const group = groups[index]!;
-    if (group.indexes.some((i) => messages[i]!.role === "user")) exchanges += 1;
+    if (
+      group.indexes.some(
+        (i) => messages[i]!.role === "user" && !options.notAnExchange?.(messages[i]!),
+      )
+    )
+      exchanges += 1;
     if (selected.has(group)) continue;
     const earlier = group.indexes[0]! < currentStart;
     if (
       exchanges > exchangeLimit &&
       (!earlier || earlierTokens + group.tokens > (options.earlier?.tokens ?? 0))
-    )
+    ) {
+      windowEnd = index;
       break;
+    }
     if (used + group.tokens > available) break;
     selected.add(group);
     used += group.tokens;
     if (earlier) earlierTokens += group.tokens;
+  }
+  // Moving the start with every exchange would rewrite the provider's cached prefix each time.
+  const anchor = options.earlier?.anchor;
+  const firstKept = groups.find(
+    (group, index) =>
+      index > windowEnd && selected.has(group) && messages[group.indexes[0]!]!.role !== "system",
+  );
+  if (anchor && windowEnd >= 0 && firstKept && !anchor(messages[firstKept.indexes[0]!]!)) {
+    const extension: Group[] = [];
+    let extra = 0;
+    for (let index = windowEnd; index >= 0; index--) {
+      const group = groups[index]!;
+      if (selected.has(group)) continue;
+      extra += group.tokens;
+      if (extra > (options.earlier?.tokens ?? 0) || used + extra > available) break;
+      extension.push(group);
+      if (anchor(messages[group.indexes[0]!]!)) {
+        for (const kept of extension) selected.add(kept);
+        used += extra;
+        break;
+      }
+    }
   }
   const selectedIndexes = new Set([...selected].flatMap((group) => group.indexes));
   return {

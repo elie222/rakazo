@@ -54,7 +54,11 @@ import {
 } from "../tools/lazy-tool-catalog.js";
 import { mcpToolAppResourceUri, readMcpApp } from "./mcp-app.js";
 import { closeMcpResource } from "./mcp-close.js";
-import { UNAVAILABLE_TOOL, unavailableTool } from "./mcp-connector.tool-definition.js";
+import {
+  mcpCatalogGroups,
+  UNAVAILABLE_TOOL,
+  unavailableTool,
+} from "./mcp-connector.tool-definition.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import {
   accessTokenExpiresAt,
@@ -509,10 +513,12 @@ export class McpConnector implements ConnectorProvider {
       }),
     ]);
     const assignments = [...assigned, ...shared.map(sharedAssignment)];
+    const catalogGroups = mcpCatalogGroups(assignments.map(({ server }) => server));
     const groups = await Promise.all(
       assignments.map(async (assignment): Promise<ConnectorTool[]> => {
         const startedAt = Date.now();
         const server = assignment.server;
+        const catalogGroup = catalogGroups.get(server.id);
         const key = this.sessionKey(server, context);
         const live = this.sessions.get(key)?.revision === server.revision;
         // As an idle connection that is closed and reopened would, a session nobody used for
@@ -526,6 +532,7 @@ export class McpConnector implements ConnectorProvider {
             unavailableTool(
               server,
               "it is still installing its package; its tools will be available on a later turn",
+              catalogGroup,
             ),
           ];
         // A server that just failed is not retried on every turn; a live session, a new
@@ -538,7 +545,7 @@ export class McpConnector implements ConnectorProvider {
           Date.now() < backoff.until &&
           !recoveredSince(server, backoff.since)
         )
-          return [unavailableTool(server, backoff.reason)];
+          return [unavailableTool(server, backoff.reason, catalogGroup)];
         let entry: SessionEntry | undefined;
         // Past the deadline this run stops waiting for its own tools/list request only;
         // the session and other calls on it carry on.
@@ -575,7 +582,7 @@ export class McpConnector implements ConnectorProvider {
                 resourceId: assignment.serverId,
                 resourceRevision: assignment.server.revision,
                 toolName: tool.name,
-                catalogGroup: assignment.server.slug,
+                catalogGroup,
                 appResourceUri: mcpToolAppResourceUri(tool),
               },
             }));
@@ -647,7 +654,7 @@ export class McpConnector implements ConnectorProvider {
               server,
               error,
             );
-          return [unavailableTool(assignment.server, reason)];
+          return [unavailableTool(server, reason, catalogGroup)];
         }
       }),
     );

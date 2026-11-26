@@ -27,7 +27,7 @@ describe("routine scheduling", () => {
   });
 });
 
-function pendingTimerFixture(reuse = true) {
+function pendingTimerFixture(reuse = true, patch: Record<string, unknown> = {}) {
   const scheduledAt = new Date(Date.now() - 1_000);
   const routine = {
     id: "routine-1",
@@ -38,8 +38,9 @@ function pendingTimerFixture(reuse = true) {
     crons: ["* * * * *"],
     timezone: "UTC",
     active: true,
-    nextRunAt: scheduledAt,
+    nextRunAt: scheduledAt as Date | null,
     watch: null,
+    ...patch,
   };
   const pending = {
     id: "pending-1",
@@ -77,7 +78,11 @@ function pendingTimerFixture(reuse = true) {
   };
   const prisma = {
     user: { findUnique: vi.fn(async () => null) },
-    routine: { findUnique: vi.fn(async () => routine) },
+    routine: {
+      findUnique: vi.fn(async () => routine),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+      deleteMany: vi.fn(async () => ({ count: 1 })),
+    },
     bot: { findUnique: vi.fn(async () => ({ id: "bot-1", thread: { id: "thread-1" } })) },
     agentSkill: { findMany: vi.fn(async () => []) },
     $transaction: vi.fn(async (callback: (client: unknown) => Promise<unknown>) => callback(tx)),
@@ -87,9 +92,9 @@ function pendingTimerFixture(reuse = true) {
   const executor = createRunExecutor({
     prisma,
     jobs: { enqueue, cancel: vi.fn(), close: vi.fn() },
-    events: { append },
+    events: { append, publishSpaceChange: vi.fn(async () => undefined) },
   } as unknown as Parameters<typeof createRunExecutor>[0]);
-  return { executor, tx, enqueue, append, scheduledAt };
+  return { executor, prisma, routine, tx, enqueue, append, scheduledAt };
 }
 
 describe("recurring routine catch-up", () => {
@@ -161,5 +166,39 @@ describe("recurring routine catch-up", () => {
     expect(append).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledOnce();
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "routine.wakeup" }));
+  });
+});
+
+describe("a routine with an end", () => {
+  it("stays on with no later run on its last run before the end", async () => {
+    const endsAt = new Date();
+    const { executor, tx, enqueue, scheduledAt } = pendingTimerFixture(false, { endsAt });
+    await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
+    expect(tx.routine.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({ endsAt }),
+      data: expect.objectContaining({ nextRunAt: null }),
+    });
+    expect(tx.routine.updateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ active: false }) }),
+    );
+    expect(tx.run.create).toHaveBeenCalledOnce();
+    expect(enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: "routine.wakeup" }));
+  });
+
+  it("ends without running when woken past its end", async () => {
+    const endsAt = new Date(Date.now() - 60_000);
+    const { executor, prisma, scheduledAt } = pendingTimerFixture(false, { endsAt });
+    await executor.wakeRoutine("routine-1", scheduledAt.toISOString());
+    expect(prisma.routine.deleteMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: "routine-1",
+        userId: "user-1",
+        active: true,
+        nextRunAt: scheduledAt,
+        endsAt,
+      }),
+    });
+    expect(prisma.routine.updateMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

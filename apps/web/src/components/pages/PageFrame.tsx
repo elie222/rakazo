@@ -1,6 +1,12 @@
 import { useExternalLinkOpener } from "@rakazo/chat-ui/web";
-import type { PageSectionAnchor } from "@rakazo/contracts";
-import { pageCopyRequest, pageCopyResult, pageLinkRequest, pageReviewSections } from "@rakazo/core";
+import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
+import {
+  pageCopyRequest,
+  pageCopyResult,
+  pageLinkRequest,
+  pageReviewSections,
+  pageStateRequest,
+} from "@rakazo/core";
 import type { CSSProperties } from "react";
 import { useCallback, useRef, useState } from "react";
 import { writeClipboard } from "../../lib/copy-text";
@@ -23,6 +29,7 @@ export function PageFrame({
   previewScrollTop,
   onReply,
   onSections,
+  onSaveState,
 }: {
   document: string;
   title: string;
@@ -33,6 +40,7 @@ export function PageFrame({
   /** Where a page's reply button puts its text; without it the page offers no replies. */
   onReply?: (text: unknown) => void;
   onSections?: (sections: PageSectionAnchor[]) => void;
+  onSaveState?: (values: PageState) => void;
 }) {
   const { open, dialog } = useExternalLinkOpener();
   const box = useRef<HTMLDivElement>(null);
@@ -70,6 +78,11 @@ export function PageFrame({
       }
       const sections = onSections && pageReviewSections(data);
       if (sections) onSections(sections);
+      const values = interactive && onSaveState ? pageStateRequest(data) : null;
+      if (values) {
+        onSaveState?.(values);
+        return;
+      }
       const { gesture } = message;
       if (!interactive || !focused || typeof gesture !== "string") return;
       if (gesture === usedGesture.current) return;
@@ -82,7 +95,7 @@ export function PageFrame({
       else if (url) open(url);
       else if (reply) reply(message.text);
     },
-    [interactive, onHeight, onReply, onSections, open, scrollablePreview],
+    [interactive, onHeight, onReply, onSaveState, onSections, open, scrollablePreview],
   );
   return (
     <>

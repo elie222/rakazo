@@ -19,8 +19,8 @@ DATABASE_URL=postgres://USER:PASSWORD@127.0.0.1:5432/postgres pnpm ios:screensho
   `rakazo_ios_screenshots` database there, so no other database is touched.
 - The API runs on port 3110 with scripted models, a fake computer, and offline billing,
   wallet, board, plugin marketplace, and app catalog. Nothing calls a hosted provider.
-- Metro starts on port 8081, where debug builds load from, and stops after the run, so the
-  screenshots always show the code on disk. Stop any other Metro first.
+- Metro starts on the first free port from 8081 and stops after the run, so the screenshots
+  always show the code on disk. The run points the app at that port and restores it afterwards.
 - With one simulator booted it is used automatically; otherwise set `SIM_UDID`.
 - Output goes to `test-report/ios-screenshots` (gitignored); override it with
   `IOS_SCREENSHOT_OUT`. Open `index.html` there.

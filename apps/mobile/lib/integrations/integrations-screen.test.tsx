@@ -4,7 +4,7 @@ import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
-import { act, createElement, useEffect } from "react";
+import { act, createElement, useEffect, useSyncExternalStore } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -22,6 +22,9 @@ const state = vi.hoisted(() => ({
   authSession: vi.fn(),
   headerMenu: false,
   navigation: { setOptions: vi.fn() },
+  headerRight: null as (() => ReactNode) | null,
+  headerChanged: null as (() => void) | null,
+  search: null as { onChangeText: (event: { nativeEvent: { text: string } }) => void } | null,
 }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
@@ -176,8 +179,16 @@ vi.mock("react-native", () => {
       ) : (
         <span>{children}</span>
       ),
-    Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
-      <button type="button" onClick={onPress}>
+    Pressable: ({
+      children,
+      onPress,
+      testID,
+    }: {
+      children: ReactNode;
+      onPress: () => void;
+      testID?: string;
+    }) => (
+      <button type="button" data-testid={testID} onClick={onPress}>
         {children}
       </button>
     ),
@@ -239,7 +250,23 @@ beforeEach(() => {
   state.authSession.mockReset().mockResolvedValue({ type: "cancel" });
   queryClient.clear();
   state.headerMenu = false;
-  state.navigation.setOptions.mockReset();
+  state.headerRight = null;
+  state.search = null;
+  state.navigation.setOptions
+    .mockReset()
+    .mockImplementation(
+      (options: {
+        headerRight?: () => ReactNode;
+        headerSearchBarOptions?: typeof state.search;
+      }) => {
+        if ("headerSearchBarOptions" in options)
+          state.search = options.headerSearchBarOptions ?? null;
+        if ("headerRight" in options) {
+          state.headerRight = options.headerRight ?? null;
+          state.headerChanged?.();
+        }
+      },
+    );
   state.push.mockReset();
   state.marketplace
     .mockReset()
@@ -260,7 +287,22 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
 });
-async function render(node: ReactNode = <Integrations />) {
+function subscribeToHeader(onChange: () => void) {
+  state.headerChanged = onChange;
+  return () => {
+    state.headerChanged = null;
+  };
+}
+function IntegrationsWithHeader() {
+  const headerRight = useSyncExternalStore(subscribeToHeader, () => state.headerRight);
+  return (
+    <>
+      {headerRight?.()}
+      <Integrations />
+    </>
+  );
+}
+async function render(node: ReactNode = <IntegrationsWithHeader />) {
   await act(async () => root.render(node));
   await act(flush);
 }
@@ -273,6 +315,11 @@ function cached(catalog: unknown[], connections: unknown[]) {
   queryClient.setQueryData(rpcQuery("connections/list").queryKey, connections as never);
 }
 const listed = () => queryClient.getQueryData(rpcQuery("connections/list").queryKey);
+/** A connected app's row, which opens it. */
+const appRow = (name = "Example app") =>
+  [...container.querySelectorAll("button")].find(
+    (entry) => entry.textContent === `${name}Connected`,
+  );
 const button = (label: string) =>
   [...container.querySelectorAll("button")].find((entry) => entry.textContent === label);
 async function typeLabel(value: string) {
@@ -286,12 +333,12 @@ async function typeLabel(value: string) {
 
 it("keeps Search visible and shows rows on a cold load until the first success", async () => {
   await render();
-  expect(container.querySelector('input[placeholder="Search apps"]')).not.toBeNull();
+  expect(state.search).not.toBeNull();
   expect(container.querySelector('[data-testid="integrations-loading"]')?.children).toHaveLength(8);
   await act(async () => catalog.resolve([item]));
   await settle();
   expect(container.querySelector('[data-testid="integrations-loading"]')).toBeNull();
-  expect(container.textContent).toContain("Example appAdded");
+  expect(container.textContent).toContain("Example appConnected");
 });
 it("leads from an app that is also a chat app here to messaging", async () => {
   state.rpc.mockImplementation((proc: string) =>
@@ -316,18 +363,18 @@ it("leads from an app that is also a chat app here to messaging", async () => {
 it("paints the cached list and Added state before replacing it in the background", async () => {
   cached([item], [account]);
   await render();
-  expect(container.textContent).toContain("Example appAdded");
+  expect(container.textContent).toContain("Example appConnected");
   expect(container.querySelector('[data-testid="integrations-loading"]')).toBeNull();
   await act(async () => catalog.resolve([{ ...item, name: "Refreshed app" }]));
   await settle();
-  expect(container.textContent).toContain("Refreshed appAdded");
+  expect(container.textContent).toContain("Refreshed appConnected");
 });
 it("keeps cached rows after a refresh failure and offers Retry", async () => {
   cached([item], [account]);
   await render();
   await act(async () => catalog.reject(new Error("Unavailable")));
   await settle();
-  expect(container.textContent).toContain("Example appAdded");
+  expect(container.textContent).toContain("Example appConnected");
   expect(button("Retry")).toBeDefined();
   state.rpc.mockImplementation((proc: string) =>
     Promise.resolve(
@@ -369,7 +416,7 @@ it("shows the newly selected Space's apps when the screen is opened again", asyn
   expect(container.querySelector('[data-testid="integrations-loading"]')).not.toBeNull();
   await act(async () => pending.resolve([{ ...item, name: "New space app", connected: false }]));
   await settle();
-  expect(container.textContent).toContain("New space appAdd");
+  expect(container.textContent).toContain("New space appConnect");
 });
 it.each(["https://example.test/logo.svg?version=1", "https://example.test/logo.SVG#icon"])(
   "renders SVG catalog artwork: %s",
@@ -438,7 +485,7 @@ it("falls back for absent logos and empty names", async () => {
 it("keeps a rename when a refresh sent before it answers", async () => {
   cached([item], [account]);
   await render();
-  await act(async () => button("Added")?.click());
+  await act(async () => appRow()?.click());
   const renamed = { ...account, displayName: "Renamed" };
   const lists = () => state.rpc.mock.calls.filter(([proc]) => proc === "connections/list").length;
   const before = lists();
@@ -476,13 +523,13 @@ it("stops a connection waiting on the browser, and any app tapped after it, on l
   });
   const begins = () => state.rpc.mock.calls.filter(([proc]) => proc === "connections/begin");
   const adds = () =>
-    [...container.querySelectorAll("button")].filter((b) => b.textContent === "Add");
+    [...container.querySelectorAll("button")].filter((b) => b.textContent === "Connect");
   await act(async () => adds()[0]?.click());
   expect(container.textContent).toContain("Working…");
   await act(async () => {
     adds()[0]?.click();
     state.focused = false;
-    root.render(<Integrations />);
+    root.render(<IntegrationsWithHeader />);
   });
   await settle();
   expect(begins()).toHaveLength(1);
@@ -503,7 +550,7 @@ it("stops polling a connection once another Space is selected", async () => {
     if (proc === "connections/catalog") return Promise.resolve([{ ...item, connected: false }]);
     return Promise.resolve([]);
   });
-  await act(async () => button("Add")?.click());
+  await act(async () => button("Connect")?.click());
   await settle();
   expect(container.textContent).toContain("Working…");
   state.space = "space-b";
@@ -516,12 +563,46 @@ it("stops polling a connection once another Space is selected", async () => {
   expect(state.rpc.mock.calls.filter(([proc]) => proc === "connections/complete")).toHaveLength(1);
 });
 
+it("shows tool permissions loading until the app returns an empty catalog", async () => {
+  cached([item], [account]);
+  const tools = deferred<unknown>();
+  state.rpc.mockImplementation((proc: string) => {
+    if (proc === "connections/tools") return tools.promise;
+    if (proc === "connections/catalog") return Promise.resolve([item]);
+    if (proc === "connections/list") return Promise.resolve([account]);
+    return Promise.resolve([]);
+  });
+  await render();
+  await act(async () => appRow()?.click());
+  const loading = '[role="progressbar"][aria-label="Loading tool permissions…"]';
+  expect(container.querySelector(loading)).not.toBeNull();
+  await act(async () => tools.resolve([]));
+  await settle();
+  expect(container.querySelector(loading)).toBeNull();
+  expect(container.textContent).not.toContain("Tool permissions");
+});
+
+it("shows when the connected app's tool permissions cannot load", async () => {
+  cached([item], [account]);
+  state.rpc.mockImplementation((proc: string) => {
+    if (proc === "connections/tools") return Promise.reject(new Error("Internal server error"));
+    if (proc === "connections/catalog") return Promise.resolve([item]);
+    if (proc === "connections/list") return Promise.resolve([account]);
+    return Promise.resolve([]);
+  });
+  await render();
+  await act(async () => appRow()?.click());
+  await settle();
+
+  expect(container.textContent).toContain("Could not load permissions");
+});
+
 it.each(["Remove", "Uninstall"])(
   "keeps the revoked Added state after %s even if the following refresh fails",
   async (action) => {
     cached([item], [account]);
     await render();
-    await act(async () => button("Added")?.click());
+    await act(async () => appRow()?.click());
     await settle();
     state.rpc.mockImplementation((proc: string) =>
       proc === "connections/catalog" ? Promise.reject(new Error()) : Promise.resolve([]),
@@ -532,7 +613,7 @@ it.each(["Remove", "Uninstall"])(
     expect(container.textContent).toContain("Could not load integrations");
     expect(container.textContent).not.toContain("Could not revoke connection");
     if (action === "Uninstall") {
-      expect(container.querySelector('input[placeholder="Search apps"]')).not.toBeNull();
+      expect(button("Back")).toBeUndefined();
     } else {
       expect(state.rpc.mock.calls.filter(([proc]) => proc === "connections/tools")).toHaveLength(
         toolsCalls + 1,
@@ -554,10 +635,10 @@ it("shows a completed connection before refreshing", async () => {
     if (proc === "connections/catalog") return Promise.reject(new Error());
     return Promise.resolve([]);
   });
-  await act(async () => button("Add")?.click());
+  await act(async () => button("Connect")?.click());
   await settle();
   expect(queryClient.getQueryData(rpcQuery("connections/catalog").queryKey)).toEqual([item]);
-  expect(container.textContent).toContain("Example appAdded");
+  expect(container.textContent).toContain("Example appConnected");
   expect(container.textContent).toContain("Could not load integrations");
   expect(container.textContent).not.toContain("Could not connect");
 });
@@ -567,7 +648,7 @@ it.each(["Add another", "Remove", "Uninstall"])(
   async (action) => {
     cached([item], [account]);
     await render();
-    await act(async () => button("Added")?.click());
+    await act(async () => appRow()?.click());
     state.rpc.mockImplementation((proc: string) => {
       if (proc === "connections/begin" || proc === "connections/revoke")
         return Promise.reject(new Error("Operation rejected"));
@@ -577,7 +658,7 @@ it.each(["Add another", "Remove", "Uninstall"])(
     expect(button(action)).toBeDefined();
     await act(async () => button(action)?.click());
     await settle();
-    expect(container.querySelector('input[placeholder="Search apps"]')).toBeNull();
+    expect(button("Back")).toBeDefined();
     expect(container.textContent).not.toContain("Could not load integrations");
     expect(container.textContent).toContain("Operation rejected");
   },
@@ -591,7 +672,7 @@ it("keeps sources loading when a rename cancels the catalog refresh", async () =
     proc === "capabilities/list" ? sources.promise : original(proc),
   );
   await render();
-  await act(async () => button("Added")?.click());
+  await act(async () => appRow()?.click());
   state.rpc.mockImplementation((proc: string) =>
     proc === "connections/rename"
       ? Promise.resolve({ ...account, displayName: "Renamed" })
@@ -606,10 +687,10 @@ it("keeps sources loading when a rename cancels the catalog refresh", async () =
     ]),
   );
   await act(async () => button("Back")?.click());
-  expect(container.querySelector('[data-testid="tool-source"]')?.textContent).toContain(
-    "Installed source",
-  );
-  expect(button("Remove")).toBeDefined();
+  const source = container.querySelector<HTMLElement>('[data-testid="tool-source"]');
+  expect(source?.textContent).toContain("Installed source");
+  await act(async () => source?.click());
+  expect(state.push).toHaveBeenCalledWith({ pathname: "/tool-source", params: { id: "source-a" } });
 });
 
 it("keeps loaded plugins showing while the screen reads them again", async () => {
@@ -655,7 +736,7 @@ it.each(["rename", "revoke", "uninstall", "connect"])(
   async (action) => {
     cached([item], [account]);
     await render();
-    await act(async () => button("Added")?.click());
+    await act(async () => appRow()?.click());
     const pending = deferred<unknown>();
     const original = state.rpc.getMockImplementation()!;
     state.rpc.mockImplementation((proc: string) => {
@@ -698,14 +779,14 @@ it.each(["rename", "revoke", "uninstall", "connect"])(
     state.focused = true;
     await render();
     await settle();
-    expect(container.textContent).toContain("New space appAdd");
+    expect(container.textContent).toContain("New space appConnect");
     await act(async () =>
       pending.resolve({ ...account, displayName: "Old space rename", status: "connected" }),
     );
     await settle();
     expect(listed()).toEqual([]);
     expect(container.textContent).not.toContain("Old space rename");
-    expect(container.textContent).toContain("New space appAdd");
+    expect(container.textContent).toContain("New space appConnect");
   },
 );
 
@@ -774,14 +855,7 @@ it("shows registered MCP servers with connector initials and sentence case statu
     rows[4]?.querySelector('[data-symbol="exclamationmark.triangle"]')?.getAttribute("data-color"),
   ).toBe("orange");
 
-  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
-      search,
-      "saved",
-    );
-    search.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await searchFor("saved");
   const matches = container.querySelectorAll('[data-testid="registered-mcp-server"]');
   expect([...matches].map((row) => row.textContent)).toEqual(["SSaved serverConnected"]);
   expect(container.textContent?.match(/Saved server/g)).toHaveLength(1);
@@ -925,7 +999,7 @@ it("lists a plugin connector under Apps, with its servers kept under the plugin"
   await settle();
   // An install from before parts could be chosen has both; its skills are listed in Skills.
   expect(container.querySelector('[data-testid="connected-apps"]')?.textContent).toBe(
-    "AppsCCalcom1 connectorSign in",
+    "AppsExample appConnectedCCalcom1 connectorSign in",
   );
   expect(container.querySelector('[data-testid="connected-skills"]')).toBeNull();
   expect(container.querySelectorAll('[data-testid="registered-mcp-server"]')).toHaveLength(0);
@@ -1001,7 +1075,7 @@ it.each([
     await act(async () => catalog.resolve([item]));
     await settle();
     expect(container.querySelector('[data-testid="connected-apps"]')?.textContent).toBe(
-      `AppsCCalcom1 connector${action}`,
+      `AppsExample appConnectedCCalcom1 connector${action}`,
     );
   },
 );
@@ -1376,7 +1450,7 @@ it("starts the next app at once when a waiting connection is replaced, without r
     return new Promise(() => undefined);
   });
   const adds = () =>
-    [...container.querySelectorAll("button")].filter((b) => b.textContent === "Add");
+    [...container.querySelectorAll("button")].filter((b) => b.textContent === "Connect");
   await act(async () => adds()[0]?.click());
   const catalogReads = () =>
     state.rpc.mock.calls.filter(([proc]) => proc === "connections/catalog").length;
@@ -1400,7 +1474,7 @@ it("does not tell onboarding about an app once another Space is selected", async
   });
   const lastBotRead = deferred<string>();
   state.lastBot.mockReturnValue(lastBotRead.promise);
-  await act(async () => button("Add")?.click());
+  await act(async () => button("Connect")?.click());
   await settle();
   state.space = "space-b";
   lastBotRead.resolve("bot-a");
@@ -1424,7 +1498,7 @@ it("does not tell onboarding about an app once the screen is left", async () => 
   });
   const lastBotRead = deferred<string>();
   state.lastBot.mockReturnValue(lastBotRead.promise);
-  await act(async () => button("Add")?.click());
+  await act(async () => button("Connect")?.click());
   await settle();
   state.focused = false;
   await render();
@@ -1437,7 +1511,7 @@ it("shows what a partial uninstall revoked without reading the lists again", asy
   const second = { ...account, id: "account-b", displayName: "Second" };
   cached([item], [account, second]);
   await render();
-  await act(async () => button("Added")?.click());
+  await act(async () => appRow()?.click());
   state.rpc.mockImplementation((proc: string, input?: { connectionId?: string }) =>
     proc === "connections/revoke" && input?.connectionId === second.id
       ? Promise.reject(new Error("Operation rejected"))
@@ -1456,7 +1530,7 @@ it("shows what a partial uninstall revoked without reading the lists again", asy
 it("keeps an app open when its uninstall finishes on a later visit", async () => {
   cached([item], [account]);
   await render();
-  await act(async () => button("Added")?.click());
+  await act(async () => appRow()?.click());
   const revoked = deferred<unknown>();
   state.rpc.mockImplementation((proc: string) =>
     proc === "connections/revoke"
@@ -1470,20 +1544,44 @@ it("keeps an app open when its uninstall finishes on a later visit", async () =>
   await render();
   await act(async () => revoked.resolve({ ok: true }));
   await settle();
-  expect(container.querySelector('input[placeholder="Search apps"]')).toBeNull();
+  expect(button("Back")).toBeDefined();
+});
+
+it("lists a connected app once, under Apps, until a search", async () => {
+  cached([item, { ...item, slug: "other", name: "Other app", connected: false }], [account]);
+  await render();
+  const apps = container.querySelector('[data-testid="connected-apps"]');
+  expect(apps?.textContent).toBe("AppsExample appConnected");
+  expect(container.textContent?.match(/Example app/g)).toHaveLength(1);
+  expect(button("Connect")).toBeDefined();
+  await searchFor("example");
+  expect(container.querySelector('[data-testid="connected-apps"]')).toBeNull();
+  expect(appRow()).toBeDefined();
 });
 
 it("closes an open app for good when another Space is selected", async () => {
   cached([item], [account]);
   await render();
-  await act(async () => button("Added")?.click());
-  expect(container.querySelector('input[placeholder="Search apps"]')).toBeNull();
+  await act(async () => appRow()?.click());
+  expect(button("Back")).toBeDefined();
   state.space = "space-b";
   await render();
   state.space = "space-a";
   cached([item], [account]);
   await render();
-  expect(container.querySelector('input[placeholder="Search apps"]')).not.toBeNull();
+  expect(button("Back")).toBeUndefined();
+});
+
+it("keeps the search over an open app and returns to the results on a new search", async () => {
+  cached([item], [account]);
+  await render();
+  await searchFor("example");
+  await act(async () => appRow()?.click());
+  expect(button("Back")).toBeDefined();
+  expect(state.search).not.toBeNull();
+  await searchFor("exam");
+  expect(button("Back")).toBeUndefined();
+  expect(container.textContent).toContain("Example app");
 });
 
 it("clears a failed add when another type is picked from the header menu", async () => {
@@ -1494,7 +1592,8 @@ it("clears a failed add when another type is picked from the header menu", async
   );
   const pick = (label: string) =>
     act(async () =>
-      state.navigation.setOptions.mock.lastCall?.[0]
+      state.navigation.setOptions.mock.calls
+        .findLast(([options]) => options.unstable_headerRightItems)?.[0]
         .unstable_headerRightItems()[0]
         .menu.items.find((entry: { label: string }) => entry.label === label)
         .onPress(),
@@ -1510,11 +1609,7 @@ it("clears a failed add when another type is picked from the header menu", async
 });
 
 async function searchFor(text: string) {
-  const search = container.querySelector('input[placeholder="Search apps"]') as HTMLInputElement;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, text);
-    search.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await act(async () => state.search?.onChangeText({ nativeEvent: { text } }));
 }
 
 const catalogResult = (auth: { type: string } | null) => ({

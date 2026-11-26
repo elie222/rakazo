@@ -128,6 +128,7 @@ export function ChatComposerArea({
         runErrorId={composer.displayedRunErrorId}
         onRunErrorPresented={composer.handleRunErrorPresented}
         onDismissError={composer.dismissComposerError}
+        onRetryRun={composer.retryRun}
         sending={composer.sending}
         fileInputRef={composer.fileInputRef}
         onAttachmentPick={composer.onAttachmentPick}

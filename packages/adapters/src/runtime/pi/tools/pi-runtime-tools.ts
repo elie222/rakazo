@@ -22,6 +22,7 @@ import {
 import type { FinishedShellCommand } from "../../../computers/sandbox/shell-command-stream.js";
 import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
 import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
+import { NO_RESPONSE } from "../../../runs/assembly/silent-reply.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
 import { settleMsArg, textContentArg } from "../../../runs/turn/tool-text.js";
 import {
@@ -31,7 +32,11 @@ import {
   oneTimeCodeArgument,
 } from "../../../secrets/bot-secrets.js";
 import { FIND_TOOL, USE_TOOL } from "../../../tools/builtin.tool-definition.js";
-import { findTools, partitionTools } from "../../../tools/builtin-tool-bridge.js";
+import {
+  findTools,
+  partitionTools,
+  unavailableToolReason,
+} from "../../../tools/builtin-tool-bridge.js";
 import { SCHEDULE_TOOL_NAMES } from "../../../tools/schedule-tools.js";
 import { positiveIntegerArg } from "../../../tools/workspace-file-tools.js";
 import { shortenToolResultText } from "../../context/context-selection.js";
@@ -128,7 +133,7 @@ function useToolAgentTool(
           response: host.modelResponses,
         });
         throw new Error(
-          host.request.unavailableToolReasons?.[name] ??
+          unavailableToolReason(host.request.unavailableToolReasons, name) ??
             `${name} is not available. Use a name find_tool lists.`,
         );
       }
@@ -284,7 +289,6 @@ export function describeToolActivity(
   if (toolName === "set_child_bot_model") return "Setting a bot's model";
   if (toolName === "create_child_routine") return `Scheduling routine: ${detail(record.name)}`;
   if (toolName === "remember") return "Saving a note to memory";
-  if (toolName === "save_shared_memory") return `Saving shared memory: ${detail(record.path)}`;
   if (toolName === "delete_shared_memory") return `Deleting shared memory: ${detail(record.path)}`;
   if (toolName === "web_search") return `Searching the web: ${detail(record.query)}`;
   if (toolName === "web_fetch") return `Reading page: ${detail(redactActivityUrl(record.url))}`;
@@ -412,6 +416,7 @@ function toAgentTool(
         return {
           operations: raw.operations,
           ...(typeof raw.path === "string" && raw.path.trim() ? { path: raw.path } : {}),
+          ...(raw.shared === true ? { shared: true } : {}),
         };
       }
       if (tool.name === "request_takeover") {
@@ -589,6 +594,12 @@ function toAgentTool(
                 ) {
                   throw new Error("ask_user requires two to four unique, non-empty options");
                 }
+                if (typeof args.question !== "string" || args.question.trim().length === 0) {
+                  // A blank question is a card nobody can answer, not a way to end quietly.
+                  throw new Error(
+                    `ask_user requires a question for the person. To finish without a message where staying silent is allowed, reply exactly ${NO_RESPONSE} instead.`,
+                  );
+                }
                 host.pausePending = true;
                 host.queue.push({
                   type: "ask",
@@ -643,7 +654,7 @@ function toAgentTool(
                   host.computerModeAllowed && !host.computerModeAllowed()
                     ? deferred.filter((candidate) => !COMPUTER_MODE_TOOLS.has(candidate.name))
                     : deferred;
-                const found = findTools(findable, args);
+                const found = findTools(findable, args, host.request.unavailableToolReasons);
                 return {
                   content: [{ type: "text", text: JSON.stringify(found) }],
                   details: found,

@@ -36,7 +36,13 @@ export const RememberInputSchema = z.object({
   path: z
     .string()
     .optional()
-    .describe(`Another of your memory documents to edit. Defaults to ${MEMORY_INDEX_PATH}.`),
+    .describe(`Another existing memory document to edit. Defaults to ${MEMORY_INDEX_PATH}.`),
+  shared: z
+    .boolean()
+    .optional()
+    .describe(
+      "Edit the Space's shared memory, read by every bot here: rules, decisions and facts about the user or team that all bots should follow. Your own role and how you work stay in yours.",
+    ),
 });
 
 // The owner flag can land in process.env after static imports run (loadRootEnv
@@ -120,7 +126,7 @@ export const conversationTools: ConnectorTool[] = [
   {
     name: "ask_user",
     description:
-      "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of asking them to type when two to four concise choices are enough. Put the content the user is deciding about, such as a draft email, in `detail`.",
+      "Ask the user one short multiple-choice question with tappable options, then wait for their selection. Use this instead of listing two to four choices in text; they can still type their own. Put the content the user is deciding about, such as a draft email, in `detail`.",
     inputSchema: {
       type: "object",
       properties: {
@@ -237,7 +243,7 @@ export const conversationTools: ConnectorTool[] = [
   {
     name: "save_page",
     description:
-      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once.',
+      'Save a page the user opens from the chat: a dashboard, report, tracker or comparison. Pass the page as JSX source written against the Rakazo page kit; call with {"help": true} first for the kit guide. Problems come back with line numbers and nothing is saved. To change a page, pass its pageId with edits (applied together, or not at all) or full source; pass only pageId to read its current source. A result with sharedByLink is a page the user shared: anyone with its link sees each save at once. A read also returns readerState: what the user set on the page controls that save.',
     inputSchema: {
       type: "object",
       properties: {
@@ -253,6 +259,12 @@ export const conversationTools: ConnectorTool[] = [
             properties: { find: { type: "string" }, replace: { type: "string" } },
             required: ["find", "replace"],
           },
+        },
+        images: {
+          type: "object",
+          description:
+            'Pictures to keep with the page, each shown in the source as "image:<name>". Map each name to an http(s) address, a chat file\'s artifactId or a path on your computer. Later saves keep the ones the source still shows.',
+          additionalProperties: { type: "string" },
         },
       },
     },
@@ -333,26 +345,13 @@ export const conversationTools: ConnectorTool[] = [
   },
   {
     name: "remember",
-    description: `Edit your memory. Each entry is one short declarative fact, not an instruction to yourself; task progress, one-off details and promises do not belong. Operations apply all or none, and the ${BOT_MEMORY_MAX_BYTES / 1024} KB limit counts only the result, so one call can make room and add.`,
+    description: `Edit your memory. Each entry is one lasting fact in a short plain sentence, not an instruction to yourself. Record a decision as it now stands, not a dated log of who approved what when; when memory holds such a log, replace all of it with the current state; keep long approved text in a file and its path here. Open loops such as waiting for a reply, task progress, one-off details and promises do not belong; the lasting result of finished work, such as where it was saved, does. Operations apply all or none, and the ${BOT_MEMORY_MAX_BYTES / 1024} KB limit counts only the result, so one call can make room and add: remove what ended or is outdated, merge duplicates, rewrite dated histories as how things now stand, or move detail to a file, rather than abbreviating.`,
     inputSchema: z.toJSONSchema(RememberInputSchema, { io: "input" }),
-  },
-  {
-    name: "save_shared_memory",
-    description:
-      "Save a Space shared memory document every bot reads. Replaces the full content, so include everything it should keep.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Document name, for example MEMORY.md." },
-        content: { type: "string", description: "The document's complete new content." },
-      },
-      required: ["path", "content"],
-    },
   },
   {
     name: "delete_shared_memory",
     description:
-      "Delete a Space shared memory document when the user asks. MEMORY.md cannot be deleted; save it with new content instead.",
+      "Delete a Space shared memory document when the user asks. MEMORY.md cannot be deleted; edit it with remember instead.",
     inputSchema: {
       type: "object",
       properties: {

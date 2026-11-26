@@ -43,7 +43,6 @@ export function useBotProfileActions(botId: string, name: string): BotProfileAct
   const leaving = useRef(false);
   const duplicate = useSave({
     save: (_: { askedIn: SearchInboxSession }, send) => send("bots/duplicate", { botId }),
-    // The copy's chat opens the way a new bot's does.
     onSaved: (copy, { askedIn }) => {
       notifyInboxChanged();
       addToSearchInbox({ kind: "bot", bot: copy }, askedIn);
