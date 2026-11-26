@@ -350,11 +350,17 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     }
   }
 
+  async listAccountsBeforeSignIn(slug: string, context: AdapterContext): Promise<string[]> {
+    return (await this.accounts(context))
+      .filter((account) => account.app?.name_slug?.toLowerCase() === slug.toLowerCase())
+      .map((account) => account.id);
+  }
+
   async begin(
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
-  ): Promise<{ authorizationUrl: string | null; state: string }> {
-    const response = await this.request<{ connect_link_url: string }>(
+  ): Promise<{ authorizationUrl: string | null; state: string; expiresAt?: string }> {
+    const response = await this.request<{ connect_link_url: string; expires_at: string }>(
       `/v1/connect/${encodeURIComponent(this.config.projectId)}/tokens`,
       {
         method: "POST",
@@ -363,13 +369,18 @@ export class PipedreamConnector implements ManagedConnectorProvider {
           success_redirect_uri: request.redirectUrl,
           error_redirect_uri: request.redirectUrl,
           scope: "connect:accounts:read connect:accounts:write",
+          ...(context.organizationId ? { expires_in: 600, app_id: request.provider } : {}),
         }),
       },
       context.signal,
     );
     const url = securePipedreamConnectUrl(response.connect_link_url);
     url.searchParams.set("app", request.provider);
-    return { authorizationUrl: url.toString(), state: request.provider };
+    return {
+      authorizationUrl: url.toString(),
+      state: request.provider,
+      ...(context.organizationId && { expiresAt: response.expires_at }),
+    };
   }
 
   async complete(request: { state: string }): Promise<{ connectionRef: string }> {

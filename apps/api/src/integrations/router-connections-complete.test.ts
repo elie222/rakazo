@@ -740,6 +740,19 @@ describe("connections.complete", () => {
     expect(row.providerRef).toBe("account-1");
   });
 
+  it("retries an identity lookup failure before connecting the account", async () => {
+    const { complete, connector, row } = pollFixture("pending");
+    row.providerRef = "request-1";
+    Object.assign(connector, {
+      resolveConnectedAccountId: async () => "account-1",
+      connectedAccountIdentity: vi
+        .fn(async () => "fixture@example.test")
+        .mockRejectedValueOnce(new Error("identity unavailable")),
+    });
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "pending" } } });
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
+  });
+
   it("leaves the row for the next poll when the provider cannot be asked for the account", async () => {
     const { complete, connector, row, sink } = pollFixture("pending");
     const resolveConnectedAccountId = vi.fn(async (): Promise<string | undefined> => {

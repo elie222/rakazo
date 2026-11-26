@@ -31,10 +31,12 @@ import { normalizedHttpUrl } from "@rakazo/core/egress";
 import {
   IsolationError,
   ProviderTransactionBusyError,
+  readJsonColumn,
   recordSecurityEvent,
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { z } from "zod";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import type { RouterDeps } from "../router.js";
 import {
@@ -72,6 +74,15 @@ function shouldRestoreLocalAfterRemoteRevokeFailure(error: unknown): boolean {
 
 /** How long a poll of connections/complete waits for the slot before reporting the row as is. */
 const COMPLETE_POLL_SLOT_WAIT_MS = 2_000;
+const signInMetadata = z.object({
+  priorAccountIds: z.array(z.string()).optional(),
+  expiresAt: z.string().optional(),
+});
+
+function requireNoPendingSignIn(pending: boolean) {
+  if (pending)
+    throw new ClientError("CONFLICT", "Finish or remove the pending sign-in for this app first.");
+}
 
 export function connectionContext(
   actor: ConnectionOwner,
@@ -234,12 +245,21 @@ export async function beginConnection(
           where: {
             ...owned,
             connectorId: input.connectorId,
-            provider: input.provider,
+            provider: organizationId
+              ? { equals: input.provider, mode: "insensitive" }
+              : input.provider,
           },
           select: { id: true, status: true },
           orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
         });
-        const reusable = pickReusableConnection(existing);
+        if (organizationId && connector.listAccountsBeforeSignIn)
+          requireNoPendingSignIn(existing.some(({ status }) => status === "pending"));
+        // A revoked hosted link may still be live. Keep its row and expiration
+        // until the new attempt has checked it.
+        const reusable =
+          organizationId && connector.listAccountsBeforeSignIn
+            ? undefined
+            : pickReusableConnection(existing);
         if (reusable) {
           return tx.connection.update({
             where: { id: reusable.id },
@@ -320,9 +340,11 @@ export async function beginConnection(
     throw error;
   }
   const scope = { ...owner, connectorId: input.connectorId, provider: input.provider };
-  const leftover = leftoverAuthorization(connector, scope, auth.state);
+  const leftover =
+    organizationId && connector.listAccountsBeforeSignIn
+      ? undefined
+      : leftoverAuthorization(connector, scope, auth.state);
   const replacedRef = reconnecting?.providerRef;
-  // A slug-scoped sign-in may reuse an old account. Its cleanup waits for the new row to pin an ID.
   const replaced =
     replacedRef && replacedRef !== auth.state
       ? leftoverAuthorization(
@@ -354,6 +376,54 @@ export async function beginConnection(
       async (tx) => {
         await lockProviderConnectionScope(tx, owner, input.connectorId, input.provider);
         if (organizationId) await requireConnectionOrganization(tx, context.actor, organizationId);
+        let priorAccountIds: string[] | undefined;
+        if (organizationId && pending && connector.listAccountsBeforeSignIn) {
+          requireNoPendingSignIn(
+            (await tx.connection.count({
+              where: {
+                ...owned,
+                connectorId: input.connectorId,
+                provider: { equals: input.provider, mode: "insensitive" },
+                status: "pending",
+                id: { not: row.id },
+              },
+            })) > 0,
+          );
+          if (!auth.expiresAt || !Number.isFinite(Date.parse(auth.expiresAt)))
+            throw new ClientError("SERVICE_UNAVAILABLE", "The sign-in link has no expiration.");
+          const revoked = await tx.connection.findMany({
+            where: {
+              ...owned,
+              connectorId: input.connectorId,
+              provider: { equals: input.provider, mode: "insensitive" },
+              providerRef: { equals: input.provider, mode: "insensitive" },
+              status: "revoked",
+            },
+            select: { id: true, metadata: true, updatedAt: true },
+          });
+          // Removing a local row cannot invalidate an already issued hosted link.
+          // Wait out that link before another attempt can claim an account.
+          for (const previous of revoked) {
+            const { expiresAt } = readJsonColumn(
+              signInMetadata,
+              previous.metadata,
+              { table: "connections", column: "metadata", id: previous.id },
+              { fallback: {} },
+            );
+            const expiry = expiresAt
+              ? Date.parse(expiresAt)
+              : previous.updatedAt.getTime() + 14_400_000;
+            if (expiry > Date.now())
+              throw new ClientError(
+                "CONFLICT",
+                "Wait for the previous sign-in link to expire, then try again.",
+              );
+          }
+          priorAccountIds = await connector.listAccountsBeforeSignIn(
+            input.provider,
+            connectionContext(owner, "connections.begin", context.signal),
+          );
+        }
         const updated = await tx.connection.updateMany({
           where: reconnecting
             ? {
@@ -366,7 +436,11 @@ export async function beginConnection(
           data: {
             status: pending ? "pending" : "connected",
             providerRef: auth.state || null,
-            metadata: { state: auth.state, attempt },
+            metadata: {
+              state: auth.state,
+              attempt,
+              ...(priorAccountIds && { priorAccountIds, expiresAt: auth.expiresAt }),
+            },
           },
         });
         if (updated.count > 0) {
@@ -541,22 +615,45 @@ export async function completeConnection(
           );
         let resolvedAccountId: string | undefined;
         if (transactionConnector.resolveConnectedAccountId) {
-          const siblings = await tx.connection.findMany({
-            where: {
-              ...owned,
-              connectorId: existing.connectorId,
-              provider: existing.provider,
-              id: { not: existing.id },
-              status: { in: ["connected", "pending", "error"] },
-            },
-            select: { providerRef: true, status: true },
-          });
+          // Request-scoped references already identify their own authorization. Resolve
+          // them independently, then check whether another row owns the result.
+          const correlated = current.providerRef && current.providerRef !== current.provider;
+          if (organizationId && !correlated && transactionConnector.cancelAuthorizationRequest)
+            return current;
+          const siblings = correlated
+            ? []
+            : await tx.connection.findMany({
+                where: {
+                  ...owned,
+                  connectorId: existing.connectorId,
+                  provider: existing.provider,
+                  id: { not: existing.id },
+                  status: { in: ["connected", "pending", "error"] },
+                },
+                select: { providerRef: true, status: true },
+              });
           // Exclude concrete account ids only. A pending sibling may still
           // store a slug or authorization-request id; passing those raw refs
           // would not match remote account ids and can let this row adopt the
           // sibling's account. If a sibling ref cannot be resolved yet, leave
           // this row pending so a later complete can re-resolve safely.
-          const excludeIds: string[] = [];
+          const priorAccountIds =
+            organizationId && !correlated && transactionConnector.listAccountsBeforeSignIn
+              ? readJsonColumn(
+                  signInMetadata,
+                  current.metadata,
+                  { table: "connections", column: "metadata", id: current.id },
+                  { fallback: {} },
+                ).priorAccountIds
+              : undefined;
+          if (
+            organizationId &&
+            !correlated &&
+            transactionConnector.listAccountsBeforeSignIn &&
+            !priorAccountIds
+          )
+            return current;
+          const excludeIds = [...(priorAccountIds ?? [])];
           try {
             for (const sibling of siblings) {
               const ref = sibling.providerRef?.trim();
@@ -575,11 +672,16 @@ export async function completeConnection(
               }
               if (sibling.status === "pending" && transactionConnector.cancelAuthorizationRequest)
                 continue;
+              if (priorAccountIds?.includes(ref)) continue;
               const resolvedSiblingId = await resolveAccountId(ref, []);
               if (!resolvedSiblingId) return current;
               excludeIds.push(resolvedSiblingId);
             }
             resolvedAccountId = await resolveAccountId(current.providerRef, excludeIds);
+            if (!resolvedAccountId && priorAccountIds)
+              getLogger().debug("Shared sign-in has no uniquely identifiable new account", {
+                connectionId: current.id,
+              });
           } catch (error) {
             // Not being able to ask is not "no account": connecting the row now would store a
             // ref revoke cannot target. Leave it for the next poll, which asks again: a warning,
@@ -613,20 +715,39 @@ export async function completeConnection(
               connectorId: existing.connectorId,
               provider: existing.provider,
               id: { not: existing.id },
-              status: { in: ["connected", "pending", "error"] },
+              status: resolvedAccountId ? "connected" : { in: ["connected", "pending", "error"] },
               providerRef,
             },
-            select: { id: true },
           });
           if (taken) {
-            // Do not mark connected with a request-scoped or shared ref —
-            // leave pending so a later complete can re-resolve an unused id.
+            if (resolvedAccountId && taken.status === "connected") {
+              await tx.connection.update({
+                where: { id: current.id },
+                data: { status: "revoked", providerRef: resolvedAccountId },
+              });
+              duplicateFound = true;
+              return taken;
+            }
             return current;
           }
         }
         if (resolvedAccountId && transactionConnector.connectedAccountIdentity) {
           const identify = transactionConnector.connectedAccountIdentity.bind(transactionConnector);
-          const identity = await identify(current.provider, resolvedAccountId, adapterContext);
+          const lookup = async (provider: string, ref: string) => {
+            try {
+              return { identity: await identify(provider, ref, adapterContext) };
+            } catch (error) {
+              adapterContext.signal.throwIfAborted();
+              getLogger().warn("connections.complete could not verify account identity", {
+                error,
+                connectionId: current.id,
+              });
+              return undefined;
+            }
+          };
+          const result = await lookup(current.provider, resolvedAccountId);
+          if (!result) return current;
+          const { identity } = result;
           if (identity) {
             const siblings = await tx.connection.findMany({
               where: {
@@ -640,7 +761,9 @@ export async function completeConnection(
             for (const sibling of siblings) {
               const ref = sibling.providerRef;
               if (!ref || ref === sibling.provider || ref === resolvedAccountId) continue;
-              if ((await identify(sibling.provider, ref, adapterContext)) !== identity) continue;
+              const match = await lookup(sibling.provider, ref);
+              if (!match) return current;
+              if (match.identity !== identity) continue;
               await tx.connection.update({
                 where: { id: current.id },
                 data: { status: "revoked", providerRef: resolvedAccountId },
@@ -659,8 +782,6 @@ export async function completeConnection(
             }
           }
         }
-        // Catalog reconciliation does not take the provider lock, so it may have
-        // connected this row meanwhile; only the call that changes it records the event.
         const updated = await tx.connection.updateMany({
           where: { id: current.id, status: current.status },
           data: {

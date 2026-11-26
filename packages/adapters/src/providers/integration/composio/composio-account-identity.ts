@@ -1,6 +1,6 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import type { ComposioClient } from "./composio-connector.js";
-import { isComposioOutage, isStaleConnectedAccountError } from "./composio-errors.js";
+import { isStaleConnectedAccountError, sanitizeIntegrationError } from "./composio-errors.js";
 
 export function composioAccountIdentity(
   activeRefs: (context: AdapterContext, slug: string) => Promise<string[]>,
@@ -18,6 +18,8 @@ export function composioAccountIdentity(
         },
         { signal: context.signal },
       );
+      if (profile && (profile.status >= 500 || profile.status === 429))
+        throw new Error(`Profile lookup returned HTTP ${profile.status}`);
       const data = profile?.data;
       if (profile?.status !== 200 || !data || typeof data !== "object" || !("emailAddress" in data))
         return undefined;
@@ -27,8 +29,8 @@ export function composioAccountIdentity(
       context.signal.throwIfAborted();
       const status = error instanceof Error && "status" in error ? error.status : undefined;
       if (status === 401 || status === 403 || status === 404) return undefined;
-      if (!isComposioOutage(error) && !isStaleConnectedAccountError(error)) throw error;
-      return undefined;
+      if (isStaleConnectedAccountError(error)) return undefined;
+      throw new Error(sanitizeIntegrationError(error));
     }
   };
 }

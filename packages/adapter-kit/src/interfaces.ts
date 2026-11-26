@@ -312,7 +312,12 @@ export interface ConnectionAuthProvider {
   begin(
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
-  ): Promise<{ authorizationUrl: string | null; state: string; requiresCompletion?: boolean }>;
+  ): Promise<{
+    authorizationUrl: string | null;
+    state: string;
+    requiresCompletion?: boolean;
+    expiresAt?: string;
+  }>;
   complete(
     request: { state: string; code?: string },
     context: AdapterContext,
@@ -354,6 +359,8 @@ export interface ManagedConnectorProvider
     spaceId?: string,
     organizationId?: string,
   ): Promise<string | undefined>;
+  /** Snapshot before giving out a sign-in link that cannot identify its own remote account. */
+  listAccountsBeforeSignIn?(slug: string, context: AdapterContext): Promise<string[]>;
   /** An upstream account identity verified using this exact authorization, when available. */
   connectedAccountIdentity?(
     slug: string,

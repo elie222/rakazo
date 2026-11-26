@@ -20,7 +20,7 @@ import { collectPages, filterCatalog } from "../../../integrations/connector-cat
 import { isLazyCatalogControlRoute } from "../../../tools/lazy-tool-catalog.js";
 import { connectedCalendarProvider } from "./calendar.js";
 import { composioAccountIdentity } from "./composio-account-identity.js";
-import { composioAccountTools, composioOwner } from "./composio-account-tools.js";
+import { composioAccountTools, composioOwner, scopedAccounts } from "./composio-account-tools.js";
 import {
   COMPOSIO_MULTI_EXECUTE_TOOL,
   composioOutgoingDraft,
@@ -793,6 +793,19 @@ export class ComposioConnector implements ComposioProvider {
   private readonly accountTools = composioAccountTools(
     (context, app) => this.listAppTools(context, app),
     (context, connection) => this.sessionForExecute(composioOwner(context), [connection]),
+    async (app) => {
+      try {
+        return (await this.directory()).some(
+          ({ slug, noAuth }) => noAuth && composioSlugKey(slug) === composioSlugKey(app),
+        );
+      } catch (error) {
+        if (!isComposioOutage(error)) throw error;
+        getLogger().warn("Composio could not verify whether the app requires an account", {
+          error: sanitizeIntegrationError(error),
+        });
+        return false;
+      }
+    },
   );
 
   resolveCall(call: ConnectorCall, context: AdapterContext) {
@@ -808,7 +821,8 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   private async discoverPersonalTools(context: AdapterContext): Promise<ConnectorTool[]> {
-    const connections = connectedComposioConnections(context);
+    const scoped = new Set(scopedAccounts(context).map(({ id }) => id));
+    const connections = connectedComposioConnections(context).filter(({ id }) => !scoped.has(id));
     if (connections.length === 0) return [];
     try {
       const { session } = await this.sessionForExecute(context.userId, connections);
@@ -926,9 +940,10 @@ export class ComposioConnector implements ComposioProvider {
           requiresCompletion: composioSlugKey(request.provider) === "gmail",
         };
       }
+      if (!connectionRequest.id) throw new Error("Authorization has no connection request ID.");
       return {
         authorizationUrl: connectionRequest.redirectUrl,
-        state: connectionRequest.id || request.provider,
+        state: connectionRequest.id,
       };
     } catch (error) {
       if (isNoAuthToolkitError(error)) {
@@ -1120,8 +1135,8 @@ export class ComposioConnector implements ComposioProvider {
     }
 
     const ids = await this.listConnectedAccountIds(composioOwner({ userId, organizationId }), slug);
-    if (current && ids.includes(current) && !excluded.has(current)) return current;
-    return ids.find((id) => !excluded.has(id));
+    const available = ids.filter((id) => !excluded.has(id));
+    return available.length === 1 ? available[0] : undefined;
   }
 
   /** The SDK loads on first use, so deployments without Composio never load it. */

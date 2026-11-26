@@ -92,6 +92,24 @@ describe("ComposioConnector over the fake Composio client", () => {
     expect(fake.created.at(-1)?.config).toMatchObject({ connectedAccounts: { GMAIL: [second] } });
   });
 
+  it("offers only pinned variants when a personal app has multiple rows", async () => {
+    const { fake, connector } = setup();
+    const pinned = connection("GMAIL", fake.connect(USER, "gmail"));
+    const legacy = connection("GMAIL", "GMAIL");
+    const tools = await connector.discoverTools(context([pinned, legacy]));
+    expect(tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          route: expect.objectContaining({
+            connectionId: pinned.id,
+            toolName: "GMAIL_LIST_LABELS",
+          }),
+        }),
+      ]),
+    );
+    expect(tools.every((tool) => tool.route?.connectionId === pinned.id)).toBe(true);
+  });
+
   it("uses separate personal and organization sessions for the same app", async () => {
     const { fake, connector } = setup();
     const organizationId = "team-fixture";

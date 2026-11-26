@@ -44,7 +44,7 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
       })),
     execute: async function* () {},
     catalog: async () => [],
-    begin: vi.fn(async () => ({
+    begin: vi.fn<ManagedConnectorProvider["begin"]>(async () => ({
       authorizationUrl: "https://authorization.example.test/",
       state: "fixture-request",
     })),
@@ -53,7 +53,9 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     listConnectedRefs: vi.fn(async () => ["fixture-account"]),
     connectionReady: async () => true,
     connectedAccountIdentity: vi.fn(async () => undefined as string | undefined),
-    resolveConnectedAccountId: vi.fn(async () => "fixture-account"),
+    resolveConnectedAccountId: vi.fn<
+      NonNullable<ManagedConnectorProvider["resolveConnectedAccountId"]>
+    >(async () => "fixture-account"),
     revoke: vi.fn(async () => {}),
   };
   const publishSpaceChange = vi.fn(async () => {});
@@ -210,9 +212,7 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
   it("adds a distinct account to the same app with a different label", async () => {
     const admin = client("admin", second);
     const { connectionId } = await admin.beginForOrganization(request);
-    vi.mocked(connector.resolveConnectedAccountId!)
-      .mockResolvedValueOnce("fixture-account")
-      .mockResolvedValueOnce("fixture-account-2");
+    vi.mocked(connector.resolveConnectedAccountId!).mockResolvedValueOnce("fixture-account-2");
     const completed = await admin.complete({ connectionId });
     expect(completed).toMatchObject({
       id: connectionId,
@@ -234,12 +234,23 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     vi.mocked(connector.revoke).mockClear();
   });
 
+  it("retires a duplicate row for the exact account ref without revoking it", async () => {
+    const admin = client("admin", second);
+    const { connectionId } = await admin.beginForOrganization(request);
+    expect(await admin.complete({ connectionId })).toMatchObject({
+      id: sharedId,
+      status: "connected",
+    });
+    expect(await admin.list()).toContainEqual(
+      expect.objectContaining({ id: connectionId, status: "revoked" }),
+    );
+    expect(connector.revoke).not.toHaveBeenCalled();
+  });
+
   it("keeps the existing account when separate authorizations verify the same identity", async () => {
     const admin = client("admin", second);
     const { connectionId } = await admin.beginForOrganization(request);
-    vi.mocked(connector.resolveConnectedAccountId!)
-      .mockResolvedValueOnce("fixture-account")
-      .mockResolvedValueOnce("fixture-duplicate");
+    vi.mocked(connector.resolveConnectedAccountId!).mockResolvedValueOnce("fixture-duplicate");
     vi.mocked(connector.connectedAccountIdentity!)
       .mockResolvedValueOnce("mailbox@example.test")
       .mockResolvedValueOnce("mailbox@example.test");
@@ -309,5 +320,72 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
       authorizationUrl: null,
     });
     expect(connector.begin).not.toHaveBeenCalled();
+  });
+  it("allows just one overlapping shared sign-in without request correlation", async () => {
+    const snapshot = vi.fn(async () => []);
+    connector.listAccountsBeforeSignIn = snapshot;
+    const app = { ...request, provider: "fixture-hosted", displayName: "Hosted" };
+    vi.mocked(connector.begin).mockResolvedValueOnce({
+      authorizationUrl: "https://authorization.example.test/",
+      state: app.provider,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    try {
+      await client("owner").beginForOrganization(app);
+      await expect(client("admin", second).beginForOrganization(app)).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+      expect(snapshot).toHaveBeenCalledTimes(1);
+    } finally {
+      delete connector.listAccountsBeforeSignIn;
+    }
+  });
+
+  it("excludes remote accounts that existed before issuing the shared sign-in link", async () => {
+    connector.listAccountsBeforeSignIn = async () => ["orphan"];
+    const app = { ...request, provider: "fixture-snapshot", displayName: "Snapshot" };
+    vi.mocked(connector.begin).mockResolvedValueOnce({
+      authorizationUrl: "https://authorization.example.test/",
+      state: app.provider,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const resolve = vi.mocked(connector.resolveConnectedAccountId!);
+    resolve.mockImplementationOnce(async (_user, _slug, _ref, excluded) =>
+      excluded?.includes("orphan") ? undefined : "orphan",
+    );
+    try {
+      const admin = client("admin", second);
+      const { connectionId } = await admin.beginForOrganization(app);
+      expect(await admin.complete({ connectionId })).toMatchObject({ status: "pending" });
+      expect(resolve).toHaveBeenLastCalledWith(
+        expect.any(String),
+        app.provider,
+        app.provider,
+        ["orphan"],
+        second,
+        team,
+      );
+    } finally {
+      delete connector.listAccountsBeforeSignIn;
+    }
+  });
+
+  it("waits for a removed hosted sign-in link to expire before issuing another one", async () => {
+    connector.listAccountsBeforeSignIn = async () => [];
+    const app = { ...request, provider: "fixture-cancelled-link", displayName: "Cancelled link" };
+    const link = {
+      authorizationUrl: "https://authorization.example.test/",
+      state: app.provider,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    vi.mocked(connector.begin).mockResolvedValueOnce(link).mockResolvedValueOnce(link);
+    try {
+      const admin = client("admin", second);
+      const { connectionId } = await admin.beginForOrganization(app);
+      await admin.revoke({ connectionId });
+      await expect(admin.beginForOrganization(app)).rejects.toMatchObject({ code: "CONFLICT" });
+    } finally {
+      delete connector.listAccountsBeforeSignIn;
+    }
   });
 });

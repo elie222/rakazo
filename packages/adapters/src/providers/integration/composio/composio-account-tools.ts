@@ -28,7 +28,7 @@ export function composioOwner(context: Pick<AdapterContext, "userId" | "organiza
   return context.organizationId ? `organization:${context.organizationId}` : context.userId;
 }
 
-function scopedAccounts(context: AdapterContext) {
+export function scopedAccounts(context: AdapterContext) {
   const accounts = (context.connectedConnections ?? []).filter(
     (account) => account.connectorId === "composio",
   );
@@ -44,6 +44,11 @@ function scopedAccounts(context: AdapterContext) {
   );
 }
 
+function accountRef(account: ConnectedConnector) {
+  const ref = account.providerRef?.trim();
+  return ref && ref.toLowerCase() !== account.externalId.toLowerCase() ? ref : undefined;
+}
+
 /** Accounts sharing an app have exact routes to sessions scoped to their credentials. */
 export function composioAccountTools(
   list: (context: AdapterContext, app: string) => Promise<ConnectorTool[]>,
@@ -51,11 +56,13 @@ export function composioAccountTools(
     context: AdapterContext,
     connection: ConnectedConnector,
   ) => Promise<{ session?: ComposioSession; connectedAccounts: Record<string, string[]> }>,
+  isNoAuth: (app: string) => Promise<boolean>,
 ) {
   async function tools(context: AdapterContext) {
     const catalogs = new Map<string, Promise<ConnectorTool[]>>();
     const groups = await Promise.all(
       scopedAccounts(context).map(async (account) => {
+        if (!accountRef(account) && !(await isNoAuth(account.externalId))) return [];
         const app = account.externalId.toLowerCase();
         let catalog = catalogs.get(app);
         if (!catalog) {
@@ -95,24 +102,23 @@ export function composioAccountTools(
         yield { type: "error", message: "The selected connected account is unavailable." };
         return;
       }
+      const ref = accountRef(account);
+      if (!ref && !(await isNoAuth(account.externalId))) {
+        yield { type: "error", message: "The selected account needs to be reconnected." };
+        return;
+      }
       const { session, connectedAccounts } = await sessionFor(
         { ...context, organizationId: account.organizationId },
         account,
       );
-      if (!session) {
-        yield { type: "error", message: "The selected account needs to be reconnected." };
-        return;
-      }
-      const ref = account.providerRef;
-      const pinned = ref && Object.values(connectedAccounts).some((ids) => ids.includes(ref));
-      if (ref && ref.toLowerCase() !== account.externalId.toLowerCase() && !pinned) {
+      if (!session || (ref && !Object.values(connectedAccounts).some((ids) => ids.includes(ref)))) {
         yield { type: "error", message: "The selected account needs to be reconnected." };
         return;
       }
       const result = await session.execute(
         route.toolName,
         call.args,
-        pinned ? { account: ref } : undefined,
+        ref ? { account: ref } : undefined,
       );
       if (result.error || result.resultType !== "completed") {
         yield {
