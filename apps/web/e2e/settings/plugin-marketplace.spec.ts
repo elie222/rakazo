@@ -318,7 +318,9 @@ test("shows directly registered MCP servers in Integrations without catalog conn
     .click();
   await expect(page.getByRole("heading", { name: "MCP servers", exact: true })).toBeVisible();
   const mcpDialog = page.getByRole("dialog", { name: "MCP servers", exact: true });
-  const sharedServer = mcpDialog.getByTestId("mcp-server").filter({ hasText: "GitHub" });
+  const sharedServer = mcpDialog.getByTestId("mcp-server").filter({
+    has: page.getByText("GitHub", { exact: true }),
+  });
   await expect(sharedServer.getByText("Organization", { exact: true })).toBeVisible();
   await expect(sharedServer.getByRole("button")).toHaveCount(0);
   await expect(mcpDialog.getByRole("button", { name: "Actions for Dropbox" })).toBeVisible();
