@@ -69,6 +69,7 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
             x: target.point.x,
             y: target.point.y,
             type: "click",
+            target,
             ...(basedOn ? { basedOn } : {}),
           },
           { kind: "clipboard", text, ...(basedOn ? { basedOn } : {}) },
@@ -90,6 +91,7 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
             x: target.point.x,
             y: target.point.y,
             type: "click",
+            target,
             ...(basedOn ? { basedOn } : {}),
           },
           key,
@@ -129,24 +131,6 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
           ...(action.duration_ms === undefined
             ? {}
             : { durationMs: boundedNumber(action.duration_ms, 0, 10_000, 500) }),
-          ...(basedOn ? { basedOn } : {}),
-        },
-      ];
-    }
-    if (kind === "zoom") {
-      return [
-        {
-          kind: "zoom",
-          region: parseRect(action.region, "region"),
-          ...(basedOn ? { basedOn } : {}),
-        },
-      ];
-    }
-    if (kind === "settle") {
-      return [
-        {
-          kind: "settle",
-          request: parseSettleRequest(action.request),
           ...(basedOn ? { basedOn } : {}),
         },
       ];
@@ -265,8 +249,29 @@ async function resolveTarget(
   if (!element) throw new ComputerStaleTargetError();
   if (target.name && element.name !== target.name) throw new ComputerStaleTargetError();
   if (target.role && element.role !== target.role) throw new ComputerStaleTargetError();
-  if (target.bbox && !contains(target.bbox, target.point)) throw new ComputerStaleTargetError();
+  // A control that moved or resized is not the one the model read, even when the name and role
+  // still match, because another control in another window can share both.
+  if (target.bbox && element.bbox && !sameRect(target.bbox, element.bbox, TARGET_BBOX_SLACK_PX))
+    throw new ComputerStaleTargetError();
+  if (
+    target.windowFrame &&
+    element.windowFrame &&
+    !sameRect(target.windowFrame, element.windowFrame, 0)
+  )
+    throw new ComputerStaleTargetError();
   return element.point;
+}
+
+/** Pixels a control may move between two reads before its target is stale. */
+const TARGET_BBOX_SLACK_PX = 2;
+
+function sameRect(a: ComputerRect, b: ComputerRect, slack: number): boolean {
+  return (
+    Math.abs(a.x - b.x) <= slack &&
+    Math.abs(a.y - b.y) <= slack &&
+    Math.abs(a.w - b.w) <= slack &&
+    Math.abs(a.h - b.h) <= slack
+  );
 }
 
 function parseBasedOn(value: unknown): string | undefined {
@@ -355,12 +360,6 @@ export function parseComputerZoomRequest(value: unknown): ComputerZoomRequest {
     throw new Error("computer_zoom requires a frameId");
   }
   return { frameId: frameId.trim().slice(0, 128), region: parseRect(raw.region, "region") };
-}
-
-function contains(rect: ComputerRect, point: { x: number; y: number }): boolean {
-  return (
-    point.x >= rect.x && point.y >= rect.y && point.x < rect.x + rect.w && point.y < rect.y + rect.h
-  );
 }
 
 export function observationToolResult(

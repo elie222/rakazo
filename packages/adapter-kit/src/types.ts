@@ -325,9 +325,7 @@ export type ComputerAction =
       to: ComputerTarget;
       durationMs?: number;
       basedOn?: string;
-    }
-  | { kind: "zoom"; region: ComputerRect; basedOn?: string }
-  | { kind: "settle"; request: ComputerSettleRequest; basedOn?: string };
+    };
 
 export interface ComputerObservation {
   frameId: string;

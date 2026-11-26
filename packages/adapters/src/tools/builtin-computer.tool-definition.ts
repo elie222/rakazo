@@ -50,16 +50,6 @@ const computerTargetSchema = {
   required: ["point", "source"],
 } as const;
 
-const computerSettleRequestSchema = {
-  type: "object",
-  properties: {
-    quiet_ms: { type: "number" },
-    first_ms: { type: "number" },
-    timeout_ms: { type: "number" },
-    verb: { type: "string", enum: ["click", "scroll", "key", "type", "launch"] },
-  },
-} as const;
-
 /** Media, computer, browser, file and desktop app tools. */
 export const computerTools: ConnectorTool[] = [
   {
@@ -95,7 +85,7 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "computer_act",
     description:
-      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Prefer target (role, name, app, window, basedOn) for native applications; use x,y for canvas, games and remote desktops. A target that moved or disappeared returns stale and runs nothing. Action kinds: click, move, down, up, type, key, scroll, wait, focus (raises the application's window, launching it if absent), drag, zoom, settle. Scroll turns the wheel at x,y; put them on the area to scroll, as for a click. Without them it scrolls wherever the pointer is. Direction up, down, left or right; amount 1-20 wheel notches, default 3.",
+      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Prefer target (role, name, app, window, basedOn) for native applications; use x,y for canvas, games and remote desktops. A target that moved or disappeared returns stale and runs nothing. Action kinds: click, move, down, up, type, key, scroll, wait, focus (raises the application's window, launching it if absent), drag. Scroll turns the wheel at x,y; put them on the area to scroll, as for a click. Without them it scrolls wherever the pointer is. Direction up, down, left or right; amount 1-20 wheel notches, default 3.",
     inputSchema: {
       type: "object",
       properties: {
@@ -146,24 +136,6 @@ export const computerTools: ConnectorTool[] = [
                   basedOn: { type: "string", minLength: 1 },
                 },
                 required: ["kind", "from", "to"],
-              },
-              {
-                type: "object",
-                properties: {
-                  kind: { type: "string", enum: ["zoom"] },
-                  region: computerRectSchema,
-                  basedOn: { type: "string", minLength: 1 },
-                },
-                required: ["kind", "region"],
-              },
-              {
-                type: "object",
-                properties: {
-                  kind: { type: "string", enum: ["settle"] },
-                  request: computerSettleRequestSchema,
-                  basedOn: { type: "string", minLength: 1 },
-                },
-                required: ["kind"],
               },
             ],
           },

@@ -380,8 +380,6 @@ describe("semantic computer targets", () => {
       parseComputerActions([
         { kind: "click", target, basedOn: "frame-1" },
         { kind: "drag", from: target, to: { ...target, point: { x: 80, y: 90 } } },
-        { kind: "zoom", region: { x: 1, y: 2, w: 30, h: 40 } },
-        { kind: "settle", request: { quiet_ms: 200, verb: "click" } },
       ]),
     ).toEqual([
       { kind: "pointer", x: 10, y: 20, type: "click", button: "left", target, basedOn: "frame-1" },
@@ -390,9 +388,15 @@ describe("semantic computer targets", () => {
         from: target,
         to: { ...target, point: { x: 80, y: 90 } },
       },
-      { kind: "zoom", region: { x: 1, y: 2, w: 30, h: 40 } },
-      { kind: "settle", request: { quietMs: 200, verb: "click" } },
     ]);
+  });
+
+  it("keeps zoom and settle out of computer_act", () => {
+    expect(() => parseComputerActions([{ kind: "zoom", region: { x: 1, y: 2, w: 3, h: 4 } }]))
+      .toThrow("unsupported computer action zoom");
+    expect(() => parseComputerActions([{ kind: "settle", request: { quiet_ms: 200 } }])).toThrow(
+      "unsupported computer action settle",
+    );
   });
 
   it("clicks a target before typing or pressing a key", () => {
@@ -402,9 +406,9 @@ describe("semantic computer targets", () => {
         { kind: "key", target, key: "Return" },
       ]),
     ).toEqual([
-      { kind: "pointer", x: 10, y: 20, type: "click" },
+      { kind: "pointer", x: 10, y: 20, type: "click", target },
       { kind: "clipboard", text: "hello" },
-      { kind: "pointer", x: 10, y: 20, type: "click" },
+      { kind: "pointer", x: 10, y: 20, type: "click", target },
       { kind: "key", key: "Return", modifiers: undefined },
     ]);
   });
@@ -484,7 +488,9 @@ describe("semantic computer targets", () => {
         truncated: false,
       })
       .mockResolvedValueOnce({
-        elements: [{ ...target, point: { x: 300, y: 400 } }],
+        elements: [
+          { ...target, point: { x: 300, y: 400 }, bbox: { x: 250, y: 350, w: 100, h: 100 } },
+        ],
         truncated: false,
       });
     await expect(

@@ -68,6 +68,28 @@ export function terminalCommand(
   });
 }
 
+const computerRectSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+});
+
+/** A semantic target: where the control was, and what it was, in the frame the model read. */
+const computerTargetSchema = z.object({
+  point: z.object({ x: z.number(), y: z.number() }),
+  bbox: computerRectSchema.optional(),
+  windowFrame: computerRectSchema.optional(),
+  source: z.enum(["coords", "ax", "cdp"]),
+  app: z.string().optional(),
+  window: z.string().optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  url: z.string().optional(),
+  secret: z.boolean().optional(),
+  editable: z.boolean().optional(),
+});
+
 export const computerActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("key"), key: z.string(), modifiers: z.array(z.string()).optional() }),
   z.object({
@@ -86,6 +108,12 @@ export const computerActionSchema = z.discriminatedUnion("kind", [
     y: z.number().optional(),
   }),
   z.object({ kind: z.literal("wait"), ms: z.number() }),
+  z.object({
+    kind: z.literal("drag"),
+    from: computerTargetSchema,
+    to: computerTargetSchema,
+    durationMs: z.number().optional(),
+  }),
   z.object({ kind: z.literal("open"), path: z.string() }),
   z.object({ kind: z.literal("launch"), application: z.string(), uri: z.string().optional() }),
   z.object({ kind: z.literal("focus"), application: z.string(), uri: z.string().optional() }),
@@ -533,6 +561,23 @@ export function containerActionStep(
         ? ["mousemove", "--", String(Math.round(action.x)), String(Math.round(action.y))]
         : [];
     argv = ["env", `DISPLAY=${display}`, "xdotool", ...at, ...wheel];
+  } else if (action.kind === "drag") {
+    // xdotool has no duration for motion; the caller still gets the press, move and release.
+    argv = [
+      "env",
+      `DISPLAY=${display}`,
+      "xdotool",
+      "mousemove",
+      String(Math.round(action.from.point.x)),
+      String(Math.round(action.from.point.y)),
+      "mousedown",
+      "1",
+      "mousemove",
+      String(Math.round(action.to.point.x)),
+      String(Math.round(action.to.point.y)),
+      "mouseup",
+      "1",
+    ];
   } else if (action.kind === "open") {
     const isHttpUrl = /^https?:\/\//i.test(action.path);
     const target = isHttpUrl

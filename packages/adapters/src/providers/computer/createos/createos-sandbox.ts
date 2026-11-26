@@ -1185,9 +1185,6 @@ print(json.dumps(out))
       await this.postJson(`${root}/mouse/up?${query}`, { button: "left" }, context);
       return;
     }
-    if (action.kind === "zoom" || action.kind === "settle") {
-      throw new Error(`${action.kind} is handled by the perception layer, not an input action`);
-    }
     if (isBrowserApplication(action.application)) {
       await this.launchBrowser(computer, action.uri ?? "about:blank", context);
       return;

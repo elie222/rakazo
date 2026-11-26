@@ -1253,9 +1253,6 @@ export class WuyingSandboxProvider implements SandboxProvider {
       );
       return;
     }
-    if (action.kind === "zoom" || action.kind === "settle") {
-      throw new Error(`${action.kind} is handled by the perception layer, not an input action`);
-    }
     const { data } = await this.tools.call("window_list", {}, signal);
     const wanted = action.application.toLowerCase();
     const windows =
