@@ -47,6 +47,12 @@ function cleanToolText(text: string, secrets: string[]): string {
   );
 }
 
+const notKept = (chars: number) => `\n… [${chars} characters not kept] …\n`;
+
+/** The largest a saved result gets: its kept text and the note of what was left out. */
+export const TOOL_CALL_SAVED_TEXT_MAX_CHARS =
+  TOOL_CALL_TEXT_MAX_CHARS + notKept(Number.MAX_SAFE_INTEGER).length;
+
 export function bounded(text: string, max: number, secrets: string[] = []): string {
   const clean = (part: string) => cleanToolText(part, secrets);
   if (text.length <= max) return clean(text);
@@ -55,7 +61,7 @@ export function bounded(text: string, max: number, secrets: string[] = []): stri
   const tailLength = max - headLength;
   const head = clean(text.slice(0, headLength + margin)).slice(0, headLength);
   const tail = clean(text.slice(-(tailLength + margin))).slice(-tailLength);
-  return `${head}\n… [${text.length - max} characters not kept] …\n${tail}`;
+  return `${head}${notKept(text.length - max)}${tail}`;
 }
 
 function keptArgument(value: unknown, depth: number, secrets: string[]): unknown {
