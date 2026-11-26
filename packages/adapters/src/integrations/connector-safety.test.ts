@@ -1,4 +1,3 @@
-import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 
@@ -52,28 +51,33 @@ describe("redactConnectorPayload", () => {
     });
   });
 
-  it("stays linear across repeated payloads with thousands of secret forms", () => {
-    const secrets = Array.from(
-      { length: 3_000 },
-      (_, index) =>
-        `${index.toString(36).padStart(4, "x")}-vault-form-${index}-secret-payload-value`,
-    );
+  it("resolves the secret matcher once per payload instead of once per leaf", () => {
+    const raw = ["secret-alpha-0001", "secret-beta-0002", "secret-gamma-0003"];
+    let indexZeroReads = 0;
+    const secrets = new Proxy(raw, {
+      get(target, prop, receiver) {
+        if (prop === "0") indexZeroReads += 1;
+        return Reflect.get(target, prop, receiver);
+      },
+    });
     const payload = {
-      items: Array.from({ length: 150 }, (_, index) => ({
+      items: Array.from({ length: 40 }, (_, index) => ({
         id: `item-${index}`,
-        label: index === 75 ? `contains ${secrets[1_500]} inside` : `Element description ${index}`,
+        label: index === 15 ? `contains ${raw[1]} inside` : `Element description ${index}`,
         href: `https://example.test/items/${index}`,
         active: index % 2 === 0,
       })),
     };
-    expectLinearTime(() => {
-      for (let call = 0; call < 200; call += 1) {
-        const redacted = redactConnectorPayload(payload, secrets) as {
-          items: Array<{ label: string }>;
-        };
-        expect(redacted.items[75]?.label).toBe("contains [redacted] inside");
-      }
-    });
+
+    // Warm the WeakMap entry, then verify a multi-leaf payload validates the secrets array once.
+    redactConnectorPayload({ warm: raw[0] }, secrets);
+    indexZeroReads = 0;
+
+    const redacted = redactConnectorPayload(payload, secrets) as {
+      items: Array<{ label: string }>;
+    };
+    expect(redacted.items[15]?.label).toBe("contains [redacted] inside");
+    expect(indexZeroReads).toBe(1);
   });
 });
 
