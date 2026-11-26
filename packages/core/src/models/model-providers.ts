@@ -482,6 +482,26 @@ export function latestModelChoices<C extends ChatModelChoice>(
   return { latest, older };
 }
 
+/**
+ * A picker's provider sections with each model's older versions held back, unless the section's
+ * key is in `expanded`; `collapsed` says the section has more to show.
+ */
+export function collapseOlderModels<
+  S extends { key: string; heading?: string; data: ChatModelChoice[] },
+>(
+  sections: readonly S[],
+  selectedKey: string,
+  expanded: ReadonlySet<string>,
+): (S & { collapsed: boolean })[] {
+  return sections.map((section) => {
+    const { latest, older } = section.heading
+      ? latestModelChoices(section.data, selectedKey)
+      : { latest: section.data, older: [] };
+    const collapsed = older.length > 0 && !expanded.has(section.key);
+    return { ...section, data: collapsed ? latest : section.data, collapsed };
+  });
+}
+
 type ModelRelease = { family: string; version: number[]; date: number[] };
 
 /**
@@ -494,11 +514,22 @@ function modelRelease(choice: ChatModelChoice): ModelRelease {
   const words: string[] = [];
   const version: number[] = [];
   const date: number[] = [];
-  for (const part of name.match(/\d+(?:\.\d+)?[a-z][a-z\d]*|[a-z]+|\d+/g) ?? []) {
+  const parts = name.match(/\d+(?:\.\d+)?[a-z][a-z\d]*|[a-z]+|\d+/g) ?? [];
+  let wordAfterVersion = false;
+  for (const [index, part] of parts.entries()) {
     if (!/^\d+$/.test(part)) {
       if (!RELEASE_TAGS.has(part)) words.push(part);
-    } else if (date.length || part.length >= 4) date.push(Number(part));
-    else version.push(Number(part));
+      if (version.length) wordAfterVersion = true;
+    } else if (
+      // A date: `20250929`, `1106`, `08-2024`, or numbers after a word that follows the version.
+      date.length ||
+      part.length >= 4 ||
+      part.startsWith("0") ||
+      wordAfterVersion ||
+      /^20\d\d$/.test(parts[index + 1] ?? "")
+    ) {
+      date.push(Number(part));
+    } else version.push(Number(part));
   }
   return {
     family: `${choice.provider ?? ""}:${choice.providerLabel ?? ""}:${words.join("-")}`,

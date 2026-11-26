@@ -3,8 +3,8 @@ import { useListSearch, useTimeout } from "@rakazo/chat-ui/hooks";
 import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
 import {
+  collapseOlderModels,
   groupModelChoices,
-  latestModelChoices,
   modelChoiceSearchText,
   modelMark,
 } from "@rakazo/core";
@@ -136,27 +136,23 @@ export function ModelPickerList({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const sections = useMemo(() => {
     if (!choices) return [];
-    const models = groupModelChoices(
-      visible.flatMap((row) => (row.connect ? [] : [row.choice])),
-      "",
-    ).map((section) => {
-      const { latest, older } = section.heading
-        ? latestModelChoices(section.data, selectedKey)
-        : { latest: section.data, older: [] };
-      const collapsed = older.length > 0 && !expanded.has(section.key);
-      return {
-        ...section,
-        data: collapsed ? latest : section.data,
-        collapsed,
-        connect: false,
-        heading:
-          providerLabel && section.heading === providerLabel
-            ? undefined
-            : providerLabel && section.heading?.endsWith(withConnectionName("", providerLabel))
-              ? section.heading.slice(0, -withConnectionName("", providerLabel).length)
-              : section.heading,
-      };
-    });
+    const models = collapseOlderModels(
+      groupModelChoices(
+        visible.flatMap((row) => (row.connect ? [] : [row.choice])),
+        "",
+      ),
+      selectedKey,
+      expanded,
+    ).map((section) => ({
+      ...section,
+      connect: false,
+      heading:
+        providerLabel && section.heading === providerLabel
+          ? undefined
+          : providerLabel && section.heading?.endsWith(withConnectionName("", providerLabel))
+            ? section.heading.slice(0, -withConnectionName("", providerLabel).length)
+            : section.heading,
+    }));
     const connect = groupModelChoices(
       visible.flatMap((row) => (row.connect ? [row.choice] : [])),
       "",

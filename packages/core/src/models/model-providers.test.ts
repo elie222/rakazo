@@ -637,6 +637,22 @@ describe("latestModelChoices", () => {
     expect(ids(latestModelChoices(snapshots, "").latest)).toEqual(["gpt-4o-2024-11-20", "gpt-4.1"]);
   });
 
+  it("reads month and day numbers as a snapshot's date, not its version", () => {
+    const snapshots = [
+      "gemini-2.5-pro-preview-05-06",
+      "gemini-2.5-pro",
+      "command-r-08-2024",
+      "command-r",
+    ].map((modelId) => ({
+      key: `vendor::${modelId}`,
+      label: modelId,
+      provider: "vendor",
+      providerLabel: "Vendor",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(snapshots, "").latest)).toEqual(["gemini-2.5-pro", "command-r"]);
+  });
+
   it("keeps an older selected model in view", () => {
     const { latest } = latestModelChoices(section, "openrouter::anthropic/claude-opus-4.5");
     expect(ids(latest)).toContain("anthropic/claude-opus-4.5");
