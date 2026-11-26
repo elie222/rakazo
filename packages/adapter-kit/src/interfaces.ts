@@ -1,4 +1,4 @@
-import type { ComputerSize } from "@rakazo/contracts";
+import type { ComputerCapabilities, ComputerSize } from "@rakazo/contracts";
 import type { ConnectedCalendarProvider } from "./personal-calendar.js";
 import type {
   AdapterContext,
@@ -39,9 +39,14 @@ import type {
   ComputerActionRequest,
   ComputerActionResult,
   ComputerFileEntry,
+  ComputerFindRequest,
+  ComputerFindResult,
   ComputerInput,
   ComputerObservation,
   ComputerRef,
+  ComputerSettleRequest,
+  ComputerSettleResult,
+  ComputerZoomRequest,
   ConnectorCall,
   ConnectorCapabilities,
   ConnectorCatalogItem,
@@ -227,6 +232,26 @@ export interface SandboxProvider {
     request: ComputerActionRequest,
     context: AdapterContext,
   ): Promise<ComputerActionResult>;
+  /** Find accessible controls by name, role, application or window. */
+  findElements?(
+    computer: ComputerRef,
+    request: ComputerFindRequest,
+    context: AdapterContext,
+  ): Promise<ComputerFindResult>;
+  /** Wait until the application that took the input has handled it. */
+  settle?(
+    computer: ComputerRef,
+    request: ComputerSettleRequest,
+    context: AdapterContext,
+  ): Promise<ComputerSettleResult>;
+  /** Read one region of the last frame at the screen's device resolution. */
+  zoom?(
+    computer: ComputerRef,
+    request: ComputerZoomRequest,
+    context: AdapterContext,
+  ): Promise<ComputerObservation>;
+  /** Read-only resources and surfaces this computer offers. */
+  capabilities?(computer: ComputerRef, context: AdapterContext): Promise<ComputerCapabilities>;
   listFiles(
     computer: ComputerRef,
     path: string,

@@ -1,9 +1,15 @@
 import type {
   AgentToolExecutionResult,
   ComputerAction,
+  ComputerFindRequest,
+  ComputerFindResult,
   ComputerObservation,
+  ComputerRect,
+  ComputerSettleRequest,
+  ComputerTarget,
+  ComputerZoomRequest,
 } from "@rakazo/adapter-kit";
-import { scrollDirection } from "@rakazo/core";
+import { ClientError, scrollDirection } from "@rakazo/core";
 import { computerActionCount, MAX_ACTIONS_PER_CALL } from "../../runs/turn/tool-loop.js";
 
 /** Identical visual actions that leave the frame unchanged before computer_act stops repeating them. */
@@ -23,6 +29,11 @@ export type UnchangedVisualStreak = {
 export type ObservationToolOptions = {
   /** Consecutive identical visual actions that left this frame unchanged. */
   unchangedVisualCount?: number;
+  /**
+   * The frame this observation belongs to, when it is the frame the bot already has rather than a
+   * new one, as a zoom crop is. The result keeps that id and never reads as an unchanged screen.
+   */
+  frameId?: string;
 };
 
 export function parseComputerActions(value: unknown): ComputerAction[] {
@@ -38,36 +49,69 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
     if (!raw || typeof raw !== "object") throw new Error("computer action must be an object");
     const action = raw as Record<string, unknown>;
     const kind = String(action.kind ?? "");
+    const target = parseTarget(action.target);
+    const basedOn = parseBasedOn(action.basedOn);
     if (kind === "click" || kind === "move" || kind === "down" || kind === "up") {
-      const x = finiteCoordinate(action.x, "x");
-      const y = finiteCoordinate(action.y, "y");
+      const x = target?.point.x ?? finiteCoordinate(action.x, "x");
+      const y = target?.point.y ?? finiteCoordinate(action.y, "y");
       const pointer: ComputerAction = {
         kind: "pointer",
         x,
         y,
         type: kind,
         button: action.button === "right" ? "right" : "left",
+        ...(target ? { target } : {}),
+        ...(basedOn ? { basedOn } : {}),
       };
       return computerActionCount(action) === 2 ? [pointer, pointer] : [pointer];
     }
     if (kind === "type") {
-      return [{ kind: "clipboard", text: String(action.text ?? "") }];
+      const text = String(action.text ?? "");
+      if (target) {
+        return [
+          {
+            kind: "pointer",
+            x: target.point.x,
+            y: target.point.y,
+            type: "click",
+            target,
+            ...(basedOn ? { basedOn } : {}),
+          },
+          { kind: "clipboard", text, ...(basedOn ? { basedOn } : {}) },
+        ];
+      }
+      return [{ kind: "clipboard", text, ...(basedOn ? { basedOn } : {}) }];
     }
     if (kind === "key") {
-      return [
-        {
-          kind: "key",
-          key: String(action.key ?? ""),
-          modifiers: Array.isArray(action.modifiers) ? action.modifiers.map(String) : undefined,
-        },
-      ];
+      const key: ComputerAction = {
+        kind: "key",
+        key: String(action.key ?? ""),
+        modifiers: Array.isArray(action.modifiers) ? action.modifiers.map(String) : undefined,
+        ...(basedOn ? { basedOn } : {}),
+      };
+      if (target) {
+        return [
+          {
+            kind: "pointer",
+            x: target.point.x,
+            y: target.point.y,
+            type: "click",
+            target,
+            ...(basedOn ? { basedOn } : {}),
+          },
+          key,
+        ];
+      }
+      return [key];
     }
     if (kind === "scroll") {
       // A point is optional, and needs both coordinates: the wheel turns where the pointer is.
       const at =
-        action.x === undefined && action.y === undefined
-          ? {}
-          : { x: finiteCoordinate(action.x, "x"), y: finiteCoordinate(action.y, "y") };
+        target !== undefined
+          ? { x: target.point.x, y: target.point.y }
+          : action.x === undefined && action.y === undefined
+            ? {}
+            : { x: finiteCoordinate(action.x, "x"), y: finiteCoordinate(action.y, "y") };
       return [
         {
           kind: "scroll",
@@ -75,6 +119,24 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
           // Wheel notches; none or fewer means the default three.
           amount: Number(action.amount) > 0 ? boundedNumber(action.amount, 1, 20, 3) : 3,
           ...at,
+          ...(target ? { target } : {}),
+          ...(basedOn ? { basedOn } : {}),
+        },
+      ];
+    }
+    if (kind === "drag") {
+      const from = parseTarget(action.from);
+      const to = parseTarget(action.to);
+      if (!from || !to) throw new Error("computer action drag requires from and to targets");
+      return [
+        {
+          kind: "drag",
+          from,
+          to,
+          ...(action.duration_ms === undefined
+            ? {}
+            : { durationMs: boundedNumber(action.duration_ms, 0, 10_000, 500) }),
+          ...(basedOn ? { basedOn } : {}),
         },
       ];
     }
@@ -102,17 +164,230 @@ export function parseComputerActions(value: unknown): ComputerAction[] {
   return actions;
 }
 
+export class ComputerStaleTargetError extends ClientError {
+  constructor() {
+    super("CONFLICT", "The target moved or disappeared; observe again before acting.");
+    this.name = "ComputerStaleTargetError";
+  }
+}
+
+export class ComputerPerceptionUnknownError extends ClientError {
+  constructor() {
+    super("CONFLICT", "The screen could not be read in time; observe again before acting.");
+    this.name = "ComputerPerceptionUnknownError";
+  }
+}
+
+export interface ComputerTargetResolver {
+  find(request: ComputerFindRequest): Promise<ComputerFindResult>;
+}
+
+/**
+ * Resolve semantic targets against the current frame. A target that moved, vanished, or cannot be
+ * read stops the batch before any action runs, so a stale click is never replayed.
+ */
+export async function resolveComputerTargets(
+  actions: readonly ComputerAction[],
+  currentFrameId: string | undefined,
+  deps: ComputerTargetResolver,
+): Promise<ComputerAction[]> {
+  const resolved: ComputerAction[] = [];
+  for (const action of actions) {
+    if ("basedOn" in action && action.basedOn && action.basedOn !== currentFrameId) {
+      throw new ComputerStaleTargetError();
+    }
+    switch (action.kind) {
+      case "pointer":
+      case "clipboard":
+      case "key":
+      case "scroll": {
+        const target = "target" in action ? action.target : undefined;
+        if (!target) {
+          resolved.push(action);
+          break;
+        }
+        const point = await resolveTarget(target, deps);
+        if (action.kind === "pointer") {
+          resolved.push({ ...action, x: point.x, y: point.y, target: undefined });
+        } else if (action.kind === "scroll") {
+          resolved.push({ ...action, x: point.x, y: point.y, target: undefined });
+        } else {
+          resolved.push(
+            { kind: "pointer", x: point.x, y: point.y, type: "click" },
+            { ...action, target: undefined },
+          );
+        }
+        break;
+      }
+      case "drag": {
+        const from = await resolveTarget(action.from, deps);
+        const to = await resolveTarget(action.to, deps);
+        resolved.push({
+          ...action,
+          from: { ...action.from, point: from },
+          to: { ...action.to, point: to },
+        });
+        break;
+      }
+      default:
+        resolved.push(action);
+    }
+  }
+  return resolved;
+}
+
+async function resolveTarget(
+  target: ComputerTarget,
+  deps: ComputerTargetResolver,
+): Promise<{ x: number; y: number }> {
+  if (target.source === "coords") return target.point;
+  const result = await deps.find({
+    text: target.name,
+    role: target.role,
+    app: target.app,
+    window: target.window,
+    page: target.source === "cdp",
+    limit: 1,
+  });
+  if (result.unknown) throw new ComputerPerceptionUnknownError();
+  const element = result.elements[0];
+  if (!element) throw new ComputerStaleTargetError();
+  if (target.name && element.name !== target.name) throw new ComputerStaleTargetError();
+  if (target.role && element.role !== target.role) throw new ComputerStaleTargetError();
+  // A control that moved or resized is not the one the model read, even when the name and role
+  // still match, because another control in another window can share both.
+  if (target.bbox && element.bbox && !sameRect(target.bbox, element.bbox, TARGET_BBOX_SLACK_PX))
+    throw new ComputerStaleTargetError();
+  if (
+    target.windowFrame &&
+    element.windowFrame &&
+    !sameRect(target.windowFrame, element.windowFrame, 0)
+  )
+    throw new ComputerStaleTargetError();
+  // The point must be the control's own: otherwise a page check judged one spot while the click
+  // lands on another, and a payment button could pass as the empty space beside it.
+  if (
+    Math.abs(target.point.x - element.point.x) > TARGET_POINT_SLACK_PX ||
+    Math.abs(target.point.y - element.point.y) > TARGET_POINT_SLACK_PX
+  )
+    throw new ComputerStaleTargetError();
+  return element.point;
+}
+
+/** Pixels a control may move between two reads before its target is stale. */
+const TARGET_BBOX_SLACK_PX = 2;
+/** Pixels the point a target names may differ from the control it names. */
+const TARGET_POINT_SLACK_PX = 2;
+
+function sameRect(a: ComputerRect, b: ComputerRect, slack: number): boolean {
+  return (
+    Math.abs(a.x - b.x) <= slack &&
+    Math.abs(a.y - b.y) <= slack &&
+    Math.abs(a.w - b.w) <= slack &&
+    Math.abs(a.h - b.h) <= slack
+  );
+}
+
+function parseBasedOn(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error("computer action basedOn must be a frame id");
+  }
+  return value.trim().slice(0, 128);
+}
+
+function parseTarget(value: unknown): ComputerTarget | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!value || typeof value !== "object") throw new Error("computer target must be an object");
+  const raw = value as Record<string, unknown>;
+  const source = raw.source;
+  if (source !== "coords" && source !== "ax" && source !== "cdp") {
+    throw new Error("computer target source must be coords, ax or cdp");
+  }
+  if (!raw.point || typeof raw.point !== "object") {
+    throw new Error("computer target requires a point");
+  }
+  const point = raw.point as Record<string, unknown>;
+  const target: ComputerTarget = {
+    point: {
+      x: finiteCoordinate(point.x, "target.x"),
+      y: finiteCoordinate(point.y, "target.y"),
+    },
+    source,
+  };
+  if (raw.bbox !== undefined) target.bbox = parseRect(raw.bbox, "bbox");
+  if (raw.windowFrame !== undefined) target.windowFrame = parseRect(raw.windowFrame, "windowFrame");
+  for (const key of ["app", "window", "role", "name", "url"] as const) {
+    if (raw[key] === undefined) continue;
+    if (typeof raw[key] !== "string") throw new Error(`computer target ${key} must be a string`);
+    target[key] = raw[key].slice(0, 2_048);
+  }
+  if (raw.secret !== undefined) target.secret = Boolean(raw.secret);
+  if (raw.editable !== undefined) target.editable = Boolean(raw.editable);
+  if (source !== "coords" && !target.name && !target.role) {
+    throw new Error("semantic computer target requires name or role");
+  }
+  return target;
+}
+
+function parseRect(value: unknown, name: string): ComputerRect {
+  if (!value || typeof value !== "object") {
+    throw new Error(`computer target ${name} must be a rectangle`);
+  }
+  const raw = value as Record<string, unknown>;
+  return {
+    x: finiteCoordinate(raw.x, `${name}.x`),
+    y: finiteCoordinate(raw.y, `${name}.y`),
+    w: boundedNumber(raw.w, 1, 100_000, 1),
+    h: boundedNumber(raw.h, 1, 100_000, 1),
+  };
+}
+
+export function parseSettleRequest(value: unknown): ComputerSettleRequest {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object") {
+    throw new Error("computer settle request must be an object");
+  }
+  const raw = value as Record<string, unknown>;
+  const verb = raw.verb;
+  if (verb !== undefined && !["click", "scroll", "key", "type", "launch"].includes(String(verb))) {
+    throw new Error("computer settle verb is invalid");
+  }
+  const quiet = raw.quietMs ?? raw.quiet_ms;
+  const first = raw.firstMs ?? raw.first_ms;
+  const timeout = raw.timeoutMs ?? raw.timeout_ms;
+  return {
+    ...(quiet === undefined ? {} : { quietMs: boundedNumber(quiet, 1, 5_000, 250) }),
+    ...(first === undefined ? {} : { firstMs: boundedNumber(first, 0, 10_000, 1_500) }),
+    ...(timeout === undefined ? {} : { timeoutMs: boundedNumber(timeout, 1, 30_000, 3_000) }),
+    ...(verb === undefined ? {} : { verb: verb as ComputerSettleRequest["verb"] }),
+  };
+}
+
+export function parseComputerZoomRequest(value: unknown): ComputerZoomRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("computer_zoom requires a frameId and region");
+  }
+  const raw = value as Record<string, unknown>;
+  const frameId = raw.frameId;
+  if (typeof frameId !== "string" || frameId.trim() === "") {
+    throw new Error("computer_zoom requires a frameId");
+  }
+  return { frameId: frameId.trim().slice(0, 128), region: parseRect(raw.region, "region") };
+}
+
 export function observationToolResult(
   observation: ComputerObservation,
   note = "computer observed",
   previousFrameId?: string,
   options?: ObservationToolOptions,
 ): AgentToolExecutionResult {
-  const unchanged = previousFrameId === observation.frameId;
+  const frameId = options?.frameId ?? observation.frameId;
+  const unchanged = options?.frameId === undefined && previousFrameId === observation.frameId;
   const unchangedVisualCount = options?.unchangedVisualCount ?? 0;
   const visualLoop = unchanged && unchangedVisualCount >= MAX_CONSECUTIVE_UNCHANGED_VISUAL_ACTIONS;
   const details = {
-    frameId: observation.frameId,
+    frameId,
     capturedAt: observation.capturedAt,
     width: observation.width,
     height: observation.height,

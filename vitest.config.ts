@@ -46,6 +46,8 @@ const isolated = include
   );
 
 export default defineConfig({
+  // React Native reads this at import time, and a mobile test that loads it fails without it.
+  define: { __DEV__: "true" },
   // Mobile imports its translation catalogs as `.po` files.
   // Some runs start outside the repo, so the config is named rather than searched for.
   plugins: [lingui({ configPath: path.join(root, "lingui.config.ts") })],
@@ -106,10 +108,25 @@ export default defineConfig({
     hookTimeout: 60_000,
     projects: [
       { extends: true, test: { name: "processes", include: processes } },
-      { extends: true, test: { name: "isolated", include: isolated } },
       {
         extends: true,
-        test: { name: "shared", include, exclude: [...processes, ...isolated], isolate: false },
+        test: {
+          name: "isolated",
+          include: isolated,
+          // The computer screen renders the app's own screen, which needs expo's Metro runtime
+          // and a device. Its pure helpers are covered by computer.test.ts; the component itself
+          // is checked by the mobile build and the simulator screenshot catalog.
+          exclude: ["**/computer-screen.test.tsx"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "shared",
+          include,
+          exclude: [...processes, ...isolated, "**/computer-screen.test.tsx"],
+          isolate: false,
+        },
       },
     ],
   },

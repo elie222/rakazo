@@ -444,6 +444,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/screenUrl", { botId: "missing-bot" }],
       ["computer/preview", { botId: "missing-bot" }],
       ["computer/heartbeat", { botId: "missing-bot" }],
+      ["computer/find", { botId: "missing-bot", text: "Save" }],
+      ["computer/zoom", { botId: "missing-bot", region: { x: 0, y: 0, w: 10, h: 10 } }],
       ["computer/recover"],
       ["computer/reset"],
       ["computer/update"],

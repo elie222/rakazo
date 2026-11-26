@@ -22,6 +22,7 @@ import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 export const IMAGE_RETURNING_COMPUTER_TOOLS = new Set([
   "computer_observe",
   "computer_act",
+  "computer_zoom",
   "open_path",
   "launch_app",
 ]);

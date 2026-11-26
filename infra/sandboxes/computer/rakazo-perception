@@ -1,0 +1,42 @@
+#!/usr/bin/python3 -I
+"""Forward one JSON request from the adapter to the persistent AT-SPI helper."""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import sys
+
+SOCKET_PATH = os.environ.get("RAKAZO_PERCEPTION_SOCKET", "/tmp/rakazo/perception.sock")
+TIMEOUT_MS = int(os.environ.get("RAKAZO_PERCEPTION_TIMEOUT_MS", "3000"))
+
+
+def main() -> int:
+    request = sys.stdin.readline(65_536)
+    if not request:
+        sys.stdout.write(json.dumps({"ok": False, "error": "no request"}) + "\n")
+        return 1
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(TIMEOUT_MS / 1000)
+            client.connect(SOCKET_PATH)
+            client.sendall(request.encode("utf-8"))
+            chunks: list[bytes] = []
+            while True:
+                chunk = client.recv(65_536)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                if chunk.endswith(b"\n"):
+                    break
+        sys.stdout.write(b"".join(chunks).decode("utf-8", "replace"))
+        return 0
+    except Exception as error:  # noqa: BLE001 - the adapter reads the reply line
+        sys.stdout.write(
+            json.dumps({"ok": False, "error": f"perception helper unavailable: {error}"}) + "\n"
+        )
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

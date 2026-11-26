@@ -1163,6 +1163,28 @@ print(json.dumps(out))
       await this.postJson(`${root}/open?${query}`, { target }, context);
       return;
     }
+    if (action.kind === "drag") {
+      // CreateOS has no duration, so the drag is a press, a move and a release.
+      await this.postJson(
+        `${root}/mouse/move?${query}`,
+        {
+          x: Math.round(action.from.point.x),
+          y: Math.round(action.from.point.y),
+        },
+        context,
+      );
+      await this.postJson(`${root}/mouse/down?${query}`, { button: "left" }, context);
+      await this.postJson(
+        `${root}/mouse/move?${query}`,
+        {
+          x: Math.round(action.to.point.x),
+          y: Math.round(action.to.point.y),
+        },
+        context,
+      );
+      await this.postJson(`${root}/mouse/up?${query}`, { button: "left" }, context);
+      return;
+    }
     if (isBrowserApplication(action.application)) {
       await this.launchBrowser(computer, action.uri ?? "about:blank", context);
       return;

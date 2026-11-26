@@ -36,6 +36,59 @@ export const COMPUTER_RUNNING_ERROR = "COMPUTER_RUNNING";
 export const ComputerHomeVersionSchema = z.object({ id: Id, savedAt: IsoDate });
 export type ComputerHomeVersion = z.infer<typeof ComputerHomeVersionSchema>;
 
+/**
+ * What the computer reports about its resources. Every field is read-only: a capability never
+ * grants access, and an unknown value is not a denial.
+ */
+export const ComputerMemorySchema = z.object({
+  vm: z
+    .object({
+      totalBytes: z.number().int().positive(),
+      availableBytes: z.number().int().nonnegative(),
+      stallPercent10s: z.number().min(0).max(100).optional(),
+      pressure: z.enum(["normal", "high", "critical"]),
+    })
+    .optional(),
+  currentBytes: z.number().int().nonnegative(),
+  workingSetBytes: z.number().int().nonnegative(),
+  limitBytes: z.number().int().positive(),
+  swapBytes: z.number().int().nonnegative().optional(),
+  swapLimitBytes: z.number().int().nonnegative().optional(),
+  oomKills: z.number().int().nonnegative(),
+  pressure: z.enum(["normal", "high", "critical"]),
+});
+export type ComputerMemory = z.infer<typeof ComputerMemorySchema>;
+
+/**
+ * What a computer offers beyond screenshots and coordinates. A server that cannot inspect the
+ * computer omits this object; an older client must treat that as the previous behaviour.
+ */
+export const ComputerCapabilitiesSchema = z.object({
+  version: z.literal(1),
+  search: z.literal("service_path"),
+  programs: z.record(z.string(), z.enum(["available", "not_on_path", "unknown"])),
+  memory: ComputerMemorySchema.optional(),
+  display: z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    scale: z.number().positive(),
+  }),
+  perception: z.object({
+    atspi: z.boolean(),
+    cdp: z.boolean(),
+    hitTest: z.boolean(),
+    settle: z.boolean(),
+    zoom: z.boolean(),
+  }),
+  stream: z.object({
+    protocol: z.enum(["vnc", "webrtc"]),
+    quality: z.boolean(),
+  }),
+  recording: z.boolean(),
+  desktopApps: z.boolean(),
+});
+export type ComputerCapabilities = z.infer<typeof ComputerCapabilitiesSchema>;
+
 export const ComputerStatusSchema = z.object({
   botId: Id,
   mode: ComputerModeSchema,
@@ -61,8 +114,62 @@ export const ComputerStatusSchema = z.object({
   controlledByOther: z.boolean().optional(),
   /** The viewer's own control lease, set only for the person holding it; closing hands it back. */
   controlLeaseId: Id.optional(),
+  /** What the computer can do beyond screenshots and coordinates. Older servers omit it. */
+  capabilities: ComputerCapabilitiesSchema.optional(),
 });
 export type ComputerStatus = z.infer<typeof ComputerStatusSchema>;
+
+export const ComputerRectSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+});
+export type ComputerRect = z.infer<typeof ComputerRectSchema>;
+
+export const ComputerElementStateSchema = z.object({
+  value: z.string().max(200).optional(),
+  checked: z.enum(["true", "false", "mixed"]).optional(),
+  disabled: z.boolean().optional(),
+  expanded: z.boolean().optional(),
+});
+export type ComputerElementState = z.infer<typeof ComputerElementStateSchema>;
+
+/** One accessible control the computer found, in model pixels. */
+export const ComputerElementSchema = z.object({
+  point: z.object({ x: z.number(), y: z.number() }),
+  bbox: ComputerRectSchema.optional(),
+  windowFrame: ComputerRectSchema.optional(),
+  source: z.enum(["coords", "ax", "cdp"]),
+  app: z.string().optional(),
+  window: z.string().optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  url: z.string().optional(),
+  secret: z.boolean().optional(),
+  editable: z.boolean().optional(),
+  ref: z.string().optional(),
+  state: ComputerElementStateSchema.optional(),
+});
+export type ComputerElement = z.infer<typeof ComputerElementSchema>;
+
+export const ComputerFindResultSchema = z.object({
+  elements: z.array(ComputerElementSchema).max(300),
+  url: z.string().optional(),
+  truncated: z.boolean(),
+  unknown: z.boolean().optional(),
+  /** The frame these elements were read from; pass it back to computer_act. */
+  frameId: z.string().optional(),
+});
+export type ComputerFindResult = z.infer<typeof ComputerFindResultSchema>;
+
+export const ComputerZoomResultSchema = z.object({
+  frameId: z.string(),
+  image: z.string(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+export type ComputerZoomResult = z.infer<typeof ComputerZoomResultSchema>;
 
 /** A computer screen to load, and how its URL signs the viewer in. */
 export const ComputerScreenSchema = z.object({

@@ -64,6 +64,42 @@ Fake computers and explicit `BROWSER_PROVIDER=fake|emulator` use an in-process s
 
 Human input and agent input may coexist on distinct Team screens. “Take control” grants the user an exclusive control lease on that bot’s screen so the embedded viewer accepts input. For a Team bot, takeover is refused with HTTP 409 (“Stop the bot first”) while that bot holds a live computer execution lease or an active run, unless the run is `waiting_takeover` (the bot asked for protected input). Stop the bot first, then take control; after release, the agent may continue. When the user only needs to see something on the computer screen, such as a QR code, the bot takes a screenshot and uses `attach_file` to send it into the chat. `request_takeover` remains available when the user must provide protected input or human judgment, or operate the screen. On providers that do not bill while running, a waiting takeover keeps the computer awake for 30 minutes after the request so the login, 2FA, or CAPTCHA page is still open when the user arrives; after that the computer suspends while the run keeps waiting. Billed providers follow the normal idle timer, which the request restarts.
 
+## Semantic perception
+
+For native applications the model gets `computer_find`, `computer_zoom` and `computer_settle`, and
+`computer_act` accepts a `target` instead of coordinates. `computer_find` reads the accessibility
+tree of the bot's own X display and returns each control's role, name, bounds, window and state;
+`computer_zoom` crops the last frame at device resolution; `computer_settle` waits until the screen
+stops changing. `computer_observe` stays the way to read the whole screen.
+
+The tree comes from AT-SPI. The image runs a persistent helper (`infra/sandboxes/computer/atspi.py`)
+that the short-lived `rakazo-perception` client reaches over a Unix socket, so an application that
+stops answering cannot hold the adapter's process. The supervisor exposes it at
+`POST /computers/:id/perception` behind the same token, bot identity and screen lock as every other
+control. An application registers with the accessibility bus only if that bus exists when it
+starts, and gives up on accessibility for its lifetime otherwise, so the screen setup waits for the
+bus socket before it reports the screen ready, and the environment every command runs with repeats
+the image's accessibility and cache settings: an exec replaces the image environment, and a command
+without them launches windows no tool can read. The helper reads only role, name, bounds and state:
+a control's value is never read, so a saved password or card number cannot reach the model, and
+password fields come back masked. Names are clipped to 256 characters, the walk is bounded to 300
+elements and 40 levels, and each request answers within five seconds.
+
+A target carries `source` (`ax` for the desktop tree, `cdp` for a page, `coords` for canvas, games
+and remote desktops), the point, the element's bounds and its window frame. Before any action runs,
+the target is resolved against a fresh read and compared with what the model saw: a target whose
+name, role or bounds changed, or whose window moved or closed, returns `stale` and runs nothing. A
+read that does not finish in time returns `unknown`, which is never treated as "no element". Both
+stop the batch, so a click is never replayed on a control that moved underneath it. Page targets
+keep working through `browser_snapshot` refs, and native applications are reached with
+`computer_find` first.
+
+Each Team bot has its own X display, so `computer_find` sees only the windows on that bot's screen;
+another bot's windows are invisible to it. A computer image without the helper (an older image) or
+without AT-SPI answers `unknown`, and coordinate actions keep working, so an old image degrades
+instead of failing. The web overlay and the mobile computer view expose Find and Zoom as icons over
+the screen; both send the same authorized RPCs, so the desktop and the phone show the same result.
+
 ## Terminal and files
 
 The web and desktop computer view opens a terminal and a file browser from a dock over the screen. The dock's browser button hides those windows, keeping their sessions, so the whole screen is visible again.

@@ -63,6 +63,8 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get inst
     x11-utils \
     x11-xserver-utils \
     imagemagick \
+    mousepad \
+    thunar \
     novnc \
     websockify \
     python3 \
@@ -80,6 +82,11 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get inst
     fonts-thai-tlwg \
     locales \
     dbus-x11 \
+    at-spi2-core \
+    python3-gi \
+    gir1.2-atspi-2.0 \
+    gir1.2-gtk-3.0 \
+    gir1.2-gdkpixbuf-2.0 \
     xdg-desktop-portal \
     xdg-desktop-portal-gtk \
     xdg-utils \
@@ -199,6 +206,10 @@ ENV HOME=/home/rakazo
 # that override the computer environment can opt in to a Chinese locale.
 RUN sed -i 's/^# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen && locale-gen
 ENV LANG=C.UTF-8
+# Accessibility buses let AT-SPI see GTK and Qt applications; start.sh launches the helper.
+ENV GTK_MODULES=gail:atk-bridge \
+    NO_AT_BRIDGE=0 \
+    QT_ACCESSIBILITY=1
 ENV UV_TOOL_DIR=/home/rakazo/.local/share/uv/tools \
     UV_TOOL_BIN_DIR=/home/rakazo/.local/bin \
     UV_PYTHON_INSTALL_DIR=/home/rakazo/.local/share/uv/python
@@ -208,6 +219,8 @@ WORKDIR /home/rakazo
 COPY --chmod=755 start.sh /usr/local/bin/rakazo-computer
 COPY --chmod=644 user-env.sh /usr/local/lib/rakazo-user-env.sh
 COPY --chmod=755 control.py /usr/local/bin/rakazo-computer-control
+COPY --chmod=755 atspi.py /usr/local/bin/atspi.py
+COPY --chmod=755 rakazo-perception /usr/local/bin/rakazo-perception
 # Tells the supervisor this control service accepts scrolls aimed at a point and sideways
 # scrolls; it sends those to older images through its fallback instead.
 LABEL rakazo.control.aimedScroll="1"
@@ -236,7 +249,7 @@ COPY --chmod=644 mobile-keyboard.js /usr/share/novnc/mobile-keyboard.js
 COPY --chmod=644 rakazo-local-bin.sh /etc/profile.d/rakazo-local-bin.sh
 # Strip CR so shebangs work even if the build context came from a CRLF checkout.
 RUN ldconfig \
-  && sed -i 's/\r$//' /usr/local/bin/rakazo-computer /usr/local/lib/rakazo-user-env.sh /usr/local/bin/rakazo-computer-control /usr/local/bin/rakazo-browser /usr/local/bin/rakazo-focus-or-launch /usr/local/bin/rakazo-page-browser \
+  && sed -i 's/\r$//' /usr/local/bin/rakazo-computer /usr/local/lib/rakazo-user-env.sh /usr/local/bin/rakazo-computer-control /usr/local/bin/atspi.py /usr/local/bin/rakazo-perception /usr/local/bin/rakazo-browser /usr/local/bin/rakazo-focus-or-launch /usr/local/bin/rakazo-page-browser \
     /usr/local/lib/rakazo/page_secrets.py \
     /etc/rakazo/fluxbox/init /etc/rakazo/fluxbox/apps /etc/rakazo/fluxbox/menu \
     /etc/profile.d/rakazo-local-bin.sh /etc/xdg/mimeapps.list

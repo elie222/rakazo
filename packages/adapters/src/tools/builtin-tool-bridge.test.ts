@@ -31,6 +31,8 @@ describe("built-in tool bridge", () => {
     expect(listed.map((tool) => tool.name).sort()).toEqual([
       "ask_user",
       "attach_file",
+      "computer_find",
+      "computer_settle",
       "connect_app",
       "find_tool",
       "list_files",
@@ -69,7 +71,7 @@ describe("built-in tool bridge", () => {
     // without abbreviating; shell says to open the bot's screen when a graphical program
     // finds no display; schedule_create takes an end date for a repeat or watch, so a limited
     // stretch is one routine.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(38_322);
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(39_320);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );

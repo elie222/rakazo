@@ -2,8 +2,13 @@ import type {
   AdapterContext,
   CommandRequest,
   ComputerActionRequest,
+  ComputerFindRequest,
+  ComputerFindResult,
   ComputerInput,
   ComputerRef,
+  ComputerSettleRequest,
+  ComputerSettleResult,
+  ComputerZoomRequest,
   ControlLeaseRef,
   PortableFile,
   ProcessEvent,
@@ -15,6 +20,7 @@ import type {
   WorkspaceDirectoryRequest,
   WorkspaceExportLimits,
 } from "@rakazo/adapter-kit";
+import type { ComputerCapabilities } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { runAsSystem } from "@rakazo/db";
 import { credentialDigest } from "../../secrets/credential-digest.js";
@@ -24,6 +30,7 @@ import {
   computerProviderRegistry,
 } from "../computer-provider-registry.js";
 import { manageComputerWorkspaceDirectories } from "../computer-workspace.js";
+import { unavailableCapabilities } from "../perception/capabilities.js";
 import { sandboxNotFoundError } from "./sandbox-errors.js";
 import { createSandboxProvider } from "./sandbox-factory.js";
 
@@ -453,6 +460,49 @@ export class ConfiguredSandbox implements SandboxProvider {
 
   async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
     return (await this.route(computer)).act(computer, request, context);
+  }
+
+  async findElements(
+    computer: ComputerRef,
+    request: ComputerFindRequest,
+    context: AdapterContext,
+  ): Promise<ComputerFindResult> {
+    return (
+      (await this.route(computer)).findElements?.(computer, request, context) ?? {
+        elements: [],
+        truncated: false,
+        unknown: true,
+      }
+    );
+  }
+
+  async settle(
+    computer: ComputerRef,
+    request: ComputerSettleRequest,
+    context: AdapterContext,
+  ): Promise<ComputerSettleResult> {
+    return (
+      (await this.route(computer)).settle?.(computer, request, context) ?? {
+        changed: [],
+        lastChangeMono: null,
+        quiet: false,
+        noVisibleChange: false,
+      }
+    );
+  }
+
+  async zoom(computer: ComputerRef, request: ComputerZoomRequest, context: AdapterContext) {
+    const provider = await this.route(computer);
+    if (!provider.zoom) throw new Error("Zoom is unavailable on this computer.");
+    return provider.zoom(computer, request, context);
+  }
+
+  async capabilities(
+    computer: ComputerRef,
+    context: AdapterContext,
+  ): Promise<ComputerCapabilities> {
+    const provider = await this.route(computer);
+    return provider.capabilities?.(computer, context) ?? unavailableCapabilities();
   }
 
   async listFiles(computer: ComputerRef, path: string, context: AdapterContext) {

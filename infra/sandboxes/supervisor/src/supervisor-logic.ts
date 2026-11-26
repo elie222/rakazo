@@ -1,5 +1,6 @@
 import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
 import {
+  COMPUTER_CACHE_ENV,
   ensureScreenCommand as coreEnsureScreenCommand,
   interactiveScreenCommand as coreInteractiveScreenCommand,
   terminalCommand as coreTerminalCommand,
@@ -67,6 +68,28 @@ export function terminalCommand(
   });
 }
 
+const computerRectSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+});
+
+/** A semantic target: where the control was, and what it was, in the frame the model read. */
+const computerTargetSchema = z.object({
+  point: z.object({ x: z.number(), y: z.number() }),
+  bbox: computerRectSchema.optional(),
+  windowFrame: computerRectSchema.optional(),
+  source: z.enum(["coords", "ax", "cdp"]),
+  app: z.string().optional(),
+  window: z.string().optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  url: z.string().optional(),
+  secret: z.boolean().optional(),
+  editable: z.boolean().optional(),
+});
+
 export const computerActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("key"), key: z.string(), modifiers: z.array(z.string()).optional() }),
   z.object({
@@ -85,6 +108,12 @@ export const computerActionSchema = z.discriminatedUnion("kind", [
     y: z.number().optional(),
   }),
   z.object({ kind: z.literal("wait"), ms: z.number() }),
+  z.object({
+    kind: z.literal("drag"),
+    from: computerTargetSchema,
+    to: computerTargetSchema,
+    durationMs: z.number().optional(),
+  }),
   z.object({ kind: z.literal("open"), path: z.string() }),
   z.object({ kind: z.literal("launch"), application: z.string(), uri: z.string().optional() }),
   z.object({ kind: z.literal("focus"), application: z.string(), uri: z.string().optional() }),
@@ -532,6 +561,23 @@ export function containerActionStep(
         ? ["mousemove", "--", String(Math.round(action.x)), String(Math.round(action.y))]
         : [];
     argv = ["env", `DISPLAY=${display}`, "xdotool", ...at, ...wheel];
+  } else if (action.kind === "drag") {
+    // xdotool has no duration for motion; the caller still gets the press, move and release.
+    argv = [
+      "env",
+      `DISPLAY=${display}`,
+      "xdotool",
+      "mousemove",
+      String(Math.round(action.from.point.x)),
+      String(Math.round(action.from.point.y)),
+      "mousedown",
+      "1",
+      "mousemove",
+      String(Math.round(action.to.point.x)),
+      String(Math.round(action.to.point.y)),
+      "mouseup",
+      "1",
+    ];
   } else if (action.kind === "open") {
     const isHttpUrl = /^https?:\/\//i.test(action.path);
     const target = isHttpUrl
@@ -776,6 +822,11 @@ export function demuxDockerStream(buffer: Buffer): { stdout: string; stderr: str
  * Environment for commands in a computer: the bot's shell tool and the user's terminal share
  * it, including this screen's CDP port. Neither exec sets a Docker `User`, so both run as the
  * container's workspace user.
+ *
+ * An exec replaces the image environment, so the accessibility settings the image sets have to
+ * be repeated here: without them an application the bot launches publishes no AT-SPI tree, and
+ * `computer_find` cannot see its own windows. The session bus is the one `start.sh` exports, so
+ * every exec and the boot session share a single bus.
  */
 export function computerCommandEnv(
   layout: Pick<ReturnType<typeof screenPorts>, "display" | "debugPort"> | undefined,
@@ -789,6 +840,11 @@ export function computerCommandEnv(
     "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "NPM_CONFIG_PREFIX=/home/rakazo/.local",
     "PIP_USER=1",
+    ...Object.entries(COMPUTER_CACHE_ENV).map(([name, value]) => `${name}=${value}`),
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/rakazo/session-bus",
+    "GTK_MODULES=gail:atk-bridge",
+    "NO_AT_BRIDGE=0",
+    "QT_ACCESSIBILITY=1",
   ];
 }
 

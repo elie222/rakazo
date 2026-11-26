@@ -21,6 +21,7 @@ import {
   resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
+  resolveComputerTargets,
   sandboxKindCapabilities,
   scheduleComputerSleep,
   screenLeaseIdForRun,
@@ -47,6 +48,7 @@ import {
   recordComputerRunEnd,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import * as z from "zod";
 import {
   acquireBootLease,
   answerComputerRequest,
@@ -94,6 +96,21 @@ function callerWorkspacePath(resolve: () => string): string {
 }
 
 /** The server's file limit, lowered to what the computer's own transport can carry. */
+/** Where a control was when the viewer picked it, before the server re-resolved it. */
+const pickedControlSchema = z.object({
+  point: z.object({ x: z.number(), y: z.number() }),
+  bbox: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).optional(),
+  windowFrame: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }).optional(),
+  source: z.enum(["coords", "ax", "cdp"]),
+  app: z.string().optional(),
+  window: z.string().optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  url: z.string().optional(),
+  secret: z.boolean().optional(),
+  editable: z.boolean().optional(),
+});
+
 function transferMaxBytes(deps: RouterContext["deps"], kind: string) {
   return Math.min(
     attachmentMaxBytes(deps.env),
@@ -442,6 +459,41 @@ export function computerRoutes(ctx: RouterContext) {
           typeof input.payload.skillId === "string" && input.payload.skillId
             ? input.payload.skillId
             : undefined;
+        // A viewer picked this control earlier; resolve it again so a screen that moved under
+        // them clicks what they chose instead of whatever is at the old point now.
+        const pointerType =
+          (input.payload.type as "move" | "down" | "up" | "click" | undefined) ?? "click";
+        let pointerX = Number(input.payload.x ?? 0);
+        let pointerY = Number(input.payload.y ?? 0);
+        const picked = pickedControlSchema.safeParse(input.payload.target);
+        if (
+          input.kind === "pointer" &&
+          pointerType === "click" &&
+          picked.success &&
+          deps.sandbox.findElements
+        ) {
+          const screen = computerContext(context.actor, bot.id, "input");
+          const ref = toComputerRef(computer);
+          const [resolved] = await resolveComputerTargets(
+            [
+              {
+                kind: "pointer",
+                x: pointerX,
+                y: pointerY,
+                type: "click",
+                target: picked.data,
+              },
+            ],
+            undefined,
+            {
+              find: (request) => deps.sandbox.findElements!(ref, request, screen),
+            },
+          );
+          if (resolved?.kind === "pointer") {
+            pointerX = resolved.x;
+            pointerY = resolved.y;
+          }
+        }
         const mapped = {
           ...(input.kind === "key"
             ? { kind: "key" as const, key: String(input.payload.key ?? ""), sensitive }
@@ -461,8 +513,8 @@ export function computerRoutes(ctx: RouterContext) {
                   }
                 : {
                     kind: "pointer" as const,
-                    x: Number(input.payload.x ?? 0),
-                    y: Number(input.payload.y ?? 0),
+                    x: pointerX,
+                    y: pointerY,
                     button: (input.payload.button as "left" | "right" | undefined) ?? "left",
                     type:
                       (input.payload.type as "move" | "down" | "up" | "click" | undefined) ??
@@ -780,6 +832,64 @@ export function computerRoutes(ctx: RouterContext) {
         if (!observation || !(await stillWaiting())) return { image: null };
         const data = Buffer.from(observation.image).toString("base64");
         return { image: `data:${observation.mimeType};base64,${data}` };
+      }),
+      find: authed.computer.find.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const computer = bot.computer;
+        if (!computer?.providerRef || computer.state !== "running" || !deps.sandbox.findElements) {
+          return { elements: [], truncated: false, unknown: true };
+        }
+        const screen = await computerScreenContext(
+          deps.prisma,
+          context.actor,
+          computer.id,
+          bot.id,
+          "find",
+        );
+        const ref = await wakeableComputerRef(deps.prisma, computer);
+        const [observation, result] = await Promise.all([
+          deps.sandbox.observe(ref, screen),
+          deps.sandbox.findElements(
+            ref,
+            {
+              ...(input.text === undefined ? {} : { text: input.text }),
+              ...(input.role === undefined ? {} : { role: input.role }),
+              ...(input.app === undefined ? {} : { app: input.app }),
+              ...(input.window === undefined ? {} : { window: input.window }),
+              ...(input.page === undefined ? {} : { page: input.page }),
+              ...(input.limit === undefined ? {} : { limit: input.limit }),
+            },
+            screen,
+          ),
+        ]);
+        return { ...result, frameId: observation.frameId };
+      }),
+      zoom: authed.computer.zoom.handler(async ({ context, input }) => {
+        const bot = await repos.getBot(context.actor, input.botId);
+        const computer = bot.computer;
+        if (!computer?.providerRef || computer.state !== "running" || !deps.sandbox.zoom) {
+          throw new ORPCError("CONFLICT", { message: "The computer is not running." });
+        }
+        const screen = await computerScreenContext(
+          deps.prisma,
+          context.actor,
+          computer.id,
+          bot.id,
+          "zoom",
+        );
+        const ref = await wakeableComputerRef(deps.prisma, computer);
+        const observation = await deps.sandbox.observe(ref, screen);
+        const zoomed = await deps.sandbox.zoom(
+          ref,
+          { frameId: observation.frameId, region: input.region },
+          screen,
+        );
+        return {
+          frameId: zoomed.frameId,
+          image: `data:${zoomed.mimeType};base64,${Buffer.from(zoomed.image).toString("base64")}`,
+          width: zoomed.width,
+          height: zoomed.height,
+        };
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

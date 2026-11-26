@@ -38,6 +38,8 @@ export const COMPUTER_IMAGE_CONTEXT_FILES = [
   "start.sh",
   "user-env.sh",
   "control.py",
+  "atspi.py",
+  "rakazo-perception",
   "xcapture.c",
   "rakazo-browser",
   "rakazo-focus-or-launch",

@@ -20,6 +20,9 @@ vi.mock("@rakazo/ui-web", () => ({
   }: ComponentProps<"button"> & { variant?: string; size?: string }) => (
     <button type="button" {...props} />
   ),
+  Input: ({ size: _size, ...props }: ComponentProps<"input"> & { size?: string }) => (
+    <input {...props} />
+  ),
 }));
 vi.mock("../../../components/computers/SaveScreenshotButton", () => ({
   SaveScreenshotButton: ({ botId }: { botId: string }) => (
@@ -35,6 +38,49 @@ vi.mock("../../../components/teach/TeachComputerOverlay", () => ({
 vi.mock("../../../components/teach/TeachRecordingChrome", () => ({
   TeachRecordingChrome: () => null,
   TeachStopButton: () => null,
+}));
+const saveMocks = vi.hoisted(() => ({
+  find: vi.fn(async () => ({
+    elements: [{ point: { x: 10, y: 20 }, source: "ax", role: "button", name: "Save" }],
+    truncated: false,
+  })),
+  zoom: vi.fn(async () => ({
+    frameId: "frame",
+    image: "data:image/png;base64,",
+    width: 640,
+    height: 400,
+  })),
+  input: vi.fn(async () => undefined),
+}));
+vi.mock("../../../lib/query/query", () => ({
+  useSave: (options: {
+    save: (input: unknown, rpc: unknown) => Promise<unknown>;
+    onSaved?: (saved: unknown, input: unknown) => unknown;
+  }) => ({
+    run: (input: unknown) => {
+      void options
+        .save(input, {
+          computer: {
+            find: saveMocks.find,
+            zoom: saveMocks.zoom,
+            input: saveMocks.input,
+          },
+        })
+        .then(
+          (saved) => {
+            try {
+              options.onSaved?.(saved, input);
+            } catch {
+              // The save is complete; a failing onSaved only changes the panel.
+            }
+          },
+          () => undefined,
+        );
+    },
+    pending: false,
+    error: null,
+    reset: () => undefined,
+  }),
 }));
 
 import { ComputerOverlay } from "./computer-overlay";
@@ -66,7 +112,12 @@ function computer(state: ComputerStatus["state"]): ComputerStatus {
 async function render(
   state: ComputerStatus["state"],
   onStart = vi.fn(),
-  options: { hasControl?: boolean; shared?: boolean; error?: string; ownMachine?: boolean } = {},
+  options: {
+    hasControl?: boolean;
+    shared?: boolean;
+    error?: string;
+    ownMachine?: boolean;
+  } = {},
 ) {
   await act(async () => {
     root.render(
@@ -126,6 +177,36 @@ it("offers Start for a stopped computer instead of a bare label", async () => {
   expect(container.textContent).toContain("Computer is stopped");
   await act(async () => startButton()?.click());
   expect(onStart).toHaveBeenCalledOnce();
+});
+
+it("opens find and zooms the running screen", async () => {
+  saveMocks.zoom.mockClear();
+  saveMocks.find.mockClear();
+  saveMocks.input.mockClear();
+  await render("running");
+
+  await act(async () =>
+    (container.querySelector('[data-testid="computer-zoom"]') as HTMLButtonElement).click(),
+  );
+  expect(saveMocks.zoom).toHaveBeenCalledWith({
+    botId: "bot-1",
+    region: { x: 320, y: 200, w: 640, h: 400 },
+  });
+  expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+
+  await act(async () =>
+    (container.querySelector('[data-testid="computer-find-open"]') as HTMLButtonElement).click(),
+  );
+  const input = container.querySelector('input[aria-label="Find a control"]') as HTMLInputElement;
+  expect(input).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, "Save");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    input.closest("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(saveMocks.find).toHaveBeenCalledWith({ botId: "bot-1", text: "Save", limit: 30 });
 });
 
 it("offers Start for an asleep computer", async () => {

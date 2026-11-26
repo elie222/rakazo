@@ -53,6 +53,9 @@ export const DEFAULT_RAKAZO_EMULATED_RELEASES: readonly EmulatedGithubRelease[] 
 const COMPUTER_OR_BROWSER_TOOLS = new Set([
   "computer_observe",
   "computer_act",
+  "computer_find",
+  "computer_zoom",
+  "computer_settle",
   "open_path",
   "launch_app",
 ]);

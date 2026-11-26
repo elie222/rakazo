@@ -17,6 +17,39 @@ export function shellDescription(screenTool: "computer_observe" | "browser_snaps
   return SHELL_DESCRIPTION;
 }
 
+const computerRectSchema = {
+  type: "object",
+  properties: {
+    x: { type: "number" },
+    y: { type: "number" },
+    w: { type: "number" },
+    h: { type: "number" },
+  },
+  required: ["x", "y", "w", "h"],
+} as const;
+
+const computerTargetSchema = {
+  type: "object",
+  properties: {
+    point: {
+      type: "object",
+      properties: { x: { type: "number" }, y: { type: "number" } },
+      required: ["x", "y"],
+    },
+    bbox: computerRectSchema,
+    windowFrame: computerRectSchema,
+    source: { type: "string", enum: ["coords", "ax", "cdp"] },
+    app: { type: "string" },
+    window: { type: "string" },
+    role: { type: "string" },
+    name: { type: "string" },
+    url: { type: "string" },
+    secret: { type: "boolean" },
+    editable: { type: "boolean" },
+  },
+  required: ["point", "source"],
+} as const;
+
 /** Media, computer, browser, file and desktop app tools. */
 export const computerTools: ConnectorTool[] = [
   {
@@ -52,7 +85,7 @@ export const computerTools: ConnectorTool[] = [
   {
     name: "computer_act",
     description:
-      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Action kinds: click, move, down, up, type, key, scroll, wait, focus (raises the application's window, launching it if absent). Scroll turns the wheel at x,y; put them on the area to scroll, as for a click. Without them it scrolls wherever the pointer is. Direction up, down, left or right; amount 1-20 wheel notches, default 3.",
+      "Perform up to 24 ordered desktop actions on this bot's computer and return the resulting screen. Batch only predictable actions; stop before an outcome you need to inspect. Prefer target (role, name, app, window, basedOn) for native applications; use x,y for canvas, games and remote desktops. A target that moved or disappeared returns stale and runs nothing. Action kinds: click, move, down, up, type, key, scroll, wait, focus (raises the application's window, launching it if absent), drag. Scroll turns the wheel at x,y; put them on the area to scroll, as for a click. Without them it scrolls wherever the pointer is. Direction up, down, left or right; amount 1-20 wheel notches, default 3.",
     inputSchema: {
       type: "object",
       properties: {
@@ -88,8 +121,21 @@ export const computerTools: ConnectorTool[] = [
                   ms: { type: "number" },
                   application: { type: "string" },
                   uri: { type: "string" },
+                  target: computerTargetSchema,
+                  basedOn: { type: "string", minLength: 1 },
                 },
                 required: ["kind"],
+              },
+              {
+                type: "object",
+                properties: {
+                  kind: { type: "string", enum: ["drag"] },
+                  from: computerTargetSchema,
+                  to: computerTargetSchema,
+                  duration_ms: { type: "number" },
+                  basedOn: { type: "string", minLength: 1 },
+                },
+                required: ["kind", "from", "to"],
               },
             ],
           },
@@ -98,6 +144,50 @@ export const computerTools: ConnectorTool[] = [
         settle_ms: { type: "number" },
       },
       required: ["actions"],
+    },
+  },
+
+  {
+    name: "computer_find",
+    description:
+      "Find a native control by name, role, app or window. Prefer this over coordinate clicks. Returns elements with bounds and a frameId; pass a target with basedOn to computer_act. unknown means the screen did not answer; observe again. Pages use browser_snapshot.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", maxLength: 256 },
+        role: { type: "string", maxLength: 64 },
+        app: { type: "string", maxLength: 128 },
+        window: { type: "string", maxLength: 256 },
+        page: { type: "boolean" },
+        limit: { type: "integer", minimum: 1, maximum: 300 },
+      },
+    },
+  },
+  {
+    name: "computer_zoom",
+    description:
+      "Read a region of the last observed screen at device resolution, for small text. Pass the frameId from computer_observe and a region in model pixels.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        frameId: { type: "string", minLength: 1, maxLength: 128 },
+        region: computerRectSchema,
+      },
+      required: ["frameId", "region"],
+    },
+  },
+  {
+    name: "computer_settle",
+    description:
+      "Wait until the screen stops changing after an action instead of guessing a delay. Returns whether it is quiet, whether anything changed, and when.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        quiet_ms: { type: "number" },
+        first_ms: { type: "number" },
+        timeout_ms: { type: "number" },
+        verb: { type: "string", enum: ["click", "scroll", "key", "type", "launch"] },
+      },
     },
   },
 

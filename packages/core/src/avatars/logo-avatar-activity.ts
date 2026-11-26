@@ -70,6 +70,9 @@ const WRITING_TOOLS = new Set(["write_file"]);
 const COMPUTER_TOOLS = new Set([
   "computer_observe",
   "computer_act",
+  "computer_find",
+  "computer_zoom",
+  "computer_settle",
   "browser_navigate",
   "browser_snapshot",
   "browser_act",

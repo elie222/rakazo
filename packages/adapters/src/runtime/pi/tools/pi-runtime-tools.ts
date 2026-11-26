@@ -277,6 +277,9 @@ export function describeToolActivity(
   if (toolName === "browser_snapshot") return "Reading the page";
   if (toolName === "browser_act") return "Using the page";
   if (toolName === "computer_act") return "Operating the computer";
+  if (toolName === "computer_find") return "Finding a control";
+  if (toolName === "computer_zoom") return "Zooming in";
+  if (toolName === "computer_settle") return "Waiting for the screen";
   if (toolName === "run_subagent") return `Delegating to helper: ${detail(record.name)}`;
   if (toolName === "create_space") return `Creating space: ${detail(record.name)}`;
   if (toolName === "list_fleet") return "Checking your bots";

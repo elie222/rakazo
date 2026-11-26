@@ -13,6 +13,14 @@ picture of what the screen shows right now, such as a code or an error you want 
 
 On mobile, tap the bot's name at the top of its chat to open its profile, then tap **Computer**.
 
+## Find a control on screen
+
+A bot reaches a native application's buttons and fields by name, so it does not have to guess
+where to click. In the computer view, the search icon (**Find on screen**) does the same for you:
+type part of a control's name, then choose the result to click it. The magnifier icon (**Zoom into
+screen**) shows a still of the middle of the screen at full resolution, which helps with small text
+and codes.
+
 ## Take control
 
 Choose **Take control** to use the screen yourself, for example to sign in to a site. The header

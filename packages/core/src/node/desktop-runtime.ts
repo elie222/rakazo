@@ -797,6 +797,13 @@ function renderEnsureScreenCommand(
     index === 0 && env.preservePrimaryDisplay
       ? [
           `for i in $(seq 1 100); do xdpyinfo -display ${layout.display} >/dev/null 2>&1 && break; sleep 0.1; done`,
+          // The screen answers as soon as Xvfb does, but the accessibility bus the image
+          // launches is forked a moment later. An application that starts before its socket
+          // exists gives up on AT-SPI for its whole lifetime, so a bot's first launch would
+          // never publish a tree. Wait for the bus, and stay harmless on an image without it.
+          `if [ -x /usr/libexec/at-spi-bus-launcher ] || command -v at-spi-bus-launcher >/dev/null 2>&1; then`,
+          `  for i in $(seq 1 100); do ls ${shellQuote(COMPUTER_CACHE_ENV.XDG_CACHE_HOME)}/at-spi/bus_* >/dev/null 2>&1 && break; sleep 0.05; done`,
+          "fi",
         ]
       : [
           // A display created before the Terminal entry already answers xdpyinfo, so the

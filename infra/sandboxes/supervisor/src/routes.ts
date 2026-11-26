@@ -526,6 +526,40 @@ app.post("/computers/:id/exec", async (c) => {
   });
 });
 
+app.post("/computers/:id/perception", async (c) => {
+  const headers = identityHeaders(c);
+  const body = z.object({ request: z.record(z.string(), z.unknown()) }).parse(await c.req.json());
+  try {
+    const { container, layout } = await managedScreen(
+      c.req.param("id"),
+      headers.botId,
+      headers.spaceId,
+      headers.screenId,
+      headers.screenLeaseId,
+    );
+    const result = await runContainerCommand(container, ["/usr/local/bin/rakazo-perception"], {
+      env: [
+        `DISPLAY=${layout.display}`,
+        "HOME=/home/rakazo",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      ],
+      stdin: `${JSON.stringify({ ...body.request, display: layout.display })}\n`,
+      timeoutMs: 5_000,
+      signal: c.req.raw.signal,
+    });
+    if (result.code !== 0) {
+      // An image without the helper, and an application that stopped answering, both mean the
+      // screen could not be read: answer that, so the adapter can fall back to coordinates.
+      return c.json({ ok: true, unknown: true });
+    }
+    return c.json(JSON.parse(result.stdout));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logRequestFailure(error);
+    return c.json({ ok: false, error: message }, 500);
+  }
+});
+
 // The bot's folder in the computer's home that files its page downloads, and PDFs its tabs show, are saved to.
 const downloadFolder = z.string().min(1).max(1024).optional();
 

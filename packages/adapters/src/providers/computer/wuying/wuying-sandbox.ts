@@ -1236,6 +1236,23 @@ export class WuyingSandboxProvider implements SandboxProvider {
       );
       return;
     }
+    if (action.kind === "drag") {
+      const from = this.native(computer, action.from.point.x, action.from.point.y);
+      const to = this.native(computer, action.to.point.x, action.to.point.y);
+      await this.tools.call(
+        "input_mouse",
+        {
+          action: "drag",
+          button: "left",
+          x: from.x,
+          y: from.y,
+          to_x: to.x,
+          to_y: to.y,
+        },
+        signal,
+      );
+      return;
+    }
     const { data } = await this.tools.call("window_list", {}, signal);
     const wanted = action.application.toLowerCase();
     const windows =
