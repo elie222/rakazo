@@ -25,7 +25,7 @@ function selectedSpace(page: Page) {
 async function openAvatarMenu(page: Page) {
   await page.getByTestId("user-menu-trigger").click();
   const menu = page.locator('[data-slot="popover-content"]');
-  await expect(menu.getByRole("button", { name: "Settings" })).toBeVisible();
+  await expect(menu.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
   return menu;
 }
 
