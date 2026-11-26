@@ -527,13 +527,14 @@ function modelRelease(choice: ChatModelChoice): ModelRelease {
       else words.push(part);
       if (version.length) wordAfterVersion = true;
     } else if (
-      // A date: `20250929`, `1106`, `08-2024`, `001`, or numbers after a word that follows the
-      // version. A bare `0` is a version part, as in `2.0`.
+      // A date: `20250929`, `1106`, `001`, or numbers after a word that follows the version. A
+      // bare `0` is a version part, as in `2.0`.
       date.length ||
       part.length >= 4 ||
       /^0\d/.test(part) ||
       wordAfterVersion ||
-      /^20\d\d$/.test(parts[index + 1] ?? "")
+      // A month before a closing year (`08-2024`), not a version before `2025-08-07`.
+      (/^20\d\d$/.test(parts[index + 1] ?? "") && !/^\d+$/.test(parts[index + 2] ?? ""))
     ) {
       date.push(Number(part));
     } else version.push(Number(part));

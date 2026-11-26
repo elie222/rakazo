@@ -655,23 +655,39 @@ describe("latestModelChoices", () => {
     expect(ids(latestModelChoices(choices, "").latest)).toEqual(models);
   });
 
-  it("orders month-year snapshots by year and keeps a stable alias over its preview and snapshots", () => {
-    const models = [
-      "command-r-12-2023",
-      "command-r-08-2024",
-      "gemini-2.0-flash-exp",
-      "gemini-2.0-flash-001",
-      "gemini-2.0-flash",
-    ].map((modelId) => ({
+  const vendorModels = (modelIds: string[]) =>
+    modelIds.map((modelId) => ({
       key: `vendor::${modelId}`,
       label: modelId,
       provider: "vendor",
       providerLabel: "Vendor",
       modelId,
     }));
-    expect(ids(latestModelChoices(models, "").latest)).toEqual([
-      "command-r-08-2024",
+
+  it("orders month-year snapshots by year", () => {
+    const models = vendorModels(["command-r-12-2023", "command-r-08-2024"]);
+    expect(ids(latestModelChoices(models, "").latest)).toEqual(["command-r-08-2024"]);
+  });
+
+  it("keeps a stable alias over its preview and snapshots", () => {
+    const models = vendorModels([
+      "gemini-2.0-flash-exp",
+      "gemini-2.0-flash-001",
       "gemini-2.0-flash",
+    ]);
+    expect(ids(latestModelChoices(models, "").latest)).toEqual(["gemini-2.0-flash"]);
+  });
+
+  it("reads the version before a full date", () => {
+    const models = vendorModels([
+      "gpt-4.1",
+      "gpt-5-2025-08-07",
+      "o1-preview-2024-09-12",
+      "o1-2024-12-17",
+    ]);
+    expect(ids(latestModelChoices(models, "").latest)).toEqual([
+      "gpt-5-2025-08-07",
+      "o1-2024-12-17",
     ]);
   });
 
