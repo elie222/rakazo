@@ -22,7 +22,7 @@ import {
 import { pluginCategoryLabel } from "@rakazo/i18n/plugin-catalog";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { BotTemplateIcon } from "../../components/bots/bot-template-icon";
 import { AddCustomForm, AddCustomMenu } from "../../components/integrations/add-custom-integration";
@@ -38,7 +38,7 @@ import {
 import { useConnectionActions } from "../../components/integrations/use-connection-actions";
 import { useCustomSourceForm } from "../../components/integrations/use-custom-source-form";
 import { NativeActionButton } from "../../components/native/native-action-button";
-import { MenuPicker } from "../../components/ui/menu-picker";
+import { NativeMenuPicker } from "../../components/native/native-menu-picker";
 import { Chevron } from "../../components/ui/row-accessories";
 import { selectedSpaceId } from "../../lib/api/api";
 import { errorText } from "../../lib/api/user-error";
@@ -51,8 +51,8 @@ import {
   pluginParams,
 } from "../../lib/integrations/plugin-marketplace";
 import { useSideInsets } from "../../lib/layout/side-insets";
-import { native, useThemedStyles } from "../../lib/native/native";
-import { useScreenHeader } from "../../lib/navigation/screen-header";
+import { useThemedStyles } from "../../lib/native/native";
+import { useHeaderSearch, useScreenHeader } from "../../lib/navigation/screen-header";
 import { openExternalUrl } from "../../lib/platform/open-url";
 import { queryClient, rpcQuery } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
@@ -185,7 +185,6 @@ export default function Integrations() {
     adding,
     startAdding,
     startCatalogMcp,
-    removeSource,
     pending: sourcePending,
     formProps,
   } = useCustomSourceForm({
@@ -396,6 +395,17 @@ export default function Integrations() {
     );
   }
 
+  // An open app or form has nothing to search, so the bar leaves with the list it filters.
+  useHeaderSearch({
+    placeholder: t`Search apps`,
+    shown: !detailItem && !adding,
+    onChange: (value) => {
+      setQuery(value);
+      setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
+      setPluginCount(PLUGIN_PAGE_SIZE);
+    },
+  });
+
   useScreenHeader({
     action: {
       kind: "menu",
@@ -424,44 +434,24 @@ export default function Integrations() {
           />
         ) : (
           <>
-            {!detailItem ? (
-              <View style={styles.searchRow}>
-                <TextInput
-                  value={query}
-                  onChangeText={(value) => {
-                    setQuery(value);
-                    setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
+            {!detailItem && (categories.length >= 2 || category) ? (
+              <View style={styles.categoryRow}>
+                <Text style={[styles.section, styles.grow]}>{t`Category`}</Text>
+                <NativeMenuPicker
+                  label={t`Category`}
+                  choices={[
+                    { key: "", label: t`All` },
+                    ...categories.map((name) => ({
+                      key: name,
+                      label: pluginCategoryLabel(name),
+                    })),
+                  ]}
+                  value={category}
+                  onChange={(key) => {
+                    setCategory(key);
                     setPluginCount(PLUGIN_PAGE_SIZE);
                   }}
-                  accessibilityLabel={t`Search apps`}
-                  placeholder={t`Search apps`}
-                  placeholderTextColor={native.tertiaryLabel}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  returnKeyType="search"
-                  style={[styles.input, styles.searchInput]}
                 />
-                {categories.length >= 2 || category ? (
-                  <View style={styles.categoryPicker}>
-                    <MenuPicker
-                      label={t`Category`}
-                      showLabel={false}
-                      plain
-                      choices={[
-                        { key: "", label: t`All` },
-                        ...categories.map((name) => ({
-                          key: name,
-                          label: pluginCategoryLabel(name),
-                        })),
-                      ]}
-                      value={category}
-                      onChange={(key) => {
-                        setCategory(key);
-                        setPluginCount(PLUGIN_PAGE_SIZE);
-                      }}
-                    />
-                  </View>
-                ) : null}
               </View>
             ) : null}
 
@@ -478,7 +468,6 @@ export default function Integrations() {
                 onOpenPlugin={openPlugin}
                 onAuthorize={authorizeMcp}
                 onRetry={retry}
-                onRemoveSource={removeSource}
               />
             ) : null}
             {!detailItem && !filtering ? (
