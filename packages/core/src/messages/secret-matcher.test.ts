@@ -1,7 +1,19 @@
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
-import { createStreamingRedactor, redactedRanges, redactSecrets } from "./events.js";
-import { createIndexedMatcher, createSecretMatcher } from "./secret-matcher.js";
+import { sanitizeModelConnectionError } from "../models/model-connection-error.js";
+import {
+  containsSecret,
+  createStreamingRedactor,
+  redactedRanges,
+  redactSecrets,
+  secretRedactor,
+} from "./events.js";
+import {
+  cachedSecretMatcher,
+  createIndexedMatcher,
+  createSecretMatcher,
+  indexedMatcherBuildCount,
+} from "./secret-matcher.js";
 
 /** The per-value scan the matcher replaced, kept to check it finds the same stretches. */
 function scannedRanges(value: string, secrets: string[]): Array<[number, number]> {
@@ -119,5 +131,125 @@ describe("redacting with a growing list", () => {
     expect(redactor.push("pass hunter2-") + redactor.push("secret done") + redactor.finish()).toBe(
       "pass [redacted] done",
     );
+  });
+
+  it("reuses one compiled matcher across fresh arrays with identical secrets", () => {
+    const secrets = Array.from(
+      { length: 500 },
+      (_, index) => `shared-cache-secret-${index.toString().padStart(4, "0")}-abcdef123456`,
+    );
+    const target = secrets[250]!;
+    const text = `${"plain text ".repeat(3_000)}${target} end`;
+    const before = indexedMatcherBuildCount();
+
+    const results = [
+      secretRedactor([...secrets])(text),
+      secretRedactor([...secrets].reverse())(text),
+      secretRedactor([...secrets, "", secrets[0]!])(text),
+      secretRedactor(new Set(secrets))(text),
+      redactSecrets(text, [...secrets]),
+      secretRedactor([...secrets])(text),
+    ];
+    for (const result of results) {
+      expect(result).not.toContain(target);
+      expect(result.endsWith("[redacted] end")).toBe(true);
+    }
+    expect(redactedRanges(text, [...secrets])).toEqual([
+      [text.indexOf(target), text.indexOf(target) + target.length],
+    ]);
+    expect(containsSecret({ body: text }, [...secrets])).toBe(true);
+    const stream = createStreamingRedactor([...secrets]);
+    const streamed = stream.push(text) + stream.finish();
+    expect(streamed).not.toContain(target);
+    expect(streamed.endsWith("[redacted] end")).toBe(true);
+
+    expect(indexedMatcherBuildCount() - before).toBe(1);
+  });
+
+  it("evicts least-recently-used sets at entry and char limits and bypasses oversized sets", () => {
+    const live = ["live-initial-secret"];
+    const snapshotRedact = secretRedactor(live);
+    expect(snapshotRedact("live-initial-secret live-added-secret")).toBe(
+      "[redacted] live-added-secret",
+    );
+    live.push("live-added-secret");
+    expect(redactSecrets("live-initial-secret live-added-secret", live)).toBe(
+      "[redacted] [redacted]",
+    );
+    expect(snapshotRedact("live-initial-secret live-added-secret")).toBe(
+      "[redacted] live-added-secret",
+    );
+
+    // Exact entry-count limit (32 entries): 32nd entry keeps oldestSet resident; 33rd evicts oldest.
+    const entrySets = Array.from({ length: 33 }, (_, index) => [
+      `exact-entry-limit-secret-${index.toString().padStart(2, "0")}-xyz`,
+    ]);
+    const firstMatcher = cachedSecretMatcher([...entrySets[0]!]).matcher;
+    const secondMatcher = cachedSecretMatcher([...entrySets[1]!]).matcher;
+    for (let index = 2; index < 32; index += 1) {
+      cachedSecretMatcher([...entrySets[index]!]);
+    }
+    // At exactly 32 resident entries, entrySets[0] is still cached (fails if limit were 31).
+    expect(cachedSecretMatcher([...entrySets[0]!]).matcher).toBe(firstMatcher);
+    // Touching entrySets[0] made entrySets[1] the oldest; adding the 33rd entry evicts entrySets[1].
+    cachedSecretMatcher([...entrySets[32]!]);
+    expect(cachedSecretMatcher([...entrySets[1]!]).matcher).not.toBe(secondMatcher);
+
+    // WeakMap fast-path hit refreshes resident content LRU recency across 31 unrelated sets.
+    const hotArray = ["weakmap-hot-secret-beta"];
+    const hotMatcher = cachedSecretMatcher(hotArray).matcher;
+    for (let index = 0; index < 32; index += 1) {
+      expect(cachedSecretMatcher(hotArray).matcher).toBe(hotMatcher);
+      cachedSecretMatcher([`unrelated-entry-set-${index}-xyz`]);
+    }
+    expect(cachedSecretMatcher([...hotArray]).matcher).toBe(hotMatcher);
+
+    // Exact char-budget limit (2,000,000 chars total): retaining both 1,000,000-char halves fails
+    // if the budget is 1,999,999; adding a 1-char set crosses 2,000,000 and evicts the oldest half.
+    const halfA = ["a".repeat(1_000_000)];
+    const halfB = ["b".repeat(1_000_000)];
+    const halfAMatcher = cachedSecretMatcher([...halfA]).matcher;
+    const halfBMatcher = cachedSecretMatcher([...halfB]).matcher;
+    expect(cachedSecretMatcher([...halfA]).matcher).toBe(halfAMatcher);
+    expect(cachedSecretMatcher([...halfB]).matcher).toBe(halfBMatcher);
+    // halfA is now oldest (halfB was touched after halfA); a single char crosses 2,000,000.
+    cachedSecretMatcher(["z"]);
+    expect(cachedSecretMatcher([...halfB]).matcher).toBe(halfBMatcher);
+    expect(cachedSecretMatcher([...halfA]).matcher).not.toBe(halfAMatcher);
+
+    // Oversized set (> 2,000,000 chars) bypasses the content cache without evicting resident entries.
+    const resident = ["resident-before-oversized-secret"];
+    const residentMatcher = cachedSecretMatcher([...resident]).matcher;
+    const oversized = ["o".repeat(2_000_001)];
+    const oversizedFirst = cachedSecretMatcher([...oversized]).matcher;
+    const oversizedSecond = cachedSecretMatcher([...oversized]).matcher;
+    expect(oversizedSecond).not.toBe(oversizedFirst);
+    expect(cachedSecretMatcher([...resident]).matcher).toBe(residentMatcher);
+
+    // Put sentinels at the oldest positions of a full 32-entry cache so even ONE insertion by an
+    // uncached diagnostic or validation path immediately evicts the oldest sentinel.
+    const sentinels = Array.from({ length: 32 }, (_, index) => [
+      `full-cache-sentinel-${index.toString().padStart(2, "0")}-xyz`,
+    ]);
+    const sentinelMatchers = sentinels.map((set) => cachedSecretMatcher([...set]).matcher);
+    const diagSecret = "sk-ant-diag-transient-credential-998877";
+    expect(
+      sanitizeModelConnectionError(`Auth failed for ${diagSecret}`, [diagSecret]),
+    ).not.toContain(diagSecret);
+    expect(cachedSecretMatcher([...sentinels[0]!]).matcher).toBe(sentinelMatchers[0]);
+    expect(containsSecret({ header: diagSecret }, [diagSecret], { cache: false })).toBe(true);
+    expect(cachedSecretMatcher([...sentinels[1]!]).matcher).toBe(sentinelMatchers[1]);
+    expect(redactSecrets(`leak ${diagSecret}`, [diagSecret], { cache: false })).toBe(
+      "leak [redacted]",
+    );
+    expect(cachedSecretMatcher([...sentinels[2]!]).matcher).toBe(sentinelMatchers[2]);
+
+    // Distinct secret sets stay isolated across eviction.
+    const sets = Array.from({ length: 40 }, (_, index) => [`distinct-tenant-secret-${index}-xyz`]);
+    for (let index = 0; index < sets.length; index += 1) {
+      const own = sets[index]![0]!;
+      const other = sets[(index + 1) % sets.length]![0]!;
+      expect(redactSecrets(`${own} ${other}`, sets[index]!)).toBe(`[redacted] ${other}`);
+    }
   });
 });

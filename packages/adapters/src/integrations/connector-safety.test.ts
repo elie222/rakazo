@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { describe, expect, it } from "vitest";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 
@@ -32,6 +33,47 @@ describe("redactConnectorPayload", () => {
     expect(
       redactConnectorPayload({ number: 123, boolean: true, empty: null }, ["123", "true", "null"]),
     ).toEqual({ number: "[redacted]", boolean: "[redacted]", empty: "[redacted]" });
+  });
+
+  it("redacts a value toJSON adds after the secrets array was already cached", () => {
+    const secrets = ["known-secret"];
+    expect(redactConnectorPayload({ first: "known-secret" }, secrets)).toEqual({
+      first: "[redacted]",
+    });
+    const payload = {
+      toJSON() {
+        secrets.push("added-after-warm");
+        return { first: "known-secret", second: "added-after-warm" };
+      },
+    };
+    expect(redactConnectorPayload(payload, secrets)).toEqual({
+      first: "[redacted]",
+      second: "[redacted]",
+    });
+  });
+
+  it("stays linear across repeated payloads with thousands of secret forms", () => {
+    const secrets = Array.from(
+      { length: 3_000 },
+      (_, index) =>
+        `${index.toString(36).padStart(4, "x")}-vault-form-${index}-secret-payload-value`,
+    );
+    const payload = {
+      items: Array.from({ length: 150 }, (_, index) => ({
+        id: `item-${index}`,
+        label: index === 75 ? `contains ${secrets[1_500]} inside` : `Element description ${index}`,
+        href: `https://example.test/items/${index}`,
+        active: index % 2 === 0,
+      })),
+    };
+    expectLinearTime(() => {
+      for (let call = 0; call < 200; call += 1) {
+        const redacted = redactConnectorPayload(payload, secrets) as {
+          items: Array<{ label: string }>;
+        };
+        expect(redacted.items[75]?.label).toBe("contains [redacted] inside");
+      }
+    });
   });
 });
 

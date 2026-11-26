@@ -252,7 +252,7 @@ export async function boatResponseError(
   const prefix = `Boat API request failed (HTTP ${response.status}${code ? `, ${code}` : ""})`;
   const detail =
     typeof body?.message === "string"
-      ? redactSecrets(body.message, [apiKey])
+      ? redactSecrets(body.message, [apiKey], { cache: false })
           .replace(/https?:\/\/[^\s<>"']+/gi, "[redacted URL]")
           .replace(/Bearer\s+[^\s,;]+/gi, "Bearer [redacted]")
           .replace(/\s+/g, " ")
@@ -264,6 +264,7 @@ export async function boatResponseError(
     redactSecrets(
       `${prefix}${detail ? `: ${detail}` : ""}${requestId ? ` (request ${requestId})` : ""}`,
       [apiKey],
+      { cache: false },
     ),
     code,
     response.status === 429 ? retryAfterMs(response, body) : undefined,

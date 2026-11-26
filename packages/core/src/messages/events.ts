@@ -11,7 +11,7 @@ import { sliceWellFormed } from "../primitives/utf8.js";
 import { modelFallbackFailure, parseModelFallbackFailure } from "../runs/run-error.js";
 import { payloadAuthor } from "./message-replies.js";
 import type { SecretMatcher } from "./secret-matcher.js";
-import { createSecretMatcher } from "./secret-matcher.js";
+import { cachedSecretMatcher, createExpandedSecretMatcher } from "./secret-matcher.js";
 
 export function projectMessages(
   events: Array<{
@@ -666,48 +666,25 @@ export function subagentBlockFromPayload(
 /** What redaction writes in place of a secret. */
 export const REDACTED_MARKER = "[redacted]";
 
-/** Shorter lines, or lines with spaces such as a key's BEGIN header, also appear in ordinary text. */
-const MIN_SECRET_LINE_LENGTH = 16;
-
-/**
- * The values to hide for `secrets`: each value, and each long unspaced line of a multi-line value
- * such as a private key's body, since output that prints only some lines or joins them with
- * spaces (an unquoted `echo $KEY`) never contains the whole value.
- */
-function protectedValues(secrets: Iterable<string>): string[] {
-  const values = new Set<string>();
-  for (const secret of secrets) {
-    if (!secret) continue;
-    values.add(secret);
-    if (!/[\r\n]/.test(secret)) continue;
-    for (const line of secret.split(/\r\n?|\n/)) {
-      const trimmed = line.trim();
-      if (trimmed.length >= MIN_SECRET_LINE_LENGTH && !/\s/.test(trimmed)) values.add(trimmed);
-    }
-  }
-  return [...values];
+function matcherFor(secrets: Iterable<string>): SecretMatcher {
+  return cachedSecretMatcher(secrets).matcher;
 }
 
-/** The matcher for `secrets` and the values it was built from, for each array asked about. */
-const matchers = new WeakMap<object, { from: string[]; matcher: SecretMatcher }>();
+function identityText(text: string): string {
+  return text;
+}
 
-/**
- * One matcher per secrets array, rebuilt whenever the array's values differ from those it was
- * built from: a run's list grows as values are added, and a stale matcher would miss one. Held
- * weakly, so it goes with the array. Other iterables build a new one each time.
- */
-function matcherFor(secrets: Iterable<string>): SecretMatcher {
-  if (!Array.isArray(secrets)) return createSecretMatcher(protectedValues(secrets));
-  const cached = matchers.get(secrets);
-  if (
-    cached &&
-    cached.from.length === secrets.length &&
-    cached.from.every((value, index) => value === secrets[index])
-  )
-    return cached.matcher;
-  const matcher = createSecretMatcher(protectedValues(secrets));
-  matchers.set(secrets, { from: [...secrets], matcher });
-  return matcher;
+function redactWithMatcher(value: string, matcher: SecretMatcher): string {
+  if (matcher.empty || value.length === 0) return value;
+  const ranges = matcher.ranges(value);
+  if (ranges.length === 0) return value;
+  let output = "";
+  let offset = 0;
+  for (const [start, end] of ranges) {
+    output += `${value.slice(offset, start)}${REDACTED_MARKER}`;
+    offset = end;
+  }
+  return output + value.slice(offset);
 }
 
 /**
@@ -719,22 +696,42 @@ export function redactedRanges(value: string, secrets: Iterable<string>): Array<
   return matcherFor(secrets).ranges(value);
 }
 
-export function redactSecrets(value: string, secrets: readonly string[]): string {
-  let output = "";
-  let offset = 0;
-  for (const [start, end] of redactedRanges(value, secrets)) {
-    output += `${value.slice(offset, start)}${REDACTED_MARKER}`;
-    offset = end;
-  }
-  return output + value.slice(offset);
+export type SecretRedactionOptions = {
+  /** Set to `false` for one-off validation or error diagnostics so credentials are not retained in the shared cache. */
+  cache?: boolean;
+};
+
+export function redactSecrets(
+  value: string,
+  secrets: readonly string[],
+  options?: SecretRedactionOptions,
+): string {
+  const matcher =
+    options?.cache === false ? createExpandedSecretMatcher(secrets) : matcherFor(secrets);
+  return redactWithMatcher(value, matcher);
+}
+
+/**
+ * A single-string redaction function for `secrets`. Redact many strings with the same secrets (a
+ * payload's keys and leaves) through one result: the values are read once and the matcher for
+ * them is resolved once, and the returned function keeps no other state.
+ */
+export function secretRedactor(secrets: Iterable<string>): (text: string) => string {
+  const { matcher } = cachedSecretMatcher(secrets);
+  if (matcher.empty) return identityText;
+  return (text: string) => redactWithMatcher(text, matcher);
 }
 
 /** Redacts `text` as the continuation of `before`, so a value split across the two is hidden too. */
 export function redactSecretsAfter(before: string, text: string, secrets: string[]): string {
+  const matcher = matcherFor(secrets);
+  if (matcher.empty || text.length === 0) return text;
   const value = before + text;
+  const ranges = matcher.ranges(value);
+  if (ranges.length === 0) return text;
   let output = "";
   let offset = before.length;
-  for (const [start, end] of redactedRanges(value, secrets)) {
+  for (const [start, end] of ranges) {
     if (end <= offset) continue;
     output += `${value.slice(offset, Math.max(start, offset))}${REDACTED_MARKER}`;
     offset = end;
@@ -742,8 +739,13 @@ export function redactSecretsAfter(before: string, text: string, secrets: string
   return output + value.slice(offset);
 }
 
-export function containsSecret(value: unknown, secrets: string[]): boolean {
-  const matcher = matcherFor(secrets);
+export function containsSecret(
+  value: unknown,
+  secrets: string[],
+  options?: SecretRedactionOptions,
+): boolean {
+  const matcher =
+    options?.cache === false ? createExpandedSecretMatcher(secrets) : matcherFor(secrets);
   if (matcher.empty) return false;
   const serialized = JSON.stringify(value);
   if (serialized === undefined) return false;
@@ -822,16 +824,13 @@ export function sanitizeJsonValue<T>(value: T): T {
 }
 
 export function createStreamingRedactor(secrets: string[]) {
-  const values = protectedValues(secrets);
-  const matcher = createSecretMatcher(values);
-  // A loop, not a spread: a Vault of many-line values can pass more lengths than a call takes.
-  const maxLength = values.reduce((longest, value) => Math.max(longest, value.length), 0);
+  const { matcher, maxLength } = cachedSecretMatcher(secrets);
   let buffer = "";
   let covered = 0;
 
   const drain = (final: boolean) => {
     let output: string;
-    if (values.length === 0) {
+    if (matcher.empty) {
       output = buffer;
       buffer = "";
     } else {
