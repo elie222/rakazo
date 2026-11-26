@@ -248,6 +248,15 @@ const MODEL_UNAVAILABLE =
 export type RunErrorRecovery = "connection" | "model" | "plan";
 
 /**
+ * Whether a failed reply the server allows to run again should offer that. A failure with a fix
+ * offers the fix instead, since the same reply would fail the same way. An unusable answer is
+ * the exception: the same model often answers properly the second time.
+ */
+export function runErrorOffersRetry(error: { recovery?: RunErrorRecovery; kind?: string }) {
+  return !error.recovery || error.kind === "output";
+}
+
+/**
  * Keep provider diagnostics available without exposing them in the visible summary. `recovery`
  * is the one action that fixes the failure: "connection" opens the model connections (a
  * rejected or capped key, or no model at all) and "model" picks another model (a provider out

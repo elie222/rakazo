@@ -5,7 +5,11 @@ import type {
   MemoryReadRequest,
   MemorySnapshot,
 } from "@rakazo/adapter-kit";
-import { MemoryRevisionConflictError, TransientModelError } from "@rakazo/adapter-kit";
+import {
+  MemoryRevisionConflictError,
+  ModelOutputError,
+  TransientModelError,
+} from "@rakazo/adapter-kit";
 import {
   legacyScopedToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -317,8 +321,8 @@ function fixture(runId = "run-1") {
     setCalls(next: ToolCall[]) {
       calls = next;
     },
-    async failFromModel() {
-      modelError = new TransientModelError("Model overloaded");
+    async failFromModel(error: Error = new TransientModelError("Model overloaded")) {
+      modelError = error;
       await executor.continueRun(run.id, "worker-1");
       return finalizeRun;
     },
@@ -335,6 +339,13 @@ function fixture(runId = "run-1") {
 describe("retrying a failed typed reply", () => {
   it("offers a fresh reply when the first model call fails before any tool", async () => {
     const finalize = await fixture().failFromModel();
+    expect(finalize).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "failed", retryable: true }),
+    );
+  });
+
+  it("offers a fresh reply when the first answer was unusable", async () => {
+    const finalize = await fixture().failFromModel(new ModelOutputError("Empty response"));
     expect(finalize).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", retryable: true }),
     );

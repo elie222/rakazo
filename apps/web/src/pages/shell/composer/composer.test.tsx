@@ -176,6 +176,20 @@ it("offers the fix instead of a retry when trying again would fail the same way"
   expect(container?.querySelector('[data-testid="composer-error-retry"]')).toBeNull();
 });
 
+it("offers both a retry and another model when the answer was unusable", () => {
+  renderComposer(async () => true, {
+    runError: "Unhandled stop reason: MALFORMED_RESPONSE",
+    runErrorId: "failed-run",
+    onRetryRun: vi.fn(),
+  });
+  expect(container?.querySelector('[data-testid="composer-error-action"]')?.textContent).toBe(
+    "Choose a model",
+  );
+  expect(container?.querySelector('[data-testid="composer-error-retry"]')?.textContent).toBe(
+    "Try again",
+  );
+});
+
 it.each([
   ['402: {"message":"You have no credits remaining."}', "Choose a model", "models"],
   ['401: {"message":"Invalid API key"}', "Replace key", "connections"],

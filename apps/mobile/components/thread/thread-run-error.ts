@@ -1,5 +1,5 @@
 import { computerHoursOut } from "@rakazo/contracts";
-import { canRetryRun } from "@rakazo/core";
+import { canRetryRun, runErrorOffersRetry } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -90,7 +90,8 @@ export function useThreadRunError(
     runError &&
     run &&
     !retryingOther &&
-    !normalizedRunError?.recovery &&
+    normalizedRunError &&
+    runErrorOffersRetry(normalizedRunError) &&
     canRetryRun(run, thread.userId) &&
     (botId || groupId)
       ? {
