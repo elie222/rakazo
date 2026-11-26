@@ -357,18 +357,16 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByRole("button", { name: "Close model settings" }).click();
     await openBotSettings(page);
     const settings = page.getByTestId("bot-settings");
-    // The model row names the model in use and opens the list; each change saves at once.
-    await settings.getByRole("button", { name: /^Model/ }).click();
+    // The bot follows the Space default, so its model row names and checks the endpoint's model.
+    const modelRow = settings.getByRole("button", { name: /^Model/ });
+    await expect(modelRow).toContainText(LOCAL_MODEL_ID);
+    await modelRow.click();
     const localModel = page.getByRole("option", { name: LOCAL_MODEL_ID });
-    await expect(localModel).toBeVisible();
+    await expect(localModel).toHaveAttribute("data-checked", "true");
     await expect(page.getByRole("option", { name: SECOND_MODEL_ID })).toBeVisible();
     await captureScreenshot(page, testInfo, "openai-compatible-model-picker");
-    const modelSaved = page.waitForResponse(
-      (response) => response.url().includes("/rpc/bots/update") && response.ok(),
-    );
-    await localModel.click();
-    await modelSaved;
-    await expect(settings.getByRole("button", { name: /^Model/ })).toContainText(LOCAL_MODEL_ID);
+    await page.keyboard.press("Escape");
+    await expect(localModel).toBeHidden();
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );
