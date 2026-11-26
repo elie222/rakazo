@@ -92,8 +92,9 @@ export function composioAccountTools(
         return;
       }
       const route = call.route;
-      const account = scopedAccounts(context).find(
-        ({ id, externalId, providerRef }) =>
+      const account = context.connectedConnections?.find(
+        ({ id, connectorId, externalId, providerRef }) =>
+          connectorId === "composio" &&
           route?.connectionId === id &&
           route.resourceId === externalId &&
           route.resourceRevision === providerRef,

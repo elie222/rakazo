@@ -27,6 +27,10 @@ export function connectionOwnerWhere(owner: ConnectionOwner) {
     : { userId: owner.userId, spaceId: owner.spaceId };
 }
 
+export function connectionProviderWhere(owner: ConnectionOwner, provider: string) {
+  return owner.organizationId ? { equals: provider, mode: "insensitive" as const } : provider;
+}
+
 /** Connection flows hold the provider lock across provider calls (45s budget plus database work). */
 export const PROVIDER_LOCK_TRANSACTION_MS = 60_000;
 
@@ -137,15 +141,14 @@ export function providerLockTransaction<T>(
  * owns no account, and counting it would make a failed begin wait on its own row forever.
  */
 function concreteKeepAccountIds(
-  rows: Array<{ providerRef: string | null; status: string }>,
-  provider: string,
+  rows: Array<{ provider: string; providerRef: string | null; status: string }>,
 ): { keepIds: string[]; canRevokeUnreferenced: boolean } {
   const keepIds: string[] = [];
   let canRevokeUnreferenced = true;
   for (const row of rows) {
     const value = row.providerRef?.trim();
     if (!value && row.status === "error") continue;
-    if (!value || value === provider) {
+    if (!value || value === row.provider) {
       canRevokeUnreferenced = false;
       continue;
     }
@@ -184,7 +187,7 @@ export async function authorizationInUse(
     where: {
       ...connectionOwnerWhere(scope),
       connectorId: scope.connectorId,
-      provider: scope.provider,
+      provider: connectionProviderWhere(scope, scope.provider),
       providerRef: ref,
       status: { in: ACTIVE_STATUSES },
     },
@@ -243,12 +246,12 @@ async function dropUnreferencedAccounts(
     where: {
       ...connectionOwnerWhere(scope),
       connectorId: scope.connectorId,
-      provider: scope.provider,
+      provider: connectionProviderWhere(scope, scope.provider),
       status: { in: ACTIVE_STATUSES },
     },
-    select: { providerRef: true, status: true },
+    select: { provider: true, providerRef: true, status: true },
   });
-  const { keepIds, canRevokeUnreferenced } = concreteKeepAccountIds(kept, scope.provider);
+  const { keepIds, canRevokeUnreferenced } = concreteKeepAccountIds(kept);
   if (!canRevokeUnreferenced) return "undecided";
   await connector.revokeUnreferencedAccounts(scope.provider, keepIds, context);
   return "done";

@@ -13,6 +13,7 @@ import {
   CONNECTION_CLEANUP_BACKUP_MS,
   connectionCleanupRetryAt,
   connectionOwnerWhere,
+  connectionProviderWhere,
   dropLeftover,
   dropLeftoverAuthorization,
   leftoverAuthorization,
@@ -399,7 +400,7 @@ export async function beginConnection(
               providerRef: { equals: input.provider, mode: "insensitive" },
               status: "revoked",
             },
-            select: { id: true, metadata: true, updatedAt: true },
+            select: { id: true, metadata: true },
           });
           // Removing a local row cannot invalidate an already issued hosted link.
           // Wait out that link before another attempt can claim an account.
@@ -408,11 +409,11 @@ export async function beginConnection(
               signInMetadata,
               previous.metadata,
               { table: "connections", column: "metadata", id: previous.id },
-              { fallback: {} },
+              "reject",
             );
-            const expiry = expiresAt
-              ? Date.parse(expiresAt)
-              : previous.updatedAt.getTime() + 14_400_000;
+            const expiry = Date.parse(expiresAt ?? "");
+            if (!Number.isFinite(expiry))
+              throw new ClientError("SERVICE_UNAVAILABLE", "The sign-in link has no expiration.");
             if (expiry > Date.now())
               throw new ClientError(
                 "CONFLICT",
@@ -626,17 +627,13 @@ export async function completeConnection(
                 where: {
                   ...owned,
                   connectorId: existing.connectorId,
-                  provider: existing.provider,
+                  provider: connectionProviderWhere(owner, existing.provider),
                   id: { not: existing.id },
                   status: { in: ["connected", "pending", "error"] },
                 },
-                select: { providerRef: true, status: true },
+                select: { provider: true, providerRef: true, status: true },
               });
-          // Exclude concrete account ids only. A pending sibling may still
-          // store a slug or authorization-request id; passing those raw refs
-          // would not match remote account ids and can let this row adopt the
-          // sibling's account. If a sibling ref cannot be resolved yet, leave
-          // this row pending so a later complete can re-resolve safely.
+          // Wait when a sibling's authorization cannot yet be resolved to an account id.
           const priorAccountIds =
             organizationId && !correlated && transactionConnector.listAccountsBeforeSignIn
               ? readJsonColumn(
@@ -659,7 +656,7 @@ export async function completeConnection(
               const ref = sibling.providerRef?.trim();
               // Slug-only refs cannot identify a concrete remote account; resolving
               // them would pick an arbitrary ACTIVE id and over-exclude.
-              if (!ref || ref === existing.provider) {
+              if (!ref || ref === sibling.provider) {
                 // A connected row has no claim on a newer account a sibling may have just authorized.
                 if (
                   sibling.status === "pending" &&
@@ -713,7 +710,7 @@ export async function completeConnection(
             where: {
               ...owned,
               connectorId: existing.connectorId,
-              provider: existing.provider,
+              provider: connectionProviderWhere(owner, existing.provider),
               id: { not: existing.id },
               status: resolvedAccountId ? "connected" : { in: ["connected", "pending", "error"] },
               providerRef,
@@ -899,15 +896,16 @@ export async function revokeConnection(
         where: {
           ...owned,
           connectorId: row.connectorId,
-          provider: row.provider,
-          status: { in: ["connected", "pending"] },
+          provider: connectionProviderWhere(owner, row.provider),
+          OR: [
+            { status: { in: ["connected", "pending"] } },
+            { status: "error", providerRef: { not: null } },
+          ],
         },
       });
       const connectionRef = row.providerRef || row.provider;
       const accountSpecific = Boolean(row.providerRef && row.providerRef !== row.provider);
-      // Account-scoped refs can disconnect one remote authorization while
-      // siblings remain. Slug-only legacy rows must wait until they are last,
-      // or a provider-wide revoke would drop every account for that app.
+      // Revoking a legacy slug removes all remote accounts for the app.
       if (!accountSpecific && remaining > 0) return {};
       const scope = {
         ...owner,

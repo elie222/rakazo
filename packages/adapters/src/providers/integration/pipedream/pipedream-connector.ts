@@ -110,6 +110,15 @@ function securePipedreamConnectUrl(value: string): URL {
   return url;
 }
 
+class PipedreamHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export class PipedreamConnector implements ManagedConnectorProvider {
   private accessToken?: { value: string; expiresAt: number };
   private accessTokenRequest?: Promise<string>;
@@ -425,7 +434,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   }
 
   async connectedAccountIdentity(slug: string, ref: string, context: AdapterContext) {
-    if (slug !== "gmail") return undefined;
+    if (slug.toLowerCase() !== "gmail") return undefined;
     const endpoint = Buffer.from("https://gmail.googleapis.com/gmail/v1/users/me/profile").toString(
       "base64url",
     );
@@ -441,10 +450,13 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       );
       const address = profile.emailAddress;
       return typeof address === "string" ? address.trim().toLowerCase() || undefined : undefined;
-    } catch {
-      // Older grants may lack the profile scope; their credentials still work for other actions.
+    } catch (error) {
       context.signal.throwIfAborted();
-      return undefined;
+      if (error instanceof PipedreamHttpError) {
+        if ([401, 403, 404].includes(error.status)) return undefined;
+        throw new Error(`Mailbox profile lookup returned HTTP ${error.status}`);
+      }
+      throw new Error(sanitizeConnectorError(error, [this.config.clientSecret]));
     }
   }
 
@@ -607,7 +619,8 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     if (response.status === 401) this.accessToken = undefined;
     const body = await readPipedreamBody(response, requestAbort);
     if (!response.ok) {
-      throw new Error(
+      throw new PipedreamHttpError(
+        response.status,
         sanitizeConnectorError(`Pipedream returned HTTP ${response.status}: ${body}`, [token]),
       );
     }

@@ -499,7 +499,7 @@ describe("composio tool mapping", () => {
     const restore = stubActiveAccounts(["ca-personal", "ca-work"]);
 
     try {
-      const connector = new ComposioConnector();
+      const connector = new ConnectorRegistry([new ComposioConnector()]);
       const context: AdapterContext = {
         operationId: "composio-multi-account",
         traceId: "composio-multi-account",
@@ -631,10 +631,12 @@ describe("composio tool mapping", () => {
           spaceId: "workspace",
           userId: "user-1",
           signal: new AbortController().signal,
-          connectedConnections: [
-            ["slack", "ca_deleted"],
-            ["github", "ca_live"],
-          ].map(([externalId, providerRef]) => ({
+          connectedConnections: (
+            [
+              ["slack", "ca_deleted"],
+              ["github", "ca_live"],
+            ] as const
+          ).map(([externalId, providerRef]) => ({
             id: providerRef,
             connectorId: "composio",
             externalId,
@@ -675,11 +677,13 @@ describe("composio tool mapping", () => {
           spaceId: "workspace",
           userId: "user-1",
           signal: new AbortController().signal,
-          connectedConnections: [
-            ["slack", "ca_gone1"],
-            ["gmail", "ca_gone2"],
-            ["github", "ca_live"],
-          ].map(([externalId, providerRef]) => ({
+          connectedConnections: (
+            [
+              ["slack", "ca_gone1"],
+              ["gmail", "ca_gone2"],
+              ["github", "ca_live"],
+            ] as const
+          ).map(([externalId, providerRef]) => ({
             id: providerRef,
             connectorId: "composio",
             externalId,

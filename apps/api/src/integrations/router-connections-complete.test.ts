@@ -705,7 +705,9 @@ describe("connections.complete", () => {
 
   it("keeps the app-only ref while a sibling authorization for the same app is unresolved", async () => {
     const { complete, connector, connection, row } = pollFixture("connected");
-    connection.findMany.mockResolvedValue([{ providerRef: "gmail", status: "pending" }] as never);
+    connection.findMany.mockResolvedValue([
+      { provider: "gmail", providerRef: "gmail", status: "pending" },
+    ] as never);
     Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-2") });
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
@@ -714,7 +716,9 @@ describe("connections.complete", () => {
 
   it("stores the account id beside an abandoned sibling attempt", async () => {
     const { complete, connector, connection, row } = pollFixture("connected");
-    connection.findMany.mockResolvedValue([{ providerRef: null, status: "error" }] as never);
+    connection.findMany.mockResolvedValue([
+      { provider: "gmail", providerRef: null, status: "error" },
+    ] as never);
     Object.assign(connector, { resolveConnectedAccountId: vi.fn(async () => "account-1") });
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "connected" } } });
@@ -860,7 +864,7 @@ describe("connections.complete", () => {
     const revokeUnreferencedAccounts = vi.fn(async () => undefined);
     Object.assign(connector, { revokeUnreferencedAccounts });
     // A sibling is still connecting and has only the app's name for a reference.
-    connection.findMany.mockResolvedValue([{ providerRef: "gmail" }] as never);
+    connection.findMany.mockResolvedValue([{ provider: "gmail", providerRef: "gmail" }] as never);
 
     await expect(complete()).resolves.toMatchObject({ body: { json: { status: "revoked" } } });
     expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();
@@ -880,7 +884,9 @@ describe("connections.complete", () => {
 
     // With every sibling's account known, the poll removes the rest itself and records nothing.
     jobs.enqueueIn.mockClear();
-    connection.findMany.mockResolvedValue([{ providerRef: "account-1" }] as never);
+    connection.findMany.mockResolvedValue([
+      { provider: "gmail", providerRef: "account-1" },
+    ] as never);
     await complete();
     expect(revokeUnreferencedAccounts).toHaveBeenCalledWith(
       "gmail",

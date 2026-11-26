@@ -211,7 +211,7 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
 
   it("adds a distinct account to the same app with a different label", async () => {
     const admin = client("admin", second);
-    const { connectionId } = await admin.beginForOrganization(request);
+    const { connectionId } = await admin.beginForOrganization({ ...request, provider: "MAIL" });
     vi.mocked(connector.resolveConnectedAccountId!).mockResolvedValueOnce("fixture-account-2");
     const completed = await admin.complete({ connectionId });
     expect(completed).toMatchObject({
@@ -227,16 +227,19 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
       expect.arrayContaining([sharedId, connectionId]),
     );
     await admin.revoke({ connectionId });
-    expect(connector.revoke).toHaveBeenLastCalledWith(
+    expect(connector.revoke).toHaveBeenCalledExactlyOnceWith(
       "fixture-account-2",
       expect.objectContaining({ organizationId: team }),
+    );
+    expect(await admin.list()).toContainEqual(
+      expect.objectContaining({ id: sharedId, status: "connected" }),
     );
     vi.mocked(connector.revoke).mockClear();
   });
 
   it("retires a duplicate row for the exact account ref without revoking it", async () => {
     const admin = client("admin", second);
-    const { connectionId } = await admin.beginForOrganization(request);
+    const { connectionId } = await admin.beginForOrganization({ ...request, provider: "MAIL" });
     expect(await admin.complete({ connectionId })).toMatchObject({
       id: sharedId,
       status: "connected",
@@ -245,6 +248,22 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
       expect.objectContaining({ id: connectionId, status: "revoked" }),
     );
     expect(connector.revoke).not.toHaveBeenCalled();
+  });
+
+  it("skips app-wide revoke when a differently cased sibling owns an account", async () => {
+    const admin = client("admin", second);
+    const { connectionId } = await admin.beginForOrganization({ ...request, provider: "MAIL" });
+    await runAsSystem("legacy organization connection fixture", () =>
+      prisma.connection.update({
+        where: { id: connectionId },
+        data: { status: "connected", providerRef: "MAIL" },
+      }),
+    );
+    await admin.revoke({ connectionId });
+    expect(connector.revoke).not.toHaveBeenCalled();
+    expect(await admin.list()).toContainEqual(
+      expect.objectContaining({ id: sharedId, status: "connected" }),
+    );
   });
 
   it("keeps the existing account when separate authorizations verify the same identity", async () => {
@@ -365,6 +384,33 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
         second,
         team,
       );
+    } finally {
+      delete connector.listAccountsBeforeSignIn;
+    }
+  });
+
+  it("rejects a replacement hosted sign-in when the previous link has no recorded expiry", async () => {
+    connector.listAccountsBeforeSignIn = async () => [];
+    const app = { ...request, provider: "fixture-unknown-expiry", displayName: "Unknown expiry" };
+    const link = {
+      authorizationUrl: "https://authorization.example.test/",
+      state: app.provider,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    vi.mocked(connector.begin).mockResolvedValueOnce(link).mockResolvedValueOnce(link);
+    try {
+      const admin = client("admin", second);
+      const { connectionId } = await admin.beginForOrganization(app);
+      await admin.revoke({ connectionId });
+      await runAsSystem("legacy hosted sign-in fixture", () =>
+        prisma.connection.update({
+          where: { id: connectionId },
+          data: { metadata: {}, updatedAt: new Date(0) },
+        }),
+      );
+      await expect(admin.beginForOrganization(app)).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+      });
     } finally {
       delete connector.listAccountsBeforeSignIn;
     }
