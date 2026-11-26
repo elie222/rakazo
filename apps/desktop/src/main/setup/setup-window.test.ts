@@ -42,6 +42,7 @@ let opening: ReturnType<typeof deferred<boolean>>;
 const settleLocalStack = vi.fn<() => Promise<void>>();
 const syncHostComputerAccess = vi.fn();
 const rebuildMenu = vi.fn();
+const stopStackLeftBehind = vi.fn();
 const onAppReady = vi.fn();
 const recoverFromCrashedSave = vi.fn<() => Promise<string>>();
 
@@ -51,6 +52,7 @@ beforeEach(() => {
   settleLocalStack.mockReset().mockResolvedValue(undefined);
   syncHostComputerAccess.mockReset();
   rebuildMenu.mockReset();
+  stopStackLeftBehind.mockReset();
   vi.mocked(app.quit).mockReset();
   onAppReady.mockReset();
   recoverFromCrashedSave.mockReset();
@@ -68,7 +70,7 @@ beforeEach(() => {
     commitPendingAppSwitch: vi.fn(),
     abandonPendingAppSwitch: vi.fn(),
     recoverFromCrashedSave,
-    stopStackLeftBehind: vi.fn(),
+    stopStackLeftBehind,
     rebuildMenu,
     settleLocalStack,
     onAppReady,
@@ -393,7 +395,7 @@ describe("desktop.setup.stack.stop", () => {
       expect(state.stopToQuit).toBeUndefined();
       const result = await mocks.invoke.get("desktop.setup.stack.stop")?.(page.event);
       expect(result).toEqual(idle);
-      expect(syncHostComputerAccess).toHaveBeenCalledOnce();
+      expect(syncHostComputerAccess).not.toHaveBeenCalled();
       expect(app.quit).not.toHaveBeenCalled();
     } finally {
       desktop.localStack = previousStack;
@@ -456,7 +458,7 @@ describe("desktop.setup.stack.stop", () => {
       await pendingStop;
 
       expect(app.quit).not.toHaveBeenCalled();
-      expect(syncHostComputerAccess).toHaveBeenCalledOnce();
+      expect(syncHostComputerAccess).not.toHaveBeenCalled();
       expect(page.reload).toHaveBeenCalledOnce();
     } finally {
       desktop.localStack = previousStack;
@@ -511,6 +513,36 @@ describe("desktop.setup.stack.stop", () => {
       expect(page.reload).toHaveBeenCalledOnce();
       expect(mocks.invoke.get("desktop.setup.state")?.(page.event)).toMatchObject({
         stopToQuit: true,
+      });
+    } finally {
+      desktop.localStack = previousStack;
+    }
+  });
+
+  it("keeps setup open and reloads with stop retry when Quit and Stop Bots fails during a successful save", async () => {
+    const previousStack = desktop.localStack;
+    desktop.localStack = {
+      webUrl: () => "http://127.0.0.1:47000",
+    } as unknown as typeof desktop.localStack;
+    try {
+      const save = mocks.invoke.get("desktop.setup.save")?.(page.event, {
+        mode: "existing",
+        serverUrl: SERVER,
+        headers: {},
+      });
+      // Quit and Stop Bots fails while the save is still in flight.
+      showSetupWindow("Could not stop the local stack.", { quitAfterStop: true });
+      expect(page.reload).not.toHaveBeenCalled();
+
+      opening.resolve(true);
+      await expect(save).resolves.toEqual({ ok: true });
+      expect(stopStackLeftBehind).not.toHaveBeenCalled();
+      expect(onAppReady).not.toHaveBeenCalled();
+      expect(desktop.setupWindow).not.toBeNull();
+      expect(page.reload).toHaveBeenCalledOnce();
+      expect(mocks.invoke.get("desktop.setup.state")?.(page.event)).toMatchObject({
+        stopToQuit: true,
+        error: "Could not stop the local stack.",
       });
     } finally {
       desktop.localStack = previousStack;

@@ -262,14 +262,23 @@ export function registerSetupIpc({
           const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
           return { ok: false, error: message };
         }
-        destroySetupWindow();
+        const keepSetupForQuitStop = quitAfterStackStop;
+        if (keepSetupForQuitStop) {
+          if (desktop.mainWindow !== null && !desktop.mainWindow.isDestroyed()) {
+            desktop.mainWindow.hide();
+          }
+          reloadSetupAfterSave = true;
+        } else {
+          destroySetupWindow();
+        }
         // Final check after setup closes — a crash in this gap still rolls back.
         if (rendererWatch?.crashed()) {
           const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
           return { ok: false, error: message };
         }
         // Only now is the switch final; a crash rollback above may restore the local server.
-        stopStackLeftBehind(previousSetup?.mode);
+        // If Quit and Stop Bots failed mid-save, leave the outstanding stop for the Retry view.
+        if (!keepSetupForQuitStop) stopStackLeftBehind(previousSetup?.mode);
         return { ok: true };
       } catch {
         const outcome = abandonPendingAppSwitch(previousSetup, previousUrl);
@@ -327,8 +336,6 @@ export function registerSetupIpc({
       if (quitAfterStackStop) {
         quitAfterStackStop = false;
         app.quit();
-      } else {
-        syncHostComputerAccess();
       }
       return state;
     } catch (error) {
