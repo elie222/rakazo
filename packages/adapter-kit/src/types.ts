@@ -1030,6 +1030,8 @@ export interface BackgroundJobPayloads {
   /** Run a failed routine run once more; the payload names the failed run. */
   "routine.retry": { runId: string };
   "computer.sleep": { computerId: string };
+  /** Tell an API caller's callback address that its task settled; rechecks until it does. */
+  "task.callback": { taskId: string };
   "computer.update": { updateId: string };
   "computer.control-expire": { computerId: string; leaseId: string };
   "skill.teaching-expire": { skillId: string };

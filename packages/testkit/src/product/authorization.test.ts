@@ -244,6 +244,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
   it("rejects unauthenticated calls to every protected RPC family", async () => {
     const calls = exhaustiveProtectedCalls([
       ["me"],
+      ["apiKeys/list"],
+      ["apiKeys/create", { name: "script" }],
+      ["apiKeys/revoke", { id: "missing-key" }],
       ["deployment/get"],
       ["deployment/update", { signupsEnabled: true }],
       ["updater/status"],

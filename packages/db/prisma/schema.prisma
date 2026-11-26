@@ -82,6 +82,7 @@ model User {
   scimIdentityTombstones      ScimIdentityTombstone[]
   scimProjectionGrants        ScimProjectionGrant[]
   passkeys                    Passkey[]
+  apiKeys                     ApiKey[]
   members                     Member[]
   accessGrants                AccessGrant[]
   invitations                 Invitation[]
@@ -309,6 +310,39 @@ model Passkey {
   @@unique([credentialID])
   @@index([userId])
   @@map("passkey")
+}
+
+/// Better Auth API keys, which let scripts and other agents use the account's bots. `key` holds
+/// only a hash; the key itself is shown once. A test in packages/auth compares it with the plugin.
+model ApiKey {
+  id                  String    @id
+  configId            String    @default("default")
+  name                String?
+  start               String?
+  referenceId         String
+  user                User      @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+  prefix              String?
+  key                 String
+  refillInterval      Int?
+  refillAmount        Int?
+  lastRefillAt        DateTime?
+  enabled             Boolean?  @default(true)
+  rateLimitEnabled    Boolean?  @default(true)
+  rateLimitTimeWindow Int?
+  rateLimitMax        Int?
+  requestCount        Int?      @default(0)
+  remaining           Int?
+  lastRequest         DateTime?
+  expiresAt           DateTime?
+  createdAt           DateTime
+  updatedAt           DateTime
+  permissions         String?
+  metadata            String?
+
+  @@index([configId])
+  @@index([referenceId])
+  @@index([key])
+  @@map("api_keys")
 }
 
 // Directory provisioning (SCIM 2.0), owned by the auth library's SCIM plugin, which reads and
@@ -1295,9 +1329,33 @@ model Task {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   runs      Run[]
+  callback  TaskCallback?
 
   @@index([spaceId, botId])
   @@map("tasks")
+}
+
+/// Where to report a task an API caller started each time it settles. Its signing key is derived
+/// from the server's key, the API key that asked for it and the address, so nothing secret is
+/// stored and a new API key gets a new signing key.
+model TaskCallback {
+  id              String    @id @default(cuid())
+  taskId          String    @unique
+  task            Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  spaceId         String
+  userId          String
+  /// The key that asked for it; a revoked key's callbacks stop. No foreign key, so deleting a
+  /// key leaves the row to be skipped rather than deleted mid-delivery.
+  issuerKeyId     String
+  url             String
+  /// The run and task status last sent, so each settled state is sent once.
+  deliveredRunId  String?
+  deliveredStatus String?
+  deliveredAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([spaceId, userId])
+  @@map("task_callbacks")
 }
 
 model Run {
