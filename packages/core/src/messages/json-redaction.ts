@@ -1,5 +1,6 @@
 import { createSecretMatcher } from "./secret-matcher.js";
 
+const REDACTED_MARKER = "[redacted]";
 const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
 const JSON_VALUE_TOKEN =
   /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
@@ -22,8 +23,15 @@ function isJsonWhitespace(ch: string | undefined): boolean {
   return ch === " " || ch === "\t" || ch === "\r" || ch === "\n";
 }
 
-function parseJsonSpans(raw: string): JsonNode | undefined {
+function parseJsonSpans(
+  raw: string,
+): { root: JsonNode; nodesByStart: Map<number, JsonNode> } | undefined {
   let pos = 0;
+  const nodesByStart = new Map<number, JsonNode>();
+  const record = <T extends JsonNode>(node: T): T => {
+    nodesByStart.set(node.start, node);
+    return node;
+  };
   const skipWs = () => {
     while (pos < raw.length && isJsonWhitespace(raw[pos])) pos += 1;
   };
@@ -52,7 +60,7 @@ function parseJsonSpans(raw: string): JsonNode | undefined {
       }
       if (code === 0x22) {
         pos += 1;
-        return { kind: "string", start, end: pos };
+        return record({ kind: "string", start, end: pos });
       }
       pos += 1;
     }
@@ -62,11 +70,11 @@ function parseJsonSpans(raw: string): JsonNode | undefined {
     const start = pos;
     if (raw.startsWith("true", pos) || raw.startsWith("null", pos)) {
       pos += 4;
-      return { kind: "primitive", start, end: pos };
+      return record({ kind: "primitive", start, end: pos });
     }
     if (raw.startsWith("false", pos)) {
       pos += 5;
-      return { kind: "primitive", start, end: pos };
+      return record({ kind: "primitive", start, end: pos });
     }
     if (raw[pos] === "-") pos += 1;
     if (pos >= raw.length) return undefined;
@@ -88,7 +96,7 @@ function parseJsonSpans(raw: string): JsonNode | undefined {
       if (pos >= raw.length || raw[pos]! < "0" || raw[pos]! > "9") return undefined;
       while (pos < raw.length && raw[pos]! >= "0" && raw[pos]! <= "9") pos += 1;
     }
-    return { kind: "primitive", start, end: pos };
+    return record({ kind: "primitive", start, end: pos });
   };
   const parseValue = (depth: number): JsonNode | undefined => {
     if (depth > MAX_JSON_SPAN_DEPTH) return undefined;
@@ -103,7 +111,7 @@ function parseJsonSpans(raw: string): JsonNode | undefined {
       const entries: Array<{ key: JsonStringNode; value: JsonNode }> = [];
       if (raw[pos] === "}") {
         pos += 1;
-        return { kind: "object", start, end: pos, entries };
+        return record({ kind: "object", start, end: pos, entries });
       }
       while (true) {
         skipWs();
@@ -118,7 +126,7 @@ function parseJsonSpans(raw: string): JsonNode | undefined {
         skipWs();
         if (raw[pos] === "}") {
           pos += 1;
-          return { kind: "object", start, end: pos, entries };
+          return record({ kind: "object", start, end: pos, entries });
         }
         if (raw[pos] !== ",") return undefined;
         pos += 1;
@@ -131,7 +139,7 @@ function parseJsonSpans(raw: string): JsonNode | undefined {
       const items: JsonNode[] = [];
       if (raw[pos] === "]") {
         pos += 1;
-        return { kind: "array", start, end: pos, items };
+        return record({ kind: "array", start, end: pos, items });
       }
       while (true) {
         const item = parseValue(depth + 1);
@@ -140,7 +148,7 @@ function parseJsonSpans(raw: string): JsonNode | undefined {
         skipWs();
         if (raw[pos] === "]") {
           pos += 1;
-          return { kind: "array", start, end: pos, items };
+          return record({ kind: "array", start, end: pos, items });
         }
         if (raw[pos] !== ",") return undefined;
         pos += 1;
@@ -151,7 +159,7 @@ function parseJsonSpans(raw: string): JsonNode | undefined {
   const root = parseValue(0);
   if (!root) return undefined;
   skipWs();
-  return pos === raw.length ? root : undefined;
+  return pos === raw.length ? { root, nodesByStart } : undefined;
 }
 
 function hasExactSortedRange(
@@ -171,100 +179,259 @@ function hasExactSortedRange(
   return false;
 }
 
-function overlapsSortedRange(
+function overlapsOutsideToken(
   ranges: ReadonlyArray<readonly [number, number]>,
   start: number,
   end: number,
 ): boolean {
   let lo = 0;
-  let hi = ranges.length - 1;
-  while (lo <= hi) {
+  let hi = ranges.length;
+  while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    const [rStart, rEnd] = ranges[mid]!;
-    if (rEnd <= start) lo = mid + 1;
-    else if (rStart >= end) hi = mid - 1;
-    else return true;
+    if (ranges[mid]![1] <= start) lo = mid + 1;
+    else hi = mid;
+  }
+  while (lo < ranges.length && ranges[lo]![0] < end) {
+    const [rStart, rEnd] = ranges[lo]!;
+    if (rStart < start || rEnd > end) return true;
+    lo += 1;
   }
   return false;
 }
 
+function sliceRangesWithin(
+  ranges: ReadonlyArray<readonly [number, number]>,
+  start: number,
+  end: number,
+): Array<[number, number]> {
+  let lo = 0;
+  let hi = ranges.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (ranges[mid]![1] <= start) lo = mid + 1;
+    else hi = mid;
+  }
+  const inside: Array<[number, number]> = [];
+  while (lo < ranges.length && ranges[lo]![0] < end) {
+    const [rStart, rEnd] = ranges[lo]!;
+    if (rStart >= start && rEnd <= end) {
+      inside.push([rStart - start, rEnd - start]);
+    }
+    lo += 1;
+  }
+  return inside;
+}
+
+function diffRedactedSpans(
+  raw: string,
+  rawRedacted: string,
+  nodesByStart?: ReadonlyMap<number, JsonNode>,
+  redact?: (text: string) => string,
+): Array<[number, number]> | undefined {
+  if (rawRedacted === raw) return [];
+  const ranges: Array<[number, number]> = [];
+  let r = 0;
+  let o = 0;
+  while (r < raw.length || o < rawRedacted.length) {
+    while (r < raw.length && o < rawRedacted.length && raw[r] === rawRedacted[o]) {
+      r += 1;
+      o += 1;
+    }
+    if (r === raw.length && o === rawRedacted.length) break;
+    // Back up across leading characters shared with "[redacted]" (such as "[" in an array secret).
+    let markerStart = -1;
+    const minBack = Math.max(0, o - (REDACTED_MARKER.length - 1));
+    for (let cand = o; cand >= minBack; cand -= 1) {
+      if (rawRedacted.startsWith(REDACTED_MARKER, cand)) {
+        const delta = o - cand;
+        if (r >= delta && raw.slice(r - delta, r) === rawRedacted.slice(cand, o)) {
+          markerStart = cand;
+          r -= delta;
+          o = cand;
+          break;
+        }
+      }
+    }
+    if (markerStart === -1) return undefined;
+    const matchStart = r;
+    o += REDACTED_MARKER.length;
+    while (rawRedacted.startsWith(REDACTED_MARKER, o)) {
+      o += REDACTED_MARKER.length;
+    }
+    const nextMarker = rawRedacted.indexOf(REDACTED_MARKER, o);
+    if (nextMarker === -1) {
+      const suffix = rawRedacted.slice(o);
+      const matchEnd = raw.length - suffix.length;
+      if (matchEnd < matchStart || !raw.endsWith(suffix)) return undefined;
+      ranges.push([matchStart, matchEnd]);
+      return ranges;
+    }
+    const gap = rawRedacted.slice(o, nextMarker);
+    if (!gap) return undefined;
+    let matchEnd = -1;
+    const node = nodesByStart?.get(matchStart);
+    if (
+      node &&
+      redact &&
+      raw.startsWith(gap, node.end) &&
+      redact(raw.slice(matchStart, node.end)) === REDACTED_MARKER
+    ) {
+      matchEnd = node.end;
+    }
+    if (matchEnd === -1) {
+      const pos = raw.indexOf(gap, matchStart + 1);
+      if (pos === -1) return undefined;
+      matchEnd = pos;
+    }
+    ranges.push([matchStart, matchEnd]);
+    r = matchEnd + gap.length;
+    o = nextMarker;
+  }
+  return ranges;
+}
+
+function jsonStringEscapeBoundaries(token: string): Uint8Array {
+  const ok = new Uint8Array(token.length + 1);
+  ok[0] = 1;
+  ok[token.length] = 1;
+  let pos = 1;
+  const end = token.length - 1;
+  while (pos < end) {
+    ok[pos] = 1;
+    if (token[pos] === "\\") {
+      pos += token[pos + 1] === "u" ? 6 : 2;
+    } else {
+      pos += 1;
+    }
+  }
+  ok[end] = 1;
+  return ok;
+}
+
+function isValidJsonStringLiteral(text: string): boolean {
+  if (text.length < 2 || !text.startsWith('"') || !text.endsWith('"')) return false;
+  try {
+    return typeof JSON.parse(text) === "string";
+  } catch {
+    return false;
+  }
+}
+
+function redactRawStringToken(
+  token: string,
+  ranges: ReadonlyArray<readonly [number, number]>,
+): string {
+  if (ranges.length === 0) return token;
+  const boundaries = jsonStringEscapeBoundaries(token);
+  const validRanges = ranges.filter(
+    ([start, end]) =>
+      start >= 0 &&
+      end <= token.length &&
+      start < end &&
+      boundaries[start] === 1 &&
+      boundaries[end] === 1,
+  );
+  if (validRanges.length === 0) return token;
+  let out = "";
+  let cursor = 0;
+  for (const [start, end] of validRanges) {
+    if (start > cursor) out += token.slice(cursor, start);
+    out += REDACTED_MARKER;
+    cursor = end;
+  }
+  if (cursor < token.length) out += token.slice(cursor);
+  const touchedStart = validRanges[0]![0] === 0;
+  const touchedEnd = validRanges.at(-1)![1] === token.length;
+  if (!touchedStart && !touchedEnd) {
+    return isValidJsonStringLiteral(out) ? out : JSON.stringify(REDACTED_MARKER);
+  }
+  if (isValidJsonStringLiteral(out)) return out;
+  const trimmedStart = !touchedStart && out.startsWith('"') ? out.slice(1) : out;
+  const trimmed =
+    !touchedEnd && trimmedStart.endsWith('"') ? trimmedStart.slice(0, -1) : trimmedStart;
+  return JSON.stringify(trimmed);
+}
+
+function applyReplacements(
+  raw: string,
+  replacements: ReadonlyArray<{ start: number; end: number; text: string }>,
+): string {
+  if (replacements.length === 0) return raw;
+  let out = "";
+  let cursor = 0;
+  for (const rep of replacements) {
+    if (rep.start > cursor) out += raw.slice(cursor, rep.start);
+    out += rep.text;
+    cursor = rep.end;
+  }
+  if (cursor < raw.length) out += raw.slice(cursor);
+  return out;
+}
+
 function redactValidJsonDocument(
   raw: string,
-  root: JsonNode,
+  parsed: { root: JsonNode; nodesByStart: Map<number, JsonNode> },
   options: {
     redactString: (text: string) => string;
     redactPrimitive: (text: string) => string;
-    quoteMatches?: ReadonlyArray<readonly [number, number]>;
-    checkContainerCallback?: (slice: string) => boolean;
-    checkRawOuterQuotes?: boolean;
+    rawMatches?: ReadonlyArray<readonly [number, number]>;
+    rawTokenRanges?: (token: string) => ReadonlyArray<readonly [number, number]>;
+    verifyBlackBox?: (text: string) => string;
   },
 ): string | undefined {
   const replacements: Array<{ start: number; end: number; text: string }> = [];
-  const exactNodeSpans = new Set<string>();
-  const stringSpans: Array<readonly [number, number]> = [];
-  const quoteMatches = options.quoteMatches ?? [];
-  let containerBudget = Math.max(16_384, raw.length * 4);
+  const handledExactSpans = new Set<string>();
+  const leafSpans: Array<readonly [number, number]> = [];
+  const rawMatches = options.rawMatches;
 
   const visit = (node: JsonNode, isRoot: boolean): void => {
-    if (quoteMatches.length > 0 && hasExactSortedRange(quoteMatches, node.start, node.end)) {
-      exactNodeSpans.add(`${node.start}:${node.end}`);
+    if (
+      rawMatches &&
+      rawMatches.length > 0 &&
+      hasExactSortedRange(rawMatches, node.start, node.end)
+    ) {
+      handledExactSpans.add(`${node.start}:${node.end}`);
       replacements.push({
         start: node.start,
         end: node.end,
-        text: isRoot && node.kind === "primitive" ? "[redacted]" : '"[redacted]"',
+        text:
+          isRoot && node.kind === "primitive" ? REDACTED_MARKER : JSON.stringify(REDACTED_MARKER),
       });
       return;
     }
-    if (node.kind === "object" || node.kind === "array") {
-      const length = node.end - node.start;
-      if (options.checkContainerCallback && length <= containerBudget) {
-        containerBudget -= length;
-        if (options.checkContainerCallback(raw.slice(node.start, node.end))) {
-          replacements.push({
-            start: node.start,
-            end: node.end,
-            text: '"[redacted]"',
-          });
-          return;
-        }
-      }
-      if (node.kind === "array") {
-        for (const item of node.items) visit(item, false);
-      } else {
-        for (const entry of node.entries) {
-          visit(entry.key, false);
-          visit(entry.value, false);
-        }
+    if (node.kind === "array") {
+      for (const item of node.items) visit(item, false);
+      return;
+    }
+    if (node.kind === "object") {
+      for (const entry of node.entries) {
+        visit(entry.key, false);
+        visit(entry.value, false);
       }
       return;
     }
+    leafSpans.push([node.start, node.end]);
+    const token = raw.slice(node.start, node.end);
     if (node.kind === "string") {
-      stringSpans.push([node.start, node.end]);
-      const token = raw.slice(node.start, node.end);
       const decoded: unknown = JSON.parse(token);
       if (typeof decoded === "string") {
-        const next = options.redactString(decoded);
-        if (next !== decoded) {
-          replacements.push({ start: node.start, end: node.end, text: JSON.stringify(next) });
-          return;
-        }
-        if (options.checkRawOuterQuotes) {
-          const rawRedacted = options.redactString(token);
-          if (
-            rawRedacted !== token &&
-            (!rawRedacted.startsWith('"') || !rawRedacted.endsWith('"'))
-          ) {
-            replacements.push({
-              start: node.start,
-              end: node.end,
-              text: JSON.stringify(rawRedacted),
-            });
+        const afterDecoded = options.redactString(decoded);
+        let candidate = afterDecoded === decoded ? token : JSON.stringify(afterDecoded);
+        if (options.rawTokenRanges) {
+          const tokenRanges =
+            candidate === token && rawMatches !== undefined
+              ? sliceRangesWithin(rawMatches, node.start, node.end)
+              : options.rawTokenRanges(candidate);
+          if (tokenRanges.length > 0) {
+            candidate = redactRawStringToken(candidate, tokenRanges);
           }
+        }
+        if (candidate !== token) {
+          replacements.push({ start: node.start, end: node.end, text: candidate });
         }
       }
       return;
     }
-    const token = raw.slice(node.start, node.end);
     const next = options.redactPrimitive(token);
     if (next !== token) {
       replacements.push({
@@ -275,31 +442,40 @@ function redactValidJsonDocument(
     }
   };
 
-  visit(root, true);
+  visit(parsed.root, true);
 
-  // If a registered quote-containing secret crosses a JSON node boundary (neither an exact node
-  // match nor strictly inside a string literal's interior), fall back so it cannot survive.
-  if (quoteMatches.length > 0) {
-    let strIdx = 0;
-    for (const [mStart, mEnd] of quoteMatches) {
-      if (exactNodeSpans.has(`${mStart}:${mEnd}`)) continue;
-      while (strIdx < stringSpans.length && stringSpans[strIdx]![1] <= mStart) strIdx += 1;
-      const enclosing = stringSpans[strIdx];
-      if (!enclosing || !(enclosing[0] < mStart && mEnd < enclosing[1])) {
+  // If a raw registered secret crosses a JSON node boundary (neither an exact node match nor
+  // contained within a single leaf token), fall back so it cannot survive unredacted.
+  if (rawMatches && rawMatches.length > 0) {
+    let leafIdx = 0;
+    for (const [mStart, mEnd] of rawMatches) {
+      if (handledExactSpans.has(`${mStart}:${mEnd}`)) continue;
+      while (leafIdx < leafSpans.length && leafSpans[leafIdx]![1] <= mStart) leafIdx += 1;
+      const enclosing = leafSpans[leafIdx];
+      if (!enclosing || !(enclosing[0] <= mStart && mEnd <= enclosing[1])) {
         return undefined;
       }
     }
   }
 
-  if (replacements.length === 0) return raw;
-  let out = "";
-  let cursor = 0;
-  for (const rep of replacements) {
-    if (rep.start > cursor) out += raw.slice(cursor, rep.start);
-    out += rep.text;
-    cursor = rep.end;
+  const out = applyReplacements(raw, replacements);
+  if (options.verifyBlackBox && rawMatches === undefined) {
+    const verified = options.verifyBlackBox(out);
+    if (verified !== out) {
+      const reparsed = parseJsonSpans(out);
+      const remaining = reparsed
+        ? diffRedactedSpans(out, verified, reparsed.nodesByStart, options.verifyBlackBox)
+        : undefined;
+      if (reparsed && remaining && remaining.length > 0) {
+        return redactValidJsonDocument(out, reparsed, {
+          ...options,
+          rawMatches: remaining,
+          verifyBlackBox: undefined,
+        });
+      }
+      return undefined;
+    }
   }
-  if (cursor < raw.length) out += raw.slice(cursor);
   return out;
 }
 
@@ -360,23 +536,20 @@ function redactSingleJsonStringToken(
   token: string,
   redact: (text: string) => string,
   fallbackPlain?: (text: string) => string,
-  checkRawOuterQuotes = false,
+  rawTokenRanges?: (candidate: string) => ReadonlyArray<readonly [number, number]>,
 ): string {
   try {
     const decoded: unknown = JSON.parse(token);
     if (typeof decoded !== "string") return fallbackPlain ? fallbackPlain(token) : token;
     const next = redact(decoded);
-    if (next !== decoded) return JSON.stringify(next);
-    if (checkRawOuterQuotes) {
-      // An exact secret registered with surrounding quotes (e.g. `"opaque-123"`) will not match
-      // the unquoted decoded text; accept raw-token redaction only when it altered an outer quote
-      // so backslash-ending secrets cannot corrupt internal escapes such as `\"`.
-      const rawRedacted = redact(token);
-      if (rawRedacted !== token && (!rawRedacted.startsWith('"') || !rawRedacted.endsWith('"'))) {
-        return JSON.stringify(rawRedacted);
+    let candidate = next === decoded ? token : JSON.stringify(next);
+    if (rawTokenRanges) {
+      const ranges = rawTokenRanges(candidate);
+      if (ranges.length > 0) {
+        candidate = redactRawStringToken(candidate, ranges);
       }
     }
-    return token;
+    return candidate;
   } catch {
     // Truncated trailing string literal in cut-off JSON (including a lone trailing backslash).
     const { trimmed, trailing: trailingEscape } = splitTrailingIncompleteJsonEscape(token);
@@ -494,19 +667,20 @@ function isClosedJsonStringToken(token: string): boolean {
 
 function followsJsonStringToken(raw: string, end: number, closed: boolean): boolean {
   if (!closed || end >= raw.length) return true;
-  const ch = raw[end];
-  // Accept whitespace or structural/diagnostic delimiters right after the closing quote (such as
-  // JSON Lines or `Response body: "s\u00e9cret" (HTTP 400)`), while keeping glued broken-quote
-  // diagnostics like `Error: "a"b"` intact for plain-text matching.
-  return (
-    isJsonWhitespace(ch) ||
-    ch === ":" ||
-    ch === "," ||
-    ch === "}" ||
-    ch === "]" ||
-    ch === ")" ||
-    ch === ";"
-  );
+  const ch = raw[end]!;
+  // Accept whitespace and structural or sentence punctuation (such as `. HTTP 400`, `;`, `)`,
+  // `,`, `}`, `]`, `\n`), while keeping glued broken-quote diagnostics like `Error: "a"b"` intact.
+  return isJsonWhitespace(ch) || !/[A-Za-z0-9_"\\]/.test(ch);
+}
+
+function blackBoxTokenRanges(
+  redact: (text: string) => string,
+): (candidate: string) => ReadonlyArray<readonly [number, number]> {
+  return (candidate) => {
+    const redacted = redact(candidate);
+    if (redacted === candidate) return [];
+    return diffRedactedSpans(candidate, redacted, undefined, redact) ?? [];
+  };
 }
 
 function replaceJsonSegmentTokens(
@@ -514,8 +688,13 @@ function replaceJsonSegmentTokens(
   redact: (text: string) => string,
   leadingQuote = false,
 ): string {
+  const chunkRedacted = redact(chunk);
+  const rawMatches =
+    chunkRedacted !== chunk ? diffRedactedSpans(chunk, chunkRedacted, undefined, redact) : [];
+  const tokenRanges = blackBoxTokenRanges(redact);
   let out = "";
   let cursor = 0;
+  let lastOverlapEnd = 0;
   for (const match of chunk.matchAll(JSON_VALUE_TOKEN)) {
     const index = match.index ?? 0;
     const token = match[0];
@@ -523,24 +702,34 @@ function replaceJsonSegmentTokens(
     if (token.startsWith('"')) {
       if (
         !precedesJsonStringToken(chunk, index) ||
-        !followsJsonStringToken(chunk, end, isClosedJsonStringToken(token))
+        !followsJsonStringToken(chunk, end, isClosedJsonStringToken(token)) ||
+        (rawMatches && rawMatches.length > 0 && overlapsOutsideToken(rawMatches, index, end))
       ) {
         continue;
       }
-      const replaced = redactSingleJsonStringToken(token, redact, redact, true);
+      const replaced = redactSingleJsonStringToken(token, redact, redact, tokenRanges);
       // Keep strings after an unquoted diagnostic label (`fixture: "opaque-123"` or
       // `fixture:\n"opaque-123"`) in the plain-text gap when the token didn't change on its own
-      // or when a wider registered secret spans across the label and opening quote.
+      // or when a wider secret spans across the label and opening quote; advance `lastOverlapEnd`
+      // so repeated overlaps scan each slice once in O(n).
       if (!isStrictJsonColon(chunk, index, leadingQuote)) {
         if (replaced === token) continue;
-        const prefix = chunk.slice(cursor, index);
+        const windowStart = Math.max(cursor, lastOverlapEnd);
+        const prefix = chunk.slice(windowStart, index);
         const redactedPrefix = redact(prefix);
-        const combined = redact(chunk.slice(cursor, end));
-        if (!combined.startsWith(redactedPrefix)) continue;
+        const combined = redact(chunk.slice(windowStart, end));
+        if (!combined.startsWith(redactedPrefix)) {
+          lastOverlapEnd = end;
+          continue;
+        }
       }
       if (index > cursor) out += redact(chunk.slice(cursor, index));
       out += replaced;
       cursor = end;
+      lastOverlapEnd = end;
+      continue;
+    }
+    if (rawMatches && rawMatches.length > 0 && overlapsOutsideToken(rawMatches, index, end)) {
       continue;
     }
     const replaced = redactJsonValueToken(token, index, chunk, redact);
@@ -548,6 +737,7 @@ function replaceJsonSegmentTokens(
       if (index > cursor) out += redact(chunk.slice(cursor, index));
       out += replaced;
       cursor = end;
+      lastOverlapEnd = end;
     }
   }
   if (cursor < chunk.length) out += redact(chunk.slice(cursor));
@@ -592,6 +782,55 @@ function redactJsonSegment(
   return replaceTokens(segment);
 }
 
+function countLineBreaks(text: string): number {
+  let count = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code === 0x0a || code === 0x0d) count += 1;
+  }
+  return count;
+}
+
+function anyRangeCrossesLineBreak(
+  text: string,
+  ranges: ReadonlyArray<readonly [number, number]>,
+): boolean {
+  for (const [start, end] of ranges) {
+    for (let index = start; index < end; index += 1) {
+      const code = text.charCodeAt(index);
+      if (code === 0x0a || code === 0x0d) return true;
+    }
+  }
+  return false;
+}
+
+function looksLikeJsonLine(line: string): boolean {
+  let pos = 0;
+  while (pos < line.length && isJsonWhitespace(line[pos])) pos += 1;
+  if (pos >= line.length) return false;
+  const ch = line[pos]!;
+  return ch === "{" || ch === "[" || ch === '"';
+}
+
+function tryRedactJsonLines(raw: string, redactLine: (line: string) => string): string | undefined {
+  if (!raw.includes("\n")) return undefined;
+  const parts = raw.split(/(\r?\n)/);
+  let hasJsonLine = false;
+  for (let index = 0; index < parts.length; index += 2) {
+    const line = parts[index]!;
+    if (looksLikeJsonLine(line) && parseJsonSpans(line)) {
+      hasJsonLine = true;
+      break;
+    }
+  }
+  if (!hasJsonLine) return undefined;
+  for (let index = 0; index < parts.length; index += 2) {
+    const line = parts[index]!;
+    if (line.length > 0) parts[index] = redactLine(line);
+  }
+  return parts.join("");
+}
+
 function redactJsonStringTokens(raw: string, redact: (text: string) => string): string {
   const parts = raw.split(BOUNDED_OMISSION_MARKER);
   if (parts.length === 1) return redactJsonSegment(raw, false, redact);
@@ -600,24 +839,21 @@ function redactJsonStringTokens(raw: string, redact: (text: string) => string): 
     .join("");
 }
 
-/**
- * Redact JSON string tokens after decoding them and apply `redactPlain` only to non-string text
- * between tokens, so pattern redactors never consume JSON quotes, escapes, or sibling fields.
- */
-export function redactJsonStringsAndPlainText(
+function redactJsonStringsAndPlainTextSingle(
   raw: string,
   redactString: (text: string) => string,
-  redactPlain: (text: string) => string = redactString,
-  wholeSecrets?: readonly string[],
+  redactPlain: (text: string) => string,
+  matcher: ReturnType<typeof createSecretMatcher> | undefined,
 ): string {
-  const quoteSecrets = wholeSecrets?.filter((value) => value.includes('"')) ?? [];
-  const quoteMatches = quoteSecrets.length > 0 ? createSecretMatcher(quoteSecrets).ranges(raw) : [];
-  const parsedRoot = parseJsonSpans(raw);
-  if (parsedRoot) {
-    const redactedJson = redactValidJsonDocument(raw, parsedRoot, {
+  const rawMatches = matcher ? matcher.ranges(raw) : [];
+  const rawTokenRanges = matcher ? (candidate: string) => matcher.ranges(candidate) : undefined;
+  const parsed = parseJsonSpans(raw);
+  if (parsed) {
+    const redactedJson = redactValidJsonDocument(raw, parsed, {
       redactString,
       redactPrimitive: redactPlain,
-      quoteMatches,
+      rawMatches,
+      rawTokenRanges,
     });
     if (redactedJson !== undefined) return redactedJson;
   }
@@ -630,38 +866,101 @@ export function redactJsonStringsAndPlainText(
     const end = index + token.length;
     const closed = isClosedJsonStringToken(token);
     // Plain diagnostics such as `Bearer "secret"`, `Bearer\n "secret"`, or `Error: "a"b"` do not
-    // sit between JSON structural delimiters, and a registered secret crossing a quote must stay
-    // intact in `redactPlain`.
+    // sit between JSON structural delimiters, and a registered secret crossing outside a quote
+    // must stay intact in `redactPlain`.
     if (
       !precedesJsonStringToken(raw, index) ||
       !followsJsonStringToken(raw, end, closed) ||
-      (quoteMatches.length > 0 &&
-        (overlapsSortedRange(quoteMatches, index, index + 1) ||
-          (closed && overlapsSortedRange(quoteMatches, end - 1, end))))
+      (rawMatches.length > 0 && overlapsOutsideToken(rawMatches, index, end))
     ) {
       continue;
     }
     if (index > cursor) out += redactPlain(raw.slice(cursor, index));
-    out += redactSingleJsonStringToken(token, redactString, redactPlain);
+    out += redactSingleJsonStringToken(token, redactString, redactPlain, rawTokenRanges);
     cursor = end;
   }
   if (cursor < raw.length) out += redactPlain(raw.slice(cursor));
   return out;
 }
 
-export function redactJsonText(raw: string, redact: (text: string) => string): string {
-  const parsedRoot = parseJsonSpans(raw);
-  if (parsedRoot) {
-    const hasRawMatch = redact(raw) !== raw;
-    const redactedJson = redactValidJsonDocument(raw, parsedRoot, {
-      redactString: redact,
-      redactPrimitive: redact,
-      checkRawOuterQuotes: hasRawMatch,
-      ...(hasRawMatch
-        ? { checkContainerCallback: (slice: string) => redact(slice) === "[redacted]" }
-        : {}),
+/**
+ * Redact JSON string tokens after decoding them and apply `redactPlain` only to non-string text
+ * between tokens, so pattern redactors never consume JSON quotes, escapes, or sibling fields.
+ */
+export function redactJsonStringsAndPlainText(
+  raw: string,
+  redactString: (text: string) => string,
+  redactPlain: (text: string) => string = redactString,
+  wholeSecrets?: readonly string[],
+): string {
+  const matcher =
+    wholeSecrets && wholeSecrets.length > 0 ? createSecretMatcher(wholeSecrets) : undefined;
+  const rawMatches = matcher ? matcher.ranges(raw) : [];
+  const rawTokenRanges = matcher ? (candidate: string) => matcher.ranges(candidate) : undefined;
+  const parsed = parseJsonSpans(raw);
+  if (parsed) {
+    const redactedJson = redactValidJsonDocument(raw, parsed, {
+      redactString,
+      redactPrimitive: redactPlain,
+      rawMatches,
+      rawTokenRanges,
     });
     if (redactedJson !== undefined) return redactedJson;
+  }
+  if (
+    raw.includes("\n") &&
+    !BOUNDED_OMISSION_MARKER.test(raw) &&
+    !anyRangeCrossesLineBreak(raw, rawMatches) &&
+    countLineBreaks(redactPlain(raw)) === countLineBreaks(raw)
+  ) {
+    const byLine = tryRedactJsonLines(raw, (line) =>
+      redactJsonStringsAndPlainTextSingle(line, redactString, redactPlain, matcher),
+    );
+    if (byLine !== undefined) return byLine;
+  }
+  return redactJsonStringsAndPlainTextSingle(raw, redactString, redactPlain, matcher);
+}
+
+function redactJsonTextSingle(raw: string, redact: (text: string) => string): string {
+  const parsed = parseJsonSpans(raw);
+  if (parsed) {
+    const rawRedacted = redact(raw);
+    const rawMatches =
+      rawRedacted === raw ? [] : diffRedactedSpans(raw, rawRedacted, parsed.nodesByStart, redact);
+    const redactedJson = redactValidJsonDocument(raw, parsed, {
+      redactString: redact,
+      redactPrimitive: redact,
+      rawMatches,
+      rawTokenRanges: blackBoxTokenRanges(redact),
+      verifyBlackBox: redact,
+    });
+    if (redactedJson !== undefined) return redactedJson;
+  }
+  return redactJsonStringTokens(raw, redact);
+}
+
+export function redactJsonText(raw: string, redact: (text: string) => string): string {
+  const parsed = parseJsonSpans(raw);
+  if (parsed) {
+    const rawRedacted = redact(raw);
+    const rawMatches =
+      rawRedacted === raw ? [] : diffRedactedSpans(raw, rawRedacted, parsed.nodesByStart, redact);
+    const redactedJson = redactValidJsonDocument(raw, parsed, {
+      redactString: redact,
+      redactPrimitive: redact,
+      rawMatches,
+      rawTokenRanges: blackBoxTokenRanges(redact),
+      verifyBlackBox: redact,
+    });
+    if (redactedJson !== undefined) return redactedJson;
+  }
+  if (
+    raw.includes("\n") &&
+    !BOUNDED_OMISSION_MARKER.test(raw) &&
+    countLineBreaks(redact(raw)) === countLineBreaks(raw)
+  ) {
+    const byLine = tryRedactJsonLines(raw, (line) => redactJsonTextSingle(line, redact));
+    if (byLine !== undefined) return byLine;
   }
   return redactJsonStringTokens(raw, redact);
 }

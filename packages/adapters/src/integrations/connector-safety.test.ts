@@ -157,12 +157,39 @@ describe("sanitizeConnectorError", () => {
       ),
     ).toEqual({ value: "[redacted]", next: "ok" });
 
+    const jsonArraySecret = "[731428,918273]";
     expect(
       JSON.parse(
-        sanitizeConnectorError(new Error('{"message":"details: [\\"opaque-123\\"]","next":"ok"}'), [
-          '\\"opaque-123\\"',
+        sanitizeConnectorError(new Error('{"value":[731428,918273],"next":"ok"}'), [
+          jsonArraySecret,
         ]),
       ),
-    ).toEqual({ message: 'details: ["opaque-123"]', next: "ok" });
+    ).toEqual({ value: "[redacted]", next: "ok" });
+
+    const escapedQuotedSecret = '\\"opaque-123\\"';
+    const escapedQuotedResult = sanitizeConnectorError(
+      new Error('{"message":"details: [\\"opaque-123\\"]","next":"ok"}'),
+      [escapedQuotedSecret],
+    );
+    expect(escapedQuotedResult).not.toContain(escapedQuotedSecret);
+    expect(JSON.parse(escapedQuotedResult)).toEqual({
+      message: "details: [[redacted]]",
+      next: "ok",
+    });
+
+    const jsonlResult = sanitizeConnectorError(
+      new Error('{"value":{"mode":"opaque-123"},"next":"ok"}\n{"done":true}'),
+      [jsonObjSecret],
+    );
+    expect(jsonlResult.split("\n").map((line) => JSON.parse(line))).toEqual([
+      { value: "[redacted]", next: "ok" },
+      { done: true },
+    ]);
+
+    expect(
+      sanitizeConnectorError(new Error('Response body: "s\\u00e9cret-123". HTTP 400'), [
+        "sécret-123",
+      ]),
+    ).toBe('Response body: "[redacted]". HTTP 400');
   });
 });

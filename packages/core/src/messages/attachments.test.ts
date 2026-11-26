@@ -1022,6 +1022,13 @@ describe("tool step history", () => {
                 { result: 'Rejected values: ["opaque-123"]' },
                 { result: '{"value":{"mode":"opaque-123"},"next":"ok"}' },
                 { result: 'Rejected fixture:\n"opaque-123"' },
+                { result: '{"value":[731428,918273],"next":"ok"}' },
+                { result: '{"message":"details: [\\"opaque-123\\"]","next":"ok"}' },
+                { result: '{"value":{"mode":"opaque-123"},"next":"ok"}\n{"done":true}' },
+                {
+                  result: `${"[".repeat(19)}{"filler":"${"x".repeat(900)}","value":{"mode":"opaque-123"}}${"]".repeat(19)}`,
+                },
+                { result: 'Response body: "s\\u00e9cret-123". HTTP 400' },
               ],
             },
           ],
@@ -1033,6 +1040,9 @@ describe("tool step history", () => {
         '"opaque-123"',
         '{"mode":"opaque-123"}',
         'fixture:\n"opaque-123"',
+        "[731428,918273]",
+        '\\"opaque-123\\"',
+        "sécret-123",
       ]),
     );
     const extraCalls =
@@ -1051,6 +1061,45 @@ describe("tool step history", () => {
       next: "ok",
     });
     expect(extraCalls?.[4]?.result).toBe("Rejected [redacted]");
+    expect(JSON.parse(extraCalls?.[5]?.result ?? "")).toEqual({
+      value: "[redacted]",
+      next: "ok",
+    });
+    expect(extraCalls?.[6]?.result).not.toContain('\\"opaque-123\\"');
+    expect(JSON.parse(extraCalls?.[6]?.result ?? "")).toEqual({
+      message: "details: [[redacted]]",
+      next: "ok",
+    });
+    expect((extraCalls?.[7]?.result ?? "").split("\n").map((line) => JSON.parse(line))).toEqual([
+      { value: "[redacted]", next: "ok" },
+      { done: true },
+    ]);
+    expect(extraCalls?.[8]?.result).not.toContain("opaque-123");
+    expect(() => JSON.parse(extraCalls?.[8]?.result ?? "")).not.toThrow();
+    expect(extraCalls?.[9]?.result).toBe('Response body: "[redacted]". HTTP 400');
+
+    // Overlapping label+value and quoted secrets must scan linearly, never re-scanning growing prefixes.
+    const overlapping = 'fixture:\n"opaque-123"\n'.repeat(2_000);
+    let inspectedChars = 0;
+    const countingRedactor = (text: string) => {
+      inspectedChars += text.length;
+      return redactSecrets(text, ['fixture:\n"opaque-123"', '"opaque-123"']);
+    };
+    const linearSegments = blocksToAgentHistorySegments(
+      [
+        {
+          kind: "steps",
+          steps: [{ label: "Lookup", tool: "lookup", count: 1, calls: [{ result: overlapping }] }],
+        },
+      ] as unknown as MessageBlock[],
+      countingRedactor,
+    );
+    const linearResult =
+      linearSegments[0] && "steps" in linearSegments[0]
+        ? linearSegments[0].steps[0]?.calls?.[0]?.result
+        : undefined;
+    expect(linearResult).toBe("[redacted]\n".repeat(2_000));
+    expect(inspectedChars).toBeLessThan(overlapping.length * 6);
   });
 
   it("ignores fractional step counts and non-string ask action labels in flat history", () => {

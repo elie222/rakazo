@@ -3,6 +3,7 @@ import { RUN_TRIGGERS } from "@rakazo/contracts";
 import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { appendToolCallSegment } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
+import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
 import { redactBlocks } from "../assembly/run-messages.js";
 import { withReplyToolOutcomes } from "../lifecycle/run-progress.js";
@@ -12,6 +13,7 @@ import {
   keepToolStepResult,
   keptToolArguments,
   keptToolResult,
+  keptTurnTranscript,
   runReplaysToolHistory,
   saveLatestStepScreenshot,
   TOOL_CALL_TEXT_MAX_CHARS,
@@ -381,21 +383,19 @@ describe("tool step outcomes", () => {
       ),
     ).toEqual({ value: "[redacted]", next: "ok" });
 
-    expect(
-      JSON.parse(
-        keptToolResult(
-          {
-            ...base,
-            result: {
-              content: [
-                { type: "text", text: '{"message":"details: [\\"opaque-123\\"]","next":"ok"}' },
-              ],
-            },
-          },
-          ['\\"opaque-123\\"'],
-        )!,
-      ),
-    ).toEqual({ message: 'details: ["opaque-123"]', next: "ok" });
+    const escapedKept = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [
+            { type: "text", text: '{"message":"details: [\\"opaque-123\\"]","next":"ok"}' },
+          ],
+        },
+      },
+      ['\\"opaque-123\\"'],
+    )!;
+    expect(escapedKept).not.toContain('\\"opaque-123\\"');
+    expect(JSON.parse(escapedKept)).toEqual({ message: "details: [[redacted]]", next: "ok" });
   });
 
   it("replays tool calls only to runs the owner started themselves, failing closed", () => {
@@ -688,5 +688,96 @@ describe("tool step outcomes", () => {
     expect(cut).toBeDefined();
     expect(Buffer.from(cut!, "utf8").toString("utf8")).toBe(cut);
     expect(cut).toContain("characters not kept");
+  });
+
+  it("redacts whole JSON arrays, JSONL objects, escaped quotes, punctuated diagnostics, and preserves Bearer JSON keys", () => {
+    const arrayKept = keptToolResult(
+      {
+        ...base,
+        result: { content: [{ type: "text", text: '{"value":[731428,918273],"next":"ok"}' }] },
+      },
+      ["[731428,918273]"],
+    );
+    expect(JSON.parse(arrayKept ?? "")).toEqual({ value: "[redacted]", next: "ok" });
+
+    const escapedKept = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [
+            { type: "text", text: '{"message":"details: [\\"opaque-123\\"]","next":"ok"}' },
+          ],
+        },
+      },
+      ['\\"opaque-123\\"'],
+    );
+    expect(escapedKept).not.toContain('\\"opaque-123\\"');
+    expect(JSON.parse(escapedKept ?? "")).toEqual({ message: "details: [[redacted]]", next: "ok" });
+
+    const jsonlKept = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [
+            { type: "text", text: '{"value":{"mode":"opaque-123"},"next":"ok"}\n{"done":true}' },
+          ],
+        },
+      },
+      ['{"mode":"opaque-123"}'],
+    );
+    expect((jsonlKept ?? "").split("\n").map((line) => JSON.parse(line))).toEqual([
+      { value: "[redacted]", next: "ok" },
+      { done: true },
+    ]);
+
+    const punctuatedKept = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [{ type: "text", text: 'Response body: "s\\u00e9cret-123". HTTP 400' }],
+        },
+      },
+      ["sécret-123"],
+    );
+    expect(punctuatedKept).toBe('Response body: "[redacted]". HTTP 400');
+
+    const bearerKeyKept = keptToolResult(
+      {
+        ...base,
+        result: { content: [{ type: "text", text: '{"Bearer ":"next"}' }] },
+      },
+      [],
+    );
+    expect(JSON.parse(bearerKeyKept ?? "")).toEqual({ "Bearer ": "next" });
+    expect(sanitizeSensitiveText('{"Bearer ":"next"}')).toBe('{"Bearer ":"next"}');
+
+    const storedTranscript = JSON.stringify({
+      version: 1,
+      represents: ["ask"],
+      messages: [
+        {
+          role: "user",
+          content:
+            'Replying to:\n<reply_target>{"message":"details: [\\"opaque-123\\"]","next":"ok"}</reply_target>',
+          timestamp: 0,
+        },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Done." }],
+          stopReason: "stop",
+          timestamp: 0,
+        },
+      ],
+    });
+    const cleanedTranscript = keptTurnTranscript(storedTranscript, ['\\"opaque-123\\"']);
+    expect(cleanedTranscript).toBeDefined();
+    expect(cleanedTranscript).not.toContain('\\"opaque-123\\"');
+    const parsedTranscript = JSON.parse(cleanedTranscript!) as {
+      messages: Array<{ content: string }>;
+    };
+    const innerJson = parsedTranscript.messages[0]?.content.match(
+      /<reply_target>([\s\S]*?)<\/reply_target>/,
+    )?.[1];
+    expect(JSON.parse(innerJson ?? "")).toEqual({ message: "details: [[redacted]]", next: "ok" });
   });
 });
