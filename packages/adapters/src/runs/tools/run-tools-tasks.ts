@@ -239,16 +239,20 @@ export const taskTools: ToolHandlers = {
     const target = await routinesTarget(ctx, call.name, args);
     if ("error" in target) return target;
     const routineId = isScheduleValueProvided(args.routineId) ? String(args.routineId).trim() : "";
-    const offset = isScheduleValueProvided(args.promptOffset) ? Number(args.promptOffset) : 0;
+    const offsetName = routineId ? "promptOffset" : "routineOffset";
+    const offset = isScheduleValueProvided(args[offsetName]) ? Number(args[offsetName]) : 0;
     if (!Number.isInteger(offset) || offset < 0)
-      return { error: "promptOffset must be a whole number of 0 or more." };
+      return { error: `${offsetName} must be a whole number of 0 or more.` };
     const listed = await listSchedulesFromTool(deps, {
       spaceId: run.spaceId,
       botId: target.botId,
       ...(target.groupThreadId ? { groupThreadId: target.groupThreadId } : {}),
       ...(routineId ? { routineId } : {}),
     });
-    return routineId ? readRoutine(listed, offset) : fitRoutineList(listed);
+    if (routineId) return readRoutine(listed, offset);
+    if (offset > 0 && offset >= listed.routines.length)
+      return { error: "routineOffset is past the end of the list." };
+    return fitRoutineList(listed, offset);
   },
   async schedule_cancel(ctx, call) {
     const { deps, run } = ctx;

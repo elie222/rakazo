@@ -2,7 +2,7 @@ import { endsWholeCharacter, fitTextPage, SERIALIZED_PAGE_LIMIT } from "./text-p
 
 const PROMPT_PREVIEW_CHARS = 200;
 const SHORTENED_NOTE =
-  "promptLength marks a prompt cut to a preview or left out, and a watch's lastCheck is left out. Read a prompt in full with schedule_list and its routineId.";
+  "promptLength marks a prompt cut to a preview or left out, and a watch's lastCheck is left out. Read a prompt in full with schedule_list and its routineId. nextRoutineOffset continues a longer list as schedule_list's routineOffset.";
 
 type ListedRoutine = {
   routineId: string;
@@ -40,29 +40,45 @@ const named = (routine: ListedRoutine) => ({
 });
 
 /**
- * The list with long prompts as previews, or its routines only named when that is still too long,
- * so one result holds every routine. Those past what fits even then are counted in `notListed`.
- * A list of short prompts that fits is returned as it is.
+ * The list with long prompts as previews, or its routines only named when that is still too long.
+ * A named list longer than one result continues from `nextRoutineOffset`. A list of short prompts
+ * that fits is returned as it is.
  */
-export function summarizeRoutineList<Routine extends ListedRoutine>(list: RoutineList<Routine>) {
-  if (!list.routines.some(isLong) && fits(list)) return list;
+export function summarizeRoutineList<Routine extends ListedRoutine>(
+  list: RoutineList<Routine>,
+  offset = 0,
+) {
+  if (offset === 0 && !list.routines.some(isLong) && fits(list)) return list;
   const note = list.note ? `${list.note} ${SHORTENED_NOTE}` : SHORTENED_NOTE;
   const previews = { note, routines: list.routines.map(previewed) };
-  if (fits(previews)) return previews;
-  const names = list.routines.map(named);
-  let shown = names.length;
-  const listed = () => ({
+  if (offset === 0 && fits(previews)) return previews;
+  const page = (end: number) => ({
     note,
-    routines: names.slice(0, shown),
-    ...(shown < names.length ? { notListed: names.length - shown } : {}),
+    routines: list.routines.slice(offset, end).map(named),
+    ...(end < list.routines.length ? { nextRoutineOffset: end } : {}),
   });
-  while (shown > 0 && !fits(listed())) shown -= 1;
-  return listed();
+  // Serialized length only grows with the page, so the largest fitting end is a search.
+  let low = offset + 1;
+  let high = list.routines.length;
+  let end = low;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    if (fits(page(mid))) {
+      end = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return page(end);
 }
 
-/** The list whole when it fits one result; otherwise its summary. */
-export function fitRoutineList<Routine extends ListedRoutine>(list: RoutineList<Routine>) {
-  return fits(list) ? list : summarizeRoutineList(list);
+/** The list whole when it fits one result; otherwise its summary, from `offset` when it continues. */
+export function fitRoutineList<Routine extends ListedRoutine>(
+  list: RoutineList<Routine>,
+  offset = 0,
+) {
+  return offset === 0 && fits(list) ? list : summarizeRoutineList(list, offset);
 }
 
 /** A list of the one routine asked for: its prompt whole when it fits, or the page from `offset`. */
@@ -76,18 +92,19 @@ export function readRoutine<Routine extends ListedRoutine>(
   if (offset > 0 && offset >= found.prompt.length)
     return { error: "promptOffset is past the end of the prompt." };
   const { lastCheck: _lastCheck, ...routine } = found;
-  return (
-    fitTextPage(routine.prompt, offset, (prompt, paging) => ({
+  const page = (shown: object) =>
+    fitTextPage(found.prompt, offset, (prompt, paging) => ({
       ...list,
       routines: [
         {
-          ...routine,
+          ...shown,
           prompt,
           promptLength: paging.length,
           promptOffset: offset,
           promptNextOffset: paging.nextOffset,
         },
       ],
-    })) ?? { error: "This routine's other details leave no room to read its prompt." }
-  );
+    }));
+  // Details too long to leave the prompt any room give way to it.
+  return page(routine) ?? page(named(found)) ?? { error: "This routine is too long to read." };
 }

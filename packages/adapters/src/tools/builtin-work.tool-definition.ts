@@ -357,6 +357,11 @@ export const workTools: ConnectorTool[] = [
           minimum: 0,
           description: "With routineId: the promptNextOffset of the page before.",
         },
+        routineOffset: {
+          type: "integer",
+          minimum: 0,
+          description: "The nextRoutineOffset of a list that did not fit one result.",
+        },
         ...otherBotRoutineProperties,
       },
     },

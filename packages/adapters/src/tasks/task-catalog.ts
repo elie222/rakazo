@@ -71,7 +71,7 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
     })),
     routines: schedules.routines,
     ...(schedules.note ? { routinesNote: schedules.note } : {}),
-    ...("notListed" in schedules ? { routinesNotListed: schedules.notListed } : {}),
+    ...("nextRoutineOffset" in schedules ? { nextRoutineOffset: schedules.nextRoutineOffset } : {}),
     taughtSkills: taughtSkills.map((skill) => ({
       id: skill.id,
       name: skill.name,

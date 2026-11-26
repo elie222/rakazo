@@ -39,12 +39,29 @@ describe("a routine list too long for one result", () => {
     });
   });
 
-  it("counts the routines that do not fit even by name", () => {
+  it("continues a list too long even by name until every routine is named", () => {
     const routines = Array.from({ length: 300 }, (_, index) => routine(`r${index}`, longPrompt));
-    const listed = fitRoutineList({ routines }) as { routines: unknown[]; notListed: number };
-    expect(JSON.stringify(listed).length).toBeLessThanOrEqual(10_000);
-    expect(listed.notListed).toBeGreaterThan(0);
-    expect(listed.routines.length + listed.notListed).toBe(300);
+    const ids: string[] = [];
+    let offset: number | undefined = 0;
+    while (offset !== undefined) {
+      const page = fitRoutineList({ routines }, offset) as {
+        routines: { routineId: string }[];
+        nextRoutineOffset?: number;
+      };
+      expect(JSON.stringify(page).length).toBeLessThanOrEqual(10_000);
+      ids.push(...page.routines.map((row) => row.routineId));
+      offset = page.nextRoutineOffset;
+    }
+    expect(ids).toEqual(routines.map((row) => row.routineId));
+  });
+
+  it("reads a long prompt even when the routine's other details fill the result", () => {
+    const watched = { ...routine("watched", longPrompt), watch: { args: "x".repeat(12_000) } };
+    const page = readRoutine({ routines: [watched] }, 0) as unknown as {
+      routines: [{ prompt: string; promptNextOffset: number }];
+    };
+    expect(page.routines[0].prompt).toBe(longPrompt.slice(0, page.routines[0].promptNextOffset));
+    expect(page.routines[0]).not.toHaveProperty("watch");
   });
 
   it("reads one routine's prompt in full, page by page", () => {
