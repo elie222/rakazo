@@ -212,7 +212,7 @@ export async function completeConnection(
           // Wait when a sibling's authorization cannot yet be resolved to an account id.
           const priorAccountIds =
             organizationId && !correlated && transactionConnector.listAccountsBeforeSignIn
-              ? readHostedSignIn(current).priorAccountIds
+              ? readHostedSignIn(current)?.priorAccountIds
               : undefined;
           if (
             organizationId &&
@@ -262,17 +262,16 @@ export async function completeConnection(
             });
             return current;
           }
-        }
 
-        // When a resolver exists and providerRef is still a request-scoped
-        // id (not the provider slug), require a concrete account id before
-        // marking connected — otherwise revoke would delete the wrong ref.
-        if (
-          transactionConnector.resolveConnectedAccountId &&
-          (organizationId || (current.providerRef && current.providerRef !== current.provider)) &&
-          !resolvedAccountId
-        ) {
-          return current;
+          // A new additional account needs its own reference for tool routing and revocation.
+          if (
+            !resolvedAccountId &&
+            (organizationId ||
+              correlated ||
+              (current.status !== "connected" && siblings.length > 0))
+          ) {
+            return current;
+          }
         }
 
         const providerRef = resolvedAccountId ?? current.providerRef;

@@ -723,6 +723,20 @@ describe("connections.complete", () => {
     expect(row.providerRef).toBe("account-1");
   });
 
+  it("keeps a second personal account pending when its account reference is ambiguous", async () => {
+    const { complete, connector, connection, row } = pollFixture("pending");
+    connection.findMany.mockResolvedValue([
+      { provider: "gmail", providerRef: "existing-account", status: "connected" },
+    ] as never);
+    Object.assign(connector, {
+      resolveConnectedAccountId: async (_user: string, _app: string, ref: string) =>
+        ref === "existing-account" ? ref : undefined,
+    });
+
+    await expect(complete()).resolves.toMatchObject({ body: { json: { status: "pending" } } });
+    expect(row.providerRef).toBe("gmail");
+  });
+
   it("stores the connected account a request id resolves to", async () => {
     const { complete, connector, row } = pollFixture("pending");
     row.providerRef = "request-1";

@@ -85,7 +85,9 @@ export async function expireHostedSignIn(
   listAccounts: () => Promise<string[]>,
 ) {
   if (row.status !== "pending" || row.providerRef !== row.provider) return;
-  const { expiresAt, priorAccountIds } = readHostedSignIn(row);
+  const signIn = readHostedSignIn(row);
+  if (!signIn) return;
+  const { expiresAt, priorAccountIds } = signIn;
   const expiry = Date.parse(expiresAt ?? "");
   if (!Number.isFinite(expiry) || expiry > Date.now()) return;
 
@@ -456,8 +458,10 @@ export async function beginConnection(
             },
           });
           const hostedContext = connectionContext(owner, "connections.begin", context.signal);
-          for (const previous of revoked)
-            await settleRevokedHostedSignIn(tx, connector, previous, hostedContext);
+          for (const previous of revoked) {
+            if ((await settleRevokedHostedSignIn(tx, connector, previous, hostedContext)) === false)
+              throw new ClientError("CONFLICT", "The previous sign-in could not be verified.");
+          }
           priorAccountIds = await connector.listAccountsBeforeSignIn(
             input.provider,
             connectionContext(owner, "connections.begin", context.signal),
@@ -598,7 +602,9 @@ export async function revokeConnection(
         row.status === "pending" &&
         (!row.providerRef || row.providerRef === row.provider)
       ) {
-        const { expiresAt, priorAccountIds } = readHostedSignIn(row);
+        const signIn = readHostedSignIn(row);
+        if (!signIn) return {};
+        const { expiresAt, priorAccountIds } = signIn;
         const expiry = Date.parse(expiresAt ?? "");
         if (priorAccountIds && Number.isFinite(expiry)) {
           await deps.jobs.enqueueIn(

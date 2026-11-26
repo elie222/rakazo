@@ -12,7 +12,13 @@ import {
 } from "@rakazo/adapter-kit";
 import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { ProviderTransactionBusyError, readJsonColumn, runProviderTransaction } from "@rakazo/db";
+import {
+  JsonColumnMismatchError,
+  ProviderTransactionBusyError,
+  readJsonColumn,
+  reportJsonColumnOnce,
+  runProviderTransaction,
+} from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
 import { z } from "zod";
 import { advisoryLock } from "../locks/advisory-lock.js";
@@ -262,7 +268,10 @@ async function dropUnreferencedAccounts(
 
 const hostedSignInMetadata = z.object({
   priorAccountIds: z.array(z.string()).optional(),
-  expiresAt: z.string().optional(),
+  expiresAt: z
+    .string()
+    .refine((value) => Number.isFinite(Date.parse(value)))
+    .optional(),
 });
 
 type HostedSignIn = Pick<
@@ -271,16 +280,21 @@ type HostedSignIn = Pick<
 >;
 
 export function readHostedSignIn(row: HostedSignIn) {
-  return readJsonColumn(
-    hostedSignInMetadata,
-    row.metadata,
-    {
-      table: "connections",
-      column: "metadata",
-      id: row.id,
-    },
-    { fallback: {} },
-  );
+  try {
+    return readJsonColumn(
+      hostedSignInMetadata,
+      row.metadata,
+      { table: "connections", column: "metadata", id: row.id },
+      "reject",
+    );
+  } catch (error) {
+    if (!(error instanceof JsonColumnMismatchError)) throw error;
+    reportJsonColumnOnce(
+      "Hosted sign-in metadata is invalid; automatic cleanup was skipped",
+      error.row,
+    );
+    return undefined;
+  }
 }
 
 /** Under the provider lock, before a later hosted URL takes its own baseline. */
@@ -291,7 +305,9 @@ export async function settleRevokedHostedSignIn(
   context: AdapterContext,
 ) {
   if (row.providerRef !== row.provider || !connector.listAccountsBeforeSignIn) return;
-  const { expiresAt, priorAccountIds } = readHostedSignIn(row);
+  const signIn = readHostedSignIn(row);
+  if (!signIn) return false;
+  const { expiresAt, priorAccountIds } = signIn;
   const recorded = Date.parse(expiresAt ?? "");
   const expiry = Number.isFinite(recorded)
     ? recorded

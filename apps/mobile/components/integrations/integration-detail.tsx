@@ -55,7 +55,6 @@ export function IntegrationDetail({
   const [owner, setOwner] = useState<ConnectionOwnerChoice>("me");
   const shared = accounts.some((row) => row.organization);
   const adding = !accounts.length && !item.connected;
-  const offerOwnership = shared ? null : organizationName;
   const key = catalogItemKey(item);
   const connecting = pending === key;
   const uninstalling = pending === `uninstall:${key}`;
@@ -135,9 +134,9 @@ export function IntegrationDetail({
             ) : null}
           </View>
         ))}
-        {offerOwnership ? (
+        {organizationName ? (
           <ConnectionOwnerPicker
-            organizationName={offerOwnership}
+            organizationName={organizationName}
             value={owner}
             onChange={setOwner}
           />
@@ -150,7 +149,7 @@ export function IntegrationDetail({
           }
           disabled={connecting || uninstalling}
           label={connecting ? t`Working…` : adding ? t`Connect` : t`Add another`}
-          onPress={() => onConnect(offerOwnership ? owner : "me")}
+          onPress={() => onConnect(organizationName ? owner : "me")}
           prominence="secondary"
         />
       </View>

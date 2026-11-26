@@ -20,6 +20,7 @@ import {
   dropLeftoverAuthorization,
   leftoverAuthorization,
   providerScopeKey,
+  readHostedSignIn,
   recordConnectionCleanupAttemptsExhausted,
 } from "./connection-cleanup.js";
 import { IntegrationProviderSettings } from "./integration-provider-settings.js";
@@ -537,4 +538,15 @@ describe("leftoverAuthorization", () => {
     ).toEqual(scope);
     expect(leftoverAuthorization(connector(), scope, undefined)).toBeUndefined();
   });
+});
+
+it("distinguishes malformed hosted sign-in metadata from a legacy row with no expiry", () => {
+  const row = {
+    ...scope,
+    id: "hosted-sign-in",
+    providerRef: scope.provider,
+    updatedAt: new Date(),
+  };
+  expect(readHostedSignIn({ ...row, metadata: { expiresAt: "invalid" } })).toBeUndefined();
+  expect(readHostedSignIn({ ...row, metadata: { state: scope.provider } })).toEqual({});
 });

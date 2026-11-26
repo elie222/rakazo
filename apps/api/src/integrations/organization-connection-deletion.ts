@@ -41,10 +41,11 @@ export async function cleanOrganizationConnections(
         for (const row of rows) {
           if (!row.providerRef) continue;
           const scope = { ...owner, provider: row.provider, connectorId: row.connectorId };
-          const { expiresAt } = readHostedSignIn(row);
-          const expiry = Date.parse(expiresAt ?? "");
           const hosted = row.providerRef === row.provider;
           if (hosted && row.status !== "connected") {
+            const signIn = readHostedSignIn(row);
+            if (!signIn) continue;
+            const expiry = Date.parse(signIn.expiresAt ?? "");
             // Hosted links cannot be cancelled by id. The job can remove accounts after expiry
             // even when the organization and its connection rows have already been deleted.
             const hasExpiry = Number.isFinite(expiry);
