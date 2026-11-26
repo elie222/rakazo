@@ -174,4 +174,34 @@ describe.skipIf(!enabled)("approving an organization MCP server's card (PostgreS
     expect(jobs.enqueue).not.toHaveBeenCalled();
     expect(storedMessageBlocks(card)).toMatchObject([{ kind: "mcp_approval", status: "pending" }]);
   });
+
+  it("refuses Not now on another member's open card beside the member's own answered one", async () => {
+    const { botId, serverId, threadId, cardId } = await reconnectCard();
+    const other = member(otherId);
+    await runAsSystem("mcp approval fixture", async () => {
+      const card = await prisma.message.findUniqueOrThrow({
+        where: { id: cardId },
+        select: { id: true, blocks: true },
+      });
+      const blocks = storedMessageBlocks(card).map((block) => ({ ...block, status: "connected" }));
+      await prisma.$transaction((tx) =>
+        createThreadMessageInTransaction(tx, {
+          threadId,
+          botId,
+          role: "bot",
+          blocks: blocks as MessageBlock[],
+        }),
+      );
+    });
+
+    await expect(
+      runAsTenant(other, () =>
+        client(other, { enqueue: vi.fn(async () => undefined) }).mcp.assignments.dismiss({
+          botId,
+          serverId,
+          threadId,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 });

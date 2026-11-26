@@ -124,11 +124,11 @@ async function rewriteCards(
   flipped: number;
   dismissed: boolean;
   connected: boolean;
-  othersCards: boolean;
+  othersOpenCards: boolean;
 }> {
   const seqs: ThreadSeq[] = [];
   let flipped = 0;
-  let othersCards = false;
+  let othersOpenCards = false;
   let dismissed = false;
   let connected = false;
   for (const thread of threads) {
@@ -144,8 +144,12 @@ async function rewriteCards(
     for (const message of messages) {
       if (message.botId && message.botId !== input.botId) continue;
       if (someoneElses(message.runId)) {
-        if (storedMessageBlocks(message).some((block) => isApproval(block, input.serverId)))
-          othersCards = true;
+        if (
+          storedMessageBlocks(message).some(
+            (block) => isApproval(block, input.serverId) && selectable(block),
+          )
+        )
+          othersOpenCards = true;
         continue;
       }
       const blocks = storedMessageBlocks(message);
@@ -178,7 +182,7 @@ async function rewriteCards(
       seqs.push({ threadId: thread.id, seq: event.seq });
     }
   }
-  return { seqs, flipped, dismissed, connected, othersCards };
+  return { seqs, flipped, dismissed, connected, othersOpenCards };
 }
 
 /** An organization's server is shared, but a card its sign-in posted belongs to the member whose
@@ -229,15 +233,9 @@ export async function resolveMcpApprovalCards<T>(
           painted.flipped === 0 &&
           !painted.connected &&
           painted.dismissed;
-        // The only card here is another member's: answering it is theirs, so nothing is saved
+        // The open card here is another member's: answering it is theirs, so nothing is saved
         // and the card stays open rather than looking answered to this member.
-        if (
-          input.threadId !== undefined &&
-          painted.othersCards &&
-          painted.flipped === 0 &&
-          !painted.connected &&
-          !painted.dismissed
-        )
+        if (input.threadId !== undefined && painted.othersOpenCards && painted.flipped === 0)
           throw new McpCardOfAnotherMemberError();
         const assign = !dismissalWon;
         const resolved = painted.flipped > 0;

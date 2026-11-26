@@ -48,7 +48,8 @@ export async function reportExpiredMcpSignIn(
  * user. Leave the chat's own authorization card for the server, the one an agent-added server
  * gets, so they can sign in again from where the bot works. One card per outage: while the
  * newest card for the server in the recent chat is still open, or the user answered it with
- * Not now, no other is posted.
+ * Not now, no other is posted. Only that member answers a card their run posted, so in a
+ * shared chat another member's card does not count.
  */
 export async function postMcpReconnectCard(
   deps: { prisma: PrismaClient; events: Pick<ThreadEvents, "notify"> },
@@ -57,7 +58,7 @@ export async function postMcpReconnectCard(
 ): Promise<boolean> {
   const found = await deps.prisma.run.findUnique({
     where: { id: ids.runId },
-    select: { threadId: true, spaceId: true },
+    select: { threadId: true, spaceId: true, userId: true },
   });
   if (!found) return false;
   const run = { id: ids.runId, botId: ids.botId, ...found };
@@ -82,11 +83,23 @@ export async function postMcpReconnectCard(
     if (replayed) return null;
     const recent = await tx.message.findMany({
       where: { threadId: run.threadId },
-      select: { id: true, blocks: true },
+      select: { id: true, runId: true, blocks: true },
       orderBy: { createdAt: "desc" },
       take: RECENT_MESSAGES,
     });
+    const runIds = recent.flatMap((message) => (message.runId ? [message.runId] : []));
+    const others = new Set(
+      runIds.length
+        ? (
+            await tx.run.findMany({
+              where: { id: { in: runIds }, threadId: run.threadId, userId: { not: run.userId } },
+              select: { id: true },
+            })
+          ).map((other) => other.id)
+        : [],
+    );
     for (const message of recent) {
+      if (message.runId && others.has(message.runId)) continue;
       const { blocks, intact } = readMessageBlocks(message);
       const card = blocks.find(
         (candidate) => candidate.kind === "mcp_approval" && candidate.serverId === server.id,
