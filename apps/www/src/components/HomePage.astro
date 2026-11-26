@@ -25,6 +25,12 @@ import slackLogo from "./brand-logos/slack.svg?raw";
 import telegramLogo from "./brand-logos/telegram.svg?raw";
 import teamsLogo from "./brand-logos/microsoftteams.svg?raw";
 import whatsappLogo from "./brand-logos/whatsapp.svg?raw";
+import wixLogo from "./brand-logos/wix.svg?raw";
+import jocoLogo from "./brand-logos/joco.svg?raw";
+import inboxZeroLogo from "./brand-logos/inboxzero.svg?raw";
+import screenshotOneLogo from "./brand-logos/screenshotone.svg?raw";
+import waybLogo from "./brand-logos/wayb.svg?raw";
+import draftFantasyLogo from "./brand-logos/draftfantasy.png";
 import {
   HOME_CHANNELS,
   HOME_FEATURE_KINDS,
@@ -175,6 +181,30 @@ const structuredData = homeStructuredData({
 
       <section id="demo">
         <ProductDemo bots={getDemoBots(locale)} strings={demoMessages(locale)} client:load />
+      </section>
+
+      <section class="social-proof">
+        <p class="social-proof__count">{copy.hero.usedBy}</p>
+        <div class="logo-marquee">
+          {
+            [0, 1, 2].map((copyIndex) => (
+              <ul class="logo-marquee__track" aria-hidden={copyIndex > 0 ? "true" : undefined}>
+                <li class="logo-marquee__logo logo-marquee__logo--wordmark"><Fragment set:html={wixLogo} /><span class="sr-only">Wix</span></li>
+                <li class="logo-marquee__logo logo-marquee__logo--wordmark logo-marquee__logo--compact"><Fragment set:html={inboxZeroLogo} /><span class="sr-only">Inbox Zero</span></li>
+                <li class="logo-marquee__logo">
+                  <span
+                    class="logo-marquee__mask"
+                    style={`--logo: url(${draftFantasyLogo.src}); aspect-ratio: ${draftFantasyLogo.width} / ${draftFantasyLogo.height}`}
+                  ></span>
+                  <span class="sr-only">Draft Fantasy</span>
+                </li>
+                <li class="logo-marquee__logo logo-marquee__logo--wordmark"><Fragment set:html={jocoLogo} /><span class="sr-only">JOCO</span></li>
+                <li class="logo-marquee__logo"><Fragment set:html={screenshotOneLogo} /><span>ScreenshotOne</span></li>
+                <li class="logo-marquee__logo"><Fragment set:html={waybLogo} /><span>wayb</span></li>
+              </ul>
+            ))
+          }
+        </div>
       </section>
 
       <section id="roster" class="section">
