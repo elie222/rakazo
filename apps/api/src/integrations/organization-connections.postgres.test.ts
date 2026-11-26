@@ -3,8 +3,9 @@ import { createRouterClient } from "@orpc/server";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import { ConnectorRegistry, retryConnectionCleanup } from "@rakazo/adapters";
 import { ORGANIZATION_CONNECTION_NAME_TAKEN } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
-import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
+import { createDb, releaseOrganizationDeletionClaim, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteOrganization } from "../account/account-deletion.js";
 import type { RouterDeps } from "../router.js";
@@ -512,6 +513,65 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
         team,
       );
     } finally {
+      delete connector.listAccountsBeforeSignIn;
+    }
+  });
+
+  it("keeps an authorized hosted sign-in claimable after its link expires", async () => {
+    const app = { ...request, provider: "fixture-late", displayName: "Late sign-in" };
+    const admin = client("admin", second);
+    const remoteAccounts = ["established-account"];
+    connector.listAccountsBeforeSignIn = async () => [...remoteAccounts];
+    vi.mocked(connector.begin).mockResolvedValueOnce({
+      authorizationUrl: "https://authorization.example.test/",
+      state: app.provider,
+      expiresAt: new Date(0).toISOString(),
+    });
+    try {
+      const { connectionId } = await admin.beginForOrganization(app);
+      remoteAccounts.push("late-account");
+      await expect(admin.beginForOrganization(app)).rejects.toMatchObject({ code: "CONFLICT" });
+      vi.mocked(connector.resolveConnectedAccountId!).mockResolvedValueOnce("late-account");
+      await expect(admin.complete({ connectionId })).resolves.toMatchObject({
+        status: "connected",
+      });
+    } finally {
+      delete connector.listAccountsBeforeSignIn;
+    }
+  });
+
+  it("refuses to publish a hosted link when deletion claims its organization during setup", async () => {
+    const started = deferred<void>();
+    const accounts = deferred<string[]>();
+    const app = { ...request, provider: "fixture-claim-race", displayName: "Delete race" };
+    connector.listAccountsBeforeSignIn = () => {
+      started.resolve();
+      return accounts.promise;
+    };
+    vi.mocked(connector.begin).mockResolvedValueOnce({
+      authorizationUrl: "https://authorization.example.test/",
+      state: app.provider,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const orgClient = client("outsider", outside);
+    const pending = orgClient.beginForOrganization(app);
+    const rejected = expect(pending).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const claimId = "organization-deletion:fixture";
+    try {
+      await started.promise;
+      await runAsSystem("claim the deletion race fixture", () =>
+        prisma.space.update({
+          where: { id: outside },
+          data: { deletionClaimId: claimId, deletingAt: new Date() },
+        }),
+      );
+      accounts.resolve([]);
+      await rejected;
+    } finally {
+      accounts.resolve([]);
+      await runAsSystem("release the deletion race fixture", () =>
+        releaseOrganizationDeletionClaim(prisma, { organizationId: other, claimId }),
+      );
       delete connector.listAccountsBeforeSignIn;
     }
   });

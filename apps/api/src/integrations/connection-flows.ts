@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { ORPCError } from "@orpc/server";
 import type {
   AdapterContext,
   BackgroundJobPayloads,
@@ -32,6 +31,7 @@ import { normalizedHttpUrl } from "@rakazo/core/egress";
 import type { Prisma } from "@rakazo/db";
 import {
   IsolationError,
+  lockOrganizationSpaces,
   ProviderTransactionBusyError,
   recordSecurityEvent,
   runAsSystem,
@@ -82,10 +82,16 @@ export async function expireHostedSignIn(
   jobs: RouterDeps["jobs"],
   owner: ConnectionOwner & { organizationId: string },
   row: Parameters<typeof readHostedSignIn>[0] & { status: string },
+  listAccounts: () => Promise<string[]>,
 ) {
   if (row.status !== "pending" || row.providerRef !== row.provider) return;
-  const expiry = Date.parse(readHostedSignIn(row).expiresAt ?? "");
+  const { expiresAt, priorAccountIds } = readHostedSignIn(row);
+  const expiry = Date.parse(expiresAt ?? "");
   if (!Number.isFinite(expiry) || expiry > Date.now()) return;
+
+  // Expiration closes the link. A completed authorization can still be claimed.
+  if (!priorAccountIds || (await listAccounts()).some((id) => !priorAccountIds.includes(id)))
+    return;
 
   const revoked = await tx.connection.update({
     where: { id: row.id },
@@ -250,29 +256,12 @@ export async function beginConnection(
       providerScopeKey(owner, input.connectorId, input.provider),
       async (tx) => {
         await lockProviderConnectionScope(tx, owner, input.connectorId, input.provider);
-        let displayName = input.displayName;
-        if (organizationId) {
-          await requireConnectionOrganization(tx, context.actor, organizationId);
-          await advisoryLock(tx, "organization-connection-label", organizationId);
-          const names = new Set(
-            (
-              await tx.connection.findMany({
-                where: { organizationId, status: { not: "revoked" } },
-                select: { displayName: true },
-              })
-            ).map((row) => row.displayName.toLowerCase()),
-          );
-          for (let number = 2; names.has(displayName.toLowerCase()); number += 1) {
-            displayName = connectionLabelFrom(input.displayName, input.provider, ` ${number}`);
-          }
-        }
+        if (organizationId) await requireConnectionOrganization(tx, context.actor, organizationId);
         const existing = await tx.connection.findMany({
           where: {
             ...owned,
             connectorId: input.connectorId,
-            provider: organizationId
-              ? { equals: input.provider, mode: "insensitive" }
-              : input.provider,
+            provider: connectionProviderWhere(owner, input.provider),
           },
           select: {
             id: true,
@@ -285,12 +274,41 @@ export async function beginConnection(
           },
           orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
         });
-        if (organizationId && connector.listAccountsBeforeSignIn) {
+        const listAccounts = connector.listAccountsBeforeSignIn?.bind(connector);
+        if (organizationId && listAccounts) {
           for (const previous of existing) {
             if (previous.status !== "pending") continue;
             requireNoPendingSignIn(
-              !(await expireHostedSignIn(tx, deps.jobs, { ...owner, organizationId }, previous)),
+              !(await expireHostedSignIn(
+                tx,
+                deps.jobs,
+                { ...owner, organizationId },
+                previous,
+                () =>
+                  listAccounts(
+                    input.provider,
+                    connectionContext(owner, "connections.begin", context.signal),
+                  ),
+              )),
             );
+          }
+        }
+        let displayName = input.displayName;
+        if (organizationId) {
+          // Deletion takes this lock before placing its claim and discovering providers.
+          await lockOrganizationSpaces(tx, organizationId);
+          await requireConnectionOrganization(tx, context.actor, organizationId);
+          await advisoryLock(tx, "organization-connection-label", organizationId);
+          const names = new Set(
+            (
+              await tx.connection.findMany({
+                where: { organizationId, status: { not: "revoked" } },
+                select: { displayName: true },
+              })
+            ).map((row) => row.displayName.toLowerCase()),
+          );
+          for (let number = 2; names.has(displayName.toLowerCase()); number += 1) {
+            displayName = connectionLabelFrom(input.displayName, input.provider, ` ${number}`);
           }
         }
         // A revoked hosted link may still be live. Keep its row and expiration
@@ -420,7 +438,7 @@ export async function beginConnection(
               where: {
                 ...owned,
                 connectorId: input.connectorId,
-                provider: { equals: input.provider, mode: "insensitive" },
+                provider: connectionProviderWhere(owner, input.provider),
                 status: "pending",
                 id: { not: row.id },
               },
@@ -432,7 +450,7 @@ export async function beginConnection(
             where: {
               ...owned,
               connectorId: input.connectorId,
-              provider: { equals: input.provider, mode: "insensitive" },
+              provider: connectionProviderWhere(owner, input.provider),
               providerRef: { equals: input.provider, mode: "insensitive" },
               status: "revoked",
             },
@@ -444,6 +462,11 @@ export async function beginConnection(
             input.provider,
             connectionContext(owner, "connections.begin", context.signal),
           );
+        }
+        if (organizationId) {
+          // A claim taken while the remote request was running must win over publication.
+          await lockOrganizationSpaces(tx, organizationId);
+          await requireConnectionOrganization(tx, context.actor, organizationId);
         }
         const updated = await tx.connection.updateMany({
           where: reconnecting
@@ -628,15 +651,11 @@ export async function revokeConnection(
         row.provider !== snapshot?.provider ||
         (prepared?.recheck && !(await prepared.recheck(tx)))
       ) {
-        throw new ORPCError("CONFLICT", {
-          message: "Integration credentials changed; retry.",
-        });
+        throw new ClientError("CONFLICT", "Integration credentials changed; retry.");
       }
       const connector = prepared?.provider;
       if (!connector) {
-        throw new ORPCError("BAD_REQUEST", {
-          message: `Connector ${row.connectorId} is not configured`,
-        });
+        throw new ClientError("BAD_REQUEST", `Connector ${row.connectorId} is not configured`);
       }
       // The call ends before the transaction's own timeout, counted from its start, so a late
       // remote delete cannot succeed after local status has already rolled back. Waiting for the

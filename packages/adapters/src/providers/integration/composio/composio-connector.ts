@@ -586,7 +586,7 @@ export class ComposioConnector implements ComposioProvider {
         getLogger().warn("Composio could not verify whether the app requires an account", {
           error: sanitizeIntegrationError(error),
         });
-        return false;
+        return undefined;
       }
     },
   );

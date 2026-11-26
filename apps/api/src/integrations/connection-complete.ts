@@ -1,4 +1,3 @@
-import { ORPCError } from "@orpc/server";
 import type { BackgroundJobPayloads } from "@rakazo/adapter-kit";
 import { connectionCleanupJob } from "@rakazo/adapter-kit";
 import {
@@ -50,9 +49,7 @@ export async function completeConnection(
   const owned = connectionOwnerWhere(owner);
   const connector = deps.connectors.managed(existing.connectorId);
   if (!connector) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: `Connector ${existing.connectorId} is not configured`,
-    });
+    throw new ClientError("BAD_REQUEST", `Connector ${existing.connectorId} is not configured`);
   }
   // Catalog reconciliation connects a row without its account id; the next poll stores it.
   const settling = (row: { status: string; provider: string; providerRef: string | null }) =>
@@ -62,7 +59,7 @@ export async function completeConnection(
     : { provider: connector, recheck: undefined };
   const transactionConnector = prepared.provider;
   if (!transactionConnector)
-    throw new ORPCError("BAD_REQUEST", { message: "Integration provider is not configured" });
+    throw new ClientError("BAD_REQUEST", "Integration provider is not configured");
   let row = existing;
   let connectedNow = false;
   let duplicateFound = false;
@@ -93,9 +90,7 @@ export async function completeConnection(
         });
         if (!current) throw new IsolationError();
         if (prepared.recheck && !(await prepared.recheck(tx))) {
-          throw new ORPCError("CONFLICT", {
-            message: "Integration credentials changed; retry.",
-          });
+          throw new ClientError("CONFLICT", "Integration credentials changed; retry.");
         }
         if (!settling(current)) return current;
         if (current.status === "revoked") {
@@ -158,12 +153,16 @@ export async function completeConnection(
           return current;
         }
 
-        if (organizationId && transactionConnector.listAccountsBeforeSignIn) {
+        const adapterContext = connectionContext(owner, "connections.complete", context.signal);
+        const listAccounts =
+          transactionConnector.listAccountsBeforeSignIn?.bind(transactionConnector);
+        if (organizationId && listAccounts) {
           const expired = await expireHostedSignIn(
             tx,
             deps.jobs,
             { ...owner, organizationId },
             current,
+            () => listAccounts(current.provider, adapterContext),
           );
           if (expired) {
             expiredNow = true;
@@ -171,7 +170,6 @@ export async function completeConnection(
           }
         }
 
-        const adapterContext = connectionContext(owner, "connections.complete", context.signal);
         if (input.code && current.status !== "connected") {
           const state = current.providerRef ?? current.provider;
           await transactionConnector.complete({ state, code: input.code }, adapterContext);

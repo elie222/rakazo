@@ -56,13 +56,18 @@ export function composioAccountTools(
     context: AdapterContext,
     connection: ConnectedConnector,
   ) => Promise<{ session?: ComposioSession; connectedAccounts: Record<string, string[]> }>,
-  isNoAuth: (app: string) => Promise<boolean>,
+  isNoAuth: (app: string) => Promise<boolean | undefined>,
 ) {
   async function tools(context: AdapterContext) {
     const catalogs = new Map<string, Promise<ConnectorTool[]>>();
     const groups = await Promise.all(
       scopedAccounts(context).map(async (account) => {
-        if (!accountRef(account) && !(await isNoAuth(account.externalId))) return [];
+        if (!accountRef(account)) {
+          const noAuth = await isNoAuth(account.externalId);
+          // A directory outage can leave a slug-only route discoverable. Execution
+          // still requires a verified no-auth toolkit before opening an unpinned session.
+          if (noAuth === false || (noAuth === undefined && !account.providerRef?.trim())) return [];
+        }
         const app = account.externalId.toLowerCase();
         let catalog = catalogs.get(app);
         if (!catalog) {
