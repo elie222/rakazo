@@ -1,4 +1,4 @@
-import { redactSecrets } from "@rakazo/core";
+import { redactSecrets, writesRoutinePrompt } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { reviewOwnerMessages } from "../../approvals/review-owner-messages.js";
 import { outsideOnlyTargets, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
@@ -48,7 +48,7 @@ export async function currentRoutinePrompt(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<string | undefined> {
-  if (toolName !== "schedule_update" || typeof args.prompt !== "string") return undefined;
+  if (toolName !== "schedule_update" || !writesRoutinePrompt(args)) return undefined;
   const routineId = typeof args.routineId === "string" ? args.routineId.trim() : "";
   if (!routineId) return undefined;
   const routine = await bestEffort(

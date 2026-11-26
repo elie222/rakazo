@@ -1,4 +1,5 @@
 import { instructionUpdateDiff } from "@rakazo/core";
+import { applyTextEdits, parseTextEdits } from "../tools/text-edits.js";
 
 /** A long text field the reviewer sees as its changed lines only, as the owner's card shows it. */
 export type ReviewedChanges = { changes: string };
@@ -13,7 +14,8 @@ export function isReviewedChanges(value: unknown): value is ReviewedChanges {
 
 /**
  * What Auto Review sees of an edit to the bot's own instructions (`update_bot`, which carries the
- * text it replaces) or a routine's prompt (`schedule_update`, given the stored prompt): the changed
+ * text it replaces) or a routine's prompt (`schedule_update`, given the stored prompt, whether the
+ * call sends a whole prompt or edits to the stored one): the changed
  * lines with a little context instead of the whole new text, so a small edit to a long text fits
  * the review. Unchanged lines were already in force. The call is reviewed as it was when the old
  * text is unknown or empty, or when the changes leave nothing out: a rewrite or a short text reads
@@ -46,11 +48,22 @@ function reshape(
     return changes && { ...rest, instructions: changes };
   }
   if (toolName === "schedule_update") {
-    if (typeof args.prompt !== "string" || !currentRoutinePrompt?.trim()) return undefined;
-    const changes = changesOf(currentRoutinePrompt, args.prompt);
-    return changes && { ...args, prompt: changes };
+    if (!currentRoutinePrompt?.trim()) return undefined;
+    const { promptEdits, ...rest } = args;
+    const prompt =
+      typeof args.prompt === "string" ? args.prompt : edited(currentRoutinePrompt, promptEdits);
+    const changes = prompt === undefined ? undefined : changesOf(currentRoutinePrompt, prompt);
+    return changes && { ...rest, prompt: changes };
   }
   return undefined;
+}
+
+/** The prompt a call's edits make of the stored one, when they apply to it. */
+function edited(prompt: string, promptEdits: unknown): string | undefined {
+  const edits = parseTextEdits(promptEdits, "promptEdits");
+  if (typeof edits === "string") return undefined;
+  const applied = applyTextEdits(prompt, edits, "the prompt");
+  return applied.ok ? applied.text : undefined;
 }
 
 /**

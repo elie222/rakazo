@@ -1,6 +1,6 @@
 import type { ConnectorCall, ConnectorTool } from "@rakazo/adapter-kit";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, BotSecretAuth, OneTimeCodeTarget } from "@rakazo/contracts";
-import { approvalCardExpires, redactSecrets } from "@rakazo/core";
+import { approvalCardExpires, redactSecrets, textEditsGiven } from "@rakazo/core";
 import { runLoginKind } from "@rakazo/db";
 import type { FleetCardSummary } from "../../approvals/approval-ask.js";
 import type { TerminatingToolResult } from "../../approvals/approval-effect.js";
@@ -526,6 +526,13 @@ export async function prepareToolRequest(
       request.heldForApproval = true;
       request.ignoresAllowRules = true;
     }
+    // Whether an edit's text is found would tell a run nobody is watching what the prompt holds,
+    // before any card.
+    if (unattended && name === "schedule_update" && textEditsGiven(args.promptEdits))
+      return refusal(
+        "bot_management_request_invalid",
+        "promptEdits needs a run the owner started. Send the whole prompt instead.",
+      );
     // The card names the bot, and an approved replay acts on its id, not a name another bot
     // could take by then.
     if (managedRoutines && nextApprovedTool !== name) {

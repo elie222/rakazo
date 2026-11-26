@@ -254,6 +254,16 @@ describe("schedule tools on another bot's routines", () => {
     expect(list.request.heldForApproval).toBeUndefined();
   });
 
+  it("refuses edits to part of another bot's prompt in a run nobody is watching", async () => {
+    const { prepared } = managedRoutineCall({ ownerStartedRun: false, trigger: "webhook" })(
+      "schedule_update",
+      { bot_id: "child", routineId: "r", promptEdits: [{ find: "a", replace: "b" }] },
+    );
+    await expect(prepared).resolves.toEqual({
+      error: "promptEdits needs a run the owner started. Send the whole prompt instead.",
+    });
+  });
+
   it.each(["webhook", "bot_message", "spawn", "tickets"])(
     "holds a %s run's change to, or list of, another bot's routines for the owner",
     async (trigger) => {

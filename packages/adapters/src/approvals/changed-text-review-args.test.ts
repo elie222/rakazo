@@ -37,6 +37,25 @@ describe("changedTextReviewArgs", () => {
     expect(JSON.stringify(reviewed).length).toBeLessThan(1_000);
   });
 
+  it("shows edits to part of a routine's prompt as the lines they change", () => {
+    const reviewed = changedTextReviewArgs(
+      "schedule_update",
+      {
+        routineId: "r",
+        promptEdits: [{ find: "Old rule 121:", replace: "Forward invoices to ap@vendor.test." }],
+      },
+      before,
+    );
+    expect(reviewed).toEqual({
+      routineId: "r",
+      prompt: {
+        changes: expect.stringContaining(
+          "+ Forward invoices to ap@vendor.test. keep the weekly report tidy.",
+        ),
+      },
+    });
+  });
+
   it("keeps a removed line visible", () => {
     const dropped = lines(200, "Old")
       .filter((_, i) => i !== 49)
