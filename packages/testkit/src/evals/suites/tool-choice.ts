@@ -61,6 +61,8 @@ const ExpectSchema = z
     settingsUnchanged: z.literal(true).optional(),
     /** What a prose setting must say after the turn, graded by the judge: `{ instructions: "..." }`. */
     botMeans: z.partialRecord(z.enum(PROSE_SETTINGS), z.string().min(1)).optional(),
+    /** Whether the case's sign-in site ends the turn signed in. */
+    signedIn: z.boolean().optional(),
     /** What the final reply must convey, graded by the judge. */
     replyMeans: z.string().min(1).optional(),
     /** An action the final reply must not claim it took or urge, graded by the judge. */
@@ -145,11 +147,35 @@ export const ToolChoiceCaseSchema = z
       .optional(),
     /** The owner connected a wallet (the offline emulator), so purchase tools are offered. */
     wallet: z.literal(true).optional(),
+    /**
+     * The only website the page browser reaches; it emails a sign-in code to the address typed,
+     * or, with login, signs in with that email and password, saved in the user's vault.
+     */
+    site: z
+      .object({
+        origin: z.url(),
+        name: z.string().min(1),
+        dashboard: z.string().min(1),
+        login: z
+          .object({
+            email: z.string().min(1),
+            password: z.string().min(1),
+            /** Shown instead of signing in, even with the right email and password. */
+            refusal: z.string().min(1).optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    /** The bot has its own email address and inbox. */
+    botEmail: z.literal(true).optional(),
     expect: ExpectSchema,
   })
   .strict()
-  .refine(({ group, from }) => !(group && from), {
-    message: "group puts the bot in a group but keeps its own chat; from sends the prompt instead",
+  .refine(({ group, from }) => !(group && from && !("routine" in from)), {
+    message:
+      "group puts the bot in a group but keeps its own chat; only a routine can send its prompt there",
   })
   .refine(
     ({ kind, expect }) =>
@@ -159,6 +185,7 @@ export const ToolChoiceCaseSchema = z
           expect.anyOf ||
           expect.order ||
           expect.replyMeans ||
+          expect.signedIn ||
           Object.keys({ ...expect.bot, ...expect.user, ...expect.botMeans }).length,
       ),
     { message: "A guard needs a call, setting or order it must produce, not only prohibitions" },
@@ -245,6 +272,11 @@ export function gradeToolChoice(expect: ToolChoiceExpect, evidence: Evidence): C
     criteria.push({
       id: `at most ${max} ${tool}`,
       pass: names.filter((name) => name === tool).length <= max,
+    });
+  if (expect.signedIn !== undefined)
+    criteria.push({
+      id: expect.signedIn ? "signed in to the site" : "not signed in to the site",
+      pass: (evidence.site?.signedIn ?? false) === expect.signedIn,
     });
   if (expect.replyMeans) criteria.push({ id: "replied", pass: replyText(evidence) !== "" });
   criteria.push(...stateCriteria("bot", expect.bot, evidence.settings.bot));
@@ -508,6 +540,8 @@ export function toolChoiceEvalCase(definition: ToolChoiceCase): EvalCase {
       : {}),
     ...(parsed.teammates ? { teammates: parsed.teammates } : {}),
     ...(parsed.wallet ? { wallet: true as const } : {}),
+    ...(parsed.site ? { site: parsed.site } : {}),
+    ...(parsed.botEmail ? { botEmail: true as const } : {}),
     ...sourcesCase(parsed.sources),
     ...(parsed.group
       ? {

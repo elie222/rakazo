@@ -404,7 +404,7 @@ describe("modelCredentialDto", () => {
       const secret = parseModelSecret(
         serializeModelSecret({
           kind: "openai_compatible",
-          baseUrl: "https://example.invalid/v1",
+          baseUrl: "http://127.0.0.1:8000/v1",
           enabledModelIds: ["custom-model"],
           visionModelIds,
         }),
@@ -447,6 +447,7 @@ describe("modelCredentialDto", () => {
         plaintext,
       ),
     ).toEqual({
+      preserveModelOrder: true,
       id: "cred-1",
       provider: "openai-compatible",
       label: "Local MLX",
@@ -457,8 +458,9 @@ describe("modelCredentialDto", () => {
       baseUrl: "https://example.invalid/v1",
       modelId: "qwen3-4b",
       reasoning: false,
-      thinkingLevels: ["off"],
-      visionModelIds: [],
+      thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+      visionModelIds: ["qwen3-4b"],
+      modelDefaults: { "qwen3-4b": { images: true, reasoning: true } },
     });
   });
 
@@ -1004,4 +1006,10 @@ it("requires HTTPS when saving new or inherited headers on public HTTP", () => {
   } finally {
     vi.unstubAllEnvs();
   }
+});
+
+it("exposes the provider ordering capability on credentials", () => {
+  const row = { id: "ordering", provider: "openai-compatible", label: "Local" };
+  expect(modelCredentialDto(row).preserveModelOrder).toBe(true);
+  expect(modelCredentialDto({ ...row, provider: "openai" }).preserveModelOrder).toBeUndefined();
 });

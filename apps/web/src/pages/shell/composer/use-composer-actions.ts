@@ -13,11 +13,15 @@ import {
   attachmentMaxCount,
   attachmentSizeLabel,
   isAttachmentImageMimeType,
+  messageTextFits,
+  THREAD_MESSAGE_TEXT_MAX_LENGTH,
 } from "@rakazo/contracts";
 import type { ComposerMention } from "@rakazo/core";
 import {
   applyThreadSendReceipt,
   attachmentsForThread,
+  canRetryRun,
+  foldPeerReplies,
   inferAttachmentMimeType,
   isImageInputConfirmation,
   newClientId,
@@ -33,9 +37,16 @@ import {
   revokePendingAttachmentPreviews,
   usePendingAttachmentPreviewCleanup,
 } from "../../../lib/composer/pending-attachments";
+import type { PendingSend } from "../../../lib/composer/pending-send";
+import {
+  newestMessageSeq,
+  withoutDeliveredSends,
+  withPendingSends,
+} from "../../../lib/composer/pending-send";
 import { canPrepareImage, prepareImage } from "../../../lib/composer/prepare-image";
 import type { PageSession } from "../../../lib/pages/pages";
 import { requestBrowserNotificationPermission } from "../../../lib/platform/browser-notifications";
+import { useSave, useSpaceQueries } from "../../../lib/query/query";
 import type { createSpaceRpc } from "../../../lib/query/rpc";
 import { clearActiveThreadRuns, threadRunError } from "../../../lib/query/thread-events";
 import { errorText } from "../../../lib/query/user-error";
@@ -43,6 +54,10 @@ import type { PendingAttachment } from "../chat/chat-shared";
 import type { useShellNavigation } from "../use-shell-navigation";
 
 type ThreadRefresh = RefObject<(id: string) => Promise<ThreadSnapshot>>;
+
+type RetryTarget = ({ botId: string; groupId?: never } | { groupId: string; botId?: never }) & {
+  runId: string;
+};
 
 /**
  * What the composer sends and the chat actions beside it: attachments, replies, send, stop,
@@ -92,12 +107,29 @@ export function useComposerActions({
   clearReadBoundary: () => void;
   flushPendingBrowserNotifications: () => void;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   usePendingAttachmentPreviewCleanup(pendingAttachments);
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [pendingSends, setPendingSends] = useState<PendingSend[]>([]);
+  const activeThreadKey = inGroup ? groupId : activeId;
+  const activeMessages = activeSnapshot?.messages;
+  // A send stays shown until the chat holds its stored message, whichever update brings it;
+  // a seq that lands after its message arrived is checked against the messages already here.
+  useEffect(() => {
+    if (activeMessages)
+      setPendingSends((current) => withoutDeliveredSends(current, activeMessages, activeThreadKey));
+  }, [activeMessages, activeThreadKey, pendingSends]);
+  // The open chat's transcript with its unconfirmed text sends shown last, or null with none.
+  const meId = bootstrapMe?.userId;
+  const pendingTranscript = useMemo(() => {
+    if (!pendingSends.length || !activeSnapshot) return null;
+    const { messages, threadId } = activeSnapshot;
+    const shown = withPendingSends(messages, pendingSends, activeThreadKey, threadId, meId);
+    return shown === messages ? null : foldPeerReplies(shown, { includePeerReceipts: true });
+  }, [activeSnapshot, activeThreadKey, meId, pendingSends]);
   const [sentCount, setSentCount] = useState(0);
   useEffect(() => {
     setComposerUnsavedWork({ sending, attachments: pendingAttachments.length > 0 });
@@ -154,6 +186,32 @@ export function useComposerActions({
   const runError = threadRunError(activeSnapshot, dismissedRunErrorIds);
   const displayedRunError = !sendError ? runError : null;
   const displayedRunErrorId = displayedRunError ? (activeSnapshot?.run?.id ?? null) : null;
+  const runRetryable =
+    Boolean(displayedRunErrorId) && canRetryRun(activeSnapshot?.run, bootstrapMe?.userId);
+  const displayedRunErrorIdRef = useRef(displayedRunErrorId);
+  displayedRunErrorIdRef.current = displayedRunErrorId;
+  const isActiveTarget = (target: RetryTarget) =>
+    target.groupId !== undefined
+      ? activeGroupId.current === target.groupId
+      : activeBotId.current === target.botId;
+  const queries = useSpaceQueries();
+  const retrySave = useSave({
+    save: (target: RetryTarget, client) => client.threads.retry(target),
+    stale: (target) => [
+      queries.threads.get.queryKey({
+        input: target.groupId !== undefined ? { groupId: target.groupId } : { botId: target.botId },
+      }),
+    ],
+    onSaved: (_, target) => {
+      // Hide the old failure while the live retry signal refreshes the thread.
+      setDismissedRunErrorIds((current) => new Set(current).add(target.runId));
+    },
+    onFailed: (error, target) => {
+      if (isActiveTarget(target) && displayedRunErrorIdRef.current === target.runId) {
+        setSendError(errorText(error, t`Could not try again`));
+      }
+    },
+  });
   const handleRunErrorPresented = useCallback((runId: string) => {
     rememberSeenRunErrorId(runId);
   }, []);
@@ -383,6 +441,36 @@ export function useComposerActions({
       setSendError(null);
       clearReadBoundary();
       setSentCount((count) => count + 1);
+      // Plain text shows in the chat at once; the stored message replaces it when it arrives.
+      if (
+        plan.shouldSend &&
+        !reroutedToGroup &&
+        attachments.length === 0 &&
+        trimmed &&
+        messageTextFits(trimmed)
+      ) {
+        const send = {
+          threadKey: originThreadKey!,
+          clientNonce,
+          text: trimmed,
+          afterSeq: newestMessageSeq(activeSnapshot?.messages ?? []),
+          replyToMessageId: replyToMessageId ?? replyAtSend?.id,
+          replyQuote: replyToMessageId ? undefined : (replyQuoteAtSend ?? undefined),
+        };
+        setPendingSends((current) => [
+          ...current.filter((pending) => pending.clientNonce !== clientNonce),
+          send,
+        ]);
+      }
+      // Without a seq the stored message cannot be told apart, so the refresh shows it instead.
+      const settlePendingSend = (acceptedSeq?: number) =>
+        setPendingSends((current) =>
+          acceptedSeq === undefined
+            ? current.filter((pending) => pending.clientNonce !== clientNonce)
+            : current.map((pending) =>
+                pending.clientNonce === clientNonce ? { ...pending, acceptedSeq } : pending,
+              ),
+        );
       const dropDelayedSetup = () => {
         // Only after successful engagement so a failed upload/send keeps the setup card.
         if (initialBotTarget && focusPromptBotIdRef.current === initialBotTarget) {
@@ -419,6 +507,10 @@ export function useComposerActions({
             void refreshThreadRef.current(botTarget).catch(() => undefined);
           }
           return true;
+        }
+        if (!messageTextFits(trimmed)) {
+          const limit = new Intl.NumberFormat(i18n.locale).format(THREAD_MESSAGE_TEXT_MAX_LENGTH);
+          throw new Error(t`Messages can be up to ${limit} characters.`);
         }
         const artifactIds: string[] = [];
         const uploaded =
@@ -478,6 +570,7 @@ export function useComposerActions({
           ? (await rpc.threads.sendWithRoutines({ ...payload, routineIds: plan.routineIds })).send
           : await rpc.threads.send(payload);
         accepted = true;
+        settlePendingSend(sent?.seq);
         if (sent && botTarget && activeBotId.current === botTarget) {
           updateSnapshot((current) =>
             applyThreadSendReceipt(
@@ -511,6 +604,7 @@ export function useComposerActions({
         else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
         return true;
       } catch (error) {
+        settlePendingSend();
         const isConfirmation = isImageInputConfirmation(error);
         // Offer the file resend only for the unchanged draft this send carried.
         const confirmation = isConfirmation && draftEdits.current === editsAtSend;
@@ -545,6 +639,7 @@ export function useComposerActions({
       pendingAttachments,
       sending,
       t,
+      i18n.locale,
     ],
   );
   const stopRun = useCallback(async () => {
@@ -613,6 +708,15 @@ export function useComposerActions({
     }
   }
 
+  function retryRun() {
+    const runId = displayedRunErrorId;
+    const botId = activeBotId.current;
+    const groupId = activeGroupId.current;
+    if (!runId || sendingRef.current) return;
+    if (groupId) retrySave.run({ groupId, runId });
+    else if (botId) retrySave.run({ botId, runId });
+  }
+
   return {
     activePendingAttachments,
     attachmentNotice,
@@ -626,7 +730,13 @@ export function useComposerActions({
     setReplyQuote,
     clearReply,
     sending,
+    pendingSends,
     sentCount,
+    /** Laid over the transcript's own props: scroll on send, and the sends not stored yet. */
+    transcriptProps: {
+      followRequest: sentCount,
+      ...(pendingTranscript ? { transcript: pendingTranscript } : {}),
+    },
     sendMessage,
     stopRun,
     answerMessage,
@@ -640,6 +750,7 @@ export function useComposerActions({
     displayedRunErrorId,
     handleRunErrorPresented,
     dismissComposerError,
+    retryRun: runRetryable && !retrySave.pending && !sending ? retryRun : undefined,
     startFocusPrompt,
   };
 }

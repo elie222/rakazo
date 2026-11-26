@@ -173,6 +173,40 @@ describe("bounded context selection", () => {
       budget.contextWindow - budget.outputReserve,
     );
   });
+  it("shortens short results of a protected batch when that is the only way to fit", () => {
+    const calls = Array.from({ length: 10 }, (_, i) => ({
+      type: "toolCall",
+      id: `call${i}`,
+      name: "read_file",
+      arguments: { path: `example${i}.txt` },
+    }));
+    const messages = [
+      { role: "assistant", content: calls },
+      ...calls.map((call) => ({
+        role: "toolResult",
+        toolCallId: call.id,
+        toolName: call.name,
+        content: "0123456789abcdef".repeat(16),
+      })),
+      user("Please continue."),
+    ];
+    const fits = { contextWindow: 2763, outputReserve: 0, systemPrompt: "", tools: [] };
+    const selected = selectContext(messages, { budget: fits, strategy: "current" });
+    expect(selected.messages).toHaveLength(12);
+    expect(selected.truncatedToolResults).toBe(10);
+    expect(
+      selected.messages.slice(1, 11).map((m) => (m as { toolCallId?: string }).toolCallId),
+    ).toEqual(calls.map((call) => call.id));
+    expect(selected.estimatedInputTokens).toBeLessThanOrEqual(fits.contextWindow);
+    expect(() =>
+      selectContext(messages, { budget: { ...fits, contextWindow: 1500 }, strategy: "current" }),
+    ).toThrow(ContextBudgetError);
+    const roomy = selectContext(messages, {
+      budget: { ...fits, contextWindow: 10000 },
+      strategy: "current",
+    });
+    expect(roomy.truncatedToolResults).toBe(0);
+  });
   it("preserves actual images while shortening result text and fails if the image alone cannot fit", () => {
     const image = { type: "image", data: "a".repeat(10000), mimeType: "image/png" };
     const call = {
@@ -223,6 +257,40 @@ describe("bounded context selection", () => {
     expect(select(100_000)).toEqual(history);
     // A protected summary at the start is not where the current request starts.
     expect(select(100_000, [0])).toEqual(history);
+  });
+  it("does not count a note that rides along with an exchange as an exchange", () => {
+    const history = Array.from({ length: 10 }, (_, index) => [
+      user(`note ${index}`),
+      user(`exchange ${index}`),
+    ]).flat();
+    const kept = selectContext(history, {
+      budget,
+      strategy: "retrieval",
+      recentExchanges: 2,
+      notAnExchange: (message) => String(message.content).startsWith("note"),
+    }).messages;
+    expect(kept).toEqual(history.slice(-4));
+  });
+  it("starts kept history at an anchor, so it holds while the conversation grows", () => {
+    const starts: string[] = [];
+    for (let length = 30; length < 50; length += 1) {
+      const history = Array.from({ length }, (_, index) => user(`exchange ${index}`));
+      const kept = selectContext(history, {
+        budget,
+        strategy: "retrieval",
+        recentExchanges: 2,
+        earlier: {
+          before: length - 1,
+          tokens: 200,
+          anchor: (message) => /[05]$/.test(String(message.content)),
+        },
+      }).messages;
+      expect(kept).toEqual(history.slice(-kept.length));
+      starts.push(String(kept[0]!.content));
+    }
+    // Without anchors the start moves with each new exchange; with them, once every five.
+    expect(new Set(starts).size).toBeLessThanOrEqual(5);
+    expect(starts.every((start) => /[05]$/.test(start))).toBe(true);
   });
   it("retains a warm useful prefix when budget allows, cold selection performs no summary work", () => {
     const history = Array.from({ length: 20 }, (_, index) => user(`exchange ${index}`));

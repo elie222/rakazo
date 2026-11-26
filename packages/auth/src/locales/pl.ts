@@ -22,27 +22,8 @@ export const PL_MESSAGES: Record<string, string> = {
   "Your Rakazo confirmation code": "Twój kod potwierdzający Rakazo",
   "Enter this code in Rakazo to confirm it's you:":
     "Wpisz ten kod w Rakazo, aby potwierdzić tożsamość:",
-  "Welcome to Rakazo": "Witaj w Rakazo",
-  "Welcome to Rakazo. The people who get the most out of it do three things:":
-    "Witamy w Rakazo. Osoby, które korzystają z niego najlepiej, robią trzy rzeczy:",
-  "Get the apps": "Pobierz aplikacje",
-  "Rakazo runs on {platforms}, so your bots can reach you wherever you are.":
-    "Rakazo działa na {platforms}, więc Twoje boty mogą skontaktować się z Tobą wszędzie.",
-  "Join the community": "Dołącz do społeczności",
-  "See what others are building, get help fast, and tell us what to build next on {discord}.":
-    "Zobacz, co budują inni, szybko uzyskaj pomoc i powiedz nam na {discord}, co zbudować dalej.",
-  "Star us on GitHub": "Daj nam gwiazdkę na GitHubie",
-  "Rakazo is open source. {star} helps more people find it.":
-    "Rakazo jest open source. {star} pomaga innym go znaleźć.",
-  "A star on GitHub": "Gwiazdka na GitHubie",
-  "Questions? Just reply. I read every one.":
-    "Masz pytania? Po prostu odpowiedz. Czytam każdą wiadomość.",
   Unsubscribe: "Zrezygnuj z otrzymywania wiadomości",
-  "Invite a friend": "Zaproś znajomego",
-  "Invite a friend to Rakazo: they get {weeks} weeks free, and you earn a free month when they start a qualifying subscription with a new card.":
-    "Zaproś znajomego do Rakazo: otrzyma {weeks} tyg. za darmo, a Ty zyskasz bezpłatny miesiąc, gdy rozpocznie subskrypcję spełniającą warunki z użyciem nowej karty.",
   "Open Rakazo": "Otwórz Rakazo",
-  "and choose Invite friends for your link.": "i wybierz Zaproś znajomych, aby otrzymać swój link.",
   "We received your Rakazo plugin": "Otrzymaliśmy Twoją wtyczkę do Rakazo",
   "Thanks for submitting a plugin to the Rakazo marketplace.":
     "Dziękujemy za zgłoszenie wtyczki do katalogu Rakazo.",
@@ -84,16 +65,4 @@ export const PL_MESSAGES: Record<string, string> = {
     "{inviter} zaprasza Cię do dołączenia do {space} w Rakazo.",
   "Join {space}": "Dołącz do {space}",
   "This invitation expires in 7 days.": "To zaproszenie wygaśnie za 7 dni.",
-  "Connect a model to start using Rakazo": "Połącz model, aby zacząć korzystać z Rakazo",
-  "Your Rakazo plan has started, but your bots can't reply until a model is connected.":
-    "Twój plan Rakazo już działa, ale Twoje boty nie mogą odpowiadać, dopóki nie połączysz modelu.",
-  "Sign in with your {subscriptions} subscription, or paste an API key.":
-    "Zaloguj się, używając subskrypcji {subscriptions}, albo wklej klucz API.",
-  "Connect a model": "Połącz model",
-  "Bring your old assistant to Rakazo": "Przenieś swojego dotychczasowego asystenta do Rakazo",
-  "Already set up an assistant in {assistants}? Rakazo can bring over its instructions, memory, skills and routines as a new bot, so you don't start again.":
-    "Masz już asystenta skonfigurowanego w {assistants}? Rakazo może przenieść jego instrukcje, pamięć, umiejętności i rutyny do nowego bota, żebyś nie zaczynał od zera.",
-  "It works for any other assistant too: send it one prompt and paste its reply.":
-    "Działa to też z każdym innym asystentem: wyślij mu jeden prompt i wklej jego odpowiedź.",
-  "Import an agent": "Importuj agenta",
 };

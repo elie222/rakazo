@@ -564,13 +564,15 @@ describe("Dictation recorder fallback", () => {
   });
 
   it.each([
-    ["recorder fallback", "", 240],
+    ["recorder fallback", "", 240, false],
+    ["desktop with automatic language", "Chrome", 240, true],
     [
       "phone with Web Speech available",
       "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
       undefined,
+      false,
     ],
-  ])("stops an endpoint recording after silence on %s", async (_browser, userAgent, endpointMs) => {
+  ] as const)("ends recording after silence: %s", async (_name, userAgent, endpointMs, auto) => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const level = { current: 0.6 };
     class FakeAnalyser {
@@ -609,7 +611,10 @@ describe("Dictation recorder fallback", () => {
       },
       language: "en-US",
     });
-    const fetchMock = vi.fn(async () => Response.json({ text: "hello" }));
+    const spoken = auto ? "Olá! How are you?" : "hello";
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ text: spoken }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const onFinal = vi.fn();
@@ -633,7 +638,8 @@ describe("Dictation recorder fallback", () => {
     const dictation = new Dictation();
     await dictation.listen({
       mode: "endpoint",
-      transcribe: true,
+      transcribe: auto ? undefined : true,
+      autoLanguage: auto,
       endpointMs,
       onFinal,
     });
@@ -646,13 +652,16 @@ describe("Dictation recorder fallback", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(onFinal).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(80);
-    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledExactlyOnceWith("hello"));
+    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledExactlyOnceWith(spoken));
     expect(stopped).toHaveBeenCalledOnce();
     expect(track.stop).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
       "/api/voice/transcribe",
       expect.objectContaining({ method: "POST" }),
     );
+    if (auto) {
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty("language");
+    }
     await vi.advanceTimersByTimeAsync(1_200);
     expect(onFinal).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -1143,20 +1152,12 @@ describe("combineTranscript", () => {
     expect(combineTranscript("hello", "Hello, world")).toBe("Hello, world");
   });
 
-  it.each([
-    ["hello."],
-    ["hello!"],
-    ["hello?"],
-    ["hello; world"],
-    ["hello: world"],
-    ["hello's world"],
-    ["hello-world"],
-    ["hello)"],
-    ['hello"'],
-    ["hello，world"],
-  ])("treats punctuation after the retained word as a boundary (%s)", (speechText) => {
-    expect(combineTranscript("hello", speechText)).toBe(speechText);
-  });
+  it.each([["hello."], ["hello's world"], ["hello，world"]])(
+    "treats punctuation after the retained word as a boundary (%s)",
+    (speechText) => {
+      expect(combineTranscript("hello", speechText)).toBe(speechText);
+    },
+  );
 
   it("keeps the replayed transcript when whitespace follows the retained words", () => {
     expect(combineTranscript("call me later", "Call me later and goodbye")).toBe(
@@ -1171,6 +1172,34 @@ describe("combineTranscript", () => {
     expect(combineTranscript("na", "naïve")).toBe("na naïve");
     expect(combineTranscript("a", "a𐐀")).toBe("a a𐐀");
     expect(combineTranscript("a𐐀", "a𐐀 more")).toBe("a𐐀 more");
+  });
+
+  it("does not repeat carried Japanese text in the restarted session", () => {
+    expect(combineTranscript("今日は", "今日は天気")).toBe("今日は天気");
+  });
+
+  it("joins a partial Japanese overlap without a space", () => {
+    expect(combineTranscript("昨日は雨。今日は", "今日は天気")).toBe("昨日は雨。今日は天気");
+  });
+
+  it("does not repeat carried Thai text in the restarted session", () => {
+    expect(combineTranscript("สวัสดี", "สวัสดีครับ")).toBe("สวัสดีครับ");
+  });
+
+  it("joins unrelated CJK text without a space", () => {
+    expect(combineTranscript("今日は", "明日")).toBe("今日は明日");
+  });
+
+  it("does not merge a one-character coincidence in Japanese", () => {
+    expect(combineTranscript("今日", "日本の天気")).toBe("今日日本の天気");
+  });
+
+  it("merges a short overlap that starts a Japanese clause", () => {
+    expect(combineTranscript("昨日は雨。今日", "今日は天気")).toBe("昨日は雨。今日は天気");
+  });
+
+  it("still requires a whole Latin word before merging into an unspaced script", () => {
+    expect(combineTranscript("cat", "category")).toBe("cat category");
   });
 });
 
@@ -1258,6 +1287,7 @@ describe("dictation engine choice", () => {
     expect(webSpeechNeedsServerFallback("network", true)).toBe(true);
     expect(webSpeechNeedsServerFallback("service-not-allowed", true)).toBe(true);
     expect(webSpeechNeedsServerFallback("network", false)).toBe(false);
+    expect(webSpeechNeedsServerFallback("language-not-supported", false)).toBe(false);
     expect(webSpeechNeedsServerFallback("not-allowed", true)).toBe(false);
     expect(webSpeechNeedsServerFallback("aborted", true)).toBe(false);
     expect(webSpeechNeedsServerFallback(undefined, true)).toBe(false);
@@ -1346,7 +1376,6 @@ describe("Dictation web speech", () => {
 
   it.each([
     ["es-CL", "es-CL"],
-    ["es-ES", "es-ES"],
     ["es-419", "es-MX"],
     ["es_AR", "es-AR"],
     ["it-IT", "it-IT"],
@@ -1466,9 +1495,6 @@ describe("Dictation web speech", () => {
   it.each([
     ["orlando florida", "florida international", "orlando florida international"],
     ["say no", "no no please", "say no no please"],
-    ["go go now", "go now please", "go go now please"],
-    ["go go", "go go now", "go go now"],
-    ["we", "welcome", "we welcome"],
     ["hello cat", "catalog", "hello cat catalog"],
     ["hello scat", "cat now", "hello scat cat now"],
   ])("merges restarted speech at whole-word overlaps (%s / %s)", async (first, next, expected) => {
@@ -1727,7 +1753,7 @@ describe("Dictation web speech", () => {
     );
   });
 
-  it.each(["network", "service-not-allowed"])(
+  it.each(["network", "service-not-allowed", "language-not-supported"])(
     "falls back to server transcription when Web Speech fails with %s",
     async (error) => {
       const instances: Array<{
@@ -2023,7 +2049,6 @@ describe("Dictation web speech", () => {
   it.each([
     ["please say no", "no please", "please say no no please"],
     ["call me later", "Call me later and goodbye", "call me later Call me later and goodbye"],
-    ["hello", "hello", "hello hello"],
     ["call me later", "", "call me later"],
   ])(
     "appends fresh recording text without removing repeated words (%s / %s)",

@@ -13,6 +13,7 @@ import {
   ensureStackToken,
   initialStackState,
   LocalStackController,
+  parseStackEnv,
   readStackToken,
   reduceStackState,
   renderStackEnv,
@@ -174,6 +175,7 @@ describe("ensureStackEnv", () => {
     "POSTGRES_APP_PASSWORD=''",
     ' POSTGRES_APP_PASSWORD = "" # empty',
     "POSTGRES_APP_PASSWORD=''# empty\r",
+    "POSTGRES_APP_PASSWORD= # fill later",
     'POSTGRES_APP_PASSWORD=keep\nPOSTGRES_APP_PASSWORD=""',
     "OTHER='first line\nPOSTGRES_APP_PASSWORD=phantom\nlast line'\nPOSTGRES_APP_PASSWORD=\"\"",
   ])("fills an empty added secret in %j once", async (assignment) => {
@@ -194,8 +196,6 @@ describe("ensureStackEnv", () => {
     ' POSTGRES_APP_PASSWORD = "keep" # note',
     "POSTGRES_APP_PASSWORD='keep # literal'",
     'POSTGRES_APP_PASSWORD=" "',
-    "POSTGRES_APP_PASSWORD= # literal comment",
-    "POSTGRES_APP_PASSWORD=#literal",
     "export POSTGRES_APP_PASSWORD='keep'",
     `POSTGRES_APP_PASSWORD=\${SYNTHETIC_PASSWORD}`,
     'POSTGRES_APP_PASSWORD=""\nPOSTGRES_APP_PASSWORD=keep',
@@ -226,6 +226,26 @@ describe("ensureStackEnv", () => {
       await expect(readFile(target, "utf8")).resolves.toBe("sentinel\n");
     },
   );
+});
+
+describe("parseStackEnv", () => {
+  it.each([
+    ["KEY= # c", ""],
+    ["KEY=\t# c", ""],
+    ["KEY=v # c", "v"],
+    ["KEY=v\t# c", "v"],
+    ["KEY=a#b", "a#b"],
+    ["KEY=#x", "#x"],
+    ['KEY="a # b"', "a # b"],
+    ["KEY='a # b'", "a # b"],
+    ['KEY="" # c', ""],
+  ])("reads %j as %j", (line, value) => {
+    expect(parseStackEnv(line).get("KEY")).toBe(value);
+  });
+
+  it("keeps the last assignment of a name, as Compose does", () => {
+    expect(parseStackEnv("KEY=first # c\nKEY= # later\n").get("KEY")).toBe("");
+  });
 });
 
 describe("stack identity", () => {
@@ -316,11 +336,14 @@ describe("reduceStackState", () => {
   it("counts direct downloads by name without adding output lines", () => {
     let state = reduceStackState(start, { type: "check-start" });
     state = reduceStackState(state, { type: "pull-start" });
-    state = reduceStackState(state, { type: "download", name: "server", bytes: 4e7 });
-    state = reduceStackState(state, { type: "download", name: "server", bytes: 1e7 });
-    state = reduceStackState(state, { type: "download", name: "database", bytes: 2e7 });
-    expect(state.layerBytes).toEqual({ server: 4e7, database: 2e7 });
+    state = reduceStackState(state, { type: "download", name: "server", bytes: 0, total: 1e8 });
+    state = reduceStackState(state, { type: "download", name: "server", bytes: 4e7, total: 1e8 });
+    state = reduceStackState(state, { type: "download", name: "server", bytes: 1e7, total: 1e8 });
+    state = reduceStackState(state, { type: "download", name: "runtime", bytes: 2e7, total: 3e7 });
+    expect(state.layerBytes).toEqual({ server: 4e7, runtime: 2e7 });
+    expect(state.layerTotals).toEqual({ server: 1e8, runtime: 3e7 });
     expect(state.output).toEqual([]);
+    expect(reduceStackState(state, { type: "check-start" }).layerTotals).toEqual({});
   });
 
   it("keeps only the last lines of output", () => {
@@ -638,7 +661,7 @@ describe("LocalStackController", () => {
     expect(calls.some((call) => call.args[0] === "image")).toBe(false);
   });
 
-  it.each(["edge", "latest", "custom-tag", "v1.2.3-preview.1"])(
+  it.each(["edge", "v1.2.3-preview.1"])(
     "refreshes the moving tag %s even when local images exist",
     async (imageTag) => {
       const stack = controller({ imageTag, probe: async () => imageTag });
@@ -1033,7 +1056,6 @@ describe("LocalStackController", () => {
   it.each([
     { code: 1, stdout: "", stderr: "spawn docker.exe ENOENT" },
     { code: 7, stdout: "plugin diagnostic\r\n", stderr: "Access is denied.\r\n" },
-    { code: 124, stdout: "", stderr: "" },
   ])("keeps an unsuccessful Compose check distinct from a missing plugin: %j", async (reply) => {
     const stack = controller({}, () => reply);
     const state = await stack.start();

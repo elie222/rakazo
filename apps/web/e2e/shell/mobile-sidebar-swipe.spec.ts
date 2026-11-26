@@ -81,9 +81,12 @@ test("swiping inward from the mobile edge opens the bots sidebar", async ({ page
   await expect(page.getByTestId("bots-sidebar")).toContainText("Chief");
   await captureScreenshot(page, testInfo, "mobile-sidebar-edge-swipe-open");
 
-  // Right-to-left layouts swipe in from the other edge.
-  await closeNavigation.click();
+  await page.keyboard.press("Escape");
   await expect(closeNavigation).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open navigation" })).toBeFocused();
+  await captureScreenshot(page, testInfo, "mobile-sidebar-escape-closed");
+
+  // Right-to-left layouts swipe in from the other edge.
   await page.locator("html").evaluate((html) => html.setAttribute("dir", "rtl"));
   const edgeBox = await edge.boundingBox();
   expect(edgeBox?.x).toBeGreaterThan(350);

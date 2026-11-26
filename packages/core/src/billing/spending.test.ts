@@ -130,6 +130,15 @@ describe("formatMinorAmount", () => {
     expect(formatMinorAmount(2340, "usd")).toBe("$23.40");
     expect(formatMinorAmount(5000, "ils", "en-US")).toBe("₪50.00");
   });
+
+  it("drops the cents of a whole amount only when asked, as prices show", () => {
+    const whole = { wholeWithoutCents: true };
+    expect(formatMinorAmount(1200, "usd", "en-US", whole)).toBe("$12");
+    expect(formatMinorAmount(1250, "usd", "en-US", whole)).toBe("$12.50");
+    expect(formatMinorAmount(1234, "kwd", "en-US", whole)).toBe("KWD\u00a01.234");
+    expect(formatMinorAmount(1200, "eur", "de-DE", whole)).toBe("12\u00a0€");
+    expect(formatMinorAmount(1200, "usd", "en-US")).toBe("$12.00");
+  });
 });
 
 describe("parseLimitInput", () => {

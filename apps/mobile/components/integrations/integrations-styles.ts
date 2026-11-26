@@ -58,7 +58,14 @@ export function createIntegrationsStyles() {
     secondary: { color: native.secondaryLabel, fontSize: 13 },
     inlineLink: { color: native.label, fontSize: 13, textDecorationLine: "underline" },
     pressed: { backgroundColor: native.fillPressed },
-    categoryPicker: { alignSelf: "flex-start" },
+    rowLink: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10 },
+    dimmed: { opacity: 0.6 },
+    categoryRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
     sectionHeader: {
       marginTop: 10,
       flexDirection: "row",
@@ -106,7 +113,9 @@ export function createIntegrationsStyles() {
       gap: 8,
     },
     toolsBody: { gap: 8, paddingTop: 4 },
+    toolSummary: { flex: 1, minWidth: 0 },
+    toolPicker: { width: 100 },
     toolName: { color: native.label, fontSize: 14 },
-    addCustom: { alignSelf: "flex-end", padding: 12 },
+    addCustom: { padding: 12 },
   });
 }

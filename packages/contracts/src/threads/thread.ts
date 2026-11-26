@@ -17,6 +17,10 @@ export const ChatAlertSchema = z.object({
 });
 export type ChatAlert = z.infer<typeof ChatAlertSchema>;
 
+export function chatAlertNeedsAttention(kind: ChatAlert["kind"]): boolean {
+  return kind === "help" || kind === "takeover" || kind === "failure";
+}
+
 /** Selected-text excerpt carried by a reply; capped so a quote stays a quote. */
 export const REPLY_QUOTE_MAX_LENGTH = 2_000;
 
@@ -25,6 +29,11 @@ export const REPLY_QUOTE_MAX_LENGTH = 2_000;
  * oversized send cannot dominate persistence and every viewer's markdown processing.
  */
 export const THREAD_MESSAGE_TEXT_MAX_LENGTH = 100_000;
+
+/** Whether the server accepts this text: it counts UTF-16 code units, as `string.length` does. */
+export function messageTextFits(text: string): boolean {
+  return text.length <= THREAD_MESSAGE_TEXT_MAX_LENGTH;
+}
 
 /** Cap an excerpt at the quote limit without splitting a surrogate pair. */
 export function truncateReplyQuote(value: string): string {

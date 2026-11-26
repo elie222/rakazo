@@ -1,36 +1,33 @@
 import { t } from "@lingui/core/macro";
 import type { Alert } from "react-native";
 
-type Dependencies<T> = {
+import { lengthLimitMessage, promptText } from "../dialogs/text-prompt";
+
+type Dependencies = {
   currentName: string;
   pending: { current: boolean };
-  saveVersion: { current: number };
   Platform: { OS: string };
   Alert: Pick<typeof Alert, "prompt">;
   errorText: (error: unknown, fallback: string) => string;
   updateAccountName: (name: string) => Promise<void>;
-  refresh: () => Promise<T>;
   onSaved: (name: string) => void;
-  onRefreshed: (account: T) => void;
+  /** Marks the account read stale, so it is read again after a save. */
+  markStale: () => Promise<void>;
   setNameDraft: (value: string) => void;
   setNameError: (error: string | null) => void;
   setNamePending: (pending: boolean) => void;
   setNameDialogOpen: (open: boolean) => void;
 };
 
-export function createAccountNameEditor<T>(deps: Dependencies<T>) {
+export function createAccountNameEditor(deps: Dependencies) {
   const { pending } = deps;
   function prompt(value: string, message?: string) {
-    deps.Alert.prompt(
-      t`Edit name`,
+    promptText(deps.Alert, {
+      title: t`Edit name`,
       message,
-      [
-        { text: t`Cancel`, style: "cancel" },
-        { text: t`Save`, isPreferred: true, onPress: (draft?: string) => saveName(draft ?? "") },
-      ],
-      "plain-text",
       value,
-    );
+      onSave: (draft) => saveName(draft ?? ""),
+    });
   }
 
   async function saveName(value: string) {
@@ -41,7 +38,7 @@ export function createAccountNameEditor<T>(deps: Dependencies<T>) {
       return;
     }
     if (name.length > 80) {
-      const message = t`Use 80 characters or fewer`;
+      const message = lengthLimitMessage(80);
       if (deps.Platform.OS === "ios") prompt(value, message);
       else deps.setNameError(message);
       return;
@@ -52,15 +49,9 @@ export function createAccountNameEditor<T>(deps: Dependencies<T>) {
     let failure: string | undefined;
     try {
       await deps.updateAccountName(name);
-      const version = ++deps.saveVersion.current;
       deps.onSaved(name);
       deps.setNameDialogOpen(false);
-      void deps
-        .refresh()
-        .then((account) => {
-          if (version === deps.saveVersion.current) deps.onRefreshed(account);
-        })
-        .catch(() => undefined);
+      void deps.markStale();
     } catch (error) {
       failure = deps.errorText(error, t`Could not update name`);
       if (deps.Platform.OS !== "ios") deps.setNameError(failure);

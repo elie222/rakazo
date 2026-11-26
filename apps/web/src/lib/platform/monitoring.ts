@@ -15,8 +15,6 @@ import type { ErrorInfo } from "react";
 import { desktopBridge } from "./desktop";
 import { importChunk, recoveringByReload } from "./preload-recovery";
 
-// Load the SDK only when the connected API enables reporting.
-
 const MAX_PENDING = 20;
 
 let sentry: typeof SentryReact | undefined;

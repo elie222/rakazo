@@ -1,8 +1,16 @@
+import { isBotChatRouteId } from "@rakazo/core";
+
 export const MCP_OAUTH_CALLBACK_PATH = "/mcp/oauth/callback";
 export const SLACK_INSTALL_CALLBACK_PATH = "/messaging/slack/callback";
 
-// A Space invite link, or an organization invitation's Join page.
-const INVITE_PATH = /^\/(invite|join)\/[A-Za-z0-9_-]{1,200}$/;
+// The shared Pages list or a single Page review.
+const PAGE_REVIEW_PATH = /^\/review(?:\/[A-Za-z0-9_-]{1,200})?\/?$/;
+
+// A Space invite link, an organization invitation's Join page, or a credit code to redeem.
+const INVITE_PATH =
+  /^\/(?:(?:invite|join)\/[A-Za-z0-9_-]{1,200}|redeem(?:\/[A-Za-z0-9_-]{1,64})?\/?)$/;
+
+const BOT_CHAT_PREFIX = "/app/";
 
 /** The page sign-in or sign-up may return to; anything else is ignored, so `next` can't redirect off the app. */
 export function signInNext(next: string | null): string | null {
@@ -18,14 +26,16 @@ export function signInNext(next: string | null): string | null {
     next === "/app?import" ||
     next.startsWith(`${MCP_OAUTH_CALLBACK_PATH}?`) ||
     next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`) ||
-    INVITE_PATH.test(next)
+    INVITE_PATH.test(next) ||
+    (next.startsWith(BOT_CHAT_PREFIX) && isBotChatRouteId(next.slice(BOT_CHAT_PREFIX.length))) ||
+    PAGE_REVIEW_PATH.test(next)
   ) {
     return next;
   }
   return null;
 }
 
-/** Where a new account starts: an invite it came for, otherwise onboarding. */
+/** Where a new account starts: an invite or code it came for, otherwise onboarding. */
 export function newAccountDestination(next: string | null): string {
   return next && INVITE_PATH.test(next) ? next : "/onboarding";
 }

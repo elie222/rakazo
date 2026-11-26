@@ -6,6 +6,7 @@ import {
   isAutoReviewCheckerConfigured,
   loadUserIncomingCalls,
   meetingCalendarScope,
+  nativeCalendarScope,
   PushSessionEndedError,
   settleCallRequest,
   validateCreditOfferingChoice,
@@ -27,9 +28,11 @@ import {
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
 import {
+  accountPreferencesChangesScope,
   auditLogAccess,
   auditLogScope,
   commitBotUpdate,
+  deploymentModelChangesScope,
   findAutoReviewPreference,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -41,6 +44,8 @@ import {
   lockSpaceSettings,
   newestVoiceCredentialOrder,
   Prisma,
+  pageChangesScope,
+  readEffectiveApprovalRules,
   removeApprovalRule,
   runAsSystem,
   runAsTenant,
@@ -56,7 +61,6 @@ import { createAccessGrant, listAccessGrants, revokeAccessGrant } from "../auth/
 import { requireAdmin } from "../auth/admins.js";
 import type { BillingService } from "../billing/billing.js";
 import {
-  accountVoiceCatalog,
   disconnectVoiceCredential,
   effectiveVoiceStatus,
   loadDefaultVoiceCredential,
@@ -67,11 +71,11 @@ import {
   toVoiceStatus,
   updateVoiceSpeechModel,
   voiceContext,
-  voiceCredentialHasKey,
   voiceCredentialServer,
   voiceProviderFor,
   withVoiceConnection,
 } from "../calls/voice.js";
+import { accountVoiceCatalog, voiceCredentialLink } from "../calls/voice-model-connection.js";
 import {
   recordCreditsChoice,
   recordSignInStep,
@@ -85,9 +89,13 @@ const ROSTER_CHANGED = Symbol("roster changed");
 const ORGANIZATIONS_CHANGED = Symbol("organizations changed");
 
 const SIGNAL_FAILURE_HOLD_MS = 30_000;
+const defaultAutoReviewPreference = { enabled: true, skipApprovals: false };
 
 export function accountRoutes(ctx: RouterContext) {
   const { deps, os, authed } = ctx;
+  const preferencesChanged = (userId: string) =>
+    deps.events.publishSpaceChange?.(accountPreferencesChangesScope(userId), "preferences");
+
   return {
     aiConsent: {
       status: authed.aiConsent.status.handler(({ context, input }) =>
@@ -109,13 +117,7 @@ export function accountRoutes(ctx: RouterContext) {
     },
     analytics: {
       screen: authed.analytics.screen.handler(async ({ context, input }) => {
-        deps.analytics?.capture(
-          context.actor.userId,
-          { name: "screen_viewed", ...input },
-          undefined,
-          // The server only sends a plan layout while the test runs, so it is the exposure.
-          input.planLayout ? { "plan-layout": input.planLayout } : undefined,
-        );
+        deps.analytics?.capture(context.actor.userId, { name: "screen_viewed", ...input });
         return { ok: true as const };
       }),
       modelSignInStep: authed.analytics.modelSignInStep.handler(async ({ context, input }) => {
@@ -144,7 +146,10 @@ export function accountRoutes(ctx: RouterContext) {
         const billing = requireBilling(deps);
         const started =
           input.funding === "credits"
-            ? await startModelConnect(deps, context.actor, "credits", undefined, input.surface)
+            ? await startModelConnect(deps, context.actor, "credits", undefined, {
+                surface: input.surface,
+                appVersion: input.appVersion,
+              })
             : undefined;
         const selected = await billing.selectFunding(
           context.actor,
@@ -201,6 +206,16 @@ export function accountRoutes(ctx: RouterContext) {
         await requireBilling(deps).claimReferral(context.actor, input.code);
         return { ok: true as const };
       }),
+      redeemCreditCode: authed.billing.redeemCreditCode.handler(async ({ context, input }) => {
+        const billing = requireBilling(deps);
+        const code = billing.modelCreditsEnabled
+          ? deps.env.creditCodes?.get(input.code.toUpperCase())
+          : undefined;
+        if (!code)
+          throw new ClientError("NOT_FOUND", "That code isn't valid", "CREDIT_CODE_INVALID");
+        await billing.redeemCreditCode(context.actor, code);
+        return { creditCents: code.creditCents };
+      }),
     },
     accessGrants: {
       list: authed.accessGrants.list.handler(async ({ context }) => {
@@ -226,26 +241,25 @@ export function accountRoutes(ctx: RouterContext) {
           input.labs === undefined
             ? undefined
             : parseLabs(input.labs).filter((feature) => !deploymentLabs.includes(feature));
+        const data = {
+          ...(input.locale === undefined ? {} : { locale: input.locale }),
+          ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
+          ...(labs === undefined ? {} : { labs }),
+          ...input.chatPreferences,
+        };
         if (input.timezone !== undefined) {
           // The routines that took the account zone keep their local schedule in the new
           // one, and the other fields commit in the same save. The move's row lock still
           // waits for any bot creation holding the user row, so no new bot is missed below.
-          await changeUserTimezone(deps, userId, input.timezone, {
-            ...(input.locale === undefined ? {} : { locale: input.locale }),
-            ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
-            ...(labs === undefined ? {} : { labs }),
-          });
+          await changeUserTimezone(deps, userId, input.timezone, data);
         } else {
           await deps.prisma.user.update({
             where: { id: userId },
             // An avatar style from an older app is accepted and ignored: there is only one.
-            data: {
-              ...(input.locale === undefined ? {} : { locale: input.locale }),
-              ...(botAvatarSet === undefined ? {} : { botAvatarSet }),
-              ...(labs === undefined ? {} : { labs }),
-            },
+            data,
           });
         }
+        if (input.chatPreferences !== undefined) await preferencesChanged(userId);
         if (botAvatarSet !== undefined) {
           // Every bot of this user not pinned to another set follows the new default, in every
           // space they own bots in, announced like any edit so other devices redraw it.
@@ -333,20 +347,34 @@ export function accountRoutes(ctx: RouterContext) {
       }),
     },
     approvalRules: {
+      effective: authed.approvalRules.effective.handler(async ({ context }) => {
+        const { target, rules, preference } = await readEffectiveApprovalRules(
+          deps.prisma,
+          context.actor,
+        );
+        return {
+          target,
+          rules: rules.map(approvalRuleDto),
+          mode: approvalModeFromPreference(preference ?? defaultAutoReviewPreference),
+        };
+      }),
       list: authed.approvalRules.list.handler(async ({ context, input }) => {
         const rows = await listApprovalRules(deps.prisma, context.actor, input?.scope);
         return rows.map(approvalRuleDto);
       }),
       set: authed.approvalRules.set.handler(async ({ context, input }) => {
-        const { scope, ...rule } = input;
-        return approvalRuleDto(
-          await deps.prisma.$transaction((tx) => saveApprovalRule(tx, context.actor, rule, scope)),
+        const { scope, expectedTarget, ...rule } = input;
+        const saved = await deps.prisma.$transaction((tx) =>
+          saveApprovalRule(tx, context.actor, rule, scope, expectedTarget),
         );
+        await preferencesChanged(context.actor.userId);
+        return approvalRuleDto(saved);
       }),
       remove: authed.approvalRules.remove.handler(async ({ context, input }) => {
         await deps.prisma.$transaction((tx) =>
-          removeApprovalRule(tx, context.actor, input.id, input.scope),
+          removeApprovalRule(tx, context.actor, input.id, input.scope, input.expectedTarget),
         );
+        await preferencesChanged(context.actor.userId);
         return { ok: true as const };
       }),
     },
@@ -389,10 +417,11 @@ export function accountRoutes(ctx: RouterContext) {
             input.mode
               ? approvalPreferenceFromMode(input.mode)
               : { enabled: input.enabled, skipApprovals: input.skipApprovals },
-            { enabled: true, skipApprovals: false },
+            defaultAutoReviewPreference,
             input.scope,
           ),
         );
+        await preferencesChanged(context.actor.userId);
         return loadAutoReviewSettings(deps, context.actor, input.scope);
       }),
     },
@@ -421,16 +450,43 @@ export function accountRoutes(ctx: RouterContext) {
         };
         const spaceChanges = async function* (
           signal: AbortSignal,
-          calendar = false,
+          special?:
+            | "meetingCalendar"
+            | "nativeCalendar"
+            | "pages"
+            | "deploymentModel"
+            | "preferences",
         ): AsyncGenerator<{ spaceChange: SpaceChangeKind }> {
-          if (!followSpaceChanges || (calendar && !deps.meetingCalendar)) return;
-          const scope = calendar ? meetingCalendarScope(spaceId, userId) : spaceId;
+          if (!followSpaceChanges) return;
+          let scope = spaceId;
+          if (special === "meetingCalendar") {
+            if (!deps.meetingCalendar) return;
+            scope = meetingCalendarScope(spaceId, userId);
+          } else if (special === "nativeCalendar") {
+            if (!context.nativeSessionId) return;
+            scope = nativeCalendarScope({ spaceId, userId, sessionId: context.nativeSessionId });
+          } else if (special === "pages") {
+            scope = pageChangesScope(userId);
+          } else if (special === "deploymentModel") {
+            scope = deploymentModelChangesScope;
+          } else if (special === "preferences") {
+            scope = accountPreferencesChangesScope(userId);
+          }
           // The app re-reads what these cover only on signals, so a failure ends the stream and
           // the app reconnects and re-reads. Alerts keep flowing for a while first, so a lasting
           // failure costs one reconnect every half minute rather than a tight loop.
           try {
             for await (const spaceChange of followSpaceChanges(scope, signal)) {
-              if ((spaceChange === "meetingCalendar") === calendar) yield { spaceChange };
+              if (
+                special
+                  ? spaceChange === special
+                  : spaceChange !== "meetingCalendar" &&
+                    spaceChange !== "nativeCalendar" &&
+                    spaceChange !== "pages" &&
+                    spaceChange !== "deploymentModel" &&
+                    spaceChange !== "preferences"
+              )
+                yield { spaceChange };
             }
           } catch (error) {
             await abortableDelay(SIGNAL_FAILURE_HOLD_MS, signal);
@@ -454,7 +510,11 @@ export function accountRoutes(ctx: RouterContext) {
             followChatAlerts(userId, spaceId, signal),
             rosterChanges(signal),
             spaceChanges(signal),
-            spaceChanges(signal, true),
+            spaceChanges(signal, "meetingCalendar"),
+            spaceChanges(signal, "nativeCalendar"),
+            spaceChanges(signal, "pages"),
+            spaceChanges(signal, "deploymentModel"),
+            spaceChanges(signal, "preferences"),
             organizationChanges(signal),
           ),
         );
@@ -603,7 +663,7 @@ export function accountRoutes(ctx: RouterContext) {
               voiceId: preference?.voiceId ?? "",
               speechModel: preference?.speechModel ?? "",
               server: await voiceCredentialServer(deps, context.actor, row),
-              hasKey: await voiceCredentialHasKey(deps, context.actor, row),
+              ...(await voiceCredentialLink(deps, context.actor, row)),
             });
           }),
         );
@@ -612,6 +672,7 @@ export function accountRoutes(ctx: RouterContext) {
         persistVoiceCredential(deps, context.actor, {
           provider: input.provider,
           plaintext: input.apiKey,
+          modelCredentialId: input.modelCredentialId,
           voiceId: input.voiceId,
           speechModel: input.speechModel,
           baseUrl: input.baseUrl,
@@ -619,6 +680,7 @@ export function accountRoutes(ctx: RouterContext) {
           sttApiKey: input.sttApiKey,
           ttsModel: input.ttsModel,
           sttModel: input.sttModel,
+          transcriptionVocabulary: input.transcriptionVocabulary,
           scope: input.scope,
           signal: context.signal,
         }),
@@ -723,10 +785,7 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor, scope?: Se
     ),
     findAutoReviewPreference(deps.prisma, actor, scope),
   ]);
-  const stored = {
-    enabled: preference?.enabled ?? true,
-    skipApprovals: preference?.skipApprovals ?? false,
-  };
+  const stored = preference ?? defaultAutoReviewPreference;
   const settings = { ...stored, mode: approvalModeFromPreference(stored) };
   const deploymentChecker = role.primarySource === "deployment" ? role.primary : null;
   const memberChoices = [

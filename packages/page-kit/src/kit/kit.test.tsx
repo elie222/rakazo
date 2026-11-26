@@ -407,6 +407,32 @@ describe("page kit", () => {
     expect(markup).toContain('stroke-dasharray="5 4"');
   });
 
+  it("widens a diagram's view to fit edge labels longer than its nodes", () => {
+    const nodes = [
+      { id: "sent", label: "Sent" },
+      { id: "done", label: "Done" },
+    ];
+    const long = "After reviewer approves the first draft";
+    const view = (edges: { from: string; to: string; label?: string }[]) => {
+      const box = /viewBox="([^"]+)"/.exec(html(<Diagram nodes={nodes} edges={edges} />));
+      const [left = 0, , width = 0] = (box?.[1] ?? "").split(" ").map(Number);
+      return { left, right: left + width };
+    };
+    expect(view([{ from: "sent", to: "done" }])).toEqual({ left: -2, right: 90 });
+    expect(view([{ from: "sent", to: "done", label: "Next" }])).toEqual({ left: -2, right: 90 });
+    // Centred under 88px nodes, about 270px of label reaches past both sides.
+    const centred = view([{ from: "sent", to: "done", label: long }]);
+    expect(centred.left).toBeLessThan(-80);
+    expect(centred.right).toBeGreaterThan(80 + 88);
+    // A loop back runs right of the nodes, so its label reaches further right than left.
+    const loop = view([
+      { from: "sent", to: "done" },
+      { from: "done", to: "sent", label: long },
+    ]);
+    expect(loop.left).toBeGreaterThan(centred.left);
+    expect(loop.right).toBeGreaterThan(centred.right + 20);
+  });
+
   it("wraps diagram labels at word breaks and splits a word too long for a line", () => {
     expect(wrapText("Voice sidecar for LiveKit agents", 12)).toEqual([
       "Voice",

@@ -17,6 +17,7 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
+  lastingWriteKind,
   outboundSiteGate,
   outsideRunToolRequiresApproval,
   ownComputerActionNeedsReview,
@@ -65,6 +66,9 @@ describe("toolRequiresApproval", () => {
     expect(toolRequiresApproval("secret_request", false)).toBe(true);
     expect(toolRequiresApproval("forget_secret", false)).toBe(true);
     expect(toolRequiresApproval("forget_memory", false)).toBe(true);
+    expect(toolRequiresApproval("delete_shared_memory", false)).toBe(true);
+    expect(toolRequiresApproval("skill_delete", false)).toBe(true);
+    expect(toolRequiresApproval("remove_mcp_server", false)).toBe(true);
     expect(toolRequiresApproval("list_secrets", false)).toBe(false);
     // A random value the bot cannot read exposes nothing, and never replaces a saved credential.
     expect(toolRequiresApproval("generate_secret", false)).toBe(false);
@@ -78,7 +82,6 @@ describe("toolRequiresApproval", () => {
     // The wallet owner approves every purchase on the provider's side.
     expect(toolRequiresApproval("request_purchase", false)).toBe(false);
     expect(toolRequiresApproval("purchase_status", false)).toBe(false);
-    expect(toolRequiresExplicitApproval("save_shared_memory")).toBe(false);
     expect(toolRequiresExplicitApproval("archive_bot")).toBe(false);
   });
 
@@ -90,7 +93,6 @@ describe("toolRequiresApproval", () => {
       "write_file",
       "shell",
       "remember",
-      "save_shared_memory",
       "spawn_bot",
       "run_subagent",
     ]) {
@@ -253,7 +255,6 @@ it("gates built-ins that change something only in runs outside text started", ()
     expect(outsideRunToolRequiresApproval("webhook", name)).toBe(true);
     expect(outsideRunToolRequiresApproval("user", name)).toBe(false);
   }
-  expect(outsideRunToolRequiresApproval("webhook", "save_shared_memory")).toBe(true);
   expect(outsideRunToolRequiresApproval("webhook", "add_mcp_server")).toBe(true);
   for (const name of ["read_file", "computer_observe", "message_user", "ask_user"]) {
     expect(outsideRunToolRequiresApproval("webhook", name)).toBe(false);
@@ -958,11 +959,73 @@ describe("connectorReadRequiresApproval", () => {
   });
 });
 
+describe("lastingWriteKind", () => {
+  it("names the write that outlives the run", () => {
+    expect(lastingWriteKind({ toolName: "remember", args: {}, savedContextWrite: true })).toBe(
+      "memory",
+    );
+    expect(lastingWriteKind({ toolName: "schedule_create", args: { prompt: "p" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "create_child_routine", args: { prompt: "p" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { on: "email" } })).toBe(
+      "routine",
+    );
+    expect(lastingWriteKind({ toolName: "update_bot", args: { instructions: "i" } })).toBe(
+      "instructions",
+    );
+  });
+
+  it("leaves pauses, new times, other settings and other paths to their own rubric", () => {
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { active: false } })).toBe(
+      undefined,
+    );
+    expect(lastingWriteKind({ toolName: "schedule_update", args: { cron: "0 9 * * *" } })).toBe(
+      undefined,
+    );
+    expect(
+      lastingWriteKind({ toolName: "schedule_update", args: { prompt: "  ", active: false } }),
+    ).toBe(undefined);
+    expect(lastingWriteKind({ toolName: "update_bot", args: { model: "m" } })).toBe(undefined);
+    expect(
+      lastingWriteKind({ toolName: "update_bot", args: { model: "m", instructions: "  " } }),
+    ).toBe(undefined);
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructions_offset: 0 },
+      }),
+    ).toBe(undefined);
+    // A null or blank offset is not a paged read: the update still writes the instructions.
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructions_offset: null },
+      }),
+    ).toBe("instructions");
+    expect(
+      lastingWriteKind({
+        toolName: "update_bot",
+        args: { instructions: "i", instructionsOffset: "" },
+      }),
+    ).toBe("instructions");
+    expect(
+      lastingWriteKind({ toolName: "set_child_instructions", args: { instructions: "i" } }),
+    ).toBe(undefined);
+    expect(lastingWriteKind({ toolName: "remember", args: {} })).toBe(undefined);
+    expect(
+      lastingWriteKind({ toolName: "schedule_create", args: { prompt: "p" }, newSite: true }),
+    ).toBe(undefined);
+  });
+});
+
 describe("savedContextWriteNeedsReview", () => {
   const readOutside = async () => true;
   const readNothing = async () => false;
 
-  it.each(["remember", "save_memory", "save_shared_memory", "skill_create", "skill_update"])(
+  it.each(["remember", "save_memory", "skill_create", "skill_update"])(
     "reviews %s only once outside content entered the run",
     async (name) => {
       await expect(savedContextWriteNeedsReview(name, readOutside)).resolves.toBe(true);

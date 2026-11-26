@@ -1,4 +1,5 @@
 import type { OAuthCredential } from "@earendil-works/pi-ai";
+import type { ModelBilling } from "@rakazo/adapter-kit";
 import type {
   ModelApiProtocol,
   ModelContextLimits,
@@ -14,6 +15,8 @@ import {
   parseModelHeaders,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
+import type { ListedModelDetails } from "./endpoints/listed-model-details.js";
+import { listedDetails } from "./endpoints/listed-model-details.js";
 
 const CORRUPT_MODEL_SECRET_MESSAGE =
   "Stored model credential is corrupt. Connect the provider again.";
@@ -32,6 +35,15 @@ function parsedModelSettings(value: unknown): StoredModelSettings {
     if (modelId.trim() && parsed.success) models[modelId] = parsed.data;
   }
   return Object.keys(models).length > 0 ? { models } : {};
+}
+
+function parsedListedModels(value: unknown): Record<string, ListedModelDetails> | undefined {
+  const models = parsedModelSettings(value).models;
+  if (!models) return undefined;
+  const listed: Record<string, ListedModelDetails> = Object.create(null);
+  for (const [modelId, settings] of Object.entries(models))
+    listed[modelId] = listedDetails(settings);
+  return listed;
 }
 
 function serializedModelSettings(secret: StoredModelSettings): StoredModelSettings {
@@ -90,6 +102,8 @@ export type StoredModelSecret =
       visionModelIds?: string[];
       enabledModelIds?: string[];
       maxImagesPerPrompt?: number;
+      /** What the server's model list said about the enabled models when last saved. */
+      listedModels?: Record<string, ListedModelDetails>;
     } & StoredModelLimits &
       StoredModelSettings);
 
@@ -162,6 +176,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
         : undefined;
     const visionModelIds = parsedModelIds(parsed.visionModelIds);
     const enabledModelIds = parsedModelIds(parsed.enabledModelIds);
+    const listedModels = parsedListedModels(parsed.listedModels);
     const maxImagesPerPrompt =
       typeof parsed.maxImagesPerPrompt === "number" &&
       Number.isInteger(parsed.maxImagesPerPrompt) &&
@@ -182,6 +197,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       ...(visionModelIds ? { visionModelIds } : {}),
       ...(enabledModelIds ? { enabledModelIds } : {}),
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
+      ...(listedModels ? { listedModels } : {}),
       ...modelLimits(parsed),
       ...parsedModelSettings(parsed.models),
     };
@@ -274,6 +290,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
       ...(secret.maxImagesPerPrompt !== undefined
         ? { maxImagesPerPrompt: secret.maxImagesPerPrompt }
         : {}),
+      ...(secret.listedModels ? { listedModels: parsedListedModels(secret.listedModels) } : {}),
       ...serializedModelSettings(secret),
     });
   }
@@ -318,4 +335,19 @@ export function secretValuesToRedact(secret: StoredModelSecret): string[] {
     ].filter((value): value is string => Boolean(value));
   if (secret.reconnectRequired) return [];
   return [secret.credential.access, secret.credential.refresh].filter(Boolean);
+}
+
+const STORED_MODEL_SECRET_BILLING = {
+  oauth: "subscription",
+  api_key: "api_key",
+  openai_compatible: "custom_endpoint",
+} as const satisfies Record<StoredModelSecret["kind"], ModelBilling>;
+
+/** Who pays for a call: credits when metered, else the user's stored connection, else the deployment. */
+export function modelBilling(funding: {
+  credits?: boolean;
+  secret?: Pick<StoredModelSecret, "kind">;
+}): ModelBilling {
+  if (funding.credits) return "credits";
+  return funding.secret ? STORED_MODEL_SECRET_BILLING[funding.secret.kind] : "deployment";
 }

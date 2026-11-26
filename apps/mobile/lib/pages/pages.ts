@@ -1,5 +1,7 @@
-import type { PageDetail, PageVisibility } from "@rakazo/contracts";
+import type { PageDetail, PageImages, PageState } from "@rakazo/contracts";
+import type { PageShown } from "@rakazo/core";
 import { isServerUnreachable, pageViewerDocument } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { rpc } from "../api/api";
 import { registerSessionDiskCache } from "../api/session";
 import { getActiveUiLocale } from "../i18n/i18n";
@@ -105,77 +107,6 @@ export function pageMessage(data: string): unknown {
   }
 }
 
-type PageShareState = {
-  /** Null when a change's answer was lost and the server could not be asked since. */
-  visibility: PageVisibility | null;
-  shareUrl: string | null;
-  /** The visibility being saved; the sheet shows it until the server answers. */
-  pending: PageVisibility | null;
-  error: boolean;
-};
-
-type PageShareEvent =
-  | { type: "loaded"; visibility: PageVisibility; shareUrl: string | null }
-  | { type: "choose"; visibility: PageVisibility }
-  | { type: "saved"; visibility: PageVisibility; shareUrl: string | null }
-  | {
-      type: "failed";
-      visibility: PageVisibility;
-      /** What the server says now: the change may have been made with only its answer lost. */
-      actual: Pick<PageDetail, "visibility" | "shareUrl"> | null;
-    };
-
-export function pageShareState(
-  detail: Pick<PageDetail, "visibility" | "shareUrl">,
-): PageShareState {
-  return { visibility: detail.visibility, shareUrl: detail.shareUrl, pending: null, error: false };
-}
-
-/** A late answer for a choice the user already changed is ignored. */
-export function reducePageShare(state: PageShareState, event: PageShareEvent): PageShareState {
-  switch (event.type) {
-    case "loaded":
-      return pageShareState(event);
-    case "choose":
-      if (event.visibility === (state.pending ?? state.visibility)) return state;
-      return { ...state, pending: event.visibility, error: false };
-    case "saved":
-      return state.pending === event.visibility ? pageShareState(event) : state;
-    case "failed":
-      if (state.pending !== event.visibility) return state;
-      return {
-        visibility: event.actual?.visibility ?? null,
-        shareUrl: event.actual?.shareUrl ?? null,
-        pending: null,
-        error: true,
-      };
-  }
-}
-
-/**
- * Saves who can view a page. A failure may still have been saved with only its answer lost, so
- * the server is asked what the page is now; null when it can't say either.
- */
-export function savePageVisibility(
-  pageId: string,
-  visibility: PageVisibility,
-  dispatch: (event: PageShareEvent) => void,
-) {
-  return setPageVisibility(pageId, visibility).then(
-    (result) => dispatch({ type: "saved", visibility, shareUrl: result.shareUrl }),
-    () =>
-      getLatestPage(pageId, { refresh: true, link: true }).then(
-        (page) => dispatch({ type: "failed", visibility, actual: page }),
-        () => dispatch({ type: "failed", visibility, actual: null }),
-      ),
-  );
-}
-
-/** The link to copy, share or open: only once anyone with it can view the page. */
-export function pageShareLink(state: PageShareState): string | null {
-  return state.pending === null && state.visibility === "link" ? state.shareUrl : null;
-}
-
 const pageReads = new Map<string, { read: Promise<PageDetail>; at: number }>();
 // Another account or server never sees this one's pages.
 registerSessionDiskCache(() => pageReads.clear());
@@ -218,11 +149,6 @@ export function getLatestPage(
   return read;
 }
 
-// A failed change may still have been made, so the cached read is dropped either way.
-export function setPageVisibility(pageId: string, visibility: PageVisibility) {
-  return rpc("pages/setVisibility", { pageId, visibility }).finally(() => pageReads.delete(pageId));
-}
-
 export function renamePage(pageId: string, title: string) {
   return rpc("pages/rename", { pageId, title }).finally(() => pageReads.delete(pageId));
 }
@@ -237,17 +163,56 @@ export function removePage(pageId: string) {
     .finally(() => pageReads.delete(pageId));
 }
 
+const PAGE_IMAGE_READS_MAX = 96;
+const pageImageReads = new Map<string, Promise<string | undefined>>();
+registerSessionDiskCache(() => pageImageReads.clear());
+
+function readPageImage(pageId: string, version: number, imageId: string) {
+  const cached = pageImageReads.get(imageId);
+  if (cached) return cached;
+  const read = bestEffort(
+    "read a page picture",
+    rpc("pageReviews/image", { pageId, version, imageId }).then((image) => image.src),
+  );
+  pageImageReads.set(imageId, read);
+  if (pageImageReads.size > PAGE_IMAGE_READS_MAX)
+    pageImageReads.delete(pageImageReads.keys().next().value!);
+  void read.then((src) => {
+    if (src === undefined && pageImageReads.get(imageId) === read) pageImageReads.delete(imageId);
+  });
+  return read;
+}
+
+async function readPageImages(pageId: string, version: number, images: PageImages) {
+  const read = await Promise.all(
+    Object.entries(images ?? {}).map(
+      async ([name, imageId]) => [name, await readPageImage(pageId, version, imageId)] as const,
+    ),
+  );
+  return Object.fromEntries(read.filter((entry): entry is [string, string] => Boolean(entry[1])));
+}
+
 export async function pageDocument(
   apiBase: string,
-  code: string,
+  page: PageShown & { pageId: string },
   theme: "light" | "dark",
   errorTitle: string,
-  options: { reply?: boolean } = {},
+  options: {
+    reply?: boolean;
+    review?: boolean;
+    reviewAnchor?: string;
+    reviewAnchorOccurrence?: number;
+    state?: PageState;
+  } = {},
 ): Promise<string> {
-  const runtime = await loadPageRuntime(apiBase);
+  const [runtime, images] = await Promise.all([
+    loadPageRuntime(apiBase),
+    readPageImages(page.pageId, page.version, page.images),
+  ]);
   return pageViewerDocument({
     runtime,
-    code,
+    code: page.code,
+    images,
     theme,
     errorTitle,
     touch: true,

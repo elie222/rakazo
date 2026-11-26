@@ -37,9 +37,16 @@ organization you're in; open it to switch to another or choose **New organizatio
 **Organization** row under **Account**). Rename or delete the current one in
 **Settings → Organization**; deleting one cancels its plan and removes its bots and data.
 
+To bring your team in, open **Members** there (on mobile, the **Organization** row under
+**Account**, then **Organization settings**), enter an email and choose **Invite**. Each person
+gets a private space of their own; [share a space](./spaces.md#share-a-space) to work together.
+The owner and admins invite people, change roles and remove members.
+
 ## Usage
 
-**Settings → Usage** shows runs, tokens and model cost, by model.
+On web and desktop, **Settings → Usage** shows runs, tokens and cost by model. On mobile,
+**Settings** shows a **Usage** summary. For a breakdown by model, type `/` at the start of a draft
+in a bot chat and choose **Settings: Usage**.
 
 ## Your data
 
@@ -65,10 +72,11 @@ Both plans come in monthly or yearly, and include monthly hours on your bots' co
 **Settings → Billing** shows your plan, when it renews and the computer hours left. Choose
 **Manage** to change it. See [pricing](https://rakazo.com/pricing) for current plans.
 
-Computers start at Standard size. On plans that offer larger sizes, the account owner can change
-**Computer size** in Billing. The choice applies across the organization as computers next start.
-Large uses twice the allowance per hour, and Extra large uses four times as much. Hours left
-reflect the selected size. The breakdown reports usage in Standard hours.
+Cloud computers start at Standard size. On plans that offer larger sizes, the account owner can
+choose a size for each computer in **Settings → Computers → Cloud computers**. The change applies
+only to that computer the next time it starts. Large uses twice the allowance per hour, and
+Extra large uses four times as much. Where computer sizes are available, **Billing** shows the
+hours left and usage by computer in Standard hours.
 
 **Invite friends** in the account menu gives you a link. You get a free month for each friend who
 starts a trial.

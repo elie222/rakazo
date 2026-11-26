@@ -2,10 +2,9 @@ import { ph, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { ChatMarkdown, MarkdownLongPressContext, withBlockMentions } from "@rakazo/chat-ui/native";
 import type { LoginFieldInput, MessageBlock } from "@rakazo/contracts";
-import { artifactPreviewKind, isAttachmentAudioMimeType } from "@rakazo/contracts";
+import { isAttachmentAudioMimeType } from "@rakazo/contracts";
 import type { ChildBotBlock, PeerExchange } from "@rakazo/core";
 import {
-  formatFileSize,
   isApprovalAskBlock,
   isQuestionAskBlock,
   messagingProviderLabel,
@@ -25,6 +24,7 @@ import type { MobileArtifactTarget } from "../../lib/artifacts/artifact-open";
 import { openMobileArtifact } from "../../lib/artifacts/artifact-open";
 import { allowsSpace } from "../../lib/cards/ask-action-label";
 import { plainAskTitle } from "../../lib/cards/ask-title";
+import { attachmentGroups } from "../../lib/messages/attachment-groups";
 import { isInlineImageBlock } from "../../lib/messages/inline-image";
 import {
   mentionedBots,
@@ -32,9 +32,13 @@ import {
   UserMentionsContext,
   userMentionTargets,
 } from "../../lib/messages/message-mentions";
-import { messagePresentationSegments } from "../../lib/messages/message-presentation";
+import {
+  askOptions,
+  hasMessageSenderContent,
+  messagePresentationSegments,
+  splitMessageBlocks,
+} from "../../lib/messages/message-presentation";
 import type { RoutineEventBlock } from "../../lib/messages/routine-event-label";
-import { routineEventLabel } from "../../lib/messages/routine-event-label";
 import type { UserBubble } from "../../lib/messages/user-bubble";
 import { withUserBubble } from "../../lib/messages/user-bubble";
 import { useResolvedAppearance } from "../../lib/native/native";
@@ -49,9 +53,11 @@ import { ChangeUndo, isUndoableChange } from "../cards/change-undo";
 import { ImportSetupCard } from "../cards/ImportSetupCard";
 import { McpApprovalCard } from "../cards/McpApprovalCard";
 import { OutgoingDraftCard } from "../cards/OutgoingDraftCard";
+import { RoutineApprovalDetail } from "../cards/routine-approval-detail";
 import { ToolQuestionCard } from "../cards/ToolQuestionCard";
+import { AttachmentFile } from "../media/attachment-file";
 import { AudioAttachment } from "../media/audio-attachment";
-import type { ImageArtifactPreviewTarget } from "../media/image-artifact-viewer";
+import { ImageAttachmentDeck } from "../media/image-attachment-deck";
 import { InlineImageAttachment } from "../media/inline-image-attachment";
 import { MessageMentions } from "../messages/bot-mention";
 import { MessageCaption } from "../messages/message-caption";
@@ -60,6 +66,7 @@ import { AskBlock } from "./ask-block";
 import { McpAppCard } from "./mcp-app-card";
 import type { MessageRowActions } from "./message-row";
 import { PeerReceiptLine } from "./peer-receipt-line";
+import { RoutineEventRows } from "./routine-event-row";
 import { isSpecialMessageBlock, SpecialMessageCard } from "./special-message-card";
 
 type AskAction = NonNullable<Extract<MessageBlock, { kind: "ask" }>["actions"]>[number];
@@ -152,19 +159,19 @@ function isOwnCardBlock(block: MessageBlock): boolean {
   );
 }
 
+function pieceShowsSender(blocks: readonly MessageBlock[]): boolean {
+  return !blocks.some(isOwnCardBlock) && hasMessageSenderContent(blocks);
+}
+
+export function hasSenderLabelContent(message: { blocks: MessageBlock[] }): boolean {
+  return splitMessageBlocks(message.blocks, isOwnCardBlock).some(pieceShowsSender);
+}
+
 function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
   const { message } = props;
-  if (!message.blocks.some(isOwnCardBlock)) return <MessageBubbleContent {...props} />;
-
-  const pieces: MessageBlock[][] = [];
-  for (const block of message.blocks) {
-    const previous = pieces.at(-1);
-    if (isOwnCardBlock(block) || !previous || isOwnCardBlock(previous[0]!)) {
-      pieces.push([block]);
-    } else {
-      previous.push(block);
-    }
-  }
+  const pieces = splitMessageBlocks(message.blocks, isOwnCardBlock);
+  if (pieces[0] === message.blocks) return <MessageBubbleContent {...props} />;
+  const firstContent = pieces.findIndex(pieceShowsSender);
   const content = pieces.map((blocks, index) => {
     const first = blocks[0]!;
     if (first.kind === "page")
@@ -208,6 +215,7 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
       <MessageBubbleContent
         {...props}
         key={`content-${index}`}
+        hideSenderLabel={props.hideSenderLabel || index !== firstContent}
         message={{ ...message, blocks }}
         onAnswer={(_, ...answer) => props.onAnswer(message, ...answer)}
       />
@@ -224,6 +232,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   botId,
   authorName,
   botName,
+  hideSenderLabel,
   showBotSenderName,
   bots,
   groupId,
@@ -237,6 +246,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onChoiceDismissed,
   onPreviewFile,
   onPreviewImage,
+  imageStackMaxWidth,
   peerExchange,
   onOpenPeerChat,
   actionProps,
@@ -248,6 +258,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   /** Someone else in a shared space wrote this message: named and set apart. */
   authorName?: string;
   botName?: string;
+  hideSenderLabel?: boolean;
   showBotSenderName: boolean;
   bots: MobileBot[];
   groupId?: string;
@@ -268,7 +279,8 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   onChoiceDismissed?: (question: string) => void;
   /** Opens a file the app can show; other types go to the share sheet. */
   onPreviewFile: (artifactId: string) => void;
-  onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
+  onPreviewImage: MessageRowActions["previewImage"];
+  imageStackMaxWidth?: number;
   peerExchange?: PeerExchange;
   onOpenPeerChat: (peer: { peerBotId: string; peerBotName: string }) => void;
   actionProps: MessageActionProps;
@@ -280,6 +292,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   const { t } = useLingui();
   const [peerExpanded, setPeerExpanded] = useState(false);
   const outgoing = message.role === "user" && !authorName;
+  const showSpeaker = !hideSenderLabel && (showBotSenderName || Boolean(authorName));
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -403,19 +416,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
   );
   if (routineEvents.length > 0 && routineEvents.length === message.blocks.length) {
     return (
-      <Pressable
-        {...actionProps}
-        style={{ width: "100%", paddingVertical: 4, alignItems: "center" }}
-      >
-        {routineEvents.map((block, index) => (
-          <Text
-            key={`${block.change}-${index}`}
-            style={{ color: tokens.mutedForeground, fontSize: 13.5, textAlign: "center" }}
-          >
-            {routineEventLabel(block)}
-          </Text>
-        ))}
-      </Pressable>
+      <RoutineEventRows blocks={routineEvents} botId={message.botId} actionProps={actionProps} />
     );
   }
   const inlineCardCount = appConnectBlocks.length + mcpApprovalBlocks.length;
@@ -493,7 +494,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                     : plainAskTitle(askBlock.text)}
                 </Text>
               ) : null}
-              {askBlock.receipt ? (
+              {askBlock.routineUpdate ? (
+                <RoutineApprovalDetail review={askBlock.routineUpdate} />
+              ) : askBlock.receipt ? (
                 <AskReceiptView receipt={askBlock.receipt} />
               ) : askBlock.detail ? (
                 <Text
@@ -517,7 +520,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
               ) : null}
               {question && (answered || canAnswer) ? (
                 <AskActions
-                  actions={askBlock.actions}
+                  actions={askOptions(askBlock)}
                   approval={false}
                   disabled={answered}
                   selectedAnswer={answered ? askBlock.answer : undefined}
@@ -557,6 +560,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
                   site={askBlock.site}
                   approval={isApprovalAskBlock(askBlock)}
                   instructions={askBlock.instructionUpdate?.after}
+                  routineUpdate={Boolean(askBlock.routineUpdate)}
                   accessibilityActions={actionProps.accessibilityActions}
                   onAccessibilityAction={actionProps.onAccessibilityAction}
                   onAnswer={(answer) => onAnswer(message, answer)}
@@ -596,9 +600,7 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
       </View>
     );
   }
-  const attachments = message.blocks.filter(
-    (block) => block.kind === "image" || block.kind === "file",
-  );
+  const attachments = attachmentGroups(message.blocks);
   const caption = message.blocks
     .flatMap((block) => {
       if (block.kind === "channel_message" && block.text) {
@@ -616,7 +618,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
         : authorName;
     const speakerColor =
       message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
-    const hasInlineImages = attachments.some(isInlineImageBlock);
+    const hasInlineImages = attachments.some(
+      (group) => group.kind === "pictures" || isInlineImageBlock(group.attachment),
+    );
     const bubbleStyle = {
       maxWidth: "100%",
       borderRadius: 20,
@@ -627,9 +631,9 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     } as const;
     return (
       <View style={hasInlineImages ? { maxWidth: "100%", gap: 8 } : bubbleStyle}>
-        {((showBotSenderName || authorName) && speaker) || caption ? (
+        {(showSpeaker && speaker) || caption ? (
           <View style={hasInlineImages ? bubbleStyle : undefined}>
-            {(showBotSenderName || authorName) && speaker ? (
+            {showSpeaker && speaker ? (
               <Text
                 style={{ color: speakerColor ?? tokens.mutedForeground, ...typeScale.footnote }}
               >
@@ -648,104 +652,89 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
             ) : null}
           </View>
         ) : null}
-        {attachments.map((attachment, index) => (
-          <View
-            key={`${attachment.artifactId ?? attachment.name ?? attachment.kind}-${index}`}
-            style={hasInlineImages && !isInlineImageBlock(attachment) ? bubbleStyle : undefined}
-          >
-            {attachment.kind === "image" ? (
-              isInlineImageBlock(attachment) ? (
-                <InlineImageAttachment
-                  threadTarget={artifactTarget}
-                  artifactId={attachment.artifactId}
-                  name={attachment.name ?? t`Image`}
-                  mimeType={attachment.mimeType ?? "image/png"}
-                  labelColor={outgoing ? tokens.chatUserForeground : tokens.foreground}
+        {attachments.map((group) =>
+          group.kind === "pictures" ? (
+            <ImageAttachmentDeck
+              key={`stack-${group.index}`}
+              threadTarget={artifactTarget}
+              images={group.pictures}
+              onOpen={onPreviewImage}
+              actionProps={actionProps}
+              maxWidth={imageStackMaxWidth}
+            />
+          ) : (
+            <View
+              key={`${group.attachment.artifactId ?? group.attachment.name ?? group.attachment.kind}-${group.index}`}
+              style={
+                hasInlineImages && !isInlineImageBlock(group.attachment) ? bubbleStyle : undefined
+              }
+            >
+              {group.attachment.kind === "image" ? (
+                isInlineImageBlock(group.attachment) ? (
+                  <InlineImageAttachment
+                    threadTarget={artifactTarget}
+                    artifactId={group.attachment.artifactId}
+                    name={group.attachment.name ?? t`Image`}
+                    mimeType={group.attachment.mimeType ?? "image/png"}
+                    labelColor={outgoing ? tokens.chatUserForeground : tokens.foreground}
+                    pressableProps={actionProps}
+                    onOpen={() =>
+                      onPreviewImage({
+                        artifactId: group.attachment.artifactId!,
+                        name: group.attachment.name ?? t`Image`,
+                        mimeType: group.attachment.mimeType ?? "image/png",
+                      })
+                    }
+                  />
+                ) : (
+                  <Pressable
+                    {...actionProps}
+                    onPress={() =>
+                      group.attachment.artifactId
+                        ? void openMobileArtifact(
+                            artifactTarget,
+                            group.attachment.artifactId,
+                            group.attachment.name ?? t`Image`,
+                            group.attachment.mimeType ?? "image/png",
+                          ).catch((err) =>
+                            Alert.alert(t`Could not open image`, errorText(err, t`Try again.`)),
+                          )
+                        : undefined
+                    }
+                  >
+                    <Text
+                      style={{
+                        color: outgoing ? tokens.chatUserForeground : tokens.foreground,
+                        fontSize: 15,
+                      }}
+                    >
+                      🖼 {group.attachment.name ?? t`Image`}
+                    </Text>
+                  </Pressable>
+                )
+              ) : group.attachment.artifactId &&
+                isAttachmentAudioMimeType(group.attachment.mimeType ?? "") ? (
+                <AudioAttachment
                   pressableProps={actionProps}
-                  onOpen={() =>
-                    onPreviewImage({
-                      artifactId: attachment.artifactId!,
-                      name: attachment.name ?? t`Image`,
-                      mimeType: attachment.mimeType ?? "image/png",
-                    })
-                  }
+                  target={artifactTarget}
+                  artifactId={group.attachment.artifactId}
+                  name={group.attachment.name ?? t`File`}
+                  mimeType={group.attachment.mimeType!}
+                  labelColor={outgoing ? tokens.chatUserForeground : undefined}
                 />
               ) : (
-                <Pressable
-                  {...actionProps}
-                  onPress={() =>
-                    attachment.artifactId
-                      ? void openMobileArtifact(
-                          artifactTarget,
-                          attachment.artifactId,
-                          attachment.name ?? t`Image`,
-                          attachment.mimeType ?? "image/png",
-                        ).catch((err) =>
-                          Alert.alert(t`Could not open image`, errorText(err, t`Try again.`)),
-                        )
-                      : undefined
-                  }
-                >
-                  <Text
-                    style={{
-                      color: outgoing ? tokens.chatUserForeground : tokens.foreground,
-                      fontSize: 15,
-                    }}
-                  >
-                    🖼 {attachment.name ?? t`Image`}
-                  </Text>
-                </Pressable>
-              )
-            ) : attachment.artifactId && isAttachmentAudioMimeType(attachment.mimeType ?? "") ? (
-              <AudioAttachment
-                pressableProps={actionProps}
-                target={artifactTarget}
-                artifactId={attachment.artifactId}
-                name={attachment.name ?? t`File`}
-                mimeType={attachment.mimeType!}
-                labelColor={outgoing ? tokens.chatUserForeground : undefined}
-              />
-            ) : (
-              <Pressable
-                {...actionProps}
-                onPress={() =>
-                  attachment.artifactId
-                    ? artifactPreviewKind(attachment.mimeType ?? "") !== "none"
-                      ? onPreviewFile(attachment.artifactId)
-                      : void openMobileArtifact(
-                          artifactTarget,
-                          attachment.artifactId,
-                          attachment.name ?? t`File`,
-                          attachment.mimeType ?? "text/plain",
-                        ).catch((err) =>
-                          Alert.alert(t`Could not open file`, errorText(err, t`Try again.`)),
-                        )
-                    : undefined
-                }
-              >
-                <Text
-                  style={{
-                    color: outgoing ? tokens.chatUserForeground : tokens.foreground,
-                    fontSize: 15,
-                  }}
-                >
-                  📎 {attachment.name ?? t`File`}
-                </Text>
-                {formatFileSize(attachment.size) ? (
-                  <Text
-                    style={{
-                      color: outgoing ? tokens.chatUserForeground : tokens.mutedForeground,
-                      marginTop: 4,
-                      fontSize: 13,
-                    }}
-                  >
-                    {formatFileSize(attachment.size)}
-                  </Text>
-                ) : null}
-              </Pressable>
-            )}
-          </View>
-        ))}
+                <AttachmentFile
+                  attachment={group.attachment}
+                  target={artifactTarget}
+                  color={outgoing ? tokens.chatUserForeground : tokens.foreground}
+                  secondaryColor={outgoing ? tokens.chatUserForeground : tokens.mutedForeground}
+                  pressableProps={actionProps}
+                  onPreviewFile={onPreviewFile}
+                />
+              )}
+            </View>
+          ),
+        )}
         {appConnectBlocks.map((block, index) => (
           <AppConnectCard
             key={`${block.provider}-${index}`}
@@ -775,7 +764,6 @@ const MessageBubbleContent = memo(function MessageBubbleContent({
     message.role === "bot" ? (botDisplayName(members, bots, message.botId) ?? botName) : authorName;
   const speakerColor =
     message.role === "bot" ? speakerColorFor(bots, members, message.botId) : undefined;
-  const showSpeaker = showBotSenderName || Boolean(authorName);
   const firstContent = segments.findIndex((segment) => segment.kind === "content");
   const choiceBlocks = message.blocks.filter(
     (block): block is Extract<MessageBlock, { kind: "choice" }> => block.kind === "choice",

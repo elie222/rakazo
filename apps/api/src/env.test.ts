@@ -2,7 +2,8 @@ import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadEnv, parseExtraAuthOrigins, withEnvOverrides } from "./env.js";
 
 const base = {
@@ -11,10 +12,12 @@ const base = {
 };
 
 describe("loadEnv", () => {
-  it("defaults the attachment count to four and accepts configured bounds", () => {
-    expect(loadEnv(base).maxAttachmentsPerMessage).toBe(4);
-    expect(loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: " " }).maxAttachmentsPerMessage).toBe(4);
-    for (const count of [1, 8, 100]) {
+  it("defaults the attachment count to ten and accepts configured bounds", () => {
+    expect(loadEnv(base).maxAttachmentsPerMessage).toBe(10);
+    expect(loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: " " }).maxAttachmentsPerMessage).toBe(
+      10,
+    );
+    for (const count of [1, 4, 8, 100]) {
       expect(
         loadEnv({ ...base, MAX_ATTACHMENTS_PER_MESSAGE: ` ${count} ` }).maxAttachmentsPerMessage,
       ).toBe(count);
@@ -25,6 +28,23 @@ describe("loadEnv", () => {
       "MAX_ATTACHMENTS_PER_MESSAGE",
     );
   });
+
+  it("reads credit codes case-insensitively, with an optional account limit", () => {
+    expect(
+      loadEnv({ ...base, CREDIT_CODES: "gift-code:10, LAUNCH2027:2.50:100" }).creditCodes,
+    ).toEqual(
+      new Map([
+        ["GIFT-CODE", { code: "GIFT-CODE", creditCents: 1000, maxClaims: null }],
+        ["LAUNCH2027", { code: "LAUNCH2027", creditCents: 250, maxClaims: 100 }],
+      ]),
+    );
+  });
+  it.each(["SHORT:10", "GIFT-CODE:0", "GIFT-CODE:10:0", "GIFT-CODE:10,gift-code:5"])(
+    "rejects credit codes %s",
+    (value) => {
+      expect(() => loadEnv({ ...base, CREDIT_CODES: value })).toThrow("CREDIT_CODES");
+    },
+  );
 
   it("keeps calls off unless explicitly enabled", () => {
     expect(loadEnv(base).phoneCallsEnabled).toBe(false);
@@ -357,6 +377,28 @@ describe("OIDC environment", () => {
       );
     },
   );
+  it("reads fixed authorization parameters", () => {
+    expect(
+      loadEnv({
+        ...base,
+        ...oidc,
+        OIDC_AUTHORIZATION_PARAMS: "domain_hint=example.test&constructor=x",
+      }).oidc?.authorizationParams,
+    ).toEqual({ domain_hint: "example.test", constructor: "x" });
+  });
+  it.each(["state=fixed", "Redirect_URI=https://attacker.example.test", "=value"])(
+    "refuses authorization parameter %s, which the sign-in flow owns",
+    (value) => {
+      expect(() => loadEnv({ ...base, ...oidc, OIDC_AUTHORIZATION_PARAMS: value })).toThrow(
+        /OIDC_AUTHORIZATION_PARAMS cannot set/,
+      );
+    },
+  );
+  it("refuses an authorization parameter set twice", () => {
+    expect(() =>
+      loadEnv({ ...base, ...oidc, OIDC_AUTHORIZATION_PARAMS: "prompt=select_account&prompt=none" }),
+    ).toThrow("OIDC_AUTHORIZATION_PARAMS sets prompt twice");
+  });
   it("guards password-only lockout without contacting discovery", () => {
     expect(() => loadEnv({ ...base, AUTH_PASSWORD_ENABLED: "false" })).toThrow(/requires OIDC/);
     expect(loadEnv({ ...base, ...oidc, AUTH_PASSWORD_ENABLED: "false" }).passwordAuth).toBe(false);
@@ -368,6 +410,53 @@ describe("OIDC environment", () => {
     ).toBe(true);
     expect(() => loadEnv({ ...base, AUTH_BREACHED_PASSWORD_CHECK_ENABLED: "yes" })).toThrow(
       "AUTH_BREACHED_PASSWORD_CHECK_ENABLED must be true or false",
+    );
+  });
+  it("refuses an Auto Review confidence floor it can't read at startup", () => {
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "90" })).toThrow(
+      "RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE must be a number from 0 to 1",
+    );
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "0.9" })).not.toThrow();
+    expect(() => loadEnv({ ...base, RAKAZO_AUTO_REVIEW_MIN_CONFIDENCE: "" })).not.toThrow();
+  });
+  it("refuses a SIGNUPS_ENABLED value it can't read", () => {
+    for (const value of ["false", "FALSE", " true ", "0", "1", ""]) {
+      expect(loadEnv({ ...base, SIGNUPS_ENABLED: value }).signupsEnabled).toBe(value);
+    }
+    for (const value of ["no", "off", "flase"]) {
+      expect(() => loadEnv({ ...base, SIGNUPS_ENABLED: value })).toThrow(
+        "SIGNUPS_ENABLED must be true or false",
+      );
+    }
+  });
+  it("refuses a RAKAZO_LIVE_MODEL_CATALOG value it can't read at startup", () => {
+    for (const value of ["off", "false", "0", "no", "on", ""]) {
+      expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: value })).not.toThrow();
+    }
+    expect(() => loadEnv({ ...base, RAKAZO_LIVE_MODEL_CATALOG: "disabled" })).toThrow(
+      "RAKAZO_LIVE_MODEL_CATALOG must be on or off",
+    );
+  });
+  it("reads USER_DEVICES_ENABLED strictly and refuses a value it can't read", () => {
+    expect(loadEnv(base).userDevicesEnabled).toBe(true);
+    for (const value of ["", "  ", "true", "TRUE", "1"]) {
+      expect(loadEnv({ ...base, USER_DEVICES_ENABLED: value }).userDevicesEnabled).toBe(true);
+    }
+    for (const value of ["false", "FALSE", "False", " false ", "0"]) {
+      expect(loadEnv({ ...base, USER_DEVICES_ENABLED: value }).userDevicesEnabled).toBe(false);
+    }
+    for (const value of ["no", "off", "flase"]) {
+      expect(() => loadEnv({ ...base, USER_DEVICES_ENABLED: value })).toThrow(
+        "USER_DEVICES_ENABLED must be true or false",
+      );
+    }
+  });
+  it("refuses a RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC value it can't read", () => {
+    for (const value of ["", "0", "false", "1", "TRUE"]) {
+      expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: value })).not.toThrow();
+    }
+    expect(() => loadEnv({ ...base, RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC: "no" })).toThrow(
+      "RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC must be true or false",
     );
   });
   it("defaults to SSO with no policy bypass", () => {
@@ -561,5 +650,26 @@ describe("RAKAZO_EXTRA_AUTH_ORIGINS", () => {
         "http://example.com,ftp://host,rakazo://,not a url,https://host/path,https://u:p@host,*",
       ),
     ).toEqual([]);
+  });
+});
+
+describe("SANDBOX_COMMAND_TIMEOUT_MS", () => {
+  afterEach(() => {
+    installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
+
+  it("warns at startup when the value is above the maximum", () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    loadEnv({ ...base, SANDBOX_COMMAND_TIMEOUT_MS: "7200000" });
+    expect(sink.events).toHaveLength(1);
+    expect(sink.events[0]).toMatchObject({ level: "warn", maximumMs: 3_600_000 });
+  });
+
+  it.each([undefined, "300000", "3600000", "0", "invalid"])("stays quiet for %s", (value) => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
+    loadEnv({ ...base, SANDBOX_COMMAND_TIMEOUT_MS: value });
+    expect(sink.events).toEqual([]);
   });
 });

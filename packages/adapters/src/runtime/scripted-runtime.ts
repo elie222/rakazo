@@ -783,7 +783,7 @@ code-b
     const named =
       /(?:named|called|path|file)\s+([A-Za-z0-9._/-]+)/i.exec(header)?.[1] ??
       /shared memory\s+([A-Za-z0-9._/-]+\.[A-Za-z0-9]+)/i.exec(header)?.[1];
-    const path = named && named.toLowerCase() !== "with" ? named : "MEMORY.md";
+    const path = named && named.toLowerCase() !== "with" ? named : undefined;
     if (!content) {
       return [
         {
@@ -796,7 +796,16 @@ code-b
     return [
       {
         assistant: "saving that to shared memory.",
-        toolCalls: [{ name: "save_shared_memory", args: { path, content } }],
+        toolCalls: [
+          {
+            name: "remember",
+            args: {
+              shared: true,
+              ...(path ? { path } : {}),
+              operations: [{ action: "add", content }],
+            },
+          },
+        ],
         complete: true,
       },
     ];

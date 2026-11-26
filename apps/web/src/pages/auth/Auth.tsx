@@ -18,7 +18,7 @@ import {
 } from "@rakazo/ui-web";
 import { ChevronLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { PasskeySignIn, usePasskeySignIn } from "../../components/account/PasskeySignIn";
 import { SocialSignInButtons } from "../../components/account/SocialSignInButtons";
 import { WindowChrome } from "../../components/WindowChrome";
@@ -26,6 +26,7 @@ import { authClient } from "../../lib/auth/auth";
 import type { AuthCapabilities } from "../../lib/auth/auth-capabilities";
 import { fetchAuthCapabilities } from "../../lib/auth/auth-capabilities";
 import { newAccountDestination, signInNext } from "../../lib/auth/sign-in-next";
+import { holdSsoAutoStart, ssoAutoStartAllowed } from "../../lib/auth/sso-auto-start";
 import { runSsoFlow } from "../../lib/auth/sso-flow";
 import { desktopBridge } from "../../lib/platform/desktop";
 import { clearSpaceSelection } from "../../lib/query/rpc";
@@ -65,6 +66,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   // Signup triggers a session refresh that remounts the anonymous auth page.
   const sent = resetSent || searchParams.get("verify") === "email";
   const [reset, setReset] = useState<AuthCapabilities | null>(null);
+  const showAccountSwitch = mode !== "in" || reset?.registrationOpen !== false;
   const [capabilityError, setCapabilityError] = useState(false);
   const [capabilityAttempt, setCapabilityAttempt] = useState(0);
   const [codeSent, setCodeSent] = useState(false);
@@ -114,6 +116,26 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
       active = false;
     };
   }, [mode, capabilityAttempt]);
+
+  // A server whose only way in is one provider starts it at once, on sign-up too since a first
+  // visit lands there, but never after the provider sent back an error. Desktop keeps the click,
+  // as its sign-in opens a window.
+  const onlyProvider =
+    (mode === "in" || (mode === "up" && reset?.registrationOpen !== false)) &&
+    reset &&
+    !reset.passwordAuth &&
+    providers.length === 1 &&
+    (!reset.sso || reset.sso.availability === "available") &&
+    !searchParams.has("error") &&
+    !desktopBridge()
+      ? providers[0]?.id
+      : undefined;
+  useEffect(() => {
+    // The hold also keeps this from starting twice; when it cannot be saved, nothing starts.
+    if (onlyProvider && ssoAutoStartAllowed() && holdSsoAutoStart()) {
+      void signInWithProvider(onlyProvider);
+    }
+  }, [onlyProvider]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -274,6 +296,9 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   if (!sent && !reset && !capabilityError) {
     return <div className="h-full bg-background" />;
   }
+  if (!sent && mode === "up" && reset?.registrationOpen === false) {
+    return <Navigate to={`/sign-in${nextQuery}`} replace />;
+  }
 
   return (
     <AuthFrame
@@ -356,23 +381,25 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   {error}
                 </p>
               ) : null}
-              <p className="mt-8 text-center text-muted-foreground">
-                {mode === "in" ? (
-                  <>
-                    <Trans>Don’t have an account?</Trans>{" "}
-                    <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
-                      <Trans>Sign up</Trans>
-                    </Link>
-                  </>
-                ) : (
-                  <>
-                    <Trans>Already have an account?</Trans>{" "}
-                    <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
-                      <Trans>Sign in</Trans>
-                    </Link>
-                  </>
-                )}
-              </p>
+              {showAccountSwitch ? (
+                <p className="mt-8 text-center text-muted-foreground">
+                  {mode === "in" ? (
+                    <>
+                      <Trans>Don’t have an account?</Trans>{" "}
+                      <Link to={`/sign-up${nextQuery}`} className="font-medium text-foreground">
+                        <Trans>Sign up</Trans>
+                      </Link>
+                    </>
+                  ) : (
+                    <>
+                      <Trans>Already have an account?</Trans>{" "}
+                      <Link to={`/sign-in${nextQuery}`} className="font-medium text-foreground">
+                        <Trans>Sign in</Trans>
+                      </Link>
+                    </>
+                  )}
+                </p>
+              ) : null}
             </>
           ) : null}
           {reset?.passwordAuth && !chooser ? (
@@ -540,7 +567,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   <Trans>Back</Trans>
                 </Button>
               ) : null}
-              {codeStep ? null : (
+              {!codeStep && showAccountSwitch ? (
                 <p className="mt-8 text-center text-muted-foreground">
                   {mode === "in" ? (
                     <>
@@ -572,7 +599,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                     </Link>
                   )}
                 </p>
-              )}
+              ) : null}
             </>
           ) : null}
         </>

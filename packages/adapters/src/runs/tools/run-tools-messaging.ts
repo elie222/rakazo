@@ -26,7 +26,6 @@ import {
   canPostLongTaskHeadsUp,
   canPublishDurableProgress,
   flushProgress,
-  progressSinceBudgetStart,
   publishInterimMessage,
   publishMidTurnNarration,
   showNarrationStatus,
@@ -34,9 +33,7 @@ import {
 import {
   clampUserProgressMessage,
   isProgressMessageTruncated,
-  MID_TURN_PROGRESS_MIN_TURN_AGE_MS,
   messageUserMaxLength,
-  midTurnProgressBudgetUsed,
 } from "../lifecycle/user-progress.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import type { AttachmentBlock } from "./run-tools-files.js";
@@ -296,33 +293,35 @@ export const messagingTools: ToolHandlers = {
     await showNarrationStatus(ctx, await publishMidTurnNarration(ctx));
     // A mid-task message handled meanwhile may have granted a new allowance; keep it.
     reply.steeringReplyPending ||= answering;
+    const result = truncated
+      ? {
+          ok: true,
+          truncated: true,
+          note: `This progress update was cut off at ${maxLength} characters and the user only saw the truncated version above — it did NOT deliver your full content. message_user is for short interim beats only, never the final answer. Put your complete answer in your normal final reply instead of relying on this truncated update.`,
+        }
+      : { ok: true };
+    // The person already has this text, unless it answers a message they just sent.
+    const repeat = !reply.steeringReplyPending && reply.midTurnUserTexts.at(-1) === text;
+    // An update that can't be a chat message yet is shown as the working line, so the bot has
+    // nothing to resend. As the bot's latest word, it becomes the reply if the bot writes none.
     if (
+      !repeat &&
       ctx.replyMode === "chat" &&
       !canPublishDurableProgress(reply) &&
       !canPostLongTaskHeadsUp(ctx)
     ) {
-      return call.finish({
-        ok: true,
-        note: midTurnProgressBudgetUsed(progressSinceBudgetStart(reply))
-          ? "This update was not posted. The chat already has enough interim messages for this run. Do not send more progress updates — keep working and put everything in your final reply."
-          : `This update was not posted because the turn just started. Keep working and put anything the person needs in your final reply. Once the turn has run ${MID_TURN_PROGRESS_MIN_TURN_AGE_MS / 1000} seconds, a later update can be posted.`,
-      });
+      reply.workingNotes.length = 0;
+      reply.lastDiscardedMidTurnNarration = text;
+      await showNarrationStatus(ctx, text);
+      return call.finish(result);
     }
-    await publishInterimMessage(ctx, text, true);
+    if (!repeat) await publishInterimMessage(ctx, text, true);
     // The person already has this message; notes written before it are no longer a missing answer.
     if (ctx.replyMode === "messages") {
       reply.workingNotes.length = 0;
       reply.lastDiscardedMidTurnNarration = "";
     }
-    return call.finish(
-      truncated
-        ? {
-            ok: true,
-            truncated: true,
-            note: `This progress update was cut off at ${maxLength} characters and the user only saw the truncated version above — it did NOT deliver your full content. message_user is for short interim beats only, never the final answer. Put your complete answer in your normal final reply instead of relying on this truncated update.`,
-          }
-        : { ok: true },
-    );
+    return call.finish(result);
   },
   async message_bot(ctx, call) {
     const { deps, run, bot } = ctx;

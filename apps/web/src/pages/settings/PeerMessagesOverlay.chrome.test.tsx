@@ -34,6 +34,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  document.documentElement.removeAttribute("dir");
   delete window.rakazoDesktop;
   vi.unstubAllGlobals();
 });
@@ -68,7 +69,30 @@ it("clears the macOS window controls in the desktop app", async () => {
   expect(view.querySelector("button")?.classList).toContain("app-no-drag");
 });
 
-it("leaves the header flush in a browser", async () => {
+it("keeps the macOS header aligned to the native controls in RTL", async () => {
+  document.documentElement.dir = "rtl";
+  window.rakazoDesktop = { platform: "darwin" } as RakazoDesktop;
   const view = await render();
-  expect(view.firstElementChild!.querySelector('[aria-hidden="true"].app-drag')).toBeNull();
+  const header = view.firstElementChild!;
+  expect(header.getAttribute("dir")).toBe("ltr");
+  expect(header.querySelector('[aria-hidden="true"].app-drag')).not.toBeNull();
+  expect(header.querySelector('[dir="auto"]')?.textContent).toContain("Scout");
+  expect(view.getAttribute("dir")).toBeNull();
+});
+
+it("leaves the header flush and inherited in an RTL browser", async () => {
+  document.documentElement.dir = "rtl";
+  const view = await render();
+  const header = view.firstElementChild!;
+  expect(header.getAttribute("dir")).toBeNull();
+  expect(header.querySelector('[aria-hidden="true"].app-drag')).toBeNull();
+});
+
+it("does not override RTL for application-rendered window controls", async () => {
+  document.documentElement.dir = "rtl";
+  window.rakazoDesktop = { platform: "win32" } as RakazoDesktop;
+  const view = await render();
+  const header = view.firstElementChild!;
+  expect(header.getAttribute("dir")).toBeNull();
+  expect(header.querySelector('button[aria-label="Minimize"]')).not.toBeNull();
 });

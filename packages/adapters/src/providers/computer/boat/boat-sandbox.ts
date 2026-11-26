@@ -14,12 +14,8 @@ import type {
 import type {
   AdapterContext,
   CommandRequest,
-  ComputerActionRequest,
   ComputerFileEntry,
-  ComputerInput,
-  ComputerObservation,
   ComputerRef,
-  ControlLeaseRef,
   PageBrowserCommand,
   PageBrowserResult,
   PortableFile,
@@ -45,6 +41,7 @@ import {
   WorkspaceTooLargeError,
 } from "@rakazo/adapter-kit";
 import type { ComputerSize } from "@rakazo/contracts";
+import { retry } from "@rakazo/core";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { getLogger } from "@rakazo/logging";
 import {
@@ -56,7 +53,7 @@ import {
   BaseSnapshotCache,
   computerSnapshotName,
 } from "../../../computers/computer-base-snapshot.js";
-import { PortableFileBatcher } from "../../../computers/computer-workspace.js";
+import { writePortableFilesInBatches } from "../../../computers/computer-workspace.js";
 import {
   deleteUnreferencedMachine,
   recordUnreferencedMachine,
@@ -76,9 +73,11 @@ import {
   shellQuote,
   workspaceCwd,
   workspacePath,
+  workspaceRelativePath,
 } from "../../../computers/screens/computer-support.js";
 import {
   LinuxDesktop,
+  LinuxDesktopSandbox,
   onBotScreen,
   PREPARE_LINUX_DESKTOP,
   VERIFY_LINUX_DESKTOP,
@@ -96,7 +95,12 @@ import {
   nextPoll,
 } from "./boat-client.js";
 import { BOAT_MACHINE_TYPES, boatComputerSize } from "./boat-computer.js";
-import { BoatApiError, boatResumeInProgress, boatSdk } from "./boat-errors.js";
+import {
+  BoatApiError,
+  boatResumeInProgress,
+  boatRetryableRefusal,
+  boatSdk,
+} from "./boat-errors.js";
 import { readBoatStoppedFile } from "./boat-stopped-file.js";
 
 const DISPLAY_START = 20;
@@ -109,6 +113,7 @@ const BOAT_COMMAND_ENV = "/home/user/.rakazo-command-env";
 const BOAT_ARCHIVE_PREFIX = "/tmp/rakazo-workspace-archive-";
 const BOAT_READY_TIMEOUT_MS = 5 * 60_000;
 const BOAT_RECOVER_POLL_MAX_MS = 15_000;
+const BOAT_RESTORE_RETRY_MS = 1_000;
 /** The output of a finished detached command keeps at most this much of each stream's end. */
 const BOAT_COMMAND_TAIL_BYTES = 1_000_000;
 const BOAT_API_COMMAND_TIMEOUT_SECONDS = 600;
@@ -146,13 +151,13 @@ interface BoatCommandResult {
   timedOut: boolean;
 }
 
-export class BoatSandboxProvider implements SandboxProvider {
+export class BoatSandboxProvider extends LinuxDesktopSandbox implements SandboxProvider {
   billsWhileRunning(): boolean {
     return true;
   }
 
   private readonly client: BoatSandboxSdk;
-  private readonly desktops = new LinuxDesktop({
+  protected readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: "/home/user",
       workspaceDir: BOAT_WORKSPACE,
@@ -234,6 +239,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     config: { apiKey: string; apiUrl?: string; unreferencedMachines?: UnreferencedMachineRecords },
     api?: BoatSandboxSdk,
   ) {
+    super();
     this.machines = config.unreferencedMachines;
     this.client = createBoatClient(config, api);
   }
@@ -517,11 +523,11 @@ export class BoatSandboxProvider implements SandboxProvider {
         yield* abortedCommandEvents();
         return;
       }
-      if (result.stdout) yield { type: "stdout", data: result.stdout };
       if (result.timedOut) {
-        yield* timedOutCommandEvents(timeoutMs);
+        yield* timedOutCommandEvents(timeoutMs, result);
         return;
       }
+      if (result.stdout) yield { type: "stdout", data: result.stdout };
       if (result.stderr) yield { type: "stderr", data: result.stderr };
       yield { type: "exit", code: result.exitCode };
     } catch (error) {
@@ -538,14 +544,18 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
-  async connectScreen(
+  override async connectScreen(
     computer: ComputerRef,
     request: ScreenRequest,
     context: AdapterContext,
   ): Promise<ScreenSession> {
     return this.authenticatedScreen(await this.desktops.connectScreen(computer, request, context));
   }
-  async connectTerminal(computer: ComputerRef, request: TerminalRequest, context: AdapterContext) {
+  override async connectTerminal(
+    computer: ComputerRef,
+    request: TerminalRequest,
+    context: AdapterContext,
+  ) {
     return this.authenticatedScreen(
       await this.desktops.connectTerminal(computer, request, context),
     );
@@ -565,28 +575,6 @@ export class BoatSandboxProvider implements SandboxProvider {
     url.searchParams.set("path", `${socket.pathname}${socket.search}`);
     return { ...session, url: url.toString(), headers: { cookie: `_port_auth=${token}` } };
   }
-  async setScreenControl(
-    computer: ComputerRef,
-    interactive: boolean,
-    context: AdapterContext,
-    controlToken?: string,
-  ): Promise<void> {
-    return this.desktops.setScreenControl(computer, interactive, context, controlToken);
-  }
-  async sendInput(
-    computer: ComputerRef,
-    input: ComputerInput,
-    _lease: ControlLeaseRef,
-    context: AdapterContext,
-  ): Promise<void> {
-    return this.desktops.sendInput(computer, input, context);
-  }
-  async observe(computer: ComputerRef, context: AdapterContext): Promise<ComputerObservation> {
-    return this.desktops.observe(computer, context);
-  }
-  async act(computer: ComputerRef, request: ComputerActionRequest, context: AdapterContext) {
-    return this.desktops.act(computer, request, context);
-  }
   async pageBrowser(
     computer: ComputerRef,
     request: PageBrowserCommand,
@@ -600,7 +588,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     directory: string,
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
-    const relative = normalizeWorkspacePath(directory);
+    const relative = workspaceRelativePath(BOAT_WORKSPACE, directory);
     const result = await this.runCommand(
       this.target(computer),
       listBoatFilesCommand(workspacePath(BOAT_WORKSPACE, relative)),
@@ -715,24 +703,13 @@ export class BoatSandboxProvider implements SandboxProvider {
     );
     if (writable.timedOut)
       throw new Error("could not prepare Boat workspace for restore (timed out)");
-    const batcher = new PortableFileBatcher<PortableFile>(8, (file) => file.content.byteLength);
-    const flush = async (batch: PortableFile[]) => {
-      if (!batch.length) return;
-      await this.writeFiles(sandbox, batch, context);
-    };
-    for await (const file of files) {
-      if (shouldSkipPortableWorkspaceFile(file.path)) continue;
-      if (context.signal.aborted) throw context.signal.reason ?? new Error("import aborted");
-      const full = batcher.add(file);
-      if (full) await flush(full);
-    }
-    await flush(batcher.take());
+    await writePortableFilesInBatches(
+      files,
+      8,
+      (batch) => this.writeFiles(sandbox, batch, context),
+      context.signal,
+    );
     // Browser profiles are imported without opening a shared browser.
-  }
-
-  async snapshot(computer: ComputerRef, context: AdapterContext) {
-    const observation = await this.observe(computer, context);
-    return { id: observation.frameId, createdAt: observation.capturedAt };
   }
 
   async keepAlive(computer: ComputerRef): Promise<void> {
@@ -740,10 +717,6 @@ export class BoatSandboxProvider implements SandboxProvider {
       sandboxId: this.id(computer),
       updateSandboxRequest: { ttlSeconds: BOAT_TTL_SECONDS },
     });
-  }
-
-  async releaseScreen(computer: ComputerRef, context: AdapterContext): Promise<void> {
-    return this.desktops.releaseScreen(computer, context);
   }
 
   async isRunning(computer: ComputerRef, context: AdapterContext): Promise<boolean> {
@@ -935,20 +908,30 @@ export class BoatSandboxProvider implements SandboxProvider {
    * Boat archives a sandbox by itself when its TTL runs out, and then refuses work with
    * `sandbox_not_ready` without running it; a machine that stopped underneath it answers
    * `machine_not_running`, and one still waking answers `sandbox_resuming`. Wake or recover
-   * it and try once more.
+   * it and try once more. A sandbox that just started can refuse work it never ran while it
+   * restores its disk; that work is sent again until it becomes ready.
    */
   private async whenRunnable<Result>(
     sandbox: BoatTarget,
     signal: AbortSignal | undefined,
     call: () => Promise<Result>,
   ): Promise<Result> {
+    const deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
+    const send = () =>
+      retry(call, {
+        attempts: Number.POSITIVE_INFINITY,
+        delayMs: BOAT_RESTORE_RETRY_MS,
+        signal,
+        retryable: (error) =>
+          !notRunning(error) && boatRetryableRefusal(error) && Date.now() < deadline,
+      });
     try {
-      return await call();
+      return await send();
     } catch (error) {
       if (!notRunning(error)) throw error;
       await this.wake(sandbox, signal);
       try {
-        return await call();
+        return await send();
       } catch (retryError) {
         // Boat reported the machine up, then refused again; a later attempt finds it settled.
         if (notRunning(retryError)) throw new SandboxUnavailableError({ cause: retryError });

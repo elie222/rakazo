@@ -2,9 +2,14 @@ import { createHmac } from "node:crypto";
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createMockAdapter, createTestMessage } from "@chat-adapter/tests";
 import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
+import { MAX_RETRY_AFTER_MS } from "@rakazo/core";
 import type { Adapter, ChatInstance } from "chat";
 import { describe, expect, it, vi } from "vitest";
-import { enrichSlackTeamRoom } from "../providers/messaging/slack/slack-messaging.js";
+import {
+  enrichSlackTeamRoom,
+  slackOutbound,
+} from "../providers/messaging/slack/slack-messaging.js";
+import { telegramOutbound } from "../providers/messaging/telegram/telegram-messaging.js";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import {
   ChatSdkMessagingSurface,
@@ -739,7 +744,10 @@ describe("ChatSdkMessagingSurface webhook plumbing", () => {
 
 describe("ChatSdkMessagingSurface outbound", () => {
   it("posts Telegram replies as Markdown", async () => {
-    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const { surface, adapter } = createSurface({
+      provider: "telegram",
+      outbound: telegramOutbound,
+    });
     const body = "# Heading\n\n**bold** and [link](https://example.test)";
 
     await surface.sendToThread({ threadId: "telegram:123", body }, context);
@@ -749,8 +757,8 @@ describe("ChatSdkMessagingSurface outbound", () => {
     });
   });
 
-  it.each(["whatsapp", "lark"])("posts %s replies as Markdown", async (provider) => {
-    const { surface, adapter } = createSurface({ provider });
+  it.each(["whatsapp", "lark", "slack"])("posts %s replies as Markdown", async (provider) => {
+    const { surface, adapter } = createSurface({ provider, outbound: { markdown: true } });
     const body = "**bold** and [link](https://example.test)";
     const threadId = `${provider}:C1:9`;
 
@@ -760,7 +768,11 @@ describe("ChatSdkMessagingSurface outbound", () => {
   });
 
   it("posts Photon iMessage replies as Markdown under the adapter's own thread ids", async () => {
-    const { surface, adapter } = createSurface({ provider: "photon", adapterName: "imessage" });
+    const { surface, adapter } = createSurface({
+      provider: "photon",
+      adapterName: "imessage",
+      outbound: { markdown: true },
+    });
     const body = "**bold** and [link](https://example.test)";
 
     await surface.sendToThread({ threadId: "photon:any;-;+15550001111", body }, context);
@@ -770,18 +782,65 @@ describe("ChatSdkMessagingSurface outbound", () => {
     });
   });
 
-  it.each(["slack", "sendblue"])("keeps %s replies as strings", async (provider) => {
-    const { surface, adapter } = createSurface({ provider });
+  it("keeps sendblue replies as strings", async () => {
+    const { surface, adapter } = createSurface({ provider: "sendblue" });
     const body = "**bold** and [link](https://example.test)";
-    const threadId = `${provider}:C1:9`;
 
-    await surface.sendToThread({ threadId, body }, context);
+    await surface.sendToThread({ threadId: "sendblue:C1:9", body }, context);
 
-    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, body);
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith("sendblue:C1:9", body);
+  });
+
+  /** A real Slack adapter whose HTTP transport records each chat.postMessage body. */
+  function slackSurface() {
+    const posts: Record<string, string>[] = [];
+    const adapter = createSlackAdapter({
+      botToken: "xoxb-fake",
+      botUserId: "UBOT",
+      signingSecret: "test-slack-signing-secret",
+      webClientOptions: {
+        adapter: async (config) => {
+          posts.push(
+            Object.fromEntries(new URLSearchParams(String(config.data))) as Record<string, string>,
+          );
+          return {
+            data: { ok: true, ts: `1700000000.00000${posts.length}`, channel: "C1" },
+            status: 200,
+            statusText: "OK",
+            headers: {},
+            config,
+            request: { path: "/api/chat.postMessage" },
+          };
+        },
+      },
+    });
+    const surface = new ChatSdkMessagingSurface([
+      {
+        provider: "slack",
+        outbound: slackOutbound,
+        capabilities: { direct: true, groups: true, receipt: "reaction" },
+        adapter,
+      },
+    ]);
+    return { surface, posts };
+  }
+
+  it("sends a Slack reply as Markdown for Slack to render, not as literal text", async () => {
+    const { surface, posts } = slackSurface();
+    const body = "**Done**: see [docs](https://x.y/z)\n# Head";
+
+    await surface.sendToThread({ threadId: "slack:C1:9", body }, context);
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({ markdown_text: body });
+    expect(posts[0]).not.toHaveProperty("text");
   });
 
   it("posts a Telegram image attachment as a photo", async () => {
-    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const { surface, adapter } = createSurface({
+      provider: "telegram",
+      outbound: telegramOutbound,
+    });
     const data = new Uint8Array([1, 2, 3]);
 
     await surface.sendToThread(
@@ -806,7 +865,10 @@ describe("ChatSdkMessagingSurface outbound", () => {
     ["an SVG", "logo.svg", "image/svg+xml", 3],
     ["an image over the photo limit", "scan.png", "image/png", 10_000_001],
   ])("uploads %s to Telegram as a document", async (_label, name, mimeType, size) => {
-    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const { surface, adapter } = createSurface({
+      provider: "telegram",
+      outbound: telegramOutbound,
+    });
     const data = new Uint8Array(size);
 
     await surface.sendToThread(
@@ -824,7 +886,10 @@ describe("ChatSdkMessagingSurface outbound", () => {
   });
 
   it("fails a file over Telegram's upload limit without retrying it", async () => {
-    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const { surface, adapter } = createSurface({
+      provider: "telegram",
+      outbound: telegramOutbound,
+    });
     const attachment = {
       name: "video.mp4",
       mimeType: "video/mp4",
@@ -855,6 +920,36 @@ describe("ChatSdkMessagingSurface outbound", () => {
       30_000,
     ],
     ["a permanent failure", new Error("channel_not_found"), true, null],
+    [
+      "a fractional retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: 1.5 }),
+      false,
+      1_500,
+    ],
+    [
+      "an unbounded retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: Infinity }),
+      false,
+      null,
+    ],
+    [
+      "a NaN retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: Number.NaN }),
+      false,
+      null,
+    ],
+    [
+      "a negative retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: -5 }),
+      false,
+      null,
+    ],
+    [
+      "a huge retry-after",
+      Object.assign(new Error("slow down"), { retryAfter: 1e12 }),
+      false,
+      MAX_RETRY_AFTER_MS,
+    ],
   ] as const)("classifies %s for the outbox", async (_label, error, permanent, retryAfterMs) => {
     const { surface } = createSurface(
       { isPermanentSendError: (candidate) => candidate === error && permanent },

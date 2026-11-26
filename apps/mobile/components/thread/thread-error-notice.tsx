@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { useUiLocale } from "../../lib/i18n/i18n";
+import { useDateLocale } from "../../lib/i18n/i18n";
 import { native, useMobileTokens } from "../../lib/native/native";
 import { RunErrorAction, RunErrorTextAction } from "../cards/run-error-actions";
 import { NativeSymbol } from "../native/native-symbol";
@@ -13,6 +13,7 @@ export function ThreadErrorNotice({
   resetAt,
   onDetails,
   action,
+  retry,
 }: {
   error: string | null;
   summary: string | null;
@@ -20,23 +21,25 @@ export function ThreadErrorNotice({
   onDetails?: () => void;
   /** The one action that fixes the failure. */
   action?: { label: string; onPress: () => void } | null;
+  /** Runs the failed reply again. */
+  retry?: { onPress: () => void; busy: boolean } | null;
 }) {
   const { t } = useLingui();
-  const locale = useUiLocale();
+  const dateLocale = useDateLocale();
   const tokens = useMobileTokens();
   const { fontScale } = useWindowDimensions();
   if (!error && !summary) return null;
   const upcomingReset =
     resetAt && resetAt > Date.now()
       ? t`Resets ${ph({
-          date: new Intl.DateTimeFormat(locale, {
+          date: new Intl.DateTimeFormat(dateLocale, {
             month: "short",
             day: "numeric",
             timeZone: "UTC",
           }).format(resetAt),
         })}.`
       : null;
-  const hasBody = (summary && error) || upcomingReset || action || (summary && onDetails);
+  const hasBody = (summary && error) || upcomingReset || action || retry || (summary && onDetails);
   return (
     <View
       accessibilityRole="alert"
@@ -67,7 +70,11 @@ export function ThreadErrorNotice({
           {upcomingReset ? (
             <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{upcomingReset}</Text>
           ) : null}
-          {action ? <RunErrorAction label={action.label} onPress={action.onPress} /> : null}
+          {action ? (
+            <RunErrorAction label={action.label} onPress={action.onPress} />
+          ) : retry ? (
+            <RunErrorAction label={t`Try again`} onPress={retry.onPress} busy={retry.busy} />
+          ) : null}
           {summary && onDetails ? (
             <RunErrorTextAction label={t`Details`} onPress={onDetails} />
           ) : null}
@@ -90,7 +97,7 @@ export function ThreadFetchErrorNotice({
   return (
     <View style={{ paddingBottom: 24 }}>
       <ThreadErrorNotice
-        error={showingSaved ? t`Couldn't refresh — showing the last loaded messages.` : error}
+        error={showingSaved ? t`Couldn't refresh. Showing the last loaded messages.` : error}
         summary={null}
       />
     </View>

@@ -56,29 +56,38 @@ test("an active call keeps a chat read-aloud from starting", async ({ page }, te
   const callButton = page.getByTestId("call-button");
   await expect(callButton).toHaveAttribute("data-voice-ready", "");
   // After the reload only the durable reply is on screen, so the locator is unambiguous.
-  const speak = page
-    .getByTestId("message-bot-bubble")
-    .filter({ hasText: replyText })
-    .getByRole("button", { name: "Speak this reply" });
-  await expect(speak).toBeEnabled();
+  const message = page
+    .locator("[data-message-id]")
+    .filter({ has: page.getByTestId("message-bot-bubble").filter({ hasText: replyText }) })
+    .last();
+  const readAloud = page.getByRole("menuitem", { name: "Read aloud" });
+  const openMessageMenu = async () => {
+    await message.hover();
+    await message.getByRole("button", { name: "More" }).click();
+  };
+  await openMessageMenu();
+  await expect(readAloud).toBeEnabled();
+  await page.keyboard.press("Escape");
 
   // The call owns the speaker: starting another read must stay unavailable for its length.
   await callButton.click();
   const call = page.getByTestId("call-view");
   await expect(call).toBeVisible();
-  await expect(speak).toBeDisabled();
 
   await call.getByRole("button", { name: "Minimize call" }).click();
   const returnBar = page.getByTestId("call-return-bar");
   await expect(returnBar).toBeVisible();
   await expect(call).toBeHidden();
-  await expect(speak).toBeDisabled();
+  await openMessageMenu();
+  await expect(readAloud).toBeDisabled();
   await captureScreenshot(page, testInfo, "read-aloud-paused-during-call");
+  await page.keyboard.press("Escape");
 
   // Hanging up hands the speaker back to the chat.
   await returnBar.click();
   await expect(call).toBeVisible();
   await call.getByRole("button", { name: "Hang up" }).click();
   await expect(call).toBeHidden();
-  await expect(speak).toBeEnabled();
+  await openMessageMenu();
+  await expect(readAloud).toBeEnabled();
 });

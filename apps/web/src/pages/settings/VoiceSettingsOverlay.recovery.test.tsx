@@ -35,7 +35,8 @@ vi.mock("@lingui/react/macro", () => {
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { OptionSelect } = await importOriginal<typeof UiWeb>();
+  const { Disclosure, OptionSelect, SwitchField, useCopyText } =
+    await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
@@ -54,6 +55,9 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     OptionSelect,
+    SwitchField,
+    Disclosure,
+    useCopyText,
   };
 });
 

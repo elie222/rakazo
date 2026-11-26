@@ -13,7 +13,6 @@ import {
   accessibilityLabel,
   buttonStyle,
   contentShape,
-  disabled,
   font,
   foregroundStyle,
   frame,
@@ -128,14 +127,11 @@ export function RoutineList({
                         toggleStyle("switch"),
                         labelsHidden(),
                         accessibilityLabel(switchLabel),
-                        // Only the routine's creator can pause or resume it.
-                        disabled(routine.editable === false),
                       ]}
                     />
                   </HStack>
                 </VStack>
-                {/* While a delete is in flight, and for routines only their creator can change, no row offers it. */}
-                {canDelete && routine.editable !== false ? (
+                {canDelete ? (
                   <SwipeActions.Actions allowsFullSwipe={false}>
                     <Button
                       label={t`Delete`}

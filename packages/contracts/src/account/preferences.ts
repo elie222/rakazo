@@ -1,5 +1,28 @@
 import * as z from "zod";
 
+/** Null leaves the choice with the device, including its existing saved preference. */
+export const ChatPreferencesSchema = z.object({
+  composerModelPicker: z.boolean().nullable().default(null),
+  streamReplies: z.boolean().nullable().default(null),
+});
+export type ChatPreferences = z.infer<typeof ChatPreferencesSchema>;
+
+export const ChatPreferencesPatchSchema = z.strictObject({
+  composerModelPicker: z.boolean().optional(),
+  streamReplies: z.boolean().optional(),
+});
+export type ChatPreferencesPatch = z.infer<typeof ChatPreferencesPatchSchema>;
+
+export const AccountChatPreferencesSchema = ChatPreferencesSchema.extend({
+  // Older servers omit this field, so clients can hide the unsupported switch.
+  notificationSounds: z.boolean().optional(),
+});
+
+export const AccountChatPreferencesPatchSchema = ChatPreferencesPatchSchema.extend({
+  notificationSounds: z.boolean().optional(),
+});
+export type AccountChatPreferencesPatch = z.infer<typeof AccountChatPreferencesPatchSchema>;
+
 /**
  * Deprecated account-level setting. Per-bot rendering uses avatarSet. Kept for older
  * app versions; the legacy settings endpoint still always reports "organic".

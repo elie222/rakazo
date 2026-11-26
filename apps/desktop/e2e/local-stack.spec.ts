@@ -192,7 +192,6 @@ test("This computer installs and starts the stack, then opens the app", async ()
   await setup.getByRole("button", { name: "Continue" }).click();
   await expect(setup.locator("#stack-phase")).toHaveText("Downloading Rakazo…");
   await expect(setup.getByRole("button", { name: "Continue" })).toBeDisabled();
-  // Docker output stays behind the details toggle; the phase, the bar, and the size show by default.
   await expect(setup.locator("#stack-detail")).toHaveText("412 MB downloaded");
   await expect(setup.locator("#stack-progress")).toBeVisible();
   await expect(setup.locator("#stack-output")).toBeHidden();
@@ -248,7 +247,6 @@ test("without Docker the app offers the download and continues once Docker is in
   await expect(setup.locator("#stack-phase")).toHaveText(
     `Rakazo needs ${docker} to run on this computer.`,
   );
-  // Installing Docker is a step, not a failure.
   await expect(setup.locator("#stack-phase")).not.toHaveAttribute("data-tone");
   const download = setup.getByRole("button", {
     name: process.platform === "linux" ? "Install Docker" : "Download Docker Desktop",
@@ -259,7 +257,6 @@ test("without Docker the app offers the download and continues once Docker is in
     animations: "disabled",
   });
 
-  // Existing instance stays available without Docker.
   await setup.getByRole("radio", { name: /Existing instance/ }).check();
   await expect(setup.locator("#stack")).toBeHidden();
   await expect(setup.getByRole("button", { name: "Continue" })).toBeEnabled();
@@ -308,7 +305,6 @@ test("switching to Existing instance while the stack starts keeps that choice", 
   expect(await savedSetup()).toBeNull();
   expect(app.windows()).toHaveLength(1);
 
-  // Back on This computer, Continue starts (or re-follows) and opens the app.
   await setup.getByRole("radio", { name: /This computer/ }).check();
   const appWindowPromise = app.waitForEvent("window");
   await setup.getByRole("button", { name: "Continue" }).click();
@@ -403,7 +399,7 @@ test("a saved local stack that is down is started again without asking", async (
 test("a saved local stack is reused only after its private identity matches", async () => {
   const stackDir = path.join(userData, "stack");
   await mkdir(stackDir, { recursive: true });
-  const host = await prepareHostComputer(userData);
+  const host = await prepareHostComputer(userData, "docker");
   await writeFile(
     path.join(stackDir, ".desktop-host-config"),
     createHash("sha256").update(JSON.stringify(host.connection)).digest("hex"),

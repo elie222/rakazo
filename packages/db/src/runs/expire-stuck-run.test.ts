@@ -1,6 +1,7 @@
-import { stuckWorkStatusMessage } from "@rakazo/core";
+import { stuckWorkStatusMessage, TAKEOVER_COMPUTER_SKIPPED_STATE } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import type { Prisma } from "../database/client.js";
+import { TransactionConflictError } from "../database/transaction-retry.js";
 import { expireStuckRun } from "./expire-stuck-run.js";
 
 const updatedAt = new Date("2026-09-27T12:00:00.000Z");
@@ -11,9 +12,10 @@ function tx(options?: {
   sibling?: boolean;
   steering?: boolean;
   openCardEffectId?: string;
+  takeoverCard?: boolean;
   status?: "queued" | "waiting_input" | "waiting_takeover";
 }) {
-  let reads = 0;
+  let cancelled = false;
   const messages: Array<Record<string, unknown>> = [];
   const events: Array<Record<string, unknown>> = [];
   const client = {
@@ -24,10 +26,13 @@ function tx(options?: {
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     run: {
-      updateMany: vi.fn(async () => ({ count: options?.cancelled ?? 1 })),
+      updateMany: vi.fn(async () => {
+        const count = options?.cancelled ?? 1;
+        cancelled = count === 1;
+        return { count };
+      }),
       findUnique: vi.fn(async () => {
-        reads += 1;
-        if (reads === 1) {
+        if (!cancelled) {
           return { status: options?.status ?? "queued", updatedAt, startedAt: null };
         }
         return { status: "cancelled", startedAt: null };
@@ -53,25 +58,33 @@ function tx(options?: {
     message: {
       findFirst: vi.fn(async () => null),
       findMany: vi.fn(async () =>
-        options?.openCardEffectId
+        options?.takeoverCard
           ? [
               {
-                blocks: [
-                  {
-                    kind: "ask",
-                    approvalEffectId: options.openCardEffectId,
-                    text: "Review before sending",
-                    status: "pending",
-                    actions: [
-                      { id: "allow", label: "Allow once" },
-                      { id: "deny", label: "Deny" },
-                    ],
-                  },
-                ],
+                id: "message-card",
+                blocks: [{ kind: "computer", state: "Needs you", text: "Sign in." }],
               },
             ]
-          : [],
+          : options?.openCardEffectId
+            ? [
+                {
+                  blocks: [
+                    {
+                      kind: "ask",
+                      approvalEffectId: options.openCardEffectId,
+                      text: "Review before sending",
+                      status: "pending",
+                      actions: [
+                        { id: "allow", label: "Allow once" },
+                        { id: "deny", label: "Deny" },
+                      ],
+                    },
+                  ],
+                },
+              ]
+            : [],
       ),
+      update: vi.fn(async () => ({})),
       create: vi.fn(async (args: { data: Record<string, unknown> }) => {
         const row = { id: "message-expired", ...args.data };
         messages.push(row);
@@ -217,6 +230,21 @@ describe("expireStuckRun", () => {
     });
   });
 
+  it("settles the card that asked for the screen", async () => {
+    const client = tx({ status: "waiting_takeover", takeoverCard: true });
+    await expireStuckRun(client as unknown as Prisma.TransactionClient, {
+      runId: "run-1",
+      threadId: "thread-1",
+      status: "waiting_takeover",
+      updatedAt,
+      now,
+    });
+    expect(client.message.update).toHaveBeenCalledWith({
+      where: { id: "message-card" },
+      data: { blocks: [expect.objectContaining({ state: TAKEOVER_COMPUTER_SKIPPED_STATE })] },
+    });
+  });
+
   it("denies the effect behind an unanswered approval card", async () => {
     const client = tx({ status: "waiting_input", openCardEffectId: "effect-1" });
     await expireStuckRun(client as unknown as Prisma.TransactionClient, {
@@ -232,12 +260,25 @@ describe("expireStuckRun", () => {
     });
   });
 
+  it("rolls the card back when a worker claims the run first", async () => {
+    const client = tx({ cancelled: 0, status: "waiting_takeover", takeoverCard: true });
+    await expect(
+      expireStuckRun(client as unknown as Prisma.TransactionClient, {
+        runId: "run-1",
+        threadId: "thread-1",
+        status: "waiting_takeover",
+        updatedAt,
+        now,
+      }),
+    ).rejects.toBeInstanceOf(TransactionConflictError);
+  });
+
   it("does nothing when the run already moved on", async () => {
-    const client = tx({ cancelled: 0, status: "waiting_takeover" });
+    const client = tx({ cancelled: 0, status: "queued" });
     const result = await expireStuckRun(client as unknown as Prisma.TransactionClient, {
       runId: "run-1",
       threadId: "thread-1",
-      status: "waiting_takeover",
+      status: "queued",
       updatedAt,
       now,
     });

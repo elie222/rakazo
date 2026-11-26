@@ -1,7 +1,19 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { Routine } from "@rakazo/contracts";
-import { defaultCronPreset, draftFromRoutine, emptyRoutineDraft } from "@rakazo/core";
+import { ROUTINE_NAME_MAX_LENGTH } from "@rakazo/contracts";
+import {
+  cronFromPreset,
+  defaultCronPreset,
+  defaultRoutineEndDay,
+  draftFromRoutine,
+  emptyRoutineDraft,
+  formatRoutineEnd,
+  isOneShotRoutineCrons,
+  routineCanEnd,
+  routineCopy,
+  wallClock,
+} from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, BackHandler, ScrollView, Text, View } from "react-native";
@@ -9,6 +21,7 @@ import { useBotEmail } from "../components/bots/bot-email";
 import { GlassIconButton } from "../components/native/glass-icon-button";
 import { NativeActionButton } from "../components/native/native-action-button";
 import { RoutineEmailTrigger } from "../components/routines/routine-email-trigger";
+import { RoutineEndDate } from "../components/routines/routine-end-date";
 import { RoutineScheduleEditor } from "../components/routines/routine-schedule-editor";
 import {
   SettingsGroup,
@@ -19,17 +32,18 @@ import {
 } from "../components/settings/settings-group";
 import { GrowingTextInput } from "../components/ui/growing-text-input";
 import { MenuPickerMenu } from "../components/ui/menu-picker";
-import { rpc } from "../lib/api/api";
 import { errorText } from "../lib/api/user-error";
 import { CallKeyboardContext } from "../lib/calls/call-keyboard-context";
-import { dateLocaleForUi, useUiLocale } from "../lib/i18n/i18n";
+import { useDateLocale } from "../lib/i18n/i18n";
 import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useMobileTokens } from "../lib/native/native";
 import { iosAtLeast } from "../lib/native/native-controls";
+import { useSave } from "../lib/query/query";
 import { deviceTimeZone, routineTriggerRows, routineWebTriggers } from "../lib/routines/routine";
 import type { MobileRoutineDraft } from "../lib/routines/routine-draft";
 import {
   routineDraftChanged,
+  routineDraftEventTriggered,
   routineSaveRequest,
   routineScheduleLocked,
   routineWithDraftTriggers,
@@ -46,11 +60,13 @@ export default function RoutineDetail() {
   const sideInsets = useSideInsets();
   const tokens = useMobileTokens();
   const { t } = useLingui();
-  const { botId, botName, routineId, origin } = useLocalSearchParams<{
+  const { botId, botName, routineId, origin, copyOf } = useLocalSearchParams<{
     botId?: string;
     botName?: string;
     routineId?: string;
     origin?: string;
+    /** A new routine that starts as a copy of this one, usually another member's. */
+    copyOf?: string;
   }>();
   const router = useRouter();
   const deletionContext = useMemo(() => ({ active: false }), [botId, routineId]);
@@ -71,8 +87,13 @@ export default function RoutineDetail() {
     failedSinceShown,
   } = useBotRoutines(botId ?? "");
   const [editing, setEditing] = useState(false);
-  const creating = Boolean(botId) && !routineId;
   const routine = routines?.find((item) => item.id === routineId) ?? null;
+  const copySource = (copyOf && routines?.find((item) => item.id === copyOf)) || null;
+  const template = copySource
+    ? routineCopy(copySource, t`${ph({ name: copySource.name })} (copy)`)
+    : null;
+  // A copy waits for the routine it copies, so its form never starts empty.
+  const creating = Boolean(botId) && !routineId && (!copyOf || template !== null);
   const error = !botId
     ? t`Routine link is incomplete`
     : creating || routine
@@ -102,6 +123,7 @@ export default function RoutineDetail() {
           botId={botId}
           botName={botName ?? ""}
           routine={routine}
+          template={template}
           onCancel={() => setEditing(false)}
           onSaved={(saved) => {
             if (creating) router.setParams({ routineId: saved.id });
@@ -119,6 +141,12 @@ export default function RoutineDetail() {
           editable={editable}
           showConversation={origin !== "profile"}
           onEdit={() => setEditing(true)}
+          onCopy={() =>
+            router.push({
+              pathname: "/routine",
+              params: { botId, botName: botName ?? "", copyOf: routine.id },
+            })
+          }
         />
       ) : null}
     </ScrollView>
@@ -133,44 +161,38 @@ function RoutineView({
   editable,
   showConversation,
   onEdit,
+  onCopy,
 }: {
   botId: string;
   botName: string | undefined;
   routine: Routine;
+  /** False for another member's routine: only its owner changes it, anyone may turn it on or off. */
   editable: boolean;
   showConversation: boolean;
   onEdit: () => void;
+  onCopy: () => void;
 }) {
   const tokens = useMobileTokens();
   const { t } = useLingui();
-  const locale = useUiLocale();
+  const dateLocale = useDateLocale();
   const router = useRouter();
-  const [running, setRunning] = useState(false);
+  const testRun = useSave({
+    save: (_, send) => send("routines/testRun", { routineId: routine.id }),
+    onFailed: (cause) => Alert.alert(t`Could not run routine`, errorText(cause, t`Try again.`)),
+  });
   const triggers = routineTriggerRows(routine, deviceTimeZone());
   const nextRun =
     !routine.active || !routine.nextRunAt
       ? null
       : routine.scheduleDelayed
         ? t`Schedule delayed`
-        : new Date(routine.nextRunAt).toLocaleString(dateLocaleForUi(locale), {
+        : new Date(routine.nextRunAt).toLocaleString(dateLocale, {
             weekday: "short",
             month: "short",
             day: "numeric",
             hour: "numeric",
             minute: "2-digit",
           });
-
-  async function testRun() {
-    if (running) return;
-    setRunning(true);
-    try {
-      await rpc("routines/testRun", { routineId: routine.id });
-    } catch (cause) {
-      Alert.alert(t`Could not run routine`, errorText(cause, t`Try again.`));
-    } finally {
-      setRunning(false);
-    }
-  }
 
   return (
     <>
@@ -184,31 +206,29 @@ function RoutineView({
           headerRight: undefined,
           unstable_headerLeftItems: undefined,
           unstable_headerRightItems: undefined,
-          ...(editable
-            ? iosAtLeast(26)
-              ? {
-                  unstable_headerRightItems: () => [
-                    {
-                      type: "button" as const,
-                      label: t`Run now`,
-                      icon: { type: "sfSymbol" as const, name: "play" },
-                      disabled: running,
-                      onPress: () => void testRun(),
-                    },
-                  ],
-                }
-              : {
-                  headerRight: () => (
-                    <GlassIconButton
-                      accessibilityLabel={t`Run now`}
-                      ios="play"
-                      android="play"
-                      disabled={running}
-                      onPress={() => void testRun()}
-                    />
-                  ),
-                }
-            : {}),
+          ...(iosAtLeast(26)
+            ? {
+                unstable_headerRightItems: () => [
+                  {
+                    type: "button" as const,
+                    label: t`Run now`,
+                    icon: { type: "sfSymbol" as const, name: "play" },
+                    disabled: testRun.pending,
+                    onPress: () => testRun.run(),
+                  },
+                ],
+              }
+            : {
+                headerRight: () => (
+                  <GlassIconButton
+                    accessibilityLabel={t`Run now`}
+                    ios="play"
+                    android="play"
+                    disabled={testRun.pending}
+                    onPress={() => testRun.run()}
+                  />
+                ),
+              }),
         }}
       />
       <SettingsGroup>
@@ -216,14 +236,15 @@ function RoutineView({
           key="active"
           label={t`Active`}
           value={routine.active}
-          // Only the routine's creator can pause or resume it.
-          disabled={!editable}
           onChange={(active) =>
             setRoutineActive(botId, routine, active, (cause) =>
               Alert.alert(t`Could not update routine`, errorText(cause, t`Try again.`)),
             )
           }
         />
+        {routine.runsAs && !routine.runsAs.isViewer ? (
+          <SettingsRow key="owner" title={t`Owner`} value={routine.runsAs.name} />
+        ) : null}
       </SettingsGroup>
       <View style={{ gap: 7 }}>
         <SettingsLabel>{t`Instruction`}</SettingsLabel>
@@ -248,6 +269,13 @@ function RoutineView({
           <SettingsRow key={trigger} title={trigger} />
         ))}
         {nextRun ? <SettingsRow key="next" title={t`Next run`} value={nextRun} /> : null}
+        {routine.endsAt ? (
+          <SettingsRow
+            key="ends"
+            title={t`Ends`}
+            value={formatRoutineEnd(routine.endsAt, routine.timezone, dateLocale)}
+          />
+        ) : null}
       </SettingsGroup>
       <SettingsGroup>
         <SettingsRow
@@ -284,7 +312,18 @@ function RoutineView({
             onPress={onEdit}
           />
         </SettingsGroup>
-      ) : null}
+      ) : isOneShotRoutineCrons(routine.crons) ? null : (
+        // A one-time routine is set up from chat, so it has no copy here.
+        <SettingsGroup>
+          <SettingsRow
+            key="copy"
+            accessibilityRole="button"
+            tinted
+            title={t`Make a copy`}
+            onPress={onCopy}
+          />
+        </SettingsGroup>
+      )}
     </>
   );
 }
@@ -294,6 +333,7 @@ function RoutineEditor({
   botId,
   botName,
   routine,
+  template,
   onCancel,
   onSaved,
   onDeleted,
@@ -301,6 +341,8 @@ function RoutineEditor({
   botId: string;
   botName: string;
   routine: Routine | null;
+  /** For a new routine: the one it starts as a copy of. */
+  template: Routine | null;
   onCancel: () => void;
   onSaved: (routine: Routine) => void;
   onDeleted: () => void;
@@ -310,7 +352,7 @@ function RoutineEditor({
   // The routine as it was when Edit opened; a save sends only what changed since.
   const [base] = useState(routine);
   const [draft, setDraft] = useState<MobileRoutineDraft>(() =>
-    base ? draftFromRoutine(base) : emptyRoutineDraft(),
+    base ? draftFromRoutine(base) : template ? draftFromRoutine(template) : emptyRoutineDraft(),
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -319,8 +361,14 @@ function RoutineEditor({
   const dirty = routineDraftChanged(draft, base);
   const locked = routineScheduleLocked(base);
   // Triggers set up on web stay listed here so the person sees them and can remove them.
-  const kept = base ? routineWithDraftTriggers(base, draft) : null;
+  const source = base ?? template;
+  const kept = source ? routineWithDraftTriggers(source, draft) : null;
   const webTriggers = kept ? routineWebTriggers(kept) : [];
+  const draftCrons = draft.schedules.map(cronFromPreset);
+  const repeats =
+    !locked &&
+    routineCanEnd(draftCrons, Boolean(kept?.watch), routineDraftEventTriggered(draft, source));
+  const zone = draft.timezone ?? deviceTimeZone() ?? "UTC";
 
   // On Android, back leaves the form for the routine instead of leaving the routine.
   useEffect(() => {
@@ -339,8 +387,8 @@ function RoutineEditor({
 
   async function save() {
     if (busy.current) return;
-    const timezone = base?.timezone ?? deviceTimeZone() ?? "UTC";
-    const request = routineSaveRequest(draft, base, botId, timezone);
+    const timezone = deviceTimeZone() ?? "UTC";
+    const request = routineSaveRequest(draft, base, botId, timezone, template);
     if ("error" in request) {
       setSaveError(
         request.error === "name"
@@ -462,7 +510,7 @@ function RoutineEditor({
           key="name"
           accessibilityLabel={t`Name`}
           placeholder={t`Name`}
-          maxLength={80}
+          maxLength={ROUTINE_NAME_MAX_LENGTH}
           value={draft.name}
           onChangeText={(name) => update({ name })}
         />
@@ -530,6 +578,14 @@ function RoutineEditor({
               ))}
             </SettingsGroup>
           ) : null}
+          {repeats ? (
+            <RoutineEndDate
+              endsOn={draft.endsOn}
+              today={wallClock(new Date(), zone).slice(0, 10)}
+              firstDay={defaultRoutineEndDay(draftCrons, zone)}
+              onChange={(endsOn) => update({ endsOn })}
+            />
+          ) : null}
           {locked ? null : (
             <SettingsGroup>
               {/* A change trigger checks on its own interval, so it never shares a schedule. */}
@@ -548,7 +604,8 @@ function RoutineEditor({
                   accessibilityRole="button"
                   tinted
                   title={t`Add email trigger`}
-                  onPress={() => update({ emailSenders: "owner" })}
+                  // An email trigger's bot never gets the owner's computer.
+                  onPress={() => update({ emailSenders: "owner", useComputer: undefined })}
                 />
               ) : null}
             </SettingsGroup>
@@ -564,6 +621,17 @@ function RoutineEditor({
           onChange={(emailSenders) => update({ emailSenders })}
           onRemove={() => update({ emailSenders: null })}
         />
+      ) : null}
+      {/* Only the owner, with a computer paired, sees it; a watch's runs never get the computer. */}
+      {base?.useComputer !== undefined && !base.inChat && !kept?.watch && !draft.emailSenders ? (
+        <SettingsGroup>
+          <SettingsSwitch
+            key="computer"
+            label={t`Use my computer`}
+            value={draft.useComputer ?? base.useComputer}
+            onChange={(useComputer) => update({ useComputer })}
+          />
+        </SettingsGroup>
       ) : null}
       {base ? (
         <SettingsGroup>

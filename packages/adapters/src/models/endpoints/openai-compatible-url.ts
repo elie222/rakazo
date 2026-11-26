@@ -11,6 +11,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
+import { parseEnvFlag } from "@rakazo/core";
 import { modelProviderAllowlist } from "../model-provider-allowlist.js";
 
 export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
@@ -23,7 +24,9 @@ export const COMPATIBLE_ENDPOINT_PRESETS: CompatibleEndpointPreset[] = [
     name: "Concentrate AI",
     baseUrl: "https://api.concentrate.ai/v1",
     publicModels: true,
+    apiProtocol: "responses",
   },
+  { id: "deepinfra", name: "DeepInfra", baseUrl: "https://api.deepinfra.com/v1/openai" },
 ];
 
 const BUILT_IN_PUBLIC_MODEL_HOSTS = presetHosts(COMPATIBLE_ENDPOINT_PRESETS);
@@ -59,8 +62,14 @@ export function compatibleEndpointPreset(baseUrl: string | undefined) {
   return matchCompatibleEndpointPreset(COMPATIBLE_ENDPOINT_PRESETS, baseUrl);
 }
 
-export function openAiCompatAllowPublicHosts(): boolean {
-  return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC !== "0";
+export function openAiCompatAllowPublicHosts(
+  source: { RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC?: string } = process.env,
+): boolean {
+  return parseEnvFlag(
+    "RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC",
+    source.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC,
+    true,
+  );
 }
 
 export function isPrivateOpenAiCompatibleHostname(hostname: string): boolean {

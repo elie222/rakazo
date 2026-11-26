@@ -8,6 +8,7 @@ import {
   messagingPlatformsFromEnv,
   splitOutboundBody,
 } from "../../../messaging/messaging-platforms.js";
+import { telegramOutbound } from "./telegram-messaging.js";
 
 const context: AdapterContext = {
   operationId: "op-test",
@@ -280,7 +281,7 @@ describe("Telegram messaging Markdown", () => {
     [`\`\`\`text\n${"\\".repeat(4090)}\n\`\`\``, "\\".repeat(4090)],
   ])("sends every split part without adapter truncation", async (body, expected) => {
     const { surface, sends, threadId } = createSurface();
-    const parts = splitOutboundBody("telegram", body);
+    const parts = splitOutboundBody(telegramOutbound, body);
     for (const part of parts) {
       await surface.sendToThread({ threadId, body: part }, context);
     }
@@ -304,7 +305,7 @@ describe("Telegram messaging Markdown", () => {
 
   async function sendSplit(body: string): Promise<string[]> {
     const { surface, sends, threadId } = createSurface();
-    for (const part of splitOutboundBody("telegram", body)) {
+    for (const part of splitOutboundBody(telegramOutbound, body)) {
       await surface.sendToThread({ threadId, body: part }, context);
     }
     return sends.map(({ text }) => text);
@@ -349,7 +350,7 @@ describe("Telegram messaging Markdown", () => {
 
   it("keeps the address of a link in a reply that fits in one message", () => {
     const body = "Read [the docs](https://example.com/docs/start) first.";
-    expect(splitOutboundBody("telegram", body)).toEqual([body]);
+    expect(splitOutboundBody(telegramOutbound, body)).toEqual([body]);
   });
 
   it("keeps every split part in the plain-text fallback after Markdown rejection", async () => {
@@ -359,7 +360,7 @@ describe("Telegram messaging Markdown", () => {
       "Bad Request: can't parse entities",
     ]);
     const body = "!".repeat(4096);
-    for (const part of splitOutboundBody("telegram", body)) {
+    for (const part of splitOutboundBody(telegramOutbound, body)) {
       await surface.sendToThread({ threadId, body: part }, context);
     }
 
@@ -423,7 +424,7 @@ describe("Telegram messaging Markdown", () => {
       { length: 90 },
       (_, row) => `- [Article ${row}](https://example.com/articles/${row}/${"path/".repeat(8)})`,
     );
-    const parts = splitOutboundBody("telegram", rows.join("\n"));
+    const parts = splitOutboundBody(telegramOutbound, rows.join("\n"));
     const { surface, sends, threadId } = createSurface(
       parts.flatMap(() => ["Bad Request: can't parse entities", ""]),
     );
@@ -590,7 +591,7 @@ describe("Telegram bots side by side", () => {
 });
 
 describe("Telegram groups", () => {
-  function createGroupSurface() {
+  function createGroupSurface(env: Partial<MessagingEnvironmentValues> = {}) {
     const sends: { token: string; payload: Record<string, unknown> }[] = [];
     vi.stubGlobal(
       "fetch",
@@ -609,6 +610,7 @@ describe("Telegram groups", () => {
             },
           });
         }
+        if (method === "sendChatAction") return Response.json({ ok: true, result: true });
         if (method === "sendRichMessage") {
           return Response.json(
             { ok: false, error_code: 404, description: "Not Found" },
@@ -637,6 +639,7 @@ describe("Telegram groups", () => {
         telegramBotToken: "home-token",
         telegramWebhookSecret: "home-secret",
         telegramBots: [{ name: "work", botToken: "work-token", webhookSecret: "work-secret" }],
+        ...env,
       }),
     );
     const inbound: MessagingInboundEvent[] = [];
@@ -719,6 +722,74 @@ describe("Telegram groups", () => {
       content: "hello group",
     });
     expect(inbound[1]?.type === "message" && inbound[1].mentionsBot).toBeUndefined();
+  });
+
+  it("ignores group chats on every bot when groups are turned off, and still takes direct chats", async () => {
+    const { surface, inbound } = createGroupSurface({ telegramGroups: "OFF" });
+
+    expect(
+      surface.platforms().map(({ provider, capabilities }) => [provider, capabilities]),
+    ).toEqual([
+      ["telegram", expect.objectContaining({ direct: true, groups: false })],
+      ["telegram-work", expect.objectContaining({ direct: true, groups: false })],
+    ]);
+    for (const [provider, secret, updateId] of [
+      ["telegram", "home-secret", 105],
+      ["telegram-work", "work-secret", 106],
+    ] as const) {
+      const response = await surface.handleWebhook(
+        provider,
+        webhook(secret, groupMessage({ text: "@testbot hello" }, updateId)),
+      );
+      expect(response?.status).toBe(200);
+    }
+    expect(inbound).toEqual([]);
+
+    await surface.handleWebhook(
+      "telegram",
+      webhook("home-secret", {
+        update_id: 107,
+        message: {
+          message_id: 16,
+          date: 1_700_000_000,
+          chat: { id: 777, type: "private", first_name: "Grace" },
+          from: sender,
+          text: "hello direct",
+        },
+      }),
+    );
+    expect(inbound).toEqual([
+      expect.objectContaining({
+        threadId: "telegram:777",
+        isDirect: true,
+        content: "hello direct",
+      }),
+    ]);
+  });
+
+  it("keeps group chats on by default and for on, true and 1", () => {
+    for (const telegramGroups of [undefined, "", "on", " TRUE ", "1"]) {
+      const { surface } = createGroupSurface({ telegramGroups });
+      expect(surface.platforms().every(({ capabilities }) => capabilities.groups)).toBe(true);
+    }
+  });
+
+  it("turns group chats off for off, false and 0 in any case", () => {
+    for (const telegramGroups of ["off", "OFF", " False ", "0"]) {
+      const { surface } = createGroupSurface({ telegramGroups });
+      expect(surface.platforms().map(({ capabilities }) => capabilities.groups)).toEqual([
+        false,
+        false,
+      ]);
+    }
+  });
+
+  it("refuses a TELEGRAM_GROUPS value it cannot read, instead of leaving groups on", () => {
+    for (const telegramGroups of ["no", "disabled", "flase"]) {
+      expect(() => createGroupSurface({ telegramGroups })).toThrow(
+        "TELEGRAM_GROUPS must be on or off",
+      );
+    }
   });
 
   it("keeps a plain reply on the group's own thread", async () => {
@@ -920,6 +991,7 @@ describe("Telegram messaging files", () => {
     const surface = new ChatSdkMessagingSurface([
       {
         provider: "telegram",
+        outbound: telegramOutbound,
         capabilities: { direct: true, groups: false, receipt: null, files: true },
         adapter,
       },

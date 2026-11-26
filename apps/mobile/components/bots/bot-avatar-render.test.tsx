@@ -245,7 +245,8 @@ describe("BotAvatar", () => {
     ]);
     act(() => button!.click());
     expect(nativeMotion.timings.filter((ms) => ms < 1000)).toEqual([800, 700]);
-    expect(nativeMotion.timings.filter((ms) => ms >= 1000)).toEqual([24_000]);
+    // The taps reuse the one long avatar clock instead of starting another.
+    expect(nativeMotion.timings.filter((ms) => ms >= 1000)).toEqual([24 * 60 * 60 * 1000]);
   });
 
   it("settles an active tap when reduced motion becomes enabled", () => {

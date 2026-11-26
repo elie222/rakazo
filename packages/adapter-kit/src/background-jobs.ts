@@ -17,6 +17,7 @@ import type {
 export const MESSAGING_INBOUND_SETTLE_MAX_ATTACHMENTS = 20;
 
 const payloadSchemas = {
+  "page.revise": z.object({ requestId: z.string().min(1) }),
   "run.continue": z.object({ runId: z.string().min(1) }),
   "routine.wakeup": z.object({
     routineId: z.string().min(1),
@@ -94,6 +95,7 @@ const payloadSchemas = {
       "secret_tables",
       "messaging_installation",
       "deployment_computer_provider",
+      "deployment_model",
       "purchase_request",
       "purchase_card",
       "purchase_token",

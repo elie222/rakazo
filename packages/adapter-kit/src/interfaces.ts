@@ -1,4 +1,5 @@
 import type { ComputerSize } from "@rakazo/contracts";
+import type { ConnectedCalendarProvider } from "./personal-calendar.js";
 import type {
   AdapterContext,
   AdapterDescriptor,
@@ -16,6 +17,7 @@ import type {
   BillingCheckoutRequest,
   BillingCreditCheckoutRequest,
   BillingCreditPurchase,
+  BillingInvoiceRefund,
   BillingPlanPayment,
   BillingPrice,
   BillingSubscriptionSnapshot,
@@ -322,6 +324,7 @@ export interface ConnectionAuthProvider {
 export interface ManagedConnectorProvider
   extends ConnectorProvider,
     Omit<ConnectionAuthProvider, "describe"> {
+  calendarProvider?: ConnectedCalendarProvider;
   catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]>;
   /** The actions one app offers, to show people what connecting it gives bots. */
   listAppTools?(context: AdapterContext, externalId: string): Promise<ConnectorTool[]>;
@@ -622,6 +625,16 @@ export interface BillingProvider {
    * Credits never count.
    */
   listPlanPayments?(customerId: string, since: Date): Promise<BillingPlanPayment[]>;
+  /**
+   * Inspects or refunds the card payment for a customer-owned paid invoice, named by its number
+   * or id; without one, the newest paid invoice. Refunds `amountMinor`, or the whole charge.
+   */
+  refundInvoice?(
+    customerId: string,
+    invoice: string | undefined,
+    confirm: boolean,
+    amountMinor?: number,
+  ): Promise<BillingInvoiceRefund | null>;
   setMonthlyCredits?(customerId: string, amountCents: number): Promise<void>;
   /** Flat monthly own-key plan: access without credits. */
   createByokCheckout?(input: BillingByokCheckoutRequest): Promise<{ id: string; url: string }>;

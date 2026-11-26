@@ -8,9 +8,11 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
   paymentOverdue,
+  SELF_HOST_URL,
 } from "@rakazo/contracts";
 import { canDeleteOrganization } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
+import { formatBillingAmount } from "@rakazo/i18n/billing";
 import { botColors, botEyeColor, typeScale } from "@rakazo/ui-tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { ComponentProps, ReactNode } from "react";
@@ -48,7 +50,7 @@ import {
   subscribedPlan,
 } from "../lib/billing/billing";
 import { endCallBeforeSessionEnd } from "../lib/calls/call-session";
-import { dateLocaleForUi } from "../lib/i18n/i18n";
+import { useDateLocale } from "../lib/i18n/i18n";
 import { FORM_COLUMN_WIDTH } from "../lib/layout/adaptive-layout";
 import { useContentBottomInset } from "../lib/layout/content-bottom-inset";
 import { useMobileTokens } from "../lib/native/native";
@@ -82,6 +84,7 @@ const CREW = [
  */
 export default function Paywall() {
   const { t } = useLingui();
+  const dateLocale = useDateLocale();
   const tokens = useMobileTokens();
   const insets = useSafeAreaInsets();
   const contentBottomInset = useContentBottomInset();
@@ -240,6 +243,9 @@ export default function Paywall() {
             else if (nativeEvent.event === "sign-out") void leave();
             else organizationAction(nativeEvent.event);
           }}
+          // The 44-point target reaches 2 points past the bar's inset so the icon stays put; the
+          // menu host drops its child's margin, so the offset sits on the host.
+          style={{ marginEnd: -2 }}
         >
           <View
             accessible
@@ -283,7 +289,7 @@ export default function Paywall() {
   if (started) {
     const endsAt = planEndsAt(status);
     const freeUntil = endsAt
-      ? new Date(endsAt).toLocaleDateString(dateLocaleForUi(), { month: "long", day: "numeric" })
+      ? new Date(endsAt).toLocaleDateString(dateLocale, { month: "long", day: "numeric" })
       : null;
     return (
       <View
@@ -358,11 +364,12 @@ export default function Paywall() {
   const subscribed = dismissible ? subscribedPlan(status) : null;
   const annualCents = status.byokPriceCents ? status.byokAnnualPriceCents : null;
   const yearly = interval === "year" && annualCents;
-  const monthlyPrice = status.byokPriceCents ? `$${status.byokPriceCents / 100}` : null;
-  const annualMonthlyPrice = annualCents ? `$${Math.round(annualCents / 12) / 100}` : null;
+  const usd = (cents: number) => formatBillingAmount(cents, "usd", dateLocale);
+  const monthlyPrice = status.byokPriceCents ? usd(status.byokPriceCents) : null;
+  const annualMonthlyPrice = annualCents ? usd(Math.round(annualCents / 12)) : null;
   // What the chosen plan bills each period, as the terms and trial timeline state it.
-  const ownKeyPrice = yearly ? `$${yearly / 100}` : monthlyPrice;
-  const creditPrice = `$${amount / 100}`;
+  const ownKeyPrice = yearly ? usd(yearly) : monthlyPrice;
+  const creditPrice = usd(amount);
   const features: { label: string; ios: string; android: SymbolName; color: string }[] = [
     {
       label: t`Bots with their own computer`,
@@ -429,6 +436,14 @@ export default function Paywall() {
           <Text accessibilityRole="header" style={[styles.title, { color: tokens.foreground }]}>
             {t`Put your bots to work`}
           </Text>
+          {status.freePeriodEnded ? (
+            <>
+              <Text style={[styles.lead, { color: tokens.mutedForeground }]}>
+                {t`Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you self-host.`}
+              </Text>
+              <LegalLink label={t`Self-hosting guide`} url={SELF_HOST_URL} />
+            </>
+          ) : null}
         </View>
         <View style={styles.features}>
           {features.map((feature) => (
@@ -502,7 +517,7 @@ export default function Paywall() {
                   <MenuView
                     actions={MODEL_CREDIT_AMOUNTS.map((value) => ({
                       id: String(value),
-                      title: t`${ph({ price: `$${value / 100}` })} / month`,
+                      title: t`${ph({ price: usd(value) })} / month`,
                       state: amount === value ? ("on" as const) : ("off" as const),
                     }))}
                     onPressAction={({ nativeEvent }) => {
@@ -723,7 +738,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
   },
-  account: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  account: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   content: {
     width: "100%",
     maxWidth: FORM_COLUMN_WIDTH,

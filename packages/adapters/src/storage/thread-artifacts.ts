@@ -11,7 +11,7 @@ import {
   ARTIFACT_DESCRIPTION_MAX_LENGTH,
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_MAX_BYTES,
-  ATTACHMENT_MAX_COUNT,
+  attachmentMaxCount,
   attachmentSizeLabel,
   HISTORY_ATTACHMENTS_PER_RESPONSE,
   MCP_APP_MIME_TYPE,
@@ -19,17 +19,18 @@ import {
 } from "@rakazo/contracts";
 import {
   attachmentComputerPath,
+  attachmentStoredName,
   inferAttachmentMimeType,
   messageBlockForArtifact,
   validateAttachmentMimeType,
 } from "@rakazo/core";
-import type { Artifact, Prisma, PrismaClient } from "@rakazo/db";
+import type { Artifact, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   THREAD_LOCK_TRANSACTION_OPTIONS,
   withResolvedArtifactVersion,
   withTransactionRetry,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { resolveBotWorkspacePath } from "../computers/screens/computer-support.js";
 
 export type MaterializedThreadFile = {
@@ -44,6 +45,8 @@ export async function attachWorkspaceFileToThread(
     prisma: PrismaClient;
     artifacts: ArtifactStore;
     maxUploadSizeBytes?: number;
+    /** Signals the Space's artifacts once the file is attached, so open lists show it. */
+    events?: Pick<ThreadEvents, "publishSpaceChange">;
   },
   input: {
     spaceId: string;
@@ -65,7 +68,11 @@ export async function attachWorkspaceFileToThread(
   if (!mimeType) {
     throw new Error(`Unsupported attachment type for ${fileName}`);
   }
-  const name = (input.name?.trim() || fileName).slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  // An Office file keeps its type's own extension (attachmentStoredName).
+  const name = attachmentStoredName(
+    (input.name?.trim() || fileName).slice(0, ARTIFACT_NAME_MAX_LENGTH),
+    mimeType,
+  );
   validateAttachmentMimeType(mimeType);
   if (input.bytes.byteLength > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)) {
     throw new Error(
@@ -124,6 +131,10 @@ export async function attachWorkspaceFileToThread(
     await deps.artifacts.remove(stored.id, context).catch(() => undefined);
     throw error;
   });
+  await bestEffort(
+    "artifacts space change signal",
+    deps.events?.publishSpaceChange?.(input.spaceId, "artifacts"),
+  );
   return { artifactId: row.id, block: messageBlockForArtifact(row) };
 }
 
@@ -249,8 +260,13 @@ async function materializeThreadFiles(
   return materialized;
 }
 
+type RecentThreadFileDeps = Pick<
+  Parameters<typeof materializeCurrentTurnFiles>[0],
+  "prisma" | "maxUploadSizeBytes"
+> & { maxAttachmentsPerMessage?: number };
+
 export async function materializeRecentThreadFiles(
-  deps: Parameters<typeof materializeCurrentTurnFiles>[0],
+  deps: Parameters<typeof materializeCurrentTurnFiles>[0] & RecentThreadFileDeps,
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
   input: Parameters<typeof materializeCurrentTurnFiles>[2] & {
@@ -263,7 +279,7 @@ export async function materializeRecentThreadFiles(
     deps,
     recentAttachmentBlocks(history, messages, input),
     { ...input, markWorkspaceDirty: undefined },
-    ATTACHMENT_MAX_COUNT,
+    attachmentMaxCount(deps),
   );
 }
 
@@ -340,7 +356,7 @@ export async function materializeEarlierFiles(
  * copies them with materializeRecentThreadFiles once something first uses the computer.
  */
 export async function listRecentThreadFiles(
-  deps: Pick<Parameters<typeof materializeCurrentTurnFiles>[0], "prisma" | "maxUploadSizeBytes">,
+  deps: RecentThreadFileDeps,
   history: ReadonlyArray<{ id?: string; role: string }>,
   messages: ReadonlyArray<{ id: string; blocks: MessageBlock[] }>,
   input: {
@@ -359,7 +375,7 @@ export async function listRecentThreadFiles(
       if (!row || row.size > limit) return [];
       return [threadFileMetadata(row)];
     })
-    .slice(0, ATTACHMENT_MAX_COUNT);
+    .slice(0, attachmentMaxCount(deps));
 }
 
 /** The newest attachments across the last `maxTurns` user turns, with or without attachments. */

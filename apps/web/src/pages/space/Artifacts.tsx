@@ -79,14 +79,37 @@ type ArtifactSummary = Artifact & { versionCount: number };
 
 const NO_BOTS: Bot[] = [];
 
-function matchesCalendarDateFilter(iso: string, filter: DateFilter, now: Date): boolean {
+// Older browsers without locale week data still need the week start of each app language.
+const MONDAY_FIRST_LOCALES = new Set(["de", "es", "fr", "nl", "pl", "ru", "tr", "zh-CN"]);
+
+function firstDayOfWeek(locale: string): number {
+  const regional = new Intl.Locale(locale || "en") as Intl.Locale & {
+    getWeekInfo?: () => { firstDay: number };
+    weekInfo?: { firstDay: number };
+  };
+  const firstDay = (regional.getWeekInfo?.() ?? regional.weekInfo)?.firstDay;
+  // Intl uses 7 for Sunday; Date.getDay() uses 0.
+  return firstDay === undefined
+    ? MONDAY_FIRST_LOCALES.has(regional.baseName)
+      ? 1
+      : 0
+    : firstDay % 7;
+}
+
+function matchesCalendarDateFilter(
+  iso: string,
+  filter: DateFilter,
+  now: Date,
+  weekStartsOn: number,
+): boolean {
   if (filter === "all") return true;
   const date = new Date(iso);
   if (filter === "today") return date.toDateString() === now.toDateString();
   if (filter === "week") {
     const startOfWeek = new Date(now);
     startOfWeek.setHours(0, 0, 0, 0);
-    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    const daysSinceStart = (startOfWeek.getDay() - weekStartsOn + 7) % 7;
+    startOfWeek.setDate(startOfWeek.getDate() - daysSinceStart);
     return date >= startOfWeek;
   }
   return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
@@ -150,12 +173,15 @@ export function ArtifactsPage() {
 
   const botsById = useMemo(() => new Map(bots.map((bot) => [bot.id, bot])), [bots]);
 
+  const { i18n } = useLingui();
+  const locale = i18n.locale;
   const filteredItems = useMemo(() => {
     if (!items) return null;
     const now = new Date();
+    const weekStartsOn = dateFilter === "week" ? firstDayOfWeek(locale) : 0;
     const query = searchQuery.trim().toLowerCase();
     return items.filter((item) => {
-      if (!matchesCalendarDateFilter(item.createdAt, dateFilter, now)) return false;
+      if (!matchesCalendarDateFilter(item.createdAt, dateFilter, now, weekStartsOn)) return false;
       if (!query) return true;
       return (
         item.name.toLowerCase().includes(query) ||
@@ -163,7 +189,7 @@ export function ArtifactsPage() {
       );
     });
     // `today` is listed so the midnight tick invalidates cached date filters.
-  }, [items, searchQuery, dateFilter, today]);
+  }, [items, searchQuery, dateFilter, today, locale]);
 
   const clientFilterActive = searchQuery.trim().length > 0 || dateFilter !== "all";
   const autoFetchedCursorRef = useRef<string | null>(null);
@@ -226,7 +252,6 @@ export function ArtifactsPage() {
   return (
     <div className="flex h-full min-w-0 flex-col bg-background text-foreground/90">
       <header className="app-drag flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3">
-        {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
         {desktopBridge() ? <WindowChrome /> : null}
         <div className="flex min-w-fit flex-1 items-center gap-1">
           <IconTooltip label={t`Back`}>
@@ -1021,7 +1046,7 @@ function PreviewPane({
               <div className="absolute bottom-3 end-3 flex items-center gap-1.5 rounded-full bg-black/70 px-2.5 py-1.5 text-caption text-white">
                 <Lock size={12} strokeWidth={2} />
                 <span>
-                  <Trans>Isolated preview — no access to your account</Trans>
+                  <Trans>Isolated preview: no access to your account</Trans>
                 </span>
               </div>
             ) : null}
@@ -1073,7 +1098,7 @@ function ArtifactPreview({ artifact, bytes }: { artifact: Artifact; bytes: Uint8
     case "none":
       return (
         <div className="grid h-full place-items-center px-6 text-center text-body text-muted-foreground/80">
-          <Trans>Preview isn't available for this file type — download it to view it.</Trans>
+          <Trans>Preview isn't available for this file type. Download it to view it.</Trans>
         </div>
       );
   }

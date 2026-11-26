@@ -1,7 +1,10 @@
-import type { MessagingInboundMessage } from "@rakazo/adapter-kit";
+import { replaceBareMentions } from "@chat-adapter/shared";
+import type { MessagingInboundMessage, MessagingOutbound } from "@rakazo/adapter-kit";
 import type { Adapter } from "chat";
+import { convertEmojiPlaceholders } from "chat";
 import { boundInboundMarkdown } from "../../../messaging/chat-sdk-surface.js";
 import { lazyChatAdapter } from "../../../messaging/lazy-chat-adapter.js";
+import { splitMarkdown } from "../../../messaging/markdown-split.js";
 import {
   asRecord,
   defineMessagingPlatform,
@@ -43,6 +46,7 @@ export const slackMessaging = defineMessagingPlatform({
     });
     return {
       provider: "slack",
+      outbound: slackOutbound,
       capabilities: { direct: true, groups: true, receipt: "reaction" },
       adapter,
       enrichTeamRoom: enrichSlackTeamRoom,
@@ -51,6 +55,29 @@ export const slackMessaging = defineMessagingPlatform({
     };
   },
 });
+
+/** Slack's `markdown_text` holds at most 12,000 characters; `text` would allow more but shows Markdown as typed. */
+export const SLACK_MARKDOWN_LIMIT = 12_000;
+
+/** A Slack user id is at most this long; the adapter rewrites `@name` to `<@name>` or `<@id>`. */
+const SLACK_USER_ID_LENGTH = 12;
+
+/** The text the adapter sends for a Markdown part: emoji placeholders resolved and each bare
+ * `@name` mention written as long as its `<@id>` form can be, so a part never grows past the limit. */
+export function slackPayloads(markdown: string): string[] {
+  return [
+    replaceBareMentions(
+      convertEmojiPlaceholders(markdown, "slack"),
+      (_mention, name) => `<@${name.padEnd(SLACK_USER_ID_LENGTH, "U")}>`,
+    ),
+  ];
+}
+
+/** Slack posts a Markdown part as `markdown_text`, split to stay under its own limit. */
+export const slackOutbound: MessagingOutbound = {
+  markdown: true,
+  split: (body) => splitMarkdown(body, { limit: SLACK_MARKDOWN_LIMIT, sent: slackPayloads }),
+};
 
 /** Slack errors a retry cannot fix: the bot cannot reach the channel or its token is dead. */
 const SLACK_PERMANENT_ERRORS = new Set([

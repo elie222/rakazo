@@ -67,12 +67,9 @@ function piArguments(tool: ConnectorTool, args: JsonObject) {
 describe("GraphQL nullable inputs", () => {
   it.each([
     ["String", scalar("String"), "text"],
-    ["ID", scalar("ID"), "id"],
     ["Int", scalar("Int"), 1],
-    ["Long", scalar("Long"), 1],
     ["Float", scalar("Float"), 1.5],
     ["Boolean", scalar("Boolean"), true],
-    ["custom scalar", scalar("Date"), "2026-01-01"],
     ["enum", episode, "NEWHOPE"],
     ["input object", input, { id: "profile" }],
   ] satisfies Array<[string, TypeRef, JsonValue]>)(

@@ -14,6 +14,12 @@ import { managedLocalOpenUrl, parseSetupInput, RAKAZO_CLOUD_URL } from "./setup-
 import { writeSetup } from "./setup-store.js";
 
 let setupSaveInProgress = false;
+let onAppReadyCallback: (() => void) | undefined;
+
+export function isSetupSaveInProgress(): boolean {
+  return setupSaveInProgress;
+}
+
 function createSetupWindow() {
   const icon = developmentIcon();
   const win = new BrowserWindow({
@@ -45,7 +51,8 @@ export function showSetupWindow(error: string | null = null) {
 
   let win: BrowserWindow;
   if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
-    if (error !== null) desktop.setupWindow.reload();
+    // A save the page is awaiting answers with the error itself; reloading would drop what was typed.
+    if (error !== null && !setupSaveInProgress) desktop.setupWindow.reload();
     win = desktop.setupWindow;
   } else {
     win = createSetupWindow();
@@ -67,6 +74,7 @@ function restoreAppWindowAfterSetup() {
   clearTimeout(desktop.warmWindowTimer);
   desktop.mainWindow.show();
   desktop.mainWindow.focus();
+  if (!setupSaveInProgress) onAppReadyCallback?.();
 }
 /** Watch for a renderer crash until setup is persisted (or the switch is abandoned). */
 function watchRendererUntilCommitted(win: BrowserWindow) {
@@ -110,6 +118,8 @@ type SetupIpcDeps = {
   stopStackLeftBehind: (previousMode: DesktopSetup["mode"] | undefined) => void;
   /** Picks the stack This computer runs on, if launch left that open. */
   settleLocalStack: () => Promise<void>;
+  /** Runs once the app window is committed and setup is closed (e.g. pending deep link). */
+  onAppReady?: () => void;
 };
 
 /** The setup window's IPC. The channel map keeps a connected Rakazo server from calling any of it. */
@@ -124,7 +134,9 @@ export function registerSetupIpc({
   recoverFromCrashedSave,
   stopStackLeftBehind,
   settleLocalStack,
+  onAppReady,
 }: SetupIpcDeps) {
+  onAppReadyCallback = onAppReady;
   // Synchronous so the setup page has its language before it first paints.
   handleIpc("desktop.setup.locale", () => ({
     lang: desktopLocale(),
@@ -150,6 +162,7 @@ export function registerSetupIpc({
     if (setupSaveInProgress || appOpener.busy())
       return { ok: false, error: t("A connection attempt is already running.") };
     setupSaveInProgress = true;
+    desktop.setupError = null;
     const previousSetup = desktop.currentSetup;
     const previousUrl = desktop.currentTargetUrl;
     try {
@@ -166,6 +179,7 @@ export function registerSetupIpc({
       // Only open the exact origin selected and authenticated by the managed stack.
       let openSetup = setup;
       if (setup.mode === "new") {
+        await settleLocalStack();
         const managedUrl = managedLocalOpenUrl(setup.serverUrl, desktop.localStack.webUrl());
         if (managedUrl === null || !(await desktop.localStack.matchesDesiredStack())) {
           return {
@@ -186,9 +200,13 @@ export function registerSetupIpc({
         desktop.currentSetup = previousSetup;
         configureHeaderSession(desktop.mainWindow?.webContents.session);
         syncHostComputerAccess();
+        // The opener reports why through showSetupWindow; hand it to the page as this answer.
+        const detail = desktop.setupError;
+        desktop.setupError = null;
         return {
           ok: false,
-          error: t("Could not open that server. The previous instance was left unchanged."),
+          error:
+            detail ?? t("Could not open that server. The previous instance was left unchanged."),
         };
       }
 
@@ -232,6 +250,7 @@ export function registerSetupIpc({
       }
     } finally {
       setupSaveInProgress = false;
+      if (desktop.setupWindow === null) onAppReadyCallback?.();
     }
   });
 

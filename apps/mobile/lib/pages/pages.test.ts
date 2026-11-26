@@ -7,15 +7,12 @@ vi.mock("../api/session", () => ({
   registerSessionDiskCache: (clear: () => void) => sessionCaches.push(clear),
 }));
 
-const {
-  pageCardState,
-  pageMessage,
-  pageReadFailure,
-  pagePreviewLayout,
-  pageShareLink,
-  pageShareState,
-  reducePageShare,
-} = await import("./pages");
+vi.mock("./page-runtime", () => ({ loadPageRuntime: async () => "" }));
+vi.mock("../i18n/i18n", () => ({ getActiveUiLocale: () => "en" }));
+
+const { pageCardState, pageDocument, pageMessage, pageReadFailure, pagePreviewLayout } =
+  await import("./pages");
+const { rpc } = await import("../api/api");
 
 const detail = (overrides: Partial<PageDetail> = {}): PageDetail => ({
   id: "page-1",
@@ -29,6 +26,7 @@ const detail = (overrides: Partial<PageDetail> = {}): PageDetail => ({
   updatedAt: "2026-10-30T11:00:00.000Z",
   version: 2,
   code: "exports.default = () => null;",
+  images: {},
   owner: { name: "RJ", image: null },
   shareUrl: null,
   ...overrides,
@@ -81,52 +79,6 @@ describe("pageMessage", () => {
   });
 });
 
-describe("reducePageShare", () => {
-  it("offers the link only once the server made the page public", () => {
-    let state = pageShareState(detail());
-    expect(pageShareLink(state)).toBeNull();
-    const reopened = reducePageShare(state, {
-      type: "loaded",
-      visibility: "link",
-      shareUrl: "https://rakazo.example/p/voice-old",
-    });
-    expect(pageShareLink(reopened)).toBe("https://rakazo.example/p/voice-old");
-    state = reducePageShare(state, { type: "choose", visibility: "link" });
-    expect(state.pending).toBe("link");
-    expect(pageShareLink(state)).toBeNull();
-    state = reducePageShare(state, {
-      type: "saved",
-      visibility: "link",
-      shareUrl: "https://rakazo.example/p/voice-abc",
-    });
-    expect(pageShareLink(state)).toBe("https://rakazo.example/p/voice-abc");
-    state = reducePageShare(state, { type: "choose", visibility: "private" });
-    expect(pageShareLink(state)).toBeNull();
-    // Not saved: the server, asked again, still has the link on.
-    state = reducePageShare(state, {
-      type: "failed",
-      visibility: "private",
-      actual: { visibility: "link", shareUrl: "https://rakazo.example/p/voice-abc" },
-    });
-    expect(state).toMatchObject({ visibility: "link", error: true, pending: null });
-    expect(pageShareLink(state)).toBe("https://rakazo.example/p/voice-abc");
-  });
-
-  it("ignores a late answer for a choice the user already changed", () => {
-    let state = reducePageShare(pageShareState(detail()), { type: "choose", visibility: "link" });
-    state = reducePageShare(state, { type: "choose", visibility: "private" });
-    const late = reducePageShare(state, {
-      type: "saved",
-      visibility: "link",
-      shareUrl: "https://rakazo.example/p/x",
-    });
-    expect(late).toBe(state);
-    expect(reducePageShare(state, { type: "failed", visibility: "link", actual: null })).toBe(
-      state,
-    );
-  });
-});
-
 describe("getLatestPage", () => {
   it("reads again for a card newer than the cached page, and forgets pages on a session change", async () => {
     const { rpc } = await import("../api/api");
@@ -157,5 +109,28 @@ describe("removePage", () => {
     await expect(removePage("p1")).resolves.toEqual({ ok: true });
     vi.mocked(rpc).mockRejectedValueOnce(new Error("offline") as never);
     await expect(removePage("p1")).rejects.toThrow("offline");
+  });
+});
+
+describe("pageDocument", () => {
+  it("reads each picture once and leaves out one that cannot be read", async () => {
+    vi.mocked(rpc).mockImplementation((async (_proc: string, input: { imageId: string }) => {
+      if (input.imageId === "i2") throw new Error("gone");
+      return { src: "data:image/webp;base64,AAAA" };
+    }) as never);
+    const page = {
+      pageId: "page-1",
+      version: 2,
+      code: "",
+      images: { hotel: "i1", logo: "i2" },
+    };
+    const html = await pageDocument("https://api.example.test", page, "light", "Error");
+    expect(html).toContain('"images":{"hotel":"data:image/webp;base64,AAAA"}');
+    await pageDocument("https://api.example.test", page, "light", "Error");
+    const reads = vi
+      .mocked(rpc)
+      .mock.calls.map(([, input]) => (input as { imageId: string }).imageId);
+    expect(reads.filter((id) => id === "i1")).toHaveLength(1);
+    expect(reads.filter((id) => id === "i2")).toHaveLength(2);
   });
 });

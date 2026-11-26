@@ -25,8 +25,15 @@ import { MCP_CLOSE_TIMEOUT_MS } from "./mcp-close.js";
 import { allowlistDrift, DEFAULT_MCP_STDIO_IDLE_MS, McpConnector } from "./mcp-connector.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
 import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
+import type * as reconnectCard from "./mcp-reconnect-card.js";
+import { reportExpiredMcpSignIn } from "./mcp-reconnect-card.js";
 import { McpSession } from "./mcp-transport.js";
 import { MCP_TOOL_TIMEOUT_MS } from "./remote-mcp.js";
+
+vi.mock("./mcp-reconnect-card.js", async (original) => ({
+  ...(await original<typeof reconnectCard>()),
+  reportExpiredMcpSignIn: vi.fn(async () => undefined),
+}));
 
 // No server is shared with every agent, so only assignments reach a bot.
 const NO_SHARED_SERVERS = { findMany: async () => [], findFirst: async () => null };
@@ -1977,6 +1984,98 @@ describe("MCP connector session cache", () => {
       }
     },
   );
+
+  describe("an expired sign-in found during a run", () => {
+    const rejected = () =>
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const { id } = (await new Request(input, init).json()) as { id?: number };
+        return Response.json({
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32302, message: "Token is no longer active" },
+        });
+      });
+    const expiredProvider = () =>
+      new StoredMcpOAuthProvider(
+        "server-1",
+        {
+          oauth: {
+            tokens: {
+              access_token: "fake-revoked",
+              refresh_token: "fake-refresh",
+              token_type: "bearer",
+            },
+          },
+        },
+        async () => undefined,
+        { refresh: async () => ({ tokens: undefined, obtainedAt: Date.now() }) },
+      );
+    async function discover(
+      prisma: Record<string, unknown>,
+      events: { append: ReturnType<typeof vi.fn>; notify?: ReturnType<typeof vi.fn> },
+    ) {
+      const connector = new McpConnector(
+        {
+          run: { findUnique: vi.fn().mockResolvedValue({ threadId: "thread-1" }) },
+          ...prisma,
+        } as never,
+        {} as never,
+        {
+          network: {
+            resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }],
+            fetch: rejected(),
+          },
+          events: events as never,
+        },
+        { providerFor: vi.fn().mockResolvedValue(expiredProvider()) } as unknown as McpOAuthBroker,
+      );
+      try {
+        return await connector.discoverTools({
+          spaceId: "w1",
+          userId: "u1",
+          botId: "bot-1",
+          runId: "run-1",
+          signal: new AbortController().signal,
+        } as never);
+      } finally {
+        await connector.close();
+      }
+    }
+    const assigned = {
+      mcpServer: { ...NO_SHARED_SERVERS, updateMany: vi.fn(async () => ({ count: 1 })) },
+      botMcpServer: { findMany: vi.fn().mockResolvedValue([ASSIGNMENT]) },
+    };
+
+    afterEach(() => {
+      vi.mocked(reportExpiredMcpSignIn).mockClear();
+    });
+
+    it("reports the failure of a server assigned to the bot", async () => {
+      const tools = await discover(assigned, { append: vi.fn(), notify: vi.fn() });
+      expect(tools).toEqual(unavailableOnly());
+      expect(reportExpiredMcpSignIn).toHaveBeenCalledTimes(1);
+      expect(reportExpiredMcpSignIn).toHaveBeenCalledWith(
+        expect.objectContaining({ events: expect.anything() }),
+        expect.objectContaining({ runId: "run-1", botId: "bot-1" }),
+        SERVER,
+        expect.anything(),
+      );
+    });
+
+    it("reports nothing for a server shared with every bot", async () => {
+      await discover(
+        {
+          mcpServer: {
+            findMany: vi.fn().mockResolvedValue([SERVER]),
+            updateMany: vi.fn(async () => ({ count: 1 })),
+          },
+          botMcpServer: { findMany: vi.fn().mockResolvedValue([]) },
+        },
+        { append: vi.fn(), notify: vi.fn() },
+      );
+      expect(reportExpiredMcpSignIn).not.toHaveBeenCalled();
+    });
+  });
 
   it.each(["localhost", "127.0.0.1", "[::1]"])(
     "blocks OAuth rediscovery to HTTP %s after invalid_client from a public server",

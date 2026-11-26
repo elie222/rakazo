@@ -4,6 +4,7 @@ import { ComputerModeSchema } from "../computers/computer.js";
 import { Id } from "../ids.js";
 import {
   AgentImportCreateInput,
+  AgentImportManyInput,
   AgentImportPlanSchema,
   AgentImportPreviewInput,
 } from "../integrations/agent-import.js";
@@ -24,6 +25,7 @@ import {
   BotSectionName,
   BotSectionSchema,
   CreateBotInput,
+  ListedBotSchema,
   ReorderBotsInput,
   UpdateBotInput,
 } from "./bot.js";
@@ -48,16 +50,27 @@ import {
   CreateScratchpadItemInput,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
+  ScratchpadItemTitle,
 } from "./scratchpad.js";
 
 export const botsRpc = {
   bots: {
-    list: oc.output(z.array(BotSchema)),
-    listArchived: oc.output(z.array(BotSchema)),
+    list: oc.output(z.array(ListedBotSchema)),
+    listArchived: oc.output(z.array(ListedBotSchema)),
     get: oc.input(botId).output(BotSchema),
     create: oc.input(CreateBotInput).output(BotSchema),
     importPreview: oc.input(AgentImportPreviewInput).output(AgentImportPlanSchema),
     importCreate: oc.input(AgentImportCreateInput).output(BotSchema),
+    /** In input order; one agent that cannot be created does not stop the others. */
+    importMany: oc.input(AgentImportManyInput).output(
+      z.array(
+        z.union([
+          z.object({ bot: BotSchema }),
+          /** `data` is what the same refusal carries from `importCreate`, such as its reason. */
+          z.object({ error: z.string(), data: z.record(z.string(), z.unknown()).optional() }),
+        ]),
+      ),
+    ),
     importSetupState: oc.input(AgentImportSetupStateInput).output(AgentImportSetupStateSchema),
     templates: oc.output(z.array(BotTemplateListingSchema)),
     createFromTemplate: oc.input(CreateBotFromTemplateInput).output(CreateBotFromTemplateOutput),
@@ -101,7 +114,10 @@ export const botsRpc = {
         webhookConfigured: z.literal(true),
       }),
     ),
-    revealWebhookSecret: oc.input(botId).output(z.object({ secret: z.string() })),
+    revealWebhookSecret: oc
+      .input(botId)
+      // `url` is set when the deployment publishes its webhooks at a public address.
+      .output(z.object({ secret: z.string(), url: z.string().optional() })),
   },
   botSections: {
     list: oc.output(z.array(BotSectionSchema)),
@@ -173,7 +189,7 @@ export const botsRpc = {
       .input(
         z.object({
           itemId: Id,
-          title: z.string().min(1).max(200).optional(),
+          title: ScratchpadItemTitle.optional(),
           status: ScratchpadItemStatusSchema.optional(),
           notes: z.string().max(4_000).optional(),
         }),

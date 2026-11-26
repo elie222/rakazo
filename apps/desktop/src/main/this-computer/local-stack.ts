@@ -146,10 +146,12 @@ export function parseStackEnv(env: string): Map<string, string> {
   const values = new Map<string, string>();
   // Consume quoted values across lines so their contents cannot become assignments.
   const assignments = env.matchAll(
-    /^[\t ]*(?:export[\t ]+)?([^\s=#]+)[\t ]*=[\t ]*(?:"((?:\\[\s\S]|[^"\\])*)"(?=[\t ]*(?:#.*)?\r?$)|'((?:\\[\s\S]|[^'\\])*)'(?=[\t ]*(?:#.*)?\r?$)|([^\r\n]*))/gm,
+    /^[\t ]*(?:export[\t ]+)?([^\s=#]+)[\t ]*=([\t ]*)(?:"((?:\\[\s\S]|[^"\\])*)"(?=[\t ]*(?:#.*)?\r?$)|'((?:\\[\s\S]|[^'\\])*)'(?=[\t ]*(?:#.*)?\r?$)|([^\r\n]*))/gm,
   );
-  for (const match of assignments) {
-    values.set(match[1]!, match[2] ?? match[3] ?? match[4]!.trim());
+  for (const [, name, gap = "", double, single, bare = ""] of assignments) {
+    // An unquoted ` #…` is a comment, but a `#` with no whitespace before it is part of the value.
+    const value = double ?? single ?? (gap + bare).replace(/\s+#.*$/, "").trim();
+    values.set(name!, value);
   }
   return values;
 }
@@ -217,12 +219,12 @@ export type LocalStackEvent =
   | { type: "up-start" }
   | { type: "wait-start" }
   | { type: "output"; line: string }
-  | { type: "download"; name: string; bytes: number }
+  | { type: "download"; name: string; bytes: number; total: number }
   | { type: "ready" }
   | { type: "failed"; message: string; output?: string[] };
 
 export function initialStackState(imageTag: string): DesktopLocalStackState {
-  return { phase: "idle", message: null, output: [], layerBytes: {}, imageTag };
+  return { phase: "idle", message: null, output: [], layerBytes: {}, layerTotals: {}, imageTag };
 }
 
 /** `COMPOSE_PROGRESS=plain` reports a layer's downloaded size and never its total. */
@@ -245,7 +247,14 @@ export function reduceStackState(
   event: LocalStackEvent,
 ): DesktopLocalStackState {
   if (event.type === "check-start") {
-    return { ...state, phase: "checking-docker", message: null, output: [], layerBytes: {} };
+    return {
+      ...state,
+      phase: "checking-docker",
+      message: null,
+      output: [],
+      layerBytes: {},
+      layerTotals: {},
+    };
   }
   // Terminal phases only leave through the next check-start.
   if (state.phase === "ready" || state.phase === "failed") return state;
@@ -276,10 +285,21 @@ export function reduceStackState(
         layerBytes: reduceLayerBytes(state.layerBytes, event.line),
       };
     case "download":
-      if (state.phase !== "pulling" || event.bytes <= (state.layerBytes[event.name] ?? 0)) {
+      if (
+        state.phase !== "pulling" ||
+        (event.bytes <= (state.layerBytes[event.name] ?? 0) &&
+          event.total === state.layerTotals[event.name])
+      ) {
         return state;
       }
-      return { ...state, layerBytes: { ...state.layerBytes, [event.name]: event.bytes } };
+      return {
+        ...state,
+        layerBytes: {
+          ...state.layerBytes,
+          [event.name]: Math.max(event.bytes, state.layerBytes[event.name] ?? 0),
+        },
+        layerTotals: { ...state.layerTotals, [event.name]: event.total },
+      };
     case "ready":
       return { ...state, phase: "ready", message: null };
     case "failed":

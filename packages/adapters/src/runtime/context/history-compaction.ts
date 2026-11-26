@@ -10,6 +10,7 @@ import type {
 } from "../../memory/memory-provider-factory.js";
 import { modelCreditOfferings } from "../../model-credits/offerings.js";
 import { resolveDeploymentModel } from "../../models/deployment-model.js";
+import { modelBilling } from "../../models/model-secret.js";
 import {
   historyCompactionInstructions,
   historyCompactionPrompt,
@@ -62,6 +63,7 @@ export type CompactedHistoryMessage = {
   /** Set on a message by someone other than this bot or a direct chat's user; see AgentRunRequest.history. */
   speaker?: string;
   segments?: AgentRunRequest["history"][number]["segments"];
+  transcript?: string;
   /** Still waiting for its own run: covered by the summary check, never sent as history. */
   waiting?: boolean;
 };
@@ -395,6 +397,7 @@ export async function compactHistory(
           provider: deploymentFallback.provider,
           id: deploymentFallback.model,
           apiKey: deps.deploymentModelKey,
+          billing: modelBilling({}),
         }
       : await (async () => {
           const settings = await deps.prisma.deploymentSettings.findUnique({
@@ -404,6 +407,7 @@ export async function compactHistory(
             provider: settings?.defaultModelProvider ?? "scripted",
             id: settings?.defaultModelId ?? "scripted",
             apiKey: undefined,
+            billing: modelBilling({}),
           };
         })();
   if (!deps.runtime.describe().capabilities.compaction || model.provider === "scripted") {

@@ -1,5 +1,7 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { AccessGrant, AccessGrantInput } from "@rakazo/contracts";
+import { BYOK_TIERS } from "@rakazo/contracts";
+import { formatBillingAmount } from "@rakazo/i18n/billing";
 import {
   Badge,
   Button,
@@ -17,7 +19,6 @@ import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { PageLoading } from "../../components/PageLoading";
 import { WindowChrome } from "../../components/WindowChrome";
-import { formatBillingAmount } from "../../lib/billing/billing";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
 
@@ -165,6 +166,7 @@ function AccessGrantsPanel() {
                   {item.creditCents > 0 ? (
                     <span>{formatBillingAmount(item.creditCents, "usd", i18n.locale)}</span>
                   ) : null}
+                  {item.byokTier ? <span>{BYOK_TIERS[item.byokTier].name}</span> : null}
                   {item.freeMonths > 0 ? (
                     <span>
                       <Plural value={item.freeMonths} one="# free month" other="# free months" />

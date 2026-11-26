@@ -3,6 +3,8 @@ import { Agent as HttpsAgent } from "node:https";
 import type { AddressInfo } from "node:net";
 import type * as S3Sdk from "@aws-sdk/client-s3";
 import { S3Client } from "@aws-sdk/client-s3";
+import type { Deferred } from "@rakazo/core/test-async";
+import { deferred } from "@rakazo/core/test-async";
 import {
   createLogger,
   createTestSink,
@@ -43,6 +45,8 @@ function fakeS3() {
   const objects = new Map<string, { body: Buffer; lastModified: Date }>();
   const uploads = new Map<string, { key: string; parts: Map<number, Buffer> }>();
   const requests: string[] = [];
+  /** Part uploads being answered; while `hold` is set, each waits for it before answering. */
+  const partsSending: { count: number; hold?: Deferred<void> } = { count: 0 };
   let nextUpload = 0;
   const xml = (value: string) =>
     value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -81,6 +85,9 @@ function fakeS3() {
       return send(503, "<Error><Code>SlowDown</Code><Message>Reduce your rate</Message></Error>");
     if (bucket !== "test-bucket") return send(404, "<Error><Code>NoSuchBucket</Code></Error>");
     if (req.method === "PUT" && query.has("uploadId")) {
+      partsSending.count += 1;
+      await partsSending.hold?.promise;
+      partsSending.count -= 1;
       uploads.get(query.get("uploadId")!)!.parts.set(Number(query.get("partNumber")), body);
       return send(200, "", { ETag: `"part-${query.get("partNumber")}"` });
     }
@@ -149,7 +156,7 @@ function fakeS3() {
     }
     send(400, "<Error><Code>BadRequest</Code></Error>");
   });
-  return { server, objects, requests };
+  return { server, objects, requests, partsSending };
 }
 
 const fake = fakeS3();
@@ -217,6 +224,30 @@ describe("S3ObjectStorage", () => {
       "PUT object?partNumber&uploadId",
       "POST object?uploadId",
     ]);
+  });
+
+  it("sends several parts of a large home at once and stores them in order", async () => {
+    const sizes = [16, 16, 1];
+    const body = (index: number) => Buffer.alloc(sizes[index]! * 1024 * 1024, index);
+    fake.partsSending.hold = deferred();
+    const uploaded = storage("parallel/").put(
+      "home",
+      (async function* () {
+        for (const index of sizes.keys()) yield body(index);
+      })(),
+    );
+    try {
+      await vi.waitFor(() => expect(fake.partsSending.count).toBe(3), { timeout: 10_000 });
+    } finally {
+      fake.partsSending.hold.resolve();
+      fake.partsSending.hold = undefined;
+    }
+    await uploaded;
+    expect(
+      fake.objects
+        .get("parallel/home")!
+        .body.equals(Buffer.concat(sizes.map((_, index) => body(index)))),
+    ).toBe(true);
   });
 
   it("aborts a multipart upload when the source fails", async () => {

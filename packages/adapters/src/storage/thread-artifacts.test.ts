@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   attachWorkspaceFileToThread,
   createEarlierFileQueue,
+  listRecentThreadFiles,
   materializeCurrentTurnFiles,
   materializeEarlierFiles,
   materializeRecentThreadFiles,
@@ -68,6 +69,34 @@ describe("current-turn thread files", () => {
       expect.objectContaining({ data: expect.objectContaining({ name: expectedName }) }),
     );
     expect(result.block).toMatchObject({ name: expectedName, mimeType: "application/pdf" });
+  });
+  it("signals the Space's artifacts after a file is attached", async () => {
+    const artifact = {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn(async ({ data }) => ({ id: "artifact", ...data })),
+    };
+    const tx = { artifact, $queryRaw: vi.fn().mockResolvedValue([]) };
+    const publishSpaceChange = vi.fn(async () => {});
+    await attachWorkspaceFileToThread(
+      {
+        prisma: {
+          artifact,
+          $transaction: async (work: (client: typeof tx) => Promise<unknown>) => work(tx),
+        } as unknown as PrismaClient,
+        artifacts: { put: vi.fn().mockResolvedValue({ id: "stored" }) } as unknown as ArtifactStore,
+        events: { publishSpaceChange },
+      },
+      {
+        spaceId: "space",
+        userId: "owner",
+        botId: "bot",
+        runId: "run",
+        filePath: "report.pdf",
+        bytes: new Uint8Array([1]),
+        operationId: "op",
+      },
+    );
+    expect(publishSpaceChange).toHaveBeenCalledExactlyOnceWith("space", "artifacts");
   });
   it("rejects generated output above a lower configured attachment limit before storage", async () => {
     const put = vi.fn();
@@ -463,6 +492,63 @@ describe("recent thread files", () => {
       expect(writeFile).not.toHaveBeenCalled();
       expect(markWorkspaceDirty).not.toHaveBeenCalled();
       expect(recentThreadFilesInstruction(files)).toContain('"attachments/notes.txt"');
+    },
+  );
+
+  it.each([4, 10])(
+    "lists and copies the same newest files up to the configured count %i",
+    async (maxAttachmentsPerMessage) => {
+      const blocks = Array.from({ length: 10 }, (_, i) => ({
+        kind: "image" as const,
+        artifactId: `pic-${i}`,
+        name: `pic-${i}.png`,
+        mimeType: "image/png",
+      }));
+      const history = [{ id: "previous", role: "user" }];
+      const messages = [{ id: "previous", blocks }];
+      const writeFile = vi.fn();
+      const deps = {
+        maxAttachmentsPerMessage,
+        prisma: {
+          artifact: {
+            findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+              blocks
+                .filter((b) => where.id.in.includes(b.artifactId))
+                .map((b) => ({ ...b, id: b.artifactId, size: 1, storageKey: b.artifactId })),
+            ),
+          },
+        } as unknown as PrismaClient,
+        artifacts: {
+          get: vi.fn().mockResolvedValue(new Uint8Array(1)),
+        } as unknown as ArtifactStore,
+        sandbox: {
+          readFile: vi.fn().mockRejectedValue(new Error("not yet copied")),
+          writeFile,
+        } as unknown as SandboxProvider,
+      };
+      const input = {
+        context: {
+          operationId: "run",
+          traceId: "run",
+          spaceId: "space",
+          userId: "user",
+          botId: "bot",
+          signal: new AbortController().signal,
+        },
+        computer: async () =>
+          ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
+        computerMode: "dedicated" as const,
+        maxTurns: 3,
+      };
+      const listed = await listRecentThreadFiles(deps, history, messages, input);
+      const expected = blocks
+        .slice(-maxAttachmentsPerMessage)
+        .reverse()
+        .map((b) => `attachments/${b.name}`);
+      expect(listed.map((f) => f.path)).toEqual(expected);
+      const copied = await materializeRecentThreadFiles(deps, history, messages, input);
+      expect(copied).toEqual(listed);
+      expect(writeFile.mock.calls.map(([, file]) => file.path)).toEqual(expected);
     },
   );
 

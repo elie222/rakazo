@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { TelegramAdapter, TelegramFormatConverter } from "@chat-adapter/telegram";
+import type { MessagingOutbound } from "@rakazo/adapter-kit";
 import { deadlineSignal, withAbort } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type { AdapterPostableMessage, CardElement, Root } from "chat";
@@ -12,6 +13,7 @@ import {
   walkAst,
 } from "chat";
 import type { MessagingPlatform } from "../../../messaging/chat-sdk-surface.js";
+import { splitMarkdown } from "../../../messaging/markdown-split.js";
 import type { MessagingMountContext } from "../../../messaging/messaging-platform-descriptor.js";
 import {
   asRecord,
@@ -27,11 +29,16 @@ export const telegramMessaging = defineMessagingPlatform({
   env: {
     telegramBotToken: { name: "TELEGRAM_BOT_TOKEN", required: true },
     telegramWebhookSecret: { name: "TELEGRAM_WEBHOOK_SECRET_TOKEN", required: true },
+    /** "off" ignores group and supergroup chats on every Telegram bot, leaving direct chats only. */
+    telegramGroups: { name: "TELEGRAM_GROUPS" },
     /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
     telegramBots: { read: telegramBotsFromEnv },
   },
   mount(env, options) {
-    return telegramPlatform("telegram", env.telegramBotToken, env.telegramWebhookSecret, options);
+    return telegramPlatform("telegram", env.telegramBotToken, env.telegramWebhookSecret, {
+      ...options,
+      groups: telegramGroupsEnabled(env.telegramGroups),
+    });
   },
   // Same rules as the default bot; each named bot has its own token and so
   // its own getUpdates slot. The surface maps their native "telegram:" thread
@@ -47,7 +54,10 @@ export const telegramMessaging = defineMessagingPlatform({
         continue;
       }
       tokens.add(bot.botToken.trim());
-      const platform = telegramPlatform(provider, bot.botToken, bot.webhookSecret, options);
+      const platform = telegramPlatform(provider, bot.botToken, bot.webhookSecret, {
+        ...options,
+        groups: telegramGroupsEnabled(env.telegramGroups),
+      });
       platform.adapterName = "telegram";
       platforms.push(platform);
     }
@@ -92,11 +102,19 @@ export function telegramBotsFromEnv(
   return bots;
 }
 
+/** Unset or blank keeps group chats on. Any other value must be one of these, or startup fails. */
+function telegramGroupsEnabled(setting: string | undefined): boolean {
+  const value = setting?.trim().toLowerCase();
+  if (!value || value === "on" || value === "true" || value === "1") return true;
+  if (value === "off" || value === "false" || value === "0") return false;
+  throw new Error("TELEGRAM_GROUPS must be on or off");
+}
+
 function telegramPlatform(
   provider: string,
   botToken: string,
   secretToken: string,
-  options: MessagingMountContext,
+  options: MessagingMountContext & { groups: boolean },
 ): MessagingPlatform {
   const adapter = new TelegramAdapterWithLinkAddresses({
     botToken,
@@ -108,11 +126,12 @@ function telegramPlatform(
   });
   return {
     provider,
+    outbound: telegramOutbound,
     get address() {
       return adapter.verifiedLinkAddress;
     },
     resolveAddress: (signal) => adapter.resolveLinkAddress(signal),
-    capabilities: { direct: true, groups: true, receipt: null, files: true },
+    capabilities: { direct: true, groups: options.groups, receipt: null, files: true },
     ...withTelegramRedelivery(adapter),
     ...telegramGroupHooks(adapter),
     isPermanentSendError: isTelegramBlocked,
@@ -253,6 +272,25 @@ export function telegramPayloads(markdown: string): string[] {
 function isTelegramBlocked(error: unknown): boolean {
   return error instanceof Error && error.name === "PermissionError";
 }
+
+/** Telegram caps a text message at 4096 UTF-16 units. */
+const TELEGRAM_TEXT_LIMIT = 4096;
+
+/** Telegram Bot API limits: photos up to 10 MB, any upload up to 50 MB. */
+const TELEGRAM_PHOTO_MAX_BYTES = 10_000_000;
+const TELEGRAM_UPLOAD_MAX_BYTES = 50_000_000;
+const TELEGRAM_PHOTO_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
+/**
+ * Telegram converts Markdown, retries a rejected format as plain text, splits at its own limit,
+ * shows a common image format under the photo limit inline, and refuses any larger upload.
+ */
+export const telegramOutbound: MessagingOutbound = {
+  markdown: true,
+  split: (body) => splitMarkdown(body, { limit: TELEGRAM_TEXT_LIMIT, sent: telegramPayloads }),
+  attachmentLimitBytes: TELEGRAM_UPLOAD_MAX_BYTES,
+  photo: { maxBytes: TELEGRAM_PHOTO_MAX_BYTES, types: TELEGRAM_PHOTO_TYPES },
+};
 
 /**
  * Group facts shared by every Telegram bot mount. Telegram names no roster,

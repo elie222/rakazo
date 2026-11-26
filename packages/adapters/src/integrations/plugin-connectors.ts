@@ -2,7 +2,13 @@
  * No repository code is executed and no files are written to the host. */
 import { createHash } from "node:crypto";
 import { McpServerConfigInput, trimEndChars, trimStartChars } from "@rakazo/contracts";
-import { buildSkillMd, deadlineSignal, findSkillByName, parseSkillMd } from "@rakazo/core";
+import {
+  buildSkillMd,
+  deadlineSignal,
+  findSkillByName,
+  isRecord,
+  parseSkillMd,
+} from "@rakazo/core";
 import { z } from "zod";
 import { BUILTIN_AGENT_SKILLS } from "../tools/builtin-skills.prompt.js";
 import { fetchSafeWebText } from "../web/web-ssrf.js";
@@ -206,13 +212,26 @@ export type PluginTextReader = (
   maxBytes: number,
   signal?: AbortSignal,
 ) => Promise<string>;
-const readPublicText: PluginTextReader = async (url, maxBytes, signal) =>
-  (await fetchSafeWebText(url, { maxBytes, signal })).body;
+/**
+ * Anonymous calls to the GitHub API share a small hourly quota per address, so an operator can
+ * set a token for them. It goes to that API only, and the fetch drops it on a redirect elsewhere.
+ */
+export function pluginSourceHeaders(
+  url: string,
+  token = process.env.PLUGIN_GITHUB_TOKEN?.trim(),
+): Record<string, string> | undefined {
+  return token && new URL(url).origin === "https://api.github.com"
+    ? { authorization: `Bearer ${token}` }
+    : undefined;
+}
+
+export const readPublicPluginText: PluginTextReader = async (url, maxBytes, signal) =>
+  (await fetchSafeWebText(url, { maxBytes, signal, headers: pluginSourceHeaders(url) })).body;
 
 export async function fetchGitHubRepo(
   ref: PluginSourceRef,
   signal?: AbortSignal,
-  read: PluginTextReader = readPublicText,
+  read: PluginTextReader = readPublicPluginText,
 ): ReturnType<PluginRepoFetcher> {
   const url = new URL(ref.gitUrl);
   if (url.hostname !== "github.com")
@@ -413,10 +432,6 @@ export async function fetchGitHubRepo(
     .map(([path, content]) => ({ path, content }))
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { files, resolvedSha: sha };
-}
-
-function object(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function companionRefusal(
@@ -633,8 +648,8 @@ function collectMcpServers(
     doc = null;
   }
   if (
-    !object(doc) ||
-    !object(doc.mcpServers) ||
+    !isRecord(doc) ||
+    !isRecord(doc.mcpServers) ||
     (schema &&
       (doc.$schema !== schema.replace("plugin.schema.json", "mcp.schema.json") ||
         Object.keys(doc).some((key) => !["$schema", "mcpServers"].includes(key))))
@@ -648,7 +663,7 @@ function collectMcpServers(
   }
   const out: PluginMcpServerEntry[] = [];
   for (const [name, entry] of Object.entries(doc.mcpServers)) {
-    if (!object(entry)) {
+    if (!isRecord(entry)) {
       skipped.push({ kind: "mcp_invalid", name, reason: "Server must be an object" });
       continue;
     }
@@ -746,7 +761,7 @@ export function parsePluginDirectory(input: {
   }
   if (manifestPath) {
     const raw: unknown = JSON.parse(files.get(manifestPath) ?? "");
-    if (!object(raw)) throw new Error("Plugin manifest must be an object");
+    if (!isRecord(raw)) throw new Error("Plugin manifest must be an object");
     rawManifest = raw;
     format =
       manifestPath === "plugin.json"

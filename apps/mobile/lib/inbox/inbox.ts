@@ -3,16 +3,21 @@ import { dateLocaleForUi } from "../i18n/i18n";
 
 const DAY_MS = 86_400_000;
 
+// Lowercase then compose, so "é" typed as one character or as "e" plus an accent compare equal.
+function searchKey(text: string): string {
+  return text.toLowerCase().normalize("NFC");
+}
+
 export function filterBots<T extends { name: string; preview: string }>(
   bots: T[],
   query: string,
 ): T[] {
-  const needle = query.trim().toLowerCase();
+  const needle = searchKey(query.trim());
   if (!needle) return bots;
-  return bots.filter((bot) => `${bot.name} ${bot.preview}`.toLowerCase().includes(needle));
+  return bots.filter((bot) => searchKey(`${bot.name} ${bot.preview}`).includes(needle));
 }
 
-export function formatThreadTime(iso: string, now = new Date()) {
+export function formatThreadTime(iso: string, now = new Date(), locale = dateLocaleForUi()) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
 
@@ -21,23 +26,23 @@ export function formatThreadTime(iso: string, now = new Date()) {
   const dayDiff = Math.round((startOfToday - startOfThatDay) / DAY_MS);
 
   if (dayDiff <= 0) {
-    return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    return clockTime(date, locale);
   }
   if (dayDiff < 7) {
-    return date.toLocaleDateString(dateLocaleForUi(), { weekday: "long" });
+    return date.toLocaleDateString(locale, { weekday: "long" });
   }
-  return date.toLocaleDateString(dateLocaleForUi(), { month: "short", day: "numeric" });
+  return date.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
 
 /** When a snoozed chat wakes: the time today, the weekday within a week, or the date. */
-export function formatSnoozeWake(iso: string, now = new Date()) {
+export function formatSnoozeWake(iso: string, now = new Date(), locale = dateLocaleForUi()) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const time = clockTime(date, locale);
   const day = snoozeWakeDay(date, now);
-  return day ? `${date.toLocaleDateString(dateLocaleForUi(), day)} ${time}` : time;
+  return day ? `${date.toLocaleDateString(locale, day)} ${time}` : time;
 }
 
-function pad(value: number) {
-  return String(value).padStart(2, "0");
+function clockTime(date: Date, locale: string) {
+  return date.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
 }

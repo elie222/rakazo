@@ -1,7 +1,8 @@
+import { i18n } from "@lingui/core";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { MessageReaction, ThreadMessage } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
-import { canMarkMessageUnread, copyableMessageText } from "@rakazo/core";
+import { canMarkMessageUnread, copyableMessageText, formatTimeSeparator } from "@rakazo/core";
 import {
   CopyTextFallback,
   DropdownMenu,
@@ -13,24 +14,39 @@ import {
   PopoverTrigger,
   useCopyText,
 } from "@rakazo/ui-web";
-import { Check, Copy, MessageSquareDot, MoreHorizontal, Reply, Smile } from "lucide-react";
+import {
+  Check,
+  Copy,
+  MessageSquareDot,
+  MoreHorizontal,
+  Reply,
+  Smile,
+  Square,
+  Volume2,
+} from "lucide-react";
 import { useState } from "react";
 import { MessageHoverMetadata } from "../../../components/messages/MessageHoverMetadata";
+import { isPendingSendMessage } from "../../../lib/composer/pending-send";
 
 export function MessageHoverActions({
   message,
   side,
+  speakerName,
   onReply,
   onMarkUnread,
   markedUnread = false,
   onReact,
+  speech,
 }: {
   message: ThreadMessage;
   side: "start" | "end";
+  /** Names whose message this is, when the chat names speakers. */
+  speakerName?: string;
   onReply: (message: ThreadMessage) => void;
   onMarkUnread: (message: ThreadMessage) => void;
   markedUnread?: boolean;
   onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
+  speech?: { speaking: boolean; disabled: boolean; onSpeak: () => void };
 }) {
   const { t } = useLingui();
   const [copiedNow, copy, copyFailed, resetCopy, copyFailedText] = useCopyText();
@@ -42,7 +58,17 @@ export function MessageHoverActions({
 
   // Streaming progress bubbles keep hover free for selection / stop clicks.
   if (message.id.startsWith("progress:")) return null;
+  // A send the server has not confirmed has no stored message to act on yet.
+  if (isPendingSendMessage(message)) return null;
 
+  const when = formatTimeSeparator(message.createdAt, i18n.locale || "en", {
+    today: t`Today`,
+    yesterday: t`Yesterday`,
+  });
+  let groupLabel = t`Message actions`;
+  if (speakerName && when) groupLabel = t`Message actions, ${speakerName}, ${when}`;
+  else if (speakerName) groupLabel = t`Message actions, ${speakerName}`;
+  else if (when) groupLabel = t`Message actions, ${when}`;
   const copied = copiedNow && copiedText === copyableMessageText(message);
 
   function copyMessage() {
@@ -57,8 +83,17 @@ export function MessageHoverActions({
     "grid h-11 w-11 place-items-center text-muted-foreground transition-colors hover:text-foreground [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7";
 
   return (
-    <MessageHoverMetadata pinned={moreOpen || reactionsOpen || copied} side={side}>
-      <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
+    <MessageHoverMetadata
+      pinned={moreOpen || reactionsOpen || copied || Boolean(speech?.speaking)}
+      side={side}
+    >
+      {/* biome-ignore lint/a11y/useSemanticElements: a fieldset brings form styling the rail does not want */}
+      <div
+        data-testid="message-hover-actions"
+        role="group"
+        aria-label={groupLabel}
+        className="flex items-center gap-0.5"
+      >
         {canReactToThreadMessage(message) ? (
           <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
             <PopoverTrigger aria-label={t`React`} className={iconButtonClass}>
@@ -86,6 +121,16 @@ export function MessageHoverActions({
             </PopoverContent>
           </Popover>
         ) : null}
+        {speech?.speaking ? (
+          <button
+            type="button"
+            aria-label={t`Stop reading aloud`}
+            onClick={speech.onSpeak}
+            className={iconButtonClass}
+          >
+            <Square size={13} strokeWidth={1.7} />
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label={t`Reply`}
@@ -95,10 +140,7 @@ export function MessageHoverActions({
           <Reply size={15} strokeWidth={1.7} />
         </button>
         <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
-          <DropdownMenuTrigger
-            aria-label={copied ? t`Copied` : t`More`}
-            className={iconButtonClass}
-          >
+          <DropdownMenuTrigger aria-label={t`More`} className={iconButtonClass}>
             {copied ? (
               <Check size={15} strokeWidth={1.7} />
             ) : (
@@ -130,8 +172,23 @@ export function MessageHoverActions({
               <Copy size={14} strokeWidth={1.7} />
               <Trans>Copy</Trans>
             </DropdownMenuItem>
+            {speech && !speech.speaking ? (
+              <DropdownMenuItem
+                disabled={speech.disabled}
+                onClick={() => {
+                  setMoreOpen(false);
+                  speech.onSpeak();
+                }}
+              >
+                <Volume2 size={14} strokeWidth={1.7} />
+                <Trans>Read aloud</Trans>
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
+        <span role="status" className="sr-only">
+          {copied ? t`Copied` : null}
+        </span>
       </div>
       <CopyTextFallback
         open={copyFailed}

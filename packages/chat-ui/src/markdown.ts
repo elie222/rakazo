@@ -1,6 +1,7 @@
 /// <reference path="./linkify-it.d.ts" />
 
 import type { MessageBlock } from "@rakazo/contracts";
+import { httpUrl } from "@rakazo/contracts";
 import { urlSite } from "@rakazo/core/egress";
 import LinkifyIt from "linkify-it";
 import type { ReactNode } from "react";
@@ -27,12 +28,25 @@ export function markdownPageId(href: string | undefined): string | undefined {
 }
 
 const MENTION_URL_PREFIX = "rakazo-mention:";
+// Ends a mention the renderer put in front of text that doesn't name the bot. An encoded id
+// never holds a `#`, so the mark can't be part of one.
+const ADDED_MENTION_MARK = "#added";
+
+/** Whether a mention link was put in front of the text, so its name isn't part of the message. */
+export function markdownMentionAdded(href: string | undefined): boolean {
+  return Boolean(href?.startsWith(MENTION_URL_PREFIX) && href.endsWith(ADDED_MENTION_MARK));
+}
 
 /** The id of a mention link, if this href is one. */
 export function markdownMentionId(href: string | undefined): string | undefined {
   if (!href?.startsWith(MENTION_URL_PREFIX)) return undefined;
+  const id = href.slice(MENTION_URL_PREFIX.length);
   try {
-    return decodeURIComponent(href.slice(MENTION_URL_PREFIX.length)) || undefined;
+    return (
+      decodeURIComponent(
+        id.endsWith(ADDED_MENTION_MARK) ? id.slice(0, -ADDED_MENTION_MARK.length) : id,
+      ) || undefined
+    );
   } catch {
     return undefined;
   }
@@ -144,7 +158,10 @@ export function withMentions(
     const firstIndex = result.findIndex((text) => trees.get(text) !== null);
     if (firstIndex === -1) continue;
     const first = result[firstIndex]!;
-    result[firstIndex] = OPENS_WITH_BLOCK.test(first) ? `${link}\n\n${first}` : `${link} ${first}`;
+    const added = `${link.slice(0, -1)}${ADDED_MENTION_MARK})`;
+    result[firstIndex] = OPENS_WITH_BLOCK.test(first)
+      ? `${added}\n\n${first}`
+      : `${added} ${first}`;
   }
   return result;
 }
@@ -426,62 +443,6 @@ export function remoteImageRenders(
 
 export function markRemoteImageLoaded(href: string): void {
   loadedRemoteImages.add(href);
-}
-
-const SHORT_LINK_LABEL_MAX = 40;
-const SHORT_LINK_PATH_MIN = 12;
-// Control and format characters (bidi overrides, zero-width joiners and spaces, the BOM) that a
-// decoded path could use to disguise itself.
-const HIDDEN_PATH_CHARACTERS = /[\p{Cc}\p{Cf}]/gu;
-
-function httpUrl(href: string): URL | undefined {
-  try {
-    const url = new URL(href);
-    return url.protocol === "http:" || url.protocol === "https:" ? url : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function decodedUrl(value: string): string {
-  try {
-    return decodeURI(value);
-  } catch {
-    return value;
-  }
-}
-
-function comparableUrl(value: string): string {
-  return value
-    .trim()
-    .replace(/^https?:\/\//i, "")
-    .replace(/\/$/, "")
-    .toLowerCase();
-}
-
-/**
- * The words a link shows. An author's label stays as written; a bare URL (an autolink, or a
- * label that just repeats the address) shortens to host and path, like `x.com/elonmusk`. The
- * host is what tells a reader where the link goes, so it is never cut and stays in its ASCII
- * (punycode) form; only a long path is trimmed.
- */
-export function linkLabel(text: string, href: string): string {
-  const url = httpUrl(href);
-  // Some parsers show an autolink with its escapes decoded (`caf%C3%A9` as `café`), so a label
-  // that matches the decoded address is bare too.
-  const label = comparableUrl(text);
-  if (!url || (label !== comparableUrl(href) && label !== comparableUrl(decodedUrl(href)))) {
-    return text;
-  }
-  const host = url.host.replace(/^www\./i, "");
-  const path = decodedUrl(url.pathname.replace(/\/+$/, "")).replace(HIDDEN_PATH_CHARACTERS, "");
-  const room = Math.max(SHORT_LINK_LABEL_MAX - host.length, SHORT_LINK_PATH_MIN);
-  if (path.length <= room) return `${host}${path}`;
-  let end = room - 1;
-  const before = path.charCodeAt(end - 1);
-  const after = path.charCodeAt(end);
-  if (before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff) end--;
-  return `${host}${path.slice(0, end)}…`;
 }
 
 /** The origin a link's site icon is looked up by, or undefined for links that get no icon. */

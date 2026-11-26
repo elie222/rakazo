@@ -1,7 +1,22 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { PAGE_TITLE_MAX_LENGTH, PageTitleSchema } from "@rakazo/contracts";
+import {
+  PAGE_IMAGE_PREFIX,
+  PAGE_IMAGES_MAX,
+  PAGE_TITLE_MAX_LENGTH,
+  PageTitleSchema,
+} from "@rakazo/contracts";
 import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
-import { isUniqueViolation } from "@rakazo/db";
+import {
+  isUniqueViolation,
+  pageImageNames,
+  pageImagesNamedIn,
+  pageVersionImages,
+  readPageState,
+  runAsSystem,
+  signalPage,
+  signalPageUsers,
+} from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
@@ -10,6 +25,15 @@ import { markReadOutsideContent, neverAsks } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
+import type { PageImageSources } from "./run-tools-page-images.js";
+import {
+  keptPageImageNames,
+  pageImageSourceLabels,
+  parsePageImageSources,
+  preparePageImages,
+  stagePageImages,
+  storePageImages,
+} from "./run-tools-page-images.js";
 
 const MAX_EDITS = 50;
 
@@ -68,6 +92,12 @@ function reachablePage(ctx: RunContext, pageId: string) {
 function editsGiven(args: Record<string, unknown>): boolean {
   // Serializers send unused optional fields blank, an empty list included.
   return Array.isArray(args.edits) ? args.edits.length > 0 : argumentGiven(args.edits);
+}
+
+function imagesGiven(args: Record<string, unknown>): boolean {
+  if (typeof args.images === "object" && args.images !== null)
+    return Object.keys(args.images).length > 0;
+  return argumentGiven(args.images);
 }
 
 /** The page a save would store: the given source, or the current source with the edits applied. */
@@ -142,12 +172,13 @@ export async function holdSharedPageSave(
     return undefined;
   }
   // Only a card the user approved pins a version.
-  const { approvedVersion: _ignored, ...args } = request.args;
+  const { approvedVersion: _version, approvedVisibility: _visibility, ...args } = request.args;
   request.args = args;
   request.effectRequest = args;
   if (args.help === true || !argumentGiven(args.pageId)) return undefined;
   const hasTitle = argumentGiven(args.title);
-  if (!argumentGiven(args.source) && !editsGiven(args) && !hasTitle) return undefined;
+  if (!argumentGiven(args.source) && !editsGiven(args) && !hasTitle && !imagesGiven(args))
+    return undefined;
   if (argumentGiven(args.source) && editsGiven(args)) return undefined;
   if (await neverAsks(ctx)) return undefined;
   const page = await ctx.deps.prisma.page.findFirst({
@@ -159,33 +190,52 @@ export async function holdSharedPageSave(
       versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
     },
   });
-  if (page?.visibility !== "link") return undefined;
+  if (!page || !["link", "people"].includes(page.visibility)) return undefined;
   const parsedTitle = hasTitle ? PageTitleSchema.safeParse(args.title) : undefined;
   if (parsedTitle && !parsedTitle.success) return undefined;
   const current = page.versions[0]?.source ?? "";
   const proposed = proposedSource(current, args);
   if (!proposed.ok) return undefined;
   const check = checkPageSource(proposed.source);
-  if (!check.ok || containsSecret([proposed.source, check.code], ctx.secrets)) return undefined;
+  const sources = imagesGiven(args) ? parsePageImageSources(args.images) : {};
+  if (typeof sources === "string") return undefined;
+  if (
+    !check.ok ||
+    containsSecret([proposed.source, check.code, ...Object.values(sources)], ctx.secrets)
+  )
+    return undefined;
   const lines = [
     // The title as it would be stored.
     ...(parsedTitle
       ? [`Title: ${redactSecrets(parsedTitle.data, ctx.secrets).slice(0, PAGE_TITLE_MAX_LENGTH)}`]
       : []),
     ...changedLines(current, proposed.source),
+    ...Object.entries(
+      await pageImageSourceLabels(ctx, pageImagesNamedIn(sources, proposed.source)),
+    ).map(([name, source]) => `+ Image ${name}: ${source.replace(/[\p{Cc}\u2028\u2029]+/gu, " ")}`),
   ];
   // Measured as the card shows it, redacted, so nothing an approval covers is cut off.
   if (redactSecrets(lines.join("\n"), ctx.secrets).length > MAX_APPROVAL_DETAIL_LENGTH)
     return {
       error:
-        "This page is shared by link, and this change is too long to show the user for approval. Save it as several smaller edits.",
+        "This page is shared, and this change is too long to show the user for approval. Save it as several smaller edits.",
     };
   const title = page.title.replace(new RegExp(CARD_TITLE_ESCAPED_CHARACTERS, "g"), "\\$&");
-  request.args = { ...args, approvedVersion: page.currentVersion };
+  request.args = {
+    ...args,
+    approvedVersion: page.currentVersion,
+    approvedVisibility: page.visibility,
+  };
   request.effectRequest = request.args;
   request.heldForApproval = true;
   request.fleetSummary = { title: `Update shared page “${title}”?`, lines };
   return undefined;
+}
+
+function pageSharingHint(visibility: string | undefined) {
+  if (visibility === "link") return { sharedByLink: true };
+  if (visibility === "people") return { sharedWithPeople: true };
+  return {};
 }
 
 async function savePage(ctx: RunContext, call: ToolCall) {
@@ -195,7 +245,10 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const pageId = argumentGiven(args.pageId) ? String(args.pageId) : undefined;
   const hasSource = argumentGiven(args.source);
   const hasEdits = editsGiven(args);
+  const hasImages = imagesGiven(args);
   if (hasSource && hasEdits) return { error: "Send either source or edits, not both." };
+  const sources: PageImageSources | string = hasImages ? parsePageImageSources(args.images) : {};
+  if (typeof sources === "string") return { error: sources, unchanged: true };
   let title: string | undefined;
   if (argumentGiven(args.title)) {
     const parsed = PageTitleSchema.safeParse(args.title);
@@ -211,23 +264,35 @@ async function savePage(ctx: RunContext, call: ToolCall) {
           title: true,
           visibility: true,
           currentVersion: true,
-          versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
+          versions: {
+            orderBy: { version: "desc" },
+            take: 1,
+            select: { id: true, source: true, images: true },
+          },
         },
       })
     : null;
   if (pageId && !page) return { error: "No page with that pageId belongs to this bot or chat." };
-  const current = page?.versions[0]?.source ?? "";
+  const currentVersion = page?.versions[0];
+  const current = currentVersion?.source ?? "";
+  const previousImages = currentVersion ? pageVersionImages(currentVersion, "reject") : {};
 
-  if (page && !hasSource && !hasEdits && !title) {
+  if (page && !hasSource && !hasEdits && !title && !hasImages) {
     // The stored source may hold outside text an earlier run put in the page, so reading it
     // taints this run like any other outside content; saves only confirm this run's own write.
+    const readerState = await runAsSystem("read the user's saved page values", () =>
+      readPageState(deps.prisma, page.id, ctx.run.userId),
+    );
     await markReadOutsideContent(ctx, current);
+    if (Object.keys(readerState).length) await markReadOutsideContent(ctx, readerState);
     return {
       pageId: page.id,
       version: page.currentVersion,
       title: page.title,
-      ...(page.visibility === "link" ? { sharedByLink: true } : {}),
+      ...pageSharingHint(page.visibility),
       source: current,
+      ...(Object.keys(readerState).length ? { readerState } : {}),
+      ...(Object.keys(previousImages).length ? { images: Object.keys(previousImages) } : {}),
     };
   }
   if (!page && hasEdits) return { error: "edits need the pageId of the page to change." };
@@ -237,6 +302,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   // An approved change applies only to the version the user saw it against.
   if (page && args.approvedVersion !== undefined && args.approvedVersion !== page.currentVersion)
     return { error: "The page changed while saving; read it again and retry.", unchanged: true };
+  // Older approval cards were only issued for link sharing.
+  const approvedVisibility =
+    call.nextApprovedTool === "save_page"
+      ? args.approvedVisibility === "people"
+        ? "people"
+        : "link"
+      : undefined;
   const proposed = proposedSource(current, args);
   if (!proposed.ok) return { error: proposed.error, unchanged: true };
   const { source } = proposed;
@@ -245,12 +317,28 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     return { error: "The page has problems; nothing was saved.", problems: check.errors };
   }
   // A page can be shared by link, so it never stores a value this run keeps secret.
-  if (containsSecret([source, check.code], ctx.secrets)) {
+  if (containsSecret([source, check.code, ...Object.values(sources)], ctx.secrets)) {
     return {
       error: "The page contains a secret value; nothing was saved. Remove it and save again.",
       unchanged: true,
     };
   }
+
+  const kept = keptPageImageNames(previousImages, sources, source);
+  if (kept.length > PAGE_IMAGES_MAX)
+    return { error: `A page shows at most ${PAGE_IMAGES_MAX} images.`, unchanged: true };
+  const unused = Object.keys(sources).filter((name) => !kept.includes(name));
+  const used = Object.fromEntries(Object.entries(sources).filter(([name]) => kept.includes(name)));
+  const prepared = await preparePageImages(ctx, call, used);
+  if ("problems" in prepared)
+    return {
+      error: "Some images could not be added; nothing was saved.",
+      problems: prepared.problems,
+      unchanged: true,
+    };
+  if (Object.keys(prepared.images).length && !deps.artifacts)
+    return { error: "File storage is unavailable, so pictures cannot be saved.", unchanged: true };
+  const { staged, discard } = await stagePageImages(ctx, page?.id, prepared.images);
 
   const unapproved =
     page !== null &&
@@ -259,7 +347,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
     !(await neverAsks(ctx));
   let saved: { pageId: string; version: number; title: string };
   try {
-    saved = await deps.prisma.$transaction(async (tx) => {
+    const { kept: keptFiles, ...committed } = await deps.prisma.$transaction(async (tx) => {
       if (!page) {
         const created = await tx.page.create({
           data: {
@@ -271,7 +359,13 @@ async function savePage(ctx: RunContext, call: ToolCall) {
             versions: { create: { version: 1, title: title!, source, code: check.code } },
           },
         });
-        return { pageId: created.id, version: 1, title: created.title };
+        const stored = await storePageImages(tx, created, {}, staged, source);
+        if (stored.kept.length)
+          await tx.pageVersion.updateMany({
+            where: { pageId: created.id, version: 1 },
+            data: { images: stored.images },
+          });
+        return { pageId: created.id, version: 1, title: created.title, kept: stored.kept };
       }
       const version = page.currentVersion + 1;
       // Conditional on the version this change was built from, so two saves never interleave.
@@ -282,7 +376,11 @@ async function savePage(ctx: RunContext, call: ToolCall) {
         where: {
           id: page.id,
           currentVersion: page.currentVersion,
-          ...(unapproved ? { visibility: "private" } : {}),
+          ...(unapproved
+            ? { visibility: "private" }
+            : approvedVisibility
+              ? { visibility: { in: ["private", approvedVisibility] } }
+              : {}),
         },
         data: { currentVersion: version, title, updatedAt: new Date() },
       });
@@ -297,16 +395,32 @@ async function savePage(ctx: RunContext, call: ToolCall) {
         nextTitle = kept;
         await tx.page.update({ where: { id: page.id }, data: { title: kept } });
       }
+      const { images, kept: keptImages } = await storePageImages(
+        tx,
+        { id: page.id, spaceId: run.spaceId },
+        previousImages,
+        staged,
+        source,
+      );
       await tx.pageVersion.create({
-        data: { pageId: page.id, version, title: nextTitle, source, code: check.code },
+        data: { pageId: page.id, version, title: nextTitle, source, code: check.code, images },
       });
-      return { pageId: page.id, version, title: nextTitle };
+      return { pageId: page.id, version, title: nextTitle, kept: keptImages };
     });
+    saved = committed;
+    await discard(keptFiles);
   } catch (error) {
+    await discard([]);
     if (error instanceof PageChangedError || isUniqueViolation(error)) {
       return { error: "The page changed while saving; read it again and retry.", unchanged: true };
     }
     throw error;
+  }
+  if (deps.events?.publishSpaceChange) {
+    const change = page
+      ? signalPage(deps.prisma, deps.events, page.id)
+      : signalPageUsers(deps.events, [run.userId]);
+    await bestEffort("signal page save", change);
   }
   const block: MessageBlock = { kind: "page", ...saved };
   const linkText = saved.title.replace(/[\\[\]]/g, "\\$&");
@@ -325,10 +439,23 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   }
   const result = {
     ...saved,
-    ...(page?.visibility === "link" ? { sharedByLink: true } : {}),
+    ...pageSharingHint(page?.visibility),
     mention: `Mention it in your reply as [${linkText}](page:${saved.pageId})`,
   };
-  return check.warnings?.length ? { ...result, warnings: check.warnings } : result;
+  const warnings = [
+    ...(check.warnings ?? []),
+    ...unused.map((name) => `Image ${name} was not saved: the source never shows image:${name}.`),
+    ...missingImages(source, kept),
+  ];
+  return warnings.length ? { ...result, warnings } : result;
+}
+
+function missingImages(source: string, kept: string[]): string[] {
+  return [...pageImageNames(source)]
+    .filter((name) => !kept.includes(name))
+    .map(
+      (name) => `${PAGE_IMAGE_PREFIX}${name} is not one of this page's images, so it is left out.`,
+    );
 }
 
 class PageChangedError extends Error {}

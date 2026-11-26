@@ -18,6 +18,17 @@ const voice = vi.hoisted(() => ({
   setSpeechModel: vi.fn(),
 }));
 
+const models = vi.hoisted(() => ({
+  beginOAuth: vi.fn(),
+  completeOAuth: vi.fn(),
+  finishOAuth: vi.fn(),
+  cancelOAuth: vi.fn(),
+  submitOAuthCode: vi.fn(),
+  // Read keys for the Models data a sign-in here makes stale.
+  credentials: vi.fn(),
+  list: vi.fn(),
+}));
+
 const { speak, activeCall } = vi.hoisted(() => ({
   speak: vi.fn(async () => undefined),
   activeCall: { current: null as { phase: string } | null },
@@ -25,17 +36,24 @@ const { speak, activeCall } = vi.hoisted(() => ({
 vi.mock("../../lib/calls/tts.js", () => ({ speaker: { speak, state: {} } }));
 vi.mock("../../lib/calls/call-session", () => ({ useCallSession: () => activeCall.current }));
 vi.mock("../../lib/query/rpc", () => ({
-  rpc: { voice },
-  rpcForSpace: () => ({ voice }),
-  createSpaceRpc: () => ({ voice }),
+  rpc: { voice, models },
+  rpcForSpace: () => ({ voice, models }),
+  createSpaceRpc: () => ({ voice, models }),
   selectedSpaceId: () => null,
 }));
 vi.mock("@lingui/react/macro", () => {
-  const t = (parts: TemplateStringsArray) => parts.join("");
-  return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
+  const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
+    parts.reduce((text, part, index) => text + String(values[index - 1]) + part);
+  return {
+    useLingui: () => ({ t }),
+    Trans: ({ children }: { children: ReactNode }) => children,
+    Plural: ({ one, other, value }: { one: string; other: string; value: number }) =>
+      (value === 1 ? one : other).replace("#", String(value)),
+  };
 });
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
-  const { OptionSelect } = await importOriginal<typeof UiWeb>();
+  const { Disclosure, OptionSelect, SwitchField, useCopyText } =
+    await importOriginal<typeof UiWeb>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     Spinner: (props: ComponentProps<"svg">) => <svg role="status" {...props} />,
@@ -48,12 +66,15 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogClose: Container,
     DialogContent: Container,
     DialogTitle: Container,
+    Disclosure,
     Field: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
     FieldLabel: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
       <label htmlFor={htmlFor}>{children}</label>
     ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
     OptionSelect,
+    SwitchField,
+    useCopyText,
   };
 });
 
@@ -321,8 +342,11 @@ it("connects a self-hosted speech server by URL without a key", async () => {
 
 it.each([
   { field: "Server URL", value: "http://100.64.0.11:8880/v1" },
+  { field: "Transcription server URL", value: "http://100.64.0.12:9000" },
   { field: "Speech model", value: "new-model" },
   { field: "Transcription model", value: "new-transcriber" },
+  { field: "Transcription vocabulary", value: "Acme, Xyla" },
+  { field: "Transcription vocabulary", value: "" },
   { field: "API key", value: "replacement-test-key" },
 ])(
   "restores saved self-hosted fields and reconnects after editing $field",
@@ -335,9 +359,16 @@ it.each([
       endpoint: "http://100.64.0.10:8810/v1",
       ttsModel: "saved-speech",
       sttModel: "saved-transcription",
+      transcriptionVocabulary: "Saved term",
     };
     voice.catalog.mockResolvedValue([
-      { id: saved.provider, name: "Self-hosted", description: "", transcribe: true },
+      {
+        id: saved.provider,
+        name: "Self-hosted",
+        description: "",
+        transcribe: true,
+        transcriptionVocabulary: true,
+      },
     ]);
     voice.credentials.mockResolvedValue([saved]);
     voice.status.mockResolvedValue({
@@ -360,6 +391,9 @@ it.each([
       expect(labelledInput(container, "Server URL").value).toBe(saved.endpoint);
       expect(labelledInput(container, "Speech model").value).toBe(saved.ttsModel);
       expect(labelledInput(container, "Transcription model").value).toBe(saved.sttModel);
+      expect(labelledInput(container, "Transcription vocabulary").value).toBe(
+        saved.transcriptionVocabulary,
+      );
       expect(labelledInput(container, "API key").value).toBe("");
       await act(async () => {
         const input = labelledInput(container, field);
@@ -369,6 +403,9 @@ it.each([
         );
         input.dispatchEvent(new Event("input", { bubbles: true }));
       });
+      if (field === "Server URL" || field === "Transcription server URL") {
+        expect(labelledInput(container, "Transcription vocabulary").value).toBe("");
+      }
       await act(async () => {
         [...container.querySelectorAll("button")]
           .find((button) => button.textContent === "Reconnect")
@@ -384,6 +421,12 @@ it.each([
           sttModel: field === "Transcription model" ? value : saved.sttModel,
         }),
       );
+      const sent = voice.connect.mock.calls[0]?.[0];
+      if (field === "Transcription vocabulary") {
+        expect(sent).toHaveProperty("transcriptionVocabulary", value);
+      } else {
+        expect(sent).not.toHaveProperty("transcriptionVocabulary");
+      }
     } finally {
       await act(async () => root.unmount());
       container.remove();
@@ -1188,98 +1231,6 @@ it("connects a keyless provider without asking for a key", async () => {
     container.remove();
     vi.unstubAllGlobals();
   }
-});
-
-describe("a provider the account's model connection can authenticate", () => {
-  const xai = { id: "xai", name: "xAI", description: "", transcribe: true };
-  const type = async (input: HTMLInputElement, value: string) => {
-    await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-      setter?.call(input, value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  };
-  const button = (container: HTMLElement, text: string) =>
-    [...container.querySelectorAll("button")].find((entry) => entry.textContent === text);
-
-  async function open(catalogEntry: object, credentials: object[] = []) {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    voice.catalog.mockReset().mockResolvedValue([catalogEntry]);
-    voice.credentials.mockReset().mockResolvedValue(credentials);
-    voice.status.mockReset().mockResolvedValue({
-      configured: credentials.length > 0,
-      ready: credentials.length > 0,
-      transcribe: false,
-      provider: credentials.length ? "xai" : null,
-      voiceId: "",
-    });
-    voice.voices.mockReset().mockResolvedValue([{ id: "eve", label: "Eve" }]);
-    voice.connect
-      .mockReset()
-      .mockResolvedValue({ ...fish, provider: "xai", voiceId: "eve", hasKey: false });
-    const container = document.createElement("div");
-    document.body.append(container);
-    const root = createRoot(container);
-    await act(async () => {
-      root.render(
-        withQueries(<VoiceSettingsOverlay embedded scope="account" onClose={() => undefined} />),
-      );
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    return {
-      container,
-      async close() {
-        await act(async () => root.unmount());
-        container.remove();
-        vi.unstubAllGlobals();
-      },
-    };
-  }
-
-  it("connects with an empty key through the model connection", async () => {
-    const { container, close } = await open({ ...xai, modelConnection: true });
-    try {
-      const key = labelledInput(container, "API key");
-      expect(key.placeholder).toBe("Optional");
-      expect(button(container, "Connect")?.disabled).toBe(false);
-      // A typed key still has to look like one.
-      await type(key, "short");
-      expect(button(container, "Connect")?.disabled).toBe(true);
-      await type(key, "   ");
-      await act(async () => button(container, "Connect")!.click());
-      expect(voice.connect).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ provider: "xai", apiKey: "" }),
-      );
-    } finally {
-      await close();
-    }
-  });
-
-  it("still requires a key when the account has no model connection", async () => {
-    const { container, close } = await open(xai);
-    try {
-      expect(labelledInput(container, "API key").placeholder).toBe("Paste your API key");
-      expect(button(container, "Connect")?.disabled).toBe(true);
-    } finally {
-      await close();
-    }
-  });
-
-  it("offers only Disconnect once linked to the model connection", async () => {
-    const { container, close } = await open({ ...xai, modelConnection: true }, [
-      { ...fish, provider: "xai", voiceId: "eve", hasKey: false },
-    ]);
-    try {
-      expect(container.textContent).not.toContain("API key");
-      expect(button(container, "Replace key")).toBeUndefined();
-      expect(button(container, "Connect")).toBeUndefined();
-      expect(button(container, "Disconnect")).toBeTruthy();
-    } finally {
-      await close();
-    }
-  });
 });
 
 it.each(["account", "space"] as const)(

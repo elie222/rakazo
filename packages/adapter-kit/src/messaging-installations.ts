@@ -1,5 +1,5 @@
 import type { MessagingSurface } from "./interfaces.js";
-import type { MessagingCapabilities } from "./types.js";
+import type { MessagingPlatformDescriptor } from "./types.js";
 
 /** A verified external workspace belongs to exactly one Rakazo space. */
 export interface MessagingInstallation {
@@ -31,9 +31,7 @@ export class MessagingInstallRefusedError extends Error {
 }
 
 /** Vendor OAuth and credential translation stay in adapters. */
-export interface MessagingInstallProvider {
-  provider: string;
-  capabilities: MessagingCapabilities;
+export interface MessagingInstallProvider extends MessagingPlatformDescriptor {
   authorizeUrl(state: string): string;
   /**
    * `ownerId` is the workspace user who authorized the install, when the platform says. Throws

@@ -1,9 +1,9 @@
 import { t } from "@lingui/core/macro";
 import type { RunActivityRow } from "@rakazo/contracts";
+import { activityPreview } from "@rakazo/i18n/activity";
 import { describe, expect, it, vi } from "vitest";
 import {
   activityFiltersActive,
-  activityPreview,
   clearActivityFilterField,
   emptyActivityFilters,
   filterActivityRuns,
@@ -158,6 +158,22 @@ describe("filterActivityRuns", () => {
     };
     expect(filterActivityRuns(runs, filters)).toHaveLength(1);
     expect(runMatchesActivityFilters(runs[1]!, filters)).toBe(true);
+  });
+
+  it("reads a date range whose From is after its To as the range between them", () => {
+    const filters = {
+      ...emptyActivityFilters(),
+      dateRange: { from: "2026-09-20", to: "2026-09-01" },
+    };
+    expect(runMatchesActivityFilters(row({ updatedAt: "2026-09-10T10:00:00.000Z" }), filters)).toBe(
+      true,
+    );
+    expect(runMatchesActivityFilters(row({ updatedAt: "2026-08-25T10:00:00.000Z" }), filters)).toBe(
+      false,
+    );
+    expect(runMatchesActivityFilters(row({ updatedAt: "2026-09-25T10:00:00.000Z" }), filters)).toBe(
+      false,
+    );
   });
 
   it("keeps a search match when the timestamp is unreadable and no date is set", () => {

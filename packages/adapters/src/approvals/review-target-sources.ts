@@ -10,8 +10,29 @@ import { sitesInText, urlSite } from "@rakazo/core/egress";
  */
 
 /** Keys whose values are what the action says or stores, not where it goes. */
-const FREE_TEXT_KEY =
-  /body|text|html|markdown|content|message|subject|description|reason|note|comment|title|summary|prompt|caption|query|instruction|values|rows|cells|records/i;
+const FREE_TEXT_WORD =
+  /^(?:(?:body|text|html|markdown|content|message|subject|description|reason|note|comment|title|summary|prompt|caption|query|instruction)s?|values|rows|cells|records)$/;
+/** Splits a key into words at separators and camelCase boundaries: `htmlBody` is `html`, `body`. */
+const KEY_WORD_BREAK = /[^\p{L}\p{N}]+|(?<=\p{Ll}|\p{N})(?=\p{Lu})|(?<=\p{Lu})(?=\p{Lu}\p{Ll})/u;
+/** Longest one-run key read as a compound; a longer one is a single word, never split. */
+const MAX_COMPOUND_CHARS = 24;
+const isFreeTextWord = (word: string) => FREE_TEXT_WORD.test(word);
+/** A lowercase run such as `htmlbody` or `plaintext`: an optional plain/raw/rich, then free-text words. */
+function isFreeTextCompound(word: string): boolean {
+  if (word.length > MAX_COMPOUND_CHARS || word !== word.toLowerCase()) return false;
+  for (let split = 2; split < word.length - 1; split++) {
+    const head = word.slice(0, split);
+    const tail = word.slice(split);
+    if ((isFreeTextWord(head) || /^(?:plain|raw|rich)$/.test(head)) && isFreeTextWord(tail))
+      return true;
+  }
+  return false;
+}
+/** Whole words only, so `context_email` and `footnote_url` still name where an action goes. */
+const isFreeTextKey = (key: string) =>
+  key
+    .split(KEY_WORD_BREAK)
+    .some((word) => isFreeTextWord(word.toLowerCase()) || isFreeTextCompound(word));
 /** Keys that name who is paid or credited by name or account number rather than by address. */
 const PARTY_KEY = /payee|merchant|vendor|beneficiary|iban|account|grantee/i;
 /** Checked one token at a time, anchored, so a long argument is read in linear time. */
@@ -46,7 +67,7 @@ export function actionTargets(args: Record<string, unknown>): Target[] {
       // An account number typed as a number is still where the money goes.
       if (Number.isInteger(node) && String(Math.abs(node)).length >= MIN_ACCOUNT_DIGITS)
         add({ value: String(node) });
-    } else if (typeof node === "string" && node.trim() && !FREE_TEXT_KEY.test(key)) {
+    } else if (typeof node === "string" && node.trim() && !isFreeTextKey(key)) {
       const value = node.trim();
       const site = urlSite(value);
       const emails = value.includes("@")

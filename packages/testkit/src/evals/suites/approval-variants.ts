@@ -4,6 +4,7 @@ import type {
   DecisionRequest,
   DecisionResult,
 } from "@rakazo/adapter-kit";
+import { lastingWriteKind } from "@rakazo/core";
 import type { ApprovalCase } from "./approval.js";
 import {
   EARLIER_STEPS_NOTE,
@@ -24,7 +25,7 @@ import {
  * - `lean-ask` or `soft-details`: one rubric in place of the product's general one.
  */
 /** Bump when a part's wording or inputs change, so runs of different wordings are never compared as one. */
-export const APPROVAL_VARIANTS_VERSION = "approval-variants-v10";
+export const APPROVAL_VARIANTS_VERSION = "approval-variants-v11";
 export const APPROVAL_VARIANT_PARTS = ["steps", "lean-ask", "soft-details"] as const;
 export type ApprovalVariantPart = (typeof APPROVAL_VARIANT_PARTS)[number];
 export type ApprovalVariant = { id: string; parts: ReadonlySet<ApprovalVariantPart> };
@@ -92,11 +93,8 @@ export class VariantDecisionProvider implements DecisionProvider {
     if (!base) throw new Error("Approval variant expected the product's decision question");
     const extra = variantContext(c, this.variant);
     const notes = notesFor(extra);
-    // The product's new-site, memory and own-computer rubrics are specific; only the general one changes.
-    const general =
-      !request.state.newSite &&
-      !request.state.savedContextWrite &&
-      !request.state.ownComputerAction;
+    // The product's new-site, lasting-write and own-computer rubrics are specific; only the general one changes.
+    const general = isGeneralReview(request.state as ReviewedCall);
     const criteria = (general && variantRubric(this.variant)) || base.criteria;
     const instructions = [base.instructions, notes ? `${STATE_IS_DATA} ${notes}` : ""]
       .filter(Boolean)
@@ -112,6 +110,14 @@ export class VariantDecisionProvider implements DecisionProvider {
   }
 }
 
+type ReviewedCall = Parameters<typeof lastingWriteKind>[0];
+/** Whether the product judges this call by its general rubric, the one a variant swaps. */
+function isGeneralReview(call: ReviewedCall): boolean {
+  return (
+    !call.newSite && !call.savedContextWrite && !call.ownComputerAction && !lastingWriteKind(call)
+  );
+}
+
 /** The same variant for a plain model that writes JSON, applied to the product's own prompt. */
 export function variantPromptFor(
   basePrompt: string,
@@ -124,7 +130,7 @@ export function variantPromptFor(
     basePrompt,
     {
       rubric: variantRubric(variant),
-      general: !c.newSite && !c.savedContextWrite && !c.ownComputerAction,
+      general: isGeneralReview(c),
       extra,
       notes: notesFor(extra),
     },

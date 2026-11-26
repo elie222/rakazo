@@ -1,4 +1,4 @@
-import { sanitizeMessagingLabel } from "@rakazo/core";
+import { sanitizeMessagingLabel, sliceWellFormed } from "@rakazo/core";
 import { formatCurrentTimeInstruction } from "../../runs/assembly/current-time.prompt.js";
 import type { TeamChatEngagementMessage } from "./team-chat-judge.js";
 
@@ -33,7 +33,7 @@ export function renderTeamChatEngagementPrompt(input: {
 
 export function truncate(value: string, max: number): string {
   const trimmed = value.replace(/\s+/g, " ").trim();
-  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1)}…`;
+  return trimmed.length <= max ? trimmed : `${sliceWellFormed(trimmed, max - 1)}…`;
 }
 
 export function cleanLine(value: string): string {

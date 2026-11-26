@@ -10,7 +10,7 @@ import {
   RadioGroup,
   RadioGroupItem,
 } from "@rakazo/ui-web";
-import { ArrowUpRight, Check, Globe, Lock, Share } from "lucide-react";
+import { ArrowUpRight, Check, Globe, Lock, Share, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCopyText } from "../../lib/copy-text";
 
@@ -56,6 +56,7 @@ export function SharePopover({
   open,
   onOpenChange,
   compact = false,
+  people,
 }: {
   title: string;
   owner: { name: string; image: string | null };
@@ -69,6 +70,7 @@ export function SharePopover({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   compact?: boolean;
+  people?: ReactNode;
 }) {
   const { t } = useLingui();
   const shownOwner = accountDisplay(owner, t`You`);
@@ -79,13 +81,27 @@ export function SharePopover({
       value: "private",
       title: t`Only you`,
       // Said where the choice is made: turning the link off breaks it for everyone holding it.
-      detail: visibility === "private" ? undefined : t`The shared link stops working`,
+      detail:
+        visibility === "link"
+          ? t`The shared link stops working`
+          : visibility === "people"
+            ? t`Removes everyone you added`
+            : undefined,
       icon: <Lock className="size-4 text-foreground/70!" strokeWidth={1.5} />,
+    },
+    {
+      value: "people",
+      title: t`Specific people`,
+      detail: visibility === "link" ? t`The shared link stops working` : undefined,
+      icon: <Users className="size-4 text-foreground/70!" strokeWidth={1.5} />,
     },
     {
       value: "link",
       title: t`Anyone with the link`,
-      detail: t`Can view without signing in`,
+      detail:
+        visibility === "people"
+          ? t`Anyone can view. Removes people you added.`
+          : t`Can view without signing in`,
       icon: <Globe className="size-4 text-foreground/70!" strokeWidth={1.5} />,
     },
   ];
@@ -164,6 +180,7 @@ export function SharePopover({
             ))}
           </RadioGroup>
         </div>
+        {visibility === "people" ? people : null}
         {shared && shareUrl !== null ? (
           <div className="mt-0.5 flex flex-col gap-2 px-4">
             <div className="flex gap-2">

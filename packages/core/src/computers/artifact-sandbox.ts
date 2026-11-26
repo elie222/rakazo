@@ -1,3 +1,12 @@
+import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
+import {
+  PAGE_STATE_MAX_BYTES,
+  PAGE_STATE_MAX_KEYS,
+  PageSectionOccurrence,
+  PageStateSchema,
+  pageStateBytes,
+} from "@rakazo/contracts";
+
 // Same policy as the web preview: nothing loads from the network, so a script
 // cannot send what it reads to a remote image or font URL.
 export const SANDBOXED_ARTIFACT_CSP =
@@ -41,16 +50,26 @@ export function pageViewerDocument(input: {
   touch?: boolean;
   /** The host can put a page's reply in a chat composer beside it; public pages have none. */
   reply?: boolean;
+  review?: boolean;
+  reviewAnchor?: string;
+  reviewAnchorOccurrence?: number;
   /** Pixels the host covers at the bottom (a docked composer); bottom bars and the end clear it. */
   bottomInset?: number;
   /** The reader's app language, for the kit's own words when the page does not set `lang`. */
   lang?: string;
+  state?: PageState;
+  images?: Record<string, string>;
 }): string {
   const boot = JSON.stringify({
     code: input.code,
+    images: input.images,
     theme: input.theme,
     errorTitle: input.errorTitle,
     lang: input.lang,
+    review: input.review || undefined,
+    reviewAnchor: input.review ? input.reviewAnchor : undefined,
+    reviewAnchorOccurrence: input.review ? input.reviewAnchorOccurrence : undefined,
+    state: input.state,
   }).replace(/</g, "\\u003c");
   const inset =
     input.bottomInset !== undefined && Number.isFinite(input.bottomInset) && input.bottomInset > 0
@@ -105,7 +124,58 @@ export function pageLinkRequest(data: unknown): string | null {
   }
 }
 
+const PAGE_STATE_MESSAGE = "rakazo-page:state";
+
+export function pageStateRequest(data: unknown): PageState | null {
+  if (!data || typeof data !== "object") return null;
+  const { type, values } = data as { type?: unknown; values?: unknown };
+  if (type !== PAGE_STATE_MESSAGE || !values || typeof values !== "object") return null;
+  const entries = Object.entries(values);
+  if (entries.length > PAGE_STATE_MAX_KEYS) return null;
+  const valid = entries.filter(
+    ([key, value]) => PageStateSchema.safeParse(Object.fromEntries([[key, value]])).success,
+  );
+  const kept = Object.fromEntries(valid);
+  // More than one save can hold is refused by the server anyway, so it is not sent.
+  return valid.length > 0 && pageStateBytes(kept) <= PAGE_STATE_MAX_BYTES ? kept : null;
+}
+
 /** The answer a page's copy button waits for. */
 export function pageCopyResult(id: string, ok: boolean) {
   return { type: "rakazo-page:copied", id, ok };
+}
+
+/** Untrusted labels from the shown frame, used only as choices in the host's comment form. */
+export function pageReviewSections(message: unknown): PageSectionAnchor[] | undefined {
+  if (
+    !message ||
+    typeof message !== "object" ||
+    !("type" in message) ||
+    message.type !== "rakazo-page:sections" ||
+    !("sections" in message) ||
+    !Array.isArray(message.sections)
+  )
+    return undefined;
+  const cleanSection = (label: unknown) =>
+    typeof label === "string" ? label.slice(0, 200).replace(/\s+/g, " ").trim() : "";
+  if ("anchors" in message && Array.isArray(message.anchors)) {
+    const seen = new Set<string>();
+    return message.anchors.slice(0, 80).flatMap((anchor: unknown) => {
+      if (!anchor || typeof anchor !== "object" || !("section" in anchor)) return [];
+      const section = cleanSection(anchor.section);
+      const occurrence = PageSectionOccurrence.safeParse(
+        "sectionOccurrence" in anchor ? anchor.sectionOccurrence : undefined,
+      );
+      if (!section || !occurrence.success) return [];
+      const key = JSON.stringify([section, occurrence.data]);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [{ section, sectionOccurrence: occurrence.data }];
+    });
+  }
+  const labels = message.sections.slice(0, 80).flatMap((label: unknown) => {
+    const text = cleanSection(label);
+    return text ? [text] : [];
+  });
+  return [...new Set(labels)].map((section) => ({ section }));
 }

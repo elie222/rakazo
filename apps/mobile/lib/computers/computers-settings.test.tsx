@@ -312,6 +312,33 @@ it("lists cloud computers above paired ones and changes a size", async () => {
   expect(container.textContent).toContain("ResearcherStandardApplies on its next start.");
 });
 
+it("keeps a confirmed size selected when refreshing the cloud list fails", async () => {
+  vi.mocked(listUserDevices).mockResolvedValue([]);
+  mocks.cloud.mockResolvedValueOnce(cloud).mockRejectedValue(new Error("offline"));
+  mocks.setSize.mockResolvedValue({ ok: true });
+  await render();
+
+  const team = button("Team Computer")?.parentElement;
+  const large = [...(team?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((option) =>
+    option.textContent?.startsWith("Choose Large"),
+  );
+  expect(large?.getAttribute("aria-pressed")).toBe("false");
+  await act(async () => large?.click());
+  await settle();
+
+  expect(mocks.setSize).toHaveBeenCalledWith({ computerId: "c1", size: "large" });
+  expect(mocks.cloud).toHaveBeenCalledTimes(2);
+  expect(button("Team Computer")?.textContent).toMatch(
+    /Team ComputerLarge.*Applies on its next start/,
+  );
+  expect(large?.getAttribute("aria-pressed")).toBe("true");
+  expect(container.textContent).toContain("offline");
+
+  await act(async () => large?.click());
+  await settle();
+  expect(mocks.setSize).toHaveBeenCalledOnce();
+});
+
 it("points a size above the plan to Billing without saving it", async () => {
   vi.mocked(listUserDevices).mockResolvedValue([]);
   mocks.cloud.mockResolvedValue({ ...cloud, computers: [cloud.computers[0]] });
@@ -346,4 +373,7 @@ it("alerts when a size change fails", async () => {
   await act(async () => button("Choose Large (uses 2× hours)")?.click());
   await settle();
   expect(Alert.alert).toHaveBeenCalledWith("Could not change computer size");
+  expect(button("Team Computer")?.textContent).toBe("Team ComputerStandard");
+  expect(button("Choose Standard")?.getAttribute("aria-pressed")).toBe("true");
+  expect(mocks.cloud).toHaveBeenCalledOnce();
 });

@@ -18,9 +18,12 @@ const models = vi.hoisted(() => ({
   role: vi.fn(),
   forRole: vi.fn(),
   setRole: vi.fn(),
+  media: vi.fn(),
+  setMedia: vi.fn(),
   credentials: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
+  disconnectPreview: vi.fn(),
   rename: vi.fn(),
   saveModelSettings: vi.fn(),
   setDefault: vi.fn(),
@@ -51,7 +54,6 @@ vi.mock("../../lib/query/rpc", () => {
 vi.mock("../../lib/models/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
   providerRowHint: () => null,
-  providerDisplayName: (_id: string, name: string) => name,
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -229,6 +231,16 @@ async function click(element: Element | null | undefined) {
   });
 }
 
+/** Opens the disconnect question and answers it once its preview has been read. */
+async function confirmDisconnect(container: HTMLElement) {
+  await click(buttons(container, "Disconnect")[0]);
+  const answer = () => buttons(container, "Disconnect").at(-1) as HTMLButtonElement;
+  await act(async () => {
+    await vi.waitFor(() => expect(answer().disabled).toBe(false));
+  });
+  await click(answer());
+}
+
 function section(role: "main" | "approval" | "computer") {
   const found = document.querySelector(`[data-testid="model-role-${role}"]`);
   if (!found) throw new Error(`Missing ${role} model list`);
@@ -300,18 +312,25 @@ async function renderSettings(
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  await act(async () => {
+  const render = () =>
     root.render(
       <QueryClientProvider client={queryClient}>
         <ModelSettingsOverlay embedded={embedded} scope={scope} onClose={() => undefined} />
       </QueryClientProvider>,
     );
+  await act(async () => {
+    render();
   });
   await act(async () => {
     await Promise.resolve();
   });
   return {
     container,
+    async rerender() {
+      await act(async () => {
+        render();
+      });
+    },
     async unmount() {
       await act(async () => {
         root.unmount();
@@ -336,6 +355,8 @@ beforeEach(() => {
   vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
   models.list.mockResolvedValue([deepseekEntry]);
   models.credentials.mockResolvedValue([]);
+  const noMedia = { options: [], selected: null };
+  models.media.mockResolvedValue({ image: noMedia, video: noMedia });
   autoReview.get.mockResolvedValue({
     mode: "ask",
     enabled: false,
@@ -344,6 +365,12 @@ beforeEach(() => {
   });
   models.connect.mockResolvedValue({});
   models.disconnect.mockResolvedValue(undefined);
+  models.disconnectPreview.mockResolvedValue({
+    mainModel: false,
+    otherChoice: false,
+    usedBy: [],
+    usedByTotal: 0,
+  });
   models.forRole.mockImplementation(() => models.list());
   models.setRole.mockImplementation(
     async ({ role: _role, expectedUserId: _user, ...patch }: Record<string, unknown>) => ({
@@ -432,9 +459,7 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(keyField(view.container).placeholder).toBe(STORED_PLACEHOLDER);
 
     models.credentials.mockResolvedValue([]);
-    await click(buttons(view.container, "Disconnect")[0]);
-    const confirm = buttons(view.container, "Disconnect");
-    await click(confirm[confirm.length - 1]);
+    await confirmDisconnect(view.container);
     expect(models.disconnect).toHaveBeenCalledWith({
       provider: "deepseek",
       credentialId: "cred-deepseek",
@@ -1754,6 +1779,40 @@ it("opens a connection's page with its models, then a model's page, and goes bac
   }
 });
 
+it("saves a connection opened from Providers without making it the main model", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
+  models.probeOpenAiCompatible.mockResolvedValue({ models: ["model-a", "model-b"] });
+  models.list.mockResolvedValue([deepseekEntry, compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    deepseekCredential,
+    { ...compatibleCredential, isDefault: false },
+  ]);
+  const view = await renderSettings();
+  try {
+    const row = [...providersSection().querySelectorAll('[data-testid="provider-row-name"]')]
+      .map((entry) => entry.textContent)
+      .find((name) => name?.includes("Local"));
+    await openProvider(row ?? "");
+    await act(async () =>
+      vi.waitFor(() => expect(models.probeOpenAiCompatible).toHaveBeenCalled()),
+    );
+    await act(async () => {
+      modelCheckbox(view.container, "model-b").click();
+    });
+    await click(buttons(view.container, "Save")[0]);
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai-compatible",
+        credentialId: "cred-compatible",
+        enabledModelIds: ["model-b"],
+        makeDefault: false,
+      }),
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("replaces one connection's key and disconnects only that connection", async () => {
   models.credentials.mockResolvedValue([deepseekCredential, workCredential]);
   const view = await renderSettings();
@@ -1770,9 +1829,7 @@ it("replaces one connection's key and disconnects only that connection", async (
       }),
     );
 
-    await click(buttons(view.container, "Disconnect")[0]);
-    const confirm = buttons(view.container, "Disconnect");
-    await click(confirm[confirm.length - 1]);
+    await confirmDisconnect(view.container);
     expect(models.disconnect).toHaveBeenCalledWith({
       provider: "deepseek",
       credentialId: "cred-deepseek-work",
@@ -1904,12 +1961,94 @@ it("shows what a disconnect left, not a read sent before it", async () => {
   try {
     expect(providerNames()).toContain("DeepSeek (Work)");
     await openProvider("DeepSeek (Work)");
-    await click(buttons(view.container, "Disconnect")[0]);
-    const confirm = buttons(view.container, "Disconnect");
-    await click(confirm[confirm.length - 1]);
+    await confirmDisconnect(view.container);
     await act(async () => releaseStale());
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(providerNames()).not.toContain("DeepSeek (Work)");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it.each([false, true])(
+  "names mixed-auth connections independently (API first: %s)",
+  async (apiFirst) => {
+    models.list.mockResolvedValue([
+      { ...deepseekEntry, auth: "both", subscriptionName: "Example subscription" },
+    ]);
+    const signedIn = { ...deepseekCredential, authKind: "oauth" };
+    const apiKey = { ...deepseekCredential, id: "api-key", authKind: "api_key", isDefault: false };
+    models.credentials.mockResolvedValue(apiFirst ? [apiKey, signedIn] : [signedIn, apiKey]);
+    i18n.load("de", { "Example subscription": "Example Abonnement" });
+    i18n.activate("de");
+    const view = await renderSettings();
+    try {
+      expect(providerNames().sort()).toEqual(["DeepSeek", "Example Abonnement"]);
+      for (const name of ["DeepSeek", "Example Abonnement"]) {
+        await openProvider(name);
+        expect(titles(view.container)).toEqual([name]);
+        await click(view.container.querySelector('button[aria-label="Back"]'));
+      }
+    } finally {
+      await view.unmount();
+      i18n.activate("en");
+    }
+  },
+);
+
+it("updates subscription group names when the language changes with the same catalog", async () => {
+  models.list.mockResolvedValue([
+    { ...deepseekEntry, auth: "oauth", subscriptionName: "Example subscription" },
+  ]);
+  models.credentials.mockResolvedValue([{ ...deepseekCredential, authKind: "oauth" }]);
+  i18n.load("en", { "Example subscription": "Example subscription" });
+  i18n.load("de", { "Example subscription": "Example Abonnement" });
+  const view = await renderSettings();
+  try {
+    expect(view.container.textContent).toContain("Example subscription");
+    await act(async () => {
+      i18n.activate("de");
+    });
+    await view.rerender();
+    expect(view.container.textContent).toContain("Example Abonnement");
+    expect(view.container.textContent).not.toContain("Example subscription");
+  } finally {
+    await view.unmount();
+    i18n.activate("en");
+  }
+});
+
+it("counts a sign-in as replaced when another connection opens over it", async () => {
+  models.list.mockResolvedValue([
+    deepseekEntry,
+    {
+      provider: "openai-codex",
+      providerName: "ChatGPT",
+      id: "fixture-model",
+      label: "Fixture model",
+      auth: "oauth",
+      signIn: "device-code",
+      oauthLabel: "Sign in with ChatGPT",
+    },
+  ]);
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  models.beginOAuth.mockResolvedValue({
+    mode: "device-code",
+    loginId: "login-1",
+    verificationUri: "https://auth.example.test/device",
+    userCode: "ABCD-1234",
+    expiresInSeconds: 300,
+  });
+  models.completeOAuth.mockResolvedValue({ status: "pending" });
+  models.cancelOAuth.mockResolvedValue({ ok: true });
+  const view = await renderSettings();
+  try {
+    await openPicker("Add fallback");
+    await choose("ChatGPT");
+    await click(buttons(view.container, "Sign in with ChatGPT")[0]);
+    expect(models.beginOAuth).toHaveBeenCalledOnce();
+    await manage();
+    expect(models.cancelOAuth).toHaveBeenCalledWith({ loginId: "login-1", reason: "replaced" });
   } finally {
     await view.unmount();
   }

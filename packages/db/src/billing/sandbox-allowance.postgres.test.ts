@@ -2,11 +2,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "../database/client.js";
 import { createDb } from "../database/client.js";
 import { asSystem, runAsTenant } from "../database/row-security.js";
+import { chargeMedia, mediaChargedMicros } from "./media-charges.js";
 import {
   grantComputerAllowance,
+  mediaAllowancePlan,
   sandboxAllowancePlan,
   sandboxRunHours,
   sandboxRunHoursByComputer,
+  speechAllowancePlan,
 } from "./sandbox-allowance.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -134,6 +137,17 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
         limitCents: 2_000,
         extraCents: 0,
       });
+      // Speech gets a fifth of the tier's list price, renewing with the same period.
+      expect(await speechAllowancePlan(prisma, organizationId, now)).toEqual({
+        limitMicros: 9_800_000n,
+        since: periodStart,
+      });
+      // Media gets its own dollar balance on the same period, apart from computer hours.
+      expect(await mediaAllowancePlan(prisma, organizationId, now)).toEqual({
+        limitMicros: 1_000_000,
+        since: periodStart,
+        trial: false,
+      });
       await grantComputerAllowance(prisma, organizationId, 2_500);
       const grant = await prisma.computerAllowanceGrant.findFirstOrThrow({
         where: { organizationId },
@@ -245,5 +259,64 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
         await prisma.deploymentSettings.update({ where: { id: "default" }, data: settings });
       else await prisma.deploymentSettings.delete({ where: { id: "default" } });
     }
+  });
+
+  it("gives granted credit without a plan a speech share spent since the first grant", async () => {
+    const settings = await prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+      select: { modelCreditsEnabled: true },
+    });
+    await prisma.deploymentSettings.upsert({
+      where: { id: "default" },
+      create: { id: "default", modelCreditsEnabled: true },
+      update: { modelCreditsEnabled: true },
+    });
+    const firstAppliedAt = new Date("2026-02-01T00:00:00Z");
+    await prisma.accessGrant.createMany({
+      data: [
+        {
+          email: `first-${otherOrganizationId}@rakazo.test`,
+          organizationId: otherOrganizationId,
+          creditCents: 3_000,
+          appliedAt: firstAppliedAt,
+        },
+        {
+          email: `second-${otherOrganizationId}@rakazo.test`,
+          organizationId: otherOrganizationId,
+          creditCents: 2_000,
+          appliedAt: new Date("2026-03-02T00:00:00Z"),
+        },
+      ],
+    });
+    try {
+      expect(await speechAllowancePlan(prisma, otherOrganizationId, now)).toEqual({
+        limitMicros: 10_000_000n,
+        since: firstAppliedAt,
+      });
+    } finally {
+      await prisma.accessGrant.deleteMany({ where: { organizationId: otherOrganizationId } });
+      if (settings)
+        await prisma.deploymentSettings.update({ where: { id: "default" }, data: settings });
+      else await prisma.deploymentSettings.delete({ where: { id: "default" } });
+    }
+  });
+
+  it("charges hosted media once per source, kept apart from the Space", async () => {
+    const charge = {
+      organizationId,
+      source: `media:${suffix}`,
+      kind: "image",
+      amountMicros: 40_000,
+    };
+    await prisma.$transaction((tx) => chargeMedia(tx, charge));
+    await prisma.$transaction((tx) => chargeMedia(tx, charge));
+    expect(await mediaChargedMicros(prisma, organizationId, since)).toBe(40_000);
+    expect(await mediaChargedMicros(prisma, otherOrganizationId, since)).toBe(0);
+    // Tenants never read the ledger directly.
+    expect(
+      await runAsTenant({ userId: "nobody", spaceId }, () =>
+        db.mediaCharge.count({ where: { organizationId } }),
+      ),
+    ).toBe(0);
   });
 });

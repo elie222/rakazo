@@ -48,7 +48,11 @@ const ENDPOINT_TICK_MS = 80;
 const SILENCE_RMS = 0.035;
 export const MAX_ENDPOINT_RECORDING_MS = 30_000;
 /** Web Speech codes that mean the cloud recognizer cannot be used. */
-const WEB_SPEECH_SERVICE_ERRORS = new Set(["network", "service-not-allowed"]);
+const WEB_SPEECH_SERVICE_ERRORS = new Set([
+  "network",
+  "service-not-allowed",
+  "language-not-supported",
+]);
 
 export function webSpeechAvailable(): boolean {
   return Boolean(speechRecognitionCtor());
@@ -128,6 +132,23 @@ function normalizedTranscript(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
 
+/**
+ * Scripts written without spaces between words. Every character there is a letter, so
+ * the whole-word rule cannot tell where a word ends; they count as word boundaries.
+ * The prolonged sound mark (U+30FC) is Script=Common but is used inside Japanese words.
+ */
+const UNSPACED_SCRIPT =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}ー]/u;
+
+function isUnspacedCharacter(char: string | undefined): boolean {
+  return char !== undefined && UNSPACED_SCRIPT.test(char);
+}
+
+/** Last code point of a string, read from its last two UTF-16 units only. */
+function lastCharacter(text: string): string | undefined {
+  return Array.from(text.slice(-2)).at(-1);
+}
+
 function startsWithWholePrefix(text: string, prefix: string): boolean {
   const head = prefix.toLowerCase();
   const tail = text.toLowerCase();
@@ -136,8 +157,10 @@ function startsWithWholePrefix(text: string, prefix: string): boolean {
   // the first half alone is not a letter.
   const point = tail.codePointAt(head.length);
   if (point === undefined) return true;
+  const next = String.fromCodePoint(point);
+  if (isUnspacedCharacter(next) || isUnspacedCharacter(lastCharacter(head))) return true;
   // Punctuation ends the retained word. Letters, numbers, and "_" continue it.
-  return !/[\p{L}\p{N}_]/u.test(String.fromCodePoint(point));
+  return !/[\p{L}\p{N}_]/u.test(next);
 }
 
 /** Join carried Web Speech with a restarted session at their longest whole-word overlap. */
@@ -149,11 +172,24 @@ export function combineTranscript(prefix: string, speechText: string): string {
   if (startsWithWholePrefix(tail, head)) return tail;
   const normalizedTail = normalizedTranscript(tail);
   for (let start = 0; start < head.length; start += 1) {
-    if (start > 0 && !/\s/u.test(head[start - 1] ?? "")) continue;
+    const before = lastCharacter(head.slice(0, start));
     const overlap = head.slice(start);
+    if (start > 0 && !/\s/u.test(before ?? "")) {
+      // No spaces to mark a word start: a short overlap there may be coincidence
+      // ("今日" then "日本" is not "今日本"), so it needs a clause break or 3+ characters.
+      const unspaced =
+        isUnspacedCharacter(before) ||
+        isUnspacedCharacter(String.fromCodePoint(overlap.codePointAt(0) ?? 0));
+      if (!unspaced) continue;
+      if (!/[。、！？，!?,.]/u.test(before ?? "") && Array.from(overlap).length < 3) continue;
+    }
     if (startsWithWholePrefix(normalizedTail, overlap)) {
       return head.slice(0, start) + normalizedTail;
     }
+  }
+  const first = String.fromCodePoint(normalizedTail.codePointAt(0) ?? 0);
+  if (isUnspacedCharacter(lastCharacter(head)) && isUnspacedCharacter(first)) {
+    return head + normalizedTail;
   }
   return `${head} ${normalizedTail}`;
 }
@@ -213,6 +249,11 @@ export class Dictation {
     return this.media?.state === "recording";
   }
 
+  /** A recorder still acquiring its track or capturing, not flushing its last audio. */
+  get recordingOrStarting(): boolean {
+    return this.recording || (!this.media && this.snapshot.status === "listening");
+  }
+
   private set(next: DictationSnapshot) {
     this.snapshot = next;
     for (const watcher of [...this.watchers]) watcher(next);
@@ -261,6 +302,7 @@ export class Dictation {
     mode: DictationMode;
     callId?: string;
     transcribe?: boolean;
+    autoLanguage?: boolean;
     endpointMs?: number;
     onFinal: (text: string) => void;
   }): Promise<void> {
@@ -268,6 +310,13 @@ export class Dictation {
     this.requestCallId = opts.callId;
     const mine = this.token;
     const spaceId = selectedSpaceId();
+    if (opts.autoLanguage && opts.transcribe === false) {
+      this.set({
+        ...IDLE,
+        error: t`Connect a voice provider that transcribes, or turn off automatic language detection in Voice settings.`,
+      });
+      return;
+    }
     this.onFinal = opts.onFinal;
     this.mode = opts.mode;
     this.set({ status: "listening", transcript: "" });
@@ -275,8 +324,14 @@ export class Dictation {
     // Desktop system speech is a fallback for an unconfigured transcription provider.
     // An unknown capability is not a refusal: a device whose browser cannot hold the
     // microphone open goes to the server even before the voice status has loaded.
-    if (usesServerDictation(opts.transcribe)) {
-      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
+    if (opts.autoLanguage || usesServerDictation(opts.transcribe)) {
+      await this.listenRecorder(
+        mine,
+        opts.mode,
+        opts.endpointMs ?? ENDPOINT_SILENCE_MS,
+        spaceId,
+        opts.autoLanguage,
+      );
       return;
     }
     if (webSpeechAvailable()) {
@@ -456,6 +511,7 @@ export class Dictation {
     mode: DictationMode,
     endpointMs: number,
     spaceId: string | null,
+    autoLanguage = false,
   ) {
     let stream: MediaStream;
     try {
@@ -497,7 +553,7 @@ export class Dictation {
         for (const track of stream.getTracks()) track.stop();
         if (this.token !== mine) return;
         this.stopVad();
-        void this.transcribeChunks(mine, spaceId);
+        void this.transcribeChunks(mine, spaceId, autoLanguage);
       };
       media.start(mode === "endpoint" ? 250 : undefined);
       this.set({ ...this.snapshot });
@@ -589,7 +645,7 @@ export class Dictation {
     if (ctx) void ctx.close().catch(() => undefined);
   }
 
-  private async transcribeChunks(mine: number, spaceId: string | null) {
+  private async transcribeChunks(mine: number, spaceId: string | null, autoLanguage: boolean) {
     const requestCallId = this.requestCallId;
     if (this.token !== mine) return;
     // Whisper-style models invent text for silence, so a recording that never rose above
@@ -632,7 +688,7 @@ export class Dictation {
           body: JSON.stringify({
             audioBase64,
             mimeType: blob.type,
-            language: transcriptionLanguage(),
+            language: autoLanguage ? undefined : transcriptionLanguage(),
             callId: requestCallId,
           }),
           signal: abort.signal,
