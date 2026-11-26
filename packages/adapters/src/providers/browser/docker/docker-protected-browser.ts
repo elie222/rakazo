@@ -54,9 +54,10 @@ async function recoverSlot(engine: string[], name: string): Promise<boolean> {
     // The ID cannot be reused by another reservation and Docker refuses to remove a running container.
     await runDocker(engine, "rm", id);
     return true;
-  } catch {
-    // A competing replica may already have removed it. Retry the atomic name reservation.
-    return true;
+  } catch (error) {
+    // A competing replica can remove the container between reservation, inspection and removal.
+    if ((error as { stderr?: string }).stderr?.includes("No such container")) return true;
+    throw error;
   }
 }
 

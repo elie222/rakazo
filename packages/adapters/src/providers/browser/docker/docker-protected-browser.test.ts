@@ -68,6 +68,22 @@ describe("protected browser slot recovery", () => {
   });
 
   it.each([
+    { stderr: `No such container: ${name}`, expected: "capacity", retried: true },
+    { stderr: "Cannot connect to the Docker daemon", expected: "configuration", retried: false },
+  ])("handles an inspect failure reporting $stderr", async ({ stderr, expected, retried }) => {
+    command.mockReset();
+    command.mockImplementation((args) => {
+      if (args[0] === "container") throw Object.assign(new Error("inspect failed"), { stderr });
+      return conflict(args[2]!);
+    });
+    await expect(launch(request)).rejects.toMatchObject({ code: expected });
+    const reservations = command.mock.calls.filter(
+      ([args]) => args[0] === "create" && args[2] === name,
+    );
+    expect(reservations).toHaveLength(retried ? 2 : 1);
+  });
+
+  it.each([
     { status: "running", age: 180_000, label: "true" },
     { status: "created", age: 10_000, label: "true" },
     { status: "created", age: 180_000, label: "<no value>" },
