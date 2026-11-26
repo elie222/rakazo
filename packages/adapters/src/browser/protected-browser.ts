@@ -35,3 +35,16 @@ export type ProtectedBrowserLauncher = (
   request: ProtectedBrowserRequest,
   signal?: AbortSignal,
 ) => Promise<ProtectedBrowserResult>;
+
+export class ProtectedBrowserError extends Error {
+  constructor(
+    public readonly code:
+      | "configuration"
+      | "timeout"
+      | "sign-in-rejected"
+      | "invalid-output"
+      | "container-exit",
+  ) {
+    super("The protected browser operation failed.");
+  }
+}

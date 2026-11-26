@@ -1,9 +1,28 @@
 import { lookup } from "node:dns/promises";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
-import { connect } from "node:net";
+import { BlockList, connect } from "node:net";
 import { networkInterfaces } from "node:os";
 import { isCloudMetadataHost, isInternalHostname, isNonPublicAddress } from "@rakazo/contracts";
+
+export function allowsProtectedBrowserAddresses(
+  addresses: { address: string; family: number }[],
+  interfaces = networkInterfaces(),
+) {
+  const local = new BlockList();
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries ?? []) {
+      local.addAddress(entry.address, entry.family === "IPv4" ? "ipv4" : "ipv6");
+    }
+  }
+  return (
+    addresses.length > 0 &&
+    addresses.every(
+      ({ address, family }) =>
+        !isNonPublicAddress(address) && !local.check(address, family === 4 ? "ipv4" : "ipv6"),
+    )
+  );
+}
 
 export function createProtectedBrowserProxy() {
   const sockets = new Set<Socket>();
@@ -29,15 +48,7 @@ export function createProtectedBrowserProxy() {
         throw new Error("Blocked tunnel destination");
       }
       const addresses = await lookup(hostname, { all: true });
-      const local = Object.values(networkInterfaces()).flat();
-      if (
-        !addresses.length ||
-        addresses.some(
-          ({ address }) =>
-            isNonPublicAddress(address) ||
-            local.some((interfaceAddress) => interfaceAddress?.address === address),
-        )
-      ) {
+      if (!allowsProtectedBrowserAddresses(addresses)) {
         throw new Error("Blocked tunnel address");
       }
       if (client.destroyed) return;
