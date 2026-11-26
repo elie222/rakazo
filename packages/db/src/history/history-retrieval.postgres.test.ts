@@ -31,6 +31,15 @@ postgres("history retrieval (PostgreSQL)", () => {
     )
       .replace(/^--.*$/gm, "")
       .replace("CONCURRENTLY ", "");
+    const historySearchIndex = readFileSync(
+      new URL(
+        "../../prisma/migrations/20261231120000_message_history_search_with_drafts/migration.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    )
+      .replace(/^--.*$/gm, "")
+      .replace("CONCURRENTLY ", "");
     pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
     prisma = new PrismaClient({ adapter: new PrismaPg(pool, { schema: "pg_temp" }) });
     await pool.query(`
@@ -52,8 +61,7 @@ postgres("history retrieval (PostgreSQL)", () => {
         '2026-01-01'::timestamptz + n * interval '1 minute',
         jsonb_build_array(jsonb_build_object('kind','text','text', CASE WHEN n = 100 THEN 'exports use batching' ELSE 'filler exchange ' || n END))
         FROM generate_series(1,10000) n;
-      CREATE INDEX synthetic_history_fts ON messages USING GIN (to_tsvector('simple',jsonb_path_query_array(blocks,
-        '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text));
+      ${historySearchIndex}
       CREATE INDEX synthetic_history_seq ON messages ("threadId",seq);
       ${toolWorkIndex}
       ANALYZE messages;
@@ -162,7 +170,7 @@ postgres("history retrieval (PostgreSQL)", () => {
       authorizedQuery.values,
     );
     const plan = explained.rows[0]["QUERY PLAN"][0];
-    expect(JSON.stringify(plan)).toContain("synthetic_history_fts");
+    expect(JSON.stringify(plan)).toContain("messages_history_search_drafts_idx");
     expect(plan.Plan["Actual Rows"]).toBe(1);
     expect(plan["Planning Time"]).toBeGreaterThanOrEqual(0);
     expect(plan["Execution Time"]).toBeGreaterThanOrEqual(0);
@@ -281,7 +289,9 @@ postgres("history retrieval (PostgreSQL)", () => {
       `EXPLAIN (FORMAT JSON) ${searchQuery.text}`,
       searchQuery.values,
     );
-    expect(JSON.stringify(explained.rows[0]["QUERY PLAN"])).toContain("synthetic_history_fts");
+    expect(JSON.stringify(explained.rows[0]["QUERY PLAN"])).toContain(
+      "messages_history_search_drafts_idx",
+    );
     await pool.query(`DELETE FROM messages WHERE id = 'steps-reply'`);
   });
   it("keeps a reply made only of tool steps when search is narrowed to bot replies", async () => {
@@ -599,6 +609,40 @@ postgres("history retrieval (PostgreSQL)", () => {
         '[{"kind":"secret_prompt","text":"synthetic credential needle"},{"kind":"progress","text":"hidden trace needle"}]')`);
     expect((await searchHistory(prisma, scope, { query: "needle" })).messages).toEqual([]);
   });
+  it("finds a draft by its body through the index", async () => {
+    await pool.query(
+      `INSERT INTO messages VALUES ('draft-reply', 'synthetic-thread', 10003, 'bot', NULL, NULL,
+      '2026-03-01T00:00:00Z', $1::jsonb)`,
+      [
+        JSON.stringify([
+          {
+            kind: "draft",
+            draftId: "synthetic-draft",
+            label: "Email",
+            subject: "Renewal",
+            body: "Hi Sam, the Marrowfield renewal is ready to sign.",
+            version: 1,
+          },
+        ]),
+      ],
+    );
+    const querySpy = vi.spyOn(prisma, "$queryRaw");
+    const results = await searchHistory(prisma, scope, { query: "marrowfield" });
+    const searchQuery = querySpy.mock.calls[0]![0] as Prisma.Sql;
+    querySpy.mockRestore();
+    expect(results.messages.map((message) => message.messageId)).toEqual(["draft-reply"]);
+    expect(results.messages[0]!.text).toBe(
+      "Renewal\nHi Sam, the Marrowfield renewal is ready to sign.",
+    );
+    const explained = await pool.query(
+      `EXPLAIN (FORMAT JSON) ${searchQuery.text}`,
+      searchQuery.values,
+    );
+    expect(JSON.stringify(explained.rows[0]["QUERY PLAN"])).toContain(
+      "messages_history_search_drafts_idx",
+    );
+    await pool.query(`DELETE FROM messages WHERE id = 'draft-reply'`);
+  });
   it("indexes persisted subagent conclusions and retrieves them as linked outcomes", async () => {
     await pool.query(`INSERT INTO messages VALUES ('subagent-result','synthetic-thread',11999,'bot',NULL,NULL,now(),
       '[{"kind":"subagent","agentId":"synthetic-agent","name":"Research","task":"Inspect exports","status":"completed","result":"ledger-indexer produced aurora-investigation.txt"}]');`);
@@ -911,7 +955,7 @@ postgres("history retrieval (PostgreSQL)", () => {
       `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${rankedQuery.text}`,
       rankedQuery.values,
     );
-    expect(JSON.stringify(explained.rows)).toContain("synthetic_history_fts");
+    expect(JSON.stringify(explained.rows)).toContain("messages_history_search_drafts_idx");
     expect(result.queries).toEqual(["quasar", "VIOLET"]);
     const single = await searchHistory(prisma, grant, { scope: "my_chats", query: "quasar" });
     expect(single.queries).toEqual(["quasar"]);

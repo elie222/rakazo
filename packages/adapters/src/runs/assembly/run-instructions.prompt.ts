@@ -435,6 +435,8 @@ export function userTurnInstructions(parts: {
   offeredFleetTools?: readonly string[];
   /** The run can set its own follow-ups (see followUpsOffered). */
   followUpsOffered?: boolean;
+  /** The run has write_draft, which only runs whose reply shows in the app get. */
+  draftsOffered?: boolean;
   /** Whether this turn may start a background helper (only in the bot's own app chat). */
   backgroundHelpersAllowed?: boolean;
   userComputer?: UserComputerState;
@@ -500,6 +502,9 @@ export function userTurnInstructions(parts: {
       "save_page",
       'For a dashboard, report, tracker or comparison, build a page with save_page (call it with {"help": true} first for the kit guide). To change a page, pass its pageId with edits or new source instead of making a new page. In your reply, mention the page by its title; never paste its source.',
     ),
+    parts.draftsOffered
+      ? "When you write something for the user to send themselves (an email, a message, a post), put it in write_draft instead of your reply, and keep the reply to a line. When the user replies to a draft with changes, revise it with its draftId instead of starting a new one."
+      : undefined,
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "add_mcp_server",

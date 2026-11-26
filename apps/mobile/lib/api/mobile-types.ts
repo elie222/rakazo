@@ -160,6 +160,7 @@ export function blockText(message: MobileMessage) {
       if (block.kind === "app") return `[app: ${block.server}]`;
       if (block.kind === "tool_question") return `[question: ${block.question.source}]`;
       if (block.kind === "page") return `[page: ${block.title}]`;
+      if (block.kind === "draft") return `[${block.label}] ${block.body}`;
       if (block.kind === "image") return `[image: ${block.name ?? "attachment"}]`;
       if (block.kind === "file") {
         return `[file: ${block.name ?? "attachment"}${block.size ? ` (${block.size} bytes)` : ""}]`;

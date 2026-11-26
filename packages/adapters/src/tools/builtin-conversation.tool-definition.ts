@@ -3,6 +3,10 @@ import {
   BOT_MEMORY_MAX_BYTES,
   BotSecretName,
   botSecretDestinationSchema,
+  DRAFT_BODY_MAX_LENGTH,
+  DRAFT_LABEL_MAX_LENGTH,
+  DRAFT_SUBJECT_MAX_LENGTH,
+  DRAFT_TO_MAX_LENGTH,
   GenerateSecretInput,
   LOGIN_FIELD_LIMIT,
   MEMORY_INDEX_PATH,
@@ -263,6 +267,34 @@ export const conversationTools: ConnectorTool[] = [
           additionalProperties: { type: "string" },
         },
       },
+    },
+  },
+  {
+    name: "write_draft",
+    description:
+      "Show something the user will send themselves (an email, a chat or social message, a post, a reply) as a draft card in this chat. The user can copy it, mark passages to change and ask for a revision. To revise a draft, pass its draftId and the whole new body; the same card updates. Not for messages you send yourself.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        draftId: { type: "string", description: "The draft to revise; omit for a new draft." },
+        label: {
+          type: "string",
+          maxLength: DRAFT_LABEL_MAX_LENGTH,
+          description: 'What it is, in a few words: "Email", "LinkedIn message", "Text".',
+        },
+        to: {
+          type: "string",
+          maxLength: DRAFT_TO_MAX_LENGTH,
+          description: "Who it is for, when known. An empty string removes it from a draft.",
+        },
+        subject: {
+          type: "string",
+          maxLength: DRAFT_SUBJECT_MAX_LENGTH,
+          description: "An empty string removes it from a draft.",
+        },
+        body: { type: "string", minLength: 1, maxLength: DRAFT_BODY_MAX_LENGTH },
+      },
+      required: ["body"],
     },
   },
   {

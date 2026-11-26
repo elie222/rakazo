@@ -273,6 +273,17 @@ function blockHistoryText(block: MessageBlock): string {
   if (block.kind === "file") {
     return `[file: ${block.name} (${block.mimeType}, ${block.size} bytes)]`;
   }
+  // The id lets a later turn revise this draft in place; the fence keeps a line in it from
+  // passing for anything outside it.
+  if (block.kind === "draft") {
+    const fenced = (value: string) => value.replace(/<\s*\/\s*draft\s*>/gi, "&lt;/draft&gt;");
+    // The label and recipient sit outside the fence, so they are kept to one line.
+    const heading = (value: string) => fenced(value.replace(/\s+/gu, " ").trim());
+    const to = block.to ? ` to ${heading(block.to)}` : "";
+    const subject = block.subject ? `Subject: ${block.subject}\n\n` : "";
+    const text = fenced(`${subject}${block.body}`);
+    return `[draft: ${heading(block.label)}${to} (draftId ${block.draftId}, version ${block.version})]\n<draft>\n${text}\n</draft>`;
+  }
   // Keep attribution on peer messages: without it a later turn cannot tell
   // which lines came from another bot rather than the user.
   if (block.kind === "bot_message_received") return `[from ${block.fromBotName}] ${block.text}`;

@@ -83,6 +83,7 @@ export * from "./locale/ui-locale.js";
 export * from "./meetings/calendar-availability.js";
 export * from "./meetings/meeting-platforms.js";
 export * from "./messages/attachments.js";
+export * from "./messages/draft-notes.js";
 export * from "./messages/events.js";
 export * from "./messages/markdown-plain.js";
 export * from "./messages/message-pages.js";

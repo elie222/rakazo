@@ -192,6 +192,8 @@ function replyBlockText(block: MessageBlock): string {
       return block.title;
     case "call_request":
       return block.reason;
+    case "draft":
+      return block.body;
     case "subagent":
       return block.name || block.task;
     case "child_bot":

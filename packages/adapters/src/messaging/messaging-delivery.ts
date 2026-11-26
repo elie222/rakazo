@@ -1533,6 +1533,10 @@ function extractText(
           const takeover = chatAppTakeoverText(block as Parameters<typeof chatAppTakeoverText>[0]);
           return takeover ? [takeover] : [];
         }
+        if (block?.kind === "draft") {
+          const draft = block as Extract<MessageBlock, { kind: "draft" }>;
+          return [draft.subject ? `${draft.subject}\n\n${draft.body}` : draft.body];
+        }
         if (
           block?.kind === "page" &&
           typeof block.title === "string" &&

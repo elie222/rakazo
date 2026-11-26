@@ -145,11 +145,11 @@ function bounded<T extends { messages: ReturnType<typeof reference>[] }>(respons
 }
 /**
  * The live history search index's own expression, so Postgres can use it: conversational text,
- * attachment names, and tool step labels and notes. The parser keeps a name like "q3-report.pdf"
+ * attachment names, tool step labels and notes, and drafts' subjects and bodies. The parser keeps a name like "q3-report.pdf"
  * as one token, so its separators become spaces first, as searchTerms splits them.
  */
 const searchableText = Prisma.sql`jsonb_path_query_array(m.blocks,
-  '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text`;
+  '$[*] ? (@.kind == "text" || @.kind == "channel_message" || @.kind == "bot_message_received" || @.kind == "bot_message_sent" || @.kind == "handoff").text')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").task')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "subagent").result')::text || translate(jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "file" || @.kind == "image").name')::text, '._-', '   ') || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].label')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "steps").steps[*].note')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "draft").subject')::text || jsonb_path_query_array(m.blocks, '$[*] ? (@.kind == "draft").body')::text`;
 const columns = Prisma.sql`m.id, m.seq, m.role, m."runId", m."replyToMessageId", m."createdAt", m.blocks, m."threadId", t."groupId" AS "groupId"`;
 
 /** Replies that used tools; matches the predicate of messages_tool_work_idx exactly. */

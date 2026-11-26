@@ -454,6 +454,24 @@ describe("local history retrieval", () => {
       ]),
     ).toBe("visible");
   });
+  it("reads, exports and searches a draft's subject and body", () => {
+    const blocks = [
+      { kind: "text", text: "Here it is." },
+      {
+        kind: "draft",
+        draftId: "draft-1",
+        label: "Email",
+        to: "Dana",
+        subject: "Quarterly numbers",
+        body: "Hi Dana, the ledger closes Friday.",
+        version: 2,
+      },
+    ];
+    const text = "Here it is.\nQuarterly numbers\nHi Dana, the ledger closes Friday.";
+    expect(historyMessageText(blocks)).toBe(text);
+    expect(historyReadText(blocks)).toBe(text);
+    expect(historySearchText(blocks)).toBe(text);
+  });
   it("returns an earlier reply's tool steps to the bot but keeps them out of message text", () => {
     const blocks = [
       {

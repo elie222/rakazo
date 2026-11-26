@@ -123,6 +123,8 @@ export const SUBAGENT_HIDDEN_TOOLS: ReadonlySet<string> = new Set([
   "update_bot",
   "update_preferences",
   "feedback",
+  // A helper's thread isn't in the chat list, so a card it posts is never seen.
+  "write_draft",
 ]);
 
 /** Cross-owner agent connections only exist for chat-linked bots, in turns that can talk. */
@@ -247,6 +249,12 @@ export function selectBuiltinToolsForRun(options: {
       (options.hasGroups === true || tool.name !== "post_to_group") &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
+      // A draft card shows only in the app: a chat app gets the draft as plain text, and a
+      // revision rewrites the card in place, which never reaches the chat.
+      (tool.name !== "write_draft" ||
+        (!isBackgroundRunTrigger(options.trigger) &&
+          options.trigger !== "messaging" &&
+          !options.messagingChannelRun)) &&
       (!isBackgroundRunTrigger(options.trigger) || !BACKGROUND_DROPPED_TOOL_NAMES.has(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (emailMailbox || !EMAIL_INBOX_TOOL_NAMES.has(tool.name)) &&

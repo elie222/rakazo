@@ -269,6 +269,7 @@ export function describeToolActivity(
   if (toolName === "save_page") {
     return record.help === true ? "Reading the page kit reference" : "Writing the page code";
   }
+  if (toolName === "write_draft") return "Writing a draft";
   if (toolName === "add_mcp_server") return `Connecting MCP server: ${detail(record.name)}`;
   if (toolName === "remove_mcp_server") return `Removing MCP server: ${detail(record.name)}`;
   if (toolName === "computer_observe") return "Looking at the screen";

@@ -72,6 +72,7 @@ const OUTSIDE_RUN_SAFE_BUILTIN_TOOLS = new Set([
   "task_catalog",
   "web_fetch",
   "web_search",
+  "write_draft",
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
@@ -332,6 +333,7 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "skill_update",
   "task_catalog",
   "update_preferences",
+  "write_draft",
   "write_file",
 ]);
 

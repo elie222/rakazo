@@ -793,6 +793,37 @@ const textStyles: Scenario = {
   ],
 };
 
+// A draft the user sends themselves: a short card in the chat that opens to mark up.
+const drafts: Scenario = {
+  id: "drafts",
+  label: "Drafts",
+  messages: [
+    user("Draft a LinkedIn message to Marie about the design lead role."),
+    say("Here's a first take."),
+    bot([
+      {
+        kind: "draft",
+        draftId: "draft-1",
+        label: "LinkedIn message",
+        to: "Marie Dubois",
+        body: "Hi Marie,\n\nI hope this message finds you well. I saw the design lead opening on your team and it lines up with my work on onboarding flows for B2B tools.\n\nWould you be open to a quick 15-minute call next week? Happy to work around your schedule.\n\nThanks,\nAlex",
+        version: 1,
+      },
+    ]),
+    bot([
+      {
+        kind: "draft",
+        draftId: "draft-2",
+        label: "Email",
+        to: "hiring@example.test",
+        subject: "Design lead role",
+        body: "Hello,\n\nI'm writing about the design lead role. My portfolio is attached.\n\nBest,\nAlex",
+        version: 2,
+      },
+    ]),
+  ],
+};
+
 const SCENARIOS: Scenario[] = [
   conversation,
   textStyles,
@@ -803,6 +834,7 @@ const SCENARIOS: Scenario[] = [
   team,
   routines,
   rich,
+  drafts,
   calls,
 ];
 

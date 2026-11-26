@@ -17,6 +17,7 @@ import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { CollaborationMarker } from "../../../components/ai/CollaborationMarker";
 import { ComputerCard } from "../../../components/computers/ComputerCard";
+import { DraftCard } from "../../../components/drafts/DraftCard";
 import { ArtifactFileCard } from "../../../components/messages/ArtifactFileCard";
 import { AskCard } from "../../../components/messages/AskCard";
 import { CloudAgentCard } from "../../../components/messages/CloudAgentCard";
@@ -507,6 +508,13 @@ export const MessageView = memo(function MessageView({
                 block={block}
                 updated={isPageSuperseded?.(message.id, block) ?? false}
               />
+            );
+          }
+          if (block.kind === "draft") {
+            return (
+              <div key={i} className="flex justify-start">
+                <DraftCard block={block} messageId={message.id} target={artifactTarget} />
+              </div>
             );
           }
           if (block.kind === "chart") {

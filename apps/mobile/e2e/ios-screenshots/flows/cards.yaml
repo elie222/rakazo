@@ -13,13 +13,32 @@ name: Request cards
     timeout: 3000
 - takeScreenshot: 01-api-key
 - scrollUntilVisible:
+    element: ".*Weekly support digest.*"
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 100
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 02-draft
+- tapOn: ".*Weekly support digest.*"
+- extendedWaitUntil:
+    visible:
+      id: "draft-body"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 03-draft-open
+- tapOn: "Close"
+- waitForAnimationToEnd:
+    timeout: 3000
+- scrollUntilVisible:
     element: ".*Pay on freshcart.test.*"
     direction: UP
     timeout: 15000
     visibilityPercentage: 100
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 02-pay
+- takeScreenshot: 04-pay
 - scrollUntilVisible:
     element: ".*Which tone should replies use.*"
     direction: UP
@@ -27,7 +46,7 @@ name: Request cards
     visibilityPercentage: 100
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 03-choice-and-computer
+- takeScreenshot: 05-choice-and-computer
 - scrollUntilVisible:
     element: ".*Sign in to the help desk.*"
     direction: UP
@@ -35,7 +54,7 @@ name: Request cards
     visibilityPercentage: 100
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 04-answered-requests
+- takeScreenshot: 06-answered-requests
 - scrollUntilVisible:
     element: ".*Gmail.*"
     direction: UP
@@ -43,4 +62,4 @@ name: Request cards
     visibilityPercentage: 100
 - waitForAnimationToEnd:
     timeout: 3000
-- takeScreenshot: 05-app-connect
+- takeScreenshot: 07-app-connect

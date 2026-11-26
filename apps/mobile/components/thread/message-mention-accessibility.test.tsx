@@ -82,6 +82,7 @@ vi.mock("../components/instruction-undo", () => ({ InstructionUndo: () => null }
 vi.mock("../cards/McpApprovalCard", () => ({ McpApprovalCard: () => null }));
 vi.mock("../native/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("../../lib/pages/page-card", () => ({ PageCard: () => null }));
+vi.mock("../drafts/draft-card", () => ({ DraftCard: () => null }));
 vi.mock("./mcp-app-card", () => ({ McpAppCard: () => null }));
 
 import { MessageBubble } from "./message-bubble";
