@@ -655,11 +655,12 @@ describe("latestModelChoices", () => {
     expect(ids(latestModelChoices(choices, "").latest)).toEqual(models);
   });
 
-  it("orders month-year snapshots by year and keeps a stable model over its preview", () => {
+  it("orders month-year snapshots by year and keeps a stable alias over its preview and snapshots", () => {
     const models = [
       "command-r-12-2023",
       "command-r-08-2024",
       "gemini-2.0-flash-exp",
+      "gemini-2.0-flash-001",
       "gemini-2.0-flash",
     ].map((modelId) => ({
       key: `vendor::${modelId}`,
