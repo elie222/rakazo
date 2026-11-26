@@ -110,6 +110,16 @@ describe("ComposioConnector over the fake Composio client", () => {
     expect(tools.every((tool) => tool.route?.connectionId === pinned.id)).toBe(true);
   });
 
+  it("settles instant non-mailbox organization authorizations through completion", async () => {
+    const { connector } = setup();
+    await expect(
+      connector.begin(
+        { provider: "GITHUB", redirectUrl: "https://example.test/callback" },
+        { ...context(), organizationId: "team-fixture" },
+      ),
+    ).resolves.toMatchObject({ authorizationUrl: null, requiresCompletion: true });
+  });
+
   it("uses separate personal and organization sessions for the same app", async () => {
     const { fake, connector } = setup();
     const organizationId = "team-fixture";

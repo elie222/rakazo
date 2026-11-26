@@ -11,6 +11,7 @@ import { readResponseWithin } from "@rakazo/core";
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "../../../approvals/approval-effect.js";
+import { accountIdentityFromResponse } from "../../../integrations/account-identity.js";
 import {
   connectorAccountRoute,
   resolveAccountToolCall,
@@ -22,10 +23,6 @@ import {
   redactConnectorPayload,
   sanitizeConnectorError,
 } from "../../../integrations/connector-safety.js";
-import {
-  mailboxProfileIdentity,
-  mailboxProfileUrl,
-} from "../../../integrations/mailbox-profile.js";
 import type { RemoteTransportDependencies } from "../../../mcp/remote-mcp.js";
 import { callRemoteMcpTool, listRemoteMcpTools } from "../../../mcp/remote-mcp.js";
 import {
@@ -441,7 +438,9 @@ export class PipedreamConnector implements ManagedConnectorProvider {
 
   async connectedAccountIdentity(slug: string, ref: string, context: AdapterContext) {
     if (slug.trim().toLowerCase() !== "gmail") return undefined;
-    const endpoint = Buffer.from(mailboxProfileUrl).toString("base64url");
+    const endpoint = Buffer.from("https://gmail.googleapis.com/gmail/v1/users/me/profile").toString(
+      "base64url",
+    );
     const query = new URLSearchParams({
       external_user_id: this.externalUserId(context),
       account_id: ref,
@@ -452,10 +451,14 @@ export class PipedreamConnector implements ManagedConnectorProvider {
         {},
         context.signal,
       );
-      return mailboxProfileIdentity(200, profile);
+      const address =
+        profile && typeof profile === "object" && "emailAddress" in profile
+          ? profile.emailAddress
+          : undefined;
+      return accountIdentityFromResponse(200, address);
     } catch (error) {
       context.signal.throwIfAborted();
-      if (error instanceof PipedreamHttpError) return mailboxProfileIdentity(error.status);
+      if (error instanceof PipedreamHttpError) return accountIdentityFromResponse(error.status);
       throw new Error(sanitizeConnectorError(error, [this.config.clientSecret]));
     }
   }

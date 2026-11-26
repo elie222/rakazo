@@ -720,7 +720,9 @@ export class ComposioConnector implements ComposioProvider {
         return {
           authorizationUrl: null,
           state: account?.id || connectionRequest.id || request.provider,
-          requiresCompletion: composioSlugKey(request.provider) === "gmail",
+          requiresCompletion:
+            composioSlugKey(request.provider) === "gmail" ||
+            Boolean(context.organizationId && (account?.id || connectionRequest.id)),
         };
       }
       if (!connectionRequest.id) throw new Error("Authorization has no connection request ID.");

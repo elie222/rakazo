@@ -1,8 +1,5 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
-import {
-  mailboxProfileIdentity,
-  mailboxProfileUrl,
-} from "../../../integrations/mailbox-profile.js";
+import { accountIdentityFromResponse } from "../../../integrations/account-identity.js";
 import type { ComposioClient } from "./composio-connector.js";
 import { isStaleConnectedAccountError, sanitizeIntegrationError } from "./composio-errors.js";
 
@@ -22,18 +19,24 @@ export function composioAccountIdentity(
       try {
         const profile = await (await tools())?.proxyExecute(
           {
-            endpoint: mailboxProfileUrl,
+            endpoint: "https://gmail.googleapis.com/gmail/v1/users/me/profile",
             method: "GET",
             connectedAccountId: ref,
           },
           { signal: context.signal },
         );
-        return profile ? mailboxProfileIdentity(profile.status, profile.data) : undefined;
+        if (!profile) return undefined;
+        const data: unknown = profile.data;
+        const address =
+          data && typeof data === "object" && "emailAddress" in data
+            ? data.emailAddress
+            : undefined;
+        return accountIdentityFromResponse(profile.status, address);
       } catch (error) {
         context.signal.throwIfAborted();
         const status = error instanceof Error && "status" in error ? error.status : undefined;
         if (isStaleConnectedAccountError(error)) return undefined;
-        if (typeof status === "number") return mailboxProfileIdentity(status);
+        if (typeof status === "number") return accountIdentityFromResponse(status);
         throw new Error(sanitizeIntegrationError(error));
       }
     };
