@@ -571,7 +571,10 @@ export function fallbackAwareModelStream(
         }
       }
       try {
-        const apiKey = target.credentials?.accessToken ?? target.apiKey;
+        const renewableKey = target.config.resolveApiKey
+          ? await target.config.resolveApiKey(signal)
+          : undefined;
+        const apiKey = renewableKey ?? target.credentials?.accessToken ?? target.apiKey;
         const reasoning = thinkingLevel === "off" ? undefined : thinkingLevel;
         stream = state.stream(
           sentTarget,
@@ -579,8 +582,12 @@ export function fallbackAwareModelStream(
           // With backups the switch replaces the SDK's retry, so a hung model is not waited on twice.
           state.request.fallbackModels?.length
             ? { ...attemptOptions, apiKey, reasoning, maxRetries: 0 }
-            : thinkingOverride
-              ? { ...attemptOptions, reasoning }
+            : thinkingOverride || renewableKey !== undefined
+              ? {
+                  ...attemptOptions,
+                  ...(thinkingOverride ? { reasoning } : {}),
+                  ...(renewableKey !== undefined ? { apiKey: renewableKey } : {}),
+                }
               : attemptOptions,
         );
       } catch (error) {

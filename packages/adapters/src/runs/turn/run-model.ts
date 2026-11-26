@@ -271,6 +271,7 @@ async function resolveModelKeyMaterial(
   } = {},
 ): Promise<{
   apiKey?: string;
+  resolveApiKey?: AgentRunRequest["model"]["resolveApiKey"];
   accountId?: string;
   gatewayId?: string;
   projectId?: string;
@@ -471,14 +472,30 @@ async function resolveModelKeyMaterial(
       redact: [],
     };
   try {
-    const hostKey = await deploymentHostCredentialKey(provider, modelId);
-    return { apiKey: hostKey ?? operatorModelKey(deps, provider), redact: [] };
+    const initialHostKey = deploymentHostCredentialKey(provider, modelId);
+    if (!initialHostKey) return { apiKey: operatorModelKey(deps, provider), redact: [] };
+    const apiKey = await initialHostKey;
+    let registeredKey = apiKey;
+    return {
+      apiKey,
+      redact: [],
+      resolveApiKey: async (signal) => {
+        const key = await deploymentHostCredentialKey(provider, modelId, signal);
+        if (!key) {
+          throw new UnavailableModelForAuthError(
+            "The deployment model workload identity is no longer configured.",
+          );
+        }
+        if (key !== registeredKey) {
+          registerSecrets?.([key]);
+          registeredKey = key;
+        }
+        return key;
+      },
+    };
   } catch (error) {
-    if (
-      !(error instanceof ClientError) &&
-      !(error instanceof DOMException && error.name === "TimeoutError")
-    )
-      throw error;
+    // An exchange outage or deadline should reach the run setup retry, not mark auth terminal.
+    if (!(error instanceof ClientError) || error.kind !== "BAD_REQUEST") throw error;
     throw new UnavailableModelForAuthError(
       "The deployment model workload identity is unavailable.",
     );
@@ -497,6 +514,7 @@ export function resolvedModelRunFields(
     connectionId: resolved.connectionId,
     billing: resolved.billing,
     apiKey: resolved.oauth ? undefined : resolved.apiKey,
+    resolveApiKey: resolved.resolveApiKey,
     callObserver: resolved.callObserver,
     ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),

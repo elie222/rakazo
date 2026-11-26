@@ -641,6 +641,8 @@ export interface AgentRunModel {
   /** Opaque id of the stored connection serving it, so a model can fall back to another account. */
   connectionId?: string;
   apiKey?: string;
+  /** In-process resolver for a renewable credential, bound to this model by the server. */
+  resolveApiKey?: (signal?: AbortSignal) => Promise<string>;
   /** Cloudflare account id stored with a gateway BYOK credential. */
   accountId?: string;
   /** Cloudflare AI Gateway id stored with a gateway BYOK credential. */

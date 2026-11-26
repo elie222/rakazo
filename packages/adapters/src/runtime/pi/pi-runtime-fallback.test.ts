@@ -245,6 +245,36 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+it.each([false, true])(
+  "passes the current renewable key across a tool turn (backups: %s)",
+  async (withBackup) => {
+    const input = request(withBackup ? [{ provider: backupA.provider, id: backupA.id }] : []);
+    input.model.resolveApiKey = vi
+      .fn()
+      .mockResolvedValueOnce("fake-primary-key")
+      .mockResolvedValueOnce("fake-rotated-key");
+    providerState.stream
+      .mockImplementationOnce(() =>
+        stream(
+          primary,
+          message(
+            primary,
+            [{ type: "toolCall", id: "call-1", name: "write_effect", arguments: { value: "a" } }],
+            "toolUse",
+          ),
+        ),
+      )
+      .mockImplementationOnce(() =>
+        stream(primary, message(primary, [{ type: "text", text: "Done." }], "stop")),
+      );
+    expect(await run(input)).toContainEqual({ type: "text", text: "Done." });
+    expect(providerState.stream.mock.calls.map(([, , options]) => options.apiKey)).toEqual([
+      "fake-primary-key",
+      "fake-rotated-key",
+    ]);
+  },
+);
+
 describe("Pi runtime transient model retries", () => {
   it("recovers one empty idle stream after the header retry budget expires", async () => {
     vi.useFakeTimers();
