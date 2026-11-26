@@ -209,8 +209,7 @@ describe("redacting with a growing list", () => {
     expect(kmpTableBuildCount() - before).toBe(1);
   });
 
-  it("matches full-string redaction across arbitrary splits, overlaps, empty deltas, and mid-stream secret additions", () => {
-    // Prefix-sharing and bridging secrets split one code unit at a time.
+  it("matches full-string redaction across single-character splits, overlaps, and empty deltas", () => {
     for (const [secrets, samples] of [
       [
         ["abcdef", "cd"],
@@ -238,8 +237,9 @@ describe("redacting with a growing list", () => {
         );
       }
     }
+  });
 
-    // Randomized equivalence against full-string redaction with small alphabet + surrogates.
+  it("matches full-string redaction across randomized chunk splits with UTF-16 surrogates", () => {
     const alphabet = ["a", "b", "c", "\uD83D", "\uDE00", "\n"];
     const next = random(1337);
     const word = (max: number) =>
@@ -261,8 +261,9 @@ describe("redacting with a growing list", () => {
         sanitizeUtf16ForJson(redactSecrets(text, secrets)),
       );
     }
+  });
 
-    // Live secrets array growing mid-stream: held prefix rescans with the new secret.
+  it("rescans held prefixes when a new secret is appended mid-stream", () => {
     const live = ["shared-prefix-old-secret"];
     const liveRedactor = createStreamingRedactor(live);
     const first = liveRedactor.push("ok shared-prefix-");
@@ -270,9 +271,9 @@ describe("redacting with a growing list", () => {
     live.push("shared-prefix-new-secret");
     const rest = liveRedactor.push("new-secret done") + liveRedactor.finish();
     expect(first + rest).toBe("ok [redacted] done");
+  });
 
-    // Registration boundary: a prefix already emitted before registration cannot be un-emitted,
-    // while matches starting in or after registration are redacted.
+  it("redacts secrets starting at or after mid-stream registration without un-emitting prior text", () => {
     const boundarySecrets = ["unrelated-secret"];
     const boundaryRedactor = createStreamingRedactor(boundarySecrets);
     expect(boundaryRedactor.push("new-")).toBe("new-");
@@ -280,8 +281,9 @@ describe("redacting with a growing list", () => {
     expect(boundaryRedactor.push("secret! new-secret") + boundaryRedactor.finish()).toBe(
       "secret! [redacted]",
     );
+  });
 
-    // Live secrets array starting empty and gaining a secret mid-stream.
+  it("begins redacting after a secret is added to an initially empty array", () => {
     const initiallyEmpty: string[] = [];
     const lateRedactor = createStreamingRedactor(initiallyEmpty);
     expect(lateRedactor.push("before ")).toBe("before ");
@@ -289,8 +291,9 @@ describe("redacting with a growing list", () => {
     expect(
       lateRedactor.push("late-added-") + lateRedactor.push("secret after") + lateRedactor.finish(),
     ).toBe("[redacted] after");
+  });
 
-    // Crossing BUILD_COST right in the middle of a split secret preserves match state during KMP -> indexed upgrade.
+  it("preserves match state when upgrading from KMP to the indexed trie mid-secret", () => {
     const upgradeSecrets = Array.from(
       { length: 20 },
       (_, index) => `upgrade-secret-${index.toString().padStart(2, "0")}-xyz`,
