@@ -56,7 +56,8 @@ describe("built-in tool bridge", () => {
     ]);
     // request_secret carries the card and contact kinds; update_bot carries instructions paging;
     // the history tools point at files from earlier messages; a watch says it takes no other timing;
-    // read_file takes a line range; ask_user carries the content being decided about;
+    // read_file takes a line range; ask_user carries the content being decided about, and says
+    // the person can still type their own answer;
     // search_history lists earlier tool work by kind without a keyword; message_bot is the
     // most used deferred tool, and a lookup before each message cost a step; schedule_create says
     // whether a routine runs in its chat, and takes the events (webhook, Git, chat, email) a
@@ -68,7 +69,7 @@ describe("built-in tool bridge", () => {
     // without abbreviating; shell says to open the bot's screen when a graphical program
     // finds no display; schedule_create takes an end date for a repeat or watch, so a limited
     // stretch is one routine.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(38_319);
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(38_322);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );
