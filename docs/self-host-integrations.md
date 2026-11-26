@@ -157,6 +157,12 @@ organization. [Composio Connect](https://docs.composio.dev/docs/composio-connect
 personal MCP connection at `https://connect.composio.dev/mcp`. It supports browser sign-in for
 compatible MCP clients and a consumer key for header-based clients.
 
+Browsing and importing plugins reads public repositories through the GitHub API, which gives
+anonymous callers a small hourly quota per address. If plugin previews start to fail, set
+`PLUGIN_GITHUB_TOKEN` on the API. The token is sent only to `api.github.com`.
+Anyone who can browse or import plugins triggers requests using this token, so use only
+a classic token with no scopes to avoid granting private repo or other access.
+
 A call on a shared mailbox is refused when the Outlook sign-in does not request the matching
 `.Shared` permission, and a connection made through Composio's default Outlook setup has been seen
 to lack it. To let a bot read or send from one, create an Outlook auth config in the Composio
