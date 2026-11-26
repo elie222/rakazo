@@ -3,19 +3,25 @@ import * as z from "zod";
 import { Id } from "../ids.js";
 import { otherSiteOrigin } from "./vault-items.js";
 
-export const OrganizationLoginOrigin = z
+const signInPage = z
   .string()
   .trim()
   .max(2048)
-  .refine((site) => URL.canParse(site) && new URL(site).protocol === "https:", {
-    message: "Enter an HTTPS site",
-  })
-  .transform((site, ctx) => {
-    const origin = otherSiteOrigin(site);
-    if (origin) return origin;
-    ctx.addIssue({ code: "custom", message: "Enter an HTTPS site without credentials" });
-    return z.NEVER;
-  });
+  .refine(
+    (site) => {
+      if (!URL.canParse(site)) return false;
+      const url = new URL(site);
+      return url.protocol === "https:" && !url.port;
+    },
+    { message: "Protected sign-in requires an HTTPS site on port 443" },
+  );
+
+export const OrganizationLoginOrigin = signInPage.transform((site, ctx) => {
+  const origin = otherSiteOrigin(site);
+  if (origin) return origin;
+  ctx.addIssue({ code: "custom", message: "Enter an HTTPS site without credentials" });
+  return z.NEVER;
+});
 
 const loginName = z.string().trim().min(1).max(100);
 const botIds = z.array(Id).max(100);
@@ -40,7 +46,7 @@ export const organizationVaultRpc = {
     .input(
       loginId
         .extend({
-          url: z.string().trim().min(1).max(2048),
+          url: signInPage,
           usernameLabel: controlName,
           username: z.string().min(1).max(4096),
           passwordLabel: controlName,
