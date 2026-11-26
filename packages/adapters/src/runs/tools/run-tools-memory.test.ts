@@ -50,13 +50,30 @@ it.each(["Provider-generated context", ""])(
       bot: { id: "bot-1" },
       context: {},
       state: { tainted: false },
-      memory: { semantic: { reflect: vi.fn(async () => ({ ok: true, value: text })) } },
+      memory: {
+        scope: "isolated",
+        semantic: { reflect: vi.fn(async () => ({ ok: true, value: text })) },
+      },
       deps: { prisma: { run: { updateMany: vi.fn(async () => ({ count: 1 })) } } },
     };
     await memoryTools.reflect_memory!(ctx as never, { args: { query: "Question" } } as never);
     expect(ctx.state.tainted).toBe(Boolean(text));
   },
 );
+
+it("passes the bot's memory scope to the reflect provider", async () => {
+  const reflect = vi.fn(async () => ({ ok: true, value: "" }));
+  const ctx = {
+    bot: { id: "bot-1" },
+    context: {},
+    memory: { scope: "shared", semantic: { reflect } },
+  };
+  await memoryTools.reflect_memory!(ctx as never, { args: { query: "Question" } } as never);
+  expect(reflect).toHaveBeenCalledWith(
+    { query: "Question", botId: "bot-1", scope: "shared" },
+    ctx.context,
+  );
+});
 
 describe("deleting a shared memory document", () => {
   const del = (path: string, documents: Array<{ id: string; path: string }>, removed = true) => {
