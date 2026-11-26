@@ -46,6 +46,8 @@ const isolated = include
   );
 
 export default defineConfig({
+  // React Native reads this at import time, and a mobile test that loads it fails without it.
+  define: { __DEV__: "true" },
   // Mobile imports its translation catalogs as `.po` files.
   // Some runs start outside the repo, so the config is named rather than searched for.
   plugins: [lingui({ configPath: path.join(root, "lingui.config.ts") })],
