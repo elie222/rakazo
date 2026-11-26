@@ -22,6 +22,7 @@ export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
   },
   { id: "linear", name: "Linear", url: "https://mcp.linear.app/mcp", signIn: true, featured: true },
   { id: "notion", name: "Notion", url: "https://mcp.notion.com/mcp", signIn: true, featured: true },
+  { id: "postiz", name: "Postiz", url: "https://api.postiz.com/mcp-oauth-dynamic", signIn: true },
   // A self-hosted Executor serves the same endpoint at its own origin, so the URL stays editable.
   { id: "executor", name: "Executor", defaultUrl: "https://mcp.executor.sh/mcp", signIn: true },
 ];
