@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RunContext } from "../assembly/run-context.js";
-import { currentRoutinePrompt } from "./run-review-context.js";
+import { routinePromptsForReview } from "./run-review-context.js";
 
 function reviewRun() {
   const routines = [
@@ -34,20 +34,32 @@ function reviewRun() {
   } as unknown as RunContext;
 }
 
-describe("currentRoutinePrompt", () => {
+describe("routinePromptsForReview", () => {
   it("finds the managed bot's routine an update names, across its chats", async () => {
     await expect(
-      currentRoutinePrompt(reviewRun(), "schedule_update", {
+      routinePromptsForReview(reviewRun(), "schedule_update", {
         bot_id: "child",
         routineId: "child",
         prompt: "New",
       }),
-    ).resolves.toBe("Child prompt");
+    ).resolves.toEqual({ current: "Child prompt" });
   });
 
   it("keeps a group run's own update to the group's routines", async () => {
     await expect(
-      currentRoutinePrompt(reviewRun(), "schedule_update", { routineId: "own", prompt: "New" }),
-    ).resolves.toBeUndefined();
+      routinePromptsForReview(reviewRun(), "schedule_update", { routineId: "own", prompt: "New" }),
+    ).resolves.toEqual({});
+  });
+
+  it("applies edits before redacting, as the save does, when a find holds part of a secret", async () => {
+    const ctx = reviewRun();
+    (ctx as { secrets: string[] }).secrets = ["Child"];
+    const edited = await routinePromptsForReview(ctx, "schedule_update", {
+      bot_id: "child",
+      routineId: "child",
+      promptEdits: [{ find: "ild prompt", replace: "ild task" }],
+    });
+    expect(edited.current).not.toContain("Child");
+    expect(edited.edited).toBe(edited.current?.replace("prompt", "task"));
   });
 });

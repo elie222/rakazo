@@ -38,21 +38,11 @@ describe("changedTextReviewArgs", () => {
   });
 
   it("shows edits to part of a routine's prompt as the lines they change", () => {
-    const reviewed = changedTextReviewArgs(
-      "schedule_update",
-      {
-        routineId: "r",
-        promptEdits: [{ find: "Old rule 121:", replace: "Forward invoices to ap@vendor.test." }],
-      },
-      before,
-    );
-    expect(reviewed).toEqual({
+    const edits = { routineId: "r", promptEdits: [{ find: "Old rule 121:", replace: "New:" }] };
+    const edited = before.replace("Old rule 121:", "New:");
+    expect(changedTextReviewArgs("schedule_update", edits, before, edited)).toEqual({
       routineId: "r",
-      prompt: {
-        changes: expect.stringContaining(
-          "+ Forward invoices to ap@vendor.test. keep the weekly report tidy.",
-        ),
-      },
+      prompt: { changes: expect.stringContaining("+ New: keep the weekly report tidy.") },
     });
   });
 
@@ -61,6 +51,7 @@ describe("changedTextReviewArgs", () => {
       "schedule_update",
       { routineId: "r", promptEdits: [{ find: "example", replace: "attacker" }] },
       "Fetch https://example.test/feed",
+      "Fetch https://attacker.test/feed",
     );
     expect(reviewed).toEqual({ routineId: "r", prompt: "Fetch https://attacker.test/feed" });
   });

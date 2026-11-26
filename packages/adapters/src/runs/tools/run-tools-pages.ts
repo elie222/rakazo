@@ -25,7 +25,7 @@ import { bestEffort } from "@rakazo/logging";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
-import { applyTextEdits, parseTextEdits } from "../../tools/text-edits.js";
+import { editText } from "../../tools/text-edits.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent, neverAsks } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
@@ -72,10 +72,8 @@ function proposedSource(
 ): { ok: true; source: string } | { ok: false; error: string } {
   if (!editsGiven(args))
     return { ok: true, source: argumentGiven(args.source) ? String(args.source) : current };
-  const edits = parseTextEdits(args.edits, "edits");
-  if (typeof edits === "string") return { ok: false, error: edits };
-  const applied = applyTextEdits(current, edits, "the page");
-  return applied.ok ? { ok: true, source: applied.text } : applied;
+  const edited = editText(current, args.edits, "edits", "the page");
+  return edited.ok ? { ok: true, source: edited.text } : edited;
 }
 
 /** Text kept on each side of a change inside a line, so the card shows where it is. */

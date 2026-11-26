@@ -16,7 +16,7 @@ import { changedTextReviewArgs } from "../../approvals/changed-text-review-args.
 import type { RunContext, RunTrust } from "../assembly/run-context.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
 import { autoReviewCheckerProvider, includedAutoReviewChecker } from "../turn/run-auto-review.js";
-import { currentRoutinePrompt, reviewOwnerContext } from "./run-review-context.js";
+import { reviewOwnerContext, routinePromptsForReview } from "./run-review-context.js";
 import { auditToolCall } from "./run-tool-audit.js";
 import type { AppliedEffect } from "./run-tool-gate.js";
 
@@ -95,9 +95,10 @@ export async function reviewToolCall(
             review.pageUrl && redactSecrets(review.pageUrl, ctx.secrets),
           )
         : redacted;
+    const routine = targetArgs === redacted ? await routinePromptsForReview(ctx, name, args) : {};
     const reviewArgs =
       targetArgs === redacted
-        ? changedTextReviewArgs(name, redacted, await currentRoutinePrompt(ctx, name, args))
+        ? changedTextReviewArgs(name, redacted, routine.current, routine.edited)
         : targetArgs;
     const reviewRequest: AutoReviewRequest = {
       toolName: name,

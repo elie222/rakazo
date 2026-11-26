@@ -1,8 +1,9 @@
-import { redactSecrets, writesRoutinePrompt } from "@rakazo/core";
+import { redactSecrets, textEditsGiven, writesRoutinePrompt } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { reviewOwnerMessages } from "../../approvals/review-owner-messages.js";
 import { outsideOnlyTargets, taskPromptIsOutside } from "../../approvals/review-target-sources.js";
 import { findRoutinesTarget } from "../../routines/routine-target.js";
+import { editText } from "../../tools/text-edits.js";
 import type { RunContext } from "../assembly/run-context.js";
 
 /**
@@ -39,18 +40,20 @@ export async function reviewOwnerContext(
 }
 
 /**
- * The stored prompt a routine edit replaces, redacted like the call, so the review can show only
- * the change. Found as the update finds it (this bot's or a managed bot's routine, this thread's in
- * a group); a failed lookup leaves the review of the whole new prompt.
+ * The stored prompt a routine edit replaces and, for a call that sends edits, the prompt they make
+ * of it, each redacted like the call, so the review can show only the change. Edits are applied
+ * before redacting, as the save applies them. Found as the update finds it (this bot's or a
+ * managed bot's routine, this thread's in a group); a failed lookup leaves the review of the call
+ * as it was sent.
  */
-export async function currentRoutinePrompt(
+export async function routinePromptsForReview(
   ctx: RunContext,
   toolName: string,
   args: Record<string, unknown>,
-): Promise<string | undefined> {
-  if (toolName !== "schedule_update" || !writesRoutinePrompt(args)) return undefined;
+): Promise<{ current?: string; edited?: string }> {
+  if (toolName !== "schedule_update" || !writesRoutinePrompt(args)) return {};
   const routineId = typeof args.routineId === "string" ? args.routineId.trim() : "";
-  if (!routineId) return undefined;
+  if (!routineId) return {};
   const routine = await bestEffort(
     "auto_review.routine_prompt",
     findRoutinesTarget(
@@ -71,5 +74,12 @@ export async function currentRoutinePrompt(
           }),
     ),
   );
-  return routine ? redactSecrets(routine.prompt, ctx.secrets) : undefined;
+  if (!routine) return {};
+  const edited = textEditsGiven(args.promptEdits)
+    ? editText(routine.prompt, args.promptEdits, "promptEdits", "the prompt")
+    : undefined;
+  return {
+    current: redactSecrets(routine.prompt, ctx.secrets),
+    ...(edited?.ok ? { edited: redactSecrets(edited.text, ctx.secrets) } : {}),
+  };
 }

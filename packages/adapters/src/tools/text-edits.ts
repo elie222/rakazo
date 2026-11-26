@@ -1,9 +1,8 @@
 const MAX_EDITS = 50;
 
-export type TextEdit = { find: string; replace: string };
+type TextEdit = { find: string; replace: string };
 
-/** The edits a call sent under `argument`, or why they cannot be read. */
-export function parseTextEdits(value: unknown, argument: string): TextEdit[] | string {
+function parseTextEdits(value: unknown, argument: string): TextEdit[] | string {
   if (!Array.isArray(value) || value.length === 0) return `${argument} must be a non-empty list.`;
   if (value.length > MAX_EDITS) return `Send at most ${MAX_EDITS} edits at once.`;
   const edits: TextEdit[] = [];
@@ -18,14 +17,18 @@ export function parseTextEdits(value: unknown, argument: string): TextEdit[] | s
 }
 
 /**
- * All edits or none: each `find` must occur exactly once in the result of the edits before it.
- * `where` names the text in an error, as in "the page".
+ * `text` with the edits a call sent under `argument` applied, all or none: each `find` must occur
+ * exactly once in the result of the edits before it. `where` names the text in an error, as in
+ * "the page".
  */
-export function applyTextEdits(
+export function editText(
   text: string,
-  edits: readonly TextEdit[],
+  value: unknown,
+  argument: string,
   where: string,
 ): { ok: true; text: string } | { ok: false; error: string } {
+  const edits = parseTextEdits(value, argument);
+  if (typeof edits === "string") return { ok: false, error: edits };
   let next = text;
   for (const [index, edit] of edits.entries()) {
     const label = `Edit ${index + 1}`;

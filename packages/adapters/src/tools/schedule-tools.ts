@@ -54,7 +54,7 @@ import { localDateTime } from "../runs/assembly/current-time.prompt.js";
 import type { ScheduleUnit } from "./schedule-intervals.js";
 import { intervalRangeError } from "./schedule-intervals.js";
 import { describeRoutineTiming, routineChanges } from "./schedule-update-view.js";
-import { applyTextEdits, parseTextEdits } from "./text-edits.js";
+import { editText } from "./text-edits.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
@@ -1176,9 +1176,7 @@ export async function updateScheduleFromTool(
   }
 
   if (editsPrompt) {
-    const edits = parseTextEdits(input.promptEdits, "promptEdits");
-    if (typeof edits === "string") return { error: edits };
-    const edited = applyTextEdits(existing.prompt, edits, "the prompt");
+    const edited = editText(existing.prompt, input.promptEdits, "promptEdits", "the prompt");
     if (!edited.ok) return { error: edited.error };
     prompt = edited.text.trim();
     if (!prompt) return { error: "prompt cannot be empty." };
