@@ -2,7 +2,12 @@ import { useLingui } from "@lingui/react/macro";
 import { useListSearch, useTimeout } from "@rakazo/chat-ui/hooks";
 import { withConnectionName } from "@rakazo/contracts";
 import type { ChatModelChoice } from "@rakazo/core";
-import { groupModelChoices, modelChoiceSearchText, modelMark } from "@rakazo/core";
+import {
+  groupModelChoices,
+  latestModelChoices,
+  modelChoiceSearchText,
+  modelMark,
+} from "@rakazo/core";
 import { useNavigation } from "expo-router";
 import type { ReactElement } from "react";
 import {
@@ -127,29 +132,42 @@ export function ModelPickerList({
     });
   }, [navigation, t, changeQuery, showSearch]);
 
+  // Older versions of each model wait behind Show more, one provider at a time.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const sections = useMemo(() => {
     if (!choices) return [];
     const models = groupModelChoices(
       visible.flatMap((row) => (row.connect ? [] : [row.choice])),
       "",
-    ).map((section) => ({
-      ...section,
-      connect: false,
-      heading:
-        providerLabel && section.heading === providerLabel
-          ? undefined
-          : providerLabel && section.heading?.endsWith(withConnectionName("", providerLabel))
-            ? section.heading.slice(0, -withConnectionName("", providerLabel).length)
-            : section.heading,
-    }));
+    ).map((section) => {
+      const { latest, older } = section.heading
+        ? latestModelChoices(section.data, selectedKey)
+        : { latest: section.data, older: [] };
+      const collapsed = older.length > 0 && !expanded.has(section.key);
+      return {
+        ...section,
+        data: collapsed ? latest : section.data,
+        collapsed,
+        connect: false,
+        heading:
+          providerLabel && section.heading === providerLabel
+            ? undefined
+            : providerLabel && section.heading?.endsWith(withConnectionName("", providerLabel))
+              ? section.heading.slice(0, -withConnectionName("", providerLabel).length)
+              : section.heading,
+      };
+    });
     const connect = groupModelChoices(
       visible.flatMap((row) => (row.connect ? [row.choice] : [])),
       "",
     ).flatMap((section) => section.data);
     return connect.length
-      ? [...models, { key: "connect", heading: undefined, connect: true, data: connect }]
+      ? [
+          ...models,
+          { key: "connect", heading: undefined, collapsed: false, connect: true, data: connect },
+        ]
       : models;
-  }, [choices, visible, providerLabel]);
+  }, [choices, visible, providerLabel, selectedKey, expanded]);
   const opensAtTop = Boolean(header);
   useLayoutEffect(() => {
     const state = initialScroll.current;
@@ -254,7 +272,22 @@ export function ModelPickerList({
           </View>
         ) : null
       }
-      renderSectionFooter={() => <View style={styles.sectionGap} />}
+      renderSectionFooter={({ section }) => (
+        <>
+          {section.collapsed ? (
+            <View style={[styles.cell, styles.last]}>
+              <View style={styles.separator} />
+              <SettingsRow
+                accessibilityRole="button"
+                title={t`Show more`}
+                tinted
+                onPress={() => setExpanded(new Set(expanded).add(section.key))}
+              />
+            </View>
+          ) : null}
+          <View style={styles.sectionGap} />
+        </>
+      )}
       keyExtractor={(choice) => choice.key || "space-default"}
       ItemSeparatorComponent={() => (
         <View style={styles.cell}>
@@ -285,7 +318,7 @@ export function ModelPickerList({
             style={[
               styles.cell,
               index === 0 && styles.first,
-              index === section.data.length - 1 && styles.last,
+              index === section.data.length - 1 && !section.collapsed && styles.last,
             ]}
           >
             <SettingsRow

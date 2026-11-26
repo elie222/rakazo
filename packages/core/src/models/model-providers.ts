@@ -451,11 +451,49 @@ export function groupModelChoices(choices: readonly ChatModelChoice[], query: st
 }
 
 /**
+ * Splits a sorted section into the newest model of each family and the older ones behind them.
+ * The selected model and a connection's own ordered models always stay in view.
+ */
+export function latestModelChoices<C extends ChatModelChoice>(
+  choices: readonly C[],
+  selectedKey: string,
+): { latest: C[]; older: C[] } {
+  const seen = new Set<string>();
+  const latest: C[] = [];
+  const older: C[] = [];
+  for (const choice of choices) {
+    const family = choice.preserveModelOrder || !choice.modelId ? null : modelFamily(choice);
+    if (family === null || !seen.has(family) || choice.key === selectedKey) latest.push(choice);
+    else older.push(choice);
+    if (family !== null) seen.add(family);
+  }
+  return { latest, older };
+}
+
+/** A model id without its version, date or release tag: `claude-sonnet-4-5-20250929` is `claude-sonnet`. */
+function modelFamily(choice: ChatModelChoice): string {
+  const id = (choice.modelId ?? "").toLowerCase();
+  const name = id.slice(id.lastIndexOf("/") + 1);
+  const version = MODEL_VERSION.exec(name);
+  const unversioned = version
+    ? name.slice(0, version.index) + name.slice(version.index + version[0].length)
+    : name;
+  const family = unversioned
+    .replace(/[-_.]\d{4,8}$/, "")
+    .replace(/[-_.:](latest|preview)$/, "")
+    .replace(/[-_.:]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `${choice.provider ?? ""}:${choice.providerLabel ?? ""}:${family}`;
+}
+
+const MODEL_VERSION = /\d+(?:[.-]\d{1,2}(?![\da-z]))*/i;
+
+/**
  * The version a model id starts with, such as `[6, 1]` for `gpt-6.1-sol` or `[4, 5]` for
  * `x-4-5`. A part followed by letters is a size or variant, as in `llama-3-8b`, not a version.
  */
 function modelVersion(id: string): number[] {
-  const match = /\d+(?:[.-]\d{1,2}(?![\da-z]))*/i.exec(id);
+  const match = MODEL_VERSION.exec(id);
   return match ? match[0].split(/[.-]/).map(Number) : [];
 }
 

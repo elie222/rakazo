@@ -1,7 +1,12 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useListSearch } from "@rakazo/chat-ui/hooks";
 import type { ChatModelChoice, ModelMark } from "@rakazo/core";
-import { groupModelChoices, modelChoiceSearchText, modelMark } from "@rakazo/core";
+import {
+  groupModelChoices,
+  latestModelChoices,
+  modelChoiceSearchText,
+  modelMark,
+} from "@rakazo/core";
 import {
   Command,
   CommandEmpty,
@@ -78,12 +83,15 @@ export function ChatModelPicker({
     text: modelChoiceSearchText,
   });
   const sections = useMemo(() => groupModelChoices(visible, ""), [visible]);
+  // Older versions of each model wait behind Show more, one provider at a time.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const selected = choices.find((choice) => choice.key === value) ?? choices[0];
   const textOnly = selected?.images === false;
   const model = selectedLabel ?? selected?.label ?? "";
 
   // A list closed by its owner (a keyboard shortcut) starts unfiltered next time too.
   if (!open && query) setQuery("");
+  if (!open && expanded.size) setExpanded(new Set());
 
   function openChange(next: boolean) {
     setOpen(next);
@@ -167,45 +175,60 @@ export function ChatModelPicker({
               <CommandEmpty>
                 <Trans>No matching models</Trans>
               </CommandEmpty>
-              {sections.map((section) => (
-                <CommandGroup
-                  key={section.key}
-                  heading={
-                    section.heading ? (
-                      <span className="flex items-center gap-1.5">
-                        {sectionMark(section.data) ? (
-                          <ModelMarkIcon mark={sectionMark(section.data)} className="size-3" />
-                        ) : null}
-                        {section.heading}
-                      </span>
-                    ) : undefined
-                  }
-                >
-                  {section.data.map((choice) => (
-                    <CommandItem
-                      key={choice.key}
-                      aria-label={choice.label}
-                      // cmdk falls back to the row's text for an empty value.
-                      value={choice.key || "space-default"}
-                      data-checked={choice.key === value}
-                      aria-describedby={choice.images === false ? imagesHintId : undefined}
-                      onSelect={() => {
-                        onChange(choice.key);
-                        if (!staysOpen?.(choice.key)) openChange(false);
-                      }}
-                    >
-                      <span className="min-w-0 flex-1 truncate">
-                        {choice.title ?? choice.label}
-                      </span>
-                      {choice.images === false ? (
-                        <span className="shrink-0 text-muted-foreground">
-                          <TextOnlyMark />
+              {sections.map((section) => {
+                const { latest, older } = section.heading
+                  ? latestModelChoices(section.data, value)
+                  : { latest: section.data, older: [] };
+                const collapsed = older.length > 0 && !expanded.has(section.key);
+                return (
+                  <CommandGroup
+                    key={section.key}
+                    heading={
+                      section.heading ? (
+                        <span className="flex items-center gap-1.5">
+                          {sectionMark(section.data) ? (
+                            <ModelMarkIcon mark={sectionMark(section.data)} className="size-3" />
+                          ) : null}
+                          {section.heading}
                         </span>
-                      ) : null}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))}
+                      ) : undefined
+                    }
+                  >
+                    {(collapsed ? latest : section.data).map((choice) => (
+                      <CommandItem
+                        key={choice.key}
+                        aria-label={choice.label}
+                        // cmdk falls back to the row's text for an empty value.
+                        value={choice.key || "space-default"}
+                        data-checked={choice.key === value}
+                        aria-describedby={choice.images === false ? imagesHintId : undefined}
+                        onSelect={() => {
+                          onChange(choice.key);
+                          if (!staysOpen?.(choice.key)) openChange(false);
+                        }}
+                      >
+                        <span className="min-w-0 flex-1 truncate">
+                          {choice.title ?? choice.label}
+                        </span>
+                        {choice.images === false ? (
+                          <span className="shrink-0 text-muted-foreground">
+                            <TextOnlyMark />
+                          </span>
+                        ) : null}
+                      </CommandItem>
+                    ))}
+                    {collapsed ? (
+                      <CommandItem
+                        value={`more:${section.key}`}
+                        className="text-muted-foreground"
+                        onSelect={() => setExpanded(new Set(expanded).add(section.key))}
+                      >
+                        {t`Show more`}
+                      </CommandItem>
+                    ) : null}
+                  </CommandGroup>
+                );
+              })}
               {onConnect ? (
                 <CommandGroup>
                   <CommandItem

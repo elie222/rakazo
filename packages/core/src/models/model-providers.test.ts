@@ -10,6 +10,7 @@ import {
   credentialForModel,
   filterModelChoices,
   groupModelChoices,
+  latestModelChoices,
   pickCatalogModelId,
   popularModelProvidersFirst,
   resolveSelectableModelId,
@@ -549,6 +550,43 @@ describe("groupModelChoices order", () => {
       "model-3",
       "model-2",
     ]);
+  });
+});
+
+describe("latestModelChoices", () => {
+  const connected = connectedModelChoices(
+    [{ provider: "openrouter", label: "OpenRouter" }],
+    [
+      "anthropic/claude-sonnet-4.5",
+      "anthropic/claude-opus-4.5",
+      "anthropic/claude-sonnet-5.5",
+      "anthropic/claude-sonnet-4-5-20250929",
+      "anthropic/claude-sonnet-latest",
+      "anthropic/claude-opus-5.5",
+      "anthropic/claude-haiku-5.5",
+    ].map((id) => ({ provider: "openrouter", providerName: "OpenRouter", id, label: id })),
+  );
+  const section = groupModelChoices(connected, "")[0]!.data;
+  const ids = (choices: readonly { modelId?: string }[]) => choices.map((c) => c.modelId);
+
+  it("keeps the newest model of each family and puts the rest behind it", () => {
+    const { latest, older } = latestModelChoices(section, "");
+    expect(ids(latest)).toEqual([
+      "anthropic/claude-sonnet-5.5",
+      "anthropic/claude-opus-5.5",
+      "anthropic/claude-haiku-5.5",
+    ]);
+    expect(ids(older)).toEqual([
+      "anthropic/claude-sonnet-4.5",
+      "anthropic/claude-opus-4.5",
+      "anthropic/claude-sonnet-4-5-20250929",
+      "anthropic/claude-sonnet-latest",
+    ]);
+  });
+
+  it("keeps an older selected model in view", () => {
+    const { latest } = latestModelChoices(section, "openrouter::anthropic/claude-opus-4.5");
+    expect(ids(latest)).toContain("anthropic/claude-opus-4.5");
   });
 });
 
