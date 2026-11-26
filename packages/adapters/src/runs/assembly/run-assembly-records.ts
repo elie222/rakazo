@@ -36,6 +36,7 @@ import { loadPurchaseRedactions } from "../../payments/purchase-service.js";
 import {
   mergeConnectedPlugins,
   needsLivePluginSync,
+  personalComposioConnections,
 } from "../../providers/integration/composio/composio-connector.js";
 import { routineRunUsesOwnerComputer } from "../../routines/routine-owner-computer.js";
 import { LEGACY_HISTORY_WINDOW_SIZE } from "../../runtime/context/history-compaction.js";
@@ -384,9 +385,7 @@ export async function connectRun(
   const onShutdown = () => runAbortController?.abort(deps.shutdownSignal?.reason);
   deps.shutdownSignal?.addEventListener("abort", onShutdown);
   hold.detachShutdown = () => deps.shutdownSignal?.removeEventListener("abort", onShutdown);
-  const composioRows = storedConnections.filter(
-    (connection) => !connection.organizationId && connection.connectorId === "composio",
-  );
+  const composioRows = personalComposioConnections(storedConnections);
   let liveSlugs: string[] = [];
   if (needsLivePluginSync(composioRows)) {
     const listing = await loadLivePlugins(deps.listConnectedPlugins, run.userId);

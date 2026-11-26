@@ -83,9 +83,9 @@ export function PluginsOverlay({
   const boundSpaceId = useBoundSpaceId();
   const { organizations, activeOrganizationId } = useOrganizations();
   const organizationName = connectionSharingOrganization(
-    boundSpaceId === undefined
-      ? organizations.find(({ id }) => id === activeOrganizationId)
-      : organizationOfSpace(organizations, boundSpaceId),
+    boundSpaceId
+      ? organizationOfSpace(organizations, boundSpaceId)
+      : organizations.find(({ id }) => id === activeOrganizationId),
   );
   const spaceCount = useOwnSpaces().length;
   const [sourceError, setSourceError] = useState<string | null>(null);

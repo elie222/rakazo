@@ -344,20 +344,19 @@ export async function markAppConnected(
     catalog.filter((item) => item.connectorId === connectorId),
     provider,
   );
-  const shared =
-    !entry?.connected || organizationConnectionId
-      ? await deps.prisma.connection.findFirst({
-          where: {
-            ...organizationItemIn(actor),
-            ...(organizationConnectionId ? { id: organizationConnectionId } : {}),
-            connectorId,
-            provider: entry?.slug ?? provider,
-            status: "connected",
-          },
-          select: { id: true },
-        })
-      : null;
-  if (!entry?.connected && !shared) return;
+  const shared = organizationConnectionId
+    ? await deps.prisma.connection.findFirst({
+        where: {
+          ...organizationItemIn(actor),
+          id: organizationConnectionId,
+          connectorId,
+          provider: { equals: entry?.slug ?? provider, mode: "insensitive" },
+          status: "connected",
+        },
+        select: { id: true },
+      })
+    : null;
+  if (organizationConnectionId ? !shared : !entry?.connected) return;
   const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
   const updates = await deps.prisma.$transaction(async (tx) => {
     // Two authorizations may finish together on an onboarding message with multiple cards.
@@ -384,11 +383,7 @@ export async function markAppConnected(
     const events = [];
     for (const message of messages) {
       const next = changeMessageBlocks(message, (block) => {
-        if (
-          block.kind === "app_connect" &&
-          block.organizationConnectionId &&
-          block.organizationConnectionId !== shared?.id
-        )
+        if (block.kind === "app_connect" && block.organizationConnectionId !== shared?.id)
           return block;
         return connectedAppBlock(
           block,

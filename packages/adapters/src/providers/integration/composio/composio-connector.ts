@@ -360,6 +360,12 @@ export function needsLivePluginSync(rows: { status: string }[]): boolean {
   return rows.some((row) => row.status === "pending" || row.status === "error");
 }
 
+export function personalComposioConnections<
+  T extends { connectorId: string; organizationId?: string | null },
+>(connections: readonly T[]): T[] {
+  return connections.filter((row) => row.connectorId === "composio" && !row.organizationId);
+}
+
 export function mergeConnectedPlugins(
   rows: { provider: string; displayName: string; status?: string }[],
   liveSlugs: string[],

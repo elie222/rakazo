@@ -148,6 +148,27 @@ it("reads a request and a stored card that name no connector as the server's def
   });
 });
 
+it("completes only the matching shared card when the personal account is also connected", async () => {
+  const { deps, actor, tx } = fixture([
+    { connectorId: "fixture", slug: "slack", name: "Slack", connected: true },
+  ]);
+  Object.assign(deps.prisma, { connection: { findFirst: vi.fn(async () => ({ id: "shared" })) } });
+  const personal = {
+    kind: "app_connect",
+    connectorId: "fixture",
+    provider: "slack",
+    name: "Slack",
+    status: "pending",
+  };
+  const shared = { ...personal, organizationConnectionId: "shared" };
+  tx.message.findMany = vi.fn(async () => [{ id: "cards", blocks: [personal, shared] }]) as never;
+  await markAppConnected(deps, actor, "bot", "slack", "fixture", undefined, undefined, "shared");
+  expect(tx.message.update).toHaveBeenCalledWith({
+    where: { id: "cards" },
+    data: { blocks: [personal, { ...shared, status: "connected" }] },
+  });
+});
+
 it("dismisses the pending focus card under the thread-lock budget", async () => {
   const { deps, actor, tx } = fixture([]);
   await dismissFocus(deps, actor, "bot");

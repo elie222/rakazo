@@ -89,7 +89,11 @@ export function useConnectionActions({
     );
   }
 
-  async function notifyAppConnected(item: ConnectionCatalogItem, focused: () => boolean) {
+  async function notifyAppConnected(
+    item: ConnectionCatalogItem,
+    focused: () => boolean,
+    organizationConnectionId?: string,
+  ) {
     const isCurrent = captureSessionScope();
     const botId = lastBotId || (await loadLastBotId());
     if (!botId || !isCurrent() || !focused()) return;
@@ -100,6 +104,7 @@ export function useConnectionActions({
         botId,
         provider: item.slug,
         connectorId: item.connectorId,
+        ...(organizationConnectionId && { organizationConnectionId }),
       }),
     );
   }
@@ -137,7 +142,9 @@ export function useConnectionActions({
         // reads nothing again, so a queued app starts at once.
         if (result.status === "aborted") throw new ConnectStopped();
         if (result.status === "connected" && result.row) await updateAccount(result.row);
-        return { status: result.status, focused };
+        const organizationConnectionId =
+          target !== "me" && result.status === "connected" ? result.connectionId : undefined;
+        return { status: result.status, focused, organizationConnectionId };
       } catch (reason) {
         if (controller.signal.aborted) throw new ConnectStopped();
         throw reason;
@@ -146,8 +153,8 @@ export function useConnectionActions({
       }
     },
     stale,
-    onSaved: ({ status, focused }, { item }) => {
-      if (status === "connected") void notifyAppConnected(item, focused);
+    onSaved: ({ status, focused, organizationConnectionId }, { item }) => {
+      if (status === "connected") void notifyAppConnected(item, focused, organizationConnectionId);
       if (status === "pending")
         Alert.alert(
           t`Connection pending`,

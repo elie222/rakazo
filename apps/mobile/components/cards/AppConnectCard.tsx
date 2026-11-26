@@ -1,7 +1,7 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { MessageBlock } from "@rakazo/contracts";
-import { appConnectedInput, appConnectLabel, waitForSignIn } from "@rakazo/core";
+import { appConnectedInput, appConnectRequest, appConnectState, waitForSignIn } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
@@ -38,12 +38,10 @@ export function AppConnectCard({
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
   const [error, setError] = useState<string | null>(null);
   const connectionAttempt = useRef<AbortController | null>(null);
-  const shared = useScreenQuery(rpcQuery("connections/list"), {
+  const connections = useScreenQuery(rpcQuery("connections/list"), {
     enabled: Boolean(block.organizationConnectionId),
-  }).data?.find((row) => row.id === block.organizationConnectionId);
-  const canAuthorize = !block.organizationConnectionId || shared?.manageable === true;
-  const status =
-    block.status === "connected" || shared?.status === "connected" ? "connected" : localStatus;
+  }).data;
+  const { canAuthorize, status } = appConnectState(block, connections, localStatus);
   const view = appConnectPresentation({ ...block, status }, busy);
 
   useEffect(() => () => connectionAttempt.current?.abort(), []);
@@ -56,19 +54,7 @@ export function AppConnectCard({
     setBusy(true);
     setError(null);
     try {
-      const request = block.organizationConnectionId
-        ? {
-            procedure: "connections/reconnectOrganization" as const,
-            input: { connectionId: block.organizationConnectionId },
-          }
-        : {
-            procedure: "connections/begin" as const,
-            input: {
-              connectorId: block.connectorId,
-              provider: block.provider,
-              displayName: appConnectLabel(block),
-            },
-          };
+      const request = appConnectRequest(block);
       const started = await rpc(request.procedure, request.input, { signal: controller.signal });
       if (controller.signal.aborted) return;
       if (started.authorizationUrl) await Linking.openURL(started.authorizationUrl);

@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useLinkPrompt } from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
-import { appConnectedInput, appConnectLabel, waitForSignIn } from "@rakazo/core";
+import { appConnectedInput, appConnectRequest, appConnectState, waitForSignIn } from "@rakazo/core";
 import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
@@ -155,13 +155,11 @@ export function AppConnectCard({
   const connectionAttempt = useRef<AbortController | null>(null);
   const readOnReturn = useRef<(() => void) | null>(null);
   const queries = useSpaceQueries();
-  const shared = useQuery(
+  const connections = useQuery(
     queries.connections.list.queryOptions({ enabled: Boolean(block.organizationConnectionId) }),
     queryClient,
-  ).data?.find((row) => row.id === block.organizationConnectionId);
-  const canAuthorize = !block.organizationConnectionId || shared?.manageable === true;
-  const status =
-    block.status === "connected" || shared?.status === "connected" ? "connected" : localStatus;
+  ).data;
+  const { canAuthorize, status } = appConnectState(block, connections, localStatus);
   useEffect(() => () => connectionAttempt.current?.abort(), []);
   useEventListener(window, "focus", () => readOnReturn.current?.());
 
@@ -173,15 +171,11 @@ export function AppConnectCard({
     setBusy(true);
     setError(null);
     try {
-      const started = block.organizationConnectionId
-        ? await rpc.connections.reconnectOrganization({
-            connectionId: block.organizationConnectionId,
-          })
-        : await rpc.connections.begin({
-            connectorId: block.connectorId,
-            provider: block.provider,
-            displayName: appConnectLabel(block),
-          });
+      const request = appConnectRequest(block);
+      const started =
+        request.procedure === "connections/reconnectOrganization"
+          ? await rpc.connections.reconnectOrganization(request.input)
+          : await rpc.connections.begin(request.input);
       if (started.authorizationUrl) {
         window.open(started.authorizationUrl, "rakazo-app-connect", "popup,width=560,height=720");
       }

@@ -125,10 +125,7 @@ test("an owner invites someone to the organization, who joins with a private Spa
 
     await inviteePage.getByRole("button", { name: "Connect apps", exact: true }).click();
     const memberIntegrations = inviteePage.getByRole("dialog", { name: "Integrations" });
-    const shared = memberIntegrations
-      .getByTestId("featured-connectors")
-      .getByText("Gmail", { exact: true })
-      .locator("xpath=ancestor::*[.//button][1]");
+    const shared = memberIntegrations.getByTestId("connection-tile-gmail");
     await expect(shared.getByText("Organization", { exact: true })).toBeVisible();
     await shared.getByRole("button", { name: "Added", exact: true }).click();
     const memberDetail = memberIntegrations.getByTestId("connection-detail");

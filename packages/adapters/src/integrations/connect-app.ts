@@ -7,7 +7,7 @@ import {
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort } from "@rakazo/logging";
 import { loadOrganizationReconnectCheck } from "./connection-context.js";
 import { DEFAULT_CONNECTOR_ID } from "./connector-registry.js";
 
@@ -64,18 +64,19 @@ export async function connectApp(
   );
   const shared = matching?.find((row) => row.organizationId);
   const orgOnly = shared && !matching?.some((row) => !row.organizationId);
-  const reconnect =
+  const checkShared =
     orgOnly && provider
-      ? await loadOrganizationReconnectCheck(provider, {
-          ...context,
-          organizationId: shared.organizationId,
-        })
-          .then((stale) => stale({ provider: entry.slug, providerRef: shared.providerRef ?? null }))
-          .catch((error) => {
-            getLogger().warn("Organization app sign-in could not be checked", { error });
-            return false;
-          })
-      : entry.connected && ((await provider?.needsReconnect?.(context, entry.slug)) ?? false);
+      ? await bestEffort(
+          "check organization app sign-in",
+          loadOrganizationReconnectCheck(provider, {
+            ...context,
+            organizationId: shared.organizationId,
+          }),
+        )
+      : undefined;
+  const reconnect = orgOnly
+    ? checkShared?.({ provider: entry.slug, providerRef: shared.providerRef ?? null })
+    : entry.connected && ((await provider?.needsReconnect?.(context, entry.slug)) ?? false);
   if (entry.connected && !reconnect)
     return {
       status: "connected",

@@ -16,7 +16,7 @@ import {
   managedOrganizationId,
   recordSecurityEvent,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import {
   beginConnection,
@@ -209,49 +209,29 @@ export function connectionsRoutes(ctx: RouterContext) {
               (row) => row.connectorId === connectorId,
             )?.organizationId;
             if (!provider || !organizationId) return;
-            try {
-              const unhealthy = await loadOrganizationReconnectCheck(
+            const unhealthy = await bestEffort(
+              "check organization app sign-ins",
+              loadOrganizationReconnectCheck(
                 provider,
                 connectionContext(
                   { ...context.actor, organizationId },
                   "connections.list",
                   context.signal,
                 ),
-              );
-              reconnect.set(connectorId, unhealthy);
-            } catch (error) {
-              getLogger().warn("Could not check organization app sign-ins", {
-                error: sanitizeIntegrationError(error),
-              });
-            }
+              ),
+            );
+            if (unhealthy) reconnect.set(connectorId, unhealthy);
           }),
         );
-        return Promise.all(
-          rows.map(async (row) => {
-            if (
-              row.organizationId &&
-              row.status === "connected" &&
-              reconnect.get(row.connectorId)?.(row)
-            )
-              return connectionDto({ ...row, status: "error" }, managed);
-            // The browser can finish after its admin left the sign-in screen.
-            if (
-              row.organizationId &&
-              row.organizationId === managed &&
-              row.status === "pending" &&
-              row.providerRef
-            ) {
-              try {
-                return await completeConnection(deps, context, { connectionId: row.id });
-              } catch (error) {
-                getLogger().warn("Could not complete organization app sign-in", {
-                  error: sanitizeIntegrationError(error),
-                });
-              }
-            }
-            return connectionDto(row, managed);
-          }),
-        );
+        return rows.map((row) => {
+          if (
+            row.organizationId &&
+            row.status === "connected" &&
+            reconnect.get(row.connectorId)?.(row)
+          )
+            return connectionDto({ ...row, status: "error" }, managed);
+          return connectionDto(row, managed);
+        });
       }),
       begin: authed.connections.begin.handler(({ context, input }) =>
         beginConnection(deps, context, input),

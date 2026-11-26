@@ -15,6 +15,7 @@ import {
   dropLeftover,
   dropLeftoverAuthorization,
   leftoverAuthorization,
+  loadOrganizationReconnectCheck,
   lockProviderConnectionScope,
   PROVIDER_LOCK_TRANSACTION_MS,
   pickReusableConnection,
@@ -153,11 +154,21 @@ function cleanupBackupAt(): Date {
   return new Date(Date.now() + CONNECTION_CLEANUP_BACKUP_MS);
 }
 
+type ReconnectingConnection = {
+  id: string;
+  provider: string;
+  status: string;
+  providerRef: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export async function beginConnection(
   deps: RouterDeps,
   context: { actor: Actor; signal?: AbortSignal },
   request: { connectorId?: string; provider: string; displayName: string },
   organizationId?: string,
+  reconnecting?: ReconnectingConnection,
 ) {
   const owner = connectionFlowOwner(context.actor, organizationId);
   const owned = connectionOwnerWhere(owner);
@@ -197,60 +208,62 @@ export async function beginConnection(
   // Share the revoke scope lock so a slug-wide remote delete cannot miss a
   // row that is inserted after SELECT FOR UPDATE and before remote revoke.
   // Complete and revoke hold that lock across provider calls, so wait as long as they may.
-  const row = await providerLockTransaction(
-    deps.prisma,
-    providerScopeKey(owner, input.connectorId, input.provider),
-    async (tx) => {
-      await lockProviderConnectionScope(tx, owner, input.connectorId, input.provider);
-      if (organizationId) {
-        await requireConnectionOrganization(tx, context.actor, organizationId);
-        const duplicate = await tx.connection.findFirst({
+  const reserve = () =>
+    providerLockTransaction(
+      deps.prisma,
+      providerScopeKey(owner, input.connectorId, input.provider),
+      async (tx) => {
+        await lockProviderConnectionScope(tx, owner, input.connectorId, input.provider);
+        if (organizationId) {
+          await requireConnectionOrganization(tx, context.actor, organizationId);
+          const duplicate = await tx.connection.findFirst({
+            where: {
+              organizationId,
+              provider: { equals: input.provider, mode: "insensitive" },
+              status: { not: "revoked" },
+            },
+            select: { id: true },
+          });
+          if (duplicate) throw organizationAppTaken();
+        }
+        const existing = await tx.connection.findMany({
           where: {
-            organizationId,
-            provider: { equals: input.provider, mode: "insensitive" },
-            status: { not: "revoked" },
+            ...owned,
+            connectorId: input.connectorId,
+            provider: input.provider,
           },
-          select: { id: true },
+          select: { id: true, status: true },
+          orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
         });
-        if (duplicate) throw organizationAppTaken();
-      }
-      const existing = await tx.connection.findMany({
-        where: {
-          ...owned,
-          connectorId: input.connectorId,
-          provider: input.provider,
-        },
-        select: { id: true, status: true },
-        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-      });
-      const reusable = pickReusableConnection(existing);
-      if (reusable) {
-        return tx.connection.update({
-          where: { id: reusable.id },
+        const reusable = pickReusableConnection(existing);
+        if (reusable) {
+          return tx.connection.update({
+            where: { id: reusable.id },
+            data: {
+              displayName: input.displayName,
+              status: "pending",
+              providerRef: null,
+              metadata: { attempt },
+            },
+          });
+        }
+        return tx.connection.create({
           data: {
+            ...owned,
+            connectorId: input.connectorId,
+            provider: input.provider,
             displayName: input.displayName,
             status: "pending",
-            providerRef: null,
             metadata: { attempt },
           },
         });
-      }
-      return tx.connection.create({
-        data: {
-          ...owned,
-          connectorId: input.connectorId,
-          provider: input.provider,
-          displayName: input.displayName,
-          status: "pending",
-          metadata: { attempt },
-        },
-      });
-    },
-  ).catch((error: unknown) => {
-    logSetup("initial_save_failed");
-    if (organizationId) throwConnectionNameConflict(error);
-    throw error;
-  });
+      },
+    ).catch((error: unknown) => {
+      logSetup("initial_save_failed");
+      if (organizationId) throwConnectionNameConflict(error);
+      throw error;
+    });
+  const row = reconnecting ?? (await reserve());
   connectionId = row.id;
   // Exactly what the first transaction wrote: this attempt's row, with no result saved on it.
   const unsavedRow = {
@@ -265,6 +278,7 @@ export async function beginConnection(
    * begin that reused it as a failed row would drop that record.
    */
   const markFailed = async () => {
+    if (reconnecting) return;
     try {
       await deps.prisma.connection.updateMany({ where: unsavedRow, data: { status: "error" } });
     } catch (error) {
@@ -301,15 +315,18 @@ export async function beginConnection(
     }
     throw error;
   }
-  const leftover = leftoverAuthorization(
-    connector,
-    {
-      ...owner,
-      connectorId: input.connectorId,
-      provider: input.provider,
-    },
-    auth.state,
-  );
+  const scope = { ...owner, connectorId: input.connectorId, provider: input.provider };
+  const leftover = leftoverAuthorization(connector, scope, auth.state);
+  const replacedRef = reconnecting?.providerRef;
+  // A slug-scoped sign-in may reuse an old account. Its cleanup waits for the new row to pin an ID.
+  const replaced =
+    replacedRef && replacedRef !== auth.state
+      ? leftoverAuthorization(
+          connector,
+          scope,
+          auth.state === input.provider ? auth.state : replacedRef,
+        )
+      : undefined;
   // Never send an opaque provider reference or a non-web URI to native URL handlers.
   if (auth.authorizationUrl) {
     const authorizationUrl = normalizedHttpUrl(auth.authorizationUrl);
@@ -333,14 +350,25 @@ export async function beginConnection(
         await lockProviderConnectionScope(tx, owner, input.connectorId, input.provider);
         if (organizationId) await requireConnectionOrganization(tx, context.actor, organizationId);
         const updated = await tx.connection.updateMany({
-          where: unsavedRow,
+          where: reconnecting
+            ? {
+                id: reconnecting.id,
+                ...owned,
+                status: reconnecting.status,
+                updatedAt: reconnecting.updatedAt,
+              }
+            : unsavedRow,
           data: {
             status: auth.authorizationUrl ? "pending" : "connected",
             providerRef: auth.state || null,
             metadata: { state: auth.state, attempt },
           },
         });
-        if (updated.count > 0) return true;
+        if (updated.count > 0) {
+          if (replaced)
+            await deps.jobs.enqueueIn(tx, connectionCleanupJob(replaced, cleanupBackupAt()));
+          return true;
+        }
         // Lost the row: removing what begin left at the provider commits with that outcome.
         if (leftover)
           await deps.jobs.enqueueIn(tx, connectionCleanupJob(leftover, cleanupBackupAt()));
@@ -359,8 +387,10 @@ export async function beginConnection(
   if (!applied) {
     logSetup("superseded");
     if (leftover) await removeLeftoverAuthorization(deps, connector, leftover, true);
+    if (reconnecting) throw new ClientError("CONFLICT", "This connection changed. Try again.");
     throw new IsolationError();
   }
+  if (replaced) await removeLeftoverAuthorization(deps, connector, replaced, true);
   logSetup(auth.authorizationUrl ? "authorization_ready" : "connected");
   if (!auth.authorizationUrl) {
     await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
@@ -633,7 +663,6 @@ export async function revokeConnection(
   deps: RouterDeps,
   context: { actor: Actor; signal?: AbortSignal },
   input: { connectionId: string },
-  reconnecting?: { updatedAt: Date },
 ) {
   const snapshot = await findManagedConnection(deps.prisma, context.actor, input.connectionId);
   const organizationId = snapshot?.organizationId ?? undefined;
@@ -664,15 +693,7 @@ export async function revokeConnection(
         },
       });
       if (!row) return {};
-      if (organizationId) {
-        await requireConnectionOrganization(tx, context.actor, organizationId);
-        if (
-          reconnecting &&
-          (row.status === "revoked" || row.updatedAt.getTime() !== reconnecting.updatedAt.getTime())
-        ) {
-          throw new ClientError("CONFLICT", "This connection changed. Try again.");
-        }
-      }
+      if (organizationId) await requireConnectionOrganization(tx, context.actor, organizationId);
 
       // Advisory lock covers inserts as well as existing rows. SELECT FOR UPDATE
       // alone misses a concurrent begin that inserts after the lock query.
@@ -788,6 +809,16 @@ export async function reconnectOrganizationConnection(
 ) {
   const row = await findManagedConnection(deps.prisma, context.actor, connectionId);
   if (!row?.organizationId || row.status === "revoked") throw new IsolationError();
-  await revokeConnection(deps, context, { connectionId }, row);
-  return beginConnection(deps, context, row, row.organizationId);
+  if (row.status === "connected") {
+    const connector = deps.connectors.managed(row.connectorId);
+    if (!connector) throw new ClientError("BAD_REQUEST", "Integration provider is not configured");
+    const adapterContext = connectionContext(
+      connectionFlowOwner(context.actor, row.organizationId),
+      "connections.reconnectOrganization",
+      context.signal,
+    );
+    const needsReconnect = await loadOrganizationReconnectCheck(connector, adapterContext);
+    if (!needsReconnect(row)) return { connectionId, authorizationUrl: null };
+  }
+  return beginConnection(deps, context, row, row.organizationId, row);
 }

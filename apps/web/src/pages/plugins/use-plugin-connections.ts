@@ -202,6 +202,9 @@ export function usePluginConnections({
               botId: activeBotId,
               provider: item.slug,
               connectorId: item.connectorId,
+              ...(target !== "me" && {
+                organizationConnectionId: result.connectionId,
+              }),
             }),
           );
         return result;

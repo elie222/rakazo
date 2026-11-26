@@ -53,6 +53,7 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     })),
     complete: async () => ({ connectionRef: "fixture-account" }),
     listConnectedExternalIds: async () => [],
+    listConnectedRefs: vi.fn(async () => ["fixture-account"]),
     connectionReady: async () => true,
     resolveConnectedAccountId: vi.fn(async () => "fixture-account"),
     revoke: vi.fn(async () => {}),
@@ -63,6 +64,7 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
       createRouter({
         prisma,
         connectors: new ConnectorRegistry([connector]),
+        jobs: { enqueueIn: vi.fn(), cancelIn: vi.fn() },
         events: { publishSpaceChange },
         env: { webOrigin: "https://rakazo.example.test" },
       } as unknown as RouterDeps),
@@ -219,7 +221,23 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     );
   });
 
+  it("preserves the shared row when starting a replacement sign-in fails", async () => {
+    vi.mocked(connector.listConnectedRefs!).mockResolvedValueOnce([]);
+    vi.mocked(connector.begin).mockRejectedValueOnce(new Error("Provider unavailable"));
+    const admin = client("admin", second);
+    await expect(admin.reconnectOrganization({ connectionId: sharedId })).rejects.toThrow();
+    expect(await admin.list()).toContainEqual(
+      expect.objectContaining({ id: sharedId, status: "connected", displayName: "Shared inbox" }),
+    );
+    expect(connector.revoke).not.toHaveBeenCalled();
+  });
+
   it("reconnects the shared app without removing a member's accounts", async () => {
+    vi.mocked(connector.listConnectedRefs!).mockResolvedValueOnce([]);
+    vi.mocked(connector.begin).mockResolvedValueOnce({
+      authorizationUrl: "https://authorization.example.test/",
+      state: "replacement-request",
+    });
     const admin = client("admin", second);
     const { connectionId } = await admin.reconnectOrganization({ connectionId: sharedId });
     expect(connectionId).toBe(sharedId);

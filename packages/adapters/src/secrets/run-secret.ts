@@ -9,13 +9,7 @@ import {
 } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, isSecretAskBlock } from "@rakazo/core";
 import type { PrismaClient, RunSecretWriter } from "@rakazo/db";
-import {
-  connectionIn,
-  runCodeKind,
-  runLoginKind,
-  runSecretKind,
-  withTransactionRetry,
-} from "@rakazo/db";
+import { runCodeKind, runLoginKind, runSecretKind, withTransactionRetry } from "@rakazo/db";
 import type { ApprovalPausedToolResult } from "../approvals/approval-effect.js";
 import {
   internalTerminatingResult,
@@ -100,13 +94,13 @@ export async function reconcileManagedConnection(
   const row = await prisma.connection.findFirst({
     where: {
       id: connectionId,
-      ...connectionIn(run),
+      spaceId: run.spaceId,
+      userId: run.userId,
     },
   });
   if (!row) return "missing";
   if (row.status === "connected") return "connected";
   if (row.status !== "pending") return "missing";
-  if (row.organizationId) return "pending";
   const connector = connectors?.managed(row.connectorId);
   if (!connector) return "pending";
   try {
@@ -281,14 +275,14 @@ export async function tryCompleteConnectionWithCode(
   const row = await prisma.connection.findFirst({
     where: {
       id: connectionId,
-      ...connectionIn(run),
+      spaceId: run.spaceId,
+      userId: run.userId,
       status: { in: ["pending", "connected"] },
     },
   });
   if (!row) return { connected: false };
   // Already finished on a prior attempt; do not resubmit the OTP.
   if (row.status === "connected") return { connected: true };
-  if (row.organizationId) return { connected: false };
   const connector = connectors?.managed(row.connectorId);
   if (!connector) return { connected: false };
   const state = row.providerRef ?? row.provider;

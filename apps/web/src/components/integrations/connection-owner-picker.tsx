@@ -14,13 +14,15 @@ export function ConnectionOwnerPicker({
 }) {
   const { t } = useLingui();
   const id = useId();
+  const labelId = `${id}-label`;
   return (
     <Field>
-      <FieldLabel htmlFor={id}>
+      <FieldLabel id={labelId} htmlFor={id}>
         <Trans>Available to</Trans>
       </FieldLabel>
       <OptionSelect
         id={id}
+        aria-labelledby={labelId}
         value={value}
         onValueChange={(owner) => onChange(owner === "organization" ? "organization" : "me")}
         options={[

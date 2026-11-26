@@ -122,7 +122,9 @@ export async function connectCatalogItem(
     isCurrent?: () => boolean;
   },
 ): Promise<
-  { status: "connected"; row?: Connection } | { status: "pending" } | { status: "aborted" }
+  | { status: "connected"; connectionId: string; row?: Connection }
+  | { status: "pending" }
+  | { status: "aborted" }
 > {
   const stopped = () => deps.signal.aborted || deps.isCurrent?.() === false;
   const started = await deps.begin({
@@ -132,12 +134,13 @@ export async function connectCatalogItem(
   });
   if (stopped()) return { status: "aborted" };
   if (started.authorizationUrl) await deps.openUrl(started.authorizationUrl);
-  else if (item.noAuth) return { status: "connected" };
-  return waitForConnection(started.connectionId, deps.complete, {
+  else if (item.noAuth) return { status: "connected", connectionId: started.connectionId };
+  const result = await waitForConnection(started.connectionId, deps.complete, {
     signal: deps.signal,
     isCurrent: deps.isCurrent,
     attempts: CATALOG_CONNECT_POLL_ATTEMPTS,
   });
+  return result.status === "connected" ? { ...result, connectionId: started.connectionId } : result;
 }
 
 /**

@@ -1,7 +1,10 @@
 import type { AdapterContext, ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import type { PluginConnectionRow } from "../providers/integration/composio/composio-connector.js";
-import { planLiveConnectionSync } from "../providers/integration/composio/composio-connector.js";
+import {
+  personalComposioConnections,
+  planLiveConnectionSync,
+} from "../providers/integration/composio/composio-connector.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 
 export function selectRunConnections<
@@ -56,9 +59,7 @@ export function connectedContext(
         providerRef: row.providerRef ?? undefined,
         ...(row.organizationId ? { organizationId: row.organizationId } : {}),
       })),
-    connectedProviders: rows
-      .filter((row) => row.connectorId === "composio")
-      .map((row) => row.provider),
+    connectedProviders: personalComposioConnections(rows).map((row) => row.provider),
   };
 }
 
