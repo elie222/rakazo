@@ -742,7 +742,164 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toEqual([["Scout", "Approve my deploy?", "thread-g:ask"]]);
   });
 
-  it("remembers run ownership across chat switches and drops a queued foreign ask when snoozed before permission", async () => {
+  it("tracks run ownership from stream events during snapshot recovery when snapshotRef is null", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    visible = false;
+    groups[0] = { id: "group-g", snoozedUntil: later };
+    snapshotRef.current = null;
+    await open({ groupId: "group-g" });
+
+    act(() => {
+      hook.notifyBrowserForEvent(
+        {
+          id: "run-start-mine",
+          type: "run.started",
+          threadId: "thread-g",
+          seq: 5,
+          runId: "run-mine-head",
+          botId: "bot-b",
+          payload: { userId: "user-1" },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      );
+      hook.notifyBrowserForEvent(
+        {
+          id: "run-start-theirs",
+          type: "run.started",
+          threadId: "thread-g",
+          seq: 6,
+          runId: "run-theirs-head",
+          botId: "bot-b",
+          payload: { userId: "member-2" },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      );
+      hook.notifyBrowserForEvent(
+        {
+          ...reply(
+            "foreign-head-ask",
+            [{ kind: "ask", text: "Other member head approval", status: "pending" }],
+            "thread-g",
+          ),
+          seq: 7,
+          runId: "run-theirs-head",
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      );
+      hook.notifyBrowserForEvent(
+        {
+          ...reply(
+            "own-head-tool-q",
+            [
+              {
+                kind: "tool_question",
+                question: { source: "Calendar", message: "Pick a slot", fields: [] },
+                status: "pending",
+                expiresAt: later,
+                publicKey: "key",
+              },
+            ],
+            "thread-g",
+          ),
+          seq: 8,
+          runId: "run-mine-head",
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      );
+    });
+    expect(shown()).toEqual([["Scout", "Message", "thread-g:ask"]]);
+  });
+
+  it("does not let a background helper's ask overwrite the viewer's queued ask before run.waiting_input", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    groups[0] = { id: "group-g" };
+    setLiveSnapshot("thread-g", [{ id: "run-mine", userId: "user-1" }]);
+    await open({ groupId: "group-g" });
+
+    act(() => {
+      hook.notifyBrowserForEvent(
+        {
+          ...reply(
+            "own-queued-ask-helper-race",
+            [{ kind: "ask", text: "Approve my deploy?", status: "pending" }],
+            "thread-g",
+          ),
+          seq: 5,
+          runId: "run-mine",
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      );
+      // Background helper emits thread.message.created before run.waiting_input identifies its owner.
+      hook.notifyBrowserForEvent(
+        {
+          ...reply(
+            "helper-queued-ask",
+            [{ kind: "ask", text: "Other member's helper ask", status: "pending" }],
+            "thread-g",
+          ),
+          seq: 6,
+          runId: "run-helper-theirs",
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      );
+      hook.notifyBrowserForEvent(
+        {
+          id: "helper-waiting",
+          type: "run.waiting_input",
+          threadId: "thread-g",
+          seq: 7,
+          runId: "run-helper-theirs",
+          botId: "bot-b",
+          payload: { userId: "member-2", trigger: "background_helper" },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      );
+    });
+
+    groups[0] = { id: "group-g", snoozedUntil: later };
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([["Scout", "Approve my deploy?", "thread-g:ask"]]);
+  });
+
+  it("remembers run ownership across chat switches for mixed replies and drops a queued foreign ask when snoozed before permission", async () => {
     const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     FakeNotification.permission = "default";
     visible = false;
@@ -752,7 +909,10 @@ describe("useBrowserNotifications chat alerts", () => {
     act(() =>
       hook.notifyBrowserForEvent(
         {
-          ...reply("foreign-nav", [{ kind: "ask", text: "Approve refund?", status: "pending" }]),
+          ...reply("foreign-nav", [
+            { kind: "text", text: "Need approval." },
+            { kind: "ask", text: "Approve refund?", status: "pending" },
+          ]),
           runId: "run-theirs",
         },
         "thread-b",
@@ -794,14 +954,12 @@ describe("useBrowserNotifications chat alerts", () => {
     );
     setLiveSnapshot("thread-b", [{ id: "run-late-theirs", userId: "member-2" }]);
     await open({ botId: "bot-b" });
-    snapshotRef.current = null;
-    await open({ botId: "bot-other" });
     FakeNotification.permission = "granted";
     act(() => hook.flushPendingBrowserNotifications());
     expect(shown()).toEqual([]);
   });
 
-  it("delivers a queued viewer-owned tool question after switching chats, and drops expired or settled cards on flush", async () => {
+  it("delivers a queued viewer-owned tool question while the chat stays open, and drops cleared, left, expired, or settled cards on flush", async () => {
     vi.useFakeTimers();
     const baseNow = Date.now();
     vi.setSystemTime(baseNow);
@@ -843,13 +1001,95 @@ describe("useBrowserNotifications chat alerts", () => {
         undefined,
       ),
     );
-    snapshotRef.current = null;
-    await open({ botId: "bot-other" });
     FakeNotification.permission = "granted";
     act(() => hook.flushPendingBrowserNotifications());
     expect(shown()).toEqual([["Scout", "Message", "thread-b:ask"]]);
 
-    // A queued tool question that expires after switching away is dropped even without a snooze.
+    // Switching away from the chat closes its thread subscription, so a queued ask is dropped
+    // rather than risking a stale alert if answered elsewhere while away.
+    FakeNotification.shown = [];
+    FakeNotification.permission = "default";
+    setLiveSnapshot("thread-b", [{ id: "run-mine", userId: "user-1" }]);
+    await open({ botId: "bot-b" });
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "ask-left-chat",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 7,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            id: "msg-left",
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Still needed?", status: "pending" }],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    act(() => hook.dropPendingQuestions("thread-b"));
+    snapshotRef.current = null;
+    await open({ botId: "bot-other" });
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
+
+    // Clearing a thread invalidates its queued ask alerts.
+    FakeNotification.shown = [];
+    FakeNotification.permission = "default";
+    setLiveSnapshot("thread-b", [{ id: "run-mine", userId: "user-1" }]);
+    await open({ botId: "bot-b" });
+    act(() => {
+      hook.notifyBrowserForEvent(
+        {
+          id: "ask-before-clear",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 8,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            id: "msg-clear",
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Cleared ask?", status: "pending" }],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      );
+      hook.notifyBrowserForEvent(
+        {
+          id: "thread-cleared-event",
+          type: "thread.cleared",
+          threadId: "thread-b",
+          seq: 9,
+          botId: "bot-b",
+          payload: {},
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      );
+    });
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
+
+    // A queued tool question that expires before permission arrives is dropped even without a snooze.
     FakeNotification.shown = [];
     FakeNotification.permission = "default";
     bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot;
@@ -861,7 +1101,7 @@ describe("useBrowserNotifications chat alerts", () => {
           id: "tool-q-expiring",
           type: "thread.message.created",
           threadId: "thread-b",
-          seq: 7,
+          seq: 10,
           runId: "run-mine",
           botId: "bot-b",
           payload: {
@@ -886,14 +1126,12 @@ describe("useBrowserNotifications chat alerts", () => {
         undefined,
       ),
     );
-    snapshotRef.current = null;
-    await open({ botId: "bot-other" });
     vi.setSystemTime(baseNow + 10_000);
     FakeNotification.permission = "granted";
     act(() => hook.flushPendingBrowserNotifications());
     expect(shown()).toEqual([]);
 
-    // A queued ask settled via thread.message.updated or snapshot refresh before permission arrives is discarded.
+    // A queued ask settled via snapshot refresh before permission arrives is discarded.
     FakeNotification.shown = [];
     FakeNotification.permission = "default";
     setLiveSnapshot("thread-b", [{ id: "run-mine", userId: "user-1" }]);
@@ -904,7 +1142,7 @@ describe("useBrowserNotifications chat alerts", () => {
           id: "ask-settle-event",
           type: "thread.message.created",
           threadId: "thread-b",
-          seq: 8,
+          seq: 11,
           runId: "run-mine",
           botId: "bot-b",
           payload: {
@@ -921,7 +1159,6 @@ describe("useBrowserNotifications chat alerts", () => {
         undefined,
       ),
     );
-    // Returning to the thread with a refreshed snapshot where msg-2 is already answered drops it at flush.
     setLiveSnapshot(
       "thread-b",
       [],

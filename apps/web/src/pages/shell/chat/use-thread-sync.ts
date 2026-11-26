@@ -83,6 +83,7 @@ export function useThreadSync({
   searchParamsRef,
   refreshBots,
   notifyBrowserForEvent,
+  dropPendingQuestions,
   markBotReadIfVisible,
   markGroupReadOnReply,
   meId,
@@ -102,6 +103,7 @@ export function useThreadSync({
   searchParamsRef: RefObject<URLSearchParams>;
   refreshBots: (includeArchived?: boolean) => Promise<void>;
   notifyBrowserForEvent: ReturnType<typeof useBrowserNotifications>["notifyBrowserForEvent"];
+  dropPendingQuestions?: ReturnType<typeof useBrowserNotifications>["dropPendingQuestions"];
   markBotReadIfVisible: (botId: string) => void;
   markGroupReadOnReply: (groupId: string) => void;
   /** The signed-in person: another member's message is new to them, their own is not. */
@@ -405,19 +407,27 @@ export function useThreadSync({
     const snapshotRefresh = createRefreshCoalescer(() => refreshThread(active.id));
     const abort = new AbortController();
     const avatarSource = newLogoAvatarActivitySource();
+    let subscribedThreadId: string | undefined = cachedThread?.threadId;
     void runThreadSubscription({
       signal: abort.signal,
       loadInitial: async () => {
         const primed = bootstrappedThread.current;
         bootstrappedThread.current = null;
         // Pending search jumps load the around-page separately; avoid replacing it with latest.
-        return primed?.botId === active.id
-          ? primed
-          : pendingJump
-            ? rpc.threads.get({ botId: active.id }, { signal: abort.signal })
-            : refreshThread(active.id, abort.signal);
+        const loaded =
+          primed?.botId === active.id
+            ? primed
+            : pendingJump
+              ? await rpc.threads.get({ botId: active.id }, { signal: abort.signal })
+              : await refreshThread(active.id, abort.signal);
+        subscribedThreadId = loaded.threadId;
+        return loaded;
       },
-      loadHead: () => rpc.threads.head({ botId: active.id }, { signal: abort.signal }),
+      loadHead: async () => {
+        const head = await rpc.threads.head({ botId: active.id }, { signal: abort.signal });
+        subscribedThreadId = head.threadId;
+        return head;
+      },
       refresh: () => refreshThread(active.id, abort.signal),
       currentSnapshot: () => snapshotRef.current,
       subscribe: (cursor, signal) =>
@@ -431,6 +441,7 @@ export function useThreadSync({
       applyEvent: (event) =>
         applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef),
       onEvent: (event, initial) => {
+        subscribedThreadId = initial.threadId;
         const currentBot = botsRef.current.find((bot) => bot.id === active.id);
         notifyBrowserForEvent(
           event,
@@ -488,9 +499,13 @@ export function useThreadSync({
       abort.abort();
       webLogoAvatarActivity.resetSource(avatarSource);
       const left = snapshotRef.current;
+      const closedThreadId =
+        subscribedThreadId ??
+        (left?.botId === active.id && !left.groupId ? left.threadId : undefined);
+      if (closedThreadId) dropPendingQuestions?.(closedThreadId);
       if (left?.botId === active.id && !left.groupId) queryClient.setQueryData(threadKey, left);
     };
-  }, [active?.id, markBotReadIfVisible, notifyBrowserForEvent, meId]);
+  }, [active?.id, dropPendingQuestions, markBotReadIfVisible, notifyBrowserForEvent, meId]);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
@@ -507,13 +522,21 @@ export function useThreadSync({
     const snapshotRefresh = createRefreshCoalescer(() => refreshGroupThread(groupId));
     const abort = new AbortController();
     const avatarSource = newLogoAvatarActivitySource();
+    let subscribedThreadId: string | undefined = cachedThread?.threadId;
     void runThreadSubscription({
       signal: abort.signal,
-      loadInitial: () =>
-        pendingJump
-          ? rpc.threads.get({ groupId }, { signal: abort.signal })
-          : refreshGroupThread(groupId, abort.signal),
-      loadHead: () => rpc.threads.head({ groupId }, { signal: abort.signal }),
+      loadInitial: async () => {
+        const loaded = pendingJump
+          ? await rpc.threads.get({ groupId }, { signal: abort.signal })
+          : await refreshGroupThread(groupId, abort.signal);
+        subscribedThreadId = loaded.threadId;
+        return loaded;
+      },
+      loadHead: async () => {
+        const head = await rpc.threads.head({ groupId }, { signal: abort.signal });
+        subscribedThreadId = head.threadId;
+        return head;
+      },
       refresh: () => refreshGroupThread(groupId, abort.signal),
       currentSnapshot: () => snapshotRef.current,
       subscribe: (cursor, signal) =>
@@ -533,6 +556,7 @@ export function useThreadSync({
           computerRef,
         ),
       onEvent: (event, initial) => {
+        subscribedThreadId = initial.threadId;
         const eventBot = botsRef.current.find((bot) => bot.id === event.botId);
         notifyBrowserForEvent(
           event,
@@ -579,9 +603,19 @@ export function useThreadSync({
       abort.abort();
       webLogoAvatarActivity.resetSource(avatarSource);
       const left = snapshotRef.current;
+      const closedThreadId =
+        subscribedThreadId ?? (left?.groupId === groupId ? left.threadId : undefined);
+      if (closedThreadId) dropPendingQuestions?.(closedThreadId);
       if (left?.groupId === groupId) queryClient.setQueryData(threadKey, left);
     };
-  }, [activeGroup?.id, groupId, notifyBrowserForEvent, markGroupReadOnReply, meId]);
+  }, [
+    activeGroup?.id,
+    dropPendingQuestions,
+    groupId,
+    notifyBrowserForEvent,
+    markGroupReadOnReply,
+    meId,
+  ]);
 
   // Memoized children take these, so they stay referentially stable across renders.
   const refreshThreadRef = useRef(refreshThread);

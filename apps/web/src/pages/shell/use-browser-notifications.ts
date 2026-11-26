@@ -124,12 +124,23 @@ export function useBrowserNotifications(
 ) {
   const meIdRef = useRef(meId);
   meIdRef.current = meId;
+  const runOwnersRef = useRef(new Map<string, { threadId: string; userId?: string }>());
   const liveRunFor = useCallback(
     (runId: string | undefined, threadId: string) => {
       if (!runId) return undefined;
       const snap = snapshotRef?.current;
-      if (!snap || snap.threadId !== threadId) return undefined;
-      return activeThreadRuns(snap).find((candidate) => candidate.id === runId);
+      const snapRun =
+        snap && snap.threadId === threadId
+          ? activeThreadRuns(snap).find((candidate) => candidate.id === runId)
+          : undefined;
+      const streamRun = runOwnersRef.current.get(runId);
+      const matchingStreamRun = streamRun?.threadId === threadId ? streamRun : undefined;
+      if (snapRun) {
+        return !snapRun.userId && matchingStreamRun?.userId
+          ? { ...snapRun, userId: matchingStreamRun.userId }
+          : snapRun;
+      }
+      return matchingStreamRun;
     },
     [snapshotRef],
   );
@@ -220,18 +231,57 @@ export function useBrowserNotifications(
   }, [rpc]);
   const notifiedBrowserEvents = useRef(new Set<string>());
   const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
+  const lastActiveChat = useRef<{ botId?: string; groupId?: string }>({
+    botId: activeBotId.current,
+    groupId: activeGroupId.current,
+  });
+  if (
+    lastActiveChat.current.botId !== activeBotId.current ||
+    lastActiveChat.current.groupId !== activeGroupId.current
+  ) {
+    const left = lastActiveChat.current;
+    for (const [key, pending] of pendingBrowserNotifications.current) {
+      if (!pending.questionOnly) continue;
+      const belongedToLeft = left.groupId
+        ? pending.groupId === left.groupId
+        : !pending.groupId && left.botId !== undefined && pending.botId === left.botId;
+      if (belongedToLeft) pendingBrowserNotifications.current.delete(key);
+    }
+    lastActiveChat.current = {
+      botId: activeBotId.current,
+      groupId: activeGroupId.current,
+    };
+  }
+  const dropPendingQuestions = useCallback((threadId: string) => {
+    for (const [key, pending] of pendingBrowserNotifications.current) {
+      if (pending.questionOnly && pending.event.threadId === threadId) {
+        pendingBrowserNotifications.current.delete(key);
+      }
+    }
+    for (const [runId, owner] of runOwnersRef.current) {
+      if (owner.threadId === threadId) runOwnersRef.current.delete(runId);
+    }
+  }, []);
   const syncPendingFromSnapshot = useCallback(
     (threadId?: string) => {
       const snap = snapshotRef?.current;
-      if (!snap || (threadId !== undefined && snap.threadId !== threadId)) return;
-      const runs = activeThreadRuns(snap);
+      const snapRuns = snap ? activeThreadRuns(snap) : undefined;
       for (const [key, pending] of pendingBrowserNotifications.current) {
-        if (pending.event.threadId !== snap.threadId) continue;
+        if (threadId !== undefined && pending.event.threadId !== threadId) continue;
         if (pending.event.runId) {
-          const live = runs.find((candidate) => candidate.id === pending.event.runId);
-          if (live) pending.runOwner = { userId: live.userId };
+          const live =
+            snap && snap.threadId === pending.event.threadId
+              ? snapRuns?.find((candidate) => candidate.id === pending.event.runId)
+              : undefined;
+          const streamOwner = runOwnersRef.current.get(pending.event.runId);
+          const ownerUserId =
+            live?.userId ??
+            (streamOwner?.threadId === pending.event.threadId ? streamOwner.userId : undefined);
+          if (live || (streamOwner && streamOwner.threadId === pending.event.threadId)) {
+            pending.runOwner = { userId: ownerUserId };
+          }
         }
-        if (pending.questionOnly) {
+        if (pending.questionOnly && snap && snap.threadId === pending.event.threadId) {
           const messageId = eventMessageId(pending.event);
           const liveMessage =
             messageId !== undefined
@@ -253,6 +303,7 @@ export function useBrowserNotifications(
     return () => {
       mounted.current = false;
       pendingBrowserNotifications.current.clear();
+      runOwnersRef.current.clear();
     };
   }, []);
   const chatFor = (pending: PendingBrowserNotification): SnoozableChat | undefined =>
@@ -263,7 +314,7 @@ export function useBrowserNotifications(
     (pending: PendingBrowserNotification): boolean => {
       const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
       if (!currentBot || typeof Notification === "undefined") return true;
-      // Drop a queued question-only card once it has expired or settled (including while away).
+      // Drop a queued question-only card once it has expired or settled.
       if (pending.questionOnly) {
         const blocks = pending.event.payload.blocks;
         if (!Array.isArray(blocks) || !blocks.some(isWaitingAskBlock)) return true;
@@ -334,22 +385,47 @@ export function useBrowserNotifications(
       enabled: boolean,
       groupId: string | undefined,
     ) => {
+      if ((event.type === "run.started" || event.type === "run.waiting_input") && event.runId) {
+        const userId =
+          typeof event.payload.userId === "string" && event.payload.userId.length > 0
+            ? event.payload.userId
+            : undefined;
+        const previous = runOwnersRef.current.get(event.runId);
+        const ownerUserId =
+          userId ?? (previous?.threadId === event.threadId ? previous.userId : undefined);
+        runOwnersRef.current.set(event.runId, {
+          threadId: event.threadId,
+          ...(ownerUserId ? { userId: ownerUserId } : {}),
+        });
+      }
       syncPendingFromSnapshot(event.threadId);
-      // A question held for permission goes when its card settles or its run ends.
-      if (event.type === "thread.message.updated") {
+      // Clearing a thread removes all queued alerts; settling a card or ending a run drops its question.
+      if (event.type === "thread.cleared") {
+        for (const [key, queued] of pendingBrowserNotifications.current) {
+          if (queued.event.threadId === event.threadId) {
+            pendingBrowserNotifications.current.delete(key);
+          }
+        }
+        for (const [runId, owner] of runOwnersRef.current) {
+          if (owner.threadId === event.threadId) runOwnersRef.current.delete(runId);
+        }
+      } else if (event.type === "thread.message.updated") {
         const messageId = eventMessageId(event);
         if (
           messageId !== undefined &&
           !(Array.isArray(event.payload.blocks) && event.payload.blocks.some(isWaitingAskBlock))
         ) {
-          for (const key of [`${event.threadId}:ask`, event.threadId]) {
-            const queued = pendingBrowserNotifications.current.get(key);
-            if (queued && eventMessageId(queued.event) === messageId) {
+          for (const [key, queued] of pendingBrowserNotifications.current) {
+            if (
+              queued.event.threadId === event.threadId &&
+              eventMessageId(queued.event) === messageId
+            ) {
               pendingBrowserNotifications.current.delete(key);
             }
           }
         }
       } else if (isRunTerminalEvent(event) && event.runId) {
+        runOwnersRef.current.delete(event.runId);
         for (const [key, queued] of pendingBrowserNotifications.current) {
           if (
             queued.questionOnly &&
@@ -388,17 +464,20 @@ export function useBrowserNotifications(
       if (snoozedOrdinaryReply(event, chatFor(pending), () => waits)) return;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       const tag = browserNotificationTag(event, { waitingQuestion: waits });
+      // Keep waiting questions separate per run while queued so a background helper's ask card
+      // arriving before run.waiting_input cannot overwrite the viewer's own queued ask.
+      const pendingKey = waits ? `${tag}:${event.runId ?? event.id}` : tag;
       if (Notification.permission === "default") {
-        pendingBrowserNotifications.current.set(tag, pending);
+        pendingBrowserNotifications.current.set(pendingKey, pending);
         return;
       }
       if (deliverBrowserNotification(pending)) {
-        pendingBrowserNotifications.current.delete(tag);
+        pendingBrowserNotifications.current.delete(pendingKey);
       } else {
-        pendingBrowserNotifications.current.set(tag, pending);
+        pendingBrowserNotifications.current.set(pendingKey, pending);
       }
     },
     [deliverBrowserNotification, liveRunFor, questionWaitsOnViewer, syncPendingFromSnapshot],
   );
-  return { notifyBrowserForEvent, flushPendingBrowserNotifications };
+  return { notifyBrowserForEvent, flushPendingBrowserNotifications, dropPendingQuestions };
 }

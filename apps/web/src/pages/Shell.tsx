@@ -229,10 +229,8 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
     redirectKeepingOverlay,
     openSpaceChat: openSpaceChatRef,
   });
-  const { notifyBrowserForEvent, flushPendingBrowserNotifications } = useBrowserNotifications(
-    bots,
-    botsRef,
-    {
+  const { notifyBrowserForEvent, flushPendingBrowserNotifications, dropPendingQuestions } =
+    useBrowserNotifications(bots, botsRef, {
       rpc,
       activeBotId,
       activeGroupId,
@@ -245,8 +243,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
       groupsRef,
       snapshotRef: thread.snapshotRef,
       roster: rosterSignals,
-    },
-  );
+    });
   const { speakingMessageId, speakMessage, callHoldsSpeaker } = useReadAloud({
     active,
     snapshot,
@@ -291,6 +288,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
     searchParamsRef,
     refreshBots,
     notifyBrowserForEvent,
+    dropPendingQuestions,
     markBotReadIfVisible: read.markBotReadIfVisible,
     markGroupReadOnReply: read.markGroupReadOnReply,
     meId: userId,
