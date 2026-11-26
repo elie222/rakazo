@@ -1428,9 +1428,23 @@ it("keeps an unrelated newer send error and image confirmation when retrying an 
   expect(latest.sendError).toBe("Send image as file?");
   expect(latest.imageConfirmation).toBe(true);
 
+  const failedRetry = deferred<never>();
+  rpc.threads.send.mockReturnValueOnce(failedRetry.promise);
+  let retried!: Promise<boolean>;
+  act(() => {
+    retried = latest.retryPendingSend("nonce-older-row");
+  });
+  expect(latest.sendError).toBe("Send image as file?");
+  expect(latest.imageConfirmation).toBe(true);
+
+  failedRetry.reject(new Error("still offline"));
+  await act(async () => void (await retried));
+  expect(latest.sendError).toBe("Send image as file?");
+  expect(latest.imageConfirmation).toBe(true);
+  expect(latest.transcriptProps.failedPendingSends?.get("nonce-older-row")).toBe("still offline");
+
   const retryReply = deferred<{ runId: string; taskId: string; seq: number }>();
   rpc.threads.send.mockReturnValueOnce(retryReply.promise);
-  let retried!: Promise<boolean>;
   act(() => {
     retried = latest.retryPendingSend("nonce-older-row");
   });

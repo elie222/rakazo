@@ -854,7 +854,11 @@ export function useComposerActions({
           (groupTarget && activeGroupId.current === groupTarget) ||
           (botTarget && activeBotId.current === botTarget)
         ) {
-          setSendFailure({ message, imageConfirmation: false, clientNonce });
+          setSendFailure((current) =>
+            current === null || current.clientNonce === clientNonce
+              ? { message, imageConfirmation: false, clientNonce }
+              : current,
+          );
         }
         return false;
       } finally {
