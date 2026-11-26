@@ -75,7 +75,7 @@ auditConfig:
     - GHSA-fc5q-39xc-vjpf
 
 patchedDependencies:
-  '@expo/ui@58.0.29': patches/@expo__ui@58.0.29.patch
+  "@expo/ui@58.0.29": patches/@expo__ui@58.0.29.patch
   dockerode@5.0.1: patches/dockerode@5.0.1.patch
   expo-sharing@58.0.23: patches/expo-sharing@58.0.23.patch
   expo-speech@58.0.4: patches/expo-speech@58.0.4.patch
