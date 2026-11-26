@@ -22,7 +22,11 @@ export function useToolAgentTool(
     execute: async (toolCallId, params, signal, onUpdate) => {
       const { name, arguments: args } = params as { name: string; arguments?: unknown };
       const tool = runnable.get(name);
-      const runner = tool ? undefined : await catalogRunnerFor(name, catalogRunners, host);
+      const reason = tool
+        ? undefined
+        : unavailableToolReason(host.request.unavailableToolReasons, name);
+      const connectorId = host.foundConnectorTools?.get(name);
+      const runner = !tool && !reason && connectorId ? catalogRunners.get(connectorId) : undefined;
       if (runner) {
         const call = { id: name, arguments: args ?? {} };
         const validated = validateToolArguments(runner, {
@@ -45,10 +49,7 @@ export function useToolAgentTool(
           ]),
           response: host.modelResponses,
         });
-        throw new Error(
-          unavailableToolReason(host.request.unavailableToolReasons, name) ??
-            `${name} is not available. Use a name find_tool lists.`,
-        );
+        throw new Error(reason ?? `${name} is not available. Use a name find_tool lists.`);
       }
       const prepared = tool.prepareArguments?.(args ?? {}) ?? args ?? {};
       const validated = validateToolArguments(tool, {
@@ -60,19 +61,4 @@ export function useToolAgentTool(
       return tool.execute(toolCallId, validated, signal, onUpdate);
     },
   };
-}
-
-/**
- * The catalog wrapper that runs a connector tool find_tool found, by its id. After a pause the
- * hit is looked up again, since the process that found it may be gone.
- */
-async function catalogRunnerFor(
-  id: string,
-  catalogRunners: ReadonlyMap<string, AgentTool>,
-  host: ToolHost,
-): Promise<AgentTool | undefined> {
-  if (!catalogRunners.size) return undefined;
-  const connectorId =
-    host.foundTools?.get(id)?.connectorId ?? (await host.request.resolveConnectorTool?.(id));
-  return connectorId ? catalogRunners.get(connectorId) : undefined;
 }

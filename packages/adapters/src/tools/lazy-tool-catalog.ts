@@ -42,6 +42,7 @@ export type CatalogSearchHit = {
   name: string;
   description: string;
   readOnly: boolean;
+  inputSchema?: Record<string, unknown>;
 };
 
 export type CatalogSearchResult =
@@ -100,6 +101,7 @@ export function catalogGroupLabel(
 export function searchCatalog(
   entries: CatalogEntry[],
   args: Record<string, unknown>,
+  withSchemas = false,
 ): CatalogSearchResult {
   // Source labels can differ only by case, so pick a source from the query as typed.
   const typedQuery = String(args.query ?? "")
@@ -118,7 +120,17 @@ export function searchCatalog(
     }
   }
   const scoped = groupFilter ? entriesInGroup(entries, groupFilter) : entries;
+  const requested = Number(args.limit ?? TOOL_SEARCH_LIMIT);
+  const limit = Number.isFinite(requested)
+    ? Math.max(1, Math.min(TOOL_SEARCH_LIMIT, Math.trunc(requested)))
+    : TOOL_SEARCH_LIMIT;
 
+  if (withSchemas && !query) {
+    const sorted = scoped.toSorted((a, b) =>
+      catalogShortName(a).localeCompare(catalogShortName(b)),
+    );
+    return { tools: catalogSearchHits(sorted.slice(0, limit), true) };
+  }
   if (!query) {
     if (groupFilter) {
       if (scoped.length === 0) {
@@ -150,23 +162,27 @@ export function searchCatalog(
     return { index: grouped };
   }
 
-  const requested = Number(args.limit ?? TOOL_SEARCH_LIMIT);
-  const limit = Number.isFinite(requested)
-    ? Math.max(1, Math.min(TOOL_SEARCH_LIMIT, Math.trunc(requested)))
-    : TOOL_SEARCH_LIMIT;
   const ranked = rankCatalogEntries(scoped, query, limit);
-  const hits = ranked.hits.map((entry) => ({
-    id: entry.id,
-    name: entry.tool.name,
-    description: entry.tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
-    readOnly: entry.tool.readOnly === true,
-  }));
+  const hits = catalogSearchHits(ranked.hits, withSchemas);
+  if (withSchemas) return { tools: hits };
   if (hits.length > 0 && ranked.complete) return { tools: hits };
   return {
     tools: hits,
     groups: groupedNames(entries).map(({ group, names }) => ({ group, count: names.length })),
     hint: "No tool in this catalog matches every word. Try other words or pass group. Built-in tools are not in this catalog, and neither are other connected apps. An empty result does not mean a tool is unavailable elsewhere.",
   };
+}
+
+function catalogSearchHits(entries: CatalogEntry[], withSchemas: boolean): CatalogSearchHit[] {
+  return entries
+    .filter((entry) => !withSchemas || catalogSchemaFits(entry))
+    .map(({ id, tool }) => ({
+      id,
+      name: tool.name,
+      description: tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
+      readOnly: tool.readOnly === true,
+      ...(withSchemas ? { inputSchema: tool.inputSchema } : {}),
+    }));
 }
 
 /** The best `limit` entries for a query; `complete` when they match every query word. */
@@ -284,9 +300,14 @@ function matchesGroupQualifiedName(entry: CatalogEntry, id: string): boolean {
   return false;
 }
 
+function catalogSchemaFits(entry: CatalogEntry): boolean {
+  return (
+    Buffer.byteLength(JSON.stringify(entry.tool.inputSchema), "utf8") <= SELECTED_SCHEMA_MAX_BYTES
+  );
+}
+
 function assertSchemaSize(entry: CatalogEntry): void {
-  const schemaBytes = Buffer.byteLength(JSON.stringify(entry.tool.inputSchema), "utf8");
-  if (schemaBytes > SELECTED_SCHEMA_MAX_BYTES) throw new Error("Tool schema is too large");
+  if (!catalogSchemaFits(entry)) throw new Error("Tool schema is too large");
 }
 
 export function resolveCatalogCall(
@@ -421,7 +442,7 @@ export async function* executeLazyCatalogControl(
   executeResolved: (resolved: ConnectorCall) => AsyncIterable<ConnectorEvent>,
 ): AsyncIterable<ConnectorEvent> {
   if (call.route?.toolName === CATALOG_SEARCH) {
-    yield { type: "result", data: searchCatalog(entries, call.args) };
+    yield { type: "result", data: searchCatalog(entries, call.args, call.withCatalogSchemas) };
     return;
   }
   if (call.route?.toolName === CATALOG_LOAD) {
@@ -429,7 +450,7 @@ export async function* executeLazyCatalogControl(
     yield {
       type: "result",
       data: {
-        id: call.args.id,
+        id: call.withCatalogSchemas ? entry.id : call.args.id,
         name: entry.tool.name,
         description: entry.tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
         inputSchema: entry.tool.inputSchema,

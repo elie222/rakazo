@@ -8,7 +8,6 @@ import type {
   AgentToolExecutionResult,
   ConnectorTool,
   ModelCallObserver,
-  ToolSearchHit,
 } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
@@ -627,8 +626,8 @@ function toAgentTool(
                 );
                 for (const hit of hits) {
                   if (!hit.connectorId) continue;
-                  host.foundTools ??= new Map();
-                  host.foundTools.set(hit.id, hit);
+                  host.foundConnectorTools ??= new Map();
+                  host.foundConnectorTools.set(hit.id, hit.connectorId);
                 }
                 return {
                   content: [{ type: "text", text: JSON.stringify(result) }],
@@ -829,7 +828,7 @@ export interface ToolHost {
   /** Model responses started by the main agent. Helpers reset it, so each of their calls counts. */
   modelResponses?: number;
   /** Connector tools find_tool found this turn, by id, for use_tool to run. */
-  foundTools?: Map<string, ToolSearchHit>;
+  foundConnectorTools?: Map<string, string>;
 }
 
 export function toolCallBudgetExceededMessage(limit: number) {

@@ -25,25 +25,14 @@ export async function searchRunTools(
   return hits;
 }
 
-export async function resolveConnectorTool(
-  ctx: RunContext,
-  id: string,
-): Promise<string | undefined> {
-  const hits = await runConnectorSource(ctx)?.find([id]);
-  return hits?.find((hit) => hit.id === id)?.connectorId;
-}
-
-function runConnectorSource({ deps, context, runId, tools }: RunContext) {
-  if (!deps.connector) return undefined;
-  return connectorCatalogSource(deps.connector, context, tools.offered, `find-tool:${runId}`);
-}
-
 function runSearchSources(ctx: RunContext): ToolSearchSource[] {
-  const { deps, context } = ctx;
+  const { deps, context, runId } = ctx;
   const offered = (name: string) => ctx.tools.offered.some((tool) => tool.name === name);
   const sources: ToolSearchSource[] = [];
-  const connector = runConnectorSource(ctx);
-  if (connector) sources.push(connector);
+  if (deps.connector)
+    sources.push(
+      connectorCatalogSource(deps.connector, context, ctx.tools.offered, `find-tool:${runId}`),
+    );
   const apps = deps.connectors?.managedProviders?.() ?? [];
   if (apps.length && offered("connect_app")) sources.push(appCatalogSource(apps, context));
   const paid = ctx.providers.paidServices;

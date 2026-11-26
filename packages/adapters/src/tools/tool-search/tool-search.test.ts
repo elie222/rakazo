@@ -5,7 +5,7 @@ import type {
   ConnectorTool,
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { selectBuiltinToolsForRun } from "../../runs/tools/run-tool-selection.js";
 import { findTools, partitionTools } from "../builtin-tool-bridge.js";
 import {
@@ -187,6 +187,21 @@ describe("connector catalog source", () => {
       calendar.name,
       "mcp__workbench__list_boards",
     ]);
+  });
+
+  it("loads one catalog for all the schemas in a query", async () => {
+    const execute = vi.fn(connector.execute);
+    const source = connectorCatalogSource(
+      { execute },
+      context,
+      lazyCatalogTools("connectors", "mcp", "MCP", entries),
+      "run-1",
+    );
+    const hits = await source.search("Workbench", 5);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(hits.map(({ id, inputSchema }) => [id, inputSchema])).toEqual(
+      entries.map(({ id, tool }) => [id, tool.inputSchema]),
+    );
   });
 
   it("hides only the tools of a connector whose catalog fails", async () => {

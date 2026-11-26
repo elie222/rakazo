@@ -203,7 +203,11 @@ export async function findTools(
       : tools.search
         ? await tools.search({ query, limit: FIND_TOOL_LIMIT, alongside: local })
         : rankToolSearchHits(local, query, FIND_TOOL_LIMIT);
-  const foundNames = new Set(hits.flatMap((hit) => [hit.id.toLowerCase(), hit.name.toLowerCase()]));
+  const foundNames = new Set(
+    hits.flatMap(({ id, name, matchedName }) =>
+      (matchedName ? [id, name, matchedName] : [id, name]).map((value) => value.toLowerCase()),
+    ),
+  );
   const unavailableEntries: Array<[string, string]> = [];
   const unavailableNames = new Set<string>();
   const unknown: string[] = [];

@@ -386,6 +386,8 @@ export interface ConnectorCall {
   route?: ConnectorRoute;
   /** Read the tool's app after a successful call. Only a caller that shows it asks. */
   withApp?: boolean;
+  /** Include selected schemas in an internal catalog search. */
+  withCatalogSchemas?: boolean;
 }
 
 /**
@@ -804,8 +806,6 @@ export interface AgentRunRequest {
    * `limit` hits, so what it marks as read from outside is only what the model is shown.
    */
   searchTools?: (request: ToolSearchRequest) => Promise<ToolSearchHit[]>;
-  /** Resolves a held-back connector tool when its search hit is no longer in memory. */
-  resolveConnectorTool?: (id: string) => Promise<string | undefined>;
   /** Called after a tool returns; implementations must not persist raw result contents. */
   onToolCompleted?: (completion: AgentToolCompletion) => Promise<void> | void;
   /**
@@ -837,6 +837,8 @@ export interface ToolSearchHit {
   name: string;
   description: string;
   next: "use_tool" | "connect_app" | "service_call";
+  /** The requested name, when a catalog resolved it to a different canonical ID. */
+  matchedName?: string;
   /** Its arguments, for a hit use_tool runs. */
   inputSchema?: Record<string, unknown>;
   /** Whatever else the next step needs, such as a paid service's price and params. */

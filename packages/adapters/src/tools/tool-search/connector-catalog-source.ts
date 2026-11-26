@@ -8,18 +8,11 @@ import type {
 } from "@rakazo/adapter-kit";
 import { bestEffort } from "@rakazo/logging";
 import type { CatalogSearchHit } from "../lazy-tool-catalog.js";
-import {
-  CATALOG_LOAD,
-  CATALOG_SEARCH,
-  MAX_DESCRIPTION_LENGTH,
-  UnknownCatalogToolError,
-} from "../lazy-tool-catalog.js";
+import { CATALOG_LOAD, CATALOG_SEARCH, UnknownCatalogToolError } from "../lazy-tool-catalog.js";
 import type { ToolSearchSource } from "./tool-search.js";
 
 /** Hits per connector whose parameters are loaded; the ranked list keeps few of them anyway. */
 const LOADED_PER_CONNECTOR = 3;
-
-type Loaded = { name: string; description: string; inputSchema: Record<string, unknown> };
 
 /**
  * Connected tools a connector holds back from the tool list, found through its catalog. use_tool
@@ -40,7 +33,13 @@ export function connectorCatalogSource(
   const control = async (connectorId: string, toolName: string, args: Record<string, unknown>) => {
     const route: ConnectorRoute = { connectorId, toolName };
     for await (const event of connector.execute(
-      { tool: toolName, args, executionId: `${executionId}:${calls++}`, route },
+      {
+        tool: toolName,
+        args,
+        executionId: `${executionId}:${calls++}`,
+        route,
+        withCatalogSchemas: true,
+      },
       context,
     ) as AsyncIterable<ConnectorEvent>) {
       if (event.type === "result") return event.data;
@@ -54,16 +53,10 @@ export function connectorCatalogSource(
       if (error instanceof Error && error.message === new UnknownCatalogToolError().message)
         return undefined;
       throw error;
-    })) as Loaded | undefined;
-    if (!loaded?.inputSchema) return undefined;
-    return {
-      id,
-      name: loaded.name,
-      description: loaded.description.slice(0, MAX_DESCRIPTION_LENGTH),
-      next: "use_tool",
-      inputSchema: loaded.inputSchema,
-      connectorId,
-    };
+    })) as CatalogSearchHit | undefined;
+    return loaded?.inputSchema
+      ? { ...connectorHit(loaded, connectorId), matchedName: id }
+      : undefined;
   };
   // One connector failing hides only its own tools; bestEffort logs why.
   const fromEach = async <T>(work: (connectorId: string) => Promise<T[]>) =>
@@ -81,15 +74,19 @@ export function connectorCatalogSource(
     label: "connected tools",
     search: (query, limit) =>
       fromEach(async (connectorId) => {
-        const result = (await control(connectorId, CATALOG_SEARCH, { query, limit })) as
-          | { tools?: CatalogSearchHit[]; group?: string; names?: string[] }
-          | undefined;
-        // A query that is only a source's name lists that source's tool names instead.
-        const ids =
-          result?.tools?.map((hit) => hit.id) ??
-          (result?.names ?? []).map((name) => `${result?.group}:${name}`);
-        return Promise.all(ids.slice(0, LOADED_PER_CONNECTOR).map((id) => load(connectorId, id)));
+        const result = (await control(connectorId, CATALOG_SEARCH, {
+          query,
+          limit: Math.min(limit, LOADED_PER_CONNECTOR),
+        })) as { tools: CatalogSearchHit[] } | undefined;
+        return (result?.tools ?? []).map((hit) => connectorHit(hit, connectorId));
       }),
     find: (ids) => fromEach((connectorId) => Promise.all(ids.map((id) => load(connectorId, id)))),
   };
+}
+
+function connectorHit(
+  { id, name, description, inputSchema }: CatalogSearchHit,
+  connectorId: string,
+): ToolSearchHit {
+  return { id, name, description, inputSchema, next: "use_tool", connectorId };
 }
