@@ -35,6 +35,8 @@ export function createClient(config: CliConfig, fetchImpl: typeof fetch = fetch)
   ): Promise<Response> {
     const response = await fetchImpl(`${base}${route}`, {
       method,
+      // A redirect could carry the key or the message to another host.
+      redirect: "error",
       headers: {
         authorization: `Bearer ${config.key}`,
         // Says it is a stream, so a server shutting down closes it at once rather than waiting.
