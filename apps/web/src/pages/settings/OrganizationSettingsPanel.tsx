@@ -18,6 +18,7 @@ import { SettingsGroup, SettingsRow } from "../../components/settings/SettingsRo
 import { OrganizationMembersSettings } from "../../components/spaces/OrganizationMembersSettings";
 import { useQueryUserId, useSave } from "../../lib/query/query";
 import { clearSpaceSelection, rpc, selectSpace } from "../../lib/query/rpc";
+import { SpaceRpcProvider } from "../../lib/query/space-rpc";
 import { errorText } from "../../lib/query/user-error";
 import type { Organization } from "../../lib/spaces/organizations";
 import { organizationsQuery, useOrganizations } from "../../lib/spaces/organizations";
@@ -150,7 +151,11 @@ function OrganizationSettings({
     );
 
   if (page === "vault" && canManageOrganizationMembers(organization))
-    return <OrganizationVaultSettings onBack={() => onPageChange("main")} />;
+    return (
+      <SpaceRpcProvider spaceId={organization.defaultSpaceId}>
+        <OrganizationVaultSettings onBack={() => onPageChange("main")} />
+      </SpaceRpcProvider>
+    );
 
   // Alone in it, its owner is offered to invite someone instead of a count of one.
   const inviteFirst = organization.memberCount === 1 && canManageOrganizationMembers(organization);

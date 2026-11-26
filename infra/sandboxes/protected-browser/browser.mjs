@@ -1,6 +1,8 @@
 import { pathToFileURL } from "node:url";
 import { startEgressRelay } from "./egress.mjs";
 
+class SignInRejectedError extends Error {}
+
 const TIMEOUT = 8_000;
 const MAX_INPUT = 2_000_000;
 const MAX_PAGE = 24_000;
@@ -69,7 +71,7 @@ async function executeStep(page, step, loginOrigin) {
   try {
     const frame = await field.ownerFrame();
     if (!frame || webUrl(frame.url()).origin !== loginOrigin) {
-      throw new Error("Unexpected sign-in origin");
+      throw new SignInRejectedError("Unexpected sign-in origin");
     }
     await field.fill(step.text, { timeout: TIMEOUT });
   } finally {
@@ -121,12 +123,19 @@ export async function runBrowser(chromium, request, launchOptions = {}) {
     await page.goto(url.href, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     const initialStorage = signingIn ? null : await context.storageState();
     for (const step of request.steps) {
-      await executeStep(page, step, signingIn ? url.origin : undefined);
+      try {
+        await executeStep(page, step, signingIn ? url.origin : undefined);
+      } catch (error) {
+        if (signingIn && error instanceof Error && error.name === "TimeoutError") {
+          throw new SignInRejectedError("Sign-in step did not complete");
+        }
+        throw error;
+      }
     }
     const storageState = await context.storageState();
     if (!initialStorage) {
       if (!storageState.cookies.length && !storageState.origins.length) {
-        throw new Error("Sign-in produced no reusable browser state");
+        throw new SignInRejectedError("Sign-in produced no reusable browser state");
       }
       return { storageState };
     }
@@ -159,10 +168,11 @@ async function main() {
     } finally {
       relay.close();
     }
-  } catch {
+  } catch (error) {
     // Driver errors can contain arguments and URLs from a private browser operation.
     process.stdout.write(JSON.stringify({ error: "The protected browser operation failed." }));
-    process.exitCode = 1;
+    // The launcher uses this exit status for a rejected sign-in.
+    process.exitCode = error instanceof SignInRejectedError ? 10 : 1;
   }
 }
 

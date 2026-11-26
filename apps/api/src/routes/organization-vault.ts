@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ProtectedBrowserError } from "@rakazo/adapters";
 import { ClientError, deadlineSignal } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import {
@@ -7,7 +8,7 @@ import {
   organizationRole,
   runAsSystem,
 } from "@rakazo/db";
-import { bestEffort } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { RouterContext } from "./context.js";
 
 const loginSelect = {
@@ -150,9 +151,27 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
           },
           signal,
         ));
-      } catch {
-        // Browser errors can interpolate form values or data from the signed-in page.
-        throw new ClientError("BAD_REQUEST", "The protected sign-in could not finish");
+      } catch (error) {
+        if (requestSignal?.aborted) requestSignal.throwIfAborted();
+        if (!(error instanceof ProtectedBrowserError)) {
+          // Browser errors can contain form values or data from the signed-in page.
+          throw new Error("Unexpected protected browser failure");
+        }
+        getLogger().warn("Protected sign-in failed", {
+          organizationId,
+          loginId: login.id,
+          code: error.code,
+        });
+        if (error.code === "sign-in-rejected") {
+          throw new ClientError("BAD_REQUEST", "The protected sign-in could not finish");
+        }
+        if (error.code === "timeout") {
+          throw new ClientError("SERVICE_UNAVAILABLE", "Protected sign-in timed out");
+        }
+        if (error.code === "configuration") {
+          throw new ClientError("SERVICE_UNAVAILABLE", "Protected sign-in is unavailable");
+        }
+        throw error;
       }
       const savedState = {
         cookies: state.cookies.filter((cookie) => {

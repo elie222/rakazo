@@ -3,7 +3,7 @@ import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import type { ProtectedBrowserLauncher } from "@rakazo/adapters";
-import { EncryptedSecretStore } from "@rakazo/adapters";
+import { EncryptedSecretStore, ProtectedBrowserError } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
@@ -250,6 +250,27 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     expect(row.sessionCipher).toMatch(/^v2:/);
     const decoded = await encryption.load(row.sessionCipher!, loginId);
     expect(JSON.parse(decoded)).toEqual({ cookies: [], origins: [siteStorage.origins[0]] });
+  });
+
+  it.each([
+    [new ProtectedBrowserError("sign-in-rejected"), 400],
+    [new ProtectedBrowserError("configuration"), 503],
+    [new ProtectedBrowserError("timeout"), 503],
+    [new Error("fake-private-browser-output"), 500],
+  ])("returns a safe status for a protected browser failure (%#)", async (error, status) => {
+    const owner = await person("session-failure");
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    launch.mockRejectedValueOnce(error);
+    const result = await call(owner.actor, "organizations/vault/signIn", {
+      loginId: created.json.id,
+      ...signInInput,
+    });
+    expect(result.status).toBe(status);
+    expect(JSON.stringify(result.json)).not.toContain("fake-private-browser-output");
   });
 
   it("keeps a session revoked if a pending sign-in finishes afterward", async () => {

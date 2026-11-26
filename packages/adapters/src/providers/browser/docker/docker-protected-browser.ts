@@ -11,12 +11,12 @@ import type {
   ProtectedBrowserRequest,
   ProtectedBrowserResult,
 } from "../../../browser/protected-browser.js";
+import { ProtectedBrowserError } from "../../../browser/protected-browser.js";
 import { createProtectedBrowserProxy } from "./protected-browser-proxy.js";
 
 const docker = promisify(execFile);
 const MAX_BYTES = 2_000_000;
 const engineEnvironment = { PATH: "/usr/local/bin:/usr/bin:/bin" };
-const failure = () => new Error("The protected browser operation failed.");
 
 async function runContainer(engine: string[], name: string, input: string, signal: AbortSignal) {
   const child = spawn("docker", [...engine, "start", "--attach", "--interactive", name], {
@@ -36,13 +36,20 @@ async function runContainer(engine: string[], name: string, input: string, signa
     else chunks.push(chunk);
   });
   const [code] = await done;
-  if (code !== 0 || bytes > MAX_BYTES) throw failure();
-  const result: ProtectedBrowserResult = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  if (bytes > MAX_BYTES) throw new ProtectedBrowserError("invalid-output");
+  if (code === 10) throw new ProtectedBrowserError("sign-in-rejected");
+  if (code !== 0) throw new ProtectedBrowserError("container-exit");
+  let result: ProtectedBrowserResult;
+  try {
+    result = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new ProtectedBrowserError("invalid-output");
+  }
   if (
-    !Array.isArray(result.storageState?.cookies) ||
-    !Array.isArray(result.storageState?.origins)
+    !Array.isArray(result?.storageState?.cookies) ||
+    !Array.isArray(result?.storageState?.origins)
   ) {
-    throw failure();
+    throw new ProtectedBrowserError("invalid-output");
   }
   return result;
 }
@@ -62,11 +69,12 @@ export function createProtectedBrowserLauncher({
   return async (request: ProtectedBrowserRequest, parent?: AbortSignal) => {
     const signal = deadlineSignal(60_000, parent);
     const input = JSON.stringify(request);
-    if (Buffer.byteLength(input) > MAX_BYTES) throw failure();
+    if (Buffer.byteLength(input) > MAX_BYTES) throw new ProtectedBrowserError("invalid-output");
     const directory = await mkdtemp(join(tmpdir(), "rakazo-browser-"));
     const name = basename(directory);
     const engine = ["--host=unix:///var/run/docker.sock", "--config", directory];
     let completed = false;
+    let created = false;
     const proxy = createProtectedBrowserProxy();
     try {
       const mount = join(directory, "proxy");
@@ -107,11 +115,15 @@ export function createProtectedBrowserLauncher({
         ],
         { signal, env: engineEnvironment },
       );
+      created = true;
       const result = await runContainer(engine, name, input, signal);
       completed = true;
       return result;
-    } catch {
-      throw failure();
+    } catch (error) {
+      if (signal.aborted) throw new ProtectedBrowserError("timeout");
+      if (error instanceof ProtectedBrowserError) throw error;
+      // Engine errors may carry arguments and captured output.
+      throw new ProtectedBrowserError(created ? "container-exit" : "configuration");
     } finally {
       proxy.close();
       if (!completed)
