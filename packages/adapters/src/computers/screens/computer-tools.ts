@@ -264,11 +264,20 @@ async function resolveTarget(
     !sameRect(target.windowFrame, element.windowFrame, 0)
   )
     throw new ComputerStaleTargetError();
+  // The point must be the control's own: otherwise a page check judged one spot while the click
+  // lands on another, and a payment button could pass as the empty space beside it.
+  if (
+    Math.abs(target.point.x - element.point.x) > TARGET_POINT_SLACK_PX ||
+    Math.abs(target.point.y - element.point.y) > TARGET_POINT_SLACK_PX
+  )
+    throw new ComputerStaleTargetError();
   return element.point;
 }
 
 /** Pixels a control may move between two reads before its target is stale. */
 const TARGET_BBOX_SLACK_PX = 2;
+/** Pixels the point a target names may differ from the control it names. */
+const TARGET_POINT_SLACK_PX = 2;
 
 function sameRect(a: ComputerRect, b: ComputerRect, slack: number): boolean {
   return (

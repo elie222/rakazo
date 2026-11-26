@@ -425,7 +425,7 @@ describe("semantic computer targets", () => {
 
   it("resolves a target against the current frame and refuses a stale frame", async () => {
     const find = vi.fn(async () => ({
-      elements: [{ ...target, point: { x: 50, y: 30 } }],
+      elements: [{ ...target }],
       truncated: false,
     }));
     await expect(
@@ -435,7 +435,7 @@ describe("semantic computer targets", () => {
         { find },
       ),
     ).resolves.toEqual([
-      { kind: "pointer", x: 50, y: 30, type: "click", target: undefined, basedOn: "frame-1" },
+      { kind: "pointer", x: 10, y: 20, type: "click", target: undefined, basedOn: "frame-1" },
     ]);
     expect(find).toHaveBeenCalledWith({
       text: "Save",
@@ -452,6 +452,21 @@ describe("semantic computer targets", () => {
         "frame-2",
         {
           find,
+        },
+      ),
+    ).rejects.toThrow(ComputerStaleTargetError);
+  });
+
+  it("refuses a point that is not the control it names", async () => {
+    await expect(
+      resolveComputerTargets(
+        [{ kind: "pointer", x: 10, y: 20, type: "click", target }],
+        "frame-1",
+        {
+          find: async () => ({
+            elements: [{ ...target, point: { x: 400, y: 500 } }],
+            truncated: false,
+          }),
         },
       ),
     ).rejects.toThrow(ComputerStaleTargetError);
@@ -484,10 +499,7 @@ describe("semantic computer targets", () => {
   it("resolves both ends of a drag", async () => {
     const find = vi
       .fn()
-      .mockResolvedValueOnce({
-        elements: [{ ...target, point: { x: 100, y: 200 } }],
-        truncated: false,
-      })
+      .mockResolvedValueOnce({ elements: [{ ...target }], truncated: false })
       .mockResolvedValueOnce({
         elements: [
           { ...target, point: { x: 300, y: 400 }, bbox: { x: 250, y: 350, w: 100, h: 100 } },
@@ -513,7 +525,7 @@ describe("semantic computer targets", () => {
     ).resolves.toEqual([
       {
         kind: "drag",
-        from: { ...target, point: { x: 100, y: 200 } },
+        from: { ...target },
         to: {
           ...target,
           point: { x: 300, y: 400 },
