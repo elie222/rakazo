@@ -171,7 +171,7 @@ export function CreditChoice({
               Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's
               now paid. It's still free if you{" "}
               <a
-                className="underline underline-offset-4 hover:text-foreground"
+                className="whitespace-nowrap underline underline-offset-4 hover:text-foreground"
                 href={SELF_HOST_URL}
                 target="_blank"
                 rel="noreferrer"
