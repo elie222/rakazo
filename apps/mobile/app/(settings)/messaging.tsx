@@ -364,21 +364,36 @@ export default function MessagingSettings() {
       detail={`${identity.address}, ${identity.botName}`}
       trailing={rowMenu(
         identity.provider,
-        movable && bots.length > 1
-          ? [
-              {
-                id: "change",
-                title: t`Change bot`,
-                subactions: bots.map((bot) => ({
-                  id: `bot:${bot.id}`,
-                  title: bot.name,
-                  attributes: { disabled: linkedBots.has(bot.id) },
-                  state: bot.id === identity.botId ? ("on" as const) : undefined,
-                })),
-              },
-            ]
-          : [],
-        (id) => startLink(`identity:${identity.id}`, identity.provider, id.slice("bot:".length)),
+        [
+          {
+            id: "mirror",
+            title: t`Send app chats here`,
+            state: identity.mirrorAppChat ? ("on" as const) : undefined,
+          },
+          ...(movable && bots.length > 1
+            ? [
+                {
+                  id: "change",
+                  title: t`Change bot`,
+                  subactions: bots.map((bot) => ({
+                    id: `bot:${bot.id}`,
+                    title: bot.name,
+                    attributes: { disabled: linkedBots.has(bot.id) },
+                    state: bot.id === identity.botId ? ("on" as const) : undefined,
+                  })),
+                },
+              ]
+            : []),
+        ],
+        (id) =>
+          id === "mirror"
+            ? act((send) =>
+                send("messaging/identities/setMirror", {
+                  identityId: identity.id,
+                  enabled: !identity.mirrorAppChat,
+                }),
+              )
+            : startLink(`identity:${identity.id}`, identity.provider, id.slice("bot:".length)),
         {
           title: t`Unlink`,
           run: (send) => send("messaging/identities/unlink", { identityId: identity.id }),

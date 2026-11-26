@@ -49,6 +49,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
               address: "+15551230001",
               botId: "bot-1",
               botName: "Chief",
+              mirrorAppChat: false,
             },
             {
               id: "mi-2",
@@ -56,6 +57,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
               address: "424242",
               botId: "bot-archived",
               botName: "Lead",
+              mirrorAppChat: false,
             },
           ],
         },

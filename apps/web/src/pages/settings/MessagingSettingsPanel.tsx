@@ -474,16 +474,31 @@ export function MessagingSettingsPanel() {
       }
       control={rowMenu(
         identity.provider,
-        movable && bots.length > 1 ? (
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger disabled={issuingLink}>
-              <Trans>Change bot</Trans>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              {botItems(`identity:${identity.id}`, identity.provider, identity.botId)}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        ) : null,
+        <>
+          <DropdownMenuItem
+            onClick={() =>
+              void act(() =>
+                rpc.messaging.identities.setMirror({
+                  identityId: identity.id,
+                  enabled: !identity.mirrorAppChat,
+                }),
+              )
+            }
+          >
+            <Trans>Send app chats here</Trans>
+            {identity.mirrorAppChat ? <CheckIcon className="ml-auto" aria-label={t`On`} /> : null}
+          </DropdownMenuItem>
+          {movable && bots.length > 1 ? (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger disabled={issuingLink}>
+                <Trans>Change bot</Trans>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {botItems(`identity:${identity.id}`, identity.provider, identity.botId)}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ) : null}
+        </>,
         {
           label: <Trans>Unlink</Trans>,
           run: () => rpc.messaging.identities.unlink({ identityId: identity.id }),
