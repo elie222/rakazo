@@ -306,6 +306,20 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["spaces/invites/cancel", { spaceId: "missing-space" }],
       ["organizations/list"],
       ["organizations/vault/list"],
+      ["organizations/vault/settings"],
+      ["organizations/vault/revokeSession", { loginId: "missing-login" }],
+      [
+        "organizations/vault/signIn",
+        {
+          loginId: "missing-login",
+          url: "https://example.test",
+          steps: [
+            { kind: "fill", role: "textbox", name: "Password", text: "fake-password" },
+            { kind: "click", role: "button", name: "Sign in" },
+            { kind: "wait", role: "heading", name: "Account" },
+          ],
+        },
+      ],
       ["organizations/vault/create", { origin: "https://example.test", name: "Test", botIds: [] }],
       ["organizations/vault/setAgents", { loginId: "missing-login", botIds: [] }],
       ["organizations/vault/remove", { loginId: "missing-login" }],

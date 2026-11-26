@@ -1,32 +1,19 @@
-import { ClientError } from "@rakazo/core";
+import { randomUUID } from "node:crypto";
+import { ProtectedBrowserError } from "@rakazo/adapters";
+import { ClientError, deadlineSignal } from "@rakazo/core";
 import {
+  assertLeaseHeld,
+  LeaseHeldError,
+  LeaseLostError,
   lockManagedOrganization,
   managedOrganizationId,
   OrganizationAdminRequiredError,
   Prisma,
   runAsSystem,
+  withLease,
 } from "@rakazo/db";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import type { RouterContext } from "./context.js";
-
-const loginSelect = {
-  id: true,
-  name: true,
-  origin: true,
-  grants: {
-    where: { bot: { archivedAt: null } },
-    select: { botId: true },
-    orderBy: { botId: "asc" },
-  },
-} satisfies Prisma.OrganizationLoginSelect;
-
-function loginDto({
-  grants,
-  ...login
-}: Prisma.OrganizationLoginGetPayload<{
-  select: typeof loginSelect;
-}>) {
-  return { ...login, botIds: grants.map(({ botId }) => botId) };
-}
 
 class InvalidOrganizationLoginAgentsError extends ClientError {
   constructor() {
@@ -81,23 +68,219 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
       }),
     );
   }
+  function listLogins(tx: Prisma.TransactionClient, organizationId: string, loginId?: string) {
+    return tx.$queryRaw<
+      { id: string; name: string; origin: string; hasSession: boolean; botIds: string[] }[]
+    >`
+      SELECT login.id, login.name, login.origin, login."sessionCipher" IS NOT NULL AS "hasSession",
+        ARRAY(
+          SELECT grant_row."botId" FROM organization_login_grants AS grant_row
+          JOIN bots AS bot ON bot.id = grant_row."botId"
+          WHERE grant_row."loginId" = login.id AND bot."archivedAt" IS NULL
+          ORDER BY grant_row."botId"
+        ) AS "botIds"
+      FROM organization_logins AS login
+      WHERE login."organizationId" = ${organizationId}
+        ${loginId === undefined ? Prisma.empty : Prisma.sql`AND login.id = ${loginId}`}
+      ORDER BY login.name, login.id
+    `;
+  }
+
+  async function readLogin(tx: Prisma.TransactionClient, organizationId: string, loginId: string) {
+    const [login] = await listLogins(tx, organizationId, loginId);
+    if (!login) throw new OrganizationLoginNotFoundError();
+    return login;
+  }
+
+  async function notify(organizationId: string) {
+    await bestEffort(
+      "publish shared login change",
+      deps.events?.publishOrganizationChange?.(organizationId) ?? Promise.resolve(),
+    );
+  }
+
+  async function change<T>(
+    actor: { userId: string; spaceId: string },
+    work: (tx: Prisma.TransactionClient, organizationId: string) => Promise<T>,
+  ) {
+    const { organizationId, value } = await adminOperation(actor, async (tx, organizationId) => ({
+      organizationId,
+      value: await work(tx, organizationId),
+    }));
+    await notify(organizationId);
+    return value;
+  }
+
   return {
-    list: vault.list.handler(({ context }) =>
+    settings: vault.settings.handler(({ context }) =>
       adminOperation(
         context.actor,
-        async (tx, organizationId) => {
-          const rows = await tx.organizationLogin.findMany({
-            where: { organizationId },
-            select: loginSelect,
+        async (tx, organizationId) => ({
+          signInAvailable: Boolean(deps.organizationLoginBrowser),
+          logins: await listLogins(tx, organizationId),
+          agents: await tx.bot.findMany({
+            where: { archivedAt: null, space: { organizationId } },
+            select: { id: true, name: true },
             orderBy: [{ name: "asc" }, { id: "asc" }],
-          });
-          return rows.map(loginDto);
-        },
+          }),
+        }),
         false,
       ),
     ),
+    signIn: vault.signIn.handler(async ({ context, input, signal: requestSignal }) => {
+      const actor = context.actor;
+      const { organizationId, login } = await adminOperation(
+        actor,
+        async (tx, organizationId) => {
+          const login = await tx.organizationLogin.findFirst({
+            where: { id: input.loginId, organizationId },
+            select: { id: true, origin: true, sessionVersion: true },
+          });
+          if (!login) throw new OrganizationLoginNotFoundError();
+          return { organizationId, login };
+        },
+        false,
+      );
+      const browser = deps.organizationLoginBrowser;
+      if (!browser) throw new ClientError("BAD_REQUEST", "Protected sign-in is unavailable");
+
+      const url = URL.canParse(input.url) ? new URL(input.url) : null;
+      if (!url || url.origin !== login.origin || url.username || url.password) {
+        throw new ClientError("BAD_REQUEST", "Enter a sign-in page on the saved site");
+      }
+      const deadline = deadlineSignal(100_000, requestSignal);
+      try {
+        return await runAsSystem("admit shared login sign-in", () =>
+          withLease(
+            deps.prisma,
+            `organization-login-sign-in:${organizationId}`,
+            { ttlMs: 120_000, signal: deadline },
+            async (lease) => {
+              const { signal } = lease;
+              signal.throwIfAborted();
+              let state: Awaited<ReturnType<typeof browser.launch>>["storageState"];
+              try {
+                ({ storageState: state } = await browser.launch(
+                  {
+                    mode: "sign-in",
+                    url: url.href,
+                    steps: [
+                      {
+                        kind: "fill",
+                        role: "textbox",
+                        name: input.usernameLabel,
+                        text: input.username,
+                      },
+                      {
+                        kind: "fill",
+                        role: "textbox",
+                        name: input.passwordLabel,
+                        text: input.password,
+                      },
+                      { kind: "click", role: "button", name: input.submitLabel },
+                      { kind: "wait", role: "heading", name: input.successHeading },
+                    ],
+                  },
+                  signal,
+                ));
+              } catch (error) {
+                if (requestSignal?.aborted) requestSignal.throwIfAborted();
+                if (!(error instanceof ProtectedBrowserError)) {
+                  // Browser errors can contain form values or data from the signed-in page.
+                  throw new Error("Unexpected protected browser failure");
+                }
+                getLogger().warn("Protected sign-in failed", {
+                  organizationId,
+                  loginId: login.id,
+                  code: error.code,
+                });
+                if (error.code === "sign-in-rejected") {
+                  throw new ClientError("BAD_REQUEST", "The protected sign-in could not finish");
+                }
+                if (error.code === "capacity") {
+                  throw new ClientError(
+                    "SERVICE_UNAVAILABLE",
+                    "Protected sign-in is busy. Try again shortly.",
+                  );
+                }
+                if (error.code === "timeout") {
+                  throw new ClientError("SERVICE_UNAVAILABLE", "Protected sign-in timed out");
+                }
+                if (error.code === "configuration") {
+                  throw new ClientError("SERVICE_UNAVAILABLE", "Protected sign-in is unavailable");
+                }
+                throw error;
+              }
+              const savedState = {
+                cookies: state.cookies.filter((cookie) => {
+                  const host = cookie.domain.startsWith(".")
+                    ? cookie.domain.slice(1)
+                    : cookie.domain;
+                  return (
+                    url.hostname === host ||
+                    (cookie.domain.startsWith(".") && url.hostname.endsWith(`.${host}`))
+                  );
+                }),
+                origins: state.origins.filter((entry) => entry.origin === url.origin),
+              };
+              if (
+                !savedState.cookies.length &&
+                !savedState.origins.some((entry) => entry.localStorage.length)
+              ) {
+                throw new ClientError("BAD_REQUEST", "The site returned no session data");
+              }
+              const operationId = randomUUID();
+              const sealed = await browser.encryption.put(
+                JSON.stringify(savedState),
+                { ...actor, operationId, traceId: operationId, signal },
+                { recordId: login.id },
+              );
+              return change(actor, async (tx, currentOrganizationId) => {
+                if (organizationId !== currentOrganizationId)
+                  throw new OrganizationLoginNotFoundError();
+                signal.throwIfAborted();
+                await assertLeaseHeld(tx, lease);
+                const { count } = await tx.organizationLogin.updateMany({
+                  where: { id: login.id, organizationId, sessionVersion: login.sessionVersion },
+                  data: { sessionCipher: sealed.ciphertext, sessionVersion: { increment: 1 } },
+                });
+                if (!count)
+                  throw new ClientError(
+                    "CONFLICT",
+                    "The session changed while you were signing in",
+                  );
+                return readLogin(tx, organizationId, login.id);
+              });
+            },
+          ),
+        );
+      } catch (error) {
+        if (error instanceof LeaseHeldError) {
+          throw new ClientError(
+            "TOO_MANY_REQUESTS",
+            "A protected sign-in is already in progress for this organization",
+          );
+        }
+        if (requestSignal?.aborted && error === requestSignal.reason) throw error;
+        if (error instanceof LeaseLostError || (deadline.aborted && error === deadline.reason)) {
+          throw new ClientError("SERVICE_UNAVAILABLE", "Protected sign-in timed out");
+        }
+        throw error;
+      }
+    }),
+    revokeSession: vault.revokeSession.handler(({ context, input }) =>
+      change(context.actor, async (tx, organizationId) => {
+        const { count } = await tx.organizationLogin.updateMany({
+          where: { id: input.loginId, organizationId },
+          data: { sessionCipher: null, sessionVersion: { increment: 1 } },
+        });
+        if (!count) throw new OrganizationLoginNotFoundError();
+        return readLogin(tx, organizationId, input.loginId);
+      }),
+    ),
+    list: vault.list.handler(({ context }) => adminOperation(context.actor, listLogins, false)),
     create: vault.create.handler(({ context, input }) =>
-      adminOperation(context.actor, async (tx, organizationId) => {
+      change(context.actor, async (tx, organizationId) => {
         const botIds = await validateAgents(tx, organizationId, input.botIds);
         const row = await tx.organizationLogin.create({
           data: {
@@ -106,13 +289,13 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
             origin: input.origin,
             grants: { create: botIds.map((botId) => ({ botId })) },
           },
-          select: loginSelect,
+          select: { id: true },
         });
-        return loginDto(row);
+        return readLogin(tx, organizationId, row.id);
       }),
     ),
     setAgents: vault.setAgents.handler(({ context, input }) =>
-      adminOperation(context.actor, async (tx, organizationId) => {
+      change(context.actor, async (tx, organizationId) => {
         const [login] = await tx.$queryRaw<{ id: string }[]>`
           SELECT id FROM organization_logins
           WHERE id = ${input.loginId} AND "organizationId" = ${organizationId}
@@ -135,16 +318,11 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
           data: botIds.map((botId) => ({ loginId: login.id, botId })),
           skipDuplicates: true,
         });
-        return loginDto(
-          await tx.organizationLogin.findUniqueOrThrow({
-            where: { id: login.id },
-            select: loginSelect,
-          }),
-        );
+        return readLogin(tx, organizationId, login.id);
       }),
     ),
     remove: vault.remove.handler(({ context, input }) =>
-      adminOperation(context.actor, async (tx, organizationId) => {
+      change(context.actor, async (tx, organizationId) => {
         const { count } = await tx.organizationLogin.deleteMany({
           where: { id: input.loginId, organizationId },
         });

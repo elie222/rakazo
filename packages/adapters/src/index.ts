@@ -26,6 +26,9 @@ export * from "./browser/browser-provider-factory.js";
 export * from "./browser/browser-tools.js";
 export * from "./browser/fake-browser.js";
 export * from "./browser/page-browser-session.js";
+export type { ProtectedBrowserLauncher } from "./browser/protected-browser.js";
+export { ProtectedBrowserError } from "./browser/protected-browser.js";
+export { configuredProtectedBrowser } from "./browser/protected-browser-factory.js";
 export type { ApnsVoipConfig } from "./calls/apns-voip.js";
 export {
   apnsVoipConfig,

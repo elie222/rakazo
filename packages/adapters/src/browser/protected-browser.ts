@@ -41,6 +41,7 @@ export type ProtectedBrowserLauncher = (
 export class ProtectedBrowserError extends Error {
   constructor(
     public readonly code:
+      | "capacity"
       | "configuration"
       | "timeout"
       | "sign-in-rejected"

@@ -134,6 +134,7 @@ import { sendReferralEmails } from "./email/referral-email.js";
 import type { AppEnv } from "./env.js";
 import { loadEnv, withEnvOverrides } from "./env.js";
 import { mountAppAssociation } from "./http/app-association.js";
+import type { AppLifecycle } from "./http/app-lifecycle.js";
 import {
   clientIpMiddleware,
   createClientIpResolver,
@@ -158,6 +159,7 @@ import { settleWithTimeout } from "./messaging/team-chat-startup.js";
 import { recordSignInEnded } from "./models/model-connect-analytics.js";
 import { createRouter, routerEnv } from "./router.js";
 import { handleHttpError } from "./rpc-errors.js";
+import { organizationLoginBrowser } from "./spaces/organization-login-browser.js";
 import type { SpaceDeletionDeps } from "./spaces/space-deletion.js";
 import { afterSpaceDeparture } from "./spaces/space-departure.js";
 import { cspReportRoutes } from "./telemetry/csp-report.js";
@@ -167,7 +169,7 @@ import { mountWebhookHttpRoutes } from "./webhooks/webhook.js";
 // A stop that hands runs back is allowed 30 seconds before the process is killed.
 const REQUEST_DRAIN_MS = 20_000;
 
-export interface AppHandles {
+export interface AppHandles extends AppLifecycle {
   app: Hono;
   prisma: PrismaClient;
   jobs: JobPublisher;
@@ -179,17 +181,6 @@ export interface AppHandles {
   notifications: NotificationProvider;
   executor: ReturnType<typeof createRunExecutor>;
   runtime: AgentRuntime;
-  awaitIdle?: () => Promise<void>;
-  backgroundFailures?: () => Array<{ name: string; count: number }>;
-  /** Node `upgrade` listener for desktop device sockets; absent when the feature is off. */
-  handleUpgrade?: UserDeviceHub["handleUpgrade"];
-  /**
-   * Stops this process. With `letRunsFinish`, the runs it is executing first end their turn, for
-   * up to RUN_DRAIN_MS, while it claims nothing new; otherwise, or when a later stop arrives
-   * without it, they are handed back at once. Either way, new runs stop at once; the rest waits
-   * for `connectionsClosed`, which settles once the server has stopped taking requests.
-   */
-  stop: (options?: { letRunsFinish?: boolean; connectionsClosed?: Promise<void> }) => Promise<void>;
 }
 
 // Startup and everything it schedules (pollers, team chat, the in-memory job
@@ -671,6 +662,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
 
   const router = createRouter({
+    organizationLoginBrowser: await organizationLoginBrowser(env.encryptionKey),
     // Only computers people paired: nothing clears a routine's "Use my computer" when this
     // server's own screen is turned off and on again.
     userDevices: userDevicesOverride ?? userDevices,
