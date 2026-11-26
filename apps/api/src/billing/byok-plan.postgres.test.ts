@@ -84,6 +84,7 @@ dbTests("own-key plan", () => {
     await expect(service.status(actor)).resolves.toMatchObject({
       access: false,
       byokFreeUntil: null,
+      freePeriodEnded: true,
     });
     await expect(spaceHasModelAccess(prisma, spaceId)).resolves.toBe(false);
   });
@@ -96,12 +97,9 @@ dbTests("own-key plan", () => {
     expect(provider.byokCheckouts.get(customer)?.trialDays).toBeUndefined();
     provider.completeByokCheckout(customer);
     await service.sync(customer);
-    await expect(service.status(actor)).resolves.toMatchObject({
-      access: true,
-      funding: "byok",
-      state: "active",
-      balanceUsd: 0,
-    });
+    const paid = await service.status(actor);
+    expect(paid).toMatchObject({ access: true, funding: "byok", state: "active", balanceUsd: 0 });
+    expect(paid.freePeriodEnded).toBeUndefined();
     await expect(spaceHasModelAccess(prisma, spaceId)).resolves.toBe(true);
     await expect(service.checkout(actor)).rejects.toMatchObject({ code: "CONFLICT" });
   });
