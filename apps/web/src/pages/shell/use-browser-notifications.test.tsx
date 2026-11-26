@@ -1655,6 +1655,292 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toEqual([]);
   });
 
+  it("keeps a pending-owner legacy ask across intermediate renders and ownerless live runs until ownership arrives", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    // Live UI snapshot has cursor already advanced by thread.message.created and an ownerless run stub.
+    snapshotRef.current = {
+      threadId: "thread-b",
+      cursor: 5,
+      olderCursor: null,
+      activeRuns: [{ id: "run-legacy", botId: "bot-b", status: "running" }],
+      messages: [
+        { id: "msg-legacy", blocks: [{ kind: "ask", text: "Approve legacy?", status: "pending" }] },
+      ],
+    } as unknown as ThreadSnapshot;
+    await open({ botId: "bot-b" });
+
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "legacy-ask-render",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 5,
+          runId: "run-legacy",
+          botId: "bot-b",
+          payload: {
+            id: "msg-legacy",
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Approve legacy?", status: "pending" }],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    // Intermediate render between thread.message.created and run.waiting_input must NOT drop the ask.
+    await open({ botId: "bot-b" });
+    expect(shown()).toEqual([]);
+
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "legacy-wait",
+          type: "run.waiting_input",
+          threadId: "thread-b",
+          seq: 6,
+          runId: "run-legacy",
+          botId: "bot-b",
+          payload: { userId: "user-1" },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    expect(shown()).toEqual([["Scout", "Approve legacy?", "thread-b:ask"]]);
+  });
+
+  it("drops stopped-run questions (queued and replayed) when a fresh server snapshot omits the run", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    setLiveSnapshot("thread-b", [{ id: "run-stopped", userId: "user-1" }]);
+    await open({ botId: "bot-b" });
+
+    // Queued tool question whose card remains marked pending after the run is stopped.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "queued-stopped-tq",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 6,
+          runId: "run-stopped",
+          botId: "bot-b",
+          payload: {
+            id: "msg-stopped-1",
+            role: "bot",
+            runUserId: "user-1",
+            blocks: [
+              {
+                kind: "tool_question",
+                question: { source: "Calendar", message: "Stopped queued", fields: [] },
+                status: "pending",
+                expiresAt: later,
+                publicKey: "key",
+              },
+            ],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+
+    // Fresh raw server snapshot at cursor 10 omits run-stopped even though the card block is still pending.
+    const rawSnap = {
+      threadId: "thread-b",
+      cursor: 10,
+      olderCursor: null,
+      activeRuns: [],
+      messages: [
+        {
+          id: "msg-stopped-1",
+          blocks: [
+            {
+              kind: "tool_question",
+              question: { source: "Calendar", message: "Stopped queued", fields: [] },
+              status: "pending",
+              expiresAt: later,
+              publicKey: "key",
+            },
+          ],
+        },
+        {
+          id: "msg-stopped-2",
+          blocks: [
+            {
+              kind: "tool_question",
+              question: { source: "Calendar", message: "Stopped replayed", fields: [] },
+              status: "pending",
+              expiresAt: later,
+              publicKey: "key",
+            },
+          ],
+        },
+      ],
+    } as unknown as ThreadSnapshot;
+    act(() => hook.reconcileSnapshot(rawSnap));
+
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
+
+    // Replayed tool question first seen after rawSnap committed must also be suppressed.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "replayed-stopped-tq",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 8,
+          runId: "run-stopped",
+          botId: "bot-b",
+          payload: {
+            id: "msg-stopped-2",
+            role: "bot",
+            runUserId: "user-1",
+            blocks: [
+              {
+                kind: "tool_question",
+                question: { source: "Calendar", message: "Stopped replayed", fields: [] },
+                status: "pending",
+                expiresAt: later,
+                publicKey: "key",
+              },
+            ],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    expect(shown()).toEqual([]);
+  });
+
+  it("ignores search-jump UI snapshots when checking clears and trusts the raw server snapshot over expanded history", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    setLiveSnapshot("thread-b", [{ id: "run-mine", userId: "user-1" }]);
+    await open({ botId: "bot-b" });
+
+    // Queue an open ask at seq 20.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "open-ask-jump",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 20,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            id: "msg-open-20",
+            role: "bot",
+            runUserId: "user-1",
+            blocks: [{ kind: "ask", text: "Still open?", status: "pending" }],
+          },
+        },
+        "thread-b",
+        10,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+
+    // Search jump replaces UI snapshotRef with an older page whose olderCursor is null and omits msg-open-20.
+    snapshotRef.current = {
+      threadId: "thread-b",
+      cursor: 20,
+      olderCursor: null,
+      activeRuns: [{ id: "run-mine", botId: "bot-b", status: "waiting_input", userId: "user-1" }],
+      messages: [{ id: "msg-old-1", blocks: [{ kind: "text", text: "Old message" }] }],
+    } as unknown as ThreadSnapshot;
+    await open({ botId: "bot-b" });
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([["Scout", "Still open?", "thread-b:ask"]]);
+
+    // Conversely, when expanded history keeps a deleted ask in UI snapshotRef, raw threads.get drops it.
+    FakeNotification.shown = [];
+    FakeNotification.permission = "default";
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "cleared-in-expanded",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 25,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            id: "msg-cleared-25",
+            role: "bot",
+            runUserId: "user-1",
+            blocks: [{ kind: "ask", text: "Deleted ask?", status: "pending" }],
+          },
+        },
+        "thread-b",
+        20,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    // UI snapshot retains msg-cleared-25 (expanded history), while raw server snapshot only has post-clear msg-30.
+    snapshotRef.current = {
+      threadId: "thread-b",
+      cursor: 30,
+      olderCursor: null,
+      activeRuns: [{ id: "run-mine", botId: "bot-b", status: "waiting_input", userId: "user-1" }],
+      messages: [
+        {
+          id: "msg-cleared-25",
+          blocks: [{ kind: "ask", text: "Deleted ask?", status: "pending" }],
+        },
+        { id: "msg-post-clear-30", blocks: [{ kind: "text", text: "Fresh after clear" }] },
+      ],
+    } as unknown as ThreadSnapshot;
+    act(() =>
+      hook.reconcileSnapshot({
+        threadId: "thread-b",
+        cursor: 30,
+        olderCursor: null,
+        activeRuns: [{ id: "run-mine", botId: "bot-b", status: "waiting_input", userId: "user-1" }],
+        messages: [
+          { id: "msg-post-clear-30", blocks: [{ kind: "text", text: "Fresh after clear" }] },
+        ],
+      } as unknown as ThreadSnapshot),
+    );
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
+  });
+
   it("closes the stream when the shell unmounts", async () => {
     await open({ botId: "bot-a" });
     act(() => root.unmount());

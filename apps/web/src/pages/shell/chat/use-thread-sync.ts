@@ -232,7 +232,7 @@ export function useThreadSync({
     const transcriptRemounted = scrollElement !== null && scrollElement !== preRequestElement;
     webLogoAvatarActivity.reconcile(snap);
     commitSnapshot(reconciled.snapshot);
-    reconcileSnapshot?.(reconciled.snapshot);
+    reconcileSnapshot?.(snap);
     if (!computerOpenRef.current) commitComputer(null);
     setRoutines([]);
     setRoutinesBotId(null);
@@ -284,7 +284,7 @@ export function useThreadSync({
     );
     webLogoAvatarActivity.reconcile(snap);
     commitSnapshot(reconciled.snapshot);
-    reconcileSnapshot?.(reconciled.snapshot);
+    reconcileSnapshot?.(snap);
     commitComputer(reconciled.computer);
     cacheComputerFor(id, { computer: reconciled.computer });
     if (
@@ -424,6 +424,7 @@ export function useThreadSync({
             : pendingJump
               ? await rpc.threads.get({ botId: active.id }, { signal: abort.signal })
               : await refreshThread(active.id, abort.signal);
+        if (pendingJump) reconcileSnapshot?.(loaded);
         subscribedThreadId = loaded.threadId;
         return loaded;
       },
@@ -533,6 +534,7 @@ export function useThreadSync({
         const loaded = pendingJump
           ? await rpc.threads.get({ groupId }, { signal: abort.signal })
           : await refreshGroupThread(groupId, abort.signal);
+        if (pendingJump) reconcileSnapshot?.(loaded);
         subscribedThreadId = loaded.threadId;
         return loaded;
       },
