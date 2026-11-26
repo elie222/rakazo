@@ -32,24 +32,18 @@ export function runModelBackups(
   organizationPrimary = false,
 ) {
   let backupChoices: Promise<ModelRoleChoice[]> | undefined;
+  // A shared model selection uses organization funding for the entire run.
   const load = () =>
-    (backupChoices ??= scripted
-      ? Promise.resolve([])
-      : (async () => {
-          if (
-            organizationPrimary &&
-            (await modelCreditBillingEnabled(deps)) &&
-            !(await memberHasModelAccess(deps.prisma, run))
-          )
-            return [];
-          return effectiveModelRole(deps.prisma, run, "main", defaults).then(
+    (backupChoices ??=
+      scripted || organizationPrimary
+        ? Promise.resolve([])
+        : effectiveModelRole(deps.prisma, run, "main", defaults).then(
             (role) => role.backups,
             (error: unknown) => {
               getLogger().warn("Backup models could not be loaded", { runId: run.id, error });
               return [];
             },
-          );
-        })());
+          ));
   // Backups that could not start here are not offered again once the model runs.
   const unavailable = new Set<ModelRoleChoice>();
   // A main model with no connection, or whose provider refused its sign-in, runs on the

@@ -1,4 +1,5 @@
 import type { Actor, MessageBlock } from "@rakazo/contracts";
+import { MODEL_IMAGE_INPUT_UNKNOWN } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { assertThreadImageInput } from "./thread-image-admission.js";
@@ -593,7 +594,7 @@ describe("current image send admission", () => {
 const actor = { userId: "member", spaceId: "space" } as Actor;
 const image = [{ kind: "image" }] as MessageBlock[];
 
-function organizationModel(supportsImages: boolean) {
+function organizationModel(supportsImages: boolean | null) {
   return {
     bot: {
       findFirst: async () => ({ modelProvider: null, modelId: null, thinkingLevel: null }),
@@ -636,4 +637,17 @@ it("uses the selected connection's per-model image setting when secrets are avai
       },
     }),
   ).rejects.toMatchObject({ code: "CONFLICT" });
+});
+
+it("reports unknown image capability when the selected organization key cannot be read", async () => {
+  const prisma = organizationModel(null);
+  await expect(
+    assertThreadImageInput(prisma as unknown as PrismaClient, actor, "bot", image, undefined, {
+      deployment: null,
+      secrets: { load: vi.fn().mockRejectedValue(new Error("fixture key unavailable")) },
+    }),
+  ).rejects.toMatchObject({
+    code: "CONFLICT",
+    message: MODEL_IMAGE_INPUT_UNKNOWN,
+  });
 });

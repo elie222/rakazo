@@ -111,20 +111,15 @@ export async function assertThreadImageInput(
           ? overrideCredential
           : selected.credential;
   if (organizationConnection && supportsImages === undefined) {
-    if (configuration) {
-      const secret = parseModelSecret(
-        await configuration.secrets.load(
-          organizationConnection.ciphertext,
-          organizationConnection.secretId,
-        ),
-      );
-      supportsImages = connectionModelSettings(secret, provider, id, {
-        defaultModel: id,
-        supportsImages: organizationConnection.supportsImages,
-      }).images;
-    } else {
-      supportsImages = organizationConnection.supportsImages ?? undefined;
-    }
+    const secret = configuration
+      ? await readModelSecret(configuration.secrets, organizationConnection)
+      : undefined;
+    supportsImages = secret
+      ? connectionModelSettings(secret, provider, id, {
+          defaultModel: id,
+          supportsImages: organizationConnection.supportsImages,
+        }).images
+      : (organizationConnection.supportsImages ?? undefined);
   }
   if (supportsImages === undefined && configuration && credential) {
     // A model the catalog cannot describe reads images when its settings say so; without
@@ -170,9 +165,17 @@ async function loadModelSecret(
   const row = await prisma.secret.findFirst({
     where: { id: credential.secretId, userId: actor.userId, spaceId: null },
   });
-  if (!row) return undefined;
+  return row
+    ? readModelSecret(secrets, { ciphertext: row.ciphertext, secretId: row.id })
+    : undefined;
+}
+
+async function readModelSecret(
+  secrets: Pick<SecretStore, "load">,
+  row: { ciphertext: string; secretId: string },
+) {
   try {
-    return parseModelSecret(await secrets.load(row.ciphertext, row.id));
+    return parseModelSecret(await secrets.load(row.ciphertext, row.secretId));
   } catch {
     return undefined;
   }
