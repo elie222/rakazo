@@ -31,11 +31,12 @@ const processes: string[] = JSON.parse(
 // graph; the rest share one per worker, which skips re-importing the same modules for every file.
 // Spies, stubbed envs and globals, and fake timers are undone before each test (see `test` below
 // and pin-test-env.ts), so files that only use those share too.
-// Files that replace prototype methods keep a fresh graph as well. The model catalog is built
-// once per process from the model env vars, so files that stub them stay isolated too.
-// Database runs give every file its own database, so they never share.
+// Files that replace prototype methods or start a `@hono/node-server` listener (which replaces
+// `globalThis.Response` unless `overrideGlobalObjects: false` is set) keep a fresh graph as well.
+// The model catalog is built once per process from the model env vars, so files that stub them
+// stay isolated too. Database runs give every file its own database, so they never share.
 const mutatesSharedState =
-  /vi\.(mock|doMock|resetModules)\(|globalThis\.\w+ *=[^=]|(globalThis|global|window)\[[^\]]+\] *=[^=]|process\.env(\.\w+|\[[^\]]+\]) *=[^=]|delete process\.env|defineProperty\((globalThis|global|window|document|navigator|process)|process\.chdir|@vitest-environment|\.prototype\.\w+ *=[^=]|stubEnv\(\s*["'`](RAKAZO_LOCAL_|RAKAZO_OPENAI_COMPATIBLE|PI_)/;
+  /vi\.(mock|doMock|resetModules)\(|globalThis\.\w+ *=[^=]|(globalThis|global|window)\[[^\]]+\] *=[^=]|process\.env(\.\w+|\[[^\]]+\]) *=[^=]|delete process\.env|defineProperty\((globalThis|global|window|document|navigator|process)|process\.chdir|@vitest-environment|\.prototype\.\w+ *=[^=]|stubEnv\(\s*["'`](RAKAZO_LOCAL_|RAKAZO_OPENAI_COMPATIBLE|PI_)|@hono\/node-server/;
 const isolated = include
   .flatMap((pattern) => globSync(pattern, { cwd: root }))
   .filter((file) => !processes.includes(file))
