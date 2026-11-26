@@ -521,6 +521,7 @@ describe("desktop.setup.stack.stop", () => {
 
   it("keeps setup open and reloads with stop retry when Quit and Stop Bots fails during a successful save", async () => {
     const previousStack = desktop.localStack;
+    desktop.currentSetup = { mode: "new", serverUrl: "http://127.0.0.1:47000" };
     desktop.localStack = {
       webUrl: () => "http://127.0.0.1:47000",
     } as unknown as typeof desktop.localStack;
@@ -544,6 +545,13 @@ describe("desktop.setup.stack.stop", () => {
         stopToQuit: true,
         error: "Could not stop the local stack.",
       });
+
+      // Abandoning stop retry via Change Rakazo Server flushes the deferred left-behind stop once.
+      showSetupWindow(null, { quitAfterStop: false });
+      expect(stopStackLeftBehind).toHaveBeenCalledOnce();
+      expect(stopStackLeftBehind).toHaveBeenCalledWith("new");
+      showSetupWindow(null, { quitAfterStop: false });
+      expect(stopStackLeftBehind).toHaveBeenCalledOnce();
     } finally {
       desktop.localStack = previousStack;
     }

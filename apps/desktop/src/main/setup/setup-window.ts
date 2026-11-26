@@ -18,7 +18,16 @@ let stackStopInProgress = false;
 let quitAfterStackStop = false;
 let reloadSetupAfterStop = false;
 let reloadSetupAfterSave = false;
+let pendingLeftBehindStop: { previousMode: DesktopSetup["mode"] | undefined } | null = null;
+let stopLeftBehindCallback: ((previousMode: DesktopSetup["mode"] | undefined) => void) | undefined;
 let onAppReadyCallback: (() => void) | undefined;
+
+function flushPendingLeftBehindStop() {
+  const pending = pendingLeftBehindStop;
+  if (pending === null) return;
+  pendingLeftBehindStop = null;
+  stopLeftBehindCallback?.(pending.previousMode);
+}
 
 export function isSetupSaveInProgress(): boolean {
   return setupSaveInProgress;
@@ -46,6 +55,7 @@ function createSetupWindow() {
       quitAfterStackStop = false;
       reloadSetupAfterStop = false;
       reloadSetupAfterSave = false;
+      if (!desktop.quitting) flushPendingLeftBehindStop();
     }
     // Closing setup without saving restores a connected session (Change Server cancel).
     restoreAppWindowAfterSetup();
@@ -68,6 +78,9 @@ export function showSetupWindow(
         : false;
   const quitChanged = quitAfterStackStop !== nextQuitAfterStop;
   quitAfterStackStop = nextQuitAfterStop;
+  if (quitChanged && !nextQuitAfterStop && !stackStopInProgress) {
+    flushPendingLeftBehindStop();
+  }
 
   let win: BrowserWindow;
   if (desktop.setupWindow !== null && !desktop.setupWindow.isDestroyed()) {
@@ -123,6 +136,7 @@ export function destroySetupWindow() {
   quitAfterStackStop = false;
   reloadSetupAfterStop = false;
   reloadSetupAfterSave = false;
+  pendingLeftBehindStop = null;
   if (setup !== null && !setup.isDestroyed()) setup.destroy();
 }
 type SetupIpcDeps = {
@@ -168,6 +182,8 @@ export function registerSetupIpc({
   settleLocalStack,
   onAppReady,
 }: SetupIpcDeps) {
+  pendingLeftBehindStop = null;
+  stopLeftBehindCallback = stopStackLeftBehind;
   onAppReadyCallback = onAppReady;
   // Synchronous so the setup page has its language before it first paints.
   handleIpc("desktop.setup.locale", () => ({
@@ -277,8 +293,14 @@ export function registerSetupIpc({
           return { ok: false, error: message };
         }
         // Only now is the switch final; a crash rollback above may restore the local server.
-        // If Quit and Stop Bots failed mid-save, leave the outstanding stop for the Retry view.
-        if (!keepSetupForQuitStop) stopStackLeftBehind(previousSetup?.mode);
+        // If Quit and Stop Bots failed mid-save, defer the left-behind stop until Retry settles or is abandoned.
+        const leftBehindMode = pendingLeftBehindStop?.previousMode ?? previousSetup?.mode;
+        if (keepSetupForQuitStop) {
+          pendingLeftBehindStop = { previousMode: leftBehindMode };
+        } else {
+          pendingLeftBehindStop = null;
+          stopStackLeftBehind(leftBehindMode);
+        }
         return { ok: true };
       } catch {
         const outcome = abandonPendingAppSwitch(previousSetup, previousUrl);
@@ -314,6 +336,7 @@ export function registerSetupIpc({
   handleIpc("desktop.setup.stack.start", async () => {
     if (stackStopInProgress) return desktop.localStack.state();
     quitAfterStackStop = false;
+    pendingLeftBehindStop = null;
     await settleLocalStack();
     // Respond right away; the setup window polls `stack.state` until a terminal phase.
     void desktop.localStack.start();
@@ -333,6 +356,7 @@ export function registerSetupIpc({
         syncHostComputerAccess();
         return state;
       }
+      pendingLeftBehindStop = null;
       if (quitAfterStackStop) {
         quitAfterStackStop = false;
         app.quit();
