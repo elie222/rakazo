@@ -15,7 +15,9 @@ if (process.argv[2] === "fixture") {
         let body = "";
         for await (const chunk of request) body += chunk;
         if (new URLSearchParams(body).get("password") !== "synthetic-password") {
-          response.writeHead(403).end();
+          response
+            .writeHead(403, { "set-cookie": "visitor=synthetic-anonymous; Secure; Path=/" })
+            .end();
           return;
         }
         response
@@ -64,6 +66,18 @@ if (process.argv[2] === "fixture") {
     code: "sign-in-rejected",
     message: "The protected browser operation failed.",
   });
+  await assert.rejects(
+    run({
+      mode: "sign-in",
+      url,
+      steps: [
+        { kind: "fill", role: "textbox", name: "Password", text: "synthetic-wrong-password" },
+        { kind: "click", role: "button", name: "Sign in" },
+        { kind: "wait", role: "heading", name: "Synthetic account" },
+      ],
+    }),
+    { code: "sign-in-rejected" },
+  );
   const { storageState } = await run({
     mode: "sign-in",
     url,
@@ -92,7 +106,7 @@ if (process.argv[2] === "fixture") {
     `${url}/private-redirect`,
   ]) {
     await assert.rejects(
-      run({ mode: "sign-in", url: blocked, steps: [] }),
+      run({ mode: "browse", url: blocked, storageState: { cookies: [], origins: [] }, steps: [] }),
       (error) =>
         error instanceof ProtectedBrowserError &&
         error.code === "container-exit" &&

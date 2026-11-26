@@ -115,6 +115,10 @@ export async function runBrowser(chromium, request, launchOptions = {}) {
   checkInput(request);
   const url = webUrl(request.url);
   const signingIn = request.mode === "sign-in";
+  const success = signingIn ? request.steps.at(-1) : undefined;
+  if (signingIn && success?.kind !== "wait") {
+    throw new SignInRejectedError("Sign-in requires a final success condition");
+  }
   const browser = await chromium.launch({ chromiumSandbox: true, ...launchOptions });
   try {
     const context = await browser.newContext({
@@ -135,6 +139,12 @@ export async function runBrowser(chromium, request, launchOptions = {}) {
     await context.routeWebSocket("**/*", (socket) => socket.close());
     const page = await context.newPage();
     await page.goto(url.href, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    if (
+      success &&
+      (await page.getByRole(success.role, { name: success.name, exact: true }).isVisible())
+    ) {
+      throw new SignInRejectedError("Sign-in success condition was already visible");
+    }
     const initialStorage = signingIn ? null : await context.storageState();
     for (const step of request.steps) {
       try {
