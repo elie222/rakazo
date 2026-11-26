@@ -1,6 +1,11 @@
 import type { SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import { hasLab, resolveLabs } from "@rakazo/contracts";
-import { BACKGROUND_HELPER_TRIGGER, isMessagingChannelRun, messagingChannelId } from "@rakazo/core";
+import {
+  BACKGROUND_HELPER_TRIGGER,
+  isMessagingChannelRun,
+  keepSecretMatcherLocal,
+  messagingChannelId,
+} from "@rakazo/core";
 import {
   connectionIn,
   effectiveMemoryScope,
@@ -315,6 +320,13 @@ export async function loadRunRecords(
   runSecrets.push(...commandRedactions);
   // A login filled in an earlier run may still be on its page, and anything this run reads
   // or is given may contain it, so every run hides its saved passwords before the model runs.
+  if (
+    purchaseRedactions.length > 0 ||
+    runLoginRedactions.length > 0 ||
+    runCodeRedactions.length > 0
+  ) {
+    keepSecretMatcherLocal(runSecrets);
+  }
   runSecrets.push(
     ...savedLoginPasswordRedactions,
     ...purchaseRedactions,

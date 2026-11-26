@@ -22,6 +22,7 @@ import {
   connectorKindFromToolName,
   connectorToolApprovalIdentity,
   isAbandonedRequest,
+  keepSecretMatcherLocal,
   redactSecrets,
   watchToolRefusal,
 } from "@rakazo/core";
@@ -645,7 +646,7 @@ async function readComputer(
           item,
         });
     });
-    const revealed = [...secrets];
+    const revealed = keepSecretMatcherLocal([...secrets]);
     const stderr = redactSecrets(result.stderr, revealed);
     if (result.code !== 0) {
       throw new RoutineWatchError(

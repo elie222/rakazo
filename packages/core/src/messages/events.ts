@@ -11,7 +11,15 @@ import { sliceWellFormed } from "../primitives/utf8.js";
 import { modelFallbackFailure, parseModelFallbackFailure } from "../runs/run-error.js";
 import { payloadAuthor } from "./message-replies.js";
 import type { SecretMatcher } from "./secret-matcher.js";
-import { cachedSecretMatcher, createExpandedSecretMatcher } from "./secret-matcher.js";
+import {
+  cachedSecretMatcher,
+  createExpandedSecretMatcher,
+  isSecretMatcherLocal,
+  keepSecretMatcherLocal,
+  uncachedSecretMatcher,
+} from "./secret-matcher.js";
+
+export { isSecretMatcherLocal, keepSecretMatcherLocal };
 
 export function projectMessages(
   events: Array<{
@@ -716,8 +724,12 @@ export function redactSecrets(
  * payload's keys and leaves) through one result: the values are read once and the matcher for
  * them is resolved once, and the returned function keeps no other state.
  */
-export function secretRedactor(secrets: Iterable<string>): (text: string) => string {
-  const { matcher } = cachedSecretMatcher(secrets);
+export function secretRedactor(
+  secrets: Iterable<string>,
+  options?: SecretRedactionOptions,
+): (text: string) => string {
+  const { matcher } =
+    options?.cache === false ? uncachedSecretMatcher(secrets) : cachedSecretMatcher(secrets);
   if (matcher.empty) return identityText;
   return (text: string) => redactWithMatcher(text, matcher);
 }
@@ -823,8 +835,9 @@ export function sanitizeJsonValue<T>(value: T): T {
   return value;
 }
 
-export function createStreamingRedactor(secrets: string[]) {
-  const { matcher, maxLength } = cachedSecretMatcher(secrets);
+export function createStreamingRedactor(secrets: string[], options?: SecretRedactionOptions) {
+  const { matcher, maxLength } =
+    options?.cache === false ? uncachedSecretMatcher(secrets) : cachedSecretMatcher(secrets);
   let buffer = "";
   let covered = 0;
 

@@ -4,6 +4,7 @@ import { sanitizeModelConnectionError } from "../models/model-connection-error.j
 import {
   containsSecret,
   createStreamingRedactor,
+  keepSecretMatcherLocal,
   redactedRanges,
   redactSecrets,
   secretRedactor,
@@ -243,6 +244,30 @@ describe("redacting with a growing list", () => {
       "leak [redacted]",
     );
     expect(cachedSecretMatcher([...sentinels[2]!]).matcher).toBe(sentinelMatchers[2]);
+
+    // Local-only arrays (for example runs with one-time codes or command-watch purchase redactions)
+    // reuse their WeakMap entry across repeated calls without entering or evicting the shared LRU.
+    const localRunSecrets = keepSecretMatcherLocal(["one-time-code-774411"]);
+    const localMatcher = cachedSecretMatcher(localRunSecrets).matcher;
+    expect(cachedSecretMatcher(localRunSecrets).matcher).toBe(localMatcher);
+    expect(redactSecrets("code one-time-code-774411", localRunSecrets)).toBe("code [redacted]");
+    const localStream = createStreamingRedactor(localRunSecrets);
+    expect(localStream.push("otp one-time-code-774411") + localStream.finish()).toBe(
+      "otp [redacted]",
+    );
+    const uncachedStream = createStreamingRedactor(["transient-stream-code-8822"], {
+      cache: false,
+    });
+    expect(uncachedStream.push("x transient-stream-code-8822") + uncachedStream.finish()).toBe(
+      "x [redacted]",
+    );
+    expect(
+      secretRedactor(["transient-watch-token-9911"], { cache: false })(
+        "token transient-watch-token-9911",
+      ),
+    ).toBe("token [redacted]");
+    expect(cachedSecretMatcher([...sentinels[3]!]).matcher).toBe(sentinelMatchers[3]);
+    expect(cachedSecretMatcher([...sentinels[0]!]).matcher).toBe(sentinelMatchers[0]);
 
     // Distinct secret sets stay isolated across eviction.
     const sets = Array.from({ length: 40 }, (_, index) => [`distinct-tenant-secret-${index}-xyz`]);

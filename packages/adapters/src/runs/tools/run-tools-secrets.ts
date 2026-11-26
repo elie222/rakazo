@@ -1,5 +1,10 @@
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
-import { createStreamingRedactor, displayName, redactSecrets } from "@rakazo/core";
+import {
+  createStreamingRedactor,
+  displayName,
+  keepSecretMatcherLocal,
+  redactSecrets,
+} from "@rakazo/core";
 import { runCodeKind, runLoginKind, runSecretKind, spaceIsShared } from "@rakazo/db";
 import {
   completeExternalEffect,
@@ -246,6 +251,7 @@ export const secretTools: ToolHandlers = {
       const plaintext = heldCode
         ? heldCode.code
         : await deps.secretStore.load(storedSecret.ciphertext, storedSecret.id);
+      keepSecretMatcherLocal(ctx.secrets);
       ctx.secrets.push(...(heldCode ? oneTimeCodeRedactions(plaintext) : [plaintext]));
       // Keep the tail the old redactor still holds; a fresh instance drops it.
       reply.pendingProgress += reply.redactor.finish();

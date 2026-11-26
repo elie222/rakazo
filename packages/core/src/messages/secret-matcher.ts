@@ -247,6 +247,27 @@ let contentMatcherCachedChars = 0;
 /** The cached matcher and snapshot of elements it was built from, for each live secrets array. */
 const arrayMatchers = new WeakMap<readonly string[], ArrayCacheEntry>();
 
+/**
+ * Secret arrays marked as run- or call-scoped (for example carrying one-time codes or single-use
+ * payment redactions). They still reuse a WeakMap-scoped matcher for the lifetime of the array,
+ * but never enter the process-wide content LRU cache.
+ */
+const localOnlySecretArrays = new WeakSet<readonly string[]>();
+
+/**
+ * Marks `secrets` so compiled matchers for this array stay scoped to the array's WeakMap entry
+ * rather than entering the shared content LRU cache.
+ */
+export function keepSecretMatcherLocal<T extends readonly string[]>(secrets: T): T {
+  localOnlySecretArrays.add(secrets);
+  return secrets;
+}
+
+/** Returns true when `secrets` was marked to bypass the shared content LRU cache. */
+export function isSecretMatcherLocal(secrets: readonly string[]): boolean {
+  return localOnlySecretArrays.has(secrets);
+}
+
 function sameArrayContents(previous: readonly string[], current: readonly string[]): boolean {
   if (previous.length !== current.length) return false;
   for (let index = 0; index < previous.length; index += 1) {
@@ -383,20 +404,33 @@ function collectProtectedSecrets(secrets: Iterable<string>, snapshot?: string[])
 }
 
 /**
+ * Builds a short-lived secret matcher and max protected length for `secrets` without inserting its
+ * values into the shared cache.
+ */
+export function uncachedSecretMatcher(secrets: Iterable<string>): CachedSecretMatcher {
+  const valueSet = collectProtectedSecrets(secrets);
+  if (valueSet.size === 0) return EMPTY_CACHED_MATCHER;
+  let maxLength = 0;
+  for (const value of valueSet) {
+    if (value.length > maxLength) maxLength = value.length;
+  }
+  return { matcher: createSecretMatcher([...valueSet]), maxLength };
+}
+
+/**
  * Builds a short-lived secret matcher for `secrets` without inserting its values into the shared
  * cache. Use for one-off credential diagnostics so entered credentials are not retained after the
  * call completes.
  */
 export function createExpandedSecretMatcher(secrets: Iterable<string>): SecretMatcher {
-  const valueSet = collectProtectedSecrets(secrets);
-  return valueSet.size === 0 ? EMPTY_CACHED_MATCHER.matcher : createSecretMatcher([...valueSet]);
+  return uncachedSecretMatcher(secrets).matcher;
 }
 
 /**
  * Returns the matcher and longest protected value length for `secrets`: each non-empty value plus
  * each long unspaced line of a multi-line value (such as a private key's body). Reuses one entry
  * per unchanged live array via WeakMap and shares across independent arrays or iterables carrying
- * the same protected values via a bounded content-keyed LRU cache.
+ * the same protected values via a bounded content-keyed LRU cache unless the array is marked local.
  */
 export function cachedSecretMatcher(secrets: Iterable<string>): CachedSecretMatcher {
   const isArray = Array.isArray(secrets);
@@ -409,6 +443,18 @@ export function cachedSecretMatcher(secrets: Iterable<string>): CachedSecretMatc
   }
   const snapshot = isArray ? ([] as string[]) : undefined;
   const valueSet = collectProtectedSecrets(secrets, snapshot);
+  if (isArray && localOnlySecretArrays.has(secrets)) {
+    let maxLength = 0;
+    for (const value of valueSet) {
+      if (value.length > maxLength) maxLength = value.length;
+    }
+    const cached =
+      valueSet.size === 0
+        ? EMPTY_CACHED_MATCHER
+        : { matcher: createSecretMatcher([...valueSet]), maxLength };
+    arrayMatchers.set(secrets as readonly string[], { from: snapshot!, cached });
+    return cached;
+  }
   const { cached, contentEntry } = contentCachedMatcher(valueSet);
   if (snapshot) {
     arrayMatchers.set(secrets as readonly string[], { from: snapshot, cached, contentEntry });
