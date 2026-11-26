@@ -1,11 +1,10 @@
 import { validateModelAuthAvailability } from "@rakazo/adapters";
 import { ClientError } from "@rakazo/core";
 import {
+  lockOrganizationMembers,
   managedOrganizationId,
   OrganizationAdminRequiredError,
-  Prisma,
   runAsSystem,
-  withTransactionRetry,
 } from "@rakazo/db";
 import { createModelConnector } from "../models/model-credentials.js";
 import type { RouterContext } from "./context.js";
@@ -65,45 +64,48 @@ export function organizationModelConnectionRoutes({ deps, authed, codexCatalog }
       );
 
       return runAsSystem("save a model connection for an organization admin", () =>
-        withTransactionRetry(() =>
-          deps.prisma.$transaction(
-            async (tx) => {
-              if ((await managedOrganizationId(tx, actor)) !== organizationId)
-                throw new OrganizationAdminRequiredError();
-              signal?.throwIfAborted();
-              return tx.organizationModelConnection.create({
-                data: {
-                  organizationId,
-                  provider: input.provider,
-                  modelId: input.modelId,
-                  label: input.label,
-                  supportsImages: input.supportsImages ?? false,
-                  secretId: stored.id,
-                  ciphertext: stored.ciphertext,
-                },
-                select: connectionSummary,
-              });
-            },
-            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-          ),
+        deps.prisma.$transaction(
+          async (tx) => {
+            await lockOrganizationMembers(tx, organizationId);
+            if ((await managedOrganizationId(tx, actor)) !== organizationId)
+              throw new OrganizationAdminRequiredError();
+            signal?.throwIfAborted();
+            return tx.organizationModelConnection.create({
+              data: {
+                organizationId,
+                provider: input.provider,
+                modelId: input.modelId,
+                label: input.label,
+                supportsImages: input.supportsImages ?? false,
+                secretId: stored.id,
+                ciphertext: stored.ciphertext,
+              },
+              select: connectionSummary,
+            });
+          },
+          { isolationLevel: "ReadCommitted" },
         ),
       );
     }),
     remove: procedures.remove.handler(({ context: { actor }, input }) =>
       runAsSystem("remove a model connection for an organization admin", () =>
-        withTransactionRetry(() =>
-          deps.prisma.$transaction(
-            async (tx) => {
-              const organizationId = await managedOrganizationId(tx, actor);
-              if (!organizationId) throw new OrganizationAdminRequiredError();
-              const removed = await tx.organizationModelConnection.deleteMany({
-                where: { organizationId, id: input.id },
-              });
-              if (!removed.count) throw new OrganizationModelConnectionNotFoundError();
-              return { ok: true as const };
-            },
-            { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-          ),
+        deps.prisma.$transaction(
+          async (tx) => {
+            const space = await tx.space.findUnique({
+              where: { id: actor.spaceId },
+              select: { organizationId: true },
+            });
+            if (!space) throw new OrganizationAdminRequiredError();
+            await lockOrganizationMembers(tx, space.organizationId);
+            const organizationId = await managedOrganizationId(tx, actor);
+            if (organizationId !== space.organizationId) throw new OrganizationAdminRequiredError();
+            const removed = await tx.organizationModelConnection.deleteMany({
+              where: { organizationId, id: input.id },
+            });
+            if (!removed.count) throw new OrganizationModelConnectionNotFoundError();
+            return { ok: true as const };
+          },
+          { isolationLevel: "ReadCommitted" },
         ),
       ),
     ),

@@ -23,6 +23,7 @@ export const AUDITED_PROCEDURES: Record<string, AuditedProcedure> = {
   "models.organizationConnections.create": {
     type: "credential.created",
     kind: "organization_model",
+    fields: ["provider"],
   },
   "models.organizationConnections.remove": {
     type: "credential.deleted",

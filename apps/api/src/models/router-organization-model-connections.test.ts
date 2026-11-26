@@ -22,6 +22,7 @@ function setup(role = "owner") {
   const member = { findFirst: vi.fn().mockResolvedValue(role === "guest" ? null : { role }) };
   const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
   const tx = {
+    $queryRaw: vi.fn().mockResolvedValue([]),
     space: { findUnique: vi.fn().mockResolvedValue({ organizationId: "organization-one" }) },
     member,
     organizationModelConnection: { create, deleteMany },
@@ -44,7 +45,7 @@ function setup(role = "owner") {
       }),
       { prefix: "/rpc", context: { actor: owner } },
     );
-  return { request, create, deleteMany, member, secrets, modelConnectionFetch };
+  return { request, create, deleteMany, member, lock: tx.$queryRaw, secrets, modelConnectionFetch };
 }
 
 it("seals an organization's model key and returns only its connection metadata", async () => {
@@ -84,9 +85,10 @@ it("scopes connection removal to the admin's organization", async () => {
 });
 
 it("rechecks management permission before saving a verified key", async () => {
-  const { request, create, member } = setup("admin");
-  member.findFirst.mockResolvedValueOnce({ role: "admin" }).mockResolvedValueOnce({
-    role: "member",
+  const { request, create, member, lock } = setup("admin");
+  lock.mockImplementationOnce(async () => {
+    member.findFirst.mockResolvedValue({ role: "member" });
+    return [];
   });
 
   expect((await request("create", input)).status).toBe(403);
