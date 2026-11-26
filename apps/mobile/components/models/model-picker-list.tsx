@@ -50,8 +50,11 @@ export function ModelPickerList({
   emptyMessage,
   connectChoices,
   header,
+  latestOnly = false,
 }: {
   choices: readonly ChatModelChoice[] | null;
+  /** List each model's newest version, with the older ones behind Show more. */
+  latestOnly?: boolean;
   /** Settings for the chosen model, above the list so they never need a scroll. */
   header?: ReactElement;
   /** Providers that need a connection first, listed after the models. */
@@ -136,13 +139,14 @@ export function ModelPickerList({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const sections = useMemo(() => {
     if (!choices) return [];
-    const models = collapseOlderModels(
-      groupModelChoices(
-        visible.flatMap((row) => (row.connect ? [] : [row.choice])),
-        "",
-      ),
-      selectedKey,
-      expanded,
+    const grouped = groupModelChoices(
+      visible.flatMap((row) => (row.connect ? [] : [row.choice])),
+      "",
+    );
+    const models = (
+      latestOnly
+        ? collapseOlderModels(grouped, selectedKey, expanded)
+        : grouped.map((section) => ({ ...section, collapsed: false }))
     ).map((section) => ({
       ...section,
       connect: false,
@@ -163,7 +167,7 @@ export function ModelPickerList({
           { key: "connect", heading: undefined, collapsed: false, connect: true, data: connect },
         ]
       : models;
-  }, [choices, visible, providerLabel, selectedKey, expanded]);
+  }, [choices, visible, providerLabel, selectedKey, expanded, latestOnly]);
   const opensAtTop = Boolean(header);
   useLayoutEffect(() => {
     const state = initialScroll.current;

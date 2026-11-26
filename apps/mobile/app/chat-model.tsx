@@ -61,6 +61,7 @@ export default function ChatModelScreen() {
 
   return (
     <ModelPickerList
+      latestOnly
       choices={choices}
       selectedKey={state?.shownKey ?? ""}
       error={failure && !choices ? errorText(failure, t`Could not load model settings`) : null}

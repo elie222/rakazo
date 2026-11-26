@@ -31,6 +31,7 @@ export default function BotModelScreen() {
 
   return (
     <ModelPickerList
+      latestOnly
       choices={choices}
       // A bot that follows the Space default shows the default's model checked.
       selectedKey={state?.shownKey ?? value}
