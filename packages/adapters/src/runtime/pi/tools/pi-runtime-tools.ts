@@ -83,7 +83,7 @@ export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost)
   const tools = named.map(({ tool, name }) =>
     toAgentTool(tool, host, name, { deferred, listed: listedByExposedName }),
   );
-  if (!deferred.length) return tools;
+  if (!listed.some((tool) => tool.name === USE_TOOL && !tool.route)) return tools;
   const runnable = new Map(
     [...tools, ...deferred.map((tool) => toAgentTool(tool, host, tool.name, { viaUseTool: true }))]
       .filter((tool) => tool.name !== FIND_TOOL && tool.name !== USE_TOOL)

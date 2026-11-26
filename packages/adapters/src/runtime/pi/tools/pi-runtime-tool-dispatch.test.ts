@@ -1058,6 +1058,39 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
+  it("runs a connected search result through use_tool when paid search is the only bridge", async () => {
+    const serviceCall = builtinAgentTools.find((tool) => tool.name === "service_call")!;
+    const executeTool = vi.fn(async () => ({ ok: true }));
+    const args = { collection: "notes", title: "Result" };
+    fakeAgentState.invoke = {
+      name: "use_tool",
+      args: { name: "destination_write", arguments: args },
+    };
+    for await (const _event of new PiAgentRuntime().run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "write the result",
+        instructions: "",
+        history: [],
+        tools: [serviceCall, destinationTool],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool,
+      },
+      { signal: new AbortController().signal },
+    )) {
+      // Exhaust the runtime event stream so tool execution completes.
+    }
+    expect(executeTool).toHaveBeenCalledWith(
+      destinationTool.name,
+      args,
+      expect.any(String),
+      destinationTool.route,
+      expect.anything(),
+    );
+  });
+
   it("preserves a connected delete_bot schema and arguments through the runtime", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const tool: ConnectorTool = {

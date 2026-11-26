@@ -98,12 +98,12 @@ export function partitionTools(tools: readonly ConnectorTool[]): {
 } {
   const deferred = tools.filter((tool) => isDeferredTool(tool.name));
   const listed = tools.filter((tool) => !isDeferredTool(tool.name));
-  if (deferred.length) return { listed: [...listed, ...bridgeTools(deferred)], deferred };
-  if (listed.some((tool) => tool.name === "service_call")) {
-    const [findTool] = bridgeTools(deferred);
-    return { listed: [...listed, findTool], deferred };
-  }
-  return { listed, deferred };
+  const canSearchPaid = listed.some((tool) => tool.name === "service_call");
+  if (!deferred.length && !canSearchPaid) return { listed, deferred };
+
+  const bridge = bridgeTools(deferred);
+  const canUseFoundTool = deferred.length > 0 || listed.some((tool) => tool.route);
+  return { listed: [...listed, ...(canUseFoundTool ? bridge : bridge.slice(0, 1))], deferred };
 }
 
 function searchEntries(deferred: readonly ConnectorTool[]): CatalogEntry[] {
