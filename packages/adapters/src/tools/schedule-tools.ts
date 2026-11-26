@@ -54,6 +54,7 @@ import { localDateTime } from "../runs/assembly/current-time.prompt.js";
 import type { ScheduleUnit } from "./schedule-intervals.js";
 import { intervalRangeError } from "./schedule-intervals.js";
 import { describeRoutineTiming, routineChanges } from "./schedule-update-view.js";
+import { applyTextEdits, parseTextEdits } from "./text-edits.js";
 
 export { isOneShotRoutineCron, ONCE_ROUTINE_CRON };
 
@@ -1094,6 +1095,8 @@ export async function updateScheduleFromTool(
     routineId: string;
     name?: string;
     prompt?: string;
+    /** Changes to the stored prompt, in place of a whole new one. */
+    promptEdits?: unknown;
     inChat?: boolean;
     active?: boolean;
     timezone?: string;
@@ -1116,7 +1119,10 @@ export async function updateScheduleFromTool(
   const routineId = input.routineId.trim();
   if (!routineId) return { error: "routineId is required." };
   const name = input.name?.trim();
-  const prompt = input.prompt?.trim();
+  let prompt = input.prompt?.trim();
+  const editsPrompt = input.promptEdits !== undefined;
+  if (editsPrompt && input.prompt !== undefined)
+    return { error: "Send either prompt or promptEdits, not both." };
   if (input.name !== undefined && !name) return { error: "name cannot be empty." };
   if (name && name.length > ROUTINE_NAME_MAX_LENGTH)
     return { error: `name must be at most ${ROUTINE_NAME_MAX_LENGTH} characters.` };
@@ -1155,6 +1161,7 @@ export async function updateScheduleFromTool(
     existing.userId !== input.userId &&
     (input.name !== undefined ||
       input.prompt !== undefined ||
+      editsPrompt ||
       input.inChat !== undefined ||
       input.timezone !== undefined ||
       input.on !== undefined ||
@@ -1166,6 +1173,15 @@ export async function updateScheduleFromTool(
       error:
         "Only the person who owns this routine can change it. You can still pause or resume it with active, or make the user their own copy with schedule_create.",
     };
+  }
+
+  if (editsPrompt) {
+    const edits = parseTextEdits(input.promptEdits, "promptEdits");
+    if (typeof edits === "string") return { error: edits };
+    const edited = applyTextEdits(existing.prompt, edits, "the prompt");
+    if (!edited.ok) return { error: edited.error };
+    prompt = edited.text.trim();
+    if (!prompt) return { error: "prompt cannot be empty." };
   }
 
   let timezone = existing.timezone;
@@ -1373,6 +1389,8 @@ export async function updateScheduleFromTool(
       ...(watchChanged ? { watch: { equals: existing.watch as Prisma.InputJsonValue } } : {}),
       ...(input.expected?.name !== undefined ? { name: input.expected.name } : {}),
       ...(input.expected?.prompt !== undefined ? { prompt: input.expected.prompt } : {}),
+      // Edits were applied to the prompt as read, so they are saved only over that prompt.
+      ...(editsPrompt ? { prompt: existing.prompt } : {}),
     },
     data: {
       ...(name === undefined ? {} : { name }),
@@ -1387,7 +1405,7 @@ export async function updateScheduleFromTool(
   if (count === 0) {
     return {
       error:
-        timingChanged || input.expected
+        timingChanged || input.expected || editsPrompt
           ? "The schedule changed while saving. Call schedule_list and try again."
           : "Schedule not found.",
     };

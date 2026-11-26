@@ -1227,6 +1227,34 @@ describe("a schedule_update that needs an approval preview", () => {
     });
   });
 
+  it("shows a change to part of a prompt and saves it over the prompt the card showed", async () => {
+    const promptEdits = [{ find: "the usual", replace: "fewer" }];
+    const { ctx, request, updateMany } = updateCall({ routineId: "routine-1", promptEdits });
+    await expect(prepareToolRequest(ctx as never, request)).resolves.toBeUndefined();
+    await expect(prepareScheduleUpdateApproval(ctx as never, request)).resolves.toBeUndefined();
+    expect(request.fleetSummary?.lines).toEqual([
+      "Instructions: Order fewer groceries",
+      "Previously: Order the usual groceries",
+    ]);
+    expect(request.effectRequest).toEqual({
+      routineId: "routine-1",
+      promptEdits,
+      expected: { prompt: "Order the usual groceries" },
+    });
+    const replay = {
+      name: "schedule_update",
+      args: request.effectRequest,
+      finish: async (result: unknown) => result,
+    } as never;
+    await expect(taskTools.schedule_update!(ctx as never, replay)).resolves.toMatchObject({
+      ok: true,
+      changes: { prompt: { promptLength: "Order fewer groceries".length } },
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { prompt: "Order fewer groceries" } }),
+    );
+  });
+
   it("answers a routine that moved after its plain card too, instead of overwriting it", async () => {
     let prompt = "Order the usual groceries";
     const { ctx, request, updateMany } = updateCall(

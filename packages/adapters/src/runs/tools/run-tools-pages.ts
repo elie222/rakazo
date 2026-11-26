@@ -5,7 +5,12 @@ import {
   PAGE_TITLE_MAX_LENGTH,
   PageTitleSchema,
 } from "@rakazo/contracts";
-import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
+import {
+  CARD_TITLE_ESCAPED_CHARACTERS,
+  containsSecret,
+  redactSecrets,
+  textEditsGiven,
+} from "@rakazo/core";
 import {
   isUniqueViolation,
   pageImageNames,
@@ -20,6 +25,7 @@ import { bestEffort } from "@rakazo/logging";
 import { checkPageSource, PAGE_KIT_GUIDE } from "@rakazo/page-kit/validate";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../approvals/approval-ask.js";
 import { argumentGiven } from "../../bots/update-bot-patch.js";
+import { applyTextEdits, parseTextEdits } from "../../tools/text-edits.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { markReadOutsideContent, neverAsks } from "../assembly/run-context.js";
 import { publishMessage } from "../assembly/run-messages.js";
@@ -34,46 +40,6 @@ import {
   stagePageImages,
   storePageImages,
 } from "./run-tools-page-images.js";
-
-const MAX_EDITS = 50;
-
-type PageEdit = { find: string; replace: string };
-
-/** All edits or none: each `find` must occur exactly once in the result of the edits before it. */
-function applyPageEdits(
-  source: string,
-  edits: readonly PageEdit[],
-): { ok: true; source: string } | { ok: false; error: string } {
-  let next = source;
-  for (const [index, edit] of edits.entries()) {
-    const label = `Edit ${index + 1}`;
-    if (!edit.find) return { ok: false, error: `${label}: find is empty.` };
-    const at = next.indexOf(edit.find);
-    if (at === -1) return { ok: false, error: `${label}: find text was not found in the page.` };
-    if (next.indexOf(edit.find, at + 1) !== -1) {
-      return {
-        ok: false,
-        error: `${label}: find text occurs more than once; include more surrounding text.`,
-      };
-    }
-    next = next.slice(0, at) + edit.replace + next.slice(at + edit.find.length);
-  }
-  return { ok: true, source: next };
-}
-
-function parseEdits(value: unknown): PageEdit[] | string {
-  if (!Array.isArray(value) || value.length === 0) return "edits must be a non-empty list.";
-  if (value.length > MAX_EDITS) return `Send at most ${MAX_EDITS} edits at once.`;
-  const edits: PageEdit[] = [];
-  for (const [index, item] of value.entries()) {
-    const edit = item as Partial<PageEdit> | null;
-    if (typeof edit?.find !== "string" || typeof edit.replace !== "string") {
-      return `Edit ${index + 1}: needs find and replace strings.`;
-    }
-    edits.push({ find: edit.find, replace: edit.replace });
-  }
-  return edits;
-}
 
 /**
  * A bot reaches its own pages and its group's pages, from any of its chats or routines; another
@@ -90,8 +56,7 @@ function reachablePage(ctx: RunContext, pageId: string) {
 }
 
 function editsGiven(args: Record<string, unknown>): boolean {
-  // Serializers send unused optional fields blank, an empty list included.
-  return Array.isArray(args.edits) ? args.edits.length > 0 : argumentGiven(args.edits);
+  return textEditsGiven(args.edits);
 }
 
 function imagesGiven(args: Record<string, unknown>): boolean {
@@ -107,8 +72,10 @@ function proposedSource(
 ): { ok: true; source: string } | { ok: false; error: string } {
   if (!editsGiven(args))
     return { ok: true, source: argumentGiven(args.source) ? String(args.source) : current };
-  const edits = parseEdits(args.edits);
-  return typeof edits === "string" ? { ok: false, error: edits } : applyPageEdits(current, edits);
+  const edits = parseTextEdits(args.edits, "edits");
+  if (typeof edits === "string") return { ok: false, error: edits };
+  const applied = applyTextEdits(current, edits, "the page");
+  return applied.ok ? { ok: true, source: applied.text } : applied;
 }
 
 /** Text kept on each side of a change inside a line, so the card shows where it is. */
