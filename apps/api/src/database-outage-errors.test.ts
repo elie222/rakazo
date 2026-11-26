@@ -1,22 +1,30 @@
 import { ORPCError } from "@orpc/server";
 import { SandboxUnavailableError } from "@rakazo/adapter-kit";
-import { databaseOutage } from "@rakazo/db";
+import { DatabaseOutage, databaseOutage } from "@rakazo/db";
 import type { TestSink } from "@rakazo/logging";
 import { createLogger, createTestSink, installLogger, runWithLogContext } from "@rakazo/logging";
 import { requestLogging } from "@rakazo/logging/hono";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { authLibraryLogger, withAuthLibraryFailures } from "./auth/auth-library-failures.js";
 import { handleHttpError, handleRpcError, requestHitDatabaseOutage } from "./rpc-errors.js";
 
 let sink: TestSink;
 beforeEach(() => {
   installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
-  databaseOutage.succeeded();
+  // The outage is shared by the whole process, and its log throttle outlives
+  // succeeded(): a failure another test file in this worker recorded would
+  // swallow this file's outage log. Route the singleton to a fresh tracker,
+  // so each test starts outside every throttle interval. The logic under
+  // test is the real DatabaseOutage.
+  const outage = new DatabaseOutage();
+  vi.spyOn(databaseOutage, "failed").mockImplementation((...args) => outage.failed(...args));
+  vi.spyOn(databaseOutage, "succeeded").mockImplementation(() => outage.succeeded());
   sink = createTestSink();
   installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
   databaseOutage.succeeded();
 });
