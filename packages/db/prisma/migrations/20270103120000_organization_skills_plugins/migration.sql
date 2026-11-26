@@ -42,6 +42,11 @@ ALTER TABLE "capability_installs"
     OR ("organizationId" IS NOT NULL AND "spaceId" IS NULL AND "userId" IS NULL)
   );
 CREATE INDEX "capability_installs_organizationId_idx" ON "capability_installs"("organizationId");
+ALTER TABLE "capability_installs" ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "capability_installs_personal" ON "capability_installs"
+  USING ("userId" = NULLIF(current_setting('app.user_id', true), ''));
+CREATE POLICY "capability_installs_system" ON "capability_installs"
+  USING ((SELECT app_rls_bypass()));
 CREATE POLICY "capability_installs_organization_read" ON "capability_installs" FOR SELECT
   USING ("organizationId" IS NOT NULL AND app_organization_item("organizationId"));
 CREATE POLICY "capability_installs_organization_manage" ON "capability_installs"

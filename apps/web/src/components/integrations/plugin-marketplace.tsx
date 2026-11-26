@@ -8,7 +8,12 @@ import type {
   PluginPreview,
 } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
-import { canManageOrganizationMembers, installedPluginParts, pluginSite } from "@rakazo/core";
+import {
+  canManageOrganizationMembers,
+  installedPluginParts,
+  pluginSite,
+  selectPluginInstall,
+} from "@rakazo/core";
 import { Button, Checkbox, Spinner } from "@rakazo/ui-web";
 import { ArrowUpRight, Check, ChevronLeft, FileText, Plug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -195,15 +200,12 @@ export function PluginDetail({
   }, []);
 
   // A pasted URL can differ from the normalized source the install is saved under.
-  const candidates = installs.filter(
-    (row) =>
-      row.kind === "plugin" &&
-      (row.source === selection.installedSource || row.source === preview?.installedSource),
+  const install = selectPluginInstall(
+    installs,
+    [selection.installedSource, preview?.installedSource],
+    selection.installId,
+    canShare && forOrganization,
   );
-  const install = selection.installId
-    ? candidates.find((row) => row.id === selection.installId)
-    : (candidates.find((row) => Boolean(row.organization) === (canShare && forOrganization)) ??
-      (!canShare ? candidates[0] : undefined));
   const readOnly = install?.manageable === false || Boolean(selection.organization && !canShare);
   const parts = install ? installedPluginParts(install.config) : [];
   const servers =

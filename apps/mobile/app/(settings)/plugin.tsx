@@ -9,6 +9,7 @@ import {
   connectionSharingOrganization,
   installedPluginParts,
   isCatalogItemConnected,
+  selectPluginInstall,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -125,17 +126,7 @@ function PluginScreen() {
 
   // A pasted URL can differ from the normalized source the install is saved under.
   const savedAs = (source: string | undefined) =>
-    installs.find(
-      (row) =>
-        row.kind === "plugin" &&
-        row.source === source &&
-        (params.installId
-          ? row.id === params.installId
-          : Boolean(row.organization) === (canShare && forOrganization)),
-    ) ??
-    (!canShare && !params.installId
-      ? installs.find((row) => row.kind === "plugin" && row.source === source)
-      : undefined);
+    selectPluginInstall(installs, [source], params.installId, canShare && forOrganization);
   const previewRead = rpcQuery("capabilities/pluginPreview", { source: params.source });
   const previewQuery = useQuery(
     {

@@ -194,6 +194,13 @@ describe("plugin detail", () => {
     expect(api.approve).not.toHaveBeenCalled();
   });
 
+  it("lets a member install a personal copy from the catalog when the organization has one", async () => {
+    await render({ install: { ...install, organization: true, manageable: false } });
+    await click("Connect");
+    expect(api.install).toHaveBeenCalledWith(expect.objectContaining({ kind: "plugin" }));
+    expect(api.install.mock.calls[0]?.[0]).not.toHaveProperty("organization");
+  });
+
   it("shows a rejected install without claiming it was added", async () => {
     api.install.mockRejectedValue(new Error("Plugin content changed"));
     await render();

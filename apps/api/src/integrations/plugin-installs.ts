@@ -28,6 +28,7 @@ import {
   spaceAvailability,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { assertNotInOrganization } from "./mcp-servers.js";
 
 export type PluginInstallDeps = {
   prisma: PrismaClient;
@@ -188,6 +189,7 @@ async function addSkills(
 
 async function addServers(
   tx: Prisma.TransactionClient,
+  actor: Actor,
   install: InstallPlacement,
   plugin: LoadedPlugin,
   prepared: PreparedServer[],
@@ -195,19 +197,23 @@ async function addServers(
   // Secrets of a connector available beyond one space are the account's, so each space reads them.
   const shared = install.allSpaces || extraSpaces(install).length > 0;
   await runAsSystemInTransaction(tx, "add a plugin's connectors where it is installed", () =>
-    addServerRows(tx, install, plugin, prepared, shared),
+    addServerRows(tx, actor, install, plugin, prepared, shared),
   );
 }
 
 async function addServerRows(
   tx: Prisma.TransactionClient,
+  actor: Actor,
   install: InstallPlacement,
   plugin: LoadedPlugin,
   prepared: PreparedServer[],
   shared: boolean,
 ) {
   const installId = install.id;
+  if (install.organizationId && prepared.length)
+    await lockOwner(tx, install.organizationId, "mcp-endpoints");
   for (const { server, stored, index } of prepared) {
+    if (install.organizationId) await assertNotInOrganization(tx, actor, server.endpoint);
     if (stored)
       await tx.secret.create({
         data: {
@@ -400,7 +406,7 @@ export async function installPlugin(
           });
           const placed = { ...install, availableIn: [] };
           if (parts.includes("skills")) await addSkills(tx, placed, plugin);
-          await addServers(tx, placed, plugin, prepared);
+          await addServers(tx, actor, placed, plugin, prepared);
           return placed;
         },
         { timeout: 60_000 },
@@ -431,7 +437,7 @@ export async function setPluginParts(
   deps: PluginInstallDeps & {
     removeServer: (
       tx: Prisma.TransactionClient,
-      server: { id: string; secretId: string | null },
+      server: { id: string; secretId: string | null; organizationId: string | null },
     ) => Promise<unknown>;
   },
   actor: Actor,
@@ -485,7 +491,7 @@ export async function setPluginParts(
           if (removing.includes("connector")) {
             const rows = await tx.mcpServer.findMany({
               where: owned,
-              select: { id: true, secretId: true },
+              select: { id: true, secretId: true, organizationId: true },
             });
             for (const server of rows) await deps.removeServer(tx, server);
           }
@@ -494,7 +500,7 @@ export async function setPluginParts(
             await assertSkillNamesFree(tx, actor, plugin, install);
             await addSkills(tx, install, plugin);
           }
-          if (plugin) await addServers(tx, install, plugin, prepared);
+          if (plugin) await addServers(tx, actor, install, plugin, prepared);
           const updated = await tx.capabilityInstall.update({
             where: { id: install.id },
             data: {

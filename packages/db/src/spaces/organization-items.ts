@@ -33,8 +33,6 @@ export function personalOrOrganizationItemIn(scope: Scope) {
   return { OR: [availableInSpace(scope), organizationItemIn(scope)] };
 }
 
-export const mcpServerIn = personalOrOrganizationItemIn;
-
 /** A server's secret, which is the member's own or, for an organization's server, the organization's. */
 export function serverSecretIn(scope: Scope) {
   return { OR: [itemSecretIn(scope), organizationItemIn(scope)] };
@@ -68,8 +66,6 @@ export function personalOrManagedOrganizationItemIn(scope: Scope, organizationId
     OR: [availableInSpace(scope), ...(organizationId ? [{ organizationId }] : [])],
   };
 }
-
-export const mcpServerManagedIn = personalOrManagedOrganizationItemIn;
 
 export async function requireManagedOrganizationId(
   db: Pick<PrismaClient, "space" | "member">,

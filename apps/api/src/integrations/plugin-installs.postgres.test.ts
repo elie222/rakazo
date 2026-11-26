@@ -218,6 +218,78 @@ describe.skipIf(!enabled)("plugin install lifecycle (PostgreSQL, offline provide
   );
 
   it(
+    "rejects an organization connector endpoint already installed by a different source",
+    asActor(async () => {
+      const rpc = client();
+      const request = { kind: "plugin" as const, ...(await input()), organization: true };
+      const installed = await rpc.capabilities.install(request);
+      try {
+        await expect(
+          rpc.capabilities.install({
+            ...request,
+            source: "https://github.com/example/another-plugin",
+            pluginParts: ["connector"],
+          }),
+        ).rejects.toMatchObject({ code: "MCP_SERVER_IN_ORGANIZATION" });
+      } finally {
+        await rpc.capabilities.remove({ id: installed.id });
+      }
+    }),
+  );
+
+  it(
+    "dismisses an organization plugin's approval in another Space when removing its connector",
+    asActor(async () => {
+      const rpc = client();
+      const install = await rpc.capabilities.install({
+        kind: "plugin",
+        ...(await input()),
+        organization: true,
+      });
+      const server = await prisma.mcpServer.findFirstOrThrow({ where: { installId: install.id } });
+      const card = await runAsTenant(teammate, async () => {
+        const bot = await prisma.bot.create({
+          data: { ...actorScope(teammate), name: "Approval bot", color: "blue" },
+        });
+        const thread = await prisma.thread.create({
+          data: { ...actorScope(teammate), botId: bot.id },
+        });
+        const message = await prisma.message.create({
+          data: {
+            threadId: thread.id,
+            botId: bot.id,
+            seq: 0,
+            role: "bot",
+            blocks: [
+              { kind: "mcp_approval", name: "Example", serverId: server.id, status: "pending" },
+            ],
+          },
+        });
+        return { bot, message, thread };
+      });
+      try {
+        await rpc.capabilities.pluginParts({ id: install.id, parts: ["skills"] });
+        await runAsTenant(teammate, async () => {
+          const message = await prisma.message.findUniqueOrThrow({
+            where: { id: card.message.id },
+          });
+          expect(message.blocks).toMatchObject([{ status: "dismissed" }]);
+          const event = await prisma.event.findFirstOrThrow({
+            where: { threadId: card.thread.id },
+          });
+          expect(event).toMatchObject({
+            spaceId: teammate.spaceId,
+            type: "thread.message.updated",
+          });
+        });
+      } finally {
+        await rpc.capabilities.remove({ id: install.id });
+        await runAsTenant(teammate, () => prisma.bot.delete({ where: { id: card.bot.id } }));
+      }
+    }),
+  );
+
+  it(
     "lets members read a shared standalone skill and reserves edits for admins",
     asActor(async () => {
       const rpc = client();

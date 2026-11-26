@@ -67,7 +67,7 @@ export function capabilitiesRoutes(ctx: RouterContext) {
       if (existing.kind === "plugin") {
         const servers = await tx.mcpServer.findMany({
           where: { installId: existing.id },
-          select: { id: true, secretId: true },
+          select: { id: true, secretId: true, organizationId: true },
         });
         for (const server of servers) {
           notify.push(...(await removeMcpServerInTransaction(tx, actor, server)));

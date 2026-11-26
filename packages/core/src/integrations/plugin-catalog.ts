@@ -1,4 +1,9 @@
-import type { ConnectionCatalogItem, PluginMarketplaceEntry, PluginPart } from "@rakazo/contracts";
+import type {
+  CapabilityInstall,
+  ConnectionCatalogItem,
+  PluginMarketplaceEntry,
+  PluginPart,
+} from "@rakazo/contracts";
 import { PluginPartSchema } from "@rakazo/contracts";
 import { catalogItemKey } from "./connection-catalog.js";
 
@@ -360,4 +365,36 @@ export function pluginSite(
 export function installedPluginParts(config: Record<string, unknown>): PluginPart[] {
   const parsed = PluginPartSchema.array().safeParse(config.parts);
   return parsed.success ? parsed.data : ["connector", "skills"];
+}
+
+export function selectPluginInstall(
+  installs: readonly CapabilityInstall[],
+  sources: readonly (string | undefined)[],
+  installId: string | undefined,
+  organization: boolean,
+): CapabilityInstall | undefined {
+  return installs.find(
+    (install) =>
+      install.kind === "plugin" &&
+      (installId
+        ? install.id === installId
+        : sources.includes(install.source) && Boolean(install.organization) === organization),
+  );
+}
+
+export function installedPluginSelection(
+  install: CapabilityInstall,
+  entries: readonly PluginMarketplaceEntry[],
+) {
+  const entry = entries.find((row) => row.installedSource === install.source);
+  return {
+    source: entry?.source ?? install.source,
+    installedSource: install.source,
+    name: entry?.displayName ?? install.name,
+    description: entry?.description,
+    logo: entry?.logo ?? undefined,
+    site: entry ? (pluginSite(entry) ?? undefined) : undefined,
+    installId: install.id,
+    organization: install.organization,
+  };
 }

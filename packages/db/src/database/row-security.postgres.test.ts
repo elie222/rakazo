@@ -1176,6 +1176,51 @@ describePostgres("row-level security (PostgreSQL)", () => {
     expect(all.secrets).toHaveLength(6);
   });
 
+  it("enforces personal and organization capability ownership with the runtime role", async () => {
+    const memberId = `${b.userId}-member`;
+    await owner.prisma.member.update({ where: { id: memberId }, data: { role: "member" } });
+    const data = { kind: "plugin", name: "Example", source: "https://example.test/plugin" };
+    try {
+      const [personal, shared] = await runAsTenant(a, async () => [
+        await db.capabilityInstall.create({
+          data: { ...data, spaceId: a.spaceId, userId: a.userId },
+        }),
+        await db.capabilityInstall.create({ data: { ...data, organizationId } }),
+      ]);
+      const where = { id: { in: [personal.id, shared.id] } };
+      await runAsTenant(b, async () => {
+        expect(await db.capabilityInstall.findMany({ where, select: { id: true } })).toEqual([
+          { id: shared.id },
+        ]);
+        expect(await db.capabilityInstall.updateMany({ where, data: { name: "Denied" } })).toEqual({
+          count: 0,
+        });
+        expect(await db.capabilityInstall.deleteMany({ where })).toEqual({ count: 0 });
+        await expect(
+          db.capabilityInstall.create({ data: { ...data, organizationId, source: "other" } }),
+        ).rejects.toThrow(/row-level security/);
+      });
+      await runAsTenant({ ...b, spaceId: "another-organization-space" }, async () => {
+        expect(await db.capabilityInstall.count({ where })).toBe(0);
+      });
+      expect(
+        await runAsSystem("inspect capability ownership fixture", () =>
+          db.capabilityInstall.count({ where }),
+        ),
+      ).toBe(2);
+      await runAsTenant(a, async () => {
+        expect(await db.capabilityInstall.updateMany({ where, data: { name: "Updated" } })).toEqual(
+          {
+            count: 2,
+          },
+        );
+        expect(await db.capabilityInstall.deleteMany({ where })).toEqual({ count: 2 });
+      });
+    } finally {
+      await owner.prisma.member.update({ where: { id: memberId }, data: { role: "owner" } });
+    }
+  });
+
   it("protects exactly the tables the client treats as protected", async () => {
     const rows = await owner.prisma.$queryRaw<Array<{ relname: string }>>`
       SELECT relname FROM pg_class

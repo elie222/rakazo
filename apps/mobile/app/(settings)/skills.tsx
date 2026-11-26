@@ -23,6 +23,7 @@ import { Chevron } from "../../components/ui/row-accessories";
 import type { PluginParams } from "../../lib/integrations/plugin-marketplace";
 import {
   gitImportParams,
+  installedPluginParams,
   pluginParams,
   pluginSkillCount,
   skillPacks,
@@ -88,14 +89,7 @@ export default function SkillsScreen() {
   const openSkills = (params: PluginParams) =>
     router.push({ pathname: "/plugin", params: { ...params, skillsOnly: "1" } });
   function setParams(install: CapabilityInstall): PluginParams {
-    const entry = entries.find((row) => row.installedSource === install.source);
-    return {
-      ...(entry
-        ? pluginParams(entry)
-        : { source: install.source, installedSource: install.source, name: install.name }),
-      installId: install.id,
-      ...(install.organization ? { organization: "1" } : {}),
-    };
+    return installedPluginParams(install, entries);
   }
 
   return (

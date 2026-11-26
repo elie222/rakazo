@@ -1,7 +1,7 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { CapabilityInstall, PluginMarketplaceEntry } from "@rakazo/contracts";
 import { PluginPreviewSchema } from "@rakazo/contracts";
-import { installedPluginParts, matchesPluginQuery } from "@rakazo/core";
+import { installedPluginParts, installedPluginSelection, matchesPluginQuery } from "@rakazo/core";
 import {
   Button,
   Dialog,
@@ -66,14 +66,7 @@ export function SkillsDialog({
   );
   const catalogEntries = catalog.data?.entries ?? NO_ENTRIES;
   function installedSelection(install: CapabilityInstall): PluginSelection {
-    const entry = catalogEntries.find((row) => row.installedSource === install.source);
-    return {
-      ...(entry
-        ? pluginSelection(entry)
-        : { source: install.source, installedSource: install.source, name: install.name }),
-      installId: install.id,
-      organization: install.organization,
-    };
+    return installedPluginSelection(install, catalogEntries);
   }
 
   async function refresh() {
