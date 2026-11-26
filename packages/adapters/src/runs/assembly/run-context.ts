@@ -18,7 +18,7 @@ import type {
   ToolStepCall,
 } from "@rakazo/contracts";
 import type { ToolStepOutcome } from "@rakazo/core";
-import { createStreamingRedactor, keepSecretMatcherLocal, toolResultTaintsRun } from "@rakazo/core";
+import { createStreamingRedactor, toolResultTaintsRun } from "@rakazo/core";
 import {
   isToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -407,7 +407,6 @@ export function addRunSecrets(ctx: RunContext, values: string[]) {
   const additions = values.filter((value) => !ctx.secrets.includes(value));
   if (additions.length === 0) return;
   reply.pendingProgress += reply.redactor.finish();
-  keepSecretMatcherLocal(ctx.secrets);
   ctx.secrets.push(...additions);
   reply.redactor = createStreamingRedactor(ctx.secrets);
 }

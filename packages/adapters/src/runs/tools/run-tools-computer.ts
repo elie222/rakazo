@@ -3,7 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import type { BrowserProvider, SandboxProvider } from "@rakazo/adapter-kit";
 import type { ComputerCommand } from "@rakazo/contracts";
 import { COMPUTER_COMMAND_OUTPUT_MAX_CHARS } from "@rakazo/contracts";
-import { isSecretMatcherLocal, keepSecretMatcherLocal, redactSecrets } from "@rakazo/core";
+import { redactSecrets } from "@rakazo/core";
 import { sandboxCommandTimeoutMs } from "@rakazo/core/node/sandbox-command";
 import { RunHistoryWriteError, releasePayment } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -233,8 +233,7 @@ export async function pageBrowserTool(ctx: RunContext, call: ToolCall) {
   if (blocked) return call.finish({ error: blocked });
   if (name !== "browser_snapshot") ctx.computer.checkpoint.markDirty();
   // Pages can echo a filled login (e.g. a username field), so scrub every page result.
-  const redactions = () =>
-    isSecretMatcherLocal(ctx.secrets) ? keepSecretMatcherLocal([...ctx.secrets]) : [...ctx.secrets];
+  const redactions = () => ctx.secrets;
   const desktopTools =
     ctx.computer.graphicalToolsAllowed && builtinOffered(ctx.tools.disabled, "computer_act");
   // A file the page downloads goes to the bot's own Downloads folder. Its name is redacted like any

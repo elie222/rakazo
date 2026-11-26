@@ -19,18 +19,17 @@ function errorMessage(error: unknown, depth = 0): string {
     : `${error.name} without a message`;
 }
 
-export function sanitizeConnectorError(error: unknown, secrets: string[] = []): string {
+export function sanitizeConnectorError(error: unknown, secrets: readonly string[] = []): string {
   const message = errorMessage(error);
   return redactSecrets(
     message
       .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
       .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]"),
     secrets,
-    { cache: false },
   ).slice(0, 2_000);
 }
 
-export function redactConnectorPayload(value: unknown, secrets: string[]): unknown {
+export function redactConnectorPayload(value: unknown, secrets: readonly string[]): unknown {
   if (secrets.length === 0) return value;
   try {
     const plain = JSON.parse(JSON.stringify(value));

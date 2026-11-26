@@ -555,14 +555,11 @@ export async function runAutoReviewJudge(
             redactSecrets(
               error instanceof Error ? `${error.name}: ${error.message}` : String(error),
               secrets,
-              { cache: false },
             ),
             200,
           )}`;
       // biome-ignore lint/suspicious/noConsole: Emit one sanitized checker diagnostic.
-      console.warn(
-        `[auto-review] checker ${redactSecrets(modelLabel, secrets, { cache: false })} ${detail}`,
-      );
+      console.warn(`[auto-review] checker ${redactSecrets(modelLabel, secrets)} ${detail}`);
       return {
         decision: "error",
         model: modelLabel,

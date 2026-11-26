@@ -157,7 +157,7 @@ export function capabilitiesRoutes(ctx: RouterContext) {
         if (
           credential &&
           credential.length >= 8 &&
-          (source.includes(credential) || containsSecret(config, [credential], { cache: false }))
+          (source.includes(credential) || containsSecret(config, [credential]))
         ) {
           throw new ORPCError("BAD_REQUEST", {
             message: "Put credentials only in the encrypted credential field",

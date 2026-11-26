@@ -1,4 +1,4 @@
-import { createExpandedSecretMatcher } from "../messages/secret-matcher.js";
+import { redactedRanges } from "../messages/events.js";
 
 const MARKER = "•••";
 
@@ -376,7 +376,7 @@ function redactKnownSecrets(text: string, secrets: ReadonlyArray<string | null |
   const { anywhere, alone } = knownSecretForms(secrets);
   let output = "";
   let offset = 0;
-  for (const [start, end] of createExpandedSecretMatcher(anywhere).ranges(foldAsciiCase(text))) {
+  for (const [start, end] of redactedRanges(foldAsciiCase(text), anywhere)) {
     output += text.slice(offset, start) + MARKER;
     offset = end;
   }

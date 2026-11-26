@@ -313,7 +313,6 @@ async function generateDraft(
     containsSecret(
       [draftSource, checked.code],
       [model.apiKey ?? "", ...Object.values(model.headers ?? {})].filter(Boolean),
-      { cache: false },
     )
   )
     return;

@@ -248,7 +248,7 @@ function serverError(
   ...privateValues: (string | undefined)[]
 ): Error {
   const secrets = privateValues.filter((value): value is string => Boolean(value));
-  const short = redactSecrets(voiceErrorDetail(body), secrets, { cache: false })
+  const short = redactSecrets(voiceErrorDetail(body), secrets)
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ")
     .trim()
     .slice(0, MAX_SERVER_DETAIL_LENGTH);
