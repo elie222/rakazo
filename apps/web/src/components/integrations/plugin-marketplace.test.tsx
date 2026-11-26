@@ -527,7 +527,7 @@ describe("integration fallback icons", () => {
   it("names each Add button after its app and hides the decorative initial", async () => {
     const item = { connectorId: "gm", slug: "gmail", name: "Gmail" } as never;
     const context = {
-      connections: { itemConnected: () => false, pending: null, connect: vi.fn() },
+      connections: { connections: [], itemConnected: () => false, pending: null, connect: vi.fn() },
       pluginForApp: new Map(),
       onOpenApp: vi.fn(),
       onOpenDetail: vi.fn(),

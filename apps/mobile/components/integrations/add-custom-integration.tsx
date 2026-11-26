@@ -2,6 +2,7 @@ import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import type { McpSourcePreset } from "@rakazo/contracts";
+import type { ConnectionOwnerChoice } from "@rakazo/core";
 import { Text, TextInput, View } from "react-native";
 import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native/native";
 import type { ScreenHeaderMenuProps } from "../../lib/navigation/screen-header";
@@ -9,11 +10,12 @@ import { openExternalUrl } from "../../lib/platform/open-url";
 import { NativeActionButton } from "../native/native-action-button";
 import { NativeSymbol } from "../native/native-symbol";
 import { MenuPicker } from "../ui/menu-picker";
+import { ConnectionOwnerPicker } from "./connection-owner-picker";
 import { createIntegrationsStyles } from "./integrations-styles";
 
 export type SourceAuth = "none" | "bearer" | "header" | "oauth";
 export type SourceKind = "mcp" | "api" | "graphql";
-export type SourceOwner = "me" | "organization";
+export type SourceOwner = ConnectionOwnerChoice;
 export type AddCustomOption = {
   id: string;
   label: string;
@@ -163,15 +165,10 @@ export function AddCustomForm({
             />
           ) : null}
           {organizationName ? (
-            <MenuPicker
-              label={t`Available to`}
-              plain
+            <ConnectionOwnerPicker
+              organizationName={organizationName}
               value={owner}
-              choices={[
-                { key: "me", label: t`Just me` },
-                { key: "organization", label: organizationName },
-              ]}
-              onChange={(key) => setOwner(key as SourceOwner)}
+              onChange={setOwner}
             />
           ) : null}
           {!sourcePreset ? (

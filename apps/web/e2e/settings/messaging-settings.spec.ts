@@ -183,7 +183,7 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   });
 
   await page.getByRole("button", { name: new RegExp(userName) }).click();
-  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByTestId("user-settings");
   await settings.getByTestId("settings-nav-messaging").click();
 

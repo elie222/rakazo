@@ -6,11 +6,18 @@ import {
   canManageOrganizationMembers,
   catalogItemKey,
   connectCatalogItem,
+  connectionSharingOrganization,
   installedPluginParts,
   isCatalogItemConnected,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
-import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import {
+  Redirect,
+  useFocusEffect,
+  useIsFocused,
+  useLocalSearchParams,
+  useRouter,
+} from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -33,6 +40,7 @@ import {
   SpaceAvailabilityPicker,
   useOwnSpaces,
 } from "../../components/settings/space-availability";
+import { useLiveStream } from "../../lib/api/roster-signals";
 import { errorText } from "../../lib/api/user-error";
 import { mobileTokens } from "../../lib/appearance/appearance";
 import { loadLastBotId } from "../../lib/inbox/last-bot";
@@ -62,6 +70,7 @@ function PluginScreen() {
   const sideInsets = useSideInsets();
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
+  useLiveStream(useIsFocused());
   const [lastBotId, setLastBotId] = useState<string | null>(null);
   const organization = activeOrganization(useOrganizations().data);
   const canShare = Boolean(organization && canManageOrganizationMembers(organization));
@@ -78,6 +87,9 @@ function PluginScreen() {
   );
   const botId = lastBotId ?? "";
 
+  const organizationName = connectionSharingOrganization(
+    activeOrganization(useOrganizations().data),
+  );
   const managed = Boolean(params.managedConnectorId && params.managedSlug);
   const installsRead = rpcQuery("capabilities/list");
   const serversRead = rpcQuery("mcp/servers/list");
@@ -265,9 +277,9 @@ function PluginScreen() {
   const managedConnected = managedApp ? isCatalogItemConnected(connections, managedApp) : false;
   const working = pending === "header";
   const action = managed
-    ? managedConnected
+    ? managedConnected || organizationName
       ? {
-          label: t`Added`,
+          label: managedConnected ? t`Added` : t`Connect`,
           onPress: () =>
             router.navigate({
               pathname: "/integrations",

@@ -36,6 +36,10 @@ vi.mock("../api/api", () => ({
   rpc: (...call: unknown[]) => state.rpc(...call),
 }));
 vi.mock("../api/session", () => ({ currentSessionGeneration: () => 1 }));
+vi.mock("../spaces/organizations", () => ({
+  useOrganizations: () => ({ data: undefined }),
+  activeOrganization: () => undefined,
+}));
 vi.mock("../platform/app-foreground", () => ({ useAppForeground: () => true }));
 vi.mock("../inbox/last-bot", () => ({ loadLastBotId: async () => state.botId }));
 vi.mock("../layout/side-insets", () => ({ useSideInsets: () => ({}) }));
@@ -47,7 +51,9 @@ vi.mock("../native/native", () => ({
   useThemedStyles: (create: () => unknown) => create(),
 }));
 vi.mock("../native/native-controls", () => ({ iosAtLeast: () => false }));
+vi.mock("../api/roster-signals", () => ({ useLiveStream: () => {} }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => state.focused,
   Redirect: () => null,
   useRouter: () => ({ navigate: vi.fn() }),
   useLocalSearchParams: () => state.params,

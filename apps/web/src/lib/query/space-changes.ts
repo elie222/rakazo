@@ -17,6 +17,11 @@ const READS: Record<ReadChangeKind, readonly Procedure[]> = {
     ["agentSkills", "list"],
     ["agentSkills", "get"],
   ],
+  integrations: [
+    ["connections", "catalog"],
+    ["connections", "list"],
+    ["connections", "tools"],
+  ],
   preferences: [
     ["approvalRules", "list"],
     ["approvalRules", "effective"],

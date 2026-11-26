@@ -511,12 +511,14 @@ model Organization {
   spaces       Space[]
   billing      BillingAccount?
   modelCredits ModelCreditAccount?
+  modelConnections OrganizationModelConnection[]
   computerAllowanceGrants ComputerAllowanceGrant[]
   mediaCharges MediaCharge[]
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
   mcpServers   McpServer[]
+  connections  Connection[]
   secrets      Secret[]
 
   @@unique([slug])
@@ -524,6 +526,22 @@ model Organization {
   agentSkills AgentSkill[]
   capabilityInstalls CapabilityInstall[]
 
+}
+
+model OrganizationModelConnection {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider       String
+  modelId        String
+  label          String
+  secretId       String
+  ciphertext     String
+  supportsImages Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+  @@map("organization_model_connections")
 }
 
 model BillingAccount {
@@ -1839,21 +1857,25 @@ model AgentSkill {
 }
 
 model Connection {
-  id          String   @id @default(cuid())
-  spaceId     String
-  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId      String
-  connectorId String
-  provider    String
-  displayName String
-  status      String
-  secretId    String?
-  providerRef String?
-  metadata    Json     @default("{}")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String        @id @default(cuid())
+  spaceId        String?
+  space          Space?        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId         String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  connectorId    String
+  provider       String
+  displayName    String
+  status         String
+  secretId       String?
+  providerRef    String?
+  metadata       Json          @default("{}")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   @@index([spaceId, userId, connectorId])
+  // Active organization apps and labels have case-insensitive unique indexes in SQL.
+  @@index([organizationId])
   @@map("connections")
 }
 

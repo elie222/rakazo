@@ -117,6 +117,14 @@ const payloadSchemas = {
     provider: z.string().min(1),
     ref: z.string().min(1).optional(),
   }),
+  "connection.organization-cleanup": z.object({
+    organizationId: z.string().min(1),
+    spaceId: z.string().min(1),
+    userId: z.string().min(1),
+    connectorId: z.string().min(1),
+    provider: z.string().min(1),
+    ref: z.string().min(1).optional(),
+  }),
   "computer.machine-cleanup": z.object({
     provider: z.string().min(1),
     machineId: z.string().min(1),
@@ -464,9 +472,13 @@ export function memoryPurgeHistoryJob(
   };
 }
 
-export function connectionCleanupJobKey(
-  payload: BackgroundJobPayloads["connection.cleanup"],
-): string {
+type ConnectionCleanupPayload = BackgroundJobPayloads["connection.cleanup"] & {
+  organizationId?: string;
+};
+
+export function connectionCleanupJobKey(payload: ConnectionCleanupPayload): string {
+  if (payload.organizationId)
+    return `connection.organization-cleanup:${JSON.stringify([payload.organizationId, payload.connectorId, payload.provider, payload.ref ?? null])}`;
   return `connection.cleanup:${JSON.stringify([payload.spaceId, payload.userId, payload.connectorId, payload.provider, payload.ref ?? null])}`;
 }
 
@@ -479,16 +491,21 @@ export const CONNECTION_CLEANUP_MAX_ATTEMPTS = 125;
 
 /** Without `availableAt` it runs now, which is how a failed direct attempt hands over. */
 export function connectionCleanupJob(
-  payload: BackgroundJobPayloads["connection.cleanup"],
+  payload: ConnectionCleanupPayload,
   availableAt?: Date,
 ): BackgroundJob {
-  return {
-    name: "connection.cleanup",
-    payload,
+  const options = {
     ...(availableAt ? { availableAt } : {}),
     replaceKey: connectionCleanupJobKey(payload),
     maxAttempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
   };
+  return payload.organizationId
+    ? {
+        ...options,
+        name: "connection.organization-cleanup",
+        payload: { ...payload, organizationId: payload.organizationId },
+      }
+    : { ...options, name: "connection.cleanup", payload };
 }
 
 export function machineCleanupJobKey(provider: string, machineId: string): string {

@@ -79,6 +79,10 @@ export * from "./email/inbound-email.js";
 export * from "./email/lifecycle-email.js";
 export * from "./ingress/ingress-factory.js";
 export * from "./integrations/connection-cleanup.js";
+export {
+  connectedContext,
+  loadOrganizationReconnectCheck,
+} from "./integrations/connection-context.js";
 export * from "./integrations/connector-catalog.js";
 export * from "./integrations/connector-registry.js";
 export * from "./integrations/graphql-connectors.js";
