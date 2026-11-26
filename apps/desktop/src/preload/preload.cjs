@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
   clipboard: {
     writeText: (text) => ipcRenderer.invoke("desktop.clipboard.write", text),
   },
+  appIcon: {
+    get: () => ipcRenderer.invoke("desktop.appIcon.get"),
+    set: (icon) => ipcRenderer.invoke("desktop.appIcon.set", icon),
+  },
   badge: {
     set: (count) => ipcRenderer.invoke("desktop.badge.set", count),
   },

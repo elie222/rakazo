@@ -7,6 +7,8 @@ import {
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
+import { loadOrganizationReconnectCheck } from "./connection-context.js";
 import { DEFAULT_CONNECTOR_ID } from "./connector-registry.js";
 
 const RECENT_MESSAGES = 50;
@@ -30,7 +32,17 @@ export async function connectApp(
           const query = await provider.catalog(context, app.trim());
           // A provider's text search may not recognize a featured alias such as gcal.
           const entries = matchAppCatalog(query, app) ? query : await provider.catalog(context);
-          return entries.filter((entry) => entry.connectorId === provider.describe().id);
+          return entries
+            .filter((entry) => entry.connectorId === provider.describe().id)
+            .map((entry) => {
+              const shared = context.connectedConnections?.some(
+                (connection) =>
+                  connection.organizationId &&
+                  connection.connectorId === entry.connectorId &&
+                  connection.externalId.toLowerCase() === entry.slug.toLowerCase(),
+              );
+              return shared ? { ...entry, connected: true } : entry;
+            });
         } catch {
           return [];
         }
@@ -45,14 +57,35 @@ export async function connectApp(
     ) ?? matchAppCatalog(catalog, app);
   if (!entry) return { error: "No such app is available in the connector catalog." };
   const provider = providers.find((provider) => provider.describe().id === entry.connectorId);
-  const reconnect =
-    entry.connected && ((await provider?.needsReconnect?.(context, entry.slug)) ?? false);
+  const matching = context.connectedConnections?.filter(
+    (row) =>
+      row.connectorId === entry.connectorId &&
+      row.externalId.toLowerCase() === entry.slug.toLowerCase(),
+  );
+  const shared = matching?.find((row) => row.organizationId);
+  const orgOnly = shared && !matching?.some((row) => !row.organizationId);
+  const checkShared =
+    orgOnly && provider
+      ? await bestEffort(
+          "check organization app sign-in",
+          loadOrganizationReconnectCheck(provider, {
+            ...context,
+            organizationId: shared.organizationId,
+          }),
+        )
+      : undefined;
+  const reconnect = orgOnly
+    ? checkShared?.({ provider: entry.slug, providerRef: shared.providerRef ?? null })
+    : entry.connected && ((await provider?.needsReconnect?.(context, entry.slug)) ?? false);
   if (entry.connected && !reconnect)
     return {
       status: "connected",
       message: "This app is already connected and its tools are available.",
     };
-  const block = appConnectCard({ ...entry, connected: false });
+  const block = {
+    ...appConnectCard({ ...entry, connected: false }),
+    ...(orgOnly ? { organizationConnectionId: shared.id } : {}),
+  };
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const nonce = `connect-app:${effectId}`;
@@ -73,7 +106,8 @@ export async function connectApp(
         storedMessageBlocks(message).some(
           (candidate) =>
             matchesAppConnection(candidate, entry.connectorId, entry.slug, DEFAULT_CONNECTOR_ID) &&
-            candidate.status === "pending",
+            candidate.status === "pending" &&
+            candidate.organizationConnectionId === block.organizationConnectionId,
         ),
       )
     )

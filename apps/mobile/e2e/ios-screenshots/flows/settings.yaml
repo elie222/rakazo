@@ -228,6 +228,13 @@ name: Settings
 - waitForAnimationToEnd:
     timeout: 3000
 - takeScreenshot: 18-language
+- openLink: "rakazo:///app-icon"
+- extendedWaitUntil:
+    visible: "Sunglasses"
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: 18b-app-icon
 - openLink: "rakazo:///account"
 - scrollUntilVisible:
     element: "Artifacts"

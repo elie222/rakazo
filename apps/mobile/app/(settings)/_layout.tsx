@@ -84,6 +84,7 @@ export default function SettingsLayout() {
       <Stack.Screen name="change-password" options={{ title: t`Change password` }} />
       <Stack.Screen name="signup-survey" options={glassHeaderOptions(t`Welcome to Rakazo`)} />
       <Stack.Screen name="language" options={glassHeaderOptions(t`Language`)} />
+      <Stack.Screen name="app-icon" options={glassHeaderOptions(t`App icon`)} />
       <Stack.Screen name="model-picker" options={glassHeaderOptions(t`Model`)} />
       <Stack.Screen name="model-connection" options={glassHeaderOptions(t`Model`)} />
       <Stack.Screen name="model-settings" options={glassHeaderOptions(t`Model`)} />

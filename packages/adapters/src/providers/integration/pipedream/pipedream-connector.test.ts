@@ -938,6 +938,71 @@ describe("PipedreamConnector", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("uses the organization's external identity from another member's Space", async () => {
+    const emulator = new ThirdPartyConnectorEmulator();
+    let expectedOwner: string | undefined;
+    const toolOwners: string[] = [];
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.pathname.endsWith("/tokens")) {
+        const data = JSON.parse(String(init?.body)) as { external_user_id: string };
+        expectedOwner = data.external_user_id;
+      }
+      const toolOwner = new Headers(init?.headers).get("x-pd-external-user-id");
+      if (toolOwner) toolOwners.push(toolOwner);
+      return emulator.fetch(input, init);
+    };
+    const connector = new PipedreamConnector(FAKE_CONFIG, {
+      fetch,
+      resolveHostname: emulator.resolveHostname,
+    });
+    const organizationId = "fixture-team";
+    await connector.begin(
+      { provider: "linear", redirectUrl: "https://rakazo.example.test/app" },
+      { ...context, organizationId },
+    );
+    const member = { ...context, userId: "fixture-member", spaceId: "another-space" };
+    expect(await connector.connectionReady(member, "linear")).toBe(false);
+    const providerRef = await connector.resolveConnectedAccountId(
+      member.userId,
+      "linear",
+      "linear",
+      [],
+      member.spaceId,
+      organizationId,
+    );
+    expect(providerRef).toBe("account-linear");
+    const ctx = {
+      ...member,
+      connectedConnections: [
+        {
+          id: "shared",
+          connectorId: "pipedream",
+          externalId: "linear",
+          displayName: "Shared Linear",
+          providerRef,
+          organizationId,
+        },
+      ],
+    };
+    const [tool] = await connector.discoverTools(ctx);
+    expect(tool).toBeDefined();
+    const events = [];
+    for await (const event of connector.execute(
+      {
+        tool: tool!.name,
+        route: tool!.route,
+        args: { text: "fixture" },
+        executionId: "fixture-execution",
+      },
+      ctx,
+    ))
+      events.push(event);
+    expect(events[0]?.type).toBe("result");
+    expect(expectedOwner).toBeTruthy();
+    expect(new Set(toolOwners)).toEqual(new Set([expectedOwner]));
+  });
+
   it("runs catalog, connection, discovery, execution, and revoke against the protocol emulator", async () => {
     const emulator = new ThirdPartyConnectorEmulator();
     const connector = new PipedreamConnector(

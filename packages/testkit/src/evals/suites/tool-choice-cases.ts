@@ -570,6 +570,14 @@ export const TOOL_CHOICE_DEFINITIONS: ToolChoiceCase[] = [
     expect: { order: ["find_tool", "scratchpad_add"] },
   },
   {
+    id: "lazy-catalog-app",
+    area: "lazy-tools",
+    kind: "guard",
+    purpose: "An app in the catalog that is not connected yet is offered for connecting.",
+    prompt: "Use the Pagesnap tool to grab a screenshot of example.com.",
+    expect: { calls: [{ tool: "connect_app", args: { app: "~pagesnap" } }] },
+  },
+  {
     id: "lazy-unoffered",
     area: "lazy-tools",
     kind: "control",

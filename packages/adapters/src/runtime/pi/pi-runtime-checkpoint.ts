@@ -52,6 +52,7 @@ export function buildTurnCheckpoint(input: {
   modelId: string;
   systemPrompt: string;
   representedHistoryIds: ReadonlySet<string>;
+  foundConnectorTools?: ReadonlyMap<string, string>;
 }): TurnCheckpoint {
   const messages = input.sentContext
     ? [
@@ -97,6 +98,9 @@ export function buildTurnCheckpoint(input: {
     executionMode: sequential ? ("sequential" as const) : ("parallel" as const),
     messages: messages as Message[],
     historyMessageIds: [...input.representedHistoryIds],
+    ...(input.foundConnectorTools?.size
+      ? { foundConnectorTools: [...input.foundConnectorTools] }
+      : {}),
   };
 }
 

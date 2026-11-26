@@ -42,8 +42,29 @@ import {
   VoiceStatusSchema,
 } from "./voice.js";
 
+const OrganizationModelConnectionSchema = z.object({
+  id: Id,
+  provider: z.string(),
+  modelId: z.string(),
+  label: z.string(),
+});
+
 export const modelsRpc = {
   models: {
+    organizationConnections: {
+      list: oc.input(z.object({})).output(z.array(OrganizationModelConnectionSchema)),
+      create: oc
+        .input(
+          ModelConnectInputSchema.safeExtend({
+            apiKey: z.string().trim().min(8),
+            modelId: z.string().trim().min(1).max(512),
+            label: ModelConnectionLabelSchema,
+            credentialId: z.never().optional(),
+          }),
+        )
+        .output(OrganizationModelConnectionSchema),
+      remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    },
     forRole: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),
