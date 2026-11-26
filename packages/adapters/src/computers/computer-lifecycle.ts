@@ -23,6 +23,7 @@ import {
   ClientError,
   computerUsingRuns,
   isRetryableError,
+  PERSON_RUN_TRIGGERS,
   pollUntil,
 } from "@rakazo/core";
 import { parseScreenLeaseId, screenLeaseId } from "@rakazo/core/node/screen-lease";
@@ -989,18 +990,44 @@ export async function acquireDedicatedScreenLeaseFence(
 
 async function lockOwnedRun(
   tx: Prisma.TransactionClient,
-  input: { runId: string; botId: string; workerId: string; runFence: number },
+  input: { computerId: string; runId: string; botId: string; workerId: string; runFence: number },
 ): Promise<void> {
-  const currentRun = await tx.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM runs
+  const now = new Date();
+  const people = [...PERSON_RUN_TRIGGERS];
+  // Background work leaves a free computer to a person's run waiting for it, but keeps one it
+  // holds. A marked person run that the lease row names already had its turn.
+  const currentRun = await tx.$queryRaw<Array<{ yieldsToPerson?: boolean }>>`
+    SELECT (
+      trigger <> ALL(${people})
+      AND NOT EXISTS (
+        SELECT 1 FROM computer_execution_leases
+        WHERE "computerId" = ${input.computerId}
+          AND "botId" = ${input.botId}
+          AND "runId" = ${input.runId}
+          AND "expiresAt" > ${now})
+      AND EXISTS (
+        SELECT 1 FROM runs waiting
+        WHERE waiting."botId" = ${input.botId}
+          AND waiting.id <> ${input.runId}
+          AND waiting.status = 'running'
+          AND waiting.trigger = ANY(${people})
+          AND waiting."computerUseStartedAt" IS NOT NULL
+          AND waiting."leaseExpiresAt" > ${now}
+          AND NOT EXISTS (
+            SELECT 1 FROM computer_execution_leases
+            WHERE "computerId" = ${input.computerId}
+              AND "botId" = ${input.botId}
+              AND "runId" = waiting.id))
+    ) AS "yieldsToPerson"
+    FROM runs
     WHERE id = ${input.runId}
       AND "botId" = ${input.botId}
       AND status = 'running'
       AND "leaseOwner" = ${input.workerId}
       AND "leaseFence" = ${input.runFence}
-      AND "leaseExpiresAt" > ${new Date()}
+      AND "leaseExpiresAt" > ${now}
     FOR UPDATE SKIP LOCKED`;
-  if (currentRun.length !== 1) throw new ComputerBusyError();
+  if (currentRun.length !== 1 || currentRun[0]?.yieldsToPerson) throw new ComputerBusyError();
 }
 
 export async function acquireComputerExecutionLease(
@@ -1114,6 +1141,17 @@ export async function waitForRunComputerLease(
   input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
   signal: AbortSignal,
 ): Promise<ComputerExecutionLease | null> {
+  // A person's run marks its wait, which the bot's background runs yield to.
+  await prisma.run.updateMany({
+    where: {
+      id: input.runId,
+      trigger: { in: [...PERSON_RUN_TRIGGERS] },
+      status: "running",
+      leaseOwner: input.workerId,
+      leaseFence: input.runFence,
+    },
+    data: { computerUseStartedAt: new Date() },
+  });
   const outcome = await pollUntil(
     async () => {
       signal.throwIfAborted();
