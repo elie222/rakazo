@@ -359,8 +359,15 @@ export interface ManagedConnectorProvider
     spaceId?: string,
     organizationId?: string,
   ): Promise<string | undefined>;
+  /** Maximum lifetime of hosted links issued before expiration was stored locally. */
+  readonly legacySignInLifetimeMs?: number;
   /** Snapshot before giving out a sign-in link that cannot identify its own remote account. */
   listAccountsBeforeSignIn?(slug: string, context: AdapterContext): Promise<string[]>;
+  /** Prepare one owner-scoped identity lookup for a batch of account references. */
+  prepareAccountIdentityLookup?(
+    slug: string,
+    context: AdapterContext,
+  ): Promise<(ref: string) => Promise<string | undefined>>;
   /** An upstream account identity verified using this exact authorization, when available. */
   connectedAccountIdentity?(
     slug: string,

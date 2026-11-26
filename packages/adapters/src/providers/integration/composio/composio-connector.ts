@@ -739,7 +739,7 @@ export class ComposioConnector implements ComposioProvider {
     }
   }
 
-  readonly connectedAccountIdentity = composioAccountIdentity(
+  readonly prepareAccountIdentityLookup = composioAccountIdentity(
     (context, slug) =>
       this.accountIds(composioOwner(context), [slug], ["ACTIVE"], {
         signal: context.signal,

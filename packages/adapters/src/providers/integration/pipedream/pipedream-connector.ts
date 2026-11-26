@@ -359,6 +359,8 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     }
   }
 
+  readonly legacySignInLifetimeMs = 4 * 60 * 60 * 1_000;
+
   async listAccountsBeforeSignIn(slug: string, context: AdapterContext): Promise<string[]> {
     return (await this.accounts(context))
       .filter((account) => account.app?.name_slug?.toLowerCase() === slug.toLowerCase())

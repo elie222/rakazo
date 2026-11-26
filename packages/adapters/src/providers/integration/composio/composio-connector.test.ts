@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
 import { ConnectorRegistry } from "../../../integrations/connector-registry.js";
 import { DestinationEmulator } from "../../../webhooks/destination-emulator.js";
+import { composioAccountIdentity } from "./composio-account-identity.js";
 import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
   AUTHORIZATION_WINDOW_MS,
@@ -25,6 +26,28 @@ import {
   toolkitDisplayName,
   withSharedAccessHint,
 } from "./composio-connector.js";
+
+it("lists active accounts once for an owner-scoped identity lookup", async () => {
+  const activeRefs = vi.fn(async () => ["account-a", "account-b"]);
+  const proxyExecute = vi.fn(async () => ({
+    status: 200,
+    data: { emailAddress: "MAILBOX@example.test" },
+  }));
+  const prepare = composioAccountIdentity(activeRefs, async () => ({ proxyExecute }));
+  const context = {
+    operationId: "test",
+    traceId: "test",
+    spaceId: "space",
+    userId: "user",
+    signal: new AbortController().signal,
+  };
+  const identify = await prepare("gmail", context);
+  await expect(identify("account-a")).resolves.toBe("mailbox@example.test");
+  await expect(identify("account-b")).resolves.toBe("mailbox@example.test");
+  await expect(identify("other-owner")).resolves.toBeUndefined();
+  expect(activeRefs).toHaveBeenCalledExactlyOnceWith(context, "gmail");
+  expect(proxyExecute).toHaveBeenCalledTimes(2);
+});
 
 const composioSdkState = vi.hoisted(() => ({
   created: [] as Array<{ userId: string; config: Record<string, unknown> }>,

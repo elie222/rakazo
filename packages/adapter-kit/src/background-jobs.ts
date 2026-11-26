@@ -117,6 +117,14 @@ const payloadSchemas = {
     provider: z.string().min(1),
     ref: z.string().min(1).optional(),
   }),
+  "connection.hosted-sign-in-cleanup": z.object({
+    organizationId: z.string().min(1),
+    spaceId: z.string().min(1),
+    userId: z.string().min(1),
+    connectorId: z.string().min(1),
+    provider: z.string().min(1),
+    connectionId: z.string().min(1),
+  }),
   "connection.organization-cleanup": z.object({
     organizationId: z.string().min(1),
     spaceId: z.string().min(1),

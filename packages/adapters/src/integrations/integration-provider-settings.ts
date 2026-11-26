@@ -193,8 +193,10 @@ export class IntegrationProviderSettings {
 }
 
 class ConfiguredIntegrationProvider implements ManagedConnectorProvider {
+  readonly prepareAccountIdentityLookup?: ManagedConnectorProvider["prepareAccountIdentityLookup"];
   readonly connectedAccountIdentity?: ManagedConnectorProvider["connectedAccountIdentity"];
   readonly resolveConnectedAccountId?: ManagedConnectorProvider["resolveConnectedAccountId"];
+  readonly legacySignInLifetimeMs?: number;
   readonly listAccountsBeforeSignIn?: ManagedConnectorProvider["listAccountsBeforeSignIn"];
   readonly cancelAuthorizationRequest?: ManagedConnectorProvider["cancelAuthorizationRequest"];
   readonly revokeUnreferencedAccounts?: ManagedConnectorProvider["revokeUnreferencedAccounts"];
@@ -205,8 +207,10 @@ class ConfiguredIntegrationProvider implements ManagedConnectorProvider {
     private readonly prepared?: ManagedConnectorProvider,
   ) {
     // Only a prepared provider is known up front; callers branch on which of these exist.
+    this.prepareAccountIdentityLookup = prepared?.prepareAccountIdentityLookup?.bind(prepared);
     this.connectedAccountIdentity = prepared?.connectedAccountIdentity?.bind(prepared);
     this.resolveConnectedAccountId = prepared?.resolveConnectedAccountId?.bind(prepared);
+    this.legacySignInLifetimeMs = prepared?.legacySignInLifetimeMs;
     this.listAccountsBeforeSignIn = prepared?.listAccountsBeforeSignIn?.bind(prepared);
     this.cancelAuthorizationRequest = prepared?.cancelAuthorizationRequest?.bind(prepared);
     this.revokeUnreferencedAccounts = prepared?.revokeUnreferencedAccounts?.bind(prepared);

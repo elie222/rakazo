@@ -5,13 +5,16 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import {
+  CONNECTION_CLEANUP_MAX_ATTEMPTS,
   connectionCleanupJob,
   connectionCleanupJobKey,
   RetryJobLaterError,
 } from "@rakazo/adapter-kit";
+import { ClientError } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { ProviderTransactionBusyError, runProviderTransaction } from "@rakazo/db";
+import { ProviderTransactionBusyError, readJsonColumn, runProviderTransaction } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
+import { z } from "zod";
 import { advisoryLock } from "../locks/advisory-lock.js";
 import { sanitizeIntegrationError } from "../providers/integration/composio/composio-connector.js";
 import type { ConnectorRegistry } from "./connector-registry.js";
@@ -257,6 +260,92 @@ async function dropUnreferencedAccounts(
   return "done";
 }
 
+const hostedSignInMetadata = z.object({
+  priorAccountIds: z.array(z.string()).optional(),
+  expiresAt: z.string().optional(),
+});
+
+type HostedSignIn = Pick<
+  Prisma.ConnectionGetPayload<object>,
+  "id" | "provider" | "providerRef" | "metadata" | "updatedAt" | "connectorId"
+>;
+
+export function readHostedSignIn(row: HostedSignIn) {
+  return readJsonColumn(
+    hostedSignInMetadata,
+    row.metadata,
+    {
+      table: "connections",
+      column: "metadata",
+      id: row.id,
+    },
+    { fallback: {} },
+  );
+}
+
+/** Under the provider lock, before a later hosted URL takes its own baseline. */
+export async function settleRevokedHostedSignIn(
+  tx: Pick<Prisma.TransactionClient, "connection">,
+  connector: ManagedConnectorProvider,
+  row: HostedSignIn,
+  context: AdapterContext,
+) {
+  if (row.providerRef !== row.provider || !connector.listAccountsBeforeSignIn) return;
+  const { expiresAt, priorAccountIds } = readHostedSignIn(row);
+  const recorded = Date.parse(expiresAt ?? "");
+  const expiry = Number.isFinite(recorded)
+    ? recorded
+    : row.updatedAt.getTime() + (connector.legacySignInLifetimeMs ?? Number.POSITIVE_INFINITY);
+  if (expiry > Date.now())
+    throw new ClientError(
+      "CONFLICT",
+      "Wait for the previous sign-in link to expire, then try again.",
+    );
+
+  if (priorAccountIds) {
+    // No later link can be issued in this scope before this snapshot is settled.
+    const prior = new Set(priorAccountIds);
+    const accounts = await connector.listAccountsBeforeSignIn(row.provider, context);
+    const added = accounts.filter((id) => !prior.has(id));
+    const candidate = added.length === 1 ? added[0] : undefined;
+    if (
+      candidate &&
+      candidate !== row.provider &&
+      !(await authorizationInUse(
+        tx,
+        {
+          ...context,
+          connectorId: row.connectorId,
+          provider: row.provider,
+        },
+        candidate,
+      ))
+    ) {
+      await connector.revoke(candidate, context);
+    }
+    if (added.length > 1)
+      getLogger().warn("A cancelled hosted sign-in left ambiguous authorizations", {
+        connectionId: row.id,
+      });
+  }
+
+  // Legacy rows have no baseline. A fresh sign-in snapshots their existing accounts.
+  await tx.connection.update({ where: { id: row.id }, data: { providerRef: null } });
+}
+
+export function hostedSignInCleanupJob(
+  payload: BackgroundJobPayloads["connection.hosted-sign-in-cleanup"],
+  availableAt: Date,
+) {
+  return {
+    name: "connection.hosted-sign-in-cleanup" as const,
+    payload,
+    availableAt,
+    maxAttempts: CONNECTION_CLEANUP_MAX_ATTEMPTS,
+    replaceKey: `connection.hosted-sign-in-cleanup:${payload.connectionId}`,
+  };
+}
+
 function cleanupContext(owner: ConnectionOwner, operationId: string): AdapterContext {
   return {
     operationId,
@@ -361,7 +450,7 @@ export async function retryConnectionCleanup(
     connectors: Pick<ConnectorRegistry, "managed">;
     jobs: Pick<JobPublisher, "enqueue">;
   },
-  payload: ConnectionCleanup,
+  payload: ConnectionCleanup & { connectionId?: string },
 ): Promise<void> {
   const configured = deps.connectors.managed(payload.connectorId);
   if (!configured) {
@@ -384,10 +473,30 @@ export async function retryConnectionCleanup(
   const outcome = await whileScopeIsFree(deps.prisma, payload, async (tx) => {
     // Credentials saved between preparing them and taking the lock: the next try has the new ones.
     if (prepared.recheck && !(await prepared.recheck(tx))) return "busy" as const;
+    if (payload.connectionId) {
+      const row = await tx.connection.findFirst({
+        where: {
+          ...connectionOwnerWhere(payload),
+          id: payload.connectionId,
+          connectorId: payload.connectorId,
+          provider: connectionProviderWhere(payload, payload.provider),
+          status: "revoked",
+        },
+      });
+      if (row)
+        await settleRevokedHostedSignIn(
+          tx,
+          connector,
+          row,
+          cleanupContext(payload, "connection.cleanup"),
+        );
+      return "done" as const;
+    }
     // A flow that ran since the failure may have saved this account on a row, which owns it now.
     return dropLeftover(tx, connector, payload, cleanupContext(payload, "connection.cleanup"));
   });
   if (outcome === "busy") {
+    if (payload.connectionId) throw new RetryJobLaterError(CONNECTION_CLEANUP_SLOT_WAIT_MS);
     // Not a failed attempt: replacing the job under its key starts it afresh, so a scope that
     // other flows keep busy never uses up its retries.
     await deps.jobs.enqueue(connectionCleanupJob(payload, connectionCleanupRetryAt("busy")));
@@ -417,7 +526,8 @@ export function recordConnectionCleanupAttemptsExhausted(
 ): void {
   if (
     job.task_identifier !== "connection.cleanup" &&
-    job.task_identifier !== "connection.organization-cleanup"
+    job.task_identifier !== "connection.organization-cleanup" &&
+    job.task_identifier !== "connection.hosted-sign-in-cleanup"
   )
     return;
   const { payload } = unwrapJobPayload(job.payload);

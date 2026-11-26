@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createRouterClient } from "@orpc/server";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
-import { ConnectorRegistry } from "@rakazo/adapters";
+import { ConnectorRegistry, retryConnectionCleanup } from "@rakazo/adapters";
 import { ORGANIZATION_CONNECTION_NAME_TAKEN } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
@@ -59,12 +59,13 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     revoke: vi.fn(async () => {}),
   };
   const publishSpaceChange = vi.fn(async () => {});
+  const enqueueIn = vi.fn();
   const client = (role: (typeof people)[number], spaceId = main) =>
     createRouterClient(
       createRouter({
         prisma,
         connectors: new ConnectorRegistry([connector]),
-        jobs: { enqueueIn: vi.fn(), cancelIn: vi.fn() },
+        jobs: { enqueueIn, cancelIn: vi.fn() },
         events: { publishSpaceChange },
         env: { webOrigin: "https://rakazo.example.test" },
       } as unknown as RouterDeps),
@@ -282,6 +283,107 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     );
   });
 
+  it("cleans up an account created after its shared sign-in was cancelled without another poll", async () => {
+    const admin = client("admin", second);
+    const hosted = { ...request, provider: "hosted-mail" };
+    const existing = await admin.beginForOrganization(hosted);
+    vi.mocked(connector.resolveConnectedAccountId!).mockResolvedValueOnce("established-account");
+    await admin.complete(existing);
+    const expiresAt = new Date(Date.now() + 600_000).toISOString();
+    const list = vi.fn(async () => ["established-account"]);
+    connector.listAccountsBeforeSignIn = list;
+    const revoke = vi.mocked(connector.revoke);
+    revoke.mockClear();
+    enqueueIn.mockClear();
+    vi.mocked(connector.begin).mockResolvedValueOnce({
+      authorizationUrl: "https://authorization.example.test/",
+      state: hosted.provider,
+      expiresAt,
+    });
+    try {
+      const { connectionId } = await admin.beginForOrganization(hosted);
+      await admin.revoke({ connectionId });
+      expect(revoke).not.toHaveBeenCalled();
+      const scheduled = enqueueIn.mock.calls[0]?.[1];
+      expect(scheduled).toMatchObject({
+        name: "connection.hosted-sign-in-cleanup",
+        availableAt: new Date(expiresAt),
+        payload: { connectionId, organizationId: team },
+      });
+      await runAsSystem("expire cancelled sign-in fixture", async () => {
+        await prisma.connection.update({
+          where: { id: connectionId },
+          data: {
+            metadata: {
+              expiresAt: new Date(0).toISOString(),
+              priorAccountIds: ["established-account"],
+            },
+          },
+        });
+        list.mockResolvedValueOnce(["established-account", "cancelled-account"]);
+        await retryConnectionCleanup(
+          {
+            prisma,
+            connectors: new ConnectorRegistry([connector]),
+            jobs: { enqueue: vi.fn() },
+          },
+          scheduled.payload,
+        );
+      });
+      expect(revoke).toHaveBeenCalledExactlyOnceWith(
+        "cancelled-account",
+        expect.objectContaining({ organizationId: team }),
+      );
+      await admin.revoke(existing);
+    } finally {
+      delete connector.listAccountsBeforeSignIn;
+      revoke.mockClear();
+    }
+  });
+
+  it("allows a fresh sign-in after an old cancelled link expires without touching its accounts", async () => {
+    const admin = client("admin", second);
+    const hosted = { ...request, provider: "legacy-hosted-mail" };
+    const oldId = randomUUID();
+    const old = new Date(Date.now() - 120_000);
+    await runAsSystem("insert expired legacy sign-in fixture", () =>
+      prisma.connection.create({
+        data: {
+          id: oldId,
+          organizationId: team,
+          connectorId: request.connectorId,
+          provider: hosted.provider,
+          providerRef: hosted.provider,
+          status: "revoked",
+          displayName: "Cancelled legacy sign-in",
+          metadata: { state: hosted.provider, attempt: "fixture-attempt" },
+          updatedAt: old,
+        },
+      }),
+    );
+    Object.assign(connector, { legacySignInLifetimeMs: 60_000 });
+    connector.listAccountsBeforeSignIn = vi.fn(async () => ["old-unknown-account"]);
+    const revoke = vi.mocked(connector.revoke);
+    revoke.mockClear();
+    vi.mocked(connector.begin).mockResolvedValueOnce({
+      authorizationUrl: "https://authorization.example.test/",
+      state: hosted.provider,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    });
+    try {
+      const { connectionId } = await admin.beginForOrganization(hosted);
+      const row = await runAsSystem("inspect fresh sign-in fixture", () =>
+        prisma.connection.findUniqueOrThrow({ where: { id: connectionId } }),
+      );
+      expect(row.metadata).toMatchObject({ priorAccountIds: ["old-unknown-account"] });
+      expect(revoke).not.toHaveBeenCalled();
+      await admin.revoke({ connectionId });
+    } finally {
+      Reflect.deleteProperty(connector, "legacySignInLifetimeMs");
+      delete connector.listAccountsBeforeSignIn;
+    }
+  });
+
   it("detects a conflicting rename in the owning organization", async () => {
     const admin = client("admin", second);
     await client("outsider", outside).beginForOrganization(request);
@@ -389,8 +491,9 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     }
   });
 
-  it("rejects a replacement hosted sign-in when the previous link has no recorded expiry", async () => {
+  it("waits for a recently cancelled legacy link without a recorded expiry", async () => {
     connector.listAccountsBeforeSignIn = async () => [];
+    Object.assign(connector, { legacySignInLifetimeMs: 60_000 });
     const app = { ...request, provider: "fixture-unknown-expiry", displayName: "Unknown expiry" };
     const link = {
       authorizationUrl: "https://authorization.example.test/",
@@ -405,13 +508,14 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
       await runAsSystem("legacy hosted sign-in fixture", () =>
         prisma.connection.update({
           where: { id: connectionId },
-          data: { metadata: {}, updatedAt: new Date(0) },
+          data: { metadata: { state: app.provider, attempt: "fixture-attempt" } },
         }),
       );
       await expect(admin.beginForOrganization(app)).rejects.toMatchObject({
-        code: "SERVICE_UNAVAILABLE",
+        code: "CONFLICT",
       });
     } finally {
+      Reflect.deleteProperty(connector, "legacySignInLifetimeMs");
       delete connector.listAccountsBeforeSignIn;
     }
   });

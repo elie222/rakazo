@@ -16,6 +16,7 @@ import {
   connectionProviderWhere,
   dropLeftover,
   dropLeftoverAuthorization,
+  hostedSignInCleanupJob,
   leftoverAuthorization,
   loadOrganizationReconnectCheck,
   lockProviderConnectionScope,
@@ -24,6 +25,8 @@ import {
   prepareManagedConnectorForTransaction,
   providerLockTransaction,
   providerScopeKey,
+  readHostedSignIn,
+  settleRevokedHostedSignIn,
   tryLockProviderConnectionScope,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
@@ -32,14 +35,13 @@ import { normalizedHttpUrl } from "@rakazo/core/egress";
 import {
   IsolationError,
   ProviderTransactionBusyError,
-  readJsonColumn,
   recordSecurityEvent,
   runAsSystem,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { z } from "zod";
 import { connectionCreatedEvent } from "../auth/security-audit.js";
 import type { RouterDeps } from "../router.js";
+import { findDuplicateAccount } from "./connection-identity.js";
 import {
   connectionDto,
   findManagedConnection,
@@ -75,11 +77,6 @@ function shouldRestoreLocalAfterRemoteRevokeFailure(error: unknown): boolean {
 
 /** How long a poll of connections/complete waits for the slot before reporting the row as is. */
 const COMPLETE_POLL_SLOT_WAIT_MS = 2_000;
-const signInMetadata = z.object({
-  priorAccountIds: z.array(z.string()).optional(),
-  expiresAt: z.string().optional(),
-});
-
 function requireNoPendingSignIn(pending: boolean) {
   if (pending)
     throw new ClientError("CONFLICT", "Finish or remove the pending sign-in for this app first.");
@@ -341,17 +338,15 @@ export async function beginConnection(
     throw error;
   }
   const scope = { ...owner, connectorId: input.connectorId, provider: input.provider };
-  const leftover =
-    organizationId && connector.listAccountsBeforeSignIn
-      ? undefined
-      : leftoverAuthorization(connector, scope, auth.state);
+  const hosted = Boolean(organizationId && connector.listAccountsBeforeSignIn);
+  const leftover = hosted ? undefined : leftoverAuthorization(connector, scope, auth.state);
   const replacedRef = reconnecting?.providerRef;
   const replaced =
-    replacedRef && replacedRef !== auth.state
+    replacedRef && replacedRef !== auth.state && (!hosted || replacedRef !== input.provider)
       ? leftoverAuthorization(
           connector,
           scope,
-          auth.state === input.provider ? auth.state : replacedRef,
+          !hosted && auth.state === input.provider ? auth.state : replacedRef,
         )
       : undefined;
   // Never send an opaque provider reference or a non-web URI to native URL handlers.
@@ -400,26 +395,10 @@ export async function beginConnection(
               providerRef: { equals: input.provider, mode: "insensitive" },
               status: "revoked",
             },
-            select: { id: true, metadata: true },
           });
-          // Removing a local row cannot invalidate an already issued hosted link.
-          // Wait out that link before another attempt can claim an account.
-          for (const previous of revoked) {
-            const { expiresAt } = readJsonColumn(
-              signInMetadata,
-              previous.metadata,
-              { table: "connections", column: "metadata", id: previous.id },
-              "reject",
-            );
-            const expiry = Date.parse(expiresAt ?? "");
-            if (!Number.isFinite(expiry))
-              throw new ClientError("SERVICE_UNAVAILABLE", "The sign-in link has no expiration.");
-            if (expiry > Date.now())
-              throw new ClientError(
-                "CONFLICT",
-                "Wait for the previous sign-in link to expire, then try again.",
-              );
-          }
+          const hostedContext = connectionContext(owner, "connections.begin", context.signal);
+          for (const previous of revoked)
+            await settleRevokedHostedSignIn(tx, connector, previous, hostedContext);
           priorAccountIds = await connector.listAccountsBeforeSignIn(
             input.provider,
             connectionContext(owner, "connections.begin", context.signal),
@@ -540,6 +519,12 @@ export async function completeConnection(
         }
         if (!settling(current)) return current;
         if (current.status === "revoked") {
+          if (
+            organizationId &&
+            transactionConnector.listAccountsBeforeSignIn &&
+            (!current.providerRef || current.providerRef === current.provider)
+          )
+            return current;
           // Authorization URLs from a revoke-win begin can still finish
           // remotely. Cancel leftover authorization-request ids, or drop slug-scoped
           // remotes no active local row still references, before rejecting.
@@ -636,12 +621,7 @@ export async function completeConnection(
           // Wait when a sibling's authorization cannot yet be resolved to an account id.
           const priorAccountIds =
             organizationId && !correlated && transactionConnector.listAccountsBeforeSignIn
-              ? readJsonColumn(
-                  signInMetadata,
-                  current.metadata,
-                  { table: "connections", column: "metadata", id: current.id },
-                  { fallback: {} },
-                ).priorAccountIds
+              ? readHostedSignIn(current).priorAccountIds
               : undefined;
           if (
             organizationId &&
@@ -728,55 +708,31 @@ export async function completeConnection(
             return current;
           }
         }
-        if (resolvedAccountId && transactionConnector.connectedAccountIdentity) {
-          const identify = transactionConnector.connectedAccountIdentity.bind(transactionConnector);
-          const lookup = async (provider: string, ref: string) => {
-            try {
-              return { identity: await identify(provider, ref, adapterContext) };
-            } catch (error) {
-              adapterContext.signal.throwIfAborted();
-              getLogger().warn("connections.complete could not verify account identity", {
-                error,
-                connectionId: current.id,
-              });
-              return undefined;
-            }
-          };
-          const result = await lookup(current.provider, resolvedAccountId);
-          if (!result) return current;
-          const { identity } = result;
-          if (identity) {
-            const siblings = await tx.connection.findMany({
-              where: {
-                ...owned,
-                connectorId: current.connectorId,
-                provider: { equals: current.provider, mode: "insensitive" },
-                status: "connected",
-                id: { not: current.id },
-              },
+        if (resolvedAccountId) {
+          const match = await findDuplicateAccount(
+            tx,
+            transactionConnector,
+            current,
+            resolvedAccountId,
+            adapterContext,
+          );
+          if (match === "retry") return current;
+          if (match) {
+            await tx.connection.update({
+              where: { id: current.id },
+              data: { status: "revoked", providerRef: resolvedAccountId },
             });
-            for (const sibling of siblings) {
-              const ref = sibling.providerRef;
-              if (!ref || ref === sibling.provider || ref === resolvedAccountId) continue;
-              const match = await lookup(sibling.provider, ref);
-              if (!match) return current;
-              if (match.identity !== identity) continue;
-              await tx.connection.update({
-                where: { id: current.id },
-                data: { status: "revoked", providerRef: resolvedAccountId },
-              });
-              await deps.jobs.enqueueIn(
-                tx,
-                connectionCleanupJob({
-                  ...owner,
-                  connectorId: current.connectorId,
-                  provider: current.provider,
-                  ref: resolvedAccountId,
-                }),
-              );
-              duplicateFound = true;
-              return sibling;
-            }
+            await deps.jobs.enqueueIn(
+              tx,
+              connectionCleanupJob({
+                ...owner,
+                connectorId: current.connectorId,
+                provider: current.provider,
+                ref: resolvedAccountId,
+              }),
+            );
+            duplicateFound = true;
+            return match;
           }
         }
         const updated = await tx.connection.updateMany({
@@ -891,6 +847,32 @@ export async function revokeConnection(
         data: { status: "revoked" },
       });
       if (updated.count === 0) return {};
+
+      if (
+        organizationId &&
+        row.status === "pending" &&
+        (!row.providerRef || row.providerRef === row.provider)
+      ) {
+        const { expiresAt, priorAccountIds } = readHostedSignIn(row);
+        const expiry = Date.parse(expiresAt ?? "");
+        if (priorAccountIds && Number.isFinite(expiry)) {
+          await deps.jobs.enqueueIn(
+            tx,
+            hostedSignInCleanupJob(
+              {
+                ...owner,
+                organizationId,
+                connectorId: row.connectorId,
+                provider: row.provider,
+                connectionId: row.id,
+              },
+              new Date(expiry),
+            ),
+          );
+          return {};
+        }
+        if (prepared?.provider?.listAccountsBeforeSignIn) return {};
+      }
 
       const remaining = await tx.connection.count({
         where: {
