@@ -1,18 +1,26 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import type { Options } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, SDKResultSuccess } from "@anthropic-ai/claude-agent-sdk";
 import type {
   AdapterContext,
   AgentRunRequest,
   AgentRuntime,
   AgentRuntimeEvent,
 } from "@rakazo/adapter-kit";
-import { deadlineSignal } from "@rakazo/core";
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { nativeTextRuntime } from "./descriptor.js";
 import { nativeTextInstructions, nativeTextPrompt } from "./runtime.prompt.js";
+import type { NativeTextSessionTurn } from "./text-session.js";
+import {
+  captureNativeTextSession,
+  NATIVE_TEXT_PROJECT,
+  nativeTextSessionScope,
+  restoreNativeTextSession,
+} from "./text-session.js";
 
 const running = new Map<string, AbortController>();
 const TURN_TIMEOUT_MS = 90_000;
@@ -30,6 +38,9 @@ function isolatedLauncher(launcher: string): Spawn {
       env: {
         HOME: cwd,
         CLAUDE_CONFIG_DIR: cwd,
+        ...(env.CLAUDE_CODE_PROJECT_DIR_NAME === NATIVE_TEXT_PROJECT
+          ? { CLAUDE_CODE_PROJECT_DIR_NAME: NATIVE_TEXT_PROJECT }
+          : {}),
         PATH: "/usr/bin:/bin",
         ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
         ANTHROPIC_BASE_URL: "https://api.anthropic.com",
@@ -42,12 +53,15 @@ function isolatedLauncher(launcher: string): Spawn {
   };
 }
 
-export function createNativeTextRuntime(launcher: string): AgentRuntime {
-  return createTextRuntime(isolatedLauncher(launcher));
+export function createNativeTextRuntime(
+  launcher: string,
+  sessionTurn?: NativeTextSessionTurn,
+): AgentRuntime {
+  return createTextRuntime(isolatedLauncher(launcher), sessionTurn);
 }
 
 /** Process transport is injected so tests can use the actual SDK against an offline endpoint. */
-export function createTextRuntime(start: Spawn): AgentRuntime {
+export function createTextRuntime(start: Spawn, sessionTurn?: NativeTextSessionTurn): AgentRuntime {
   return {
     describe: () => ({
       id: nativeTextRuntime.id,
@@ -78,14 +92,35 @@ export function createTextRuntime(start: Spawn): AgentRuntime {
       let scratch: string | undefined;
       try {
         signal.throwIfAborted();
+        const scope = sessionTurn ? nativeTextSessionScope(sessionTurn, request) : undefined;
+        const previous = sessionTurn?.mode === "resume" ? sessionTurn.previous : undefined;
+        if (sessionTurn?.mode === "resume" && !previous)
+          throw new Error("The requested native session is missing.");
+        const nativeSessionId = scope ? (previous?.sessionId ?? randomUUID()) : undefined;
         const { query } = await import("@anthropic-ai/claude-agent-sdk");
         scratch = await mkdtemp(join(tmpdir(), "rakazo-primary-"));
         signal.throwIfAborted();
         const secrets = [...(request.secrets ?? []), request.model.apiKey];
+        if (scope && previous)
+          await restoreNativeTextSession(scratch, scope, previous, request.model.apiKey, secrets);
+        signal.throwIfAborted();
+        let exitedCleanly: Promise<boolean> | undefined;
+        const spawnSession: Spawn = (options) => {
+          const child = start(options);
+          exitedCleanly = new Promise((resolve) => {
+            child.on("exit", (code, signal) => resolve(code === 0 && signal === null));
+            child.on("error", () => resolve(false));
+          });
+          return child;
+        };
         const session = query({
           prompt: nativeTextPrompt(
             request.prompt,
-            request.history.filter((entry) => entry.id !== request.sourceMessageId || !entry.id),
+            scope
+              ? []
+              : request.history.filter(
+                  (entry) => entry.id !== request.sourceMessageId || !entry.id,
+                ),
             secrets,
           ),
           options: {
@@ -93,6 +128,7 @@ export function createTextRuntime(start: Spawn): AgentRuntime {
             env: {
               HOME: scratch,
               CLAUDE_CONFIG_DIR: scratch,
+              ...(scope ? { CLAUDE_CODE_PROJECT_DIR_NAME: NATIVE_TEXT_PROJECT } : {}),
               PATH: "/usr/bin:/bin",
               ANTHROPIC_API_KEY: request.model.apiKey,
               ANTHROPIC_BASE_URL: "https://api.anthropic.com",
@@ -108,14 +144,21 @@ export function createTextRuntime(start: Spawn): AgentRuntime {
             strictMcpConfig: true,
             mcpServers: {},
             settingSources: [],
-            persistSession: false,
+            persistSession: Boolean(scope),
+            ...(nativeSessionId
+              ? previous
+                ? { resume: nativeSessionId }
+                : { sessionId: nativeSessionId }
+              : {}),
             includePartialMessages: true,
             maxTurns: 1,
-            spawnClaudeCodeProcess: start,
+            spawnClaudeCodeProcess: scope ? spawnSession : start,
           },
         });
         let init = false;
         let streamedText = false;
+        let completed: SDKResultSuccess | undefined;
+        let assistantUuid: string | undefined;
         try {
           for await (const message of session) {
             signal.throwIfAborted();
@@ -123,12 +166,18 @@ export function createTextRuntime(start: Spawn): AgentRuntime {
               if (
                 message.tools.length ||
                 message.mcp_servers.length ||
-                message.model !== request.model.id
+                message.model !== request.model.id ||
+                (nativeSessionId && message.session_id !== nativeSessionId)
               )
                 throw new Error("Unexpected tools in the text-only primary runtime.");
               init = true;
             }
             if (!init) continue;
+            if (scope && message.type === "assistant") {
+              if (message.message.content.some((block) => block.type === "tool_use"))
+                throw new Error("An unexpected tool call was refused.");
+              assistantUuid = message.uuid;
+            }
             if (
               message.type === "stream_event" &&
               message.event.type === "content_block_start" &&
@@ -148,31 +197,55 @@ export function createTextRuntime(start: Spawn): AgentRuntime {
               }
             }
             if (message.type !== "result") continue;
-            if (message.is_error || message.subtype !== "success")
+            if (
+              completed ||
+              message.is_error ||
+              message.subtype !== "success" ||
+              (nativeSessionId && message.session_id !== nativeSessionId)
+            )
               throw new Error("The primary runtime could not complete this turn.");
-            const usage = {
-              type: "usage",
-              provider: request.model.provider,
-              model: request.model.id,
-              billing: "api_key",
-              callId: request.runId,
-              inputTokens: message.usage.input_tokens,
-              outputTokens: message.usage.output_tokens,
-              cacheReadTokens: message.usage.cache_read_input_tokens,
-              cacheWriteTokens: message.usage.cache_creation_input_tokens,
-              totalTokens: null,
-              costUsd: null,
-            } as const;
-            await request.onUsage?.(usage);
-            signal.throwIfAborted();
-            yield { ...usage, accounted: Boolean(request.onUsage) };
-            yield streamedText ? { type: "done" } : { type: "done", text: message.result };
-            return;
+            completed = message;
+            if (!scope) break;
           }
-          throw new Error("The primary runtime stopped without a completed turn.");
         } finally {
           session.close();
         }
+        if (!completed) throw new Error("The primary runtime stopped without a completed turn.");
+        signal.throwIfAborted();
+        const usage = {
+          type: "usage",
+          provider: request.model.provider,
+          model: request.model.id,
+          billing: "api_key",
+          callId: request.runId,
+          inputTokens: completed.usage.input_tokens,
+          outputTokens: completed.usage.output_tokens,
+          cacheReadTokens: completed.usage.cache_read_input_tokens,
+          cacheWriteTokens: completed.usage.cache_creation_input_tokens,
+          totalTokens: null,
+          costUsd: null,
+        } as const;
+        await request.onUsage?.(usage);
+        if (sessionTurn && scope && nativeSessionId) {
+          if (!assistantUuid || !exitedCleanly || !(await withAbort(exitedCleanly, signal)))
+            throw new Error("The native process did not flush a completed turn.");
+          signal.throwIfAborted();
+          const snapshot = await captureNativeTextSession(
+            scratch,
+            scope,
+            nativeSessionId,
+            assistantUuid,
+            request.model.apiKey,
+            secrets,
+          );
+          if (previous?.transcript === snapshot.transcript)
+            throw new Error("Native session did not record the completed turn.");
+          signal.throwIfAborted();
+          sessionTurn.onCandidate(snapshot);
+        }
+        signal.throwIfAborted();
+        yield { ...usage, accounted: Boolean(request.onUsage) };
+        yield streamedText ? { type: "done" } : { type: "done", text: completed.result };
       } catch {
         if (ctx?.signal?.aborted || controller.signal.aborted) return;
         // Never expose SDK stderr, errors or provider payloads; they can carry credentials.

@@ -74,6 +74,23 @@ output cannot pick a recipient. The receiver cannot hand off again, and no
 ordinary runtime, files, memory, or computer access is inherited. Do not
 enable this slice until the separately documented staging gate passes.
 
+## Native text resume contract (not enabled in the application)
+
+The adapter can snapshot a complete native text turn and restore the exact
+session in a fresh process. It validates the selected owner, Space, bot, thread,
+model, named connection and profile revision before restoring anything.
+It never chooses the most recent session or replays app messages into a resumed
+turn. Each child still has fresh scratch. Only its one expected bounded
+transcript can become a candidate, after a successful process exit and the
+current assistant record are verified. Missing or invalid snapshots fail
+rather than starting a different session.
+
+The app does not yet bind these snapshots to owner DMs or store them durably.
+A later slice must recheck current access, encrypt the snapshot, publish it
+only with a successful fenced turn, and delete it on chat clear or expiry.
+Do not share a whole config directory or enable operator-facing resume before
+those safeguards and the staging gate are verified.
+
 ## Pause and rollback
 
 Stop accepting new pilot turns first (disable the launcher configuration for

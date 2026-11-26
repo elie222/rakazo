@@ -1,8 +1,11 @@
 import { spawn } from "node:child_process";
+import { rmSync } from "node:fs";
 import { createServer } from "node:http";
+import { join } from "node:path";
 import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { expect, it, vi } from "vitest";
 import { createTextRuntime } from "./runtime.js";
+import type { NativeTextSessionSnapshot, NativeTextSessionTurn } from "./text-session.js";
 
 function request(runId: string, apiKey: string): AgentRunRequest {
   return {
@@ -23,7 +26,7 @@ async function collect(events: AsyncIterable<AgentRuntimeEvent>) {
   return result;
 }
 
-it("runs the pinned SDK against an offline API with separate per-run keys and no tools", async () => {
+async function offlineApi() {
   const seen: Array<{ key: string | undefined; body: Record<string, unknown> }> = [];
   const server = createServer(async (req, res) => {
     if (!req.url?.startsWith("/v1/messages")) {
@@ -66,6 +69,11 @@ it("runs the pinned SDK against an offline API with separate per-run keys and no
     );
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return { seen, server };
+}
+
+it("runs the pinned SDK against an offline API with separate per-run keys and no tools", async () => {
+  const { seen, server } = await offlineApi();
   try {
     const addr = server.address();
     if (!addr || typeof addr === "string") throw new Error("Fixture listener is unavailable");
@@ -146,3 +154,139 @@ it("stops the actual SDK while the upstream request is still open", async () => 
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 }, 15_000);
+
+it("restores an exact native session in a fresh process without replaying app history", async () => {
+  const { seen, server } = await offlineApi();
+  const addr = server.address();
+  if (!addr || typeof addr === "string") throw new Error("Fixture listener is unavailable");
+  let dropTranscript = false;
+  const spawned: Array<{ cwd: string | undefined; pid: number | undefined }> = [];
+  const start: Parameters<typeof createTextRuntime>[0] = (options) => {
+    const child = spawn(options.command, options.args, {
+      cwd: options.cwd,
+      env: { ...options.env, ANTHROPIC_BASE_URL: `http://127.0.0.1:${addr.port}` },
+      signal: options.signal,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const cwd = options.cwd;
+    if (dropTranscript && cwd) {
+      child.once("exit", () => rmSync(join(cwd, "projects"), { recursive: true, force: true }));
+    }
+    spawned.push({ cwd, pid: child.pid });
+    return child;
+  };
+  let previous: NativeTextSessionSnapshot | undefined;
+  const onCandidate = vi.fn((snapshot: NativeTextSessionSnapshot) => {
+    previous = snapshot;
+  });
+  const scope = {
+    spaceId: "space",
+    ownerId: "owner",
+    profileRevision: "profile-v1",
+    mode: "new" as const,
+    onCandidate,
+  };
+  const first = {
+    ...request("native-a", "fixture-key"),
+    model: {
+      ...request("native-a", "fixture-key").model,
+      billing: "api_key" as const,
+      connectionId: "shared-fixture",
+    },
+    prompt: "Synthetic first-turn fact: lavender-checkpoint.",
+  };
+  try {
+    expect(await collect(createTextRuntime(start, scope).run(first))).toContainEqual({
+      type: "done",
+    });
+    expect(previous).toBeDefined();
+    const snapshot = previous!;
+    const second = { ...first, prompt: "Recall the checkpoint.", runId: "native-a-next" };
+    expect(
+      await collect(
+        createTextRuntime(start, { ...scope, mode: "resume", previous: snapshot }).run(second),
+      ),
+    ).toContainEqual({ type: "done" });
+    expect(previous?.sessionId).toEqual(snapshot.sessionId);
+    expect(spawned).toHaveLength(2);
+    expect(spawned[0]?.cwd).not.toEqual(spawned[1]?.cwd);
+    expect(spawned[0]?.pid).not.toEqual(spawned[1]?.pid);
+    expect(JSON.stringify(seen[1]?.body.messages)).toContain("lavender-checkpoint");
+    expect(JSON.stringify(seen[1]?.body.messages)).toContain("Recall the checkpoint.");
+    expect(JSON.stringify(seen[1]?.body.messages)).not.toContain("Earlier answer");
+    expect(seen[1]?.body.tools ?? []).toEqual([]);
+
+    for (const [changedRequest, changedScope] of [
+      [{ ...second, botId: "different-bot" }, {}],
+      [{ ...second, threadId: "different-thread" }, {}],
+      [{ ...second, model: { ...second.model, connectionId: "different-connection" } }, {}],
+      [{ ...second, model: { ...second.model, apiKey: "rotated-key" } }, {}],
+      [second, { ownerId: "different-owner" }],
+      [second, { spaceId: "different-space" }],
+      [second, { profileRevision: "changed-profile" }],
+    ] satisfies [
+      AgentRunRequest,
+      Partial<Pick<NativeTextSessionTurn, "ownerId" | "spaceId" | "profileRevision">>,
+    ][]) {
+      await expect(
+        collect(
+          createTextRuntime(start, {
+            ...scope,
+            ...changedScope,
+            mode: "resume",
+            previous: snapshot,
+          }).run(changedRequest),
+        ),
+      ).rejects.toThrow("No other runtime was used");
+    }
+    await expect(
+      collect(
+        createTextRuntime(start, {
+          ...scope,
+          mode: "resume",
+          previous: {
+            ...snapshot,
+            transcript: snapshot.transcript.slice(0, -1),
+          },
+        }).run(second),
+      ),
+    ).rejects.toThrow("No other runtime was used");
+    await expect(
+      collect(
+        createTextRuntime(start, {
+          ...scope,
+          mode: "resume",
+          previous: {
+            ...snapshot,
+            transcript: snapshot.transcript.replace("lavender-checkpoint", "edited-checkpoint"),
+          },
+        }).run(second),
+      ),
+    ).rejects.toThrow("No other runtime was used");
+    expect(spawned).toHaveLength(2);
+    expect(onCandidate).toHaveBeenCalledTimes(2);
+    const sharedBot = {
+      ...first,
+      botId: "native-b",
+      threadId: "native-b",
+      runId: "native-b",
+      prompt: "Separate bot with the same named account.",
+    };
+    await collect(createTextRuntime(start, scope).run(sharedBot));
+    expect(previous?.sessionId).not.toBe(snapshot.sessionId);
+    expect(JSON.stringify(seen[2]?.body.messages)).not.toContain("lavender-checkpoint");
+    expect(onCandidate).toHaveBeenCalledTimes(3);
+    // Provider success alone is not a transcript receipt.
+    dropTranscript = true;
+    await expect(
+      collect(
+        createTextRuntime(start, { ...scope, mode: "resume", previous: snapshot }).run(second),
+      ),
+    ).rejects.toThrow("No other runtime was used");
+    expect(seen).toHaveLength(4);
+    expect(onCandidate).toHaveBeenCalledTimes(3);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}, 30_000);
