@@ -466,8 +466,9 @@ export async function buildTurnPrompt(
       ? undefined
       : await loadBotGroupDirectory(deps.prisma, run);
   const botDirectory =
-    [renderBotDirectory(parts.tools.teammates), groupDirectory].filter(Boolean).join("\n\n") ||
-    undefined;
+    [renderBotDirectory(parts.tools.teammates, parts.tools.strategicBuiltins), groupDirectory]
+      .filter(Boolean)
+      .join("\n\n") || undefined;
   return {
     pluginLine,
     taughtSkillsLine,
