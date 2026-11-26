@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { ProtectedBrowserError } from "@rakazo/adapters";
 import { ClientError, deadlineSignal } from "@rakazo/core";
-import type { Prisma } from "@rakazo/db";
 import {
+  lockManagedOrganization,
   managedOrganizationId,
   OrganizationAdminRequiredError,
-  organizationRole,
+  Prisma,
   runAsSystem,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -16,7 +16,11 @@ const loginSelect = {
   name: true,
   origin: true,
   sessionCipher: true,
-  grants: { select: { botId: true }, orderBy: { botId: "asc" } },
+  grants: {
+    where: { bot: { archivedAt: null } },
+    select: { botId: true },
+    orderBy: { botId: "asc" },
+  },
 } satisfies Prisma.OrganizationLoginSelect;
 
 function loginDto({
@@ -41,15 +45,27 @@ class OrganizationLoginNotFoundError extends ClientError {
   }
 }
 
-async function validateAgents(tx: Prisma.TransactionClient, organizationId: string, ids: string[]) {
+async function validateAgents(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  ids: string[],
+  existing: ReadonlySet<string> = new Set(),
+) {
   const botIds = [...new Set(ids)];
-  const count = await tx.bot.count({
-    where: { id: { in: botIds }, archivedAt: null, space: { organizationId } },
-  });
-  if (count !== botIds.length) {
+  if (botIds.length === 0) return botIds;
+  const active = await tx.$queryRaw<{ id: string }[]>`
+    SELECT bot.id FROM bots AS bot
+    JOIN spaces AS space ON space.id = bot."spaceId"
+    WHERE bot.id IN (${Prisma.join(botIds)}) AND bot."archivedAt" IS NULL
+      AND space."organizationId" = ${organizationId}
+    ORDER BY bot.id
+    FOR SHARE OF bot
+  `;
+  const activeIds = new Set(active.map(({ id }) => id));
+  if (botIds.some((id) => !activeIds.has(id) && !existing.has(id))) {
     throw new InvalidOrganizationLoginAgentsError();
   }
-  return botIds;
+  return [...activeIds];
 }
 
 export function organizationVaultRoutes({ deps, authed }: RouterContext) {
@@ -57,17 +73,15 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
   function adminOperation<T>(
     actor: { userId: string; spaceId: string },
     work: (tx: Prisma.TransactionClient, organizationId: string) => Promise<T>,
+    write = true,
   ) {
     return runAsSystem("manage the vault of the active organization", () =>
       deps.prisma.$transaction(async (tx) => {
-        const organizationId = await managedOrganizationId(tx, actor);
+        const organizationId = await (write ? lockManagedOrganization : managedOrganizationId)(
+          tx,
+          actor,
+        );
         if (!organizationId) throw new OrganizationAdminRequiredError();
-        const [membership] = await tx.$queryRaw<{ role: string }[]>`
-          SELECT role FROM "member"
-          WHERE "organizationId" = ${organizationId} AND "userId" = ${actor.userId}
-          FOR SHARE`;
-        if (!membership || organizationRole(membership.role) === "member")
-          throw new OrganizationAdminRequiredError();
         return work(tx, organizationId);
       }),
     );
@@ -102,26 +116,34 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
 
   return {
     settings: vault.settings.handler(({ context }) =>
-      adminOperation(context.actor, async (tx, organizationId) => ({
-        signInAvailable: Boolean(deps.organizationLoginBrowser),
-        logins: await listLogins(tx, organizationId),
-        agents: await tx.bot.findMany({
-          where: { archivedAt: null, space: { organizationId } },
-          select: { id: true, name: true },
-          orderBy: [{ name: "asc" }, { id: "asc" }],
+      adminOperation(
+        context.actor,
+        async (tx, organizationId) => ({
+          signInAvailable: Boolean(deps.organizationLoginBrowser),
+          logins: await listLogins(tx, organizationId),
+          agents: await tx.bot.findMany({
+            where: { archivedAt: null, space: { organizationId } },
+            select: { id: true, name: true },
+            orderBy: [{ name: "asc" }, { id: "asc" }],
+          }),
         }),
-      })),
+        false,
+      ),
     ),
     signIn: vault.signIn.handler(async ({ context, input, signal: requestSignal }) => {
       const actor = context.actor;
-      const { organizationId, login } = await adminOperation(actor, async (tx, organizationId) => {
-        const login = await tx.organizationLogin.findFirst({
-          where: { id: input.loginId, organizationId },
-          select: { id: true, origin: true, sessionVersion: true },
-        });
-        if (!login) throw new OrganizationLoginNotFoundError();
-        return { organizationId, login };
-      });
+      const { organizationId, login } = await adminOperation(
+        actor,
+        async (tx, organizationId) => {
+          const login = await tx.organizationLogin.findFirst({
+            where: { id: input.loginId, organizationId },
+            select: { id: true, origin: true, sessionVersion: true },
+          });
+          if (!login) throw new OrganizationLoginNotFoundError();
+          return { organizationId, login };
+        },
+        false,
+      );
       const browser = deps.organizationLoginBrowser;
       if (!browser) throw new ClientError("BAD_REQUEST", "Protected sign-in is unavailable");
 
@@ -228,7 +250,7 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
         );
       }),
     ),
-    list: vault.list.handler(({ context }) => adminOperation(context.actor, listLogins)),
+    list: vault.list.handler(({ context }) => adminOperation(context.actor, listLogins, false)),
     create: vault.create.handler(({ context, input }) =>
       change(context.actor, async (tx, organizationId) => {
         const botIds = await validateAgents(tx, organizationId, input.botIds);
@@ -251,7 +273,16 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
           WHERE id = ${input.loginId} AND "organizationId" = ${organizationId}
           FOR UPDATE`;
         if (!login) throw new OrganizationLoginNotFoundError();
-        const botIds = await validateAgents(tx, organizationId, input.botIds);
+        const existing = await tx.organizationLoginGrant.findMany({
+          where: { loginId: login.id },
+          select: { botId: true },
+        });
+        const botIds = await validateAgents(
+          tx,
+          organizationId,
+          input.botIds,
+          new Set(existing.map(({ botId }) => botId)),
+        );
         await tx.organizationLoginGrant.deleteMany({
           where: { loginId: login.id, botId: { notIn: botIds } },
         });

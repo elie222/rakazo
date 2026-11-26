@@ -70,8 +70,9 @@ jobs:
           sudo ip route add 93.184.216.34/32 via 192.0.2.2
           printf '%s\n' '93.184.216.34 protected-browser-fixture.example.com' \
             '127.0.0.1 private-protected-browser-fixture.example.com' | sudo tee -a /etc/hosts
+          mkfifo "$fixture/ready"
           sudo ip netns exec browser-fixture "$(command -v node)" \
             packages/adapters/src/providers/browser/docker/protected-browser-smoke.mjs fixture \
             "$fixture/key.pem" "$fixture/cert.pem" > "$fixture/ready" &
-          timeout 10s bash -c 'until grep -q "^Fixture ready$" "$1"; do sleep 0.2; done' bash "$fixture/ready"
+          timeout 30s grep -qx -m1 "Fixture ready" "$fixture/ready"
           pnpm exec tsx packages/adapters/src/providers/browser/docker/protected-browser-smoke.mjs /tmp/browser-seccomp.json

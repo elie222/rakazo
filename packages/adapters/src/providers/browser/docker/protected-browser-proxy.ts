@@ -5,6 +5,11 @@ import { BlockList, connect } from "node:net";
 import { networkInterfaces } from "node:os";
 import { isCloudMetadataHost, isInternalHostname, isNonPublicAddress } from "@rakazo/contracts";
 
+import { deadlineSignal } from "@rakazo/core";
+
+const SETUP_TIMEOUT_MS = 10_000;
+const IDLE_TIMEOUT_MS = 15_000;
+
 export function allowsProtectedBrowserAddresses(
   addresses: { address: string; family: number }[],
   interfaces = networkInterfaces(),
@@ -36,7 +41,15 @@ export function createProtectedBrowserProxy() {
     response.writeHead(403, { connection: "close" }).end();
   });
   server.maxConnections = 64;
-  server.on("connection", track);
+  server.on("connection", (socket: Socket) => {
+    track(socket);
+    socket.setTimeout(IDLE_TIMEOUT_MS, () => socket.destroy());
+    const setup = deadlineSignal(SETUP_TIMEOUT_MS);
+    const expire = () => socket.destroy();
+    setup.addEventListener("abort", expire, { once: true });
+    socket.once("close", () => setup.removeEventListener("abort", expire));
+    socket.once("tunnelReady", () => setup.removeEventListener("abort", expire));
+  });
   server.on("connect", async (request, client, head) => {
     try {
       const authority = request.url ?? "";
@@ -59,6 +72,7 @@ export function createProtectedBrowserProxy() {
       upstream.once("close", () => client.destroy());
       client.once("close", () => upstream.destroy());
       upstream.once("connect", () => {
+        client.emit("tunnelReady");
         client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
         upstream.write(head);
         client.pipe(upstream).pipe(client);
