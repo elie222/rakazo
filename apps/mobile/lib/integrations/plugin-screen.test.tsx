@@ -9,6 +9,15 @@ import PluginRoute from "../../app/(settings)/plugin";
 import { queryClient } from "../query/query";
 
 const SOURCE = "https://plugins.example.test/notes";
+vi.mock("../spaces/organizations", () => ({
+  useOrganizations: () => ({}),
+  activeOrganization: () => undefined,
+}));
+vi.mock("../../components/settings/settings-group", () => ({
+  SettingsGroup: () => null,
+  SettingsSwitch: () => null,
+}));
+
 const state = vi.hoisted(() => ({
   rpc: vi.fn(),
   params: {} as Record<string, string>,
