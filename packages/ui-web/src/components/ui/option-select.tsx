@@ -9,7 +9,6 @@ import {
   SelectValue,
 } from "./select.js";
 
-/** One choice in an {@link OptionSelect}. */
 type SelectOption<T extends string> = {
   readonly value: T;
   readonly label: string;

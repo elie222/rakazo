@@ -16,8 +16,8 @@ import {
   ClientError,
   comparePlugins,
   containsSecret,
-  MCP_SOURCE_PRESETS,
   matchesPluginQuery,
+  mcpSourcePresetsFor,
 } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { AVAILABILITY_SELECT, availableInSpace, itemSecretIn, spaceAvailability } from "@rakazo/db";
@@ -121,7 +121,9 @@ export function capabilitiesRoutes(ctx: RouterContext) {
           createdAt: row.createdAt.toISOString(),
         }));
       }),
-      sourcePresets: authed.capabilities.sourcePresets.handler(() => MCP_SOURCE_PRESETS),
+      sourcePresets: authed.capabilities.sourcePresets.handler(() =>
+        mcpSourcePresetsFor(deps.env.webOrigin),
+      ),
       catalogSearch: authed.capabilities.catalogSearch.handler(async ({ context, input }) => {
         const baseUrl =
           deps.env.integrationsCatalogUrl ??

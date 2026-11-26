@@ -120,7 +120,6 @@ async function chat(messages: object[]) {
       draft = "";
     },
   } as never;
-  /** What the server receives for the composer's message. */
   const sent = async (): Promise<Record<string, unknown> | undefined> => {
     payloads.length = 0;
     await act(async () => sender.send());

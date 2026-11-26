@@ -105,7 +105,6 @@ export function InboxHeader({
             <NativeSymbol ios="magnifyingglass" android="search" size={17} />
           </HeaderButton>
         </GlassSurface>
-        {/* Creating is a different kind of action from the ways of looking at chats beside it. */}
         <GlassSurface shape="circle" style={styles.headerCircle} fallbackStyle={styles.headerFill}>
           <MenuView
             actions={createMenuActions(Platform.OS)}

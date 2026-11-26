@@ -49,6 +49,8 @@ export const openCodeAgent: AcpAgentDescriptor = {
   id: OPENCODE_CLI_PROVIDER_ID,
   label: "OpenCode",
   command: "opencode",
+  // OpenCode passes images on to models that take them.
+  acceptsImages: true,
   notInstalled:
     "OpenCode is not installed on this server. Install it for the user that runs the Rakazo worker.",
   async launch({ files, instructions, toolServer, env }) {

@@ -244,6 +244,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
   it("rejects unauthenticated calls to every protected RPC family", async () => {
     const calls = exhaustiveProtectedCalls([
       ["me"],
+      ["apiKeys/list"],
+      ["apiKeys/create", { name: "script" }],
+      ["apiKeys/revoke", { id: "missing-key" }],
       ["deployment/get"],
       ["deployment/update", { signupsEnabled: true }],
       ["updater/status"],
@@ -343,6 +346,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["bots/remove", { botId: "missing-bot" }],
       ["bots/removePreview", { botId: "missing-bot" }],
       ["bots/importCreate"],
+      [
+        "bots/importMany",
+        {
+          agents: [{ importKey: "import-key-1", files: [{ path: "SOUL.md", content: "Calm." }] }],
+        },
+      ],
       ["bots/importSetupState"],
       ["bots/templates"],
       ["bots/createFromTemplate", { templateId: "morning-briefing", version: 1 }],
@@ -623,6 +632,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/servers/list"],
       ["mcp/servers/create"],
       ["mcp/servers/createForBots"],
+      ["mcp/servers/createForOrganization"],
       ["mcp/servers/connect"],
       ["mcp/servers/update"],
       ["mcp/servers/save"],

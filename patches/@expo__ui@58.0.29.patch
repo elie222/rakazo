@@ -1,0 +1,31 @@
+diff --git a/ios/BottomSheetView.swift b/ios/BottomSheetView.swift
+index b331018ac492033c951ab5d51add0a98292e0989..350a71f868daf8039d697871bd0d06112b5155df 100644
+--- a/ios/BottomSheetView.swift
++++ b/ios/BottomSheetView.swift
+@@ -111,12 +111,25 @@ struct BottomSheetView: ExpoSwiftUI.View {
+     }
+   }
+ 
++  @ViewBuilder
++  private var sheetBody: some View {
++#if os(iOS) && compiler(>=6.4)
++    if #available(iOS 27.1, *) {
++      presentedContent.toolbarVerticalBehavior(.disabled)
++    } else {
++      presentedContent
++    }
++#else
++    presentedContent
++#endif
++  }
++
+   var body: some View {
+     anchor
+       .sheet(isPresented: $isPresented, onDismiss: {
+         props.onDismiss()
+       }) {
+-        presentedContent
++        sheetBody
+       }
+       .onChange(of: isPresented, perform: { newIsPresented in
+         if props.isPresented == newIsPresented {

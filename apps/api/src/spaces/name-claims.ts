@@ -31,6 +31,11 @@ async function assertOwnSpaces(
 
 type Joined = { spaceId: string; userId: string; allSpaces: boolean; secretId?: string | null };
 
+/** A member's own server; an organization's is never placed in Spaces, so it is left out. */
+function ownServer<Row extends { spaceId: string | null; userId: string | null }>(row: Row | null) {
+  return row?.spaceId && row.userId ? { ...row, spaceId: row.spaceId, userId: row.userId } : null;
+}
+
 /** Secrets of an item available beyond one space are the account's, so every such space reads them. */
 async function settleSecret(
   tx: Prisma.TransactionClient,
@@ -180,7 +185,7 @@ export async function setAvailability(
       input.kind === "skill"
         ? await tx.agentSkill.findFirst({ where: { ...visible, source: "user" } })
         : input.kind === "mcpServer"
-          ? await tx.mcpServer.findFirst({ where: { ...visible, installId: null } })
+          ? ownServer(await tx.mcpServer.findFirst({ where: { ...visible, installId: null } }))
           : await tx.capabilityInstall.findFirst({ where: visible });
     if (!item) throw new ORPCError("NOT_FOUND");
     return place(tx, actor, input.kind, item, input);
@@ -224,7 +229,10 @@ async function ownItems(tx: Prisma.TransactionClient, actor: Actor): Promise<Own
     });
     return [
       ...installs.map((row) => item("install", row)),
-      ...servers.map((row) => item("mcpServer", row)),
+      ...servers.flatMap((row) => {
+        const own = ownServer(row);
+        return own ? [item("mcpServer", own)] : [];
+      }),
       ...skills.map((row) => item("skill", row)),
     ];
   });
@@ -333,7 +341,10 @@ export async function rehomeItemsLeaving(prisma: PrismaClient, spaceId: string):
       }
     };
     for (const row of installs) await move("install", row);
-    for (const row of servers) await move("mcpServer", row);
+    for (const row of servers) {
+      const own = ownServer(row);
+      if (own) await move("mcpServer", own);
+    }
     for (const row of skills) await move("skill", row);
   });
 }
@@ -347,13 +358,4 @@ export async function serverAvailability(
     select: { spaceId: true },
   });
   return spaceAvailability({ ...server, availableIn });
-}
-
-/** A server's new secret goes where every space it is available in can read it. */
-export async function serverSecretSpace(
-  tx: Prisma.TransactionClient,
-  server: { id: string; spaceId: string; allSpaces: boolean },
-): Promise<string | null> {
-  const { allSpaces, spaceIds } = await serverAvailability(tx, server);
-  return allSpaces || spaceIds.length > 1 ? null : server.spaceId;
 }

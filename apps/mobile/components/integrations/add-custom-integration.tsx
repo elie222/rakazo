@@ -13,6 +13,7 @@ import { createIntegrationsStyles } from "./integrations-styles";
 
 export type SourceAuth = "none" | "bearer" | "header" | "oauth";
 export type SourceKind = "mcp" | "api" | "graphql";
+export type SourceOwner = "me" | "organization";
 export type AddCustomOption = {
   id: string;
   label: string;
@@ -63,6 +64,9 @@ export function AddCustomForm({
   setAuthHeader,
   credential,
   setCredential,
+  organizationName,
+  owner,
+  setOwner,
   busy,
   onAdd,
   onClose,
@@ -84,6 +88,10 @@ export function AddCustomForm({
   setAuthHeader: (next: string) => void;
   credential: string;
   setCredential: (next: string) => void;
+  /** Set when the member may add this server for their organization too. */
+  organizationName: string | null;
+  owner: SourceOwner;
+  setOwner: (next: SourceOwner) => void;
   busy: boolean;
   onAdd: () => void;
   onClose: () => void;
@@ -152,6 +160,18 @@ export function AddCustomForm({
               }
               placeholderTextColor={native.tertiaryLabel}
               style={styles.input}
+            />
+          ) : null}
+          {organizationName ? (
+            <MenuPicker
+              label={t`Available to`}
+              plain
+              value={owner}
+              choices={[
+                { key: "me", label: t`Just me` },
+                { key: "organization", label: organizationName },
+              ]}
+              onChange={(key) => setOwner(key as SourceOwner)}
             />
           ) : null}
           {!sourcePreset ? (

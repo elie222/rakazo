@@ -11,6 +11,11 @@ export interface AcpAgentDescriptor {
   command: string;
   /** Shown when the command is not on PATH. */
   notInstalled: string;
+  /**
+   * Whether the CLI passes images to its model, in the message and in tool results. It decides
+   * whether the bot can see screenshots and the images people send.
+   */
+  acceptsImages?: boolean;
   /** How the operator signs the CLI in, shown when it says it is not signed in. */
   signIn?: string;
   /**

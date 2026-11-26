@@ -228,9 +228,11 @@ PI_DEFAULT_MODEL=opencode/big-pickle
 
 Use a model id from `opencode models`. Each chat continues OpenCode's session from its previous
 turn, so OpenCode keeps its context and prompt cache; after a restart, the next turn starts a new
-session with the recent chat. Screen and computer use, and images people send, are not available
-to bots on OpenCode yet. Usage counts against your OpenCode plan or provider, and Rakazo shows no cost for these runs. Your
-use of OpenCode and of the models it reaches is covered by their own terms.
+session with the recent chat. Bots on OpenCode can use their computer's screen and see the images
+people send, through the same tools and approvals as any bot, when the model OpenCode runs takes
+images. Rakazo goes by its own model list where it knows the model, so a text-only model gets
+neither. Usage counts against your OpenCode plan or provider, and Rakazo shows no cost
+for these runs. Your use of OpenCode and of the models it reaches is covered by their own terms.
 
 The CLI runs in a private working folder with an allowlisted environment: API keys and other server
 secrets are never passed to it. Only the deployment model runs on OpenCode; it is not offered as a
@@ -266,9 +268,9 @@ it keeps its sign-in in, so your Antigravity hooks, MCP servers, skills and othe
 of the bot's turns. A sign-in the CLI saves there when it refreshes is replaced by the link again
 before the next turn, so signing out or switching accounts with `agy` reaches your bots.
 
-If the model id is not one the CLI offers, the run's error lists the ones it does. Screen and
-computer use, and images people send, are not available to bots on Antigravity yet. Usage counts
-against your Google plan, and Rakazo shows no cost for these runs. Your use is covered by
+If the model id is not one the CLI offers, the run's error lists the ones it does. Bots on
+Antigravity can use their computer's screen and see the images people send, as on OpenCode. Usage
+counts against your Google plan, and Rakazo shows no cost for these runs. Your use is covered by
 [Google's Antigravity terms](https://antigravity.google/terms).
 
 ## Ollama Cloud

@@ -195,6 +195,14 @@ export default function SettingsLayout() {
           contentStyle: { backgroundColor: native.groupedPage },
         }}
       />
+      {/* Titled by the screen once the source loads. */}
+      <Stack.Screen
+        name="tool-source"
+        options={{
+          ...glassHeaderOptions(""),
+          contentStyle: { backgroundColor: native.groupedPage },
+        }}
+      />
       <Stack.Screen name="integration-setup" options={glassHeaderOptions(t`Server integrations`)} />
     </Stack>
   );

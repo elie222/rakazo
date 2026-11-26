@@ -133,6 +133,9 @@ export const integrationsRpc = {
           z.object({ config: McpServerConfigInput, botIds: McpServerAccessInput.shape.botIds }),
         )
         .output(McpServerSchema),
+      /** `create` owned by the organization, for its owner and admins. Every member's agents in
+       * each of its Spaces can use it. */
+      createForOrganization: oc.input(McpServerConfigInput).output(McpServerSchema),
       /** Adds a remote server by URL, or reuses the one already added, and starts its sign-in.
        * The bot gets the server once the sign-in finishes, or at once when none is needed. */
       connect: oc

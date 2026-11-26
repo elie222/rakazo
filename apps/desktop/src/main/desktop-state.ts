@@ -6,7 +6,6 @@ import type { StackController } from "./this-computer/local-stack.js";
 import type { DesktopUpdateController } from "./updates/auto-update.js";
 import type { AppTarget } from "./windows/app-frame.js";
 
-/** Window, setup, and service state shared by the main process modules. */
 export const desktop = {
   mainWindow: null,
   replacedAppWindow: null,

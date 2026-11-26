@@ -106,9 +106,12 @@ test("read-aloud asks before sharing voice data and cancel sends no speech", asy
     if (new URL(request.url()).pathname === "/api/voice/speak") speechRequests += 1;
     if (new URL(request.url()).pathname === "/rpc/aiConsent/allow") grants += 1;
   });
-  const speak = reply.getByRole("button", { name: "Speak this reply" });
-  await expect(speak).toBeEnabled();
-  await speak.click();
+  const message = page.locator("[data-message-id]").filter({ has: reply }).last();
+  const readAloud = page.getByRole("menuitem", { name: "Read aloud" });
+  await message.hover();
+  await message.getByRole("button", { name: "More" }).click();
+  await expect(readAloud).toBeEnabled();
+  await readAloud.click();
   const disclosure = page.getByRole("alertdialog");
   await expect(
     disclosure.getByRole("heading", { name: "Share voice data with Example speech server?" }),
@@ -122,7 +125,9 @@ test("read-aloud asks before sharing voice data and cancel sends no speech", asy
   await captureScreenshot(page, testInfo, "voice-data-sharing-disclosure");
   await disclosure.getByRole("button", { name: "Cancel" }).click();
   await expect(disclosure).toBeHidden();
-  await expect(speak).toBeEnabled();
+  await message.hover();
+  await message.getByRole("button", { name: "More" }).click();
+  await expect(readAloud).toBeEnabled();
   expect(speechRequests).toBe(0);
   expect(grants).toBe(0);
 });

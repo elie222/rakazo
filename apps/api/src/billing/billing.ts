@@ -44,6 +44,7 @@ import {
 import { ClientError, retry } from "@rakazo/core";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
+  activeFreeByokTier,
   billingAccountForOrganization,
   byokFreeUntil,
   createBillingAccount,
@@ -89,7 +90,6 @@ import { createReferrals } from "./referrals.js";
 import { trialOutcome } from "./trial-outcome.js";
 
 export { TRIAL_DAYS };
-/** An invited organization's first trial. */
 export const INVITED_TRIAL_DAYS = INVITED_TRIAL_WEEKS * 7;
 const PRICE_CACHE_MS = 60 * 60 * 1000;
 
@@ -172,7 +172,6 @@ export function createBillingService(deps: {
   const { prisma, provider } = deps;
   const appUrl = `${deps.webOrigin}/app`;
   const returnUrl = `${deps.webOrigin}${BILLING_RETURN_PATH}`;
-  /** A mobile checkout returns through the API either way, which hands back to the app. */
   const mobileReturnUrl = `${returnUrl}?client=mobile`;
   const modelCredits = provider.describe().capabilities.modelCredits === true;
   const referrals = createReferrals(deps);
@@ -236,7 +235,6 @@ export function createBillingService(deps: {
     await pull(account.customerId);
   }
 
-  /** Reads the provider's subscription and credit purchases into the account. */
   async function pull(customerId: string): Promise<void> {
     if (modelCredits && provider.listCreditPurchases) {
       const account = await prisma.billingAccount.findUnique({ where: { customerId } });
@@ -749,18 +747,27 @@ export function createBillingService(deps: {
           trialDays(organizationId),
           organizationOwnerHadTrial(prisma, organizationId, "byok"),
         ]);
+        const now = new Date();
+        const subscriptionStatus = account?.status ?? null;
+        const free = activeFreeByokTier(credits, subscriptionStatus, now);
+        const freeAccessUntil = byokFreeUntil(credits, now);
         const freeUntil =
           credits.mode === "byok" &&
           BYOK_TIERS.standard.monthlyPriceCents !== null &&
-          !hasBillingAccess(account?.status ?? null)
-            ? byokFreeUntil(credits)
+          !hasBillingAccess(subscriptionStatus) &&
+          !needsBillingPortal(subscriptionStatus)
+            ? freeAccessUntil
             : null;
+        const access = hasModelAccess(credits, subscriptionStatus, now);
+        const freePeriodEnded =
+          !access && !account?.subscribedAt && credits.byokFreeUntil !== null && !freeAccessUntil;
         const subscribed = subscribedByokPrice(account);
-        const tier = subscribed?.tier ?? "standard";
+        const tier = free?.tier ?? subscribed?.tier ?? "standard";
         const hourMicros = deps.sandbox && sandboxDisplayedHourMicros(deps.sandbox);
         const offers = byokTierOffers(Boolean(sized), hourMicros);
         return {
-          access: hasModelAccess(credits, account?.status ?? null),
+          access,
+          ...(freePeriodEnded && { freePeriodEnded: true as const }),
           funding:
             credits.mode === "byok"
               ? "byok"
@@ -772,8 +779,10 @@ export function createBillingService(deps: {
           creditPurchasesEnabled: deps.managedModelsAvailable ?? true,
           byokPriceCents:
             BYOK_TIERS.standard.monthlyPriceCents &&
-            (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents),
-          byokInterval: subscribed?.interval ?? "month",
+            (free
+              ? byokTierPriceCents(free.tier, "month")
+              : (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents)),
+          byokInterval: free ? "month" : (subscribed?.interval ?? "month"),
           byokAnnualPriceCents: byokTierPriceCents(tier, "year"),
           byokTier: tier,
           ...(offers.length ? { byokTiers: offers } : {}),

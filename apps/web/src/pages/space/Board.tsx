@@ -133,7 +133,6 @@ export function BoardPage() {
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="app-drag flex flex-wrap items-center gap-2 border-b px-3 py-3 sm:gap-3 sm:px-4">
-        {/* This route is the window's leading edge, so Electron window controls sit in the header. */}
         {desktopBridge() ? <WindowChrome className={rail ? "md:hidden" : undefined} /> : null}
         <div className="flex min-w-fit flex-1 items-center gap-1">
           <IconTooltip label={t`Back`}>

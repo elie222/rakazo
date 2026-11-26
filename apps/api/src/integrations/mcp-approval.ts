@@ -3,10 +3,10 @@ import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
-  availableInSpace,
   changeMessageBlocks,
   HOLDS_CHAT,
   IsolationError,
+  mcpServerIn,
   storedMessageBlocks,
   withTransactionRetry,
 } from "@rakazo/db";
@@ -53,10 +53,10 @@ async function threadsForDecision(
   actor: Actor,
   input: McpApprovalResolution,
 ): Promise<ApprovalThread[]> {
-  // Threads are shared by the space, but a card is about one member's own server:
-  // only that member resolves it.
+  // Threads are shared by the space, but a card is about a server the member can use:
+  // their own or their organization's.
   const server = await deps.prisma.mcpServer.findFirst({
-    where: { id: input.serverId, ...availableInSpace(actor) },
+    where: { id: input.serverId, ...mcpServerIn(actor) },
     select: { id: true },
   });
   if (!server) return [];
@@ -254,7 +254,7 @@ export async function queueMcpConnectedRun(
       select: { id: true },
     }),
     tx.mcpServer.findFirst({
-      where: { id: input.serverId, ...availableInSpace(actor) },
+      where: { id: input.serverId, ...mcpServerIn(actor) },
       select: { name: true },
     }),
   ]);

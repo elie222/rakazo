@@ -331,38 +331,46 @@ it("names the person a reply quotes instead of saying You", () => {
   );
 });
 
-it("speaks the message it renders", () => {
+function readAloudItem() {
+  return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (entry) => entry.textContent === "Read aloud",
+  );
+}
+
+async function openMore() {
+  const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="More"]');
+  await act(async () => trigger?.click());
+}
+
+it("reads the message aloud from its menu", async () => {
   const onSpeak = vi.fn();
   renderView("bot", [{ kind: "text", text: "Hello" }], { onSpeak, voiceReady: true });
-  const button = [...container.querySelectorAll("button")].find(
-    (node) => node.textContent === "Speak",
-  );
-  act(() => button?.click());
+  await openMore();
+  await act(async () => readAloudItem()?.click());
   expect(onSpeak).toHaveBeenCalledTimes(1);
   expect(onSpeak.mock.calls[0]?.[0]).toMatchObject({ id: "message" });
 });
 
-it("disables starting a read while a call holds the speaker, keeping stop available", () => {
+it("disables starting a read while a call holds the speaker, keeping stop available", async () => {
   renderView("bot", [{ kind: "text", text: "Hello" }], {
     voiceReady: true,
     callHoldsSpeaker: true,
   });
-  const startButtons = () => [
-    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Speak this reply"]'),
-  ];
-  expect(startButtons().length).toBeGreaterThan(0);
-  for (const button of startButtons()) expect(button.disabled).toBe(true);
+  await openMore();
+  expect(readAloudItem()?.getAttribute("aria-disabled")).toBe("true");
 
+  const onSpeak = vi.fn();
   renderView("bot", [{ kind: "text", text: "Hello" }], {
     voiceReady: true,
     callHoldsSpeaker: true,
     speaking: true,
+    onSpeak,
   });
-  const stopButtons = () => [
-    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Stop speaking"]'),
-  ];
-  expect(stopButtons().length).toBeGreaterThan(0);
-  for (const button of stopButtons()) expect(button.disabled).toBe(false);
+  const stop = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Stop reading aloud"]',
+  );
+  act(() => stop?.click());
+  expect(onSpeak).toHaveBeenCalledTimes(1);
 });
 
 it("opens one counted peer line without an inline reply toggle", () => {

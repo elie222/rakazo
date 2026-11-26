@@ -147,6 +147,7 @@ export const ROW_SECURITY_MODELS: ReadonlySet<string> = new Set([
   "Bot",
   "Run",
   "Task",
+  "TaskCallback",
   "Routine",
   "Connection",
   "McpServer",

@@ -8,11 +8,17 @@ import type {
 import {
   CATALOG_SEARCH_QUERY_MAX_LENGTH,
   CATALOG_SEARCH_QUERY_MIN_LENGTH,
+  isLoopbackHost,
   McpRemoteEndpointSchema,
 } from "@rakazo/contracts";
 
+type SourcePreset = McpSourcePreset & {
+  /** Web origins the service accepts sign-in from, besides this machine. Omitted: any. */
+  signInOrigins?: readonly string[];
+};
+
 /** MCP services offered as one-step sources. A preset with a URL always connects there. */
-export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
+export const MCP_SOURCE_PRESETS: SourcePreset[] = [
   {
     id: "github",
     name: "GitHub",
@@ -22,9 +28,24 @@ export const MCP_SOURCE_PRESETS: McpSourcePreset[] = [
   },
   { id: "linear", name: "Linear", url: "https://mcp.linear.app/mcp", signIn: true, featured: true },
   { id: "notion", name: "Notion", url: "https://mcp.notion.com/mcp", signIn: true, featured: true },
+  {
+    id: "postiz",
+    name: "Postiz",
+    url: "https://api.postiz.com/mcp-oauth-dynamic",
+    signIn: true,
+    signInOrigins: ["https://app.rakazo.com"],
+  },
   // A self-hosted Executor serves the same endpoint at its own origin, so the URL stays editable.
   { id: "executor", name: "Executor", defaultUrl: "https://mcp.executor.sh/mcp", signIn: true },
 ];
+
+/** The presets a deployment at `webOrigin` can connect. */
+export function mcpSourcePresetsFor(webOrigin: string): McpSourcePreset[] {
+  const { origin, hostname } = new URL(webOrigin);
+  return MCP_SOURCE_PRESETS.flatMap(({ signInOrigins, ...preset }) =>
+    !signInOrigins || signInOrigins.includes(origin) || isLoopbackHost(hostname) ? [preset] : [],
+  );
+}
 
 export type SignInMcpServer = { name: string; endpoint: string };
 
@@ -64,9 +85,12 @@ export function catalogMcpServers(
   return [...servers.values()];
 }
 
-export function featuredMcpPresets(presets: readonly McpSourcePreset[], query: string) {
+/** Featured presets while browsing, and every preset whose name matches a search. */
+export function browseMcpPresets(presets: readonly McpSourcePreset[], query: string) {
   const term = query.trim().toLowerCase();
-  return presets.filter((preset) => preset.featured && preset.name.toLowerCase().includes(term));
+  return presets.filter((preset) =>
+    term ? preset.name.toLowerCase().includes(term) : preset.featured,
+  );
 }
 
 /** Addresses already added through either of the remote MCP connection flows. */
