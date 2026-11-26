@@ -52,12 +52,18 @@ if (process.argv[2] === "fixture") {
   await once(server, "listening");
   process.stdout.write("Fixture ready\n");
 } else {
+  const { ProtectedBrowserError } = await import("../../../browser/protected-browser.ts");
   const { createProtectedBrowserLauncher } = await import("./docker-protected-browser.ts");
   const run = createProtectedBrowserLauncher({
     image: "rakazo/protected-browser:smoke",
     seccompProfile: process.argv[2],
   });
   const url = "https://protected-browser-fixture.example.com";
+  await assert.rejects(run({ mode: "sign-in", url, steps: [] }), {
+    name: "Error",
+    code: "sign-in-rejected",
+    message: "The protected browser operation failed.",
+  });
   const { storageState } = await run({
     mode: "sign-in",
     url,
@@ -87,7 +93,10 @@ if (process.argv[2] === "fixture") {
   ]) {
     await assert.rejects(
       run({ mode: "sign-in", url: blocked, steps: [] }),
-      /The protected browser operation failed/,
+      (error) =>
+        error instanceof ProtectedBrowserError &&
+        error.code === "container-exit" &&
+        error.message === "The protected browser operation failed.",
     );
   }
 }

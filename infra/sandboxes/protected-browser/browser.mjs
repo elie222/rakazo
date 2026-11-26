@@ -79,19 +79,33 @@ async function executeStep(page, step, loginOrigin) {
   }
 }
 
-function pageSnapshot(text, ...states) {
+export function pageSnapshot(text, ...states) {
   const values = states.flatMap((storage) => [
     ...storage.cookies.map(({ value }) => value),
     ...storage.origins.flatMap(({ localStorage }) => localStorage.map(({ value }) => value)),
   ]);
-  for (const value of [...new Set(values)].sort((a, b) => b.length - a.length)) {
-    if (value) {
-      text = text.replaceAll(value, "[redacted]");
-      const escaped = encodeURIComponent(value);
-      if (escaped !== value) text = text.replaceAll(escaped, "[redacted]");
-      const encodedFormValue = new URLSearchParams([["v", value]]).toString().slice(2);
-      if (encodedFormValue !== value) text = text.replaceAll(encodedFormValue, "[redacted]");
+  const secrets = new Set();
+  while (values.length) {
+    const value = values.pop();
+    if (typeof value === "string") {
+      if (!value || secrets.has(value)) continue;
+      secrets.add(value);
+      if (!/^\s*(?:\{|\[|")/.test(value)) continue;
+      try {
+        values.push(JSON.parse(value));
+      } catch {
+        // Opaque storage values are still redacted as a whole.
+      }
+    } else if (value && typeof value === "object") {
+      for (const child of Object.values(value)) values.push(child);
     }
+  }
+  for (const value of [...secrets].sort((a, b) => b.length - a.length)) {
+    text = text.replaceAll(value, "[redacted]");
+    const escaped = encodeURIComponent(value.toWellFormed());
+    if (escaped !== value) text = text.replaceAll(escaped, "[redacted]");
+    const encodedFormValue = new URLSearchParams([["v", value]]).toString().slice(2);
+    if (encodedFormValue !== value) text = text.replaceAll(encodedFormValue, "[redacted]");
   }
   return text.slice(0, MAX_PAGE);
 }

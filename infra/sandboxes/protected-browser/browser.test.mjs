@@ -6,10 +6,31 @@ import { createServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { chromium } from "playwright-core";
-import { runBrowser } from "./browser.mjs";
+import { pageSnapshot, runBrowser } from "./browser.mjs";
+
+test("redacts individual session values in nested JSON storage", () => {
+  const state = {
+    cookies: [],
+    origins: [
+      {
+        localStorage: [
+          {
+            value: JSON.stringify({
+              session: [JSON.stringify({ token: "synthetic nested/token" })],
+            }),
+          },
+        ],
+      },
+    ],
+  };
+  assert.equal(
+    pageSnapshot("Orders synthetic nested/token synthetic%20nested%2Ftoken", state),
+    "Orders [redacted] [redacted]",
+  );
+});
 
 test("a fresh protected browser resumes the synthetic signed-in session", async () => {
+  const { chromium } = await import("playwright-core");
   const dir = await mkdtemp(join(tmpdir(), "protected-browser-"));
   const key = join(dir, "key.pem");
   const cert = join(dir, "cert.pem");
