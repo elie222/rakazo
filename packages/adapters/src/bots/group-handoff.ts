@@ -22,8 +22,13 @@ import {
 import { runLeaseFor } from "../runs/assembly/run-messages.js";
 import type { ExecutorDeps } from "../runs/executor/executor-deps.js";
 import {
+  outboundPilotDirective,
+  outboundPilotEnrolled,
+} from "../runs/turn/primary-outbound-handoff.js";
+import {
   groupHandoffNonce,
   groupPilotEnrolled,
+  groupPilotRuntimeForBot,
   handoffPilotRuntimeForBot,
   pilotHandoffSourceWhere,
   pilotLauncher,
@@ -46,6 +51,7 @@ export async function handoffToGroupBot(
     confirm_name?: string;
     message: string;
     deliveryKey?: string;
+    fromPrimaryPilot?: true;
     /** Saved attachments, shown on the handoff and copied to the next bot's computer. */
     files?: Array<Extract<MessageBlock, { kind: "image" | "file" }>>;
   },
@@ -91,6 +97,7 @@ export async function handoffToGroupBot(
       },
       select: {
         id: true,
+        primaryRuntime: true,
         thread: { select: { groupId: true } },
         sourceMessage: { select: { blocks: true } },
       },
@@ -102,6 +109,34 @@ export async function handoffToGroupBot(
     }
     if (!group.members.some((member) => member.bot.id === run.botId)) {
       return { error: "source bot is no longer a group member" } as const;
+    }
+
+    const sourceRuntime = activeSource.primaryRuntime;
+    const bots = group.members.map((member) => member.bot);
+    if (input.fromPrimaryPilot) {
+      const sender = bots.find((bot) => bot.id === run.botId);
+      const original = MessageBlock.array().safeParse(activeSource.sourceMessage?.blocks);
+      const [first] = original.success ? original.data : [];
+      const authorized =
+        sender && first?.kind === "text" && original.success && original.data.length === 1
+          ? outboundPilotDirective(first.text, sender.name)
+          : undefined;
+      if (
+        !sourceRuntime ||
+        sourceRuntime !== groupPilotRuntimeForBot(run.botId) ||
+        !outboundPilotEnrolled(run.botId) ||
+        !inGroup ||
+        input.files?.length ||
+        !sender ||
+        resolveBotAddress(bots, { name: sender.name })?.id !== run.botId ||
+        !authorized ||
+        authorized.recipient !== input.confirm_name ||
+        !input.bot_id ||
+        resolveBotAddress(bots, { name: authorized.recipient })?.id !== input.bot_id
+      )
+        return { error: "the owner did not authorize this pilot handoff" } as const;
+    } else if (sourceRuntime) {
+      return { error: "the source pilot does not have access to group handoff tools" } as const;
     }
 
     // A group stage has one owner; an outside turn can send several independent tasks.
@@ -128,7 +163,8 @@ export async function handoffToGroupBot(
         orderBy: { seq: "desc" },
         select: { seq: true },
       });
-      if (!nextRun || !event) return { error: "recorded handoff is incomplete" } as const;
+      if (!nextRun || !event || (input.fromPrimaryPilot && nextRun.botId !== input.bot_id))
+        return { error: "recorded handoff does not match this request" } as const;
       return {
         ok: true,
         botId: nextRun.botId,
@@ -140,13 +176,10 @@ export async function handoffToGroupBot(
       } as const;
     }
 
-    const target = resolveBotAddress(
-      group.members.map((member) => member.bot),
-      {
-        botId: input.bot_id,
-        name: input.confirm_name,
-      },
-    );
+    const target = resolveBotAddress(bots, {
+      botId: input.bot_id,
+      name: input.confirm_name,
+    });
     if (!target) return { error: "handoff target is not a group member" } as const;
     const targetId = target.id;
     if (targetId === run.botId) return { error: "cannot hand off to yourself" } as const;
@@ -171,7 +204,9 @@ export async function handoffToGroupBot(
     }
 
     let pilotPin: ReturnType<typeof pilotRunModel>;
-    if (groupPilotEnrolled(targetId)) {
+    if (input.fromPrimaryPilot && !outboundPilotEnrolled(targetId))
+      return { error: "the selected bot is not available for this pilot handoff" } as const;
+    if (input.fromPrimaryPilot || groupPilotEnrolled(targetId)) {
       const runtime = handoffPilotRuntimeForBot(targetId);
       if (!runtime || !pilotLauncher()) {
         return { error: "the receiving bot is not available for pilot handoffs" } as const;
@@ -182,7 +217,11 @@ export async function handoffToGroupBot(
         } as const;
       }
       const source = await tx.run.findFirst({
-        where: { ...pilotHandoffSourceWhere(run), id: run.id, status: "running" },
+        where: {
+          ...pilotHandoffSourceWhere(run, sourceRuntime ?? null),
+          id: run.id,
+          status: "running",
+        },
         select: { id: true },
       });
       const recipient = await tx.bot.findFirst({

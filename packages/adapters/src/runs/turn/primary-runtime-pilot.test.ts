@@ -265,9 +265,78 @@ it("projects only a genuine first handoff after rechecking the live sender and o
     }),
     select: { id: true },
   });
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "bot,sender");
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", "bot,sender");
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_OUTBOUND_BOT_IDS", "bot,sender");
+  await expect(pilotGroupRequest(prisma as never, input)).resolves.toMatchObject({
+    prompt: "Next stage",
+    history: [],
+    tools: [],
+  });
+  expect(prisma.run.findFirst).toHaveBeenLastCalledWith({
+    where: expect.objectContaining({
+      botId: "sender",
+      trigger: "user",
+      OR: [{ primaryRuntime: null }, { primaryRuntime: id }],
+    }),
+    select: { id: true },
+  });
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_OUTBOUND_BOT_IDS", "bot");
   prisma.run.findFirst.mockResolvedValueOnce(null);
   await expect(pilotGroupRequest(prisma as never, input)).rejects.toThrow("verified handoff");
   prisma.message.findFirst.mockResolvedValueOnce({ ...source, clientNonce: "different-source" });
   await expect(pilotGroupRequest(prisma as never, input)).rejects.toThrow("verified handoff");
-  expect(prisma.run.findFirst).toHaveBeenCalledTimes(2);
+  expect(prisma.run.findFirst).toHaveBeenCalledTimes(3);
+});
+
+it("uses the owner directive once without forwarding the directive, history or tools", async () => {
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "bot,review");
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", "bot,review");
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_CONTINUITY_BOT_IDS", "bot");
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_OUTBOUND_BOT_IDS", "bot,review");
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_HANDOFF_BOT_IDS", "review");
+  const prisma = {
+    chatGroup: {
+      findFirst: vi.fn().mockResolvedValue({
+        members: [
+          { bot: { id: "bot", name: "Source Bot", userId: "owner" } },
+          { bot: { id: "review", name: "Review Bot", userId: "owner" } },
+        ],
+      }),
+    },
+    message: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: "current",
+        seq: 2,
+        blocks: [
+          {
+            kind: "text",
+            text: "@Source Bot /handoff Review Bot\nDraft a task brief with synthetic-hidden-key",
+          },
+        ],
+      }),
+    },
+  };
+  const outcome = await pilotGroupRequest(prisma as never, {
+    run: {
+      ...run,
+      id: "run-a",
+      userId: "owner",
+      spaceId: "space",
+      threadId: "thread",
+      sourceMessageId: "current",
+    },
+    thread: { id: "thread", botId: null, groupId: "group", externalConversationId: null },
+    senderName: "Source Bot",
+    model,
+    onUsage: undefined,
+    redactions: ["synthetic-hidden-key"],
+  });
+  expect(outcome.prompt).not.toContain("synthetic-hidden-key");
+  expect(outcome).toMatchObject({
+    outboundRecipient: { id: "review", name: "Review Bot" },
+    prompt: expect.stringMatching(/^Draft a task brief with /),
+    history: [],
+    tools: [],
+  });
 });

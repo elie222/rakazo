@@ -1,11 +1,13 @@
 import { accessSync, constants } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { AgentRunModel, AgentRunRequest } from "@rakazo/adapter-kit";
-import { redactSecrets } from "@rakazo/core";
+import { redactSecrets, resolveBotAddress } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { readMessageBlocks } from "@rakazo/db";
 import { nativeTextRuntime } from "../../providers/agent-runtime/claude/descriptor.js";
 import { primaryGroupHistory } from "./primary-group-continuity.js";
+import { outboundPilotDirective, outboundPilotEnrolled } from "./primary-outbound-handoff.js";
+import { OUTBOUND_HANDOFF_BRIEF_PROMPT } from "./primary-outbound-handoff.prompt.js";
 
 /** Deployment-owned allowlist. No user-supplied executable, environment or vendor fork. */
 export function pilotRuntimeForBot(botId: string, environment = process.env): string | undefined {
@@ -39,20 +41,27 @@ export function groupHandoffNonce(sourceRunId: string) {
   return `group-handoff:${sourceRunId}`;
 }
 
-/** For this pilot, only a human-started Pi turn in the same live app group can delegate. */
-export function pilotHandoffSourceWhere(input: {
-  spaceId: string;
-  threadId: string;
-  userId: string;
-  botId: string;
-}) {
+/** Both source modes start with the bot owner in the same live app group. */
+export function pilotHandoffSourceWhere(
+  input: {
+    spaceId: string;
+    threadId: string;
+    userId: string;
+    botId: string;
+  },
+  primaryRuntime: string | null = null,
+) {
   const { spaceId, threadId, userId, botId } = input;
   return {
     spaceId,
     threadId,
     userId,
     botId,
-    primaryRuntime: null,
+    primaryRuntime,
+    space: {
+      deletingAt: null,
+      memberships: { some: { userId, member: { user: { deactivatedAt: null } } } },
+    },
     trigger: "user",
     routineId: null,
     sourceMessage: { threadId, role: "user", authorUserId: userId },
@@ -206,7 +215,7 @@ export function pilotConversation(
 
 /** No ambient group history or instructions; only independently opted-in owner mentions can replay. */
 export async function pilotGroupRequest(
-  prisma: Pick<PrismaClient, "message" | "run">,
+  prisma: Pick<PrismaClient, "chatGroup" | "message" | "run">,
   input: {
     run: {
       id: string;
@@ -231,9 +240,10 @@ export async function pilotGroupRequest(
     model: AgentRunModel;
     onUsage: AgentRunRequest["onUsage"];
     redactions: readonly string[];
+    senderName?: string;
   },
-): Promise<AgentRunRequest> {
-  const { run, thread, model, onUsage, redactions } = input;
+): Promise<AgentRunRequest & { outboundRecipient?: { id: string; name: string } }> {
+  const { run, thread, model, onUsage, redactions, senderName } = input;
   const handoff = run.trigger === "follow_up";
   const error = () =>
     new Error("The group runtime pilot requires authorized addressed text or a verified handoff.");
@@ -287,6 +297,7 @@ export async function pilotGroupRequest(
   const [block] = blocks;
   if (!intact || blocks.length !== 1 || !block) throw error();
   let prompt: string;
+  let outboundRecipient: { id: string; name: string } | undefined;
   if (handoff) {
     if (
       block.kind !== "handoff" ||
@@ -299,9 +310,20 @@ export async function pilotGroupRequest(
       source.clientNonce !== groupHandoffNonce(source.runId)
     )
       throw error();
+    const { primaryRuntime: pi, ...originWhere } = pilotHandoffSourceWhere({
+      ...run,
+      botId: source.botId,
+    });
+    const nativeOrigin =
+      outboundPilotEnrolled(source.botId) &&
+      outboundPilotEnrolled(run.botId) &&
+      groupPilotRuntimeForBot(source.botId);
     const origin = await prisma.run.findFirst({
       where: {
-        ...pilotHandoffSourceWhere({ ...run, botId: source.botId }),
+        ...originWhere,
+        ...(nativeOrigin
+          ? { OR: [{ primaryRuntime: pi }, { primaryRuntime: nativeOrigin }] }
+          : { primaryRuntime: pi }),
         id: source.runId,
         status: { in: ["running", "completed"] },
       },
@@ -311,14 +333,57 @@ export async function pilotGroupRequest(
     prompt = block.text;
   } else {
     if (block.kind !== "text") throw error();
-    prompt = block.text;
+    const outbound =
+      senderName && outboundPilotEnrolled(run.botId)
+        ? outboundPilotDirective(block.text, senderName)
+        : undefined;
+    if (outbound) {
+      const group = await prisma.chatGroup.findFirst({
+        where: {
+          id: thread.groupId,
+          spaceId: run.spaceId,
+          archivedAt: null,
+          space: {
+            deletingAt: null,
+            memberships: {
+              some: { userId: run.userId, member: { user: { deactivatedAt: null } } },
+            },
+          },
+        },
+        select: {
+          members: {
+            where: { bot: { spaceId: run.spaceId, archivedAt: null } },
+            select: { bot: { select: { id: true, name: true, userId: true } } },
+          },
+        },
+      });
+      const members = group?.members.map(({ bot }) => bot) ?? [];
+      const recipient = resolveBotAddress(members, { name: outbound.recipient });
+      if (
+        !senderName ||
+        resolveBotAddress(members, { name: senderName })?.id !== run.botId ||
+        !recipient ||
+        recipient.id === run.botId ||
+        recipient.userId !== run.userId ||
+        !outboundPilotEnrolled(recipient.id) ||
+        !handoffPilotRuntimeForBot(recipient.id)
+      )
+        throw new Error("The selected bot is not available for this pilot handoff.");
+      outboundRecipient = { id: recipient.id, name: outbound.recipient };
+    }
+    prompt = outbound?.prompt ?? block.text;
   }
   if (!prompt.trim()) throw error();
   const continuity = process.env.PRIMARY_RUNTIME_PILOT_GROUP_CONTINUITY_BOT_IDS?.split(",").some(
     (id) => id.trim() === run.botId,
   );
   const history =
-    !handoff && continuity && run.modelProvider && run.modelId && run.modelCredentialId
+    !handoff &&
+    !outboundRecipient &&
+    continuity &&
+    run.modelProvider &&
+    run.modelId &&
+    run.modelCredentialId
       ? await primaryGroupHistory(prisma, {
           ...run,
           modelProvider: run.modelProvider,
@@ -334,7 +399,8 @@ export async function pilotGroupRequest(
     runId: run.id,
     sourceMessageId: run.sourceMessageId,
     prompt: redactSecrets(prompt, redactions),
-    instructions: "",
+    instructions: outboundRecipient ? OUTBOUND_HANDOFF_BRIEF_PROMPT : "",
+    ...(outboundRecipient ? { outboundRecipient } : {}),
     history,
     tools: [],
     model,

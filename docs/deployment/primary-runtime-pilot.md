@@ -57,6 +57,23 @@ delivery of the same occurrence, and refusal after disabling the routine or
 revoking the connection. Clear this setting after draining/cancelling marked
 runs to restore ordinary Pi handling for future timer occurrences.
 
+## Owner-directed outbound group handoff
+
+Default off. List both bots in `PRIMARY_RUNTIME_PILOT_OUTBOUND_BOT_IDS`
+on the workers. Both must be enabled for owner mentions and the recipient
+must also be enabled for inbound pilot handoffs. They must belong to the
+same app group and the same active owner. Mention the source bot with
+the composer at the start of the first line, then type `/handoff Recipient Name`
+after the space inserted by the composer.
+On the next line, write the task brief or ask the source bot to draft it.
+
+The source gets only that text, with no history or tools. The complete
+draft is sent once to the selected recipient, using only the recipient's
+pinned connection. A stopped or failed draft publishes nothing. Model
+output cannot pick a recipient. The receiver cannot hand off again, and no
+ordinary runtime, files, memory, or computer access is inherited. Do not
+enable this slice until the separately documented staging gate passes.
+
 ## Pause and rollback
 
 Stop accepting new pilot turns first (disable the launcher configuration for

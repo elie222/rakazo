@@ -3,6 +3,7 @@ import { modelRoleConnectionId } from "@rakazo/contracts";
 import { BACKGROUND_HELPER_TRIGGER, redactSecrets } from "@rakazo/core";
 import { isDatabaseUnavailable, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { handoffToGroupBot } from "../../bots/group-handoff.js";
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
 import { personSpeaker } from "../../runtime/context/history-speakers.js";
 import { backgroundHelpersAllowed } from "../../tasks/background-helpers.js";
@@ -24,6 +25,7 @@ import { completeRun } from "../lifecycle/run-complete.js";
 import { failRun, handoffEndedTurn, requeueRunAfterDatabaseOutage } from "../lifecycle/run-fail.js";
 import { followUpsOffered, offeredFleetTools } from "../tools/run-tool-selection.js";
 import { applyTool } from "../tools/run-tools.js";
+import { collectOutboundPilotText } from "./primary-outbound-handoff.js";
 import { pilotRoutineRequest } from "./primary-routine-pilot.js";
 import { loadPilotRuntime, pilotConversation, pilotGroupRequest } from "./primary-runtime-pilot.js";
 import { consumeRunEvents } from "./run-turn.js";
@@ -82,6 +84,19 @@ export async function runModelTurn(
             hold.secrets,
           )
         : undefined;
+    const groupId = turn.records.thread.groupId;
+    const groupPilot =
+      run.primaryRuntime && groupId
+        ? await pilotGroupRequest(deps.prisma, {
+            run: { ...run, primaryRuntime: run.primaryRuntime },
+            thread: turn.records.thread,
+            model: request.model,
+            onUsage: request.onUsage,
+            redactions: hold.secrets,
+            senderName: turn.records.bot.name,
+          })
+        : undefined;
+    const groupRequest = groupPilot && { ...groupPilot, outboundRecipient: undefined };
     const runtimeEvents = run.primaryRuntime
       ? (
           await loadPilotRuntime(
@@ -91,38 +106,49 @@ export async function runModelTurn(
           )
         ).run(
           routineRequest ??
-            (turn.records.thread.groupId
-              ? await pilotGroupRequest(deps.prisma, {
-                  run: { ...run, primaryRuntime: run.primaryRuntime },
-                  thread: turn.records.thread,
-                  model: request.model,
-                  onUsage: request.onUsage,
-                  redactions: hold.secrets,
-                })
-              : {
-                  ...pilotConversation(
-                    run,
-                    turn.records.thread,
-                    turn.records.bot,
-                    turn.records.messages,
-                  ),
-                  botId: request.botId,
-                  threadId: request.threadId,
-                  runId,
-                  sourceMessageId: request.sourceMessageId,
-                  instructions: runIdentityInstruction(turn.records.bot, run.trigger),
-                  model: request.model,
-                  tools: [],
-                  onUsage: request.onUsage,
-                  secrets: request.secrets,
-                }),
+            groupRequest ?? {
+              ...pilotConversation(
+                run,
+                turn.records.thread,
+                turn.records.bot,
+                turn.records.messages,
+              ),
+              botId: request.botId,
+              threadId: request.threadId,
+              runId,
+              sourceMessageId: request.sourceMessageId,
+              instructions: runIdentityInstruction(turn.records.bot, run.trigger),
+              model: request.model,
+              tools: [],
+              onUsage: request.onUsage,
+              secrets: request.secrets,
+            },
           routineRequest || turn.records.thread.groupId
             ? { signal: runtimeContext.signal }
             : runtimeContext,
         )
       : deps.runtime.run(request, runtimeContext);
-    if (await consumeRunEvents(ctx, runtimeEvents)) return;
+    const recipient = groupPilot?.outboundRecipient;
+    const draft =
+      groupId && recipient
+        ? collectOutboundPilotText(runtimeEvents, [
+            ...hold.secrets,
+            ...(request.model.apiKey ? [request.model.apiKey] : []),
+          ])
+        : undefined;
+    if (await consumeRunEvents(ctx, draft?.events() ?? runtimeEvents)) return;
     if (await interruptedByShutdown()) return;
+    if (draft && groupId && recipient) {
+      if (runtimeContext.signal.aborted) return;
+      const outcome = await handoffToGroupBot(deps, run, groupId, {
+        bot_id: recipient.id,
+        confirm_name: recipient.name,
+        message: draft.result(),
+        fromPrimaryPilot: true,
+      });
+      if ("error" in outcome) throw new Error(outcome.error);
+      state.handedOff = true;
+    }
     await completeRun(ctx);
   } catch (turnError) {
     if (await interruptedByShutdown()) return;
