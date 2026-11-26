@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), get: vi.fn() }));
+const organization = vi.hoisted(() => ({ id: "org-1", role: "member" }));
 const memoryApi = vi.hoisted(() => ({
   list: vi.fn(async () => []),
   remove: vi.fn(),
@@ -54,6 +55,18 @@ vi.mock("@rakazo/ui-web", () => {
       variant: _variant,
       ...props
     }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
+    Field: Container,
+    FieldLabel: (props: ComponentProps<"label">) => <label {...props} />,
+    Checkbox: ({
+      onCheckedChange,
+      ...props
+    }: ComponentProps<"input"> & { onCheckedChange: (checked: boolean) => void }) => (
+      <input
+        {...props}
+        type="checkbox"
+        onChange={(event) => onCheckedChange(event.target.checked)}
+      />
+    ),
     Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
     Skeleton: Container,
     Tabs: Container,
@@ -68,7 +81,10 @@ import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import { spaceQueries } from "../../lib/query/query";
 
 vi.mock("../../lib/spaces/organizations", () => ({
-  useOrganizations: () => ({ organizations: [], activeOrganizationId: null }),
+  useOrganizations: () => ({
+    organizations: [organization],
+    activeOrganizationId: organization.id,
+  }),
 }));
 
 import { AgentSkills, KnowledgeSection } from "./KnowledgeSection";
@@ -134,6 +150,38 @@ it("disables skill rows while a completed save is refreshing the catalog", async
     });
     container.remove();
     vi.unstubAllGlobals();
+  }
+});
+
+it("submits the chosen shared scope after losing management permission", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  organization.role = "admin";
+  api.list.mockResolvedValue([]);
+  api.create.mockRejectedValue(new ORPCError("FORBIDDEN"));
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const button = (name: string) =>
+    [...container.querySelectorAll("button")].find((entry) => entry.textContent === name)!;
+  try {
+    await show(root, <AgentSkills />);
+    await act(async () => button("New skill").click());
+    await act(async () =>
+      container.querySelector<HTMLInputElement>("input[type=checkbox]")!.click(),
+    );
+    organization.role = "member";
+    await show(root, <AgentSkills />);
+    await act(async () => button("Save").click());
+    expect(api.create).toHaveBeenLastCalledWith({
+      content: expect.stringContaining("name: my-skill"),
+      organization: true,
+    });
+    expect(container.textContent).toContain("Could not save skill");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
   }
 });
 
