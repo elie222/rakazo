@@ -126,52 +126,57 @@ export function organizationModelConnectionRoutes({ deps, authed, codexCatalog }
         { ephemeral: true },
       );
 
-      const connection = await runAsSystem("save a model connection for an organization admin", () =>
-        deps.prisma.$transaction(
-          async (tx) => {
-            await lockOrganizationMembers(tx, organizationId);
-            if ((await managedOrganizationId(tx, actor)) !== organizationId)
-              throw new OrganizationAdminRequiredError();
-            signal?.throwIfAborted();
-            return tx.organizationModelConnection.create({
-              data: {
-                organizationId,
-                provider: input.provider,
-                modelId: input.modelId,
-                label: input.label,
-                supportsImages: input.supportsImages ?? false,
-                secretId: stored.id,
-                ciphertext: stored.ciphertext,
-              },
-              select: connectionSummary,
-            });
-          },
-          { isolationLevel: "ReadCommitted" },
-        ),
+      const connection = await runAsSystem(
+        "save a model connection for an organization admin",
+        () =>
+          deps.prisma.$transaction(
+            async (tx) => {
+              await lockOrganizationMembers(tx, organizationId);
+              if ((await managedOrganizationId(tx, actor)) !== organizationId)
+                throw new OrganizationAdminRequiredError();
+              signal?.throwIfAborted();
+              return tx.organizationModelConnection.create({
+                data: {
+                  organizationId,
+                  provider: input.provider,
+                  modelId: input.modelId,
+                  label: input.label,
+                  supportsImages: input.supportsImages ?? false,
+                  secretId: stored.id,
+                  ciphertext: stored.ciphertext,
+                },
+                select: connectionSummary,
+              });
+            },
+            { isolationLevel: "ReadCommitted" },
+          ),
       );
       await deps.events?.publishOrganizationChange?.(organizationId);
       return connection;
     }),
     remove: procedures.remove.handler(async ({ context: { actor }, input }) => {
-      const organizationId = await runAsSystem("remove a model connection for an organization admin", () =>
-        deps.prisma.$transaction(
-          async (tx) => {
-            const space = await tx.space.findUnique({
-              where: { id: actor.spaceId },
-              select: { organizationId: true },
-            });
-            if (!space) throw new OrganizationAdminRequiredError();
-            await lockOrganizationMembers(tx, space.organizationId);
-            const organizationId = await managedOrganizationId(tx, actor);
-            if (organizationId !== space.organizationId) throw new OrganizationAdminRequiredError();
-            const removed = await tx.organizationModelConnection.deleteMany({
-              where: { organizationId, id: input.id },
-            });
-            if (!removed.count) throw new OrganizationModelConnectionNotFoundError();
-            return organizationId;
-          },
-          { isolationLevel: "ReadCommitted" },
-        ),
+      const organizationId = await runAsSystem(
+        "remove a model connection for an organization admin",
+        () =>
+          deps.prisma.$transaction(
+            async (tx) => {
+              const space = await tx.space.findUnique({
+                where: { id: actor.spaceId },
+                select: { organizationId: true },
+              });
+              if (!space) throw new OrganizationAdminRequiredError();
+              await lockOrganizationMembers(tx, space.organizationId);
+              const organizationId = await managedOrganizationId(tx, actor);
+              if (organizationId !== space.organizationId)
+                throw new OrganizationAdminRequiredError();
+              const removed = await tx.organizationModelConnection.deleteMany({
+                where: { organizationId, id: input.id },
+              });
+              if (!removed.count) throw new OrganizationModelConnectionNotFoundError();
+              return organizationId;
+            },
+            { isolationLevel: "ReadCommitted" },
+          ),
       );
       await deps.events?.publishOrganizationChange?.(organizationId);
       return { ok: true as const };
