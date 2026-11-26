@@ -444,11 +444,21 @@ export class PiAgentRuntime implements AgentRuntime {
             imageTokens: estimatePiImageTokens,
             ...(speculative ? {} : { watchDeliveries: runWatchDeliveries }),
           });
-        let sentContext: { context: Context; sourceLength: number } | undefined;
+        let sentContext:
+          | {
+              context: Context;
+              sourceLength: number;
+              sourceIndexes?: ReadonlyArray<number | undefined>;
+            }
+          | undefined;
         const prepareContext = (ctx: Context, m: Model<Api>) => {
           const prepared = contextPolicy.prepareContext(ctx, m);
           // The checkpoint keeps what the policy chose; the opening turn is added to each call.
-          sentContext = { context: prepared, sourceLength: ctx.messages.length };
+          sentContext = {
+            context: prepared,
+            sourceLength: ctx.messages.length,
+            sourceIndexes: contextPolicy.getLastSourceIndexes(),
+          };
           return withLeadingUser(prepared);
         };
         const usageHooks = {

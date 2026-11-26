@@ -589,6 +589,7 @@ export function selectContext<T extends ContextMessage>(
   options: ContextSelectionOptions,
 ): {
   messages: T[];
+  selectedIndexes: number[];
   estimatedInputTokens: number;
   droppedMessages: number;
   truncatedToolResults: number;
@@ -787,8 +788,12 @@ export function selectContext<T extends ContextMessage>(
     }
   }
   const selectedIndexes = new Set([...selected].flatMap((group) => group.indexes));
+  const keptIndexes = messages.flatMap((_message, index) =>
+    selectedIndexes.has(index) ? [index] : [],
+  );
   return {
-    messages: messages.filter((_message, index) => selectedIndexes.has(index)),
+    messages: keptIndexes.map((index) => messages[index]!),
+    selectedIndexes: keptIndexes,
     estimatedInputTokens: fixed + used,
     droppedMessages: messages.length - selectedIndexes.size,
     truncatedToolResults: 0,

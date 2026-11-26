@@ -26,6 +26,13 @@ import {
   navigationSnapshotsPrompt,
   RECALLED_MEMORY_LEAD,
 } from "./runtime-context.prompt.js";
+import type { PendingWatchDelivery, WatchDeliveryState } from "./watch-delivery-provenance.js";
+import {
+  applyWatchDeliveryProvenance,
+  commitWatchDeliveries,
+} from "./watch-delivery-provenance.js";
+
+export type { WatchDeliveryState } from "./watch-delivery-provenance.js";
 
 /** Minimum whole-result window, unless the full model budget requires clipping. */
 const RECENT_TOOL_RESULTS_TO_KEEP = 3;
@@ -125,6 +132,7 @@ export function rebuildPaysOff(
 }
 interface Prepared {
   context: Context;
+  sourceIndexes: Array<number | undefined>;
   cacheRequest: CacheRequest;
   navigation?: { message: Message; catalogIds: string[] };
   decision: RuntimeContextDecision;
@@ -134,6 +142,7 @@ interface SentTranscript {
   head: string;
   source: string[];
   messages: Message[];
+  sourceIndexes: Array<number | undefined>;
   projection: ProjectionEntry[];
   truncatedToolResults: number;
   /** Size of the transcript at the last rebuild, and calls appended to it since. */
@@ -175,28 +184,6 @@ export interface RuntimeContextDecision {
   droppedMessages: number;
   truncatedToolResults: number;
   observedReuse: boolean | null;
-}
-export type WatchDeliveryState =
-  | {
-      full: true;
-      fullText: string;
-      details: Record<string, unknown>;
-      toolCallId: string;
-    }
-  | {
-      full: false;
-      texts: string[];
-      details: Record<string, unknown>;
-      toolCallId: string;
-    };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function cleanWatchDetails(details: Record<string, unknown>): Record<string, unknown> {
-  const { contextBeforeUseText: _beforeUse, contextDeliveredTexts: _delivered, ...clean } = details;
-  return clean;
 }
 
 /** Applies one shared free context policy immediately before every model call.
@@ -269,7 +256,7 @@ export function createRuntimeContextPolicy(
   let sent: SentTranscript | undefined;
   // Only remember shortening actually sent within this policy, never across model switches.
   const shortenedResults = new Map<string, Message>();
-  let pendingWatchDeliveries: Array<{ key: string; state: WatchDeliveryState }> = [];
+  let pendingWatchDeliveries: PendingWatchDelivery[] = [];
   const hashes = new WeakMap<Message, string>();
   function hash(message: Message): string {
     let value = hashes.get(message);
@@ -306,10 +293,18 @@ export function createRuntimeContextPolicy(
   function project(
     ctx: Context,
     model: Model<Api>,
-  ): { messages: Message[]; catalogIds: string[]; navigation?: Message } | undefined {
+  ):
+    | {
+        messages: Message[];
+        sourceIndexes: Array<number | undefined>;
+        catalogIds: string[];
+        navigation?: Message;
+      }
+    | undefined {
     const prior = projections.get(projectionScope(model));
     if (!prior) return;
     const result: Message[] = [];
+    const sourceIndexes: Array<number | undefined> = [];
     let latestMatchedIndex = -1;
     let catalogIds: string[] = [];
     let catalogMessage: Message | undefined;
@@ -325,17 +320,22 @@ export function createRuntimeContextPolicy(
         const rebuilt = navigation(entry.catalogIds);
         if (!rebuilt || messageHash(rebuilt) !== entry.hash) return;
         result.push(rebuilt);
+        sourceIndexes.push(undefined);
         catalogIds = entry.catalogIds;
         catalogMessage = rebuilt;
       } else {
         const index = indexesByHash.get(entry.hash)?.shift();
         if (index === undefined) return;
         result.push(ctx.messages[index]!);
+        sourceIndexes.push(index);
         latestMatchedIndex = Math.max(latestMatchedIndex, index);
       }
     }
-    result.push(...ctx.messages.slice(latestMatchedIndex + 1));
-    return { messages: result, catalogIds, navigation: catalogMessage };
+    for (let index = latestMatchedIndex + 1; index < ctx.messages.length; index++) {
+      result.push(ctx.messages[index]!);
+      sourceIndexes.push(index);
+    }
+    return { messages: result, sourceIndexes, catalogIds, navigation: catalogMessage };
   }
   /** The run's context built from scratch: history selection, pruning and shortening. */
   function rebuild(
@@ -403,6 +403,7 @@ export function createRuntimeContextPolicy(
     if (strategy === "current") {
       return {
         context: ctx,
+        sourceIndexes: ctx.messages.map((_, index) => index),
         cacheRequest,
         decision: {
           strategy,
@@ -415,9 +416,13 @@ export function createRuntimeContextPolicy(
       };
     }
     // Metadata distinguishes repeated historical requests from the live request.
-    let messages = (projected?.messages ?? ctx.messages).map(
-      (message) => shortenedResults.get(hash(message)) ?? message,
-    );
+    let sourceIndexes: Array<number | undefined> =
+      projected?.sourceIndexes ?? ctx.messages.map((_, index) => index);
+    let messages = (projected?.messages ?? ctx.messages).map((message, index) => {
+      const sourceIndex = sourceIndexes[index];
+      const key = sourceIndex !== undefined ? `${sourceIndex}:${hash(message)}` : hash(message);
+      return shortenedResults.get(key) ?? message;
+    });
     let currentIndex = messages.findIndex(
       (message) =>
         message.role === "user" && message !== projected?.navigation && !original(message),
@@ -486,17 +491,23 @@ export function createRuntimeContextPolicy(
         catalog = entry + catalog;
         catalogIds.unshift(stored.id);
       }
-      const earlierSystem = historical
+      const earlierSystemIndexes = historical
         .slice(0, recentStart)
-        .filter((message) => message.role === "system");
+        .flatMap((message, index) => (message.role === "system" ? [index] : []));
       messages = [
-        ...earlierSystem,
+        ...earlierSystemIndexes.map((index) => historical[index]!),
         ...historical.slice(recentStart),
         ...messages.slice(currentIndex),
       ];
+      sourceIndexes = [
+        ...earlierSystemIndexes.map((index) => sourceIndexes[index]),
+        ...sourceIndexes.slice(recentStart, currentIndex),
+        ...sourceIndexes.slice(currentIndex),
+      ];
       protectedIndexes = messages.flatMap((message, index) =>
         message.role === "system" ||
-        (index >= earlierSystem.length + historical.length - recentStart && message.role === "user")
+        (index >= earlierSystemIndexes.length + historical.length - recentStart &&
+          message.role === "user")
           ? [index]
           : [],
       );
@@ -514,6 +525,7 @@ export function createRuntimeContextPolicy(
         ) {
           const insertIndex = messages[0]?.role === "system" ? 1 : 0;
           messages.splice(insertIndex, 0, catalogMessage);
+          sourceIndexes.splice(insertIndex, 0, undefined);
           navigationMessage = catalogMessage;
           protectedIndexes = [
             insertIndex,
@@ -541,6 +553,12 @@ export function createRuntimeContextPolicy(
       if (!messages.includes(summary)) {
         const insertIndex = messages[0]?.role === "system" ? 1 : 0;
         messages.splice(insertIndex, 0, summary);
+        const summarySourceIndex = ctx.messages.indexOf(summary);
+        sourceIndexes.splice(
+          insertIndex,
+          0,
+          summarySourceIndex >= 0 ? summarySourceIndex : undefined,
+        );
         protectedIndexes = protectedIndexes.map((index) => index + Number(index >= insertIndex));
         if (currentIndex >= insertIndex) currentIndex += 1;
       }
@@ -671,6 +689,7 @@ export function createRuntimeContextPolicy(
     }).length;
     return {
       context: { ...ctx, messages: selected.messages },
+      sourceIndexes: selected.selectedIndexes.map((index) => sourceIndexes[index]),
       cacheRequest,
       ...(navigationMessage ? { navigation: { message: navigationMessage, catalogIds } } : {}),
       decision: {
@@ -742,107 +761,20 @@ export function createRuntimeContextPolicy(
     }
     return length;
   }
-  function withWatchDeliveryProvenance(ctx: Context, messages: Message[]): Message[] {
-    const originalResults = new Map(
-      ctx.messages.flatMap((message) =>
-        message.role === "toolResult" ? [[message.toolCallId, message] as const] : [],
-      ),
+  function withWatchDeliveryProvenance(
+    ctx: Context,
+    messages: Message[],
+    sourceIndexes: ReadonlyArray<number | undefined>,
+  ): Message[] {
+    const applied = applyWatchDeliveryProvenance(
+      ctx,
+      messages,
+      sourceIndexes,
+      options.watchDeliveries,
+      hash,
     );
-    pendingWatchDeliveries = [];
-    let changed = false;
-    const annotated = messages.map((message) => {
-      if (message.role !== "toolResult") return message;
-      const details = isRecord(message.details) ? message.details : undefined;
-      if (!details || !("routines" in details)) return message;
-      const original = originalResults.get(message.toolCallId);
-      const key = hash(original ?? message);
-      const clean = cleanWatchDetails(details);
-      const currentText = text(message);
-      const originalText = original ? text(original) : currentText;
-      const existingBeforeUse =
-        typeof details.contextBeforeUseText === "string" ? details.contextBeforeUseText : undefined;
-      if (currentText.length >= originalText.length && existingBeforeUse === undefined) {
-        pendingWatchDeliveries.push({
-          key,
-          state: {
-            full: true,
-            fullText: currentText,
-            details: clean,
-            toolCallId: message.toolCallId,
-          },
-        });
-        return message;
-      }
-      const prior = options.watchDeliveries?.get(key);
-      if (prior?.full) {
-        pendingWatchDeliveries.push({ key, state: prior });
-        if (existingBeforeUse === prior.fullText && !("contextDeliveredTexts" in details)) {
-          return message;
-        }
-        changed = true;
-        return {
-          ...message,
-          details: {
-            ...clean,
-            contextBeforeUseText: prior.fullText,
-          },
-        };
-      }
-      const pendingTexts =
-        existingBeforeUse !== undefined
-          ? currentText !== existingBeforeUse
-            ? [existingBeforeUse, currentText]
-            : [existingBeforeUse]
-          : [currentText];
-      pendingWatchDeliveries.push({
-        key,
-        state: {
-          full: false,
-          texts: pendingTexts,
-          details: clean,
-          toolCallId: message.toolCallId,
-        },
-      });
-      if (!prior || prior.texts.length === 0) return message;
-      if (existingBeforeUse === undefined) {
-        changed = true;
-        return {
-          ...message,
-          details: {
-            ...clean,
-            contextBeforeUseText: prior.texts[0]!,
-            ...(prior.texts.length > 1 ? { contextDeliveredTexts: [...prior.texts] } : {}),
-          },
-        };
-      }
-      const extras = prior.texts.filter((entry) => entry !== existingBeforeUse);
-      if (extras.length > 0) {
-        const currentDelivered = Array.isArray(details.contextDeliveredTexts)
-          ? details.contextDeliveredTexts.filter(
-              (entry): entry is string => typeof entry === "string",
-            )
-          : [];
-        const merged = [existingBeforeUse, ...extras, ...currentDelivered].filter(
-          (entry, index, list) => list.indexOf(entry) === index,
-        );
-        if (
-          merged.length !== currentDelivered.length ||
-          merged.some((entry, index) => currentDelivered[index] !== entry)
-        ) {
-          changed = true;
-          return {
-            ...message,
-            details: {
-              ...clean,
-              contextBeforeUseText: existingBeforeUse,
-              contextDeliveredTexts: merged,
-            },
-          };
-        }
-      }
-      return message;
-    });
-    return changed ? annotated : messages;
+    pendingWatchDeliveries = applied.pending;
+    return applied.messages;
   }
   return {
     /**
@@ -892,7 +824,13 @@ export function createRuntimeContextPolicy(
             );
       }
       if (previous && appended && append) {
-        const annotated = withWatchDeliveryProvenance(ctx, appended);
+        const appendedSourceIndexes = [
+          ...previous.sourceIndexes,
+          ...ctx.messages
+            .slice(previous.source.length)
+            .map((_, offset) => previous.source.length + offset),
+        ];
+        const annotated = withWatchDeliveryProvenance(ctx, appended, appendedSourceIndexes);
         const projection = [
           ...previous.projection,
           ...ctx.messages.slice(previous.source.length).map((message) => ({ hash: hash(message) })),
@@ -901,6 +839,7 @@ export function createRuntimeContextPolicy(
           ...previous,
           source,
           messages: annotated,
+          sourceIndexes: appendedSourceIndexes,
           projection,
           appends: previous.appends + 1,
         };
@@ -917,23 +856,20 @@ export function createRuntimeContextPolicy(
               : 0,
           )
         : built.context.messages;
-      const messages = withWatchDeliveryProvenance(ctx, rawMessages);
+      const messages = withWatchDeliveryProvenance(ctx, rawMessages, built.sourceIndexes);
       const projection = messages.map((message, index) => ({
         hash: hash(message),
         ...(built.navigation && rawMessages[index] === built.navigation.message
           ? { catalogIds: built.navigation.catalogIds }
           : {}),
       }));
-      const originalResults = new Map(
-        ctx.messages.flatMap((message) =>
-          message.role === "toolResult" ? [[message.toolCallId, message] as const] : [],
-        ),
-      );
-      for (const message of messages) {
+      for (let index = 0; index < messages.length; index++) {
+        const message = messages[index]!;
         if (message.role !== "toolResult") continue;
-        const original = originalResults.get(message.toolCallId);
-        if (original && text(message).length < text(original).length) {
-          shortenedResults.set(hash(original), message);
+        const sourceIndex = built.sourceIndexes[index];
+        const original = sourceIndex !== undefined ? ctx.messages[sourceIndex] : undefined;
+        if (original?.role === "toolResult" && text(message).length < text(original).length) {
+          shortenedResults.set(`${sourceIndex}:${hash(original)}`, message);
         }
       }
       sent = {
@@ -941,6 +877,7 @@ export function createRuntimeContextPolicy(
         source,
         // A copy, so a caller that later grows the array it passed in cannot change the record.
         messages: [...messages],
+        sourceIndexes: [...built.sourceIndexes],
         projection,
         truncatedToolResults: built.decision.truncatedToolResults,
         rebuiltTokens: measure(ctx, messages).tokens,
@@ -953,27 +890,13 @@ export function createRuntimeContextPolicy(
         model,
       );
     },
+    /** Source message index in `ctx.messages` for each message in the last prepared context. */
+    getLastSourceIndexes(): ReadonlyArray<number | undefined> | undefined {
+      return sent ? [...sent.sourceIndexes] : undefined;
+    },
     /** Publish watch-check delivery provenance once the provider completes the prepared request. */
     commitDelivery() {
-      if (!options.watchDeliveries || pendingWatchDeliveries.length === 0) {
-        pendingWatchDeliveries = [];
-        return;
-      }
-      for (const { key, state } of pendingWatchDeliveries) {
-        if (state.full) {
-          options.watchDeliveries.set(key, state);
-          continue;
-        }
-        const existing = options.watchDeliveries.get(key);
-        if (existing?.full) continue;
-        if (!existing) {
-          options.watchDeliveries.set(key, { ...state, texts: [...state.texts] });
-        } else {
-          for (const value of state.texts) {
-            if (!existing.texts.includes(value)) existing.texts.push(value);
-          }
-        }
-      }
+      commitWatchDeliveries(options.watchDeliveries, pendingWatchDeliveries);
       pendingWatchDeliveries = [];
     },
     onUsage(usage: AgentUsage | null | undefined) {

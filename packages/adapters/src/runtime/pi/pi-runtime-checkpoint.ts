@@ -46,7 +46,11 @@ export function shouldRecordFinishedToolCall(
 }
 
 export function buildTurnCheckpoint(input: {
-  sentContext?: { context: Context; sourceLength: number };
+  sentContext?: {
+    context: Context;
+    sourceLength: number;
+    sourceIndexes?: ReadonlyArray<number | undefined>;
+  };
   stateMessages: readonly AgentMessage[];
   restoringCalls: boolean;
   tools: readonly AgentTool[];
@@ -70,17 +74,44 @@ export function buildTurnCheckpoint(input: {
         ...input.stateMessages.slice(input.sentContext.sourceLength),
       ]
     : [...input.stateMessages];
-  const retainedWatch = messages.filter(
-    (message): message is Extract<AgentMessage, { role: "toolResult" }> =>
-      message.role === "toolResult" && isRecord(message.details) && "routines" in message.details,
-  );
-  const isRetained = (toolCallId: string, routines: unknown) =>
-    retainedWatch.some(
+  const messageSourceIndexes: ReadonlyArray<number | undefined> | undefined = input.sentContext
+    ? input.sentContext.sourceIndexes
+      ? [
+          ...input.sentContext.sourceIndexes,
+          ...input.stateMessages
+            .slice(input.sentContext.sourceLength)
+            .map((_, offset) => input.sentContext!.sourceLength + offset),
+        ]
+      : undefined
+    : input.stateMessages.map((_, index) => index);
+  const retainedWatch: Array<Extract<AgentMessage, { role: "toolResult" }>> = [];
+  const retainedWatchBySourceIndex = new Map<
+    number,
+    Extract<AgentMessage, { role: "toolResult" }>
+  >();
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]!;
+    if (
+      message.role !== "toolResult" ||
+      !isRecord(message.details) ||
+      !("routines" in message.details)
+    )
+      continue;
+    retainedWatch.push(message);
+    const sourceIndex = messageSourceIndexes?.[index];
+    if (sourceIndex !== undefined) retainedWatchBySourceIndex.set(sourceIndex, message);
+  }
+  const isRetained = (entry: WatchDeliveryState) => {
+    if (messageSourceIndexes !== undefined && entry.sourceIndex !== undefined) {
+      return retainedWatchBySourceIndex.has(entry.sourceIndex);
+    }
+    return retainedWatch.some(
       (message) =>
-        message.toolCallId === toolCallId &&
+        message.toolCallId === entry.toolCallId &&
         isRecord(message.details) &&
-        message.details.routines === routines,
+        message.details.routines === entry.details.routines,
     );
+  };
   const droppedWatchOutside: string[] = [
     ...(input.priorWatchOutsideText ?? []).filter((entry) => entry.trim().length > 0),
   ];
@@ -101,12 +132,15 @@ export function buildTurnCheckpoint(input: {
         .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
         .filter((value) => value.trim().length > 0);
       if (restoredItems.length === 0) continue;
-      const retainedMatch = retainedWatch.find(
-        (retained) =>
-          retained.toolCallId === message.toolCallId &&
-          isRecord(retained.details) &&
-          retained.details.routines === details.routines,
-      );
+      const retainedMatch =
+        messageSourceIndexes !== undefined
+          ? retainedWatchBySourceIndex.get(index)
+          : retainedWatch.find(
+              (retained) =>
+                retained.toolCallId === message.toolCallId &&
+                isRecord(retained.details) &&
+                retained.details.routines === details.routines,
+            );
       if (!retainedMatch) {
         droppedWatchOutside.push(...restoredItems);
         continue;
@@ -123,7 +157,7 @@ export function buildTurnCheckpoint(input: {
   }
   if (input.watchDeliveries) {
     for (const entry of input.watchDeliveries.values()) {
-      if (isRetained(entry.toolCallId, entry.details.routines)) continue;
+      if (isRetained(entry)) continue;
       const synthetic = entry.full
         ? {
             details: { ...entry.details, contextBeforeUseText: entry.fullText },

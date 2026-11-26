@@ -29,6 +29,7 @@ import {
   restoreTurnCheckpointEffects,
   seedIntroEffectOccurrences,
 } from "./run-context.js";
+import { watchChecksFromToolResultMessage } from "./watch-outside-text.js";
 
 function fixture(tools: ConnectorTool[] = []) {
   return {
@@ -2353,4 +2354,241 @@ it("preserves delivery order so older restored watch evidence never evicts a new
       { ownerWords: ["Check schedules"], outsideText: ctx.state.outsideText },
     ),
   ).toEqual(["newer-watch-target@outside.test"]);
+});
+
+it("matches watch delivery provenance by call occurrence when a provider reuses a tool-call ID across turns", () => {
+  const emptyUsage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+  const firstDetails = {
+    routines: [
+      {
+        routineId: "r-reused-1",
+        prompt: "Send routine one update to owner-reused-1@example.test",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: `${"a".repeat(2_000)} first-reused-target@outside.test ${"b".repeat(2_000)}`,
+        },
+      },
+    ],
+  };
+  const secondDetails = {
+    routines: [
+      {
+        routineId: "r-reused-2",
+        prompt: "Send routine two update to owner-reused-2@example.test",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:05:00.000Z",
+          detail: `${"c".repeat(2_000)} second-reused-target@outside.test ${"d".repeat(2_000)}`,
+        },
+      },
+    ],
+  };
+  const firstRaw = JSON.stringify(firstDetails);
+  const secondRaw = JSON.stringify(secondDetails);
+  const reusedCallId = "call-reused";
+  const makeModel = (id: string, contextWindow: number) => ({
+    id,
+    name: id,
+    api: "openai-responses" as const,
+    provider: "openai" as const,
+    baseUrl: "https://api.openai.com/v1",
+    reasoning: false,
+    input: ["text" as const],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow,
+    maxTokens: 1_024,
+  });
+  const request = {
+    runId: "run-reused-call-id",
+    botId: "bot-1",
+    threadId: "thread-1",
+    prompt: "Review both watch schedules",
+    instructions: "Fixture",
+    history: [],
+    tools: [],
+    model: { provider: "openai", id: "model-wide", contextWindow: 32_000 },
+    contextStrategy: "snapshots" as const,
+  };
+  const stateMessages: Message[] = [
+    { role: "user", content: request.prompt, timestamp: 1 },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: reusedCallId, name: "schedule_list", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-wide",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 2,
+    },
+    {
+      role: "toolResult",
+      toolCallId: reusedCallId,
+      toolName: "schedule_list",
+      content: [{ type: "text", text: firstRaw }],
+      details: firstDetails,
+      isError: false,
+      timestamp: 3,
+    },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: reusedCallId, name: "schedule_list", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-wide",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 4,
+    },
+    {
+      role: "toolResult",
+      toolCallId: reusedCallId,
+      toolName: "schedule_list",
+      content: [{ type: "text", text: secondRaw }],
+      details: secondDetails,
+      isError: false,
+      timestamp: 5,
+    },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "read-1", name: "read_file", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-wide",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 6,
+    },
+    {
+      role: "toolResult",
+      toolCallId: "read-1",
+      toolName: "read_file",
+      content: [{ type: "text", text: "r".repeat(6_000) }],
+      isError: false,
+      timestamp: 7,
+    },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "read-2", name: "read_file", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-wide",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 8,
+    },
+    {
+      role: "toolResult",
+      toolCallId: "read-2",
+      toolName: "read_file",
+      content: [{ type: "text", text: "s".repeat(6_000) }],
+      isError: false,
+      timestamp: 9,
+    },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "read-3", name: "read_file", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-wide",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 10,
+    },
+    {
+      role: "toolResult",
+      toolCallId: "read-3",
+      toolName: "read_file",
+      content: [{ type: "text", text: "t".repeat(6_000) }],
+      isError: false,
+      timestamp: 11,
+    },
+  ];
+  const watchDeliveries = new Map<string, WatchDeliveryState>();
+  const widePolicy = createRuntimeContextPolicy(request, undefined, { watchDeliveries });
+  widePolicy.prepareContext(
+    { systemPrompt: "Fixture", messages: stateMessages, tools: [] },
+    makeModel("model-wide", 32_000),
+  );
+  widePolicy.commitDelivery();
+  expect(watchDeliveries.size).toBe(2);
+
+  // Switch to a narrower backup whose rebuild compacts the first watch result after use while
+  // keeping the second watch result, even though both share the same toolCallId.
+  const narrowPolicy = createRuntimeContextPolicy(
+    { ...request, model: { provider: "openai", id: "model-narrow", contextWindow: 10_000 } },
+    undefined,
+    { watchDeliveries },
+  );
+  const narrowPrepared = narrowPolicy.prepareContext(
+    { systemPrompt: "Fixture", messages: stateMessages, tools: [] },
+    makeModel("model-narrow", 10_000),
+  );
+  const watchResults = narrowPrepared.messages.filter(
+    (message): message is Extract<Message, { role: "toolResult" }> =>
+      message.role === "toolResult" && message.toolCallId === reusedCallId,
+  );
+  expect(watchResults).toHaveLength(2);
+  const firstText = watchResults[0]!.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  expect(firstText.length).toBeLessThan(firstRaw.length);
+  const firstExtracted = JSON.stringify(
+    watchChecksFromToolResultMessage(watchResults[0]!, request.contextStrategy),
+  );
+  expect(firstExtracted).toContain("first-reused-target@outside.test");
+  expect(firstExtracted).not.toContain("second-reused-target@outside.test");
+  expect(firstExtracted).not.toContain("owner-reused-1@example.test");
+
+  const checkpoint = buildTurnCheckpoint({
+    sentContext: {
+      context: narrowPrepared,
+      sourceLength: stateMessages.length,
+      sourceIndexes: narrowPolicy.getLastSourceIndexes(),
+    },
+    stateMessages: [
+      ...stateMessages,
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "ask-reused", name: "ask_user", arguments: {} }],
+        api: "openai-responses",
+        provider: "openai",
+        model: "model-narrow",
+        usage: emptyUsage,
+        stopReason: "toolUse",
+        timestamp: 12,
+      },
+    ],
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "ask-reused",
+    toolCallCount: 6,
+    mainModelConfig: { provider: "openai", id: "model-narrow" },
+    provider: "openai",
+    modelId: "model-narrow",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries,
+    contextStrategy: request.contextStrategy,
+  });
+
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(ctx, JSON.stringify(checkpoint), {
+      provider: "openai",
+      id: "model-narrow",
+    }),
+  ).toBeDefined();
+  expect(ctx.state.outsideText).toContain("first-reused-target@outside.test");
+  expect(ctx.state.outsideText).toContain("second-reused-target@outside.test");
+  expect(ctx.state.outsideText).not.toContain("owner-reused-1@example.test");
+  expect(ctx.state.outsideText).not.toContain("owner-reused-2@example.test");
 });
