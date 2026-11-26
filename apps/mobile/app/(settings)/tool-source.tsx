@@ -28,7 +28,11 @@ export default function ToolSourceScreen() {
   const { t } = useLingui();
   const installsRead = rpcQuery("capabilities/list");
   const installs = useScreenQuery(installsRead);
-  const source = installs.data?.find((item) => item.id === id) ?? null;
+  const source =
+    installs.data?.find(
+      (item) =>
+        item.id === id && (item.kind === "mcp" || item.kind === "api" || item.kind === "graphql"),
+    ) ?? null;
   const everywhere = reachesOtherSpaces(source?.availability, useOwnSpaces().length);
   const remove = useSave({
     save: (_, send) => send("capabilities/remove", { id }),
@@ -36,7 +40,8 @@ export default function ToolSourceScreen() {
     onSaved: () => router.back(),
     closesScreen: true,
   });
-  // A source removed elsewhere leaves nothing to show, once a fresh read says so.
+
+  // A source removed, or moved out of this Space, leaves nothing to show once a fresh read says so.
   const gone = installs.isSuccess && !installs.isFetching && !source && !remove.pending;
   useEffect(() => {
     if (gone) router.back();

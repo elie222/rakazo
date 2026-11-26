@@ -608,7 +608,7 @@ it.each(["Remove", "Uninstall"])(
     expect(container.textContent).toContain("Could not load integrations");
     expect(container.textContent).not.toContain("Could not revoke connection");
     if (action === "Uninstall") {
-      expect(state.search).not.toBeNull();
+      expect(button("Back")).toBeUndefined();
     } else {
       expect(state.rpc.mock.calls.filter(([proc]) => proc === "connections/tools")).toHaveLength(
         toolsCalls + 1,
@@ -653,7 +653,7 @@ it.each(["Add another", "Remove", "Uninstall"])(
     expect(button(action)).toBeDefined();
     await act(async () => button(action)?.click());
     await settle();
-    expect(state.search).toBeNull();
+    expect(button("Back")).toBeDefined();
     expect(container.textContent).not.toContain("Could not load integrations");
     expect(container.textContent).toContain("Operation rejected");
   },
@@ -1539,20 +1539,32 @@ it("keeps an app open when its uninstall finishes on a later visit", async () =>
   await render();
   await act(async () => revoked.resolve({ ok: true }));
   await settle();
-  expect(state.search).toBeNull();
+  expect(button("Back")).toBeDefined();
 });
 
 it("closes an open app for good when another Space is selected", async () => {
   cached([item], [account]);
   await render();
   await act(async () => button("Added")?.click());
-  expect(state.search).toBeNull();
+  expect(button("Back")).toBeDefined();
   state.space = "space-b";
   await render();
   state.space = "space-a";
   cached([item], [account]);
   await render();
+  expect(button("Back")).toBeUndefined();
+});
+
+it("keeps the search over an open app and returns to the results on a new search", async () => {
+  cached([item], [account]);
+  await render();
+  await searchFor("example");
+  await act(async () => button("Added")?.click());
+  expect(button("Back")).toBeDefined();
   expect(state.search).not.toBeNull();
+  await searchFor("exam");
+  expect(button("Back")).toBeUndefined();
+  expect(container.textContent).toContain("Example app");
 });
 
 it("clears a failed add when another type is picked from the header menu", async () => {

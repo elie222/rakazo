@@ -395,11 +395,14 @@ export default function Integrations() {
     );
   }
 
-  // An open app or form has nothing to search, so the bar leaves with the list it filters.
+  // The bar stays over an open app, keeping its search: a new search returns to the results.
+  // The add form has nothing to search, so the bar leaves while it is open.
   useHeaderSearch({
     placeholder: t`Search apps`,
-    shown: !detailItem && !adding,
+    shown: !adding,
     onChange: (value) => {
+      if (value === query) return;
+      closeDetail();
       setQuery(value);
       setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
       setPluginCount(PLUGIN_PAGE_SIZE);
