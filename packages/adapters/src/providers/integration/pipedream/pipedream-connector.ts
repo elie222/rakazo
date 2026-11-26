@@ -77,7 +77,7 @@ type PipedreamApp = {
   img_src?: string;
 };
 
-type ApprovedAccount = { id: string; label: string; connectionId: string };
+type ApprovedAccount = { id: string; label: string; connectionId: string; organizationId?: string };
 
 type PipedreamAccount = {
   id: string;
@@ -157,6 +157,13 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     await this.apps();
   }
 
+  async listConnectedRefs(context: AdapterContext): Promise<string[] | undefined> {
+    if (!context.organizationId) return undefined;
+    return (await this.accounts(context))
+      .filter((account) => account.healthy !== false && account.dead !== true)
+      .map((account) => account.id);
+  }
+
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
     const accounts = await this.accounts(context);
     return [
@@ -188,7 +195,12 @@ export class PipedreamConnector implements ManagedConnectorProvider {
             accounts.map(async (account) => {
               const tools = await listRemoteMcpTools({
                 endpoint: MCP_ENDPOINT,
-                headers: this.mcpHeaders(context, app, account.id, token),
+                headers: this.mcpHeaders(
+                  { ...context, organizationId: account.organizationId },
+                  app,
+                  account.id,
+                  token,
+                ),
                 signal: context.signal,
                 fetch: this.dependencies.fetch,
                 resolveHostname: this.dependencies.resolveHostname,
@@ -310,7 +322,12 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       const result = await callRemoteMcpTool(
         {
           endpoint: MCP_ENDPOINT,
-          headers: this.mcpHeaders(context, app, account.id, token),
+          headers: this.mcpHeaders(
+            { ...context, organizationId: account.organizationId },
+            app,
+            account.id,
+            token,
+          ),
           signal: context.signal,
           fetch: this.dependencies.fetch,
           resolveHostname: this.dependencies.resolveHostname,
@@ -370,6 +387,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     currentRef: string | null | undefined,
     excludeIds: string[] = [],
     spaceId?: string,
+    organizationId?: string,
   ): Promise<string | undefined> {
     const excluded = new Set(excludeIds.filter(Boolean));
     const current = currentRef?.trim() || undefined;
@@ -383,6 +401,7 @@ export class PipedreamConnector implements ManagedConnectorProvider {
     const context = {
       userId,
       spaceId,
+      organizationId,
       signal: AbortSignal.timeout(30_000),
     } as AdapterContext;
     const accounts = await this.accounts(context, slug);
@@ -459,7 +478,11 @@ export class PipedreamConnector implements ManagedConnectorProvider {
   /** Pipedream keys connected accounts by this stateless ID; changing it orphans them. */
   private externalUserId(context: AdapterContext): string {
     return `rkz_${createHmac("sha256", this.config.identitySecret)
-      .update(`${context.spaceId}:${context.userId}`)
+      .update(
+        context.organizationId
+          ? `organization:${context.organizationId}`
+          : `${context.spaceId}:${context.userId}`,
+      )
       .digest("hex")}`;
   }
 
@@ -613,7 +636,12 @@ function approvedAccounts(context: AdapterContext, app: string): ApprovedAccount
     if (connection.connectorId !== "pipedream" || connection.externalId !== app) continue;
     const ref = connection.providerRef?.trim();
     if (ref && ref !== app && !approved.has(ref)) {
-      approved.set(ref, { id: ref, label: connection.displayName, connectionId: connection.id });
+      approved.set(ref, {
+        id: ref,
+        label: connection.displayName,
+        connectionId: connection.id,
+        organizationId: connection.organizationId,
+      });
     }
   }
   return [...approved.values()];

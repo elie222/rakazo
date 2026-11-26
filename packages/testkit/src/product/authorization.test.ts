@@ -518,6 +518,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/catalog", {}],
       ["connections/list"],
       ["connections/begin", connectionInput("Unauthenticated")],
+      ["connections/beginForOrganization", connectionInput("Unauthenticated")],
+      ["connections/reconnectOrganization", { connectionId: "missing-connection" }],
       ["connections/complete", { connectionId: "missing-connection" }],
       ["connections/revoke", { connectionId: "missing-connection" }],
       ["connections/rename"],

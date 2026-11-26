@@ -122,6 +122,7 @@ export const accountRpc = {
           threadId: Id.optional(),
           /** The card's own message, so it is found however far back it is. */
           messageId: Id.optional(),
+          organizationConnectionId: Id.optional(),
           provider: z.string(),
           /** Omitted for the server's default connector. */
           connectorId: z.string().optional(),

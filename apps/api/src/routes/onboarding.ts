@@ -75,6 +75,7 @@ export function onboardingRoutes(ctx: RouterContext) {
           input.connectorId,
           input.threadId,
           input.messageId,
+          input.organizationConnectionId,
         );
         return { ok: true as const };
       }),

@@ -17,6 +17,7 @@ import { humanizeToolName } from "@rakazo/core";
 import { isVitestRuntime } from "@rakazo/core/node/test-runtime";
 import { getLogger } from "@rakazo/logging";
 import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
+import { isLazyCatalogControlRoute } from "../../../tools/lazy-tool-catalog.js";
 import { connectedCalendarProvider } from "./calendar.js";
 import {
   COMPOSIO_MULTI_EXECUTE_TOOL,
@@ -30,9 +31,27 @@ import {
   mergeCatalogWithConnected,
 } from "./composio-catalog-cache.js";
 import {
+  collectLogIds,
+  composioResultError,
   isComposioOutage,
+  isNoAuthToolkitError,
+  isNoManagedAuthError,
   isStaleConnectedAccountError,
+  sanitizeIntegrationError,
+  sanitizePayload,
   staleAccountIds,
+  withSharedAccessHint,
+} from "./composio-errors.js";
+
+import { composioOwner, organizationConnector } from "./composio-organization.js";
+
+export {
+  collectLogIds,
+  composioResultError,
+  isNoAuthToolkitError,
+  isNoManagedAuthError,
+  sanitizeIntegrationError,
+  withSharedAccessHint,
 } from "./composio-errors.js";
 
 type SdkSession = Awaited<ReturnType<Composio["create"]>>;
@@ -341,6 +360,12 @@ export function needsLivePluginSync(rows: { status: string }[]): boolean {
   return rows.some((row) => row.status === "pending" || row.status === "error");
 }
 
+export function personalComposioConnections<
+  T extends { connectorId: string; organizationId?: string | null },
+>(connections: readonly T[]): T[] {
+  return connections.filter((row) => row.connectorId === "composio" && !row.organizationId);
+}
+
 export function mergeConnectedPlugins(
   rows: { provider: string; displayName: string; status?: string }[],
   liveSlugs: string[],
@@ -470,9 +495,14 @@ export class ComposioConnector implements ComposioProvider {
       options.client || options.apiKey ? createToolkitDirectoryCache() : composioToolkitDirectory;
   }
   readonly calendarProvider = connectedCalendarProvider(async (connection, accountId, context) => {
-    const active = await this.accountIds(context.userId, [connection.externalId], ["ACTIVE"], {
-      signal: context.signal,
-    });
+    const active = await this.accountIds(
+      composioOwner({ ...context, organizationId: connection.organizationId }),
+      [connection.externalId],
+      ["ACTIVE"],
+      {
+        signal: context.signal,
+      },
+    );
     return active.includes(accountId) ? (await this.sdk()).tools : undefined;
   });
   private readonly catalogSessions = new Map<string, string>();
@@ -631,7 +661,7 @@ export class ComposioConnector implements ComposioProvider {
   async catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]> {
     const [directory, toolkits] = await Promise.all([
       this.directory(),
-      this.connectedToolkits(context.userId),
+      this.connectedToolkits(composioOwner(context)),
     ]);
     // An expired account keeps its app listed so the user can still reconnect or remove it.
     const withAccount = toolkits.map((toolkit) => toolkit.slug);
@@ -723,15 +753,17 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
-    return this.listConnectedSlugs(context.userId);
+    return this.listConnectedSlugs(composioOwner(context));
   }
 
   async listConnectedRefs(context: AdapterContext): Promise<string[]> {
-    return this.accountIds(context.userId, [], ["ACTIVE"], { signal: context.signal });
+    return this.accountIds(composioOwner(context), [], ["ACTIVE"], { signal: context.signal });
   }
 
   async listReconnectRefs(context: AdapterContext): Promise<string[]> {
-    return this.accountIds(context.userId, [], RECONNECT_STATUSES, { signal: context.signal });
+    return this.accountIds(composioOwner(context), [], RECONNECT_STATUSES, {
+      signal: context.signal,
+    });
   }
 
   /** The app's own actions, not the session tools that only search and run them. */
@@ -758,7 +790,24 @@ export class ComposioConnector implements ComposioProvider {
     return asConnectorTools(tools);
   }
 
+  private readonly organizationConnector = organizationConnector(
+    (context, app) => this.listAppTools(context, app),
+    (context, connection) => this.sessionForExecute(composioOwner(context), [connection]),
+  );
+
+  resolveCall(call: ConnectorCall, context: AdapterContext) {
+    return this.organizationConnector.resolveCall(call, context);
+  }
+
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
+    const [personal, shared] = await Promise.all([
+      this.discoverPersonalTools(context),
+      this.organizationConnector.discoverTools(context),
+    ]);
+    return [...personal, ...shared];
+  }
+
+  private async discoverPersonalTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const connections = connectedComposioConnections(context);
     if (connections.length === 0) return [];
     try {
@@ -776,6 +825,10 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
+    if (call.route?.connectionId || isLazyCatalogControlRoute(call.route)) {
+      yield* this.organizationConnector.execute(call, context);
+      return;
+    }
     const executed = [];
     try {
       const connections = connectedComposioConnections(context);
@@ -860,7 +913,7 @@ export class ComposioConnector implements ComposioProvider {
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
   ): Promise<{ authorizationUrl: string | null; state: string }> {
-    const session = await this.sessionFor(context.userId);
+    const session = await this.sessionFor(composioOwner(context));
     try {
       const connectionRequest = await session.authorize(request.provider, {
         callbackUrl: request.redirectUrl,
@@ -888,7 +941,7 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
-    const session = await this.sessionFor(context.userId);
+    const session = await this.sessionFor(composioOwner(context));
     const page = await session.toolkits({ search: slug, limit: 50 });
     const match = page.items.find((item) => composioSlugKey(item.slug) === composioSlugKey(slug));
     if (!match) return false;
@@ -910,7 +963,7 @@ export class ComposioConnector implements ComposioProvider {
     let accountId: string | undefined;
     try {
       const listed = await this.listConnectedAccountIds(
-        context.userId,
+        composioOwner(context),
         connectionRef,
         requestOptions,
       );
@@ -1039,6 +1092,7 @@ export class ComposioConnector implements ComposioProvider {
     currentRef: string | null | undefined,
     excludeIds: string[] = [],
     _spaceId?: string,
+    organizationId?: string,
   ): Promise<string | undefined> {
     const excluded = new Set(excludeIds.filter(Boolean));
     const current = currentRef?.trim() || undefined;
@@ -1056,7 +1110,7 @@ export class ComposioConnector implements ComposioProvider {
       return undefined;
     }
 
-    const ids = await this.listConnectedAccountIds(userId, slug);
+    const ids = await this.listConnectedAccountIds(composioOwner({ userId, organizationId }), slug);
     if (current && ids.includes(current) && !excluded.has(current)) return current;
     return ids.find((id) => !excluded.has(id));
   }
@@ -1079,7 +1133,9 @@ function isComposioNotFoundError(error: unknown): boolean {
 
 function connectedComposioConnections(context: AdapterContext): ConnectedConnector[] {
   return (
-    context.connectedConnections?.filter((connection) => connection.connectorId === "composio") ??
+    context.connectedConnections?.filter(
+      (connection) => connection.connectorId === "composio" && !connection.organizationId,
+    ) ??
     (context.connectedProviders ?? []).map((externalId) => ({
       id: `legacy:${externalId}`,
       connectorId: "composio",
@@ -1087,151 +1143,4 @@ function connectedComposioConnections(context: AdapterContext): ConnectedConnect
       displayName: externalId,
     }))
   );
-}
-
-export function collectLogIds(value: unknown): string[] {
-  const ids: string[] = [];
-  const seen = new Set<string>();
-  const walk = (node: unknown) => {
-    if (!node || typeof node !== "object") return;
-    if (Array.isArray(node)) {
-      for (const item of node) walk(item);
-      return;
-    }
-    const record = node as Record<string, unknown>;
-    for (const [key, nested] of Object.entries(record)) {
-      if (
-        (key === "logId" || key === "log_id") &&
-        typeof nested === "string" &&
-        nested &&
-        !seen.has(nested)
-      ) {
-        seen.add(nested);
-        ids.push(nested);
-      } else {
-        walk(nested);
-      }
-    }
-  };
-  walk(value);
-  return ids;
-}
-
-export function isNoAuthToolkitError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("ToolkitsIsNoAuth") || message.includes("does not require authentication")
-  );
-}
-
-/** Composio has no managed OAuth app for the toolkit and the project has no auth config of its own. */
-export function isNoManagedAuthError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes("ToolRouterV2_NoManagedAuth");
-}
-
-/**
- * COMPOSIO_MULTI_EXECUTE_TOOL reports a failed batch as "N out of M tools
- * failed" and puts each tool's real error in `data.results`. Keep those, or the
- * model cannot tell "message not found" apart from a broken integration.
- */
-export function composioResultError(summary: string, data: unknown): string {
-  const results = (data as { results?: unknown } | null | undefined)?.results;
-  if (!Array.isArray(results)) return summary;
-  const details = results.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") return [];
-    const item = entry as {
-      tool_slug?: unknown;
-      error?: unknown;
-      response?: { error?: unknown } | null;
-    };
-    const error = [item.error, item.response?.error].find(
-      (value): value is string => typeof value === "string" && value.length > 0,
-    );
-    if (!error) return [];
-    const redacted = redactConnectorText(error);
-    const detail = redacted.length > 500 ? `${redacted.slice(0, 500)}…` : redacted;
-    return [typeof item.tool_slug === "string" ? `${item.tool_slug}: ${detail}` : detail];
-  });
-  if (details.length === 0) return summary;
-  const shown = details.slice(0, 5);
-  const more = details.length - shown.length;
-  return `${summary}: ${shown.join("; ")}${more > 0 ? `; +${more} more` : ""}`;
-}
-
-const SHARED_ACCESS_SCOPE =
-  /\b(?:Mail|Calendars|Contacts|Tasks)\.(?:Read|ReadBasic|ReadWrite|Send)\.Shared(?![A-Za-z0-9_]|\.[A-Za-z0-9])/;
-
-/**
- * A connection made without a delegated "shared" scope is refused for any mailbox or
- * calendar but the user's own, and only a new connection carries the scope.
- */
-export function withSharedAccessHint(message: string): string {
-  const scope = SHARED_ACCESS_SCOPE.exec(message)?.[0];
-  if (!scope) return message;
-  let end = message.length;
-  while (end > 0 && (message[end - 1] === "." || message[end - 1]?.trim() === "")) end--;
-  return `${message.slice(0, end)}. This call needs the ${scope} permission; reconnect if the connection was made before it was added.`;
-}
-
-export function sanitizeIntegrationError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return redactConnectorText(message);
-}
-
-const CREDENTIAL_FIELD_NAME =
-  "composio[_-]?api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|client[_-]?secret|api[_-]?key|password|passwd|secret";
-
-const CREDENTIAL_FIELD_KEY = new RegExp(`^(?:${CREDENTIAL_FIELD_NAME})$`, "i");
-
-const CREDENTIAL_ASSIGNMENT = new RegExp(
-  `(["']?\\b(?:${CREDENTIAL_FIELD_NAME})\\b["']?\\s*[=:]\\s*)` +
-    `(?:"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|[^\\s,&;}]+(?:;(?![A-Za-z0-9_]+[=:])[^\\s,&;}]+)*)`,
-  "gi",
-);
-
-function sanitizePayload(data: unknown): unknown {
-  return redactConnectorData(data);
-}
-
-function redactConnectorData(data: unknown): unknown {
-  if (typeof data === "string") return redactConnectorText(data);
-  if (Array.isArray(data)) return data.map((item) => redactConnectorData(item));
-  if (!data || typeof data !== "object") return data;
-  const seen = new Map<string, number>();
-  return Object.fromEntries(
-    Object.entries(data).map(([key, value]) => [
-      distinctRedactedKey(redactSecretLiterals(key), seen),
-      isCredentialField(key) ? "[redacted]" : redactConnectorData(value),
-    ]),
-  );
-}
-
-function distinctRedactedKey(key: string, seen: Map<string, number>): string {
-  const count = (seen.get(key) ?? 0) + 1;
-  seen.set(key, count);
-  return count === 1 ? key : `${key}~${count}`;
-}
-
-function isCredentialField(key: string): boolean {
-  return CREDENTIAL_FIELD_KEY.test(key);
-}
-
-function redactConnectorText(value: string): string {
-  return redactSecretLiterals(
-    value
-      .replace(CREDENTIAL_ASSIGNMENT, '$1"[redacted]"')
-      .replace(
-        /COMPOSIO_API_KEY(?!\s*[=:])\s+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\S+)/gi,
-        "COMPOSIO_API_KEY=[redacted]",
-      ),
-  );
-}
-
-function redactSecretLiterals(value: string): string {
-  return value
-    .replace(/ak_[A-Za-z0-9]+/g, "[redacted]")
-    .replace(/ck_[A-Za-z0-9]+/g, "[redacted]")
-    .replace(/sk-or-v1-[A-Za-z0-9]+/g, "[redacted]")
-    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]");
 }

@@ -352,6 +352,7 @@ export interface ManagedConnectorProvider
     currentRef: string | null | undefined,
     excludeIds?: string[],
     spaceId?: string,
+    organizationId?: string,
   ): Promise<string | undefined>;
   /** Invalidate an unfinished browser authorization by its request id. */
   cancelAuthorizationRequest?(requestId: string, context: AdapterContext): Promise<void>;
