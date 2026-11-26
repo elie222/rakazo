@@ -212,6 +212,8 @@ vi.mock("../api/api", () => ({
         deploymentPrimary: main ? null : APPROVAL_DEFAULT,
       };
     }
+    if (procedure === "models/organizationConnections/available")
+      return { connections: [], selectedId: null, canManage: false };
     if (procedure === "models/forRole") return mocks.catalogEmpty ? [] : catalog;
     if (procedure === "models/setRole") {
       await result;
