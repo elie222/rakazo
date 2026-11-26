@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { flush } from "@rakazo/core/test-async";
+import type { AuthCapabilities } from "@rakazo/contracts";
+import { deferred, flush } from "@rakazo/core/test-async";
 import type { ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 
 interface SessionState {
@@ -19,6 +20,7 @@ const capability = vi.hoisted(() => ({
   screen: vi.fn(async () => ({ ok: true })),
   session: null as SessionState | null,
   authMounts: 0,
+  fetchAuthCapabilities: vi.fn<() => Promise<AuthCapabilities>>(),
   syncCallIdentity: vi.fn(),
 }));
 vi.mock("@lingui/react/macro", () => ({
@@ -45,6 +47,9 @@ vi.mock("./pages/auth/Auth", async () => {
     },
   };
 });
+vi.mock("./lib/auth/auth-capabilities", () => ({
+  fetchAuthCapabilities: capability.fetchAuthCapabilities,
+}));
 vi.mock("./lib/calls/call-session", () => ({ syncCallIdentity: capability.syncCallIdentity }));
 vi.mock("./lib/preferences/remote-images-preference", () => ({
   remoteImagesPreference: { use: () => false },
@@ -157,6 +162,53 @@ it.each([
     vi.unstubAllGlobals();
   }
 });
+
+it.each([
+  ["/?next=%2Fintegrations%2Fsetup", false, "/sign-in?next=%2Fintegrations%2Fsetup"],
+  ["/redeem/example", false, "/sign-in?next=%2Fredeem%2Fexample"],
+  ["/", true, "/sign-up"],
+])(
+  "routes a first visit to %s with registration open=%s",
+  async (entry, registrationOpen, target) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    localStorage.clear();
+    capability.session = { isPending: false, data: null, error: null };
+    const lookup = deferred<AuthCapabilities>();
+    capability.fetchAuthCapabilities.mockReturnValue(lookup.promise);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    function CurrentUrl() {
+      const { pathname, search } = useLocation();
+      return <output>{pathname + search}</output>;
+    }
+    try {
+      await act(async () =>
+        root.render(
+          <MemoryRouter initialEntries={[entry]}>
+            <CurrentUrl />
+            <App />
+          </MemoryRouter>,
+        ),
+      );
+      expect(container.querySelector("output")?.textContent).toBe(entry);
+      await act(async () =>
+        lookup.resolve({
+          sso: null,
+          passwordAuth: true,
+          passwordReset: false,
+          resetUrl: null,
+          registrationOpen,
+        }),
+      );
+      expect(container.querySelector("output")?.textContent).toBe(target);
+    } finally {
+      await act(async () => root.unmount());
+      capability.session = null;
+      capability.fetchAuthCapabilities.mockReset();
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("keeps the sign-in page mounted while a signed-out session refetches", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
