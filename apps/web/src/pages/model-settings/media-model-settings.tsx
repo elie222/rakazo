@@ -4,6 +4,7 @@ import { SectionHeading } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
 import { spaceQueries, useSave } from "../../lib/query/query";
 import { useSpaceRpc } from "../../lib/query/space-rpc";
+import { errorText } from "../../lib/query/user-error";
 import type { RoleModelOption } from "./role-model-picker";
 import { RoleModelPicker, rolePickerTrigger } from "./role-model-picker";
 
@@ -93,7 +94,7 @@ export function MediaModelSettings({
         </ol>
         {save.error && save.input?.role === role ? (
           <p role="alert" className="mt-2 text-body text-destructive">
-            {save.error.message}
+            {errorText(save.error)}
           </p>
         ) : null}
       </section>

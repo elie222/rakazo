@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
 import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import type { ComponentProps, ReactNode } from "react";
@@ -121,6 +122,7 @@ async function commit(key?: string) {
 }
 
 beforeEach(() => {
+  i18n.loadAndActivate({ locale: "en", messages: {} });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -209,6 +211,19 @@ describe("SpaceSettingsPanel", () => {
     await type("Help desk");
     await commit();
     expect(container.textContent).toContain("Could not rename space");
+  });
+
+  it("shows localized errorText guidance instead of raw error.message on rename network failure", async () => {
+    await render({
+      onRename: async () => {
+        throw new TypeError("Failed to fetch");
+      },
+    });
+    await type("Help desk");
+    await commit();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Could not reach the server",
+    );
   });
 
   it("shows neither rename nor delete to a space it cannot change", async () => {
