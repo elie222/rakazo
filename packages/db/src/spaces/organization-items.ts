@@ -2,7 +2,7 @@ import { GUEST_ROLE, LIVE_ORGANIZATION } from "../billing/billing.js";
 import type { PrismaClient } from "../database/client.js";
 import type { Prisma } from "../generated/prisma/client.js";
 import { availableInSpace, itemSecretIn } from "./availability.js";
-import { organizationRole } from "./organization-members.js";
+import { lockOrganizationMembers, organizationRole } from "./organization-members.js";
 
 type Scope = { spaceId: string; userId: string };
 
@@ -82,6 +82,22 @@ export async function managedOrganizationId(
     select: { role: true },
   });
   return member && organizationRole(member.role) !== "member" ? space.organizationId : null;
+}
+
+/** Hold authorization through an organization item write. */
+export async function lockManagedOrganization(tx: Prisma.TransactionClient, scope: Scope) {
+  const space = await tx.space.findUnique({
+    where: { id: scope.spaceId },
+    select: { organizationId: true },
+  });
+  if (!space) return null;
+  await lockOrganizationMembers(tx, space.organizationId);
+  const [live] = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "spaces"
+    WHERE "organizationId" = ${space.organizationId} AND "isDefault" AND "deletingAt" IS NULL
+    FOR SHARE
+  `;
+  return live ? managedOrganizationId(tx, scope) : null;
 }
 
 /** The MCP servers a member can change: their own and, for an admin, the organization's. */

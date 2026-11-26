@@ -517,6 +517,7 @@ model Organization {
   referralCode ReferralCode?
   referredBy   Referral?           @relation("ReferredOrganization")
   referrals    Referral[]          @relation("ReferrerOrganization")
+  organizationLogins OrganizationLogin[]
   mcpServers   McpServer[]
   connections  Connection[]
   secrets      Secret[]
@@ -1069,6 +1070,7 @@ model SpaceVoicePreference {
 }
 
 model Bot {
+  organizationLoginGrants OrganizationLoginGrant[]
   meetingSessions MeetingSession[]
   screenGeneration Int @default(0)
   id                String            @id @default(cuid())
@@ -2619,6 +2621,29 @@ model BotSecret {
   @@index([botId])
   @@index([spaceId])
   @@map("bot_secrets")
+}
+
+model OrganizationLogin {
+  id             String @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  origin         String
+  grants         OrganizationLoginGrant[]
+
+  @@index([organizationId])
+  @@map("organization_logins")
+}
+
+model OrganizationLoginGrant {
+  loginId String
+  login   OrganizationLogin @relation(fields: [loginId], references: [id], onDelete: Cascade)
+  botId   String
+  bot     Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@id([loginId, botId])
+  @@index([botId])
+  @@map("organization_login_grants")
 }
 
 /// A member's vault items: logins, cards, contacts, API credentials and command variables. A null
