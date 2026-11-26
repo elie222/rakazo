@@ -68,8 +68,9 @@ describe("built-in tool bridge", () => {
     // the Space's shared memory too, and says what stays out of memory and how to make room
     // without abbreviating; shell says to open the bot's screen when a graphical program
     // finds no display; schedule_create takes an end date for a repeat or watch, so a limited
-    // stretch is one routine.
-    expect(definitionBytes(listed)).toBeLessThanOrEqual(38_322);
+    // stretch is one routine; schedule_list reads one routine's long prompt in full and continues
+    // a long list.
+    expect(definitionBytes(listed)).toBeLessThanOrEqual(38_598);
     expect(deferred.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["render_plot", "create_space", "generate_secret", "scratchpad_add"]),
     );
