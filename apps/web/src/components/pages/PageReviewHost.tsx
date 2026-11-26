@@ -145,6 +145,14 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
       };
     });
   }
+  const latestKnownVersion =
+    page && commentDraft.version !== null
+      ? Math.max(page.currentVersion, commentDraft.version)
+      : page?.currentVersion;
+  const reviewPage =
+    page && latestKnownVersion !== undefined && latestKnownVersion !== page.currentVersion
+      ? { ...page, currentVersion: latestKnownVersion }
+      : page;
   const commentSave = usePageReviewCommentSave({
     pageId,
     onAdded: () => {
@@ -221,7 +229,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
             </>
           ) : (
             <ReviewControls
-              page={page}
+              page={reviewPage!}
               open={commentsOpen}
               setOpen={setCommentsOpen}
               sections={sections}
@@ -264,10 +272,10 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
       titleError={
         draftId && publish.input === draftId && publish.error
           ? errorText(publish.error)
-          : review.isError && page
-            ? errorText(review.error)
-            : stateSaver.failed && readerState
-              ? t`Your changes aren't saved. Check your connection.`
+          : stateSaver.failed && readerState
+            ? t`Your changes aren't saved. Check your connection.`
+            : review.isError && page
+              ? errorText(review.error)
               : null
       }
     />

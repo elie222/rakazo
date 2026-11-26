@@ -32,10 +32,12 @@ const rpcState = vi.hoisted(() => ({
     >(),
   addComment: vi.fn<(input: Record<string, unknown>) => Promise<void>>(),
   publish: vi.fn<(input: { pageId: string; requestId: string }) => Promise<void>>(),
+  saveState: vi.fn<(input: Record<string, unknown>) => Promise<void>>(),
 }));
 
 const viewState = vi.hoisted(() => ({
   reportSections: undefined as ((sections: PageSectionAnchor[]) => void) | undefined,
+  saveReaderState: undefined as ((values: Record<string, string>) => void) | undefined,
   navigateTo: undefined as ((to: string) => void) | undefined,
 }));
 
@@ -63,7 +65,7 @@ vi.mock("../../lib/query/rpc", () => {
       askRevision: vi.fn(),
       list: vi.fn(async () => ({ items: [], nextCursor: null })),
       image: vi.fn(),
-      saveState: vi.fn(),
+      saveState: (input: Record<string, unknown>) => rpcState.saveState(input),
     },
     pages: {
       get: vi.fn(),
@@ -84,6 +86,7 @@ vi.mock("./PageView", () => ({
     share,
     notice,
     titleError,
+    onSaveState,
     onSections,
   }: {
     title: string;
@@ -91,9 +94,11 @@ vi.mock("./PageView", () => ({
     share: ReactNode;
     notice?: ReactNode;
     titleError?: string | null;
+    onSaveState?: (values: Record<string, string>) => void;
     onSections?: (sections: PageSectionAnchor[]) => void;
   }) => {
     viewState.reportSections = onSections;
+    viewState.saveReaderState = onSaveState;
     return (
       <div data-testid="page-review-view">
         <h1>{title}</h1>
@@ -214,6 +219,7 @@ beforeEach(() => {
   }));
   vi.stubGlobal("fetch", async () => new Response(""));
   viewState.reportSections = undefined;
+  viewState.saveReaderState = undefined;
   viewState.navigateTo = undefined;
   rpcState.spaceId = "space-1";
   rpcState.getReview.mockReset();
@@ -221,11 +227,13 @@ beforeEach(() => {
   rpcState.getDraft.mockReset();
   rpcState.addComment.mockReset();
   rpcState.publish.mockReset();
+  rpcState.saveState.mockReset();
   rpcState.getReview.mockResolvedValue(makePage());
   rpcState.getComments.mockResolvedValue({ items: [], nextCursor: null });
   rpcState.getDraft.mockResolvedValue({ code: "<main>draft</main>", images: {}, version: 1 });
   rpcState.addComment.mockResolvedValue(undefined);
   rpcState.publish.mockResolvedValue(undefined);
+  rpcState.saveState.mockResolvedValue(undefined);
 });
 
 afterEach(async () => {
@@ -514,6 +522,91 @@ describe("PageReviewHost comment draft preservation", () => {
     expect(document.querySelector('[data-testid="review-inline-error"]')?.textContent).toBeTruthy();
     expect(sectionInput()?.value).toBe("Summary");
     expect(commentTextarea()?.value).toBe("Draft before offline refetch");
+  });
+
+  it("prioritizes the unsaved-changes warning over a transient refresh error", async () => {
+    let failRefresh = false;
+    rpcState.getReview.mockImplementation(async () => {
+      if (failRefresh) throw new Error("Failed to fetch");
+      return makePage({
+        version: 1,
+        currentVersion: 1,
+        readerState: { fields: {}, values: {} } as PageReview["readerState"],
+      });
+    });
+    rpcState.saveState.mockRejectedValue(new Error("Failed to fetch"));
+
+    await mountReview("/review/page-1");
+    failRefresh = true;
+    await act(async () => {
+      await queryClient.refetchQueries();
+    });
+    await act(flush);
+    expect(document.querySelector('[data-testid="review-inline-error"]')?.textContent).toBeTruthy();
+
+    await act(async () => {
+      viewState.saveReaderState?.({ answer: "yes" });
+    });
+    await act(flush);
+    expect(document.querySelector('[data-testid="review-inline-error"]')?.textContent).toContain(
+      "Your changes aren't saved.",
+    );
+  });
+
+  it("keeps Back to latest and submits against the newest known version when revisiting a cached older revision offline", async () => {
+    let phase: "v1" | "v2" | "offline" = "v1";
+    rpcState.getReview.mockImplementation(async ({ version }) => {
+      if (phase === "offline") throw new Error("Failed to fetch");
+      if (version === 1 || phase === "v1") {
+        return makePage({ version: 1, currentVersion: phase === "v1" ? 1 : 2 });
+      }
+      return makePage({ version: 2, currentVersion: 2 });
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [makeComment({ id: "c-v1", version: 1, section: "Summary" })],
+      nextCursor: null,
+    });
+
+    // Seed cache for revision 1 while currentVersion is 1, then advance latest to revision 2.
+    await mountReview("/review/page-1");
+    await openCommentsPopover();
+    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+    // Re-query latest after owner publishes revision 2.
+    phase = "v2";
+    await act(async () => {
+      viewState.navigateTo?.("/review");
+    });
+    await act(flush);
+    await act(async () => {
+      viewState.navigateTo?.("/review/page-1");
+    });
+    await act(flush);
+    await openCommentsPopover();
+
+    // Go offline and revisit revision 1, which hits cached { version: 1, currentVersion: 1 }.
+    phase = "offline";
+    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+
+    // Back to latest must still appear, and the composer must stay hidden while viewing rev 1
+    // (instead of offering a composer that submits against stale version 1).
+    const backButton = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Back to latest"),
+    );
+    expect(backButton).toBeDefined();
+    await openCommentsPopover();
+    expect(commentTextarea()).toBeNull();
+
+    // Returning to latest restores the composer targeting version 2.
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+    if (!commentTextarea()) await openCommentsPopover();
+    await act(async () => {
+      setFieldValue(sectionInput()!, "Summary");
+      setFieldValue(commentTextarea()!, "Comment on latest rev 2");
+    });
+    await clickButton((button) => button.textContent?.includes("Post comment") ?? false);
+    expect(rpcState.addComment).toHaveBeenCalledWith(
+      expect.objectContaining({ pageId: "page-1", version: 2 }),
+    );
   });
 
   it("unmounts the page on 404 or 403 and keeps it hidden across a failed retry until authorized again", async () => {
