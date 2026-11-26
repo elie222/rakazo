@@ -1,6 +1,6 @@
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { canManageOrganizationMembers } from "@rakazo/core";
+import { canShareWithOrganization } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
@@ -42,7 +42,7 @@ export default function SkillScreen() {
 
 function SkillEditor({ id }: { id?: string }) {
   const organization = activeOrganization(useOrganizations().data);
-  const canShare = Boolean(organization && canManageOrganizationMembers(organization));
+  const canShare = canShareWithOrganization(organization);
   const [forOrganization, setForOrganization] = useState(false);
 
   const router = useRouter();

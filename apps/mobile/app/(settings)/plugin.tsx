@@ -3,7 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { McpServer, PluginPart } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
 import {
-  canManageOrganizationMembers,
+  canShareWithOrganization,
   catalogItemKey,
   connectCatalogItem,
   connectionSharingOrganization,
@@ -74,7 +74,7 @@ function PluginScreen() {
   useLiveStream(useIsFocused());
   const [lastBotId, setLastBotId] = useState<string | null>(null);
   const organization = activeOrganization(useOrganizations().data);
-  const canShare = Boolean(organization && canManageOrganizationMembers(organization));
+  const canShare = canShareWithOrganization(organization);
   const [forOrganization, setForOrganization] = useState(false);
   const [allSkills, setAllSkills] = useState(false);
   const [noAuth, setNoAuth] = useState(new Set<string>());

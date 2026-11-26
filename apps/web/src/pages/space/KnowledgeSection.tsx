@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
-import { canManageOrganizationMembers } from "@rakazo/core";
+import { activeOrganizationForSpace, canShareWithOrganization } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
 import { Badge, Button, Checkbox, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
@@ -332,9 +332,8 @@ Steps the agent should follow.
 
 /** Your own skills in this space, plus the built-in ones; plugin skills are listed by plugin. */
 export function AgentSkills() {
-  const { organizations, activeOrganizationId } = useOrganizations();
-  const activeOrganization = organizations.find((entry) => entry.id === activeOrganizationId);
-  const canShare = Boolean(activeOrganization && canManageOrganizationMembers(activeOrganization));
+  const organizationList = useOrganizations();
+  const canShare = canShareWithOrganization(activeOrganizationForSpace(organizationList));
   const [forOrganization, setForOrganization] = useState(false);
 
   const rpc = useSpaceRpc();

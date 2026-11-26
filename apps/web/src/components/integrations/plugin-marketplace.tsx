@@ -9,7 +9,8 @@ import type {
 } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
 import {
-  canManageOrganizationMembers,
+  activeOrganizationForSpace,
+  canShareWithOrganization,
   installedPluginParts,
   pluginSite,
   selectPluginInstall,
@@ -177,9 +178,8 @@ export function PluginDetail({
   onChanged: () => Promise<unknown>;
 }) {
   const { t } = useLingui();
-  const { organizations, activeOrganizationId } = useOrganizations();
-  const activeOrganization = organizations.find((entry) => entry.id === activeOrganizationId);
-  const canShare = Boolean(activeOrganization && canManageOrganizationMembers(activeOrganization));
+  const organizationList = useOrganizations();
+  const canShare = canShareWithOrganization(activeOrganizationForSpace(organizationList));
   const [forOrganization, setForOrganization] = useState(false);
   const [preview, setPreview] = useState<PluginPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);

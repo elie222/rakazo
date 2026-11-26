@@ -219,9 +219,8 @@ export async function skillReadFromTool(
   input: { name?: string; skillId?: string; file?: string },
 ): Promise<Record<string, unknown>> {
   const keys = await prisma.agentSkill.findMany({
-    where: personalOrOrganizationItemIn(owner),
+    ...visibleSkillQuery(owner),
     select: { id: true, name: true },
-    orderBy: [{ organizationId: { sort: "asc", nulls: "first" } }, { name: "asc" }, { id: "asc" }],
   });
   // Builtins already have a document. Stored entries have only a name and ID here.
   const catalog = mergeBuiltinSkills<SkillKey | (SkillRecord & { id: string })>(
