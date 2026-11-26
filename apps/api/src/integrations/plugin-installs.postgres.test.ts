@@ -169,53 +169,99 @@ describe.skipIf(!enabled)("plugin install lifecycle (PostgreSQL, offline provide
     }),
   );
 
-  it(
-    "makes a shared plugin additive and readable across Spaces without giving members management rights",
-    asActor(async () => {
-      const rpc = client();
-      const request = { kind: "plugin" as const, ...(await input()) };
-      const personal = await rpc.capabilities.install(request);
-      const shared = await rpc.capabilities.install({ ...request, organization: true });
-      try {
-        await expect(
-          rpc.capabilities.install({ ...request, organization: true }),
-        ).rejects.toMatchObject({ code: "CONFLICT" });
-        await runAsTenant(teammate, async () => {
-          const member = client(teammate);
-          expect((await member.capabilities.list()).filter((row) => row.source === source)).toEqual(
-            [expect.objectContaining({ id: shared.id, organization: true, manageable: false })],
-          );
-          expect(await member.mcp.servers.list()).toContainEqual(
-            expect.objectContaining({
-              installId: shared.id,
-              organization: true,
-              allBots: true,
-              manageable: false,
-              hasSecret: true,
-            }),
-          );
-          expect(
-            await skillReadFromTool(prisma, teammate, { name: "plugin-test-skill" }),
-          ).toMatchObject({
-            content: expect.stringContaining("Follow these steps."),
-          });
-          await expect(
-            member.capabilities.install({ ...request, organization: true }),
-          ).rejects.toMatchObject({ code: "FORBIDDEN" });
-          await expect(
-            member.capabilities.pluginParts({ id: shared.id, parts: ["skills"] }),
-          ).rejects.toMatchObject({ code: "NOT_FOUND" });
-          await member.capabilities.remove({ id: shared.id });
-          expect(await member.capabilities.list()).toContainEqual(
-            expect.objectContaining({ id: shared.id }),
-          );
+  describe("personal and organization installs of the same plugin", () => {
+    let personalId: string;
+    let sharedId: string;
+    const asMember = (fn: () => Promise<void>) => () => runAsTenant(teammate, fn);
+    const sharedRequest = async () => ({
+      kind: "plugin" as const,
+      ...(await input()),
+      organization: true,
+    });
+
+    beforeAll(
+      asActor(async () => {
+        const request = await sharedRequest();
+        personalId = (await client().capabilities.install({ ...request, organization: false })).id;
+        sharedId = (await client().capabilities.install(request)).id;
+      }),
+    );
+    afterAll(
+      asActor(async () => {
+        if (sharedId) await client().capabilities.remove({ id: sharedId });
+        if (personalId) await client().capabilities.remove({ id: personalId });
+      }),
+    );
+
+    it(
+      "rejects a second organization install",
+      asActor(async () => {
+        await expect(client().capabilities.install(await sharedRequest())).rejects.toMatchObject({
+          code: "CONFLICT",
         });
-      } finally {
-        await rpc.capabilities.remove({ id: shared.id });
-        await rpc.capabilities.remove({ id: personal.id });
-      }
-    }),
-  );
+      }),
+    );
+    it(
+      "lists only the shared install in a teammate's Space",
+      asMember(async () => {
+        expect(
+          (await client(teammate).capabilities.list()).filter((row) => row.source === source),
+        ).toEqual([
+          expect.objectContaining({ id: sharedId, organization: true, manageable: false }),
+        ]);
+      }),
+    );
+    it(
+      "exposes the shared connector in a teammate's Space",
+      asMember(async () => {
+        expect(await client(teammate).mcp.servers.list()).toContainEqual(
+          expect.objectContaining({
+            installId: sharedId,
+            organization: true,
+            allBots: true,
+            manageable: false,
+            hasSecret: true,
+          }),
+        );
+      }),
+    );
+    it(
+      "lets a teammate read the installed skill",
+      asMember(async () => {
+        expect(
+          await skillReadFromTool(prisma, teammate, { name: "plugin-test-skill" }),
+        ).toMatchObject({
+          content: expect.stringContaining("Follow these steps."),
+        });
+      }),
+    );
+    it(
+      "refuses a member's organization install",
+      asMember(async () => {
+        await expect(
+          client(teammate).capabilities.install(await sharedRequest()),
+        ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      }),
+    );
+    it(
+      "hides the shared parts editor from a member",
+      asMember(async () => {
+        await expect(
+          client(teammate).capabilities.pluginParts({ id: sharedId, parts: ["skills"] }),
+        ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      }),
+    );
+    it(
+      "preserves the shared install after a member requests removal",
+      asMember(async () => {
+        const member = client(teammate);
+        await member.capabilities.remove({ id: sharedId });
+        expect(await member.capabilities.list()).toContainEqual(
+          expect.objectContaining({ id: sharedId }),
+        );
+      }),
+    );
+  });
 
   it(
     "rejects an organization connector endpoint already installed by a different source",
