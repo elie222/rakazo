@@ -67,11 +67,10 @@ export function composerModelChip(
     catalog: catalog.map(localizeModelEntry),
     me,
     modelKey,
-    spaceDefaultLabel: t`Space default`,
   });
   const level = (bot.thinkingLevel as typeof state.defaultThinkingLevel | null | undefined) ?? null;
   return {
-    label: state.selectedName ?? t`Space default`,
+    label: state.selectedName ?? t`Model`,
     mark: state.selectedMark,
     thinking: state.thinkingLevels.length
       ? thinkingLevelLabel(level ?? state.defaultThinkingLevel)

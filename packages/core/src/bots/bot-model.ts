@@ -1,4 +1,4 @@
-import type { ModelCatalogEntry, ModelCredential } from "@rakazo/contracts";
+import type { ModelCatalogEntry, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import { modelMark } from "../models/model-marks.js";
 import {
   chatModelChoices,
@@ -13,22 +13,20 @@ import { modelDefaultThinkingLevel, modelThinkingLevels } from "../models/model-
 type SpaceDefault = { defaultProvider: string | null; defaultModel: string | null };
 
 /**
- * A bot's model as its pickers show it: the models it can switch to (the Space default first),
- * its own model as the catalog names it today (`modelKey` is "" for the Space default), the
- * short name a compact picker shows, and the thinking levels the model in effect offers.
+ * A bot's model as its pickers show it: the models it can switch to, its own model as the catalog
+ * names it today (`modelKey` is "" while it follows the Space default), the model in effect
+ * (`shownKey`), the short name a compact picker shows, and the thinking levels it offers.
  */
 export function botModelState({
   credentials,
   catalog,
   me,
   modelKey,
-  spaceDefaultLabel,
 }: {
   credentials: readonly ModelCredential[];
   catalog: readonly ModelCatalogEntry[];
   me: SpaceDefault | null;
   modelKey: string;
-  spaceDefaultLabel: string;
 }) {
   const stored = modelKey ? parseModelOptionKey(modelKey) : null;
   const selectedModel = stored
@@ -43,23 +41,22 @@ export function botModelState({
   const defaultEntry = me?.defaultModel
     ? catalogEntry(catalog, me.defaultProvider, me.defaultModel)
     : undefined;
+  const defaultModelKey =
+    me?.defaultProvider && me.defaultModel
+      ? modelOptionKey(
+          me.defaultProvider,
+          resolveSelectableModelId(catalog, me.defaultProvider, me.defaultModel),
+        )
+      : "";
+  // The model in effect: the bot's, or the Space default's while it follows it.
+  const shownKey = selectedModelKey || defaultModelKey;
   const connected = connectedModelChoices(credentials, catalog);
   const choices = chatModelChoices(
     connected,
-    selectedModelKey,
-    spaceDefaultLabel,
-    defaultEntry?.images,
+    shownKey,
+    selectedModelKey ? undefined : { label: defaultEntry?.label, images: defaultEntry?.images },
   );
-
-  // The model in effect as its own row lists it: the bot's, or the Space default's when it follows it.
-  const shown = selectedModelKey
-    ? choices.find((choice) => choice.key === selectedModelKey)
-    : choices.find(
-        (choice) =>
-          choice.key !== "" &&
-          choice.provider === me?.defaultProvider &&
-          choice.modelId === me?.defaultModel,
-      );
+  const shown = choices.find((choice) => choice.key === shownKey);
   // Its maker's mark, and its own name without its connection or the product word the mark stands for.
   const selectedMark = modelMark(
     shown ?? {
@@ -97,14 +94,19 @@ export function botModelState({
   return {
     selectedModel,
     selectedModelKey,
+    shownKey,
     defaultEntry,
     choices,
+    /** The model key to save for a pick: "" for the Space default's, so the bot keeps following it. */
+    savedModelKey: (key: string) => (key === defaultModelKey ? "" : key),
     /** No connected provider offers a model, so a picker should offer to connect one. */
     nothingConnected: connected.length === 0,
     selectedName,
     selectedMark,
     thinkingLevels,
     defaultThinkingLevel,
+    /** The level to save for a pick: none for the model's default, so the bot keeps following it. */
+    savedThinkingLevel: (level: ThinkingLevel) => (level === defaultThinkingLevel ? null : level),
   };
 }
 

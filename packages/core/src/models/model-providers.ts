@@ -586,26 +586,23 @@ export function newestModelsFirst<T extends { id: string }>(models: readonly T[]
 }
 
 /**
- * A chat's model picker: the space default (key ""), then a saved model no
- * connection offers any more, then every connected model.
+ * A chat's model picker: the model in use when no connection offers it any more (named by
+ * `missing`, else its id), then every connected model.
  */
 export function chatModelChoices(
   connected: readonly ConnectedModelChoice[],
   selectedKey: string,
-  spaceDefaultLabel: string,
-  /** Whether the space's default model reads images, when the catalog knows. */
-  spaceDefaultImages?: boolean,
+  missing?: { label?: string; images?: boolean },
 ): ChatModelChoice[] {
-  const choices: ChatModelChoice[] = [
-    { key: "", label: spaceDefaultLabel, images: spaceDefaultImages },
-  ];
+  const choices: ChatModelChoice[] = [];
   if (selectedKey && !connected.some((option) => option.key === selectedKey)) {
     const saved = parseModelOptionKey(selectedKey);
     choices.push({
       key: selectedKey,
-      label: saved?.modelId ?? selectedKey,
+      label: missing?.label ?? saved?.modelId ?? selectedKey,
       provider: saved?.provider,
       modelId: saved?.modelId,
+      ...(missing?.images === undefined ? {} : { images: missing.images }),
     });
   }
   return choices.concat(connected);

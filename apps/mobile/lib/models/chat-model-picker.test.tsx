@@ -709,11 +709,12 @@ describe("chat settings model row", () => {
     await render();
     expect(container.querySelector('[data-menu="Model"]')).toBeNull();
     const row = container.querySelector<HTMLButtonElement>('button[aria-label="Model"]');
-    expect(row?.getAttribute("aria-valuetext")).toBe("Space default (Model 1)");
+    // A bot that follows the Space default shows the default's model.
+    expect(row?.getAttribute("aria-valuetext")).toBe("Model 1 (OpenRouter)");
     act(() => row!.click());
     expect(mocks.push).toHaveBeenCalledExactlyOnceWith({
       pathname: "/bot-model",
-      params: { botId: "bot-fixture", value: "" },
+      params: { botId: "bot-fixture", value: "openrouter::vendor/model-1a" },
     });
   });
 
@@ -766,7 +767,7 @@ describe("chat model list", () => {
   it("checks the current model, filters by name or id, and returns the pick", async () => {
     mocks.params = { botId: "bot-fixture", value: "openrouter::vendor/model-2b" };
     await act(async () => root.render(<BotModelScreen />));
-    expect(rows()).toHaveLength(12);
+    expect(rows()).toHaveLength(11);
     expect(mocks.setOptions.mock.lastCall![0].headerSearchBarOptions).toMatchObject({
       hideNavigationBar: false,
     });
@@ -779,19 +780,12 @@ describe("chat model list", () => {
     });
     expect(container.querySelectorAll("h2")).toHaveLength(1);
     expect(container.querySelector("h2")?.textContent).toBe("OpenRouter");
-    expect(rows()[0]?.querySelector("small")?.textContent).toBe("Model 1");
-    expect(rows()[0]!.textContent).toBe("Space defaultModel 1");
     const checked = rows().filter((row) => row.getAttribute("aria-selected") === "true");
     expect(checked.map((row) => row.textContent)).toEqual(["Model 2"]);
     expect(checked[0]!.querySelector("[data-checkmark]")).not.toBeNull();
 
     search("MODEL 1");
-    expect(rows().map((row) => row.textContent)).toEqual([
-      "Space defaultModel 1",
-      "Model 11",
-      "Model 10",
-      "Model 1",
-    ]);
+    expect(rows().map((row) => row.textContent)).toEqual(["Model 11", "Model 10", "Model 1"]);
     search("vendor/model-7g");
     expect(rows().map((row) => row.textContent)).toEqual(["Model 7"]);
 
@@ -823,7 +817,7 @@ describe("chat model list", () => {
     expect(nextList).not.toBe(emptyList);
     act(() => mocks.setOptions.mock.lastCall![0].headerSearchBarOptions.onCancelButtonPress());
     expect(container.querySelector("ul")).not.toBe(nextList);
-    expect(rows()).toHaveLength(12);
+    expect(rows()).toHaveLength(11);
   });
 
   it("says when nothing matches", async () => {

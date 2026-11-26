@@ -88,7 +88,7 @@ export function ChatModelPicker({
     () => collapseOlderModels(groupModelChoices(visible, ""), value, expanded),
     [visible, value, expanded],
   );
-  const selected = choices.find((choice) => choice.key === value) ?? choices[0];
+  const selected = choices.find((choice) => choice.key === value);
   const textOnly = selected?.images === false;
   const model = selectedLabel ?? selected?.label ?? "";
 
@@ -196,8 +196,7 @@ export function ChatModelPicker({
                     <CommandItem
                       key={choice.key}
                       aria-label={choice.label}
-                      // cmdk falls back to the row's text for an empty value.
-                      value={choice.key || "space-default"}
+                      value={choice.key}
                       data-checked={choice.key === value}
                       aria-describedby={choice.images === false ? imagesHintId : undefined}
                       onSelect={() => {

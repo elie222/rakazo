@@ -372,9 +372,9 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     const botSaved = page.waitForResponse(
       (response) => response.url().includes("/rpc/bots/update") && response.ok(),
     );
-    // A bot that picks no level runs at the one the model's settings chose.
+    // A bot that picks no level shows the one the model's settings chose.
     const thinking = settings.getByRole("combobox", { name: "Thinking", exact: true });
-    await expect(thinking).toHaveText("Default (Max)");
+    await expect(thinking).toHaveText("Max");
     await chooseOption(thinking, "High");
     await botSaved;
 

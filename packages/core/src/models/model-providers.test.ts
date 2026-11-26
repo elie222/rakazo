@@ -384,9 +384,8 @@ describe("chat model choices", () => {
     },
   ];
 
-  it("puts the space default first, then a saved model no connection offers, then the rest", () => {
-    expect(chatModelChoices(connected, "openai::retired-model", "Space default")).toEqual([
-      { key: "", label: "Space default" },
+  it("puts a model in use that no connection offers first, then the rest", () => {
+    expect(chatModelChoices(connected, "openai::retired-model")).toEqual([
       {
         key: "openai::retired-model",
         label: "retired-model",
@@ -395,25 +394,12 @@ describe("chat model choices", () => {
       },
       ...connected,
     ]);
-    expect(chatModelChoices(connected, connected[1]!.key, "Space default")).toEqual([
-      { key: "", label: "Space default" },
-      ...connected,
-    ]);
-  });
-
-  it("marks the space default with its model's image support", () => {
-    expect(chatModelChoices(connected, "", "Space default", false)[0]).toEqual({
-      key: "",
-      label: "Space default",
-      images: false,
-    });
-    expect(chatModelChoices(connected, "", "Space default")[0]?.images).toBeUndefined();
+    expect(chatModelChoices(connected, connected[1]!.key)).toEqual(connected);
   });
 
   it("matches the label, model id, or provider, ignoring case", () => {
-    const choices = chatModelChoices(connected, "", "Space default (Claude Sonnet)");
+    const choices = chatModelChoices(connected, "");
     expect(filterModelChoices(choices, "  SONNET ").map((choice) => choice.key)).toEqual([
-      "",
       "openrouter::anthropic/claude-sonnet",
     ]);
     expect(filterModelChoices(choices, "openai/").map((choice) => choice.key)).toEqual([
@@ -506,14 +492,13 @@ describe("groupModelChoices order", () => {
     label: id.toUpperCase(),
   });
 
-  it("lists a provider's newest models first and keeps default choices on top", () => {
+  it("lists a provider's newest models first", () => {
     const connected = connectedModelChoices(
       [{ provider: "zai", label: "Z.AI" }],
       [entry("glm-4.5"), entry("glm-5"), entry("glm-4.6")],
     );
-    const sections = groupModelChoices(chatModelChoices(connected, "", "Space default"), "");
-    expect(sections[0]?.data.map((choice) => choice.key)).toEqual([""]);
-    expect(sections[1]?.data.map((choice) => choice.modelId)).toEqual([
+    const sections = groupModelChoices(chatModelChoices(connected, ""), "");
+    expect(sections[0]?.data.map((choice) => choice.modelId)).toEqual([
       "glm-5",
       "glm-4.6",
       "glm-4.5",
@@ -757,16 +742,16 @@ describe("groupModelChoices", () => {
       },
     ],
   );
-  const choices = chatModelChoices(connected, "retired::saved", "Space default");
+  const choices = chatModelChoices(connected, "retired::saved");
 
-  it("keeps default and disconnected choices first and groups catalog vendor names", () => {
+  it("keeps a disconnected choice first and groups catalog vendor names", () => {
     const sections = groupModelChoices(choices, "");
     expect(sections.map((section) => section.heading)).toEqual([
       undefined,
       "Anthropic (OpenRouter)",
       "Google (OpenRouter)",
     ]);
-    expect(sections[0]?.data.map((choice) => choice.key)).toEqual(["", "retired::saved"]);
+    expect(sections[0]?.data.map((choice) => choice.key)).toEqual(["retired::saved"]);
     expect(sections[1]?.data.map((choice) => choice.title)).toEqual([
       "Claude Opus",
       "Claude Sonnet",
