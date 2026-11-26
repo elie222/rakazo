@@ -83,6 +83,7 @@ it("approves the bot after OAuth completes while a COOP popup keeps focus", asyn
         <McpApprovalCard
           botId="bot"
           threadId="thread"
+          messageId="message"
           block={{
             kind: "mcp_approval",
             name: "Example",
@@ -107,6 +108,7 @@ it("approves the bot after OAuth completes while a COOP popup keeps focus", asyn
       botId: "bot",
       serverId: "server",
       threadId: "thread",
+      messageId: "message",
     });
     expect(vi.getTimerCount()).toBe(0);
   } finally {

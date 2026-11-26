@@ -576,7 +576,12 @@ export const MessageView = memo(function MessageView({
             if (!botId) return null;
             return (
               <div key={i} className="flex justify-start">
-                <McpApprovalCard botId={botId} threadId={message.threadId} block={block} />
+                <McpApprovalCard
+                  botId={botId}
+                  threadId={message.threadId}
+                  messageId={message.id}
+                  block={block}
+                />
               </div>
             );
           }

@@ -108,49 +108,67 @@ describe.skipIf(!enabled)("approving an organization MCP server's card (PostgreS
         },
         include: { thread: true },
       });
-      const threadId = group.thread!.id;
+      const chat = { botId: bot.id, serverId: server.id, threadId: group.thread!.id };
+      const card = await cardFrom(chat, askerId, "pending");
+      return { ...chat, cardRunId: card.runId, cardId: card.id };
+    });
+  }
+
+  /** A card posted by a run `userId` started in the chat. */
+  function cardFrom(
+    chat: { botId: string; serverId: string; threadId: string },
+    userId: string,
+    status: "pending" | "dismissed",
+  ) {
+    return runAsSystem("mcp approval fixture", async () => {
+      const { botId, serverId, threadId } = chat;
       const task = await prisma.task.create({
-        data: {
-          spaceId,
-          botId: bot.id,
-          threadId,
-          userId: askerId,
-          prompt: "File the bug",
-          status: "completed",
-        },
+        data: { spaceId, botId, threadId, userId, prompt: "File the bug", status: "completed" },
       });
       const run = await prisma.run.create({
         data: {
           spaceId,
-          botId: bot.id,
+          botId,
           threadId,
           taskId: task.id,
-          userId: askerId,
+          userId,
           status: "completed",
           trigger: "user",
         },
       });
       const block: MessageBlock = {
         kind: "mcp_approval",
-        name: server.name,
-        serverId: server.id,
+        name: "Tracker",
+        serverId,
         transport: "streamable_http",
-        endpoint: server.endpoint,
+        endpoint: "https://mcp.tracker.example.test/mcp",
         needsOAuth: true,
-        status: "pending",
+        status,
       };
       const card = await prisma.$transaction((tx) =>
         createThreadMessageInTransaction(tx, {
           threadId,
-          botId: bot.id,
+          botId,
           runId: run.id,
           role: "bot",
           blocks: [block],
         }),
       );
-      return { botId: bot.id, serverId: server.id, threadId, cardRunId: run.id, cardId: card.id };
+      return { id: card.id, runId: run.id };
     });
   }
+
+  const statuses = (ids: string[]) =>
+    runAsSystem("mcp approval fixture", async () => {
+      const cards = await prisma.message.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, blocks: true },
+      });
+      return ids.map((id) => {
+        const [block] = storedMessageBlocks(cards.find((card) => card.id === id)!);
+        return block?.kind === "mcp_approval" ? block.status : undefined;
+      });
+    });
 
   it("refuses another member's card, leaving it open with no run started", async () => {
     const { botId, serverId, threadId, cardRunId, cardId } = await reconnectCard();
@@ -175,33 +193,54 @@ describe.skipIf(!enabled)("approving an organization MCP server's card (PostgreS
     expect(storedMessageBlocks(card)).toMatchObject([{ kind: "mcp_approval", status: "pending" }]);
   });
 
-  it("refuses Not now on another member's open card beside the member's own answered one", async () => {
-    const { botId, serverId, threadId, cardId } = await reconnectCard();
+  it("refuses the other member's card when a member taps it beside their own open one", async () => {
+    const chat = await reconnectCard();
+    const own = await cardFrom(chat, otherId, "pending");
     const other = member(otherId);
-    await runAsSystem("mcp approval fixture", async () => {
-      const card = await prisma.message.findUniqueOrThrow({
-        where: { id: cardId },
-        select: { id: true, blocks: true },
-      });
-      const blocks = storedMessageBlocks(card).map((block) => ({ ...block, status: "connected" }));
-      await prisma.$transaction((tx) =>
-        createThreadMessageInTransaction(tx, {
-          threadId,
-          botId,
-          role: "bot",
-          blocks: blocks as MessageBlock[],
-        }),
-      );
-    });
+    const jobs = { enqueue: vi.fn(async () => undefined) };
 
     await expect(
       runAsTenant(other, () =>
-        client(other, { enqueue: vi.fn(async () => undefined) }).mcp.assignments.dismiss({
-          botId,
-          serverId,
-          threadId,
+        client(other, jobs).mcp.assignments.approve({
+          botId: chat.botId,
+          serverId: chat.serverId,
+          threadId: chat.threadId,
+          messageId: chat.cardId,
         }),
       ),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    const runs = await runAsSystem("mcp approval fixture", () =>
+      prisma.run.findMany({
+        where: { threadId: chat.threadId, id: { notIn: [chat.cardRunId, own.runId] } },
+      }),
+    );
+    expect(runs).toEqual([]);
+    expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(await statuses([chat.cardId, own.id])).toEqual(["pending", "pending"]);
   });
+
+  it.each([
+    ["names the card", true],
+    ["comes from an older client", false],
+  ])(
+    "repeats Not now on the member's own answered card beside another's open one when it %s",
+    async (_, named) => {
+      const chat = await reconnectCard();
+      const own = await cardFrom(chat, otherId, "dismissed");
+      const other = member(otherId);
+
+      await expect(
+        runAsTenant(other, () =>
+          client(other, { enqueue: vi.fn(async () => undefined) }).mcp.assignments.dismiss({
+            botId: chat.botId,
+            serverId: chat.serverId,
+            threadId: chat.threadId,
+            ...(named ? { messageId: own.id } : {}),
+          }),
+        ),
+      ).resolves.toEqual({ ok: true });
+      expect(await statuses([chat.cardId, own.id])).toEqual(["pending", "dismissed"]);
+    },
+  );
 });

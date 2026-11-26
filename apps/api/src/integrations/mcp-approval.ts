@@ -25,6 +25,8 @@ export type McpApprovalResolution = {
   status: "connected" | "dismissed";
   /** The chat whose cards should resolve; defaults to the bot's own thread. */
   threadId?: string;
+  /** The card's own message in that chat, when the decision came from one. */
+  messageId?: string;
 };
 
 export type McpApprovalDecision = {
@@ -98,6 +100,14 @@ async function threadsForDecision(
 
 type ApprovalThread = { id: string; botId: string | null };
 
+type CardMessage = {
+  id: string;
+  threadId: string;
+  botId: string | null;
+  runId: string | null;
+  blocks: Prisma.JsonValue;
+};
+
 async function threadsForBot(
   db: Prisma.TransactionClient | PrismaClient,
   actor: Actor,
@@ -118,7 +128,7 @@ async function rewriteCards(
   threads: ApprovalThread[],
   input: { botId?: string; serverId: string; status: ApprovalBlock["status"] },
   selectable: (block: ApprovalBlock) => boolean,
-  options: { leaveOthersCards?: boolean } = {},
+  options: { leaveOthersCards?: boolean; include?: CardMessage } = {},
 ): Promise<{
   seqs: ThreadSeq[];
   flipped: number;
@@ -134,10 +144,13 @@ async function rewriteCards(
   for (const thread of threads) {
     const messages = await tx.message.findMany({
       where: { threadId: thread.id },
-      select: { id: true, botId: true, runId: true, blocks: true },
+      select: { id: true, threadId: true, botId: true, runId: true, blocks: true },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
+    const { include } = options;
+    if (include?.threadId === thread.id && !messages.some((message) => message.id === include.id))
+      messages.push(include);
     const someoneElses = options.leaveOthersCards
       ? await askedBySomeoneElse(tx, actor, thread.id, messages)
       : () => false;
@@ -204,13 +217,39 @@ async function askedBySomeoneElse(
   return (runId) => runId !== null && askers.has(runId) && askers.get(runId) !== actor.userId;
 }
 
+/** The card a decision was made on: another member's is refused, and one already answered is
+    returned so a repeat changes nothing. */
+async function clickedCard(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  threads: ApprovalThread[],
+  input: McpApprovalResolution & { messageId: string },
+): Promise<{ message: CardMessage; open: boolean; status: ApprovalBlock["status"] }> {
+  const message = await tx.message.findFirst({
+    where: { id: input.messageId, threadId: { in: threads.map((thread) => thread.id) } },
+    select: { id: true, threadId: true, botId: true, runId: true, blocks: true },
+  });
+  const cards = message
+    ? storedMessageBlocks(message).filter((block): block is ApprovalBlock =>
+        isApproval(block, input.serverId),
+      )
+    : [];
+  const card = cards.find(isOpen) ?? cards[0];
+  if (!message || !card || (message.botId && message.botId !== input.botId))
+    throw new IsolationError();
+  const someoneElses = await askedBySomeoneElse(tx, actor, message.threadId, [message]);
+  if (someoneElses(message.runId)) throw new McpCardOfAnotherMemberError();
+  return { message, open: isOpen(card), status: card.status };
+}
+
 /** Flip every open mcp_approval card for this server. The read, the writes,
     and `effect` share one serializable transaction. A card decision (one that
     passes threadId) sees `assign: false` when a dismissal already won, so that
     race does not create an assignment. Settings approval omits threadId and
     still assigns. Cards another member's run posted stay as they are, so
-    `resolved` never starts a run for someone else's request, and a card
-    decision that finds only such a card is refused. */
+    `resolved` never starts a run for someone else's request. A decision that
+    names its card is refused on another member's; one from an older client,
+    without the card, is refused when only such a card is open. */
 export async function resolveMcpApprovalCards<T>(
   deps: McpApprovalDeps,
   actor: Actor,
@@ -225,17 +264,39 @@ export async function resolveMcpApprovalCards<T>(
           input.threadId === undefined
             ? (block: ApprovalBlock) => block.status !== "connected"
             : isOpen;
-        const painted = await rewriteCards(tx, actor, threads, input, selectable, {
-          leaveOthersCards: true,
-        });
+        const clicked =
+          input.threadId !== undefined && input.messageId !== undefined
+            ? await clickedCard(tx, actor, threads, { ...input, messageId: input.messageId })
+            : undefined;
+        // A repeat on an answered card changes nothing, even if other copies are still open.
+        const painted =
+          clicked && !clicked.open
+            ? {
+                seqs: [],
+                flipped: 0,
+                dismissed: clicked.status === "dismissed",
+                connected: clicked.status === "connected",
+                othersOpenCards: false,
+              }
+            : await rewriteCards(tx, actor, threads, input, selectable, {
+                leaveOthersCards: true,
+                include: clicked?.message,
+              });
         const dismissalWon =
           input.threadId !== undefined &&
           painted.flipped === 0 &&
           !painted.connected &&
           painted.dismissed;
         // The open card here is another member's: answering it is theirs, so nothing is saved
-        // and the card stays open rather than looking answered to this member.
-        if (input.threadId !== undefined && painted.othersOpenCards && painted.flipped === 0)
+        // and the card stays open rather than looking answered to this member. An answered
+        // card of their own makes this a repeat, which still succeeds.
+        if (
+          input.threadId !== undefined &&
+          painted.othersOpenCards &&
+          painted.flipped === 0 &&
+          !painted.dismissed &&
+          !painted.connected
+        )
           throw new McpCardOfAnotherMemberError();
         const assign = !dismissalWon;
         const resolved = painted.flipped > 0;
