@@ -1285,12 +1285,10 @@ describe("updateScheduleFromTool", () => {
   });
 
   it("leaves the prompt's own leading and trailing space as stored", async () => {
-    const { updateMany, update } = setup({ ...weekly, prompt: "  Order the usual groceries
-" });
+    const { updateMany, update } = setup({ ...weekly, prompt: "  Order the usual groceries " });
     await update({ promptEdits: [{ find: "usual", replace: "weekly" }] });
     expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { prompt: "  Order the weekly groceries
-" } }),
+      expect.objectContaining({ data: { prompt: "  Order the weekly groceries " } }),
     );
   });
 
