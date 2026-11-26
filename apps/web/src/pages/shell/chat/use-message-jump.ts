@@ -1,4 +1,4 @@
-import type { Bot, ComputerStatus, Routine } from "@rakazo/contracts";
+import type { Bot, ComputerStatus, Routine, ThreadSnapshot } from "@rakazo/contracts";
 import { foldPeerReplies, jumpTargetId, searchHitThreadTarget } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import type { Dispatch, RefObject, SetStateAction } from "react";
@@ -33,6 +33,7 @@ export function useMessageJump({
   setPanelState,
   editRoutine,
   resetRoutineTarget,
+  reconcileSnapshot,
 }: {
   rpc: ReturnType<typeof createSpaceRpc>;
   queries: SpaceQueries;
@@ -50,6 +51,7 @@ export function useMessageJump({
   setPanelState: Dispatch<SetStateAction<Panel>>;
   editRoutine: (routine: Routine) => void;
   resetRoutineTarget: () => void;
+  reconcileSnapshot?: (snap: ThreadSnapshot) => void;
 }) {
   const {
     snapshot,
@@ -136,6 +138,7 @@ export function useMessageJump({
       messages: targetInPage ? page.messages : snap.messages,
       olderCursor: targetInPage ? page.olderCursor : snap.olderCursor,
     });
+    reconcileSnapshot?.(snap);
     if (threadTarget.botId) {
       commitComputer(snap.computer ?? null);
       // Don't block parent-scroll on routines metadata; a list failure must not abort the jump.

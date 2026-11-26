@@ -1941,6 +1941,160 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toEqual([]);
   });
 
+  it("drops a queued tool question when a newer search jump shows it answered despite an older raw snapshot", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    const pendingSnap = {
+      threadId: "thread-b",
+      cursor: 6,
+      olderCursor: null,
+      activeRuns: [{ id: "run-mine", botId: "bot-b", status: "running", userId: "user-1" }],
+      messages: [
+        {
+          id: "msg-tq-jump",
+          blocks: [
+            {
+              kind: "tool_question",
+              question: { source: "Calendar", message: "Pick a slot", fields: [] },
+              status: "pending",
+              expiresAt: later,
+              publicKey: "key",
+            },
+          ],
+        },
+      ],
+    } as unknown as ThreadSnapshot;
+    snapshotRef.current = pendingSnap;
+    await open({ botId: "bot-b" });
+    act(() => hook.reconcileSnapshot(pendingSnap));
+
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "tq-jump-evt",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 6,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            id: "msg-tq-jump",
+            role: "bot",
+            runUserId: "user-1",
+            blocks: [
+              {
+                kind: "tool_question",
+                question: { source: "Calendar", message: "Pick a slot", fields: [] },
+                status: "pending",
+                expiresAt: later,
+                publicKey: "key",
+              },
+            ],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+
+    // Same-chat search jump commits a newer around-page where msg-tq-jump is already answered while
+    // the raw threads.get response still had cursor 6 with the card pending.
+    snapshotRef.current = {
+      threadId: "thread-b",
+      cursor: 6,
+      olderCursor: null,
+      activeRuns: [{ id: "run-mine", botId: "bot-b", status: "running", userId: "user-1" }],
+      messages: [
+        {
+          id: "msg-tq-jump",
+          blocks: [
+            {
+              kind: "tool_question",
+              question: { source: "Calendar", message: "Pick a slot", fields: [] },
+              status: "answered",
+              expiresAt: later,
+              publicKey: "key",
+            },
+          ],
+        },
+      ],
+    } as unknown as ThreadSnapshot;
+    act(() => hook.reconcileSnapshot(pendingSnap));
+
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
+  });
+
+  it("drops a replayed expired tool question in an unsnoozed chat instead of alerting as a generic message", async () => {
+    const expired = new Date(Date.now() - 60 * 1000).toISOString();
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot;
+    const rawSnap = {
+      threadId: "thread-b",
+      cursor: 10,
+      olderCursor: null,
+      activeRuns: [],
+      messages: [
+        {
+          id: "msg-expired-tq",
+          blocks: [
+            {
+              kind: "tool_question",
+              question: { source: "Calendar", message: "Expired prompt", fields: [] },
+              status: "expired",
+              expiresAt: expired,
+              publicKey: "key",
+            },
+          ],
+        },
+      ],
+    } as unknown as ThreadSnapshot;
+    snapshotRef.current = rawSnap;
+    await open({ botId: "bot-b" });
+    act(() => hook.reconcileSnapshot(rawSnap));
+
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "replayed-expired-tq",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 6,
+          runId: "run-expired",
+          botId: "bot-b",
+          payload: {
+            id: "msg-expired-tq",
+            role: "bot",
+            runUserId: "user-1",
+            blocks: [
+              {
+                kind: "tool_question",
+                question: { source: "Calendar", message: "Expired prompt", fields: [] },
+                status: "pending",
+                expiresAt: expired,
+                publicKey: "key",
+              },
+            ],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    expect(shown()).toEqual([]);
+  });
+
   it("closes the stream when the shell unmounts", async () => {
     await open({ botId: "bot-a" });
     act(() => root.unmount());

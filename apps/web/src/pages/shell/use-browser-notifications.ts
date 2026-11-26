@@ -1,5 +1,5 @@
 import type { Bot, ChatAlert, ProductEvent, ThreadSnapshot } from "@rakazo/contracts";
-import { chatAlertNeedsAttention } from "@rakazo/contracts";
+import { chatAlertNeedsAttention, MessageBlock } from "@rakazo/contracts";
 import { activeThreadRuns, chatSnoozed, isRunTerminalEvent, isWaitingAskBlock } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
@@ -69,11 +69,18 @@ function eventRunOwner(event: {
     : undefined;
 }
 
+function isPendingQuestionBlock(block: unknown): boolean {
+  const parsed = MessageBlock.safeParse(block);
+  if (!parsed.success) return false;
+  if (parsed.data.kind === "ask") return parsed.data.status !== "answered";
+  return parsed.data.kind === "tool_question" && parsed.data.status === "pending";
+}
+
 function isQuestionOnlyEvent(event: { type: string; payload: { blocks?: unknown } }): boolean {
   if (event.type !== "thread.message.created") return false;
   const blocks = event.payload.blocks;
   if (!Array.isArray(blocks) || blocks.length === 0) return false;
-  return blocks.every((block) => isWaitingAskBlock(block));
+  return blocks.every((block) => isPendingQuestionBlock(block));
 }
 
 function snoozedOrdinaryReply(
@@ -352,10 +359,9 @@ export function useBrowserNotifications(
                 ...pending.event,
                 payload: { ...pending.event.payload, blocks: serverMessage.blocks },
               };
+              return "keep";
             }
-            return "keep";
-          }
-          if (serverSnap.olderCursor === null || serverSnap.messages.length === 0) {
+          } else if (serverSnap.olderCursor === null || serverSnap.messages.length === 0) {
             // The raw `threads.get` response covers the whole thread (or is empty) at or past
             // this event without the message, confirming the thread was cleared.
             return "drop";
@@ -584,6 +590,11 @@ export function useBrowserNotifications(
         ...(runOwner ? { runOwner } : {}),
       } satisfies PendingBrowserNotification;
       if (reconcilePendingEntry(pending) === "drop") return;
+      // Drop a question-only event if every question block has already expired or settled.
+      if (pending.questionOnly) {
+        const blocks = pending.event.payload.blocks;
+        if (!Array.isArray(blocks) || !blocks.some(isWaitingAskBlock)) return;
+      }
       const ownership = questionOwnership(pending.event, pending.runOwner);
       const waits = ownership === "viewer";
       // Ordinary replies wait out a snooze. A question still comes through, and a reply that was

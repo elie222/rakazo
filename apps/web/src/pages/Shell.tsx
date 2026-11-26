@@ -463,6 +463,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
     setPanelState: rightPanel.setPanelState,
     editRoutine,
     resetRoutineTarget,
+    reconcileSnapshot,
   });
   const computerControls = useComputerControls({
     rpc,
