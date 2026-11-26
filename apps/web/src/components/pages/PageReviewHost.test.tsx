@@ -899,4 +899,57 @@ describe("PageReviewHost comment draft preservation", () => {
       expect(viewState.saveReaderState).toBeTypeOf("function");
     });
   });
+
+  it("keeps cached v1 read-only after reopening the review offline once v2 was observed", async () => {
+    let phase: "v1" | "offline" = "v1";
+    rpcState.getReview.mockImplementation(async ({ version }) => {
+      if (version === 1) {
+        return makePage({
+          version: 1,
+          currentVersion: 2,
+          readerState: { fields: {}, values: { note: "from-v1" } } as PageReview["readerState"],
+        });
+      }
+      if (phase === "offline") throw new Error("Failed to fetch");
+      return makePage({
+        version: 1,
+        currentVersion: 1,
+        readerState: { fields: {}, values: { note: "from-v1" } } as PageReview["readerState"],
+      });
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [makeComment({ id: "comment-v1", version: 1, section: "Summary", body: "v1 note" })],
+      nextCursor: null,
+    });
+
+    await mountReview("/review/page-1");
+    expect(viewState.saveReaderState).toBeTypeOf("function");
+
+    // Open revision 1, whose response reports currentVersion: 2 while latest cache still holds v1.
+    await openCommentsPopover();
+    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+    await vi.waitFor(() => {
+      expect(rpcState.getReview).toHaveBeenCalledWith({ pageId: "page-1", version: 1 });
+    });
+
+    // Close and reopen the review while offline so the mounted component resets commentDraft.version.
+    phase = "offline";
+    await act(async () => {
+      viewState.navigateTo?.("/review");
+    });
+    await act(flush);
+    await act(async () => {
+      viewState.navigateTo?.("/review/page-1");
+    });
+    await act(flush);
+
+    expect(viewState.saveReaderState).toBeUndefined();
+    expect(
+      [...document.querySelectorAll("button")].find((button) =>
+        button.textContent?.includes("Back to latest"),
+      ),
+    ).toBeDefined();
+    await openCommentsPopover();
+    expect(commentTextarea()).toBeNull();
+  });
 });

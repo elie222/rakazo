@@ -110,19 +110,49 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
   const review = useQuery({
     ...read,
     queryFn: async (context) => {
+      const currentPath = queries.pageReviews.get.key()[0];
+      const userSegment = Array.isArray(currentPath) ? currentPath[0] : undefined;
+      const matchingQueries = () =>
+        queryClient.getQueryCache().findAll({
+          predicate: (query) => isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId),
+        });
       try {
-        return await read.queryFn!(context);
+        const fetched = await read.queryFn!(context);
+        let newest = fetched.currentVersion;
+        const cachedQueries = matchingQueries();
+        for (const query of cachedQueries) {
+          const cached = query.state.data;
+          if (
+            cached &&
+            typeof cached === "object" &&
+            "currentVersion" in cached &&
+            typeof cached.currentVersion === "number" &&
+            cached.currentVersion > newest
+          ) {
+            newest = cached.currentVersion;
+          }
+        }
+        // Keep every cached revision of this page aware of the newest observed currentVersion so
+        // reopening the review while offline cannot treat a stale cached revision as current.
+        for (const query of cachedQueries) {
+          const cached = query.state.data;
+          if (
+            cached &&
+            typeof cached === "object" &&
+            "currentVersion" in cached &&
+            typeof cached.currentVersion === "number" &&
+            cached.currentVersion < newest
+          ) {
+            query.setState({ data: { ...cached, currentVersion: newest } });
+          }
+        }
+        return newest > fetched.currentVersion ? { ...fetched, currentVersion: newest } : fetched;
       } catch (error) {
         if (isUnavailablePageError(error)) {
           // Drop every cached revision payload for this reviewer and page across Spaces so failed
           // retries, remounts, or Space switches while offline cannot resurface a revoked page
           // before a new authorized read succeeds.
-          const currentPath = queries.pageReviews.get.key()[0];
-          const userSegment = Array.isArray(currentPath) ? currentPath[0] : undefined;
-          for (const query of queryClient.getQueryCache().findAll({
-            predicate: (query) =>
-              isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId),
-          })) {
+          for (const query of matchingQueries()) {
             query.setState({ data: undefined, dataUpdatedAt: 0 });
           }
         }
