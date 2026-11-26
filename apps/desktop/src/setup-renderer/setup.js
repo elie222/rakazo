@@ -607,14 +607,10 @@
       }
       // A relaunch with the stack down starts it before this window opens; show that
       // attempt instead of the saved mode, and follow it while it is still running.
-      // A local stack that is still running or failed to stop in the background after leaving
+      // A local stack still starting, running, or failing to stop in the background after leaving
       // This computer must not hijack Change Server away from the saved server choice.
       const stack = await bridge.stack.state();
-      const leftBehindStack =
-        state.saved !== null &&
-        state.saved.mode !== "new" &&
-        !stopToQuit &&
-        stack?.phase === "ready";
+      const leftBehindStack = state.saved !== null && state.saved.mode !== "new" && !stopToQuit;
       const attached =
         stack !== null &&
         stack.phase !== "idle" &&

@@ -920,4 +920,21 @@ describe("setup", () => {
     expect(ui.starts()).toBe(1);
     expect(ui.stops()).toBe(0);
   });
+
+  it.each(["pulling", "starting"] as const)(
+    "keeps saved Cloud selected when reopening setup while a left-behind local stack is still %s",
+    async (phase) => {
+      const ui = mount({ mode: "existing", serverUrl: CLOUD_URL });
+      await flush();
+      ui.resolveStackState(stackState(phase));
+      await flush();
+
+      expect(
+        document.querySelector<HTMLInputElement>('input[name="mode"][value="cloud"]')?.checked,
+      ).toBe(true);
+      expect(element("stack").hidden).toBe(true);
+      expect(element("continue").textContent).toBe("Continue");
+      expect(element<HTMLButtonElement>("continue").disabled).toBe(false);
+    },
+  );
 });

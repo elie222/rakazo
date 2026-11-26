@@ -156,6 +156,11 @@ class Service {
     return this.child !== null;
   }
 
+  /** True once `stop()` has ended this process (and cleared its restart timer), even if file cleanup threw. */
+  get stopped(): boolean {
+    return !this.alive && this.stopping;
+  }
+
   start() {
     this.stopping = false;
     const startedAt = Date.now();
@@ -241,9 +246,12 @@ class Service {
       await exited;
       clearTimeout(timer);
     }
-    await rm(this.pidFile(), { force: true });
-    await new Promise<void>((resolve) => (this.log ? this.log.end(resolve) : resolve()));
-    this.log = null;
+    try {
+      await rm(this.pidFile(), { force: true });
+    } finally {
+      await new Promise<void>((resolve) => (this.log ? this.log.end(resolve) : resolve()));
+      this.log = null;
+    }
   }
 
   private line(line: string) {
@@ -496,6 +504,9 @@ export class NativeStackController extends StackLifecycle {
 
   protected async attempt(signal: AbortSignal) {
     this.push({ type: "check-start" });
+    // Dead services whose file cleanup rejected stay tracked for Stop Retry,
+    // but must not block a fresh Start once their process has already exited.
+    this.services = this.services.filter((service) => !service.stopped);
     await this.stopServices();
     for (const sub of ["runtime", "logs", "run", "data"]) {
       await mkdir(this.dir(sub), { recursive: true, mode: 0o700 });
