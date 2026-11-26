@@ -373,13 +373,34 @@ export function selectPluginInstall(
   installId: string | undefined,
   organization: boolean,
 ): CapabilityInstall | undefined {
-  return installs.find(
-    (install) =>
-      install.kind === "plugin" &&
-      (installId
-        ? install.id === installId
-        : sources.includes(install.source) && Boolean(install.organization) === organization),
+  const exact = installId
+    ? installs.find((install) => install.kind === "plugin" && install.id === installId)
+    : undefined;
+  return (
+    exact ??
+    installs.find(
+      (install) =>
+        install.kind === "plugin" &&
+        sources.includes(install.source) &&
+        Boolean(install.organization) === organization,
+    )
   );
+}
+
+export function pluginInstallScope(
+  selectedOrganization: boolean | undefined,
+  canShare: boolean,
+  forOrganization: boolean,
+): boolean {
+  return selectedOrganization ?? (canShare && forOrganization);
+}
+
+export function pluginInstallIsReadOnly(
+  install: CapabilityInstall | undefined,
+  organization: boolean,
+  canShare: boolean,
+): boolean {
+  return install?.manageable === false || (organization && !canShare);
 }
 
 export function installedPluginSelection(

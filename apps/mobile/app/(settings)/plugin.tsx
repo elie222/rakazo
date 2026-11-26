@@ -9,6 +9,8 @@ import {
   connectionSharingOrganization,
   installedPluginParts,
   isCatalogItemConnected,
+  pluginInstallIsReadOnly,
+  pluginInstallScope,
   selectPluginInstall,
 } from "@rakazo/core";
 import { useQuery } from "@tanstack/react-query";
@@ -76,6 +78,11 @@ function PluginScreen() {
   const organization = activeOrganization(useOrganizations().data);
   const canShare = canShareWithOrganization(organization);
   const [forOrganization, setForOrganization] = useState(false);
+  const organizationScope = pluginInstallScope(
+    params.organization === "1" ? true : undefined,
+    canShare,
+    forOrganization,
+  );
   const [allSkills, setAllSkills] = useState(false);
   const [noAuth, setNoAuth] = useState(new Set<string>());
 
@@ -126,7 +133,7 @@ function PluginScreen() {
 
   // A pasted URL can differ from the normalized source the install is saved under.
   const savedAs = (source: string | undefined) =>
-    selectPluginInstall(installs, [source], params.installId, canShare && forOrganization);
+    selectPluginInstall(installs, [source], params.installId, organizationScope);
   const previewRead = rpcQuery("capabilities/pluginPreview", { source: params.source });
   const previewQuery = useQuery(
     {
@@ -141,7 +148,7 @@ function PluginScreen() {
   const previewLoading = previewQuery.isLoading;
   const install =
     savedAs(params.installedSource) ?? (preview ? savedAs(preview.installedSource) : undefined);
-  const readOnly = install?.manageable === false || (params.organization === "1" && !canShare);
+  const readOnly = pluginInstallIsReadOnly(install, organizationScope, canShare);
   const parts = install ? installedPluginParts(install.config) : [];
   const servers =
     install && parts.includes("connector")
@@ -182,9 +189,7 @@ function PluginScreen() {
             name: preview.name,
             source: preview.pinnedSource ?? params.source,
             pluginDigest: preview.digest,
-            ...(canShare && (params.organization === "1" || forOrganization)
-              ? { organization: true }
-              : {}),
+            ...(organizationScope ? { organization: true } : {}),
             config: {},
             pluginParts: next,
           });

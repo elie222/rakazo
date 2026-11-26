@@ -12,6 +12,8 @@ import {
   activeOrganizationForSpace,
   canShareWithOrganization,
   installedPluginParts,
+  pluginInstallIsReadOnly,
+  pluginInstallScope,
   pluginSite,
   selectPluginInstall,
 } from "@rakazo/core";
@@ -182,6 +184,7 @@ export function PluginDetail({
   const canShare = canShareWithOrganization(activeOrganizationForSpace(organizationList));
   const organizationScopeId = useId();
   const [forOrganization, setForOrganization] = useState(false);
+  const organizationScope = pluginInstallScope(selection.organization, canShare, forOrganization);
   const [preview, setPreview] = useState<PluginPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
@@ -205,9 +208,9 @@ export function PluginDetail({
     installs,
     [selection.installedSource, preview?.installedSource],
     selection.installId,
-    canShare && forOrganization,
+    organizationScope,
   );
-  const readOnly = install?.manageable === false || Boolean(selection.organization && !canShare);
+  const readOnly = pluginInstallIsReadOnly(install, organizationScope, canShare);
   const parts = install ? installedPluginParts(install.config) : [];
   const servers =
     install && parts.includes("connector")
@@ -263,9 +266,7 @@ export function PluginDetail({
             name: preview.name,
             source: preview.pinnedSource ?? selection.source,
             pluginDigest: preview.digest,
-            ...(canShare && (selection.organization ?? forOrganization)
-              ? { organization: true }
-              : {}),
+            ...(organizationScope ? { organization: true } : {}),
             config: {},
             pluginParts: next,
           });
