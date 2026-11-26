@@ -1284,6 +1284,16 @@ describe("updateScheduleFromTool", () => {
     });
   });
 
+  it("leaves the prompt's own leading and trailing space as stored", async () => {
+    const { updateMany, update } = setup({ ...weekly, prompt: "  Order the usual groceries
+" });
+    await update({ promptEdits: [{ find: "usual", replace: "weekly" }] });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { prompt: "  Order the weekly groceries
+" } }),
+    );
+  });
+
   it("saves nothing when a prompt edit's text is not in the prompt", async () => {
     const { updateMany, update } = setup();
     await expect(
@@ -1300,7 +1310,7 @@ describe("updateScheduleFromTool", () => {
   it("refuses prompt edits that change nothing, so every saved edit shows a change", async () => {
     const { updateMany, update } = setup();
     await expect(
-      update({ promptEdits: [{ find: "groceries", replace: "groceries " }], active: false }),
+      update({ promptEdits: [{ find: "groceries", replace: "groceries" }], active: false }),
     ).resolves.toEqual({ error: "promptEdits change nothing." });
     expect(updateMany).not.toHaveBeenCalled();
   });

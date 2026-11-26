@@ -1178,8 +1178,8 @@ export async function updateScheduleFromTool(
   if (editsPrompt) {
     const edited = editText(existing.prompt, input.promptEdits, "promptEdits", "the prompt");
     if (!edited.ok) return { error: edited.error };
-    prompt = edited.text.trim();
-    if (!prompt) return { error: "prompt cannot be empty." };
+    prompt = edited.text;
+    if (!prompt.trim()) return { error: "prompt cannot be empty." };
     if (prompt === existing.prompt) return { error: "promptEdits change nothing." };
   }
 
