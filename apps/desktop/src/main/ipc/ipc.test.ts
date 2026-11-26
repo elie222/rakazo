@@ -239,6 +239,7 @@ describe("handleIpc", () => {
       "desktop.setup.state",
     ]);
     expect(names.filter((name) => ipcChannels[name].refused === LIVE)).toEqual([
+      "desktop.appIcon.get",
       "desktop.update.check",
       "desktop.update.download",
       "desktop.update.install",

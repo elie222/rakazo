@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { AppIcon } from "@rakazo/contracts";
+import { DEFAULT_APP_ICON } from "@rakazo/contracts";
 import type { Session } from "electron";
 import { app, BrowserWindow, Menu, nativeTheme, net, screen, session, shell } from "electron";
 import {
@@ -10,6 +12,7 @@ import {
 } from "../auth/oauth-callback.js";
 import { appWindowTargets, desktop } from "../desktop-state.js";
 import { t, withDetail } from "../i18n.js";
+import { handleIpc } from "../ipc/ipc.js";
 import {
   probeFailureMessage,
   safeExternalUrl,
@@ -17,6 +20,12 @@ import {
   servesBundledRenderer,
   sessionPartitionForServerUrl,
 } from "../setup/setup-config.js";
+import {
+  appIconFile,
+  createAppIconSetHandler,
+  currentAppIcon,
+  loadAppIcon,
+} from "../system/app-icon.js";
 import { reportDesktopError } from "../system/monitoring.js";
 import { LAUNCH_CHECK_DELAY_MS } from "../updates/auto-update.js";
 import type { AppDocumentState } from "./app-document-state.js";
@@ -61,10 +70,34 @@ export function markOnce(name: string) {
   if (performance.getEntriesByName(name).length === 0) performance.mark(name);
 }
 /** Dock/taskbar icon for unpackaged launches; packaged builds get theirs from electron-builder. */
-export function developmentIcon() {
+function developmentIcon() {
   if (app.isPackaged) return undefined;
   const icon = path.join(app.getAppPath(), "assets", developmentIconFile(process.platform));
   return existsSync(icon) ? icon : undefined;
+}
+function appIconsDir() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "app-icons")
+    : path.join(app.getAppPath(), "assets", "app-icons");
+}
+function applyAppIcon(icon: AppIcon) {
+  const file = appIconFile(appIconsDir(), icon, process.platform);
+  if (process.platform === "darwin") app.dock?.setIcon(file);
+  else for (const win of BrowserWindow.getAllWindows()) win.setIcon(file);
+}
+/** Before any window opens, so the first one already wears the saved icon. */
+export async function startAppIcon(userDataDir: string) {
+  await loadAppIcon(userDataDir);
+  const icon = windowIcon();
+  if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
+  handleIpc("desktop.appIcon.get", currentAppIcon, currentAppIcon);
+  handleIpc("desktop.appIcon.set", createAppIconSetHandler(userDataDir, applyAppIcon));
+}
+/** The icon the person picked, else the development icon for unpackaged launches. */
+export function windowIcon() {
+  const icon = currentAppIcon();
+  if (icon === DEFAULT_APP_ICON) return developmentIcon();
+  return appIconFile(appIconsDir(), icon, process.platform);
 }
 function sessionPartitionKey(targetUrl: string) {
   return sessionPartitionForServerUrl(targetUrl);
@@ -233,7 +266,7 @@ function rememberWindowBounds(win: BrowserWindow) {
 }
 export function createWindow(url: string, partition: string | null) {
   markOnce("rk:main:window-create-start");
-  const icon = developmentIcon();
+  const icon = windowIcon();
   // A window being replaced may have moved within the save delay; record it so this one opens there.
   if (desktop.mainWindow && !desktop.mainWindow.isDestroyed()) saveWindowBounds(desktop.mainWindow);
   const saved = savedWindowBounds();

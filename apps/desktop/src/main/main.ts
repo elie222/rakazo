@@ -128,7 +128,6 @@ import { applicationMenuInstaller, followUpdateState, installUpdate } from "./wi
 import { createAppOpener } from "./windows/app-opener.js";
 import {
   createWindow,
-  developmentIcon,
   installBundledRenderer,
   markOnce,
   PROBE_TIMEOUT_MS,
@@ -136,6 +135,7 @@ import {
   remoteServerOrigin,
   resolveSessionForTarget,
   ServerUnavailable,
+  startAppIcon,
 } from "./windows/app-window.js";
 import { DEEP_LINK_SCHEME } from "./windows/deep-link.js";
 import { registerDeepLinkHandlers } from "./windows/second-instance.js";
@@ -817,8 +817,7 @@ app.whenReady().then(async () => {
     markOnce("rk:main:caches-cleared");
   }
 
-  const icon = developmentIcon();
-  if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
+  await startAppIcon(userDataDir);
   installApplicationMenu();
   const browserAuth = createBrowserAuthHandlers((target) => shell.openExternal(target));
   app.on("before-quit", browserAuth.cancelAll);

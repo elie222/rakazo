@@ -108,6 +108,7 @@
       "./plugins/with-android-no-gwp-asan",
       "./plugins/with-agent-notifications",
       "./plugins/with-app-intents",
+      "./plugins/with-alternate-app-icons",
       "./plugins/with-apple-watch",
       "expo-apple-authentication"
     ],

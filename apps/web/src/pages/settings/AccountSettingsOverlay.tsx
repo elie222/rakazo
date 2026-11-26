@@ -63,6 +63,7 @@ import { getUiAppearancePreference, setUiAppearance } from "../../lib/preference
 import { useQueryUserId, useSave, useSpaceQueries } from "../../lib/query/query";
 import type { RpcClient } from "../../lib/query/rpc";
 import { authErrorText } from "../../lib/query/user-error";
+import { AppIconPicker } from "./AppIconPicker";
 
 export type SettingsGeneralProps = {
   email?: string | null;
@@ -366,6 +367,7 @@ export function GeneralSettingsPanels({
             }
           />
         ) : null}
+        <AppIconPicker />
         <SettingsRow
           label={
             <span id={sidebarDensityLabelId}>

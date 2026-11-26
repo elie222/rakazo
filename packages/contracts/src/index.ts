@@ -29,6 +29,7 @@ export * from "./bots/bot-settings-layout.js";
 export * from "./bots/bot-template.js";
 export * from "./bots/builtin-tools.js";
 export * from "./bots/scratchpad.js";
+export * from "./clients/app-icons.js";
 export * from "./clients/client-build.js";
 export * from "./clients/desktop.js";
 export * from "./clients/local-settings.js";
