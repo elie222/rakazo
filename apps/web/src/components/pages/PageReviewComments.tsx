@@ -21,50 +21,40 @@ import {
 } from "@rakazo/ui-web";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Ellipsis } from "lucide-react";
-import { useRef, useState } from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
 import { promptDataConsent } from "../../lib/calls/voice-consent";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorText } from "../../lib/query/user-error";
+
+export type PageCommentDraft = {
+  version: number | null;
+  section: string;
+  sectionName: string;
+  body: string;
+};
+
+export const EMPTY_PAGE_COMMENT_DRAFT: PageCommentDraft = {
+  version: null,
+  section: "",
+  sectionName: "",
+  body: "",
+};
 
 type CommentAction =
   | { kind: "resolve"; id: string; resolved: boolean }
   | { kind: "ask"; id: string; retryOf?: string }
   | ({ kind: "add" } & PageCommentSubmission);
 
-export function PageReviewComments({
-  page,
-  sections,
-  onRevision,
-  onDraft,
+export function usePageReviewCommentSave({
+  pageId,
+  onAdded,
 }: {
-  page: PageReview;
-  sections: PageSectionAnchor[];
-  onRevision: (version: number, anchor: PageSectionAnchor) => void;
-  onDraft: (id: string) => void;
+  pageId: string;
+  onAdded: () => void;
 }) {
-  const { t } = useLingui();
   const queries = useSpaceQueries();
-  const [section, setSection] = useState("");
-  const [sectionName, setSectionName] = useState("");
-  const [body, setBody] = useState("");
-  const lastSubmission = useRef<PageCommentSubmission>(undefined);
-  const [composingVersion, setComposingVersion] = useState(page.version);
-  if (composingVersion !== page.version) {
-    setComposingVersion(page.version);
-    setSection("");
-    setSectionName("");
-    setBody("");
-  }
-  const comments = useInfiniteQuery(
-    queries.pageReviews.comments.infiniteOptions({
-      input: (cursor: string | null) => ({ pageId: page.id, ...(cursor ? { cursor } : {}) }),
-      initialPageParam: null as string | null,
-      getNextPageParam: (result) => result.nextCursor,
-    }),
-  );
-  const save = useSave({
+  return useSave({
     save: async (action: CommentAction, rpc) => {
-      const pageId = page.id;
       if (action.kind === "resolve")
         return rpc.pageReviews.resolve({ pageId, commentId: action.id, resolved: action.resolved });
       if (action.kind === "ask") {
@@ -91,12 +81,42 @@ export function PageReviewComments({
     },
     stale: [queries.pageReviews.comments.key(), queries.pageReviews.get.key()],
     onSaved: (_, action) => {
-      if (action.kind === "add") {
-        setBody("");
-        lastSubmission.current = undefined;
-      }
+      if (action.kind === "add") onAdded();
     },
   });
+}
+
+export type PageReviewCommentSave = ReturnType<typeof usePageReviewCommentSave>;
+
+export function PageReviewComments({
+  page,
+  sections,
+  draft,
+  onDraftChange,
+  lastSubmission,
+  save,
+  onRevision,
+  onDraft,
+}: {
+  page: PageReview;
+  sections: PageSectionAnchor[];
+  draft: PageCommentDraft;
+  onDraftChange: Dispatch<SetStateAction<PageCommentDraft>>;
+  lastSubmission: RefObject<PageCommentSubmission | undefined>;
+  save: PageReviewCommentSave;
+  onRevision: (version: number, anchor: PageSectionAnchor) => void;
+  onDraft: (id: string) => void;
+}) {
+  const { t } = useLingui();
+  const queries = useSpaceQueries();
+  const { section, sectionName, body } = draft;
+  const comments = useInfiniteQuery(
+    queries.pageReviews.comments.infiniteOptions({
+      input: (cursor: string | null) => ({ pageId: page.id, ...(cursor ? { cursor } : {}) }),
+      initialPageParam: null as string | null,
+      getNextPageParam: (result) => result.nextCursor,
+    }),
+  );
   const current = page.currentVersion === page.version;
   const choices = pageSectionChoices(sections);
   const selected = choices.find(({ value }) => value === section);
@@ -125,7 +145,7 @@ export function PageReviewComments({
               aria-label={t`Section`}
               options={[{ value: "", label: t`Choose a section`, disabled: true }, ...choices]}
               value={selected?.value ?? ""}
-              onValueChange={setSection}
+              onValueChange={(next) => onDraftChange((current) => ({ ...current, section: next }))}
               disabled={save.pending}
             />
           ) : (
@@ -135,7 +155,10 @@ export function PageReviewComments({
               maxLength={200}
               value={sectionName}
               readOnly={save.pending}
-              onChange={(event) => setSectionName(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value;
+                onDraftChange((current) => ({ ...current, sectionName: next }));
+              }}
             />
           )}
           <Textarea
@@ -144,7 +167,10 @@ export function PageReviewComments({
             maxLength={4000}
             value={body}
             readOnly={save.pending}
-            onChange={(event) => setBody(event.target.value)}
+            onChange={(event) => {
+              const next = event.target.value;
+              onDraftChange((current) => ({ ...current, body: next }));
+            }}
           />
           <Button type="submit" className="self-end" disabled={!canPost}>
             <Trans>Post comment</Trans>

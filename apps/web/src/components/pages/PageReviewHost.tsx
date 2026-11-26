@@ -1,7 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PageReview, PageSectionAnchor } from "@rakazo/contracts";
 import { pageReviewPath } from "@rakazo/contracts";
-import type { PageReviewSections } from "@rakazo/core";
+import type { PageCommentSubmission, PageReviewSections } from "@rakazo/core";
 import { pageReviewContent } from "@rakazo/core";
 import {
   Button,
@@ -14,19 +14,58 @@ import {
   PopoverTrigger,
   Spinner,
 } from "@rakazo/ui-web";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
-import { useEffect, useState } from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { usePageStateSaver } from "../../lib/pages/page-state";
 import { useMedia, usePageDocument, useReviewedPageContent } from "../../lib/pages/pages";
 import { followStream } from "../../lib/query/follow-stream";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { spaceChanged } from "../../lib/query/space-changes";
-import { errorText } from "../../lib/query/user-error";
+import { errorCode, errorText } from "../../lib/query/user-error";
 import { PageNotice } from "./PageNotice";
-import { PageReviewComments } from "./PageReviewComments";
+import type { PageCommentDraft, PageReviewCommentSave } from "./PageReviewComments";
+import {
+  EMPTY_PAGE_COMMENT_DRAFT,
+  PageReviewComments,
+  usePageReviewCommentSave,
+} from "./PageReviewComments";
 import { PageView } from "./PageView";
+
+function isUnavailablePageError(error: unknown): boolean {
+  const code = errorCode(error);
+  if (code === "NOT_FOUND" || code === "FORBIDDEN" || code === "UNAUTHORIZED") return true;
+  const status = error && typeof error === "object" && "status" in error ? error.status : undefined;
+  return status === 401 || status === 403 || status === 404;
+}
+
+function isSameReviewerPageReviewQuery(
+  queryKey: readonly unknown[],
+  userSegment: unknown,
+  pageId: string,
+): boolean {
+  const path = queryKey[0];
+  if (
+    !Array.isArray(path) ||
+    path.length !== 4 ||
+    typeof userSegment !== "string" ||
+    path[0] !== userSegment ||
+    typeof path[1] !== "string" ||
+    !path[1].startsWith("space:") ||
+    path[2] !== "pageReviews" ||
+    path[3] !== "get"
+  ) {
+    return false;
+  }
+  const options = queryKey[1];
+  if (!options || typeof options !== "object" || !("input" in options)) return false;
+  const input = (options as { input?: unknown }).input;
+  return Boolean(
+    input && typeof input === "object" && (input as { pageId?: unknown }).pageId === pageId,
+  );
+}
 
 export default function PageReviewHost() {
   const { pageId } = useParams();
@@ -64,9 +103,55 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [draftId, setDraftId] = useState<string>();
   const [anchors, setAnchors] = useState<PageReviewSections>();
+  const queryClient = useQueryClient();
+  const [commentDraft, setCommentDraft] = useState<PageCommentDraft>(EMPTY_PAGE_COMMENT_DRAFT);
+  const lastSubmission = useRef<PageCommentSubmission>(undefined);
   const read = queries.pageReviews.get.queryOptions({ input: { pageId, version } });
-  const review = useQuery({ ...read, refetchOnMount: "always", refetchOnWindowFocus: "always" });
-  const page = review.isError ? undefined : review.data;
+  const review = useQuery({
+    ...read,
+    queryFn: async (context) => {
+      try {
+        return await read.queryFn!(context);
+      } catch (error) {
+        if (isUnavailablePageError(error)) {
+          // Drop every cached revision payload for this reviewer and page across Spaces so failed
+          // retries, remounts, or Space switches while offline cannot resurface a revoked page
+          // before a new authorized read succeeds.
+          const currentPath = queries.pageReviews.get.key()[0];
+          const userSegment = Array.isArray(currentPath) ? currentPath[0] : undefined;
+          for (const query of queryClient.getQueryCache().findAll({
+            predicate: (query) =>
+              isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId),
+          })) {
+            query.setState({ data: undefined, dataUpdatedAt: 0 });
+          }
+        }
+        throw error;
+      }
+    },
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+  });
+  const unavailable = review.isError && (!review.data || isUnavailablePageError(review.error));
+  const page = unavailable ? undefined : review.data;
+  if (page && (commentDraft.version === null || page.currentVersion > commentDraft.version)) {
+    setCommentDraft((current) => {
+      if (current.version !== null && page.currentVersion <= current.version) return current;
+      return {
+        version: page.currentVersion,
+        section: current.version === null ? current.section : "",
+        sectionName: current.version === null ? current.sectionName : "",
+        body: current.body,
+      };
+    });
+  }
+  const commentSave = usePageReviewCommentSave({
+    pageId,
+    onAdded: () => {
+      setCommentDraft((current) => ({ ...EMPTY_PAGE_COMMENT_DRAFT, version: current.version }));
+      lastSubmission.current = undefined;
+    },
+  });
   const draft = useQuery({
     ...queries.pageReviews.draft.queryOptions({ input: { pageId, requestId: draftId ?? "" } }),
     enabled: Boolean(page?.owner && draftId),
@@ -140,6 +225,10 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
               open={commentsOpen}
               setOpen={setCommentsOpen}
               sections={sections}
+              draft={commentDraft}
+              onDraftChange={setCommentDraft}
+              lastSubmission={lastSubmission}
+              commentSave={commentSave}
               onVersion={(version, anchor) => {
                 setAnchors(undefined);
                 setRevision(version !== undefined && anchor ? { version, anchor } : undefined);
@@ -150,7 +239,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
         ) : null
       }
       notice={
-        review.isError ? (
+        unavailable ? (
           <PageNotice
             title={t`This page isn't available`}
             detail={errorText(review.error)}
@@ -175,9 +264,11 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
       titleError={
         draftId && publish.input === draftId && publish.error
           ? errorText(publish.error)
-          : stateSaver.failed && readerState
-            ? t`Your changes aren't saved. Check your connection.`
-            : null
+          : review.isError && page
+            ? errorText(review.error)
+            : stateSaver.failed && readerState
+              ? t`Your changes aren't saved. Check your connection.`
+              : null
       }
     />
   );
@@ -188,6 +279,10 @@ function ReviewControls({
   open,
   setOpen,
   sections,
+  draft,
+  onDraftChange,
+  lastSubmission,
+  commentSave,
   onVersion,
   onDraft,
 }: {
@@ -195,6 +290,10 @@ function ReviewControls({
   open: boolean;
   setOpen: (open: boolean) => void;
   sections: PageSectionAnchor[];
+  draft: PageCommentDraft;
+  onDraftChange: Dispatch<SetStateAction<PageCommentDraft>>;
+  lastSubmission: RefObject<PageCommentSubmission | undefined>;
+  commentSave: PageReviewCommentSave;
   onVersion: (next?: number, anchor?: PageSectionAnchor) => void;
   onDraft: (id: string) => void;
 }) {
@@ -224,6 +323,10 @@ function ReviewControls({
             <PageReviewComments
               page={page}
               sections={sections}
+              draft={draft}
+              onDraftChange={onDraftChange}
+              lastSubmission={lastSubmission}
+              save={commentSave}
               onRevision={(version, section) => {
                 setOpen(false);
                 onVersion(version, section);
