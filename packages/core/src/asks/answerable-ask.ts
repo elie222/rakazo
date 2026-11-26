@@ -1,4 +1,20 @@
+import { MessageBlock } from "@rakazo/contracts";
 import { isSecretAskBlock } from "../runs/action-approval.js";
+
+/**
+ * Whether a message block is an open question waiting on a human: an unanswered ask card or a
+ * pending, unexpired tool question.
+ */
+export function isWaitingAskBlock(block: unknown): boolean {
+  const parsed = MessageBlock.safeParse(block);
+  if (!parsed.success) return false;
+  if (parsed.data.kind === "ask") return parsed.data.status !== "answered";
+  return (
+    parsed.data.kind === "tool_question" &&
+    parsed.data.status === "pending" &&
+    Date.parse(parsed.data.expiresAt) > Date.now()
+  );
+}
 
 type AskSnapshot = {
   messages: readonly {

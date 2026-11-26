@@ -1,6 +1,7 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import {
   displayName,
+  isWaitingAskBlock,
   memberMessageAlerts,
   messageUnreadFor,
   payloadAuthor,
@@ -136,11 +137,8 @@ export function browserNotificationTag(
   event: Pick<ProductEvent, "type" | "threadId" | "payload">,
 ): string {
   const blocks = event.type === "thread.message.created" ? event.payload.blocks : undefined;
-  // An ask card keeps its own tag, so a later reply in the thread does not replace the question.
-  return Array.isArray(blocks) &&
-    blocks.some(
-      (block) => !!block && typeof block === "object" && "kind" in block && block.kind === "ask",
-    )
+  // A question card keeps its own tag, so a later reply in the thread does not replace the question.
+  return Array.isArray(blocks) && blocks.some(isWaitingAskBlock)
     ? `${event.threadId}:ask`
     : pendingTakeoverOnly(event)
       ? `${event.threadId}:takeover`

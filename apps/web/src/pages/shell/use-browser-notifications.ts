@@ -1,6 +1,6 @@
 import type { Bot, ChatAlert, ProductEvent } from "@rakazo/contracts";
 import { chatAlertNeedsAttention } from "@rakazo/contracts";
-import { chatSnoozed } from "@rakazo/core";
+import { chatSnoozed, isWaitingAskBlock } from "@rakazo/core";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import { computerUpdates } from "../../lib/computers/computer-updates";
@@ -17,10 +17,12 @@ import { isReadChangeKind, spaceChanged } from "../../lib/query/space-changes";
 import { organizationsChanged } from "../../lib/spaces/organizations";
 
 type PendingBrowserNotification = {
-  event: Pick<ProductEvent, "id" | "type" | "threadId" | "botId" | "payload">;
+  event: Pick<ProductEvent, "id" | "type" | "threadId" | "runId" | "botId" | "payload">;
   botId: string;
   botName: string;
   groupId: string | undefined;
+  /** Run owner captured while the notification's chat was open, so switching chats before flush keeps ownership. */
+  runOwner?: { userId?: string };
 };
 
 type SnoozableChat = { id: string; snoozedUntil?: string | null };
@@ -35,31 +37,34 @@ type ChatAlertOptions = {
   notificationSounds?: boolean;
   /** Current groups, so a snooze that lands after a reply was queued is still honored. */
   groupsRef?: RefObject<readonly SnoozableChat[]>;
+  /** The open chat's live runs, whose owners say whose question this chat waits on. */
+  activeRunsRef?: RefObject<readonly { id: string; userId?: string }[]>;
   /** The server's roster signals: one when the stream opens, then one per change. */
   roster?: RosterSignals;
 };
 
 export type RosterSignals = { changed: () => void };
 
-/** A question still arrives while a chat is snoozed; an ordinary reply waits. */
-function messageAsks(event: { type: string; payload: { blocks?: unknown } }): boolean {
-  if (event.type !== "thread.message.created") return false;
-  const blocks = event.payload.blocks;
-  return (
-    Array.isArray(blocks) &&
-    blocks.some(
-      (block) => !!block && typeof block === "object" && "kind" in block && block.kind === "ask",
-    )
-  );
+function eventMessageId(event: { payload: Record<string, unknown> }): string | undefined {
+  return typeof event.payload.messageId === "string"
+    ? event.payload.messageId
+    : typeof event.payload.id === "string"
+      ? event.payload.id
+      : undefined;
 }
 
 function snoozedOrdinaryReply(
-  event: { type: string; payload: { blocks?: unknown } },
+  event: { type: string; runId?: string; payload: { blocks?: unknown } },
   chat: SnoozableChat | undefined,
+  waitsOnViewer: (event: {
+    type: string;
+    runId?: string;
+    payload: { blocks?: unknown };
+  }) => boolean,
 ): boolean {
   return (
     event.type === "thread.message.created" &&
-    !messageAsks(event) &&
+    !waitsOnViewer(event) &&
     !!chat &&
     chatSnoozed(chat, Date.now())
   );
@@ -94,12 +99,42 @@ export function useBrowserNotifications(
     openChat,
     meId,
     groupsRef,
+    activeRunsRef,
     roster,
     notificationSounds,
   }: ChatAlertOptions,
 ) {
   const meIdRef = useRef(meId);
   meIdRef.current = meId;
+  // The snooze exception speaks to the person a question waits on. Both ask cards and tool
+  // questions are answered only by the run's own user. A tool question arrives while its run is
+  // already active, so it counts only when the viewer owns that run. An ask card from a
+  // background run can arrive before run.waiting_input adds the run to activeRuns, so an unknown
+  // run still alerts while a known run counts only when the viewer owns it.
+  const questionWaitsOnViewer = useCallback(
+    (
+      event: { type: string; runId?: string; payload: { blocks?: unknown } },
+      rememberedRunOwner?: { userId?: string },
+    ): boolean => {
+      if (event.type !== "thread.message.created") return false;
+      const blocks = event.payload.blocks;
+      if (!Array.isArray(blocks)) return false;
+      const me = meIdRef.current;
+      const run =
+        (event.runId
+          ? activeRunsRef?.current?.find((candidate) => candidate.id === event.runId)
+          : undefined) ?? rememberedRunOwner;
+      const viewerOwnsRun = !!me && !!run && run.userId === me;
+      return blocks.some(
+        (block) =>
+          isWaitingAskBlock(block) &&
+          ((block as { kind?: unknown }).kind === "tool_question"
+            ? viewerOwnsRun
+            : !run || viewerOwnsRun),
+      );
+    },
+    [activeRunsRef],
+  );
   const soundEnabled = useRef(false);
   soundEnabled.current = notificationSounds === true;
   useEffect(() => prepareNotificationIcons(bots), [bots]);
@@ -161,6 +196,12 @@ export function useBrowserNotifications(
   }, [rpc]);
   const notifiedBrowserEvents = useRef(new Set<string>());
   const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
+  for (const pending of pendingBrowserNotifications.current.values()) {
+    const runId = pending.event.runId;
+    if (!runId) continue;
+    const live = activeRunsRef?.current?.find((candidate) => candidate.id === runId);
+    if (live) pending.runOwner = { userId: live.userId };
+  }
   // A permission answer can arrive after the shell has gone; its held notifications go with it.
   const mounted = useRef(false);
   useEffect(() => {
@@ -174,36 +215,44 @@ export function useBrowserNotifications(
     pending.groupId
       ? groupsRef?.current.find((group) => group.id === pending.groupId)
       : botsRef.current.find((bot) => bot.id === pending.botId);
-  const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
-    const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
-    if (!currentBot || typeof Notification === "undefined") return true;
-    // A reply queued while permission was pending can be snoozed before it is shown.
-    if (snoozedOrdinaryReply(pending.event, chatFor(pending))) return true;
-    const result = deliverNativeBrowserNotification(
-      pending.event,
-      currentBot.name || pending.botName,
-      {
-        enabled: pending.groupId !== undefined || currentBot.notifyOnFinish,
-        pageVisible: document.visibilityState === "visible",
-        windowFocused: document.hasFocus(),
-        permission: Notification.permission,
-        notifiedEventIds: notifiedBrowserEvents.current,
-        show: (title, body, tag) => {
-          const icon = notificationIcon(currentBot);
-          const notification = new Notification(title, {
-            body,
-            tag,
-            ...(icon ? { icon } : {}),
-            ...(desktopBridge() ? { silent: true } : {}),
-          });
-          openChatOnClick(notification, shown.current, () =>
-            openChatRef.current({ botId: pending.botId, groupId: pending.groupId }),
-          );
+  const deliverBrowserNotification = useCallback(
+    (pending: PendingBrowserNotification): boolean => {
+      const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
+      if (!currentBot || typeof Notification === "undefined") return true;
+      const waitsOnViewer = (event: {
+        type: string;
+        runId?: string;
+        payload: { blocks?: unknown };
+      }) => questionWaitsOnViewer(event, pending.runOwner);
+      // A reply queued while permission was pending can be snoozed before it is shown.
+      if (snoozedOrdinaryReply(pending.event, chatFor(pending), waitsOnViewer)) return true;
+      const result = deliverNativeBrowserNotification(
+        pending.event,
+        currentBot.name || pending.botName,
+        {
+          enabled: pending.groupId !== undefined || currentBot.notifyOnFinish,
+          pageVisible: document.visibilityState === "visible",
+          windowFocused: document.hasFocus(),
+          permission: Notification.permission,
+          notifiedEventIds: notifiedBrowserEvents.current,
+          show: (title, body, tag) => {
+            const icon = notificationIcon(currentBot);
+            const notification = new Notification(title, {
+              body,
+              tag,
+              ...(icon ? { icon } : {}),
+              ...(desktopBridge() ? { silent: true } : {}),
+            });
+            openChatOnClick(notification, shown.current, () =>
+              openChatRef.current({ botId: pending.botId, groupId: pending.groupId }),
+            );
+          },
         },
-      },
-    );
-    return result !== "pending";
-  }, []);
+      );
+      return result !== "pending";
+    },
+    [questionWaitsOnViewer],
+  );
   const flushPendingBrowserNotifications = useCallback(() => {
     if (!mounted.current) return;
     for (const [threadId, pending] of pendingBrowserNotifications.current) {
@@ -214,7 +263,7 @@ export function useBrowserNotifications(
   }, [deliverBrowserNotification]);
   const notifyBrowserForEvent = useCallback(
     (
-      event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "botId" | "payload">,
+      event: Pick<ProductEvent, "id" | "type" | "threadId" | "seq" | "runId" | "botId" | "payload">,
       subscribedThreadId: string | undefined,
       initialCursor: number,
       streamReady: boolean,
@@ -224,6 +273,20 @@ export function useBrowserNotifications(
     ) => {
       const botId = event.botId;
       if (typeof botId !== "string") return;
+      // A question held for permission goes when its card settles: answered or expired
+      // elsewhere, the alert would arrive after the fact.
+      if (event.type === "thread.message.updated") {
+        const queued = pendingBrowserNotifications.current.get(`${event.threadId}:ask`);
+        const messageId = eventMessageId(event);
+        if (
+          queued &&
+          messageId !== undefined &&
+          eventMessageId(queued.event) === messageId &&
+          !(Array.isArray(event.payload.blocks) && event.payload.blocks.some(isWaitingAskBlock))
+        ) {
+          pendingBrowserNotifications.current.delete(`${event.threadId}:ask`);
+        }
+      }
       const eligible = shouldNotifyBrowser(event, {
         subscribedThreadId: subscribedThreadId ?? "",
         initialCursor,
@@ -235,15 +298,19 @@ export function useBrowserNotifications(
         meId: meIdRef.current,
       });
       if (!eligible || !enabled) return;
+      const liveRun = event.runId
+        ? activeRunsRef?.current?.find((candidate) => candidate.id === event.runId)
+        : undefined;
       const pending = {
         event,
         botId,
         botName,
         groupId,
+        ...(liveRun ? { runOwner: { userId: liveRun.userId } } : {}),
       } satisfies PendingBrowserNotification;
       // Ordinary replies wait out a snooze. A question still comes through, and a reply that was
       // queued before the snooze is checked again when it is actually shown.
-      if (snoozedOrdinaryReply(event, chatFor(pending))) return;
+      if (snoozedOrdinaryReply(event, chatFor(pending), questionWaitsOnViewer)) return;
       if (typeof Notification === "undefined" || Notification.permission === "denied") return;
       if (Notification.permission === "default") {
         pendingBrowserNotifications.current.set(browserNotificationTag(event), pending);
@@ -255,7 +322,7 @@ export function useBrowserNotifications(
         pendingBrowserNotifications.current.set(browserNotificationTag(event), pending);
       }
     },
-    [deliverBrowserNotification],
+    [activeRunsRef, deliverBrowserNotification, questionWaitsOnViewer],
   );
   return { notifyBrowserForEvent, flushPendingBrowserNotifications };
 }

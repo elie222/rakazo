@@ -209,6 +209,8 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
     },
     [navigate, setMobileSidebarOpen],
   );
+  // The open chat's live runs: whose question this chat waits on (set once runs are read).
+  const activeRunsRef = useRef<readonly { id: string; userId?: string }[]>([]);
   const computerState = useComputerState({ rpc, panel, activeId: active?.id, activeBotId });
   const { computerOpen, setComputerOpen, commitComputer } = computerState;
   useReportedUiLocale(rpc, bootstrapMe?.locale);
@@ -243,6 +245,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
       },
       meId: userId,
       groupsRef,
+      activeRunsRef,
       roster: rosterSignals,
     },
   );
@@ -406,6 +409,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
     meId: userId,
   });
   const { activeSnapshot, transcript, composerRunning } = view;
+  activeRunsRef.current = view.currentRuns;
   const { composerMentionTargets, footerLogos, setFooterLogos } = useComposerMentions({
     rpc,
     queries,

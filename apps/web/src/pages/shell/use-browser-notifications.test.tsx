@@ -80,6 +80,7 @@ const rpc = {
 const noBots: Bot[] = [];
 const bots = [{ id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot];
 const groups: Array<{ id: string; snoozedUntil?: string | null }> = [{ id: "group-g" }];
+let runs: Array<{ id: string; userId?: string }> = [];
 const roster = { changed: vi.fn() };
 
 type HarnessProps = { botId?: string; groupId?: string; notificationSounds?: boolean };
@@ -96,6 +97,7 @@ function Harness({ botId, groupId, notificationSounds }: HarnessProps) {
       notificationSounds,
       meId: "user-1",
       groupsRef: { current: groups },
+      activeRunsRef: { current: runs },
       roster,
     },
   );
@@ -151,6 +153,7 @@ beforeEach(() => {
   FakeNotification.shown = [];
   bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot;
   groups[0] = { id: "group-g" };
+  runs = [];
   streams = [];
   signals = [];
   focused = true;
@@ -477,6 +480,288 @@ describe("useBrowserNotifications chat alerts", () => {
       ),
     );
     bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
+  });
+
+  it("keeps a snoozed chat quiet for another member's ask or tool question, and for answered or expired questions", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const expired = new Date(Date.now() - 60 * 1000).toISOString();
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    runs = [
+      { id: "run-theirs", userId: "member-2" },
+      { id: "run-mine", userId: "user-1" },
+    ];
+    await open({ botId: "bot-b" });
+    for (const event of [
+      {
+        ...reply("foreign-ask", [{ kind: "ask", text: "Buy the ticket?", status: "pending" }]),
+        runId: "run-theirs",
+      },
+      {
+        ...reply("foreign-tool-q", [
+          {
+            kind: "tool_question",
+            question: { source: "Calendar", message: "Which slot?", fields: [] },
+            status: "pending",
+            expiresAt: later,
+            publicKey: "key",
+          },
+        ]),
+        runId: "run-theirs",
+      },
+      {
+        ...reply("unknown-tool-q", [
+          {
+            kind: "tool_question",
+            question: { source: "Calendar", message: "Which slot?", fields: [] },
+            status: "pending",
+            expiresAt: later,
+            publicKey: "key",
+          },
+        ]),
+        runId: "run-unknown",
+      },
+      {
+        ...reply("answered-ask", [{ kind: "ask", text: "Already done", status: "answered" }]),
+        runId: "run-mine",
+      },
+      {
+        ...reply("expired-tool-q", [
+          {
+            kind: "tool_question",
+            question: { source: "Calendar", message: "Too late", fields: [] },
+            status: "pending",
+            expiresAt: expired,
+            publicKey: "key",
+          },
+        ]),
+        runId: "run-mine",
+      },
+    ]) {
+      act(() => hook.notifyBrowserForEvent(event, "thread-b", 4, true, "Scout", true, undefined));
+    }
+    expect(shown()).toEqual([]);
+  });
+
+  it("announces the viewer's own ask, an unknown-run ask, and the viewer's own pending tool question in a snoozed chat", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    runs = [{ id: "run-mine", userId: "user-1" }];
+    await open({ botId: "bot-b" });
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          ...reply("own-ask", [{ kind: "ask", text: "Which repo?", status: "pending" }]),
+          runId: "run-mine",
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          ...reply("bg-ask", [{ kind: "ask", text: "Approve deploy?", status: "pending" }]),
+          runId: "run-background",
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          ...reply("own-tool-q", [
+            {
+              kind: "tool_question",
+              question: { source: "Calendar", message: "Which slot?", fields: [] },
+              status: "pending",
+              expiresAt: later,
+              publicKey: "key",
+            },
+          ]),
+          runId: "run-mine",
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    expect(shown()).toEqual([
+      ["Scout", "Which repo?", "thread-b:ask"],
+      ["Scout", "Approve deploy?", "thread-b:ask"],
+      ["Scout", "Message", "thread-b:ask"],
+    ]);
+  });
+
+  it("remembers run ownership across chat switches and drops a queued foreign ask when snoozed before permission", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot;
+    runs = [{ id: "run-theirs", userId: "member-2" }];
+    await open({ botId: "bot-b" });
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          ...reply("foreign-nav", [{ kind: "ask", text: "Approve refund?", status: "pending" }]),
+          runId: "run-theirs",
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    runs = [];
+    await open({ botId: "bot-other" });
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
+  });
+
+  it("drops a queued unknown-run ask when foreign ownership arrives before permission grant and the chat is snoozed", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    runs = [];
+    await open({ botId: "bot-b" });
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          ...reply("late-foreign", [{ kind: "ask", text: "Deploy now?", status: "pending" }]),
+          runId: "run-late-theirs",
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    runs = [{ id: "run-late-theirs", userId: "member-2" }];
+    await open({ botId: "bot-b" });
+    runs = [];
+    await open({ botId: "bot-other" });
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([]);
+  });
+
+  it("delivers a queued viewer-owned tool question in a snoozed chat after switching chats, and drops it if settled first", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    FakeNotification.permission = "default";
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true, snoozedUntil: later } as Bot;
+    runs = [{ id: "run-mine", userId: "user-1" }];
+    await open({ botId: "bot-b" });
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "tool-q-event",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 6,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            id: "msg-1",
+            role: "bot",
+            blocks: [
+              {
+                kind: "tool_question",
+                question: { source: "Calendar", message: "Which slot?", fields: [] },
+                status: "pending",
+                expiresAt: later,
+                publicKey: "key",
+              },
+            ],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    runs = [];
+    await open({ botId: "bot-other" });
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([["Scout", "Message", "thread-b:ask"]]);
+
+    // A queued ask settled via thread.message.updated before permission arrives is discarded.
+    FakeNotification.shown = [];
+    FakeNotification.permission = "default";
+    runs = [{ id: "run-mine", userId: "user-1" }];
+    await open({ botId: "bot-b" });
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "ask-settle-event",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 7,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            id: "msg-2",
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Proceed?", status: "pending" }],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "ask-settled",
+          type: "thread.message.updated",
+          threadId: "thread-b",
+          seq: 8,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            messageId: "msg-2",
+            blocks: [{ kind: "ask", text: "Proceed?", status: "answered" }],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
     FakeNotification.permission = "granted";
     act(() => hook.flushPendingBrowserNotifications());
     expect(shown()).toEqual([]);
