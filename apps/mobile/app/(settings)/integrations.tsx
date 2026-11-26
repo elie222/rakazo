@@ -347,7 +347,8 @@ export default function Integrations() {
     );
   }
 
-  function renderCatalogTile(item: ConnectionCatalogItem, label: string) {
+  /** A catalog app's row; `inGrid` sizes it as one cell of the catalog's columns. */
+  function renderCatalogTile(item: ConnectionCatalogItem, label: string, inGrid = true) {
     const connected = itemConnected(item);
     const brandPlugin = pluginForApp.get(catalogItemKey(item));
     const body = (
@@ -373,7 +374,7 @@ export default function Integrations() {
         {renderCatalogActions(item, label)}
       </>
     );
-    const tileStyle = [styles.row, catalogColumns === 2 ? styles.catalogCell : null];
+    const tileStyle = [styles.row, inGrid && catalogColumns === 2 ? styles.catalogCell : null];
     if (connected || brandPlugin) {
       return (
         <Pressable
@@ -461,7 +462,7 @@ export default function Integrations() {
             {!detailItem && !filtering ? (
               <ConnectedApps
                 connectedCatalog={connectedCatalog.map((item) =>
-                  renderCatalogTile(item, item.name),
+                  renderCatalogTile(item, item.name, false),
                 )}
                 connectorPlugins={connectorPlugins}
                 mcpServers={mcpServers}
