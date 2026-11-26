@@ -43,6 +43,7 @@ import type { LabFeature, ModelCredential, NavLink } from "@rakazo/contracts";
 import type { BoardEvents, PrismaClient, ThreadEvents } from "@rakazo/db";
 import type { BillingService } from "./billing/billing.js";
 import type { CreditCode } from "./billing/credit-codes.js";
+import { apiKeysRoutes } from "./bot-access/api-key-routes.js";
 import type { VoiceDeps } from "./calls/voice.js";
 import type { AppEnv } from "./env.js";
 import { meetingCalendarRoutes } from "./meetings/calendar/calendar-routes.js";
@@ -192,6 +193,7 @@ export function createRouter(deps: RouterDeps) {
 
   return os.router({
     ...accountRoutes(ctx),
+    ...apiKeysRoutes(ctx),
     ...meetingRoutes(ctx),
     ...meetingCalendarRoutes(ctx),
     ...spacesRoutes(ctx),

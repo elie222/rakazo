@@ -112,6 +112,9 @@ vi.mock("../../components/account/AccountAccess", () => ({
 vi.mock("../../components/settings/AccountDataSettings", () => ({
   AccountDataSettings: () => null,
 }));
+vi.mock("../../components/settings/ApiKeysSettings", () => ({
+  ApiKeysSettings: () => null,
+}));
 vi.mock("../../components/settings/ApprovalRulesSettings", () => ({
   ApprovalRulesSettings: () => null,
 }));

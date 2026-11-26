@@ -19,6 +19,7 @@ export * from "./billing/billing.js";
 export * from "./billing/partner-click.js";
 export * from "./billing/payments.js";
 export * from "./billing/usage.js";
+export * from "./bot-access/bot-access.js";
 export * from "./bots/agent-secret-name.js";
 export * from "./bots/bot.js";
 export * from "./bots/bot-avatar.js";

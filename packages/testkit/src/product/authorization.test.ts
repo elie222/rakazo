@@ -244,6 +244,9 @@ describeWithDatabase("API authorization and resource isolation", () => {
   it("rejects unauthenticated calls to every protected RPC family", async () => {
     const calls = exhaustiveProtectedCalls([
       ["me"],
+      ["apiKeys/list"],
+      ["apiKeys/create", { name: "script" }],
+      ["apiKeys/revoke", { id: "missing-key" }],
       ["deployment/get"],
       ["deployment/update", { signupsEnabled: true }],
       ["updater/status"],
@@ -629,6 +632,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["mcp/servers/list"],
       ["mcp/servers/create"],
       ["mcp/servers/createForBots"],
+      ["mcp/servers/createForOrganization"],
       ["mcp/servers/connect"],
       ["mcp/servers/update"],
       ["mcp/servers/save"],

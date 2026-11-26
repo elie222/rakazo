@@ -352,12 +352,12 @@ function toolUsageLine(parts: {
   return `${parts.computerInstruction} ${clauses.join(" ")}`;
 }
 
-/** Names the apps a run reaches through plugin tools, so it uses them before browsing. */
+/** Names connected plugins and points the run at each plugin's own tools, rather than a connector catalog or the browser. */
 export function connectedPluginsInstruction(
   plugins: readonly { displayName: string; connectorId: string; provider: string }[],
 ): string {
   return plugins.length > 0
-    ? `Connected plugins: ${plugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
+    ? `Connected plugins: ${plugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Find and run their actions with each plugin's own tools; a connector search only covers the sources it lists. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
     : "No plugins are connected yet.";
 }
 

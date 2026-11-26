@@ -4,6 +4,7 @@ import type {
   BotMcpServer,
   CapabilityInstall,
   McpServer,
+  OrganizationList,
 } from "@rakazo/contracts";
 import { MCP_OAUTH_CLIENT_REQUIRED } from "@rakazo/contracts";
 import {
@@ -175,6 +176,18 @@ test("shows directly registered MCP servers in Integrations without catalog conn
 }, testInfo) => {
   await signup(page, `direct-mcp-list-${Date.now()}@rakazo.test`, "password12", "Direct MCP List");
   await completeOnboarding(page);
+  let role: "member" | "admin" = "member";
+  await page.route("**/rpc/organizations/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: OrganizationList };
+    const organizations = body.json.organizations.map((organization) => ({
+      ...organization,
+      name: "Example Team",
+      role,
+      memberCount: 2,
+    }));
+    await route.fulfill({ response, json: { ...body, json: { ...body.json, organizations } } });
+  });
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
@@ -199,7 +212,10 @@ test("shows directly registered MCP servers in Integrations without catalog conn
       "Connected",
       (s) => ({ ...s, health: { ...s.health, status: phase === "down" ? "error" : "ok" } }),
     ],
-    GitHub: ["Needs sign-in", (s) => ({ ...s, oauthStatus: "reconnect" })],
+    GitHub: [
+      "Needs sign-in",
+      (s) => ({ ...s, oauthStatus: "reconnect", organization: true, manageable: role === "admin" }),
+    ],
     Linear: ["Not connected", (s) => ({ ...s, health: { ...s.health, status: "unknown" } })],
     Notion: ["Not working", (s) => ({ ...s, health: { ...s.health, status: "error" } })],
     Figma: [
@@ -290,6 +306,9 @@ test("shows directly registered MCP servers in Integrations without catalog conn
     );
   }
   await expect(servers).not.toContainText("fake-mcp-credential");
+  await expect(
+    servers.getByTestId("registered-mcp-server").filter({ hasText: "GitHub" }),
+  ).toContainText("Organization");
   await captureScreenshot(page, testInfo, "integrations-direct-mcp-servers");
   await page.setViewportSize({ width: 390, height: 844 });
   await captureScreenshot(page, testInfo, "integrations-direct-mcp-mobile");
@@ -298,12 +317,20 @@ test("shows directly registered MCP servers in Integrations without catalog conn
     .getByRole("button", { name: "Manage MCP servers", exact: true })
     .click();
   await expect(page.getByRole("heading", { name: "MCP servers", exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog").getByText("GitHub", { exact: true })).toBeVisible();
+  const mcpDialog = page.getByRole("dialog", { name: "MCP servers", exact: true });
+  const sharedServer = mcpDialog.getByTestId("mcp-server").filter({
+    has: page.getByText("GitHub", { exact: true }),
+  });
+  await expect(sharedServer.getByText("Organization", { exact: true })).toBeVisible();
+  await expect(sharedServer.getByRole("button", { name: "Actions for GitHub" })).toHaveCount(0);
+  await expect(sharedServer.getByRole("button", { name: "Reconnect OAuth" })).toHaveCount(0);
+  await expect(mcpDialog.getByRole("button", { name: "Actions for Dropbox" })).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await captureScreenshot(page, testInfo, "integrations-organization-mcp-member");
 
   // Once both of its servers are connected, Docs counts once.
   phase = "all";
   await page.getByRole("button", { name: "Close MCP servers", exact: true }).click();
-  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(page.getByRole("button", { name: "2 connected", exact: true })).toBeVisible();
   await expect(marks("2 connected")).toHaveText("D");
@@ -319,6 +346,18 @@ test("shows directly registered MCP servers in Integrations without catalog conn
   await expect(
     servers.getByTestId("registered-mcp-server").filter({ hasText: "Dropbox" }),
   ).toContainText("Not working");
+  await page.getByRole("button", { name: "Close integrations", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Integrations", exact: true })).toBeHidden();
+  role = "admin";
+  await page.reload();
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await openIntegrationsAdd(page, "Manage MCP servers");
+  await mcpDialog.getByRole("button", { name: "Add server", exact: true }).click();
+  await mcpDialog.getByText("Available to", { exact: true }).waitFor();
+  await mcpDialog.locator("#mcp-owner").click();
+  await expect(page.getByRole("option", { name: "Just me", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "Example Team", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "integrations-organization-mcp-availability");
   await page.unrouteAll({ behavior: "wait" });
 });
 

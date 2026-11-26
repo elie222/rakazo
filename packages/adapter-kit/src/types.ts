@@ -586,10 +586,11 @@ export interface SemanticMemoryConversationRequest {
   turns: SemanticMemoryConversationTurn[];
 }
 
-/** Reflects over the bot's own memory only. */
+/** Reflects over the durable memory the bot can write to in this scope. */
 export interface SemanticMemoryReflectRequest {
   query: string;
   botId: string;
+  scope: DurableMemoryScope;
 }
 
 export type SemanticMemoryForgetResponse = SemanticMemoryResponse<{
@@ -1058,6 +1059,8 @@ export interface BackgroundJobPayloads {
   /** Run a failed routine run once more; the payload names the failed run. */
   "routine.retry": { runId: string };
   "computer.sleep": { computerId: string };
+  /** Tell an API caller's callback address that its task settled; rechecks until it does. */
+  "task.callback": { taskId: string };
   "computer.update": { updateId: string };
   "computer.control-expire": { computerId: string; leaseId: string };
   "skill.teaching-expire": { skillId: string };

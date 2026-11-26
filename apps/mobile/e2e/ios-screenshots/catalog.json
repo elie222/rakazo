@@ -66,6 +66,7 @@
       "models",
       "integrations",
       "mcp-server",
+      "tool-source",
       "voice",
       "ai-data-sharing",
       "labs",

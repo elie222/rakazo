@@ -22,6 +22,9 @@ describe("auth policy", () => {
       "/organization/list",
       "/organization/create-team",
       "/organization/some-future-route",
+      "/api-key/create",
+      "/api-key/list",
+      "/api-key/delete",
     ]) {
       expect(isBlockedAuthPath(path), path).toBe(true);
     }

@@ -5,7 +5,7 @@ import { TOOL_STEP_CALLS_KEPT, toolStepOutcomeText } from "@rakazo/core";
 import {
   bounded,
   IMAGE_NOT_KEPT,
-  TOOL_CALL_TEXT_MAX_CHARS,
+  TOOL_CALL_SAVED_TEXT_MAX_CHARS,
 } from "../../runs/turn/tool-step-calls.js";
 import { USE_TOOL } from "../../tools/builtin.tool-definition.js";
 import {
@@ -135,9 +135,9 @@ function replayedResult(
   const isError = call.failed === true || outcome === "failed" || outcome === "stopped";
   const ended = outcome ? `${outcome.charAt(0).toUpperCase()}${outcome.slice(1)}.` : "Done.";
   if (typeof call.result !== "string" || !call.result) return { text: ended, isError };
-  // Saved results are already bounded; this only holds imported ones to the same size.
+  // A saved result replays as saved; this only holds one saved any other way to the same size.
   if (!call.result.includes(IMAGE_NOT_KEPT))
-    return { text: bounded(call.result, TOOL_CALL_TEXT_MAX_CHARS), isError };
+    return { text: bounded(call.result, TOOL_CALL_SAVED_TEXT_MAX_CHARS), isError };
   // The image itself is gone; what the bot wrote right after seeing it is what it showed.
   const quote =
     wordsAfter.length > WORDS_AFTER_IMAGE_MAX_CHARS
