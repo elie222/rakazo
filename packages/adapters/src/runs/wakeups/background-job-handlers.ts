@@ -208,6 +208,13 @@ export function createBackgroundJobHandlers(deps: {
         );
       },
     ),
+    "connection.hosted-sign-in-cleanup": async (payload) => {
+      const connectors = deps.connectors;
+      if (!connectors) throw new Error("connection cleanup has no connector registry");
+      await runAsSystem("remove a cancelled hosted sign-in", () =>
+        retryConnectionCleanup({ prisma: deps.prisma, connectors, jobs: deps.jobs }, payload),
+      );
+    },
     "connection.organization-cleanup": async (payload) => {
       const connectors = deps.connectors;
       if (!connectors) throw new Error("connection cleanup has no connector registry");

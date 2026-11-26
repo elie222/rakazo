@@ -647,11 +647,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
       : undefined;
 
   const stopOrganizationDeletions = startHourlySweep(
-    finishStalledOrganizationDeletions({ ...spaceDeletionDeps, billing }),
+    finishStalledOrganizationDeletions({
+      ...spaceDeletionDeps,
+      billing,
+      connectors: stack.connector,
+    }),
     (error) => getLogger().error("stalled organization deletion failed", error),
   );
-
-  // Meeting requests use a runtime with no persistent session recording.
   const meetingRuntime = new PiAgentRuntime();
   const meetingMedia =
     meetingMediaConfig &&

@@ -492,7 +492,10 @@ describe("connections.begin", () => {
     tx.connection.findMany
       .mockResolvedValueOnce([])
       // A sibling that has not saved its account id yet.
-      .mockResolvedValueOnce([{ providerRef: "account-1" }, { providerRef: "gmail" }]);
+      .mockResolvedValueOnce([
+        { provider: "gmail", providerRef: "account-1" },
+        { provider: "gmail", providerRef: "gmail" },
+      ]);
 
     await expect(call()).rejects.toBeInstanceOf(IsolationError);
     expect(revokeUnreferencedAccounts).not.toHaveBeenCalled();

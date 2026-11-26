@@ -18,7 +18,6 @@ import {
   integrationCatalogsReady,
   isCatalogItemConnected,
   matchesWordPrefixes,
-  organizationConnectionForApp,
   pluginBrands,
   pluginCategories,
 } from "@rakazo/core";
@@ -537,11 +536,7 @@ export default function Integrations() {
               <IntegrationDetail
                 key={catalogItemKey(detailItem)}
                 item={detailItem}
-                organizationName={
-                  organizationConnectionForApp(connections, detailItem.slug)
-                    ? null
-                    : organizationName
-                }
+                organizationName={organizationName}
                 accounts={catalogItemAccounts(connections, detailItem)}
                 pending={pending}
                 labelDrafts={labelDrafts}
