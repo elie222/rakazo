@@ -595,8 +595,12 @@ export function observedPiStream(
             ) {
               try {
                 hooks?.onDeliveryAccepted?.();
-              } catch {
+              } catch (error) {
                 /* Delivery provenance cannot discard accounted spend. */
+                getLogger().warn("Watch delivery provenance hook failed", {
+                  runId: attribution.runId,
+                  error,
+                });
               }
             }
           }

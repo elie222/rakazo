@@ -1,10 +1,7 @@
 import type { Context } from "@earendil-works/pi-ai";
+import { isRecord } from "@rakazo/core";
 import type { ContextBudget } from "../runtime/context/context-selection.js";
 import { estimateContextTokens } from "../runtime/context/context-selection.js";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 /**
  * Strip internal watch-check delivery provenance from tool-result `details` before sizing a

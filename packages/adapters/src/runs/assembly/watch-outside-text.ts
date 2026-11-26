@@ -1,6 +1,6 @@
 import type { AgentContextStrategy } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
-import { sliceWellFormed } from "@rakazo/core";
+import { isRecord, sliceWellFormed } from "@rakazo/core";
 import { MAX_OUTSIDE_TEXT_CHARS } from "../../approvals/review-target-sources.js";
 import { shortenToolResultText } from "../../runtime/context/context-selection.js";
 import {
@@ -471,10 +471,6 @@ function formatPlainTextBeforeUseGroups(partGroups: readonly WatchTextPart[][]):
     );
   }
   return dedupeItems(extracted);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function extractVisibleWatchChecksFromDeliveredText(

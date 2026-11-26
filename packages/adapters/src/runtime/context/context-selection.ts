@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AgentContextStrategy, CacheCapabilities } from "@rakazo/adapter-kit";
 import {
+  isRecord,
   MODEL_CONTEXT_TOO_SMALL_ERROR,
   shortenedTextLength,
   textBoundary,
@@ -579,10 +580,6 @@ function messageGroups(
   }
   return groups;
 }
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 /** Cheap selection only. No clock event or strategy calls a model or creates a summary. */
 export function selectContext<T extends ContextMessage>(
   messages: readonly T[],
@@ -693,11 +690,10 @@ export function selectContext<T extends ContextMessage>(
           const nextMessage = { ...message, content: [{ type: "text", text }, ...images] } as T & {
             details?: unknown;
           };
-          // A before-use cut changes what the model first sees, so record that delivery on
-          // `details` without overwriting metadata fields like `frameId` or `error`, preventing
-          // later after-use compaction from restoring content the model never received.
+          // A before-use cut changes what the model first sees on a routine-watch read, so record
+          // that delivery on `details` without duplicating non-routine tool results in checkpoints.
           const currentDetails = nextMessage.details;
-          if (!afterUse && isRecord(currentDetails)) {
+          if (!afterUse && isRecord(currentDetails) && Array.isArray(currentDetails.routines)) {
             nextMessage.details = {
               ...currentDetails,
               contextBeforeUseText: text,

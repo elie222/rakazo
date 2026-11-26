@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Context, Message } from "@earendil-works/pi-ai";
 import type { AgentContextStrategy, AgentRunModel } from "@rakazo/adapter-kit";
+import { isRecord } from "@rakazo/core";
 import { watchChecksFromToolResultMessage } from "../../runs/assembly/watch-outside-text.js";
 import type { ComputerModeCheckpoint, TurnCheckpoint } from "../../runs/turn/turn-checkpoint.js";
 import {
@@ -9,10 +10,6 @@ import {
 } from "../../runs/turn/turn-checkpoint.js";
 import type { WatchDeliveryState } from "../context/runtime-context.js";
 import { computerSelection } from "./tools/pi-runtime-computer-mode.js";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 export const ANSWERED_ON_RESUME = new Set(["ask_user", "request_takeover"]);
 

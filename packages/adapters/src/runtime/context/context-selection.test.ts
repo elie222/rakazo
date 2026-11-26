@@ -809,6 +809,27 @@ describe("bounded context selection", () => {
     for (const [index, c] of decoded.conversations.entries())
       expect(c.conversation_id).toBe(`conv${index}`);
   });
+  it("keeps non-routine tool result details free of contextBeforeUseText when shortened before use", () => {
+    const call = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "read-1", name: "read_file", arguments: {} }],
+    };
+    const nonRoutine = {
+      role: "toolResult",
+      toolCallId: "read-1",
+      toolName: "read_file",
+      content: [{ type: "text", text: "payload ".repeat(2000) }],
+      details: { frameId: "frame-1" },
+    };
+    const selected = selectContext([user("check"), call, nonRoutine], {
+      budget: { ...budget, contextWindow: 1500 },
+      strategy: "retrieval",
+    });
+    const result = selected.messages.find((message) => message.role === "toolResult") as
+      | (typeof nonRoutine & { details?: Record<string, unknown> })
+      | undefined;
+    expect(result?.details).toEqual({ frameId: "frame-1" });
+  });
   it("fails explicitly if mandatory content cannot fit rather than silently losing the request", () => {
     expect(() =>
       selectContext([user("large ".repeat(2000))], { budget, strategy: "retrieval" }),

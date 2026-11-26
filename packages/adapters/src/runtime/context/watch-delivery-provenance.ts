@@ -1,4 +1,5 @@
 import type { Context, Message } from "@earendil-works/pi-ai";
+import { isRecord } from "@rakazo/core";
 
 export type WatchDeliveryState =
   | {
@@ -19,10 +20,6 @@ export type WatchDeliveryState =
 export interface PendingWatchDelivery {
   key: string;
   state: WatchDeliveryState;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function cleanWatchDetails(details: Record<string, unknown>): Record<string, unknown> {
