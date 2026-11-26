@@ -56,7 +56,6 @@ export const BUILTIN_TOOL_NAMES = [
   "delete_shared_memory",
   "web_search",
   "web_fetch",
-  "service_search",
   "service_call",
   "cloud_agent_launch",
   "cloud_agent_status",
@@ -138,12 +137,15 @@ export function disabledBuiltinToolSet(names: readonly string[] | undefined): Se
   return disabled;
 }
 
+// Older clients can still save a disabled-tools list that includes the retired search tool.
+const RETIRED_SERVICE_SEARCH = "service_search";
+
 export const DisabledBuiltinToolsSchema = z
   .array(z.string().trim().min(1).max(64))
-  .max(BUILTIN_TOOL_NAMES.length)
+  .max(BUILTIN_TOOL_NAMES.length + 1)
   .superRefine((names, ctx) => {
     names.forEach((name, index) => {
-      if (!isBuiltinToolName(name)) {
+      if (name !== RETIRED_SERVICE_SEARCH && !isBuiltinToolName(name)) {
         ctx.addIssue({
           code: "custom",
           message: `Unknown built-in tool: ${name}`,
@@ -152,4 +154,4 @@ export const DisabledBuiltinToolsSchema = z
       }
     });
   })
-  .transform((names) => [...new Set(names)]);
+  .transform((names) => [...disabledBuiltinToolSet(names)]);

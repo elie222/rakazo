@@ -34,7 +34,6 @@ export const CORE_BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "attach_file",
   "web_search",
   "web_fetch",
-  "service_search",
   "service_call",
   "computer_observe",
   "computer_act",
@@ -99,7 +98,12 @@ export function partitionTools(tools: readonly ConnectorTool[]): {
 } {
   const deferred = tools.filter((tool) => isDeferredTool(tool.name));
   const listed = tools.filter((tool) => !isDeferredTool(tool.name));
-  return { listed: deferred.length ? [...listed, ...bridgeTools(deferred)] : listed, deferred };
+  if (deferred.length) return { listed: [...listed, ...bridgeTools(deferred)], deferred };
+  if (listed.some((tool) => tool.name === "service_call")) {
+    const [findTool] = bridgeTools(deferred);
+    return { listed: [...listed, findTool], deferred };
+  }
+  return { listed, deferred };
 }
 
 function searchEntries(deferred: readonly ConnectorTool[]): CatalogEntry[] {
@@ -119,7 +123,7 @@ function searchEntries(deferred: readonly ConnectorTool[]): CatalogEntry[] {
   );
 }
 
-function bridgeTools(deferred: readonly ConnectorTool[]): ConnectorTool[] {
+function bridgeTools(deferred: readonly ConnectorTool[]): [ConnectorTool, ConnectorTool] {
   return bridgeToolDefinitions(formatNameIndexText(groupedNames(searchEntries(deferred))));
 }
 

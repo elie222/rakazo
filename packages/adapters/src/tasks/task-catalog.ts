@@ -1,4 +1,3 @@
-import type { ConnectorTool } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { listSchedulesFromTool } from "../tools/schedule-tools.js";
 import { listAgentSkillRecords } from "../tools/skill-tools.js";
@@ -15,7 +14,6 @@ type TaskCatalogInput = {
   userId: string;
   /** In a group run, marks which routines post in the group. */
   groupThreadId?: string;
-  tools: readonly Pick<ConnectorTool, "name" | "description" | "readOnly">[];
 };
 
 export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: TaskCatalogInput) {
@@ -45,19 +43,6 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
     }),
   ]);
 
-  const seenTools = new Set<string>();
-  const exposedTools = input.tools.flatMap((tool) => {
-    if (seenTools.has(tool.name)) return [];
-    seenTools.add(tool.name);
-    return [
-      {
-        name: tool.name,
-        description: tool.description,
-        readOnly: tool.readOnly ?? false,
-      },
-    ];
-  });
-
   return {
     guidance: TASK_CATALOG_GUIDANCE,
     tasks: tasks.map((task) => ({
@@ -82,6 +67,5 @@ export async function taskCatalogFromTool(deps: TaskCatalogToolDeps, input: Task
       source: skill.source,
       readOnly: skill.readOnly,
     })),
-    tools: exposedTools,
   };
 }

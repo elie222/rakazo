@@ -215,7 +215,7 @@ PAID_SERVICES_API_KEY=replace-with-org-scoped-token
 `PAID_SERVICES_BASE_URL` 可把请求指向自托管的 Treg，而不是 `https://treg.to`。
 请使用组织级令牌，并保持账户余额充足或开启自动充值；余额为空时每次调用都会失败。
 
-机器人每次运行都会获得 `service_search` 和 `service_call`；`service_call` 和其他操作一样
+机器人通过 `find_tool` 查找付费服务，并通过 `service_call` 调用；`service_call` 和其他操作一样
 遵循机器人的审批模式。只提供只读查询：账户操作、生成任务以及需要账户自身连接的服务不会开放。
 每次调用有机器人设置、审批卡展示的费用上限（最多 $2），提供商在收费前会强制执行。
 启用模型额度时，调用会先从组织额度中预留该上限，再按提供商实际收费加 20% 结算，且不会超过上限；

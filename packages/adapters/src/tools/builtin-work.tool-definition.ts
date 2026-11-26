@@ -165,7 +165,7 @@ export const workTools: ConnectorTool[] = [
   {
     name: "task_catalog",
     description:
-      "Read-only inventory and source of truth for this bot's real open tasks, saved routines, taught skills, reusable skills, and currently exposed tools. Call it before claiming a task or skill exists. Use the returned ids and exact names; do not infer capabilities from memory or conversation text.",
+      "Read-only inventory and source of truth for this bot's real open tasks, saved routines, taught skills, and reusable skills. Call it before claiming a task or skill exists. Use the returned ids and exact names; do not infer capabilities from memory or conversation text.",
     inputSchema: { type: "object", properties: {} },
     readOnly: true,
   },

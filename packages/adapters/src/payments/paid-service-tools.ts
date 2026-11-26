@@ -26,7 +26,6 @@ const BODY_MAX_CHARS = 20_000;
 const QUERY_MAX_CHARS = 4_000;
 const SEARCH_RESULTS = 10;
 
-const searchArgs = z.object({ query: z.string().trim().min(1).max(200) });
 const callArgs = z.object({
   service: z.string().trim().min(1).max(300),
   query: z
@@ -85,25 +84,6 @@ function affordable(services: PaidService[], billing: boolean) {
   );
 }
 
-export async function serviceSearchFromTool(
-  provider: PaidServiceProvider,
-  context: AdapterContext,
-  args: Record<string, unknown>,
-  billing: boolean,
-) {
-  const parsed = searchArgs.safeParse(args);
-  if (!parsed.success) return { error: "query must be 1-200 characters." };
-  try {
-    return { services: await findPaidServices(provider, parsed.data.query, context, billing) };
-  } catch (error) {
-    context.signal.throwIfAborted();
-    getLogger().warn("paid_services.search_failed", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return { error: "Service search is unavailable right now." };
-  }
-}
-
 function boundedResult(data: unknown) {
   const text = JSON.stringify(data) ?? "null";
   return text.length > RESULT_MAX_CHARS
@@ -156,7 +136,7 @@ export async function serviceCallFromTool(
     return undefined;
   });
   if (service === undefined) return { error: "Service search is unavailable right now." };
-  if (!service) return { error: "Unknown service. Use service_search to find one." };
+  if (!service) return { error: "Unknown service. Use find_tool to find one." };
 
   const markup = factor(deps.billing);
   const maxUsd = roundUsd(max_cost_usd);
