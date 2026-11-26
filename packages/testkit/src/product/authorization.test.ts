@@ -254,6 +254,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["updater/apply", {}],
       ["models/list"],
       ["models/credentials"],
+      ["models/organizationConnections/list", {}],
+      [
+        "models/organizationConnections/create",
+        { provider: "test", apiKey: "not-a-real-key", modelId: "test/model", label: "Test" },
+      ],
+      ["models/organizationConnections/remove", { id: "missing-connection" }],
       ["models/connect", { provider: "test", apiKey: "not-a-real-key" }],
       ["models/beginOAuth", { provider: "openai-codex" }],
       ["models/submitOAuthCode", { loginId: "missing-login", code: "fake-code" }],
