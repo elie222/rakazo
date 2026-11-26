@@ -63,7 +63,10 @@ describe("botModelState", () => {
   it("lists the Space default's model for a pinned bot even when no connection offers it", () => {
     const state = botModelState({
       credentials,
-      catalog: [...catalog, { provider: "gone", id: "old", label: "Old" }] as ModelCatalogEntry[],
+      catalog: [
+        ...catalog,
+        { provider: "gone", id: "old", label: "Vendor: Old" },
+      ] as ModelCatalogEntry[],
       me: { defaultProvider: "gone", defaultModel: "old" },
       modelKey: "acme::plain",
     });
@@ -72,6 +75,7 @@ describe("botModelState", () => {
       "acme::fast",
       "acme::plain",
     ]);
+    expect(state.choices[0]?.label).toBe("Old");
     expect(state.savedModelKey("gone::old")).toBe("");
   });
 

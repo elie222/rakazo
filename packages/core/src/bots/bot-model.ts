@@ -53,7 +53,7 @@ export function botModelState({
   const connected = connectedModelChoices(credentials, catalog);
   // The Space default's model is always listed, so a pinned bot can go back to following it.
   const choices = chatModelChoices(connected, defaultModelKey, {
-    label: defaultEntry?.label,
+    label: shortModelName(defaultEntry?.label),
     images: defaultEntry?.images,
   });
   if (!choices.some((choice) => choice.key === shownKey)) {
