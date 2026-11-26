@@ -1029,6 +1029,11 @@ describe("tool step history", () => {
                   result: `${"[".repeat(19)}{"filler":"${"x".repeat(900)}","value":{"mode":"opaque-123"}}${"]".repeat(19)}`,
                 },
                 { result: 'Response body: "s\\u00e9cret-123". HTTP 400' },
+                { result: '{"message":"details: [\\"opaque-123\\"]' },
+                { result: '{"message":"\\u006fpaque-123006\\u0074oken-456"}' },
+                { result: '{"message":"\\u006fpaque-123 and other-secret"}' },
+                { result: '{"message":"opaque-1234567890"}' },
+                { result: '{"done":true}\n731428' },
               ],
             },
           ],
@@ -1043,6 +1048,10 @@ describe("tool step history", () => {
         "[731428,918273]",
         '\\"opaque-123\\"',
         "sécret-123",
+        "\\u006fpaque-123",
+        "\\u0074oken-456",
+        "other-secret",
+        'heading\n"opaque-1234567890"\nfooter',
       ]),
     );
     const extraCalls =
@@ -1077,6 +1086,20 @@ describe("tool step history", () => {
     expect(extraCalls?.[8]?.result).not.toContain("opaque-123");
     expect(() => JSON.parse(extraCalls?.[8]?.result ?? "")).not.toThrow();
     expect(extraCalls?.[9]?.result).toBe('Response body: "[redacted]". HTTP 400');
+    expect(extraCalls?.[10]?.result).toBe('{"message":"details: [[redacted]]');
+    expect(JSON.parse(extraCalls?.[11]?.result ?? "")).toEqual({
+      message: "[redacted]006[redacted]",
+    });
+    expect(JSON.parse(extraCalls?.[12]?.result ?? "")).toEqual({
+      message: "[redacted] and [redacted]",
+    });
+    expect(JSON.parse(extraCalls?.[13]?.result ?? "")).toEqual({
+      message: "[redacted]",
+    });
+    expect((extraCalls?.[14]?.result ?? "").split("\n").map((line) => JSON.parse(line))).toEqual([
+      { done: true },
+      "[redacted]",
+    ]);
 
     // Overlapping label+value and quoted secrets must scan linearly, never re-scanning growing prefixes.
     const overlapping = 'fixture:\n"opaque-123"\n'.repeat(2_000);

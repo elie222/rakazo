@@ -1,371 +1,34 @@
-import { createSecretMatcher } from "./secret-matcher.js";
+import { REDACTED_MARKER, redactedRanges } from "./events.js";
+import type { JsonNode } from "./json-spans.js";
+import {
+  applyReplacements,
+  diffRedactedSpans,
+  hasExactSortedRange,
+  isJsonWhitespace,
+  isValidJsonStringLiteral,
+  jsonStringEscapeBoundaries,
+  overlapsOutsideToken,
+  parseJsonSpans,
+  redactRawStringToken,
+  sliceRangesWithin,
+} from "./json-spans.js";
 
-const REDACTED_MARKER = "[redacted]";
 const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
 const JSON_VALUE_TOKEN =
   /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
 const JSON_STRING_LITERAL_TOKEN = /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))/g;
-const MAX_JSON_SPAN_DEPTH = 256;
 
-type JsonStringNode = { kind: "string"; start: number; end: number };
-type JsonNode =
-  | JsonStringNode
-  | { kind: "primitive"; start: number; end: number }
-  | { kind: "array"; start: number; end: number; items: JsonNode[] }
-  | {
-      kind: "object";
-      start: number;
-      end: number;
-      entries: Array<{ key: JsonStringNode; value: JsonNode }>;
-    };
-
-function isJsonWhitespace(ch: string | undefined): boolean {
-  return ch === " " || ch === "\t" || ch === "\r" || ch === "\n";
-}
-
-function parseJsonSpans(
-  raw: string,
-): { root: JsonNode; nodesByStart: Map<number, JsonNode> } | undefined {
-  let pos = 0;
-  const nodesByStart = new Map<number, JsonNode>();
-  const record = <T extends JsonNode>(node: T): T => {
-    nodesByStart.set(node.start, node);
-    return node;
+function blackBoxTokenRanges(
+  redact: (text: string) => string,
+): (candidate: string) => ReadonlyArray<readonly [number, number]> {
+  return (candidate) => {
+    const redacted = redact(candidate);
+    if (redacted === candidate) return [];
+    const boundaries = isValidJsonStringLiteral(candidate)
+      ? jsonStringEscapeBoundaries(candidate)
+      : undefined;
+    return diffRedactedSpans(candidate, redacted, { boundaries, redact }) ?? [];
   };
-  const skipWs = () => {
-    while (pos < raw.length && isJsonWhitespace(raw[pos])) pos += 1;
-  };
-  const parseString = (): JsonStringNode | undefined => {
-    if (raw[pos] !== '"') return undefined;
-    const start = pos;
-    pos += 1;
-    while (pos < raw.length) {
-      const code = raw.charCodeAt(pos);
-      if (code < 0x20) return undefined;
-      if (code === 0x5c) {
-        pos += 1;
-        if (pos >= raw.length) return undefined;
-        const esc = raw[pos]!;
-        if (esc === "u") {
-          for (let i = 1; i <= 4; i += 1) {
-            if (pos + i >= raw.length || !/[0-9a-fA-F]/.test(raw[pos + i]!)) return undefined;
-          }
-          pos += 5;
-        } else if ('"\\/bfnrt'.includes(esc)) {
-          pos += 1;
-        } else {
-          return undefined;
-        }
-        continue;
-      }
-      if (code === 0x22) {
-        pos += 1;
-        return record({ kind: "string", start, end: pos });
-      }
-      pos += 1;
-    }
-    return undefined;
-  };
-  const parsePrimitive = (): (JsonNode & { kind: "primitive" }) | undefined => {
-    const start = pos;
-    if (raw.startsWith("true", pos) || raw.startsWith("null", pos)) {
-      pos += 4;
-      return record({ kind: "primitive", start, end: pos });
-    }
-    if (raw.startsWith("false", pos)) {
-      pos += 5;
-      return record({ kind: "primitive", start, end: pos });
-    }
-    if (raw[pos] === "-") pos += 1;
-    if (pos >= raw.length) return undefined;
-    if (raw[pos] === "0") {
-      pos += 1;
-    } else if (raw[pos]! >= "1" && raw[pos]! <= "9") {
-      while (pos < raw.length && raw[pos]! >= "0" && raw[pos]! <= "9") pos += 1;
-    } else {
-      return undefined;
-    }
-    if (raw[pos] === ".") {
-      pos += 1;
-      if (pos >= raw.length || raw[pos]! < "0" || raw[pos]! > "9") return undefined;
-      while (pos < raw.length && raw[pos]! >= "0" && raw[pos]! <= "9") pos += 1;
-    }
-    if (raw[pos] === "e" || raw[pos] === "E") {
-      pos += 1;
-      if (raw[pos] === "+" || raw[pos] === "-") pos += 1;
-      if (pos >= raw.length || raw[pos]! < "0" || raw[pos]! > "9") return undefined;
-      while (pos < raw.length && raw[pos]! >= "0" && raw[pos]! <= "9") pos += 1;
-    }
-    return record({ kind: "primitive", start, end: pos });
-  };
-  const parseValue = (depth: number): JsonNode | undefined => {
-    if (depth > MAX_JSON_SPAN_DEPTH) return undefined;
-    skipWs();
-    if (pos >= raw.length) return undefined;
-    const ch = raw[pos];
-    if (ch === '"') return parseString();
-    if (ch === "{") {
-      const start = pos;
-      pos += 1;
-      skipWs();
-      const entries: Array<{ key: JsonStringNode; value: JsonNode }> = [];
-      if (raw[pos] === "}") {
-        pos += 1;
-        return record({ kind: "object", start, end: pos, entries });
-      }
-      while (true) {
-        skipWs();
-        const key = parseString();
-        if (!key) return undefined;
-        skipWs();
-        if (raw[pos] !== ":") return undefined;
-        pos += 1;
-        const value = parseValue(depth + 1);
-        if (!value) return undefined;
-        entries.push({ key, value });
-        skipWs();
-        if (raw[pos] === "}") {
-          pos += 1;
-          return record({ kind: "object", start, end: pos, entries });
-        }
-        if (raw[pos] !== ",") return undefined;
-        pos += 1;
-      }
-    }
-    if (ch === "[") {
-      const start = pos;
-      pos += 1;
-      skipWs();
-      const items: JsonNode[] = [];
-      if (raw[pos] === "]") {
-        pos += 1;
-        return record({ kind: "array", start, end: pos, items });
-      }
-      while (true) {
-        const item = parseValue(depth + 1);
-        if (!item) return undefined;
-        items.push(item);
-        skipWs();
-        if (raw[pos] === "]") {
-          pos += 1;
-          return record({ kind: "array", start, end: pos, items });
-        }
-        if (raw[pos] !== ",") return undefined;
-        pos += 1;
-      }
-    }
-    return parsePrimitive();
-  };
-  const root = parseValue(0);
-  if (!root) return undefined;
-  skipWs();
-  return pos === raw.length ? { root, nodesByStart } : undefined;
-}
-
-function hasExactSortedRange(
-  ranges: ReadonlyArray<readonly [number, number]>,
-  start: number,
-  end: number,
-): boolean {
-  let lo = 0;
-  let hi = ranges.length - 1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >>> 1;
-    const [rStart, rEnd] = ranges[mid]!;
-    if (rStart < start) lo = mid + 1;
-    else if (rStart > start) hi = mid - 1;
-    else return rEnd === end;
-  }
-  return false;
-}
-
-function overlapsOutsideToken(
-  ranges: ReadonlyArray<readonly [number, number]>,
-  start: number,
-  end: number,
-): boolean {
-  let lo = 0;
-  let hi = ranges.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (ranges[mid]![1] <= start) lo = mid + 1;
-    else hi = mid;
-  }
-  while (lo < ranges.length && ranges[lo]![0] < end) {
-    const [rStart, rEnd] = ranges[lo]!;
-    if (rStart < start || rEnd > end) return true;
-    lo += 1;
-  }
-  return false;
-}
-
-function sliceRangesWithin(
-  ranges: ReadonlyArray<readonly [number, number]>,
-  start: number,
-  end: number,
-): Array<[number, number]> {
-  let lo = 0;
-  let hi = ranges.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (ranges[mid]![1] <= start) lo = mid + 1;
-    else hi = mid;
-  }
-  const inside: Array<[number, number]> = [];
-  while (lo < ranges.length && ranges[lo]![0] < end) {
-    const [rStart, rEnd] = ranges[lo]!;
-    if (rStart >= start && rEnd <= end) {
-      inside.push([rStart - start, rEnd - start]);
-    }
-    lo += 1;
-  }
-  return inside;
-}
-
-function diffRedactedSpans(
-  raw: string,
-  rawRedacted: string,
-  nodesByStart?: ReadonlyMap<number, JsonNode>,
-  redact?: (text: string) => string,
-): Array<[number, number]> | undefined {
-  if (rawRedacted === raw) return [];
-  const ranges: Array<[number, number]> = [];
-  let r = 0;
-  let o = 0;
-  while (r < raw.length || o < rawRedacted.length) {
-    while (r < raw.length && o < rawRedacted.length && raw[r] === rawRedacted[o]) {
-      r += 1;
-      o += 1;
-    }
-    if (r === raw.length && o === rawRedacted.length) break;
-    // Back up across leading characters shared with "[redacted]" (such as "[" in an array secret).
-    let markerStart = -1;
-    const minBack = Math.max(0, o - (REDACTED_MARKER.length - 1));
-    for (let cand = o; cand >= minBack; cand -= 1) {
-      if (rawRedacted.startsWith(REDACTED_MARKER, cand)) {
-        const delta = o - cand;
-        if (r >= delta && raw.slice(r - delta, r) === rawRedacted.slice(cand, o)) {
-          markerStart = cand;
-          r -= delta;
-          o = cand;
-          break;
-        }
-      }
-    }
-    if (markerStart === -1) return undefined;
-    const matchStart = r;
-    o += REDACTED_MARKER.length;
-    while (rawRedacted.startsWith(REDACTED_MARKER, o)) {
-      o += REDACTED_MARKER.length;
-    }
-    const nextMarker = rawRedacted.indexOf(REDACTED_MARKER, o);
-    if (nextMarker === -1) {
-      const suffix = rawRedacted.slice(o);
-      const matchEnd = raw.length - suffix.length;
-      if (matchEnd < matchStart || !raw.endsWith(suffix)) return undefined;
-      ranges.push([matchStart, matchEnd]);
-      return ranges;
-    }
-    const gap = rawRedacted.slice(o, nextMarker);
-    if (!gap) return undefined;
-    let matchEnd = -1;
-    const node = nodesByStart?.get(matchStart);
-    if (
-      node &&
-      redact &&
-      raw.startsWith(gap, node.end) &&
-      redact(raw.slice(matchStart, node.end)) === REDACTED_MARKER
-    ) {
-      matchEnd = node.end;
-    }
-    if (matchEnd === -1) {
-      const pos = raw.indexOf(gap, matchStart + 1);
-      if (pos === -1) return undefined;
-      matchEnd = pos;
-    }
-    ranges.push([matchStart, matchEnd]);
-    r = matchEnd + gap.length;
-    o = nextMarker;
-  }
-  return ranges;
-}
-
-function jsonStringEscapeBoundaries(token: string): Uint8Array {
-  const ok = new Uint8Array(token.length + 1);
-  ok[0] = 1;
-  ok[token.length] = 1;
-  let pos = 1;
-  const end = token.length - 1;
-  while (pos < end) {
-    ok[pos] = 1;
-    if (token[pos] === "\\") {
-      pos += token[pos + 1] === "u" ? 6 : 2;
-    } else {
-      pos += 1;
-    }
-  }
-  ok[end] = 1;
-  return ok;
-}
-
-function isValidJsonStringLiteral(text: string): boolean {
-  if (text.length < 2 || !text.startsWith('"') || !text.endsWith('"')) return false;
-  try {
-    return typeof JSON.parse(text) === "string";
-  } catch {
-    return false;
-  }
-}
-
-function redactRawStringToken(
-  token: string,
-  ranges: ReadonlyArray<readonly [number, number]>,
-): string {
-  if (ranges.length === 0) return token;
-  const boundaries = jsonStringEscapeBoundaries(token);
-  const validRanges = ranges.filter(
-    ([start, end]) =>
-      start >= 0 &&
-      end <= token.length &&
-      start < end &&
-      boundaries[start] === 1 &&
-      boundaries[end] === 1,
-  );
-  if (validRanges.length === 0) return token;
-  let out = "";
-  let cursor = 0;
-  for (const [start, end] of validRanges) {
-    if (start > cursor) out += token.slice(cursor, start);
-    out += REDACTED_MARKER;
-    cursor = end;
-  }
-  if (cursor < token.length) out += token.slice(cursor);
-  const touchedStart = validRanges[0]![0] === 0;
-  const touchedEnd = validRanges.at(-1)![1] === token.length;
-  if (!touchedStart && !touchedEnd) {
-    return isValidJsonStringLiteral(out) ? out : JSON.stringify(REDACTED_MARKER);
-  }
-  if (isValidJsonStringLiteral(out)) return out;
-  const trimmedStart = !touchedStart && out.startsWith('"') ? out.slice(1) : out;
-  const trimmed =
-    !touchedEnd && trimmedStart.endsWith('"') ? trimmedStart.slice(0, -1) : trimmedStart;
-  return JSON.stringify(trimmed);
-}
-
-function applyReplacements(
-  raw: string,
-  replacements: ReadonlyArray<{ start: number; end: number; text: string }>,
-): string {
-  if (replacements.length === 0) return raw;
-  let out = "";
-  let cursor = 0;
-  for (const rep of replacements) {
-    if (rep.start > cursor) out += raw.slice(cursor, rep.start);
-    out += rep.text;
-    cursor = rep.end;
-  }
-  if (cursor < raw.length) out += raw.slice(cursor);
-  return out;
 }
 
 function redactValidJsonDocument(
@@ -377,6 +40,7 @@ function redactValidJsonDocument(
     rawMatches?: ReadonlyArray<readonly [number, number]>;
     rawTokenRanges?: (token: string) => ReadonlyArray<readonly [number, number]>;
     verifyBlackBox?: (text: string) => string;
+    quoteRootPrimitive?: boolean;
   },
 ): string | undefined {
   const replacements: Array<{ start: number; end: number; text: string }> = [];
@@ -395,7 +59,9 @@ function redactValidJsonDocument(
         start: node.start,
         end: node.end,
         text:
-          isRoot && node.kind === "primitive" ? REDACTED_MARKER : JSON.stringify(REDACTED_MARKER),
+          isRoot && node.kind === "primitive" && !options.quoteRootPrimitive
+            ? REDACTED_MARKER
+            : JSON.stringify(REDACTED_MARKER),
       });
       return;
     }
@@ -413,17 +79,26 @@ function redactValidJsonDocument(
     leafSpans.push([node.start, node.end]);
     const token = raw.slice(node.start, node.end);
     if (node.kind === "string") {
-      const decoded: unknown = JSON.parse(token);
+      // Redact escape-aligned raw matches BEFORE decoding so re-serializing another redacted
+      // secret in the same string cannot turn a raw escaped secret into its unescaped form.
+      let rawCleaned = token;
+      if (options.rawTokenRanges) {
+        const rawRanges =
+          rawMatches !== undefined
+            ? sliceRangesWithin(rawMatches, node.start, node.end)
+            : options.rawTokenRanges(token);
+        if (rawRanges.length > 0) {
+          rawCleaned = redactRawStringToken(token, rawRanges);
+        }
+      }
+      const decoded: unknown = JSON.parse(rawCleaned);
       if (typeof decoded === "string") {
         const afterDecoded = options.redactString(decoded);
-        let candidate = afterDecoded === decoded ? token : JSON.stringify(afterDecoded);
-        if (options.rawTokenRanges) {
-          const tokenRanges =
-            candidate === token && rawMatches !== undefined
-              ? sliceRangesWithin(rawMatches, node.start, node.end)
-              : options.rawTokenRanges(candidate);
-          if (tokenRanges.length > 0) {
-            candidate = redactRawStringToken(candidate, tokenRanges);
+        let candidate = afterDecoded === decoded ? rawCleaned : JSON.stringify(afterDecoded);
+        if (afterDecoded !== decoded && options.rawTokenRanges) {
+          const afterRanges = options.rawTokenRanges(candidate);
+          if (afterRanges.length > 0) {
+            candidate = redactRawStringToken(candidate, afterRanges);
           }
         }
         if (candidate !== token) {
@@ -437,7 +112,7 @@ function redactValidJsonDocument(
       replacements.push({
         start: node.start,
         end: node.end,
-        text: isRoot ? next : JSON.stringify(next),
+        text: isRoot && !options.quoteRootPrimitive ? next : JSON.stringify(next),
       });
     }
   };
@@ -464,7 +139,10 @@ function redactValidJsonDocument(
     if (verified !== out) {
       const reparsed = parseJsonSpans(out);
       const remaining = reparsed
-        ? diffRedactedSpans(out, verified, reparsed.nodesByStart, options.verifyBlackBox)
+        ? diffRedactedSpans(out, verified, {
+            nodesByStart: reparsed.nodesByStart,
+            redact: options.verifyBlackBox,
+          })
         : undefined;
       if (reparsed && remaining && remaining.length > 0) {
         return redactValidJsonDocument(out, reparsed, {
@@ -538,34 +216,64 @@ function redactSingleJsonStringToken(
   fallbackPlain?: (text: string) => string,
   rawTokenRanges?: (candidate: string) => ReadonlyArray<readonly [number, number]>,
 ): string {
-  try {
-    const decoded: unknown = JSON.parse(token);
-    if (typeof decoded !== "string") return fallbackPlain ? fallbackPlain(token) : token;
-    const next = redact(decoded);
-    let candidate = next === decoded ? token : JSON.stringify(next);
+  if (isValidJsonStringLiteral(token)) {
+    let rawCleaned = token;
     if (rawTokenRanges) {
-      const ranges = rawTokenRanges(candidate);
+      const ranges = rawTokenRanges(token);
       if (ranges.length > 0) {
-        candidate = redactRawStringToken(candidate, ranges);
+        rawCleaned = redactRawStringToken(token, ranges);
       }
     }
-    return candidate;
-  } catch {
-    // Truncated trailing string literal in cut-off JSON (including a lone trailing backslash).
-    const { trimmed, trailing: trailingEscape } = splitTrailingIncompleteJsonEscape(token);
     try {
-      const decoded: unknown = JSON.parse(`${trimmed}"`);
+      const decoded: unknown = JSON.parse(rawCleaned);
       if (typeof decoded !== "string") return fallbackPlain ? fallbackPlain(token) : token;
       const next = redact(decoded);
-      return next === decoded ? token : `${JSON.stringify(next).slice(0, -1)}${trailingEscape}`;
-    } catch {
-      if (!fallbackPlain) return token;
-      if (token.length >= 2 && token.startsWith('"') && token.endsWith('"')) {
-        return `"${fallbackPlain(token.slice(1, -1))}"`;
+      if (next === decoded) return rawCleaned;
+      let candidate = JSON.stringify(next);
+      if (rawTokenRanges) {
+        const afterRanges = rawTokenRanges(candidate);
+        if (afterRanges.length > 0) {
+          candidate = redactRawStringToken(candidate, afterRanges);
+        }
       }
-      return fallbackPlain(token);
+      return candidate;
+    } catch {
+      return fallbackPlain ? fallbackPlain(token) : token;
     }
   }
+  // Truncated trailing string literal in cut-off JSON (including a lone trailing backslash).
+  const { trimmed, trailing: trailingEscape } = splitTrailingIncompleteJsonEscape(token);
+  const closedToken = `${trimmed}"`;
+  if (isValidJsonStringLiteral(closedToken)) {
+    let rawCleaned = closedToken;
+    if (rawTokenRanges) {
+      const ranges = rawTokenRanges(closedToken);
+      if (ranges.length > 0) {
+        rawCleaned = redactRawStringToken(closedToken, ranges, trimmed.length);
+      }
+    }
+    try {
+      const decoded: unknown = JSON.parse(rawCleaned);
+      if (typeof decoded !== "string") return fallbackPlain ? fallbackPlain(token) : token;
+      const next = redact(decoded);
+      if (next === decoded && rawCleaned === closedToken) return token;
+      let encoded = next === decoded ? rawCleaned : JSON.stringify(next);
+      if (next !== decoded && rawTokenRanges) {
+        const afterRanges = rawTokenRanges(encoded);
+        if (afterRanges.length > 0) {
+          encoded = redactRawStringToken(encoded, afterRanges, encoded.length - 1);
+        }
+      }
+      return `${encoded.slice(0, -1)}${trailingEscape}`;
+    } catch {
+      // Fall through to plain fallback below.
+    }
+  }
+  if (!fallbackPlain) return token;
+  if (token.length >= 2 && token.startsWith('"') && token.endsWith('"')) {
+    return `"${fallbackPlain(token.slice(1, -1))}"`;
+  }
+  return fallbackPlain(token);
 }
 
 function redactJsonValueToken(
@@ -673,16 +381,6 @@ function followsJsonStringToken(raw: string, end: number, closed: boolean): bool
   return isJsonWhitespace(ch) || !/[A-Za-z0-9_"\\]/.test(ch);
 }
 
-function blackBoxTokenRanges(
-  redact: (text: string) => string,
-): (candidate: string) => ReadonlyArray<readonly [number, number]> {
-  return (candidate) => {
-    const redacted = redact(candidate);
-    if (redacted === candidate) return [];
-    return diffRedactedSpans(candidate, redacted, undefined, redact) ?? [];
-  };
-}
-
 function replaceJsonSegmentTokens(
   chunk: string,
   redact: (text: string) => string,
@@ -690,7 +388,7 @@ function replaceJsonSegmentTokens(
 ): string {
   const chunkRedacted = redact(chunk);
   const rawMatches =
-    chunkRedacted !== chunk ? diffRedactedSpans(chunk, chunkRedacted, undefined, redact) : [];
+    chunkRedacted !== chunk ? diffRedactedSpans(chunk, chunkRedacted, { redact }) : [];
   const tokenRanges = blackBoxTokenRanges(redact);
   let out = "";
   let cursor = 0;
@@ -843,10 +541,15 @@ function redactJsonStringsAndPlainTextSingle(
   raw: string,
   redactString: (text: string) => string,
   redactPlain: (text: string) => string,
-  matcher: ReturnType<typeof createSecretMatcher> | undefined,
+  wholeSecrets: readonly string[] | undefined,
+  quoteRootPrimitive = false,
 ): string {
-  const rawMatches = matcher ? matcher.ranges(raw) : [];
-  const rawTokenRanges = matcher ? (candidate: string) => matcher.ranges(candidate) : undefined;
+  const rawMatches =
+    wholeSecrets && wholeSecrets.length > 0 ? redactedRanges(raw, wholeSecrets) : [];
+  const rawTokenRanges =
+    wholeSecrets && wholeSecrets.length > 0
+      ? (candidate: string) => redactedRanges(candidate, wholeSecrets)
+      : undefined;
   const parsed = parseJsonSpans(raw);
   if (parsed) {
     const redactedJson = redactValidJsonDocument(raw, parsed, {
@@ -854,6 +557,7 @@ function redactJsonStringsAndPlainTextSingle(
       redactPrimitive: redactPlain,
       rawMatches,
       rawTokenRanges,
+      quoteRootPrimitive,
     });
     if (redactedJson !== undefined) return redactedJson;
   }
@@ -893,10 +597,12 @@ export function redactJsonStringsAndPlainText(
   redactPlain: (text: string) => string = redactString,
   wholeSecrets?: readonly string[],
 ): string {
-  const matcher =
-    wholeSecrets && wholeSecrets.length > 0 ? createSecretMatcher(wholeSecrets) : undefined;
-  const rawMatches = matcher ? matcher.ranges(raw) : [];
-  const rawTokenRanges = matcher ? (candidate: string) => matcher.ranges(candidate) : undefined;
+  const rawMatches =
+    wholeSecrets && wholeSecrets.length > 0 ? redactedRanges(raw, wholeSecrets) : [];
+  const rawTokenRanges =
+    wholeSecrets && wholeSecrets.length > 0
+      ? (candidate: string) => redactedRanges(candidate, wholeSecrets)
+      : undefined;
   const parsed = parseJsonSpans(raw);
   if (parsed) {
     const redactedJson = redactValidJsonDocument(raw, parsed, {
@@ -914,25 +620,32 @@ export function redactJsonStringsAndPlainText(
     countLineBreaks(redactPlain(raw)) === countLineBreaks(raw)
   ) {
     const byLine = tryRedactJsonLines(raw, (line) =>
-      redactJsonStringsAndPlainTextSingle(line, redactString, redactPlain, matcher),
+      redactJsonStringsAndPlainTextSingle(line, redactString, redactPlain, wholeSecrets, true),
     );
     if (byLine !== undefined) return byLine;
   }
-  return redactJsonStringsAndPlainTextSingle(raw, redactString, redactPlain, matcher);
+  return redactJsonStringsAndPlainTextSingle(raw, redactString, redactPlain, wholeSecrets);
 }
 
-function redactJsonTextSingle(raw: string, redact: (text: string) => string): string {
+function redactJsonTextSingle(
+  raw: string,
+  redact: (text: string) => string,
+  quoteRootPrimitive = false,
+): string {
   const parsed = parseJsonSpans(raw);
   if (parsed) {
     const rawRedacted = redact(raw);
     const rawMatches =
-      rawRedacted === raw ? [] : diffRedactedSpans(raw, rawRedacted, parsed.nodesByStart, redact);
+      rawRedacted === raw
+        ? []
+        : diffRedactedSpans(raw, rawRedacted, { nodesByStart: parsed.nodesByStart, redact });
     const redactedJson = redactValidJsonDocument(raw, parsed, {
       redactString: redact,
       redactPrimitive: redact,
       rawMatches,
       rawTokenRanges: blackBoxTokenRanges(redact),
       verifyBlackBox: redact,
+      quoteRootPrimitive,
     });
     if (redactedJson !== undefined) return redactedJson;
   }
@@ -944,7 +657,9 @@ export function redactJsonText(raw: string, redact: (text: string) => string): s
   if (parsed) {
     const rawRedacted = redact(raw);
     const rawMatches =
-      rawRedacted === raw ? [] : diffRedactedSpans(raw, rawRedacted, parsed.nodesByStart, redact);
+      rawRedacted === raw
+        ? []
+        : diffRedactedSpans(raw, rawRedacted, { nodesByStart: parsed.nodesByStart, redact });
     const redactedJson = redactValidJsonDocument(raw, parsed, {
       redactString: redact,
       redactPrimitive: redact,
@@ -959,7 +674,7 @@ export function redactJsonText(raw: string, redact: (text: string) => string): s
     !BOUNDED_OMISSION_MARKER.test(raw) &&
     countLineBreaks(redact(raw)) === countLineBreaks(raw)
   ) {
-    const byLine = tryRedactJsonLines(raw, (line) => redactJsonTextSingle(line, redact));
+    const byLine = tryRedactJsonLines(raw, (line) => redactJsonTextSingle(line, redact, true));
     if (byLine !== undefined) return byLine;
   }
   return redactJsonStringTokens(raw, redact);

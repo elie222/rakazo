@@ -191,5 +191,38 @@ describe("sanitizeConnectorError", () => {
         "sécret-123",
       ]),
     ).toBe('Response body: "[redacted]". HTTP 400');
+
+    // Clipped JSON string with escape-aligned registered secret.
+    expect(
+      sanitizeConnectorError(new Error('{"message":"details: [\\"opaque-123\\"]'), [
+        escapedQuotedSecret,
+      ]),
+    ).toBe('{"message":"details: [[redacted]]');
+
+    // Co-occurring raw-escaped secret and plain secret in the same string.
+    expect(
+      JSON.parse(
+        sanitizeConnectorError(new Error('{"message":"\\u006fpaque-123 and other-secret"}'), [
+          "\\u006fpaque-123",
+          "other-secret",
+        ]),
+      ),
+    ).toEqual({ message: "[redacted] and [redacted]" });
+
+    // Protected line extracted from a multiline secret.
+    expect(
+      JSON.parse(
+        sanitizeConnectorError(new Error('{"message":"opaque-1234567890"}'), [
+          'heading\n"opaque-1234567890"\nfooter',
+        ]),
+      ),
+    ).toEqual({ message: "[redacted]" });
+
+    // Primitive JSONL record stays valid JSON when redacted.
+    expect(
+      sanitizeConnectorError(new Error('{"done":true}\n731428'), ["731428"])
+        .split("\n")
+        .map((line) => JSON.parse(line)),
+    ).toEqual([{ done: true }, "[redacted]"]);
   });
 });

@@ -70,7 +70,7 @@ export function sanitizeSensitiveText(message: string) {
     .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
     .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
     .replace(
-      /Bearer\s+(?:"(?!\s*[:,}\]\r\n]|$)(?:[^"\r\n]+)"?|'(?!\s*[:,}\]\r\n]|$)(?:[^'\r\n]+)'?|[^\s"',;&}]+)/gi,
+      /Bearer\s+(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|(?:\\(?!")|[^\s"',;&}\\])+)/gi,
       "Bearer [redacted]",
     )
     .replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, "[redacted]")

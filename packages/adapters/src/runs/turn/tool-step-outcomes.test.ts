@@ -750,6 +750,50 @@ describe("tool step outcomes", () => {
     );
     expect(JSON.parse(bearerKeyKept ?? "")).toEqual({ "Bearer ": "next" });
     expect(sanitizeSensitiveText('{"Bearer ":"next"}')).toBe('{"Bearer ":"next"}');
+    expect(
+      JSON.parse(sanitizeSensitiveText(JSON.stringify({ message: 'Bearer "opaque-123"' }))),
+    ).toEqual({ message: "Bearer [redacted]" });
+
+    const clippedEscaped = keptToolResult(
+      {
+        ...base,
+        result: { content: [{ type: "text", text: '{"message":"details: [\\"opaque-123\\"]' }] },
+      },
+      ['\\"opaque-123\\"'],
+    );
+    expect(clippedEscaped).toBe('{"message":"details: [[redacted]]');
+
+    const rawAndDecoded = keptToolResult(
+      {
+        ...base,
+        result: {
+          content: [{ type: "text", text: '{"message":"\\u006fpaque-123 and other-secret"}' }],
+        },
+      },
+      ["\\u006fpaque-123", "other-secret"],
+    );
+    expect(JSON.parse(rawAndDecoded ?? "")).toEqual({ message: "[redacted] and [redacted]" });
+
+    const multilineLine = keptToolResult(
+      {
+        ...base,
+        result: { content: [{ type: "text", text: '{"message":"opaque-1234567890"}' }] },
+      },
+      ['heading\n"opaque-1234567890"\nfooter'],
+    );
+    expect(JSON.parse(multilineLine ?? "")).toEqual({ message: "[redacted]" });
+
+    const primitiveJsonl = keptToolResult(
+      {
+        ...base,
+        result: { content: [{ type: "text", text: '{"done":true}\n731428' }] },
+      },
+      ["731428"],
+    );
+    expect((primitiveJsonl ?? "").split("\n").map((line) => JSON.parse(line))).toEqual([
+      { done: true },
+      "[redacted]",
+    ]);
 
     const storedTranscript = JSON.stringify({
       version: 1,
