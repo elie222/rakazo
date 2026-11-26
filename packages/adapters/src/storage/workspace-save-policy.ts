@@ -160,19 +160,19 @@ export function workspaceSaveFindCommand(): string {
     .join(" -o ");
   const find = "find . -regextype posix-extended";
   const script = [
+    // Byte-wise C locale keeps every ASCII pattern and fnmatch -path check fast without
+    // per-path multibyte decoding, while preserving raw UTF-8 path bytes.
+    "export LC_ALL=C",
     // Errors only cost a missed tag, which saves that directory; the second walk reports them.
     // Like isTaggedCacheDirectory, only a tag that starts with the signature counts.
     // A name with a newline cannot be listed one per line, so its directory is kept. The home
     // itself is never pruned, and past the cap the remaining tagged directories are kept so the
     // final find's arguments stay bounded.
-    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f -size -${MAX_CACHE_DIRECTORY_TAG_BYTES}c ! -path ./${CACHE_DIRECTORY_TAG} ! -path '*\n*' -exec awk ${shellQuote(`FNR == 1 && index($0, "${CACHE_DIRECTORY_SIGNATURE}") == 1 { print FILENAME } { nextfile }`)} {} + 2>/dev/null | head -n ${MAX_PRUNED_CACHE_DIRECTORIES} | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g')`,
-    "n=$#",
+    `tags=$(${find} \\( ${excluded} \\) -prune -o -name ${CACHE_DIRECTORY_TAG} -type f -size -${MAX_CACHE_DIRECTORY_TAG_BYTES}c ! -path ./${CACHE_DIRECTORY_TAG} ! -path '*\n*' -exec awk ${shellQuote(`FNR == 1 && index($0, "${CACHE_DIRECTORY_SIGNATURE}") == 1 { print FILENAME } { nextfile }`)} {} + 2>/dev/null | head -n ${MAX_PRUNED_CACHE_DIRECTORIES} | sed -e 's|/${CACHE_DIRECTORY_TAG.replace(".", "\\.")}$||' -e 's/[][*?\\\\]/\\\\&/g' -e 'i\\\n-o\\\n-path')`,
     "IFS='\n'",
     "set -f",
-    'for dir in $tags; do set -- "$@" -o -path "$dir"; done',
-    'set -- "$@" \\) \\) -prune -o -type f',
-    // Moves the caller's actions after the pruned directories.
-    'while [ "$n" -gt 0 ]; do set -- "$@" "$1"; shift; n=$((n - 1)); done',
+    // Place the pruned directories and filter before the caller's actions in one O(N) pass.
+    'set -- $tags \\) \\) -prune -o -type f "$@"',
     `exec ${find} \\( ${excluded} -o -type d \\( -false "$@"`,
   ].join("\n");
   return `sh -c ${shellQuote(script)} workspace-save`;

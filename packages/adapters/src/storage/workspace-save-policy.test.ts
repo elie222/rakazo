@@ -88,6 +88,7 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
         const home = path.join(scratch, "home with 'quotes'");
         const kept = [
           "notes.txt",
+          "café/notes.txt",
           "nested/with space/new\nline.txt",
           "packages/core/notes.txt",
           "debug.log/notes.txt",
@@ -105,6 +106,7 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
           "project/.yarn/cache",
           ".browser-profiles/chromium/Default/Code Cache",
           "rust/target",
+          "café/cache",
           "odd [dir]*?/target",
         ];
         const excluded = [
@@ -118,7 +120,7 @@ describe.skipIf(findVersion.status !== 0 || !findVersion.stdout.includes("GNU"))
           await mkdir(path.dirname(target), { recursive: true });
           await writeFile(target, name === "CACHEDIR.TAG" ? CACHE_TAG : "data", { mode: 0o600 });
         }
-        for (const dir of ["rust/target", "odd [dir]*?/target"]) {
+        for (const dir of ["rust/target", "café/cache", "odd [dir]*?/target"]) {
           await writeFile(path.join(home, dir, "CACHEDIR.TAG"), CACHE_TAG);
         }
         // The signature counts only at the start of the tag, as the in-process walkers read it.
