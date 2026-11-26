@@ -143,7 +143,7 @@ export function applicationMenuInstaller({
       id: "change-rakazo-server",
       label: t("Change Rakazo Server…"),
       accelerator: "CmdOrCtrl+Shift+K",
-      click: () => showSetupWindow(),
+      click: () => showSetupWindow(null, { quitAfterStop: false }),
     };
     const quitAndStopBots = quitAndStopBotsItem({
       mode: desktop.currentSetup?.mode,
@@ -164,9 +164,7 @@ export function applicationMenuInstaller({
             showSetupWindow(
               state?.phase === "failed" && state.message
                 ? state.message
-                : t(
-                    "Could not stop the local stack. Check that Docker is running, then try again.",
-                  ),
+                : t("Could not stop the local stack. Try again."),
               { quitAfterStop: true },
             );
             throw error;

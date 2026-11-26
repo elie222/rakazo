@@ -494,9 +494,7 @@ export abstract class StackLifecycle implements StackController {
           ...this.current,
           phase: "failed",
           failedOperation: "stop",
-          message: t(
-            "Could not stop the local stack. Check that Docker is running, then try again.",
-          ),
+          message: t("Could not stop the local stack. Try again."),
         });
         throw error;
       })

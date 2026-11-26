@@ -272,9 +272,7 @@ describe("desktop.setup.stack.stop", () => {
       expect(activate).toHaveBeenCalledWith(false);
       expect(syncHostComputerAccess).toHaveBeenCalledOnce();
       expect(rebuildMenu).toHaveBeenCalledTimes(2);
-      expect(desktop.setupError).toBe(
-        "Could not stop the local stack. Check that Docker is running, then try again.",
-      );
+      expect(desktop.setupError).toBe("Could not stop the local stack. Try again.");
       expect(app.quit).not.toHaveBeenCalled();
     } finally {
       desktop.localStack = previousStack;
@@ -502,6 +500,10 @@ describe("desktop.setup.stack.stop", () => {
       });
       // Quit and Stop Bots fails while the save is still pending.
       showSetupWindow("Could not stop the local stack.", { quitAfterStop: true });
+      expect(page.reload).not.toHaveBeenCalled();
+
+      // The failing server opener reports its error via showSetupWindow(error) before returning false.
+      showSetupWindow("Could not open that server.");
       expect(page.reload).not.toHaveBeenCalled();
 
       opening.resolve(false);

@@ -428,10 +428,7 @@
       }
     } catch {
       if (generation === requestGeneration) {
-        setStatus(
-          t("Could not stop the local stack. Check that Docker is running, then try again."),
-          "error",
-        );
+        setStatus(t("Could not stop the local stack. Try again."), "error");
         setBusy(false);
       }
     } finally {

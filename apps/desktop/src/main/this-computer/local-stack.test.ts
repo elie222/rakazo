@@ -1400,7 +1400,7 @@ describe("LocalStackController", () => {
     expect(stack.state()).toMatchObject({
       phase: "failed",
       failedOperation: "stop",
-      message: "Could not stop the local stack. Check that Docker is running, then try again.",
+      message: "Could not stop the local stack. Try again.",
     });
   });
 

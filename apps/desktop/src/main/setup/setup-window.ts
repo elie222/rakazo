@@ -60,7 +60,12 @@ export function showSetupWindow(
   options?: { quitAfterStop?: boolean },
 ) {
   desktop.setupError = error;
-  const nextQuitAfterStop = options?.quitAfterStop === true;
+  const nextQuitAfterStop =
+    options?.quitAfterStop !== undefined
+      ? options.quitAfterStop === true
+      : setupSaveInProgress
+        ? quitAfterStackStop
+        : false;
   const quitChanged = quitAfterStackStop !== nextQuitAfterStop;
   quitAfterStackStop = nextQuitAfterStop;
 
@@ -331,7 +336,7 @@ export function registerSetupIpc({
       desktop.setupError = quitAfterStackStop
         ? state?.phase === "failed" && state.message
           ? state.message
-          : t("Could not stop the local stack. Check that Docker is running, then try again.")
+          : t("Could not stop the local stack. Try again.")
         : null;
       syncHostComputerAccess();
       throw error;

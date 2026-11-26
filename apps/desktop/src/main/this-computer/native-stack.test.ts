@@ -898,12 +898,17 @@ describe("NativeStackController", () => {
     expect(stack.state()).toMatchObject({
       phase: "failed",
       failedOperation: "stop",
+      message: "Could not stop the local stack. Try again.",
     });
     // Postgres was still stopped, while the unfinished api service stayed tracked for Retry.
     const postgres = children.find((child) => child.args.includes(DATABASE_CONTAINER));
     expect(postgres?.signals).toContain("SIGINT");
     expect(runtime.database?.running).toBe(false);
     await expect(stack.stop()).rejects.toThrow();
+
+    // Starting again while the obstruction remains must reach terminal failed, not hang in checking-docker.
+    const restarted = await stack.start();
+    expect(restarted.phase).toBe("failed");
 
     // Clear the blocking directory and retry stop: succeeds and clears remaining services.
     await rm(apiPidPath, { recursive: true, force: true });

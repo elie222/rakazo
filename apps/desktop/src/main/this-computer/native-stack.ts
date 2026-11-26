@@ -475,7 +475,8 @@ export class NativeStackController extends StackLifecycle {
   }
 
   protected async attemptFailed(error: unknown, signal: AbortSignal) {
-    await this.stopServices();
+    // Keep unfinished services tracked for Stop Retry while always publishing a terminal failure.
+    await bestEffort("stop native services after failed start", this.stopServices());
     if (signal.aborted) {
       this.push({ type: "failed", message: startInterrupted() });
     } else if (error instanceof StartFailure) {
