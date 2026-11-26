@@ -20,6 +20,7 @@ import {
   validateAttachmentMimeType,
 } from "./attachments.js";
 import { redactSecrets, withToolHistory } from "./events.js";
+import { redactJsonStringsAndPlainText, redactJsonText } from "./json-redaction.js";
 
 const secretRedactor = (secrets: readonly string[]) => (text: string) =>
   redactSecrets(text, secrets);
@@ -1123,6 +1124,17 @@ describe("tool step history", () => {
         : undefined;
     expect(linearResult).toBe("[redacted]\n".repeat(2_000));
     expect(inspectedChars).toBeLessThan(overlapping.length * 6);
+  });
+
+  it("scans unclosed escaped-quote strings linearly without regex backtracking", () => {
+    const redact = secretRedactor(["opaque-123"]);
+    const payload = `"${'\\"'.repeat(50_000)}opaque-123`;
+    expectLinearTime(() => {
+      const plain = redactJsonStringsAndPlainText(payload, redact, redact, ["opaque-123"]);
+      const json = redactJsonText(payload, redact);
+      expect(plain).not.toContain("opaque-123");
+      expect(json).not.toContain("opaque-123");
+    });
   });
 
   it("ignores fractional step counts and non-string ask action labels in flat history", () => {

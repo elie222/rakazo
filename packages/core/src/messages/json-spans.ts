@@ -395,3 +395,71 @@ export function applyReplacements(
   if (cursor < raw.length) out += raw.slice(cursor);
   return out;
 }
+
+function isAsciiDigit(ch: string | undefined): boolean {
+  return ch !== undefined && ch >= "0" && ch <= "9";
+}
+
+export type ScannedJsonToken = { start: number; end: number; isString: boolean };
+
+/**
+ * Scan single-line JSON-like string literals (and optionally JSON numbers) in strictly linear time
+ * without regex backtracking. Matches unclosed strings up to the line break or end of input,
+ * including a trailing backslash before a line break or EOF.
+ */
+export function scanJsonTokens(raw: string, includeNumbers: boolean): ScannedJsonToken[] {
+  const tokens: ScannedJsonToken[] = [];
+  let i = 0;
+  while (i < raw.length) {
+    const ch = raw[i]!;
+    if (ch === '"') {
+      let end = i + 1;
+      while (end < raw.length) {
+        const next = raw[end]!;
+        if (next === '"') {
+          end += 1;
+          break;
+        }
+        if (next === "\r" || next === "\n") break;
+        if (next === "\\") {
+          if (end + 1 >= raw.length || raw[end + 1] === "\r" || raw[end + 1] === "\n") {
+            end += 1;
+            break;
+          }
+          end += 2;
+          continue;
+        }
+        end += 1;
+      }
+      tokens.push({ start: i, end, isString: true });
+      i = end;
+      continue;
+    }
+    if (includeNumbers && (ch === "-" || isAsciiDigit(ch))) {
+      let end = i;
+      if (raw[end] === "-") end += 1;
+      const intStart = end;
+      while (end < raw.length && isAsciiDigit(raw[end])) end += 1;
+      if (end === intStart) {
+        i += 1;
+        continue;
+      }
+      if (end + 1 < raw.length && raw[end] === "." && isAsciiDigit(raw[end + 1])) {
+        end += 2;
+        while (end < raw.length && isAsciiDigit(raw[end])) end += 1;
+      }
+      if (end < raw.length && (raw[end] === "e" || raw[end] === "E")) {
+        let exp = end + 1;
+        if (exp < raw.length && (raw[exp] === "+" || raw[exp] === "-")) exp += 1;
+        const expDigits = exp;
+        while (exp < raw.length && isAsciiDigit(raw[exp])) exp += 1;
+        if (exp > expDigits) end = exp;
+      }
+      tokens.push({ start: i, end, isString: false });
+      i = end;
+      continue;
+    }
+    i += 1;
+  }
+  return tokens;
+}

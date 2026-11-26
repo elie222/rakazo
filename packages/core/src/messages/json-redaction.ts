@@ -10,13 +10,11 @@ import {
   overlapsOutsideToken,
   parseJsonSpans,
   redactRawStringToken,
+  scanJsonTokens,
   sliceRangesWithin,
 } from "./json-spans.js";
 
 const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
-const JSON_VALUE_TOKEN =
-  /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
-const JSON_STRING_LITERAL_TOKEN = /"(?:\\[^\r\n]|[^"\\\r\n])*(?:"|\\?(?=[\r\n]|$))/g;
 
 /**
  * Redact Bearer tokens in plain or raw JSON-like text, handling quoted, escaped-quote, and
@@ -404,11 +402,9 @@ function replaceJsonSegmentTokens(
   let out = "";
   let cursor = 0;
   let lastOverlapEnd = 0;
-  for (const match of chunk.matchAll(JSON_VALUE_TOKEN)) {
-    const index = match.index ?? 0;
-    const token = match[0];
-    const end = index + token.length;
-    if (token.startsWith('"')) {
+  for (const { start: index, end, isString } of scanJsonTokens(chunk, true)) {
+    const token = chunk.slice(index, end);
+    if (isString) {
       if (
         !precedesJsonStringToken(chunk, index) ||
         !followsJsonStringToken(chunk, end, isClosedJsonStringToken(token)) ||
@@ -575,10 +571,8 @@ function redactJsonStringsAndPlainTextSingle(
   if (!raw.includes('"')) return redactPlain(raw);
   let out = "";
   let cursor = 0;
-  for (const match of raw.matchAll(JSON_STRING_LITERAL_TOKEN)) {
-    const index = match.index ?? 0;
-    const token = match[0];
-    const end = index + token.length;
+  for (const { start: index, end } of scanJsonTokens(raw, false)) {
+    const token = raw.slice(index, end);
     const closed = isClosedJsonStringToken(token);
     // Plain diagnostics such as `Bearer "secret"`, `Bearer\n "secret"`, or `Error: "a"b"` do not
     // sit between JSON structural delimiters, and a registered secret crossing outside a quote
