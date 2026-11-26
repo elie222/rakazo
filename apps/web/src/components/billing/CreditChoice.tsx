@@ -1,6 +1,10 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { BillingStatus, ByokInterval } from "@rakazo/contracts";
-import { DEFAULT_MONTHLY_CREDIT_AMOUNT, ModelCreditAmountSchema } from "@rakazo/contracts";
+import {
+  DEFAULT_MONTHLY_CREDIT_AMOUNT,
+  ModelCreditAmountSchema,
+  SELF_HOST_URL,
+} from "@rakazo/contracts";
 import { formatBillingAmount, formatMonthlyPrice } from "@rakazo/i18n/billing";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import { Button, Card, CardContent, CardFooter, CardHeader } from "@rakazo/ui-web";
@@ -157,9 +161,28 @@ export function CreditChoice({
       {dismissible ? null : (
         <AccountMenu disabled={pending} signingOut={signingOut} onLogOut={() => void logOut()} />
       )}
-      <h1 className="text-heading1 font-medium">
-        <Trans>Choose how to use Rakazo</Trans>
-      </h1>
+      <div className="flex flex-col gap-2">
+        <h1 className="text-heading1 font-medium">
+          <Trans>Choose how to use Rakazo</Trans>
+        </h1>
+        {status.freePeriodEnded ? (
+          <p className="text-body text-muted-foreground">
+            <Trans>
+              Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's
+              now paid. It's still free if you{" "}
+              <a
+                className="underline underline-offset-4 hover:text-foreground"
+                href={SELF_HOST_URL}
+                target="_blank"
+                rel="noreferrer"
+              >
+                self-host
+              </a>
+              .
+            </Trans>
+          </p>
+        ) : null}
+      </div>
       <div className="grid gap-4 min-[480px]:grid-cols-2">
         <PlanCard
           title={<Trans>Your subscription or API key</Trans>}

@@ -752,12 +752,19 @@ export function createBillingService(deps: {
           !hasBillingAccess(account?.status ?? null)
             ? byokFreeUntil(credits)
             : null;
+        const access = hasModelAccess(credits, account?.status ?? null);
+        const freePeriodEnded =
+          !access &&
+          !account?.subscribedAt &&
+          credits.byokFreeUntil !== null &&
+          !byokFreeUntil(credits);
         const subscribed = subscribedByokPrice(account);
         const tier = subscribed?.tier ?? "standard";
         const hourMicros = deps.sandbox && sandboxDisplayedHourMicros(deps.sandbox);
         const offers = byokTierOffers(Boolean(sized), hourMicros);
         return {
-          access: hasModelAccess(credits, account?.status ?? null),
+          access,
+          ...(freePeriodEnded && { freePeriodEnded: true as const }),
           funding:
             credits.mode === "byok"
               ? "byok"

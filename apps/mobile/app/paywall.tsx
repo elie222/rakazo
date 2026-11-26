@@ -8,6 +8,7 @@ import {
   MODEL_CREDIT_AMOUNTS,
   ModelCreditAmountSchema,
   paymentOverdue,
+  SELF_HOST_URL,
 } from "@rakazo/contracts";
 import { canDeleteOrganization } from "@rakazo/core";
 import { writeSaved } from "@rakazo/core/query";
@@ -435,6 +436,14 @@ export default function Paywall() {
           <Text accessibilityRole="header" style={[styles.title, { color: tokens.foreground }]}>
             {t`Put your bots to work`}
           </Text>
+          {status.freePeriodEnded ? (
+            <>
+              <Text style={[styles.lead, { color: tokens.mutedForeground }]}>
+                {t`Thanks for being an early user. Running Rakazo in the cloud has real costs, so it's now paid. It's still free if you self-host.`}
+              </Text>
+              <LegalLink label={t`Self-hosting guide`} url={SELF_HOST_URL} />
+            </>
+          ) : null}
         </View>
         <View style={styles.features}>
           {features.map((feature) => (
