@@ -114,10 +114,11 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     };
   }
 
-  async function call(actor: Actor, path: string, input: unknown) {
+  async function call(actor: Actor, path: string, input: unknown, signal?: AbortSignal) {
     const { response } = await handler.handle(
       new Request(`http://127.0.0.1/rpc/${path}`, {
         method: "POST",
+        signal,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ json: input }),
       }),
@@ -334,6 +335,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
   it.each([
     [new ProtectedBrowserError("sign-in-rejected"), 400],
     [new ProtectedBrowserError("configuration"), 503],
+    [new ProtectedBrowserError("capacity"), 503],
     [new ProtectedBrowserError("timeout"), 503],
     [new Error("fake-private-browser-output"), 500],
   ])("returns a safe status for a protected browser failure (%#)", async (error, status) => {
@@ -381,7 +383,7 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     ).toBe(0);
   });
 
-  it("keeps the first committed session when two admins sign in at once", async () => {
+  it("admits one sign-in per organization across admins and logins", async () => {
     const owner = await person("concurrent-owner");
     const admin = await person("concurrent-admin");
     const adminActor = await join(owner, admin);
@@ -391,6 +393,17 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     });
     const created = await call(owner.actor, "organizations/vault/create", {
       name: "Example account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    const other = await person("concurrent-unrelated");
+    const secondLogin = await call(adminActor, "organizations/vault/create", {
+      name: "Second account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    const unrelatedLogin = await call(other.actor, "organizations/vault/create", {
+      name: "Unrelated account",
       origin: "https://example.test",
       botIds: [],
     });
@@ -404,16 +417,67 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
 
     const pending = call(owner.actor, "organizations/vault/signIn", { loginId, ...signInInput });
     await browserStarted.promise;
-    const committed = await call(adminActor, "organizations/vault/signIn", {
-      loginId,
+    const callsBefore = launch.mock.calls.length;
+    try {
+      const refused = await call(adminActor, "organizations/vault/signIn", {
+        loginId: secondLogin.json.id,
+        ...signInInput,
+      });
+      expect(refused.status).toBe(429);
+      expect(launch).toHaveBeenCalledTimes(callsBefore);
+      const independent = await call(other.actor, "organizations/vault/signIn", {
+        loginId: unrelatedLogin.json.id,
+        ...signInInput,
+      });
+      expect(independent.status).toBe(200);
+    } finally {
+      browserFinished.resolve({ storageState: siteStorage });
+      await pending;
+    }
+    expect((await pending).status).toBe(200);
+    const retried = await call(adminActor, "organizations/vault/signIn", {
+      loginId: secondLogin.json.id,
       ...signInInput,
     });
-    browserFinished.resolve({ storageState: siteStorage });
-    expect(committed.status).toBe(200);
-    expect((await pending).status).toBe(409);
-    expect(
-      await system.organizationLogin.findUniqueOrThrow({ where: { id: loginId } }),
-    ).toMatchObject({ sessionVersion: 1 });
+    expect(retried.status).toBe(200);
+  });
+
+  it("keeps admission until a cancelled launch finishes cleanup", async () => {
+    const owner = await person("cancelled-sign-in");
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    const input = { loginId: created.json.id, ...signInInput };
+    const started = deferred<AbortSignal>();
+    const cleanedUp = deferred<void>();
+    launch.mockImplementationOnce(async (_request, signal) => {
+      started.resolve(signal!);
+      await cleanedUp.promise;
+      signal!.throwIfAborted();
+      return { storageState: siteStorage };
+    });
+    const request = new AbortController();
+    const pending = Promise.allSettled([
+      call(owner.actor, "organizations/vault/signIn", input, request.signal),
+    ]);
+    const signal = await started.promise;
+    try {
+      request.abort();
+      await vi.waitFor(() => expect(signal.aborted).toBe(true));
+      expect((await call(owner.actor, "organizations/vault/signIn", input)).status).toBe(429);
+    } finally {
+      cleanedUp.resolve();
+      await pending;
+    }
+    await vi.waitFor(async () => {
+      const rows = await system.$queryRaw<unknown[]>`
+        SELECT 1 FROM leases WHERE key = ${`organization-login-sign-in:${owner.organizationId}`}
+      `;
+      expect(rows).toHaveLength(0);
+    });
+    expect((await call(owner.actor, "organizations/vault/signIn", input)).status).toBe(200);
   });
 
   it("rejects unauthorized sign-ins before invoking the launcher", async () => {

@@ -283,3 +283,10 @@ image from `infra/sandboxes/protected-browser/Dockerfile`, then set
 sandbox profile used by the protected browser workflow. The API starts each
 sign-in in a fresh container and encrypts the saved session with the deployment
 encryption key. Removing a saved session in Rakazo removes its local copy.
+
+Each organization can run one sign-in at a time. The local container engine can
+run two protected browsers at once, shared by all API replicas using its socket.
+A request that reaches either limit returns immediately and can be retried.
+If the API or engine stops during container creation, check whether
+`rakazo-protected-browser-1` or `rakazo-protected-browser-2` was left behind.
+Remove a leftover stopped container after confirming its sign-in has ended.

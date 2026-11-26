@@ -2,11 +2,15 @@ import { randomUUID } from "node:crypto";
 import { ProtectedBrowserError } from "@rakazo/adapters";
 import { ClientError, deadlineSignal } from "@rakazo/core";
 import {
+  assertLeaseHeld,
+  LeaseHeldError,
+  LeaseLostError,
   lockManagedOrganization,
   managedOrganizationId,
   OrganizationAdminRequiredError,
   Prisma,
   runAsSystem,
+  withLease,
 } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import type { RouterContext } from "./context.js";
@@ -144,77 +148,125 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
       if (!url || url.origin !== login.origin || url.username || url.password) {
         throw new ClientError("BAD_REQUEST", "Enter a sign-in page on the saved site");
       }
-      const signal = deadlineSignal(100_000, requestSignal);
-      let state: Awaited<ReturnType<typeof browser.launch>>["storageState"];
+      const deadline = deadlineSignal(100_000, requestSignal);
       try {
-        ({ storageState: state } = await browser.launch(
-          {
-            mode: "sign-in",
-            url: url.href,
-            steps: [
-              { kind: "fill", role: "textbox", name: input.usernameLabel, text: input.username },
-              { kind: "fill", role: "textbox", name: input.passwordLabel, text: input.password },
-              { kind: "click", role: "button", name: input.submitLabel },
-              { kind: "wait", role: "heading", name: input.successHeading },
-            ],
-          },
-          signal,
-        ));
+        return await runAsSystem("admit shared login sign-in", () =>
+          withLease(
+            deps.prisma,
+            `organization-login-sign-in:${organizationId}`,
+            { ttlMs: 120_000, signal: deadline },
+            async (lease) => {
+              const { signal } = lease;
+              signal.throwIfAborted();
+              let state: Awaited<ReturnType<typeof browser.launch>>["storageState"];
+              try {
+                ({ storageState: state } = await browser.launch(
+                  {
+                    mode: "sign-in",
+                    url: url.href,
+                    steps: [
+                      {
+                        kind: "fill",
+                        role: "textbox",
+                        name: input.usernameLabel,
+                        text: input.username,
+                      },
+                      {
+                        kind: "fill",
+                        role: "textbox",
+                        name: input.passwordLabel,
+                        text: input.password,
+                      },
+                      { kind: "click", role: "button", name: input.submitLabel },
+                      { kind: "wait", role: "heading", name: input.successHeading },
+                    ],
+                  },
+                  signal,
+                ));
+              } catch (error) {
+                if (requestSignal?.aborted) requestSignal.throwIfAborted();
+                if (!(error instanceof ProtectedBrowserError)) {
+                  // Browser errors can contain form values or data from the signed-in page.
+                  throw new Error("Unexpected protected browser failure");
+                }
+                getLogger().warn("Protected sign-in failed", {
+                  organizationId,
+                  loginId: login.id,
+                  code: error.code,
+                });
+                if (error.code === "sign-in-rejected") {
+                  throw new ClientError("BAD_REQUEST", "The protected sign-in could not finish");
+                }
+                if (error.code === "capacity") {
+                  throw new ClientError(
+                    "SERVICE_UNAVAILABLE",
+                    "Protected sign-in is busy. Try again shortly.",
+                  );
+                }
+                if (error.code === "timeout") {
+                  throw new ClientError("SERVICE_UNAVAILABLE", "Protected sign-in timed out");
+                }
+                if (error.code === "configuration") {
+                  throw new ClientError("SERVICE_UNAVAILABLE", "Protected sign-in is unavailable");
+                }
+                throw error;
+              }
+              const savedState = {
+                cookies: state.cookies.filter((cookie) => {
+                  const host = cookie.domain.startsWith(".")
+                    ? cookie.domain.slice(1)
+                    : cookie.domain;
+                  return (
+                    url.hostname === host ||
+                    (cookie.domain.startsWith(".") && url.hostname.endsWith(`.${host}`))
+                  );
+                }),
+                origins: state.origins.filter((entry) => entry.origin === url.origin),
+              };
+              if (
+                !savedState.cookies.length &&
+                !savedState.origins.some((entry) => entry.localStorage.length)
+              ) {
+                throw new ClientError("BAD_REQUEST", "The site returned no session data");
+              }
+              const operationId = randomUUID();
+              const sealed = await browser.encryption.put(
+                JSON.stringify(savedState),
+                { ...actor, operationId, traceId: operationId, signal },
+                { recordId: login.id },
+              );
+              return change(actor, async (tx, currentOrganizationId) => {
+                if (organizationId !== currentOrganizationId)
+                  throw new OrganizationLoginNotFoundError();
+                signal.throwIfAborted();
+                await assertLeaseHeld(tx, lease);
+                const { count } = await tx.organizationLogin.updateMany({
+                  where: { id: login.id, organizationId, sessionVersion: login.sessionVersion },
+                  data: { sessionCipher: sealed.ciphertext, sessionVersion: { increment: 1 } },
+                });
+                if (!count)
+                  throw new ClientError(
+                    "CONFLICT",
+                    "The session changed while you were signing in",
+                  );
+                return readLogin(tx, organizationId, login.id);
+              });
+            },
+          ),
+        );
       } catch (error) {
+        if (error instanceof LeaseHeldError) {
+          throw new ClientError(
+            "TOO_MANY_REQUESTS",
+            "A protected sign-in is already in progress for this organization",
+          );
+        }
         if (requestSignal?.aborted) requestSignal.throwIfAborted();
-        if (!(error instanceof ProtectedBrowserError)) {
-          // Browser errors can contain form values or data from the signed-in page.
-          throw new Error("Unexpected protected browser failure");
-        }
-        getLogger().warn("Protected sign-in failed", {
-          organizationId,
-          loginId: login.id,
-          code: error.code,
-        });
-        if (error.code === "sign-in-rejected") {
-          throw new ClientError("BAD_REQUEST", "The protected sign-in could not finish");
-        }
-        if (error.code === "timeout") {
+        if (error instanceof LeaseLostError || deadline.aborted) {
           throw new ClientError("SERVICE_UNAVAILABLE", "Protected sign-in timed out");
-        }
-        if (error.code === "configuration") {
-          throw new ClientError("SERVICE_UNAVAILABLE", "Protected sign-in is unavailable");
         }
         throw error;
       }
-      const savedState = {
-        cookies: state.cookies.filter((cookie) => {
-          const host = cookie.domain.startsWith(".") ? cookie.domain.slice(1) : cookie.domain;
-          return (
-            url.hostname === host ||
-            (cookie.domain.startsWith(".") && url.hostname.endsWith(`.${host}`))
-          );
-        }),
-        origins: state.origins.filter((entry) => entry.origin === url.origin),
-      };
-      if (
-        !savedState.cookies.length &&
-        !savedState.origins.some((entry) => entry.localStorage.length)
-      ) {
-        throw new ClientError("BAD_REQUEST", "The site returned no session data");
-      }
-      const operationId = randomUUID();
-      const sealed = await browser.encryption.put(
-        JSON.stringify(savedState),
-        { ...actor, operationId, traceId: operationId, signal },
-        { recordId: login.id },
-      );
-      return change(actor, async (tx, currentOrganizationId) => {
-        if (organizationId !== currentOrganizationId) throw new OrganizationLoginNotFoundError();
-        signal.throwIfAborted();
-        const { count } = await tx.organizationLogin.updateMany({
-          where: { id: login.id, organizationId, sessionVersion: login.sessionVersion },
-          data: { sessionCipher: sealed.ciphertext, sessionVersion: { increment: 1 } },
-        });
-        if (!count)
-          throw new ClientError("CONFLICT", "The session changed while you were signing in");
-        return readLogin(tx, organizationId, login.id);
-      });
     }),
     revokeSession: vault.revokeSession.handler(({ context, input }) =>
       change(context.actor, async (tx, organizationId) => {
