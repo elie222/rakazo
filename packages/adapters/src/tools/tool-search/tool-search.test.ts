@@ -72,6 +72,8 @@ describe("app catalog source", () => {
     app("Pagesnap"),
     app("Userback"),
     app("Box"),
+    app("Microsoft To Do"),
+    app("Monday.com"),
     app("Google Sheets"),
     app("Google Calendar", true),
   ]);
@@ -79,6 +81,10 @@ describe("app catalog source", () => {
   it("finds the app a request names, and not ones that only share a short word or a substring", async () => {
     const found = await apps.search("use the pagesnap tool on my inbox", 5);
     expect(found.map((hit) => hit.name)).toEqual(["Pagesnap"]);
+  });
+
+  it("finds an app whose whole name is a short word", async () => {
+    expect((await apps.search("put it in box for me", 5)).map((hit) => hit.name)).toEqual(["Box"]);
   });
 
   it("ranks the app named in full above one sharing a word of its name", async () => {
@@ -138,5 +144,19 @@ describe("connector catalog source", () => {
     expect((await source.find(["server-1:get_release_calendar"])).map((hit) => hit.id)).toEqual([
       "server-1:get_release_calendar",
     ]);
+  });
+
+  it("reports a catalog that fails instead of finding nothing in it", async () => {
+    const failing = connectorCatalogSource(
+      {
+        async *execute() {
+          yield { type: "error" as const, message: "Server unavailable" };
+        },
+      },
+      context,
+      lazyCatalogTools("connectors", "mcp", "MCP", entries),
+      "run-1",
+    );
+    await expect(failing.search("release calendar", 5)).rejects.toThrow("Server unavailable");
   });
 });

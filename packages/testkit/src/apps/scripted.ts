@@ -1,10 +1,9 @@
-import type { AppEmulatorOptions, AppTool, ToolSchema } from "./app-emulator.js";
+import type { AppEmulatorOptions, AppTool } from "./app-emulator.js";
 import { AppEmulator } from "./app-emulator.js";
 
 export type ScriptedTool = {
   name: string;
   description: string;
-  inputSchema?: ToolSchema;
   readOnly?: boolean;
   /** What every call returns, whatever its arguments. */
   result: unknown;
@@ -29,7 +28,7 @@ export class ScriptedEmulator extends AppEmulator {
     return this.scripted.map((tool) => ({
       name: tool.name,
       description: tool.description,
-      inputSchema: tool.inputSchema ?? { type: "object", properties: {} },
+      inputSchema: { type: "object", properties: {} },
       readOnly: tool.readOnly ?? true,
       run: () => structuredClone(tool.result),
     }));

@@ -80,7 +80,10 @@ export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): numbe
 export function toAgentTools(toolDefs: readonly ConnectorTool[], host: ToolHost): AgentTool[] {
   const { listed, deferred } = partitionTools(toolDefs);
   const named = namedAgentTools(listed);
-  const tools = named.map(({ tool, name }) => toAgentTool(tool, host, name, { deferred, listed }));
+  const listedByExposedName = named.map(({ tool, name }) => ({ ...tool, name }));
+  const tools = named.map(({ tool, name }) =>
+    toAgentTool(tool, host, name, { deferred, listed: listedByExposedName }),
+  );
   if (!deferred.length) return tools;
   const runnable = new Map(
     [...tools, ...deferred.map((tool) => toAgentTool(tool, host, tool.name, { viaUseTool: true }))]

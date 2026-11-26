@@ -60,18 +60,23 @@ export function appCatalogSource(
   };
 }
 
-/** 3: the request names the app; 2: it names a word of the app's name; 1: a word starts one. */
+/**
+ * 3: the request names the app; 2: it names a word of the app's name; 1: a word starts one. Short
+ * words count only as a whole app name, so "to" or "com" never find "Microsoft To Do" or
+ * "Monday.com", and "box" in "inbox" is not Box.
+ */
 function appRank(entry: ConnectorCatalogItem, joined: string, queryWords: string[]): number {
   const names = [squash(entry.name), squash(entry.slug)];
-  // A short name inside a longer word ("box" in "inbox") is not the app.
-  if (names.some((name) => name.length >= MIN_PREFIX_LENGTH && joined.includes(name))) return 3;
-  const nameWords = words(`${entry.name} ${entry.slug}`);
-  if (queryWords.some((word) => nameWords.includes(word))) return 2;
-  return queryWords.some(
-    (word) => word.length >= MIN_PREFIX_LENGTH && nameWords.some((name) => name.startsWith(word)),
+  if (
+    names.some((name) =>
+      name.length >= MIN_PREFIX_LENGTH ? joined.includes(name) : queryWords.includes(name),
+    )
   )
-    ? 1
-    : 0;
+    return 3;
+  const longWords = queryWords.filter((word) => word.length >= MIN_PREFIX_LENGTH);
+  const nameWords = words(`${entry.name} ${entry.slug}`);
+  if (longWords.some((word) => nameWords.includes(word))) return 2;
+  return longWords.some((word) => nameWords.some((name) => name.startsWith(word))) ? 1 : 0;
 }
 
 /** An app several catalogs list counts once, as connected when any of them connected it. */

@@ -7,7 +7,12 @@ import type {
   ToolSearchHit,
 } from "@rakazo/adapter-kit";
 import type { CatalogSearchHit } from "../lazy-tool-catalog.js";
-import { CATALOG_LOAD, CATALOG_SEARCH, MAX_DESCRIPTION_LENGTH } from "../lazy-tool-catalog.js";
+import {
+  CATALOG_LOAD,
+  CATALOG_SEARCH,
+  MAX_DESCRIPTION_LENGTH,
+  UnknownCatalogToolError,
+} from "../lazy-tool-catalog.js";
 import type { ToolSearchSource } from "./tool-search.js";
 
 /** Hits per connector whose parameters are loaded; the ranked list keeps few of them anyway. */
@@ -33,16 +38,22 @@ export function connectorCatalogSource(
   let calls = 0;
   const control = async (connectorId: string, toolName: string, args: Record<string, unknown>) => {
     const route: ConnectorRoute = { connectorId, toolName };
-    let data: unknown;
     for await (const event of connector.execute(
       { tool: toolName, args, executionId: `${executionId}:${calls++}`, route },
       context,
-    ) as AsyncIterable<ConnectorEvent>)
-      if (event.type === "result") data = event.data;
-    return data;
+    ) as AsyncIterable<ConnectorEvent>) {
+      if (event.type === "result") return event.data;
+      if (event.type === "error") throw new Error(event.message);
+    }
+    return undefined;
   };
+  // A catalog that does not hold the id answers with an error, which is no hit, not a failure.
   const load = async (connectorId: string, id: string): Promise<ToolSearchHit | undefined> => {
-    const loaded = (await control(connectorId, CATALOG_LOAD, { id })) as Loaded | undefined;
+    const loaded = (await control(connectorId, CATALOG_LOAD, { id }).catch((error: unknown) => {
+      if (error instanceof Error && error.message === new UnknownCatalogToolError().message)
+        return undefined;
+      throw error;
+    })) as Loaded | undefined;
     if (!loaded?.inputSchema) return undefined;
     return {
       id,
