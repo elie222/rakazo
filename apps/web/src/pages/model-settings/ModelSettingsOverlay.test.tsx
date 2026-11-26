@@ -2053,3 +2053,45 @@ it("counts a sign-in as replaced when another connection opens over it", async (
     await view.unmount();
   }
 });
+
+it("shows localized errorText guidance instead of raw error.message when saving a media model fails", async () => {
+  models.credentials.mockResolvedValue([deepseekCredential]);
+  models.media.mockResolvedValue({
+    image: {
+      options: [
+        {
+          provider: "deepseek",
+          connectionLabel: "DeepSeek",
+          credentialId: deepseekCredential.id,
+          modelId: "image-1",
+          label: "Image One",
+        },
+        {
+          provider: "deepseek",
+          connectionLabel: "DeepSeek",
+          credentialId: deepseekCredential.id,
+          modelId: "image-2",
+          label: "Image Two",
+        },
+      ],
+      selected: { credentialId: deepseekCredential.id, modelId: "image-1" },
+    },
+    video: { options: [], selected: null },
+  });
+  models.setMedia.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+  const view = await renderSettings();
+  try {
+    const imageSection = view.container.querySelector('[data-testid="model-role-image"]');
+    expect(imageSection).not.toBeNull();
+    await click(imageSection!.querySelector('button[aria-label="Change Image model"]'));
+    await choose("Image Two");
+    await act(flush);
+
+    const alert = imageSection!.querySelector('[role="alert"]');
+    expect(alert?.textContent).toBe("Could not reach the server");
+    expect(alert?.textContent).not.toContain("Failed to fetch");
+  } finally {
+    await view.unmount();
+  }
+});
