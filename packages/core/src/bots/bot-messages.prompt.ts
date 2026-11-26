@@ -55,7 +55,7 @@ export function renderBotDirectory(
       : "message_bot";
     lines.push(
       "Use message_bot for questions, blockers and results, not each step. Delivery is async and does not end your turn. Continue independent work; do not send ack-only messages.",
-      `Each bot has its own computer and does one computer task at a time; your subagents share yours. Give ${work} work, including each part of parallel computer work, to the teammate whose area it is (${route}), so you stay free for the user. To wait on a teammate, ask it to message you when ready instead of polling or watching its files.`,
+      `Bots on a Team Computer share the computer and have separate screens. Your subagents share your screen. Give ${work} work, including independent parts of parallel computer work, to the teammate whose area it is (${route}). To wait on a teammate, ask it to message you when ready instead of polling or watching its files.`,
     );
   } else if (canSchedule) {
     lines.push("Use create_child_routine to schedule recurring work on the teammate who owns it.");

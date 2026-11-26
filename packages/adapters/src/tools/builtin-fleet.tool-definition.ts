@@ -157,7 +157,7 @@ export const fleetTools: ConnectorTool[] = [
   {
     name: "spawn_bot",
     description:
-      "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Do not also call run_subagent. To give the new bot more than instructions (skills, routines, memories, apps to connect) or a task the user wants started, put it in prompt; the bot sets itself up from it. Otherwise creating the bot is the whole action.",
+      "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, screen, and memory, and appears as a peer in the bot list. Do not also call run_subagent. To give the new bot more than instructions (skills, routines, memories, apps to connect) or a task the user wants started, put it in prompt; the bot sets itself up from it. Otherwise creating the bot is the whole action.",
     inputSchema: {
       type: "object",
       properties: {
@@ -183,7 +183,7 @@ export const fleetTools: ConnectorTool[] = [
           type: "string",
           enum: ["team", "dedicated"],
           description:
-            "Optional. team shares one screen with other Team bots; dedicated (Private) gets its own. Defaults to team.",
+            "Optional. team shares a computer with other Team bots and gives each bot its own screen. dedicated (Private) gives the bot its own computer. Defaults to team.",
         },
       },
       required: ["name"],
