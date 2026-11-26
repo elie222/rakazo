@@ -844,6 +844,12 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
+  infra/sandboxes/protected-browser:
+    dependencies:
+      playwright-core:
+        specifier: 1.64.1
+        version: 1.64.1
+
   infra/sandboxes/supervisor:
     dependencies:
       '@hono/node-server':
