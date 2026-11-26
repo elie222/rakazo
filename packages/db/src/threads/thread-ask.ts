@@ -832,17 +832,22 @@ export async function pauseRunForInput(
       botId: input.botId,
       runId: input.runId,
     });
+    const run = await tx.run.findUnique({
+      where: { id: input.runId },
+      select: { userId: true },
+    });
     const response = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
       threadId: requestThreadId,
       botId: input.botId,
       type: "thread.message.created",
       runId: input.runId,
-      payload: { messageId: message.id, role: "bot", blocks: input.blocks },
-    });
-    const run = await tx.run.findUnique({
-      where: { id: input.runId },
-      select: { userId: true },
+      payload: {
+        messageId: message.id,
+        role: "bot",
+        blocks: input.blocks,
+        ...(run?.userId ? { runUserId: run.userId } : {}),
+      },
     });
     const waitingEvent = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,

@@ -55,20 +55,19 @@ function eventMessageId(event: { payload: Record<string, unknown> }): string | u
       : undefined;
 }
 
+function eventRunOwner(event: {
+  payload: Record<string, unknown>;
+}): { userId: string } | undefined {
+  return typeof event.payload.runUserId === "string" && event.payload.runUserId.length > 0
+    ? { userId: event.payload.runUserId }
+    : undefined;
+}
+
 function isQuestionOnlyEvent(event: { type: string; payload: { blocks?: unknown } }): boolean {
   if (event.type !== "thread.message.created") return false;
   const blocks = event.payload.blocks;
   if (!Array.isArray(blocks) || blocks.length === 0) return false;
-  let hasQuestion = false;
-  for (const block of blocks) {
-    if (!block || typeof block !== "object" || !("kind" in block)) return false;
-    if (block.kind === "ask" || block.kind === "tool_question") {
-      hasQuestion = true;
-      continue;
-    }
-    return false;
-  }
-  return hasQuestion;
+  return blocks.every((block) => isWaitingAskBlock(block));
 }
 
 function snoozedOrdinaryReply(
@@ -151,14 +150,20 @@ export function useBrowserNotifications(
   // unknown run still alerts while a known run counts only when the viewer owns it.
   const questionWaitsOnViewer = useCallback(
     (
-      event: { type: string; threadId: string; runId?: string; payload: { blocks?: unknown } },
+      event: {
+        type: string;
+        threadId: string;
+        runId?: string;
+        payload: Record<string, unknown> & { blocks?: unknown };
+      },
       rememberedRunOwner?: { userId?: string },
     ): boolean => {
       if (event.type !== "thread.message.created") return false;
       const blocks = event.payload.blocks;
       if (!Array.isArray(blocks)) return false;
       const me = meIdRef.current;
-      const run = liveRunFor(event.runId, event.threadId) ?? rememberedRunOwner;
+      const run =
+        eventRunOwner(event) ?? liveRunFor(event.runId, event.threadId) ?? rememberedRunOwner;
       const viewerOwnsRun = !!me && !!run && run.userId === me;
       return blocks.some(
         (block) =>
@@ -420,7 +425,14 @@ export function useBrowserNotifications(
               queued.event.threadId === event.threadId &&
               eventMessageId(queued.event) === messageId
             ) {
-              pendingBrowserNotifications.current.delete(key);
+              if (queued.questionOnly) {
+                pendingBrowserNotifications.current.delete(key);
+              } else if (Array.isArray(event.payload.blocks)) {
+                queued.event = {
+                  ...queued.event,
+                  payload: { ...queued.event.payload, blocks: event.payload.blocks },
+                };
+              }
             }
           }
         }
@@ -449,14 +461,14 @@ export function useBrowserNotifications(
         meId: meIdRef.current,
       });
       if (!eligible || !enabled) return;
-      const liveRun = liveRunFor(event.runId, event.threadId);
+      const runOwner = eventRunOwner(event) ?? liveRunFor(event.runId, event.threadId);
       const pending = {
         event,
         botId,
         botName,
         groupId,
         questionOnly: isQuestionOnlyEvent(event),
-        ...(liveRun ? { runOwner: { userId: liveRun.userId } } : {}),
+        ...(runOwner ? { runOwner: { userId: runOwner.userId } } : {}),
       } satisfies PendingBrowserNotification;
       const waits = questionWaitsOnViewer(event, pending.runOwner);
       // Ordinary replies wait out a snooze. A question still comes through, and a reply that was

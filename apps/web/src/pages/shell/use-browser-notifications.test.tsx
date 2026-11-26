@@ -899,6 +899,164 @@ describe("useBrowserNotifications chat alerts", () => {
     expect(shown()).toEqual([["Scout", "Approve my deploy?", "thread-g:ask"]]);
   });
 
+  it("uses payload.runUserId to suppress a foreign helper ask immediately and deliver a viewer tool question during snapshot recovery", async () => {
+    const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    visible = false;
+    groups[0] = { id: "group-g", snoozedUntil: later };
+    snapshotRef.current = null;
+    await open({ groupId: "group-g" });
+
+    act(() => {
+      // Foreign background helper ask arrives before run.waiting_input, carrying runUserId on the card.
+      hook.notifyBrowserForEvent(
+        {
+          ...reply(
+            "foreign-helper-live-ask",
+            [{ kind: "ask", text: "Other member helper approval", status: "pending" }],
+            "thread-g",
+          ),
+          seq: 5,
+          runId: "run-helper-live",
+          payload: {
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Other member helper approval", status: "pending" }],
+            runUserId: "member-2",
+          },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      );
+      // Viewer's tool_question arrives after threads.head with no prior run.started and null snapshot.
+      hook.notifyBrowserForEvent(
+        {
+          id: "own-recovery-tool-q",
+          type: "thread.message.created",
+          threadId: "thread-g",
+          seq: 6,
+          runId: "run-started-before-head",
+          botId: "bot-b",
+          payload: {
+            role: "bot",
+            runUserId: "user-1",
+            blocks: [
+              {
+                kind: "tool_question",
+                question: { source: "Calendar", message: "Pick a slot", fields: [] },
+                status: "pending",
+                expiresAt: later,
+                publicKey: "key",
+              },
+            ],
+          },
+        },
+        "thread-g",
+        4,
+        true,
+        "Scout",
+        true,
+        "group-g",
+      );
+    });
+    expect(shown()).toEqual([["Scout", "Message", "thread-g:ask"]]);
+  });
+
+  it("delivers an already-answered card and keeps non-question or mixed queued alerts when thread.message.updated arrives", async () => {
+    FakeNotification.permission = "default";
+    visible = false;
+    bots[0] = { id: "bot-b", name: "Scout", notifyOnFinish: true } as Bot;
+    setLiveSnapshot("thread-b", [{ id: "run-mine", userId: "user-1" }]);
+    await open({ botId: "bot-b" });
+
+    // An already-answered Settings updated card must not be discarded as an expired question on flush.
+    act(() =>
+      hook.notifyBrowserForEvent(
+        {
+          id: "settings-updated-event",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 5,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            messageId: "msg-settings",
+            role: "bot",
+            blocks: [{ kind: "ask", text: "Settings updated", status: "answered" }],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      ),
+    );
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([["Scout", "Settings updated", "thread-b"]]);
+
+    // Updating a skill draft or settling an ask in a mixed reply must not drop queued ordinary alerts.
+    FakeNotification.shown = [];
+    FakeNotification.permission = "default";
+    act(() => {
+      hook.notifyBrowserForEvent(
+        {
+          id: "mixed-reply-event",
+          type: "thread.message.created",
+          threadId: "thread-b",
+          seq: 6,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            messageId: "msg-mixed",
+            role: "bot",
+            blocks: [
+              { kind: "text", text: "Saved the draft for you." },
+              { kind: "ask", text: "Publish it?", status: "pending" },
+            ],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      );
+      hook.notifyBrowserForEvent(
+        {
+          id: "mixed-reply-updated",
+          type: "thread.message.updated",
+          threadId: "thread-b",
+          seq: 7,
+          runId: "run-mine",
+          botId: "bot-b",
+          payload: {
+            messageId: "msg-mixed",
+            role: "bot",
+            blocks: [
+              { kind: "text", text: "Saved the draft for you." },
+              { kind: "ask", text: "Publish it?", status: "answered" },
+            ],
+          },
+        },
+        "thread-b",
+        4,
+        true,
+        "Scout",
+        true,
+        undefined,
+      );
+    });
+    FakeNotification.permission = "granted";
+    act(() => hook.flushPendingBrowserNotifications());
+    expect(shown()).toEqual([["Scout", "Saved the draft for you.\nPublish it?", "thread-b"]]);
+  });
+
   it("remembers run ownership across chat switches for mixed replies and drops a queued foreign ask when snoozed before permission", async () => {
     const later = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     FakeNotification.permission = "default";
