@@ -40,10 +40,15 @@ export function appCatalogSource(
   return {
     label: "apps",
     async search(query, limit) {
-      const joined = squash(query);
       const queryWords = words(query);
+      // Every run of up to four words, joined: "google calendar" names Google Calendar.
+      const named = new Set(
+        queryWords.flatMap((_, start) =>
+          [1, 2, 3, 4].map((length) => queryWords.slice(start, start + length).join("")),
+        ),
+      );
       return dedupe(await catalog())
-        .map((entry) => ({ entry, rank: appRank(entry, joined, queryWords) }))
+        .map((entry) => ({ entry, rank: appRank(entry, named, queryWords) }))
         .filter(({ rank }) => rank > 0)
         .sort((left, right) => right.rank - left.rank)
         .slice(0, limit)
@@ -61,18 +66,13 @@ export function appCatalogSource(
 }
 
 /**
- * 3: the request names the app; 2: it names a word of the app's name; 1: a word starts one. Short
- * words count only as a whole app name, so "to" or "com" never find "Microsoft To Do" or
- * "Monday.com", and "box" in "inbox" is not Box.
+ * 3: whole words of the request name the app; 2: one names a word of the app's name; 1: one
+ * starts a word of it. Only whole words count, so "box" in "inbox" is not Box and "Pagesnapper"
+ * is not Pagesnap, and short words never match part of a name, so "to" or "com" never find
+ * "Microsoft To Do" or "Monday.com".
  */
-function appRank(entry: ConnectorCatalogItem, joined: string, queryWords: string[]): number {
-  const names = [squash(entry.name), squash(entry.slug)];
-  if (
-    names.some((name) =>
-      name.length >= MIN_PREFIX_LENGTH ? joined.includes(name) : queryWords.includes(name),
-    )
-  )
-    return 3;
+function appRank(entry: ConnectorCatalogItem, named: Set<string>, queryWords: string[]): number {
+  if ([squash(entry.name), squash(entry.slug)].some((name) => named.has(name))) return 3;
   const longWords = queryWords.filter((word) => word.length >= MIN_PREFIX_LENGTH);
   const nameWords = words(`${entry.name} ${entry.slug}`);
   if (longWords.some((word) => nameWords.includes(word))) return 2;

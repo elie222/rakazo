@@ -103,6 +103,10 @@ describe("app catalog source", () => {
     expect(found.map((hit) => hit.name)).toEqual(["Pagesnap"]);
   });
 
+  it("does not offer an app whose name is only part of a word the request uses", async () => {
+    expect(await apps.search("use the pagesnapper tool", 5)).toEqual([]);
+  });
+
   it("finds an app whose whole name is a short word", async () => {
     expect((await apps.search("put it in box for me", 5)).map((hit) => hit.name)).toEqual(["Box"]);
   });
