@@ -68,7 +68,7 @@ function isSameReviewerPageReviewQuery(
   );
 }
 
-type PageDenialRecord = { generation: number; error: unknown };
+type PageDenialRecord = { generation: number; spaceSegment: string | undefined; error: unknown };
 
 const pageDenials = new WeakMap<QueryClient, Map<string, PageDenialRecord>>();
 
@@ -80,14 +80,19 @@ function getPageDenial(queryClient: QueryClient, key: string): PageDenialRecord 
   return pageDenials.get(queryClient)?.get(key);
 }
 
-function recordPageDenial(queryClient: QueryClient, key: string, error: unknown): void {
+function recordPageDenial(
+  queryClient: QueryClient,
+  key: string,
+  spaceSegment: string | undefined,
+  error: unknown,
+): void {
   let map = pageDenials.get(queryClient);
   if (!map) {
     map = new Map();
     pageDenials.set(queryClient, map);
   }
   const previous = map.get(key);
-  map.set(key, { generation: (previous?.generation ?? 0) + 1, error });
+  map.set(key, { generation: (previous?.generation ?? 0) + 1, spaceSegment, error });
 }
 
 export default function PageReviewHost() {
@@ -135,6 +140,10 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
     queryFn: async (context) => {
       const currentPath = queries.pageReviews.get.key()[0];
       const userSegment = Array.isArray(currentPath) ? currentPath[0] : undefined;
+      const spaceSegment =
+        Array.isArray(currentPath) && typeof currentPath[1] === "string"
+          ? currentPath[1]
+          : undefined;
       const matchingQueries = () =>
         queryClient.getQueryCache().findAll({
           predicate: (query) => isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId),
@@ -146,7 +155,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
         fetched = await read.queryFn!(context);
       } catch (error) {
         if (isUnavailablePageError(error)) {
-          recordPageDenial(queryClient, denialKey, error);
+          recordPageDenial(queryClient, denialKey, spaceSegment, error);
           // Drop every cached revision payload for this reviewer and page across Spaces so failed
           // retries, remounts, or Space switches while offline cannot resurface a revoked page
           // before a new authorized read succeeds.
@@ -157,9 +166,14 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
         throw error;
       }
       const latestDenial = getPageDenial(queryClient, denialKey);
-      if (latestDenial && latestDenial.generation !== startGeneration) {
-        // Reject reads started before a 401/403/404 denial so an in-flight pre-revocation response
-        // cannot repopulate the cache after revocation; a retry started afterward still succeeds.
+      if (
+        latestDenial &&
+        latestDenial.generation !== startGeneration &&
+        !(fetched.owner && latestDenial.spaceSegment !== spaceSegment)
+      ) {
+        // Reject same-Space or non-owner reads started before a 401/403/404 denial so an in-flight
+        // pre-revocation response cannot repopulate the cache; a retry started afterward or an
+        // independently authorized owner read in another Space still succeeds.
         throw latestDenial.error;
       }
       let newest = fetched.currentVersion;

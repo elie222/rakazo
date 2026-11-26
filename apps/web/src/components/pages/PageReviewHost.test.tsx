@@ -10,11 +10,15 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SpaceRpcProvider } from "../../lib/query/space-rpc";
 import PageReviewHost from "./PageReviewHost";
 
 const rpcState = vi.hoisted(() => ({
   spaceId: "space-1",
   getReview: vi.fn<(input: { pageId: string; version?: number }) => Promise<PageReview>>(),
+  getReviewBySpace: undefined as
+    | ((input: { pageId: string; version?: number }, spaceId?: string) => Promise<PageReview>)
+    | undefined,
   getComments:
     vi.fn<
       (input: {
@@ -47,7 +51,7 @@ vi.mock("@lingui/react/macro", () => ({
 }));
 
 vi.mock("../../lib/query/rpc", () => {
-  const client = {
+  const makeClient = (boundSpaceId?: string) => ({
     notifications: {
       subscribe: async () => ({
         [Symbol.asyncIterator]: () => ({
@@ -56,7 +60,10 @@ vi.mock("../../lib/query/rpc", () => {
       }),
     },
     pageReviews: {
-      get: (input: { pageId: string; version?: number }) => rpcState.getReview(input),
+      get: (input: { pageId: string; version?: number }) =>
+        rpcState.getReviewBySpace
+          ? rpcState.getReviewBySpace(input, boundSpaceId)
+          : rpcState.getReview(input),
       comments: (input: { pageId: string; cursor?: string }) => rpcState.getComments(input),
       draft: (input: { pageId: string; requestId: string }) => rpcState.getDraft(input),
       comment: (input: Record<string, unknown>) => rpcState.addComment(input),
@@ -70,12 +77,13 @@ vi.mock("../../lib/query/rpc", () => {
     pages: {
       get: vi.fn(),
     },
-  };
+  });
+  const defaultClient = makeClient();
   return {
-    rpc: client,
+    rpc: defaultClient,
     selectedSpaceId: () => rpcState.spaceId,
-    rpcForSpace: () => client,
-    createSpaceRpc: () => client,
+    rpcForSpace: (spaceId: string) => makeClient(spaceId),
+    createSpaceRpc: (spaceId: string | null) => makeClient(spaceId ?? undefined),
   };
 });
 
@@ -222,6 +230,7 @@ beforeEach(() => {
   viewState.saveReaderState = undefined;
   viewState.navigateTo = undefined;
   rpcState.spaceId = "space-1";
+  rpcState.getReviewBySpace = undefined;
   rpcState.getReview.mockReset();
   rpcState.getComments.mockReset();
   rpcState.getDraft.mockReset();
@@ -1029,5 +1038,81 @@ describe("PageReviewHost comment draft preservation", () => {
     await vi.waitFor(() => {
       expect(document.querySelector('[data-testid="review-document"]')).not.toBeNull();
     });
+  });
+
+  it("allows an in-flight owner read in the owning Space to succeed after a 404 in another Space", async () => {
+    const ownerRead = deferred<PageReview>();
+    const calls: Array<string | undefined> = [];
+    rpcState.getReviewBySpace = async (_input, spaceId) => {
+      calls.push(spaceId);
+      if (spaceId === "space-1") return ownerRead.promise;
+      throw Object.assign(new Error("Page not found"), { code: "NOT_FOUND", status: 404 });
+    };
+
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 0 } },
+    });
+    root = createRoot(document.body.appendChild(document.createElement("div")));
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <SpaceRpcProvider spaceId="space-1">
+            <MemoryRouter initialEntries={["/review/page-1"]}>
+              <Routes>
+                <Route path="/review/:pageId" element={<PageReviewHost />} />
+              </Routes>
+            </MemoryRouter>
+          </SpaceRpcProvider>
+        </QueryClientProvider>,
+      );
+    });
+    await act(flush);
+    expect(calls).toEqual(["space-1"]);
+
+    // Mount a second view bound to another Space while space-1's owner read stays in flight.
+    const secondRoot = createRoot(document.body.appendChild(document.createElement("div")));
+    try {
+      await act(async () => {
+        secondRoot.render(
+          <QueryClientProvider client={queryClient}>
+            <SpaceRpcProvider spaceId="space-2">
+              <MemoryRouter initialEntries={["/review/page-1"]}>
+                <Routes>
+                  <Route path="/review/:pageId" element={<PageReviewHost />} />
+                </Routes>
+              </MemoryRouter>
+            </SpaceRpcProvider>
+          </QueryClientProvider>,
+        );
+      });
+      await act(flush);
+      expect(document.body.textContent).toContain("This page isn't available");
+
+      // Resolve space-1's owner read: it must still commit and render in space-1.
+      ownerRead.resolve(makePage({ version: 1, currentVersion: 1, owner: true }));
+      await act(flush);
+      await vi.waitFor(() => {
+        expect(document.querySelector('[data-testid="review-document"]')).not.toBeNull();
+      });
+      const space1Cached = queryClient
+        .getQueryCache()
+        .findAll({
+          predicate: (query) => {
+            const path = query.queryKey[0];
+            const opts = query.queryKey[1] as { input?: { pageId?: string } } | undefined;
+            return (
+              Array.isArray(path) &&
+              path[1] === "space:space-1" &&
+              path[2] === "pageReviews" &&
+              path[3] === "get" &&
+              opts?.input?.pageId === "page-1"
+            );
+          },
+        })
+        .some((query) => query.state.data !== undefined);
+      expect(space1Cached).toBe(true);
+    } finally {
+      await act(async () => secondRoot.unmount());
+    }
   });
 });
