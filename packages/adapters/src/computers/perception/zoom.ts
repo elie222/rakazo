@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ComputerObservation, ComputerRect, ComputerZoomRequest } from "@rakazo/adapter-kit";
 import { ClientError } from "@rakazo/core";
-import sharp from "sharp";
 
 /** A frame that is no longer the last observation cannot be cropped safely. */
 export class ComputerStaleFrameError extends ClientError {
@@ -17,6 +16,7 @@ export async function zoomObservation(
 ): Promise<ComputerObservation> {
   if (request.frameId !== observation.frameId) throw new ComputerStaleFrameError();
   const region = clampRegion(request.region, observation.width, observation.height);
+  const { default: sharp } = await import("sharp");
   const image = await sharp(Buffer.from(observation.image))
     .extract({ left: region.x, top: region.y, width: region.w, height: region.h })
     .png()
