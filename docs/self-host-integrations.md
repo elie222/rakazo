@@ -15,7 +15,7 @@ This option sends search queries and requested page URLs to Parallel, which retr
 on its servers. Conversation accounting uses an HMAC of internal IDs keyed by
 `ENCRYPTION_KEY` (shared by the API and worker), so deployments with distinct secrets send
 distinct session IDs. Rotating that secret resets the session IDs; the existing development-only
-encryption-key fallback also applies here. Anonymous access has service limits; rate-limit and provider errors are returned
+encryption-key fallback also applies here. Anonymous access has service limits; set `PARALLEL_API_KEY` on the API and worker to send a Bearer token and lift those limits. Rate-limit and provider errors are returned
 to the bot without switching providers. Per-bot disabled web tools remain disabled. Set
 `WEB_PROVIDER=keyless-http` (or remove the setting) to return to the default.
 
