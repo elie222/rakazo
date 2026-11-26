@@ -346,7 +346,7 @@ describe("memory tool secret redaction", () => {
         datedCtx as never,
         {
           args: {
-            operations: [{ action: "add", content: "Pause alerts", until: "2026-03-19" }],
+            operations: [{ action: "add", content: "Pause alerts", until: "until ( 2026-03-19 )" }],
           },
           finish: (v: unknown) => v,
         } as never,

@@ -227,10 +227,21 @@ it("drops an oversized unreadable image on the current turn and marks it unavail
   expect(hydrated[0]?.content).toBe("[image: corrupt.png (unavailable)]");
 });
 
-it("redacts quoted reply context and steering text before formatting when redact is passed", async () => {
+it("redacts quoted reply context, steering text, and attachment display names while keeping tool paths", async () => {
   const secret = "steer&sec<7>val";
   const deps = {
     prisma: {
+      artifact: {
+        findMany: vi.fn(async () => [
+          {
+            id: "art-steer-1",
+            name: `${secret}-schedule.txt`,
+            mimeType: "text/plain",
+            size: 42,
+            storageKey: "stored-steer-1",
+          },
+        ]),
+      },
       message: {
         findFirst: vi.fn(async () => ({
           id: "m-steer",
@@ -246,6 +257,7 @@ it("redacts quoted reply context and steering text before formatting when redact
         })),
       },
     },
+    artifacts: { get: vi.fn() },
     events: {
       claimSteering: vi.fn(async () => [
         {
@@ -253,7 +265,16 @@ it("redacts quoted reply context and steering text before formatting when redact
           messageId: "m-steer",
           origin: "user" as const,
           text: `follow up ${secret}`,
-          blocks: [{ kind: "text", text: `follow up ${secret}` }] satisfies MessageBlock[],
+          blocks: [
+            { kind: "text", text: `follow up ${secret}` },
+            {
+              kind: "file",
+              artifactId: "art-steer-1",
+              name: `${secret}-schedule.txt`,
+              mimeType: "text/plain",
+              size: 42,
+            },
+          ] satisfies MessageBlock[],
         },
       ]),
     },
@@ -270,7 +291,11 @@ it("redacts quoted reply context and steering text before formatting when redact
   expect(claimed).toHaveLength(1);
   expect(claimed[0]?.text).toContain("quoted [redacted]");
   expect(claimed[0]?.text).toContain("follow up [redacted]");
+  expect(claimed[0]?.text).toContain('"[redacted]-schedule.txt"');
+  expect(claimed[0]?.text).toContain('"attachments/art-steer-1.txt"');
   expect(claimed[0]?.text).not.toContain(secret);
   expect(claimed[0]?.text).not.toContain("steer&amp;sec");
-  expect(claimed[0]?.historyText).toBe("follow up [redacted]");
+  expect(claimed[0]?.historyText).toContain("follow up [redacted]");
+  expect(claimed[0]?.historyText).toContain("[file: [redacted]-schedule.txt");
+  expect(claimed[0]?.historyText).not.toContain(secret);
 });

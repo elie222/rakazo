@@ -28,10 +28,11 @@ export function latestEndedDate(now: Date): string {
 
 function normalizeMemoryUntil(until: string): string {
   return until
+    .replace(/[()]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^until\s+/i, "")
-    .replace(/[()]/g, "");
+    .trim();
 }
 
 /** Whether a temporary memory end condition resolves to an ISO calendar expiry date. */

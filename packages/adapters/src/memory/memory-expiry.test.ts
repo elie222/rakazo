@@ -19,6 +19,12 @@ describe("stampMemoryEntry", () => {
       "Hold sends: all newsletters (saved 2026-03-05, ends 2026-03-20)",
     );
   });
+
+  it("normalizes whitespace inside parentheses around an expiry date", () => {
+    expect(stampMemoryEntry("Hold sends.", "2026-03-05", "until ( 2026-03-20 )")).toBe(
+      "Hold sends. (saved 2026-03-05, ends 2026-03-20)",
+    );
+  });
 });
 
 it("ends a date only once it is over in every time zone", () => {

@@ -389,7 +389,7 @@ export async function claimRunSteering(
         context.signal,
       );
       if (files.length) pendingTurnFiles.push(item.blocks);
-      const filesInstruction = currentTurnFilesInstruction(files);
+      const filesInstruction = currentTurnFilesInstruction(files, currentTurn.redact);
       const answerReplyContext = currentTurn.resumeAnswerReplyContexts?.get(item.messageId);
       const bodyText = currentTurn.redact
         ? item.blocks.length
