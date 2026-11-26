@@ -135,10 +135,13 @@ export function browserNotificationMessage(
 
 export function browserNotificationTag(
   event: Pick<ProductEvent, "type" | "threadId" | "payload">,
+  options?: { waitingQuestion?: boolean },
 ): string {
   const blocks = event.type === "thread.message.created" ? event.payload.blocks : undefined;
+  const asks =
+    options?.waitingQuestion ?? (Array.isArray(blocks) && blocks.some(isWaitingAskBlock));
   // A question card keeps its own tag, so a later reply in the thread does not replace the question.
-  return Array.isArray(blocks) && blocks.some(isWaitingAskBlock)
+  return asks
     ? `${event.threadId}:ask`
     : pendingTakeoverOnly(event)
       ? `${event.threadId}:takeover`
@@ -154,6 +157,7 @@ export function deliverBrowserNotification(
     windowFocused: boolean;
     permission: BrowserNotificationPermission;
     notifiedEventIds: Set<string>;
+    tag?: string;
     show: (title: string, body: string, tag: string) => void;
   },
 ): "delivered" | "pending" | "discarded" {
@@ -168,7 +172,7 @@ export function deliverBrowserNotification(
   if (context.permission === "default") return "pending";
   const message = browserNotificationMessage(event, botName);
   try {
-    context.show(message.title, message.body, browserNotificationTag(event));
+    context.show(message.title, message.body, context.tag ?? browserNotificationTag(event));
     context.notifiedEventIds.add(event.id);
     return "delivered";
   } catch {

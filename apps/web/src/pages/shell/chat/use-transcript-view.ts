@@ -90,7 +90,6 @@ export function useTranscriptView({
   );
   return {
     activeSnapshot,
-    currentRuns,
     transcript,
     artifactTarget,
     composerRunning: currentRuns.some((run) => isActive(run.status)),
