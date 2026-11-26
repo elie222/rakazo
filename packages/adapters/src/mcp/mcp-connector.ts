@@ -509,7 +509,13 @@ export class McpConnector implements ConnectorProvider {
         include: { server: true },
       }),
       this.prisma.mcpServer.findMany({
-        where: { ...usable, allBots: true, assignments: { none: { botId: context.botId } } },
+        where: {
+          ...usable,
+          allBots: true,
+          assignments: {
+            none: { botId: context.botId, spaceId: context.spaceId, userId: context.userId },
+          },
+        },
       }),
     ]);
     const all = [...assigned, ...shared.map(sharedAssignment)];

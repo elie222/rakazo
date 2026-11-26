@@ -412,8 +412,9 @@ export async function assertNotInOrganization(
   db: Pick<Prisma.TransactionClient, "mcpServer">,
   actor: Pick<Actor, "spaceId" | "userId">,
   endpoint: string,
+  exceptId?: string,
 ): Promise<void> {
-  if (await organizationServerAt(db, actor, endpoint))
+  if (await organizationServerAt(db, actor, endpoint, exceptId))
     throw new ClientError(
       "CONFLICT",
       "Your organization already added this MCP server.",

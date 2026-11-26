@@ -84,10 +84,15 @@ export async function organizationServerAt(
   db: Pick<PrismaClient, "mcpServer">,
   scope: Scope,
   endpoint: string,
+  exceptId?: string,
 ): Promise<{ id: string; name: string } | null> {
   const href = (url: string) => (URL.canParse(url) ? new URL(url).href : url);
   const rows = await db.mcpServer.findMany({
-    where: { ...organizationItemIn(scope), endpoint: { not: null } },
+    where: {
+      ...organizationItemIn(scope),
+      endpoint: { not: null },
+      ...(exceptId ? { NOT: { id: exceptId } } : {}),
+    },
     select: { id: true, name: true, endpoint: true },
   });
   const found = rows.find((row) => row.endpoint && href(row.endpoint) === href(endpoint));

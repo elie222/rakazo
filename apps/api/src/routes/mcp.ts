@@ -36,6 +36,7 @@ import {
   assertMcpRemoteEndpoint,
   assertMcpStdioAdmin,
   assertMcpStdioCommand,
+  assertNotInOrganization,
   MCP_OAUTH_PENDING_MESSAGE,
   mcpAssignmentDto,
   mcpServerDto,
@@ -266,8 +267,9 @@ export function mcpRoutes(ctx: RouterContext) {
         URL.canParse(nextEndpoint)
           ? new URL(existing.endpoint).href !== new URL(nextEndpoint).href
           : existing.endpoint !== nextEndpoint;
-      if (endpointChanged) {
+      if (endpointChanged && nextEndpoint) {
         await assertMcpRemoteEndpoint(nextEndpoint, deps);
+        await assertNotInOrganization(deps.prisma, actor, nextEndpoint, existing.id);
       }
       if (config.transport === "stdio") {
         await assertMcpStdioCommand(config.command, actor, deps);
@@ -421,7 +423,12 @@ export function mcpRoutes(ctx: RouterContext) {
               : [];
           return { updated, seqs };
         }),
-      );
+      ).catch((error: unknown) => {
+        // An organization's names are held by its index, so a rename onto one fails there.
+        if (isUniqueViolation(error))
+          throw new ClientError("CONFLICT", "An MCP server with that name already exists.");
+        throw error;
+      });
       if (row) {
         for (const event of row.seqs) await deps.events.notify(event.threadId, event.seq);
         const oauth = await mcpOAuth.summaryFor(row.updated, actor);

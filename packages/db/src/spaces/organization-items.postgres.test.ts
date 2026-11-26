@@ -78,6 +78,15 @@ describe.skipIf(!enabled)("an organization's MCP servers (PostgreSQL)", () => {
           data: { id: `${userId}-m`, organizationId: orgId, userId, role, createdAt: new Date() },
         });
       }
+      await prisma.member.create({
+        data: {
+          id: `${member}-other`,
+          organizationId: otherOrganizationId,
+          userId: member,
+          role: "member",
+          createdAt: new Date(),
+        },
+      });
       for (const [userId, spaceId] of [
         [member, memberOwn],
         [guest, team],
@@ -143,22 +152,32 @@ describe.skipIf(!enabled)("an organization's MCP servers (PostgreSQL)", () => {
     expect(await managedOrganizationId(prisma, { spaceId: team, userId: guest })).toBeNull();
   });
 
-  it("is found at its address in another spelling, and its name is taken for members", async () => {
+  it("is found at its address in another spelling", async () => {
     const scope = { spaceId: memberOwn, userId: member };
     expect(
       await runAsTenant(scope, () =>
         organizationServerAt(prisma, scope, "HTTPS://tracker.example.test:443/mcp"),
       ),
     ).toEqual({ id: serverId, name: "Tracker" });
-    await expect(
-      runAsTenant(scope, () =>
-        prisma.$transaction((tx) =>
-          assertNameFreeWhereAvailable(tx, "mcpServer", scope, "tracker", {
-            allSpaces: true,
-            spaceIds: [memberOwn],
-          }),
-        ),
+  });
+
+  const claim = (spaceIds: string[]) => {
+    const scope = { spaceId: spaceIds[0]!, userId: member };
+    return runAsTenant(scope, () =>
+      prisma.$transaction((tx) =>
+        assertNameFreeWhereAvailable(tx, "mcpServer", scope, "tracker", {
+          allSpaces: false,
+          spaceIds,
+        }),
       ),
-    ).rejects.toMatchObject({ name: "NameTakenError" });
+    );
+  };
+
+  it("takes its name in its organization's Spaces", async () => {
+    await expect(claim([memberOwn])).rejects.toMatchObject({ name: "NameTakenError" });
+  });
+
+  it("leaves its name free in another organization the member belongs to", async () => {
+    await expect(claim([outsiderSpace])).resolves.toBeUndefined();
   });
 });

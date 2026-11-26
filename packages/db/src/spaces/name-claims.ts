@@ -60,6 +60,9 @@ export async function assertNameFreeWhereAvailable(
               {
                 organization: {
                   members: { some: { userId: actor.userId, role: { not: GUEST_ROLE } } },
+                  ...(availability.allSpaces
+                    ? {}
+                    : { spaces: { some: { id: { in: availability.spaceIds } } } }),
                 },
               },
             ],

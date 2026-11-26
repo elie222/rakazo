@@ -1988,7 +1988,7 @@ describe("MCP connector session cache", () => {
         enabled: true,
         allBots: true,
         OR: expect.arrayContaining([expect.objectContaining({ userId: "u1" })]),
-        assignments: { none: { botId: "bot-1" } },
+        assignments: { none: { botId: "bot-1", spaceId: "w1", userId: "u1" } },
       }),
     });
     const events = [];
