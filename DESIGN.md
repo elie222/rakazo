@@ -1,17 +1,17 @@
 ---
 # Normative token names and roles. Values live in code; this file never copies them.
 sources:
-  colors: packages/ui-tokens/src/index.ts        # webDarkTokens / webLightTokens (web, Electron); darkTokens / lightTokens (mobile)
-  colors-css: packages/ui-tokens/src/tokens.css  # generated, do not edit
+  colors: packages/ui-tokens/src/index.ts # webDarkTokens / webLightTokens (web, Electron); darkTokens / lightTokens (mobile)
+  colors-css: packages/ui-tokens/src/tokens.css # generated, do not edit
   tailwind-theme: packages/ui-web/src/styles.css # @theme: type scale, radius, color utilities
   control-sizes: packages/ui-web/src/lib/control-size.ts
   components: packages/ui-web/src/components/ui
 default-theme: dark
-surfaces:            # bottom to top in dark mode; see "Surfaces" for light
-  - background       # page
-  - sidebar          # app navigation (same fill as background in dark)
-  - dialog           # modal panels
-  - card             # raised blocks, also muted and popover
+surfaces: # bottom to top in dark mode; see "Surfaces" for light
+  - background # page
+  - sidebar # app navigation (same fill as background in dark)
+  - dialog # modal panels
+  - card # raised blocks, also muted and popover
 fills:
   muted: tracks, wells, quiet containers
   accent: hover and pressed fill (ink at low opacity)
@@ -23,10 +23,10 @@ ink:
   faint-foreground: tertiary text
   primary: the one strong action (ink, not a hue)
 status: [destructive, success, warning]
-identity: botColors   # the only hues in app chrome
+identity: botColors # the only hues in app chrome
 type-scale: [caption, label, body-sm, body, body-lg, heading3, heading2, heading1, display]
 control-sizes: [xs, sm, default, lg, xl]
-radius: [sm, md, lg, xl, 2xl]   # all derived from --radius
+radius: [sm, md, lg, xl, 2xl] # all derived from --radius
 ---
 
 # Rakazo design
@@ -53,12 +53,12 @@ is the source of truth for values and this file should be fixed.
 
 One TypeScript file, `packages/ui-tokens/src/index.ts`, defines every palette:
 
-| Palette | Used by |
-|---|---|
-| `darkTokens`, `lightTokens` | Mobile (iOS system values) |
+| Palette                                 | Used by                                                                      |
+| --------------------------------------- | ---------------------------------------------------------------------------- |
+| `darkTokens`, `lightTokens`             | Mobile (iOS system values)                                                   |
 | `webDarkOverrides`, `webLightOverrides` | Merged over the mobile palettes to make `webDarkTokens` and `webLightTokens` |
-| `botColors`, `botEyeColor` | Bot identity, every surface |
-| `pageKitPalette` | Bot-built pages only, never app chrome |
+| `botColors`, `botEyeColor`              | Bot identity, every surface                                                  |
+| `pageKitPalette`                        | Bot-built pages only, never app chrome                                       |
 
 `pnpm --filter @rakazo/ui-tokens generate` renders `tokens.css`. `packages/ui-web/src/styles.css`
 exposes each token as a Tailwind colour (`bg-card`, `text-muted-foreground`, `border-input`).
@@ -72,21 +72,21 @@ variant matches `[data-theme="dark"]`.
 Surfaces are opaque. Text, borders, hover and selection are ink at an opacity, so they read
 the same on any surface.
 
-| Token | Role |
-|---|---|
-| `background` | The page |
-| `sidebar` | App navigation |
-| `dialog` | Modal panels (`DialogContent`) |
-| `card` | Raised blocks inside a page or dialog |
-| `popover` | Menus, popovers, command palette |
-| `muted` | Tracks and wells: segmented control track, tab list, quiet containers |
-| `glass-fill`, `glass-stroke` | Floating controls over scrolling content (`.glass`) |
+| Token                        | Role                                                                  |
+| ---------------------------- | --------------------------------------------------------------------- |
+| `background`                 | The page                                                              |
+| `sidebar`                    | App navigation                                                        |
+| `dialog`                     | Modal panels (`DialogContent`)                                        |
+| `card`                       | Raised blocks inside a page or dialog                                 |
+| `popover`                    | Menus, popovers, command palette                                      |
+| `muted`                      | Tracks and wells: segmented control track, tab list, quiet containers |
+| `glass-fill`, `glass-stroke` | Floating controls over scrolling content (`.glass`)                   |
 
 **The lightness order flips between themes.** Check both before you pick a fill.
 
-| | Darkest → lightest |
-|---|---|
-| Dark | `background` = `sidebar` → `dialog` → `card` = `muted` = `popover` |
+|       | Darkest → lightest                                                 |
+| ----- | ------------------------------------------------------------------ |
+| Dark  | `background` = `sidebar` → `dialog` → `card` = `muted` = `popover` |
 | Light | `card` = `muted` → `sidebar` → `background` = `dialog` = `popover` |
 
 So `bg-background` on a `bg-muted` track looks raised in light mode and sunken in dark mode.
@@ -94,20 +94,20 @@ A selected item inside a track needs a dark-mode override:
 
 ```tsx
 // Selected item in a muted track
-"aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50"
+"aria-pressed:bg-background aria-pressed:shadow-sm dark:aria-pressed:bg-input/50";
 ```
 
 Shared Tabs does the same with `dark:data-active:bg-input/30` and a border.
 
 ### Interaction fills
 
-| State | Token |
-|---|---|
-| Hover, menu highlight, open trigger | `accent` |
-| Selected in a track | `background` (light), `input/50` (dark) |
-| Focus | `ring` at 50%, 3px (`focus-visible:ring-3 focus-visible:ring-ring/50`) |
-| Disabled | `opacity-50`, or `primary-disabled` for the primary button |
-| Invalid | `destructive` border and ring |
+| State                               | Token                                                                  |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| Hover, menu highlight, open trigger | `accent`                                                               |
+| Selected in a track                 | `background` (light), `input/50` (dark)                                |
+| Focus                               | `ring` at 50%, 3px (`focus-visible:ring-3 focus-visible:ring-ring/50`) |
+| Disabled                            | `opacity-50`, or `primary-disabled` for the primary button             |
+| Invalid                             | `destructive` border and ring                                          |
 
 ### Ink
 
@@ -121,17 +121,17 @@ System font (`font-sans`). Regular weight is 420 on macOS, where 400 reads thin.
 
 Tailwind's default text sizes are removed. Use the scale:
 
-| Utility | Size / line | Use |
-|---|---|---|
-| `text-caption` | 11 / 16 | Timestamps, tiny meta |
-| `text-label` | 12 / 16 | Field labels, quiet group labels |
-| `text-body-sm` | 13 / 18 | Dense controls, segmented items, table meta |
-| `text-body` | 14 / 20 | Default UI text |
-| `text-body-lg` | 15 / 22 | Section titles, `xl` buttons |
-| `text-heading3` | 17 / 24 | Settings section headings |
-| `text-heading2` | 22 / 28 | Dialog and page titles |
-| `text-heading1` | 26 / 32 | Rare, top-level headings |
-| `text-display` | 32 / 40 | Onboarding and empty-state heroes |
+| Utility         | Size / line | Use                                         |
+| --------------- | ----------- | ------------------------------------------- |
+| `text-caption`  | 11 / 16     | Timestamps, tiny meta                       |
+| `text-label`    | 12 / 16     | Field labels, quiet group labels            |
+| `text-body-sm`  | 13 / 18     | Dense controls, segmented items, table meta |
+| `text-body`     | 14 / 20     | Default UI text                             |
+| `text-body-lg`  | 15 / 22     | Section titles, `xl` buttons                |
+| `text-heading3` | 17 / 24     | Settings section headings                   |
+| `text-heading2` | 22 / 28     | Dialog and page titles                      |
+| `text-heading1` | 26 / 32     | Rare, top-level headings                    |
+| `text-display`  | 32 / 40     | Onboarding and empty-state heroes           |
 
 Use `SectionHeading` (`heading`, `title`, `label` variants) for section names instead of
 styling an `h3` by hand. Mobile uses `typeScale` in iOS points (body 17/22) and caps dynamic
@@ -169,11 +169,11 @@ Text on a page starts on one vertical line, and trailing controls end on one lin
 All radii derive from `--radius` (0.75rem): `rounded-sm` −4px, `rounded-md` −2px, `rounded-lg`
 = radius, `rounded-xl` +4px, `rounded-2xl` +8px.
 
-| Radius | Use |
-|---|---|
-| `rounded-lg` | Controls, segmented tracks and items, menu items |
-| `rounded-xl` | Cards, settings groups, default dialogs |
-| `rounded-2xl` | Large dialogs and overlays |
+| Radius         | Use                                                           |
+| -------------- | ------------------------------------------------------------- |
+| `rounded-lg`   | Controls, segmented tracks and items, menu items              |
+| `rounded-xl`   | Cards, settings groups, default dialogs                       |
+| `rounded-2xl`  | Large dialogs and overlays                                    |
 | `rounded-full` | Avatars, floating buttons, filter chips. Never action buttons |
 
 ## Elevation
@@ -190,11 +190,11 @@ No elevation tokens. Separation comes from surface order and borders first, shad
 
 No motion tokens. Keep it short and functional.
 
-| Duration | Use |
-|---|---|
-| `duration-100` | Dialog open and close |
+| Duration       | Use                                        |
+| -------------- | ------------------------------------------ |
+| `duration-100` | Dialog open and close                      |
 | `duration-150` | Hover and colour transitions (most common) |
-| `duration-200` | Panel and disclosure movement |
+| `duration-200` | Panel and disclosure movement              |
 
 Ease out on enter. Open and close use `tw-animate-css` (`animate-in fade-in-0 zoom-in-95`).
 AI moments (loading, shimmer, success) reuse `apps/web/src/components/ai/`.
@@ -226,27 +226,27 @@ Reuse these before writing anything by hand. `pnpm checks` rejects some hand-rol
 `Button`, `Input`, `InputGroup`, `SelectTrigger` and `OptionSelect` take height from the `size`
 prop only (`control-size.ts`), so controls side by side line up:
 
-| Size | Height | Square |
-|---|---|---|
-| `xs` | 24 | `icon-xs` |
-| `sm` | 28 | `icon-sm` |
-| `default` | 32 | `icon` |
-| `lg` | 36 | `icon-lg` |
-| `xl` | 48 | |
+| Size      | Height | Square    |
+| --------- | ------ | --------- |
+| `xs`      | 24     | `icon-xs` |
+| `sm`      | 28     | `icon-sm` |
+| `default` | 32     | `icon`    |
+| `lg`      | 36     | `icon-lg` |
+| `xl`      | 48     |           |
 
 ### Button
 
-| Variant | Use |
-|---|---|
-| `default` | The one primary action on a screen (ink fill) |
-| `secondary` | Row actions, header actions, Edit, Rename, Change password. The usual choice |
-| `outline` | Rare: a secondary action that needs an edge on a busy surface |
-| `ghost` | Toolbars and icon-only actions |
-| `text` | Inline action that reads as text |
-| `link` | Navigation inside copy |
+| Variant                 | Use                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| `default`               | The one primary action on a screen (ink fill)                                            |
+| `secondary`             | Row actions, header actions, Edit, Rename, Change password. The usual choice             |
+| `outline`               | Rare: a secondary action that needs an edge on a busy surface                            |
+| `ghost`                 | Toolbars and icon-only actions                                                           |
+| `text`                  | Inline action that reads as text                                                         |
+| `link`                  | Navigation inside copy                                                                   |
 | `destructive-secondary` | Remove, delete, leave or disconnect on an ordinary page: neutral, red on hover and press |
-| `destructive` | The confirming button in a destructive confirmation (tinted red) |
-| `floating` | Pill over scrolling content (glass) |
+| `destructive`           | The confirming button in a destructive confirmation (tinted red)                         |
+| `floating`              | Pill over scrolling content (glass)                                                      |
 
 One `default` button per view. Destructive actions go in menus or the bottom of an edit form,
 not repeated per row.
@@ -264,17 +264,17 @@ as an alarm. On ordinary pages:
 
 ### Choosing between similar controls
 
-| Need | Use | Not |
-|---|---|---|
-| Pick one of a fixed list | `OptionSelect` | Native `<select>` (check rejects it) |
-| Pick one of 2–4 short options, all visible | Segmented control | Radio group |
-| Switch views of the same content | `Tabs` | Segmented control |
-| On or off, applies at once | `Switch` | Checkbox |
-| Agree or select in a form | `Checkbox` | Switch |
-| Confirm a destructive action | `AlertDialog` (`ConfirmDialog`) | `Dialog` |
-| Transient result | `toast` (sonner) | Inline banner |
-| A status or failure that stays until something changes | `Notice` | Bare coloured text |
-| Nothing here yet | `Empty` | Custom text block |
+| Need                                                   | Use                             | Not                                  |
+| ------------------------------------------------------ | ------------------------------- | ------------------------------------ |
+| Pick one of a fixed list                               | `OptionSelect`                  | Native `<select>` (check rejects it) |
+| Pick one of 2–4 short options, all visible             | Segmented control               | Radio group                          |
+| Switch views of the same content                       | `Tabs`                          | Segmented control                    |
+| On or off, applies at once                             | `Switch`                        | Checkbox                             |
+| Agree or select in a form                              | `Checkbox`                      | Switch                               |
+| Confirm a destructive action                           | `AlertDialog` (`ConfirmDialog`) | `Dialog`                             |
+| Transient result                                       | `toast` (sonner)                | Inline banner                        |
+| A status or failure that stays until something changes | `Notice`                        | Bare coloured text                   |
+| Nothing here yet                                       | `Empty`                         | Custom text block                    |
 
 ### Segmented control
 
@@ -304,7 +304,9 @@ render with `role="alert"` and the others with `role="status"`. Put it next to w
 (a provider error inside the provider section), not at the top of the page.
 
 ```tsx
-{error ? <Notice tone="error">{error}</Notice> : null}
+{
+  error ? <Notice tone="error">{error}</Notice> : null;
+}
 ```
 
 ### Settings
