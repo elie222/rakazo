@@ -91,7 +91,12 @@ export async function startAppIcon(userDataDir: string) {
   const icon = windowIcon();
   if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
   handleIpc("desktop.appIcon.get", currentAppIcon, currentAppIcon);
-  handleIpc("desktop.appIcon.set", createAppIconSetHandler(userDataDir, applyAppIcon));
+  handleIpc(
+    "desktop.appIcon.set",
+    createAppIconSetHandler(userDataDir, applyAppIcon, (error) =>
+      reportDesktopError(error, "desktop.ipc"),
+    ),
+  );
 }
 /** The icon the person picked, else the development icon for unpackaged launches. */
 export function windowIcon() {
@@ -319,11 +324,15 @@ export function createWindow(url: string, partition: string | null) {
     if (shouldOpenInAppPopup(appOrigin, childUrl, frameName)) {
       // An MCP server signs in through a jar of its own so accounts never mix.
       const mcpServerId = mcpOAuthPopupServerId(frameName);
+      const icon = windowIcon();
       return {
         action: "allow",
-        overrideBrowserWindowOptions: oauthPopupWindowOptions(
-          mcpServerId === null ? partition : mcpOAuthPartition(url, mcpServerId),
-        ),
+        overrideBrowserWindowOptions: {
+          ...oauthPopupWindowOptions(
+            mcpServerId === null ? partition : mcpOAuthPartition(url, mcpServerId),
+          ),
+          ...(icon ? { icon } : {}),
+        },
       };
     }
     const external = safeExternalUrl(childUrl);

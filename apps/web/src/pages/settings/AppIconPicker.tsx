@@ -1,11 +1,17 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AppIcon } from "@rakazo/contracts";
-import { APP_ICONS, DEFAULT_APP_ICON, isAppIcon } from "@rakazo/contracts";
+import { APP_ICONS, isAppIcon } from "@rakazo/contracts";
 import { appIconLabel } from "@rakazo/i18n/app-icon";
 import { ToggleGroup, ToggleGroupItem } from "@rakazo/ui-web";
-import { useEffect, useId, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useId } from "react";
 import { SettingsRow } from "../../components/settings/SettingsRows";
+import type { RakazoDesktop } from "../../lib/platform/desktop";
 import { desktopBridge } from "../../lib/platform/desktop";
+import { useSave } from "../../lib/query/query";
+
+/** The icon belongs to this computer, not to the signed-in user. */
+const APP_ICON_KEY = ["desktop", "appIcon"] as const;
 
 /** Only the desktop app can change its own Dock or taskbar icon. */
 export function AppIconPicker() {
@@ -13,47 +19,18 @@ export function AppIconPicker() {
   return bridge ? <DesktopAppIconPicker bridge={bridge} /> : null;
 }
 
-function DesktopAppIconPicker({
-  bridge,
-}: {
-  bridge: NonNullable<NonNullable<ReturnType<typeof desktopBridge>>["appIcon"]>;
-}) {
+function DesktopAppIconPicker({ bridge }: { bridge: NonNullable<RakazoDesktop["appIcon"]> }) {
   const { t } = useLingui();
   const labelId = useId();
-  const [icon, setIcon] = useState<AppIcon | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    bridge.get().then(
-      (current) => {
-        if (active) setIcon(current);
-      },
-      () => {
-        if (active) setIcon(DEFAULT_APP_ICON);
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [bridge]);
-
-  function choose(next: AppIcon) {
-    const previous = icon;
-    setIcon(next);
-    setFailed(false);
-    bridge.set(next).then(
-      (saved) => {
-        if (saved) return;
-        setIcon(previous);
-        setFailed(true);
-      },
-      () => {
-        setIcon(previous);
-        setFailed(true);
-      },
-    );
-  }
+  const queryClient = useQueryClient();
+  const { data: saved } = useQuery({ queryKey: APP_ICON_KEY, queryFn: () => bridge.get() });
+  const change = useSave({
+    save: async (icon: AppIcon) => {
+      if (!(await bridge.set(icon))) throw new Error("The desktop app kept its icon.");
+    },
+    onSaved: (_done, icon) => queryClient.setQueryData(APP_ICON_KEY, icon),
+  });
+  const shown = change.pending ? change.input : saved;
 
   return (
     <SettingsRow
@@ -67,9 +44,10 @@ function DesktopAppIconPicker({
           <ToggleGroup
             aria-labelledby={labelId}
             data-testid="app-icon-select"
-            value={icon ? [icon] : []}
+            disabled={saved === undefined || change.pending}
+            value={shown ? [shown] : []}
             onValueChange={([next]) => {
-              if (isAppIcon(next) && next !== icon) choose(next);
+              if (isAppIcon(next) && next !== saved) change.run(next);
             }}
             spacing={1}
             className="grid grid-cols-6"
@@ -91,7 +69,7 @@ function DesktopAppIconPicker({
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
-          {failed ? (
+          {change.error ? (
             <p role="alert" className="text-body-sm text-destructive">
               {t`Couldn't change the app icon`}
             </p>

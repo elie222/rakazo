@@ -28,16 +28,28 @@ export function appIconFile(dir: string, icon: AppIcon, platform: NodeJS.Platfor
   return path.join(dir, platform === "darwin" ? `${icon}-macos.png` : `${icon}.png`);
 }
 
-export function createAppIconSetHandler(userDataDir: string, apply: (icon: AppIcon) => void) {
+/** Applies before saving, so a choice that cannot be shown is never kept for the next launch. */
+export function createAppIconSetHandler(
+  userDataDir: string,
+  apply: (icon: AppIcon) => void,
+  report: (error: unknown) => void,
+) {
   return async (_event: unknown, icon: unknown): Promise<boolean> => {
     if (!isAppIcon(icon)) return false;
     try {
-      await saveAppIcon(userDataDir, icon);
-      current = icon;
       apply(icon);
-      return true;
-    } catch {
+    } catch (error) {
+      report(error);
       return false;
     }
+    try {
+      await saveAppIcon(userDataDir, icon);
+    } catch (error) {
+      report(error);
+      apply(current);
+      return false;
+    }
+    current = icon;
+    return true;
   };
 }
