@@ -24,7 +24,7 @@ import {
   AVAILABILITY_SELECT,
   itemSecretIn,
   managedOrganizationId,
-  personalOrManagedOrganizationItemIn,
+  OrganizationAdminRequiredError,
   personalOrOrganizationItemIn,
   spaceAvailability,
 } from "@rakazo/db";
@@ -61,9 +61,12 @@ export function capabilitiesRoutes(ctx: RouterContext) {
       await lockPluginInstalls(tx, actor);
       if (managedId) await lockPluginInstalls(tx, actor, managedId);
       const existing = await tx.capabilityInstall.findFirst({
-        where: { id, ...personalOrManagedOrganizationItemIn(actor, managedId) },
+        where: { id, ...personalOrOrganizationItemIn(actor) },
       });
       if (!existing) return;
+      if (existing.organizationId && existing.organizationId !== managedId) {
+        throw new OrganizationAdminRequiredError();
+      }
       if (existing.kind === "plugin") {
         const servers = await tx.mcpServer.findMany({
           where: { installId: existing.id },

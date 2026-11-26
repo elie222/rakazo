@@ -255,7 +255,9 @@ describe.skipIf(!enabled)("plugin install lifecycle (PostgreSQL, offline provide
       "preserves the shared install after a member requests removal",
       asMember(async () => {
         const member = client(teammate);
-        await member.capabilities.remove({ id: sharedId });
+        await expect(member.capabilities.remove({ id: sharedId })).rejects.toMatchObject({
+          code: "FORBIDDEN",
+        });
         expect(await member.capabilities.list()).toContainEqual(
           expect.objectContaining({ id: sharedId }),
         );
