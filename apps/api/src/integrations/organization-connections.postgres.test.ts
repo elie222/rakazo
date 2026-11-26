@@ -2,10 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createRouterClient } from "@orpc/server";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import { ConnectorRegistry } from "@rakazo/adapters";
-import {
-  APP_CONNECTION_IN_ORGANIZATION,
-  ORGANIZATION_CONNECTION_NAME_TAKEN,
-} from "@rakazo/contracts";
+import { ORGANIZATION_CONNECTION_NAME_TAKEN } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -55,6 +52,7 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
     listConnectedExternalIds: async () => [],
     listConnectedRefs: vi.fn(async () => ["fixture-account"]),
     connectionReady: async () => true,
+    connectedAccountIdentity: vi.fn(async () => undefined as string | undefined),
     resolveConnectedAccountId: vi.fn(async () => "fixture-account"),
     revoke: vi.fn(async () => {}),
   };
@@ -209,13 +207,53 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
       await expect(operation()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("detects the same app and a conflicting rename in the owning organization", async () => {
+  it("adds a distinct account to the same app with a different label", async () => {
     const admin = client("admin", second);
-    await expect(
-      admin.beginForOrganization({ ...request, provider: "MAIL" }),
-    ).rejects.toMatchObject({
-      code: APP_CONNECTION_IN_ORGANIZATION,
+    const { connectionId } = await admin.beginForOrganization(request);
+    vi.mocked(connector.resolveConnectedAccountId!)
+      .mockResolvedValueOnce("fixture-account")
+      .mockResolvedValueOnce("fixture-account-2");
+    const completed = await admin.complete({ connectionId });
+    expect(completed).toMatchObject({
+      id: connectionId,
+      status: "connected",
+      displayName: "Shared inbox 2",
     });
+    vi.mocked(connector.listConnectedRefs!).mockResolvedValueOnce([
+      "fixture-account",
+      "fixture-account-2",
+    ]);
+    expect((await client("member", second).list()).map((row) => row.id)).toEqual(
+      expect.arrayContaining([sharedId, connectionId]),
+    );
+    await admin.revoke({ connectionId });
+    expect(connector.revoke).toHaveBeenLastCalledWith(
+      "fixture-account-2",
+      expect.objectContaining({ organizationId: team }),
+    );
+    vi.mocked(connector.revoke).mockClear();
+  });
+
+  it("keeps the existing account when separate authorizations verify the same identity", async () => {
+    const admin = client("admin", second);
+    const { connectionId } = await admin.beginForOrganization(request);
+    vi.mocked(connector.resolveConnectedAccountId!)
+      .mockResolvedValueOnce("fixture-account")
+      .mockResolvedValueOnce("fixture-duplicate");
+    vi.mocked(connector.connectedAccountIdentity!)
+      .mockResolvedValueOnce("mailbox@example.test")
+      .mockResolvedValueOnce("mailbox@example.test");
+    expect(await admin.complete({ connectionId })).toMatchObject({
+      id: sharedId,
+      status: "connected",
+    });
+    expect(await admin.list()).toContainEqual(
+      expect.objectContaining({ id: connectionId, status: "revoked" }),
+    );
+  });
+
+  it("detects a conflicting rename in the owning organization", async () => {
+    const admin = client("admin", second);
     await client("outsider", outside).beginForOrganization(request);
     const { connectionId } = await admin.beginForOrganization({
       ...request,
@@ -253,7 +291,9 @@ describe.skipIf(!enabled)("organization app connections (PostgreSQL)", () => {
       "fixture-account",
       expect.objectContaining({ organizationId: team }),
     );
-    expect(await client("member", second).list()).toHaveLength(4);
+    expect(
+      (await client("member", second).list()).filter((row) => row.status !== "revoked"),
+    ).toHaveLength(4);
   });
 
   it("finishes an existing sign-in when an admin reconnects a pending account", async () => {

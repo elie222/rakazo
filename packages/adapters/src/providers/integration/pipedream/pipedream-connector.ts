@@ -409,7 +409,32 @@ export class PipedreamConnector implements ManagedConnectorProvider {
       .filter((account) => account.healthy !== false && account.dead !== true)
       .map((account) => account.id)
       .filter(Boolean);
-    return ids.find((id) => !excluded.has(id));
+    const available = ids.filter((id) => !excluded.has(id));
+    return available.length === 1 ? available[0] : undefined;
+  }
+
+  async connectedAccountIdentity(slug: string, ref: string, context: AdapterContext) {
+    if (slug !== "gmail") return undefined;
+    const endpoint = Buffer.from("https://gmail.googleapis.com/gmail/v1/users/me/profile").toString(
+      "base64url",
+    );
+    const query = new URLSearchParams({
+      external_user_id: this.externalUserId(context),
+      account_id: ref,
+    });
+    try {
+      const profile = await this.request<{ emailAddress?: unknown }>(
+        `/v1/connect/${encodeURIComponent(this.config.projectId)}/proxy/${endpoint}?${query}`,
+        {},
+        context.signal,
+      );
+      const address = profile.emailAddress;
+      return typeof address === "string" ? address.trim().toLowerCase() || undefined : undefined;
+    } catch {
+      // Older grants may lack the profile scope; their credentials still work for other actions.
+      context.signal.throwIfAborted();
+      return undefined;
+    }
   }
 
   async connectionReady(context: AdapterContext, externalId: string): Promise<boolean> {

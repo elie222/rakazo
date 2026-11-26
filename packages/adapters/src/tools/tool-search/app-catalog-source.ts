@@ -36,7 +36,17 @@ export function appCatalogSource(
             )) ?? [],
         ),
       )
-    ).flat();
+    )
+      .flat()
+      .map((entry) =>
+        context.connectedConnections?.some(
+          (account) =>
+            account.connectorId === entry.connectorId &&
+            account.externalId.toLowerCase() === entry.slug.toLowerCase(),
+        )
+          ? { ...entry, connected: true }
+          : entry,
+      );
   return {
     label: "apps",
     async search(query, limit) {

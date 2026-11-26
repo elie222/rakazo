@@ -8,6 +8,7 @@ import type {
 import { ConnectorAuthUnavailableError, connectionCleanupJob } from "@rakazo/adapter-kit";
 import type { ConnectionOwner } from "@rakazo/adapters";
 import {
+  advisoryLock,
   authorizationInUse,
   CONNECTION_CLEANUP_BACKUP_MS,
   connectionCleanupRetryAt,
@@ -25,7 +26,7 @@ import {
   tryLockProviderConnectionScope,
 } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { ClientError, matchFeaturedConnectorId } from "@rakazo/core";
+import { ClientError, connectionLabelFrom, matchFeaturedConnectorId } from "@rakazo/core";
 import { normalizedHttpUrl } from "@rakazo/core/egress";
 import {
   IsolationError,
@@ -39,7 +40,6 @@ import type { RouterDeps } from "../router.js";
 import {
   connectionDto,
   findManagedConnection,
-  organizationAppTaken,
   publishConnectionChange,
   requireConnectionOrganization,
   throwConnectionNameConflict,
@@ -214,17 +214,21 @@ export async function beginConnection(
       providerScopeKey(owner, input.connectorId, input.provider),
       async (tx) => {
         await lockProviderConnectionScope(tx, owner, input.connectorId, input.provider);
+        let displayName = input.displayName;
         if (organizationId) {
           await requireConnectionOrganization(tx, context.actor, organizationId);
-          const duplicate = await tx.connection.findFirst({
-            where: {
-              organizationId,
-              provider: { equals: input.provider, mode: "insensitive" },
-              status: { not: "revoked" },
-            },
-            select: { id: true },
-          });
-          if (duplicate) throw organizationAppTaken();
+          await advisoryLock(tx, "organization-connection-label", organizationId);
+          const names = new Set(
+            (
+              await tx.connection.findMany({
+                where: { organizationId, status: { not: "revoked" } },
+                select: { displayName: true },
+              })
+            ).map((row) => row.displayName.toLowerCase()),
+          );
+          for (let number = 2; names.has(displayName.toLowerCase()); number += 1) {
+            displayName = connectionLabelFrom(input.displayName, input.provider, ` ${number}`);
+          }
         }
         const existing = await tx.connection.findMany({
           where: {
@@ -240,7 +244,7 @@ export async function beginConnection(
           return tx.connection.update({
             where: { id: reusable.id },
             data: {
-              displayName: input.displayName,
+              displayName,
               status: "pending",
               providerRef: null,
               metadata: { attempt },
@@ -252,7 +256,7 @@ export async function beginConnection(
             ...owned,
             connectorId: input.connectorId,
             provider: input.provider,
-            displayName: input.displayName,
+            displayName,
             status: "pending",
             metadata: { attempt },
           },
@@ -341,6 +345,7 @@ export async function beginConnection(
   // Re-take the provider lock and only advance the row while it is still this attempt's, so
   // a concurrent revoke cannot be overwritten back to pending/connected, and neither can the
   // result of a later begin that reused the row.
+  const pending = Boolean(auth.authorizationUrl || auth.requiresCompletion);
   let applied: boolean;
   try {
     applied = await providerLockTransaction(
@@ -359,7 +364,7 @@ export async function beginConnection(
               }
             : unsavedRow,
           data: {
-            status: auth.authorizationUrl ? "pending" : "connected",
+            status: pending ? "pending" : "connected",
             providerRef: auth.state || null,
             metadata: { state: auth.state, attempt },
           },
@@ -391,8 +396,8 @@ export async function beginConnection(
     throw new IsolationError();
   }
   if (replaced) await removeLeftoverAuthorization(deps, connector, replaced, true);
-  logSetup(auth.authorizationUrl ? "authorization_ready" : "connected");
-  if (!auth.authorizationUrl) {
+  logSetup(pending ? "authorization_ready" : "connected");
+  if (!pending) {
     await recordSecurityEvent(connectionCreatedEvent("connections.begin", row.id, context.actor));
     recordToolConnected(deps.analytics, context.actor.userId, row);
   }
@@ -427,6 +432,7 @@ export async function completeConnection(
     throw new ORPCError("BAD_REQUEST", { message: "Integration provider is not configured" });
   let row = existing;
   let connectedNow = false;
+  let duplicateFound = false;
   if (settling(existing)) {
     // Hold the provider lock across remote completion, account-id resolution,
     // providerRef persistence, and any overlapping revokeUnreferencedAccounts cleanup
@@ -558,9 +564,17 @@ export async function completeConnection(
               // them would pick an arbitrary ACTIVE id and over-exclude.
               if (!ref || ref === existing.provider) {
                 // A connected row has no claim on a newer account a sibling may have just authorized.
-                if (current.status === "connected" && sibling.status === "pending") return current;
+                if (
+                  sibling.status === "pending" &&
+                  (current.status === "connected" ||
+                    !current.providerRef ||
+                    current.providerRef === current.provider)
+                )
+                  return current;
                 continue;
               }
+              if (sibling.status === "pending" && transactionConnector.cancelAuthorizationRequest)
+                continue;
               const resolvedSiblingId = await resolveAccountId(ref, []);
               if (!resolvedSiblingId) return current;
               excludeIds.push(resolvedSiblingId);
@@ -610,6 +624,41 @@ export async function completeConnection(
             return current;
           }
         }
+        if (resolvedAccountId && transactionConnector.connectedAccountIdentity) {
+          const identify = transactionConnector.connectedAccountIdentity.bind(transactionConnector);
+          const identity = await identify(current.provider, resolvedAccountId, adapterContext);
+          if (identity) {
+            const siblings = await tx.connection.findMany({
+              where: {
+                ...owned,
+                connectorId: current.connectorId,
+                provider: { equals: current.provider, mode: "insensitive" },
+                status: "connected",
+                id: { not: current.id },
+              },
+            });
+            for (const sibling of siblings) {
+              const ref = sibling.providerRef;
+              if (!ref || ref === sibling.provider || ref === resolvedAccountId) continue;
+              if ((await identify(sibling.provider, ref, adapterContext)) !== identity) continue;
+              await tx.connection.update({
+                where: { id: current.id },
+                data: { status: "revoked", providerRef: resolvedAccountId },
+              });
+              await deps.jobs.enqueueIn(
+                tx,
+                connectionCleanupJob({
+                  ...owner,
+                  connectorId: current.connectorId,
+                  provider: current.provider,
+                  ref: resolvedAccountId,
+                }),
+              );
+              duplicateFound = true;
+              return sibling;
+            }
+          }
+        }
         // Catalog reconciliation does not take the provider lock, so it may have
         // connected this row meanwhile; only the call that changes it records the event.
         const updated = await tx.connection.updateMany({
@@ -650,7 +699,8 @@ export async function completeConnection(
     );
     recordToolConnected(deps.analytics, context.actor.userId, row);
   }
-  if (connectedNow) await publishConnectionChange(deps, context.actor, organizationId);
+  if (connectedNow || duplicateFound)
+    await publishConnectionChange(deps, context.actor, organizationId);
   return connectionDto(row, organizationId);
 }
 
@@ -811,7 +861,8 @@ export async function reconnectOrganizationConnection(
   if (!row?.organizationId || row.status === "revoked") throw new IsolationError();
   if (row.status === "pending" && row.providerRef) {
     const completed = await completeConnection(deps, context, { connectionId });
-    if (completed.status === "connected") return { connectionId, authorizationUrl: null };
+    if (completed.status === "connected")
+      return { connectionId: completed.id, authorizationUrl: null };
   }
   if (row.status === "connected") {
     const connector = deps.connectors.managed(row.connectorId);

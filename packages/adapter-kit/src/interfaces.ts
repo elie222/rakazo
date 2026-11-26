@@ -312,7 +312,7 @@ export interface ConnectionAuthProvider {
   begin(
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
-  ): Promise<{ authorizationUrl: string | null; state: string }>;
+  ): Promise<{ authorizationUrl: string | null; state: string; requiresCompletion?: boolean }>;
   complete(
     request: { state: string; code?: string },
     context: AdapterContext,
@@ -353,6 +353,12 @@ export interface ManagedConnectorProvider
     excludeIds?: string[],
     spaceId?: string,
     organizationId?: string,
+  ): Promise<string | undefined>;
+  /** An upstream account identity verified using this exact authorization, when available. */
+  connectedAccountIdentity?(
+    slug: string,
+    connectionRef: string,
+    context: AdapterContext,
   ): Promise<string | undefined>;
   /** Invalidate an unfinished browser authorization by its request id. */
   cancelAuthorizationRequest?(requestId: string, context: AdapterContext): Promise<void>;

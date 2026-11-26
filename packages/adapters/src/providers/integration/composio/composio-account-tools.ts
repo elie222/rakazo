@@ -28,14 +28,24 @@ export function composioOwner(context: Pick<AdapterContext, "userId" | "organiza
   return context.organizationId ? `organization:${context.organizationId}` : context.userId;
 }
 
-function organizationAccounts(context: AdapterContext) {
-  return (context.connectedConnections ?? []).filter(
-    (account) => account.connectorId === "composio" && account.organizationId,
+function scopedAccounts(context: AdapterContext) {
+  const accounts = (context.connectedConnections ?? []).filter(
+    (account) => account.connectorId === "composio",
+  );
+  const personalCounts = new Map<string, number>();
+  for (const account of accounts) {
+    if (account.organizationId) continue;
+    const app = account.externalId.toLowerCase();
+    personalCounts.set(app, (personalCounts.get(app) ?? 0) + 1);
+  }
+  return accounts.filter(
+    (account) =>
+      account.organizationId || (personalCounts.get(account.externalId.toLowerCase()) ?? 0) > 1,
   );
 }
 
-/** Personal sessions keep their own accounts. Shared actions have exact routes to an org session. */
-export function organizationConnector(
+/** Accounts sharing an app have exact routes to sessions scoped to their credentials. */
+export function composioAccountTools(
   list: (context: AdapterContext, app: string) => Promise<ConnectorTool[]>,
   sessionFor: (
     context: AdapterContext,
@@ -43,16 +53,21 @@ export function organizationConnector(
   ) => Promise<{ session?: ComposioSession; connectedAccounts: Record<string, string[]> }>,
 ) {
   async function tools(context: AdapterContext) {
+    const catalogs = new Map<string, Promise<ConnectorTool[]>>();
     const groups = await Promise.all(
-      organizationAccounts(context).map(async (account) => {
-        try {
-          return scopeConnectorTools(await list(context, account.externalId), account);
-        } catch (error) {
-          getLogger().warn("Organization app tools unavailable", {
-            error: sanitizeIntegrationError(error),
+      scopedAccounts(context).map(async (account) => {
+        const app = account.externalId.toLowerCase();
+        let catalog = catalogs.get(app);
+        if (!catalog) {
+          catalog = list(context, account.externalId).catch((error) => {
+            getLogger().warn("Connected account tools unavailable", {
+              error: sanitizeIntegrationError(error),
+            });
+            return [];
           });
-          return [];
+          catalogs.set(app, catalog);
         }
+        return scopeConnectorTools(await catalog, account);
       }),
     );
     return groups.flat();
@@ -70,7 +85,7 @@ export function organizationConnector(
         return;
       }
       const route = call.route;
-      const account = organizationAccounts(context).find(
+      const account = scopedAccounts(context).find(
         ({ id, externalId, providerRef }) =>
           route?.connectionId === id &&
           route.resourceId === externalId &&
@@ -85,11 +100,15 @@ export function organizationConnector(
         account,
       );
       if (!session) {
-        yield { type: "error", message: "The organization connection needs to be reconnected." };
+        yield { type: "error", message: "The selected account needs to be reconnected." };
         return;
       }
       const ref = account.providerRef;
       const pinned = ref && Object.values(connectedAccounts).some((ids) => ids.includes(ref));
+      if (ref && ref.toLowerCase() !== account.externalId.toLowerCase() && !pinned) {
+        yield { type: "error", message: "The selected account needs to be reconnected." };
+        return;
+      }
       const result = await session.execute(
         route.toolName,
         call.args,

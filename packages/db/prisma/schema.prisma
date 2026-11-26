@@ -1850,7 +1850,7 @@ model Connection {
   updatedAt      DateTime      @updatedAt
 
   @@index([spaceId, userId, connectorId])
-  // Active organization apps and labels have case-insensitive unique indexes in SQL.
+  // Active organization connection labels have a case-insensitive unique index in SQL.
   @@index([organizationId])
   @@map("connections")
 }

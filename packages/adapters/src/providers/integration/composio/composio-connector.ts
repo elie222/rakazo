@@ -19,6 +19,8 @@ import { getLogger } from "@rakazo/logging";
 import { collectPages, filterCatalog } from "../../../integrations/connector-catalog.js";
 import { isLazyCatalogControlRoute } from "../../../tools/lazy-tool-catalog.js";
 import { connectedCalendarProvider } from "./calendar.js";
+import { composioAccountIdentity } from "./composio-account-identity.js";
+import { composioAccountTools, composioOwner } from "./composio-account-tools.js";
 import {
   COMPOSIO_MULTI_EXECUTE_TOOL,
   composioOutgoingDraft,
@@ -42,8 +44,6 @@ import {
   staleAccountIds,
   withSharedAccessHint,
 } from "./composio-errors.js";
-
-import { composioOwner, organizationConnector } from "./composio-organization.js";
 
 export {
   collectLogIds,
@@ -790,19 +790,19 @@ export class ComposioConnector implements ComposioProvider {
     return asConnectorTools(tools);
   }
 
-  private readonly organizationConnector = organizationConnector(
+  private readonly accountTools = composioAccountTools(
     (context, app) => this.listAppTools(context, app),
     (context, connection) => this.sessionForExecute(composioOwner(context), [connection]),
   );
 
   resolveCall(call: ConnectorCall, context: AdapterContext) {
-    return this.organizationConnector.resolveCall(call, context);
+    return this.accountTools.resolveCall(call, context);
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const [personal, shared] = await Promise.all([
       this.discoverPersonalTools(context),
-      this.organizationConnector.discoverTools(context),
+      this.accountTools.discoverTools(context),
     ]);
     return [...personal, ...shared];
   }
@@ -826,7 +826,7 @@ export class ComposioConnector implements ComposioProvider {
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
     if (call.route?.connectionId || isLazyCatalogControlRoute(call.route)) {
-      yield* this.organizationConnector.execute(call, context);
+      yield* this.accountTools.execute(call, context);
       return;
     }
     const executed = [];
@@ -912,7 +912,7 @@ export class ComposioConnector implements ComposioProvider {
   async begin(
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
-  ): Promise<{ authorizationUrl: string | null; state: string }> {
+  ): ReturnType<ManagedConnectorProvider["begin"]> {
     const session = await this.sessionFor(composioOwner(context));
     try {
       const connectionRequest = await session.authorize(request.provider, {
@@ -923,6 +923,7 @@ export class ComposioConnector implements ComposioProvider {
         return {
           authorizationUrl: null,
           state: account?.id || connectionRequest.id || request.provider,
+          requiresCompletion: composioSlugKey(request.provider) === "gmail",
         };
       }
       return {
@@ -939,6 +940,14 @@ export class ComposioConnector implements ComposioProvider {
       throw new Error(sanitizeIntegrationError(error));
     }
   }
+
+  readonly connectedAccountIdentity = composioAccountIdentity(
+    (context, slug) =>
+      this.accountIds(composioOwner(context), [slug], ["ACTIVE"], {
+        signal: context.signal,
+      }),
+    async () => (await this.sdk()).tools,
+  );
 
   async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
     const session = await this.sessionFor(composioOwner(context));

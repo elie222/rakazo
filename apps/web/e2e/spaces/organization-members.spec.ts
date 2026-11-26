@@ -120,6 +120,8 @@ test("an owner invites someone to the organization, who joins with a private Spa
     await captureScreenshot(ownerPage, testInfo, "organization-app-owner-picker");
     await ownerDetail.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(ownerDetail.getByText("Organization", { exact: true })).toBeVisible();
+    await expect(availableTo).toHaveText("Acme");
+    await expect(ownerDetail.getByRole("button", { name: "Add another" })).toBeVisible();
     await captureScreenshot(ownerPage, testInfo, "organization-app-owner-account");
     await ownerIntegrations.getByRole("button", { name: "Close integrations" }).click();
 
