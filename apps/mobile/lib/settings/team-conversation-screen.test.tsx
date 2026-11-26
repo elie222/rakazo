@@ -212,8 +212,6 @@ async function save(times = 1) {
   await act(async () => headerRoot.unmount());
   return enabled;
 }
-/** Holds the room's save open, so a test decides when and how it ends. */
-/** What every write carries: the server, session and space its save was started in. */
 const pinned = {
   requestContext: {
     apiBase: "https://app.example.test",
@@ -389,7 +387,6 @@ it("holds Save while the room saves, and saves once for two taps", async () => {
   await held.finish();
   expect(back).toHaveBeenCalledTimes(1);
   expect(alert).not.toHaveBeenCalled();
-  // Save stays held while the screen closes, so a tap then cannot save or go back again.
   expect(await save()).toBe(false);
 });
 

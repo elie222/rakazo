@@ -3,6 +3,7 @@ import { BOT_MEMORY_MAX_BYTES } from "@rakazo/contracts";
 import { byteLength } from "@rakazo/core";
 import type { z } from "zod";
 import type { RememberInputSchema } from "../tools/builtin-conversation.tool-definition.js";
+import { withoutSavedDate } from "./memory-expiry.js";
 
 const SEMANTIC_MEMORY_TOOL_NAMES = new Set([
   "recall_memory",
@@ -31,10 +32,13 @@ export function appendMemoryFact(existing: string, fact: string): string {
   const current = existing.trimEnd().replace(/\r\n/g, "\n");
   const next = fact.trim();
   const comparableFact = next.replace(/\r\n/g, "\n");
+  // The same fact saved on another day is still a duplicate.
+  const unstamped = withoutSavedDate(next);
   if (
     !next ||
     `\n${current}\n`.includes(`\n${comparableFact}\n`) ||
-    (!next.includes("\n") && current.split("\n").some((line) => line.trim() === next))
+    (!next.includes("\n") &&
+      current.split("\n").some((line) => withoutSavedDate(line.trim()) === unstamped))
   )
     return existing;
   return existing ? `${existing}${existing.endsWith("\n") ? "" : "\n"}${next}\n` : `${next}\n`;
@@ -66,7 +70,7 @@ export function editMemory(
   if (bytes > maxBytes && bytes > byteLength(existing)) {
     const over = bytes - maxBytes;
     return {
-      error: `Memory is full: this would be ${over} bytes over the ${maxBytes}-byte limit, so nothing was saved. Send one remember call whose operations remove or shorten entries to free at least ${over} bytes and also make this change.`,
+      error: `Memory is full: this would be ${over} bytes over the ${maxBytes}-byte limit, so nothing was saved. Send one remember call that makes this change and frees at least ${over} bytes by removing what ended or is outdated, merging duplicates, rewriting dated histories as how things now stand, or moving detail to a file, never by abbreviating.`,
       entries: entriesOf(existing),
     };
   }

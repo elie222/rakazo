@@ -24,10 +24,11 @@ export function lazyCatalogToolDefinitions(
   label: string,
   grouped: CatalogNameGroup[],
 ): ConnectorTool[] {
+  const scope = `Search connected ${label} tools from the sources listed here only. Other connected tools are separate, so an empty result does not mean one is unavailable.`;
   const searchDescription =
     grouped.length > 0 && fitsNameIndexBudget(grouped)
-      ? `Search connected ${label} tools. Empty query lists names by source. Pass group to expand one source.\n${formatNameIndexText(grouped)}`
-      : `Search connected ${label} tools. Empty query lists sources. Pass group to list names in one source, or query to search.${sourceSummaryText(grouped)}`;
+      ? `${scope} Empty query lists names by source. Pass group to expand one source.\n${formatNameIndexText(grouped)}`
+      : `${scope} Empty query lists sources. Pass group to list names in one source, or query to search.${sourceSummaryText(grouped)}`;
   return [
     {
       name: `${prefix}_search_tools`,
@@ -38,7 +39,8 @@ export function lazyCatalogToolDefinitions(
           query: {
             type: "string",
             maxLength: MAX_QUERY_LENGTH,
-            description: "Words describing the tool to find. Omit to list names by source.",
+            description:
+              "Words describing the tool to find in the listed sources. Omit to list names by source.",
           },
           group: {
             type: "string",

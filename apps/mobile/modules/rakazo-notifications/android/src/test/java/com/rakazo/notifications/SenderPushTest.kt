@@ -2,6 +2,8 @@ package com.rakazo.notifications
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SenderPushTest {
@@ -51,6 +53,15 @@ class SenderPushTest {
         foreground = { false },
       ),
     )
+  }
+
+  @Test
+  fun `only an opted-in background push may play sound`() {
+    val silent = push("help")
+    val audible = push("help").put("notificationSound", true)
+    assertFalse(SenderPush.shouldPlaySound(silent, foreground = false))
+    assertFalse(SenderPush.shouldPlaySound(audible, foreground = true))
+    assertTrue(SenderPush.shouldPlaySound(audible, foreground = false))
   }
 
   @Test

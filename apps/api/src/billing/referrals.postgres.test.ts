@@ -99,7 +99,6 @@ dbTests("referrals", () => {
         createdAt: new Date(),
       },
     });
-    // The same person, acting in their second organization.
     const sameOwner = { ...owner, spaceId: second.spaceId, organizationId: second.organizationId };
     await service.claimReferral(sameOwner, await inviteCode(owner));
     await expect(service.status(second)).resolves.toMatchObject({ trialDays: TRIAL_DAYS });

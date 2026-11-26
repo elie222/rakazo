@@ -182,10 +182,6 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(settings).toHaveAttribute("data-settings-section", "voice");
   await expect(settings.getByTestId("voice-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-voice");
-  const voice = settings.getByTestId("voice-settings");
-  await chooseOption(voice.getByLabel("Provider", { exact: true }), "xAI");
-  await expect(voice.getByLabel("API key", { exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "settings-shell-voice-xai");
 
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("user-settings")).toHaveCount(0);
@@ -371,4 +367,29 @@ test("a connected memory provider edits with its saved settings", async ({ page 
   // Another bank is something more the key could read, so it is asked for again.
   await memory.getByLabel("Recall from banks", { exact: true }).fill("other-app,journal");
   await expect(save).toBeDisabled();
+});
+
+test("desktop notification sound starts off and saves the account choice", async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "rakazoDesktop", { value: { platform: "darwin" } });
+  });
+  await signup(
+    page,
+    `notification-sound-${Date.now()}@rakazo.test`,
+    "password12",
+    "Settings Tester",
+  );
+  await completeOnboarding(page);
+  const settings = await openUserSettings(page);
+  const sound = settings.getByRole("switch", { name: "Sound for alerts that need attention" });
+  await expect(sound).toBeEnabled();
+  await expect(sound).not.toBeChecked();
+  await sound.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "desktop-notification-sound");
+  await sound.click();
+  await expect(sound).toBeChecked();
+  await page.reload();
+  await expect(sound).toBeChecked();
 });

@@ -35,6 +35,7 @@ const routine: Routine = {
   watchState: null,
   lastRunAt: null,
   nextRunAt: null,
+  endsAt: null,
   createdAt: "2026-10-01T00:00:00.000Z",
 };
 

@@ -11,6 +11,8 @@ export class StripeEmulator {
   readonly customers = new Map<string, { id: string; email: string; deleted: boolean }>();
   readonly sessions: StripeCheckoutSession[] = [];
   readonly subscriptions: StripeSubscriptionRecord[] = [];
+  /** Every invoice a subscription has had, oldest first. */
+  readonly invoices: Array<StripeInvoice & { subscription: string }> = [];
   /** Customer balance in cents; negative is credit owed to the customer, as in Stripe. */
   readonly balances = new Map<string, number>();
   readonly balanceTransactions: Array<{
@@ -119,6 +121,10 @@ export class StripeEmulator {
         ],
       },
     });
+    this.invoices.push({
+      ...this.subscriptions.at(-1)!.latestInvoice,
+      subscription: `sub_fake_${n}`,
+    });
     return `sub_fake_${n}`;
   }
 
@@ -140,20 +146,17 @@ export class StripeEmulator {
     if (!newest) throw new Error(`No subscription for ${customerId}`);
     const nowSeconds = Math.floor(this.now() / 1000);
     newest.status = outcome === "paid" ? "active" : "past_due";
-    newest.latestInvoice =
-      outcome === "paid"
-        ? {
-            id: `in_fake_${++this.sequence}`,
-            status: "paid",
-            total: 1000,
-            status_transitions: { paid_at: nowSeconds },
-          }
-        : {
-            id: `in_fake_${++this.sequence}`,
-            status: "open",
-            total: 1000,
-            status_transitions: { paid_at: null },
-          };
+    this.bill(newest, {
+      id: `in_fake_${++this.sequence}`,
+      status: outcome === "paid" ? "paid" : "open",
+      total: 1000,
+      status_transitions: { paid_at: outcome === "paid" ? nowSeconds : null },
+    });
+  }
+
+  private bill(subscription: StripeSubscriptionRecord, invoice: StripeInvoice) {
+    subscription.latestInvoice = invoice;
+    this.invoices.push({ ...invoice, subscription: subscription.id });
   }
 
   /** Moves the customer's newest subscription to a raw Stripe status. */
@@ -267,6 +270,16 @@ export class StripeEmulator {
         }));
       return Response.json({ object: "list", has_more: start + limit < matching.length, data });
     }
+    if (method === "GET" && path === "/v1/invoices") {
+      const data = this.invoices
+        .filter(
+          (invoice) =>
+            invoice.subscription === form.subscription &&
+            (form.status === undefined || invoice.status === form.status),
+        )
+        .reverse();
+      return Response.json({ object: "list", has_more: false, data });
+    }
     const balance = /^\/v1\/customers\/([^/]+)\/balance_transactions$/.exec(path);
     if (method === "GET" && balance) {
       const id = decodeURIComponent(balance[1]!);
@@ -324,12 +337,12 @@ export class StripeEmulator {
       const nowSeconds = Math.floor(this.now() / 1000);
       found.status = "active";
       found.trial_end = nowSeconds;
-      found.latestInvoice = {
+      this.bill(found, {
         id: `in_fake_${++this.sequence}`,
         status: "paid",
         total: 1000,
         status_transitions: { paid_at: nowSeconds },
-      };
+      });
       for (const entry of found.items.data) {
         entry.current_period_start = nowSeconds;
         entry.current_period_end = nowSeconds + 30 * 86_400;
@@ -376,12 +389,7 @@ export interface StripeSubscriptionRecord {
   /** Emulator-only: the card's fingerprint, returned when the payment method is expanded. */
   cardFingerprint?: string;
   /** Emulator-only: the latest invoice, returned whole when expanded and as its id otherwise. */
-  latestInvoice: {
-    id: string;
-    status: string;
-    total: number;
-    status_transitions: { paid_at: number | null };
-  };
+  latestInvoice: StripeInvoice;
   items: {
     object: "list";
     data: Array<{
@@ -393,6 +401,13 @@ export interface StripeSubscriptionRecord {
       current_period_end: number;
     }>;
   };
+}
+
+export interface StripeInvoice {
+  id: string;
+  status: string;
+  total: number;
+  status_transitions: { paid_at: number | null };
 }
 
 export interface StripeFailure {

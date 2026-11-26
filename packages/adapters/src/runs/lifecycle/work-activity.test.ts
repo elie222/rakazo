@@ -257,7 +257,6 @@ describe("live status card of the user's bots at work", () => {
       { runId: "1", type: "thread.progress", seq: 2, payload: { delta: "Here", streaming: true } },
     );
     await activities.register("user-1", "session-1", TOKEN);
-    // The token is stored encrypted.
     expect([...cards.values()][0]!.ciphertext).not.toContain(TOKEN);
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     // So is the state, which holds chat content.
@@ -519,7 +518,6 @@ describe("live status card of the user's bots at work", () => {
       const { activities, phones, runs, run, start, send } = setup();
       await activities.registerStarts("user-1", "session-1", START_TOKEN);
       await activities.registerStarts("user-1", "session-2", "ef".repeat(32));
-      // The token is stored encrypted.
       expect([...phones.values()][0]!.ciphertext).not.toContain(START_TOKEN);
       await vi.waitFor(() => expect(start).toHaveBeenCalledTimes(2));
       expect(start).toHaveBeenCalledWith(START_TOKEN, {

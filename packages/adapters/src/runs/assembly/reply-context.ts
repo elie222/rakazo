@@ -79,6 +79,11 @@ export function messageToAgentHistorySegments(
   return context ? [{ text: context }, ...segments] : segments;
 }
 
+/** The runtime's record of the turn a reply ended, when it kept one. */
+export function messageTranscript(message: { toolHistory?: string | null }): string | undefined {
+  return parsedToolHistory(message.toolHistory)?.transcript;
+}
+
 /** A message's stored tool history, or none when it has none or it cannot be read. */
 function parsedToolHistory(stored: string | null | undefined): ToolHistory | undefined {
   if (!stored) return undefined;

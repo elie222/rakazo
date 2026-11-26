@@ -135,13 +135,6 @@ export function persistentComputerInstruction(options: {
   return `You have a persistent sandbox${capabilities}. This backend does not provide model-visible graphical control.${toolSentence}`;
 }
 
-/** Only where the desktop-protection guard checks shell commands. */
-export function desktopGuardShellInstruction(offeredToolNames: ReadonlySet<string>) {
-  if (!offeredToolNames.has("shell")) return undefined;
-  const write = offeredToolNames.has("write_file") ? "a script with write_file" : "a script file";
-  return `Shell commands must be literal: no \`$(...)\`, backticks, subshells, loops, or \`$\` variables, environment variables included. Otherwise write ${write} and run it with \`python3\` or \`bash\`.`;
-}
-
 export function dockerComputerToolInstruction(
   computerKind: string,
   disabled?: ReadonlySet<string>,
@@ -261,10 +254,10 @@ function scratchpadClause(disabled?: ReadonlySet<string>): string | undefined {
   if (pads.length === 0) return undefined;
   const schedules = [...SCHEDULE_TOOL_NAMES].some((name) => builtinOffered(disabled, name));
   if (pads.length === 3 && schedules) {
-    return "Use scratchpad_add / scratchpad_update / scratchpad_complete for open work that should outlive this turn (not reminders — those are schedule_*).";
+    return "Use scratchpad_add / scratchpad_update / scratchpad_complete for open work that should outlive this turn, such as waiting on someone, rather than memory (not reminders — those are schedule_*).";
   }
   const reminder = schedules ? " (not reminders — those are schedule_*)" : "";
-  return `Use ${pads.join(" / ")} for open work that should outlive this turn${reminder}.`;
+  return `Use ${pads.join(" / ")} for open work that should outlive this turn, such as waiting on someone, rather than memory${reminder}.`;
 }
 
 /**
@@ -340,11 +333,14 @@ function toolUsageLine(parts: {
     pageWorkClause(parts.pageBrowserAllowed, disabled),
     webLookupClause(disabled),
     ...secretGuidance(disabled),
+    builtinOffered(disabled, "ask_user")
+      ? "When you would end your reply asking the user to choose, call ask_user with the two to four best options instead of listing them in text."
+      : undefined,
     builtinOffered(disabled, "connect_app")
       ? "Use connect_app when an app needs connecting or the user asks to connect one, then wait for them."
       : undefined,
     builtinOffered(disabled, "remember")
-      ? "Save lasting facts the user mentions about themselves, people they know, their work or decisions with remember in the same turn, even unasked: using a fact in your answer does not keep it."
+      ? "Save lasting facts the user mentions about themselves, people they know, their work or decisions with remember in the same turn, even unasked: using a fact in your answer does not keep it. When the user sets an instruction or a state for a period (a pause until they're back, someone away until the 18th, nothing booked before the 20th), save it with until: the last date it holds, or the event that ends it. A detail of one task, such as a code, tracking number or budget, is not worth saving because it ends; save it only when asked. Each entry shows the date it was saved; work out relative dates from that. Remove a temporary entry as soon as the user lifts it or its event happens; dated ones drop out by themselves."
       : undefined,
     scratchpadClause(disabled),
     parts.followUpsOffered ? FOLLOW_UP_INSTRUCTION : undefined,
@@ -356,12 +352,12 @@ function toolUsageLine(parts: {
   return `${parts.computerInstruction} ${clauses.join(" ")}`;
 }
 
-/** Names the apps a run reaches through plugin tools, so it uses them before browsing. */
+/** Names connected plugins and points the run at each plugin's own tools, rather than a connector catalog or the browser. */
 export function connectedPluginsInstruction(
   plugins: readonly { displayName: string; connectorId: string; provider: string }[],
 ): string {
   return plugins.length > 0
-    ? `Connected plugins: ${plugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
+    ? `Connected plugins: ${plugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Find and run their actions with each plugin's own tools; a connector search only covers the sources it lists. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
     : "No plugins are connected yet.";
 }
 

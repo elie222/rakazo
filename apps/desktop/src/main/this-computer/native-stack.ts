@@ -8,8 +8,14 @@ import type { WriteStream } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
+import { homedir } from "node:os";
 import path from "node:path";
-import type { DesktopLocalStackPhase, DesktopLocalStackState } from "@rakazo/contracts";
+import type {
+  DesktopLocalStackPhase,
+  DesktopLocalStackState,
+  DesktopUpdateState,
+} from "@rakazo/contracts";
+import { bestEffort } from "@rakazo/logging";
 import { t } from "../i18n.js";
 import { readPrivateFile, writePrivateFile } from "../setup/setup-store.js";
 import type { RunDocker } from "./docker-cli.js";
@@ -40,6 +46,7 @@ import type {
 import {
   CONTAINER_RUNTIME_VERSION,
   DownloadError,
+  fetchServerBundle,
   installServerBundle,
   isInside,
   pruneRuntimes,
@@ -381,6 +388,10 @@ const servicesFailed = () =>
 export class NativeStackController extends StackLifecycle {
   private background: AbortController | null = null;
   private services: Service[] = [];
+  /** The app version a downloaded update installs, whose server bundle is fetched ahead. */
+  private nextVersion: string | null = null;
+  private prefetch: { done: Promise<void>; abort: AbortController } | null = null;
+  private pruning: Promise<void> = Promise.resolve();
 
   constructor(private readonly deps: NativeStackDeps) {
     super(deps.imageTag, deps.localWebUrl, deps.onState);
@@ -417,9 +428,49 @@ export class NativeStackController extends StackLifecycle {
     }
   }
 
+  /**
+   * Fetches the server bundle a downloaded app update will run, once this stack is up, so the
+   * first start after the update finds it unpacked. A failure leaves that start to download it.
+   */
+  prefetchServerBundle(version: string) {
+    if (version === this.deps.serverBundle.version || version === this.nextVersion) return;
+    this.nextVersion = version;
+    if (this.current.phase === "ready") this.startPrefetch();
+  }
+
+  private startPrefetch() {
+    const version = this.nextVersion;
+    if (version === null || this.prefetch !== null) return;
+    const abort = new AbortController();
+    const deps: RuntimeDeps = {
+      dir: this.dir("runtime"),
+      run: this.deps.run,
+      fetch: this.deps.fetch,
+      env: this.baseEnv(),
+      signal: abort.signal,
+      onBytes: () => undefined,
+      onLine: () => undefined,
+    };
+    const install = this.deps.installers?.server ?? installServerBundle;
+    const work = this.pruning.then(async () => {
+      const bundle = await fetchServerBundle(deps, this.deps.serverBundle, version);
+      if (bundle !== null) await install(deps, bundle);
+    });
+    const done = bestEffort("download the next server bundle", work).then(() => {
+      if (this.prefetch?.done !== done) return;
+      this.prefetch = null;
+      // A newer update, or a restart that cut this one short, fetches again while the stack runs.
+      if (abort.signal.aborted || this.nextVersion !== version) {
+        if (this.current.phase === "ready") this.startPrefetch();
+      }
+    });
+    this.prefetch = { done, abort };
+  }
+
   /** Stops every process; the database, data and downloads stay for the next start. */
   protected async shutdown() {
     await this.stopServices();
+    this.prefetch?.abort.abort();
     this.setState(initialStackState(this.deps.imageTag));
   }
 
@@ -465,7 +516,7 @@ export class NativeStackController extends StackLifecycle {
       fetch: this.deps.fetch,
       env: this.baseEnv(),
       signal: AbortSignal.any([signal, installing.signal]),
-      onBytes: (name, bytes) => this.push({ type: "download", name, bytes }),
+      onBytes: (name, bytes, total) => this.push({ type: "download", name, bytes, total }),
       onLine: (line) => this.push({ type: "output", line }),
     };
     const installers = this.deps.installers ?? {};
@@ -657,6 +708,7 @@ export class NativeStackController extends StackLifecycle {
     const deadline = Date.now() + (this.deps.healthTimeoutMs ?? STACK_HEALTH_TIMEOUT_MS);
     const crashed = () => this.services.find((service) => !service.alive);
     let apiHealthy = false;
+    const runtimeRoot = await this.runtimeRoot(runtime.cli);
     while (!signal.aborted) {
       const down = crashed();
       if (down)
@@ -674,11 +726,17 @@ export class NativeStackController extends StackLifecycle {
         if (down)
           throw new StartFailure(servicesFailed(), [...down.tail, `${down.spec.name} exited`]);
         this.push({ type: "ready" });
-        await pruneRuntimes(this.dir("runtime"), [
-          `container-${CONTAINER_RUNTIME_VERSION}`,
-          path.basename(path.dirname(server.dir)),
-          ...(await this.runtimeRoot(runtime.cli)),
-        ]).catch(() => undefined);
+        // A prefetch in flight keeps its partial files; the next start prunes instead.
+        if (this.prefetch === null) {
+          this.pruning = pruneRuntimes(this.dir("runtime"), [
+            `container-${CONTAINER_RUNTIME_VERSION}`,
+            path.basename(path.dirname(server.dir)),
+            ...(this.nextVersion === null ? [] : [`server-${this.nextVersion}`]),
+            ...runtimeRoot,
+          ]).catch(() => undefined);
+          await this.pruning;
+        }
+        this.startPrefetch();
         this.pullComputerImage(runtime.cli, computerImage);
         return;
       }
@@ -999,7 +1057,20 @@ export class NativeStackController extends StackLifecycle {
   }
 
   private baseEnv(): Record<string, string> {
-    const env: Record<string, string> = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
+    // A GUI launch may omit the directories where the user installs CLIs.
+    const directories = [
+      ...(this.deps.env.PATH ?? "").split(":"),
+      "/usr/bin",
+      "/bin",
+      "/usr/sbin",
+      "/sbin",
+      path.posix.join(this.deps.env.HOME || homedir(), ".local", "bin"),
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+    ];
+    const env: Record<string, string> = {
+      PATH: [...new Set(directories.filter(Boolean))].join(":"),
+    };
     for (const name of INHERITED_ENV) {
       const value = this.deps.env[name];
       if (value) env[name] = value;
@@ -1025,9 +1096,11 @@ export class NativeStackController extends StackLifecycle {
     const fromFile = Object.fromEntries(
       [...stackEnv].filter(([name, value]) => value !== "" && !COMPOSE_ONLY.test(name)),
     );
+    const configuredPath = stackEnv.get("PATH");
     return {
       ...fromFile,
       ...this.nodeEnv(),
+      ...(configuredPath === undefined ? {} : { PATH: configuredPath }),
       DATA_DIR: this.dir("data"),
       WAKEUP_DRIVER: "graphile",
       AGENT_RUNTIME: "pi",
@@ -1044,4 +1117,10 @@ export class NativeStackController extends StackLifecycle {
       ...fixed,
     };
   }
+}
+
+/** Once an app update is downloaded, a native stack fetches the server bundle it will run. */
+export function prefetchForUpdate(stack: unknown, update: DesktopUpdateState) {
+  if (update.phase !== "ready" || update.availableVersion === null) return;
+  if (stack instanceof NativeStackController) stack.prefetchServerBundle(update.availableVersion);
 }

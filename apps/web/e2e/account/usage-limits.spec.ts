@@ -114,6 +114,30 @@ const breakdown = {
       cachedTokens: 0,
     },
   ],
+  routines: [
+    {
+      id: "routine-1",
+      name: "Morning brief",
+      botName: "Assistant",
+      runs: 30,
+      inputTokens: 700_000,
+      outputTokens: 60_000,
+      totalTokens: 760_000,
+      costUsd: 3.2,
+      modelCalls: 140,
+    },
+    {
+      id: null,
+      name: null,
+      botName: null,
+      runs: 12,
+      inputTokens: 210_000,
+      outputTokens: 26_000,
+      totalTokens: 236_000,
+      costUsd: 1.24,
+      modelCalls: 46,
+    },
+  ],
   overTimeUnit: "day",
   overTime: [
     {
@@ -242,6 +266,7 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
                     cachedTokens: 0,
                   },
                 ],
+                routines: [],
                 overTime: [point],
               }
             : {}),
@@ -283,6 +308,13 @@ test("account menu shows the usage hint and Usage shows allowances and credits o
   await expect(settings).not.toContainText("opaque-legacy-id");
   await unlisted.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "usage-model-labels");
+  const routineUsage = settings.getByRole("table").filter({
+    has: page.getByRole("columnheader", { name: "Routine" }),
+  });
+  await expect(routineUsage.getByRole("row", { name: /Morning brief/ })).toContainText("$3.20");
+  await expect(routineUsage.getByRole("row", { name: /Chats and other work/ })).toBeVisible();
+  await routineUsage.scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "usage-by-routine");
   const botFilter = settings.getByRole("combobox", { name: "Bot" });
   await expect(botFilter).toHaveText("All bots");
   await botFilter.click();

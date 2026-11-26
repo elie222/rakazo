@@ -40,6 +40,7 @@ import {
   shellQuote,
   workspaceCwd,
   workspacePath,
+  workspaceRelativePath,
 } from "../../../computers/screens/computer-support.js";
 import {
   INSTALL_LINUX_BROWSER,
@@ -301,7 +302,7 @@ export class RailwaySandboxProvider extends LinuxDesktopSandbox implements Sandb
     context: AdapterContext,
   ): Promise<ComputerFileEntry[]> {
     const sandbox = await this.connect(computer, context);
-    const relative = normalizeWorkspacePath(directory);
+    const relative = workspaceRelativePath(WORKSPACE, directory);
     const entries = await sandbox.files.list(workspacePath(WORKSPACE, relative));
     return entries.map((entry) => ({
       path: normalizeWorkspacePath(path.posix.join(relative, entry.name)),

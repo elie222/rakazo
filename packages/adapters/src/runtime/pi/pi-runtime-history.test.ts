@@ -53,6 +53,7 @@ vi.mock("./models/pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+import { keptToolResult } from "../../runs/turn/tool-step-calls.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { isHistoryReply, toHistory } from "./pi-runtime-history.js";
 
@@ -417,6 +418,44 @@ describe("replaying an earlier reply's tool steps", () => {
       expect(message).toMatchObject({ rakazoHistory: true, rakazoMessageId: "m2" });
       expect(isHistoryReply(message)).toBe(true);
     }
+  });
+
+  it("replays a long kept result as it was saved, with how much was left out", () => {
+    const saved = keptToolResult(
+      {
+        name: "shell",
+        executionId: "call-1",
+        durationMs: 1,
+        result: { content: [{ type: "text", text: "x".repeat(10_000) }] },
+      },
+      [],
+    )!;
+    expect(saved).toContain("[9000 characters not kept]");
+    const messages = toHistory(
+      [
+        {
+          ...toolReply,
+          segments: [
+            {
+              steps: [
+                {
+                  label: "Shell",
+                  tool: "shell",
+                  count: 1,
+                  calls: [{ arguments: "{}", result: saved }],
+                  outcomes: { succeeded: 1 },
+                },
+              ],
+            },
+            { text: "Done." },
+          ],
+        },
+      ],
+      "",
+      undefined,
+      OFFERED,
+    );
+    expect(messages.find((message) => message.role === "toolResult")?.content).toEqual(text(saved));
   });
 
   it("says in its result when a replayed call's tool is not offered now", () => {

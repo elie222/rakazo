@@ -20,6 +20,7 @@ import {
   ModelConnectionLabelSchema,
   ModelConnectionTargetSchema,
   ModelCredentialSchema,
+  ModelDisconnectPreviewSchema,
   ModelOAuthBeginSchema,
   ModelSettingsSaveSchema,
   modelChoiceListSchema,
@@ -41,8 +42,29 @@ import {
   VoiceStatusSchema,
 } from "./voice.js";
 
+const OrganizationModelConnectionSchema = z.object({
+  id: Id,
+  provider: z.string(),
+  modelId: z.string(),
+  label: z.string(),
+});
+
 export const modelsRpc = {
   models: {
+    organizationConnections: {
+      list: oc.input(z.object({})).output(z.array(OrganizationModelConnectionSchema)),
+      create: oc
+        .input(
+          ModelConnectInputSchema.safeExtend({
+            apiKey: z.string().trim().min(8),
+            modelId: z.string().trim().min(1).max(512),
+            label: ModelConnectionLabelSchema,
+            credentialId: z.never().optional(),
+          }),
+        )
+        .output(OrganizationModelConnectionSchema),
+      remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+    },
     forRole: oc
       .input(z.object({ role: ModelRoleSchema, expectedUserId: Id.optional() }))
       .output(z.array(ModelCatalogEntrySchema)),
@@ -158,6 +180,10 @@ export const modelsRpc = {
       .input(z.object({ credentialId: Id, label: ModelConnectionLabelSchema }))
       .output(z.object({ ok: z.literal(true) })),
     saveModelSettings: oc.input(ModelSettingsSaveSchema).output(z.object({ ok: z.literal(true) })),
+    /** What disconnecting this connection takes with it, for the question that asks first. */
+    disconnectPreview: oc
+      .input(z.object({ provider: z.string().trim().min(1), credentialId: Id }))
+      .output(ModelDisconnectPreviewSchema),
     /** Removes one connection, or every connection of the provider when older apps omit it. */
     disconnect: oc
       .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
@@ -182,6 +208,8 @@ export const modelsRpc = {
              * the account's model connection authenticates (the catalog's `modelConnection`).
              */
             apiKey: z.string().max(4096).default(""),
+            /** With no key, the account's model connection voice uses; omitted uses the preferred one. */
+            modelCredentialId: z.string().min(1).max(64).optional(),
             voiceId: z.string().max(120).optional(),
             speechModel: z.string().max(64).optional(),
             /** Self-hosted (OpenAI-compatible) server address and model ids. */

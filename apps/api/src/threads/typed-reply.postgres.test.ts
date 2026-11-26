@@ -8,7 +8,9 @@ import {
   createDb,
   createPendingSteeringRun,
   createThreadMessage,
+  loadRunTurnCheckpoint,
   provisionMessagingIdentity,
+  RUN_TURN_CHECKPOINT_KIND,
   runAsSystem,
   runAsTenant,
   SpaceDeletionInProgressError,
@@ -192,6 +194,51 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       await system.message.findUniqueOrThrow({ where: { id: fixture.message.id } }),
     ).toMatchObject({ blocks: fixture.message.blocks });
   }
+
+  it.each(["created", "user"])(
+    "only replays a saved question when continuing the same turn (%s)",
+    async (trigger) => {
+      const { run } = await waitingCard(question, threadId, botId, trigger);
+      const transcript = JSON.stringify({
+        version: 1,
+        provider: "fake",
+        model: "test-model",
+        systemPrompt: "",
+        pendingToolCallId: "ask-1",
+        messages: [
+          { role: "user", content: "Ask which city to visit.", timestamp: 0 },
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "toolCall",
+                name: "ask_user",
+                id: "ask-1",
+                arguments: { question: "Which city?", options: ["Berlin", "Paris"] },
+              },
+            ],
+            stopReason: "toolUse",
+            timestamp: 1,
+          },
+        ],
+      });
+      await system.externalEffect.create({
+        data: {
+          runId: run.id,
+          spaceId: actor.spaceId,
+          kind: RUN_TURN_CHECKPOINT_KIND,
+          status: RUN_TURN_CHECKPOINT_KIND,
+          idempotencyKey: JSON.stringify([RUN_TURN_CHECKPOINT_KIND, run.id]),
+          request: {},
+          result: transcript,
+        },
+      });
+      expect((await send(privateTarget(), "Paris")).runId).toBe(run.id);
+      expect(await loadRunTurnCheckpoint(system, run)).toBe(
+        trigger === "created" ? undefined : transcript,
+      );
+    },
+  );
 
   it("uses the owner's first composer reply as the resumed intro's source", async () => {
     const intro = await waitingCard(question, threadId, botId, "created");
@@ -483,7 +530,6 @@ describe.skipIf(!enabled)("typed replies to waiting cards (PostgreSQL)", () => {
       const message = await system.message.findFirstOrThrow({
         where: { threadId: target.threadId, seq: result.seq },
       });
-      // Send as file stores the picture as a file the routine can list and copy.
       expect(message.blocks).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ kind: "file", artifactId: artifact.id }),

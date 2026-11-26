@@ -17,8 +17,15 @@ import { sanitizeIntegrationError } from "../providers/integration/composio/comp
 import type { ConnectorRegistry } from "./connector-registry.js";
 import { prepareManagedConnectorForTransaction } from "./integration-provider-settings.js";
 
-type ConnectionScope = { spaceId: string; userId: string; connectorId: string; provider: string };
-type ConnectionCleanup = BackgroundJobPayloads["connection.cleanup"];
+export type ConnectionOwner = { spaceId: string; userId: string; organizationId?: string };
+type ConnectionScope = ConnectionOwner & { connectorId: string; provider: string };
+type ConnectionCleanup = BackgroundJobPayloads["connection.cleanup"] & { organizationId?: string };
+
+export function connectionOwnerWhere(owner: ConnectionOwner) {
+  return owner.organizationId
+    ? { organizationId: owner.organizationId, userId: null, spaceId: null }
+    : { userId: owner.userId, spaceId: owner.spaceId };
+}
 
 /** Connection flows hold the provider lock across provider calls (45s budget plus database work). */
 export const PROVIDER_LOCK_TRANSACTION_MS = 60_000;
@@ -73,17 +80,19 @@ const ACTIVE_STATUSES = ["connected", "pending", "error"];
  * behind work the database would serialize anyway.
  */
 export function providerScopeKey(
-  owner: { spaceId: string; userId: string },
+  owner: ConnectionOwner,
   connectorId: string,
   provider: string,
 ): string {
   // Avoid NUL separators in the lock key; text params may truncate at a zero byte and break begin.
+  if (owner.organizationId)
+    return `organization:${owner.organizationId}|provider:${provider.toLowerCase()}`;
   return `space:${owner.spaceId}|user:${owner.userId}|connector:${connectorId}|provider:${provider}`;
 }
 
 export async function lockProviderConnectionScope(
   tx: Prisma.TransactionClient,
-  owner: { spaceId: string; userId: string },
+  owner: ConnectionOwner,
   connectorId: string,
   provider: string,
 ): Promise<void> {
@@ -93,7 +102,7 @@ export async function lockProviderConnectionScope(
 /** Like lockProviderConnectionScope, but returns false instead of waiting for a holder. */
 export async function tryLockProviderConnectionScope(
   tx: Prisma.TransactionClient,
-  owner: { spaceId: string; userId: string },
+  owner: ConnectionOwner,
   connectorId: string,
   provider: string,
 ): Promise<boolean> {
@@ -153,12 +162,11 @@ export function leftoverAuthorization(
 ): ConnectionCleanup | undefined {
   const ref = state?.trim();
   if (!ref) return undefined;
-  const { spaceId, userId, connectorId, provider } = scope;
+  const { spaceId, userId, organizationId, connectorId, provider } = scope;
+  const owner = { spaceId, userId, ...(organizationId ? { organizationId } : {}) };
   // A request or account id is removed by id; an app slug names no single account.
-  if (ref !== provider) return { spaceId, userId, connectorId, provider, ref };
-  return connector.revokeUnreferencedAccounts
-    ? { spaceId, userId, connectorId, provider }
-    : undefined;
+  if (ref !== provider) return { ...owner, connectorId, provider, ref };
+  return connector.revokeUnreferencedAccounts ? { ...owner, connectorId, provider } : undefined;
 }
 
 /**
@@ -174,8 +182,7 @@ export async function authorizationInUse(
 ): Promise<boolean> {
   const referring = await tx.connection.count({
     where: {
-      spaceId: scope.spaceId,
-      userId: scope.userId,
+      ...connectionOwnerWhere(scope),
       connectorId: scope.connectorId,
       provider: scope.provider,
       providerRef: ref,
@@ -211,6 +218,7 @@ async function dropAuthorization(
         target.ref,
         [],
         target.spaceId,
+        ...(target.organizationId ? [target.organizationId] : []),
       )
     : target.ref;
   if (!accountId) return;
@@ -233,8 +241,7 @@ async function dropUnreferencedAccounts(
   if (!connector.revokeUnreferencedAccounts) return "done";
   const kept = await tx.connection.findMany({
     where: {
-      spaceId: scope.spaceId,
-      userId: scope.userId,
+      ...connectionOwnerWhere(scope),
       connectorId: scope.connectorId,
       provider: scope.provider,
       status: { in: ACTIVE_STATUSES },
@@ -247,15 +254,13 @@ async function dropUnreferencedAccounts(
   return "done";
 }
 
-function cleanupContext(
-  owner: { spaceId: string; userId: string },
-  operationId: string,
-): AdapterContext {
+function cleanupContext(owner: ConnectionOwner, operationId: string): AdapterContext {
   return {
     operationId,
     traceId: operationId,
     spaceId: owner.spaceId,
     userId: owner.userId,
+    ...(owner.organizationId ? { organizationId: owner.organizationId } : {}),
     signal: AbortSignal.timeout(CONNECTION_CLEANUP_ATTEMPT_MS),
   };
 }
@@ -407,7 +412,11 @@ export function recordConnectionCleanupAttemptsExhausted(
   job: { task_identifier: string; payload: unknown; attempts: number },
   error: unknown,
 ): void {
-  if (job.task_identifier !== "connection.cleanup") return;
+  if (
+    job.task_identifier !== "connection.cleanup" &&
+    job.task_identifier !== "connection.organization-cleanup"
+  )
+    return;
   const { payload } = unwrapJobPayload(job.payload);
   getLogger().error(
     "connection cleanup gave up; remove the authorization at the provider by hand",

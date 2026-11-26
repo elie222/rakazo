@@ -3,6 +3,7 @@ import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
 import {
   botEventRoutines,
   firstWatchCheck,
+  hasRoutineEvents,
   listAgentSkillRecords,
   lockOwnerComputerApproval,
   ownerComputerRefusal,
@@ -12,6 +13,10 @@ import {
   routineComputerFingerprint,
   routineEditChange,
   routineEdited,
+  routineEndError,
+  routineEnded,
+  routineEndInZone,
+  runBeforeEnd,
   stableStringify,
   validateRoutineWatch,
   wakeRun,
@@ -157,9 +162,17 @@ export function routinesRoutes(ctx: RouterContext) {
           await assertEmailTrigger(deps.prisma, deps.env.inboundEmailDomain, bot.id);
         }
         await assertRoutineModel(deps, context.actor, input, codexCatalog);
-        const row = await deps.prisma.routine.create({
-          data: routineRowData(context.actor, input, routineNextRunAt(input)),
-        });
+        const data = routineRowData(context.actor, input, routineNextRunAt(input));
+        const endError = routineEndError(
+          {
+            ...data,
+            watch: input.watch,
+            events: hasRoutineEvents(input),
+          },
+          { end: true, nextRun: true },
+        );
+        if (endError) throw new ClientError("BAD_REQUEST", endError);
+        const row = await deps.prisma.routine.create({ data });
         await announceRoutine(context.actor, bot, row);
         await postRoutineNotice(deps, {
           spaceId: context.actor.spaceId,
@@ -274,11 +287,22 @@ export function routinesRoutes(ctx: RouterContext) {
           (input.crons !== undefined &&
             JSON.stringify(input.crons) !== JSON.stringify(existing.crons)) ||
           (input.timezone !== undefined && input.timezone !== existing.timezone);
+        const endsAt =
+          input.endsAt === undefined
+            ? routineEndInZone(existing.endsAt, existing.timezone, timezone)
+            : input.endsAt === null
+              ? null
+              : new Date(input.endsAt);
+        const endChanged = endsAt?.getTime() !== existing.endsAt?.getTime();
+        const onLastRun = routineEnded(existing);
+        const resumes = !existing.nextRunAt && (!onLastRun || endChanged);
         const recalculatedNextRunAt =
           crons.length > 0 &&
           !isOneShotRoutineCrons(crons) &&
-          (scheduleChanged || (active && !existing.nextRunAt))
-            ? nextRoutineDate(crons, timezone)
+          (scheduleChanged || (active && resumes))
+            ? onLastRun
+              ? runBeforeEnd(nextRoutineDate(crons, timezone), endsAt)
+              : nextRoutineDate(crons, timezone)
             : null;
         let armedOneShotAt: Date | null = null;
         if (active && isOneShotRoutineCrons(crons) && !existing.nextRunAt && !existing.lastRunAt) {
@@ -303,7 +327,7 @@ export function routinesRoutes(ctx: RouterContext) {
           ? null
           : watch
             ? // Turning a watch on, or changing it, checks right away; otherwise keep its rhythm.
-              !existing.active || watchChanged || !existing.nextRunAt
+              !existing.active || watchChanged || resumes
               ? firstWatchCheck()
               : existing.nextRunAt
             : crons.length === 0
@@ -311,6 +335,25 @@ export function routinesRoutes(ctx: RouterContext) {
               : isOneShotRoutineCrons(crons)
                 ? (armedOneShotAt ?? existing.nextRunAt)
                 : (recalculatedNextRunAt ?? existing.nextRunAt);
+        const endError = routineEndError(
+          {
+            endsAt,
+            crons,
+            watch,
+            nextRunAt,
+            events: hasRoutineEvents({
+              webhookEnabled,
+              githubEnabled,
+              messageProvider,
+              emailSenders,
+            }),
+          },
+          {
+            end: input.endsAt !== undefined && endChanged,
+            nextRun: endChanged || nextRunAt?.getTime() !== existing.nextRunAt?.getTime(),
+          },
+        );
+        if (endError) throw new ClientError("BAD_REQUEST", endError);
         // What a watch read is not the owner's words, so it never runs as a turn in the chat.
         const inChat = watch ? false : input.inChat;
         const computerPromptHash =
@@ -378,6 +421,7 @@ export function routinesRoutes(ctx: RouterContext) {
                 : { watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull }),
               ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
               ...(writesSchedule ? { nextRunAt } : {}),
+              ...(endChanged ? { endsAt } : {}),
             },
           });
         const write =

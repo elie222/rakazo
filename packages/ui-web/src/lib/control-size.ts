@@ -20,5 +20,4 @@ export const controlSquare = {
 
 export type ControlSize = keyof typeof controlHeight;
 
-/** The sizes a field (an Input or a select) comes in; a button also has xs. */
 export type FieldSize = Exclude<ControlSize, "xs">;

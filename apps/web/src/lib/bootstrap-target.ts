@@ -1,4 +1,5 @@
 import type { AppBootstrap } from "@rakazo/contracts";
+import { isReservedAppSegment } from "@rakazo/core";
 
 export function initialBootstrapTarget(path: string, desktop: boolean) {
   const pathname = path.split(/[?#]/)[0] ?? "";
@@ -12,7 +13,7 @@ export function initialBootstrapTarget(path: string, desktop: boolean) {
 
 function botIdFromPath(pathname: string) {
   const segments = pathname.split("/");
-  if (["g", "artifacts", "board", "x"].includes(segments[2] ?? "")) return undefined;
+  if (isReservedAppSegment(segments[2] ?? "")) return undefined;
   return decoded(segments[2]);
 }
 

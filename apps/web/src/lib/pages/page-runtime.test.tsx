@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
-import { flush } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { queryClient } from "../query/query";
+import type { PageContent } from "./pages";
 import { usePageDocument } from "./pages";
 
 vi.mock("@lingui/react/macro", () => ({
@@ -16,6 +17,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
   queryClient.clear();
   document.body.replaceChildren();
+});
+
+const content = (
+  images: PageContent["images"] = {},
+  read: (imageId: string) => Promise<{ src: string }> = () => Promise.reject(new Error("unread")),
+): PageContent => ({
+  code: "export default () => null;",
+  images,
+  readImage: (imageId) => ({ queryKey: ["test-image", imageId], queryFn: () => read(imageId) }),
 });
 
 it("asks the server for the page runtime again each time a page opens", async () => {
@@ -32,7 +42,7 @@ it("asks the server for the page runtime again each time a page opens", async ()
   vi.stubGlobal("fetch", fetcher);
   let shown: string | null = null;
   function Page() {
-    shown = usePageDocument("export default () => null;").document;
+    shown = usePageDocument(content()).document;
     return null;
   }
   const open = async () => {
@@ -65,7 +75,7 @@ it("rebuilds the review document when only its section changes", async () => {
   vi.stubGlobal("fetch", async () => new Response("/*kit*/"));
   let shown: string | null = null;
   function Page({ occurrence }: { occurrence: number }) {
-    shown = usePageDocument("export default () => null;", "card", false, 0, true, {
+    shown = usePageDocument(content(), "card", false, 0, true, {
       section: "Summary",
       sectionOccurrence: occurrence,
     }).document;
@@ -86,4 +96,70 @@ it("rebuilds the review document when only its section changes", async () => {
   await show(1);
   expect(shown).toContain('"reviewAnchor":"Summary","reviewAnchorOccurrence":1');
   await act(async () => root.unmount());
+});
+
+it("waits for a page's pictures and leaves out one that cannot be read", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  vi.stubGlobal("fetch", async () => new Response("/*kit*/"));
+  const hotel = deferred<{ src: string }>();
+  let shown: string | null = null;
+  function Page() {
+    shown = usePageDocument(
+      content({ hotel: "i1", logo: "i2" }, (imageId) =>
+        imageId === "i1"
+          ? hotel.promise
+          : Promise.reject(Object.assign(new Error("gone"), { status: 404 })),
+      ),
+    ).document;
+    return null;
+  }
+  const root = createRoot(document.body.appendChild(document.createElement("div")));
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <Page />
+      </QueryClientProvider>,
+    ),
+  );
+  await act(flush);
+  expect(shown).toBeNull();
+  await act(async () => hotel.resolve({ src: "data:image/webp;base64,AAAA" }));
+  await vi.waitFor(() =>
+    expect(shown).toContain('"images":{"hotel":"data:image/webp;base64,AAAA"}'),
+  );
+  await act(async () => root.unmount());
+});
+
+it("reads a page's picture once however often the page opens", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  vi.stubGlobal("fetch", async () => new Response("/*kit*/"));
+  const read = vi.fn(async () => ({ src: "data:image/webp;base64,AAAA" }));
+  let shown: string | null = null;
+  function Page() {
+    shown = usePageDocument(content({ hotel: "i1" }, read)).document;
+    return null;
+  }
+  for (let open = 0; open < 2; open++) {
+    const root = createRoot(document.body.appendChild(document.createElement("div")));
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Page />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => expect(shown).toContain("data:image/webp;base64,AAAA"));
+    await act(async () => root.unmount());
+  }
+  expect(read).toHaveBeenCalledTimes(1);
 });

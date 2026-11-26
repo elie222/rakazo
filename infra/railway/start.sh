@@ -4,7 +4,7 @@ umask 077
 
 if [[ $(id -u) == 0 ]]; then
   install -d -m 750 -o node -g node /data
-  exec gosu node "$0"
+  exec gosu node "$0" "$@"
 fi
 
 # Set DATABASE_MIGRATION_URL to the owner and DATABASE_URL to a runtime login to
@@ -13,11 +13,11 @@ fi
 # shell's original environment, which any process running as node can read from /proc.
 if [[ "${1:-}" != serve ]]; then
   pnpm --filter @rakazo/api db:deploy
-  exec env -u DATABASE_MIGRATION_URL bash "$0" serve
+  exec env -u DATABASE_MIGRATION_URL bash "$0" serve "${2:-railway}"
 fi
 
 # Railway computers run in their own environment; the Render template uses another provider.
-if [[ -n "${RAILWAY_API_TOKEN:-}" ]]; then
+if [[ "${2:-railway}" == railway ]]; then
   export RAILWAY_ENVIRONMENT_ID
   RAILWAY_ENVIRONMENT_ID=$(node infra/railway/sandbox-environment.mjs)
 fi

@@ -28,15 +28,6 @@ services:
         sync: false
       - key: OWNER_PASSWORD
         generateValue: true
-      # Blank uses boat. Fill in the key for the provider you choose.
-      - key: SANDBOX_PROVIDER
-        sync: false
-      - key: BOAT_API_KEY
-        sync: false
-      - key: E2B_API_KEY
-        sync: false
-      - key: DAYTONA_API_KEY
-        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: rakazo-db

@@ -78,6 +78,39 @@ the local Docker computer. For in-stack Caddy plus remote E2B computers, use the
 [production Compose](./self-host-production.md#public-single-vm-deployment) path and `infra/compose/Caddyfile.prod`
 instead of this host proxy.
 
+### From a Docker panel
+
+Server panels that deploy a Compose file from a URL (Hostinger's Docker Manager, Coolify, Dokploy
+and similar) need no shell, installer or `.env`. Paste:
+
+```text
+https://raw.githubusercontent.com/elie222/rakazo/main/infra/compose/docker-compose.standalone.yml
+```
+
+It is the images Compose file with one addition: on first start, a one-shot `secrets` service
+generates every secret the installer would ([secrets checklist](./self-host-secrets.md)) into the
+`secrets` volume. Later starts reuse them and never replace one. Each service gets a copy of only
+the secrets it uses. A value you set as an environment variable in the panel always wins over the
+generated one, so set it before the first start or not at all: a changed database password or
+`ENCRYPTION_KEY` breaks an existing install.
+
+Set `RAKAZO_PUBLIC_URL` to the address people open, such as `https://app.example.com`, whenever
+they reach Rakazo by anything but `127.0.0.1`: it sets `BETTER_AUTH_URL`, `WEB_ORIGIN` and `API_URL`
+and allows its host, and without it the app refuses that address. Optional variables:
+
+- `OPENROUTER_API_KEY`, or add a model in the app after signup.
+- `RAKAZO_WEB_BIND`: the web port stays on `127.0.0.1:5173`, so nothing is public until you choose.
+  When the panel's proxy reaches the `web` service on port 5173 over Docker's network, leave it.
+  To open the app directly at the server's address, set `RAKAZO_WEB_BIND=0.0.0.0` and
+  `RAKAZO_PUBLIC_URL=http://<server-address>:5173`. That serves sign-in over plain HTTP, so use it
+  only to try Rakazo and put TLS in front before real use.
+
+The `secrets` volume holds `ENCRYPTION_KEY`, so back it up with the database: encrypted content
+cannot be read without it. Removing the stack's volumes deletes both.
+
+[Admin commands](#admin-commands) run through the same start step, which reads the generated
+secrets: `docker compose exec api sh /run/rakazo-secrets/start node dist/cli/admin.js …`.
+
 ### Restricted networks / mirror downloads
 
 If the installer, Compose downloads, or image pulls are blocked, use the
@@ -89,6 +122,35 @@ To run Rakazo without managing a server, [deploy on Railway](https://railway.com
 ([setup guide](../infra/railway/README.md)) or
 [deploy to Render](https://render.com/deploy?repo=https://github.com/elie222/rakazo)
 ([setup guide](../infra/render/README.md)).
+
+## Any VPS: paste user data
+
+Hosts such as DigitalOcean, Vultr, Akamai (Linode), Hetzner and Hostinger take a cloud-init
+"user data" script when you create a server. Create an Ubuntu 22.04 or newer server of the
+[size above](#what-you-need), paste [`infra/cloud-init/user-data.yaml`](../infra/cloud-init/user-data.yaml)
+into that field, and Rakazo installs itself into `/opt/rakazo` on first boot with no SSH.
+`/var/log/cloud-init-output.log` shows progress.
+
+Its two settings are optional. `OPENROUTER_API_KEY` gives everyone a model; user data stays readable
+from the host's metadata service, so you may prefer to connect a model in the app instead. Without
+`RAKAZO_DOMAIN`, Rakazo listens only on the server's loopback: open an SSH tunnel with
+`ssh -N -L 5173:127.0.0.1:5173 root@SERVER_IP` and browse to `http://127.0.0.1:5173`.
+
+To serve it publicly, point a domain's DNS at the server and run:
+
+```bash
+sudo bash /opt/rakazo/setup-server.sh --domain app.example.com
+```
+
+This sets the public origins in `.env`, restarts the stack and starts Caddy, which serves the
+domain with an automatic HTTPS certificate. Setting `RAKAZO_DOMAIN` in the user data does the same
+on first boot. Signup is open, so once your account exists, close it:
+
+```bash
+sudo bash /opt/rakazo/setup-server.sh --close-signup
+```
+
+The script is safe to rerun, and the login message repeats the next step.
 
 ## Docker Compose (single machine)
 
@@ -122,6 +184,8 @@ Same as the README quick start: `.env` from `.env.example`, `pnpm sandbox:build`
 On Apple silicon Macs with macOS 26 or later, builds that include a server bundle can run this stack without Docker. Fresh setups use this path, downloading the server and computer runtime as needed. Existing Docker setups are offered a move while Docker is running; **Keep Docker** preserves the Docker path. Moving copies the bots and data and stops the old Docker stack without removing it. The Docker-free server stops when the desktop app quits.
 
 Other builds and platforms use Docker Compose and the published images (see [Published images](#published-images-no-checkout)); their managed API gets a Docker-assigned loopback port. These Docker containers keep running after the app quits. **Quit and Stop Bots** in the application menu stops the managed stack and quits, for either runtime; switching to another server also stops it. Unpackaged development builds normally have no server bundle; use **Existing instance** for the source development stack.
+
+On headless Linux hosts running the API and worker directly, install Fontconfig and a Latin font for PNG chart labels. On Debian and Ubuntu, install `fontconfig` and `fonts-dejavu-core`.
 
 For source development in WSL, keep the checkout and `data` directory in the Linux filesystem (for example, `~/rakazo`), and run `pnpm dev` as your normal user. The host-run supervisor matches bot container UID/GID to that user. If Docker Desktop container IPs are unreachable, set `SANDBOX_CONTROL_VIA_LOOPBACK=true` in `.env`; this publishes the token-protected control service on a random loopback port. Leave this unset for the Compose-hosted supervisor.
 
@@ -180,6 +244,13 @@ out of chat and logs. Each new key is recorded as a `credential.changed`
 [security event](./self-host-observability.md#security-events) with `by: operator`.
 
 ### Account deletion and billing
+
+Grant complimentary own-key access with `node dist/cli/admin.js access grant <email> <free-months> [standard|pro|max|ultra]`.
+For example, `node dist/cli/admin.js access grant person@example.test 6 max` gives Max benefits for
+six 30-day months without creating a subscription. Grants of the same named tier extend its expiry.
+The highest unexpired named tier applies while the organization uses its own API key and has no
+active subscription or subscription awaiting billing recovery. Omitting the tier uses the original
+Standard access grant.
 
 Run these from the API container. Omit `--confirm` to preview the target and action.
 

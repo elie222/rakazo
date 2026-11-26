@@ -53,6 +53,38 @@ function shownService(service: PaidService, billing: boolean) {
   };
 }
 
+/** The services a query finds that one call can afford, as the bot is shown them. */
+export async function findPaidServices(
+  provider: PaidServiceProvider,
+  query: string,
+  context: AdapterContext,
+  billing: boolean,
+) {
+  return affordable(await provider.search(query, context), billing)
+    .slice(0, SEARCH_RESULTS)
+    .map((service) => shownService(service, billing));
+}
+
+/** One service by id, as the bot is shown it, or undefined when it cannot be called. */
+export async function describePaidService(
+  provider: PaidServiceProvider,
+  serviceId: string,
+  context: AdapterContext,
+  billing: boolean,
+) {
+  const service = await provider.describe(serviceId, context);
+  return service && affordable([service], billing).length
+    ? shownService(service, billing)
+    : undefined;
+}
+
+function affordable(services: PaidService[], billing: boolean) {
+  return services.filter(
+    (service) =>
+      service.priceUsd === null || service.priceUsd * factor(billing) <= MAX_PAID_SERVICE_CALL_USD,
+  );
+}
+
 export async function serviceSearchFromTool(
   provider: PaidServiceProvider,
   context: AdapterContext,
@@ -62,17 +94,7 @@ export async function serviceSearchFromTool(
   const parsed = searchArgs.safeParse(args);
   if (!parsed.success) return { error: "query must be 1-200 characters." };
   try {
-    const services = await provider.search(parsed.data.query, context);
-    return {
-      services: services
-        .filter(
-          (service) =>
-            service.priceUsd === null ||
-            service.priceUsd * factor(billing) <= MAX_PAID_SERVICE_CALL_USD,
-        )
-        .slice(0, SEARCH_RESULTS)
-        .map((service) => shownService(service, billing)),
-    };
+    return { services: await findPaidServices(provider, parsed.data.query, context, billing) };
   } catch (error) {
     context.signal.throwIfAborted();
     getLogger().warn("paid_services.search_failed", {

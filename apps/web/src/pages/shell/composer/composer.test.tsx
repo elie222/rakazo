@@ -10,7 +10,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { act, createRef } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -27,6 +27,7 @@ import { dictation } from "../../../lib/calls/dictation";
 import { replaceComposerDraft } from "../../../lib/composer/composer-draft";
 import { createPageSession, PagesProvider } from "../../../lib/pages/pages";
 import { Composer, LARGE_PASTE_THRESHOLD } from "./composer";
+import { FileDropZoneContext } from "./use-composer-file-drop";
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -142,6 +143,37 @@ it("shows a readable run error with raw details, while preserving send errors", 
   rerenderComposer({ sendError: "Could not send the message." });
   expect(error?.textContent).toBe("Could not send the message.");
   expect(error?.querySelector("details")).toBeNull();
+});
+
+it("offers to try a failed reply again only while it is retryable", () => {
+  const onRetryRun = vi.fn();
+  renderComposer(async () => true, {
+    runError: "terminated",
+    runErrorId: "failed-run",
+    onRetryRun,
+  });
+  const retry = () =>
+    container?.querySelector<HTMLButtonElement>('[data-testid="composer-error-retry"]');
+  expect(retry()?.textContent).toBe("Try again");
+  act(() => retry()?.click());
+  expect(onRetryRun).toHaveBeenCalledOnce();
+
+  rerenderComposer({ onRetryRun: undefined });
+  expect(retry()).toBeNull();
+  rerenderComposer({ onRetryRun, sendError: "Could not send the message." });
+  expect(retry()).toBeNull();
+});
+
+it("offers the fix instead of a retry when trying again would fail the same way", () => {
+  renderComposer(async () => true, {
+    runError: '401: {"message":"Invalid API key"}',
+    runErrorId: "failed-run",
+    onRetryRun: vi.fn(),
+  });
+  expect(container?.querySelector('[data-testid="composer-error-action"]')?.textContent).toBe(
+    "Replace key",
+  );
+  expect(container?.querySelector('[data-testid="composer-error-retry"]')).toBeNull();
 });
 
 it.each([
@@ -2462,33 +2494,98 @@ it("shows an image confirmation as a warning with file and model actions", () =>
   ).toBe(false);
 });
 
-it("accepts file drops in transparent padding only during file drags", () => {
+function dispatchDrag(target: EventTarget, type: string, dataTransfer?: object) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", { value: dataTransfer ?? null });
+  act(() => target.dispatchEvent(event));
+}
+
+/** Renders the composer under a chat column holding a transcript element. */
+function renderInChatColumn(overrides: Partial<ComponentProps<typeof Composer>>) {
+  renderComposer(async () => true, overrides);
+  const column = document.createElement("main");
+  const transcript = column.appendChild(document.createElement("div"));
+  container!.before(column);
+  onTestFinished(() => column.remove());
+  act(() =>
+    root?.render(
+      <FileDropZoneContext value={column}>
+        <Composer {...composerProps} />
+      </FileDropZoneContext>,
+    ),
+  );
+  const overlay = () => column.querySelector('[data-testid="file-drop-overlay"]');
+  return { transcript, overlay };
+}
+
+const droppedFiles = [new File(["example"], "example.txt", { type: "text/plain" })];
+const fileDrag = { types: ["Files"], items: [], files: droppedFiles };
+
+it("attaches files dropped anywhere on the chat column", () => {
   const onAttachmentPick = vi.fn(() => true);
-  renderComposer(async () => true, { onAttachmentPick });
+  const { transcript, overlay } = renderInChatColumn({ onAttachmentPick });
+  const message = transcript.appendChild(document.createElement("p"));
+  dispatchDrag(transcript, "dragenter", { types: ["text/plain"], items: [] });
+  expect(overlay()).toBeNull();
+  dispatchDrag(transcript, "dragenter", fileDrag);
+  expect(overlay()).not.toBeNull();
+  // Moving onto a child enters it before leaving its parent.
+  dispatchDrag(message, "dragenter", fileDrag);
+  dispatchDrag(transcript, "dragleave", fileDrag);
+  expect(overlay()).not.toBeNull();
+  dispatchDrag(message, "dragover", fileDrag);
+  dispatchDrag(message, "drop", fileDrag);
+  expect(onAttachmentPick).toHaveBeenCalledExactlyOnceWith(droppedFiles);
+  expect(overlay()).toBeNull();
+  dispatchDrag(transcript, "dragenter", fileDrag);
+  dispatchDrag(transcript, "dragleave", fileDrag);
+  expect(overlay()).toBeNull();
+});
+
+it("lets the composer's gaps catch drops only during file drags", () => {
+  const { transcript } = renderInChatColumn({});
   const fieldset = container!.querySelector("fieldset")!;
-  const dispatchDrag = (target: EventTarget, type: string, dataTransfer: object) => {
-    const event = new Event(type, { bubbles: true, cancelable: true });
-    Object.defineProperty(event, "dataTransfer", { value: dataTransfer });
-    act(() => target.dispatchEvent(event));
-  };
-  dispatchDrag(window, "dragenter", { types: ["text/plain"], items: [] });
   expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
-  const files = [new File(["example"], "example.txt", { type: "text/plain" })];
-  const dataTransfer = { types: ["Files"], items: [], files };
-  dispatchDrag(window, "dragenter", dataTransfer);
+  dispatchDrag(transcript, "dragenter", fileDrag);
   expect(fieldset.classList.contains("pointer-events-auto")).toBe(true);
-  dispatchDrag(fieldset, "dragover", dataTransfer);
-  expect(fieldset.dataset.dragging).toBe("files");
-  dispatchDrag(fieldset, "drop", dataTransfer);
-  expect(onAttachmentPick).toHaveBeenCalledExactlyOnceWith(files);
+  dispatchDrag(transcript, "drop", fileDrag);
   expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
-  expect(fieldset.dataset.dragging).toBeUndefined();
-  dispatchDrag(window, "dragenter", dataTransfer);
-  dispatchDrag(window, "dragleave", dataTransfer);
-  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
-  dispatchDrag(window, "dragenter", dataTransfer);
-  dispatchDrag(window, "dragend", dataTransfer);
-  expect(fieldset.classList.contains("pointer-events-none")).toBe(true);
+});
+
+it("ignores files dragged from within the page", () => {
+  const onAttachmentPick = vi.fn(() => true);
+  const { transcript, overlay } = renderInChatColumn({ onAttachmentPick });
+  dispatchDrag(transcript, "dragstart", fileDrag);
+  dispatchDrag(transcript, "dragenter", fileDrag);
+  dispatchDrag(transcript, "drop", fileDrag);
+  expect(overlay()).toBeNull();
+  expect(onAttachmentPick).not.toHaveBeenCalled();
+  dispatchDrag(transcript, "dragend", fileDrag);
+  dispatchDrag(transcript, "dragenter", fileDrag);
+  expect(overlay()).not.toBeNull();
+});
+
+it("hides the drop overlay when the element under the drag was replaced", () => {
+  const { transcript, overlay } = renderInChatColumn({});
+  const streaming = transcript.appendChild(document.createElement("p"));
+  dispatchDrag(streaming, "dragenter", fileDrag);
+  // A streaming reply swaps the node; its leave fires on the detached node and never arrives.
+  streaming.replaceWith(document.createElement("p"));
+  const replacement = transcript.querySelector("p")!;
+  dispatchDrag(replacement, "dragenter", fileDrag);
+  dispatchDrag(replacement, "dragleave", fileDrag);
+  expect(overlay()).toBeNull();
+});
+
+it("attaches outside files after a page drag whose source was removed", () => {
+  const onAttachmentPick = vi.fn(() => true);
+  const { transcript } = renderInChatColumn({ onAttachmentPick });
+  const image = transcript.appendChild(document.createElement("img"));
+  dispatchDrag(image, "dragstart", fileDrag);
+  // Removed mid-drag, the source's dragend never reaches the window.
+  image.remove();
+  dispatchDrag(transcript, "drop", fileDrag);
+  expect(onAttachmentPick).toHaveBeenCalledExactlyOnceWith(droppedFiles);
 });
 
 it("stops the running reply on Escape, but lets Escape close the mention picker first", () => {

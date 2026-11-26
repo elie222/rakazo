@@ -6,6 +6,81 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-24
+
+### Security
+
+- Signed-in API requests sent by a browser from a page the deployment does not trust are now refused. Before, a page on a sibling subdomain could make a signed-in user's browser call the API. The web, desktop and mobile apps are unaffected.
+- Production servers no longer trust the local Expo dev-server addresses as browser origins.
+- `AUTH_RATE_LIMIT_ENABLED` turns the rate limit on sign-in, sign-up, password reset, email codes and passkeys on or off explicitly. Before, the limit ran only when `NODE_ENV=production`, so a server started without that variable had none ([configuration](docs/self-host-configuration.md)).
+- Servers that run Claude Code with its setup token no longer tell the model the operator's account email, so a bot can't repeat it to people it talks to ([models](docs/self-host-models.md)).
+- Bots running on their own (routines, webhooks, messages from other bots, a new bot's first task, tickets) can now use bot management tools. Reading the bot list just works, and every change waits on a fresh owner approval card that **Always allow** does not skip.
+- Saving an MCP server and the bots that can use it is now all or nothing, so a failed save no longer leaves the server open to every bot. A bot archived while the list was open no longer gets hidden access.
+
+### Added
+
+- Bots make images and videos with the member's own model connection when that provider can generate media, and fall back to the deployment's media provider otherwise. Members who connect such a key get an **Image model** and a **Video model** picker in Model settings, and what that media costs shows in Settings > Usage.
+- `MEDIA_GENERATION_PROVIDER=openrouter` sends bot image and video generation through OpenRouter ([models](docs/self-host-models.md)).
+- DeepInfra is available as a hosted model connection: paste an API key and pick from its chat models.
+- Model settings has a **Thinking** dropdown (Off, Minimal, Low, Medium, High, Extra high, Max) in place of the "Supports thinking" checkbox. It sets the level a model uses when a chat, bot or role picks none.
+- Bots can save a rule that only holds for a while, such as a pause until someone is back. Once it ends, the rule moves to an archive you can still read on the memory screen. New memory entries also record the day they were saved.
+- Bots can correct facts in any of their private memory documents, such as an imported `USER.md`, and bots using Supermemory can forget a single wrong or outdated memory.
+- When a site emails a sign-in code to the bot's own inbox or to the user's connected email, the bot reads it and types it in. It asks for the code only when it went somewhere the bot can't read.
+- A bot can archive itself after the owner approves. Its routines and computer stop, and the owner can restore it like any archived bot.
+- Approving a routine edit shows the routine's name and each change next to its previous value, with schedules as everyday times.
+- Edit a saved MCP server on mobile: test it, change its name, URL and bearer token, pick which bots can use it, or delete it.
+- A frozen browser on a computer restarts by itself, keeping the bot's sign-ins and leaving other bots on the computer alone.
+- `SANDBOX_COMPUTER_GPU` gives Docker computers' browsers one host GPU render node, such as `/dev/dri/renderD128`, for hardware WebGL. It is off by default; enable it only with a GPU dedicated to bot computers ([Docker computers](docs/self-host-docker-computers.md)).
+- Files dropped anywhere on an open chat attach to the message box, not only when dropped on the box itself.
+- A Settings gear sits at the bottom of the mobile chat sidebar, and the Apple Watch chat shows a typing bubble while a bot works.
+- Links to the web app show a preview card when pasted into social and chat apps.
+- Single sign-on: `OIDC_AUTHORIZATION_PARAMS` adds parameters to the sign-in request, such as `domain_hint=example.com`, and `OIDC_EMAIL_VERIFIED_CLAIM` names the claim that proves the email for providers that leave `email_verified` out ([accounts](docs/self-host-accounts.md)).
+- Install on any VPS with no SSH by pasting the cloud-init user data file into the host's create-server form, and `infra/compose/docker-compose.standalone.yml` starts Rakazo from a Compose URL with no shell, installer or `.env` ([self-hosting](docs/self-host.md)).
+- The one-line installer installs Docker when it is missing on a fresh Linux server run as root. The docs now give the minimum server size: 2 vCPUs and 4 GB of RAM.
+- Self-hosters can build and sign their own iOS app with `RAKAZO_IOS_BUNDLE_ID`, `RAKAZO_APPLE_TEAM_ID`, `RAKAZO_EXPO_PROJECT_ID` and `RAKAZO_EXPO_OWNER`, with no edits to the app's config files.
+- Operator commands: `admin.js access grant <email> <free-months>` gives an account free months of the own-key plan, and `billing refund <email>` with no invoice previews the newest paid invoice ([self-hosting](docs/self-host.md)).
+
+### Changed
+
+- Paid plans get a separate monthly $1.00 balance for image and video generation on the hosted media provider, shown in Settings > Usage. Hosted media is refused for trials and once the balance runs out.
+- The admin refund command now refunds only a credit purchase's unused credits by default. `--full` still refunds the whole charge.
+- A recurring routine no longer starts a new run while its previous run is still active. If that run is waiting for an answer, answering it continues the run.
+- Bots save lasting facts you mention while asking for something else, and fill a saved website login instead of asking for command passwords.
+- A bot notifying a group it belongs to from outside that group posts there itself instead of relaying through another bot and posting twice.
+- Public MCP directory results appear under their own heading below your catalog, with each server's address and icon. Adding one warns that nobody has reviewed it.
+- When a memory provider recalls notes on every run, those notes go after the chat history, so the prompt cache is reused and replies start sooner. The sidebar also downloads much less data when it refreshes.
+- On iPhone, the chat composer matches the system's message fields, sheets share one top bar with close on the left and the action on the right, and pinned chats show as a grid of large avatars like desktop and Android.
+- The round buttons in the web and desktop top bar, sidebar and side panel share one glass style, and copies of the same bot's moving avatar move in step.
+
+### Fixed
+
+- On Android, the chat's message box no longer stays hidden under the keyboard.
+- The Android app no longer closes on a chat with a Mermaid diagram, and the diagram shows at full height.
+- Bot replies show on the Apple Watch while the iPhone is asleep.
+- The mobile share picker no longer stops responding after a failed navigation, and on iOS shared images and files are kept until the chosen chat adds them.
+- When a mobile voice call can't start, the app says why instead of opening Voice settings.
+- Chats on slow connections finish loading and go live instead of retrying every 2 seconds forever.
+- Bots with full memory make room and save the new fact in one edit instead of looping on errors.
+- A computer still restoring its disk after a restart no longer fails its first command, and a run that arrives while a computer is going to sleep wakes it straight back up.
+- On a shared computer, a bot's shell and terminal drive that bot's own Chrome instead of the first screen's.
+- A computer's saved home is no longer deleted early as unused when its organization paid for a plan that has since lapsed.
+- Copying a routine keeps the original routine's time zone.
+- Gemini 4 Neon and Gemini 4 Hydrogen no longer fail every message at the **Extra high** thinking level. A saved Extra high now runs at High.
+- Adding an MCP server that accepts only pre-registered apps asks for an OAuth client ID instead of failing.
+- Single sign-on accepts `email_verified` sent as the text `"true"`.
+- Browser dictation in a language the browser can't recognize switches to the connected transcription provider.
+- Credential requests wrap on mobile instead of being cut off.
+- Pi tools whose nested inputs accept any JSON value take object arguments again.
+- Desktop: **Let bots use this computer** works on Linux desktops Chromium does not recognize, such as Hyprland, Sway and i3, when a system keyring runs; **This computer** setup no longer stops when Rakazo's data folder is reached through a symlink; and the macOS server finds command-line tools installed for the current user.
+
+### Self-host upgrade notes
+
+- Signed-in API requests from origins outside the deployment's trusted web origins are now refused. A server whose sign-in already works is unaffected.
+- A server started without `NODE_ENV=production` has no sign-in rate limit unless you set `AUTH_RATE_LIMIT_ENABLED=true`.
+- If you run Claude Code signed in with `claude auth login`, switch to the setup token (`RAKAZO_CLAUDE_CODE_SETUP_TOKEN=1`) to keep your account email away from the model.
+- When a bot, role or chat leaves the thinking level unset, a model now runs at its connection's saved level instead of medium.
+- If you install with the standalone Compose file, back up its `secrets` volume with the database, because it holds the generated `ENCRYPTION_KEY`.
+
 ## [0.15.0] - 2026-11-23
 
 ### Security

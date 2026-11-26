@@ -77,7 +77,7 @@ describe("reflect_memory", () => {
 
     expect(ctx.state.tainted).toBe(true);
     expect(reflect).toHaveBeenCalledWith(
-      { query: "What does the user prefer?", botId: "bot-1" },
+      { query: "What does the user prefer?", botId: "bot-1", scope: "shared" },
       context,
     );
   });
@@ -158,6 +158,17 @@ describe("appendMemoryFact", () => {
 
   it("starts an empty document with the fact", () => {
     expect(appendMemoryFact("", "  durable fact  ")).toBe("durable fact\n");
+  });
+
+  it("treats the same fact saved on another day as one it already holds", () => {
+    const existing = "Prefers mornings. (saved 2026-03-01)\n";
+    expect(appendMemoryFact(existing, "Prefers mornings. (saved 2026-03-09)")).toBe(existing);
+  });
+
+  it("adds a fact again when it comes with a new end", () => {
+    const existing = "Hold sends. (saved 2026-03-01, ends 2026-03-12)\n";
+    const renewed = "Hold sends. (saved 2026-03-09, ends 2026-03-30)";
+    expect(appendMemoryFact(existing, renewed)).toBe(`${existing}${renewed}\n`);
   });
 
   it("leaves memory unchanged for a fact it already holds or an empty fact", () => {

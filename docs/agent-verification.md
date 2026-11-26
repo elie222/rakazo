@@ -629,6 +629,9 @@ The offline model-protocol fixture runs the same product path and proves that an
 appended Berlin beside London and a claimed save after a full-memory refusal
 fail, while a rewrite and one call that makes room and saves pass.
 
+`memory-ended-rule` starts from memory holding a rule whose end date passed months ago;
+when asked which standing instructions apply, the reply must not present it as in force.
+
 Seven `memory-proactive-*` cases check that the bot takes notes on its own. In
 three, the user mentions a lasting fact in passing (a child's allergy, a team
 decision, a new job) without asking for it to be saved: a save must happen, and

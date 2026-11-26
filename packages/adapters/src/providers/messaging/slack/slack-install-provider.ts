@@ -8,6 +8,7 @@ import {
   readBoundedText,
 } from "../../../messaging/chat-sdk-surface.js";
 import { messagingPlatformsFromEnv } from "../../../messaging/messaging-platforms.js";
+import { slackOutbound } from "./slack-messaging.js";
 
 const MAX_OAUTH_RESPONSE_BYTES = 64 * 1024;
 /** What Slack answers for a code the person can get again by starting over. */
@@ -34,6 +35,7 @@ const SCOPES = [
 export class SlackInstallProvider implements MessagingInstallProvider {
   readonly provider = "slack";
   readonly capabilities = { direct: true, groups: true, receipt: "reaction" as const };
+  readonly outbound = slackOutbound;
   constructor(
     private readonly config: {
       clientId: string;

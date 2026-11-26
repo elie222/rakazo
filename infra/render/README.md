@@ -7,12 +7,11 @@ The Blueprint in [`render.yaml`](../../render.yaml) runs Rakazo on one Render we
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/elie222/rakazo)
 
 1. Open the Blueprint. Enter your email in `OWNER_EMAIL`.
-2. Choose where bot computers run. Leave `SANDBOX_PROVIDER` blank for Boat and enter `BOAT_API_KEY`, or set it to `e2b` or `daytona` and enter that provider's key. Leave the other keys blank.
-3. Wait for the first build and deploy to finish. Open the service's `onrender.com` address.
-4. Sign in with your email and the generated `OWNER_PASSWORD` from the service's Environment tab. Change the password in account settings.
-5. Connect your model account in Rakazo and send Chief a message.
+2. Wait for the first build and deploy to finish. Open the service's `onrender.com` address.
+3. Sign in with your email and the generated `OWNER_PASSWORD` from the service's Environment tab. Change the password in account settings.
+4. Connect your model account in Rakazo and send Chief a message.
 
-The service needs a paid instance type, because Render attaches disks only to paid services. Other [computer providers](../../docs/self-host-sandbox-providers.md#remote-providers) work too: set `SANDBOX_PROVIDER` and that provider's variables in the Environment tab.
+The service needs a paid instance type, because Render attaches disks only to paid services. Computers are off initially. To enable them, choose a [remote computer provider](../../docs/self-host-sandbox-providers.md#remote-providers) and set `SANDBOX_PROVIDER` and its credentials in the Environment tab.
 
 ## How it runs
 

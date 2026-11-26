@@ -1,3 +1,4 @@
+import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { RunHistoryWriteError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -193,6 +194,57 @@ describe("executor tool effect ownership", () => {
       expect(f.append).not.toHaveBeenCalled();
     },
   );
+  it("finds a legacy row even after a modern row with the same request", async () => {
+    const modern = { ...effect(`${"one"}:write_fixture:${"a".repeat(64)}`, "one"), id: "modern" };
+    const legacy = { ...effect("call_1", "one"), id: "legacy" };
+    const f = fixture([modern, legacy]);
+    expect(
+      await recordEffect(
+        f.deps,
+        run("one"),
+        "write_fixture",
+        runScopedToolExecutionId("one", "call_1"),
+        {},
+        "call_1",
+      ),
+    ).toEqual({ duplicate: true, effect: legacy });
+    expect(f.create).not.toHaveBeenCalled();
+  });
+  it("does not reconcile onto a modern row with the same request", async () => {
+    const modern = { ...effect(`${"one"}:write_fixture:${"a".repeat(64)}`, "one"), id: "modern" };
+    const f = fixture([modern]);
+    const result = await recordEffect(
+      f.deps,
+      run("one"),
+      "write_fixture",
+      runScopedToolExecutionId("one", "call_1"),
+      {},
+      "call_1",
+    );
+    expect(result.duplicate).toBe(false);
+    expect(f.create).toHaveBeenCalledTimes(1);
+  });
+  it("keeps the legacy reconciliation linear across a long run's calls", async () => {
+    // Sized so the key-first scan stays far under the bound on a slow runner, while serializing
+    // every stored request on every call, as reading the history before testing the key would
+    // do, runs far past it rather than merely close to it.
+    const calls = 300;
+    const request = { payload: "x".repeat(128 * 1024) };
+    const modern = (index: number) => `one:write_fixture:${index.toString(16).padStart(64, "0")}`;
+    const f = fixture(
+      Array.from({ length: calls }, (_, index) => ({
+        ...effect(modern(index), "one"),
+        id: `modern-${index}`,
+        request,
+      })),
+    );
+    await expectLinearTime(async () => {
+      for (let index = 0; index < calls; index += 1) {
+        await recordEffect(f.deps, run("one"), "write_fixture", modern(calls + index), request);
+      }
+    });
+  });
+
   it("does not confuse separator-containing model IDs or run IDs", () => {
     expect(runScopedToolExecutionId("a:b", "c")).not.toBe(runScopedToolExecutionId("a", "b:c"));
   });

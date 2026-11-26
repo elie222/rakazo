@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -482,10 +483,24 @@ describe("favicon resolver", () => {
     expect(await iconOf(resolver, "https://long.test")).toMatch(/^data:image\/png/);
   });
 
-  it("refuses an icon larger than 64 KB", async () => {
+  it("uses a large PNG icon of about 100 KB", async () => {
+    const bytes = await sharp(randomBytes(160 * 160 * 4), {
+      raw: { width: 160, height: 160, channels: 4 },
+    })
+      .png()
+      .toBuffer();
+    expect(bytes.length).toBeGreaterThan(64 * 1024);
+    routes.set("big.test/", html('<link rel="icon" href="/i.png">'));
+    routes.set("big.test/i.png", image(bytes));
+    const resolver = createFaviconResolver({ fetch: testFetch, resolveHostname: publicResolver });
+
+    expect(await iconOf(resolver, "https://big.test")).toMatch(/^data:image\/png/);
+  });
+
+  it("refuses an icon larger than 256 KB", async () => {
     routes.set("huge.test/", html('<link rel="icon" href="/i.png">'));
-    routes.set("huge.test/i.png", image(new Uint8Array(70 * 1024)));
-    routes.set("huge.test/favicon.ico", image(new Uint8Array(70 * 1024)));
+    routes.set("huge.test/i.png", image(new Uint8Array(257 * 1024)));
+    routes.set("huge.test/favicon.ico", image(new Uint8Array(257 * 1024)));
     const resolver = createFaviconResolver({ fetch: testFetch, resolveHostname: publicResolver });
 
     expect(await iconOf(resolver, "https://huge.test")).toBeNull();

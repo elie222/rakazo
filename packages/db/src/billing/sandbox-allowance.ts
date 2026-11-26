@@ -12,7 +12,8 @@ import {
 import type { PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import { runAsSystem, runAsSystemInTransaction } from "../database/row-security.js";
-import { hasBillingAccess } from "./billing.js";
+import type { FreeByokTiers } from "./billing.js";
+import { activeFreeByokTier, FREE_BYOK_ACCOUNT_SELECT, hasBillingAccess } from "./billing.js";
 
 /**
  * The own-key tier an organization's computers get: a live own-key subscription's tier, whatever
@@ -52,7 +53,7 @@ export async function sandboxAllowancePlan(
     prisma.organization.findUnique({
       where: { id: organizationId },
       select: {
-        modelCredits: { select: { mode: true } },
+        modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },
         billing: {
           select: {
             creditAmountCents: true,
@@ -71,18 +72,15 @@ export async function sandboxAllowancePlan(
   if (!settings?.modelCreditsEnabled) return null;
   const billing = organization?.billing;
   const { live, periodStart, since } = allowancePeriod(billing, now);
-  const tier = byokTierOf(organization?.modelCredits?.mode, billing);
+  const free = activeFreeByokTier(organization?.modelCredits, billing?.status ?? null, now);
+  const tier = free?.tier ?? byokTierOf(organization?.modelCredits?.mode, billing);
   const creditShare = (cents: number) =>
     Math.floor((cents * CREDITS_SANDBOX_ALLOWANCE_PERCENT) / 100);
   if (billing?.status !== "trialing" && !tier && !billing?.creditAmountCents) {
     // Granted credit without a monthly plan: its share is one pool, spent since the first grant.
-    const granted = await prisma.accessGrant.aggregate({
-      where: { organizationId, appliedAt: { not: null }, creditCents: { gt: 0 } },
-      _sum: { creditCents: true },
-      _min: { appliedAt: true },
-    });
-    if (granted._sum.creditCents && granted._min.appliedAt) {
-      const since = granted._min.appliedAt;
+    const granted = await grantedCreditPool(prisma, organizationId);
+    if (granted) {
+      const since = granted.since;
       // Grants from a paid plan's earlier periods already reset; its last period's still count. A
       // yearly plan's period is the month that began on its last anniversary before it ended.
       const periodStartsAt = billing?.currentPeriodStartsAt;
@@ -101,7 +99,7 @@ export async function sandboxAllowancePlan(
         lastPeriod && lastPeriod > since ? lastPeriod : since,
       );
       return {
-        limitCents: creditShare(granted._sum.creditCents) + extraCents,
+        limitCents: creditShare(granted.cents) + extraCents,
         extraCents,
         since,
         resetsAt: null,
@@ -131,12 +129,28 @@ export async function sandboxAllowancePlan(
     (!tier && !live) ||
     billing?.status === "trialing" ||
     reset <= now ||
+    (free && free.expiresAt <= reset) ||
     (live && periodEnd != null && periodEnd <= now) ||
     // The cancellation flag can also mean a scheduled date before the billing period ends.
     (live && billing?.cancelAtPeriodEnd)
       ? null
       : reset;
   return { limitCents, extraCents, since, resetsAt };
+}
+
+/** Credit an operator granted the organization, summed, and when the first grant applied. */
+async function grantedCreditPool(
+  prisma: Pick<PrismaClient, "accessGrant">,
+  organizationId: string,
+): Promise<{ cents: number; since: Date } | null> {
+  const granted = await prisma.accessGrant.aggregate({
+    where: { organizationId, appliedAt: { not: null }, creditCents: { gt: 0 } },
+    _sum: { creditCents: true },
+    _min: { appliedAt: true },
+  });
+  return granted._sum.creditCents && granted._min.appliedAt
+    ? { cents: granted._sum.creditCents, since: granted._min.appliedAt }
+    : null;
 }
 
 /** The monthly allowance period an organization's billing puts it in. */
@@ -167,11 +181,12 @@ function allowancePeriod(
 
 /**
  * What the organization may spend on deployment-funded speech this period, in micros, and when
- * the period began: a share of its plan's monthly price. Without a live plan or a trial it gets
- * nothing; a deployment without model-credit billing never limits speech (null).
+ * the period began: a share of its plan's monthly price. Without a paid plan, named grant, or trial, credit an
+ * operator granted brings its share once, spent since the first grant; otherwise it gets nothing.
+ * A deployment without model-credit billing never limits speech (null).
  */
 export async function speechAllowancePlan(
-  prisma: Pick<PrismaClient, "deploymentSettings" | "organization">,
+  prisma: Pick<PrismaClient, "deploymentSettings" | "organization" | "accessGrant">,
   organizationId: string,
   now = new Date(),
 ): Promise<{ limitMicros: bigint; since: Date } | null> {
@@ -183,6 +198,7 @@ export async function speechAllowancePlan(
     prisma.organization.findUnique({
       where: { id: organizationId },
       select: {
+        modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },
         billing: {
           select: {
             creditAmountCents: true,
@@ -203,9 +219,11 @@ export async function speechAllowancePlan(
   const { live, since } = allowancePeriod(billing, now);
   // A paid tier counts only while its subscription is live; a lapsed one pays for nothing.
   const tier = byokTierOf(null, billing);
+  const free = activeFreeByokTier(organization?.modelCredits, billing?.status ?? null, now);
   const ended = billing?.currentPeriodEndsAt != null && billing.currentPeriodEndsAt <= now;
-  const planCents =
-    !live || ended || (billing?.status === "trialing" && billing.cancelAtPeriodEnd)
+  const planCents = free
+    ? (BYOK_TIERS[free.tier].monthlyPriceCents ?? 0)
+    : !live || ended || (billing?.status === "trialing" && billing.cancelAtPeriodEnd)
       ? 0
       : billing?.status === "trialing"
         ? (BYOK_TIERS.standard.monthlyPriceCents ?? 0)
@@ -213,13 +231,18 @@ export async function speechAllowancePlan(
           ? (BYOK_TIERS[tier].monthlyPriceCents ?? 0)
           : (billing?.creditAmountCents ?? 0);
   // One cent is 10,000 micros, so a percent of it is 100.
-  return { limitMicros: BigInt(planCents) * BigInt(SPEECH_ALLOWANCE_PERCENT) * 100n, since };
+  const share = (cents: number) => BigInt(cents) * BigInt(SPEECH_ALLOWANCE_PERCENT) * 100n;
+  if (planCents === 0 && billing?.status !== "trialing") {
+    const granted = await grantedCreditPool(prisma, organizationId);
+    if (granted) return { limitMicros: share(granted.cents), since: granted.since };
+  }
+  return { limitMicros: share(planCents), since };
 }
 
 /**
  * What the organization may spend on hosted image and video generation this period, in micros,
- * and when the period began. Only a live paid plan gets any: a trial or an organization without a
- * plan gets none. A deployment without model-credit billing never meters media (null).
+ * and when the period began. A live paid plan or named own-key grant includes media.
+ * A deployment without model-credit billing never meters media (null).
  */
 export async function mediaAllowancePlan(
   prisma: Pick<PrismaClient, "deploymentSettings" | "organization">,
@@ -234,6 +257,7 @@ export async function mediaAllowancePlan(
     prisma.organization.findUnique({
       where: { id: organizationId },
       select: {
+        modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },
         billing: {
           select: {
             creditAmountCents: true,
@@ -255,8 +279,9 @@ export async function mediaAllowancePlan(
   const ended = billing?.currentPeriodEndsAt != null && billing.currentPeriodEndsAt <= now;
   const paid =
     live && !ended && !trial && Boolean(byokTierOf(null, billing) || billing?.creditAmountCents);
+  const free = activeFreeByokTier(organization?.modelCredits, billing?.status ?? null, now);
   // One cent is 10,000 micros.
-  return { limitMicros: paid ? MEDIA_ALLOWANCE_CENTS * 10_000 : 0, since, trial };
+  return { limitMicros: paid || free ? MEDIA_ALLOWANCE_CENTS * 10_000 : 0, since, trial };
 }
 
 async function grantedAllowanceCents(
@@ -301,13 +326,13 @@ export async function grantComputerAllowance(
 
 /** What `allowedComputerSizes` reads from an organization. */
 export const COMPUTER_SIZE_PLAN_SELECT = {
-  modelCredits: { select: { mode: true } },
+  modelCredits: { select: FREE_BYOK_ACCOUNT_SELECT },
   billing: { select: { status: true, byokTier: true, byokPriceCents: true } },
 } as const;
 
 type ComputerSizePlan =
   | {
-      modelCredits: { mode: string | null } | null;
+      modelCredits: FreeByokTiers | null;
       billing: {
         status: string | null;
         byokTier: string | null;
@@ -318,8 +343,13 @@ type ComputerSizePlan =
   | undefined;
 
 /** The sizes an organization's plan lets its computers run at, smallest first. */
-export function allowedComputerSizes(organization: ComputerSizePlan): ComputerSize[] {
-  const tier = byokTierOf(organization?.modelCredits?.mode, organization?.billing);
+export function allowedComputerSizes(
+  organization: ComputerSizePlan,
+  now = new Date(),
+): ComputerSize[] {
+  const tier =
+    activeFreeByokTier(organization?.modelCredits, organization?.billing?.status ?? null, now)
+      ?.tier ?? byokTierOf(organization?.modelCredits?.mode, organization?.billing);
   return computerSizesUpTo(tier ? BYOK_TIERS[tier].computerSize : "standard");
 }
 

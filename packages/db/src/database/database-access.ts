@@ -106,6 +106,9 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
     IF to_regprocedure('public.app_vault_run_unrestricted(text,text)') IS NOT NULL THEN
       GRANT EXECUTE ON FUNCTION public.app_vault_run_unrestricted(text, text) TO ${RUNTIME_ROLE};
     END IF;
+    IF to_regprocedure('public.app_organization_item(text)') IS NOT NULL THEN
+      GRANT EXECUTE ON FUNCTION public.app_organization_item(text) TO ${RUNTIME_ROLE};
+    END IF;
   END $$`);
   await owner.query(
     `DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${RUNTIME_ROLE}', current_database()); END $$`,

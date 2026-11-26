@@ -44,6 +44,8 @@ watch can't be combined with a schedule.
 ### Webhook
 
 Gives you a URL and key. Any service that can send a POST request can start the routine.
+A service that signs its requests with `webhook-id`, `webhook-timestamp` and `webhook-signature`
+headers can use the key as its signing secret, so the key is never sent.
 
 ### Git event
 
@@ -79,6 +81,9 @@ Runs when the bot receives a message in Slack. Needs [Slack connected](./messagi
 - Turn off **Active** to pause a routine without deleting it.
 - **Run history** shows each past run and its result.
 - A running routine shows **Running** in the list, with **Stop**.
+
+A recurring timer skips new runs while an earlier run from that timer is still active. If it is
+waiting for your input, answer in the chat where the question appeared to continue that run.
 
 ## On mobile
 

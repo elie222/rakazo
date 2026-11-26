@@ -1,4 +1,4 @@
-import { MEMORY_REVISION_CONFLICT_ERROR, MemoryRevisionConflictError } from "@rakazo/adapter-kit";
+import { MemoryRevisionConflictError } from "@rakazo/adapter-kit";
 import { HistoryReadInputSchema, HistorySearchInputSchema } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { memoryTools, withoutBlankFields } from "./run-tools-memory.js";
@@ -50,45 +50,16 @@ it.each(["Provider-generated context", ""])(
       bot: { id: "bot-1" },
       context: {},
       state: { tainted: false },
-      memory: { semantic: { reflect: vi.fn(async () => ({ ok: true, value: text })) } },
+      memory: {
+        scope: "isolated",
+        semantic: { reflect: vi.fn(async () => ({ ok: true, value: text })) },
+      },
       deps: { prisma: { run: { updateMany: vi.fn(async () => ({ count: 1 })) } } },
     };
     await memoryTools.reflect_memory!(ctx as never, { args: { query: "Question" } } as never);
     expect(ctx.state.tainted).toBe(Boolean(text));
   },
 );
-
-describe("saving shared memory over a newer revision", () => {
-  const save = (failure: Error) => {
-    const finish = vi.fn((result: unknown) => result);
-    const ctx = {
-      runId: "run-1",
-      thread: { id: "thread-1" },
-      context: {},
-      deps: {
-        memory: {
-          read: vi.fn(async () => ({ documents: [{ revision: 1 }] })),
-          commit: vi.fn().mockRejectedValue(failure),
-        },
-      },
-    };
-    return memoryTools.save_shared_memory!(
-      ctx as never,
-      { args: { path: "team.md", content: "new" }, finish } as never,
-    );
-  };
-
-  it("tells the bot to read again", async () => {
-    await expect(save(new MemoryRevisionConflictError())).resolves.toEqual({
-      error: MEMORY_REVISION_CONFLICT_ERROR,
-    });
-  });
-
-  it("lets another failure through, even one quoting the conflict", async () => {
-    const failure = new Error(MEMORY_REVISION_CONFLICT_ERROR);
-    await expect(save(failure)).rejects.toBe(failure);
-  });
-});
 
 describe("deleting a shared memory document", () => {
   const del = (path: string, documents: Array<{ id: string; path: string }>, removed = true) => {
@@ -147,10 +118,15 @@ describe("remembering in another private memory document", () => {
     };
     const ctx = {
       runId: "run-1",
+      run: { userId: "user-1" },
       bot: { id: "bot-1" },
       thread: { id: "thread-1" },
       context: {},
-      deps: { memory },
+      deps: {
+        memory,
+        now: () => new Date("2026-03-05T23:30:00Z"),
+        prisma: { user: { findUnique: async () => ({ timezone: "Pacific/Auckland" }) } },
+      },
     };
     const result = memoryTools.remember!(
       ctx as never,
@@ -174,8 +150,54 @@ describe("remembering in another private memory document", () => {
     expect(memory.commit).toHaveBeenCalledWith(
       expect.objectContaining({
         path: "USER.md",
-        content: "# User\n- Lives in Berlin\n- Likes tea\n",
+        content: "# User\n- Lives in Berlin (saved 2026-03-06)\n- Likes tea\n",
         expectedRevision: 3,
+      }),
+      {},
+    );
+  });
+
+  it("edits the Space's shared memory again after a concurrent save", async () => {
+    const { memory, result } = remember(
+      { shared: true, operations: [{ action: "add", content: "Invoices go to Dana." }] },
+      [{ path: "MEMORY.md", content: "# Team\n", revision: 2 }],
+    );
+    memory.commit.mockRejectedValueOnce(new MemoryRevisionConflictError());
+    await expect(result).resolves.toEqual({ ok: true });
+    expect(memory.read).toHaveBeenCalledWith({ scope: "user", path: "MEMORY.md" }, {});
+    expect(memory.commit).toHaveBeenCalledTimes(2);
+    expect(memory.commit).toHaveBeenLastCalledWith(
+      {
+        scope: "user",
+        path: "MEMORY.md",
+        content: "# Team\nInvoices go to Dana. (saved 2026-03-06)\n",
+        expectedRevision: 2,
+        sourceRunId: "run-1",
+        sourceThreadId: "thread-1",
+      },
+      {},
+    );
+  });
+
+  it("stamps a temporary entry with its end", async () => {
+    const { memory, result } = remember(
+      {
+        operations: [
+          { action: "add", content: "No visits to the flat.", until: "2026-03-19" },
+          {
+            action: "add",
+            content: "Quote 7 days for delivery.",
+            until: "the courier backlog clears",
+          },
+        ],
+      },
+      [{ path: "MEMORY.md", content: "", revision: 1 }],
+    );
+    await expect(result).resolves.toEqual({ ok: true });
+    expect(memory.commit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "No visits to the flat. (saved 2026-03-06, ends 2026-03-19)\nQuote 7 days for delivery. (saved 2026-03-06, ends when the courier backlog clears)\n",
       }),
       {},
     );

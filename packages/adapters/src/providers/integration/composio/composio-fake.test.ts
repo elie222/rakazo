@@ -65,6 +65,40 @@ describe("ComposioConnector over the fake Composio client", () => {
     expect(createConnectorStack(connector).connector.managed("composio")).toBe(connector);
   });
 
+  it("uses separate personal and organization sessions for the same app", async () => {
+    const { fake, connector } = setup();
+    const organizationId = "team-fixture";
+    const { state } = await connector.begin(
+      { provider: "GMAIL", redirectUrl: "https://example.test/callback" },
+      { ...context(), organizationId },
+    );
+    const memberId = "member-fixture";
+    const personalRef = await connect(connector, "GMAIL", memberId);
+    const shared = { ...connection("GMAIL", state), organizationId };
+    const personal = connection("GMAIL", personalRef);
+    const ctx = context([personal, shared], memberId);
+    const tool = (await connector.discoverTools(ctx)).find(
+      (tool) =>
+        tool.route?.connectionId === shared.id && tool.route.toolName === "GMAIL_LIST_LABELS",
+    );
+    expect(tool).toBeDefined();
+    const events: ConnectorEvent[] = [];
+    for await (const event of connector.execute(
+      {
+        tool: tool!.name,
+        route: tool!.route,
+        args: {},
+        executionId: "organization-action",
+      },
+      ctx,
+    ))
+      events.push(event);
+    expect(events[0]?.type).toBe("result");
+    expect(fake.executions.at(-1)).toMatchObject({ userId: "organization:team-fixture" });
+    await run(connector, "GMAIL_LIST_LABELS", {}, ctx);
+    expect(fake.executions.at(-1)).toMatchObject({ userId: memberId });
+  });
+
   it("serves and searches the toolkit catalog", async () => {
     const { connector } = setup();
 

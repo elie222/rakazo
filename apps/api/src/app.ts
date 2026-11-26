@@ -118,6 +118,7 @@ import { isTrustedOrigin, mobileAuthOrigins } from "./auth/trusted-origins.js";
 import { mountUserDeviceRoutes } from "./auth/user-devices.js";
 import { createBillingService } from "./billing/billing.js";
 import { mountBillingRoutes } from "./billing/billing-webhook.js";
+import { mountBotAccess } from "./bot-access/public-api-routes.js";
 import { createSpeechSummarizer } from "./calls/speech-summary.js";
 import { mountVoiceHttpRoutes } from "./calls/voice.js";
 import { homeRetentionSweep } from "./computers/home-retention.js";
@@ -632,12 +633,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
 
   // Self-hosted deployments without billing keep every saved home.
   const stopHomeRetention =
-    email && billingProvider && home instanceof ObjectAgentHomeStore
+    email && billing && home instanceof ObjectAgentHomeStore
       ? startHourlySweep(
           homeRetentionSweep({
             prisma,
             email,
             appUrl: new URL("/app", env.webOrigin).href,
+            syncBilling: (customerId) => billing.sync(customerId),
             onError: (error) => getLogger().error("saved home retention failed", error),
           }),
           (error) => getLogger().error("saved home retention failed", error),
@@ -805,7 +807,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
   mountApiRequestBodyLimits(app);
   mountScreenTarget(app, prisma, env.screenProxySecret);
   mountScriptAssets(app);
-  mountSharedPages(app, prisma, requestClientIp);
+  mountSharedPages(app, { prisma, artifacts }, requestClientIp);
   const auditAuthResponse = createAuthResponseAudit();
   for (const [path, reason] of SYSTEM_CONTEXT_PATHS) {
     app.use(path, (_c, next) => runAsSystem(reason, next));
@@ -865,9 +867,10 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
   }
   mountRpcRoute(app, router, requestSession, env);
+  mountBotAccess(app, { prisma, auth, router, jobs, encryptionKey: env.encryptionKey });
   mountAccountExportRoute(app, { prisma, auth, artifacts, home });
   mountAuditExportRoute(app, { prisma, sessionActor });
-  mountVoiceHttpRoutes(app, { prisma, secrets, env }, (c) => sessionActor(c.req.raw));
+  mountVoiceHttpRoutes(app, { prisma, secrets, env }, (c) => sessionActor(c.req.raw), env);
   mountAccountImportRoute(
     app,
     { ...spaceDeletionDeps, maxArtifactBytes: env.maxUploadSizeBytes },

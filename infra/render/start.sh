@@ -13,6 +13,6 @@ if [[ -n "${RENDER_EXTERNAL_HOSTNAME:-}" ]]; then
 fi
 # Render's edge appends to a caller's own X-Forwarded-For; True-Client-IP is the address it saw.
 export CLIENT_IP_HEADER="${CLIENT_IP_HEADER:-true-client-ip}"
-export SANDBOX_PROVIDER="${SANDBOX_PROVIDER:-boat}"
+export SANDBOX_PROVIDER="${SANDBOX_PROVIDER:-}"
 
-exec bash "$(dirname "$0")/../railway/start.sh"
+exec bash "$(dirname "$0")/../railway/start.sh" migrate render

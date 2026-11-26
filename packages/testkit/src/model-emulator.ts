@@ -72,6 +72,12 @@ export async function startModelEmulator(options: {
       response.writeHead(404).end();
       return;
     }
+    // Saving a connection reads the server's model list.
+    if (request.method === "GET" && request.url === "/v1/models") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ object: "list", data: [{ id: modelId, object: "model" }] }));
+      return;
+    }
     void (async () => {
       assert.equal(request.method, "POST", "Expected a model POST request");
       assert.equal(request.url, "/v1/chat/completions", "Unexpected model endpoint");
