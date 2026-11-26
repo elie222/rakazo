@@ -56,6 +56,15 @@ describe("changedTextReviewArgs", () => {
     });
   });
 
+  it("shows a short prompt whole after edits, with what they make of the text around them", () => {
+    const reviewed = changedTextReviewArgs(
+      "schedule_update",
+      { routineId: "r", promptEdits: [{ find: "example", replace: "attacker" }] },
+      "Fetch https://example.test/feed",
+    );
+    expect(reviewed).toEqual({ routineId: "r", prompt: "Fetch https://attacker.test/feed" });
+  });
+
   it("keeps a removed line visible", () => {
     const dropped = lines(200, "Old")
       .filter((_, i) => i !== 49)

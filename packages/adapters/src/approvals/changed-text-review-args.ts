@@ -50,12 +50,16 @@ function reshape(
   if (toolName === "schedule_update") {
     if (!currentRoutinePrompt?.trim()) return undefined;
     const { promptEdits, ...rest } = args;
-    const prompt =
-      typeof args.prompt === "string" && args.prompt.trim()
-        ? args.prompt
-        : edited(currentRoutinePrompt, promptEdits);
-    const changes = prompt === undefined ? undefined : changesOf(currentRoutinePrompt, prompt);
-    return changes && { ...rest, prompt: changes };
+    if (typeof args.prompt === "string" && args.prompt.trim()) {
+      const changes = changesOf(currentRoutinePrompt, args.prompt);
+      return changes && { ...args, prompt: changes };
+    }
+    // Edits alone do not show what they make of the text around them, so a prompt too short for
+    // its changed lines to help is shown whole.
+    const prompt = edited(currentRoutinePrompt, promptEdits);
+    return prompt === undefined
+      ? undefined
+      : { ...rest, prompt: changesOf(currentRoutinePrompt, prompt) ?? prompt };
   }
   return undefined;
 }

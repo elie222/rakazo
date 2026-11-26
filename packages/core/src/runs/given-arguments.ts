@@ -13,14 +13,3 @@ export function textEditsGiven(value: unknown): boolean {
 export function writesRoutinePrompt(args: Record<string, unknown>): boolean {
   return argumentGiven(args.prompt) || textEditsGiven(args.promptEdits);
 }
-
-/** The words a routine update puts into its prompt: the whole new one, or what its edits add. */
-export function writtenRoutinePromptText(args: Record<string, unknown>): string {
-  if (argumentGiven(args.prompt)) return String(args.prompt);
-  if (!Array.isArray(args.promptEdits)) return "";
-  return args.promptEdits
-    .map((edit: { replace?: unknown } | null) =>
-      typeof edit?.replace === "string" ? edit.replace : "",
-    )
-    .join("\n");
-}

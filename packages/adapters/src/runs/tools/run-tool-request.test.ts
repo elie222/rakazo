@@ -262,6 +262,11 @@ describe("schedule tools on another bot's routines", () => {
     await expect(prepared).resolves.toEqual({
       error: "promptEdits needs a run the owner started. Send the whole prompt instead.",
     });
+    const own = managedRoutineCall({ ownerStartedRun: false, trigger: "webhook" })(
+      "schedule_update",
+      { bot_name: "Me", routineId: "r", promptEdits: [{ find: "a", replace: "b" }] },
+    );
+    await expect(own.prepared).resolves.toBeUndefined();
   });
 
   it.each(["webhook", "bot_message", "spawn", "tickets"])(

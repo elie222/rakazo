@@ -1297,6 +1297,14 @@ describe("updateScheduleFromTool", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
+  it("refuses prompt edits that change nothing, so every saved edit shows a change", async () => {
+    const { updateMany, update } = setup();
+    await expect(
+      update({ promptEdits: [{ find: "groceries", replace: "groceries " }], active: false }),
+    ).resolves.toEqual({ error: "promptEdits change nothing." });
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   it("edits the prompt in place and keeps the timing", async () => {
     const { updateMany, enqueue, append, update } = setup();
     const prompt = "Order the usual; if cheddar is out of stock, skip it";

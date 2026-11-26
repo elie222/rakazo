@@ -455,7 +455,6 @@ export async function scheduleUpdatePreview(
               : String(args.prompt).trim(),
         }
       : {}),
-    // Edits that change nothing write nothing, so they pin nothing.
     ...(textEditsGiven(args.promptEdits) && typeof changes.prompt?.before === "string"
       ? { prompt: changes.prompt.before }
       : {}),

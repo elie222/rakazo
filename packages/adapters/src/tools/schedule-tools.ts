@@ -1182,6 +1182,7 @@ export async function updateScheduleFromTool(
     if (!edited.ok) return { error: edited.error };
     prompt = edited.text.trim();
     if (!prompt) return { error: "prompt cannot be empty." };
+    if (prompt === existing.prompt) return { error: "promptEdits change nothing." };
   }
 
   let timezone = existing.timezone;
