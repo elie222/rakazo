@@ -1115,4 +1115,41 @@ describe("PageReviewHost comment draft preservation", () => {
       await act(async () => secondRoot.unmount());
     }
   });
+
+  it("keeps the accessible latest revision cached when an older pre-grant revision returns 404", async () => {
+    rpcState.getReview.mockImplementation(async ({ version }) => {
+      if (version === 1) {
+        throw Object.assign(new Error("Not found"), { code: "NOT_FOUND", status: 404 });
+      }
+      return makePage({ version: 2, currentVersion: 2 });
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [makeComment({ id: "comment-v1", version: 1, section: "Summary", body: "v1 note" })],
+      nextCursor: null,
+    });
+
+    await mountReview("/review/page-1");
+    expect(document.querySelector('[data-testid="review-document"]')).not.toBeNull();
+
+    // Open historical revision 1 which predates the reviewer's grant and returns 404.
+    await openCommentsPopover();
+    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+
+    // Latest revision (version: undefined) must keep its cached payload instead of being erased.
+    const latestCached = queryClient
+      .getQueryCache()
+      .findAll({
+        predicate: (query) => {
+          const opts = query.queryKey[1] as
+            | { input?: { pageId?: string; version?: number } }
+            | undefined;
+          return opts?.input?.pageId === "page-1" && opts?.input?.version === undefined;
+        },
+      })
+      .some((query) => query.state.data !== undefined);
+    expect(latestCached).toBe(true);
+  });
 });

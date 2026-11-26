@@ -35,6 +35,12 @@ import {
 } from "./PageReviewComments";
 import { PageView } from "./PageView";
 
+function isNotFoundError(error: unknown): boolean {
+  if (errorCode(error) === "NOT_FOUND") return true;
+  const status = error && typeof error === "object" && "status" in error ? error.status : undefined;
+  return status === 404;
+}
+
 function isUnavailablePageError(error: unknown): boolean {
   const code = errorCode(error);
   if (code === "NOT_FOUND" || code === "FORBIDDEN" || code === "UNAUTHORIZED") return true;
@@ -46,6 +52,7 @@ function isSameReviewerPageReviewQuery(
   queryKey: readonly unknown[],
   userSegment: unknown,
   pageId: string,
+  versionFilter?: { version: number | undefined },
 ): boolean {
   const path = queryKey[0];
   if (
@@ -63,17 +70,51 @@ function isSameReviewerPageReviewQuery(
   const options = queryKey[1];
   if (!options || typeof options !== "object" || !("input" in options)) return false;
   const input = (options as { input?: unknown }).input;
-  return Boolean(
-    input && typeof input === "object" && (input as { pageId?: unknown }).pageId === pageId,
-  );
+  if (!input || typeof input !== "object" || (input as { pageId?: unknown }).pageId !== pageId) {
+    return false;
+  }
+  if (!versionFilter) return true;
+  return (input as { version?: unknown }).version === versionFilter.version;
 }
 
-type PageDenialRecord = { generation: number; spaceSegment: string | undefined; error: unknown };
+type PageDenialRecord = {
+  activeReads: number;
+  generation: number;
+  spaceSegment: string | undefined;
+  error: unknown;
+};
 
 const pageDenials = new WeakMap<QueryClient, Map<string, PageDenialRecord>>();
 
-function pageDenialKey(userSegment: unknown, pageId: string): string {
-  return `${typeof userSegment === "string" ? userSegment : ""}\0${pageId}`;
+function pageDenialKey(userSegment: unknown, pageId: string, version?: number): string {
+  const base = `${typeof userSegment === "string" ? userSegment : ""}\0${pageId}`;
+  return version === undefined ? base : `${base}\0v:${version}`;
+}
+
+function beginPageRead(queryClient: QueryClient, key: string): number {
+  let map = pageDenials.get(queryClient);
+  if (!map) {
+    map = new Map();
+    pageDenials.set(queryClient, map);
+  }
+  const existing = map.get(key);
+  if (existing) {
+    existing.activeReads += 1;
+    return existing.generation;
+  }
+  map.set(key, { activeReads: 1, generation: 0, spaceSegment: undefined, error: undefined });
+  return 0;
+}
+
+function endPageRead(queryClient: QueryClient, key: string): void {
+  const map = pageDenials.get(queryClient);
+  const existing = map?.get(key);
+  if (!map || !existing) return;
+  existing.activeReads -= 1;
+  if (existing.activeReads <= 0) {
+    map.delete(key);
+    if (map.size === 0) pageDenials.delete(queryClient);
+  }
 }
 
 function getPageDenial(queryClient: QueryClient, key: string): PageDenialRecord | undefined {
@@ -86,13 +127,11 @@ function recordPageDenial(
   spaceSegment: string | undefined,
   error: unknown,
 ): void {
-  let map = pageDenials.get(queryClient);
-  if (!map) {
-    map = new Map();
-    pageDenials.set(queryClient, map);
-  }
-  const previous = map.get(key);
-  map.set(key, { generation: (previous?.generation ?? 0) + 1, spaceSegment, error });
+  const existing = pageDenials.get(queryClient)?.get(key);
+  if (!existing) return;
+  existing.generation += 1;
+  existing.spaceSegment = spaceSegment;
+  existing.error = error;
 }
 
 export default function PageReviewHost() {
@@ -149,32 +188,71 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
           predicate: (query) => isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId),
         });
       const denialKey = pageDenialKey(userSegment, pageId);
-      const startGeneration = getPageDenial(queryClient, denialKey)?.generation ?? 0;
+      const revisionDenialKey =
+        version !== undefined ? pageDenialKey(userSegment, pageId, version) : undefined;
+      const startGeneration = beginPageRead(queryClient, denialKey);
+      const startRevisionGeneration =
+        revisionDenialKey !== undefined ? beginPageRead(queryClient, revisionDenialKey) : 0;
       let fetched: PageReview;
       try {
-        fetched = await read.queryFn!(context);
-      } catch (error) {
-        if (isUnavailablePageError(error)) {
-          recordPageDenial(queryClient, denialKey, spaceSegment, error);
-          // Drop every cached revision payload for this reviewer and page across Spaces so failed
-          // retries, remounts, or Space switches while offline cannot resurface a revoked page
-          // before a new authorized read succeeds.
-          for (const query of matchingQueries()) {
-            query.setState({ data: undefined, dataUpdatedAt: 0 });
+        try {
+          fetched = await read.queryFn!(context);
+        } catch (error) {
+          if (isUnavailablePageError(error)) {
+            if (revisionDenialKey !== undefined && isNotFoundError(error)) {
+              // A 404 on an explicit historical revision can mean that revision predates the
+              // reviewer's grant while the latest revision remains accessible. Clear only the
+              // denied revision and invalidate siblings so accessible views stay visible and
+              // revalidate against the server.
+              recordPageDenial(queryClient, revisionDenialKey, spaceSegment, error);
+              for (const query of matchingQueries()) {
+                if (
+                  isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId, { version })
+                ) {
+                  query.setState({ data: undefined, dataUpdatedAt: 0 });
+                }
+              }
+              void queryClient.invalidateQueries({
+                predicate: (query) =>
+                  isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId) &&
+                  !isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId, { version }),
+              });
+            } else {
+              recordPageDenial(queryClient, denialKey, spaceSegment, error);
+              // Drop every cached revision payload for this reviewer and page across Spaces so
+              // failed retries, remounts, or Space switches while offline cannot resurface a
+              // revoked page before a new authorized read succeeds.
+              for (const query of matchingQueries()) {
+                query.setState({ data: undefined, dataUpdatedAt: 0 });
+              }
+            }
+          }
+          throw error;
+        }
+        const latestDenial = getPageDenial(queryClient, denialKey);
+        if (
+          latestDenial &&
+          latestDenial.generation !== startGeneration &&
+          !(fetched.owner && latestDenial.spaceSegment !== spaceSegment)
+        ) {
+          // Reject same-Space or non-owner reads started before a 401/403/404 denial so an in-flight
+          // pre-revocation response cannot repopulate the cache; a retry started afterward or an
+          // independently authorized owner read in another Space still succeeds.
+          throw latestDenial.error;
+        }
+        if (revisionDenialKey !== undefined) {
+          const latestRevisionDenial = getPageDenial(queryClient, revisionDenialKey);
+          if (
+            latestRevisionDenial &&
+            latestRevisionDenial.generation !== startRevisionGeneration &&
+            !(fetched.owner && latestRevisionDenial.spaceSegment !== spaceSegment)
+          ) {
+            throw latestRevisionDenial.error;
           }
         }
-        throw error;
-      }
-      const latestDenial = getPageDenial(queryClient, denialKey);
-      if (
-        latestDenial &&
-        latestDenial.generation !== startGeneration &&
-        !(fetched.owner && latestDenial.spaceSegment !== spaceSegment)
-      ) {
-        // Reject same-Space or non-owner reads started before a 401/403/404 denial so an in-flight
-        // pre-revocation response cannot repopulate the cache; a retry started afterward or an
-        // independently authorized owner read in another Space still succeeds.
-        throw latestDenial.error;
+      } finally {
+        endPageRead(queryClient, denialKey);
+        if (revisionDenialKey !== undefined) endPageRead(queryClient, revisionDenialKey);
       }
       let newest = fetched.currentVersion;
       const cachedQueries = matchingQueries();
