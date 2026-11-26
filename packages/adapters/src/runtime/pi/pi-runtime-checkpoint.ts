@@ -120,6 +120,13 @@ export function buildTurnCheckpoint(input: {
   if (input.restoredMessages) {
     // Only results before the paused assistant turn in the restored checkpoint were actually
     // delivered to an earlier model; trailing sibling results await their first delivery.
+    // Pi prepends a leading system message when initializing a legacy checkpoint without one.
+    const restoredOffset =
+      input.restoredMessages.length > 0 &&
+      input.stateMessages[0]?.role === "system" &&
+      input.restoredMessages[0]?.role !== "system"
+        ? 1
+        : 0;
     const lastRestoredAssistant = input.restoredMessages.findLastIndex(
       (message) => message.role === "assistant",
     );
@@ -134,7 +141,7 @@ export function buildTurnCheckpoint(input: {
       if (restoredItems.length === 0) continue;
       const retainedMatch =
         messageSourceIndexes !== undefined
-          ? retainedWatchBySourceIndex.get(index)
+          ? retainedWatchBySourceIndex.get(index + restoredOffset)
           : retainedWatch.find(
               (retained) =>
                 retained.toolCallId === message.toolCallId &&

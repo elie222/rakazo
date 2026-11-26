@@ -2592,3 +2592,119 @@ it("matches watch delivery provenance by call occurrence when a provider reuses 
   expect(ctx.state.outsideText).not.toContain("owner-reused-1@example.test");
   expect(ctx.state.outsideText).not.toContain("owner-reused-2@example.test");
 });
+
+it("does not duplicate retained watch results into watchOutsideText when Pi prepends a leading system message on resume", () => {
+  const emptyUsage = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+  const details = {
+    routines: [
+      {
+        routineId: "r-legacy-sys",
+        prompt: "Owner prompt",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: "Alert legacy-watch-target@outside.test",
+        },
+      },
+    ],
+  };
+  // Legacy v1 checkpoint without a leading system message.
+  const legacyRestoredMessages: Message[] = [
+    { role: "user", content: "Check schedules", timestamp: 1 },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "watch-1", name: "schedule_list", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-a",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 2,
+    },
+    {
+      role: "toolResult",
+      toolCallId: "watch-1",
+      toolName: "schedule_list",
+      content: [{ type: "text", text: JSON.stringify(details) }],
+      details,
+      isError: false,
+      timestamp: 3,
+    },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "ask-1", name: "ask_user", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-a",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 4,
+    },
+  ];
+  const systemMessage = {
+    role: "system",
+    content: "Fixture system prompt",
+    timestamp: 0,
+  } as unknown as Message;
+  const initializedStateMessages: Message[] = [
+    systemMessage,
+    ...legacyRestoredMessages,
+    {
+      role: "toolResult",
+      toolCallId: "ask-1",
+      toolName: "ask_user",
+      content: [{ type: "text", text: "Continue" }],
+      isError: false,
+      timestamp: 5,
+    },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "ask-2", name: "ask_user", arguments: {} }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "model-a",
+      usage: emptyUsage,
+      stopReason: "toolUse",
+      timestamp: 6,
+    },
+  ];
+  // Both passing Pi's initialized restored transcript and passing raw legacy restored messages
+  // must recognize that watch-1 at state index 3 is still retained in messages.
+  for (const restoredMessages of [
+    initializedStateMessages.slice(0, legacyRestoredMessages.length + 1),
+    legacyRestoredMessages,
+  ]) {
+    const checkpoint = buildTurnCheckpoint({
+      sentContext: {
+        context: {
+          systemPrompt: "Fixture system prompt",
+          messages: initializedStateMessages.slice(0, 6),
+          tools: [],
+        },
+        sourceLength: 6,
+        sourceIndexes: [0, 1, 2, 3, 4, 5],
+      },
+      stateMessages: initializedStateMessages,
+      restoringCalls: false,
+      tools: [],
+      pendingToolCallId: "ask-2",
+      toolCallCount: 2,
+      mainModelConfig: { provider: "openai", id: "model-a" },
+      provider: "openai",
+      modelId: "model-a",
+      systemPrompt: "Fixture system prompt",
+      representedHistoryIds: new Set(),
+      restoredMessages,
+    });
+    expect(checkpoint.watchOutsideText).toBeUndefined();
+    expect(
+      checkpoint.messages.some((m) => m.role === "toolResult" && m.toolCallId === "watch-1"),
+    ).toBe(true);
+  }
+});

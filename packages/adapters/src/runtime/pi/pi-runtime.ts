@@ -821,6 +821,11 @@ export class PiAgentRuntime implements AgentRuntime {
             messages: history,
           },
         });
+        // Capture Pi's initialized transcript so restored message indexes match agent.state.messages
+        // even when Pi prepends a leading system message to a legacy checkpoint without one.
+        const initialRestoredMessages = restored
+          ? ([...agent.state.messages] as Message[])
+          : undefined;
 
         let restoringCalls = false;
         // Pi publishes parallel results into state only after the entire batch.
@@ -843,7 +848,7 @@ export class PiAgentRuntime implements AgentRuntime {
             foundConnectorTools: host.foundConnectorTools,
             watchDeliveries: runWatchDeliveries,
             priorWatchOutsideText: restored?.watchOutsideText,
-            restoredMessages: restored?.messages,
+            restoredMessages: initialRestoredMessages,
             contextStrategy: request.contextStrategy,
           });
         host.captureCheckpoint = async (toolCallId, executionId) => {
