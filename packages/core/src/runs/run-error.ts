@@ -227,8 +227,23 @@ export function parseModelFallbackFailure(
  * policy blocks, from a gateway passing on a bare safety finish reason, and from provider APIs
  * that reject a model's malformed tool call or empty reply. Never matched against model prose.
  */
-const MODEL_OUTPUT_FAILURE =
-  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|Cyber safeguards flagged this message\b|This request triggered cyber-related safeguards\b|(?:SAFETY|BLOCKLIST|PROHIBITED_CONTENT|SPII|RECITATION|IMAGE_(?:SAFETY|PROHIBITED_CONTENT|RECITATION))$|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's |(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
+/** The provider declined the request itself, so asking again gets the same answer. */
+const MODEL_REFUSAL =
+  /^(?:The model refused to complete the request\b|(?:Codex error: )?This content was flagged for possible cybersecurity risk\b|Cyber safeguards flagged this message\b|This request triggered cyber-related safeguards\b|(?:SAFETY|BLOCKLIST|PROHIBITED_CONTENT|SPII|RECITATION|IMAGE_(?:SAFETY|PROHIBITED_CONTENT|RECITATION))$|This request (?:triggered restrictions on [^\n.]{1,80} and )?was blocked (?:under|as it seems to violate) Anthropic's )/;
+const MODEL_MALFORMED_OUTPUT =
+  /^(?:Provider (?:finish_reason|stopped with): |Unhandled stop reason: |Provider returned an empty response\b|Failed to parse tool call arguments as JSON\b|[Tt]ool call validation failed\b|Parsing failed\. The model generated output that could not be parsed\b|Upstream request failed: \[api_error\] Upstream response was not valid JSON\b|(?:[\w.]+Error: )?unexpected tokens remaining in message header:)/;
+function isModelOutputFailure(text: string): boolean {
+  return MODEL_REFUSAL.test(text) || MODEL_MALFORMED_OUTPUT.test(text);
+}
+
+/** Whether a failed reply's error says the provider refused the request, not that it garbled it. */
+export function isModelRefusal(error: string): boolean {
+  return MODEL_REFUSAL.test(
+    error
+      .trim()
+      .replace(/^(?:Provider (?:finish_reason|stopped with)|Unhandled stop reason): /, ""),
+  );
+}
 
 /** The provider cut off the model's reply, such as a half-written tool call, at its output limit. */
 const MODEL_OUTPUT_LIMIT_REACHED = /\bcut ?off by max_(?:completion_|output_)?tokens\b/i;
@@ -380,8 +395,8 @@ export function normalizeRunError(
   // Output diagnostics can quote generated text that mentions a timeout or a quota.
   if (
     trimmed === MODEL_OUTPUT_LIMIT_ERROR ||
-    MODEL_OUTPUT_FAILURE.test(trimmed) ||
-    MODEL_OUTPUT_FAILURE.test(message) ||
+    isModelOutputFailure(trimmed) ||
+    isModelOutputFailure(message) ||
     // The provider's content filter refused the conversation.
     payload.code === "data_inspection_failed"
   ) {

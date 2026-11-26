@@ -351,6 +351,15 @@ describe("retrying a failed typed reply", () => {
     );
   });
 
+  it("does not offer a fresh reply to a request the provider refused", async () => {
+    const finalize = await fixture().failFromModel(
+      new ModelOutputError("The model refused to complete the request"),
+    );
+    expect(finalize).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "failed", retryable: false }),
+    );
+  });
+
   it("does not offer a fresh reply after a tool has already written data", async () => {
     const f = fixture();
     f.setCalls([

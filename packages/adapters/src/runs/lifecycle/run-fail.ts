@@ -10,6 +10,7 @@ import {
   BACKGROUND_HELPER_TRIGGER,
   containsSecret,
   displayName,
+  isModelRefusal,
   MISSING_TOOL_FINAL_RESPONSE_ERROR,
   normalizeRunError,
   redactSecrets,
@@ -167,11 +168,12 @@ export async function failRun(
     error: message,
     // A fresh run has fresh tool effect keys. Only offer it when this was the first
     // attempt and its model failed, or answered with nothing usable, before any tool
-    // could have done work.
+    // could have done work. A request the provider refused would be refused again.
     retryable:
       run.trigger === "user" &&
       ctx.fence === 1 &&
-      (error instanceof TransientModelError || error instanceof ModelOutputError) &&
+      (error instanceof TransientModelError ||
+        (error instanceof ModelOutputError && !isModelRefusal(error.message))) &&
       !ctx.state.toolStarted &&
       partialReply.length === 0,
     ...(partialReply.length > 0 ? { partialReply } : {}),
