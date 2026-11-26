@@ -22,7 +22,7 @@ export function publishOrganizationChange(
   realtime: RealtimeFanout | undefined,
   organizationId: string,
   alsoUserIds: readonly string[] = [],
-  options: { sleep?: (ms: number) => Promise<void> } = {},
+  options: { sleep?: (ms: number) => Promise<void>; waitForPublish?: boolean } = {},
 ): Promise<void> {
   if (!realtime) return Promise.resolve();
   const publish = async () => {
@@ -37,12 +37,12 @@ export function publishOrganizationChange(
       [...userIds].map((userId) => realtime.publish(organizationChangesTopic(userId), "")),
     );
   };
-  void retryWhileDatabaseUnavailable(publish, {
+  const published = retryWhileDatabaseUnavailable(publish, {
     source: "organization signal",
     waitMs: PUBLISH_RETRY_MS,
-    ...options,
+    sleep: options.sleep,
   }).catch((error: unknown) => getLogger().warn("organization signal not published", { error }));
-  return Promise.resolve();
+  return options.waitForPublish ? published : Promise.resolve();
 }
 
 /**
