@@ -1,7 +1,7 @@
 import type { MaterializedThreadFile } from "./thread-artifacts.js";
 
 function fileLine(file: MaterializedThreadFile, redact?: (text: string) => string): string {
-  const name = redact ? redact(file.name) : file.name;
+  const name = redact && typeof file.name === "string" ? redact(file.name) : file.name;
   return `- ${JSON.stringify(name)} (${file.mimeType}, ${file.size} bytes): ${JSON.stringify(file.path)}`;
 }
 

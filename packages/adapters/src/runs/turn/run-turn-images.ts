@@ -392,7 +392,7 @@ export async function claimRunSteering(
       const filesInstruction = currentTurnFilesInstruction(files, currentTurn.redact);
       const answerReplyContext = currentTurn.resumeAnswerReplyContexts?.get(item.messageId);
       const bodyText = currentTurn.redact
-        ? item.blocks.length
+        ? item.blocks.length && item.text === blocksToAgentHistoryText(item.blocks)
           ? blocksToAgentHistoryText(item.blocks, currentTurn.redact)
           : currentTurn.redact(item.text)
         : item.text;

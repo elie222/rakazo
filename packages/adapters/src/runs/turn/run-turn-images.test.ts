@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { blocksToAgentHistoryText, redactSecrets } from "@rakazo/core";
 import sharp from "sharp";
 import { expect, it, vi } from "vitest";
 import {
@@ -259,24 +259,27 @@ it("redacts quoted reply context, steering text, and attachment display names wh
     },
     artifacts: { get: vi.fn() },
     events: {
-      claimSteering: vi.fn(async () => [
-        {
-          id: "s-1",
-          messageId: "m-steer",
-          origin: "user" as const,
-          text: `follow up ${secret}`,
-          blocks: [
-            { kind: "text", text: `follow up ${secret}` },
-            {
-              kind: "file",
-              artifactId: "art-steer-1",
-              name: `${secret}-schedule.txt`,
-              mimeType: "text/plain",
-              size: 42,
-            },
-          ] satisfies MessageBlock[],
-        },
-      ]),
+      claimSteering: vi.fn(async () => {
+        const blocks: MessageBlock[] = [
+          { kind: "text", text: `follow up ${secret}` },
+          {
+            kind: "file",
+            artifactId: "art-steer-1",
+            name: `${secret}-schedule.txt`,
+            mimeType: "text/plain",
+            size: 42,
+          },
+        ];
+        return [
+          {
+            id: "s-1",
+            messageId: "m-steer",
+            origin: "user" as const,
+            text: blocksToAgentHistoryText(blocks),
+            blocks,
+          },
+        ];
+      }),
     },
   } as unknown as ExecutorDeps;
 
