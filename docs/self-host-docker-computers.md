@@ -100,11 +100,13 @@ supervisor after changing the host rules to run that check again.
 Screen streaming is unaffected: the supervisor and web proxy join each computer's bridge,
 and the ruleset exempts traffic whose in- and out-interface are both `rakazo-c*` before
 any drop (that exemption is load-bearing on hosts where `br_netfilter` feeds bridged
-frames through `FORWARD`). Rules match interface names rather than subnets, so computer
-create/delete cycles need no firewall maintenance; deleting a computer removes its
-traffic from the match and nothing else. A computer provisioned while egress was open
-is replaced on its next provision — resuming it on an unnamed bridge would bypass the
-restriction.
+frames through `FORWARD`). Replies on connections opened from outside the bridge are also
+returned before the drops, so the web UI stays reachable from LAN clients while the web
+container is on a computer's bridge; computers still cannot open connections there. Rules
+match interface names rather than subnets, so computer create/delete cycles need no firewall
+maintenance; deleting a computer removes its traffic from the match and nothing else. A
+computer provisioned while egress was open is replaced on its next provision — resuming it
+on an unnamed bridge would bypass the restriction.
 
 Computers resolve names through Docker's embedded DNS. Docker 28 and newer forward lookups
 to the host's own resolvers from the host's network, so a private host resolver (a cloud VPC

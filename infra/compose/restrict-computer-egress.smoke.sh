@@ -29,6 +29,16 @@ last_v4_user="$(grep '^iptables -I DOCKER-USER' <<<"$printed" | tail -1)"
 grep -qxF 'ip6tables -I DOCKER-USER 1 -i rakazo-c+ -o rakazo-c+ -j RETURN' <<<"$printed" ||
   fail "missing IPv6 same-bridge RETURN"
 
+# Replies on connections opened from outside the bridge (the web container's
+# published port DNATed onto a computer bridge) return before the private-range
+# drops, so LAN clients keep getting answers. It prints just before the
+# same-bridge RETURN and therefore lands second in DOCKER-USER.
+est_user='iptables -I DOCKER-USER 1 -i rakazo-c+ -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN'
+[[ "$(grep '^iptables -I DOCKER-USER' <<<"$printed" | tail -2 | head -1)" == "$est_user" ]] ||
+  fail "established RETURN must print just before the same-bridge RETURN"
+grep -qxF 'ip6tables -I DOCKER-USER 1 -i rakazo-c+ -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN' <<<"$printed" ||
+  fail "missing IPv6 established RETURN"
+
 # Every non-public IPv4 block is dropped on the computer bridges' forwarded path.
 for cidr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 \
   172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4; do
@@ -159,8 +169,8 @@ v4_state="$STUB_DIR/iptables.state"
 v6_state="$STUB_DIR/ip6tables.state"
 v4_calls="$STUB_DIR/iptables.calls"
 
-[[ "$(wc -l <"$v4_state")" -eq 14 ]] || fail "expected 14 IPv4 rules, got $(wc -l <"$v4_state")"
-[[ "$(wc -l <"$v6_state")" -eq 7 ]] || fail "expected 7 IPv6 rules, got $(wc -l <"$v6_state")"
+[[ "$(wc -l <"$v4_state")" -eq 15 ]] || fail "expected 15 IPv4 rules, got $(wc -l <"$v4_state")"
+[[ "$(wc -l <"$v6_state")" -eq 8 ]] || fail "expected 8 IPv6 rules, got $(wc -l <"$v6_state")"
 grep -qxF 'INPUT -i rakazo-c+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT' "$v4_state" ||
   fail "established accept missing after apply"
 grep -qxF 'INPUT -i rakazo-c+ -j DROP' "$v4_state" || fail "INPUT drop missing after apply"
@@ -168,6 +178,10 @@ grep -qxF 'DOCKER-USER -i rakazo-c+ -d 169.254.0.0/16 -j DROP' "$v4_state" ||
   fail "metadata drop missing after apply"
 grep -qxF 'DOCKER-USER -i rakazo-c+ -o rakazo-c+ -j RETURN' "$v4_state" ||
   fail "same-bridge RETURN missing after apply"
+est_ret_at="$(grep -nxF 'DOCKER-USER -i rakazo-c+ -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN' "$v4_state" | head -1 | cut -d: -f1)"
+first_drop_at="$(grep -n '^DOCKER-USER -i rakazo-c+ -d ' "$v4_state" | head -1 | cut -d: -f1)"
+[[ -n "$est_ret_at" && -n "$first_drop_at" && "$est_ret_at" -lt "$first_drop_at" ]] ||
+  fail "established RETURN must sit above the DOCKER-USER drops"
 
 # The established accept must end up above the INPUT drop. Call order is not
 # the chain: a prefix check may probe the accept before the drop is inserted.
@@ -179,9 +193,9 @@ drop_at="$(grep -nxF 'INPUT -i rakazo-c+ -j DROP' "$v4_state" | head -1 | cut -d
 # Second apply inserts nothing when the managed rules are already the prefix.
 # The stub's -S output has already moved -d ahead of -i and swapped ctstate.
 RAKAZO_IPTABLES="$bin/iptables" RAKAZO_IP6TABLES="$bin/ip6tables" bash "$script" --apply
-[[ "$(grep -c '^-I ' "$v4_calls")" == 14 ]] ||
+[[ "$(grep -c '^-I ' "$v4_calls")" == 15 ]] ||
   fail "rules re-inserted on repeat apply"
-[[ "$(grep -c '^-I ' "$STUB_DIR/ip6tables.calls")" == 7 ]] ||
+[[ "$(grep -c '^-I ' "$STUB_DIR/ip6tables.calls")" == 8 ]] ||
   fail "IPv6 rules re-inserted on repeat apply"
 
 # Later repair checks expect this exact prefix.
@@ -260,17 +274,17 @@ meta_at="$(grep -nxF 'DOCKER-USER -i rakazo-c+ -d 169.254.0.0/16 -j DROP' "$v4_s
   fail "metadata drop is not above the foreign ACCEPT"
 [[ "$(grep -cxF 'DOCKER-USER -i rakazo-c+ -d 169.254.0.0/16 -j DROP' "$v4_state")" == 1 ]] ||
   fail "repair left a stale metadata drop"
-[[ "$(wc -l <"$v4_state")" -eq 15 ]] ||
+[[ "$(wc -l <"$v4_state")" -eq 16 ]] ||
   fail "repair left duplicate rules, got $(wc -l <"$v4_state") lines"
 
-# A failure halfway through the repair must not remove the drops. 14 inserts
-# land the new prefix first; the 15th mutation is the first stale delete and
+# A failure halfway through the repair must not remove the drops. 15 inserts
+# land the new prefix first; the 16th mutation is the first stale delete and
 # is failed before it changes anything. Both the new and previous copies stay.
 { printf '%s\n' 'DOCKER-USER -j ACCEPT' 'INPUT -j ACCEPT'; cat "$v4_state"; } >"$v4_state.tmp"
 mv "$v4_state.tmp" "$v4_state"
 rm -f "$STUB_DIR/mutation.count"
 calls_before="$(wc -l <"$v4_calls")"
-STUB_FAIL_ON_MUTATION=15 RAKAZO_IPTABLES="$bin/iptables" RAKAZO_IP6TABLES="$bin/ip6tables" \
+STUB_FAIL_ON_MUTATION=16 RAKAZO_IPTABLES="$bin/iptables" RAKAZO_IP6TABLES="$bin/ip6tables" \
   bash "$script" --apply && fail "repair should fail when iptables fails midway" || true
 meta_drop='DOCKER-USER -i rakazo-c+ -d 169.254.0.0/16 -j DROP'
 input_drop='INPUT -i rakazo-c+ -j DROP'
@@ -279,7 +293,7 @@ input_drop='INPUT -i rakazo-c+ -j DROP'
 [[ "$(grep -cxF "$input_drop" "$v4_state")" == 2 ]] ||
   fail "INPUT drop missing after a midway repair failure"
 new_calls="$(tail -n +"$((calls_before + 1))" "$v4_calls")"
-[[ "$(grep -c '^-I ' <<<"$new_calls")" == 14 ]] ||
+[[ "$(grep -c '^-I ' <<<"$new_calls")" == 15 ]] ||
   fail "repair did not insert the new prefix before failing"
 [[ "$(grep -c '^-D ' <<<"$new_calls")" == 1 ]] ||
   fail "repair deleted rules before the new prefix was in place"
