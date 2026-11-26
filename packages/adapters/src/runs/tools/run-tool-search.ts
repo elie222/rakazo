@@ -17,8 +17,10 @@ export async function searchRunTools(
   request: ToolSearchRequest,
 ): Promise<ToolSearchHit[]> {
   const hits = await searchToolSources(runSearchSources(ctx), request);
-  // Tool and service descriptions come from outside; the app catalog is the deployment's own.
-  const outside = hits.filter((hit) => hit.next !== "connect_app");
+  // Held-back tool and service descriptions come from outside. The app catalog is the
+  // deployment's own, and hits the runtime passed alongside were already in front of the model.
+  const alongside = new Set("alongside" in request ? request.alongside : []);
+  const outside = hits.filter((hit) => hit.next !== "connect_app" && !alongside.has(hit));
   if (outside.length) await markReadOutsideContent(ctx, outside);
   return hits;
 }

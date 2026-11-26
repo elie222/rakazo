@@ -29,7 +29,11 @@ export async function searchToolSources(
   );
   return "ids" in request
     ? found.flat()
-    : rankToolSearchHits(found.flat(), request.query, request.limit);
+    : rankToolSearchHits(
+        [...(request.alongside ?? []), ...found.flat()],
+        request.query,
+        request.limit,
+      );
 }
 
 /**

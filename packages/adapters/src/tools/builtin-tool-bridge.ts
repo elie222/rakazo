@@ -196,16 +196,13 @@ export async function findTools(
   ];
   const localIds = new Set(local.map((hit) => hit.id));
   const missing = names.filter((name) => !localIds.has(name));
-  const remote = names.length
-    ? missing.length
-      ? ((await tools.search?.({ ids: missing })) ?? [])
-      : []
-    : query
-      ? ((await tools.search?.({ query, limit: FIND_TOOL_LIMIT })) ?? [])
-      : [];
   const hits = names.length
-    ? [...local, ...remote]
-    : rankToolSearchHits([...local, ...remote], query, FIND_TOOL_LIMIT);
+    ? [...local, ...(missing.length ? ((await tools.search?.({ ids: missing })) ?? []) : [])]
+    : !query
+      ? []
+      : tools.search
+        ? await tools.search({ query, limit: FIND_TOOL_LIMIT, alongside: local })
+        : rankToolSearchHits(local, query, FIND_TOOL_LIMIT);
   const foundNames = new Set(hits.flatMap((hit) => [hit.id.toLowerCase(), hit.name.toLowerCase()]));
   const unavailableEntries: Array<[string, string]> = [];
   const unavailableNames = new Set<string>();

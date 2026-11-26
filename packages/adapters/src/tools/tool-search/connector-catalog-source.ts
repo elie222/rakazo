@@ -82,10 +82,13 @@ export function connectorCatalogSource(
     search: (query, limit) =>
       fromEach(async (connectorId) => {
         const result = (await control(connectorId, CATALOG_SEARCH, { query, limit })) as
-          | { tools?: CatalogSearchHit[] }
+          | { tools?: CatalogSearchHit[]; group?: string; names?: string[] }
           | undefined;
-        const hits = (result?.tools ?? []).slice(0, LOADED_PER_CONNECTOR);
-        return Promise.all(hits.map((hit) => load(connectorId, hit.id)));
+        // A query that is only a source's name lists that source's tool names instead.
+        const ids =
+          result?.tools?.map((hit) => hit.id) ??
+          (result?.names ?? []).map((name) => `${result?.group}:${name}`);
+        return Promise.all(ids.slice(0, LOADED_PER_CONNECTOR).map((id) => load(connectorId, id)));
       }),
     find: (ids) => fromEach((connectorId) => Promise.all(ids.map((id) => load(connectorId, id)))),
   };

@@ -128,7 +128,12 @@ describe("connector catalog source", () => {
     name: "mcp__workbench__get_release_calendar",
     description: "Read the team's release calendar.",
     inputSchema: { type: "object", properties: { week: { type: "string" } } },
-    route: { connectorId: "mcp", resourceId: "server-1", toolName: "get_release_calendar" },
+    route: {
+      connectorId: "mcp",
+      resourceId: "server-1",
+      toolName: "get_release_calendar",
+      catalogGroup: "Workbench",
+    },
   };
   const entries = catalogEntries([
     calendar,
@@ -163,6 +168,13 @@ describe("connector catalog source", () => {
     ]);
     expect((await source.find(["server-1:get_release_calendar"])).map((hit) => hit.id)).toEqual([
       "server-1:get_release_calendar",
+    ]);
+  });
+
+  it("finds a source's tools by the source's name", async () => {
+    expect((await source.search("Workbench", 5)).map((hit) => hit.name)).toEqual([
+      calendar.name,
+      "mcp__workbench__list_boards",
     ]);
   });
 
