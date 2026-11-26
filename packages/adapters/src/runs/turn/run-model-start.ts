@@ -134,6 +134,7 @@ export async function startRunModel(
               registerSecrets,
               {
                 adminSettings: selected.adminSettings,
+                connectionId: selected.connectionId,
                 creditOfferingId: creditOfferingFromConnectionId(selected.connectionId),
                 requireStoredSecret: Boolean(
                   selected.connectionId && !creditOfferingFromConnectionId(selected.connectionId),

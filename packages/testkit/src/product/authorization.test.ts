@@ -254,6 +254,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["updater/apply", {}],
       ["models/list"],
       ["models/credentials"],
+      ["models/organizationConnections/available"],
+      ["models/organizationConnections/select", { id: null }],
       ["models/organizationConnections/list", {}],
       [
         "models/organizationConnections/create",

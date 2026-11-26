@@ -21,6 +21,9 @@ const models = vi.hoisted(() => ({
   media: vi.fn(),
   setMedia: vi.fn(),
   credentials: vi.fn(),
+  organizationConnections: {
+    available: vi.fn(async () => ({ connections: [], canManage: false, selectedId: null })),
+  },
   connect: vi.fn(),
   disconnect: vi.fn(),
   disconnectPreview: vi.fn(),

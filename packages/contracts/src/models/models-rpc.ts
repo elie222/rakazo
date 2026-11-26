@@ -52,6 +52,14 @@ const OrganizationModelConnectionSchema = z.object({
 export const modelsRpc = {
   models: {
     organizationConnections: {
+      available: oc.output(
+        z.object({
+          connections: z.array(OrganizationModelConnectionSchema),
+          selectedId: Id.nullable(),
+          canManage: z.boolean(),
+        }),
+      ),
+      select: oc.input(z.object({ id: Id.nullable() })).output(z.object({ ok: z.literal(true) })),
       list: oc.input(z.object({})).output(z.array(OrganizationModelConnectionSchema)),
       create: oc
         .input(

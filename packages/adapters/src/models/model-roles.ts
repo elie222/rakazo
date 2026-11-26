@@ -15,6 +15,8 @@ import { adminDeploymentModel } from "./deployment-model.js";
 import type { ModelChoice, ModelCredential } from "./model-selection.js";
 import { findConnectedModelCredential } from "./model-selection.js";
 
+export const ORGANIZATION_MODEL_CONNECTION_PREFIX = "organization:";
+
 /** The deployment's configuration that stands in for a member who chose nothing. */
 export type DeploymentModelDefaults = {
   /** The default saved for everyone, ahead of the environment's while it applies. */
@@ -89,6 +91,7 @@ export async function effectiveModelRole(
 export type MemberMainModel = ModelRoleChoice & {
   /** The connection that serves it; null when only the deployment can. */
   credential: ModelCredential;
+  organizationConnectionId?: string;
 };
 
 /** The member's main model and the connection that serves it, resolved as validation does. */
@@ -96,6 +99,26 @@ export async function resolveMemberMainModel(
   deps: { prisma: PrismaClient; secretStore: Pick<SecretStore, "load"> },
   scope: { userId: string; spaceId: string },
 ): Promise<MemberMainModel | null> {
+  const organization = await deps.prisma.spaceMember?.findUnique?.({
+    where: { spaceId_userId: { spaceId: scope.spaceId, userId: scope.userId } },
+    select: {
+      organizationModelConnectionId: true,
+      organizationModelProvider: true,
+      organizationModelId: true,
+    },
+  });
+  if (
+    organization?.organizationModelConnectionId &&
+    organization.organizationModelProvider &&
+    organization.organizationModelId
+  ) {
+    return {
+      provider: organization.organizationModelProvider,
+      modelId: organization.organizationModelId,
+      credential: null,
+      organizationConnectionId: organization.organizationModelConnectionId,
+    };
+  }
   const { primary } = await appliedModelRole(deps.prisma, scope, "main");
   if (!primary) return null;
   const credential = primary.creditOfferingId
@@ -141,7 +164,7 @@ export function selectConfiguredModel(input: {
   const useMain =
     !useOverride &&
     main !== null &&
-    (Boolean(main.credentialId || main.creditOfferingId) ||
+    (Boolean(main.credentialId || main.creditOfferingId || main.organizationConnectionId) ||
       runnable(main.provider, main.credential, main.modelId));
   const fallback = deploymentModelRole("main", input.defaults).primary;
   const selected = useOverride
@@ -155,7 +178,9 @@ export function selectConfiguredModel(input: {
           provider: main.provider,
           id: main.modelId,
           credential: main.credential,
-          connectionId: modelRoleConnectionId(main),
+          connectionId: main.organizationConnectionId
+            ? `${ORGANIZATION_MODEL_CONNECTION_PREFIX}${main.organizationConnectionId}`
+            : modelRoleConnectionId(main),
         }
       : { provider: fallback?.provider, id: fallback?.modelId ?? null, credential: null };
   // The main model's effort belongs to that model, so an override of the same model keeps it.

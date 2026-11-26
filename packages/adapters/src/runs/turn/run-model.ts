@@ -12,6 +12,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { MISSING_MODEL_RUN_ERROR, savedThinkingLevel } from "@rakazo/core";
+import { organizationModelConnectionIn, runAsSystem } from "@rakazo/db";
 import {
   approvedModelCreditOffering,
   modelCreditOfferings,
@@ -50,7 +51,11 @@ import {
   modelProviderAllowed,
   modelProviderAllowlist,
 } from "../../models/model-provider-allowlist.js";
-import { resolveMemberMainModel, selectConfiguredModel } from "../../models/model-roles.js";
+import {
+  ORGANIZATION_MODEL_CONNECTION_PREFIX,
+  resolveMemberMainModel,
+  selectConfiguredModel,
+} from "../../models/model-roles.js";
 import type { StoredModelSecret } from "../../models/model-secret.js";
 import { modelBilling, parseModelSecret, secretValuesToRedact } from "../../models/model-secret.js";
 import {
@@ -176,6 +181,17 @@ export async function modelCreditBillingEnabled(
 
 export async function resolveModelKey(...args: Parameters<typeof resolveModelKeyMaterial>) {
   const [deps, userId, spaceId, , provider] = args;
+  const selectedConnection = args[7]?.connectionId;
+  if (selectedConnection?.startsWith(ORGANIZATION_MODEL_CONNECTION_PREFIX)) {
+    return resolveOrganizationModelKey(
+      deps,
+      { userId, spaceId },
+      selectedConnection,
+      provider,
+      args[5],
+      args[6],
+    );
+  }
   const operatorFunded = args[7]?.operatorFunded === true;
   if (operatorFunded && (args[3] || args[7]?.creditOfferingId || args[7]?.requireStoredSecret))
     throw new UnavailableModelForAuthError("Conflicting model funding sources");
@@ -242,6 +258,83 @@ export async function resolveModelKey(...args: Parameters<typeof resolveModelKey
   };
 }
 
+async function resolveOrganizationModelKey(
+  deps: ExecutorDeps,
+  scope: { userId: string; spaceId: string },
+  connectionId: string,
+  provider: string,
+  modelId: string,
+  registerSecrets?: (values: string[]) => void,
+): Promise<
+  Awaited<ReturnType<typeof resolveModelKeyMaterial>> & {
+    connectionId: string;
+    callObserver?: undefined;
+  }
+> {
+  if (!modelProviderAllowed(modelProviderAllowlist(), provider))
+    throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
+  const id = connectionId.slice(ORGANIZATION_MODEL_CONNECTION_PREFIX.length);
+  const row = await runAsSystem("authorize the selected organization model for this run", () =>
+    deps.prisma.organizationModelConnection.findFirst({
+      where: { id, provider, modelId, ...organizationModelConnectionIn(scope, id) },
+    }),
+  );
+  if (!row)
+    throw new UnavailableModelForAuthError(
+      "Choose an available organization model or switch to your saved model.",
+    );
+  const plaintext = await deps.secretStore.load(row.ciphertext, row.secretId);
+  const secret = parseModelSecret(plaintext);
+  const redact = secretValuesToRedact(secret);
+  registerSecrets?.(redact);
+  if (secret.kind === "oauth")
+    throw new UnavailableModelForAuthError("The organization model requires an API key.");
+  const authError = validateModelAuthAvailability(provider, modelId, plaintext);
+  if (authError) throw new UnavailableModelForAuthError(authError);
+  const apiKey = secret.kind === "api_key" ? secret.key : secret.apiKey;
+  if (!apiKey?.trim()) throw new UnavailableModelForAuthError(MISSING_MODEL_RUN_ERROR);
+  const endpoint = secret.kind === "openai_compatible" ? secret : undefined;
+  const allowPrivateEndpoint = endpoint ? deps.mcpAllowPrivateEndpoint === true : undefined;
+  if (endpoint) {
+    try {
+      assertAllowedOpenAiCompatibleUrl(endpoint.baseUrl, {
+        allowPublic: true,
+        allowPrivate: allowPrivateEndpoint,
+      });
+    } catch (error) {
+      throw new UnavailableModelForAuthError((error as Error).message);
+    }
+  }
+  if (secret.kind === "api_key")
+    cloudflareProviderEnv({ provider, accountId: secret.accountId, gatewayId: secret.gatewayId });
+  const settings = connectionModelSettings(secret, provider, modelId, {
+    defaultModel: modelId,
+    supportsImages: row.supportsImages,
+  });
+  return {
+    apiKey,
+    baseUrl: endpoint?.baseUrl,
+    headers: endpoint?.headers,
+    apiProtocol: endpoint?.apiProtocol,
+    allowPrivateEndpoint,
+    cacheCapabilities: secret.cacheCapabilities,
+    accountId: secret.kind === "api_key" ? secret.accountId : undefined,
+    gatewayId: secret.kind === "api_key" ? secret.gatewayId : undefined,
+    projectId: secret.kind === "api_key" ? secret.projectId : undefined,
+    region: secret.kind === "api_key" ? secret.region : undefined,
+    zeroDataRetention: secret.kind === "api_key" ? secret.zeroDataRetention : undefined,
+    acceptsImages: settings.images,
+    maxImagesPerPrompt: settings.maxImagesPerPrompt,
+    contextWindow: settings.contextWindow,
+    maxTokens: settings.maxTokens,
+    reasoning: settings.reasoning,
+    thinkingLevel: settings.thinkingLevel,
+    billing: "organization",
+    redact,
+    connectionId,
+  };
+}
+
 async function resolveModelKeyMaterial(
   deps: ExecutorDeps,
   userId: string,
@@ -264,6 +357,7 @@ async function resolveModelKeyMaterial(
   }: {
     requireStoredSecret?: boolean;
     creditOfferingId?: string;
+    connectionId?: string;
     operatorFunded?: boolean;
     /** The same settings snapshot used to choose the deployment fallback. */
     adminSettings?: SavedDeploymentModel | null;
@@ -533,6 +627,18 @@ export async function resolveConnectedModelKey(
   if (!modelProviderAllowed(modelProviderAllowlist(), provider)) {
     throw new UnavailableModelForAuthError(MODEL_PROVIDER_NOT_ALLOWED_ERROR);
   }
+  if (credentialId?.startsWith(ORGANIZATION_MODEL_CONNECTION_PREFIX))
+    return {
+      credential: null,
+      resolved: await resolveOrganizationModelKey(
+        deps,
+        scope,
+        credentialId,
+        provider,
+        modelId,
+        registerSecrets,
+      ),
+    };
   const creditOfferingId = creditOfferingFromConnectionId(credentialId);
   if (creditOfferingId) {
     const resolved = await resolveModelKey(
@@ -691,6 +797,7 @@ export async function resolveRunModel(
     undefined,
     {
       adminSettings: settings,
+      connectionId: selected.connectionId,
       creditOfferingId: creditOfferingFromConnectionId(selected.connectionId),
       requireStoredSecret: Boolean(
         selected.connectionId && !creditOfferingFromConnectionId(selected.connectionId),

@@ -39,6 +39,7 @@ import type { ModelRoleConnectIntent } from "./ModelRoleSettings";
 import { ModelRoleSettings, useModelRole } from "./ModelRoleSettings";
 import { MediaModelSettings } from "./media-model-settings";
 import { ModelSettingsPanel } from "./model-settings-panel";
+import { OrganizationModelSettings } from "./organization-model-settings";
 import { ProviderPage } from "./provider-page";
 import { ConnectionNameField, ProvidersSection } from "./providers-section";
 import type { ConnectableProvider } from "./role-model-picker";
@@ -374,6 +375,7 @@ export function ModelSettingsOverlay({
       ) : null}
       {me && !loading ? (
         <>
+          <OrganizationModelSettings providers={allProviders} />
           <ModelRoleSettings
             userId={me.userId}
             spaceId={me.spaceId}
