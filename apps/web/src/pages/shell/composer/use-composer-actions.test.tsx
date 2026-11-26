@@ -1405,6 +1405,44 @@ it("keeps the send error banner visible when restoring a failed send back into t
   expect(latest.sendError).toBe("network offline");
 });
 
+it("keeps an unrelated newer send error and image confirmation when retrying an older row", async () => {
+  const firstFail = deferred<never>();
+  rpc.threads.send.mockReturnValueOnce(firstFail.promise);
+  let sent!: Promise<boolean>;
+  act(() => {
+    sent = latest.sendMessage("older failed text", [], "nonce-older-row");
+  });
+  act(() => latest.clearImageConfirmation());
+  firstFail.reject(new Error("older timeout"));
+  await act(async () => void (await sent));
+  expect(latest.transcriptProps.failedPendingSends?.has("nonce-older-row")).toBe(true);
+
+  const imageConfirm = Object.assign(new Error("Send image as file?"), {
+    status: 409,
+    data: { reason: "model_image_input_unsupported" },
+  });
+  rpc.threads.send.mockRejectedValueOnce(imageConfirm);
+  await act(async () => {
+    await latest.sendMessage("newer attachment caption", [], "nonce-newer-confirm");
+  });
+  expect(latest.sendError).toBe("Send image as file?");
+  expect(latest.imageConfirmation).toBe(true);
+
+  const retryReply = deferred<{ runId: string; taskId: string; seq: number }>();
+  rpc.threads.send.mockReturnValueOnce(retryReply.promise);
+  let retried!: Promise<boolean>;
+  act(() => {
+    retried = latest.retryPendingSend("nonce-older-row");
+  });
+  expect(latest.sendError).toBe("Send image as file?");
+  expect(latest.imageConfirmation).toBe(true);
+
+  retryReply.resolve({ runId: "run-2", taskId: "task-2", seq: 40 });
+  await act(async () => void (await retried));
+  expect(latest.sendError).toBe("Send image as file?");
+  expect(latest.imageConfirmation).toBe(true);
+});
+
 it("strips the retried prefix when post-leave dictation appended to a failing send", async () => {
   const key = composerDraftKey({ botId: "bot-1" });
   const replaced = vi.fn();
@@ -1433,6 +1471,44 @@ it("strips the retried prefix when post-leave dictation appended to a failing se
     replaced.mockClear();
     rpc.threads.send.mockResolvedValueOnce({ runId: "run-2", taskId: "task-2", seq: 30 });
     await act(async () => void (await latest.retryPendingSend("nonce-post-leave-dictate")));
+    expect(readComposerDraft(key)).toBe("and a hotel");
+    expect(replaced).toHaveBeenCalledWith("and a hotel");
+  } finally {
+    unsubscribe();
+    writeComposerDraft(key, "");
+  }
+});
+
+it("strips the retried prefix when post-leave dictation finishes after the send fails", async () => {
+  const key = composerDraftKey({ botId: "bot-1" });
+  const replaced = vi.fn();
+  const unsubscribe = subscribeComposerDraftReplaced(key, replaced);
+  try {
+    writeComposerDraft(key, "book a train");
+    const submission = beginComposerDraftSubmission(key, "book a train");
+    const firstFail = deferred<never>();
+    rpc.threads.send.mockReturnValueOnce(firstFail.promise);
+    let sent!: Promise<boolean>;
+    act(() => {
+      sent = latest.sendMessage("book a train", [], "nonce-post-fail-dictate");
+    });
+
+    // Changing the reply target keeps the failed row while leaving the saved draft untouched.
+    act(() => latest.clearImageConfirmation());
+    firstFail.reject(new Error("offline"));
+    await act(async () => void (await sent));
+    settleComposerDraftSubmission(key, submission, false);
+    expect(latest.transcriptProps.failedPendingSends?.has("nonce-post-fail-dictate")).toBe(true);
+    expect(readComposerDraft(key)).toBe("book a train");
+
+    // Dictation finishes after the failure and appends to the still-untouched failed draft.
+    appendComposerDraftText(key, "and a hotel");
+    expect(readComposerDraft(key)).toBe("book a train and a hotel");
+
+    // Retrying the failed row succeeds and leaves only the dictated follow-up.
+    replaced.mockClear();
+    rpc.threads.send.mockResolvedValueOnce({ runId: "run-2", taskId: "task-2", seq: 31 });
+    await act(async () => void (await latest.retryPendingSend("nonce-post-fail-dictate")));
     expect(readComposerDraft(key)).toBe("and a hotel");
     expect(replaced).toHaveBeenCalledWith("and a hotel");
   } finally {

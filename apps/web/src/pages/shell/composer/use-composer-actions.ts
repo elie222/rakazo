@@ -766,7 +766,7 @@ export function useComposerActions({
       const writeToken = pendingSend.captureFailedSendWriteToken(scopeAtRetry, entry.threadKey);
       sendingRef.current = true;
       setSending(true);
-      setSendError(null);
+      clearSendFailureForNonce(clientNonce);
       clearReadBoundary();
       setPendingSends((current) =>
         current.map((pending) =>
@@ -862,7 +862,7 @@ export function useComposerActions({
         setSending(false);
       }
     },
-    [clearSentReply, clearSubmittedDraft, refreshBots, t],
+    [clearSendFailureForNonce, clearSentReply, clearSubmittedDraft, refreshBots, t],
   );
 
   const stopRun = useCallback(async () => {

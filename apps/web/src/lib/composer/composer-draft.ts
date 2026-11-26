@@ -37,6 +37,7 @@ export type ComposerDraftSnapshot = {
 };
 const draftRevisions = new Map<string, number>();
 const pendingSubmissions = new Map<string, ComposerDraftSubmission>();
+const failedSubmissions = new Map<string, ComposerDraftSubmission>();
 const acceptedListeners = new Map<
   string,
   Set<(text: string, bindingRecord: string | null) => void>
@@ -70,25 +71,27 @@ function sameSubmittedDraft(
 /**
  * Adds words to a chat's saved draft from outside its composer, such as a dictation that
  * finished after the chat was left. A composer showing that chat shows them. A send still in
- * flight from that draft keeps its settlement: once accepted, only the added words remain.
+ * flight (or a failed one whose saved draft stayed untouched) keeps its settlement: once
+ * accepted or dismissed, only the added words remain.
  */
 export function appendComposerDraftText(threadKey: string, text: string): void {
   const saved = readComposerDraft(threadKey);
   const next = saved ? `${saved} ${text}` : text;
   const pending = pendingSubmissions.get(threadKey);
-  // Only a draft still holding the in-flight text and its mention bindings belongs to that
-  // send; another tab can rebind the same text to another mention or rewrite it.
-  const inFlight =
-    pending && sameSubmittedDraft(threadKey, { ...pending, text: savedDraftOf(pending) })
-      ? pending
+  const tracked = pending ?? failedSubmissions.get(threadKey);
+  // Only a draft still holding the in-flight or failed text and its mention bindings belongs to
+  // that send; another tab can rebind the same text to another mention or rewrite it.
+  const matching =
+    tracked && sameSubmittedDraft(threadKey, { ...tracked, text: savedDraftOf(tracked) })
+      ? tracked
       : null;
   writeComposerDraft(threadKey, next, undefined, readComposerDraftBindings(threadKey));
-  if (inFlight) {
-    inFlight.appended = inFlight.appended ? `${inFlight.appended} ${text}` : text;
-    inFlight.bindingRecord = readCanonicalBindingRecord(threadKey, next);
-    inFlight.revision = draftRevisions.get(threadKey) ?? 0;
-    inFlight.version = readDraftVersion(threadKey);
-    pendingSubmissions.set(threadKey, inFlight);
+  if (matching) {
+    matching.appended = matching.appended ? `${matching.appended} ${text}` : text;
+    matching.bindingRecord = readCanonicalBindingRecord(threadKey, next);
+    matching.revision = draftRevisions.get(threadKey) ?? 0;
+    matching.version = readDraftVersion(threadKey);
+    (pending ? pendingSubmissions : failedSubmissions).set(threadKey, matching);
   }
   replacedDrafts.emit(threadKey, next);
 }
@@ -127,11 +130,13 @@ export function settleComposerDraftSubmission(
 ): boolean {
   if (pendingSubmissions.get(threadKey) !== submission) return false;
   pendingSubmissions.delete(threadKey);
-  if (
-    !accepted ||
-    !sameSubmittedDraft(threadKey, { ...submission, text: savedDraftOf(submission) })
-  )
+  if (!sameSubmittedDraft(threadKey, { ...submission, text: savedDraftOf(submission) })) {
     return false;
+  }
+  if (!accepted) {
+    failedSubmissions.set(threadKey, submission);
+    return false;
+  }
   if (submission.appended) {
     writeComposerDraft(threadKey, submission.appended);
     replacedDrafts.emit(threadKey, submission.appended);
@@ -284,6 +289,7 @@ export function hasUnsentComposerDraft(storage: Storage | null = null): boolean 
 
 /** Signing out leaves no saved draft, its mentions, its failed rows or its retry nonce for whoever uses this browser next. */
 export function clearComposerDrafts(): void {
+  failedSubmissions.clear();
   clearStoredFailedSends();
   try {
     const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
@@ -476,6 +482,7 @@ export function writeComposerDraft(
   bindings?: readonly ComposerMentionBinding[],
 ): void {
   pendingSubmissions.delete(threadKey);
+  failedSubmissions.delete(threadKey);
   if (threadKey) draftRevisions.set(threadKey, (draftRevisions.get(threadKey) ?? 0) + 1);
   if (!storage || !threadKey) return;
   try {
