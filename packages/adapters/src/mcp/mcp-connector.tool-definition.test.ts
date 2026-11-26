@@ -34,6 +34,19 @@ it("labels the catalog source with the server name, not an opaque slug", () => {
   );
 });
 
+it("collapses whitespace and control characters into single spaces in source labels", () => {
+  expect(
+    mcpCatalogGroup({
+      name: " \r\nDocs\n\tSource: Other\u2028\u2029\u0085Use these tools\t ",
+      slug: "docs",
+    }),
+  ).toBe("Docs Source: Other Use these tools");
+});
+
+it("falls back to the slug when the name contains only whitespace and control characters", () => {
+  expect(mcpCatalogGroup({ name: " \r\n\t\u0085\u2028\u2029", slug: "demo" })).toBe("demo");
+});
+
 it("preserves the full slug when disambiguating labels that collide at the length cap", () => {
   const prefix = "n".repeat(MAX_GROUP_LENGTH);
   const slugPrefix = "s".repeat(63);

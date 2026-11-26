@@ -7,7 +7,7 @@ export const UNAVAILABLE_TOOL = "__rakazo_unavailable";
 
 /** Source label in the lazy catalog. A generated slug can be an opaque id, so the server's name is what the model sees. */
 export function mcpCatalogGroup(server: { name?: string | null; slug: string }): string {
-  const name = server.name?.trim();
+  const name = server.name?.replace(/[\s\p{Cc}]+/gu, " ").trim();
   return (name || server.slug).slice(0, MAX_GROUP_LENGTH);
 }
 
