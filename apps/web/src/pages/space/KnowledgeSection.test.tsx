@@ -66,6 +66,11 @@ vi.mock("@rakazo/ui-web", () => {
 
 import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import { spaceQueries } from "../../lib/query/query";
+
+vi.mock("../../lib/spaces/organizations", () => ({
+  useOrganizations: () => ({ organizations: [], activeOrganizationId: null }),
+}));
+
 import { AgentSkills, KnowledgeSection } from "./KnowledgeSection";
 
 const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });

@@ -5,6 +5,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("../../lib/spaces/organizations", () => ({
+  useOrganizations: () => ({ organizations: [], activeOrganizationId: null }),
+}));
+
 const api = vi.hoisted(() => ({
   preview: vi.fn(),
   install: vi.fn(),
@@ -299,7 +303,14 @@ describe("plugin detail", () => {
 
   it("opens an installed plugin skill's saved instructions", async () => {
     api.skills.mockResolvedValue([
-      { id: "skill-db-1", name: "skill-1", source: "plugin", description: "", readOnly: true },
+      {
+        id: "skill-db-1",
+        installId: install.id,
+        name: "skill-1",
+        source: "plugin",
+        description: "",
+        readOnly: true,
+      },
     ]);
     api.skill.mockResolvedValue({ content: "Follow the plugin steps." });
     await render({ install, servers: [server] });

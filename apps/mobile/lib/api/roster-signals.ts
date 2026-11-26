@@ -12,6 +12,13 @@ import { subscribeSessionGeneration } from "./session";
 
 // One stream for the whole app, open while any screen holds it.
 const rosterListeners = new Set<() => void>();
+function refreshCapabilities() {
+  void refreshRpcQueries("capabilities/list");
+  void refreshRpcQueries("agentSkills/list");
+  void refreshRpcQueries("agentSkills/get");
+  void refreshRpcQueries("mcp/servers/list");
+}
+
 const spaceChangeListeners = new Set<(kind: SpaceChangeKind) => void>();
 let holders = 0;
 let close: (() => void) | undefined;
@@ -53,6 +60,7 @@ async function follow(signal: AbortSignal) {
         () => {
           if (connection.signal.aborted) return;
           opened = true;
+          refreshCapabilities();
           invalidateWatchChat("roster");
           // Each connection opens with a signal, so a reconnect catches up on what it missed.
           for (const listener of rosterListeners) listener();
@@ -60,6 +68,7 @@ async function follow(signal: AbortSignal) {
         connection.signal,
         (kind) => {
           if (connection.signal.aborted) return;
+          if (kind === "capabilities") refreshCapabilities();
           if (kind === "runs") invalidateWatchChat();
           if (kind === "preferences") {
             void refreshRpcQueries("me");

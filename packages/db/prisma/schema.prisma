@@ -521,6 +521,9 @@ model Organization {
 
   @@unique([slug])
   @@map("organization")
+  agentSkills AgentSkill[]
+  capabilityInstalls CapabilityInstall[]
+
 }
 
 model BillingAccount {
@@ -1809,9 +1812,9 @@ model AgentImport {
 
 model AgentSkill {
   id          String   @id @default(cuid())
-  spaceId     String
-  space       Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId      String
+  spaceId     String?
+  space       Space?    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId      String?
   name        String
   description String
   content     String
@@ -1825,6 +1828,10 @@ model AgentSkill {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  organizationId String?
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([spaceId, userId])
   @@index([installId])
   // Case-insensitive unique index agent_skills_spaceId_userId_name_lower_key is created in SQL.
@@ -1852,9 +1859,9 @@ model Connection {
 
 model CapabilityInstall {
   id        String   @id @default(cuid())
-  spaceId   String
-  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  userId    String
+  spaceId   String?
+  space     Space?    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId    String?
   kind      String
   name      String
   source    String
@@ -1869,6 +1876,10 @@ model CapabilityInstall {
   mcpServers  McpServer[]
   availableIn CapabilityInstallSpace[]
 
+  organizationId String?
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
   @@index([spaceId, userId])
   @@map("capability_installs")
 }

@@ -9,6 +9,14 @@ import SkillScreen from "../../app/(settings)/skill";
 import { announceToScreenReader } from "../native/announce";
 import { queryClient } from "../query/query";
 
+vi.mock("../spaces/organizations", () => ({
+  useOrganizations: () => ({}),
+  activeOrganization: () => undefined,
+}));
+vi.mock("../../components/settings/settings-group", () => ({
+  SettingsGroup: () => null,
+  SettingsSwitch: () => null,
+}));
 vi.mock("../native/announce", () => ({ announceToScreenReader: vi.fn() }));
 
 const mocks = vi.hoisted(() => ({

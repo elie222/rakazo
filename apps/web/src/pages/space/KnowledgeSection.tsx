@@ -2,8 +2,9 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument, isEmptyBotMemory } from "@rakazo/contracts";
+import { canManageOrganizationMembers } from "@rakazo/core";
 import { fetchFresh, writeSaved } from "@rakazo/core/query";
-import { Badge, Button, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
+import { Badge, Button, Checkbox, SectionHeading, Skeleton, Textarea } from "@rakazo/ui-web";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@rakazo/ui-web/components/ui/tooltip";
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus } from "lucide-react";
@@ -17,6 +18,7 @@ import {
 import { downloadArtifactBytes } from "../../lib/pages/artifact-open";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { useSpaceRpc } from "../../lib/query/space-rpc";
+import { useOrganizations } from "../../lib/spaces/organizations";
 
 const NO_DOCS: MemoryDocument[] = [];
 const NO_SKILLS: AgentSkillCatalogEntry[] = [];
@@ -330,6 +332,11 @@ Steps the agent should follow.
 
 /** Your own skills in this space, plus the built-in ones; plugin skills are listed by plugin. */
 export function AgentSkills() {
+  const { organizations, activeOrganizationId } = useOrganizations();
+  const activeOrganization = organizations.find((entry) => entry.id === activeOrganizationId);
+  const canShare = Boolean(activeOrganization && canManageOrganizationMembers(activeOrganization));
+  const [forOrganization, setForOrganization] = useState(false);
+
   const rpc = useSpaceRpc();
   const { t } = useLingui();
   const queries = useSpaceQueries();
@@ -384,7 +391,10 @@ export function AgentSkills() {
     setError(null);
     try {
       if (creating) {
-        await rpc.agentSkills.create({ content: draft });
+        await rpc.agentSkills.create({
+          content: draft,
+          ...(canShare && forOrganization ? { organization: true } : {}),
+        });
       } else if (open) {
         await rpc.agentSkills.update({ skillId: open.id, content: draft });
       }
@@ -456,7 +466,11 @@ export function AgentSkills() {
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   <AvailabilityLabel availability={entry.availability} />
-                  <SkillSourceBadge source={entry.source} />
+                  {entry.organization ? (
+                    <Trans>Organization</Trans>
+                  ) : (
+                    <SkillSourceBadge source={entry.source} />
+                  )}
                 </span>
               </span>
               <span className="mt-0.5 block truncate text-body-sm text-muted-foreground" dir="auto">
@@ -465,6 +479,17 @@ export function AgentSkills() {
             </Button>
           ))
         : null}
+      {creating && canShare ? (
+        <label htmlFor="organization-item-scope" className="mb-3 flex items-center gap-2 text-body">
+          <Checkbox
+            id="organization-item-scope"
+            checked={forOrganization}
+            onCheckedChange={setForOrganization}
+            disabled={busy}
+          />
+          <Trans>Share with organization</Trans>
+        </label>
+      ) : null}
       {editorOpen ? (
         <div className="pb-2">
           {open ? (
@@ -472,8 +497,12 @@ export function AgentSkills() {
               <div className="min-w-0 truncate text-body font-normal text-foreground" dir="auto">
                 {open.name}
               </div>
-              <SkillSourceBadge source={open.source} />
-              {open.source === "user" ? (
+              {open.organization ? (
+                <Trans>Organization</Trans>
+              ) : (
+                <SkillSourceBadge source={open.source} />
+              )}
+              {open.source === "user" && !open.organization ? (
                 <div className="ms-auto">
                   <AvailabilityControl
                     kind="skill"
@@ -565,6 +594,7 @@ export function AgentSkills() {
           onClick={() => {
             selection.current += 1;
             setOpen(null);
+            setForOrganization(false);
             setCreating(true);
             setConfirmingDelete(false);
             setDraft(NEW_SKILL_TEMPLATE);

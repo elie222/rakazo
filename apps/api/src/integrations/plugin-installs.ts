@@ -15,12 +15,15 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 import {
   AVAILABILITY_SELECT,
   assertNameFreeWhereAvailable,
-  availableInSpace,
   isUniqueViolation,
   JsonObject,
   lockOwner,
+  managedOrganizationId,
   NameTakenError,
+  personalOrManagedOrganizationItemIn,
+  personalOrOrganizationItemIn,
   readJsonColumn,
+  requireManagedOrganizationId,
   runAsSystemInTransaction,
   spaceAvailability,
 } from "@rakazo/db";
@@ -31,6 +34,7 @@ export type PluginInstallDeps = {
   secrets: SecretStore;
   fetcher?: PluginRepoFetcher;
   assertEndpoint: (endpoint: string) => Promise<void>;
+  onOrganizationChange?: (id: string) => Promise<void>;
 };
 
 type LoadedPlugin = Awaited<ReturnType<typeof previewPluginInstall>>;
@@ -113,8 +117,9 @@ function withPreparedServers<T>(
 /** Where an install's skills and connectors live: wherever the install itself is available. */
 type InstallPlacement = {
   id: string;
-  spaceId: string;
-  userId: string;
+  organizationId: string | null;
+  spaceId: string | null;
+  userId: string | null;
   allSpaces: boolean;
   availableIn: Array<{ spaceId: string }>;
 };
@@ -125,6 +130,7 @@ async function assertSkillNamesFree(
   plugin: LoadedPlugin,
   install: Pick<InstallPlacement, "spaceId" | "allSpaces" | "availableIn">,
 ) {
+  if (!install.spaceId) return;
   for (const skill of plugin.skills) {
     try {
       await assertNameFreeWhereAvailable(
@@ -161,16 +167,19 @@ async function addSkills(
           spaceId: install.spaceId,
           userId: install.userId,
           allSpaces: install.allSpaces,
+          organizationId: install.organizationId,
           ...skill,
           source: "plugin",
           installId: install.id,
         },
       });
+      const userId = install.userId;
+      if (!userId) continue;
       await tx.agentSkillSpace.createMany({
         data: extraSpaces(install).map((spaceId) => ({
           skillId: row.id,
           spaceId,
-          userId: install.userId,
+          userId,
         })),
       });
     }
@@ -202,6 +211,7 @@ async function addServerRows(
     if (stored)
       await tx.secret.create({
         data: {
+          organizationId: install.organizationId,
           userId: install.userId,
           spaceId: shared ? null : install.spaceId,
           id: stored.id,
@@ -217,6 +227,8 @@ async function addServerRows(
         userId: install.userId,
         allSpaces: install.allSpaces,
         installId,
+        organizationId: install.organizationId,
+        ...(install.organizationId ? { allBots: true } : {}),
         slug: `${plugin.name.slice(0, 48)}-${suffix}`,
         name: `${plugin.name}: ${server.name}`.slice(0, 120),
         description: `Installed from plugin ${plugin.name}`,
@@ -229,21 +241,27 @@ async function addServerRows(
         enabled: true,
       },
     });
+    const userId = install.userId;
+    if (!userId) continue;
     await tx.mcpServerSpace.createMany({
       data: extraSpaces(install).map((spaceId) => ({
         serverId: row.id,
         spaceId,
-        userId: install.userId,
+        userId,
       })),
     });
   }
 }
 
-export function lockPluginInstalls(tx: Prisma.TransactionClient, actor: Actor) {
+export function lockPluginInstalls(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  organizationId?: string | null,
+) {
   // Serialize installs for this actor, including same-source duplicates. A
   // transaction-scoped advisory lock avoids an extra global uniqueness policy
   // on capability_installs (other kinds deliberately allow multiple sources).
-  return lockOwner(tx, actor.userId, "plugin");
+  return lockOwner(tx, organizationId ?? actor.userId, "plugin");
 }
 
 /**
@@ -264,7 +282,8 @@ export function installConfig(
 
 function installDto(row: {
   id: string;
-  spaceId: string;
+  spaceId: string | null;
+  organizationId?: string | null;
   allSpaces: boolean;
   availableIn?: Array<{ spaceId: string }>;
   name: string;
@@ -283,7 +302,9 @@ function installDto(row: {
     digest: row.digest,
     secretConfigured: false,
     config: installConfig(row),
-    availability: spaceAvailability(row),
+    ...(row.organizationId
+      ? { organization: true, manageable: true }
+      : { availability: spaceAvailability(row) }),
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -298,6 +319,7 @@ export async function installPlugin(
     credential?: string;
     pluginDigest?: string;
     pluginParts?: PluginPart[];
+    organization?: boolean;
   },
   signal?: AbortSignal,
 ): Promise<CapabilityInstall> {
@@ -311,6 +333,9 @@ export async function installPlugin(
       message: "Preview and confirm the plugin before installing",
     });
   }
+  const organizationId = input.organization
+    ? await requireManagedOrganizationId(deps.prisma, actor)
+    : null;
   const plugin = await loadPlugin(deps, input.source, input.pluginDigest, signal);
   const parts = availableParts(plugin, input.pluginParts ?? ["connector", "skills"]);
   if (!parts.length) {
@@ -321,29 +346,45 @@ export async function installPlugin(
   const servers = parts.includes("connector") ? plugin.mcpServers : [];
   return withPreparedServers(deps, actor, servers, signal, async (prepared) => {
     const source = plugin.source.gitUrl + (plugin.source.subdir ? `#${plugin.source.subdir}` : "");
-    const scope = { spaceId: actor.spaceId, userId: actor.userId };
+    const scope = organizationId
+      ? { organizationId, spaceId: null, userId: null }
+      : { spaceId: actor.spaceId, userId: actor.userId };
     try {
       const row = await deps.prisma.$transaction(
         async (tx) => {
-          await lockPluginInstalls(tx, actor);
+          await lockPluginInstalls(tx, actor, organizationId);
+          if (
+            organizationId &&
+            (await requireManagedOrganizationId(tx, actor)) !== organizationId
+          ) {
+            throw new ClientError("FORBIDDEN", "Organization access changed.");
+          }
           // One install per plugin and account, since it is available in all the user's spaces.
           const installed = await runAsSystemInTransaction(
             tx,
             "owner's plugin installs across their spaces",
             () =>
               tx.capabilityInstall.findFirst({
-                where: { userId: actor.userId, kind: "plugin", source },
+                where: {
+                  ...(organizationId ? { organizationId } : { userId: actor.userId }),
+                  kind: "plugin",
+                  source,
+                },
               }),
           );
           if (installed) {
             throw new ORPCError("CONFLICT", { message: "This plugin is already installed" });
           }
-          const everywhere = { spaceId: actor.spaceId, allSpaces: true, availableIn: [] };
+          const everywhere = {
+            spaceId: scope.spaceId,
+            allSpaces: !organizationId,
+            availableIn: [],
+          };
           if (parts.includes("skills")) await assertSkillNamesFree(tx, actor, plugin, everywhere);
           const install = await tx.capabilityInstall.create({
             data: {
               ...scope,
-              allSpaces: true,
+              allSpaces: !organizationId,
               kind: "plugin",
               name: input.name.trim() || plugin.name,
               source,
@@ -364,6 +405,7 @@ export async function installPlugin(
         },
         { timeout: 60_000 },
       );
+      if (row.organizationId) await deps.onOrganizationChange?.(row.organizationId);
       return installDto(row);
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -397,9 +439,18 @@ export async function setPluginParts(
   signal?: AbortSignal,
 ): Promise<CapabilityInstall | null> {
   const existing = await deps.prisma.capabilityInstall.findFirst({
-    where: { ...availableInSpace(actor), id: input.id, kind: "plugin" },
+    where: {
+      ...personalOrOrganizationItemIn(actor),
+      id: input.id,
+      kind: "plugin",
+    },
   });
-  if (!existing?.version || !existing.digest)
+  if (
+    !existing?.version ||
+    !existing.digest ||
+    (existing.organizationId &&
+      existing.organizationId !== (await managedOrganizationId(deps.prisma, actor)))
+  )
     throw new ORPCError("NOT_FOUND", { message: "Plugin is not installed" });
   if (!input.parts.length) return null;
   const current = installedPluginParts(installConfig(existing, "reject"));
@@ -416,13 +467,16 @@ export async function setPluginParts(
     try {
       const row = await deps.prisma.$transaction(
         async (tx) => {
-          await lockPluginInstalls(tx, actor);
+          await lockPluginInstalls(tx, actor, existing.organizationId);
+          const managedId = existing.organizationId
+            ? await requireManagedOrganizationId(tx, actor)
+            : null;
           const install = await tx.capabilityInstall.findFirst({
-            where: { ...availableInSpace(actor), id: existing.id },
+            where: { ...personalOrManagedOrganizationItemIn(actor, managedId), id: existing.id },
             include: { availableIn: AVAILABILITY_SELECT },
           });
           if (!install) throw new ORPCError("NOT_FOUND", { message: "Plugin is not installed" });
-          const owned = { userId: actor.userId, installId: install.id };
+          const owned = { installId: install.id };
           // The plan above was made from an unlocked read; another change since then invalidates it.
           const config = installConfig(install, "reject");
           const locked = installedPluginParts(config);
@@ -456,6 +510,7 @@ export async function setPluginParts(
         },
         { timeout: 60_000 },
       );
+      if (row.organizationId) await deps.onOrganizationChange?.(row.organizationId);
       return installDto(row);
     } catch (error) {
       if (isUniqueViolation(error)) {

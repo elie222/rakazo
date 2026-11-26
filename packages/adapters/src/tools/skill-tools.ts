@@ -14,6 +14,7 @@ import {
   availableInSpace,
   lockOwner,
   NameTakenError,
+  personalOrOrganizationItemIn,
   runAsSystemInTransaction,
   spaceAvailability,
 } from "@rakazo/db";
@@ -42,6 +43,7 @@ type AgentSkillRow = {
   description: string;
   content: string;
   source: string;
+  organizationId?: string | null;
 };
 
 function asSource(value: string): SkillSource {
@@ -57,7 +59,7 @@ function toRecord(row: AgentSkillRow): SkillRecord & { id: string } {
     description: row.description,
     content: row.content,
     source,
-    readOnly: isSkillReadOnly(source),
+    readOnly: isSkillReadOnly(source) || Boolean(row.organizationId),
   };
 }
 
@@ -150,10 +152,10 @@ export async function listAgentSkillRecords(
   owner: SkillOwner,
 ): Promise<Array<SkillRecord & { id: string }>> {
   const rows = await prisma.agentSkill.findMany({
-    where: availableInSpace(owner),
+    where: personalOrOrganizationItemIn(owner),
     // Reference files are read one at a time through skill_read, never with the catalog.
     omit: { files: true },
-    orderBy: [{ name: "asc" }, { id: "asc" }],
+    orderBy: [{ organizationId: { sort: "asc", nulls: "first" } }, { name: "asc" }, { id: "asc" }],
   });
   return mergeBuiltinSkills(builtinAgentSkillRecords(), rows.map(toRecord));
 }
@@ -186,9 +188,9 @@ export async function skillReadFromTool(
   input: { name?: string; skillId?: string; file?: string },
 ): Promise<Record<string, unknown>> {
   const keys = await prisma.agentSkill.findMany({
-    where: availableInSpace(owner),
+    where: personalOrOrganizationItemIn(owner),
     select: { id: true, name: true },
-    orderBy: [{ name: "asc" }, { id: "asc" }],
+    orderBy: [{ organizationId: { sort: "asc", nulls: "first" } }, { name: "asc" }, { id: "asc" }],
   });
   // Builtins already have a document. Stored entries have only a name and ID here.
   const catalog = mergeBuiltinSkills<SkillKey | (SkillRecord & { id: string })>(
@@ -204,7 +206,7 @@ export async function skillReadFromTool(
     : await prisma.agentSkill.findFirst({
         where: {
           id: key.id,
-          ...availableInSpace(owner),
+          ...personalOrOrganizationItemIn(owner),
           ...(input.skillId ? {} : { name: key.name }),
         },
         select: {
@@ -212,6 +214,7 @@ export async function skillReadFromTool(
           name: true,
           description: true,
           source: true,
+          organizationId: true,
           content: true,
           files: true,
         },

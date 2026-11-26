@@ -11,14 +11,20 @@ import {
 } from "./skill-tools.js";
 
 type Scope = {
+  organization?: unknown;
+  allSpaces?: boolean;
+  availableIn?: { some: { spaceId: string } };
   spaceId?: string;
   userId?: string;
   name?: { equals: string } | string;
   NOT?: { id: string };
-  OR?: Array<{ spaceId?: string; allSpaces?: boolean }>;
+  OR?: Scope[];
 };
 /** The owner's rows here: added in this space or available in all of the owner's spaces. */
 function inScope(row: Record<string, unknown>, where: Scope): boolean {
+  if (where.organization) return false;
+  if (where.availableIn && !Array.isArray(row.availableIn)) return false;
+  if (where.allSpaces && !row.allSpaces) return false;
   if (where.userId && row.userId !== where.userId) return false;
   if (where.spaceId && row.spaceId !== where.spaceId) return false;
   if (
@@ -27,13 +33,7 @@ function inScope(row: Record<string, unknown>, where: Scope): boolean {
   )
     return false;
   if (where.NOT && row.id === where.NOT.id) return false;
-  if (
-    where.OR &&
-    !where.OR.some(
-      (branch) => branch.spaceId === row.spaceId || (branch.allSpaces && row.allSpaces === true),
-    )
-  )
-    return false;
+  if (where.OR && !where.OR.some((branch) => inScope(row, branch))) return false;
   return true;
 }
 
@@ -226,11 +226,9 @@ describe("skill tools", () => {
         where: {
           id: "plugin-1",
           name: "billing",
-          userId: owner.userId,
           OR: [
-            { spaceId: owner.spaceId },
-            { allSpaces: true },
-            { availableIn: { some: { spaceId: owner.spaceId } } },
+            expect.objectContaining({ userId: owner.userId }),
+            expect.objectContaining({ organization: expect.any(Object) }),
           ],
         },
       }),

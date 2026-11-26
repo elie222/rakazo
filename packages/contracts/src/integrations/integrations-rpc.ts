@@ -107,6 +107,7 @@ export const integrationsRpc = {
             .regex(/^sha256:[a-f0-9]{64}$/)
             .optional(),
           /** Plugins only: which parts to add; all supported parts when omitted. */
+          organization: z.boolean().optional(),
           pluginParts: z.array(PluginPartSchema).min(1).max(2).optional(),
         }),
       )

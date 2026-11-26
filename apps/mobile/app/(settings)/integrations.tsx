@@ -318,9 +318,13 @@ export default function Integrations() {
 
   function installedParams(install: CapabilityInstall): PluginParams {
     const entry = pluginEntries.find((row) => row.installedSource === install.source);
-    return entry
-      ? pluginParams(entry)
-      : { source: install.source, installedSource: install.source, name: install.name };
+    return {
+      ...(entry
+        ? pluginParams(entry)
+        : { source: install.source, installedSource: install.source, name: install.name }),
+      installId: install.id,
+      ...(install.organization ? { organization: "1" } : {}),
+    };
   }
 
   function openDetail(item: ConnectionCatalogItem) {

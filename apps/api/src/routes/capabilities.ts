@@ -20,7 +20,14 @@ import {
   mcpSourcePresetsFor,
 } from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
-import { AVAILABILITY_SELECT, availableInSpace, itemSecretIn, spaceAvailability } from "@rakazo/db";
+import {
+  AVAILABILITY_SELECT,
+  itemSecretIn,
+  managedOrganizationId,
+  personalOrManagedOrganizationItemIn,
+  personalOrOrganizationItemIn,
+  spaceAvailability,
+} from "@rakazo/db";
 import { requireAdmin } from "../auth/admins.js";
 import { searchIntegrationCatalog } from "../integrations/integration-catalog.js";
 import { assertMcpRemoteEndpoint, mayUsePrivateEndpoint } from "../integrations/mcp-servers.js";
@@ -36,25 +43,30 @@ import {
   listPluginSubmissions,
   reviewPluginSubmission,
 } from "../integrations/plugin-submissions.js";
+import { signalOrganizationCapabilities } from "../spaces/organization-capabilities.js";
 import type { RouterContext } from "./context.js";
 
 export function capabilitiesRoutes(ctx: RouterContext) {
   const { deps, removeMcpServerInTransaction, authed } = ctx;
+  const onOrganizationChange = (id: string) =>
+    signalOrganizationCapabilities(deps.prisma, deps.events, id);
   const pluginMarketplace = createPluginMarketplace(deps.pluginMarketplaceRead);
   /** Removes an install and, for a plugin, the servers, secrets and skills it added. */
   const removeInstall = async (actor: Actor, id: string) => {
     const notify: Array<{ threadId: string; seq: number }> = [];
-    await deps.prisma.$transaction(async (tx) => {
+    const organizationId = await deps.prisma.$transaction(async (tx) => {
       // Parts changes hold this lock while adding children; reading them without it could
       // miss a connector committed meanwhile and leave its secret behind.
+      const managedId = await managedOrganizationId(tx, actor);
       await lockPluginInstalls(tx, actor);
+      if (managedId) await lockPluginInstalls(tx, actor, managedId);
       const existing = await tx.capabilityInstall.findFirst({
-        where: { id, ...availableInSpace(actor) },
+        where: { id, ...personalOrManagedOrganizationItemIn(actor, managedId) },
       });
       if (!existing) return;
       if (existing.kind === "plugin") {
         const servers = await tx.mcpServer.findMany({
-          where: { installId: existing.id, userId: actor.userId },
+          where: { installId: existing.id },
           select: { id: true, secretId: true },
         });
         for (const server of servers) {
@@ -73,7 +85,9 @@ export function capabilitiesRoutes(ctx: RouterContext) {
           });
         }
       }
+      return existing.organizationId;
     });
+    if (organizationId) await onOrganizationChange(organizationId);
     for (const event of notify) await deps.events.notify(event.threadId, event.seq);
   };
   return {
@@ -104,8 +118,9 @@ export function capabilitiesRoutes(ctx: RouterContext) {
     },
     capabilities: {
       list: authed.capabilities.list.handler(async ({ context }) => {
+        const managedId = await managedOrganizationId(deps.prisma, context.actor);
         const rows = await deps.prisma.capabilityInstall.findMany({
-          where: availableInSpace(context.actor),
+          where: personalOrOrganizationItemIn(context.actor),
           include: { availableIn: AVAILABILITY_SELECT },
         });
         return rows.map((row) => ({
@@ -117,7 +132,9 @@ export function capabilitiesRoutes(ctx: RouterContext) {
           digest: row.digest,
           secretConfigured: Boolean(row.secretId),
           config: installConfig(row),
-          availability: spaceAvailability(row),
+          ...(row.organizationId
+            ? { organization: true, manageable: row.organizationId === managedId }
+            : { availability: spaceAvailability(row) }),
           createdAt: row.createdAt.toISOString(),
         }));
       }),
@@ -144,6 +161,7 @@ export function capabilitiesRoutes(ctx: RouterContext) {
               prisma: deps.prisma,
               secrets: deps.secrets,
               fetcher: deps.pluginRepoFetcher,
+              onOrganizationChange,
               assertEndpoint: (endpoint) => assertMcpRemoteEndpoint(endpoint, deps),
             },
             context.actor,
@@ -151,6 +169,8 @@ export function capabilitiesRoutes(ctx: RouterContext) {
             context.signal,
           );
         }
+        if (input.organization)
+          throw new ClientError("BAD_REQUEST", "Only plugins can be shared here.");
         let source = input.source.trim();
         let config = input.config;
         const credential = input.credential?.trim() || undefined;
@@ -307,6 +327,7 @@ export function capabilitiesRoutes(ctx: RouterContext) {
             prisma: deps.prisma,
             secrets: deps.secrets,
             fetcher: deps.pluginRepoFetcher,
+            onOrganizationChange,
             assertEndpoint: (endpoint) => assertMcpRemoteEndpoint(endpoint, deps),
             removeServer: async (tx, server) =>
               notify.push(...(await removeMcpServerInTransaction(tx, context.actor, server))),

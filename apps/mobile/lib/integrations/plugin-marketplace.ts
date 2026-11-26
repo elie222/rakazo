@@ -10,6 +10,8 @@ import { installedPluginParts, matchesPluginQuery, pluginSite } from "@rakazo/co
 export type PluginParams = {
   source: string;
   installedSource: string;
+  installId?: string;
+  organization?: "1";
   name: string;
   description?: string;
   logo?: string;

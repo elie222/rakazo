@@ -12,6 +12,11 @@ type Procedure = {
 
 const READS: Record<ReadChangeKind, readonly Procedure[]> = {
   deploymentModel: [],
+  capabilities: [
+    ["capabilities", "list"],
+    ["agentSkills", "list"],
+    ["agentSkills", "get"],
+  ],
   preferences: [
     ["approvalRules", "list"],
     ["approvalRules", "effective"],
@@ -53,6 +58,7 @@ export function spaceChanged(kind: ReadChangeKind, client = queryClient): Promis
       if (!Array.isArray(path)) return false;
       if (kind === "deploymentModel") return path[2] === "me" || path[2] === "models";
       if (kind === "preferences" && path[2] === "me") return true;
+      if (kind === "capabilities" && path.slice(-3).join(".") === "mcp.servers.list") return true;
       return procedures.includes(path.slice(-2).join("."));
     },
   };

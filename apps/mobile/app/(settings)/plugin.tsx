@@ -3,6 +3,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { McpServer, PluginPart } from "@rakazo/contracts";
 import { mcpServerConnection, mcpServerNeedsSignIn, PluginPreviewSchema } from "@rakazo/contracts";
 import {
+  canManageOrganizationMembers,
   catalogItemKey,
   connectCatalogItem,
   installedPluginParts,
@@ -26,6 +27,7 @@ import { PluginIcon } from "../../components/integrations/plugin-icon";
 import { SkillSymbol } from "../../components/integrations/skill-symbol";
 import { NativeActionButton } from "../../components/native/native-action-button";
 import { NativeSymbol } from "../../components/native/native-symbol";
+import { SettingsGroup, SettingsSwitch } from "../../components/settings/settings-group";
 import {
   reachesOtherSpaces,
   SpaceAvailabilityPicker,
@@ -44,6 +46,7 @@ import { openExternalUrl } from "../../lib/platform/open-url";
 import type { SaveSend } from "../../lib/query/query";
 import { queryClient, rpcQuery, useSave } from "../../lib/query/query";
 import { useScreenQuery } from "../../lib/query/screen-query";
+import { activeOrganization, useOrganizations } from "../../lib/spaces/organizations";
 
 const SKILLS_SHOWN = 5;
 
@@ -60,6 +63,9 @@ function PluginScreen() {
   const styles = useThemedStyles(createStyles);
   const { t } = useLingui();
   const [lastBotId, setLastBotId] = useState<string | null>(null);
+  const organization = activeOrganization(useOrganizations().data);
+  const canShare = Boolean(organization && canManageOrganizationMembers(organization));
+  const [forOrganization, setForOrganization] = useState(false);
   const [allSkills, setAllSkills] = useState(false);
   const [noAuth, setNoAuth] = useState(new Set<string>());
 
@@ -107,7 +113,17 @@ function PluginScreen() {
 
   // A pasted URL can differ from the normalized source the install is saved under.
   const savedAs = (source: string | undefined) =>
-    installs.find((row) => row.kind === "plugin" && row.source === source);
+    installs.find(
+      (row) =>
+        row.kind === "plugin" &&
+        row.source === source &&
+        (params.installId
+          ? row.id === params.installId
+          : Boolean(row.organization) === (canShare && forOrganization)),
+    ) ??
+    (!canShare && !params.installId
+      ? installs.find((row) => row.kind === "plugin" && row.source === source)
+      : undefined);
   const previewRead = rpcQuery("capabilities/pluginPreview", { source: params.source });
   const previewQuery = useQuery(
     {
@@ -122,13 +138,16 @@ function PluginScreen() {
   const previewLoading = previewQuery.isLoading;
   const install =
     savedAs(params.installedSource) ?? (preview ? savedAs(preview.installedSource) : undefined);
+  const readOnly = install?.manageable === false || (params.organization === "1" && !canShare);
   const parts = install ? installedPluginParts(install.config) : [];
   const servers =
     install && parts.includes("connector")
       ? allServers.filter((server) => server.installId === install.id)
       : [];
   const installed = Boolean(install);
-  const everywhere = reachesOtherSpaces(install?.availability, useOwnSpaces().length);
+  const spaceCount = useOwnSpaces().length;
+  const everywhere =
+    Boolean(install?.organization) || reachesOtherSpaces(install?.availability, spaceCount);
 
   const change = useSave({
     save: (
@@ -160,6 +179,9 @@ function PluginScreen() {
             name: preview.name,
             source: preview.pinnedSource ?? params.source,
             pluginDigest: preview.digest,
+            ...(canShare && (params.organization === "1" || forOrganization)
+              ? { organization: true }
+              : {}),
             config: {},
             pluginParts: next,
           });
@@ -281,13 +303,19 @@ function PluginScreen() {
         };
   useScreenHeader({
     title: params.name,
-    action: {
-      label: action.label,
-      prominence: action.destructive ? "destructive" : managedConnected ? "secondary" : "primary",
-      disabled: managed ? !managedApp : !ready,
-      busy,
-      onPress: action.onPress,
-    },
+    action: readOnly
+      ? null
+      : {
+          label: action.label,
+          prominence: action.destructive
+            ? "destructive"
+            : managedConnected
+              ? "secondary"
+              : "primary",
+          disabled: managed ? !managedApp : !ready,
+          busy,
+          onPress: action.onPress,
+        },
   });
 
   const description = detail?.description || params.description;
@@ -328,7 +356,20 @@ function PluginScreen() {
         </View>
 
         {description ? <Text style={styles.description}>{description}</Text> : null}
-        {install ? (
+        {!managed && canShare && !params.installId ? (
+          <SettingsGroup>
+            <SettingsSwitch
+              label={t`Install for organization`}
+              value={forOrganization}
+              onChange={setForOrganization}
+              disabled={busy}
+            />
+          </SettingsGroup>
+        ) : null}
+        {install?.organization && params.installId ? (
+          <Text style={styles.secondary}>{t`Organization`}</Text>
+        ) : null}
+        {install && !install.organization ? (
           <SpaceAvailabilityPicker
             kind="install"
             id={install.id}
@@ -402,7 +443,9 @@ function PluginScreen() {
                       ) : null}
                     </View>
                     <View style={styles.itemActions}>
-                      {!mcpServerNeedsSignIn(server) || noAuth.has(server.id) ? null : (
+                      {server.manageable === false ||
+                      !mcpServerNeedsSignIn(server) ||
+                      noAuth.has(server.id) ? null : (
                         <NativeActionButton
                           busy={pending === server.id}
                           disabled={busy}
@@ -412,7 +455,7 @@ function PluginScreen() {
                           prominence="secondary"
                         />
                       )}
-                      {botId ? (
+                      {botId && !server.organization ? (
                         assigned.has(server.id) ? (
                           <Text style={styles.secondary}>{t`In this bot`}</Text>
                         ) : (
@@ -456,7 +499,7 @@ function PluginScreen() {
               <Text style={styles.sectionTitle}>
                 {t`Skills`} <Text style={styles.count}>{skills.length}</Text>
               </Text>
-              {skillPack ? null : (
+              {skillPack || readOnly ? null : (
                 <NativeActionButton
                   busy={pending === "skills"}
                   disabled={busy || !ready}

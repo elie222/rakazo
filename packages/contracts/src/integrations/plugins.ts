@@ -11,6 +11,8 @@ export const CapabilityInstallSchema = z.object({
   digest: z.string().nullable(),
   secretConfigured: z.boolean(),
   config: z.record(z.string(), z.unknown()),
+  organization: z.boolean().optional(),
+  manageable: z.boolean().optional(),
   availability: SpaceAvailabilitySchema.optional(),
   createdAt: z.string(),
 });

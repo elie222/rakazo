@@ -32,7 +32,9 @@ async function assertOwnSpaces(
 type Joined = { spaceId: string; userId: string; allSpaces: boolean; secretId?: string | null };
 
 /** A member's own server; an organization's is never placed in Spaces, so it is left out. */
-function ownServer<Row extends { spaceId: string | null; userId: string | null }>(row: Row | null) {
+function personalItem<Row extends { spaceId: string | null; userId: string | null }>(
+  row: Row | null,
+) {
   return row?.spaceId && row.userId ? { ...row, spaceId: row.spaceId, userId: row.userId } : null;
 }
 
@@ -183,10 +185,10 @@ export async function setAvailability(
     // A plugin's own skills and connectors are placed through the plugin.
     const item: (Joined & { id: string }) | null =
       input.kind === "skill"
-        ? await tx.agentSkill.findFirst({ where: { ...visible, source: "user" } })
+        ? personalItem(await tx.agentSkill.findFirst({ where: { ...visible, source: "user" } }))
         : input.kind === "mcpServer"
-          ? ownServer(await tx.mcpServer.findFirst({ where: { ...visible, installId: null } }))
-          : await tx.capabilityInstall.findFirst({ where: visible });
+          ? personalItem(await tx.mcpServer.findFirst({ where: { ...visible, installId: null } }))
+          : personalItem(await tx.capabilityInstall.findFirst({ where: visible }));
     if (!item) throw new ORPCError("NOT_FOUND");
     return place(tx, actor, input.kind, item, input);
   });
@@ -228,12 +230,18 @@ async function ownItems(tx: Prisma.TransactionClient, actor: Actor): Promise<Own
       row,
     });
     return [
-      ...installs.map((row) => item("install", row)),
+      ...installs.flatMap((row) => {
+        const own = personalItem(row);
+        return own ? [item("install", own)] : [];
+      }),
       ...servers.flatMap((row) => {
-        const own = ownServer(row);
+        const own = personalItem(row);
         return own ? [item("mcpServer", own)] : [];
       }),
-      ...skills.map((row) => item("skill", row)),
+      ...skills.flatMap((row) => {
+        const own = personalItem(row);
+        return own ? [item("skill", own)] : [];
+      }),
     ];
   });
 }
@@ -340,12 +348,13 @@ export async function rehomeItemsLeaving(prisma: PrismaClient, spaceId: string):
         if (!isUniqueViolation(error)) throw error;
       }
     };
-    for (const row of installs) await move("install", row);
+    for (const row of installs)
+      if (row.userId) await move("install", { ...row, userId: row.userId });
     for (const row of servers) {
-      const own = ownServer(row);
+      const own = personalItem(row);
       if (own) await move("mcpServer", own);
     }
-    for (const row of skills) await move("skill", row);
+    for (const row of skills) if (row.userId) await move("skill", { ...row, userId: row.userId });
   });
 }
 
