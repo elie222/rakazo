@@ -150,6 +150,20 @@ Tailwind's default 4px scale, with no custom spacing tokens. Common rhythm:
 Forms lay out with `FieldGroup`, `Field` and `FieldLabel` so every form has the same rhythm.
 Never hand-space labels.
 
+### One text edge
+
+Text on a page starts on one vertical line, and trailing controls end on one line.
+
+- Inside a bordered group or muted card, rows are padded (`px-4`, or `px-3.5` in the Vault
+  list) and their text sets the edge.
+- Headings above a group are inset to that edge: `SettingsGroup` titles do this, and a hand-built
+  header row uses the same inset (`mx-px px-4` over a bordered group, `px-4` or `px-3.5` over a
+  borderless card).
+- A `FieldLabel` above its control starts where the control's text does (border plus padding,
+  13px). The component does this; don't add padding by hand.
+- `Input`, `Textarea` and select triggers share one text inset, so stacked controls line up.
+- A header's action button ends on the same line as the controls in the rows below.
+
 ## Radius
 
 All radii derive from `--radius` (0.75rem): `rounded-sm` −4px, `rounded-md` −2px, `rounded-lg`
@@ -160,7 +174,7 @@ All radii derive from `--radius` (0.75rem): `rounded-sm` −4px, `rounded-md` �
 | `rounded-lg` | Controls, segmented tracks and items, menu items |
 | `rounded-xl` | Cards, settings groups, default dialogs |
 | `rounded-2xl` | Large dialogs and overlays |
-| `rounded-full` | Avatars, floating buttons, pills |
+| `rounded-full` | Avatars, floating buttons, filter chips. Never action buttons |
 
 ## Elevation
 
@@ -191,6 +205,11 @@ Lucide (`lucide-react`). Default size `size-4`, `strokeWidth={1.75}` in navigati
 directional icons in RTL (`rtl:rotate-180`). An icon-only control needs an accessible name and
 usually an `IconTooltip`.
 
+- An icon-only button in a row or card uses `size="icon"` (32px, the height of an input), not
+  `icon-sm` or `icon-xs`, so its hit area matches the controls beside it.
+- A button carries at most one icon, at the start (`data-icon="inline-start"`). A button that
+  opens a menu doesn't add a chevron when it already has an icon.
+
 ## Components
 
 Web and Electron use shadcn/ui (style `base-nova`) on Base UI, vendored into
@@ -220,16 +239,28 @@ prop only (`control-size.ts`), so controls side by side line up:
 | Variant | Use |
 |---|---|
 | `default` | The one primary action on a screen (ink fill) |
-| `outline` | Secondary actions next to a primary |
-| `secondary` | Quiet filled action |
-| `ghost` | Toolbar and icon actions |
+| `secondary` | Row actions, header actions, Edit, Rename, Change password. The usual choice |
+| `outline` | Rare: a secondary action that needs an edge on a busy surface |
+| `ghost` | Toolbars and icon-only actions |
 | `text` | Inline action that reads as text |
 | `link` | Navigation inside copy |
-| `destructive` | Delete and remove (tinted, not solid) |
+| `destructive-secondary` | Remove, delete, leave or disconnect on an ordinary page: neutral, red on hover and press |
+| `destructive` | The confirming button in a destructive confirmation (tinted red) |
 | `floating` | Pill over scrolling content (glass) |
 
 One `default` button per view. Destructive actions go in menus or the bottom of an edit form,
 not repeated per row.
+
+**Destructive actions stay neutral until you reach for them.** A page lined with red text reads
+as an alarm. On ordinary pages:
+
+- A labelled button uses `destructive-secondary` with an icon that says what happens: `Trash2`
+  for remove and delete, `LogOut` for leave, `Unplug` for disconnect. Don't use a trash can for
+  actions that delete nothing.
+- An icon-only button (a trash can at the end of a row) is `ghost` with `text-muted-foreground`
+  and a red hover and press tint.
+- Red at rest is for the confirmation step: the `destructive` button in an `AlertDialog`, or a
+  danger container that holds the final form (deleting an account).
 
 ### Choosing between similar controls
 
@@ -242,6 +273,7 @@ not repeated per row.
 | Agree or select in a form | `Checkbox` | Switch |
 | Confirm a destructive action | `AlertDialog` (`ConfirmDialog`) | `Dialog` |
 | Transient result | `toast` (sonner) | Inline banner |
+| A status or failure that stays until something changes | `Notice` | Bare coloured text |
 | Nothing here yet | `Empty` | Custom text block |
 
 ### Segmented control (proposed)
@@ -264,11 +296,32 @@ live in one place. Until then, copy the class string above exactly.
 own scroll panes. Every dialog has a `DialogTitle`. Add a `DialogDescription` only when the
 title alone doesn't say what happens.
 
+### Notice
+
+`Notice` (`apps/web/src/components/Notice.tsx`) is a tinted message box with `error`, `warning`
+and `success` tones. The tone's icon carries the colour, the text stays `foreground`, and errors
+render with `role="alert"` and the others with `role="status"`. Put it next to what it is about
+(a provider error inside the provider section), not at the top of the page.
+
+```tsx
+{error ? <Notice tone="error">{error}</Notice> : null}
+```
+
 ### Settings
 
 Settings screens use `SettingsGroup` (titled, bordered list) and `SettingsRow` (label then
 control, wrapping when narrow) from `apps/web/src/components/settings/SettingsRows.tsx`, inside
 `SETTINGS_CONTENT_WIDTH`.
+
+- Prefer rows (label left, control right) to a stacked form. A setting's longer setup (an API
+  key, server fields, sign-in) goes inside its row's children, under the label.
+- Selects in a row get a fixed width (`w-56`) so rows line up. Switches sit at the end of the row.
+- A list with an add action gets a section header: `SectionHeading` (`heading` variant) on the
+  left, a `secondary` button with a `Plus` icon on the right, inset to the text edge. The list
+  sits below, in a `SettingsGroup` or a muted card (`rounded-xl bg-muted/50`). Approvals (Rules),
+  Vault (Items) and Memory (Memory provider) follow this.
+- A record opened from a muted-card list shows its fields in the same card, so it looks the same
+  open as in the list.
 
 ### Card and Empty
 
@@ -315,5 +368,10 @@ tokens from `apps/mobile/lib/appearance/appearance.ts`. System chrome uses `Plat
 
 - No shared segmented control (see above).
 - No elevation or motion tokens. The conventions above are descriptive.
+- Some danger and error boxes are still hand-built with the `Notice` classes (the account
+  deletion container, a few inline errors). Move message-only ones to `Notice`.
+- About 20 buttons still use `destructive`. Most confirm an action in a dialog, which is right;
+  check the rest against the destructive-action rule above.
+- Spaces' "New private space" still sits below its list rather than in a section header.
 - Light-theme `card` and `muted` are darker than `background`, the opposite of dark, where they
   are lighter. Worth a deliberate decision rather than a per-component fix.
