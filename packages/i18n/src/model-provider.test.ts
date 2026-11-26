@@ -88,7 +88,6 @@ it("refreshes subscription names and chat choices when the language changes", ()
         catalog: [entry].map(localizeModelEntry),
         me: null,
         modelKey: "example::model",
-        spaceDefaultLabel: "Default",
       }).choices.find((choice) => choice.key === "example::model"),
     ).toMatchObject({ label: `Model (${expected})` });
     expect(connectedModelChoices(credentials, [entry].map(localizeModelEntry))[0]).toMatchObject({

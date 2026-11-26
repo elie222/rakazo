@@ -451,11 +451,137 @@ export function groupModelChoices(choices: readonly ChatModelChoice[], query: st
 }
 
 /**
+ * Splits a section into the newest model of each family and the older ones behind it, keeping
+ * the section's order. The selected model and a connection's own ordered models stay in view.
+ */
+export function latestModelChoices<C extends ChatModelChoice>(
+  choices: readonly C[],
+  selectedKey: string,
+): { latest: C[]; older: C[] } {
+  const releases = new Map(
+    choices.map((choice) => [
+      choice,
+      choice.preserveModelOrder || !choice.modelId ? null : modelRelease(choice),
+    ]),
+  );
+  const newest = new Map<string, { choice: C; release: ModelRelease }>();
+  for (const [choice, release] of releases) {
+    if (!release) continue;
+    const current = newest.get(release.family);
+    if (!current || compareReleases(release, current.release) > 0) {
+      newest.set(release.family, { choice, release });
+    }
+  }
+  const latest: C[] = [];
+  const older: C[] = [];
+  for (const [choice, release] of releases) {
+    const shown =
+      !release || newest.get(release.family)?.choice === choice || choice.key === selectedKey;
+    (shown ? latest : older).push(choice);
+  }
+  return { latest, older };
+}
+
+/**
+ * A picker's provider sections with each model's older versions held back, unless the section's
+ * key is in `expanded`; `collapsed` says the section has more to show.
+ */
+export function collapseOlderModels<
+  S extends { key: string; heading?: string; data: ChatModelChoice[] },
+>(
+  sections: readonly S[],
+  selectedKey: string,
+  expanded: ReadonlySet<string>,
+): (S & { collapsed: boolean })[] {
+  return sections.map((section) => {
+    const { latest, older } = section.heading
+      ? latestModelChoices(section.data, selectedKey)
+      : { latest: section.data, older: [] };
+    const collapsed = older.length > 0 && !expanded.has(section.key);
+    return { ...section, data: collapsed ? latest : section.data, collapsed };
+  });
+}
+
+type ModelRelease = { family: string; version: number[]; tagged: boolean; date: number[] };
+
+/**
+ * Reads a model id as its vendor path, words, sizes (`120b`, `0.5b`, `4o`), a version, a date and
+ * a local tag:
+ * `claude-sonnet-4-5-20250929` is family `claude-sonnet`, version 4.5, dated 20250929.
+ */
+function modelRelease(choice: ChatModelChoice): ModelRelease {
+  const id = (choice.modelId ?? "").toLowerCase();
+  // A vendor path (`anthropic/`) and a local tag (`:8b-instruct-q4_0`) name different models
+  // rather than releases, so they stay whole in the family.
+  const vendor = id.slice(0, id.lastIndexOf("/") + 1);
+  const [name = "", tag] = id.slice(vendor.length).split(/:(.*)/s);
+  const words: string[] = [];
+  const version: number[] = [];
+  const date: number[] = [];
+  let tagged = false;
+  const parts = name.match(/\d+(?:\.\d+)?[a-z][a-z\d]*|[a-z]+|\d+/g) ?? [];
+  let wordAfterVersion = false;
+  for (const [index, part] of parts.entries()) {
+    if (!/^\d+$/.test(part)) {
+      if (RELEASE_TAGS.has(part)) tagged = true;
+      else words.push(part);
+      if (version.length) wordAfterVersion = true;
+    } else if (
+      // A date: `20250929`, `1106`, `001`, or numbers after a word that follows the version. A
+      // bare `0` is a version part, as in `2.0`.
+      date.length ||
+      part.length >= 4 ||
+      /^0\d/.test(part) ||
+      wordAfterVersion ||
+      // A month before a closing year (`08-2024`), not a version before `2025-08-07`.
+      (/^20\d\d$/.test(parts[index + 1] ?? "") && !/^\d+$/.test(parts[index + 2] ?? ""))
+    ) {
+      date.push(Number(part));
+    } else version.push(Number(part));
+  }
+  return {
+    family: `${choice.provider ?? ""}:${choice.providerLabel ?? ""}:${vendor}${words.join("-")}:${tag ?? ""}`,
+    version,
+    tagged,
+    // A year leads, so `12-2023` sorts before `08-2024`.
+    date: [...date.filter(isYear), ...date.filter((part) => !isYear(part))],
+  };
+}
+
+function isYear(part: number): boolean {
+  return part >= 1990 && part <= 2099;
+}
+
+/**
+ * Higher versions first. Within one version a stable id beats a preview, and an undated id (which
+ * follows the newest) beats snapshots.
+ */
+function compareReleases(left: ModelRelease, right: ModelRelease): number {
+  return (
+    compareNumbers(left.version, right.version) ||
+    Number(right.tagged) - Number(left.tagged) ||
+    Number(!left.date.length) - Number(!right.date.length) ||
+    compareNumbers(left.date, right.date)
+  );
+}
+
+function compareNumbers(left: readonly number[], right: readonly number[]): number {
+  for (let index = 0; index < Math.max(left.length, right.length); index++) {
+    const difference = (left[index] ?? -1) - (right[index] ?? -1);
+    if (difference) return difference;
+  }
+  return 0;
+}
+
+const RELEASE_TAGS = new Set(["latest", "preview", "exp"]);
+const MODEL_VERSION = /\d+(?:[.-]\d{1,2}(?![\da-z]))*/i;
+
+/**
  * The version a model id starts with, such as `[6, 1]` for `gpt-6.1-sol` or `[4, 5]` for
  * `x-4-5`. A part followed by letters is a size or variant, as in `llama-3-8b`, not a version.
  */
 function modelVersion(id: string): number[] {
-  const match = /\d+(?:[.-]\d{1,2}(?![\da-z]))*/i.exec(id);
+  const match = MODEL_VERSION.exec(id);
   return match ? match[0].split(/[.-]/).map(Number) : [];
 }
 
@@ -474,26 +600,23 @@ export function newestModelsFirst<T extends { id: string }>(models: readonly T[]
 }
 
 /**
- * A chat's model picker: the space default (key ""), then a saved model no
- * connection offers any more, then every connected model.
+ * A chat's model picker: the model in use when no connection offers it any more (named by
+ * `missing`, else its id), then every connected model.
  */
 export function chatModelChoices(
   connected: readonly ConnectedModelChoice[],
   selectedKey: string,
-  spaceDefaultLabel: string,
-  /** Whether the space's default model reads images, when the catalog knows. */
-  spaceDefaultImages?: boolean,
+  missing?: { label?: string; images?: boolean },
 ): ChatModelChoice[] {
-  const choices: ChatModelChoice[] = [
-    { key: "", label: spaceDefaultLabel, images: spaceDefaultImages },
-  ];
+  const choices: ChatModelChoice[] = [];
   if (selectedKey && !connected.some((option) => option.key === selectedKey)) {
     const saved = parseModelOptionKey(selectedKey);
     choices.push({
       key: selectedKey,
-      label: saved?.modelId ?? selectedKey,
+      label: missing?.label ?? saved?.modelId ?? selectedKey,
       provider: saved?.provider,
       modelId: saved?.modelId,
+      ...(missing?.images === undefined ? {} : { images: missing.images }),
     });
   }
   return choices.concat(connected);
