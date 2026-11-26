@@ -1141,21 +1141,25 @@ export async function waitForRunComputerLease(
   input: { computerId: string; botId: string; runId: string; workerId: string; runFence: number },
   signal: AbortSignal,
 ): Promise<ComputerExecutionLease | null> {
-  // A person's run marks its wait, which the bot's background runs yield to.
-  await prisma.run.updateMany({
-    where: {
-      id: input.runId,
-      trigger: { in: [...PERSON_RUN_TRIGGERS] },
-      status: "running",
-      leaseOwner: input.workerId,
-      leaseFence: input.runFence,
-    },
-    data: { computerUseStartedAt: new Date() },
-  });
+  let marked = false;
   const outcome = await pollUntil(
     async () => {
       signal.throwIfAborted();
       try {
+        // A person's run marks its wait, which the bot's background runs yield to.
+        if (!marked) {
+          await prisma.run.updateMany({
+            where: {
+              id: input.runId,
+              trigger: { in: [...PERSON_RUN_TRIGGERS] },
+              status: "running",
+              leaseOwner: input.workerId,
+              leaseFence: input.runFence,
+            },
+            data: { computerUseStartedAt: new Date() },
+          });
+          marked = true;
+        }
         const bot = await prisma.bot.findUnique({
           where: { id: input.botId },
           select: { computerId: true, computerSwitching: true, archivedAt: true },
