@@ -586,10 +586,11 @@ export interface SemanticMemoryConversationRequest {
   turns: SemanticMemoryConversationTurn[];
 }
 
-/** Reflects over the bot's own memory only. */
+/** Reflects over the durable memory the bot can write to in this scope. */
 export interface SemanticMemoryReflectRequest {
   query: string;
   botId: string;
+  scope: DurableMemoryScope;
 }
 
 export type SemanticMemoryForgetResponse = SemanticMemoryResponse<{

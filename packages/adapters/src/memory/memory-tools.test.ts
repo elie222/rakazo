@@ -77,7 +77,7 @@ describe("reflect_memory", () => {
 
     expect(ctx.state.tainted).toBe(true);
     expect(reflect).toHaveBeenCalledWith(
-      { query: "What does the user prefer?", botId: "bot-1" },
+      { query: "What does the user prefer?", botId: "bot-1", scope: "shared" },
       context,
     );
   });
