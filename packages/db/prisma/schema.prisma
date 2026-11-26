@@ -561,6 +561,7 @@ model AccessGrant {
   email          String
   creditCents    Int       @default(0)
   freeMonths     Int       @default(0)
+  byokTier       String?
   createdById    String?
   createdBy      User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
   organizationId String?
@@ -2740,6 +2741,7 @@ model ModelCreditAccount {
   balanceMicros         BigInt             @default(0)
   pendingCreditCheckout Boolean            @default(false)
   byokFreeUntil         DateTime?
+  freeByokTiers          FreeByokTier[]
   purchaseReadsStarted  BigInt             @default(0)
   purchaseReadApplied   BigInt             @default(0)
   entries               ModelCreditEntry[]
@@ -2748,6 +2750,17 @@ model ModelCreditAccount {
   updatedAt             DateTime           @updatedAt
 
   @@map("model_credit_accounts")
+}
+
+/// The current expiry for a named complimentary own-key tier, tracked separately from other tiers.
+model FreeByokTier {
+  organizationId String
+  account        ModelCreditAccount @relation(fields: [organizationId], references: [organizationId], onDelete: Cascade)
+  tier           String
+  expiresAt      DateTime
+
+  @@id([organizationId, tier])
+  @@map("free_byok_tiers")
 }
 
 /// Current purchase, reservation, or expiry projection. Database triggers journal every change.

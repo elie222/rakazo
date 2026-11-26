@@ -44,6 +44,7 @@ import {
 import { ClientError, retry } from "@rakazo/core";
 import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
+  activeFreeByokTier,
   billingAccountForOrganization,
   byokFreeUntil,
   createBillingAccount,
@@ -746,20 +747,22 @@ export function createBillingService(deps: {
           trialDays(organizationId),
           organizationOwnerHadTrial(prisma, organizationId, "byok"),
         ]);
+        const now = new Date();
+        const free = activeFreeByokTier(credits, account?.status ?? null, now);
         const freeUntil =
           credits.mode === "byok" &&
           BYOK_TIERS.standard.monthlyPriceCents !== null &&
           !hasBillingAccess(account?.status ?? null)
-            ? byokFreeUntil(credits)
+            ? (free?.expiresAt ?? byokFreeUntil(credits, now))
             : null;
-        const access = hasModelAccess(credits, account?.status ?? null);
+        const access = hasModelAccess(credits, account?.status ?? null, now);
         const freePeriodEnded =
           !access &&
           !account?.subscribedAt &&
           credits.byokFreeUntil !== null &&
-          !byokFreeUntil(credits);
+          !byokFreeUntil(credits, now);
         const subscribed = subscribedByokPrice(account);
-        const tier = subscribed?.tier ?? "standard";
+        const tier = free?.tier ?? subscribed?.tier ?? "standard";
         const hourMicros = deps.sandbox && sandboxDisplayedHourMicros(deps.sandbox);
         const offers = byokTierOffers(Boolean(sized), hourMicros);
         return {
@@ -776,8 +779,10 @@ export function createBillingService(deps: {
           creditPurchasesEnabled: deps.managedModelsAvailable ?? true,
           byokPriceCents:
             BYOK_TIERS.standard.monthlyPriceCents &&
-            (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents),
-          byokInterval: subscribed?.interval ?? "month",
+            (free
+              ? byokTierPriceCents(free.tier, "month")
+              : (subscribed?.cents ?? BYOK_TIERS.standard.monthlyPriceCents)),
+          byokInterval: free ? "month" : (subscribed?.interval ?? "month"),
           byokAnnualPriceCents: byokTierPriceCents(tier, "year"),
           byokTier: tier,
           ...(offers.length ? { byokTiers: offers } : {}),

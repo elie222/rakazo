@@ -1,5 +1,6 @@
 import type { BillingSubscriptionSnapshot } from "@rakazo/adapter-kit";
-import { BYOK_TIERS } from "@rakazo/contracts";
+import type { ByokTier } from "@rakazo/contracts";
+import { BYOK_TIERS, ByokTierSchema } from "@rakazo/contracts";
 import type { BillingAccount, PrismaClient } from "../database/client.js";
 import { Prisma } from "../database/client.js";
 import { isUniqueViolation } from "../database/prisma-errors.js";
@@ -32,6 +33,26 @@ export function byokFreeUntil(credits: { byokFreeUntil: Date | null }, now = new
   return credits.byokFreeUntil && credits.byokFreeUntil > now ? credits.byokFreeUntil : null;
 }
 
+export type FreeByokTiers = { freeByokTiers: readonly { tier: string; expiresAt: Date }[] };
+
+export const FREE_BYOK_TIERS_SELECT = { select: { tier: true, expiresAt: true } } as const;
+
+/** A live subscription controls its own benefits. Otherwise the highest unexpired grant wins. */
+export function activeFreeByokTier(
+  account: FreeByokTiers | null | undefined,
+  subscriptionStatus: string | null,
+  now = new Date(),
+) {
+  if (hasBillingAccess(subscriptionStatus)) return null;
+  for (const tier of [...ByokTierSchema.options].reverse()) {
+    const grant = account?.freeByokTiers?.find(
+      (grant) => grant.tier === tier && grant.expiresAt > now,
+    );
+    if (grant) return { tier, expiresAt: grant.expiresAt };
+  }
+  return null;
+}
+
 export const FREE_MONTH_DAYS = 30;
 /** How long an open checkout session holds the owner's trial; sessions live about a day. */
 const BYOK_TRIAL_CHECKOUT_HOLD_MS = 24 * 60 * 60 * 1000;
@@ -41,11 +62,28 @@ export async function extendByokFreePeriod(
   tx: Prisma.TransactionClient,
   organizationId: string,
   days: number,
+  tier?: ByokTier,
 ) {
-  await tx.$executeRaw`
-    UPDATE model_credit_accounts
-    SET "byokFreeUntil" = GREATEST(COALESCE("byokFreeUntil", now()), now()) + make_interval(days => ${days}::int)
-    WHERE "organizationId" = ${organizationId}`;
+  if (tier) {
+    // Keep the tier's own term and project the latest end for existing access checks.
+    await tx.$executeRaw`
+      WITH grant_expiry AS (
+        INSERT INTO free_byok_tiers ("organizationId", "tier", "expiresAt")
+        VALUES (${organizationId}, ${tier}, now() + make_interval(days => ${days}::int))
+        ON CONFLICT ("organizationId", "tier") DO UPDATE
+        SET "expiresAt" = GREATEST(free_byok_tiers."expiresAt", now()) + make_interval(days => ${days}::int)
+        RETURNING "expiresAt"
+      )
+      UPDATE model_credit_accounts
+      SET "byokFreeUntil" = GREATEST("byokFreeUntil", grant_expiry."expiresAt")
+      FROM grant_expiry
+      WHERE "organizationId" = ${organizationId}`;
+  } else {
+    await tx.$executeRaw`
+      UPDATE model_credit_accounts
+      SET "byokFreeUntil" = GREATEST(COALESCE("byokFreeUntil", now()), now()) + make_interval(days => ${days}::int)
+      WHERE "organizationId" = ${organizationId}`;
+  }
   // The free days are the owners' own-key trial, used even if the organization later goes away.
   await markOwnersByokTrialUsed(tx, { id: organizationId });
 }
