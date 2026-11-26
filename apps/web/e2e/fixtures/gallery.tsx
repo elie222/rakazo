@@ -781,6 +781,8 @@ const textStyles: Scenario = {
         "### Heading 3",
         "A plain paragraph that runs long enough to wrap, so line height and measure show the way a real answer reads.",
         "**Bold**, *italic*, ***bold italic***, ~~strikethrough~~, `inline code` and a [link](https://example.test).",
+        String.raw`The area of a circle with radius $r$ is $A = \pi r^2$. Its circumference is:`,
+        String.raw`\[C = 2\pi r\]`,
         "> A blockquote that also runs long enough to wrap onto a second line.",
         "- A bullet\n- Another bullet\n  - A nested bullet",
         "1. **A bold lead-in:** then the rest of the item, long enough to wrap.\n2. A second item",

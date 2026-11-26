@@ -20,19 +20,21 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
+    "katex": "0.19.1",
     "linkify-it": "5.0.2",
     "mermaid": "11.17.2",
     "prism-react-renderer": "2.4.1",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
     "remark-parse": "11.0.0",
     "unified": "11.0.5"
   },
   "peerDependencies": {
+    "@ronradtke/react-native-markdown-display": "9.0.3",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-native": ">=0.79",
-    "@ronradtke/react-native-markdown-display": "9.0.3",
     "react-native-enriched-markdown": "1.2.0"
   },
   "peerDependenciesMeta": {
@@ -50,14 +52,16 @@
     }
   },
   "devDependencies": {
+    "@ronradtke/react-native-markdown-display": "9.0.3",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "mdast-util-from-markdown": "2.0.3",
+    "micromark-util-types": "2.0.2",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-native": "0.88.1",
+    "react-native-enriched-markdown": "1.2.0",
     "typescript": "7.0.2",
-    "vitest": "5.1.0",
-    "@ronradtke/react-native-markdown-display": "9.0.3",
-    "react-native-enriched-markdown": "1.2.0"
+    "vitest": "5.1.0"
   }
 }

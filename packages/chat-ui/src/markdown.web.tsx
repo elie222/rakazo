@@ -14,7 +14,9 @@ import {
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
+import type { PluggableList } from "unified";
 import { unified } from "unified";
 import type { HastNode } from "./table-utils";
 import "./markdown.web.css";
@@ -57,6 +59,8 @@ import {
 } from "./markdown";
 import { useMarkdownCopy } from "./markdown-copy";
 import { useMarkdownLinkCopy, useMarkdownLinkTrust } from "./markdown-link-prompt";
+import { rehypeDisplayMath, remarkChatMath } from "./markdown-math";
+import { MarkdownMath } from "./markdown-math.web";
 import { MarkdownTable, MarkdownTableSourceContext } from "./markdown-table";
 import { isMermaidFence, mermaidSvgImage } from "./mermaid";
 import { useMermaidSvg } from "./mermaid.web";
@@ -678,6 +682,16 @@ const components: Components = {
     );
   },
   pre: MarkdownPre,
+  span({ node, children, ...props }) {
+    const display = node?.properties["data-math"];
+    const source = node?.properties["data-math-source"];
+    if ((display === "inline" || display === "block") && typeof source === "string") {
+      return (
+        <MarkdownMath tex={codeText(node).trim()} source={source} display={display === "block"} />
+      );
+    }
+    return <span {...props}>{children}</span>;
+  },
   table({ node, children, ...props }) {
     return (
       <MarkdownTable node={node} tableProps={props}>
@@ -742,8 +756,13 @@ export function LinkifiedText({
   );
 }
 
-const remarkPlugins = [remarkGfm];
-const rehypePlugins = [preserveSkippedTableText];
+const remarkPlugins: PluggableList = [
+  remarkGfm,
+  [remarkMath, { singleDollarTextMath: false }],
+  remarkChatMath,
+];
+const blockParser = unified().use(remarkParse).use(remarkPlugins);
+const rehypePlugins = [preserveSkippedTableText, rehypeDisplayMath];
 
 // MarkdownImage decides what an image source may do, so it receives the source as written.
 function urlTransform(url: string, key: string) {
@@ -811,7 +830,6 @@ const MarkdownBlock = memo(function MarkdownBlock({
 type SourceBlock = { start: number; source: string; type: string; key: string };
 type SplitSource = { text: string; blocks: SourceBlock[] };
 
-const blockParser = unified().use(remarkParse).use(remarkGfm);
 // Link and footnote definitions apply to the whole document, so such text is never split.
 const definition = /\]:/;
 

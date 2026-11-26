@@ -170,6 +170,13 @@
   white-space: pre;
 }
 
+.rk-chat-math-display {
+  display: block;
+  margin-block: 0.65em;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
 .rk-chat-markdown-pre-wrap {
   position: relative;
   margin: 0.65em 0;
