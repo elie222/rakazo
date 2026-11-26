@@ -56,7 +56,9 @@ vi.mock("@rakazo/ui-web", () => {
       ...props
     }: ComponentProps<"h3"> & { variant?: string }) => <h3 {...props} />,
     Field: Container,
-    FieldLabel: (props: ComponentProps<"label">) => <label {...props} />,
+    FieldLabel: ({ htmlFor, children }: ComponentProps<"label">) => (
+      <label htmlFor={htmlFor}>{children}</label>
+    ),
     Checkbox: ({
       onCheckedChange,
       ...props
