@@ -502,7 +502,7 @@ export function collapseOlderModels<
   });
 }
 
-type ModelRelease = { family: string; version: number[]; date: number[] };
+type ModelRelease = { family: string; version: number[]; tagged: boolean; date: number[] };
 
 /**
  * Reads a model id as its vendor path, words, sizes (`120b`, `0.5b`, `4o`), a version, a date and
@@ -518,11 +518,13 @@ function modelRelease(choice: ChatModelChoice): ModelRelease {
   const words: string[] = [];
   const version: number[] = [];
   const date: number[] = [];
+  let tagged = false;
   const parts = name.match(/\d+(?:\.\d+)?[a-z][a-z\d]*|[a-z]+|\d+/g) ?? [];
   let wordAfterVersion = false;
   for (const [index, part] of parts.entries()) {
     if (!/^\d+$/.test(part)) {
-      if (!RELEASE_TAGS.has(part)) words.push(part);
+      if (RELEASE_TAGS.has(part)) tagged = true;
+      else words.push(part);
       if (version.length) wordAfterVersion = true;
     } else if (
       // A date: `20250929`, `1106`, `08-2024`, or numbers after a word that follows the version.
@@ -538,14 +540,24 @@ function modelRelease(choice: ChatModelChoice): ModelRelease {
   return {
     family: `${choice.provider ?? ""}:${choice.providerLabel ?? ""}:${vendor}${words.join("-")}:${tag ?? ""}`,
     version,
-    date,
+    tagged,
+    // A year leads, so `12-2023` sorts before `08-2024`.
+    date: [...date.filter(isYear), ...date.filter((part) => !isYear(part))],
   };
 }
 
-/** Higher versions first; within one version an undated id (which follows the newest) beats snapshots. */
+function isYear(part: number): boolean {
+  return part >= 1990 && part <= 2099;
+}
+
+/**
+ * Higher versions first. Within one version a stable id beats a preview, and an undated id (which
+ * follows the newest) beats snapshots.
+ */
 function compareReleases(left: ModelRelease, right: ModelRelease): number {
   return (
     compareNumbers(left.version, right.version) ||
+    Number(right.tagged) - Number(left.tagged) ||
     Number(!left.date.length) - Number(!right.date.length) ||
     compareNumbers(left.date, right.date)
   );

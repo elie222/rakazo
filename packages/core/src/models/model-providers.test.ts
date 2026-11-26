@@ -655,6 +655,25 @@ describe("latestModelChoices", () => {
     expect(ids(latestModelChoices(choices, "").latest)).toEqual(models);
   });
 
+  it("orders month-year snapshots by year and keeps a stable model over its preview", () => {
+    const models = [
+      "command-r-12-2023",
+      "command-r-08-2024",
+      "gemini-2.0-flash-exp",
+      "gemini-2.0-flash",
+    ].map((modelId) => ({
+      key: `vendor::${modelId}`,
+      label: modelId,
+      provider: "vendor",
+      providerLabel: "Vendor",
+      modelId,
+    }));
+    expect(ids(latestModelChoices(models, "").latest)).toEqual([
+      "command-r-08-2024",
+      "gemini-2.0-flash",
+    ]);
+  });
+
   it("keeps an older selected model in view", () => {
     const { latest } = latestModelChoices(section, "openrouter::anthropic/claude-opus-4.5");
     expect(ids(latest)).toContain("anthropic/claude-opus-4.5");
