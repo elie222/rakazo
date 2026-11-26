@@ -3,6 +3,7 @@ import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
+import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
 import {
   acceptOrganizationInvitation,
@@ -12,6 +13,7 @@ import {
   createThreadEvents,
   installAuditEventStore,
   leaveOrganizationSpaces,
+  lockOrganizationMembers,
   OrganizationAdminRequiredError,
   OwnedOrganizationHasMembersError,
   publishOrganizationChange,
@@ -202,6 +204,70 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     const loginId = created.json.id;
     expect((await call(member.actor, "organizations/vault/remove", { loginId })).status).toBe(404);
     expect((await call(owner.actor, "organizations/vault/remove", { loginId })).status).toBe(200);
+  });
+
+  it("rechecks vault write authorization after a concurrent demotion", async () => {
+    const owner = await person("vault-demoter");
+    const admin = await person("vault-demoted");
+    const actor = await join(owner, admin);
+    const where = {
+      organizationId_userId: { organizationId: owner.organizationId, userId: admin.id },
+    };
+    await system.member.update({ where, data: { role: "admin" } });
+
+    const held = deferred<number>();
+    const release = deferred<void>();
+    const demotion = system.$transaction(async (tx) => {
+      await lockOrganizationMembers(tx, owner.organizationId);
+      const [backend] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      held.resolve(backend!.pid);
+      await release.promise;
+      await tx.member.update({ where, data: { role: "member" } });
+    });
+    const pid = await Promise.race([held.promise, demotion.then(() => 0)]);
+    const create = call(actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [],
+    });
+    try {
+      await vi.waitFor(async () => {
+        const [row] = await system.$queryRaw<{ waiting: boolean }[]>`
+          SELECT EXISTS (
+            SELECT 1 FROM pg_stat_activity
+            WHERE datname = current_database() AND ${pid}::int = ANY(pg_blocking_pids(pid))
+          ) AS waiting
+        `;
+        expect(row?.waiting).toBe(true);
+      });
+    } finally {
+      release.resolve();
+      await demotion;
+    }
+    expect((await create).status).toBe(403);
+  });
+
+  it("drops an archived grant from a stale selection and rejects granting it again", async () => {
+    const owner = await person("archived-grant-owner");
+    const bot = await system.bot.create({
+      data: { spaceId: owner.actor.spaceId, userId: owner.id, name: "Test", color: "blue" },
+    });
+    const created = await call(owner.actor, "organizations/vault/create", {
+      name: "Example account",
+      origin: "https://example.test",
+      botIds: [bot.id],
+    });
+    expect(created.status).toBe(200);
+    await system.bot.update({ where: { id: bot.id }, data: { archivedAt: new Date() } });
+    const list = await call(owner.actor, "organizations/vault/list", undefined);
+    expect(list.json).toEqual([expect.objectContaining({ id: created.json.id, botIds: [] })]);
+    const replace = () =>
+      call(owner.actor, "organizations/vault/setAgents", {
+        loginId: created.json.id,
+        botIds: [bot.id],
+      });
+    expect(await replace()).toMatchObject({ status: 200, json: { botIds: [] } });
+    expect((await replace()).status).toBe(400);
   });
 
   it("replaces grants and rejects agents from a different organization", async () => {

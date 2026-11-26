@@ -1,13 +1,22 @@
 import { ClientError } from "@rakazo/core";
-import type { Prisma } from "@rakazo/db";
-import { managedOrganizationId, OrganizationAdminRequiredError, runAsSystem } from "@rakazo/db";
+import {
+  lockManagedOrganization,
+  managedOrganizationId,
+  OrganizationAdminRequiredError,
+  Prisma,
+  runAsSystem,
+} from "@rakazo/db";
 import type { RouterContext } from "./context.js";
 
 const loginSelect = {
   id: true,
   name: true,
   origin: true,
-  grants: { select: { botId: true }, orderBy: { botId: "asc" } },
+  grants: {
+    where: { bot: { archivedAt: null } },
+    select: { botId: true },
+    orderBy: { botId: "asc" },
+  },
 } satisfies Prisma.OrganizationLoginSelect;
 
 function loginDto({
@@ -31,15 +40,27 @@ class OrganizationLoginNotFoundError extends ClientError {
   }
 }
 
-async function validateAgents(tx: Prisma.TransactionClient, organizationId: string, ids: string[]) {
+async function validateAgents(
+  tx: Prisma.TransactionClient,
+  organizationId: string,
+  ids: string[],
+  existing: ReadonlySet<string> = new Set(),
+) {
   const botIds = [...new Set(ids)];
-  const count = await tx.bot.count({
-    where: { id: { in: botIds }, archivedAt: null, space: { organizationId } },
-  });
-  if (count !== botIds.length) {
+  if (botIds.length === 0) return botIds;
+  const active = await tx.$queryRaw<{ id: string }[]>`
+    SELECT bot.id FROM bots AS bot
+    JOIN spaces AS space ON space.id = bot."spaceId"
+    WHERE bot.id IN (${Prisma.join(botIds)}) AND bot."archivedAt" IS NULL
+      AND space."organizationId" = ${organizationId}
+    ORDER BY bot.id
+    FOR SHARE OF bot
+  `;
+  const activeIds = new Set(active.map(({ id }) => id));
+  if (botIds.some((id) => !activeIds.has(id) && !existing.has(id))) {
     throw new InvalidOrganizationLoginAgentsError();
   }
-  return botIds;
+  return [...activeIds];
 }
 
 export function organizationVaultRoutes({ deps, authed }: RouterContext) {
@@ -47,10 +68,14 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
   function adminOperation<T>(
     actor: { userId: string; spaceId: string },
     work: (tx: Prisma.TransactionClient, organizationId: string) => Promise<T>,
+    write = true,
   ) {
     return runAsSystem("manage the vault of the active organization", () =>
       deps.prisma.$transaction(async (tx) => {
-        const organizationId = await managedOrganizationId(tx, actor);
+        const organizationId = await (write ? lockManagedOrganization : managedOrganizationId)(
+          tx,
+          actor,
+        );
         if (!organizationId) throw new OrganizationAdminRequiredError();
         return work(tx, organizationId);
       }),
@@ -58,14 +83,18 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
   }
   return {
     list: vault.list.handler(({ context }) =>
-      adminOperation(context.actor, async (tx, organizationId) => {
-        const rows = await tx.organizationLogin.findMany({
-          where: { organizationId },
-          select: loginSelect,
-          orderBy: [{ name: "asc" }, { id: "asc" }],
-        });
-        return rows.map(loginDto);
-      }),
+      adminOperation(
+        context.actor,
+        async (tx, organizationId) => {
+          const rows = await tx.organizationLogin.findMany({
+            where: { organizationId },
+            select: loginSelect,
+            orderBy: [{ name: "asc" }, { id: "asc" }],
+          });
+          return rows.map(loginDto);
+        },
+        false,
+      ),
     ),
     create: vault.create.handler(({ context, input }) =>
       adminOperation(context.actor, async (tx, organizationId) => {
@@ -89,7 +118,16 @@ export function organizationVaultRoutes({ deps, authed }: RouterContext) {
           WHERE id = ${input.loginId} AND "organizationId" = ${organizationId}
           FOR UPDATE`;
         if (!login) throw new OrganizationLoginNotFoundError();
-        const botIds = await validateAgents(tx, organizationId, input.botIds);
+        const existing = await tx.organizationLoginGrant.findMany({
+          where: { loginId: login.id },
+          select: { botId: true },
+        });
+        const botIds = await validateAgents(
+          tx,
+          organizationId,
+          input.botIds,
+          new Set(existing.map(({ botId }) => botId)),
+        );
         await tx.organizationLoginGrant.deleteMany({
           where: { loginId: login.id, botId: { notIn: botIds } },
         });
