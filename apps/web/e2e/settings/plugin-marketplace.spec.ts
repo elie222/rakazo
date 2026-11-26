@@ -343,6 +343,8 @@ test("shows directly registered MCP servers in Integrations without catalog conn
   await expect(
     servers.getByTestId("registered-mcp-server").filter({ hasText: "Dropbox" }),
   ).toContainText("Not working");
+  await page.getByRole("button", { name: "Close integrations", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Integrations", exact: true })).toBeHidden();
   role = "admin";
   await page.reload();
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
