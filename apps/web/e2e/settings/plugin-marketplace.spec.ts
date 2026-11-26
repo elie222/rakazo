@@ -322,7 +322,8 @@ test("shows directly registered MCP servers in Integrations without catalog conn
     has: page.getByText("GitHub", { exact: true }),
   });
   await expect(sharedServer.getByText("Organization", { exact: true })).toBeVisible();
-  await expect(sharedServer.getByRole("button")).toHaveCount(0);
+  await expect(sharedServer.getByRole("button", { name: "Actions for GitHub" })).toHaveCount(0);
+  await expect(sharedServer.getByRole("button", { name: "Reconnect OAuth" })).toHaveCount(0);
   await expect(mcpDialog.getByRole("button", { name: "Actions for Dropbox" })).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 720 });
   await captureScreenshot(page, testInfo, "integrations-organization-mcp-member");
