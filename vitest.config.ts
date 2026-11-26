@@ -2,7 +2,7 @@ import { globSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { lingui } from "@lingui/vite-plugin";
-import { configDefaults, defineConfig } from "vitest/config";
+import { defineConfig } from "vitest/config";
 
 const include = [
   ".agents/skills/*/*.test.ts",
@@ -100,13 +100,6 @@ export default defineConfig({
     // react-native can be mocked in node tests.
     server: { deps: { inline: [/react-native-markdown-display/] } },
     environment: "node",
-    // The computer screen renders the app's own screen, which needs expo's Metro runtime and a
-    // device. Its pure helpers are covered by computer.test.ts; the component itself is checked
-    // by the mobile build and the simulator screenshot catalog.
-    exclude: [
-      ...(configDefaults.exclude ?? []),
-      "apps/mobile/lib/computers/computer-screen.test.tsx",
-    ],
     setupFiles: ["./packages/testkit/src/pin-test-env.ts"],
     restoreMocks: true,
     unstubEnvs: true,
@@ -115,10 +108,25 @@ export default defineConfig({
     hookTimeout: 60_000,
     projects: [
       { extends: true, test: { name: "processes", include: processes } },
-      { extends: true, test: { name: "isolated", include: isolated } },
       {
         extends: true,
-        test: { name: "shared", include, exclude: [...processes, ...isolated], isolate: false },
+        test: {
+          name: "isolated",
+          include: isolated,
+          // The computer screen renders the app's own screen, which needs expo's Metro runtime
+          // and a device. Its pure helpers are covered by computer.test.ts; the component itself
+          // is checked by the mobile build and the simulator screenshot catalog.
+          exclude: ["**/computer-screen.test.tsx"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "shared",
+          include,
+          exclude: [...processes, ...isolated, "**/computer-screen.test.tsx"],
+          isolate: false,
+        },
       },
     ],
   },
