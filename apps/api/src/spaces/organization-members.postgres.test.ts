@@ -284,49 +284,52 @@ describePostgres("organization members and invitations (PostgreSQL)", () => {
     expect(launch.mock.calls).toHaveLength(previousCalls);
   });
 
-  it("audits committed session saves and revocations with only safe metadata", async () => {
-    const owner = await person("session-audit-owner");
-    const created = await call(owner.actor, "organizations/vault/create", {
-      name: "Example account",
-      origin: "https://example.test",
-      botIds: [],
-    });
-    const loginId = created.json.id as string;
-    expect(
-      (await call(owner.actor, "organizations/vault/signIn", { loginId, ...signInInput })).status,
-    ).toBe(200);
-    expect((await call(owner.actor, "organizations/vault/revokeSession", { loginId })).status).toBe(
-      200,
-    );
-    expect(
-      await system.auditEvent.findMany({
-        where: { organizationId: owner.organizationId, targetType: "organization_login_session" },
-        select: { action: true, actorId: true, spaceId: true, metadata: true },
-        orderBy: { action: "asc" },
-      }),
-    ).toEqual([
-      {
-        action: "credential.changed",
-        actorId: owner.id,
-        spaceId: owner.actor.spaceId,
-        metadata: {
-          procedure: "organizations.vault.signIn",
-          kind: "organization_login_session",
-          loginId,
+  it.each(["revokeSession", "remove"] as const)(
+    "audits committed session saves and %s with only safe metadata",
+    async (operation) => {
+      const owner = await person(`session-audit-${operation}`);
+      const created = await call(owner.actor, "organizations/vault/create", {
+        name: "Example account",
+        origin: "https://example.test",
+        botIds: [],
+      });
+      const loginId = created.json.id as string;
+      expect(
+        (await call(owner.actor, "organizations/vault/signIn", { loginId, ...signInInput })).status,
+      ).toBe(200);
+      expect(
+        (await call(owner.actor, `organizations/vault/${operation}`, { loginId })).status,
+      ).toBe(200);
+      expect(
+        await system.auditEvent.findMany({
+          where: { organizationId: owner.organizationId, targetType: "organization_login_session" },
+          select: { action: true, actorId: true, spaceId: true, metadata: true },
+          orderBy: { action: "asc" },
+        }),
+      ).toEqual([
+        {
+          action: "credential.changed",
+          actorId: owner.id,
+          spaceId: owner.actor.spaceId,
+          metadata: {
+            procedure: "organizations.vault.signIn",
+            kind: "organization_login_session",
+            loginId,
+          },
         },
-      },
-      {
-        action: "credential.deleted",
-        actorId: owner.id,
-        spaceId: owner.actor.spaceId,
-        metadata: {
-          procedure: "organizations.vault.revokeSession",
-          kind: "organization_login_session",
-          loginId,
+        {
+          action: "credential.deleted",
+          actorId: owner.id,
+          spaceId: owner.actor.spaceId,
+          metadata: {
+            procedure: `organizations.vault.${operation}`,
+            kind: "organization_login_session",
+            loginId,
+          },
         },
-      },
-    ]);
-  });
+      ]);
+    },
+  );
 
   it.each([
     [new ProtectedBrowserError("sign-in-rejected"), 400],
