@@ -42,7 +42,8 @@ export function renderBotDirectory(bots: readonly BotAddress[]): string | undefi
     "<teammate_directory>",
     ...formatBotRosterLines(bots),
     "</teammate_directory>",
-    "Use message_bot for useful updates, questions, and results. Delivery is async and does not end your turn. Continue independent work; do not poll or send ack-only messages. Later updates only if they add something new.",
+    "Use message_bot for questions, blockers and results, not each step. Delivery is async and does not end your turn. Continue independent work; do not send ack-only messages.",
+    "Each bot has its own computer and does one computer task at a time; your subagents share yours. Give recurring or computer-heavy work, including each part of parallel computer work, to the teammate whose area it is (message_bot, or create_child_routine for a schedule), so you stay free for the user. To wait on a teammate, ask it to message you when ready instead of polling or watching its files.",
   ].join("\n");
 }
 
