@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
   Spinner,
 } from "@rakazo/ui-web";
+import type { QueryClient } from "@tanstack/react-query";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
@@ -67,6 +68,28 @@ function isSameReviewerPageReviewQuery(
   );
 }
 
+type PageDenialRecord = { generation: number; error: unknown };
+
+const pageDenials = new WeakMap<QueryClient, Map<string, PageDenialRecord>>();
+
+function pageDenialKey(userSegment: unknown, pageId: string): string {
+  return `${typeof userSegment === "string" ? userSegment : ""}\0${pageId}`;
+}
+
+function getPageDenial(queryClient: QueryClient, key: string): PageDenialRecord | undefined {
+  return pageDenials.get(queryClient)?.get(key);
+}
+
+function recordPageDenial(queryClient: QueryClient, key: string, error: unknown): void {
+  let map = pageDenials.get(queryClient);
+  if (!map) {
+    map = new Map();
+    pageDenials.set(queryClient, map);
+  }
+  const previous = map.get(key);
+  map.set(key, { generation: (previous?.generation ?? 0) + 1, error });
+}
+
 export default function PageReviewHost() {
   const { pageId } = useParams();
   const { state } = useLocation();
@@ -116,39 +139,14 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
         queryClient.getQueryCache().findAll({
           predicate: (query) => isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId),
         });
+      const denialKey = pageDenialKey(userSegment, pageId);
+      const startGeneration = getPageDenial(queryClient, denialKey)?.generation ?? 0;
+      let fetched: PageReview;
       try {
-        const fetched = await read.queryFn!(context);
-        let newest = fetched.currentVersion;
-        const cachedQueries = matchingQueries();
-        for (const query of cachedQueries) {
-          const cached = query.state.data;
-          if (
-            cached &&
-            typeof cached === "object" &&
-            "currentVersion" in cached &&
-            typeof cached.currentVersion === "number" &&
-            cached.currentVersion > newest
-          ) {
-            newest = cached.currentVersion;
-          }
-        }
-        // Keep every cached revision of this page aware of the newest observed currentVersion so
-        // reopening the review while offline cannot treat a stale cached revision as current.
-        for (const query of cachedQueries) {
-          const cached = query.state.data;
-          if (
-            cached &&
-            typeof cached === "object" &&
-            "currentVersion" in cached &&
-            typeof cached.currentVersion === "number" &&
-            cached.currentVersion < newest
-          ) {
-            query.setState({ data: { ...cached, currentVersion: newest } });
-          }
-        }
-        return newest > fetched.currentVersion ? { ...fetched, currentVersion: newest } : fetched;
+        fetched = await read.queryFn!(context);
       } catch (error) {
         if (isUnavailablePageError(error)) {
+          recordPageDenial(queryClient, denialKey, error);
           // Drop every cached revision payload for this reviewer and page across Spaces so failed
           // retries, remounts, or Space switches while offline cannot resurface a revoked page
           // before a new authorized read succeeds.
@@ -158,6 +156,41 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
         }
         throw error;
       }
+      const latestDenial = getPageDenial(queryClient, denialKey);
+      if (latestDenial && latestDenial.generation !== startGeneration) {
+        // Reject reads started before a 401/403/404 denial so an in-flight pre-revocation response
+        // cannot repopulate the cache after revocation; a retry started afterward still succeeds.
+        throw latestDenial.error;
+      }
+      let newest = fetched.currentVersion;
+      const cachedQueries = matchingQueries();
+      for (const query of cachedQueries) {
+        const cached = query.state.data;
+        if (
+          cached &&
+          typeof cached === "object" &&
+          "currentVersion" in cached &&
+          typeof cached.currentVersion === "number" &&
+          cached.currentVersion > newest
+        ) {
+          newest = cached.currentVersion;
+        }
+      }
+      // Keep every cached revision of this page aware of the newest observed currentVersion so
+      // reopening the review while offline cannot treat a stale cached revision as current.
+      for (const query of cachedQueries) {
+        const cached = query.state.data;
+        if (
+          cached &&
+          typeof cached === "object" &&
+          "currentVersion" in cached &&
+          typeof cached.currentVersion === "number" &&
+          cached.currentVersion < newest
+        ) {
+          query.setState({ data: { ...cached, currentVersion: newest } });
+        }
+      }
+      return newest > fetched.currentVersion ? { ...fetched, currentVersion: newest } : fetched;
     },
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",

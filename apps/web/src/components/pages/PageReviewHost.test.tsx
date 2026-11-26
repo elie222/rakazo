@@ -952,4 +952,82 @@ describe("PageReviewHost comment draft preservation", () => {
     await openCommentsPopover();
     expect(commentTextarea()).toBeNull();
   });
+
+  it("rejects in-flight pre-denial reads after revocation while allowing a later authorized retry", async () => {
+    const slowHistorical = deferred<PageReview>();
+    let historicalCalls = 0;
+    let latestMode: "ok" | "denied" | "offline" | "restored" = "ok";
+    rpcState.getReview.mockImplementation(async ({ version }) => {
+      if (version === 1) {
+        historicalCalls += 1;
+        if (historicalCalls === 1) return makePage({ version: 1, currentVersion: 2 });
+        return slowHistorical.promise;
+      }
+      if (latestMode === "denied") {
+        throw Object.assign(new Error("Forbidden"), { code: "FORBIDDEN", status: 403 });
+      }
+      if (latestMode === "offline") throw new Error("Failed to fetch");
+      return makePage({ version: 2, currentVersion: 2 });
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [makeComment({ id: "comment-v1", version: 1, section: "Summary", body: "v1 note" })],
+      nextCursor: null,
+    });
+
+    await mountReview("/review/page-1");
+    expect(document.querySelector('[data-testid="review-document"]')).not.toBeNull();
+
+    // Prime revision 1 once, return to latest, then reopen revision 1 so its refetch stays in flight.
+    await openCommentsPopover();
+    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+    await vi.waitFor(() => {
+      expect(historicalCalls).toBe(1);
+    });
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+    await openCommentsPopover();
+    await clickButton((button) => button.textContent?.includes("Revision 1") ?? false);
+    await vi.waitFor(() => {
+      expect(historicalCalls).toBe(2);
+    });
+
+    // Switch back to latest and receive 403 Forbidden while the revision 1 read is still pending.
+    latestMode = "denied";
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+
+    // The pre-denial revision 1 read now finishes; it must not repopulate the query cache.
+    slowHistorical.resolve(makePage({ version: 1, currentVersion: 2 }));
+    await act(flush);
+    const cachedPayloads = queryClient
+      .getQueryCache()
+      .findAll({
+        predicate: (query) => {
+          const path = query.queryKey[0];
+          const opts = query.queryKey[1] as { input?: { pageId?: string } } | undefined;
+          return (
+            Array.isArray(path) &&
+            path[2] === "pageReviews" &&
+            path[3] === "get" &&
+            opts?.input?.pageId === "page-1"
+          );
+        },
+      })
+      .filter((query) => query.state.data !== undefined);
+    expect(cachedPayloads).toHaveLength(0);
+
+    // Offline refresh must keep the page hidden.
+    latestMode = "offline";
+    await clickButton((button) => button.textContent === "Try again");
+    expect(document.body.textContent).toContain("This page isn't available");
+    expect(document.querySelector('[data-testid="review-document"]')).toBeNull();
+
+    // A newly started authorized retry after the denial restores the page.
+    latestMode = "restored";
+    await clickButton((button) => button.textContent === "Try again");
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="review-document"]')).not.toBeNull();
+    });
+  });
 });
