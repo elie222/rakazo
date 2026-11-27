@@ -274,6 +274,27 @@ function spawnBotClause(disabled?: ReadonlySet<string>): string | undefined {
   return `spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop.${demo}`;
 }
 
+function subagentClause(
+  disabled: ReadonlySet<string> | undefined,
+  backgroundHelpersAllowed: boolean | undefined,
+): string | undefined {
+  if (!builtinOffered(disabled, "run_subagent")) return undefined;
+  if (!backgroundHelpersAllowed) {
+    return "Subagent delegation is unavailable in this conversation. Complete the work yourself; do not claim to have delegated it.";
+  }
+  const canList = builtinOffered(disabled, "list_subagents");
+  const canCancel = builtinOffered(disabled, "cancel_subagent");
+  const control =
+    canList && canCancel
+      ? " Use list_subagents to inspect running subagents and cancel_subagent to stop them."
+      : canList
+        ? " Use list_subagents to inspect running subagents."
+        : canCancel
+          ? " Use cancel_subagent to stop running subagents."
+          : "";
+  return `run_subagent delegates work independently and returns immediately. Use it for work another agent can complete. Its result comes back later; end your turn when nothing else needs doing, and remain available for new user messages. Wait for the needed results before giving a final answer, combine related results, and honor newer instructions or cancellation. Subagents can act under the applicable permissions and request approval in this chat.${control}`;
+}
+
 /** The fleet rules, naming only the tools the run was offered; none without a write tool. */
 function fleetClause(
   offered: readonly string[] | undefined,
@@ -463,13 +484,7 @@ export function userTurnInstructions(parts: {
       "update_bot",
       'update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it), readAloud, voice, replyMode, team chat listening and rules, memoryScope, and disableTools to turn built-in tools off. With bot_id it changes the name, description, color, notifications and those settings of another bot in this space, plus its computer; set_child_instructions and set_child_bot_model change its instructions and model. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; a standing rule for how you work ("from now on", "always") is a request to add it to your instructions, not just to follow it now. When you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.',
     ),
-    offeredBuiltinClause(
-      parts.disabledBuiltinTools,
-      "run_subagent",
-      parts.backgroundHelpersAllowed
-        ? "run_subagent delegates work independently and returns immediately. Use it for work another agent can complete. Its result comes back later; end your turn when nothing else needs doing, and remain available for new user messages. Wait for the needed results before giving a final answer, combine related results, and honor newer instructions or cancellation. Subagents can act under the applicable permissions and request approval in this chat."
-        : "Subagent delegation is unavailable in this conversation. Complete the work yourself; do not claim to have delegated it.",
-    ),
+    subagentClause(parts.disabledBuiltinTools, parts.backgroundHelpersAllowed),
     parts.botDirectory,
     offeredBuiltinClause(
       parts.disabledBuiltinTools,

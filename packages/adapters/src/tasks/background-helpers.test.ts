@@ -7,7 +7,12 @@ import type { RunContext } from "../runs/assembly/run-context.js";
 import type { ToolCall } from "../runs/tools/run-tool-gate.js";
 import { messagingTools } from "../runs/tools/run-tools-messaging.js";
 import { fleetTools } from "../tools/builtin-fleet.tool-definition.js";
-import { returnHelperOutcome, startBackgroundHelper } from "./background-helpers.js";
+import {
+  cancelBackgroundHelper,
+  listBackgroundHelpers,
+  returnHelperOutcome,
+  startBackgroundHelper,
+} from "./background-helpers.js";
 import { startedNote } from "./background-helpers.prompt.js";
 
 vi.mock("@rakazo/db", async (original) => ({
@@ -236,7 +241,7 @@ describe("starting a background helper", () => {
         modelProvider: "opencode-go",
         modelId: "claude-haiku-5-5",
       }),
-    ).resolves.toEqual({ ok: true, name: "scout", note: startedNote("scout") });
+    ).resolves.toEqual({ ok: true, id: "helper-run", name: "scout", note: startedNote("scout") });
     expect(h.createRun).toHaveBeenCalledWith({
       data: expect.objectContaining({
         modelProvider: "opencode-go",
@@ -261,7 +266,7 @@ describe("starting a background helper", () => {
         modelProvider: "OpenCode Go",
         modelId: "opencode-go/claude-haiku-5-5",
       }),
-    ).resolves.toEqual({ ok: true, name: "scout", note: startedNote("scout") });
+    ).resolves.toEqual({ ok: true, id: "helper-run", name: "scout", note: startedNote("scout") });
     expect(h.createRun).toHaveBeenCalledWith({
       data: expect.objectContaining({
         modelProvider: "opencode-go",
@@ -291,6 +296,7 @@ describe("starting a background helper", () => {
     } as unknown as ToolCall;
     await expect(messagingTools.run_subagent!(h.ctx, call)).resolves.toEqual({
       ok: true,
+      id: "helper-run",
       name: "scout",
       note: startedNote("scout"),
     });
@@ -326,6 +332,19 @@ describe("starting a background helper", () => {
       startBackgroundHelper(h.ctx, { ...START, modelProvider: "openai", modelId: "gpt-x" }),
     ).resolves.toEqual({ error: "Connect that model provider first" });
     expect(h.prisma.$transaction).not.toHaveBeenCalled();
+    expect(h.createRun).not.toHaveBeenCalled();
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("returns the existing helper run id on idempotent replay", async () => {
+    const h = harness();
+    h.tx.run.findFirst.mockResolvedValueOnce({ id: "helper-existing" } as never);
+    await expect(startBackgroundHelper(h.ctx, START)).resolves.toEqual({
+      ok: true,
+      id: "helper-existing",
+      name: "scout",
+      note: startedNote("scout"),
+    });
     expect(h.createRun).not.toHaveBeenCalled();
     expect(h.enqueue).not.toHaveBeenCalled();
   });
@@ -461,5 +480,381 @@ describe("passing a helper's result back in a shared space", () => {
     await h.returned;
     expect(h.createRun).not.toHaveBeenCalled();
     expect(h.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe("listing and cancelling background helpers", () => {
+  type ActiveHelperRow = {
+    id: string;
+    status: string;
+    startedAt: Date | null;
+    createdAt: Date;
+    sourceMessageId: string;
+    sourceMessage: { id: string; blocks: unknown[] };
+  };
+
+  function makeHelper(
+    overrides: Partial<{
+      id: string;
+      status: string;
+      name: string;
+      task: string;
+      agentId: string;
+      sourceMessageId: string;
+      startedAt: Date | null;
+      createdAt: Date;
+    }> = {},
+  ): ActiveHelperRow {
+    const id = overrides.id ?? "helper-1";
+    const sourceMessageId = overrides.sourceMessageId ?? `card-${id}`;
+    return {
+      id,
+      status: overrides.status ?? "running",
+      startedAt:
+        overrides.startedAt === undefined
+          ? new Date("2026-11-01T10:00:00.000Z")
+          : overrides.startedAt,
+      createdAt: overrides.createdAt ?? new Date("2026-11-01T09:59:00.000Z"),
+      sourceMessageId,
+      sourceMessage: {
+        id: sourceMessageId,
+        blocks: [
+          {
+            kind: "subagent",
+            agentId: overrides.agentId ?? `agent-${id}`,
+            name: overrides.name ?? "scout",
+            task: overrides.task ?? "compare venues",
+            status: "running",
+          },
+        ],
+      },
+    };
+  }
+
+  function controlHarness(
+    options: {
+      trigger?: string;
+      conversationThreadId?: string;
+      secrets?: string[];
+      active?: ActiveHelperRow[];
+      leases?: Array<{ computerId: string; botId: string; runId: string; fence: number }>;
+      computers?: Array<{ id: string; homeKey: string; kind: string; providerRef: string | null }>;
+      withSandbox?: boolean;
+      pendingAskByRun?: Record<string, { id: string; blocks: unknown[] }[]>;
+    } = {},
+  ) {
+    const active = options.active ?? [makeHelper()];
+    const activeById = new Map(active.map((row) => [row.id, row]));
+    const updatedMessages: Array<{ where: unknown; data: unknown }> = [];
+    const execute = vi.fn(async function* () {
+      yield { type: "exit" as const, code: 0 };
+    });
+    const releaseScreen = vi.fn(async () => undefined);
+    const publishSpaceChange = vi.fn(async () => undefined);
+    const notify = vi.fn(async () => undefined);
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      run: {
+        findMany: vi.fn(async (args?: { where?: { id?: { in?: string[] } } }) => {
+          if (args?.where?.id?.in) {
+            return args.where.id.in.map((id) => ({ id, userId: "user-1", spaceId: "space-1" }));
+          }
+          return active;
+        }),
+        updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.flatMap((id) => {
+            const row = activeById.get(id);
+            return row
+              ? [
+                  {
+                    id: row.id,
+                    spaceId: "space-1",
+                    botId: "bot-1",
+                    userId: "user-1",
+                    sourceMessageId: row.sourceMessageId,
+                  },
+                ]
+              : [];
+          }),
+        ),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      externalEffect: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+        updateMany: vi.fn(async () => ({ count: 0 })),
+      },
+      secret: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+      event: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+      computerExecutionLease: { findMany: vi.fn(async () => options.leases ?? []) },
+      computer: { findMany: vi.fn(async () => options.computers ?? []) },
+      message: {
+        findMany: vi.fn(async ({ where }: { where?: { runId?: unknown } }) => {
+          if (typeof where?.runId === "string") {
+            return options.pendingAskByRun?.[where.runId] ?? [];
+          }
+          return [];
+        }),
+        findFirst: vi.fn(async ({ where }: { where?: { id?: string } }) => {
+          const match = active.find((row) => row.sourceMessageId === where?.id);
+          return match
+            ? {
+                id: match.sourceMessageId,
+                threadId: options.conversationThreadId ?? "chat-1",
+                blocks: match.sourceMessage.blocks,
+                thread: { group: null },
+              }
+            : null;
+        }),
+        update: vi.fn(async (args: { where: unknown; data: unknown }) => {
+          updatedMessages.push(args);
+          return {};
+        }),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+      run: { findMany: vi.fn(async () => active) },
+      message: {
+        findUnique: vi.fn(async () => ({
+          threadId: options.conversationThreadId ?? "chat-1",
+        })),
+      },
+      computerExecutionLease: { updateMany: vi.fn(async () => ({ count: 1 })) },
+    };
+    const ctx = {
+      deps: {
+        prisma,
+        events: { notify, publishSpaceChange },
+        ...(options.withSandbox ? { sandbox: { execute, releaseScreen } } : {}),
+      },
+      run: {
+        id: "run-parent",
+        spaceId: "space-1",
+        userId: "user-1",
+        threadId: "thread-own",
+        trigger: options.trigger ?? "user",
+      },
+      runId: "run-parent",
+      bot: { id: "bot-1" },
+      thread: { id: options.conversationThreadId ?? "chat-1" },
+      source: {
+        conversationThreadId: options.conversationThreadId,
+      },
+      secrets: options.secrets ?? [],
+    } as unknown as RunContext;
+    return { ctx, prisma, tx, execute, releaseScreen, publishSpaceChange, notify, updatedMessages };
+  }
+
+  it("lists active helpers scoped to this bot, user, space, and conversation thread with redaction", async () => {
+    const h = controlHarness({
+      conversationThreadId: "chat-conv",
+      secrets: ["tok-secret-99"],
+      active: [
+        makeHelper({
+          id: "helper-1",
+          name: "scout tok-secret-99",
+          task: "fetch using tok-secret-99",
+          status: "queued",
+          startedAt: null,
+          createdAt: new Date("2026-11-01T09:50:00.000Z"),
+        }),
+        makeHelper({
+          id: "helper-2",
+          name: "reviewer",
+          task: "check draft",
+          status: "running",
+          startedAt: new Date("2026-11-01T10:00:00.000Z"),
+          createdAt: new Date("2026-11-01T09:55:00.000Z"),
+        }),
+      ],
+    });
+    const result = await listBackgroundHelpers(h.ctx);
+    expect(result).toEqual({
+      subagents: [
+        {
+          id: "helper-1",
+          name: "scout [redacted]",
+          status: "queued",
+          task: "fetch using [redacted]",
+          startedAt: "2026-11-01T09:50:00.000Z",
+        },
+        {
+          id: "helper-2",
+          name: "reviewer",
+          status: "running",
+          task: "check draft",
+          startedAt: "2026-11-01T10:00:00.000Z",
+        },
+      ],
+    });
+    expect(h.prisma.run.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          spaceId: "space-1",
+          botId: "bot-1",
+          userId: "user-1",
+          trigger: "helper",
+          sourceMessage: { threadId: "chat-conv" },
+        }),
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      }),
+    );
+  });
+
+  it("refuses listing and cancelling in non-conversational runs", async () => {
+    const h = controlHarness({ trigger: "routine" });
+    await expect(listBackgroundHelpers(h.ctx)).resolves.toEqual({
+      error: expect.stringContaining("unavailable"),
+    });
+    await expect(cancelBackgroundHelper(h.ctx, { all: true })).resolves.toEqual({
+      error: expect.stringContaining("cannot be cancelled"),
+    });
+    expect(h.prisma.run.findMany).not.toHaveBeenCalled();
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("requires id, name, or all: true to cancel", async () => {
+    const h = controlHarness();
+    await expect(cancelBackgroundHelper(h.ctx, {})).resolves.toEqual({
+      error: "Pass id, name, or all: true to cancel a subagent.",
+    });
+    expect(h.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["run id", { id: "helper-1" }],
+    ["card message id", { id: "card-helper-1" }],
+    ["card agentId", { id: "agent-helper-1" }],
+    ["trimmed case-insensitive name", { name: "  SCOUT  " }],
+  ])(
+    "cancels a matching helper by %s, settles its card, denies asks, and tears down its computer",
+    async (_label, input) => {
+      const h = controlHarness({
+        conversationThreadId: "chat-1",
+        withSandbox: true,
+        active: [
+          makeHelper({ id: "helper-1", name: "scout", sourceMessageId: "card-helper-1" }),
+          makeHelper({ id: "helper-2", name: "reviewer", sourceMessageId: "card-helper-2" }),
+        ],
+        leases: [{ computerId: "comp-1", botId: "bot-1", runId: "helper-1", fence: 3 }],
+        computers: [{ id: "comp-1", homeKey: "home-1", kind: "fake", providerRef: "ref-1" }],
+        pendingAskByRun: {
+          "helper-1": [
+            {
+              id: "ask-1",
+              blocks: [
+                {
+                  kind: "ask",
+                  text: "Approve?",
+                  status: "pending",
+                  approvalEffectId: "eff-1",
+                  actions: [
+                    { id: "allow", label: "Allow" },
+                    { id: "deny", label: "Deny" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      });
+      await expect(cancelBackgroundHelper(h.ctx, input)).resolves.toEqual({
+        ok: true,
+        cancelled: [{ id: "helper-1", name: "scout" }],
+      });
+      expect(h.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 20_000 });
+      expect(h.tx.run.updateManyAndReturn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: { in: ["helper-1"] } }),
+          data: expect.objectContaining({ status: "cancelled", completedAt: expect.any(Date) }),
+        }),
+      );
+      expect(h.tx.event.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ runId: { in: ["helper-1"] } }),
+        }),
+      );
+      expect(h.publishSpaceChange).toHaveBeenCalledWith("space-1", "runs");
+      // Pending ask denied + subagent card settled to failed/stopped.
+      expect(h.updatedMessages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            where: { id: "ask-1" },
+            data: { blocks: [expect.objectContaining({ status: "answered", answer: "deny" })] },
+          }),
+          expect.objectContaining({
+            where: { id: "card-helper-1" },
+            data: {
+              blocks: [
+                expect.objectContaining({ kind: "subagent", status: "failed", result: "stopped" }),
+              ],
+            },
+          }),
+        ]),
+      );
+      expect(h.execute).toHaveBeenCalledOnce();
+      expect(h.releaseScreen).toHaveBeenCalledOnce();
+      expect(h.prisma.computerExecutionLease.updateMany).toHaveBeenCalledWith({
+        where: { runId: { in: ["helper-1"] } },
+        data: { expiresAt: new Date(0) },
+      });
+    },
+  );
+
+  it("refuses to cancel when multiple helpers share a name without all: true", async () => {
+    const h = controlHarness({
+      secrets: ["secret-x"],
+      active: [
+        makeHelper({ id: "helper-1", name: "scout secret-x", status: "running" }),
+        makeHelper({ id: "helper-2", name: "scout secret-x", status: "queued" }),
+      ],
+    });
+    await expect(cancelBackgroundHelper(h.ctx, { name: "scout secret-x" })).resolves.toEqual({
+      error: "Multiple running subagents match that name. Pass id or all: true.",
+      matches: [
+        { id: "helper-1", name: "scout [redacted]", status: "running" },
+        { id: "helper-2", name: "scout [redacted]", status: "queued" },
+      ],
+    });
+    expect(h.tx.run.updateManyAndReturn).not.toHaveBeenCalled();
+    expect(h.publishSpaceChange).not.toHaveBeenCalled();
+  });
+
+  it("cancels all matching helpers when name and all: true are passed, and all helpers on all: true alone", async () => {
+    const rows = [
+      makeHelper({ id: "helper-1", name: "scout" }),
+      makeHelper({ id: "helper-2", name: "scout" }),
+      makeHelper({ id: "helper-3", name: "reviewer" }),
+    ];
+    const byName = controlHarness({ active: rows });
+    await expect(cancelBackgroundHelper(byName.ctx, { name: "scout", all: true })).resolves.toEqual(
+      {
+        ok: true,
+        cancelled: [
+          { id: "helper-1", name: "scout" },
+          { id: "helper-2", name: "scout" },
+        ],
+      },
+    );
+    const everything = controlHarness({ active: rows });
+    await expect(cancelBackgroundHelper(everything.ctx, { all: true })).resolves.toEqual({
+      ok: true,
+      cancelled: [
+        { id: "helper-1", name: "scout" },
+        { id: "helper-2", name: "scout" },
+        { id: "helper-3", name: "reviewer" },
+      ],
+    });
+  });
+
+  it("is idempotent when no active subagent matches", async () => {
+    const h = controlHarness({ active: [makeHelper({ id: "helper-1", name: "scout" })] });
+    await expect(cancelBackgroundHelper(h.ctx, { name: "other" })).resolves.toEqual({
+      ok: true,
+      cancelled: [],
+      note: "No matching running subagents.",
+    });
+    expect(h.tx.run.updateManyAndReturn).not.toHaveBeenCalled();
+    expect(h.publishSpaceChange).not.toHaveBeenCalled();
   });
 });

@@ -5377,6 +5377,40 @@ describe("subagent permissions", () => {
     expect(f.effects).toEqual([]);
   });
 
+  it.each(["list_subagents", "cancel_subagent"] as const)(
+    "refuses a helper's emitted %s call before executing it",
+    async (name) => {
+      const f = fixture({ name, builtin: true, trigger: "helper", skipApprovals: true });
+      f.setCalls([
+        { args: name === "cancel_subagent" ? { all: true } : {}, executionId: "call-1" },
+      ]);
+      await f.run();
+      expect(f.offeredTools()).not.toContain(name);
+      expect(f.results).toEqual([
+        {
+          error: `${name} is not available to a subagent. Say in your result what the parent should do.`,
+        },
+      ]);
+      expect(f.effects).toEqual([]);
+    },
+  );
+
+  it("offers list_subagents and cancel_subagent on helper_result turns without run_subagent, and hides them from routines", async () => {
+    const wake = fixture({ builtin: true, trigger: "helper_result" });
+    wake.setCalls([]);
+    await wake.run();
+    expect(wake.offeredTools()).toContain("list_subagents");
+    expect(wake.offeredTools()).toContain("cancel_subagent");
+    expect(wake.offeredTools()).not.toContain("run_subagent");
+
+    const routine = fixture({ builtin: true, trigger: "routine" });
+    routine.setCalls([]);
+    await routine.run();
+    expect(routine.offeredTools()).not.toContain("list_subagents");
+    expect(routine.offeredTools()).not.toContain("cancel_subagent");
+    expect(routine.offeredTools()).not.toContain("run_subagent");
+  });
+
   it.each(["helper", "helper_result"])(
     "asks instead of Auto-approving a %s with missing provenance",
     async (trigger) => {

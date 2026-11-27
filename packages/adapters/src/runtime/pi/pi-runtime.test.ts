@@ -78,6 +78,14 @@ describe("describeToolActivity", () => {
     expect(describeToolActivity("run_subagent", { name: "scout", task: "…" })).toBe(
       "Delegating to helper: scout",
     );
+    expect(describeToolActivity("list_subagents", {})).toBe("Checking running subagents");
+    expect(describeToolActivity("cancel_subagent", { name: "scout" })).toBe(
+      "Stopping subagent: scout",
+    );
+    expect(describeToolActivity("cancel_subagent", { id: "helper-1" })).toBe(
+      "Stopping subagent: helper-1",
+    );
+    expect(describeToolActivity("cancel_subagent", { all: true })).toBe("Stopping all subagents");
     expect(describeToolActivity("create_space", { name: "Customer support" })).toBe(
       "Creating space: Customer support",
     );

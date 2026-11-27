@@ -6,6 +6,7 @@ import {
   chatAppConnectNote,
   HELPER_RESULT_TRIGGER,
   isCallClientNonce,
+  isConversationalRun,
   isOwnerStartedRun,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
@@ -763,9 +764,13 @@ export async function selectRunTools(
       emailInbox,
       emailClaimable: Boolean(deps.inboundEmailDomain) && !emailName && run.userId === bot.userId,
       emailSend: Boolean(deps.email),
-    }).filter(
-      (tool) => tool.name !== "run_subagent" || backgroundHelpersAllowed({ trigger: run.trigger }),
-    ),
+    }).filter((tool) => {
+      if (tool.name === "run_subagent") return backgroundHelpersAllowed({ trigger: run.trigger });
+      if (tool.name === "list_subagents" || tool.name === "cancel_subagent") {
+        return isConversationalRun(run.trigger);
+      }
+      return true;
+    }),
     // Cross-owner agent connections only exist for chat-linked bots. The chat link is its
     // creator's, and a connected agent's messages run as them, so only their runs may
     // open, approve or use one.

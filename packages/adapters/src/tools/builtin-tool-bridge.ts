@@ -69,6 +69,7 @@ const FLEET_NAMES: ReadonlySet<string> = new Set(FLEET_TOOL_NAMES);
 
 const AREAS: Array<[area: string, matches: (name: string) => boolean]> = [
   ["secrets", (name) => name.includes("secret")],
+  ["subagents", (name) => name === "list_subagents" || name === "cancel_subagent"],
   ["bots", (name) => FLEET_NAMES.has(name) || name.endsWith("_bot") || name === "post_to_group"],
   [
     "tasks",

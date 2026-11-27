@@ -6,16 +6,23 @@ import {
   HELPER_RESULT_TRIGGER,
   isApprovalAskBlock,
   isConversationalRun,
+  redactSecrets,
   STOPPED_HELPER_RESULT,
 } from "@rakazo/core";
 import {
   appendEventInTransaction,
   assertRunCanWriteHistory,
   changeMessageBlocks,
+  clearEndedRunState,
   createThreadMessageInTransaction,
+  expireComputerExecutionLeases,
   storedMessageBlocks,
   THREAD_LOCK_TRANSACTION_OPTIONS,
+  transientRunEventsWhere,
 } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
+import { cancelComputerRunWork } from "../computers/computer-idle.js";
+import { screenLeaseIdForRun, toComputerRef } from "../computers/computer-lifecycle.js";
 import { resolveModelChoice } from "../models/model-choice.js";
 import {
   PINNED_PROVIDER_NOT_CONNECTED,
@@ -137,10 +144,11 @@ export async function startBackgroundHelper(
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
     // The cap belongs to the bot, including starts in different conversations.
     await tx.$queryRaw`SELECT id FROM bots WHERE id = ${bot.id} FOR UPDATE`;
-    if (
-      await tx.run.findFirst({ where: { spaceId: run.spaceId, clientNonce }, select: { id: true } })
-    )
-      return null;
+    const existing = await tx.run.findFirst({
+      where: { spaceId: run.spaceId, clientNonce },
+      select: { id: true },
+    });
+    if (existing) return { existingId: existing.id } as const;
     const running = await tx.run.count({
       where: {
         botId: bot.id,
@@ -236,17 +244,243 @@ export async function startBackgroundHelper(
         payload: { messageId: input.id, role: "user", blocks: attachments },
       });
     }
-    return { eventSeq: event.seq, helperRunId: helperRun.id };
+    return { eventSeq: event.seq, helperRunId: helperRun.id } as const;
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   if (committed === "full") {
     return {
       error: backgroundHelperLimitNote(MAX_PARALLEL_SUBAGENTS),
     };
   }
-  if (!committed) return started;
+  if ("existingId" in committed) return { ...started, id: committed.existingId };
   await deps.events.notify(thread.id, committed.eventSeq);
   await wakeRun(deps.jobs, committed.helperRunId);
-  return started;
+  return { ...started, id: committed.helperRunId };
+}
+
+function helperCardFromMessage(
+  sourceMessage: { id: string; blocks: unknown } | null | undefined,
+): HelperBlock | undefined {
+  if (!sourceMessage) return undefined;
+  return storedMessageBlocks(sourceMessage).find(
+    (block): block is HelperBlock => block.kind === "subagent",
+  );
+}
+
+/** Active subagents this bot started for this user in this conversation thread, oldest first. */
+export async function listBackgroundHelpers(ctx: RunContext) {
+  const { deps, run, bot } = ctx;
+  if (!isConversationalRun(run.trigger)) {
+    return { error: "Subagent listing is unavailable in this run." };
+  }
+  const parentThreadId = ctx.source?.conversationThreadId ?? run.threadId;
+  const helpers = await deps.prisma.run.findMany({
+    where: {
+      spaceId: run.spaceId,
+      botId: bot.id,
+      userId: run.userId,
+      trigger: BACKGROUND_HELPER_TRIGGER,
+      status: { in: [...ACTIVE_RUN_STATUSES] },
+      sourceMessage: { threadId: parentThreadId },
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      status: true,
+      startedAt: true,
+      createdAt: true,
+      sourceMessage: { select: { id: true, blocks: true } },
+    },
+  });
+  return {
+    subagents: helpers.map((helper) => {
+      const card = helperCardFromMessage(helper.sourceMessage);
+      return {
+        id: helper.id,
+        name: redactSecrets(card?.name ?? "helper", ctx.secrets),
+        status: helper.status,
+        task: redactSecrets(card?.task ?? "", ctx.secrets),
+        startedAt: (helper.startedAt ?? helper.createdAt)?.toISOString() ?? null,
+      };
+    }),
+  };
+}
+
+/** Cancel one or all active subagents this bot started for this user in this conversation. */
+export async function cancelBackgroundHelper(
+  ctx: RunContext,
+  input: { id?: string; name?: string; all?: boolean },
+) {
+  const { deps, run, bot } = ctx;
+  if (!isConversationalRun(run.trigger)) {
+    return { error: "Subagents cannot be cancelled in this run." };
+  }
+  const id = input.id?.trim() ?? "";
+  const name = input.name?.trim() ?? "";
+  const all = input.all === true;
+  if (!id && !name && !all) {
+    return { error: "Pass id, name, or all: true to cancel a subagent." };
+  }
+  const parentThreadId = ctx.source?.conversationThreadId ?? run.threadId;
+  const committed = await deps.prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${parentThreadId} FOR UPDATE`;
+    const active = await tx.run.findMany({
+      where: {
+        spaceId: run.spaceId,
+        botId: bot.id,
+        userId: run.userId,
+        trigger: BACKGROUND_HELPER_TRIGGER,
+        sourceMessage: { threadId: parentThreadId },
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: {
+        id: true,
+        status: true,
+        sourceMessageId: true,
+        sourceMessage: { select: { id: true, blocks: true } },
+      },
+    });
+    const candidates = active.map((helper) => {
+      const card = helperCardFromMessage(helper.sourceMessage);
+      return {
+        id: helper.id,
+        status: helper.status,
+        sourceMessageId: helper.sourceMessageId,
+        agentId: card?.agentId,
+        name: card?.name ?? "helper",
+      };
+    });
+    let matched: typeof candidates;
+    if (id) {
+      matched = candidates.filter(
+        (helper) => helper.id === id || helper.sourceMessageId === id || helper.agentId === id,
+      );
+    } else if (name) {
+      const wanted = name.toLowerCase();
+      matched = candidates.filter((helper) => helper.name.trim().toLowerCase() === wanted);
+      if (matched.length > 1 && !all) {
+        return {
+          ambiguous: matched.map((helper) => ({
+            id: helper.id,
+            name: redactSecrets(helper.name, ctx.secrets),
+            status: helper.status,
+          })),
+        } as const;
+      }
+    } else {
+      matched = candidates;
+    }
+    if (matched.length === 0) return null;
+    const cancelled = await tx.run.updateManyAndReturn({
+      where: {
+        id: { in: matched.map((helper) => helper.id) },
+        status: { in: [...ACTIVE_RUN_STATUSES] },
+      },
+      data: { status: "cancelled", completedAt: new Date() },
+      select: {
+        id: true,
+        spaceId: true,
+        botId: true,
+        userId: true,
+        sourceMessageId: true,
+      },
+    });
+    const ids = cancelled.map((helper) => helper.id);
+    if (ids.length === 0) return null;
+    await clearEndedRunState(tx, ids);
+    await tx.event.deleteMany({
+      where: {
+        ...transientRunEventsWhere(),
+        runId: { in: ids },
+      },
+    });
+    // Snapshot teardown coordinates before commit, matching cancelThreadRuns.
+    const leases = await tx.computerExecutionLease.findMany({
+      where: { runId: { in: ids } },
+      select: { computerId: true, botId: true, runId: true, fence: true },
+    });
+    const computers = leases.length
+      ? await tx.computer.findMany({
+          where: { id: { in: [...new Set(leases.map((lease) => lease.computerId))] } },
+          select: { id: true, homeKey: true, kind: true, providerRef: true },
+        })
+      : [];
+    const nameById = new Map(matched.map((helper) => [helper.id, helper.name]));
+    return {
+      cancelled: cancelled.map((helper) => ({
+        ...helper,
+        name: redactSecrets(nameById.get(helper.id) ?? "helper", ctx.secrets),
+      })),
+      leases,
+      computers,
+    } as const;
+  }, THREAD_LOCK_TRANSACTION_OPTIONS);
+  if (!committed) {
+    return { ok: true as const, cancelled: [], note: "No matching running subagents." };
+  }
+  if ("ambiguous" in committed) {
+    return {
+      error: "Multiple running subagents match that name. Pass id or all: true.",
+      matches: committed.ambiguous,
+    };
+  }
+  await deps.events.publishSpaceChange?.(run.spaceId, "runs");
+  for (const helper of committed.cancelled) {
+    await bestEffort(
+      "settle cancelled subagent card",
+      returnHelperOutcome(deps, helper, { status: "stopped", text: "" }),
+    );
+  }
+  if (deps.sandbox) {
+    const computerById = new Map(committed.computers.map((computer) => [computer.id, computer]));
+    const seenTargets = new Set<string>();
+    const teardownTargets: Array<{
+      computer: (typeof committed.computers)[number];
+      lease: (typeof committed.leases)[number];
+    }> = [];
+    for (const lease of committed.leases) {
+      const computer = computerById.get(lease.computerId);
+      if (!computer) continue;
+      const key = `${computer.id}:${lease.runId}`;
+      if (seenTargets.has(key)) continue;
+      seenTargets.add(key);
+      teardownTargets.push({ computer, lease });
+    }
+    await Promise.all(
+      teardownTargets.map(async ({ computer, lease }) => {
+        if (!computer.providerRef) return;
+        const context = {
+          operationId: "stop",
+          traceId: "stop",
+          spaceId: run.spaceId,
+          userId: run.userId,
+          botId: lease.botId,
+          runId: lease.runId,
+          screenLeaseId: screenLeaseIdForRun(lease, lease.runId),
+          cancelRunWork: true,
+          signal: new AbortController().signal,
+        };
+        const ref = toComputerRef(computer);
+        await cancelComputerRunWork(deps.sandbox, ref, computer.id, lease.runId, context);
+        if (deps.sandbox.releaseScreen) {
+          await bestEffort(
+            "release cancelled subagent screen",
+            deps.sandbox.releaseScreen(ref, context),
+          );
+        }
+      }),
+    );
+    await expireComputerExecutionLeases(deps.prisma, {
+      runId: { in: committed.cancelled.map((helper) => helper.id) },
+    });
+  }
+  return {
+    ok: true as const,
+    cancelled: committed.cancelled.map(({ id: helperId, name: helperName }) => ({
+      id: helperId,
+      name: helperName,
+    })),
+  };
 }
 
 /**

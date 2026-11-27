@@ -1513,7 +1513,7 @@ describe("userTurnInstructions", () => {
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. Never claim the space exists before the tool succeeds.",
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
     'update_bot reads and changes your own settings: name (chat header and list label), description (the one-line public summary teammates see), private instructions (how you do your job), avatar, notifyOnFinish, dailyCheckIns (switch it off when the user asks you to stop checking in), model, thinkingLevel (how hard you reason; a standing request to think harder, or to answer faster, is a request to change it), readAloud, voice, replyMode, team chat listening and rules, memoryScope, and disableTools to turn built-in tools off. With bot_id it changes the name, description, color, notifications and those settings of another bot in this space, plus its computer; set_child_instructions and set_child_bot_model change its instructions and model. Call it with no fields to read them, for example when asked which model you run. Change a setting only when the user asks for that change; a standing rule for how you work ("from now on", "always") is a request to add it to your instructions, not just to follow it now. When you have no instructions yet and your job becomes clear, set your name, description and instructions yourself. Never claim a change without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.',
-    "run_subagent delegates work independently and returns immediately. Use it for work another agent can complete. Its result comes back later; end your turn when nothing else needs doing, and remain available for new user messages. Wait for the needed results before giving a final answer, combine related results, and honor newer instructions or cancellation. Subagents can act under the applicable permissions and request approval in this chat.",
+    "run_subagent delegates work independently and returns immediately. Use it for work another agent can complete. Its result comes back later; end your turn when nothing else needs doing, and remain available for new user messages. Wait for the needed results before giving a final answer, combine related results, and honor newer instructions or cancellation. Subagents can act under the applicable permissions and request approval in this chat. Use list_subagents to inspect running subagents and cancel_subagent to stop them.",
   ];
   const archiveBot =
     "archive_bot safely archives a bot in this space, yourself included. Use it when the user asks to remove a bot, or when another bot is finished and unused. The user can restore it or permanently delete it later. confirm_name must exactly match its name.";
@@ -1854,6 +1854,31 @@ describe("userTurnInstructions", () => {
     expect(text).toContain("web_search");
     expect(text).toContain("destination_write");
     expect(text).toContain("Always put the complete final answer in your normal reply.");
+  });
+
+  it("omits disabled list_subagents or cancel_subagent from subagent guidance", () => {
+    const lineFor = (disabled: string[]) =>
+      userTurnInstructions({
+        ...base,
+        backgroundHelpersAllowed: true,
+        groupContext: undefined,
+        messagingContext: undefined,
+        redactedMemoryContext: undefined,
+        redactedScratchpadContext: undefined,
+        hasHistoricalContext: false,
+        agentEnvironmentInstruction: undefined,
+        botDirectory: undefined,
+        pluginLine: undefined,
+        agentSkillsLine: undefined,
+        taughtSkillsLine: undefined,
+        disabledBuiltinTools: new Set(disabled),
+      }).find((line) => line?.startsWith("run_subagent "));
+    expect(lineFor(["list_subagents"])).toContain("cancel_subagent");
+    expect(lineFor(["list_subagents"])).not.toContain("list_subagents");
+    expect(lineFor(["cancel_subagent"])).toContain("list_subagents");
+    expect(lineFor(["cancel_subagent"])).not.toContain("cancel_subagent");
+    expect(lineFor(["list_subagents", "cancel_subagent"])).not.toContain("list_subagents");
+    expect(lineFor(["list_subagents", "cancel_subagent"])).not.toContain("cancel_subagent");
   });
 
   it("keeps the reaction silence rule when message_user is off", () => {

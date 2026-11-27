@@ -138,6 +138,33 @@ export const fleetTools: ConnectorTool[] = [
     },
   },
   {
+    name: "list_subagents",
+    description:
+      "List running subagents you started in this conversation, with id, name, status, task, and start time.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "cancel_subagent",
+    description:
+      "Cancel one or all running subagents you started in this conversation. Pass id, name, or all: true.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Subagent id from run_subagent or list_subagents." },
+        name: { type: "string", description: "Subagent name (case-insensitive)." },
+        all: {
+          type: "boolean",
+          description: "Cancel every running subagent in this conversation.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "create_space",
     description:
       "Propose a new space in the current organization when the user asks for a separate data boundary. A space can contain many bots and groups, but its chats, files, memory, tools, and integrations stay isolated from other spaces. Creating the space is the whole action; do not create bots in it unless the user asks later.",

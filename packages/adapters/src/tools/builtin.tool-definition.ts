@@ -11,6 +11,8 @@ import { workTools } from "./builtin-work.tool-definition.js";
 
 export const DELEGATION_TOOL_NAMES = new Set<string>([
   "run_subagent",
+  "list_subagents",
+  "cancel_subagent",
   "spawn_bot",
   "archive_bot",
   "handoff_to_bot",

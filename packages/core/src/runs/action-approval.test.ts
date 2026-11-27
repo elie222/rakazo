@@ -95,9 +95,13 @@ describe("toolRequiresApproval", () => {
       "remember",
       "spawn_bot",
       "run_subagent",
+      "list_subagents",
+      "cancel_subagent",
     ]) {
       expect(toolRequiresApproval(name, false)).toBe(false);
     }
+    expect(outsideRunToolRequiresApproval("webhook", "list_subagents")).toBe(false);
+    expect(outsideRunToolRequiresApproval("webhook", "cancel_subagent")).toBe(true);
   });
 
   it("always asks a person before rewriting another bot's instructions", () => {

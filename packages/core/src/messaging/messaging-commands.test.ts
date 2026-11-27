@@ -13,31 +13,121 @@ describe("parseMessagingCommand", () => {
     expect(parseMessagingCommand("leave")).toBe("leave");
   });
 
-  it("stays fast on a long run of punctuation", () => {
-    expectLinearTime(() => expect(parseMessagingCommand(`${"!".repeat(200_000)}a`)).toBeNull());
+  it("stays fast on long runs of punctuation, commas, and slashes", () => {
+    expectLinearTime(() => {
+      expect(parseMessagingCommand(`${"!".repeat(200_000)}a`)).toBeNull();
+      expect(parseMessagingCommand(`${",".repeat(200_000)}stop`)).toBeNull();
+      expect(parseMessagingCommand(`stop${",".repeat(200_000)}now`)).toBeNull();
+      expect(parseMessagingCommand(`${"/".repeat(200_000)}stop`)).toBeNull();
+      expect(parseMessagingCommand(`stop${"!".repeat(200_000)}`)).toBe("stop");
+    });
   });
 
-  it("reads a bare stop or stop now, ignoring case, spacing and closing punctuation", () => {
-    for (const text of ["stop", "Stop now.", "STOP!", "  stop   now ", "stop…"])
-      expect(parseMessagingCommand(text)).toBe("stop");
+  it("reads bare stop and cancel commands across app languages, slash forms, and commas", () => {
     for (const text of [
+      "stop",
+      "Stop now.",
+      "STOP!",
+      "  stop   now ",
+      "stop…",
+      "stop it",
+      "stop this",
+      "stop that",
+      "stop all",
+      "stop everything",
+      "please stop",
+      "stop please",
+      "stop, now",
+      "stop, please",
+      "please, stop",
+      "cancel",
+      "cancel it",
+      "cancel this",
+      "cancel that",
+      "cancel all",
+      "abort",
+      "halt",
+      "/stop",
+      "/stop!",
+      "/cancel",
+      "/abort",
+      // Polish (with and without diacritics, plus NFD)
+      "zatrzymaj",
+      "zatrzymaj to",
+      "zatrzymaj wszystko",
+      "zatrzymaj się",
+      "zatrzymaj sie",
+      "przestań",
+      "przestan",
+      "przestan\u0301",
+      "anuluj",
+      "anuluj to",
+      "przerwij",
+      "przerwij to",
+      "stop teraz",
+      // Other app languages
       "Stopp!",
+      "stopp es",
+      "abbrechen",
       "detente",
       "¡Detente!",
+      "detente ya",
+      "cancelar",
+      "stop nu",
+      "stop ermee",
+      "annuleer",
       "Стоп",
+      "отмена",
+      "отмени",
+      "прекрати",
       "停止。",
+      "キャンセル",
+      "中止",
+      "やめて",
       "停下！",
-      "przestań",
+      "取消",
+      "别做了",
       "Arrête !",
+      "arrete",
+      "arrête ça",
+      "arrete ca",
+      "annule",
+      "annuler",
       "pare",
       "멈춰",
+      "취소",
+      "그만",
       "Dur.",
+      "durdur",
+      "iptal",
+      "İptal",
       "रुको",
+      "रद्द करो",
+      "बंद करो",
       "עצור",
+      "בטל",
+      "ยกเลิก",
     ])
-      expect(parseMessagingCommand(text)).toBe("stop");
-    for (const text of ["para", "¿Para?", "stop it", "stopper", "don't stop", "/stop", "stop, now"])
-      expect(parseMessagingCommand(text)).toBeNull();
+      expect(parseMessagingCommand(text), text).toBe("stop");
+    for (const text of [
+      "para",
+      "¿Para?",
+      "stopper",
+      "don't stop",
+      "do not cancel",
+      "stop by the store",
+      "can you stop this timer?",
+      "cancel my flight",
+      "why did it stop?",
+      "nie zatrzymuj",
+      "nie przerywaj",
+      "//stop",
+      "/ stop",
+      "stop,",
+      ", stop",
+      "stop,, now",
+    ])
+      expect(parseMessagingCommand(text), text).toBeNull();
   });
 
   it("recognizes standalone Thai stop commands", () => {
