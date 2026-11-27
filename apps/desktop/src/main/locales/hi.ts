@@ -232,4 +232,14 @@ export const HI_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Rakazo रीस्टार्ट करें",
   "Not Now": "अभी नहीं",
   "Restart Rakazo to finish setup": "सेटअप पूरा करने के लिए Rakazo रीस्टार्ट करें",
+  // Page apps
+  "Keep on Top": "सबसे ऊपर रखें",
+  "Open in Rakazo": "Rakazo में खोलें",
+  "Uninstall…": "अनइंस्टॉल करें…",
+  "Uninstall {name}?": "{name} अनइंस्टॉल करें?",
+  Uninstall: "अनइंस्टॉल करें",
+  "Allow {name} to ask its bot?": "{name} को अपने बॉट से पूछने दें?",
+  "Allow {name} to show notifications?": "{name} को सूचनाएँ दिखाने दें?",
+  "{name} was removed.": "{name} हटा दिया गया।",
+  "Move to Trash": "ट्रैश में ले जाएँ",
 };
