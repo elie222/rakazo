@@ -8862,7 +8862,7 @@ msgstr "Kuruluş seçenekleri"
 #: apps/mobile/components/models/organization-model-settings.tsx
 #: apps/web/src/pages/model-settings/organization-model-settings.tsx
 msgid "Organization override for this Space"
-msgstr "Bu Alan için kuruluş modeli"
+msgstr "Bu Alan için kuruluş modeli geçersiz kılma"
 
 #: apps/mobile/components/inbox/organization-menu.tsx
 msgid "Organization settings"
