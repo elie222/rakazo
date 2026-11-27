@@ -35,7 +35,7 @@ window.addEventListener("message", async (event) => {
   const data = event.data;
   if (!data || typeof data !== "object" || !RELAYED.has(data.type)) return;
   const shown = frame.getAttribute("src");
-  const reply = await bridge.message(data);
+  const reply = await bridge.message(data, shown);
   // A reply for a page that has since been replaced is dropped.
   if (reply && frame.getAttribute("src") === shown) frame.contentWindow?.postMessage(reply, "*");
 });

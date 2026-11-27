@@ -17,7 +17,7 @@ import {
 } from "./page-apps/app/page-app-window.js";
 import { runningBundle } from "./page-apps/bundle-builder.js";
 import { adoptLauncherIdentity, launcherIcon, removeOwnLauncher } from "./page-apps/launchers.js";
-import { createPageAppApi } from "./page-apps/page-app-api.js";
+import { createPageAppApi, revokePageAppToken } from "./page-apps/page-app-api.js";
 import {
   PAGE_APP_CONFIG_FILE,
   pageAppConfig,
@@ -47,11 +47,15 @@ app.setPath("userData", pageAppDataDir(appId, appData));
 if (launchedId !== null) adoptLauncherIdentity(appId);
 registerPageAppScheme();
 
-/** Removes this app and forgets its data; its token is already revoked or gone. */
-async function removeSelf() {
+/**
+ * Removes this app. Its data goes only with a revoked token: otherwise a Mac app waits in the
+ * Trash, and a launcher's app stays installed, for the revoke to be tried again.
+ */
+async function removeSelf(revoked: boolean) {
+  if (launchedId !== null && !revoked) return app.exit(0);
   if (launchedId === null) await bestEffort("trash page app", shell.trashItem(runningBundle()));
   else await bestEffort("remove page app launcher", removeOwnLauncher(appId, appData));
-  await bestEffort("remove page app data", removePageAppData(appId, appData));
+  if (revoked) await bestEffort("remove page app data", removePageAppData(appId, appData));
   app.exit(0);
 }
 
@@ -75,7 +79,7 @@ async function start() {
       cancelId: 1,
       noLink: true,
     });
-    if (response === 0) await removeSelf();
+    if (response === 0) await removeSelf(true);
     else app.exit(0);
   };
 
@@ -152,12 +156,11 @@ async function start() {
     });
     if (response !== 0) return;
     controller.stop();
-    await bestEffort("revoke page app", api.revoke());
-    await removeSelf();
+    await removeSelf(await revokePageAppToken(api));
   }
 
   handleIpc("desktop.pageApp.ready", () => controller.screen());
-  handleIpc("desktop.pageApp.message", (_event, data) => controller.message(data));
+  handleIpc("desktop.pageApp.message", (_event, data, frame) => controller.message(data, frame));
   servePageApp(controller.frameDocument);
   win = await createPageAppWindow(
     title,

@@ -84,7 +84,7 @@ export function pagesRoutes(ctx: RouterContext) {
     },
     pageApps: {
       install: authed.pageApps.install.handler(({ context, input }) =>
-        installPageApp(deps.prisma, context.actor, input),
+        installPageApp(deps.prisma, deps.jobs, context.actor, input),
       ),
       remove: authed.pageApps.remove.handler(({ context, input }) =>
         removePageApp(deps.prisma, context.actor, input.appId),

@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 // main process checks each one. Channels are literals for ipc-channels.test.ts.
 contextBridge.exposeInMainWorld("rakazoPageApp", {
   ready: () => ipcRenderer.invoke("desktop.pageApp.ready"),
-  message: (data) => ipcRenderer.invoke("desktop.pageApp.message", data),
+  message: (data, frame) => ipcRenderer.invoke("desktop.pageApp.message", data, frame),
   onScreen: (listener) => {
     // The IpcRendererEvent stays in the preload: the shell only sees what to show.
     const handler = (_event, screen) => listener(screen);

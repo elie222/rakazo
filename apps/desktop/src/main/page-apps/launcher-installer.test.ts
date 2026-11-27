@@ -33,7 +33,13 @@ afterEach(async () => {
 
 function setup(write?: PageAppLauncher["write"]) {
   const launcher: PageAppLauncher = {
-    write: write ?? (async ({ config }) => path.join(appData, `${config.appId}.lnk`)),
+    write:
+      write ??
+      (async ({ config }) => {
+        const shortcut = path.join(appData, `${config.appId}.lnk`);
+        await writeFile(shortcut, "");
+        return shortcut;
+      }),
     repoint: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined),
   };
@@ -101,10 +107,26 @@ describe("createLauncherInstaller", () => {
     expect(existsSync(pageAppsDataDir(appData))).toBe(true);
   });
 
+  it("revokes an app whose launcher was deleted, and keeps it while the revoke fails", async () => {
+    const { installer, fetch } = setup();
+    await installer.install(request("app1"), SERVER);
+    await rm(path.join(appData, "app1.lnk"));
+    fetch.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    await installer.refresh();
+    expect(apps.map((app) => app.appId)).toEqual(["app1"]);
+    await installer.refresh();
+    expect(fetch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ href: expect.stringContaining("/api/v1/page-app") }),
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(apps).toEqual([]);
+  });
+
   it("forgets an app that uninstalled itself and clears what it left", async () => {
     const { installer } = setup();
     await installer.install(request("app1"), SERVER);
     const dataDir = pageAppDataDir("app1", appData);
+    await rm(path.join(appData, "app1.lnk"));
     await rm(path.join(dataDir, "token"));
     await writeFile(path.join(dataDir, "Cookies"), "");
     await installer.refresh();

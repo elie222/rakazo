@@ -3,7 +3,7 @@ import { readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { bestEffort } from "@rakazo/logging";
 import { PAGE_APP_ID } from "./bundle-name.js";
-import { createPageAppApi } from "./page-app-api.js";
+import { createPageAppApi, revokePageAppToken } from "./page-app-api.js";
 import type { PageAppConfig } from "./page-app-files.js";
 import {
   PAGE_APP_CONFIG_FILE,
@@ -86,17 +86,23 @@ export function createLauncherInstaller(options: {
     const app = (await registry.list()).find((entry) => entry.appId === appId);
     if (!app) return false;
     await launcher.remove(app.bundlePath);
-    const token = await readPageAppToken(appId, appData);
-    if (token)
-      await bestEffort(
-        "revoke page app",
-        createPageAppApi(app.server, token, options.fetch).revoke(),
-      );
+    await forget(app);
+    return true;
+  }
+
+  /**
+   * Revokes a removed app's token and clears what it left. A revoke that fails keeps the token
+   * and the record, so `refresh` tries again on the next start.
+   */
+  async function forget(app: InstalledPageApp): Promise<boolean> {
+    const token = await readPageAppToken(app.appId, appData);
+    const api = token && createPageAppApi(app.server, token, options.fetch);
+    if (api && !(await revokePageAppToken(api))) return false;
     // A running app holds files in its data folder on Windows. Without its token it is a
     // removed app's folder, which the app clears once it sees it was removed, or `refresh` does.
-    await rm(pageAppTokenFile(appId, appData), { force: true });
-    await bestEffort("remove page app data", removePageAppData(appId, appData));
-    await registry.remove(appId);
+    await rm(pageAppTokenFile(app.appId, appData), { force: true });
+    await bestEffort("remove page app data", removePageAppData(app.appId, appData));
+    await registry.remove(app.appId);
     return true;
   }
 
@@ -113,8 +119,7 @@ export function createLauncherInstaller(options: {
           "repoint page app",
           launcher.repoint(app, pageAppDataDir(app.appId, appData)),
         );
-      } else if (existsSync(pageAppTokenFile(app.appId, appData))) installed.add(app.appId);
-      else await registry.remove(app.appId);
+      } else if (!(await bestEffort("forget page app", forget(app)))) installed.add(app.appId);
     }
     let folders: string[];
     try {

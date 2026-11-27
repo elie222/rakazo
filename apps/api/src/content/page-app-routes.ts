@@ -17,7 +17,7 @@ import type { RouterDeps } from "../router.js";
 import type { PageAppAccess } from "./page-apps.js";
 import {
   pageAppFromToken,
-  pageAppStillInstalled,
+  pageAppVersion,
   revokePageAppToken,
   setPageAppAbilities,
 } from "./page-apps.js";
@@ -49,16 +49,20 @@ export function mountPageAppRoutes(
 
   async function withApp(
     c: Context,
-    handle: (access: PageAppAccess) => Promise<Response>,
+    handle: (access: PageAppAccess, stillAuthorized: () => Promise<boolean>) => Promise<Response>,
   ): Promise<Response> {
     if (addresses(throttleKey(clientIp(c))) > REQUESTS_PER_IP_PER_MINUTE)
       return c.json({ error: "Too many requests" }, 429, { ...HEADERS, "retry-after": "60" });
-    const access = await pageAppFromToken(deps.prisma, c.req.header("authorization"));
+    const authorization = c.req.header("authorization");
+    const access = await pageAppFromToken(deps.prisma, authorization);
     if (!access) return c.json({ error: "Unauthorized" }, 401, HEADERS);
     if (requests(access.appId) > REQUESTS_PER_APP_PER_MINUTE)
       return c.json({ error: "Too many requests" }, 429, { ...HEADERS, "retry-after": "60" });
     try {
-      return await runAsTenant(access.actor, () => handle(access));
+      // A long-lived response asks again, so a revoked token or a removed owner ends it.
+      const stillAuthorized = async () =>
+        (await pageAppFromToken(deps.prisma, authorization))?.appId === access.appId;
+      return await runAsTenant(access.actor, () => handle(access, stillAuthorized));
     } catch (error) {
       if (error instanceof IsolationError) return c.json({ error: "Not found" }, 404, HEADERS);
       if (error instanceof ClientError)
@@ -137,7 +141,7 @@ export function mountPageAppRoutes(
   );
 
   app.post(`${PAGE_APP_API_PATH}/ask`, (c) =>
-    withApp(c, async (access) => {
+    withApp(c, async (access, stillAuthorized) => {
       const body = PageAskInputSchema.safeParse(await jsonBody(c, PAGE_ASK_BODY_BYTES));
       if (!body.success) return c.json({ error: "Invalid question" }, 400, HEADERS);
       if (!access.abilities.includes("ask"))
@@ -148,6 +152,8 @@ export function mountPageAppRoutes(
         access.actor,
         { ...body.data, pageId: access.pageId },
         c.req.raw.signal,
+        // An uninstall, or its owner leaving, ends a question still running.
+        stillAuthorized,
       );
       const first = await events.next();
       const encoder = new TextEncoder();
@@ -181,7 +187,7 @@ export function mountPageAppRoutes(
   );
 
   app.get(`${PAGE_APP_API_PATH}/changes`, (c) =>
-    withApp(c, async (access) => {
+    withApp(c, async (access, stillAuthorized) => {
       const follow = deps.events.followSpaceChanges;
       if (!follow) return c.json({ error: "Not found" }, 404, HEADERS);
       const stop = new AbortController();
@@ -204,8 +210,14 @@ export function mountPageAppRoutes(
             "page app change stream",
             (async () => {
               try {
-                for await (const _ of follow(pageChangesScope(access.actor.userId), stop.signal))
+                // The owner's signal covers all their pages; only this page's changes go out.
+                let seen = await pageAppVersion(deps.prisma, access);
+                for await (const _ of follow(pageChangesScope(access.actor.userId), stop.signal)) {
+                  const now = await pageAppVersion(deps.prisma, access);
+                  if (now === seen) continue;
+                  seen = now;
                   send("data: changed\n\n");
+                }
               } finally {
                 // A failed subscription ends the stream, so the app reconnects and catches up.
                 close();
@@ -220,7 +232,7 @@ export function mountPageAppRoutes(
                   await abortableDelay(HEARTBEAT_MS, stop.signal);
                   if (stop.signal.aborted) return;
                   // An uninstall ends the stream within a heartbeat.
-                  if (!(await pageAppStillInstalled(deps.prisma, access.appId))) return;
+                  if (!(await stillAuthorized())) return;
                   send(": heartbeat\n\n");
                 }
               } finally {

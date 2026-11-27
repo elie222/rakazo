@@ -11,7 +11,7 @@ import {
   AlertDialogTitle,
   Button,
 } from "@rakazo/ui-web";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { AppWindow, MonitorDown } from "lucide-react";
 import { useState } from "react";
 import { pageAppIconPngs, pageAppIconSvg, svgDataUrl } from "../../lib/pages/page-app-icon";
@@ -32,7 +32,6 @@ type InstallablePage = {
 export function PageAppButton({ page, className }: { page: InstallablePage; className?: string }) {
   const { t } = useLingui();
   const bridge = desktopBridge()?.pageApps;
-  const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const installed = useQuery({
     queryKey: INSTALLED_KEY,
@@ -46,7 +45,7 @@ export function PageAppButton({ page, className }: { page: InstallablePage; clas
     staleTime: Number.POSITIVE_INFINITY,
   });
   const install = useSave({
-    save: async (_: void, rpc) => {
+    save: async (_, rpc) => {
       if (!bridge) throw new Error("This app cannot install pages.");
       const pngs = await pageAppIconPngs(icon.data ?? (await pageAppIconSvg(page)));
       const app = await rpc.pageApps.install({ pageId: page.id, abilities: page.abilities });
@@ -58,16 +57,10 @@ export function PageAppButton({ page, className }: { page: InstallablePage; clas
         abilities: page.abilities,
         icon: pngs,
       });
-      if (!made) {
-        // Nothing holds the token now, so it is revoked rather than left to linger.
-        await rpc.pageApps.remove({ appId: app.appId });
-        throw new Error("The app could not be made.");
-      }
+      if (!made) throw new Error("The app could not be made.");
     },
-    onSaved: () => {
-      setConfirming(false);
-      void queryClient.invalidateQueries({ queryKey: INSTALLED_KEY });
-    },
+    stale: [INSTALLED_KEY],
+    onSaved: () => setConfirming(false),
   });
   if (!bridge) return null;
   const app = installed.data?.find((each) => each.pageId === page.id);
