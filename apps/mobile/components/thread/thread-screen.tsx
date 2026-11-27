@@ -20,7 +20,8 @@ import { useFocusEffect, useIsFocused, useLocalSearchParams, useRouter } from "e
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { I18nManager, Platform, View } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView, useKeyboardContext } from "react-native-keyboard-controller";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLiveStream } from "../../lib/api/roster-signals";
 import { mobileTokens } from "../../lib/appearance/appearance";
@@ -48,7 +49,7 @@ import {
   threadHeaderFloats,
 } from "../../lib/thread/scroll/thread-edges";
 import { useThreadKeyboard } from "../../lib/thread/scroll/thread-keyboard";
-import { threadKeyboardAvoidance } from "../../lib/thread/scroll/thread-keyboard-offset";
+import { threadKeyboardVerticalOffset } from "../../lib/thread/scroll/thread-keyboard-offset";
 import { useThreadListScroll } from "../../lib/thread/scroll/thread-list-scroll";
 import {
   isOwnThreadMessage,
@@ -157,6 +158,16 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   // clear of it. A read-only chat has no composer.
   const [dockHeight, setDockHeight] = useState(0);
   const keyboard = useThreadKeyboard();
+  const avoidKeyboard = !rootAvoidsKeyboard && keyboard.avoiding;
+  const isAndroid = Platform.OS === "android";
+  const {
+    reanimated: { height: keyboardHeight },
+  } = useKeyboardContext();
+  // The Android thread runs to the edge of the window in both layouts. Use the IME
+  // inset directly so a stale measurement of the header can't put the dock under it.
+  const androidKeyboardPadding = useAnimatedStyle(() => ({
+    paddingBottom: isAndroid && avoidKeyboard ? -keyboardHeight.value : 0,
+  }));
   const bottomInset = Math.max(dockHeight, readOnly ? contentBottomInset : 0);
   const activeBotId = useRef(botId);
   activeBotId.current = botId;
@@ -417,6 +428,7 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
   useIncomingShareImport({
     attachments,
     composerRef: composer.composerRef,
+    focused,
     readOnly,
     threadKey,
     uploadConfig,
@@ -451,8 +463,8 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     activeBotId,
   });
 
-  const { runError, normalizedRunError, runErrorAction, detailsOpen, setDetailsOpen } =
-    useThreadRunError(snap?.run, botId);
+  const { runError, normalizedRunError, runErrorAction, retry, detailsOpen, setDetailsOpen } =
+    useThreadRunError(snap?.run, { botId, groupId, userId, isCurrentTarget });
 
   // Event actions read the latest committed screen state without invalidating settled rows.
   const rowActions = useLatestRowActions({
@@ -474,10 +486,22 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
     // A chat attachment opens the version it was sent with, not the newest.
     previewFile: (artifactId) =>
       router.push({ pathname: "/artifact", params: { artifactId, exact: "1" } }),
-    previewImage: (target) =>
+    previewImage: (target, gallery) =>
       router.push({
         pathname: "/image",
-        params: { ...target, ...(groupId ? { groupId } : { botId }) },
+        params: {
+          artifactId: target.artifactId,
+          name: target.name,
+          mimeType: target.mimeType,
+          ...(groupId ? { groupId } : { botId }),
+          ...(gallery
+            ? {
+                gallery: JSON.stringify(
+                  gallery.map(({ artifactId: id, name, mimeType }) => ({ id, name, mimeType })),
+                ),
+              }
+            : {}),
+        },
       }),
     jump: (messageId) => {
       void applyMessageJump({
@@ -587,25 +611,23 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
       resetAt={visibleRunError?.resetAt}
       onDetails={() => setDetailsOpen(true)}
       action={visibleRunError ? runErrorAction : null}
+      retry={visibleRunError && !readOnly ? retry : null}
     />
   );
 
   return (
-    <View style={{ flex: 1 }}>
+    <Animated.View style={[{ flex: 1 }, androidKeyboardPadding]}>
       <KeyboardAvoidingView
-        enabled={!rootAvoidsKeyboard && keyboard.avoiding}
+        enabled={!isAndroid && avoidKeyboard}
         // Padding always settles to zero. "height" stays shrunk when the keyboard hides without
         // move frames, such as when a pushed screen closes with its own keyboard up.
         behavior="padding"
-        {...threadKeyboardAvoidance({
+        keyboardVerticalOffset={threadKeyboardVerticalOffset({
           os: Platform.OS,
           floatingHeader: threadHeaderFloats(),
           nativeHeaderHeight,
         })}
-        style={{
-          flex: 1,
-          backgroundColor: tokens.background,
-        }}
+        style={{ flex: 1, backgroundColor: tokens.background }}
       >
         {/* The keyboard's padding shrinks this, so the floating composer rides above it. */}
         <View style={{ flex: 1 }}>
@@ -724,6 +746,6 @@ export function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId:
           />
         ) : null}
       </KeyboardAvoidingView>
-    </View>
+    </Animated.View>
   );
 }

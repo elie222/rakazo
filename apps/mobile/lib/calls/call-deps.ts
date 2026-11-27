@@ -13,7 +13,7 @@ import { bestEffort } from "@rakazo/logging/best-effort";
 import type { ApiRequestContext } from "../api/api";
 import { captureApiRequestContext, rpc } from "../api/api";
 import { subscribeThread } from "../api/api-live";
-import type { MobileSnapshot } from "../api/mobile-types";
+import type { MobileMessage, MobileSnapshot } from "../api/mobile-types";
 import { currentSessionGeneration } from "../api/session";
 import { deviceLanguage, getActiveUiLocale } from "../i18n/i18n";
 import * as dictation from "../voice/dictation";
@@ -46,6 +46,7 @@ const FEED_RETRY_MAX_MS = 5_000;
 /** The call a set of production deps serves, and how they hand a lost call back to the session. */
 export type CallDepsContext = {
   callId: string;
+  autoLanguage: boolean;
   /** The session the call started in: a late request fails instead of going out with a newer one. */
   generation: number;
   requestContext?: ApiRequestContext;
@@ -57,12 +58,13 @@ export type CallDepsContext = {
 
 export function productionDeps({
   callId: sessionCallId,
+  autoLanguage,
   generation,
   requestContext,
   onUnauthorized,
   onFeedLost,
 }: CallDepsContext): CallDeps {
-  // One owner per call: its hang-up and barge-in stop only its own speech, never
+  // One owner per call: its hang-up stops only its own speech, never
   // unrelated read-aloud that has since replaced it.
   const speechOwner = createSpeechOwner();
   const callContext = async () => {
@@ -88,7 +90,7 @@ export function productionDeps({
       return recordClip(signal);
     },
     transcribe: async (clip, signal) =>
-      transcribeClip(clip, signal, await callContext(), sessionCallId),
+      transcribeClip(clip, signal, await callContext(), { callId: sessionCallId, autoLanguage }),
     send: (botId, text, clientNonce) =>
       endOnUnauthorized(
         callContext().then(async (requestContext) => {
@@ -168,7 +170,7 @@ function watchReplies(
   feed: {
     onReply: (messageId: string, text: string, runId?: string) => void;
     onEnded: (ended: CallEnded) => void;
-    onThread: (thread: MobileSnapshot) => void;
+    onThread: (thread: MobileSnapshot, nextReply?: MobileMessage) => void;
     onFeedLost: () => void;
   },
   requestContext?: ApiRequestContext,
@@ -213,20 +215,21 @@ function watchReplies(
             const previous = snapshot;
             snapshot = reduceThreadSnapshot(snapshot, event) ?? snapshot;
             if (!snapshot) return;
-            if (snapshot !== previous) onThread(snapshot);
             const message = latestSpokenCallReply(snapshot.messages, watchedCallId);
-            if (!message || message.id === lastSeen) return;
-            // Wait for the message's own run to settle so half-written blocks are never
-            // spoken; another run still working says nothing about this one.
-            // An answered question can resume a run behind the one the thread shows first, so
-            // look the message's run up among every active run.
-            const run =
-              snapshot?.activeRuns?.find((active) => active.id === message.runId) ?? snapshot?.run;
-            const fromAnotherRun = Boolean(message.runId && message.runId !== run?.id);
-            if (!fromAnotherRun && run && ACTIVE_RUN_STATUSES.some((s) => s === run.status)) return;
-            const text = speechFromBlocks(message.blocks).trim();
-            lastSeen = message.id;
-            onNewReply(message.id, text, message.runId);
+            // Wait for this reply's run, which can be behind another active run.
+            const run = snapshot.activeRuns?.find((active) => active.id === message?.runId);
+            const ownRun =
+              run ?? (!message?.runId || snapshot.run?.id === message.runId ? snapshot.run : null);
+            const reply =
+              message &&
+              message.id !== lastSeen &&
+              !ACTIVE_RUN_STATUSES.some((status) => status === ownRun?.status)
+                ? message
+                : undefined;
+            if (snapshot !== previous) onThread(snapshot, reply);
+            if (!reply) return;
+            lastSeen = reply.id;
+            onNewReply(reply.id, speechFromBlocks(reply.blocks).trim(), reply.runId);
           },
           controller.signal,
           requestContext,

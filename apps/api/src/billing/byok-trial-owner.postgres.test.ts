@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ArtifactStore, JobPublisher } from "@rakazo/adapter-kit";
-import { BillingEmulator } from "@rakazo/adapters";
+import { BillingEmulator, ConnectorRegistry } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import type { PrismaClient } from "@rakazo/db";
@@ -17,7 +17,6 @@ import {
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteOrganization } from "../account/account-deletion.js";
-import type { SpaceDeletionDeps } from "../spaces/space-deletion.js";
 import { createBillingService, TRIAL_DAYS } from "./billing.js";
 import { expireCheckoutLease, watchCheckoutLeaseClaims } from "./checkout-lease.test-support.js";
 
@@ -637,13 +636,14 @@ dbTests("own-key trial hold lifecycle", () => {
     await service.selectFunding(owner.first.actor, "byok");
     const deps = {
       prisma,
+      connectors: new ConnectorRegistry([]),
       sandbox: { destroy: vi.fn() },
       home: {},
       jobs: { cancel: vi.fn() } as unknown as JobPublisher,
       artifacts: { remove: vi.fn() } as unknown as ArtifactStore,
       dataDir: root,
       billing: service,
-    } as unknown as SpaceDeletionDeps & { billing: ReturnType<typeof createBillingService> };
+    } as unknown as Parameters<typeof deleteOrganization>[0];
     provider.failCancellation = true;
     await expect(
       deleteOrganization(deps, owner.userId, owner.first.organizationId),

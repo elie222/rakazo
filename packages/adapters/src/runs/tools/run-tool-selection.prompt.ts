@@ -9,10 +9,19 @@ export function createdRunToolUnavailableReason(name: string): string {
   return `${name} is not available until the user says what this bot is for. Use ask_user.`;
 }
 
-export function backgroundRunToolUnavailableReason(name: string): string {
-  return `${name} is not available in a background run. Report through ticket_comment instead.`;
+export function backgroundRunToolUnavailableReason(
+  name: string,
+  ticketCommentOffered: boolean,
+): string {
+  return ticketCommentOffered
+    ? `${name} is not available in a background run. Report through ticket_comment instead.`
+    : `${name} is not available in a background run.`;
 }
 
 export function disabledBuiltinToolUnavailableReason(name: string): string {
   return `${name} is turned off for this bot.`;
+}
+
+export function routineRunToolUnavailableReason(name: string): string {
+  return `${name} is not available in routine runs.`;
 }

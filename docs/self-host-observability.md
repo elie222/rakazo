@@ -75,6 +75,20 @@ attempts needing no computer before tuning `SANDBOX_IDLE_MS`. Increasing the idl
 resumes between nearby uses but increases billed runtime; changing it does not remove unnecessary
 starts caused by tools. Provider rolling-window limits remain the source of truth for quota.
 
+## Scheduled routines
+
+`routine.paused_after_failures` records an automatic pause with `routine.id`,
+`space.id`, `bot.id`, `routine.failure_count`, and a fixed `run.failure_kind`.
+Alert on this event if an operator should review routines that need attention.
+
+For routines that keep running, group `agent.tool.completed` events with
+`tool.outcome=error` by `routine.id` and `tool`. Count distinct `run.id` values
+in a short window so several retries inside one run do not look like a failing
+schedule. Nonzero shell exits count as tool errors. Use `run.trigger` to compare
+interactive and scheduled runs. A completed run can still have failed tool
+calls, and repeated tool errors warrant investigation even when the run
+finishes. These logs omit tool inputs, outputs, and error text.
+
 ## Error reporting
 
 Error reporting to Sentry or a Sentry-compatible collector such as GlitchTip is optional:

@@ -261,6 +261,46 @@ describePostgres("computer allowance hours (PostgreSQL)", () => {
     }
   });
 
+  it("gives granted credit without a plan a speech share spent since the first grant", async () => {
+    const settings = await prisma.deploymentSettings.findUnique({
+      where: { id: "default" },
+      select: { modelCreditsEnabled: true },
+    });
+    await prisma.deploymentSettings.upsert({
+      where: { id: "default" },
+      create: { id: "default", modelCreditsEnabled: true },
+      update: { modelCreditsEnabled: true },
+    });
+    const firstAppliedAt = new Date("2026-02-01T00:00:00Z");
+    await prisma.accessGrant.createMany({
+      data: [
+        {
+          email: `first-${otherOrganizationId}@rakazo.test`,
+          organizationId: otherOrganizationId,
+          creditCents: 3_000,
+          appliedAt: firstAppliedAt,
+        },
+        {
+          email: `second-${otherOrganizationId}@rakazo.test`,
+          organizationId: otherOrganizationId,
+          creditCents: 2_000,
+          appliedAt: new Date("2026-03-02T00:00:00Z"),
+        },
+      ],
+    });
+    try {
+      expect(await speechAllowancePlan(prisma, otherOrganizationId, now)).toEqual({
+        limitMicros: 10_000_000n,
+        since: firstAppliedAt,
+      });
+    } finally {
+      await prisma.accessGrant.deleteMany({ where: { organizationId: otherOrganizationId } });
+      if (settings)
+        await prisma.deploymentSettings.update({ where: { id: "default" }, data: settings });
+      else await prisma.deploymentSettings.delete({ where: { id: "default" } });
+    }
+  });
+
   it("charges hosted media once per source, kept apart from the Space", async () => {
     const charge = {
       organizationId,

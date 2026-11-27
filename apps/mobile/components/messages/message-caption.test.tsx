@@ -6,7 +6,7 @@ import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OpenPageContext } from "../../lib/messages/message-mentions";
+import { OpenPageContext, UserMentionsContext } from "../../lib/messages/message-mentions";
 import { MessageCaption } from "./message-caption";
 
 const linking = vi.hoisted(() => ({
@@ -14,9 +14,12 @@ const linking = vi.hoisted(() => ({
   openURL: vi.fn(async () => undefined),
 }));
 
-// Only drawn for a sent mention, which these tests do not use.
+// Mock the avatar and icon rendering, but retain the icon's color at the native boundary.
 vi.mock("../bots/bot-avatar", () => ({ BotAvatar: () => null }));
-vi.mock("../native/native-symbol", () => ({ NativeSymbol: () => null }));
+vi.mock("../native/native-symbol", () => ({
+  NativeSymbol: ({ ios, color }: { ios: string; color: string }) =>
+    createElement("span", { "data-symbol": ios, "data-color": color }),
+}));
 
 vi.mock("react-native", () => {
   function View({ children }: { children?: ReactNode }) {
@@ -59,6 +62,7 @@ vi.mock("react-native", () => {
     },
     I18nManager: { isRTL: false },
     useColorScheme: () => "light",
+    useWindowDimensions: () => ({ fontScale: 1 }),
   };
 });
 
@@ -114,6 +118,32 @@ describe("attachment captions", () => {
     await act(async () => link?.click());
 
     expect(linking.openURL).toHaveBeenCalledWith("https://example.test/docs");
+  });
+
+  it("uses the received caption foreground for the everyone icon", () => {
+    const role = "user";
+    act(() => {
+      root.render(
+        <UserMentionsContext.Provider
+          value={{
+            targets: [{ kind: "everyone", id: "everyone", name: "everyone" }],
+            onOpenBot: vi.fn(),
+          }}
+        >
+          <MessageCaption
+            role={role}
+            received
+            text="@everyone Sample caption"
+            tokens={lightTokens}
+            colorScheme="light"
+            streaming={false}
+          />
+        </UserMentionsContext.Provider>,
+      );
+    });
+
+    const icon = container.querySelector('[data-symbol="person.3"]');
+    expect(icon?.getAttribute("data-color")).toBe(lightTokens.foreground);
   });
 
   it("opens the page a sent page link names from the user's bubble", async () => {

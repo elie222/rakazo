@@ -10,7 +10,6 @@ import {
   signup,
 } from "../helpers/helpers";
 
-/** Match activity rows by their aria-label. */
 function activityRow(page: Page, botName: string) {
   return page.locator("aside").getByRole("button", {
     name: new RegExp(`^${botName}, `),

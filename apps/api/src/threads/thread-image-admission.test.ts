@@ -1,6 +1,8 @@
-import type { Actor } from "@rakazo/contracts";
+import type { Actor, MessageBlock } from "@rakazo/contracts";
+import { MODEL_IMAGE_INPUT_UNKNOWN } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { assertThreadImageInput } from "./thread-image-admission.js";
 import type { ThreadTarget } from "./thread-target.js";
 import { sendThreadMessage } from "./thread-target.js";
 
@@ -10,6 +12,7 @@ function fixture(group = false) {
   const model = { modelProvider: "openrouter", modelId: "deepseek/deepseek-v4-pro" };
   const tx = {
     space: { findUnique: vi.fn(async () => null) },
+    spaceMember: { findUnique: vi.fn(async () => null) },
     user: { findMany: vi.fn().mockResolvedValue([]) },
     secret: { findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "synthetic" }) },
     $executeRaw: vi.fn(async () => 0),
@@ -167,17 +170,16 @@ describe("current image send admission", () => {
             kind: "openai_compatible",
             baseUrl: "https://model.example.test/v1",
             enabledModelIds: ["custom-model"],
-            visionModelIds: images ? ["custom-model"] : [],
+            models: { "custom-model": { images } },
           }),
         ),
       },
     };
     if (images) await expect(send(configuration)).resolves.toMatchObject({ runId: "run-1" });
-    // A custom endpoint is never known to be text-only; image input is just not turned on.
     else
       await expect(send(configuration)).rejects.toMatchObject({
         code: "CONFLICT",
-        message: "Image input is not configured for this model.",
+        message: "This model cannot read images. Choose a model that supports images.",
       });
   });
 
@@ -307,7 +309,7 @@ describe("current image send admission", () => {
     );
   });
 
-  it("asks to configure image input for a legacy custom connection that never set it", async () => {
+  it("lets a custom model that never set image input read images", async () => {
     const { tx, send } = fixture();
     tx.bot.findFirst.mockResolvedValue({
       id: "bot-1",
@@ -332,10 +334,7 @@ describe("current image send admission", () => {
         ),
       },
     };
-    await expect(send(configuration)).rejects.toMatchObject({
-      code: "CONFLICT",
-      message: "Image input is not configured for this model.",
-    });
+    await expect(send(configuration)).resolves.toMatchObject({ runId: "run-1" });
   });
 
   it("follows a listed-only model's own image setting, but never over the catalog", async () => {
@@ -589,5 +588,66 @@ describe("current image send admission", () => {
     expect(notify).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
     expect(releaseTakeover).not.toHaveBeenCalled();
+  });
+});
+
+const actor = { userId: "member", spaceId: "space" } as Actor;
+const image = [{ kind: "image" }] as MessageBlock[];
+
+function organizationModel(supportsImages: boolean | null) {
+  return {
+    bot: {
+      findFirst: async () => ({ modelProvider: null, modelId: null, thinkingLevel: null }),
+    },
+    spaceMember: {
+      findUnique: async () => ({
+        organizationModelConnectionId: "shared",
+        organizationModelProvider: "openai-compatible",
+        organizationModelId: "fixture-vision-model",
+      }),
+    },
+    organizationModelConnection: {
+      findFirst: vi.fn(async () => ({ secretId: "fixture", ciphertext: "sealed", supportsImages })),
+    },
+    deploymentSettings: { findUnique: async () => null },
+  };
+}
+
+it("uses the organization image setting without runtime configuration", async () => {
+  const prisma = organizationModel(true);
+  await expect(
+    assertThreadImageInput(prisma as unknown as PrismaClient, actor, "bot", image),
+  ).resolves.toBeUndefined();
+  expect(prisma.organizationModelConnection.findFirst).toHaveBeenCalledOnce();
+});
+
+it("uses the selected connection's per-model image setting when secrets are available", async () => {
+  const prisma = organizationModel(true);
+  await expect(
+    assertThreadImageInput(prisma as unknown as PrismaClient, actor, "bot", image, undefined, {
+      deployment: null,
+      secrets: {
+        load: async () =>
+          JSON.stringify({
+            kind: "openai_compatible",
+            baseUrl: "https://models.example.test",
+            apiKey: "fixture-key",
+            models: { "fixture-vision-model": { images: false } },
+          }),
+      },
+    }),
+  ).rejects.toMatchObject({ code: "CONFLICT" });
+});
+
+it("reports unknown image capability when the selected organization key cannot be read", async () => {
+  const prisma = organizationModel(null);
+  await expect(
+    assertThreadImageInput(prisma as unknown as PrismaClient, actor, "bot", image, undefined, {
+      deployment: null,
+      secrets: { load: vi.fn().mockRejectedValue(new Error("fixture key unavailable")) },
+    }),
+  ).rejects.toMatchObject({
+    code: "CONFLICT",
+    message: MODEL_IMAGE_INPUT_UNKNOWN,
   });
 });

@@ -1,3 +1,4 @@
 {
-  "labels": ["review:greptile"]
+  "labels": ["review:greptile"],
+  "instructions": "Do not request comments that restate code, tests, or schema fields. Request a comment only when you can name a missing contract or constraint the code cannot express and explain why it matters."
 }

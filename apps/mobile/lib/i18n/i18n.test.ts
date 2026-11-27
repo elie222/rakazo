@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("expo-localization", () => ({
   getLocales: vi.fn(() => [{ languageTag: "en-US" }]),
+  getCalendars: vi.fn(() => []),
 }));
 
 vi.mock("expo-secure-store", () => ({
@@ -148,6 +149,22 @@ describe("mobile i18n", () => {
     expect(getActiveUiLocale()).toBe("ru");
     expect(t("Language")).toBe("Язык");
     expect(dateLocaleForUi()).toBe("ru");
+  });
+
+  it("formats dates with the phone's region and clock", async () => {
+    const localization = await import("expo-localization");
+    const gb = [{ languageTag: "en-GB", regionCode: "GB" }] as never;
+    vi.mocked(localization.getLocales).mockReturnValueOnce(gb).mockReturnValueOnce(gb);
+    vi.mocked(localization.getCalendars).mockReturnValueOnce([{ uses24hourClock: true }] as never);
+    const { bootstrapI18n, dateLocaleForUi } = await import("./i18n");
+
+    await expect(bootstrapI18n()).resolves.toBe("en");
+    expect(dateLocaleForUi()).toBe("en-GB-u-hc-h23");
+    expect(dateLocaleForUi("de")).toBe("de-GB-u-hc-h23");
+    expect(dateLocaleForUi("zh-TW")).toBe("zh-TW-u-hc-h23");
+    expect(
+      new Intl.DateTimeFormat(dateLocaleForUi(), { timeStyle: "short" }).resolvedOptions(),
+    ).toMatchObject({ locale: "en-GB-u-hc-h23", hourCycle: "h23" });
   });
 
   it("normalizes a regional German stored locale before activation", async () => {

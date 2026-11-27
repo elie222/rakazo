@@ -14,6 +14,7 @@ type Item = {
   tintColor?: string;
   disabled: boolean;
   onPress: () => void;
+  menu?: { items: { label: string; onPress: () => void }[] };
 };
 type Options = {
   title?: string;
@@ -183,6 +184,28 @@ it("runs the latest handler without setting the header again when only the handl
   act(() => shown?.click());
   expect(first).not.toHaveBeenCalled();
   expect(latest).toHaveBeenCalledTimes(1);
+});
+
+it("dispatches an existing native menu item to the latest selection handler", () => {
+  state.ios26 = true;
+  const first = vi.fn();
+  const latest = vi.fn();
+  const menu = {
+    kind: "menu",
+    label: "Add custom",
+    symbol: "plus",
+    items: [{ id: "source", label: "Source" }],
+    Fallback: () => null,
+  } as const;
+  render({ action: { ...menu, onSelect: first } });
+  const shown = item()?.menu?.items[0];
+  render({ action: { ...menu, onSelect: latest } });
+
+  shown?.onPress();
+
+  expect(state.setOptions).toHaveBeenCalledTimes(1);
+  expect(first).not.toHaveBeenCalled();
+  expect(latest).toHaveBeenCalledExactlyOnceWith("source");
 });
 
 it.each([

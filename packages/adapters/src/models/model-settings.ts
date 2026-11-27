@@ -1,4 +1,7 @@
 import type { ModelSettings } from "@rakazo/contracts";
+import { DEFAULT_MODEL_MAX_TOKENS, withModelDefaults } from "@rakazo/contracts";
+import { REASONING_MODEL_MAX_TOKENS } from "../runtime/pi/pi-runtime-limits.js";
+import { isPrivateOpenAiCompatibleHostname } from "./endpoints/openai-compatible-url.js";
 import type { StoredModelSecret } from "./model-secret.js";
 import { catalogKnowsModel, compatibleModelSeesImages } from "./model-vision.js";
 
@@ -8,6 +11,7 @@ type LegacyCredential = { supportsImages?: boolean | null; defaultModel?: string
  * The settings a model on this connection runs with. A model's own saved settings replace
  * everything; until it has some, values saved for the whole connection still apply to it.
  * Image input and thinking, with its level, stay the catalog's answer for models it knows.
+ * A compatible model fills what is left from `compatibleModelDefaults`.
  */
 export function connectionModelSettings(
   secret: StoredModelSecret,
@@ -16,9 +20,34 @@ export function connectionModelSettings(
   credential?: LegacyCredential,
 ): ModelSettings {
   const settings = savedModelSettings(secret, modelId, credential);
-  if (!catalogKnowsModel(provider, modelId)) return settings;
+  if (!catalogKnowsModel(provider, modelId)) {
+    if (secret.kind !== "openai_compatible") return settings;
+    const merged = withModelDefaults(compatibleModelDefaults(secret, modelId), settings);
+    // The list names the model's ceiling; a request asks for the usual modest share of it.
+    if (settings.maxTokens === undefined && merged.maxTokens !== undefined)
+      merged.maxTokens = Math.min(
+        merged.maxTokens,
+        merged.reasoning ? REASONING_MODEL_MAX_TOKENS : DEFAULT_MODEL_MAX_TOKENS,
+      );
+    return merged;
+  }
   const { images: _images, reasoning: _reasoning, thinkingLevel: _level, ...limits } = settings;
   return limits;
+}
+
+/**
+ * What a compatible model does until its own settings say otherwise: what the server's model
+ * list said, else image input and thinking, as most models today have both. A model on a local
+ * or private server is assumed to have neither, as small local models often lack them.
+ */
+export function compatibleModelDefaults(
+  secret: Extract<StoredModelSecret, { kind: "openai_compatible" }>,
+  modelId: string,
+): ModelSettings {
+  const listed = secret.listedModels?.[modelId.trim()] ?? {};
+  const url = URL.parse(secret.baseUrl);
+  if (url && isPrivateOpenAiCompatibleHostname(url.hostname)) return listed;
+  return { images: true, reasoning: true, ...listed };
 }
 
 function savedModelSettings(

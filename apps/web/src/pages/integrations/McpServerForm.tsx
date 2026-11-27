@@ -15,6 +15,7 @@ import {
   FieldLabel,
   FieldTitle,
   Input,
+  OptionSelect,
   SectionHeading,
   Tabs,
   TabsList,
@@ -34,6 +35,8 @@ type EnvRow = { id: number; name: string; value: string; file: boolean };
 /** Everything the add or edit form holds until it is saved. */
 export type McpServerDraft = {
   access: AgentAccess;
+  /** Added for the whole organization instead of only the member. */
+  organization: boolean;
   transport: McpTransport;
   name: string;
   endpoint: string;
@@ -74,6 +77,7 @@ function envName(value: string): string {
 export function emptyMcpServerDraft(transport: McpTransport): McpServerDraft {
   return {
     access: { allBots: true, botIds: [] },
+    organization: false,
     transport,
     name: "",
     endpoint: "",
@@ -194,6 +198,7 @@ export function McpServerForm({
   stdioEnabled,
   bots,
   assignmentsReady,
+  organizationName,
   oauthClientIdInput,
   onBack,
   onSave,
@@ -207,6 +212,8 @@ export function McpServerForm({
   stdioEnabled: boolean;
   bots: Bot[];
   assignmentsReady: boolean;
+  /** The organization a new server can be added for, when the member may do so. */
+  organizationName: string | null;
   oauthClientIdInput: RefObject<HTMLInputElement | null>;
   onBack: () => void;
   onSave: () => void;
@@ -258,6 +265,22 @@ export function McpServerForm({
             placeholder="e.g. Mobbin"
           />
         </Field>
+        {!editing && organizationName ? (
+          <Field>
+            <FieldLabel htmlFor="mcp-owner">
+              <Trans>Available to</Trans>
+            </FieldLabel>
+            <OptionSelect
+              id="mcp-owner"
+              value={draft.organization ? "organization" : "me"}
+              onValueChange={(owner) => update({ organization: owner === "organization" })}
+              options={[
+                { value: "me", label: t`Just me` },
+                { value: "organization", label: organizationName },
+              ]}
+            />
+          </Field>
+        ) : null}
         <Tabs
           value={draft.transport}
           onValueChange={(value) => update({ transport: value as McpTransport })}
@@ -541,12 +564,14 @@ export function McpServerForm({
           </div>
         </Disclosure>
       </FieldGroup>
-      <AgentAccessControl
-        bots={bots}
-        access={draft.access}
-        disabled={!assignmentsReady}
-        onChange={(access) => update({ access })}
-      />
+      {draft.organization || editing?.organization ? null : (
+        <AgentAccessControl
+          bots={bots}
+          access={draft.access}
+          disabled={!assignmentsReady}
+          onChange={(access) => update({ access })}
+        />
+      )}
       <Button
         type="button"
         className="w-full"

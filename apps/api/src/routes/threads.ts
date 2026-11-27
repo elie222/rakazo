@@ -58,6 +58,7 @@ import {
   setThreadSnooze,
   setThreadUnreadState,
 } from "../threads/thread-read-state.js";
+import { retryThreadRun } from "../threads/thread-retry.js";
 import { threadSnapshot } from "../threads/thread-snapshot.js";
 import { isStopMessage, stopThreadRuns } from "../threads/thread-stop.js";
 import type { ThreadTarget } from "../threads/thread-target.js";
@@ -169,6 +170,7 @@ export function threadsRoutes(ctx: RouterContext) {
       {
         ...deps,
         maxAttachmentsPerMessage: deps.env.maxAttachmentsPerMessage,
+        signedInApp,
         imageAdmission: confirmingImages
           ? {
               secrets: deps.secrets,
@@ -188,7 +190,6 @@ export function threadsRoutes(ctx: RouterContext) {
       },
       takeoverReleaser(deps, actor, target),
       startRoutines,
-      signedInApp,
     ).catch((error: unknown) => {
       if (error instanceof AttachmentValidationError) {
         throw new ClientError("BAD_REQUEST", error.message);
@@ -320,7 +321,13 @@ export function threadsRoutes(ctx: RouterContext) {
         try {
           if (input.text?.trim() || input.artifactIds?.length) {
             // A saved message for this nonce is replayed before any of this runs.
-            sent = await send(actor, input, startRoutines, context.nativeSessionId);
+            sent = await send(
+              actor,
+              input,
+              startRoutines,
+              context.nativeSessionId,
+              Boolean(context.sessionId),
+            );
           } else {
             // Only the routines: they all commit or none does.
             const started = await withTransactionRetry(() =>
@@ -368,6 +375,11 @@ export function threadsRoutes(ctx: RouterContext) {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         await stopThreadRuns(deps, context.actor, target);
         return { ok: true as const };
+      }),
+      retry: authed.threads.retry.handler(async ({ context, input }) => {
+        const { actor } = context;
+        const target = await resolveThreadTarget(deps.prisma, actor, input);
+        return retryThreadRun(deps, actor, target, input.runId);
       }),
       stopHelper: authed.threads.stopHelper.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);

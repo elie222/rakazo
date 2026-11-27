@@ -48,3 +48,15 @@ distinguish sideways drags from vertical chat scrolling. Their viewports
 start at the physical left, and table layout preserves the user's scroll
 position where it still fits. Drop when an upstream release handles both
 behaviors in a vertical chat list (#6368, #6369).
+
+## `react-native-screens@4.30.1.patch`
+
+Native stack sheets request horizontal bars on iOS 27.1 so UIKit positions
+them clear of the camera and status bar on the iPhone Duo outer display.
+Drop when the native stack supports setting the sheet's vertical bar behavior.
+
+## `@expo__ui@58.0.29.patch`
+
+SwiftUI bottom sheets request the same horizontal bars on the iPhone Duo
+outer display. Drop when Expo UI exposes the vertical bar behavior on the
+presented sheet content.

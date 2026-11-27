@@ -152,11 +152,14 @@ export function receiveIncomingShare(isShare: boolean, initial: boolean) {
   if (initial) sweepIosShareContainer(share.files);
 }
 
-/** Binds the pending share to the chat the picker opens, so no other chat can take it. */
-export function chooseIncomingShareThread(threadKey: string): boolean {
-  if (!pending) return false;
-  chosen = { generation: pending.generation, threadKey };
-  return true;
+/** Binds the share to one chat and lets the picker undo that choice if opening it stalls. */
+export function chooseIncomingShareThread(threadKey: string): (() => void) | undefined {
+  if (!pending) return undefined;
+  const choice = { generation: pending.generation, threadKey };
+  chosen = choice;
+  return () => {
+    if (chosen === choice) chosen = null;
+  };
 }
 
 /** Claim synchronously: a second chat/effect cannot take the same share. */

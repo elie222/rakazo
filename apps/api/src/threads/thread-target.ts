@@ -42,6 +42,7 @@ import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
   clearEndedRunState,
+  connectionIn,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
@@ -150,8 +151,7 @@ async function resolveOwnedConnectorDisplayNames(
   const rows = await tx.connection.findMany({
     where: {
       id: { in: connectionIds },
-      spaceId: actor.spaceId,
-      userId: actor.userId,
+      ...connectionIn(actor),
       status: "connected",
     },
     select: { id: true, displayName: true },
@@ -510,6 +510,8 @@ export async function sendThreadMessage(
     prisma: PrismaClient;
     events: ThreadEvents;
     jobs: JobPublisher;
+    /** Set by the signed-in app route, never taken from client input. */
+    signedInApp?: boolean;
     imageAdmission?: Parameters<typeof assertThreadImageInput>[5];
     maxAttachmentsPerMessage?: number;
     analytics?: ProductAnalytics;
@@ -535,8 +537,10 @@ export async function sendThreadMessage(
   releaseTakeover?: (runId: string) => Promise<void>,
   /** Runs saved with the message, after the thread lock and before the message is routed. */
   startRoutines?: (tx: Prisma.TransactionClient) => Promise<Array<{ id: string; status: string }>>,
-  signedInApp = false,
 ) {
+  if (target.kind === "bot" && pilotRuntimeForBot(target.botId) && !deps.signedInApp) {
+    throw new ClientError("FORBIDDEN", "Use the signed-in app to message this pilot bot.");
+  }
   const existing = await replayExistingSend(
     deps,
     target.threadId,
@@ -881,7 +885,7 @@ export async function sendThreadMessage(
             clientNonce: sendRunClientNonce(input.clientNonce, message.id),
             sourceMessageId: message.id,
             ...pilotPin,
-            ...(pilotPin && signedInApp && !replyToMessageId && !replyQuote
+            ...(pilotPin && deps.signedInApp && !replyToMessageId && !replyQuote
               ? { nativeDmResumeGrant: pilotDmResumeGrant(target.botId) }
               : {}),
           },
@@ -924,6 +928,8 @@ export async function sendThreadMessage(
       } = groupSendTargets(members, input, repliedBotId);
       if ([...explicitPilotIds].some((id) => !memberBotIds.includes(id)))
         throw new ClientError("BAD_REQUEST", "The addressed bot is not a group member.");
+      if (explicitPilotIds.size > 0 && !deps.signedInApp)
+        throw new ClientError("FORBIDDEN", "Use the signed-in app to message this pilot bot.");
       const noEligiblePilotGroupTarget =
         targetBotIds.length === 0 && memberBotIds.some((id) => groupPilotEnrolled(id));
       if (noEligiblePilotGroupTarget && !isStopMessage(input))

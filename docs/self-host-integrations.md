@@ -15,7 +15,7 @@ This option sends search queries and requested page URLs to Parallel, which retr
 on its servers. Conversation accounting uses an HMAC of internal IDs keyed by
 `ENCRYPTION_KEY` (shared by the API and worker), so deployments with distinct secrets send
 distinct session IDs. Rotating that secret resets the session IDs; the existing development-only
-encryption-key fallback also applies here. Anonymous access has service limits; rate-limit and provider errors are returned
+encryption-key fallback also applies here. Anonymous access has service limits; set `PARALLEL_API_KEY` on the API and worker to send a Bearer token and lift those limits. Rate-limit and provider errors are returned
 to the bot without switching providers. Per-bot disabled web tools remain disabled. Set
 `WEB_PROVIDER=keyless-http` (or remove the setting) to return to the default.
 
@@ -156,6 +156,12 @@ option uses browser sign-in and exposes the apps the person has configured in th
 organization. [Composio Connect](https://docs.composio.dev/docs/composio-connect) offers a separate
 personal MCP connection at `https://connect.composio.dev/mcp`. It supports browser sign-in for
 compatible MCP clients and a consumer key for header-based clients.
+
+Browsing and importing plugins reads public repositories through the GitHub API, which gives
+anonymous callers a small hourly quota per address. If plugin previews start to fail, set
+`PLUGIN_GITHUB_TOKEN` on the API. The token is sent only to `api.github.com`.
+Anyone who can browse or import plugins triggers requests using this token, so use only
+a classic token with no scopes to avoid granting private repo or other access.
 
 A call on a shared mailbox is refused when the Outlook sign-in does not request the matching
 `.Shared` permission, and a connection made through Composio's default Outlook setup has been seen

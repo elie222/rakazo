@@ -176,6 +176,7 @@ async function startProxy() {
     performanceAssetDelayMs: 0,
     desktopStackToken: "",
     instanceTheme: undefined,
+    publicOrigin: undefined,
     imageTag: "edge",
     appPolicy: "",
   };

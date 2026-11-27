@@ -17,10 +17,34 @@ document.addEventListener("click", (event) => {
 document.addEventListener("submit", (event) => event.preventDefault(), true);
 </script>`;
 
-function previewDocument(html: string): string {
+const SCROLL_PREVIEW = "rakazo-page:scroll-preview";
+const SCROLL_PREVIEW_GUARD = `<style>
+@media (pointer: fine) {
+  :root { overflow-anchor: none; scrollbar-width: none; }
+  :root::-webkit-scrollbar { display: none; }
+}
+</style><script>
+(() => {
+  const shell = parent;
+  const finePointer = matchMedia("(pointer: fine)");
+  const scroll = window.scrollTo.bind(window);
+  addEventListener("message", (event) => {
+    const data = event.data;
+    if (finePointer.matches && event.source === shell && data?.type === "${SCROLL_PREVIEW}" && Number.isFinite(data.top) && data.top >= 0) {
+      scroll({ top: data.top, behavior: "instant" });
+    }
+  });
+})();
+</script>`;
+
+function previewDocument(html: string, scrollable: boolean): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`;
   const referrer = `<meta name="referrer" content="no-referrer">`;
-  return `${meta}${referrer}${PREVIEW_GUARD}${html}`;
+  return `${meta}${referrer}${PREVIEW_GUARD}${scrollable ? SCROLL_PREVIEW_GUARD : ""}${html}`;
+}
+
+function sendPreviewScroll(frame: HTMLIFrameElement | null, top: number) {
+  frame?.contentWindow?.postMessage({ type: SCROLL_PREVIEW, top: Math.max(0, top) }, "*");
 }
 
 /**
@@ -32,11 +56,14 @@ export function SandboxedHtmlViewer({
   html,
   title,
   className = "bg-white",
+  previewScrollTop,
   onFrameMessage,
 }: {
   html: string;
   title: string;
   className?: string;
+  /** For a Page card, scroll the rendered document to match the card's native scroll position. */
+  previewScrollTop?: number;
   /**
    * Messages the shown document sends up through the viewer shell; `answer` posts back down, and
    * `focused` says whether this frame holds the app's focus as the message arrives.
@@ -46,13 +73,22 @@ export function SandboxedHtmlViewer({
   const frame = useRef<HTMLIFrameElement>(null);
   // Every shell load starts empty, so each one gets the document again.
   const [loads, setLoads] = useState(0);
+  const scrollable = previewScrollTop !== undefined;
   useEffect(() => {
     // The sandboxed shell has an opaque origin, so there is no narrower target origin to name.
-    if (loads > 0) frame.current?.contentWindow?.postMessage(previewDocument(html), "*");
-  }, [loads, html]);
-  useEventListener(onFrameMessage ? window : null, "message", (event) => {
+    if (loads > 0)
+      frame.current?.contentWindow?.postMessage(previewDocument(html, scrollable), "*");
+  }, [loads, html, scrollable]);
+  useEffect(() => {
+    if (previewScrollTop !== undefined) sendPreviewScroll(frame.current, previewScrollTop);
+  }, [previewScrollTop]);
+  useEventListener(onFrameMessage || scrollable ? window : null, "message", (event) => {
     // Only this viewer's own frame speaks for its document.
     if (event.source !== frame.current?.contentWindow) return;
+    // A newly mounted document may have missed the last scroll message during navigation.
+    if (previewScrollTop !== undefined && event.data?.type === "rakazo-page:height") {
+      sendPreviewScroll(frame.current, previewScrollTop);
+    }
     onFrameMessage?.(
       event.data,
       (message) => frame.current?.contentWindow?.postMessage(message, "*"),
