@@ -12,7 +12,10 @@ const LAST_UNCHECKED = "20261115120000_billing_byok_price";
 // wait for the next deploy behind the deferred marker.
 // `COLUMN` is optional in `ALTER TABLE … DROP`; dropping a constraint is fine.
 const DROP =
-  /\bDROP\s+TABLE\b|^ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?\S+\s+DROP\s+(?!CONSTRAINT\b)|,\s*DROP\s+(?!CONSTRAINT\b)/i;
+  /\bDROP\s+(?:TABLE|TYPE|VIEW)\b|^ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?\S+\s+DROP\s+(?!CONSTRAINT\b)|,\s*DROP\s+(?!CONSTRAINT\b)/i;
+// This repository writes DDL through `DO $$ ... EXECUTE format('ALTER TABLE ...') $$`, where the
+// statement starts with `DO`, so the patterns above never see the DDL inside the literal.
+const DYNAMIC_DDL = /EXECUTE\s+format\(\s*'((?:[^']|'')*)'/gi;
 // No marker makes a rename safe: one of the two releases always reads the missing name.
 // Renaming a constraint is fine.
 const RENAME = /^ALTER\s+TABLE\b.*\bRENAME\s+(?!CONSTRAINT\b)/i;
@@ -25,7 +28,17 @@ function unsafeStatements(sql: string): string[] {
     .replace(/--[^\n]*/g, "")
     .split(";")
     .map((statement) => statement.trim().replace(/\s+/g, " "))
-    .filter((statement) => RENAME.test(statement) || (!deferred && DROP.test(statement)));
+    .filter((statement) => {
+      // A literal inside a comment, a NOTICE or a COMMENT ON is text, not DDL the deploy runs.
+      const code = statement.replace(/'(?:[^']|'')*'/g, "''");
+      if (RENAME.test(code)) return true;
+      if (deferred) return false;
+      if (DROP.test(code)) return true;
+      // A template may be indented or wrapped across lines, so it is trimmed before it is read.
+      return [...statement.matchAll(DYNAMIC_DDL)].some((match) =>
+        DROP.test((match[1] ?? "").trim()),
+      );
+    });
 }
 
 describe("migration safety", () => {
@@ -71,5 +84,43 @@ describe("migration safety", () => {
       'ALTER TABLE "bots" RENAME COLUMN "a" TO "b"',
       'ALTER TABLE "bots" RENAME TO "agents"',
     ]);
+  });
+
+  it.each([
+    [
+      "a column drop inside a DO block",
+      "DO $$ BEGIN EXECUTE format('ALTER TABLE %I DROP COLUMN %I', 'bots', 'title'); END $$;",
+      "DO $$ BEGIN EXECUTE format('ALTER TABLE %I DROP COLUMN %I', 'bots', 'title')",
+    ],
+    ["a type drop", 'DROP TYPE "old_status";', 'DROP TYPE "old_status"'],
+    ["a view drop", 'DROP VIEW "old_dashboard";', 'DROP VIEW "old_dashboard"'],
+  ])("flags %s", (_, sql, statement) => {
+    expect(unsafeStatements(sql)).toEqual([statement]);
+  });
+
+  it.each([
+    ["a function drop", 'DROP FUNCTION IF EXISTS "helper"();'],
+    [
+      "a policy drop written as dynamic SQL",
+      "DO $$ BEGIN EXECUTE format('DROP POLICY %I ON %I', 'a_policy', 'a_table'); END $$;",
+    ],
+    ["a drop named in a comment", `COMMENT ON TABLE "bots" IS 'DROP TYPE "old_status"';`],
+    ["a drop named in a notice", `DO $$ BEGIN RAISE NOTICE 'DROP VIEW "old"'; END $$;`],
+  ])("leaves %s alone", (_, sql) => {
+    expect(unsafeStatements(sql)).toEqual([]);
+  });
+
+  it("reads an indented template as DDL", () => {
+    const sql = `EXECUTE format('
+        ALTER TABLE %I DROP COLUMN %I', 'bots', 'title');`;
+    expect(unsafeStatements(sql)).toEqual([
+      "EXECUTE format(' ALTER TABLE %I DROP COLUMN %I', 'bots', 'title')",
+    ]);
+  });
+
+  it("still lets the marker exempt a drop written as dynamic SQL", () => {
+    const sql = `${DEFERRED_MIGRATION_MARKER}
+      DO $$ BEGIN EXECUTE format('ALTER TABLE %I DROP COLUMN %I', 'bots', 'title'); END $$;`;
+    expect(unsafeStatements(sql)).toEqual([]);
   });
 });
