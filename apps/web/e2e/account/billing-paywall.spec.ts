@@ -344,7 +344,7 @@ test("delete an unpaid organization from the plan choice", async ({ page }, test
   expect(organizations.map((organization) => organization.name)).toEqual(["Personal"]);
 });
 
-test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
+test("start a bigger own-key plan billed yearly", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `byok-yearly-${stamp}@rakazo.test`, "password12", "Demo Customer");
   await completeOnboarding(page);
@@ -358,6 +358,7 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
     creditPurchasesEnabled: true,
     byokPriceCents: 1500,
     byokAnnualPriceCents: 14400,
+    byokTiers: tiers,
     funding: null,
     balanceUsd: 0,
     monthlyAmountCents: null,
@@ -369,6 +370,9 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   await period.getByRole("button", { name: /Yearly/ }).click();
   await expect(page.getByText("$12", { exact: true })).toBeVisible();
   await expect(period.getByText("−20%", { exact: true })).toBeVisible();
+  await page.getByRole("combobox", { name: "Plan" }).click();
+  await page.getByRole("option", { name: /^Pro/ }).click();
+  await expect(page.getByText("$39", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-byok-yearly");
   let selected: unknown;
   await page.route("**/rpc/billing/selectFunding", async (route) => {
@@ -381,7 +385,7 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   ]);
   // The checkout is mocked, so the paywall returns; waiting lets the reload's requests settle.
   await expect(page.getByRole("heading", { name: "Choose how to use Rakazo" })).toBeVisible();
-  expect(selected).toEqual({ funding: "byok", interval: "year" });
+  expect(selected).toEqual({ funding: "byok", interval: "year", tier: "pro" });
 });
 
 test("an early user whose free period ended can still self-host", async ({ page }, testInfo) => {

@@ -1,12 +1,20 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ByokInterval, HeldCreditAmount, MODEL_CREDIT_AMOUNTS } from "@rakazo/contracts";
+import type {
+  BillingStatus,
+  ByokInterval,
+  ByokTier,
+  HeldCreditAmount,
+  MODEL_CREDIT_AMOUNTS,
+} from "@rakazo/contracts";
 import {
   ByokIntervalSchema,
   byokYearlySavingsPercent,
   creditAmountChoices,
   HeldCreditAmountSchema,
 } from "@rakazo/contracts";
-import { formatBillingAmount, formatMonthlyPrice } from "@rakazo/i18n/billing";
+import { tierPriceCents } from "@rakazo/core";
+import { formatBillingAmount, formatBillingPrice, formatMonthlyPrice } from "@rakazo/i18n/billing";
+import { tierComputerSummary } from "@rakazo/i18n/computer-usage";
 import {
   Select,
   SelectContent,
@@ -19,6 +27,82 @@ import {
 } from "@rakazo/ui-web";
 
 export type CreditAmount = (typeof MODEL_CREDIT_AMOUNTS)[number];
+
+type TierOffer = NonNullable<BillingStatus["byokTiers"]>[number];
+
+/** The own-key plan's tiers at `interval`, each with its price and computer. */
+export function ByokTierSelect({
+  tiers,
+  interval,
+  value,
+  disabled,
+  onChange,
+  wide = false,
+}: {
+  tiers: TierOffer[];
+  interval: ByokInterval;
+  value: ByokTier;
+  disabled?: boolean;
+  onChange: (offer: TierOffer) => void;
+  /** Fills its card at the plan picker's height. */
+  wide?: boolean;
+}) {
+  const { t, i18n } = useLingui();
+  const offered = tiers.flatMap((offer) => {
+    const cents = tierPriceCents(offer, interval);
+    return cents === null
+      ? []
+      : [
+          {
+            offer,
+            price: formatBillingPrice(
+              { amount: cents, currency: "usd", interval, intervalCount: 1 },
+              i18n.locale,
+            ),
+          },
+        ];
+  });
+  return (
+    <Select
+      value={value}
+      disabled={disabled}
+      onValueChange={(next) => {
+        const chosen = offered.find(({ offer }) => offer.tier === next);
+        if (chosen) onChange(chosen.offer);
+      }}
+      items={offered.map(({ offer }) => ({ value: offer.tier, label: offer.name }))}
+    >
+      <SelectTrigger
+        aria-label={t`Plan`}
+        size={wide ? "xl" : "default"}
+        className={wide ? "w-full" : "min-w-28"}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent
+        alignItemWithTrigger={false}
+        align="start"
+        className="w-auto min-w-(--anchor-width)"
+      >
+        <SelectGroup>
+          {offered.map(({ offer, price }) => (
+            <SelectItem key={offer.tier} value={offer.tier} className="py-2">
+              <span className="flex flex-col gap-0.5">
+                <span className="flex justify-between gap-4">
+                  <span>{offer.name}</span>
+                  <span className="text-muted-foreground">{price}</span>
+                </span>
+                <span className="text-label text-muted-foreground">
+                  {tierComputerSummary(offer)}
+                </span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
 
 /** Monthly or yearly own-key plan, with what the yearly plan saves. */
 export function ByokIntervalToggle({

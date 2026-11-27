@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BillingStatus, ByokInterval } from "@rakazo/contracts";
+import type { BillingStatus, ByokInterval, ByokTier } from "@rakazo/contracts";
 import {
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   ModelCreditAmountSchema,
@@ -18,7 +18,7 @@ import { rpc } from "../../lib/query/rpc";
 import { AccountMenu } from "../account/AccountMenu";
 import { InfoTooltip } from "../InfoTooltip";
 import type { CreditAmount } from "./PlanControls";
-import { ByokIntervalToggle, CreditAmountSelect } from "./PlanControls";
+import { ByokIntervalToggle, ByokTierSelect, CreditAmountSelect } from "./PlanControls";
 
 /** A checked line on a plan, with more about it behind an info button when it needs it. */
 type PlanFeature = string | { text: string; info: { label: string; text: string } };
@@ -99,7 +99,14 @@ export function CreditChoice({
   ];
   const trialDays = status.trialDays;
   const [amount, setAmount] = useState<CreditAmount>(DEFAULT_MONTHLY_CREDIT_AMOUNT);
-  const [interval, setByokInterval] = useState<ByokInterval>("month");
+  const [chosenInterval, setByokInterval] = useState<ByokInterval>("month");
+  const tiers = status.byokTiers ?? [];
+  const [tier, setTier] = useState<ByokTier>("standard");
+  const offer = tiers.find((candidate) => candidate.tier === tier);
+  const monthlyCents = offer?.monthlyPriceCents ?? status.byokPriceCents;
+  const annualCents = offer ? offer.annualPriceCents : status.byokAnnualPriceCents;
+  // A tier offered monthly only bills monthly whatever was picked before.
+  const interval = annualCents ? chosenInterval : "month";
   const credit = formatBillingAmount(amount, "usd", i18n.locale);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +139,7 @@ export function CreditChoice({
   async function choose(ownKey: boolean) {
     setPending(true);
     setError(null);
-    const terms = { interval };
+    const terms = { interval, ...(offer ? { tier } : {}) };
     try {
       if (ownKey && status.byokFreeUntil) {
         go((await client.billing.checkout(terms)).url);
@@ -187,31 +194,39 @@ export function CreditChoice({
         <PlanCard
           title={<Trans>Your subscription or API key</Trans>}
           price={
-            status.byokPriceCents && status.byokAnnualPriceCents ? (
-              <div className="flex h-12 items-center justify-between gap-3">
-                <MonthlyPrice
-                  cents={
-                    interval === "year"
-                      ? Math.round(status.byokAnnualPriceCents / 12)
-                      : status.byokPriceCents
-                  }
+            <div className="flex flex-col gap-3">
+              {monthlyCents && annualCents ? (
+                <div className="flex h-12 items-center justify-between gap-3">
+                  <MonthlyPrice
+                    cents={interval === "year" ? Math.round(annualCents / 12) : monthlyCents}
+                  />
+                  <ByokIntervalToggle
+                    monthlyCents={monthlyCents}
+                    annualCents={annualCents}
+                    value={interval}
+                    onChange={setByokInterval}
+                  />
+                </div>
+              ) : (
+                <p className="flex h-12 items-center text-display font-medium tracking-tight">
+                  {monthlyCents ? (
+                    formatMonthlyPrice(monthlyCents, i18n.locale)
+                  ) : (
+                    <Trans>Free</Trans>
+                  )}
+                </p>
+              )}
+              {tiers.length > 1 ? (
+                <ByokTierSelect
+                  wide
+                  tiers={tiers}
+                  interval={interval}
+                  value={tier}
+                  disabled={pending}
+                  onChange={(next) => setTier(next.tier)}
                 />
-                <ByokIntervalToggle
-                  monthlyCents={status.byokPriceCents}
-                  annualCents={status.byokAnnualPriceCents}
-                  value={interval}
-                  onChange={setByokInterval}
-                />
-              </div>
-            ) : (
-              <p className="flex h-12 items-center text-display font-medium tracking-tight">
-                {status.byokPriceCents ? (
-                  formatMonthlyPrice(status.byokPriceCents, i18n.locale)
-                ) : (
-                  <Trans>Free</Trans>
-                )}
-              </p>
-            )
+              ) : null}
+            </div>
           }
           detail={<Trans>Works with your ChatGPT or Claude plan.</Trans>}
           features={features}
