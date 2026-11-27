@@ -115,12 +115,16 @@ export function createLauncherInstaller(options: {
       });
       await registry.put({ ...config, bundlePath: written });
     } catch (error) {
-      if (written !== null) await launcher.remove(written);
-      await removePageAppData(request.appId, appData);
-      // Nothing will use the token now, so it ends here rather than waiting for the server.
+      // Nothing will use the token now, so it ends first, before any cleanup that could fail.
       await bestEffort(
         "revoke an unfinished page app",
         createPageAppApi(server, request.token, options.fetch).revoke(),
+      );
+      if (written !== null)
+        await bestEffort("remove an unfinished launcher", launcher.remove(written));
+      await bestEffort(
+        "remove an unfinished page app's data",
+        removePageAppData(request.appId, appData),
       );
       throw error;
     }

@@ -43,6 +43,14 @@ export type PageAppHost = {
   viewed: (view: PageAppView) => void;
 };
 
+/**
+ * Placed first in the page's head, before the page's own scripts: it removes itself and keeps the
+ * key in a closure, so a page can report no click or key the person did not make.
+ */
+function gestureGuard(key: string): string {
+  return `<script>(() => { const up = parent, key = ${JSON.stringify(key)}; document.currentScript.remove(); const apply = Reflect.apply, repeat = Object.getOwnPropertyDescriptor(KeyboardEvent.prototype, "repeat").get; const tell = () => up.postMessage({ type: "rakazo-page:gesture", key }, "*"); addEventListener("pointerup", (event) => { if (event.isTrusted) tell(); }, true); addEventListener("keydown", (event) => { if (event.isTrusted && !apply(repeat, event, [])) tell(); }, true); })();</script>`;
+}
+
 /** JSON with object keys sorted, since the database keeps its own key order. */
 function canonical(value: unknown): string {
   return JSON.stringify(value, (_key, item: unknown) =>
@@ -90,6 +98,8 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
   /** The reader's values as the shown frame has them: what it opened with and saved since. */
   let known: PageState = {};
   let saving: Promise<void> | null = null;
+  let gestureKey = "";
+  let usedGesture: string | null = null;
   let consenting = false;
 
   function show(next: PageAppScreen) {
@@ -141,6 +151,9 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
         return [name, cached] as const;
       }),
     );
+    // Only this version's pictures stay held, so an app open for days does not keep them all.
+    const shown = new Set(Object.values(page.images));
+    for (const imageId of images.keys()) if (!shown.has(imageId)) images.delete(imageId);
     return Object.fromEntries(entries);
   }
 
@@ -168,10 +181,21 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
       state: { ...next.page.readerState, ...unsaved },
       ask,
     });
-    frame = { id: frame.id + 1, document: withSandboxedArtifactCsp(document) };
+    gestureKey = randomUUID();
+    frame = {
+      id: frame.id + 1,
+      document: withSandboxedArtifactCsp(
+        document.replace("<head>", `<head>${gestureGuard(gestureKey)}`),
+      ),
+    };
     known = { ...next.page.readerState, ...unsaved };
     shown = key;
-    show({ frame: `${FRAME_ORIGIN}/${frame.id}`, title: host.name, lang: desktopLocale() });
+    show({
+      frame: `${FRAME_ORIGIN}/${frame.id}`,
+      title: host.name,
+      gestureKey,
+      lang: desktopLocale(),
+    });
   }
 
   /** Reads the page again; a request while one runs reads once more after it. */
@@ -268,7 +292,18 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
     }
   }
 
-  async function answer(request: FrameRequest): Promise<unknown> {
+  /** A fresh click or key, used at most once: what copy, links and questions each need. */
+  function takeGesture(gesture: unknown): boolean {
+    if (typeof gesture !== "string" || !gesture.startsWith(`${gestureKey}:`)) return false;
+    if (gesture === usedGesture) return false;
+    usedGesture = gesture;
+    return true;
+  }
+
+  async function answer(request: FrameRequest, gesture: unknown): Promise<unknown> {
+    if (request.kind === "ask" && !takeGesture(gesture)) return askAnswer(request.id, null);
+    if ((request.kind === "copy" || request.kind === "open-link") && !takeGesture(gesture))
+      return request.kind === "copy" ? pageCopyResult(request.id, false) : null;
     switch (request.kind) {
       case "state":
         await saveState(request.values);
@@ -299,7 +334,7 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
     message: async (data: unknown, from: unknown) => {
       if (from !== `${FRAME_ORIGIN}/${frame.id}`) return null;
       const request = frameRequest(data);
-      return request ? answer(request) : null;
+      return request ? answer(request, (data as { gesture?: unknown }).gesture) : null;
     },
     view: () => view,
   };

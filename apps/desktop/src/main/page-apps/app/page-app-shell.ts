@@ -8,8 +8,10 @@ export const SHELL_URL = `${SHELL_ORIGIN}/page-app-shell.html`;
 export const FRAME_ORIGIN = `${PAGE_APP_SCHEME}://frame`;
 
 /** What the window shows, in the app's language: the page's frame by its address, or a short message. */
-export type PageAppScreen = { lang: string } & (
-  | { frame: string; title: string }
+export type PageAppScreen = {
+  lang: string;
+} /** `gestureKey` is known only to the frame's guard, which reports the person's clicks and keys. */ & (
+  | { frame: string; title: string; gestureKey: string }
   | { message: string }
 );
 
