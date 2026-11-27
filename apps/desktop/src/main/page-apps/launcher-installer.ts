@@ -123,6 +123,12 @@ export function createLauncherInstaller(options: {
         dataDir,
       });
       await registry.put({ ...config, bundlePath: written });
+      // One read marks the token used, so the server's cleanup of never-used apps leaves this one
+      // even if its first launch does not get through.
+      await bestEffort(
+        "mark a page app installed",
+        createPageAppApi(server, request.token, options.fetch).view(),
+      );
     } catch (error) {
       // Nothing will use the token now, so it ends first, before any cleanup that could fail.
       await revokePageAppToken(createPageAppApi(server, request.token, options.fetch));

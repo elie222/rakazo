@@ -95,7 +95,7 @@ describe("createLauncherInstaller", () => {
     await installer.install(request("app1"), SERVER);
     expect(await installer.uninstall("app1")).toBe(true);
     expect(launcher.remove).toHaveBeenCalledWith(path.join(appData, "app1.lnk"));
-    const [url, init] = fetch.mock.calls[0] as unknown as [URL, RequestInit];
+    const [url, init] = fetch.mock.calls.at(-1) as unknown as [URL, RequestInit];
     expect([String(url), init.method]).toEqual([`${SERVER}/api/v1/page-app`, "DELETE"]);
     expect(existsSync(pageAppDataDir("app1", appData))).toBe(false);
     expect(apps).toEqual([]);
