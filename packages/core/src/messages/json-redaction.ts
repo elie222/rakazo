@@ -23,13 +23,13 @@ const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
  *
  * Raw text treats a JSON escape (`\\`, `\"`, `\n`, `\r`, `\t`) as the end of the token, so a
  * saved JSON string stays valid. `decoded` is for text JSON.parse already returned: a backslash
- * is then one character, and only whitespace or a delimiter ends the token.
+ * is one character, a `\"` pair stays inside the token, and a bare `"` still ends it.
  */
 const RAW_BEARER =
   /Bearer\s+(?!\[redacted\](?!(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])))(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|\[redacted\](?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])+|(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])+)/gi;
 
 const DECODED_BEARER =
-  /Bearer\s+(?!\[redacted\](?!(?:[^\s"',;&}:\]])))(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|\[redacted\](?:[^\s"',;&}:\]])+|(?:[^\s"',;&}:\]])+)/gi;
+  /Bearer\s+(?!\[redacted\](?!(?:\\"|[^\s"',;&}:\]])))(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|\[redacted\](?:\\"|[^\s"',;&}:\]])+|(?:\\"|[^\s"',;&}:\]])+)/gi;
 
 export function redactPlainBearerTokens(text: string, options?: { decoded?: boolean }): string {
   const pattern = options?.decoded ? DECODED_BEARER : RAW_BEARER;

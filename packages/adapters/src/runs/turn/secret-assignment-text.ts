@@ -99,6 +99,14 @@ function quotedKeyValue(
   return { interiorStart: pos + 1, interiorEnd: end, resume: end };
 }
 
+/** True when `open` is a quoted COMPOSIO_API_KEY key followed by a quoted value. */
+function quotedComposioKeyAt(text: string, open: number): boolean {
+  if (text[open] !== '"' || quoteIsEscaped(text, open)) return false;
+  const scanned = scanQuoted(text, open);
+  if (!scanned.closed || !closedStringIsComposioKey(text, open, scanned.end)) return false;
+  return quotedKeyValue(text, scanned.end) !== undefined;
+}
+
 /** End of an assignment value, or -1 when the separator has nothing after it. */
 function assignmentValueEnd(text: string, open: number): number {
   const quote = text[open];
@@ -129,9 +137,10 @@ function assignmentValueEnd(text: string, open: number): number {
  * Redact a COMPOSIO_API_KEY assignment.
  * A closed JSON string is left intact unless its decoded text is the key itself, in which case
  * only the following quoted value is replaced. An escaped quote is not a string start. A closer
- * that is not the key is tried again as an opener, so a quote inside a log prefix cannot hide
- * the next field. The decoded string is redacted again by the JSON walker.
- * Whitespace may surround `:` or `=`, including a newline before a quoted value.
+ * is tried again as an opener only when that quote starts a COMPOSIO_API_KEY field. Any other
+ * closer stays closed, so a log prefix cannot hide a later bare assignment. The decoded string
+ * is redacted again by the JSON walker. Whitespace may surround `:` or `=`, including a newline
+ * before a quoted value.
  */
 export function redactComposioApiKeyAssignments(text: string): string {
   let out = "";
@@ -153,7 +162,9 @@ export function redactComposioApiKeyAssignments(text: string): string {
           index = scanned.end;
           continue;
         }
-        index = scanned.end - 1;
+        // `mix"ed' {"COMPOSIO_API_KEY"` closes on the real key. Any other closer must not be
+        // retried: `msg="ready"` would swallow the next bare `COMPOSIO_API_KEY:` assignment.
+        index = quotedComposioKeyAt(text, scanned.end - 1) ? scanned.end - 1 : scanned.end;
         continue;
       }
       blockStringProbe = scanned.barrier;
@@ -376,18 +387,26 @@ function jsonEscapeLength(text: string, index: number): number {
 type JsonKeyString =
   | { kind: "closed"; end: number }
   | { kind: "bad-escape"; resume: number }
-  | { kind: "open" };
+  | { kind: "open"; resume: number };
+
+/** Index just after a raw `\n`, `\r`, or `\r\n` at `index`, or `text.length` at the end. */
+function lineBreakResume(text: string, index: number): number {
+  if (index >= text.length) return text.length;
+  if (text[index] === "\r" && text[index + 1] === "\n") return index + 2;
+  return index + 1;
+}
 
 /**
- * A closed JSON string, an invalid escape to resume after, or no closer before a newline.
- * An invalid escape such as `\l` does not abandon the rest of the line.
+ * A closed JSON string, an invalid escape to resume after, or no closer before a line break.
+ * An invalid escape such as `\l` resumes after the backslash. A raw `\n`, `\r`, or `\r\n`
+ * resumes after that break, so a later credential on the same record is still seen.
  */
 function scanJsonKeyString(text: string, index: number): JsonKeyString {
-  if (text[index] !== '"') return { kind: "open" };
+  if (text[index] !== '"') return { kind: "open", resume: Math.min(index + 1, text.length) };
   let end = index + 1;
   while (end < text.length) {
     const ch = text[end]!;
-    if (ch === "\n" || ch === "\r") return { kind: "open" };
+    if (ch === "\n" || ch === "\r") return { kind: "open", resume: lineBreakResume(text, end) };
     if (ch === "\\") {
       const size = jsonEscapeLength(text, end);
       if (size === 0) return { kind: "bad-escape", resume: end + 1 };
@@ -397,7 +416,7 @@ function scanJsonKeyString(text: string, index: number): JsonKeyString {
     if (ch === '"') return { kind: "closed", end: end + 1 };
     end += 1;
   }
-  return { kind: "open" };
+  return { kind: "open", resume: text.length };
 }
 
 /** Index just after the JSON string that opens at `index`, or -1. A raw newline ends it. */
@@ -577,6 +596,31 @@ function closersThenField(text: string, index: number): boolean {
   return text[colon] === ":" && jsonValueStarts(text, colon + 1);
 }
 
+/** True when `open` is a quoted credential key followed by `:` and a quoted value. */
+function quotedCredentialKeyAt(text: string, open: number): boolean {
+  if (text[open] !== '"' || quoteIsEscaped(text, open)) return false;
+  const scanned = scanJsonKeyString(text, open);
+  if (scanned.kind !== "closed") return false;
+  const interior = text.slice(open + 1, scanned.end - 1);
+  let keyName = interior;
+  if (interior.includes("\\")) {
+    try {
+      const decoded: unknown = JSON.parse(text.slice(open, scanned.end));
+      if (typeof decoded !== "string") return false;
+      keyName = decoded;
+    } catch {
+      return false;
+    }
+  }
+  if (!CREDENTIAL_KEY_NAME.test(keyName)) return false;
+  let pos = scanned.end;
+  while (pos < text.length && /\s/.test(text[pos]!)) pos += 1;
+  if (text[pos] !== ":") return false;
+  pos += 1;
+  while (pos < text.length && /\s/.test(text[pos]!)) pos += 1;
+  return text[pos] === '"';
+}
+
 function isStructuralContinuation(tail: string): boolean {
   const start = structuralLeadEnd(tail);
   if (start >= tail.length) return true;
@@ -607,13 +651,8 @@ export function redactCredentialJsonFields(text: string, honorOmissionMarker: bo
       continue;
     }
     const scannedKey = scanJsonKeyString(text, openKey);
-    if (scannedKey.kind === "bad-escape") {
-      index = scannedKey.resume;
-      continue;
-    }
     if (scannedKey.kind !== "closed") {
-      const lineBreak = text.indexOf("\n", openKey);
-      index = lineBreak < 0 ? text.length : lineBreak + 1;
+      index = scannedKey.resume;
       continue;
     }
     const closeKey = scannedKey.end;
@@ -626,9 +665,10 @@ export function redactCredentialJsonFields(text: string, honorOmissionMarker: bo
     }
     let pos = closeKey;
     while (pos < text.length && /\s/.test(text[pos]!)) pos += 1;
-    // A quote that closed a non-key can still open the real key (`mix"ed' {"access_token"`).
+    // Retry the closer only when it opens a real key (`mix"ed' {"access_token"`).
+    // Retrying every closer hides a later assignment inside a fake string.
     if (!CREDENTIAL_KEY_NAME.test(keyName) || text[pos] !== ":") {
-      index = closeKey - 1;
+      index = quotedCredentialKeyAt(text, closeKey - 1) ? closeKey - 1 : closeKey;
       continue;
     }
     pos += 1;

@@ -4,7 +4,7 @@ import { expectLinearTime } from "@rakazo/contracts/test-timing";
 import { appendToolCallSegment } from "@rakazo/core";
 import { describe, expect, it, vi } from "vitest";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
-import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
+import { sanitizeError, sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
 import { redactBlocks } from "../assembly/run-messages.js";
 import { withReplyToolOutcomes } from "../lifecycle/run-progress.js";
@@ -885,6 +885,84 @@ describe("tool step outcomes", () => {
       const redacted = kept(wide) ?? "";
       expect(redacted).not.toContain("fixtureValue123");
       expect(redacted).toContain('"status":"ok"');
+    });
+  });
+
+  it("keeps a bare assignment and a decoded bearer escape after a quoted prefix", () => {
+    const kept = (text: string, secrets: string[] = []) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, secrets);
+    const replay = (text: string, secrets: string[] = []) =>
+      bounded(text, 1_000, secrets, { replaySaved: true });
+    const plainTail = "Bearer fixturePrefix\\nTail";
+    const quoteTail = JSON.stringify({ message: 'Bearer fixturePrefix\\"Tail', status: "ok" });
+    const jsonTail = JSON.stringify({ message: "Bearer fixturePrefix\\nTail", status: "ok" });
+    const keptSlash = JSON.stringify({ message: "Bearer [redacted]\\", status: "ok" });
+    const keptLine = JSON.stringify({ message: "Bearer [redacted]\nNext line", status: "ok" });
+    const truncated = '{"message":"Bearer secret\\nnext';
+    const bare = 'INFO msg="ready" COMPOSIO_API_KEY: "fixtureValue123"';
+    const quotedAfter = 'INFO msg="ready" "access_token": "fixtureValue123"';
+    for (const read of [kept, replay]) {
+      expect(read(plainTail)).toBe("Bearer [redacted]");
+      expect(read('Authorization: "Bearer secret"')).toBe('Authorization: "Bearer [redacted]"');
+      expect(JSON.parse(read(quoteTail) ?? "")).toEqual({
+        message: "Bearer [redacted]",
+        status: "ok",
+      });
+      expect(JSON.parse(read(jsonTail) ?? "")).toEqual({
+        message: "Bearer [redacted]",
+        status: "ok",
+      });
+      expect(JSON.parse(read(keptSlash) ?? "")).toEqual({
+        message: "Bearer [redacted]",
+        status: "ok",
+      });
+      expect(JSON.parse(read(keptLine) ?? "")).toEqual({
+        message: "Bearer [redacted]\nNext line",
+        status: "ok",
+      });
+      expect(read(truncated)).toBe('{"message":"Bearer [redacted]\\nnext');
+      expect(read(bare)).toBe('INFO msg="ready" COMPOSIO_API_KEY=[redacted]');
+      expect(read(quotedAfter)).toBe('INFO msg="ready" "access_token": "[redacted]"');
+      for (const broken of [
+        'INFO msg="unclosed\n{"access_token":"fixtureValue123"}',
+        'INFO msg="unclosed\r\n{"access_token":"fixtureValue123"}',
+        'INFO msg="unclosed\r{"access_token":"fixtureValue123"}',
+      ]) {
+        const logged = read(broken) ?? "";
+        expect(logged).not.toContain("fixtureValue123");
+        expect(JSON.parse(logged.slice(logged.indexOf("{")))).toEqual({
+          access_token: "[redacted]",
+        });
+      }
+    }
+    expect(sanitizeError(plainTail)).toBe("Bearer [redacted]");
+    expect(sanitizeError('Authorization: "Bearer secret"')).toBe(
+      'Authorization: "Bearer [redacted]"',
+    );
+    expect(JSON.parse(sanitizeError(quoteTail))).toEqual({
+      message: "Bearer [redacted]",
+      status: "ok",
+    });
+    expect(JSON.parse(sanitizeError(jsonTail))).toEqual({
+      message: "Bearer [redacted]",
+      status: "ok",
+    });
+    expect(JSON.parse(sanitizeError(keptSlash))).toEqual({
+      message: "Bearer [redacted]",
+      status: "ok",
+    });
+    expect(JSON.parse(sanitizeError(keptLine))).toEqual({
+      message: "Bearer [redacted]\nNext line",
+      status: "ok",
+    });
+    expect(sanitizeError(truncated)).toBe('{"message":"Bearer [redacted]\\nnext');
+    const wideBare = 'INFO msg="ready" COMPOSIO_API_KEY: "fixtureValue123"\n'.repeat(40_000);
+    const wideBreak = 'INFO msg="unclosed\r{"access_token":"fixtureValue123"}\n'.repeat(40_000);
+    expect(wideBare.length).toBeGreaterThan(2_000_000);
+    expect(wideBreak.length).toBeGreaterThan(2_000_000);
+    expectLinearTime(() => {
+      expect(kept(wideBare)).not.toContain("fixtureValue123");
+      expect(kept(wideBreak)).not.toContain("fixtureValue123");
     });
   });
 

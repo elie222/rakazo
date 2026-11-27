@@ -9,6 +9,7 @@ import {
   MODEL_OUTPUT_LIMIT_ERROR,
   normalizeRunError,
   parseModelFallbackFailure,
+  redactJsonStringsAndPlainText,
   redactPlainBearerTokens,
 } from "@rakazo/core";
 import { LOCAL_PROVIDER_ID } from "./models/pi-local-provider-id.js";
@@ -86,7 +87,13 @@ export function sanitizeSensitiveText(message: string, options?: { decoded?: boo
 }
 
 export function sanitizeError(message: string) {
-  return sanitizeSensitiveText(message);
+  // Valid JSON is decoded first, so `\\`, `\n`, and `\"` inside a string are characters.
+  // Plain diagnostics use the same decoded match. Raw JSON escapes stay in the re-encoded text.
+  return redactJsonStringsAndPlainText(
+    message,
+    (value) => sanitizeSensitiveText(value, { decoded: true }),
+    (value) => sanitizeSensitiveText(value, { decoded: true }),
+  );
 }
 
 const OPENCODE_SESSION_ERROR = "OpenCode rejected this chat session. Send the message again.";
