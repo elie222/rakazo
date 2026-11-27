@@ -246,6 +246,51 @@ afterEach(() => {
 });
 
 describe("Pi runtime transient model retries", () => {
+  it("regenerates a malformed function call without replaying a completed tool", async () => {
+    const input = request();
+    const call = {
+      type: "toolCall" as const,
+      id: "saved",
+      name: "write_effect",
+      arguments: { value: "once" },
+    };
+    const failure = {
+      ...message(primary, [], "error", "Provider stopped with: MALFORMED_FUNCTION_CALL"),
+      rawStopReason: "MALFORMED_FUNCTION_CALL",
+    };
+    providerState.stream
+      .mockImplementationOnce(() => stream(primary, message(primary, [call], "toolUse")))
+      .mockImplementationOnce(() => stream(primary, failure))
+      .mockImplementation(() =>
+        stream(primary, message(primary, [{ type: "text", text: "Done." }], "stop")),
+      );
+
+    const events = await run(input);
+    expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+    expect(input.executeTool).toHaveBeenCalledTimes(1);
+    expect(providerState.stream).toHaveBeenCalledTimes(3);
+    const contexts = providerState.stream.mock.calls.map(([, context]) => context.messages);
+    expect(contexts[2]).toEqual(contexts[1]);
+    expect(contexts[2]).toContainEqual(
+      expect.objectContaining({ role: "toolResult", toolCallId: "saved" }),
+    );
+  });
+
+  it.each([
+    ["MALFORMED_FUNCTION_CALL", "", 2],
+    ["MALFORMED_FUNCTION_CALL", "Already visible.", 1],
+    ["SAFETY", "", 1],
+  ] as const)("bounds recovery for %s with visible text %j", async (reason, text, attempts) => {
+    const details = `Provider stopped with: ${reason}`;
+    const failure = {
+      ...message(primary, text ? [{ type: "text", text }] : [], "error", details),
+      rawStopReason: reason,
+    };
+    providerState.stream.mockImplementation(() => stream(primary, failure));
+    await expect(run(request())).rejects.toThrow(details);
+    expect(providerState.stream).toHaveBeenCalledTimes(attempts);
+  });
+
   it("recovers one empty idle stream after the header retry budget expires", async () => {
     vi.useFakeTimers();
     providerState.delay.mockImplementation(async (delay) => {

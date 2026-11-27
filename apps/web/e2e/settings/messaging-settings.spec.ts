@@ -242,9 +242,10 @@ test("messaging settings show linked chat apps, channels, connections, and team 
   await expect(messagingSettings).toBeVisible();
   await expect(messagingSettings.getByText("+15551230001, Chief")).toBeVisible();
   await expect(messagingSettings.getByText("424242, Lead")).toBeVisible();
-  await expect(messagingSettings.getByText("Chief was invited to Family")).toBeVisible();
+  // The request sentences follow the new language too.
+  await expect(messagingSettings.getByText("Chief이(가) Family에 초대되었습니다")).toBeVisible();
   await expect(
-    messagingSettings.getByText("Dana's Assistant wants to connect to Chief"),
+    messagingSettings.getByText("Dana님의 Assistant이(가) Chief에 연결하려고 합니다"),
   ).toBeVisible();
   await expect(messagingSettings.getByRole("button", { name: "허용" })).toHaveCount(2);
 
