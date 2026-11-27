@@ -71,6 +71,7 @@ import {
   reportDesktopError,
 } from "./system/monitoring.js";
 import { createSystemSpeech } from "./system/system-speech.js";
+import { startDesktopTrayQuickAsk } from "./system/tray-quick-ask.js";
 import {
   confirmRemoteComputerAccess,
   createComputerAccessHandler,
@@ -866,10 +867,8 @@ app.whenReady().then(async () => {
     "desktop.locale.set",
     createLocaleHandler((locale) => writeUiLocale(userDataDir, locale), installApplicationMenu),
   );
-  handleIpc(
-    "desktop.badge.set",
-    createBadgeHandler((count) => app.setBadgeCount(count)),
-  );
+  const trayQuickAsk = startDesktopTrayQuickAsk(() => showSetupWindow());
+  handleIpc("desktop.badge.set", createBadgeHandler(trayQuickAsk.setBadgeCount));
   if (process.platform === "darwin") {
     // Installed builds ship the helper as an extra resource; `pnpm build` compiles it for development.
     const helper = app.isPackaged
