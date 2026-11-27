@@ -855,6 +855,35 @@ describe("acpAgentRuntime", () => {
     ]);
   });
 
+  it("maps base model plus thinkingLevel to suffixed ACP model ids when no thought_level option exists", async () => {
+    const runtime = acpAgentRuntime(
+      fallback,
+      descriptor({
+        supportsThinking: true,
+        sessionMeta: () => ({ fake: { suffixedModelsOnly: true } }),
+      }),
+      { accessCheck: allowed },
+    );
+
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/neon", thinkingLevel: "high" },
+      }),
+    );
+    await collect(
+      runtime,
+      request({
+        model: { provider: "fake-agent", id: "fake/neon", thinkingLevel: "low" },
+      }),
+    );
+
+    // High matches the already-selected `fake/neon-high` (no redundant switch); Low switches to `fake/neon`.
+    expect(requests("session/set_config_option").map((event) => event.params)).toEqual([
+      expect.objectContaining({ configId: "model", value: "fake/neon" }),
+    ]);
+  });
+
   it("passes accountId as profileId to launch and isolates cached sessions per account", async () => {
     const launchedProfiles: Array<string | undefined> = [];
     const runtime = acpAgentRuntime(
@@ -913,6 +942,65 @@ describe("acpAgentRuntime", () => {
     expect(launchedProfiles).toEqual([accountA, accountB]);
     expect(requests("session/new")).toHaveLength(2);
     expect(requests("session/resume")).toHaveLength(0);
+  });
+
+  it("claims pending steering messages before prompting and delivers them once without duplicating history", async () => {
+    const runtime = acpAgentRuntime(fallback, descriptor(), { accessCheck: allowed });
+    const threadId = `thread-${randomUUID()}`;
+    const claimedSeenCalls: string[][] = [];
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "Review the follow-up.",
+        sourceMessageId: "msg-steer-1",
+        history: [
+          { id: "msg-1", role: "user", content: "Initial request." },
+          { id: "msg-steer-1", role: "user", content: "Switch reasoning to low." },
+        ],
+        async claimSteering(seenIds) {
+          claimedSeenCalls.push(seenIds);
+          return [
+            {
+              id: "steer-1",
+              messageId: "msg-steer-1",
+              text: "Switch reasoning to low.",
+              origin: "user",
+            },
+          ];
+        },
+      }),
+    );
+
+    await collect(
+      runtime,
+      request({
+        threadId,
+        prompt: "Next question.",
+        sourceMessageId: "msg-2",
+        history: [
+          { id: "msg-1", role: "user", content: "Initial request." },
+          { id: "msg-steer-1", role: "user", content: "Switch reasoning to low." },
+          { id: "msg-2", role: "user", content: "Next question." },
+        ],
+        async claimSteering(seenIds) {
+          claimedSeenCalls.push(seenIds);
+          return [];
+        },
+      }),
+    );
+
+    expect(claimedSeenCalls).toEqual([[], []]);
+    const prompts = requests("session/prompt").map((event) =>
+      ((event.params as { prompt: Array<{ text?: string }> }).prompt ?? [])
+        .map((block) => block.text ?? "")
+        .join("\n"),
+    );
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]).toContain("Additional user context:\nSwitch reasoning to low.");
+    expect(prompts[0]?.match(/Switch reasoning to low\./g)).toHaveLength(1);
+    expect(prompts[1]).toBe("Next question.");
   });
 
   it("leaves every other model to the runtime it wraps", async () => {

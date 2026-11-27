@@ -1,14 +1,21 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AuthInteraction, OAuthCredential } from "@earendil-works/pi-ai";
+import { bestEffort } from "@rakazo/logging";
 import { cliEnv, stopProcessTree } from "../../../cli-models/cli-process.js";
 import {
+  ANTIGRAVITY_APP_DATA_DIR,
+  antigravityProfileArgs,
+  antigravityProfileEnv,
   ensureAntigravityProfileDir,
   removeAntigravityProfileDir,
 } from "./antigravity-profiles.js";
 import { ANTIGRAVITY_CLI_PROVIDER_ID } from "./provider-id.js";
 
 const AUTH_URL_PATTERN = /https:\/\/accounts\.google\.com\/[^\s"'<>]+/;
+const AUTH_EMAIL_PATTERN = /authenticated successfully as ([^\s@<>"]+@[^\s@<>"]+)/i;
 const AUTH_URL_WAIT_MS = 20_000;
 const LOGIN_EXCHANGE_TIMEOUT_MS = 60_000;
 const MAX_CAPTURED_OUTPUT = 16_384;
@@ -41,12 +48,11 @@ export function createAntigravityCliLogin(options: AntigravityCliLoginOptions = 
     const profileId = createProfileId();
     const profileDir = await ensureAntigravityProfileDir(profileId, baseEnv);
 
-    const child = spawn(command, ["acp", "--login"], {
+    const child = spawn(command, antigravityProfileArgs(profileDir, ["--login"]), {
       detached: process.platform !== "win32",
       stdio: ["pipe", "pipe", "pipe"],
       env: {
-        ...cliEnv(baseEnv),
-        GEMINI_HOME: profileDir,
+        ...antigravityProfileEnv(profileDir, cliEnv(baseEnv)),
         BROWSER: "true",
         DISPLAY: "",
         WAYLAND_DISPLAY: "",
@@ -111,7 +117,7 @@ export function createAntigravityCliLogin(options: AntigravityCliLoginOptions = 
       },
     );
     // Prevent an unhandled rejection if spawn fails before `exitPromise` is awaited.
-    exitPromise.catch(() => {});
+    void bestEffort("antigravity login process exit", exitPromise);
 
     const onAbort = () => {
       stopProcessTree(child);
@@ -163,6 +169,7 @@ export function createAntigravityCliLogin(options: AntigravityCliLoginOptions = 
       }
 
       succeeded = true;
+      const email = await extractAuthenticatedEmail(output, stderr, profileDir);
       const marker = `${ANTIGRAVITY_CLI_PROVIDER_ID}:${profileId}`;
       return {
         type: "oauth",
@@ -171,15 +178,47 @@ export function createAntigravityCliLogin(options: AntigravityCliLoginOptions = 
         // `agy` manages and refreshes its own Google tokens inside `profileDir`.
         expires: Number.MAX_SAFE_INTEGER,
         accountId: profileId,
+        ...(email ? { email } : {}),
       };
     } finally {
       signal.removeEventListener("abort", onAbort);
       stopProcessTree(child);
       if (!succeeded) {
-        await removeAntigravityProfileDir(profileId, baseEnv).catch(() => undefined);
+        await bestEffort(
+          "remove failed antigravity profile dir",
+          removeAntigravityProfileDir(profileId, baseEnv),
+        );
       }
     }
   };
+}
+
+/**
+ * Extracts the signed-in Google account email (for distinguishing multiple connections in the UI)
+ * from `agy acp --login` output or its diagnostic login log. Never reads any token files.
+ */
+async function extractAuthenticatedEmail(
+  stdout: string,
+  stderr: string,
+  profileDir: string,
+): Promise<string | undefined> {
+  const fromStreams = AUTH_EMAIL_PATTERN.exec(stdout)?.[1] ?? AUTH_EMAIL_PATTERN.exec(stderr)?.[1];
+  if (fromStreams) return fromStreams;
+  try {
+    const logDir = join(profileDir, ANTIGRAVITY_APP_DATA_DIR, "log");
+    const entries = (await readdir(logDir))
+      .filter((name) => name.startsWith("acp-login-") && name.endsWith(".log"))
+      .sort()
+      .reverse();
+    for (const entry of entries.slice(0, 3)) {
+      const text = await readFile(join(logDir, entry), "utf8");
+      const match = AUTH_EMAIL_PATTERN.exec(text);
+      if (match?.[1]) return match[1];
+    }
+  } catch {
+    // Email label is optional; fall back to the default connection name.
+  }
+  return undefined;
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {

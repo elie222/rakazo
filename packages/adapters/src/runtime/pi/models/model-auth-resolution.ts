@@ -200,6 +200,8 @@ export async function tryRetireModelCredential(
  * apart. Read from the stored token only; never logged.
  */
 export function oauthCredentialEmail(credential: OAuthCredential): string | undefined {
+  const direct = nonBlankString((credential as { email?: unknown }).email);
+  if (direct) return direct;
   const payload = decodeJwtPayload(credential.access);
   if (!payload) return undefined;
   const profile = payload["https://api.openai.com/profile"];

@@ -228,6 +228,7 @@ export default function ModelConnection() {
     pasteCode,
     setPasteCode,
     oauthPending,
+    submittingCode,
     cancelOAuth,
     leaveSignIn,
     openSignInPage,
@@ -623,6 +624,7 @@ export default function ModelConnection() {
                   />
                   <TextInput
                     accessibilityLabel={t`Code from ${ph({ host: signInHost })}`}
+                    editable={!submittingCode}
                     placeholder={t`Paste code`}
                     placeholderTextColor={native.tertiaryLabel}
                     value={pasteCode}
@@ -632,9 +634,9 @@ export default function ModelConnection() {
                     style={[styles.keyInput, styles.nestedInput]}
                   />
                   <NativeActionButton
-                    disabled={!pasteCode.trim()}
+                    disabled={submittingCode || !pasteCode.trim()}
                     fill
-                    label={t`Submit`}
+                    label={submittingCode ? t`Signing in…` : t`Submit`}
                     onPress={() => void submitOAuthCode()}
                     prominence="secondary"
                     style={{ marginTop: 12 }}

@@ -1,11 +1,17 @@
 // @vitest-environment jsdom
+import { deferred } from "@rakazo/core/test-async";
 import { act } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useModelOAuthSignIn } from "./use-model-oauth-signin";
 
-const models = vi.hoisted(() => ({ beginOAuth: vi.fn(), cancelOAuth: vi.fn() }));
+const models = vi.hoisted(() => ({
+  beginOAuth: vi.fn(),
+  cancelOAuth: vi.fn(),
+  submitOAuthCode: vi.fn(),
+  finishOAuth: vi.fn(),
+}));
 const analytics = vi.hoisted(() => ({ modelSignInStep: vi.fn() }));
 const desktop = vi.hoisted(() => ({ bridge: undefined as unknown }));
 vi.mock("../query/space-rpc", () => ({ useSpaceRpc: () => ({ models, analytics }) }));
@@ -174,4 +180,57 @@ it("tells the server a sign-in the app gave up on was interrupted, not cancelled
 
   expect(onError).toHaveBeenCalledWith("Sign-in timed out");
   expect(models.cancelOAuth.mock.calls).toEqual([[{ loginId: "login", reason: "interrupted" }]]);
+});
+
+it("falls back to the link-and-paste card on desktop when auth-url uses a hosted redirect_uri", async () => {
+  const open = vi.fn().mockRejectedValue(new Error("should not be called"));
+  desktop.bridge = { oauth: { open, onCallback: () => () => undefined } };
+  const hostedUri =
+    "https://accounts.google.com/o/oauth2/auth?redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback&state=abc";
+  models.beginOAuth.mockResolvedValue({
+    mode: "auth-url",
+    loginId: "login",
+    verificationUri: hostedUri,
+    expiresInSeconds: 300,
+  });
+
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "antigravity-cli" });
+  });
+
+  expect(open).not.toHaveBeenCalled();
+  expect(onError).not.toHaveBeenCalled();
+  expect(latest.oauth).toMatchObject({ mode: "auth-url", verificationUri: hostedUri });
+});
+
+it("tracks submittingCode while a pasted auth-url code is exchanging", async () => {
+  const submit = deferred<void>();
+  models.beginOAuth.mockResolvedValue({
+    mode: "auth-url",
+    loginId: "login",
+    verificationUri,
+    expiresInSeconds: 300,
+  });
+  models.submitOAuthCode.mockImplementation(() => submit.promise);
+  waitForModelOAuth.mockResolvedValueOnce(undefined);
+  models.finishOAuth.mockResolvedValue({ id: "cred-1", provider: "antigravity-cli" });
+
+  await act(async () => {
+    void latest.startSubscriptionSignIn({ provider: "antigravity-cli" });
+  });
+  act(() => latest.setPasteCode("4/test-code"));
+
+  let pendingSubmit!: Promise<void>;
+  act(() => {
+    pendingSubmit = latest.submitOAuthCode();
+  });
+  expect(latest.submittingCode).toBe(true);
+  expect(latest.pasteCode).toBe("4/test-code");
+
+  await act(async () => {
+    submit.resolve();
+    await pendingSubmit;
+  });
+  expect(latest.submittingCode).toBe(false);
+  expect(latest.pasteCode).toBe("");
 });

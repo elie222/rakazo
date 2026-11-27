@@ -33,6 +33,7 @@ import {
 } from "../pi/tools/pi-runtime-tools.js";
 import { fallbackSystemPrompt } from "../runtime.prompt.js";
 import type { AcpAgentDescriptor } from "./acp-agent.js";
+import { selectModel, selectThoughtLevel } from "./acp-config.js";
 import type { AcpConnection } from "./acp-connection.js";
 import { AcpRequestError, startAcpAgent } from "./acp-connection.js";
 import type { AgentSession } from "./acp-sessions.js";
@@ -268,6 +269,7 @@ async function runAcpTurn(
       if (!tool) return errorResult(unknownToolText(name));
       toolsRunning += 1;
       afterTool = true;
+      thinking = false;
       try {
         const id = randomUUID();
         const prepared = tool.prepareArguments ? tool.prepareArguments(args) : args;
@@ -388,8 +390,25 @@ async function runAcpTurn(
         },
         async onRequest(method, params) {
           if (method === "session/request_permission") {
-            // Rakazo's own tools are allowed up front, so a request is for one of the CLI's.
             const toolCall = (params.toolCall ?? {}) as Update;
+            const toolName = descriptor.reportedToolName
+              ? descriptor.reportedToolName({ ...toolCall, sessionUpdate: "tool_call" })
+              : typeof toolCall.name === "string"
+                ? toolCall.name
+                : typeof toolCall.title === "string"
+                  ? toolCall.title
+                  : undefined;
+            // Some ACP servers ask permission even for client-provided MCP tools; Rakazo's own
+            // tool server enforces approvals, so allow those while refusing any CLI built-in tool.
+            if (toolName && ownToolCalls.has(toolName)) {
+              const options = Array.isArray(params.options) ? (params.options as Update[]) : [];
+              const allow = options.find(
+                (option) => option.kind === "allow_once" || option.kind === "allow_always",
+              );
+              if (typeof allow?.optionId === "string") {
+                return { outcome: { outcome: "selected", optionId: allow.optionId } };
+              }
+            }
             refuse(String(toolCall.name ?? toolCall.title ?? "a permission request"));
             return { outcome: { outcome: "cancelled" } };
           }
@@ -476,6 +495,7 @@ async function runAcpTurn(
       activeSessionId,
       opened,
       request.model.id,
+      request.model.thinkingLevel,
       descriptor,
       step,
     );
@@ -486,6 +506,29 @@ async function runAcpTurn(
       request.model.thinkingLevel ?? selectedModel.inferredEffort,
       step,
     );
+
+    // Claim any steering messages waiting for this run (including follow-up continuations) before
+    // prompting the CLI, matching PiRuntime so `discardAnsweredSteering` clears them on reply
+    // instead of re-queueing an endless loop of follow-up runs.
+    const initialSteering = request.claimSteering ? await request.claimSteering([]) : [];
+    const steeringMessageIds = new Set(initialSteering.map((item) => item.messageId));
+    const turnRequest: AgentRunRequest = initialSteering.length
+      ? {
+          ...request,
+          history: request.history.filter((item) => !item.id || !steeringMessageIds.has(item.id)),
+          prompt: `${request.prompt}\n\nAdditional user context:\n${initialSteering
+            .map((item) => item.text)
+            .join("\n")}`,
+          ...(initialSteering.some((item) => item.images?.length)
+            ? {
+                currentTurnImages: [
+                  ...(request.currentTurnImages ?? []),
+                  ...initialSteering.flatMap((item) => item.images ?? []),
+                ],
+              }
+            : {}),
+        }
+      : request;
 
     const fresh = !session;
     const current: AgentSession = session ?? {
@@ -498,7 +541,14 @@ async function runAcpTurn(
       usedAt: Date.now(),
     };
     const takesImages = Boolean((capabilities.promptCapabilities as Update | undefined)?.image);
-    const turn = turnText(request, current, fresh, includeOwnReplies, seesImages && takesImages);
+    const turn = turnText(
+      turnRequest,
+      current,
+      fresh,
+      includeOwnReplies,
+      seesImages && takesImages,
+    );
+    for (const id of steeringMessageIds) current.seen.add(id);
     if (turn.leftOut) {
       getLogger().warn("The agent CLI does not take images; the message's images were left out", {
         agent: descriptor.id,
@@ -721,107 +771,6 @@ async function awaitStep<T>(
     done.abort();
     if (onAbort) signal.removeEventListener("abort", onAbort);
   }
-}
-
-const EFFORT_SUFFIXES = ["low", "medium", "high", "xhigh"] as const;
-
-/** Chooses the deployment model when the CLI offers a model choice for the session. */
-async function selectModel(
-  agent: AcpConnection,
-  sessionId: string,
-  opened: Update | undefined,
-  modelId: string,
-  descriptor: AcpAgentDescriptor,
-  step: <T>(work: Promise<T>) => Promise<T>,
-): Promise<{ inferredEffort?: string; configOptions: unknown }> {
-  const options = Array.isArray(opened?.configOptions) ? (opened.configOptions as Update[]) : [];
-  const choice = options.find((option) => option.category === "model" || option.id === "model");
-  // Running on whatever the CLI defaults to would spend the plan on a model nobody chose.
-  if (!choice) throw new Error(`${descriptor.label} offers no model choice for its sessions.`);
-  const values = flattenValues(choice.options);
-  let targetModelId = modelId;
-  let inferredEffort: string | undefined;
-  if (values.length && !values.includes(modelId)) {
-    // Support legacy suffixed model ids such as `gemini-4-neon-high` when the ACP server exposes
-    // base models paired with a separate `thought_level` option.
-    const matchedSuffix = EFFORT_SUFFIXES.find(
-      (suffix) =>
-        modelId.endsWith(`-${suffix}`) && values.includes(modelId.slice(0, -(suffix.length + 1))),
-    );
-    if (matchedSuffix) {
-      targetModelId = modelId.slice(0, -(matchedSuffix.length + 1));
-      inferredEffort = matchedSuffix;
-    } else {
-      throw new Error(
-        `${descriptor.label} on this server has no model "${modelId}". Set PI_DEFAULT_MODEL to one of: ${values.slice(0, 20).join(", ")}${values.length > 20 ? `, and ${values.length - 20} more the CLI lists` : ""}.`,
-      );
-    }
-  }
-  if (choice.currentValue === targetModelId) {
-    return { inferredEffort, configOptions: opened?.configOptions };
-  }
-  const updated = await step(
-    agent.request<Update>("session/set_config_option", {
-      sessionId,
-      configId: choice.id,
-      value: targetModelId,
-    }),
-  );
-  return {
-    inferredEffort,
-    configOptions: Array.isArray(updated?.configOptions)
-      ? updated.configOptions
-      : opened?.configOptions,
-  };
-}
-
-const THINKING_TO_ACP_CANDIDATES: Record<string, readonly string[]> = {
-  minimal: ["minimal", "low"],
-  low: ["low", "minimal", "medium"],
-  medium: ["medium", "low", "high"],
-  high: ["high", "medium", "xhigh"],
-  xhigh: ["xhigh", "high", "max"],
-  max: ["max", "xhigh", "high"],
-};
-
-/** Applies the requested thinking level when the ACP server exposes a `thought_level` option. */
-async function selectThoughtLevel(
-  agent: AcpConnection,
-  sessionId: string,
-  rawConfigOptions: unknown,
-  requestedLevel: string | null | undefined,
-  step: <T>(work: Promise<T>) => Promise<T>,
-): Promise<void> {
-  if (!requestedLevel || requestedLevel === "off") return;
-  const options = Array.isArray(rawConfigOptions) ? (rawConfigOptions as Update[]) : [];
-  const choice = options.find(
-    (option) => option.category === "thought_level" || option.id === "thought_level",
-  );
-  if (!choice) return;
-  const values = flattenValues(choice.options);
-  const candidates = THINKING_TO_ACP_CANDIDATES[requestedLevel] ?? [requestedLevel];
-  const resolved = values.length
-    ? candidates.find((candidate) => values.includes(candidate))
-    : requestedLevel;
-  if (!resolved || choice.currentValue === resolved) return;
-  await step(
-    agent.request("session/set_config_option", {
-      sessionId,
-      configId: choice.id,
-      value: resolved,
-    }),
-  );
-}
-
-function flattenValues(options: unknown): string[] {
-  if (!Array.isArray(options)) return [];
-  return options.flatMap((option: Update) =>
-    Array.isArray(option?.options)
-      ? flattenValues(option.options)
-      : typeof option?.value === "string"
-        ? [option.value]
-        : [],
-  );
 }
 
 /** Usage is reported only when the CLI gives it; the plan pays, so its cost is unknown. */

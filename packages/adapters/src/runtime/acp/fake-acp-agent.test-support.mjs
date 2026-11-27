@@ -208,6 +208,24 @@ async function handle(message) {
       const sessionId = `ses-${randomUUID()}`;
       servers.set(sessionId, params.mcpServers[0]);
       appendFileSync(sessionsFile, `${sessionId}\n`);
+      if (params._meta?.fake?.suffixedModelsOnly) {
+        return {
+          sessionId,
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "fake/neon-high",
+              options: [
+                { value: "fake/neon", name: "Neon (Low)" },
+                { value: "fake/neon-high", name: "Neon (High)" },
+              ],
+            },
+          ],
+        };
+      }
       return {
         sessionId,
         configOptions: [modelOption("fake/default"), thoughtOption("medium")],

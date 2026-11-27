@@ -48,7 +48,7 @@ const onPageOpened = vi.fn();
 
 function render(
   oauth: ModelOAuthBegin | null,
-  options: { setup?: typeof setup; pasteCode?: string } = {},
+  options: { setup?: typeof setup; pasteCode?: string; submittingCode?: boolean } = {},
 ) {
   act(() =>
     root.render(
@@ -62,6 +62,7 @@ function render(
         codeCopied={false}
         onCopyCode={onCopyCode}
         pasteCode={options.pasteCode ?? ""}
+        submittingCode={options.submittingCode}
         onPasteCodeChange={vi.fn()}
         onSubmitCode={onSubmitCode}
         onPageOpened={onPageOpened}
@@ -139,4 +140,16 @@ it("starts a new sign-in from either kind once one is under way", () => {
     [...host.querySelectorAll("button")].find((b) => b.textContent === "Start over")?.click(),
   );
   expect(onRestart).toHaveBeenCalledTimes(2);
+});
+
+it("shows submitting feedback and disables paste controls while finishing a pasted code", () => {
+  render(pasteBack, { pasteCode: "4/auth-code", submittingCode: true });
+  expect(steps().map((step) => step.dataset.status)).toEqual(["complete", "current"]);
+  expect(host.textContent).toContain("Finishing sign-in…");
+  const input = host.querySelector("input");
+  expect(input?.disabled).toBe(true);
+  const submit = [...host.querySelectorAll("button")].find((b) => b.textContent === "Signing in…");
+  expect(submit?.disabled).toBe(true);
+  const restart = [...host.querySelectorAll("button")].find((b) => b.textContent === "Start over");
+  expect(restart?.disabled).toBe(false);
 });

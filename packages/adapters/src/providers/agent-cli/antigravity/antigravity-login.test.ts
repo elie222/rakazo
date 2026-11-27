@@ -23,25 +23,42 @@ beforeEach(() => {
   workDir = mkdtempSync(join(tmpdir(), "rakazo-agy-login-test-"));
   logFile = join(workDir, "login.json");
   fakeCli = writeFakeCli(`
-    import { writeFileSync } from "node:fs";
+    import { mkdirSync, writeFileSync } from "node:fs";
+    import { join } from "node:path";
     import { createInterface } from "node:readline";
-    if (process.argv[2] !== "acp" || process.argv[3] !== "--login") {
-      console.error("unexpected args", process.argv.slice(2));
+    const args = process.argv.slice(2);
+    const geminiDirIdx = args.indexOf("--gemini-dir");
+    const appDataIdx = args.indexOf("--app-data-dir");
+    if (args[0] !== "acp" || geminiDirIdx === -1 || appDataIdx === -1 || !args.includes("--login")) {
+      console.error("unexpected args", args);
       process.exit(2);
     }
+    const geminiDir = args[geminiDirIdx + 1];
+    const appDataDir = args[appDataIdx + 1];
     console.log("Please open this URL in your browser:");
     console.log("https://accounts.google.com/o/oauth2/auth?client_id=test&state=abc123");
     const rl = createInterface({ input: process.stdin });
     rl.once("line", (line) => {
       writeFileSync(${JSON.stringify(logFile)}, JSON.stringify({
         code: line,
+        args,
+        geminiDir,
+        appDataDir,
         geminiHome: process.env.GEMINI_HOME,
+        xdgConfigHome: process.env.XDG_CONFIG_HOME,
+        dbus: process.env.DBUS_SESSION_BUS_ADDRESS ?? null,
         browser: process.env.BROWSER,
       }));
       if (line.includes("bad-code")) {
         console.error("invalid_grant");
         process.exit(1);
       }
+      const logDir = join(geminiDir, appDataDir, "log");
+      mkdirSync(logDir, { recursive: true });
+      writeFileSync(
+        join(logDir, "acp-login-20261127_152002-1.log"),
+        "I1127 15:20:16.585253 114 server_oauth.go:226] OAuth: authenticated successfully as founder@example.com\\n",
+      );
       console.log("Login succeeded!");
       process.exit(0);
     });
@@ -85,18 +102,29 @@ describe("createAntigravityCliLogin", () => {
       refresh: `${ANTIGRAVITY_CLI_PROVIDER_ID}:${profileId}`,
       expires: Number.MAX_SAFE_INTEGER,
       accountId: profileId,
+      email: "founder@example.com",
     });
     const recorded = JSON.parse(readFileSync(logFile, "utf8")) as {
       code: string;
+      args: string[];
+      geminiDir: string;
+      appDataDir: string;
       geminiHome: string;
+      xdgConfigHome: string;
+      dbus: string | null;
       browser: string;
     };
+    const expectedDir = antigravityProfileDir(profileId, env);
     expect(recorded.code).toBe(
       "https://antigravity.google/oauth-callback?code=4/test-code&state=abc123",
     );
-    expect(recorded.geminiHome).toBe(antigravityProfileDir(profileId, env));
+    expect(recorded.geminiDir).toBe(expectedDir);
+    expect(recorded.appDataDir).toBe("acp");
+    expect(recorded.geminiHome).toBe(expectedDir);
+    expect(recorded.xdgConfigHome).toBe(join(expectedDir, "config"));
+    expect(recorded.dbus).toBe(process.platform === "linux" ? "disabled:" : null);
     expect(recorded.browser).toBe("true");
-    expect(existsSync(antigravityProfileDir(profileId, env))).toBe(true);
+    expect(existsSync(expectedDir)).toBe(true);
   });
 
   it("removes the profile folder if agy exits with a non-zero status", async () => {

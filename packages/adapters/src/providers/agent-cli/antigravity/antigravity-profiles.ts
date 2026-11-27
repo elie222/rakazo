@@ -38,6 +38,55 @@ export function antigravityProfileDir(
   return join(antigravityProfilesRoot(env), profileId);
 }
 
+export const ANTIGRAVITY_APP_DATA_DIR = "acp";
+
+export function antigravityProfileArgs(
+  profileDir: string,
+  extraArgs: readonly string[] = [],
+): string[] {
+  return [
+    "acp",
+    "--gemini-dir",
+    profileDir,
+    "--app-data-dir",
+    ANTIGRAVITY_APP_DATA_DIR,
+    ...extraArgs,
+  ];
+}
+
+/**
+ * Builds an isolated process environment for one Antigravity profile so `agy` stores its auth and
+ * config strictly inside `profileDir` rather than sharing the host's `~/.gemini`, `~/.config`, or
+ * Linux desktop keyring across accounts.
+ */
+export function antigravityProfileEnv(
+  profileDir: string,
+  baseEnv: Record<string, string | undefined>,
+): Record<string, string> {
+  const isolated: Record<string, string> = {};
+  for (const [key, value] of Object.entries(baseEnv)) {
+    if (
+      value === undefined ||
+      key === "DBUS_SESSION_BUS_ADDRESS" ||
+      key === "GNOME_KEYRING_CONTROL" ||
+      key === "XDG_RUNTIME_DIR"
+    ) {
+      continue;
+    }
+    isolated[key] = value;
+  }
+  // On Linux, `go-keyring` falls back to `/run/user/<uid>/bus` even when
+  // `DBUS_SESSION_BUS_ADDRESS` is unset. An explicitly invalid bus address makes `agy` fall back
+  // cleanly to per-profile file storage inside `profileDir` instead of sharing one OS keyring
+  // slot across accounts.
+  if (process.platform === "linux") {
+    isolated.DBUS_SESSION_BUS_ADDRESS = "disabled:";
+  }
+  isolated.GEMINI_HOME = profileDir;
+  isolated.XDG_CONFIG_HOME = join(profileDir, "config");
+  return isolated;
+}
+
 export async function ensureAntigravityProfileDir(
   profileId: string,
   env: NodeJS.ProcessEnv = process.env,
@@ -46,6 +95,7 @@ export async function ensureAntigravityProfileDir(
   await mkdir(root, { recursive: true, mode: 0o700 });
   const dir = antigravityProfileDir(profileId, env);
   await mkdir(dir, { recursive: true, mode: 0o700 });
+  await mkdir(join(dir, "config"), { recursive: true, mode: 0o700 });
   return dir;
 }
 

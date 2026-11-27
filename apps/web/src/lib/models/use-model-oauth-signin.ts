@@ -20,6 +20,28 @@ import { useSpaceRpc } from "../query/space-rpc";
 import { errorText } from "../query/user-error";
 import { waitForModelOAuth } from "./model-auth";
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * The desktop OAuth bridge binds a local listener when `redirect_uri` is present, so it
+ * refuses non-loopback redirects (such as hosted code pages). Those fall back to the card's
+ * clickable link and paste box.
+ */
+function desktopBridgeSupportsAuthUrl(verificationUri: string): boolean {
+  try {
+    const redirect = new URL(verificationUri).searchParams.get("redirect_uri");
+    if (!redirect) return true;
+    const callback = new URL(redirect);
+    return (
+      callback.protocol === "http:" &&
+      LOOPBACK_HOSTS.has(callback.hostname) &&
+      Boolean(callback.port)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export type ModelOAuthSignInBegin = {
   provider: string;
   /** The connection to sign in again; null adds another. */
@@ -47,7 +69,9 @@ export function useModelOAuthSignIn(options: {
   const { onFinished, onError, onClearError } = options;
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
-  const [oauthPending, setOauthPending] = useState(false);
+  const [oauthPhase, setOauthPhase] = useState<"idle" | "pending" | "submitting">("idle");
+  const oauthPending = oauthPhase !== "idle";
+  const submittingCode = oauthPhase === "submitting";
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
@@ -87,7 +111,7 @@ export function useModelOAuthSignIn(options: {
     cancelModelOAuthAttempt(oauthAbortRef, () => {
       if (resetState) {
         setOauth(null);
-        setOauthPending(false);
+        setOauthPhase("idle");
       }
     });
     if (loginId) void rpc.models.cancelOAuth({ loginId, reason }).catch(() => undefined);
@@ -121,7 +145,7 @@ export function useModelOAuthSignIn(options: {
     const code = (captured ?? pasteCode).trim();
     if (!controller || !code) return;
     oauthCodeSubmittingRef.current = true;
-    setPasteCode("");
+    setOauthPhase("submitting");
     onClearErrorRef.current?.();
     let submitted = false;
     let retryable = false;
@@ -132,11 +156,13 @@ export function useModelOAuthSignIn(options: {
       );
       submitted = true;
       await finishSubscriptionSignIn(attempt, controller);
+      setPasteCode("");
     } catch (err) {
       if (controller.signal.aborted) return;
       if (submitted) {
         oauthLoginIdRef.current = null;
         setOauth(null);
+        setPasteCode("");
         void rpc.models
           .cancelOAuth({ loginId: attempt.loginId, reason: "interrupted" })
           .catch(() => undefined);
@@ -150,18 +176,19 @@ export function useModelOAuthSignIn(options: {
       // its submitting guard or the newer desktop callback is dropped.
       if (oauthAbortRef.current === controller) {
         oauthCodeSubmittingRef.current = false;
+        if (retryable) setOauthPhase("pending");
       }
       if (!retryable) {
         // Only drop this attempt's listener — a newer sign-in may already own the ref.
         releaseOAuthCapture(capture);
-        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPhase("idle"));
       }
     }
   }
 
   async function startSubscriptionSignIn(begin: ModelOAuthSignInBegin) {
     onClearErrorRef.current?.();
-    setOauthPending(true);
+    setOauthPhase("pending");
     const controller = new AbortController();
     oauthAbortRef.current = controller;
     let waitingForCode = false;
@@ -197,7 +224,7 @@ export function useModelOAuthSignIn(options: {
           oauthStateOf(started.verificationUri),
         );
         const browserAuth = desktopBridge()?.oauth;
-        if (browserAuth?.open) {
+        if (browserAuth?.open && desktopBridgeSupportsAuthUrl(started.verificationUri)) {
           const cancelBrowser = () =>
             void browserAuth.cancel?.(started.verificationUri).catch(() => undefined);
           controller.signal.addEventListener("abort", cancelBrowser, { once: true });
@@ -226,7 +253,7 @@ export function useModelOAuthSignIn(options: {
     } finally {
       if (!waitingForCode) {
         if (oauthAbortRef.current === controller) releaseOAuthCapture();
-        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPending(false));
+        finishModelOAuthAttempt(oauthAbortRef, controller, () => setOauthPhase("idle"));
       }
     }
   }
@@ -250,6 +277,7 @@ export function useModelOAuthSignIn(options: {
     pasteCode,
     setPasteCode,
     oauthPending,
+    submittingCode,
     cancelOAuthAttempt,
     reportSignInStep,
     startSubscriptionSignIn,

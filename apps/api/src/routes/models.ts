@@ -57,7 +57,7 @@ import {
   withTransactionRetry,
   writeModelRole,
 } from "@rakazo/db";
-import { getLogger } from "@rakazo/logging";
+import { bestEffort, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import {
   assertCompatibleDefaultChange,
@@ -179,7 +179,10 @@ export function modelsRoutes(ctx: RouterContext) {
           codexCatalog,
         );
         if (previousProfileId && previousProfileId !== login.credential.accountId) {
-          await removeAntigravityProfileDir(previousProfileId).catch(() => undefined);
+          await bestEffort(
+            "remove previous antigravity profile dir",
+            removeAntigravityProfileDir(previousProfileId),
+          );
         }
         record(login.provider, {
           name: "model_connected",
@@ -192,7 +195,10 @@ export function modelsRoutes(ctx: RouterContext) {
           canonicalPiProviderId(login.provider) === ANTIGRAVITY_CLI_PROVIDER_ID &&
           isAntigravityProfileId(login.credential.accountId)
         ) {
-          await removeAntigravityProfileDir(login.credential.accountId).catch(() => undefined);
+          await bestEffort(
+            "remove failed antigravity profile dir",
+            removeAntigravityProfileDir(login.credential.accountId),
+          );
         }
         // The member is told why a save was refused; anything else is reported generically.
         if (error instanceof ORPCError) throw new ModelSignInError(error.message);

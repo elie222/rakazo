@@ -362,6 +362,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
     setPasteCode,
     signInLabel,
     submitOAuthCode,
+    submittingCode,
   } = model;
 
   return (
@@ -379,6 +380,7 @@ function SubscriptionSignIn({ model }: { model: OnboardingModel }) {
         codeCopied={codeCopied}
         onCopyCode={copyOAuthCode}
         pasteCode={pasteCode}
+        submittingCode={submittingCode}
         onPasteCodeChange={setPasteCode}
         onSubmitCode={() => void submitOAuthCode()}
         onPageOpened={() => reportSignInStep("page_opened")}

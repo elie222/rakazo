@@ -230,6 +230,11 @@ function pinnedCatalogProbeBaseUrl(
 
 function antigravityCatalogEntries(): PiCatalogEntry[] {
   if (!antigravityCliEnabled()) return [];
+  cachedAntigravityCatalog ??= buildAntigravityCatalog();
+  return cachedAntigravityCatalog;
+}
+
+function buildAntigravityCatalog(): PiCatalogEntry[] {
   const definition = modelProviderDefinition(ANTIGRAVITY_CLI_PROVIDER_ID);
   const signIn = definition?.signIn;
   return ANTIGRAVITY_CATALOG_MODELS.map((model) => ({
@@ -252,6 +257,8 @@ function antigravityCatalogEntries(): PiCatalogEntry[] {
     images: model.images,
   }));
 }
+
+let cachedAntigravityCatalog: PiCatalogEntry[] | undefined;
 
 export function listPiCatalog(): PiCatalogEntry[] {
   cachedCatalog ??= buildPiCatalog();

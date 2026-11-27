@@ -43,6 +43,7 @@ export function ConnectionControls({
   setPasteCode,
   setZeroDataRetention,
   submitOAuthCode,
+  submittingCode,
   subscriptionSignIn,
   updateApiKey,
   zeroDataRetention,
@@ -84,6 +85,7 @@ export function ConnectionControls({
   | "setPasteCode"
   | "setZeroDataRetention"
   | "submitOAuthCode"
+  | "submittingCode"
   | "subscriptionSignIn"
   | "updateApiKey"
   | "zeroDataRetention"
@@ -123,6 +125,7 @@ export function ConnectionControls({
             codeCopied={codeCopied}
             onCopyCode={copyOAuthCode}
             pasteCode={pasteCode}
+            submittingCode={submittingCode}
             onPasteCodeChange={setPasteCode}
             onSubmitCode={() => void submitOAuthCode()}
             onPageOpened={() => reportSignInStep("page_opened")}

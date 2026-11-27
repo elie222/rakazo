@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { hostCredentialSource, resolveDeploymentModel } from "../../../models/deployment-model.js";
+import { applyCodexLiveCatalog } from "../../../runtime/pi/models/pi-codex-catalog.js";
 import { listPiCatalog } from "../../../runtime/pi/models/pi-models.js";
 import { antigravityAgent } from "./antigravity-agent.js";
 import {
@@ -23,19 +24,32 @@ afterEach(() => {
 
 describe("antigravityAgent", () => {
   it("turns off every built-in tool and adds Rakazo's instructions to each session", () => {
-    expect(
-      antigravityAgent.sessionMeta?.({ instructions: "You are Pip.", toolServer: "rakazo" }),
-    ).toEqual({
+    const withTools = antigravityAgent.sessionMeta?.({
+      instructions: "You are Pip.",
+      toolServer: "rakazo",
+    }) as {
       antigravity: {
-        enabledTools: [],
-        eagerMcpServers: ["rakazo"],
-        systemPrompt: { append: "You are Pip." },
-      },
-    });
+        enabledTools: string[];
+        eagerMcpServers: string[];
+        systemPrompt: { append: string };
+      };
+    };
+    expect(withTools.antigravity.enabledTools).toEqual([]);
+    expect(withTools.antigravity.eagerMcpServers).toEqual(["rakazo"]);
+    expect(withTools.antigravity.systemPrompt.append).toContain("You are Pip.");
+    expect(withTools.antigravity.systemPrompt.append).toContain("mcp_rakazo_read_file");
+    expect(withTools.antigravity.systemPrompt.append).toContain("Never call unprefixed CLI");
+
     // A turn without tools has no tool server for the CLI to load.
-    expect(antigravityAgent.sessionMeta?.({ instructions: "You are Pip." })).toMatchObject({
-      antigravity: { eagerMcpServers: [] },
-    });
+    const withoutTools = antigravityAgent.sessionMeta?.({ instructions: "You are Pip." }) as {
+      antigravity: {
+        enabledTools: string[];
+        eagerMcpServers: string[];
+        systemPrompt: { append: string };
+      };
+    };
+    expect(withoutTools.antigravity.eagerMcpServers).toEqual([]);
+    expect(withoutTools.antigravity.systemPrompt.append).toContain("No tools are enabled");
   });
 
   it("starts the CLI with a home of its own that links only the operator's sign-in", async () => {
@@ -79,11 +93,18 @@ describe("antigravityAgent", () => {
     expect(hostCredentialSource(ANTIGRAVITY_CLI_PROVIDER_ID)).toBe("CLI");
   });
 
-  it("uses an isolated per-account GEMINI_HOME when profileId is provided", async () => {
+  it("uses an isolated per-account directory, flags, and env when profileId is provided", async () => {
     operatorHome = mkdtempSync(join(tmpdir(), "rakazo-antigravity-profile-"));
     const profileA = randomUUID();
     const profileB = randomUUID();
-    const env = { PATH: "/usr/bin", HOME: operatorHome, DATA_DIR: operatorHome };
+    const env = {
+      PATH: "/usr/bin",
+      HOME: operatorHome,
+      DATA_DIR: operatorHome,
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+      GNOME_KEYRING_CONTROL: "/run/user/1000/keyring",
+      XDG_RUNTIME_DIR: "/run/user/1000",
+    };
 
     const launchA = await antigravityAgent.launch({
       files: operatorHome,
@@ -100,15 +121,43 @@ describe("antigravityAgent", () => {
       profileId: profileB,
     });
 
-    expect(launchA.env.GEMINI_HOME).toBe(join(operatorHome, "antigravity-profiles", profileA));
-    expect(launchB.env.GEMINI_HOME).toBe(join(operatorHome, "antigravity-profiles", profileB));
-    expect(existsSync(launchA.env.GEMINI_HOME!)).toBe(true);
-    expect(existsSync(launchB.env.GEMINI_HOME!)).toBe(true);
+    const dirA = join(operatorHome, "antigravity-profiles", profileA);
+    const dirB = join(operatorHome, "antigravity-profiles", profileB);
+    expect(launchA.args).toEqual(["acp", "--gemini-dir", dirA, "--app-data-dir", "acp"]);
+    expect(launchB.args).toEqual(["acp", "--gemini-dir", dirB, "--app-data-dir", "acp"]);
+    expect(launchA.env.GEMINI_HOME).toBe(dirA);
+    expect(launchB.env.GEMINI_HOME).toBe(dirB);
+    expect(launchA.env.XDG_CONFIG_HOME).toBe(join(dirA, "config"));
+    expect(launchB.env.XDG_CONFIG_HOME).toBe(join(dirB, "config"));
+    expect(launchA.env.DBUS_SESSION_BUS_ADDRESS).toBe(
+      process.platform === "linux" ? "disabled:" : undefined,
+    );
+    expect(launchA.env.GNOME_KEYRING_CONTROL).toBeUndefined();
+    expect(launchA.env.XDG_RUNTIME_DIR).toBeUndefined();
+    expect(existsSync(dirA)).toBe(true);
+    expect(existsSync(dirB)).toBe(true);
     expect(antigravityAgent.supportsThinking).toBe(true);
+    expect(antigravityAgent.toolCallName("rakazo", "connectors_search_tools")).toBe(
+      "mcp_rakazo_connectors_search_tools",
+    );
+
+    // Regression: `acp-runtime` passes scrubbed `cliEnv(process.env)` without `DATA_DIR`;
+    // `launch` must still resolve the profile folder under `process.env.DATA_DIR` without leaking
+    // `DATA_DIR` into the spawned CLI environment.
+    vi.stubEnv("DATA_DIR", operatorHome);
+    const scrubbedLaunch = await antigravityAgent.launch({
+      files: operatorHome,
+      instructions: "You are Pip.",
+      toolServer: "rakazo",
+      env: { PATH: "/usr/bin", HOME: operatorHome },
+      profileId: profileB,
+    });
+    expect(scrubbedLaunch.env.GEMINI_HOME).toBe(dirB);
+    expect(scrubbedLaunch.env.DATA_DIR).toBeUndefined();
 
     await removeAntigravityProfileDir(profileA, env);
-    expect(existsSync(launchA.env.GEMINI_HOME!)).toBe(false);
-    expect(existsSync(launchB.env.GEMINI_HOME!)).toBe(true);
+    expect(existsSync(dirA)).toBe(false);
+    expect(existsSync(dirB)).toBe(true);
   });
 
   it("rejects non-UUID profile identifiers to prevent path traversal", () => {
@@ -141,5 +190,29 @@ describe("antigravityAgent", () => {
       thinkingLevels: ["low", "medium", "high", "xhigh"],
       images: true,
     });
+
+    // Regression: listPiCatalog() must return stable entry references so overlayLiveCatalog
+    // (used when a user also has a live ChatGPT/Codex subscription connected) keeps Antigravity.
+    const first = listPiCatalog();
+    const codexIds = first
+      .filter((entry) => entry.provider === "openai-codex")
+      .map((entry) => ({
+        slug: entry.id,
+        contextWindow: 128_000,
+        reasoningEfforts: ["low", "high"],
+        supportsImages: true,
+        supportsFastTier: false,
+      }));
+    const merged = applyCodexLiveCatalog(
+      first,
+      {
+        byProvider: { "openai-codex": "oauth" },
+        byModel: {},
+        secretIdByProvider: { "openai-codex": "sec-1" },
+        secretIdByModel: {},
+      },
+      new Map([["sec-1", codexIds]]),
+    );
+    expect(merged.some((entry) => entry.provider === ANTIGRAVITY_CLI_PROVIDER_ID)).toBe(true);
   });
 });

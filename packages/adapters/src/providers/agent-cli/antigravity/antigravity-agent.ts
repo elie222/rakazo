@@ -4,7 +4,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { privateFolder } from "../../../cli-models/cli-process.js";
 import type { AcpAgentDescriptor } from "../../../runtime/acp/acp-agent.js";
-import { ensureAntigravityProfileDir, isAntigravityProfileId } from "./antigravity-profiles.js";
+import {
+  antigravityProfileArgs,
+  antigravityProfileEnv,
+  ensureAntigravityProfileDir,
+  isAntigravityProfileId,
+} from "./antigravity-profiles.js";
 import { ANTIGRAVITY_CLI_PROVIDER_ID } from "./provider-id.js";
 
 /** The CLI's own folder inside its home, which holds its sessions and, off macOS, its sign-in. */
@@ -70,21 +75,37 @@ export const antigravityAgent: AcpAgentDescriptor = {
     "Sign in with Google under Settings → Models → Antigravity, or run `agy acp --login` as the worker user.",
   async launch({ env, profileId }) {
     if (isAntigravityProfileId(profileId)) {
-      const home = await ensureAntigravityProfileDir(profileId, env);
-      return { args: ["acp"], env: { ...env, GEMINI_HOME: home } };
+      // `env` is the scrubbed child environment from `cliEnv(process.env)` (which omits server
+      // vars like `DATA_DIR`), so resolve the profile root against `process.env` unless `env`
+      // explicitly provides `DATA_DIR` (e.g. in tests).
+      const profileRootEnv = env.DATA_DIR !== undefined ? env : process.env;
+      const home = await ensureAntigravityProfileDir(profileId, profileRootEnv);
+      return {
+        args: antigravityProfileArgs(home),
+        env: antigravityProfileEnv(home, env),
+      };
     }
     const home = botHome();
     await linkSignIn(home, join(homedir(), ".gemini"));
     return { args: ["acp"], env: { ...env, GEMINI_HOME: home } };
   },
-  sessionMeta: ({ instructions, toolServer }) => ({
-    antigravity: {
-      enabledTools: [],
-      eagerMcpServers: toolServer ? [toolServer] : [],
-      systemPrompt: { append: instructions },
-    },
-  }),
-  toolCallName: (toolServer, tool) => `${toolServer}_${tool}`,
+  sessionMeta: ({ instructions, toolServer }) => {
+    // `agy acp` 1.5.x still declares its own built-in tools (such as `read_file`, `write_file`,
+    // `run_command`, `search_web`) even when `enabledTools: []` is sent. Because Rakazo's
+    // instructions refer to tools by unprefixed names (`read_file`, `shell`, etc.), tell the
+    // model explicitly to use only the `mcp_<toolServer>_*` tools and never unprefixed CLI tools.
+    const toolRoutingRule = toolServer
+      ? `\n\nTool routing rule: Every Rakazo tool referenced in the instructions above is exposed with the \`mcp_${toolServer}_\` prefix (for example \`mcp_${toolServer}_read_file\`, \`mcp_${toolServer}_write_file\`, \`mcp_${toolServer}_shell\`, \`mcp_${toolServer}_web_search\`, \`mcp_${toolServer}_ask_user\`). Never call unprefixed CLI built-in tools such as \`read_file\`, \`write_file\`, \`edit_file\`, \`run_command\`, \`search_web\`, \`ask_question\`, \`schedule\`, \`send_message\`, \`manage_task\`, \`update_steps\`, \`invoke_subagent\`, \`define_subagent\`, \`manage_subagents\`, \`run_workflow\`, or \`swarm\`. Always call the \`mcp_${toolServer}_*\` tool instead.`
+      : "\n\nTool routing rule: No tools are enabled for this turn. Never call any CLI built-in tools (`read_file`, `write_file`, `edit_file`, `run_command`, `search_web`, `ask_question`, etc.); answer directly in text.";
+    return {
+      antigravity: {
+        enabledTools: [],
+        eagerMcpServers: toolServer ? [toolServer] : [],
+        systemPrompt: { append: `${instructions}${toolRoutingRule}` },
+      },
+    };
+  },
+  toolCallName: (toolServer, tool) => `mcp_${toolServer}_${tool}`,
   // The CLI names a call in its first update's title, prefixed with its MCP server's name.
   reportedToolName: (update) =>
     typeof update.name === "string"

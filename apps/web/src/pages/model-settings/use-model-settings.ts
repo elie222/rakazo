@@ -133,6 +133,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     pasteCode,
     setPasteCode,
     oauthPending,
+    submittingCode,
     cancelOAuthAttempt,
     reportSignInStep,
     startSubscriptionSignIn,
@@ -510,6 +511,7 @@ export function useModelSettings(onClose: () => void, scope: SettingsScope) {
     setPasteCode,
     settingsDirty,
     submitOAuthCode,
+    submittingCode,
     subscriptionSignIn,
     usingServerCredentials,
   };

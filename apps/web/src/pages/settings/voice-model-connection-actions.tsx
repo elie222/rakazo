@@ -46,6 +46,7 @@ export function VoiceModelConnectionActions({
           codeCopied={codeCopied}
           onCopyCode={copyOAuthCode}
           pasteCode={signIn.pasteCode}
+          submittingCode={signIn.submittingCode}
           onPasteCodeChange={signIn.setPasteCode}
           onSubmitCode={() => void signIn.submitOAuthCode()}
           onPageOpened={() => signIn.reportSignInStep("page_opened")}
