@@ -1,5 +1,6 @@
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
 import * as Logging from "@rakazo/logging";
+import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import type { CardFillStep } from "./browser-tools.js";
 import {
@@ -25,7 +26,7 @@ const checkout = `<!doctype html><html><head><title>Checkout</title></head><body
 </body></html>`;
 
 function checkoutSession(url = `${merchant}/pay`) {
-  const session = new PageBrowserSession(url, checkout);
+  const session = new PageBrowserSession(JSDOM, url, checkout);
   // Every snapshot hands out new refs, so a batch uses the refs of one.
   const refs = () => {
     const { elements } = session.snapshot();
@@ -91,6 +92,7 @@ describe("in-process page browser card fill", () => {
 
   it("finds a card field without a ref by its autocomplete token", () => {
     const session = new PageBrowserSession(
+      JSDOM,
       `${merchant}/pay`,
       `<!doctype html><body>
         <input aria-label="Hidden number" autocomplete="cc-number" type="hidden" />
@@ -124,7 +126,7 @@ describe("in-process page browser card fill", () => {
       ["https://evil.example.test/pay", /not on the merchant's site/],
       [`${merchant}/pay`, /More than one field/],
     ] as const) {
-      const session = new PageBrowserSession(url, twoNumbers);
+      const session = new PageBrowserSession(JSDOM, url, twoNumbers);
       const result = session.act([
         { kind: "fill", text: card.number, origin: merchant, field: "card", cardField: "number" },
       ]);
@@ -326,7 +328,7 @@ describe("pay token fill", () => {
   });
 
   it("shows the checkout's merchant account and hands it the token, never showing it", () => {
-    const session = new PageBrowserSession(`${merchant}/pay`, steering());
+    const session = new PageBrowserSession(JSDOM, `${merchant}/pay`, steering());
     expect(session.snapshot().tree).toContain(
       'This checkout accepts a pay token: merchantAccountId "acct_fake123".',
     );
@@ -343,7 +345,7 @@ describe("pay token fill", () => {
       [`${merchant}/pay`, "<!doctype html><body></body>", fill(), /no pay token field/],
       [`${merchant}/pay`, steering(), fill("acct_fake123", "http://shop.example.test"), /HTTPS/],
     ] as const) {
-      const session = new PageBrowserSession(url, html);
+      const session = new PageBrowserSession(JSDOM, url, html);
       const result = session.act([step]);
       expect(result, url).toMatchObject({ ok: false, completed: 0, uncertain: false });
       expect(result.error, url).toMatch(error);

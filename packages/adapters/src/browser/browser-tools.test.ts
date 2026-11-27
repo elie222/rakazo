@@ -484,8 +484,8 @@ describe("browser tools", () => {
           { resolveSecretFill: async () => ({ text, origin, hidden }) },
         );
       // Read from the page itself: the bot's snapshots never say which option is chosen.
-      const chosen = () => {
-        const session = browser.sessions.get(pageBrowserSessionKey(computer, context));
+      const chosen = async () => {
+        const session = await browser.sessions.get(pageBrowserSessionKey(computer, context));
         const { document } = (session as unknown as { dom: JSDOM }).dom.window;
         return (document.querySelector('[aria-label="Branch"]') as HTMLSelectElement).value;
       };
@@ -493,9 +493,9 @@ describe("browser tools", () => {
       expect(JSON.stringify(await snapshot())).toContain('"selected":true');
       const picked = await fill("A2");
       expect(picked).toMatchObject({ ok: true, completed: 1 });
-      expect(chosen()).toBe("A2");
+      expect(await chosen()).toBe("A2");
       expect(await fill("v1")).toMatchObject({ ok: true, completed: 1 });
-      expect(chosen()).toBe("v1");
+      expect(await chosen()).toBe("v1");
       for (const seen of [picked, await snapshot()] as Array<{
         tree: string;
         elements: Array<{ name: string }>;
@@ -530,7 +530,7 @@ describe("browser tools", () => {
       expect(JSON.stringify(elsewhere)).toMatch(
         /This login is saved for https:\/\/other.example.test/,
       );
-      expect(chosen()).toBe("v1");
+      expect(await chosen()).toBe("v1");
       const locked = (await snapshot()).elements.find((el) => el.name.includes("Locked"))!.ref;
       const onLocked = await browserActFromTool(
         browser,

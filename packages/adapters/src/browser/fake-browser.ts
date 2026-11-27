@@ -68,7 +68,7 @@ export class FakeBrowserProvider implements BrowserProvider {
     if (!url) {
       return { url: "", title: "", fallback: "computer_act", error: "url is required" };
     }
-    const session = this.sessions.get(pageBrowserSessionKey(computer, context));
+    const session = await this.sessions.get(pageBrowserSessionKey(computer, context));
     const seeded = this.pages[url] ?? this.pages[stripHash(url)];
     if (seeded) {
       const html = seeded.title ? ensureTitle(seeded.html, seeded.title) : seeded.html;
@@ -106,7 +106,7 @@ export class FakeBrowserProvider implements BrowserProvider {
       };
     }
     if (this.snapshotError) throw this.snapshotError;
-    return this.sessions.get(pageBrowserSessionKey(computer, context)).snapshot();
+    return (await this.sessions.get(pageBrowserSessionKey(computer, context))).snapshot();
   }
 
   async act(
@@ -125,17 +125,18 @@ export class FakeBrowserProvider implements BrowserProvider {
       };
     }
     if (this.actError) throw this.actError;
+    const session = await this.sessions.get(pageBrowserSessionKey(computer, context));
     if (!request.actions?.length) {
       return {
         ok: false,
         completed: 0,
-        url: this.sessions.get(pageBrowserSessionKey(computer, context)).url,
-        title: this.sessions.get(pageBrowserSessionKey(computer, context)).title,
+        url: session.url,
+        title: session.title,
         error: "actions is required",
         fallback: "computer_act",
       };
     }
-    return this.sessions.get(pageBrowserSessionKey(computer, context)).act(request.actions);
+    return session.act(request.actions);
   }
 }
 
