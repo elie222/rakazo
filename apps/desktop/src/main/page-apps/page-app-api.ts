@@ -8,7 +8,11 @@ import {
   PageIconColorSchema,
   PageImageSourceSchema,
 } from "@rakazo/contracts";
-import { PAGE_RUNTIME_PATH } from "@rakazo/core";
+import { deadlineSignal, PAGE_RUNTIME_PATH } from "@rakazo/core";
+
+const REVOKE_DEADLINE_MS = 15_000;
+const CHANGES_SILENCE_MS = 60_000;
+
 import { getLogger } from "@rakazo/logging";
 
 const strings = (value: unknown): string[] =>
@@ -107,14 +111,26 @@ export function createPageAppApi(server: string, token: string, fetcher: Fetch =
     },
     /** Resolves each time the page changes, until the stream ends. */
     changes: async function* (signal: AbortSignal): AsyncGenerator<void> {
-      const response = await request("/changes", { signal });
-      if (!response.body) return;
-      for await (const line of lines(response.body)) {
-        if (line.startsWith("data:")) yield;
+      // The server writes at least a heartbeat every 25 seconds; a stream silent for longer has
+      // gone half-open (after sleep or a network change) and is ended so the app reconnects.
+      const silent = new AbortController();
+      let timer = setTimeout(() => silent.abort(), CHANGES_SILENCE_MS);
+      try {
+        const response = await request("/changes", {
+          signal: AbortSignal.any([signal, silent.signal]),
+        });
+        if (!response.body) return;
+        for await (const line of lines(response.body)) {
+          clearTimeout(timer);
+          timer = setTimeout(() => silent.abort(), CHANGES_SILENCE_MS);
+          if (line.startsWith("data:")) yield;
+        }
+      } finally {
+        clearTimeout(timer);
       }
     },
-    revoke: async () => {
-      await request("", { method: "DELETE" });
+    revoke: async (signal?: AbortSignal) => {
+      await request("", { method: "DELETE", signal });
     },
     runtime: async () => {
       const response = await fetcher(new URL(PAGE_RUNTIME_PATH, server));
@@ -132,7 +148,7 @@ export type PageAppApi = ReturnType<typeof createPageAppApi>;
  */
 export async function revokePageAppToken(api: PageAppApi): Promise<boolean> {
   try {
-    await api.revoke();
+    await api.revoke(deadlineSignal(REVOKE_DEADLINE_MS));
     return true;
   } catch (error) {
     if (error instanceof PageAppRequestError && (error.status === 401 || error.status === 404))
