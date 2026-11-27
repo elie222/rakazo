@@ -6,6 +6,9 @@ export const SLACK_INSTALL_CALLBACK_PATH = "/messaging/slack/callback";
 // The shared Pages list or a single Page review.
 const PAGE_REVIEW_PATH = /^\/review(?:\/[A-Za-z0-9_-]{1,200})?\/?$/;
 
+// A page open on its own, as a browser installs it, in the Space it belongs to.
+const PAGE_APP_PATH = /^\/page\/[A-Za-z0-9_-]{1,200}(?:\?space=[A-Za-z0-9_-]{1,200})?$/;
+
 // A Space invite link, an organization invitation's Join page, or a credit code to redeem.
 const INVITE_PATH =
   /^\/(?:(?:invite|join)\/[A-Za-z0-9_-]{1,200}|redeem(?:\/[A-Za-z0-9_-]{1,64})?\/?)$/;
@@ -28,7 +31,8 @@ export function signInNext(next: string | null): string | null {
     next.startsWith(`${SLACK_INSTALL_CALLBACK_PATH}?`) ||
     INVITE_PATH.test(next) ||
     (next.startsWith(BOT_CHAT_PREFIX) && isBotChatRouteId(next.slice(BOT_CHAT_PREFIX.length))) ||
-    PAGE_REVIEW_PATH.test(next)
+    PAGE_REVIEW_PATH.test(next) ||
+    PAGE_APP_PATH.test(next)
   ) {
     return next;
   }
