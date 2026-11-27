@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CALENDAR_CSS, DayView, MonthView, parseDay, WeekView } from "./calendar.js";
+import { TextLink } from "./controls.js";
 import {
   Audio,
   Avatar,
@@ -170,6 +171,66 @@ describe("media", () => {
     });
     expect(current()).toEqual(["Show photo 2"]);
     render(<Gallery photos={[]} />);
+  });
+
+  it("enlarges the gallery photo that was clicked", () => {
+    render(
+      <Gallery
+        photos={[
+          { src: PNG, alt: "Lobby" },
+          { src: PNG, alt: "Pool" },
+        ]}
+      />,
+    );
+    click(q('button[aria-label="Enlarge Pool"]'));
+    expect(q('[role="dialog"]')?.getAttribute("aria-label")).toBe("Pool");
+  });
+
+  it("moves focus with the photo when arrow keys step from a focused photo", () => {
+    render(<Gallery photos={["A", "B"].map((alt) => ({ src: PNG, alt }))} />);
+    const photo = q<HTMLButtonElement>('button[aria-label="Enlarge A"]')!;
+    photo.focus();
+    act(() => {
+      photo.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Enlarge B");
+  });
+
+  it("enlarges a photo inside a link without opening the link", () => {
+    render(
+      <TextLink href="https://example.com">
+        <Gallery photos={[{ src: PNG, alt: "Lobby" }]} />
+      </TextLink>,
+    );
+    click(q('button[aria-label="Enlarge Lobby"]'));
+    expect(q('[role="dialog"]')).not.toBeNull();
+    expect(posted).toEqual([]);
+  });
+
+  it("hands focus to the photo an arrow brings on screen, so arrow keys carry on", () => {
+    render(<Gallery photos={["A", "B", "C"].map((alt) => ({ src: PNG, alt }))} />);
+    click(q('button[aria-label="Next photo"]'));
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Enlarge B");
+    act(() => {
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
+    });
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Enlarge C");
+  });
+
+  it("steps through a gallery with arrows that leave at either end", () => {
+    render(<Gallery photos={["A", "B", "C"].map((alt) => ({ src: PNG, alt }))} />);
+    const arrows = () => all(".rk-gallery-arrow").map((arrow) => arrow.getAttribute("aria-label"));
+    const current = () => all("button[aria-current]").map((dot) => dot.getAttribute("aria-label"));
+    expect(arrows()).toEqual(["Next photo"]);
+    click(q('button[aria-label="Next photo"]'));
+    click(q('button[aria-label="Next photo"]'));
+    expect(current()).toEqual(["Show photo 3"]);
+    expect(arrows()).toEqual(["Previous photo"]);
+    click(q('button[aria-label="Previous photo"]'));
+    expect(current()).toEqual(["Show photo 2"]);
+    expect(arrows()).toEqual(["Previous photo", "Next photo"]);
   });
 
   it("keeps a photo marked when the gallery loses the one that was shown", () => {
