@@ -2274,6 +2274,9 @@ model PageApp {
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   spaceId    String
+  /// The sign-in it was installed through: ending that sign-in ends the app, as it does a paired
+  /// computer.
+  sessionId  String?
   tokenHash  String    @unique
   /// Abilities the owner approved; a page version's own list says which it uses.
   abilities  String[]  @default([])
@@ -2282,6 +2285,7 @@ model PageApp {
 
   @@index([userId])
   @@index([pageId])
+  @@index([sessionId])
   @@map("page_apps")
 }
 

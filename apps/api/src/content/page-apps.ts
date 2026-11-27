@@ -32,6 +32,7 @@ export async function installPageApp(
   jobs: JobPublisher,
   actor: Actor,
   input: { pageId: string; abilities: PageAbility[] },
+  sessionId?: string,
 ): Promise<PageAppInstall> {
   const page = await prisma.page.findFirst({
     where: { id: input.pageId, spaceId: actor.spaceId, userId: actor.userId },
@@ -58,6 +59,7 @@ export async function installPageApp(
           pageId: page.id,
           userId: actor.userId,
           spaceId: actor.spaceId,
+          sessionId,
           tokenHash: hashPageAppToken(token),
           abilities: approved,
         },

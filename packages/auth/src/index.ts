@@ -876,7 +876,15 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               });
             }
             const previous = replacedSession(ctx);
-            if (previous) await env.afterReplaceSession?.(previous, session);
+            if (previous) {
+              await runAsSystem("move page apps to the replacing sign-in", () =>
+                prisma.pageApp.updateMany({
+                  where: { sessionId: previous.id },
+                  data: { sessionId: session.id },
+                }),
+              );
+              await env.afterReplaceSession?.(previous, session);
+            }
           },
         },
         delete: {
@@ -890,7 +898,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 metadata: { via: ctx.path },
               });
             }
-            if (replacedSession(ctx)?.id !== session.id) await env.afterDeleteSession?.(session);
+            if (replacedSession(ctx)?.id !== session.id) {
+              // A page app ends with the sign-in it was installed through, as a paired computer does.
+              await runAsSystem("end page apps with their sign-in", () =>
+                prisma.pageApp.deleteMany({ where: { sessionId: session.id } }),
+              );
+              await env.afterDeleteSession?.(session);
+            }
           },
         },
       },
