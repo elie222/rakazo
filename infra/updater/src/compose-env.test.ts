@@ -55,6 +55,13 @@ const NOT_PASSED: Record<string, string> = {
   RAKAZO_ALLOW_DEV_SECRETS: "development-only escape hatch for placeholder secrets",
   RAKAZO_CLAUDE_CODE_SETUP_TOKEN:
     "the Claude Code CLI runs only from a source checkout; the images do not include it",
+  // The experimental native runtime needs an operator-owned isolated launcher.
+  // No Compose stack installs that launcher or enables the pilot.
+  PRIMARY_RUNTIME_PILOT_BOT_IDS: "opt-in native runtime on a source-run deployment",
+  PRIMARY_RUNTIME_PILOT_LAUNCHER: "operator-owned isolated launcher on a source-run deployment",
+  PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS: "explicit group admission for the source-run pilot",
+  PRIMARY_RUNTIME_PILOT_HANDOFF_BOT_IDS: "group handoff admission for the source-run pilot",
+  PRIMARY_RUNTIME_PILOT_GROUP_CONTINUITY_BOT_IDS: "group continuity for the source-run pilot",
   EMAIL_EMULATOR: "ignored when NODE_ENV=production",
   BILLING_EMULATOR: "ignored when NODE_ENV=production",
   NODE_USE_ENV_PROXY:
