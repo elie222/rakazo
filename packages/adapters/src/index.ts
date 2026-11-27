@@ -197,6 +197,7 @@ export { SupermemoryMemoryProvider } from "./providers/memory/supermemory/superm
 export * from "./providers/messaging/sendblue/sendblue-emulator.js";
 export * from "./providers/messaging/slack/slack-install-provider.js";
 export * from "./providers/partner-program/dub/dub-partner-program.js";
+export * from "./providers/phone/twilio/twilio-phone.js";
 export * from "./providers/secret-store/infisical/infisical-secret-store.js";
 export * from "./providers/voice/cartesia/cartesia-voice.js";
 export * from "./providers/voice/elevenlabs/elevenlabs-voice.js";
