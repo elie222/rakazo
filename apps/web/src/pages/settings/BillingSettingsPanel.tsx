@@ -40,6 +40,12 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
 
   const price = status?.price ? formatBillingPrice(status.price, locale) : null;
   const seats = status?.seats ?? 0;
+  const canCancel = Boolean(
+    status?.canManage &&
+      status.hasCustomer &&
+      !status.cancelAtPeriodEnd &&
+      (status.state === "trialing" || status.state === "active"),
+  );
 
   if (status?.funding !== undefined)
     return (
@@ -78,16 +84,37 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
           ) : null}
         </div>
         {status?.canManage && status.hasCustomer ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={portal.pending}
-            onClick={() => portal.run()}
-          >
-            <Trans>Manage</Trans>
-          </Button>
+          <div className="flex items-center gap-2">
+            {canCancel ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={portal.pending}
+                onClick={() => portal.run()}
+              >
+                {status?.state === "trialing" ? (
+                  <Trans>Cancel trial</Trans>
+                ) : (
+                  <Trans>Cancel plan</Trans>
+                )}
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={portal.pending}
+              onClick={() => portal.run()}
+            >
+              <Trans>Manage</Trans>
+            </Button>
+          </div>
         ) : null}
       </div>
+      {status && !status.canManage ? (
+        <p className="mt-3 text-body text-muted-foreground">
+          <Trans>Only the organization owner can change or cancel billing.</Trans>
+        </p>
+      ) : null}
       {portal.error || error ? (
         <p role="alert" className="mt-3 text-body text-destructive">
           {portal.error ? t`Could not open billing` : t`Could not load billing`}

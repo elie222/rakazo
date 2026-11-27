@@ -223,8 +223,25 @@ export function ModelCreditsSettings({
   const checkoutAnnualPrice = checkoutAnnualCents
     ? formatBillingAmount(checkoutAnnualCents, "usd", i18n.locale)
     : null;
+  const canCancel =
+    status.canManage &&
+    status.hasCustomer &&
+    !status.cancelAtPeriodEnd &&
+    (status.state === "trialing" || status.state === "active");
+  const cancelLabel =
+    status.state === "trialing" ? <Trans>Cancel trial</Trans> : <Trans>Cancel plan</Trans>;
+  const openPortal = () =>
+    action(async (client) => {
+      const { url } = await client.billing.portal();
+      window.location.assign(url);
+    });
   return (
     <div data-testid="model-credits" className="space-y-5">
+      {!status.canManage ? (
+        <p className="text-body text-muted-foreground">
+          <Trans>Only the organization owner can change or cancel billing.</Trans>
+        </p>
+      ) : null}
       {ownKeyPlan ? (
         <div data-testid="own-key-plan" className="rounded-xl border border-border p-5">
           <h3 className="text-body text-muted-foreground">
@@ -241,7 +258,7 @@ export function ModelCreditsSettings({
                 : `${currentTier.name} · ${tierComputerDescription(currentTier)}`}
             </p>
           ) : null}
-          {tierChange || yearlySavings !== null ? (
+          {tierChange || yearlySavings !== null || canCancel ? (
             <div className="mt-5 flex flex-wrap items-center gap-3">
               {tierChange ? (
                 <ByokTierSelect
@@ -258,6 +275,11 @@ export function ModelCreditsSettings({
                 <Button variant="secondary" disabled={pending} onClick={() => setYearlyOpen(true)}>
                   <Trans>Switch to yearly</Trans>
                   <span className="text-success">−{yearlySavings}%</span>
+                </Button>
+              ) : null}
+              {canCancel ? (
+                <Button variant="ghost" disabled={pending} onClick={openPortal}>
+                  {cancelLabel}
                 </Button>
               ) : null}
             </div>
@@ -289,6 +311,11 @@ export function ModelCreditsSettings({
             <Trans>Monthly credits expire at renewal. Top-ups do not expire.</Trans>
           )}
         </p>
+        {status.funding === "byok" && freeUntil && !status.hasCustomer ? (
+          <p className="mt-1 text-body text-muted-foreground">
+            <Trans>No payment method on file. Nothing will be charged.</Trans>
+          </p>
+        ) : null}
         {status.canManage ? (
           <div className="mt-5 flex flex-wrap items-center gap-3">
             {freeUntil && tiers.length > 1 ? (
@@ -358,14 +385,20 @@ export function ModelCreditsSettings({
               <p className="mt-2 text-body text-muted-foreground">
                 <Trans>Trials get fewer hours to prevent abuse.</Trans>
               </p>
-              <Button
-                className="mt-5"
-                variant="secondary"
-                disabled={pending}
-                onClick={() => setEndTrialOpen(true)}
-              >
-                <Trans>Start plan now</Trans>
-              </Button>
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <Button
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() => setEndTrialOpen(true)}
+                >
+                  <Trans>Start plan now</Trans>
+                </Button>
+                {canCancel && !ownKeyPlan && !recurring ? (
+                  <Button variant="ghost" disabled={pending} onClick={openPortal}>
+                    {cancelLabel}
+                  </Button>
+                ) : null}
+              </div>
             </>
           ) : isCancelledTrial(status) ? (
             <>
@@ -377,12 +410,7 @@ export function ModelCreditsSettings({
                   className="mt-5"
                   variant="secondary"
                   disabled={pending}
-                  onClick={() =>
-                    action(async (client) => {
-                      const { url } = await client.billing.portal();
-                      window.location.assign(url);
-                    })
-                  }
+                  onClick={openPortal}
                 >
                   <Trans>Renew plan</Trans>
                 </Button>
@@ -531,19 +559,16 @@ export function ModelCreditsSettings({
             </Button>
           </div>
           {status.hasCustomer ? (
-            <Button
-              className="mt-4"
-              variant="ghost"
-              disabled={pending}
-              onClick={() =>
-                action(async (client) => {
-                  const { url } = await client.billing.portal();
-                  window.location.assign(url);
-                })
-              }
-            >
-              <Trans>Manage billing</Trans>
-            </Button>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button variant="ghost" disabled={pending} onClick={openPortal}>
+                <Trans>Manage billing</Trans>
+              </Button>
+              {canCancel && !ownKeyPlan ? (
+                <Button variant="ghost" disabled={pending} onClick={openPortal}>
+                  {cancelLabel}
+                </Button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       ) : null}

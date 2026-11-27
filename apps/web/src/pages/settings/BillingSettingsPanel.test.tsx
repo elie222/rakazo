@@ -292,3 +292,94 @@ it("keeps showing loaded billing if a later refresh fails", async () => {
   act(() => root.unmount());
   container.remove();
 });
+
+it("lets owners cancel a trial or active plan and shows owner and free-plan hints", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  let current: Record<string, unknown> = { ...status, hasCustomer: true };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request, init?: RequestInit) => {
+      requests.push({
+        url: request.url,
+        spaceId: new Headers(init?.headers ?? request.headers).get("x-rakazo-space-id"),
+      });
+      if (request.url.endsWith("/billing/portal")) {
+        return Response.json({ json: { url: "about:blank#cancel-portal" } });
+      }
+      return Response.json({ json: current });
+    }),
+  );
+  const assign = vi.fn();
+  vi.stubGlobal("location", { ...window.location, assign });
+  const renderPanel = async (next: Record<string, unknown>) => {
+    current = next;
+    requests.length = 0;
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(panel(createSpaceRpc("space-a"), "space-a"));
+      await flush();
+    });
+    return {
+      container,
+      cleanup: () => {
+        act(() => root.unmount());
+        container.remove();
+      },
+    };
+  };
+
+  const trial = await renderPanel({ ...status, hasCustomer: true });
+  await vi.waitFor(() => expect(trial.container.textContent).toContain("Cancel trial"));
+  await act(async () => {
+    button(trial.container, "Cancel trial").click();
+    await flush();
+  });
+  expect(assign).toHaveBeenCalledWith("about:blank#cancel-portal");
+  expect(
+    requests.some(({ url, spaceId }) => url.endsWith("/billing/portal") && spaceId === "space-a"),
+  ).toBe(true);
+  trial.cleanup();
+
+  const active = await renderPanel({
+    ...status,
+    funding: "credits",
+    state: "active",
+    hasCustomer: true,
+    monthlyAmountCents: 2000,
+    byokPriceCents: null,
+  });
+  await vi.waitFor(() => expect(active.container.textContent).toContain("Cancel plan"));
+  active.cleanup();
+
+  const freePlan = await renderPanel({
+    ...status,
+    state: "trialing",
+    hasCustomer: false,
+    byokFreeUntil: "2027-01-01T00:00:00.000Z",
+    byokPriceCents: 2000,
+  });
+  await vi.waitFor(() =>
+    expect(freePlan.container.textContent).toContain(
+      "No payment method on file. Nothing will be charged.",
+    ),
+  );
+  expect(freePlan.container.textContent).not.toContain("Cancel trial");
+  freePlan.cleanup();
+
+  for (const nonOwner of [
+    { ...status, canManage: false, hasCustomer: true },
+    { state: "active", canManage: false, hasCustomer: true, seats: 1 },
+  ]) {
+    const view = await renderPanel(nonOwner);
+    await vi.waitFor(() =>
+      expect(view.container.textContent).toContain(
+        "Only the organization owner can change or cancel billing.",
+      ),
+    );
+    expect(view.container.textContent).not.toContain("Cancel trial");
+    expect(view.container.textContent).not.toContain("Cancel plan");
+    view.cleanup();
+  }
+});

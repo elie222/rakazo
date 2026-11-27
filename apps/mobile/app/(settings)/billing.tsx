@@ -105,6 +105,16 @@ export default function BillingScreen() {
   const referral = status.referral;
   const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
   const cancelledTrial = isCancelledTrial(status);
+  const canCancel =
+    status.canManage &&
+    status.hasCustomer &&
+    !status.cancelAtPeriodEnd &&
+    (status.state === "trialing" || status.state === "active");
+  const planFooter = !status.canManage
+    ? t`Only the organization owner can change or cancel billing.`
+    : status.byokFreeUntil && !status.hasCustomer
+      ? t`No payment method on file. Nothing will be charged.`
+      : undefined;
   const yearlySavings = byokYearlySwitchSavings(status);
   const annualCents = status.byokAnnualPriceCents;
   const tiers = status.byokTiers ?? [];
@@ -151,7 +161,7 @@ export default function BillingScreen() {
       contentContainerStyle={[styles.content, stacked && styles.compactContent]}
       contentInsetAdjustmentBehavior="automatic"
     >
-      <SettingsGroup>
+      <SettingsGroup footer={planFooter}>
         <SettingsRow
           title={t`Plan`}
           detail={
@@ -232,6 +242,19 @@ export default function BillingScreen() {
             title={plan && !status.byokFreeUntil ? t`Change plan` : t`Choose a plan`}
             prominent
             onPress={() => openFromSettingsSheet(router, "/paywall?dismissible=1")}
+          />
+        ) : null}
+        {canCancel ? (
+          <SettingsRow
+            title={status.state === "trialing" ? t`Cancel trial` : t`Cancel plan`}
+            chevron="right"
+            disabled={pending}
+            onPress={() =>
+              action(async (send) => {
+                const result = await send("billing/portal", { client: "mobile" });
+                return openBillingPage(result.url, send);
+              })
+            }
           />
         ) : null}
       </SettingsGroup>
