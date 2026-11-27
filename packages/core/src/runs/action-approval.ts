@@ -150,7 +150,7 @@ export function connectorKindFromToolName(toolName: string, connectorKinds: stri
  * relaxes the name check: the provider chooses both the name and the hint.
  */
 export function connectorToolRequiresApproval(toolName: string, readOnly?: boolean): boolean {
-  if (readOnly === false) return true;
+  if (readOnly === false || toolRequiresExplicitApproval(toolName)) return true;
   if (MUTATING_CONNECTOR_PATTERN.test(toolName)) return true;
   if (COMPOUND_CONNECTOR_ACTION_PATTERN.test(toolName)) return true;
   return !READ_ONLY_CONNECTOR_PATTERN.test(toolName);
@@ -164,8 +164,8 @@ export function watchToolRefusal(input: {
   connectorKind?: string;
   rules: ActionApprovalRule[];
 }): string | null {
-  const { toolName, readOnly } = input;
-  if (readOnly !== true) {
+  const { toolName, toolAliases, readOnly } = input;
+  if (readOnly !== true || [toolName, ...(toolAliases ?? [])].some(toolRequiresExplicitApproval)) {
     return `${toolName} can change data, so a change trigger can't run it. Pick a read-only tool.`;
   }
   const decision = resolveActionApprovalDetail({
@@ -231,16 +231,14 @@ function innerToolSlugs(args: unknown): string[] {
 
 /** Stateful MCP pause-resume tools confirm a different action per call, so they always ask. */
 export function isMcpResumeTool(toolName: string): boolean {
-  const name = toolName.trim().toLowerCase();
-  return (
-    name === "resume" || (name.startsWith("mcp__") && name.endsWith("__resume") && name.length > 13)
-  );
+  const n = toolName.trim().toLowerCase();
+  return n === "resume" || (n.startsWith("mcp__") && n.endsWith("__resume") && n.length > 13);
 }
 
 /** Security-boundary changes and MCP pause-resume tools never auto-review or Always allow. */
 export function toolRequiresExplicitApproval(toolName: string): boolean {
-  const name = toolName.trim().toLowerCase();
-  return EXPLICIT_APPROVAL_BUILTIN_TOOLS.has(name) || isMcpResumeTool(name);
+  const n = toolName.trim().toLowerCase();
+  return EXPLICIT_APPROVAL_BUILTIN_TOOLS.has(n) || isMcpResumeTool(n);
 }
 
 /**

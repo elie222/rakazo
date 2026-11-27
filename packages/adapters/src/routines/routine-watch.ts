@@ -1063,7 +1063,7 @@ export async function validateRoutineWatch(
   assertWatchToolReadOnly(name, declaredRead(tool));
 }
 
-/** A batch runs whatever actions its arguments name, so it is never a declared read. */
+/** A batch or explicit-approval tool is never a declared read. */
 function declaredRead(tool: ConnectorTool): boolean | undefined {
-  return tool.batch ? undefined : tool.readOnly;
+  return tool.batch || tool.explicitApproval ? false : tool.readOnly;
 }

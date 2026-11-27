@@ -1953,6 +1953,53 @@ it("loads authorized connection context for discovery, creation validation and c
   expect(execute).toHaveBeenCalledOnce();
 });
 
+it("rejects explicit-approval tools in routine watches even when advertised as read-only", async () => {
+  const execute = vi.fn();
+  const tools = [
+    {
+      name: "mcp__executor__resume",
+      description: "Resume paused execution",
+      inputSchema: { type: "object" },
+      readOnly: true,
+      explicitApproval: true,
+      route: { connectorId: "mcp", resourceId: "srv-1", toolName: "resume" },
+    },
+    {
+      name: "read_docs_resume",
+      description: "Disambiguated resume",
+      inputSchema: { type: "object" },
+      readOnly: true,
+      explicitApproval: true,
+      route: { connectorId: "installed", resourceId: "inst-1", toolName: "resume" },
+    },
+  ];
+  const deps = {
+    prisma: {
+      connection: { findMany: vi.fn(async () => []) },
+      spaceSettingOverride: { findUnique: vi.fn(async () => null) },
+      actionApprovalRule: { findMany: vi.fn(async () => []) },
+      userActionApprovalRule: { findMany: vi.fn(async () => []) },
+    },
+    connector: { discoverTools: vi.fn(async () => tools), execute },
+  } as unknown as RoutineWatchTickDeps;
+
+  for (const tool of tools) {
+    const routine = {
+      id: "r",
+      spaceId: "s",
+      userId: "u",
+      botId: "b",
+      watch: { kind: "tool" as const, tool: tool.name },
+      watchState: null,
+    };
+    await expect(
+      validateRoutineWatch(deps, RoutineWatchSchema.parse(routine.watch), routine),
+    ).rejects.toThrow("can change data");
+    await expect(checkRoutineWatch(deps, routine)).rejects.toThrow("can change data");
+  }
+  expect(execute).not.toHaveBeenCalled();
+});
+
 describe("overlapping tracked identities", () => {
   it("retains parent values when a nested object has the same ID", () => {
     const result = (modifiedTime: string) => ({

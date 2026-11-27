@@ -1291,7 +1291,19 @@ describe("approvalRuleEffectChoices", () => {
     for (const name of ["resume", "RESUME", "mcp__demo__resume", "mcp__my-server__RESUME"]) {
       expect(toolRequiresExplicitApproval(name), name).toBe(true);
       expect(toolRequiresApproval(name, true, true), name).toBe(true);
+      expect(connectorToolRequiresApproval(name, true), name).toBe(true);
+      expect(watchToolRefusal({ toolName: name, readOnly: true, rules: [] }), name).toContain(
+        "can change data",
+      );
     }
+    expect(
+      watchToolRefusal({
+        toolName: "read_docs_resume",
+        toolAliases: ["resume"],
+        readOnly: true,
+        rules: [],
+      }),
+    ).toContain("can change data");
     for (const name of [
       "mcp____resume",
       "mcp__demo__resume_playback",
