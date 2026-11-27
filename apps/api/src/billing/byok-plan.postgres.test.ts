@@ -270,6 +270,35 @@ dbTests("own-key plan", () => {
     await expect(service.switchToYearly(actor)).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
+  it("renews a cancelled yearly trial on a monthly plan, and no other subscription", async () => {
+    const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
+    for (const subscription of provider.subscriptions) subscription.status = "canceled";
+    await service.sync(customer);
+    await service.selectFunding(actor, "byok", undefined, "year");
+    provider.completeByokCheckout(customer);
+    const plan = provider.subscriptions.at(-1)!;
+    plan.status = "trialing";
+    await service.sync(customer);
+    // A trial that is not cancelling has nothing to renew.
+    await expect(service.renewTrial(actor, "standard", "month")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    plan.cancelAtPeriodEnd = true;
+    await service.renewTrial(actor, "standard", "month");
+    await expect(service.status(actor)).resolves.toMatchObject({
+      state: "trialing",
+      cancelAtPeriodEnd: false,
+      byokPriceCents: BYOK_TIERS.standard.monthlyPriceCents,
+      byokInterval: "month",
+    });
+    // A paid plan set to cancel has a paid period to credit, so it resumes in the portal.
+    plan.status = "active";
+    plan.cancelAtPeriodEnd = true;
+    await expect(service.renewTrial(actor, "standard", "year")).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+  });
+
   it("subscribes to a tier and moves between tiers at the same interval", async () => {
     const customer = (await billingAccountForOrganization(prisma, organizationId))!.customerId;
     for (const subscription of provider.subscriptions) subscription.status = "canceled";

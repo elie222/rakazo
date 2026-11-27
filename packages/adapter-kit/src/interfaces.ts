@@ -666,12 +666,13 @@ export interface BillingProvider {
    * billing the prorated difference now: a change of interval restarts the period today, crediting
    * its unused part. A failed payment leaves the plan unchanged. Returns false without charging
    * when that subscription is no longer an active or trialing `from` plan, is set to cancel, or
-   * monthly credits have started.
+   * monthly credits have started. With `resume` it instead takes only a trial that is set to
+   * cancel, and keeps it: the trial runs on and `to` is billed when it ends.
    */
   changeByokPlan?(
     customerId: string,
     subscriptionId: string,
-    change: { from: BillingByokPlan; to: BillingByokPlan },
+    change: { from: BillingByokPlan; to: BillingByokPlan; resume?: boolean },
   ): Promise<boolean>;
   /** Ends every live own-key plan at its period end. */
   endByokPlans?(customerId: string): Promise<void>;

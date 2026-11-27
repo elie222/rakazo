@@ -266,6 +266,49 @@ describe("Stripe prepaid model credits", () => {
         ?.params.get("recurring[interval]"),
     ).toBe("year");
   });
+  it("keeps a cancelling trial on the chosen plan, and leaves a cancelling paid plan", async () => {
+    const yearly = (status: string, cancellation: Record<string, unknown>) => ({
+      id: "sub_byok",
+      status,
+      metadata: { rakazo_plan: "byok" },
+      created: 1,
+      ...cancellation,
+      items: {
+        data: [
+          {
+            id: "si_byok",
+            quantity: 1,
+            price: { id: "price_year", unit_amount: 14400, recurring: { interval: "year" } },
+          },
+        ],
+      },
+    });
+    const renewal = {
+      from: { tier: "standard", interval: "year", amountCents: 14400 },
+      to: { tier: "standard", interval: "month", amountCents: 1500 },
+      resume: true,
+    } as const;
+    const renew = async (subscription: ReturnType<typeof yearly>) => {
+      const { provider, requests } = fixture({
+        "GET /v1/subscriptions": { data: [subscription], has_more: false },
+        "POST /v1/subscriptions/sub_byok": { id: "sub_byok" },
+      });
+      const renewed = await provider.changeByokPlan("cus_fixture", "sub_byok", renewal);
+      return { renewed, update: requests.find((r) => r.path === "/v1/subscriptions/sub_byok") };
+    };
+    const atPeriodEnd = await renew(yearly("trialing", { cancel_at_period_end: true }));
+    expect(atPeriodEnd.renewed).toBe(true);
+    expect(atPeriodEnd.update!.params.get("cancel_at_period_end")).toBe("false");
+    expect(atPeriodEnd.update!.params.has("cancel_at")).toBe(false);
+    expect(atPeriodEnd.update!.params.get("items[0][id]")).toBe("si_byok");
+    const onDate = await renew(yearly("trialing", { cancel_at: 1900000000 }));
+    expect(onDate.update!.params.get("cancel_at")).toBe("");
+    for (const subscription of [
+      yearly("active", { cancel_at_period_end: true }),
+      yearly("trialing", {}),
+    ])
+      expect(await renew(subscription)).toEqual({ renewed: false, update: undefined });
+  });
   it("moves an own-key plan to another tier at its interval, and reports the tier", async () => {
     const subscription = (lookupKey: string, unitAmount: number) => ({
       id: "sub_byok",
