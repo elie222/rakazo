@@ -1269,12 +1269,38 @@ describe("approvalRuleEffectChoices", () => {
       "require_approval",
       "deny",
     ]);
+    expect(approvalRuleEffectChoices(rule("tool", "mcp__demo__resume"))).toEqual([
+      "require_approval",
+      "deny",
+    ]);
+    expect(approvalRuleEffectChoices(rule("tool", "resume"))).toEqual(["require_approval", "deny"]);
+    expect(approvalRuleEffectChoices(rule("tool", "linkedin_get_resume"))).toEqual([
+      "always_allow",
+      "require_approval",
+      "deny",
+    ]);
     expect(approvalRuleEffectChoices(rule("tool", "shell"))).toEqual([
       "always_allow",
       "require_approval",
       "deny",
     ]);
     expect(approvalRuleEffectChoices(rule("category", "email"))).toEqual([]);
+  });
+
+  it("treats MCP pause-resume tools as requiring explicit approval without matching unrelated names", () => {
+    for (const name of ["resume", "RESUME", "mcp__demo__resume", "mcp__my-server__RESUME"]) {
+      expect(toolRequiresExplicitApproval(name), name).toBe(true);
+      expect(toolRequiresApproval(name, true, true), name).toBe(true);
+    }
+    for (const name of [
+      "mcp____resume",
+      "mcp__demo__resume_playback",
+      "mcp__demo__get_resume",
+      "linkedin_get_resume",
+      "spotify_resume_playback",
+    ]) {
+      expect(toolRequiresExplicitApproval(name), name).toBe(false);
+    }
   });
 });
 

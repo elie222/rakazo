@@ -337,14 +337,14 @@ describe("bot management approval cards", () => {
   });
 
   it("never offers always allow on a tool that needs explicit approval", () => {
-    const block = buildApprovalAskBlock(
-      "effect-1",
-      "set_child_instructions",
-      { bot_id: "bot-a" },
-      [],
-    );
-    if (block.kind !== "ask") throw new Error("expected ask block");
-    expect(block.actions?.map((action) => action.id)).toEqual(["allow", "deny"]);
+    for (const toolName of ["set_child_instructions", "mcp__demo__resume", "resume"]) {
+      const block = buildApprovalAskBlock("effect-1", toolName, { bot_id: "bot-a" }, []);
+      if (block.kind !== "ask") throw new Error("expected ask block");
+      expect(
+        block.actions?.map((action) => action.id),
+        toolName,
+      ).toEqual(["allow", "deny"]);
+    }
   });
 });
 

@@ -592,6 +592,7 @@ export class McpConnector implements ConnectorProvider {
               name: `mcp__${assignment.server.slug}__${tool.name}`,
               description: tool.description ?? tool.name,
               ...mcpToolFields(tool, server.transport === "stdio" ? undefined : server.endpoint),
+              ...(tool.name.trim().toLowerCase() === "resume" ? { explicitApproval: true } : {}),
               route: {
                 connectorId: "mcp",
                 resourceId: assignment.serverId,

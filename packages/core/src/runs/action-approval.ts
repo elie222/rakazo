@@ -229,9 +229,18 @@ function innerToolSlugs(args: unknown): string[] {
   });
 }
 
-/** Security-boundary changes cannot be auto-reviewed or permanently allowed. */
+/** Stateful MCP pause-resume tools confirm a different action per call, so they always ask. */
+export function isMcpResumeTool(toolName: string): boolean {
+  const name = toolName.trim().toLowerCase();
+  return (
+    name === "resume" || (name.startsWith("mcp__") && name.endsWith("__resume") && name.length > 13)
+  );
+}
+
+/** Security-boundary changes and MCP pause-resume tools never auto-review or Always allow. */
 export function toolRequiresExplicitApproval(toolName: string): boolean {
-  return EXPLICIT_APPROVAL_BUILTIN_TOOLS.has(toolName);
+  const name = toolName.trim().toLowerCase();
+  return EXPLICIT_APPROVAL_BUILTIN_TOOLS.has(name) || isMcpResumeTool(name);
 }
 
 /**

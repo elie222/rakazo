@@ -261,6 +261,7 @@ export class InstalledConnectorProvider implements ConnectorProvider {
         });
         return tools.map((tool) => ({
           ...tool,
+          ...(tool.name.trim().toLowerCase() === "resume" ? { explicitApproval: true } : {}),
           route: {
             connectorId: "installed",
             resourceId: install.id,
