@@ -72,4 +72,21 @@ describe("TypecastVoiceProvider", () => {
       "https://api.typecast.ai/v3/voices?model=ssfm-v30",
     );
   });
+
+  it("lists the models its voices support, newest first", async () => {
+    const fetch = stubFetch(() =>
+      Response.json([
+        { voice_id: "tc_1", models: [{ version: "ssfm-v21" }, { version: "ssfm-v31" }] },
+        { voice_id: "tc_2", models: [{ version: "ssfm-v31" }, { version: "ssfm-v30" }, {}] },
+        { voice_id: "tc_3" },
+      ]),
+    );
+
+    await expect(new TypecastVoiceProvider().listModels("tc-key", context)).resolves.toEqual([
+      { id: "ssfm-v31", label: "ssfm-v31" },
+      { id: "ssfm-v30", label: "ssfm-v30" },
+      { id: "ssfm-v21", label: "ssfm-v21" },
+    ]);
+    expect(String(fetch.mock.calls[0]![0])).toBe("https://api.typecast.ai/v3/voices");
+  });
 });

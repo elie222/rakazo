@@ -4,6 +4,7 @@ import type {
   SpeechClip,
   VoiceCapabilities,
   VoiceInfo,
+  VoiceModelInfo,
   VoiceProvider,
   VoiceSynthesizeRequest,
   VoiceVerifyResult,
@@ -49,14 +50,7 @@ export class TypecastVoiceProvider implements VoiceProvider {
     options: { model?: string } = {},
   ): Promise<VoiceInfo[]> {
     // Voices support only some models, so list the ones the connection's model can speak with.
-    const params = new URLSearchParams({ model: options.model?.trim() || MODEL });
-    const res = await fetch(`${API}/v3/voices?${params}`, {
-      headers: typecastHeaders(apiKey),
-      signal: deadlineSignal(20_000, context.signal),
-    });
-    const body = await readVoiceJson(res, { requireValid: res.ok });
-    if (!res.ok) throw voiceRequestError(res.status, "Typecast", "listing voices", body);
-    const voices = Array.isArray(body) ? (body as Array<Record<string, unknown>>) : [];
+    const voices = await fetchVoices(apiKey, context, options.model?.trim() || MODEL);
     return voices
       .map((voice) => ({
         id: typeof voice.voice_id === "string" ? voice.voice_id : "",
@@ -66,6 +60,20 @@ export class TypecastVoiceProvider implements VoiceProvider {
           undefined,
       }))
       .filter((voice) => voice.id);
+  }
+
+  /** Typecast has no model listing, so the models are the ones its voices say they support. */
+  async listModels(apiKey: string, context: AdapterContext): Promise<VoiceModelInfo[]> {
+    const versions = new Set<string>();
+    for (const voice of await fetchVoices(apiKey, context)) {
+      if (!Array.isArray(voice.models)) continue;
+      for (const model of voice.models as Array<{ version?: unknown }>) {
+        if (typeof model?.version === "string" && model.version) versions.add(model.version);
+      }
+    }
+    return [...versions]
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+      .map((id) => ({ id, label: id }));
   }
 
   async synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip> {
@@ -92,6 +100,21 @@ function typecastHeaders(apiKey: string): Record<string, string> {
   return { "X-API-KEY": apiKey, "User-Agent": USER_AGENT };
 }
 
+async function fetchVoices(
+  apiKey: string,
+  context: AdapterContext,
+  model?: string,
+): Promise<Array<Record<string, unknown>>> {
+  const query = model ? `?${new URLSearchParams({ model })}` : "";
+  const res = await fetch(`${API}/v3/voices${query}`, {
+    headers: typecastHeaders(apiKey),
+    signal: deadlineSignal(20_000, context.signal),
+  });
+  const body = await readVoiceJson(res, { requireValid: res.ok });
+  if (!res.ok) throw voiceRequestError(res.status, "Typecast", "listing voices", body);
+  return Array.isArray(body) ? (body as Array<Record<string, unknown>>) : [];
+}
+
 /** The v3 name is localized; older shapes send a plain string. */
 function voiceName(name: unknown): string {
   if (typeof name === "string" && name.trim()) return name.trim();
@@ -116,6 +139,7 @@ export const typecastVoice: VoiceProviderDefinition = {
     description: "Expressive voices that pick up emotion from the text.",
     transcribe: false,
     speechModel: true,
+    speechModels: true,
   },
   create: () => new TypecastVoiceProvider(),
 };
