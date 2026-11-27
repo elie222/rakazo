@@ -1,13 +1,37 @@
-import type { PageAbility, PageAskEvent, PageState } from "@rakazo/contracts";
+import type { PageAbility, PageAppView, PageAskEvent, PageState } from "@rakazo/contracts";
 import {
+  knownPageAbilities,
   PAGE_APP_API_PATH,
-  PageAbilitiesSchema,
   PageAppViewSchema,
   PageAskEventSchema,
+  PageDetailSchema,
+  PageIconColorSchema,
   PageImageSourceSchema,
 } from "@rakazo/contracts";
 import { PAGE_RUNTIME_PATH } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
+
+const strings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+
+/**
+ * The view as this app reads it. An app is a copy of the Rakazo that made it and can trail the
+ * server, so what a newer server adds (a field, an ability, an icon color) is left out, not refused.
+ */
+export function readPageAppView(value: unknown): PageAppView {
+  const raw = (value ?? {}) as { appId?: unknown; approved?: unknown; page?: unknown };
+  const sent = (raw.page ?? {}) as Record<string, unknown>;
+  const page = Object.fromEntries(
+    Object.keys(PageDetailSchema.shape).flatMap((key) => (key in sent ? [[key, sent[key]]] : [])),
+  );
+  page.abilities = knownPageAbilities(strings(sent.abilities));
+  if (!PageIconColorSchema.safeParse(page.iconColor).success) page.iconColor = null;
+  return PageAppViewSchema.parse({
+    appId: raw.appId,
+    approved: knownPageAbilities(strings(raw.approved)),
+    page,
+  });
+}
 
 /** A refused or failed request; 401 means the app's token no longer works. */
 export class PageAppRequestError extends Error {
@@ -53,7 +77,7 @@ export function createPageAppApi(server: string, token: string, fetcher: Fetch =
     request(path, init).then((response) => response.json() as Promise<unknown>);
 
   return {
-    view: async (signal?: AbortSignal) => PageAppViewSchema.parse(await json("", { signal })),
+    view: async (signal?: AbortSignal) => readPageAppView(await json("", { signal })),
     image: async (imageId: string, version: number) =>
       PageImageSourceSchema.parse(
         await json(`/images/${encodeURIComponent(imageId)}?version=${version}`),
@@ -63,7 +87,7 @@ export function createPageAppApi(server: string, token: string, fetcher: Fetch =
     },
     approve: async (abilities: PageAbility[]) => {
       const body = await json("/abilities", { method: "PUT", body: JSON.stringify({ abilities }) });
-      return PageAbilitiesSchema.parse((body as { approved?: unknown }).approved);
+      return knownPageAbilities(strings((body as { approved?: unknown }).approved));
     },
     /** The bot's progress on one question, until its answer or failure. */
     ask: async function* (

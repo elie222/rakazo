@@ -140,5 +140,11 @@ export function createLauncherInstaller(options: {
     }
   }
 
-  return { install, uninstall, refresh };
+  return {
+    install,
+    uninstall,
+    refresh,
+    /** A launcher never moves while its app could open, so there is nothing to wait for. */
+    idle: async () => undefined,
+  };
 }

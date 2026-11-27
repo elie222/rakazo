@@ -23,6 +23,7 @@ import {
   pageAppConfig,
   pageAppDataDir,
   readPageAppToken,
+  readServerOverride,
   removePageAppData,
 } from "./page-apps/page-app-files.js";
 import { launchedPageAppId } from "./page-apps/page-app-launch.js";
@@ -40,7 +41,8 @@ if (launchedId !== null && !existsSync(configFile)) process.exit(0);
 const config = pageAppConfig(JSON.parse(readFileSync(configFile, "utf8")));
 if (!config || (process.platform !== "darwin" && config.appId !== launchedId))
   throw new Error("This page app's config is not usable.");
-const { appId, pageId, title, server } = config;
+const { appId, pageId, title } = config;
+const server = readServerOverride(appId, appData) ?? config.server;
 
 app.setName(title);
 app.setPath("userData", pageAppDataDir(appId, appData));
