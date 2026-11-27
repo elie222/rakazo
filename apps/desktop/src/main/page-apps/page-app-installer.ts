@@ -200,6 +200,9 @@ export function createPageAppInstaller(options: {
         },
       );
       await registry.put({ ...config, bundlePath: placed });
+      // One read marks the token used, so the server's cleanup of never-used apps leaves this one
+      // even if its first launch does not get through.
+      await bestEffort("mark a page app installed", createPageAppApi(server, request.token).view());
       await bestEffort("register page app", registerWithLaunchServices(placed));
       await bestEffort("open page app", options.open(placed));
       return true;
