@@ -1,9 +1,8 @@
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { desktopLocaleCatalogFiles, emitDesktopLocaleCatalogs } from "./locale-catalogs.ts";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const root = path.resolve(import.meta.dirname, "..");
 
 const localeTags = await emitDesktopLocaleCatalogs(path.join(root, "dist", "locales"));
 
@@ -17,7 +16,7 @@ const result = await build({
   target: "node24",
   sourcemap: true,
   metafile: true,
-  plugins: [desktopLocaleCatalogFiles(root, localeTags)],
+  plugins: [desktopLocaleCatalogFiles(localeTags)],
   banner: {
     js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
   },
@@ -30,7 +29,7 @@ const result = await build({
   },
 });
 
-const leakedCatalogs = Object.keys(result.metafile?.inputs ?? {}).filter(
+const leakedCatalogs = Object.keys(result.metafile.inputs).filter(
   (file) => file.includes("src/main/locales/") || file.endsWith("src/main/locale-catalogs.ts"),
 );
 if (leakedCatalogs.length > 0) {

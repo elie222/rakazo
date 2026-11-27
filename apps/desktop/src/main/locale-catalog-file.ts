@@ -1,47 +1,30 @@
 import { readFileSync } from "node:fs";
-import path from "node:path";
+import type { DesktopCatalogTag, DesktopMessages } from "./locale-catalogs.js";
 
-/** A catalog file name is one language tag plus `.json`. Dots and slashes never match. */
-const CATALOG_TAG = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/;
+const catalogs = new Map<DesktopCatalogTag, DesktopMessages | undefined>();
 
-export function isDesktopCatalogTag(locale: string): boolean {
-  return CATALOG_TAG.test(locale);
-}
+export function loadDesktopCatalog(locale: DesktopCatalogTag): DesktopMessages | undefined {
+  if (catalogs.has(locale)) return catalogs.get(locale);
 
-/**
- * Reads `directory/<locale>.json`. `locale` must be one of `allowed` and a language tag,
- * so the path is never built from an arbitrary string. A missing or unreadable file
- * returns `undefined` and a stderr warning. Electron main does not install a logger,
- * so `console.warn` is what shows up. Startup continues.
- */
-export function readDesktopLocaleCatalog(
-  directory: string,
-  locale: string,
-  allowed: readonly string[],
-): Readonly<Record<string, string>> | undefined {
-  if (!allowed.includes(locale) || !isDesktopCatalogTag(locale)) return {};
-  const root = path.resolve(directory);
-  const file = path.join(root, `${locale}.json`);
-  if (path.dirname(file) !== root) return {};
+  let messages: DesktopMessages | undefined;
   try {
-    return messagesFromJson(readFileSync(file, "utf8"));
+    // The locale comes from the bundled list. Electron's fs also reads files inside the ASAR.
+    const file = new URL(`./locales/${locale}.json`, import.meta.url);
+    const catalog: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (!isMessageCatalog(catalog)) throw new Error("Expected a desktop translation catalog");
+    messages = catalog;
   } catch (error) {
-    console.warn(`desktop locale catalog unavailable: ${locale}`, error);
-    return undefined;
+    console.warn(`Desktop locale catalog unavailable: ${locale}`, error);
   }
+  catalogs.set(locale, messages);
+  return messages;
 }
 
-function messagesFromJson(raw: string): Readonly<Record<string, string>> {
-  const parsed: unknown = JSON.parse(raw);
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("desktop locale catalog is not an object");
-  }
-  const messages: Record<string, string> = Object.create(null);
-  for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value !== "string") {
-      throw new Error("desktop locale catalog has a value that is not a string");
-    }
-    messages[key] = value;
-  }
-  return messages;
+function isMessageCatalog(catalog: unknown): catalog is DesktopMessages {
+  return (
+    catalog !== null &&
+    typeof catalog === "object" &&
+    !Array.isArray(catalog) &&
+    Object.values(catalog).every((message) => typeof message === "string")
+  );
 }

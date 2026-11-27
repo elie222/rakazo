@@ -14,11 +14,7 @@ import { TR_MESSAGES } from "./locales/tr.js";
 import { ZH_CN_MESSAGES } from "./locales/zh-CN.js";
 import { ZH_TW_MESSAGES } from "./locales/zh-TW.js";
 
-/**
- * Every language the app offers except English, which is the source text.
- * Vitest and `tsx` use this map. The desktop build replaces the module with a
- * disk loader so `dist/main.js` does not contain these catalogs.
- */
+// The desktop build replaces these exports with a loader for the packaged JSON files.
 export const CATALOGS = {
   de: DE_MESSAGES,
   es: ES_MESSAGES,
@@ -35,4 +31,12 @@ export const CATALOGS = {
   tr: TR_MESSAGES,
   "zh-CN": ZH_CN_MESSAGES,
   "zh-TW": ZH_TW_MESSAGES,
-} as const satisfies Record<string, Readonly<Record<string, string>>>;
+} as const satisfies Record<string, DesktopMessages>;
+
+export type DesktopMessages = Readonly<Record<string, string>>;
+export type DesktopCatalogTag = keyof typeof CATALOGS;
+export const desktopCatalogTags = Object.keys(CATALOGS) as DesktopCatalogTag[];
+
+export function loadDesktopCatalog(locale: DesktopCatalogTag): DesktopMessages | undefined {
+  return CATALOGS[locale];
+}

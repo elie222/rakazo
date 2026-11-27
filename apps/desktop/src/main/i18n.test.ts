@@ -5,7 +5,6 @@ import path from "node:path";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  CATALOGS,
   createLocaleHandler,
   desktopDirection,
   desktopLocale,
@@ -16,6 +15,7 @@ import {
   t,
   withDetail,
 } from "./i18n.js";
+import { CATALOGS } from "./locale-catalogs.js";
 import { ES_MESSAGES } from "./locales/es.js";
 import { HE_MESSAGES } from "./locales/he.js";
 import { PL_MESSAGES } from "./locales/pl.js";
