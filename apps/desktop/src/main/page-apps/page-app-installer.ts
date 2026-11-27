@@ -137,7 +137,8 @@ export function createPageAppInstaller(options: {
   let queue: Promise<unknown> = Promise.resolve();
   const exclusive = <T>(work: () => Promise<T>): Promise<T> => {
     const next = queue.then(work, work);
-    queue = next.catch(() => undefined);
+    // The caller gets the failure; the next one waits only for this one to settle.
+    queue = Promise.allSettled([next]);
     return next;
   };
 
