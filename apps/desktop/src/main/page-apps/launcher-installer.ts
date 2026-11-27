@@ -254,6 +254,9 @@ export function createLauncherInstaller(options: {
         await bestEffort("forget an unfinished page app", forget({ ...config, bundlePath: "" }));
         continue;
       }
+      // Its launcher, if one survived, can never open a page again.
+      const dead = await launcher.find(appId);
+      if (dead) await bestEffort("remove a dead page app launcher", launcher.remove(dead));
       await bestEffort("remove page app data", removePageAppData(appId, appData));
     }
   }
