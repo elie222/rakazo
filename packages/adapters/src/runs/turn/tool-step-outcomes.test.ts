@@ -1870,6 +1870,20 @@ describe("tool step outcomes", () => {
     expect(sanitizeConnectorError(new Error('Bearer [redacted]{"ok":true}'))).toBe(
       'Bearer [redacted]{"ok":true}',
     );
+    for (const attached of [
+      'Bearer "fixture"[opaque-123]',
+      "Bearer [redacted][opaque-123]",
+      'Bearer "fixture"{opaque-123}',
+      "Bearer [redacted]{opaque-123}",
+      'Bearer "fixture"x="opaque-123"',
+      'Bearer [redacted]x="opaque-123"',
+      'Bearer "fixture"secret="opaque-123"',
+      'Bearer [redacted]secret="opaque-123"',
+      'Bearer "fixture"auth:opaque-123',
+      String.raw`Bearer\n"fixture"secret="opaque-123"`,
+    ]) {
+      expect(sanitizeConnectorError(new Error(attached))).not.toContain("opaque-123");
+    }
     for (const sep of [String.raw`\n`, String.raw`\r\n`, String.raw`\t `, String.raw` \t`]) {
       expect(sanitizeConnectorError(new Error(`Bearer${sep}opaque-123`))).toBe("Bearer [redacted]");
     }

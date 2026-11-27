@@ -15,11 +15,11 @@ const CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS = new RegExp(
   `Bearer(?:[^\\S\\r\\n]+(?!(?:\\s|\\\\[nrt]|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))\\S|\\s+(?!(?:\\s|\\\\[nrt]|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))\\S|\\s*\\\\[nrt](?:\\s|\\\\[nrt])*(?!(?:\\s|\\\\[nrt]|${CONNECTOR_RAW_JSON_CONTAINER_START.source}|\\S*Bearer(?:\\s|\\\\[nrt])+\\S))(?:\\\\"|["']|\\\\(?![nrt"\\\\])|[^\\s"',;&}:\\]\\\\]))`,
 );
 const CONNECTOR_ADJACENT_CREDENTIAL_START =
-  /(?:Bearer\s|(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:])/;
+  /(?:Bearer\s|(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:]\s*(?:\[redacted\]|["']\[redacted\]["']))/;
 const CONNECTOR_RAW_UNIT =
   /(?:[=:](?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)(?:\\[^\r\n]|[^"\\\r\n])+"?|'(?!\s*[:,}\]\r\n]|$)(?:\\[^\r\n]|[^'"\\\r\n])+'?)|=|:(?!\s|$|["']|\\")|\[redacted\]|\[(?!redacted\])|\\(?![nrt"\\])|[^\s"',;&}=:\]\\[])/;
 const CONNECTOR_SUFFIX_UNIT = new RegExp(
-  `(?:(?!${CONNECTOR_ADJACENT_CREDENTIAL_START.source})(?:\\\\(?![nrt"\\\\])|[^\\s"',;&}{[\\]:\\\\]))`,
+  `(?:(?!${CONNECTOR_ADJACENT_CREDENTIAL_START.source}|${CONNECTOR_RAW_JSON_CONTAINER_START.source})${CONNECTOR_RAW_UNIT.source})`,
 );
 const CONNECTOR_PLAIN_BEARER_RE = new RegExp(
   `Bearer\\s+(?!${CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${CONNECTOR_SUFFIX_UNIT.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${CONNECTOR_SUFFIX_UNIT.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${CONNECTOR_SUFFIX_UNIT.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${CONNECTOR_SUFFIX_UNIT.source}*)?|\\[redacted\\]${CONNECTOR_SUFFIX_UNIT.source}+|(?:${CONNECTOR_RAW_UNIT.source})+)`,
