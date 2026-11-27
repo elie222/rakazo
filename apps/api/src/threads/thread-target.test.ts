@@ -3175,9 +3175,16 @@ describe("sendThreadMessage", () => {
         trigger: string;
       }> = [],
       replyTo?: { role: string; botId: string | null },
-      pilotOwnerBot?: { modelProvider: string; modelId: string; modelCredentialId: string } | null,
+      pilotOwnerBot?: {
+        modelProvider: string;
+        modelId: string;
+        modelCredentialId: string;
+        primaryRuntimePreference?: string | null;
+        primaryRuntimeRevision?: number;
+      } | null,
       observation?: { assert: (tx: { message: { create: ReturnType<typeof vi.fn> } }) => void },
       signedInApp = true,
+      betaPreference: string | null = pilotOwnerBot?.primaryRuntimePreference ?? null,
     ) {
       let messageSeq = 0;
       let eventSeq = 0;
@@ -3241,7 +3248,14 @@ describe("sendThreadMessage", () => {
             id: "group-1",
             members: [
               { bot: { id: "bot-a", name: "Alpha", color: null } },
-              { bot: { id: "bot-b", name: "Beta", color: null } },
+              {
+                bot: {
+                  id: "bot-b",
+                  name: "Beta",
+                  color: null,
+                  primaryRuntimePreference: betaPreference,
+                },
+              },
             ],
           }),
           update: vi.fn().mockResolvedValue({ id: "group-1" }),
@@ -3357,11 +3371,17 @@ describe("sendThreadMessage", () => {
             plan.mentionPayload,
             [],
             undefined,
-            model,
+            { ...model, primaryRuntimeRevision: 3 },
           );
           expect(tx.bot.findFirst).toHaveBeenCalledExactlyOnceWith({
             where: { id: "bot-b", spaceId: "workspace-1", userId: "user-1", archivedAt: null },
-            select: { modelProvider: true, modelId: true, modelCredentialId: true },
+            select: {
+              modelProvider: true,
+              modelId: true,
+              modelCredentialId: true,
+              primaryRuntimePreference: true,
+              primaryRuntimeRevision: true,
+            },
           });
           expect(created).toEqual([
             expect.objectContaining({
@@ -3369,6 +3389,7 @@ describe("sendThreadMessage", () => {
               botId: "bot-b",
               modelPinned: true,
               primaryRuntime: expect.any(String),
+              primaryRuntimeRevision: 3,
             }),
           ]);
         }),
@@ -3449,6 +3470,39 @@ describe("sendThreadMessage", () => {
         vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "");
         await expect(
           sendToGroup("how will you handle this?", [{ kind: "bot", id: "bot-b" }]),
+        ).rejects.toThrow("not available on this deployment");
+      }));
+
+    it("keeps an explicitly Pi bot eligible for ordinary group messages", async () =>
+      withGroupPilot(async () => {
+        const { created } = await sendToGroup(
+          "ordinary group send",
+          undefined,
+          [],
+          undefined,
+          null,
+          undefined,
+          false,
+          "pi",
+        );
+        expect(created.map((run) => run.botId)).toEqual(["bot-a", "bot-b"]);
+        expect(created[1]).not.toHaveProperty("primaryRuntime");
+      }));
+
+    it("does not route a saved native choice through Pi when the group pilot is off", async () =>
+      withGroupPilot(async () => {
+        vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", "");
+        await expect(
+          sendToGroup(
+            "@Beta current plan?",
+            [{ kind: "bot", id: "bot-b" }],
+            [],
+            undefined,
+            null,
+            { assert: (tx) => expect(tx.message.create).not.toHaveBeenCalled() },
+            true,
+            "claude-agent",
+          ),
         ).rejects.toThrow("not available on this deployment");
       }));
 

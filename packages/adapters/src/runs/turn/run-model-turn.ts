@@ -37,7 +37,7 @@ import { applyTool } from "../tools/run-tools.js";
 import { collectOutboundPilotText } from "./primary-outbound-handoff.js";
 import { pilotRoutineRequest } from "./primary-routine-pilot.js";
 import {
-  assertPrimaryDmRuntimePin,
+  assertPrimaryChatRuntimePin,
   loadPilotRuntime,
   pilotConversation,
   pilotDmResumeGrant,
@@ -127,12 +127,16 @@ export async function runModelTurn(
             secrets: request.secrets,
           }
         : undefined;
-    if (dmRequest && run.primaryRuntime) {
+    if (run.primaryRuntime && (dmRequest || (groupRequest && run.trigger === "user"))) {
       const bot = await deps.prisma.bot.findFirst({
         where: { id: run.botId, spaceId: run.spaceId, userId: run.userId, archivedAt: null },
         select: { primaryRuntimePreference: true, primaryRuntimeRevision: true },
       });
-      assertPrimaryDmRuntimePin({ ...run, primaryRuntime: run.primaryRuntime }, bot);
+      assertPrimaryChatRuntimePin(
+        { ...run, primaryRuntime: run.primaryRuntime },
+        bot,
+        groupRequest ? "group" : "dm",
+      );
     }
     const configuredGrant = dmRequest ? pilotDmResumeGrant(run.botId) : undefined;
     const grant = configuredGrant === run.nativeDmResumeGrant ? configuredGrant : undefined;

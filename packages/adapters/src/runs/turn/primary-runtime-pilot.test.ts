@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  assertPrimaryDmRuntimePin,
+  assertPrimaryChatRuntimePin,
   groupPilotRuntimeForBot,
   loadPilotRuntime,
   pilotConversation,
@@ -15,7 +15,13 @@ const bot = {
   modelCredentialId: "key-a",
 };
 const id = pilotRuntimeForBot("bot", { PRIMARY_RUNTIME_PILOT_BOT_IDS: "bot" })!;
-const run = { ...pilotRunModel(id, bot)!, botId: "bot", trigger: "user", routineId: null };
+const run = {
+  ...pilotRunModel(id, bot)!,
+  botId: "bot",
+  trigger: "user",
+  routineId: null,
+  primaryRuntimeRevision: 0,
+};
 const model = {
   provider: bot.modelProvider,
   id: bot.modelId,
@@ -35,10 +41,22 @@ it("rejects an old DM pin after switching away and back to the same native runti
   vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", run.botId);
   const pin = { ...run, primaryRuntimeRevision: 1 };
   const current = { primaryRuntimePreference: id, primaryRuntimeRevision: 3 };
-  expect(() => assertPrimaryDmRuntimePin(pin, current)).toThrow("runtime selection has changed");
+  expect(() => assertPrimaryChatRuntimePin(pin, current, "dm")).toThrow(
+    "runtime selection has changed",
+  );
   expect(() =>
-    assertPrimaryDmRuntimePin({ ...pin, primaryRuntimeRevision: 3 }, current),
+    assertPrimaryChatRuntimePin({ ...pin, primaryRuntimeRevision: 3 }, current, "dm"),
   ).not.toThrow();
+});
+
+it("rejects a group run with a stale native revision after the same runtime is reselected", () => {
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", run.botId);
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", run.botId);
+  const pin = { ...run, primaryRuntimeRevision: 1 };
+  const current = { primaryRuntimePreference: id, primaryRuntimeRevision: 3 };
+  expect(() => assertPrimaryChatRuntimePin(pin, current, "group")).toThrow(
+    "runtime selection has changed",
+  );
 });
 
 it("rejects changed credentials rather than resolving another account", async () => {

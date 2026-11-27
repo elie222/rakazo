@@ -160,7 +160,11 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
         expectedRevision,
       }),
     );
-  const directSend = (target: ThreadTarget, signedInApp: boolean) =>
+  const directSend = (
+    target: ThreadTarget,
+    signedInApp: boolean,
+    mentions?: Parameters<typeof sendThreadMessage>[3]["mentions"],
+  ) =>
     runAsTenant(actor, () =>
       sendThreadMessage(
         {
@@ -172,7 +176,7 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
         },
         actor,
         target,
-        { text: "Use the selected runtime.", clientNonce: randomUUID() },
+        { text: "Use the selected runtime.", clientNonce: randomUUID(), mentions },
       ),
     );
 
@@ -207,6 +211,71 @@ describe.skipIf(!enabled)("send model gate with a bot's own model (PostgreSQL)",
         modelPinned: true,
         modelCredentialId: credential.id,
       });
+    },
+  );
+
+  it.skipIf(process.platform !== "linux")(
+    "stores a new group runtime pin after switching away and back, without removing chat history",
+    async () => {
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", botId);
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_GROUP_BOT_IDS", botId);
+      vi.stubEnv("PRIMARY_RUNTIME_PILOT_LAUNCHER", process.execPath);
+      const native = pilotRuntimeForBot(botId)!;
+      const credential = await system.userModelCredential.create({
+        data: {
+          userId: actor.userId,
+          provider: "anthropic",
+          label: "Group fixture",
+          secretId: "unused-group-fixture",
+        },
+      });
+      await system.bot.update({
+        where: { id: botId },
+        data: {
+          modelProvider: "anthropic",
+          modelId: "claude-sonnet-4-6",
+          modelCredentialId: credential.id,
+        },
+      });
+      const peer = await system.bot.create({
+        data: { spaceId: actor.spaceId, userId: actor.userId, name: "Peer", color: "primary" },
+      });
+      const group = await system.chatGroup.create({
+        data: {
+          spaceId: actor.spaceId,
+          userId: actor.userId,
+          name: "Group",
+          members: { create: [{ botId }, { botId: peer.id }] },
+          thread: { create: { spaceId: actor.spaceId, userId: actor.userId } },
+        },
+      });
+      const mention = async () => {
+        const target = await runAsTenant(actor, () =>
+          resolveThreadTarget(prisma, actor, { groupId: group.id }),
+        );
+        const { runId } = await directSend(target, true, [{ kind: "bot", id: botId }]);
+        return system.run.findUniqueOrThrow({ where: { id: runId! } });
+      };
+      await changeRuntime(native, 0);
+      const prior = await mention();
+      expect(prior).toMatchObject({
+        botId,
+        primaryRuntime: native,
+        primaryRuntimeRevision: 1,
+        modelCredentialId: credential.id,
+      });
+      await system.run.update({ where: { id: prior.id }, data: { status: "completed" } });
+      await changeRuntime("pi", 1);
+      await changeRuntime(native, 2);
+
+      const current = await mention();
+      expect(current).toMatchObject({
+        botId,
+        primaryRuntime: native,
+        primaryRuntimeRevision: 3,
+        modelCredentialId: credential.id,
+      });
+      expect(await userMessages(prior.threadId)).toBe(2);
     },
   );
 

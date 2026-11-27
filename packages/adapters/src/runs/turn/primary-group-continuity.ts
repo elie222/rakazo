@@ -25,6 +25,7 @@ export async function primaryGroupHistory(
     threadId: string;
     userId: string;
     primaryRuntime: string;
+    primaryRuntimeRevision: number;
     modelProvider: string;
     modelId: string;
     modelCredentialId: string;
@@ -38,6 +39,7 @@ export async function primaryGroupHistory(
     threadId,
     userId,
     primaryRuntime,
+    primaryRuntimeRevision,
     modelProvider,
     modelId,
     modelCredentialId,
@@ -51,6 +53,7 @@ export async function primaryGroupHistory(
       threadId,
       userId,
       primaryRuntime,
+      primaryRuntimeRevision,
       modelProvider,
       modelId,
       modelCredentialId,

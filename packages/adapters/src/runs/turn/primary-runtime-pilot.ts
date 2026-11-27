@@ -33,24 +33,26 @@ export function resolvePrimaryDmRuntime(
   return enrolled ? ({ kind: "native", id: enrolled } as const) : ({ kind: "default" } as const);
 }
 
-export class PrimaryDmRuntimeChangedError extends Error {
+export class PrimaryChatRuntimeChangedError extends Error {
   constructor() {
     super("The bot's primary runtime selection has changed or is unavailable. Send a new message.");
-    this.name = "PrimaryDmRuntimeChangedError";
+    this.name = "PrimaryChatRuntimeChangedError";
   }
 }
 
-export function assertPrimaryDmRuntimePin(
+export function assertPrimaryChatRuntimePin(
   run: { botId: string; primaryRuntime: string; primaryRuntimeRevision: number },
   bot: DmRuntimePreference | null,
+  scope: "dm" | "group",
 ) {
-  const selection = bot && resolvePrimaryDmRuntime({ ...bot, id: run.botId });
+  const resolve = scope === "group" ? resolvePrimaryGroupRuntime : resolvePrimaryDmRuntime;
+  const selection = bot && resolve({ ...bot, id: run.botId });
   if (
     selection?.kind !== "native" ||
     selection.id !== run.primaryRuntime ||
     bot?.primaryRuntimeRevision !== run.primaryRuntimeRevision
   )
-    throw new PrimaryDmRuntimeChangedError();
+    throw new PrimaryChatRuntimeChangedError();
 }
 
 /** Set only for a bot whose owner explicitly agreed to private native continuity. */
@@ -78,6 +80,21 @@ export function groupPilotRuntimeForBot(botId: string, environment = process.env
   return groupPilotEnrolled(botId, environment)
     ? pilotRuntimeForBot(botId, environment)
     : undefined;
+}
+
+/** Group rollout is independent; an explicit native choice never becomes a regular group turn. */
+export function resolvePrimaryGroupRuntime(
+  bot: { id: string; primaryRuntimePreference: string | null },
+  environment = process.env,
+) {
+  if (!groupPilotEnrolled(bot.id, environment))
+    return bot.primaryRuntimePreference === null || bot.primaryRuntimePreference === "pi"
+      ? ({ kind: "default" } as const)
+      : ({ kind: "unavailable" } as const);
+  const selection = resolvePrimaryDmRuntime(bot, environment);
+  if (selection.kind === "default" && bot.primaryRuntimePreference !== "pi")
+    return { kind: "unavailable" } as const;
+  return selection;
 }
 
 /** Model-authored tasks are a separate opt-in from human group mentions. */
@@ -277,6 +294,7 @@ export async function pilotGroupRequest(
       threadId: string;
       sourceMessageId: string | null;
       primaryRuntime: string;
+      primaryRuntimeRevision: number;
       modelProvider: string | null;
       modelId: string | null;
       modelCredentialId: string | null;

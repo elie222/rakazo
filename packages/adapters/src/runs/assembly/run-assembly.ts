@@ -6,7 +6,7 @@ import { recentMeetingContext } from "../../meetings/meeting-chat.prompt.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { mayOpenModelStream, requeueComputerRun } from "../lifecycle/run-lifecycle.js";
-import { assertPrimaryDmRuntimePin } from "../turn/primary-runtime-pilot.js";
+import { assertPrimaryChatRuntimePin } from "../turn/primary-runtime-pilot.js";
 import { takeoverCheckpointOf } from "../turn/takeover-resume.js";
 import {
   loadComputerInstructions,
@@ -26,8 +26,16 @@ export async function assembleRunTurn(services: RunExecutorServices, hold: RunHo
   const saved = await loadSavedTurn(services, hold);
   const records = await loadRunRecords(services, hold, { saved });
   const { run } = hold;
-  if (run.primaryRuntime && run.trigger === "user" && records.thread.botId === run.botId)
-    assertPrimaryDmRuntimePin({ ...run, primaryRuntime: run.primaryRuntime }, records.bot);
+  if (
+    run.primaryRuntime &&
+    run.trigger === "user" &&
+    (records.thread.botId === run.botId || records.thread.groupId)
+  )
+    assertPrimaryChatRuntimePin(
+      { ...run, primaryRuntime: run.primaryRuntime },
+      records.bot,
+      records.thread.groupId ? "group" : "dm",
+    );
   const connected = await connectRun(services, hold, { records });
   const thread = await readThreadHistory(hold, { records });
   const turnContext = await loadTurnContext(hold, { records, connected, thread });

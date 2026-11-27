@@ -38,7 +38,7 @@ import {
 } from "../assembly/run-computer.js";
 import type { RunComputerUseState, RunLeaseState } from "../assembly/run-context.js";
 import type { ExecutorDeps } from "../executor/executor-deps.js";
-import { PrimaryDmRuntimeChangedError } from "../turn/primary-runtime-pilot.js";
+import { PrimaryChatRuntimeChangedError } from "../turn/primary-runtime-pilot.js";
 import type { TakeoverResumeCheckpoint } from "../turn/takeover-resume.js";
 import { continueRunClaimFence, TAKEOVER_RESUME_CHECKPOINTS } from "../turn/takeover-resume.js";
 import { wakeRun } from "../wakeups/wake-run.js";
@@ -513,7 +513,7 @@ export async function retryRunSetup(
   // Only Recover brings this computer back, so the run ends now rather than starting it again.
   const recoveryRequired = computerNeedsRecovery(setupError);
   const diskTooLarge = setupError instanceof SandboxDiskTooLargeError;
-  const runtimeChanged = setupError instanceof PrimaryDmRuntimeChangedError;
+  const runtimeChanged = setupError instanceof PrimaryChatRuntimeChangedError;
   const setupMessage = redactSecrets(
     recoveryRequired
       ? computerRunError(setupError)
