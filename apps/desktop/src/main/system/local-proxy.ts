@@ -14,6 +14,40 @@ import { handleIpc } from "../ipc/ipc.js";
 const PREFS_FILE = "local-proxy.json";
 const MAX_CONNECT_TIMEOUT_MS = 15_000;
 const DNS_LOOKUP_TIMEOUT_MS = 5_000;
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+function stripHopByHopHeaders(headers: http.IncomingHttpHeaders): http.OutgoingHttpHeaders {
+  const nominated = new Set<string>();
+  const connectionHeader = headers.connection;
+  const rawTokens = Array.isArray(connectionHeader)
+    ? connectionHeader
+    : typeof connectionHeader === "string"
+      ? [connectionHeader]
+      : [];
+  for (const raw of rawTokens) {
+    for (const token of raw.split(",")) {
+      const clean = token.trim().toLowerCase();
+      if (clean) nominated.add(clean);
+    }
+  }
+  const result: http.OutgoingHttpHeaders = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase();
+    if (HOP_BY_HOP_HEADERS.has(lower) || nominated.has(lower)) continue;
+    if (value !== undefined) result[key] = value;
+  }
+  return result;
+}
 
 export type LocalProxyLookup = (
   hostname: string,
@@ -37,25 +71,27 @@ export function isBlockedProxyAddress(address: string): boolean {
   return false;
 }
 
+type ResolveTargetResult = { kind: "ok"; ip: string } | { kind: "blocked" } | { kind: "failed" };
+
 async function resolveSafeTarget(
   hostname: string,
   dnsLookup: LocalProxyLookup,
   signal: AbortSignal,
   dnsTimeoutMs: number,
-): Promise<string | null> {
+): Promise<ResolveTargetResult> {
   const clean = hostname.trim().replace(/^\[|\]$/g, "");
-  if (!clean || isBlockedProxyAddress(clean)) return null;
-  if (net.isIP(clean)) return clean;
+  if (!clean || isBlockedProxyAddress(clean)) return { kind: "blocked" };
+  if (net.isIP(clean)) return { kind: "ok", ip: clean };
   try {
     const records = await withAbort(
       dnsLookup(clean, { all: true }),
       deadlineSignal(dnsTimeoutMs, signal),
     );
-    if (records.length === 0) return null;
-    if (records.some((record) => isNonPublicAddress(record.address))) return null;
-    return records[0]!.address;
+    if (records.length === 0) return { kind: "failed" };
+    if (records.some((record) => isNonPublicAddress(record.address))) return { kind: "blocked" };
+    return { kind: "ok", ip: records[0]!.address };
   } catch {
-    return null;
+    return { kind: "failed" };
   }
 }
 
@@ -82,7 +118,10 @@ async function readSavedEnabled(userDataDir: string): Promise<boolean> {
     const raw = await readFile(path.join(userDataDir, PREFS_FILE), "utf8");
     const parsed = JSON.parse(raw) as { enabled?: unknown };
     return parsed.enabled === true;
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | null)?.code !== "ENOENT") {
+      void bestEffort("read desktop local web proxy state", Promise.reject(error));
+    }
     return false;
   }
 }
@@ -162,7 +201,7 @@ export async function createLocalWebProxy(options: {
           res.end("Only http requests or CONNECT tunnels are supported");
           return;
         }
-        const safeIp = await resolveSafeTarget(
+        const resolved = await resolveSafeTarget(
           parsed.hostname,
           dnsLookup,
           currentAbort.signal,
@@ -172,17 +211,20 @@ export async function createLocalWebProxy(options: {
           if (!res.destroyed) res.destroy();
           return;
         }
-        if (!safeIp) {
+        if (resolved.kind === "blocked") {
           res.writeHead(403, { "Content-Type": "text/plain" });
           res.end("Destination address is not allowed");
           return;
         }
-        const headers = { ...req.headers };
-        delete headers["proxy-connection"];
-        delete headers["proxy-authorization"];
+        if (resolved.kind === "failed") {
+          res.writeHead(502, { "Content-Type": "text/plain" });
+          res.end("Could not resolve destination host");
+          return;
+        }
+        const headers = stripHopByHopHeaders(req.headers);
         const upstream = http.request(
           {
-            host: safeIp,
+            host: resolved.ip,
             port: parsed.port ? Number.parseInt(parsed.port, 10) : 80,
             method: req.method,
             path: `${parsed.pathname}${parsed.search}`,
@@ -190,7 +232,7 @@ export async function createLocalWebProxy(options: {
             timeout: connectTimeoutMs,
           },
           (upstreamRes) => {
-            res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers);
+            res.writeHead(upstreamRes.statusCode ?? 502, stripHopByHopHeaders(upstreamRes.headers));
             upstreamRes.pipe(res);
           },
         );
@@ -203,7 +245,7 @@ export async function createLocalWebProxy(options: {
           if (!res.headersSent) res.writeHead(502, { "Content-Type": "text/plain" });
           if (!res.writableEnded) res.end("Upstream connection failed");
         });
-        req.once("close", () => {
+        res.once("close", () => {
           if (!res.writableEnded) upstream.destroy();
         });
         req.pipe(upstream);
@@ -214,13 +256,15 @@ export async function createLocalWebProxy(options: {
 
     nextServer.on("connect", (req, clientSocket, head) => {
       trackSocket(clientSocket);
+      let activeUpstream: net.Socket | null = null;
+      clientSocket.on("error", () => activeUpstream?.destroy());
       void (async () => {
         const target = parseAuthority(req.url ?? "");
         if (!target) {
           clientSocket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
           return;
         }
-        const safeIp = await resolveSafeTarget(
+        const resolved = await resolveSafeTarget(
           target.host,
           dnsLookup,
           currentAbort.signal,
@@ -230,11 +274,15 @@ export async function createLocalWebProxy(options: {
           if (!clientSocket.destroyed) clientSocket.destroy();
           return;
         }
-        if (!safeIp) {
+        if (resolved.kind === "blocked") {
           clientSocket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
           return;
         }
-        const upstream = net.connect(target.port, safeIp, () => {
+        if (resolved.kind === "failed") {
+          clientSocket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+          return;
+        }
+        const upstream = net.connect(target.port, resolved.ip, () => {
           if (currentAbort.signal.aborted || clientSocket.destroyed) {
             upstream.destroy();
             return;
@@ -244,12 +292,18 @@ export async function createLocalWebProxy(options: {
           upstream.pipe(clientSocket);
           clientSocket.pipe(upstream);
         });
+        activeUpstream = upstream;
         trackSocket(upstream);
-        upstream.setTimeout(connectTimeoutMs, () => upstream.destroy());
+        upstream.setTimeout(connectTimeoutMs, () => {
+          upstream.destroy();
+          if (!clientSocket.destroyed) clientSocket.destroy();
+        });
+        upstream.once("close", () => {
+          if (!clientSocket.destroyed) clientSocket.destroy();
+        });
         upstream.on("error", () => {
           if (!clientSocket.destroyed) clientSocket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
         });
-        clientSocket.on("error", () => upstream.destroy());
       })();
     });
 
@@ -273,13 +327,12 @@ export async function createLocalWebProxy(options: {
 
   const saved = await readSavedEnabled(options.userDataDir);
   if (saved) {
-    try {
-      await startServer();
-      enabled = true;
-    } catch {
-      enabled = false;
-      url = null;
-    }
+    const started = await bestEffort(
+      "start desktop local web proxy",
+      startServer().then(() => true),
+    );
+    enabled = started === true;
+    if (!enabled) url = null;
   }
 
   return {
@@ -289,12 +342,19 @@ export async function createLocalWebProxy(options: {
         if (closed) return { enabled: false, url: null };
         if (next) {
           await startServer();
+          try {
+            await writeSavedEnabled(options.userDataDir, true);
+          } catch (error) {
+            await stopServer();
+            enabled = false;
+            throw error;
+          }
           enabled = true;
         } else {
+          await writeSavedEnabled(options.userDataDir, false);
           await stopServer();
           enabled = false;
         }
-        await writeSavedEnabled(options.userDataDir, enabled);
         return { enabled, url };
       });
     },

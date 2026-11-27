@@ -118,7 +118,7 @@ describe("desktop local web proxy", () => {
       req.on("error", reject);
       req.end();
     });
-    expect(status).toBe(403);
+    expect(status).toBe(502);
     await proxy.close();
   });
 });
