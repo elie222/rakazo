@@ -3002,7 +3002,6 @@ describe("compatible gateway connection reuse", () => {
     const keyPath = join(directory, "key.pem");
     const certPath = join(directory, "cert.pem");
     const previous = getCACertificates("default");
-    const previousReject = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
     let server: Server | undefined;
     try {
       execFileSync(
@@ -3050,20 +3049,18 @@ describe("compatible gateway connection reuse", () => {
       // process trust settings only once the socket opens, so change them in
       // that gap and leave them in place through the dial.
       const first = readModels(safeFetch, url);
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+      vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
       setDefaultCACertificates([...previous, certificate]);
       await expect(first).rejects.toMatchObject({
         cause: { code: "DEPTH_ZERO_SELF_SIGNED_CERT" },
       });
-      if (previousReject === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-      else process.env.NODE_TLS_REJECT_UNAUTHORIZED = previousReject;
+      vi.unstubAllEnvs();
       setDefaultCACertificates(previous);
       await expect(readModels(safeFetch, url)).rejects.toMatchObject({
         cause: { code: "DEPTH_ZERO_SELF_SIGNED_CERT" },
       });
     } finally {
-      if (previousReject === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-      else process.env.NODE_TLS_REJECT_UNAUTHORIZED = previousReject;
+      vi.unstubAllEnvs();
       setDefaultCACertificates(previous);
       if (server) {
         server.closeAllConnections();
@@ -3270,7 +3267,6 @@ describe("compatible gateway connection reuse", () => {
       no_proxy: process.env.no_proxy,
       NO_PROXY: process.env.NO_PROXY,
       RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS: process.env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS,
-      NODE_TLS_REJECT_UNAUTHORIZED: process.env.NODE_TLS_REJECT_UNAUTHORIZED,
     };
     const proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
     try {
@@ -3281,7 +3277,7 @@ describe("compatible gateway connection reuse", () => {
       process.env.no_proxy = "";
       process.env.NO_PROXY = "";
       process.env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS = "models.example.com";
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+      vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
       const safeFetch = createOpenAiCompatibleFetch(
         undefined,
         async () => [{ address: "203.0.113.10", family: 4 }],
@@ -3295,10 +3291,11 @@ describe("compatible gateway connection reuse", () => {
       expect(connects).toEqual(["203.0.113.10:443"]);
 
       const enabled = readModels(safeFetch, "https://models.example.com/v1/models");
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+      vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
       await expect(enabled).rejects.toThrow();
       expect(connects).toEqual(["203.0.113.10:443", "models.example.com:443"]);
     } finally {
+      vi.unstubAllEnvs();
       for (const [name, value] of Object.entries(previousEnv)) {
         if (value === undefined) delete process.env[name];
         else process.env[name] = value;
@@ -3391,26 +3388,29 @@ describe("compatible gateway connection reuse", () => {
         if (url === targetUrl) {
           dispatchers.push((init as { dispatcher?: unknown } | undefined)?.dispatcher);
           if (dispatchers.length === 1) {
-            const body = new ReadableStream<Uint8Array>({
-              pull(streamController) {
-                if (mode === "chunk") {
-                  // Abort while releaseCompatibleResponse.pull is awaiting reader.read().
-                  controller.abort(reason);
-                  streamController.enqueue(new TextEncoder().encode("first "));
-                  return;
-                }
-                streamController.close();
-                // Microtasks drain before setImmediate, so abort fires during onceImmediate().
-                queueMicrotask(() => {
-                  queueMicrotask(() => {
+            const body = new ReadableStream<Uint8Array>(
+              {
+                pull(streamController) {
+                  if (mode === "chunk") {
+                    // Abort while releaseCompatibleResponse.pull is awaiting reader.read().
                     controller.abort(reason);
+                    streamController.enqueue(new TextEncoder().encode("first "));
+                    return;
+                  }
+                  streamController.close();
+                  // Microtasks drain before setImmediate, so abort fires during onceImmediate().
+                  queueMicrotask(() => {
+                    queueMicrotask(() => {
+                      controller.abort(reason);
+                    });
                   });
-                });
+                },
+                cancel() {
+                  upstreamCancelled = true;
+                },
               },
-              cancel() {
-                upstreamCancelled = true;
-              },
-            });
+              { highWaterMark: 0 },
+            );
             return new Response(body, {
               status: 200,
               headers: { "content-type": "text/plain" },
