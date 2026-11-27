@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { getCACertificates } from "node:tls";
 import { deadlineSignal } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import type { Agent, Dispatcher } from "undici";
@@ -23,8 +25,44 @@ type PooledTransport = {
   users: number;
   lastUsed: number;
   retired: boolean;
+  /**
+   * Fingerprint of the default CA store when this HTTPS dispatcher was opened.
+   * Absent for plain HTTP and when certificate checks are disabled.
+   */
+  caFingerprint?: string;
   idle?: ReturnType<typeof setTimeout>;
 };
+
+/**
+ * `getCACertificates("default")` returns the same array until
+ * `setDefaultCACertificates` replaces the store. Hashing that bundle is about
+ * a tenth of a millisecond, so it runs only when the array identity changes.
+ * `NODE_EXTRA_CA_CERTS` and the system roots are already inside this list.
+ */
+let caSnapshot: readonly string[] | undefined;
+let caFingerprint: string | undefined;
+/** Trust fingerprint last used for a verified HTTPS borrow. */
+let pooledCaFingerprint: string | undefined;
+
+function defaultCaFingerprint(): string {
+  const certificates = getCACertificates("default");
+  if (certificates === caSnapshot && caFingerprint !== undefined) return caFingerprint;
+  const hash = createHash("sha256");
+  for (const certificate of certificates) {
+    hash.update(certificate);
+    hash.update("\0");
+  }
+  caSnapshot = certificates;
+  caFingerprint = hash.digest("hex");
+  return caFingerprint;
+}
+
+/** Empty when this origin does not check certificates, so those sockets stay pooled. */
+function verifiedHttpsCaFingerprint(origin: string): string {
+  if (!origin.startsWith("https:")) return "";
+  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0") return "";
+  return defaultCaFingerprint();
+}
 
 const transports = new Map<string, PooledTransport>();
 /** Releases a pool slot when the caller drops a response body without reading or cancelling it. */
@@ -56,7 +94,8 @@ export function compatibleTransportLimits(): Pick<
 /**
  * Identity of one reusable dispatcher. The checked lookup is closed over the
  * resolver and the address policy, so a different resolver, proxy, timeout or
- * origin must not inherit a socket pinned for someone else.
+ * origin must not inherit a socket pinned for someone else. The last field is
+ * the default CA fingerprint for verified HTTPS, and empty otherwise.
  */
 export function compatibleTransportKey(input: {
   origin: string;
@@ -67,6 +106,7 @@ export function compatibleTransportKey(input: {
   resolve: ResolveHostname;
 }): string {
   const env = process.env;
+  const ca = verifiedHttpsCaFingerprint(input.origin);
   return [
     input.route,
     input.origin,
@@ -79,18 +119,41 @@ export function compatibleTransportKey(input: {
     env.no_proxy ?? env.NO_PROXY ?? "",
     env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS ?? "",
     env.NODE_TLS_REJECT_UNAUTHORIZED ?? "",
+    ca,
   ].join("\0");
 }
 
-function retireTransport(key: string, held: PooledTransport): Promise<void> {
+/** The last `\0` field of a transport key. Empty means the socket is not tied to a CA store. */
+function caFingerprintOf(key: string): string | undefined {
+  const fingerprint = key.slice(key.lastIndexOf("\0") + 1);
+  return fingerprint === "" ? undefined : fingerprint;
+}
+
+/**
+ * A changed default trust store must not keep sockets that already passed
+ * verification. `close` lets an in-flight body finish and refuses new requests.
+ */
+function retireChangedCaTransports(fingerprint: string): void {
+  if (fingerprint === "" || fingerprint === pooledCaFingerprint) return;
+  pooledCaFingerprint = fingerprint;
+  for (const [key, held] of [...transports]) {
+    if (held.caFingerprint === undefined || held.caFingerprint === fingerprint) continue;
+    void retireTransport(key, held, "close");
+  }
+}
+
+function retireTransport(
+  key: string,
+  held: PooledTransport,
+  shutdown: "destroy" | "close" = "destroy",
+): Promise<void> {
   if (held.retired) return Promise.resolve();
   held.retired = true;
   if (held.idle) clearTimeout(held.idle);
   held.idle = undefined;
   if (transports.get(key) === held) transports.delete(key);
-  return bestEffort("close compatible gateway transport", held.dispatcher.destroy()).then(
-    () => undefined,
-  );
+  const closed = shutdown === "close" ? held.dispatcher.close() : held.dispatcher.destroy();
+  return bestEffort("close compatible gateway transport", closed).then(() => undefined);
 }
 
 /** Drop the oldest idle entries until `limit` remain. In-flight entries are kept. */
@@ -114,6 +177,7 @@ export function borrowCompatibleTransport(
   key: string,
   create: () => Dispatcher,
 ): { dispatcher: Dispatcher; release: (failed: boolean) => Promise<void> } {
+  retireChangedCaTransports(caFingerprintOf(key) ?? "");
   let held = transports.get(key);
   if (!held || held.retired) {
     evictIdleTransports(TRANSPORT_POOL_LIMIT - 1);
@@ -122,6 +186,7 @@ export function borrowCompatibleTransport(
       users: 0,
       lastUsed: Date.now(),
       retired: false,
+      caFingerprint: caFingerprintOf(key),
     };
     transports.set(key, held);
   }

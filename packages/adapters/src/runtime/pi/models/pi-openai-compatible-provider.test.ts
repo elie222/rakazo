@@ -1,7 +1,13 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { createServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import type { AddressInfo } from "node:net";
 import { Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { getCACertificates, setDefaultCACertificates } from "node:tls";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import {
@@ -2802,6 +2808,76 @@ describe("compatible gateway connection reuse", () => {
       destroy.mockRestore();
       installLogger(previous);
       await server.close();
+    }
+  });
+
+  it("refuses a reused TLS socket after the default CA trust store drops its certificate", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "gateway-ca-"));
+    const keyPath = join(directory, "key.pem");
+    const certPath = join(directory, "cert.pem");
+    const previous = getCACertificates("default");
+    let server: Server | undefined;
+    try {
+      execFileSync(
+        "openssl",
+        [
+          "req",
+          "-x509",
+          "-newkey",
+          "rsa:2048",
+          "-nodes",
+          "-keyout",
+          keyPath,
+          "-out",
+          certPath,
+          "-days",
+          "2",
+          "-subj",
+          "/CN=127.0.0.1",
+          "-addext",
+          "subjectAltName=IP:127.0.0.1",
+        ],
+        { stdio: "ignore" },
+      );
+      const certificate = readFileSync(certPath, "utf8");
+      let connections = 0;
+      server = createHttpsServer(
+        { cert: certificate, key: readFileSync(keyPath, "utf8") },
+        (request, response) => {
+          request.resume();
+          response.setHeader("content-type", "application/json");
+          response.end(MODEL_LIST);
+        },
+      );
+      server.on("connection", () => {
+        connections += 1;
+      });
+      // The rejected handshake is the assertion. Ignore it on the server.
+      server.on("tlsClientError", () => undefined);
+      await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Missing test server address");
+      const url = `https://127.0.0.1:${address.port}/v1/models`;
+      setDefaultCACertificates([...previous, certificate]);
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, OWNER);
+      await readModels(safeFetch, url);
+      await readModels(safeFetch, url);
+      expect(connections).toBe(1);
+      setDefaultCACertificates(previous);
+      await expect(readModels(safeFetch, url)).rejects.toMatchObject({
+        cause: { code: "DEPTH_ZERO_SELF_SIGNED_CERT" },
+      });
+    } finally {
+      setDefaultCACertificates(previous);
+      if (server) {
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) => {
+          server?.close((error) => (error ? reject(error) : resolve()));
+        });
+      }
+      if (existsSync(keyPath)) unlinkSync(keyPath);
+      if (existsSync(certPath)) unlinkSync(certPath);
+      if (existsSync(directory)) rmdirSync(directory);
     }
   });
 });
