@@ -1,7 +1,10 @@
 import { FEEDBACK_DESCRIPTION_MAX_LENGTH, FEEDBACK_KINDS } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
+import { THREAD_LOCK_TRANSACTION_OPTIONS, withTransactionRetry } from "@rakazo/db";
+import { bestEffort } from "@rakazo/logging";
 import { z } from "zod";
 import type { RunContext } from "../assembly/run-context.js";
+import { persistMessageInTransaction, runLeaseFor } from "../assembly/run-messages.js";
 import type { ToolCall, ToolHandlers } from "./run-tool-gate.js";
 
 const FeedbackSchema = z
@@ -29,19 +32,46 @@ async function sendFeedback(ctx: RunContext, call: ToolCall) {
   });
   if (recent >= FEEDBACK_REPORTS_PER_HOUR)
     return call.finish({ error: "Too many reports in the last hour. Try again later." });
-  const report = await deps.prisma.feedbackReport.create({
-    data: {
-      userId: run.userId,
-      spaceId: run.spaceId,
-      botId: run.botId,
-      threadId: run.threadId,
-      runId: run.id,
-      kind: parsed.data.kind,
-      description: redactSecrets(parsed.data.description, ctx.secrets),
-    },
-    select: { id: true },
-  });
-  return call.finish({ sent: true, id: report.id });
+  const { kind, description } = parsed.data;
+  const committed = await withTransactionRetry(() =>
+    deps.prisma.$transaction(async (tx) => {
+      const report = await tx.feedbackReport.create({
+        data: {
+          userId: run.userId,
+          spaceId: run.spaceId,
+          botId: run.botId,
+          threadId: run.threadId,
+          runId: run.id,
+          kind,
+          description: redactSecrets(description, ctx.secrets),
+        },
+        select: { id: true, description: true },
+      });
+      const receipt = await persistMessageInTransaction(
+        tx,
+        run,
+        "bot",
+        [
+          {
+            kind: "feedback_receipt",
+            reportId: report.id,
+            reportKind: kind,
+            description: report.description,
+          },
+        ],
+        undefined,
+        undefined,
+        false,
+        runLeaseFor(deps, run.id),
+      );
+      return { id: report.id, ...receipt };
+    }, THREAD_LOCK_TRANSACTION_OPTIONS),
+  );
+  await bestEffort(
+    "notify feedback receipt",
+    deps.events.notify(run.threadId, committed.eventSeq, committed.firstResponseRunId),
+  );
+  return call.finish({ sent: true, id: committed.id });
 }
 
 /** Bug reports and product feedback the user asked their bot to send. */

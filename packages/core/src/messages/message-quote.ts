@@ -206,6 +206,8 @@ function replyBlockText(block: MessageBlock): string {
       return block.server;
     case "tool_question":
       return block.question.source;
+    case "feedback_receipt":
+      return block.description;
     case "import_setup":
       if (block.undone) return "";
       return block.items.map((item) => ("name" in item ? item.name : item.title)).join(", ");

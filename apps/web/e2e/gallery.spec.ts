@@ -73,6 +73,14 @@ test("gallery renders every chat scenario in both themes", async ({ page }, test
           )
           .toBeGreaterThan(0);
       }
+      if (label === "Feedback receipt") {
+        const receipt = page.getByTestId("feedback-receipt");
+        await expect(receipt.getByText("Bug report sent")).toBeVisible();
+        await expect(
+          receipt.getByText("The preview stayed blank after I opened a file."),
+        ).toBeVisible();
+        await expect(receipt.getByText("Receipt example-report-1")).toBeVisible();
+      }
       await captureScreenshot(
         page,
         testInfo,

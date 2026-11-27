@@ -16,6 +16,7 @@ import { BotAvatar, cn, resolvePersonaColorDef } from "@rakazo/ui-web";
 import { UserRound } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import { CollaborationMarker } from "../../../components/ai/CollaborationMarker";
+import { BuiCard } from "../../../components/ai/primitives";
 import { ComputerCard } from "../../../components/computers/ComputerCard";
 import { ArtifactFileCard } from "../../../components/messages/ArtifactFileCard";
 import { AskCard } from "../../../components/messages/AskCard";
@@ -533,6 +534,29 @@ export const MessageView = memo(function MessageView({
                   canAnswer={canAnswer}
                 />
               </div>
+            );
+          }
+          if (block.kind === "feedback_receipt") {
+            return (
+              <BuiCard
+                key={i}
+                data-testid="feedback-receipt"
+                className="grid min-w-0 gap-1.5 px-4 py-3"
+              >
+                <div className="font-medium text-label">
+                  {block.reportKind === "bug" ? (
+                    <Trans>Bug report sent</Trans>
+                  ) : (
+                    <Trans>Feedback sent</Trans>
+                  )}
+                </div>
+                <p dir="auto" className="whitespace-pre-wrap wrap-anywhere text-body">
+                  {block.description}
+                </p>
+                <div className="wrap-anywhere text-caption text-muted-foreground">
+                  <Trans>Receipt {block.reportId}</Trans>
+                </div>
+              </BuiCard>
             );
           }
           if (block.kind === "import_setup") {
