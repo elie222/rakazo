@@ -3,6 +3,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AppIcon } from "@rakazo/contracts";
 import { DEFAULT_APP_ICON } from "@rakazo/contracts";
+import { requestDeadline, withAbort } from "@rakazo/core";
 import type { Session } from "electron";
 import { app, BrowserWindow, Menu, nativeTheme, net, screen, session, shell } from "electron";
 import {
@@ -137,13 +138,29 @@ export async function resolveSessionForTarget(targetUrl: string) {
     } catch {
       // Continue with a storage probe when the profile looks pre-partition.
     }
-    if (defaultSessionProfileExists() && (await defaultSessionHasOriginData(origin))) {
-      try {
-        await writeFile(legacyDefaultSessionFlag(partition), new Date().toISOString(), "utf8");
-      } catch {
-        // Flag is best-effort; still stay on the default session this launch.
+    if (defaultSessionProfileExists()) {
+      const originData = await defaultSessionHasOriginData(origin);
+      if (originData === "present") {
+        try {
+          await writeFile(legacyDefaultSessionFlag(partition), new Date().toISOString(), "utf8");
+        } catch {
+          // Flag is best-effort; still stay on the default session this launch.
+        }
+        return { partition: null, value: session.defaultSession };
       }
-      return { partition: null, value: session.defaultSession };
+      if (originData === "unknown") {
+        // The probe did not read the default profile. Keep an isolated partition
+        // that already has this origin's cookies; otherwise stay on the default
+        // session without recording a legacy flag.
+        const isolated = session.fromPartition(partition);
+        try {
+          const cookies = await isolated.cookies.get({ url: origin });
+          if (cookies.length > 0) return { partition, value: isolated };
+        } catch {
+          // The partition's cookies could not be read; its session is undetermined.
+        }
+        return { partition: null, value: session.defaultSession };
+      }
     }
   }
   return { partition, value: session.fromPartition(partition) };
@@ -158,8 +175,13 @@ function defaultSessionProfileExists() {
     existsSync(path.join(root, "Cache Storage"))
   );
 }
-/** Page storage in the default session means a pre-partition install for this origin. */
-async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
+/**
+ * Page storage in the default session means a pre-partition install for this origin.
+ * "unknown" means the probe timed out or its window closed before it could read storage.
+ */
+async function defaultSessionHasOriginData(
+  origin: string,
+): Promise<"present" | "absent" | "unknown"> {
   const probe = new BrowserWindow({
     show: false,
     width: 1,
@@ -173,9 +195,14 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
   // Increment only after construction succeeds so a throw cannot leave the
   // counter stuck > 0 and permanently block quit on Windows/Linux.
   desktop.liveProbeWindows++;
+  const cancel = new AbortController();
+  probe.once("closed", () => cancel.abort());
+  const deadline = requestDeadline(PROBE_TIMEOUT_MS, "Session probe timed out.", cancel.signal);
   try {
-    await probe.loadURL(origin);
-    return (await probe.webContents.executeJavaScript(`(async () => {
+    await withAbort(probe.loadURL(origin), deadline.signal);
+    if (probe.isDestroyed()) return "unknown";
+    const hasData = await withAbort(
+      probe.webContents.executeJavaScript(`(async () => {
       if (localStorage.length > 0 || sessionStorage.length > 0) return true;
       if (typeof indexedDB !== "undefined" && indexedDB.databases) {
         try {
@@ -190,11 +217,18 @@ async function defaultSessionHasOriginData(origin: string): Promise<boolean> {
         } catch {}
       }
       return false;
-    })()`)) as boolean;
+    })()`),
+      deadline.signal,
+    );
+    return hasData === true ? "present" : "absent";
   } catch {
-    return false;
+    return deadline.signal.aborted || probe.isDestroyed() ? "unknown" : "absent";
   } finally {
-    if (!probe.isDestroyed()) probe.destroy();
+    deadline.dispose();
+    if (!probe.isDestroyed()) {
+      probe.webContents.stop();
+      probe.destroy();
+    }
     desktop.liveProbeWindows--;
   }
 }
