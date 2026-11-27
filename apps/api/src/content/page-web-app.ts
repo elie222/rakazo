@@ -22,7 +22,7 @@ const SERVED = { ...PAGE_APP_HEADERS, "cache-control": "private, max-age=300" };
 
 /**
  * What a browser needs to install a page as its own app: a manifest and its icons. Only the
- * page's owner, signed in, reads them; anyone else gets the same 404.
+ * page's owner, signed in, reads them; a signed-out caller gets 401 and anyone else the same 404.
  */
 export function mountPageWebApp(
   app: Hono,
@@ -39,7 +39,7 @@ export function mountPageWebApp(
   ): Promise<Response> {
     try {
       const actor = await deps.sessionActor(c.req.raw, c.req.query(PAGE_WEB_APP_SPACE_PARAM));
-      if (!actor) return c.json({ error: "Not found" }, 404, PAGE_APP_HEADERS);
+      if (!actor) return c.json({ error: "Unauthorized" }, 401, PAGE_APP_HEADERS);
       const page = await runAsTenant(actor, () =>
         getPageSummary(deps.prisma, actor, c.req.param("pageId") ?? ""),
       );
@@ -82,12 +82,12 @@ export function mountPageWebApp(
     }),
   );
 
-  app.get("/api/v1/pages/:pageId/app-icon/:file", async (c) => {
-    const name = c.req.param("file").replace(/\.png$/, "");
-    if (!c.req.param("file").endsWith(".png") || !Object.hasOwn(PAGE_WEB_APP_ICONS, name))
-      return c.json({ error: "Not found" }, 404, PAGE_APP_HEADERS);
-    const { size, maskable } = PAGE_WEB_APP_ICONS[name as PageWebAppIcon];
-    return withPage(c, async (page, actor) => {
+  app.get("/api/v1/pages/:pageId/app-icon/:file", (c) =>
+    withPage(c, async (page, actor) => {
+      const name = c.req.param("file").replace(/\.png$/, "");
+      if (!c.req.param("file").endsWith(".png") || !Object.hasOwn(PAGE_WEB_APP_ICONS, name))
+        return c.json({ error: "Not found" }, 404, PAGE_APP_HEADERS);
+      const { size, maskable } = PAGE_WEB_APP_ICONS[name as PageWebAppIcon];
       if (iconReads(actor.userId) > ICONS_PER_USER_PER_MINUTE)
         return c.json({ error: "Too many requests" }, 429, {
           ...PAGE_APP_HEADERS,
@@ -95,6 +95,6 @@ export function mountPageWebApp(
         });
       const png = await renderPageAppIconPng(page, size, maskable ? "full" : "plate");
       return c.body(png, 200, { ...SERVED, "content-type": "image/png" });
-    });
-  });
+    }),
+  );
 }
