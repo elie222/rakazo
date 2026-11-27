@@ -31,7 +31,7 @@ const setupBody = readFileSync(path.join(srcDir, "setup.html"), "utf8").match(
 const setupScript = readFileSync(path.join(srcDir, "setup.js"), "utf8");
 
 function stackState(phase: DesktopLocalStackState["phase"]): DesktopLocalStackState {
-  return { phase, message: null, output: [], layerBytes: {}, imageTag: "v0.0.0" };
+  return { phase, message: null, output: [], layerBytes: {}, layerTotals: {}, imageTag: "v0.0.0" };
 }
 
 function element<T extends HTMLElement>(id: string): T {
@@ -65,9 +65,7 @@ interface Harness {
   resolveCheck: (result: DesktopReachability) => void;
   /** What every `stack.start` call this mount receives resolves with. */
   startResult: Deferred<DesktopLocalStackState>;
-  /** How many times `stack.start` was called. */
   starts: () => number;
-  /** Links passed to `openLink`. */
   links: string[];
   /** Resolves the oldest pending `state` call, in call order. */
   resolveAppState: (saved: DesktopSetup | null) => void;
@@ -77,7 +75,6 @@ interface Harness {
   rejectStackState: (reason: unknown) => void;
   /** Delivers a pushed stack state the way the `desktop.setup.stack.changed` push does. */
   pushStackState: (state: DesktopLocalStackState) => void;
-  /** Payloads received by `save`. */
   saves: DesktopSetup[];
   /** Resolves the oldest pending `save` call, in call order. */
   resolveSave: (result: DesktopSetupResult) => void;
@@ -655,6 +652,44 @@ describe("setup", () => {
       await flush();
       expect(element("stack-detail").textContent).toBe(template.replace("{size}", size));
     }
+  });
+
+  it("measures downloads of a known size against their total and leaves unsized ones out", async () => {
+    const ui = await boot(null, ENGLISH);
+    selectMode("new");
+    submitForm();
+    ui.startResult.resolve({
+      ...stackState("pulling"),
+      layerBytes: { server: 5e6, runtime: 0, database: 3e8 },
+      layerTotals: { server: 9.7e7, runtime: 2e7 },
+    });
+    await flush();
+    expect(element("stack-detail").textContent).toBe("5 MB of 117 MB");
+    expect(element("stack-progress").getAttribute("aria-valuenow")).toBe("22.6");
+  });
+
+  it("moves the bar back when a download's size arrives after another has progressed", async () => {
+    const ui = await boot(null, ENGLISH);
+    selectMode("new");
+    submitForm();
+    ui.startResult.resolve({
+      ...stackState("pulling"),
+      layerBytes: { server: 5e7 },
+      layerTotals: { server: 1e8 },
+    });
+    await flush();
+    expect(element("stack-progress").getAttribute("aria-valuenow")).toBe("50.0");
+
+    const later = {
+      ...stackState("pulling"),
+      layerBytes: { server: 5e7, runtime: 0 },
+      layerTotals: { server: 1e8, runtime: 1e8 },
+    };
+    ui.pushStackState(later);
+    await flush();
+    ui.resolveStackState(later);
+    await flush();
+    expect(element("stack-progress").getAttribute("aria-valuenow")).toBe("35.0");
   });
 
   it("renders Polish setup controls and interpolates connection and download status", async () => {

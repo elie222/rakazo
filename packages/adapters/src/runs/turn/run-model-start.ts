@@ -8,7 +8,10 @@ import { getLogger } from "@rakazo/logging";
 import { HostedModelCreditsRequiredError } from "../../models/credits/model-credit-observer.js";
 import type { SavedDeploymentModel } from "../../models/deployment-model.js";
 import type { DeploymentModelDefaults } from "../../models/model-roles.js";
-import { effectiveModelRole } from "../../models/model-roles.js";
+import {
+  effectiveModelRole,
+  ORGANIZATION_MODEL_CONNECTION_PREFIX,
+} from "../../models/model-roles.js";
 import { ModelConnectionGoneError } from "../../models/model-selection.js";
 import { isRetiredModelCredentialError } from "../../runtime/pi/models/pi-oauth.js";
 import type { restoreComputerModels } from "../../runtime/pi/tools/pi-runtime-computer-mode.js";
@@ -27,12 +30,13 @@ export function runModelBackups(
   defaults: DeploymentModelDefaults,
   scripted: boolean,
   registerSecrets: (values: string[]) => void,
-  connectionPinned = false,
+  exactConnection = false,
 ) {
   let backupChoices: Promise<ModelRoleChoice[]> | undefined;
+  // A named personal connection stays exact; an organization model keeps organization funding.
   const load = () =>
     (backupChoices ??=
-      scripted || connectionPinned
+      scripted || exactConnection
         ? Promise.resolve([])
         : effectiveModelRole(deps.prisma, run, "main", defaults).then(
             (role) => role.backups,
@@ -106,7 +110,11 @@ export async function startRunModel(
   let primaryFailure = { message: MISSING_MODEL_RUN_ERROR, accountFailure: true };
   let retryPrimary: unknown;
   if (selected.provider && selected.id) {
-    if (await modelAccessDenied()) {
+    const connectionId = pinned?.connectionId ?? selected.connectionId;
+    if (
+      !connectionId?.startsWith(ORGANIZATION_MODEL_CONNECTION_PREFIX) &&
+      (await modelAccessDenied())
+    ) {
       return { failure: { message: MODEL_ACCESS_REQUIRED_RUN_ERROR, accountFailure: true } };
     }
     try {
@@ -137,6 +145,7 @@ export async function startRunModel(
               registerSecrets,
               {
                 adminSettings: selected.adminSettings,
+                connectionId: selected.connectionId,
                 creditOfferingId: creditOfferingFromConnectionId(selected.connectionId),
                 requireStoredSecret: Boolean(
                   selected.connectionId && !creditOfferingFromConnectionId(selected.connectionId),

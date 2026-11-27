@@ -167,6 +167,13 @@ export async function createPushDelivery(input: {
     input.notifications ??
     new ExpoPushProvider(pushTokens, {
       sessionExpiresAt: (sessionId) => pushSessionExpiresAt(prisma, sessionId),
+      notificationSounds: async (userId) =>
+        (
+          await prisma.user.findUnique({
+            where: { id: userId },
+            select: { notificationSounds: true },
+          })
+        )?.notificationSounds === true,
       jobs: input.jobs,
       accessToken: input.expoAccessToken,
       voip: await createApnsVoipProvider(apnsVoip),

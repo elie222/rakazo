@@ -4,6 +4,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { resolveSupervisorToken } from "@rakazo/core/node/secrets-guard";
 import { deferred } from "@rakazo/core/test-async";
+import type { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   COMPUTER_IMAGE,
@@ -929,11 +930,9 @@ describe("space computer limit enforcement", () => {
     mocks.docker.listContainers.mockImplementation(
       async (opts?: { filters?: { label?: string[] } }) => {
         const labels = opts?.filters?.label ?? [];
-        // For findBotContainer check
         if (labels.some((l: string) => l.startsWith("rakazo.botId="))) {
           return [];
         }
-        // For countSpaceContainers
         return [
           { Id: "c1", Labels: { "rakazo.managed": "true", "rakazo.spaceId": "space-1" } },
           { Id: "c2", Labels: { "rakazo.managed": "true", "rakazo.spaceId": "space-1" } },
@@ -1271,6 +1270,42 @@ describe("screen release status", () => {
     };
   }
 
+  function screenWhoseTeardownCanFail(app: Hono, id: string, stderr = "") {
+    const commands: string[] = [];
+    const state = { failCommands: false };
+    const container = managedContainer(
+      vi.fn(async ({ Cmd }: { Cmd?: string[] }) => {
+        commands.push(Cmd?.join(" ") ?? "");
+        const failing = state.failCommands;
+        const payload = Buffer.from(failing ? stderr : "");
+        const header = Buffer.alloc(8);
+        header[0] = 2;
+        header.writeUInt32BE(payload.length, 4);
+        return {
+          start: async () => Readable.from([Buffer.concat([header, payload])]),
+          inspect: async () => ({ ExitCode: failing ? 1 : 0 }),
+        };
+      }),
+    );
+    const withLease = (leaseId: string) => ({ ...headers, "x-rakazo-screen-lease-id": leaseId });
+    return {
+      commands,
+      container,
+      state,
+      open: (leaseId: string) =>
+        app.request(`/computers/${id}/screen-mode`, {
+          method: "POST",
+          headers: withLease(leaseId),
+          body: JSON.stringify({ interactive: false, revokeControl: false }),
+        }),
+      cancel: (leaseId: string) =>
+        app.request(`/computers/${id}/screen`, {
+          method: "DELETE",
+          headers: { ...withLease(leaseId), "x-rakazo-cancel-run-work": "1" },
+        }),
+    };
+  }
+
   it("returns 404 only when the computer is already missing", async () => {
     const { supervisorApp } = await import("./index.js");
     const missing = {
@@ -1449,6 +1484,55 @@ describe("screen release status", () => {
     });
     expect(released.status).toBe(500);
     await expect(released.json()).resolves.toEqual({ error: "computer screen failed to stop" });
+  });
+
+  it("retries a release whose teardown failed", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const screen = screenWhoseTeardownCanFail(supervisorApp, "release-retried");
+    mocks.docker.getContainer.mockReturnValue(screen.container);
+    expect((await screen.open("run-1:1")).status).toBe(200);
+
+    screen.state.failCommands = true;
+    expect((await screen.cancel("run-1:1")).status).toBe(500);
+
+    screen.state.failCommands = false;
+    const before = screen.commands.length;
+    expect((await screen.cancel("run-1:1")).status).toBe(200);
+    expect(screen.commands.slice(before)).toHaveLength(1);
+    expect(screen.commands.at(-1)).toContain("Browser.close");
+  });
+
+  it("sets a screen up again when the next request retries its failed teardown", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const screen = screenWhoseTeardownCanFail(supervisorApp, "stuck-teardown");
+    mocks.docker.getContainer.mockReturnValue(screen.container);
+    expect((await screen.open("run-1:1")).status).toBe(200);
+    screen.state.failCommands = true;
+    expect((await screen.cancel("run-1:1")).status).toBe(500);
+    const before = screen.commands.length;
+
+    screen.state.failCommands = false;
+    const reopened = await screen.open("run-2:2");
+    expect(reopened.status).toBe(200);
+    expect(
+      screen.commands.slice(before).map((command) => command.includes("Browser.close")),
+    ).toEqual([true, false]);
+  });
+
+  it("answers the next request with the stop's error while the retried teardown keeps failing", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const forkFailure = "bash: fork: retry: Resource temporarily unavailable\n";
+    const screen = screenWhoseTeardownCanFail(supervisorApp, "stuck-teardown-error", forkFailure);
+    mocks.docker.getContainer.mockReturnValue(screen.container);
+    expect((await screen.open("run-1:1")).status).toBe(200);
+    screen.state.failCommands = true;
+    expect((await screen.cancel("run-1:1")).status).toBe(500);
+    const before = screen.commands.length;
+
+    const reopened = await screen.open("run-2:2");
+    expect(reopened.status).toBe(400);
+    await expect(reopened.json()).resolves.toEqual({ error: forkFailure });
+    expect(screen.commands.slice(before)).toHaveLength(1);
   });
 
   it("fully tears down a screen when control revocation is uncertain", async () => {

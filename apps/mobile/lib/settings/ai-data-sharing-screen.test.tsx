@@ -161,7 +161,6 @@ function hold(write: string, answer = opened) {
   };
 }
 
-/** What every write carries: the server, session and space its save was started in. */
 const pinned = {
   requestContext: {
     apiBase: "https://app.example.test",

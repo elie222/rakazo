@@ -2,10 +2,13 @@ import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { Bot } from "@rakazo/contracts";
 import { nextIncomingCall, respondToIncomingCall } from "@rakazo/core";
+import { bestEffort } from "@rakazo/logging/best-effort";
 import { BotAvatar, Button, defaultBotAvatarValue } from "@rakazo/ui-web";
 import { Phone, PhoneOff } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { callAutoLanguage } from "../../lib/calls/call-language-preference";
 import {
+  getSnapshot,
   isLeavingSession,
   prepareCallAudio,
   startCall,
@@ -164,23 +167,25 @@ export function IncomingCall({
     const target = { botId: bot.id, callId: call.callId };
     const context = { spaceId: selectedSpaceId() };
     try {
+      const autoLanguage = callAutoLanguage.get();
       const answered = await respondToIncomingCall(call, () =>
         rpc.threads.answerCall(target, { context }),
       );
       // The page reloads for another session: a hang-up now would carry that session's cookie.
       if (isLeavingSession()) return;
-      if (!mounted.current) {
-        // Nobody is left to talk to: hang up the call the server now holds as answered.
-        void rpc.threads.endCall(target, { context }).catch(() => undefined);
+      if (mounted.current) setHandled((current) => new Set(current).add(call.callId));
+      if (getSnapshot() || !mounted.current || selectedSpaceId() !== context.spaceId) {
+        // Another call or view took over. Close the accepted call without replacing it.
+        void bestEffort("close superseded incoming call", rpc.threads.endCall(target, { context }));
         return;
       }
-      setHandled((current) => new Set(current).add(call.callId));
       startCall({
         botId: bot.id,
         botName: bot.name,
         botColor: bot.color,
         botAvatarSet: bot.avatarSet,
         transcribe,
+        autoLanguage,
         answered: { callId: call.callId, opening: answered.opening },
       });
       onAnswered(bot.id);

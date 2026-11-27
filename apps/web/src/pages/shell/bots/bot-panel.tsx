@@ -286,17 +286,20 @@ export function BotSettings({
   const {
     selectedModel,
     selectedModelKey,
+    shownKey,
     connections: eligibleConnections,
+    connectionModelKey,
     choices: modelChoices,
     thinkingLevels: thinkingOptions,
     defaultThinkingLevel,
+    savedModelKey,
+    savedThinkingLevel,
   } = botModelState({
     credentials,
     catalog: catalog.map(localizeModelEntry),
     me,
     modelKey,
     modelCredentialId,
-    spaceDefaultLabel: t`Space default`,
   });
 
   const connectionOptions = [
@@ -524,13 +527,7 @@ export function BotSettings({
   const email = useQuery(queries.bots.emailAddress.queryOptions({ input: { botId: bot.id } })).data;
   const routineCount = routines?.routines.length ?? 0;
   const headerButtons = (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="text-muted-foreground"
-      aria-label={t`Close panel`}
-      onClick={onClose}
-    >
+    <Button variant="floating" size="icon" aria-label={t`Close panel`} onClick={onClose}>
       <X className="size-4.5" strokeWidth={1.75} />
     </Button>
   );
@@ -540,9 +537,8 @@ export function BotSettings({
       {view !== "settings" ? (
         <div className="mb-4 flex items-center justify-between">
           <Button
-            variant="ghost"
+            variant="floating"
             size="icon"
-            className="text-muted-foreground"
             aria-label={t`Back`}
             onClick={() => onViewChange?.("settings")}
           >
@@ -558,17 +554,10 @@ export function BotSettings({
       {view === "pages" ? <PagesList botId={bot.id} /> : null}
       {/* Stays mounted so drafts and the open sections survive a visit to a whole list. */}
       <div hidden={view !== "settings"}>
-        <div className="mb-4 flex items-center justify-end gap-1">
+        <div className="mb-4 flex items-center justify-end gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-muted-foreground"
-                  aria-label={t`More actions`}
-                />
-              }
+              render={<Button variant="floating" size="icon" aria-label={t`More actions`} />}
             >
               <MoreHorizontal className="size-4.5" strokeWidth={1.75} />
             </DropdownMenuTrigger>
@@ -703,19 +692,22 @@ export function BotSettings({
                 ids={ids}
                 containerRef={modelRef}
                 choices={modelChoices}
-                value={selectedModelKey}
+                value={shownKey}
                 onModelChange={(key) => {
-                  if (key === selectedModelKey) return;
-                  setModelKey(key);
+                  if (modelCredentialId && key === shownKey) return;
+                  const saved = savedModelKey(key);
+                  if (saved === selectedModelKey) return;
+                  setModelKey(saved);
                   setModelCredentialId("");
                   setThinkingLevel("");
                 }}
                 thinkingOptions={thinkingOptions}
-                thinkingLevel={thinkingLevel}
-                defaultThinkingLevel={defaultThinkingLevel}
-                onThinkingLevelChange={setThinkingLevel}
+                thinkingLevel={(thinkingLevel || defaultThinkingLevel) as ThinkingLevel}
+                onThinkingLevelChange={(level) =>
+                  setThinkingLevel(savedThinkingLevel(level as ThinkingLevel) ?? "")
+                }
               />
-              {selectedModel && (eligibleConnections.length > 0 || modelCredentialId) ? (
+              {shownKey && (eligibleConnections.length > 0 || modelCredentialId) ? (
                 <label
                   htmlFor={`${ids}-model-connection`}
                   className="flex min-h-12 items-center justify-between gap-3 text-body text-foreground"
@@ -725,7 +717,11 @@ export function BotSettings({
                     id={`${ids}-model-connection`}
                     className="w-fit max-w-2/3"
                     value={modelCredentialId}
-                    onValueChange={setModelCredentialId}
+                    onValueChange={(id) => {
+                      setModelKey(connectionModelKey(id));
+                      setModelCredentialId(id);
+                      setThinkingLevel("");
+                    }}
                     options={connectionOptions}
                   />
                 </label>

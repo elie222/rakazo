@@ -110,6 +110,14 @@ export async function signupThroughForm(
   await page.getByRole("button", { name: "Create account" }).click();
 }
 
+/**
+ * Waits for the server's copy of a sent message. The chat shows a text send at once with a
+ * `pending:` id and replaces it with the stored message, the only one other actions can use.
+ */
+export async function expectStoredSend(row: Locator) {
+  await expect(row).not.toHaveAttribute("data-message-id", /^pending:/);
+}
+
 /** Brings the window back into view, which reads live lists again as returning to the tab does. */
 export async function refocus(page: Page) {
   await page.evaluate(() => window.dispatchEvent(new Event("visibilitychange")));

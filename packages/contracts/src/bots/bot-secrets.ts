@@ -560,8 +560,6 @@ export const BotSecretPutInput = z.object({
 });
 export type BotSecretPutInput = z.infer<typeof BotSecretPutInput>;
 
-// ---- Cards and contacts ----
-
 /** Trimmed text, or undefined when empty, so an untouched form field is not saved as "". */
 function optionalText(max: number) {
   return z

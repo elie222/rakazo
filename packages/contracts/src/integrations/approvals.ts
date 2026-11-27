@@ -1,5 +1,10 @@
 import * as z from "zod";
 import { Id } from "../ids.js";
+import { SettingsScopeSchema } from "../settings-scope.js";
+
+export const EffectiveApprovalTargetSchema = z.object({ scope: SettingsScopeSchema, spaceId: Id });
+export type EffectiveApprovalTarget = z.infer<typeof EffectiveApprovalTargetSchema>;
+export const APPROVAL_RULES_CHANGED = "APPROVAL_RULES_CHANGED";
 
 export const ActionApprovalRuleSchema = z.object({
   id: Id,

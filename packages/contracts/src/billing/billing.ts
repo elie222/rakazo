@@ -134,6 +134,8 @@ export const BILLING_CANCELLATION_REASONS = [
 ] as const;
 export type BillingCancellationReason = (typeof BILLING_CANCELLATION_REASONS)[number];
 
+export const SELF_HOST_URL = "https://rakazo.com/docs/self-host";
+
 export const BillingStatusSchema = z.object({
   funding: z.enum(["byok", "credits"]).nullable().optional(),
   balanceUsd: z.number().optional(),
@@ -164,6 +166,8 @@ export const BillingStatusSchema = z.object({
     .optional(),
   /** End of an unpaid own-key organization's free period. */
   byokFreeUntil: z.string().nullable().optional(),
+  /** The organization's free period has run out and it has never subscribed. */
+  freePeriodEnded: z.literal(true).optional(),
   access: z.boolean(),
   /** Only organization owners start checkout or open the billing portal. */
   canManage: z.boolean(),

@@ -1,9 +1,12 @@
 import type { PluginMarketplaceCatalog, PluginMarketplaceEntry } from "@rakazo/contracts";
 import { comparePlugins, matchesPluginQuery, pluginCategory } from "@rakazo/core";
 import { z } from "zod";
-import { fetchSafeWebText } from "../web/web-ssrf.js";
 import type { PluginCompleteness, PluginTextReader } from "./plugin-connectors.js";
-import { classifyPluginFiles, parsePluginSource } from "./plugin-connectors.js";
+import {
+  classifyPluginFiles,
+  parsePluginSource,
+  readPublicPluginText,
+} from "./plugin-connectors.js";
 
 const REGISTRIES = [
   {
@@ -174,12 +177,9 @@ function displayName(name: string): string {
     .join(" ");
 }
 
-const publicRead: PluginTextReader = async (url, maxBytes, signal) =>
-  (await fetchSafeWebText(url, { maxBytes, signal })).body;
-
 /** Cache is per API router instance; failures are never cached. Concurrent
  * requests share one bounded fetch, without sharing an actor's abort signal. */
-export function createPluginMarketplace(read: PluginTextReader = publicRead) {
+export function createPluginMarketplace(read: PluginTextReader = readPublicPluginText) {
   const cache = new Map<
     string,
     { expires: number; data: ReturnType<typeof parsePluginMarketplace> }

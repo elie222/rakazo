@@ -11,9 +11,11 @@ import { useSideInsets } from "../lib/layout/side-insets";
 import { native, useThemedStyles } from "../lib/native/native";
 import { queryClient, rpcQuery, useSave } from "../lib/query/query";
 import { useScreenQuery } from "../lib/query/screen-query";
+import { useBackToSettings } from "../lib/settings/back-to-settings";
 
 /** The Space's ticket board: every column, with the status changed in place. */
 export default function BoardScreen() {
+  useBackToSettings();
   const { t } = useLingui();
   const styles = useThemedStyles(createStyles);
   const sideInsets = useSideInsets();

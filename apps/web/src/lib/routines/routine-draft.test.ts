@@ -105,6 +105,7 @@ it("reads whether a routine runs in the chat", () => {
     watchState: null,
     lastRunAt: null,
     nextRunAt: null,
+    endsAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
   };
   expect(emptyRoutineDraftState().inChat).toBe(false);

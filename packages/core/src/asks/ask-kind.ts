@@ -17,3 +17,8 @@ export function isQuestionAskBlock(block: MessageBlock): boolean {
     !block.instructionUpdate
   );
 }
+
+/** The letter a question card shows beside its option at `index`, so a typed "B" means that option. */
+export function askOptionLetter(index: number): string {
+  return String.fromCharCode(65 + index);
+}

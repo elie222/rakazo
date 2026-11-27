@@ -104,6 +104,12 @@ import {
   TOOL_CHOICE_JUDGE_VERSION,
 } from "../evals/suites/tool-choice.js";
 import { TOOL_CHOICE_CASES } from "../evals/suites/tool-choice-cases.js";
+import {
+  WEBHOOK_SILENCE_EVAL_CASES,
+  WEBHOOK_SILENCE_FIXTURE_VERSION,
+  WEBHOOK_SILENCE_JUDGE_CALIBRATION,
+  WEBHOOK_SILENCE_JUDGE_VERSION,
+} from "../evals/suites/webhook-silence.js";
 import type { ObservedToolCall, ObservedToolList } from "../evals/tool-calls.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
 import { diagnosticWireFetch } from "../evals/wire-observer.js";
@@ -200,6 +206,14 @@ async function main() {
       cases: SILENCE_EVAL_CASES,
       fixtureVersion: SILENCE_FIXTURE_VERSION,
       judge: { version: SILENCE_JUDGE_VERSION, calibration: SILENCE_JUDGE_CALIBRATION },
+    },
+    "webhook-silence": {
+      cases: WEBHOOK_SILENCE_EVAL_CASES,
+      fixtureVersion: WEBHOOK_SILENCE_FIXTURE_VERSION,
+      judge: {
+        version: WEBHOOK_SILENCE_JUDGE_VERSION,
+        calibration: WEBHOOK_SILENCE_JUDGE_CALIBRATION,
+      },
     },
     initiative: {
       cases: INITIATIVE_EVAL_CASES,
