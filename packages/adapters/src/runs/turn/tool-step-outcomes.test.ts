@@ -664,6 +664,32 @@ describe("tool step outcomes", () => {
     });
   });
 
+  it("redacts a quoted COMPOSIO_API_KEY without breaking the JSON around it", () => {
+    const secret = "ak_live123";
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    expect(kept(`COMPOSIO_API_KEY: "${secret}"`)).not.toContain(secret);
+    expect(kept(`COMPOSIO_API_KEY="${secret}"`)).not.toContain(secret);
+    expect(kept(`COMPOSIO_API_KEY: '${secret}'`)).not.toContain(secret);
+    const json = kept(`{"COMPOSIO_API_KEY": "${secret}", "status": "ok"}`);
+    expect(json).not.toContain(secret);
+    expect(JSON.parse(json ?? "")).toEqual({ COMPOSIO_API_KEY: "[redacted]", status: "ok" });
+    expect(
+      bounded(`COMPOSIO_API_KEY: "${secret}"`, 1_000, [], { replaySaved: true }),
+    ).not.toContain(secret);
+    expect(sanitizeSensitiveText(`COMPOSIO_API_KEY: "${secret}"`)).not.toContain(secret);
+    expect(kept(`note COMPOSIO_API_KEY: "${secret}" tail`)).not.toContain(secret);
+    expect(
+      keptToolResult({ ...base, result: { content: [{ type: "text", text: "Bearer abc]" }] } }, []),
+    ).toBe("Bearer [redacted]]");
+    expect(
+      keptToolResult(
+        { ...base, result: { content: [{ type: "text", text: "Bearer abc: detail" }] } },
+        [],
+      ),
+    ).toBe("Bearer [redacted]: detail");
+  });
+
   it("redacts a raw credential that contains a forged omission marker, including its suffix", () => {
     const forged = "\n… [12 characters not kept] …\n";
     const suffix = "SECRET_SUFFIX_UNLABELED";

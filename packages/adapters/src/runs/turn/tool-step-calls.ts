@@ -20,6 +20,7 @@ import {
 } from "../../runtime/pi/pi-runtime-transcript.js";
 import { storeStepScreenshot } from "../../storage/thread-artifacts.js";
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
+import { redactComposioApiKeyAssignments } from "./secret-assignment-text.js";
 import { toolCompletionOutcome } from "./tool-completion-audit.js";
 
 /**
@@ -512,7 +513,8 @@ function cleanToolText(text: string, secrets: string[], honorOmissionMarker = fa
   });
   const sanitizeDecoded = (value: string) => sanitizeSensitiveText(redactSecrets(value, secrets));
   const sanitizePlain = (value: string) => sanitizeSensitiveText(redactSecrets(value, secretForms));
-  const cleaned = redactJsonStringsAndPlainText(text, sanitizeDecoded, sanitizePlain, secrets);
+  const prepared = redactComposioApiKeyAssignments(text);
+  const cleaned = redactJsonStringsAndPlainText(prepared, sanitizeDecoded, sanitizePlain, secrets);
   return redactCredentialJsonFields(cleaned, honorOmissionMarker);
 }
 

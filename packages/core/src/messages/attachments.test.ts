@@ -20,7 +20,11 @@ import {
   validateAttachmentMimeType,
 } from "./attachments.js";
 import { redactSecrets, withToolHistory } from "./events.js";
-import { redactJsonStringsAndPlainText, redactJsonText } from "./json-redaction.js";
+import {
+  redactJsonStringsAndPlainText,
+  redactJsonText,
+  redactPlainBearerTokens,
+} from "./json-redaction.js";
 
 const secretRedactor = (secrets: readonly string[]) => (text: string) =>
   redactSecrets(text, secrets);
@@ -1167,6 +1171,25 @@ describe("tool step history", () => {
         : undefined;
     expect(linearResult).toBe("[redacted]\n".repeat(2_000));
     expect(inspectedChars).toBeLessThan(overlapping.length * 6);
+  });
+
+  it("leaves JSON delimiters after an unquoted Bearer token", () => {
+    expect(redactPlainBearerTokens("Bearer abc]")).toBe("Bearer [redacted]]");
+    expect(redactPlainBearerTokens("Bearer abc: detail")).toBe("Bearer [redacted]: detail");
+    expect(redactPlainBearerTokens("Bearer abc, next")).toBe("Bearer [redacted], next");
+    expect(redactPlainBearerTokens("Bearer abc} tail")).toBe("Bearer [redacted]} tail");
+    expect(redactPlainBearerTokens("Authorization: Bearer [redacted]")).toBe(
+      "Authorization: Bearer [redacted]",
+    );
+    expect(redactPlainBearerTokens("Bearer [redacted]]")).toBe("Bearer [redacted]]");
+    const many = "Bearer abc] Bearer abc: detail ".repeat(4_000);
+    expectLinearTime(() => {
+      const redacted = redactPlainBearerTokens(many);
+      expect(redacted).not.toContain("abc]");
+      expect(redacted).not.toContain("abc:");
+      expect(redacted).toContain("Bearer [redacted]]");
+      expect(redacted).toContain("Bearer [redacted]:");
+    });
   });
 
   it("scans unclosed escaped-quote strings linearly without regex backtracking", () => {
