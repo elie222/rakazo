@@ -204,14 +204,15 @@ export function mountPageAppRoutes(
             stop.abort();
             controller.close();
           };
-          // A reconnect is the catch-up, so every stream opens with a signal.
-          send("data: changed\n\n");
           void bestEffort(
             "page app change stream",
             (async () => {
               try {
                 // The owner's signal covers all their pages; only this page's changes go out.
+                // Read before the opening signal, so a change after it still differs.
                 let seen = await pageAppVersion(deps.prisma, access);
+                // A reconnect is the catch-up, so every stream opens with a signal.
+                send("data: changed\n\n");
                 for await (const _ of follow(pageChangesScope(access.actor.userId), stop.signal)) {
                   const now = await pageAppVersion(deps.prisma, access);
                   if (now === seen) continue;

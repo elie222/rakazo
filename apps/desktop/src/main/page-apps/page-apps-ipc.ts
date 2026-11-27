@@ -4,7 +4,7 @@ import { app, shell } from "electron";
 import type { IpcCaller } from "../ipc/ipc.js";
 import { handleIpc } from "../ipc/ipc.js";
 import { reportDesktopError } from "../system/monitoring.js";
-import { serverOrigin } from "./page-app-files.js";
+import { isLoopbackOrigin, serverOrigin, writeServerOverride } from "./page-app-files.js";
 import {
   createPageAppInstaller,
   installedBundles,
@@ -31,9 +31,24 @@ export function registerPageApps(userDataDir: string) {
     },
     version: app.getVersion(),
   });
+  /**
+   * The apps the caller's server installed. Rakazo's local server can come back on another
+   * port, so a local caller also takes the local apps and moves them to its port.
+   */
   const appsFor = async (event: IpcCaller) => {
     const server = callerServer(event);
-    return (await registry.list()).filter((entry) => entry.server === server);
+    if (!server) return [];
+    const local = isLoopbackOrigin(server);
+    const apps = (await registry.list()).filter(
+      (entry) => entry.server === server || (local && isLoopbackOrigin(entry.server)),
+    );
+    for (const entry of apps) {
+      if (entry.server === server) continue;
+      await writeServerOverride(entry.appId, server);
+      await registry.put({ ...entry, server });
+      entry.server = server;
+    }
+    return apps;
   };
 
   handleIpc("desktop.pageApps.install", async (event, input) => {
@@ -53,6 +68,8 @@ export function registerPageApps(userDataDir: string) {
       .map(({ appId, pageId, title }) => ({ appId, pageId, title })),
   );
   handleIpc("desktop.pageApps.open", async (event, appId) => {
+    // An update moves the bundle for a moment; opening waits until it is back in place.
+    await installer.idle();
     const entry = (await appsFor(event)).find((candidate) => candidate.appId === appId);
     if (!entry || !existsSync(entry.bundlePath)) return false;
     return (await shell.openPath(entry.bundlePath)) === "";

@@ -151,7 +151,8 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
     const key = JSON.stringify([next.page.version, ask, host.theme(), desktopLocale()]);
     // Values changed on another device draw the page again; the frame's own saves do not.
     const stateChanged = canonical(next.page.readerState ?? {}) !== canonical(known);
-    if (!force && key === shown && (!stateChanged || saving)) return;
+    const pending = saving !== null || Object.keys(unsaved).length > 0;
+    if (!force && key === shown && (!stateChanged || pending)) return;
     if (force || runtime === null) runtime = await api.runtime();
     const document = pageViewerDocument({
       runtime,
@@ -161,11 +162,12 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
       errorTitle: t("Page failed to load."),
       surface: host.surface(),
       lang: desktopLocale(),
-      state: next.page.readerState ?? {},
+      // Values not saved yet are the reader's latest, over the server's older copy.
+      state: { ...next.page.readerState, ...unsaved },
       ask,
     });
     frame = { id: frame.id + 1, document: withSandboxedArtifactCsp(document) };
-    known = next.page.readerState ?? {};
+    known = { ...next.page.readerState, ...unsaved };
     shown = key;
     show({ frame: `${FRAME_ORIGIN}/${frame.id}`, title: host.name, lang: desktopLocale() });
   }

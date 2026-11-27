@@ -333,5 +333,7 @@ export function createPageAppInstaller(options: {
       exclusive(() => install(request, server)),
     uninstall: (appId: string) => exclusive(() => uninstall(appId)),
     refresh: () => exclusive(refresh),
+    /** Settles once no install, removal or update is moving a bundle. */
+    idle: () => exclusive(async () => undefined),
   };
 }

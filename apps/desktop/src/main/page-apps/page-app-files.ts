@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -45,6 +46,33 @@ export function pageAppConfig(value: unknown): PageAppConfig | null {
   return isPageAppIdentity(appId, pageId, title) && origin !== null
     ? { appId: appId as string, pageId: pageId as string, title: title as string, server: origin }
     : null;
+}
+
+/** Whether an origin is this computer's own, as Rakazo's local server is. */
+export function isLoopbackOrigin(origin: string): boolean {
+  const host = URL.parse(origin)?.hostname;
+  return host === "127.0.0.1" || host === "localhost" || host === "[::1]";
+}
+
+const SERVER_FILE = "server";
+
+/**
+ * The server an app reads instead of the one in its bundle, kept with its data because a signed
+ * bundle cannot change: Rakazo's local server can move to another port between starts.
+ */
+export function readServerOverride(appId: string, home?: string): string | null {
+  try {
+    return serverOrigin(readFileSync(path.join(pageAppDataDir(appId, home), SERVER_FILE), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+export async function writeServerOverride(appId: string, server: string, home?: string) {
+  await writeFile(path.join(pageAppDataDir(appId, home), SERVER_FILE), `${server}\n`, {
+    mode: 0o600,
+  });
 }
 
 export function pageAppsFolder(home = os.homedir()): string {
