@@ -1,4 +1,8 @@
-import { QUEUE_HOLDING_RUN_STATUSES } from "@rakazo/core";
+import {
+  APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX,
+  isAppConnectionFollowUp,
+  QUEUE_HOLDING_RUN_STATUSES,
+} from "@rakazo/core";
 import type { Prisma } from "@rakazo/db";
 import { HOLDS_CHAT, handQueuedRunToWorkingRun } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -18,6 +22,7 @@ interface ChatWaitingRun {
   threadId: string;
   taskId: string;
   trigger: string;
+  clientNonce: string | null;
   status: string;
   startedAt: Date | null;
   wakeAt: Date | null;
@@ -25,8 +30,12 @@ interface ChatWaitingRun {
   routine: { name: string; inChat: boolean } | null;
 }
 
+function waitsForChat(run: Pick<ChatWaitingRun, "trigger" | "clientNonce">) {
+  return CHAT_WAITING_TRIGGERS.includes(run.trigger) || isAppConnectionFollowUp(run);
+}
+
 /**
- * A scheduled task or a message from another bot never starts beside another run in its chat, so
+ * A scheduled task, a message from another bot or an app connection follow-up waits for its chat, so
  * their messages never mix and it reads what that run did instead of doing the same work at the
  * same time: its claim waits for that run to end. Holds until then; after a while a scheduled task
  * hands itself to that run instead, so a run that goes on for hours does not hold it back. A
@@ -34,10 +43,10 @@ interface ChatWaitingRun {
  * in the chat.
  */
 export function claimWaitsForChat(
-  run: Pick<ChatWaitingRun, "id" | "botId" | "trigger" | "startedAt" | "createdAt">,
+  run: Pick<ChatWaitingRun, "id" | "botId" | "trigger" | "clientNonce" | "startedAt" | "createdAt">,
   now: Date,
 ): Prisma.RunWhereInput {
-  if (!CHAT_WAITING_TRIGGERS.includes(run.trigger) || run.startedAt) return {};
+  if (!waitsForChat(run) || run.startedAt) return {};
   const chatFree: Prisma.RunWhereInput = { thread: { runs: { none: busyRunWhere(run, now) } } };
   if (run.trigger !== "routine") return chatFree;
   return { OR: [{ routine: { is: { inChat: false } } }, chatFree] };
@@ -73,8 +82,7 @@ function busyRunWhere(
  * own, because its reply goes back to that bot.
  */
 export async function holdRunForChat(deps: ExecutorDeps, run: ChatWaitingRun): Promise<void> {
-  if (!CHAT_WAITING_TRIGGERS.includes(run.trigger) || run.status !== "queued" || run.startedAt)
-    return;
+  if (!waitsForChat(run) || run.status !== "queued" || run.startedAt) return;
   // Read again: the claim saw the routine as it is now, which an edit may have changed since the
   // run was loaded.
   const current = await deps.prisma.run.findUnique({
@@ -138,10 +146,18 @@ export async function startRunsWaitingOnChat(
       id: { not: run.id },
       threadId: run.threadId,
       botId: run.botId,
-      trigger: { in: [...CHAT_WAITING_TRIGGERS] },
       status: "queued",
       startedAt: null,
-      OR: [{ routineId: null }, { routine: { is: { inChat: true } } }],
+      OR: [
+        {
+          trigger: { in: [...CHAT_WAITING_TRIGGERS] },
+          OR: [{ routineId: null }, { routine: { is: { inChat: true } } }],
+        },
+        {
+          trigger: "follow_up",
+          clientNonce: { startsWith: APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX },
+        },
+      ],
       // A retry, or a run backing off after a failed attempt, keeps its own delay.
       retryOfRunId: null,
       attempts: { none: {} },

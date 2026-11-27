@@ -2,7 +2,12 @@ import type { JobPublisher } from "@rakazo/adapter-kit";
 import type { ConnectorRegistry } from "@rakazo/adapters";
 import { wakeRun } from "@rakazo/adapters";
 import type { Actor, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
-import { appConnectCard, connectedAppBlock, matchAppCatalog } from "@rakazo/core";
+import {
+  APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX,
+  appConnectCard,
+  connectedAppBlock,
+  matchAppCatalog,
+} from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -323,6 +328,7 @@ export async function markAppConnected(
 ): Promise<void> {
   const { bot, thread: ownThread } = await requireBotThread(deps, actor, botId);
   let thread = ownThread;
+  let chatBotIds = [bot.id];
   if (threadId && threadId !== ownThread.id) {
     const candidate = await deps.prisma.thread.findFirst({
       where: { id: threadId, spaceId: actor.spaceId },
@@ -331,6 +337,7 @@ export async function markAppConnected(
     const target = await resolveThreadTarget(deps.prisma, actor, { groupId: candidate.groupId });
     if (target.kind !== "group" || !target.memberBotIds.includes(botId)) throw new IsolationError();
     thread = { ...ownThread, id: target.threadId };
+    chatBotIds = target.memberBotIds;
   }
   const providerAdapter = deps.connectors.managed(connectorId);
   if (!providerAdapter) return;
@@ -362,7 +369,6 @@ export async function markAppConnected(
       })
     : null;
   if (organizationConnectionId ? !shared : !entry?.connected) return;
-  const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
   const committed = await deps.prisma.$transaction(async (tx) => {
     // Two authorizations may finish together on an onboarding message with multiple cards.
     await tx.$executeRaw`SELECT id FROM threads WHERE id = ${thread.id} FOR UPDATE`;
@@ -384,9 +390,11 @@ export async function markAppConnected(
     const own = messageId
       ? await tx.message.findMany({ where: { id: messageId, threadId: thread.id }, select })
       : [];
-    const messages = [...new Map([...first, ...latest, ...own].map((m) => [m.id, m])).values()];
+    // Prefer the clicked card, then the newest request for each bot.
+    const messages = [...new Map([...own, ...latest, ...first].map((m) => [m.id, m])).values()];
+    const chatBots = new Set(chatBotIds);
     const runIds = messages.flatMap((message) =>
-      message.botId === bot.id && message.runId ? [message.runId] : [],
+      message.botId && chatBots.has(message.botId) && message.runId ? [message.runId] : [],
     );
     const ownedRuns = runIds.length
       ? await tx.run.findMany({
@@ -394,19 +402,25 @@ export async function markAppConnected(
             id: { in: runIds },
             spaceId: actor.spaceId,
             userId: actor.userId,
-            botId: bot.id,
+            botId: { in: chatBotIds },
+            bot: { archivedAt: null },
             threadId: thread.id,
           },
-          select: { id: true, status: true, trigger: true },
+          select: {
+            id: true,
+            botId: true,
+            status: true,
+            trigger: true,
+            sourceMessage: { select: { id: true, role: true, authorUserId: true, threadId: true } },
+          },
         })
       : [];
     const runs = new Map(ownedRuns.map((run) => [run.id, run]));
-    let followUpRunId: string | undefined;
-    const events = [];
-    for (const message of messages) {
-      if (message.botId && message.botId !== bot.id) continue;
+    const changes = messages.flatMap((message) => {
+      const requestingBotId = message.botId ?? bot.id;
+      if (!chatBots.has(requestingBotId)) return [];
       const origin = message.runId ? runs.get(message.runId) : undefined;
-      if (message.runId && !origin) continue;
+      if (message.runId && origin?.botId !== requestingBotId) return [];
       const next = changeMessageBlocks(message, (block) => {
         if (block.kind === "app_connect" && block.organizationConnectionId !== shared?.id)
           return block;
@@ -417,38 +431,57 @@ export async function markAppConnected(
           deps.connectors.defaultConnectorId,
         );
       });
-      if (!next) continue;
+      return next ? [{ message, requestingBotId, origin, next }] : [];
+    });
+    const confirmedRequest = changes.some(
+      ({ message, requestingBotId, origin }) =>
+        message.id === messageId && requestingBotId === bot.id && origin,
+    );
+    const followUps = new Map<string, string>();
+    const events = [];
+    for (const { message, requestingBotId, origin, next } of changes) {
+      if (requestingBotId !== bot.id && !confirmedRequest) continue;
       if (
-        message.id === messageId &&
-        !bot.archivedAt &&
+        confirmedRequest &&
+        !followUps.has(requestingBotId) &&
         origin &&
         (origin.trigger === "user" || origin.trigger === "follow_up") &&
         origin.status !== "cancelled" &&
         origin.status !== "failed"
       ) {
-        followUpRunId = await queueConnectionFollowUp(tx, actor, {
-          botId: bot.id,
+        const source = origin.sourceMessage;
+        const sourceMessageId =
+          source?.role === "user" &&
+          source.authorUserId === actor.userId &&
+          source.threadId === thread.id
+            ? source.id
+            : undefined;
+        const followUp = await queueConnectionFollowUp(tx, actor, {
+          botId: requestingBotId,
           threadId: thread.id,
           prompt: appConnectedPrompt(entry?.name ?? provider),
-          // Authorization opens the app. The automatic turn still uses normal approval rules
-          // for work recovered from history.
           trigger: "follow_up",
+          clientNonce: `${APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX}${message.id}`,
+          sourceMessageId,
         });
+        followUps.set(requestingBotId, followUp);
       }
       await tx.message.update({ where: { id: message.id }, data: { blocks: next.stored } });
       events.push(
         await appendEventInTransaction(tx, {
-          ...target,
+          spaceId: actor.spaceId,
+          threadId: thread.id,
+          botId: requestingBotId,
           type: "thread.message.updated",
           payload: { messageId: message.id, role: "bot", blocks: next.blocks },
         }),
       );
     }
-    return { events, followUpRunId };
+    return { events, followUps: [...followUps.values()] };
   }, THREAD_LOCK_TRANSACTION_OPTIONS);
   for (const event of committed.events)
     await bestEffort("notify connected app card", deps.events.notify(thread.id, event.seq));
-  if (committed.followUpRunId) await wakeRun(deps.jobs, committed.followUpRunId);
+  for (const runId of committed.followUps) await wakeRun(deps.jobs, runId);
 }
 
 function capitalize(value: string): string {

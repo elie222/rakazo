@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { connectApp } from "./connect-app.js";
 
 const stored = vi.hoisted(
-  () => [] as { blocks: MessageBlock[]; clientNonce: string; runId: string }[],
+  () => [] as { blocks: MessageBlock[]; botId: string; clientNonce: string; runId: string }[],
 );
 vi.mock("@rakazo/db", async (original) => ({
   ...(await original<typeof db>()),
@@ -28,7 +28,9 @@ function fixture(items = [entry]) {
     $executeRaw: vi.fn(),
     run: { findFirst: vi.fn(async () => null) },
     message: {
-      findMany: vi.fn(async () => stored),
+      findMany: vi.fn(async ({ where }: { where: { botId?: string } }) =>
+        stored.filter((message) => !where.botId || message.botId === where.botId),
+      ),
       findFirst: vi.fn(
         async ({ where }: { where: { clientNonce: string } }) =>
           stored.find((message) => message.clientNonce === where.clientNonce) ?? null,
@@ -145,6 +147,21 @@ describe("connect_app execution", () => {
       select: { id: true },
     });
     expect(stored.map((message) => message.runId)).toEqual(["run", "other-run"]);
+  });
+
+  it("shows a card for each bot that needs the app in a group chat", async () => {
+    const f = fixture();
+    await f.call();
+    await connectApp(
+      f.deps,
+      f.providers,
+      { ...f.context, botId: "peer" },
+      { ...f.target, id: "peer-run", botId: "peer" },
+      "Gmail",
+      "peer-effect",
+    );
+    expect(stored.map((message) => message.botId)).toEqual(["bot", "peer"]);
+    expect(f.tx.run.findFirst).not.toHaveBeenCalled();
   });
 });
 

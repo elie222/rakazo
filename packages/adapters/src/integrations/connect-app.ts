@@ -100,7 +100,7 @@ export async function connectApp(
     if (replayed) return null;
     // Only recent cards count as already shown; an old one far up the chat should not block a new one.
     const recent = await tx.message.findMany({
-      where: { threadId: target.threadId },
+      where: { threadId: target.threadId, botId: target.botId },
       select: { id: true, runId: true, blocks: true },
       orderBy: { createdAt: "desc" },
       take: RECENT_MESSAGES,
@@ -117,7 +117,7 @@ export async function connectApp(
         : [],
     );
     if (pendingRuns.includes(target.id)) return null;
-    // Another Space member's request uses their account. Only reuse a card this user can resolve.
+    // Each bot needs a request to resume from, and another member's request uses their account.
     if (
       pendingRuns.length &&
       (await tx.run.findFirst({

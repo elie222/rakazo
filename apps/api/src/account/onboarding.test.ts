@@ -14,13 +14,16 @@ vi.mock("@rakazo/db", async (original) => ({
 }));
 // These transactions lock the thread row, which snapshot reads hold for up to 15s.
 const budget = { timeout: 20_000 };
+type ConnectionOrigin = Pick<db.Run, "id" | "botId" | "status" | "trigger"> & {
+  sourceMessage: Pick<db.Message, "id" | "role" | "authorUserId" | "threadId"> | null;
+};
 function fixture(catalog: unknown[]) {
   posted.length = 0;
   const tx = {
     $executeRaw: vi.fn(),
     task: { create: vi.fn(async () => ({ id: "follow-up-task" })) },
     run: {
-      findMany: vi.fn(async () => [] as { id: string; status: string; trigger: string }[]),
+      findMany: vi.fn(async (): Promise<ConnectionOrigin[]> => []),
       create: vi.fn(async () => ({ id: "follow-up-run" })),
     },
     message: {
@@ -337,14 +340,28 @@ function botConnectionFixture() {
 
 it("starts one follow-up for the same user and chat when a bot's card connects", async () => {
   const { complete, deps, tx, actor } = botConnectionFixture();
-  tx.run.findMany.mockResolvedValue([{ id: "origin-run", status: "completed", trigger: "user" }]);
+  tx.run.findMany.mockResolvedValue([
+    {
+      id: "origin-run",
+      botId: "bot",
+      status: "running",
+      trigger: "user",
+      sourceMessage: {
+        id: "request",
+        threadId: "thread",
+        role: "user",
+        authorUserId: actor.userId,
+      },
+    },
+  ]);
   await complete();
   await complete();
   expect(tx.run.findMany).toHaveBeenCalledWith(
     expect.objectContaining({
       where: {
         id: { in: ["origin-run"] },
-        botId: "bot",
+        botId: { in: ["bot"] },
+        bot: { archivedAt: null },
         threadId: "thread",
         spaceId: actor.spaceId,
         userId: actor.userId,
@@ -360,11 +377,32 @@ it("starts one follow-up for the same user and chat when a bot's card connects",
       taskId: "follow-up-task",
       trigger: "follow_up",
       status: "queued",
+      clientNonce: "app-connected:requested-connection",
+      sourceMessageId: "request",
     },
     select: { id: true },
   });
   expect(deps.jobs.enqueue).toHaveBeenCalledExactlyOnceWith(
     expect.objectContaining({ name: "run.continue", payload: { runId: "follow-up-run" } }),
+  );
+});
+
+it("does not use a bot-authored source as the user's request", async () => {
+  const { complete, tx } = botConnectionFixture();
+  tx.run.findMany.mockResolvedValue([
+    {
+      id: "origin-run",
+      botId: "bot",
+      status: "completed",
+      trigger: "follow_up",
+      sourceMessage: { id: "handoff", threadId: "thread", role: "bot", authorUserId: null },
+    },
+  ]);
+  await complete();
+  expect(tx.run.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: expect.objectContaining({ trigger: "follow_up", sourceMessageId: undefined }),
+    }),
   );
 });
 
