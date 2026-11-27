@@ -3,6 +3,7 @@ import path from "node:path";
 import type { PageAppConfig } from "./page-app-files.js";
 import { pageAppConfig } from "./page-app-files.js";
 
+/** `bundlePath` is the app's bundle on macOS, and its shortcut or desktop entry elsewhere. */
 export type InstalledPageApp = PageAppConfig & { bundlePath: string };
 
 const REGISTRY_FILE = "page-apps.json";

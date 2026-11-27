@@ -19,6 +19,7 @@ import {
 } from "./bundle-builder.js";
 import { pageAppBundleId, pageAppName, uniqueBundleName } from "./bundle-name.js";
 import { ICNS_SIZES, isSquarePng, writeIcns } from "./icns.js";
+import { ICO_SIZES } from "./ico.js";
 import { createOneAtATime } from "./one-at-a-time.js";
 import { createPageAppApi, revokePageAppToken } from "./page-app-api.js";
 import type { PageAppConfig } from "./page-app-files.js";
@@ -36,6 +37,7 @@ import {
 import type { InstalledPageApp } from "./registry.js";
 
 const MAX_ICON_BASE64 = 4 * 1024 * 1024;
+const ICON_SIZES = new Set([...ICNS_SIZES, ...ICO_SIZES]);
 /** One drawing per size the web app renders, with room to spare; a longer list is refused unread. */
 const MAX_ICON_ENTRIES = 12;
 /** Where bundles are made before they appear in the apps folder, on the same volume. */
@@ -69,7 +71,7 @@ export function pageAppInstallRequest(value: unknown): PageAppInstallRequest | n
   for (const entry of icon as unknown[]) {
     const { size, png } = (entry ?? {}) as { size?: unknown; png?: unknown };
     if (typeof size !== "number" || pngs.has(size)) return null;
-    if (!ICNS_SIZES.includes(size)) continue;
+    if (!ICON_SIZES.has(size)) continue;
     if (typeof png !== "string" || png.length > MAX_ICON_BASE64) return null;
     const bytes = Buffer.from(png, "base64");
     if (!isSquarePng(bytes, size)) return null;
@@ -140,7 +142,10 @@ async function stopApp(bundle: string) {
 }
 
 /** The apps found in the apps folder by their own config, for a registry that has to be rebuilt. */
-export async function installedBundles(home?: string): Promise<InstalledPageApp[]> {
+export async function installedBundles(
+  appData: string,
+  home?: string,
+): Promise<InstalledPageApp[]> {
   const folder = pageAppsFolder(home);
   const found = await Promise.all(
     [...(await bundleNames(folder))]
@@ -150,7 +155,7 @@ export async function installedBundles(home?: string): Promise<InstalledPageApp[
         const built = await bestEffort("read a page app bundle", readBuiltApp(bundlePath));
         const config = built ? pageAppConfig(built.config) : null;
         // The server an app was moved to wins over the one in its bundle.
-        const server = config ? (readServerOverride(config.appId, home) ?? config.server) : null;
+        const server = config ? (readServerOverride(config.appId, appData) ?? config.server) : null;
         return config && server ? [{ ...config, server, bundlePath }] : [];
       }),
   );
@@ -164,10 +169,11 @@ export function createPageAppInstaller(options: {
   /** Opens a bundle as an app. */
   open: (bundle: string) => Promise<void>;
   version: string;
+  appData: string;
   home?: string;
   source?: string;
 }) {
-  const { registry, home } = options;
+  const { registry, home, appData } = options;
   const source = options.source ?? runningBundle();
   const exclusive = createOneAtATime();
 
@@ -201,8 +207,8 @@ export function createPageAppInstaller(options: {
             config,
           }),
         async (built) => {
-          await writePageAppToken(request.appId, request.token, home);
-          await writePageAppHeaders(request.appId, serverHeaders, home);
+          await writePageAppToken(request.appId, request.token, appData);
+          await writePageAppHeaders(request.appId, serverHeaders, appData);
           const target = path.join(folder, uniqueBundleName(name, await bundleNames(folder)));
           await rename(built, target);
           return target;
@@ -224,7 +230,7 @@ export function createPageAppInstaller(options: {
       if (placed !== null) await bestEffort("remove an unfinished page app", removeBundle(placed));
       await bestEffort(
         "remove an unfinished page app's data",
-        removePageAppData(request.appId, home),
+        removePageAppData(request.appId, appData),
       );
       throw error;
     }
@@ -238,11 +244,11 @@ export function createPageAppInstaller(options: {
 
   /** Drops an app whose bundle is gone; until its token is revoked, the next start tries again. */
   async function forget(app: InstalledPageApp) {
-    const token = await readPageAppToken(app.appId, home);
-    const headers = await readPageAppHeaders(app.appId, home);
+    const token = await readPageAppToken(app.appId, appData);
+    const headers = await readPageAppHeaders(app.appId, appData);
     const api = token && createPageAppApi(app.server, token, fetch, headers);
     if (api && !(await revokePageAppToken(api))) return;
-    await removePageAppData(app.appId, home);
+    await removePageAppData(app.appId, appData);
     await registry.remove(app.appId);
   }
 
@@ -259,8 +265,8 @@ export function createPageAppInstaller(options: {
     if (!existsSync(app.bundlePath)) {
       // Renamed in its folder, it is found there; moved anywhere else, Spotlight may know.
       const moved =
-        (await installedBundles(home)).find((found) => found.appId === app.appId)?.bundlePath ??
-        (await findBundle(pageAppBundleId(app.appId), home ?? os.homedir()));
+        (await installedBundles(appData, home)).find((found) => found.appId === app.appId)
+          ?.bundlePath ?? (await findBundle(pageAppBundleId(app.appId), home ?? os.homedir()));
       if (moved) await registry.put({ ...app, bundlePath: moved });
       else await forget(app);
       return;
@@ -339,7 +345,7 @@ export function createPageAppInstaller(options: {
   /** Records an app whose install placed its bundle but ended before writing the registry. */
   async function adoptUntracked() {
     const known = new Set((await registry.list()).map((app) => app.appId));
-    for (const found of await installedBundles(home))
+    for (const found of await installedBundles(appData, home))
       if (!known.has(found.appId)) await registry.put(found);
   }
 

@@ -76,11 +76,12 @@ function visible(bounds: Rectangle | undefined): Rectangle | undefined {
 }
 
 /** The app's one window: the shell page in the sandbox, nothing it can navigate or open. */
-export async function createPageAppWindow(title: string) {
+export async function createPageAppWindow(title: string, icon?: string) {
   const saved = await readWindowState();
   const bounds = visible(saved.bounds);
   const win = new BrowserWindow({
     title,
+    ...(icon ? { icon } : {}),
     width: bounds?.width ?? 1040,
     height: bounds?.height ?? 760,
     ...(bounds ? { x: bounds.x, y: bounds.y } : {}),
@@ -117,14 +118,42 @@ export async function createPageAppWindow(title: string) {
   return win;
 }
 
-export function pageAppMenu(input: {
-  name: string;
-  win: BrowserWindow;
-  canOpenInRakazo: boolean;
-  openInRakazo: () => void;
-  reload: () => void;
-  uninstall: () => void;
-}): MenuItemConstructorOptions[] {
+/** Roles Electron offers only on macOS. */
+const MAC_ONLY_ROLES = new Set<MenuItemConstructorOptions["role"]>([
+  "hide",
+  "hideOthers",
+  "unhide",
+  "zoom",
+]);
+
+function withoutMacOnlyRoles(items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] {
+  return items.flatMap((item) => {
+    if (MAC_ONLY_ROLES.has(item.role)) return [];
+    if (!Array.isArray(item.submenu)) return [item];
+    const submenu = withoutMacOnlyRoles(item.submenu).filter(
+      (each, index, all) =>
+        each.type !== "separator" || (index > 0 && all[index - 1]?.type !== "separator"),
+    );
+    return [{ ...item, submenu }];
+  });
+}
+
+export function pageAppMenu(
+  input: {
+    name: string;
+    win: BrowserWindow;
+    canOpenInRakazo: boolean;
+    openInRakazo: () => void;
+    reload: () => void;
+    uninstall: () => void;
+  },
+  platform = process.platform,
+): MenuItemConstructorOptions[] {
+  const menu = macPageAppMenu(input);
+  return platform === "darwin" ? menu : withoutMacOnlyRoles(menu);
+}
+
+function macPageAppMenu(input: Parameters<typeof pageAppMenu>[0]): MenuItemConstructorOptions[] {
   const { name, win } = input;
   return [
     {

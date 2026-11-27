@@ -20,11 +20,15 @@ export function pageAppName(title: string): string {
   return name || FALLBACK_NAME;
 }
 
-/** The bundle file name for an app, numbered when another app already has the name. */
-export function uniqueBundleName(name: string, taken: ReadonlySet<string>): string {
+/** The bundle or shortcut file name for an app, numbered when another app already has the name. */
+export function uniqueBundleName(
+  name: string,
+  taken: ReadonlySet<string>,
+  extension = ".app",
+): string {
   const lower = new Set([...taken].map((entry) => entry.toLowerCase()));
   for (let number = 1; ; number += 1) {
-    const candidate = number === 1 ? `${name}.app` : `${name} ${number}.app`;
+    const candidate = number === 1 ? `${name}${extension}` : `${name} ${number}${extension}`;
     if (!lower.has(candidate.toLowerCase())) return candidate;
   }
 }

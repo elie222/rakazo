@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { PageAbility } from "@rakazo/contracts";
 import { bestEffort, getLogger } from "@rakazo/logging";
@@ -16,6 +16,7 @@ import {
   setPageAppMenu,
 } from "./page-apps/app/page-app-window.js";
 import { runningBundle } from "./page-apps/bundle-builder.js";
+import { adoptLauncherIdentity, launcherIcon, removeOwnLauncher } from "./page-apps/launchers.js";
 import { createPageAppApi, revokePageAppToken } from "./page-apps/page-app-api.js";
 import {
   PAGE_APP_CONFIG_FILE,
@@ -26,40 +27,59 @@ import {
   readServerOverride,
   removePageAppData,
 } from "./page-apps/page-app-files.js";
+import { launchedPageAppId } from "./page-apps/page-app-launch.js";
 import { systemWindowBackground } from "./windows/window-options.js";
 
-const config = pageAppConfig(
-  JSON.parse(readFileSync(path.join(process.resourcesPath, PAGE_APP_CONFIG_FILE), "utf8")),
+/** Set when a Windows or Linux launcher started Rakazo as this app; macOS apps are bundles. */
+const launchedId = launchedPageAppId(process.argv, process.platform);
+const appData = app.getPath("appData");
+const configFile = path.join(
+  launchedId === null ? process.resourcesPath : pageAppDataDir(launchedId, appData),
+  PAGE_APP_CONFIG_FILE,
 );
-if (!config) throw new Error("This page app's config is not usable.");
+// A launcher the system kept after uninstalling, such as a taskbar pin, starts nothing.
+if (launchedId !== null && !existsSync(configFile)) process.exit(0);
+const config = pageAppConfig(JSON.parse(readFileSync(configFile, "utf8")));
+if (!config || (process.platform !== "darwin" && config.appId !== launchedId))
+  throw new Error("This page app's config is not usable.");
 const { appId, pageId, title } = config;
-const server = readServerOverride(appId) ?? config.server;
+const server = readServerOverride(appId, appData) ?? config.server;
 
 app.setName(title);
-app.setPath("userData", pageAppDataDir(appId));
+app.setPath("userData", pageAppDataDir(appId, appData));
+if (launchedId !== null) adoptLauncherIdentity(appId);
 registerPageAppScheme();
 
 /**
- * Moves this app to the Trash. Its data goes only with a revoked token; otherwise Rakazo finds
- * the app in the Trash on its next start and revokes the token from there.
+ * Removes this app. Its data goes only with a revoked token: otherwise its token stays, and
+ * Rakazo, finding the bundle or launcher gone, tries the revoke again on its next start.
  */
 async function removeSelf(revoked: boolean) {
-  // A bundle the Trash refused stays usable: its data goes only once the bundle is gone.
-  const trashed = await shell.trashItem(runningBundle()).then(
+  // An app whose bundle or launcher could not be removed stays usable: its data goes only
+  // once that is gone.
+  const removal =
+    launchedId === null ? shell.trashItem(runningBundle()) : removeOwnLauncher(appId, appData);
+  const removed = await removal.then(
     () => true,
     (error: unknown) => {
-      getLogger().warn("page app could not move itself to the Trash", { error });
+      getLogger().warn("page app could not remove itself", { error });
       return false;
     },
   );
-  if (revoked && trashed) await bestEffort("remove page app data", removePageAppData(appId));
+  if (revoked && removed)
+    await bestEffort("remove page app data", removePageAppData(appId, appData));
   app.exit(0);
 }
 
 async function start() {
   startDesktopLocale(null, app.getPreferredSystemLanguages()[0] ?? app.getLocale());
-  const token = await readPageAppToken(appId);
-  const api = createPageAppApi(server, token ?? "", fetch, await readPageAppHeaders(appId));
+  const token = await readPageAppToken(appId, appData);
+  const api = createPageAppApi(
+    server,
+    token ?? "",
+    fetch,
+    await readPageAppHeaders(appId, appData),
+  );
   const notifications = new Set<Notification>();
   let removing = false;
 
@@ -71,7 +91,7 @@ async function start() {
     removing = true;
     const { response } = await showDialog({
       message: t("{name} was removed.", { name: title }),
-      buttons: [t("Move to Trash"), t("Quit")],
+      buttons: [launchedId === null ? t("Move to Trash") : t("Uninstall"), t("Quit")],
       defaultId: 0,
       cancelId: 1,
       noLink: true,
@@ -159,7 +179,10 @@ async function start() {
   handleIpc("desktop.pageApp.ready", () => controller.screen());
   handleIpc("desktop.pageApp.message", (_event, data, frame) => controller.message(data, frame));
   servePageApp(controller.frameDocument);
-  win = await createPageAppWindow(title);
+  win = await createPageAppWindow(
+    title,
+    launchedId === null ? undefined : launcherIcon(appId, appData),
+  );
   desktop.pageAppWindow = win;
   win.on("closed", () => app.quit());
   win.on("focus", () => controller.refresh());

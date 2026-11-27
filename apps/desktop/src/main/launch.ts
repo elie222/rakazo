@@ -6,8 +6,14 @@ import path from "node:path";
 // launch after the first skips most of the compile. It only covers modules loaded after
 // this call, so the bundle loads from here.
 enableCompileCache();
-// A page installed as its own app is a copy of Rakazo carrying its page's config.
-if (existsSync(path.join(process.resourcesPath, "page-app.json"))) await import("./page-app.js");
+// A page installed as its own app is a copy of Rakazo carrying its page's config on macOS, and
+// Rakazo started by the app's launcher with `--page-app=<id>` elsewhere (this file is not
+// bundled, so page-app.ts checks the id).
+if (
+  existsSync(path.join(process.resourcesPath, "page-app.json")) ||
+  (process.platform !== "darwin" && process.argv.some((each) => each.startsWith("--page-app=")))
+)
+  await import("./page-app.js");
 else await import("./main.js");
 // Saved now rather than at exit, which a crash or forced quit never reaches.
 flushCompileCache();
