@@ -305,8 +305,8 @@ describe("keyless HTTP web provider", () => {
     expect(last).toMatchObject({ text: long.slice(360), truncated: false });
   });
 
-  it("falls back to HTML strip when Readability finds nothing", () => {
-    const extracted = extractReadableText(
+  it("falls back to HTML strip when Readability finds nothing", async () => {
+    const extracted = await extractReadableText(
       "<html><title>Plain</title><body><div>just text here</div></body></html>",
       "https://example.test/",
     );
@@ -314,13 +314,13 @@ describe("keyless HTTP web provider", () => {
     expect(extracted.text).toContain("just text here");
   });
 
-  it("keeps the HTML strip fallback's output", () => {
+  it("keeps the HTML strip fallback's output", async () => {
     const html = [
       "<frameset><TITLE lang=en>A  <b>page</b></title><style>p{}</style>",
       "<script type=x>var a = '<p>no</p>';</SCRIPT>keep 1 < 2 and <> too",
       "<p>one</p>   \n\n\n\n<div>two</div><script>unclosed</frameset>",
     ].join("");
-    expect(extractReadableText(html, "https://example.test/")).toEqual({
+    expect(await extractReadableText(html, "https://example.test/")).toEqual({
       title: "A <b>page</b>",
       text: "A page keep 1 too one\n\n two unclosed",
     });
@@ -336,23 +336,23 @@ describe("keyless HTTP web provider", () => {
       "nested elements",
       '<div><div><span><i></i></span><a href="/">x</a></div></div>'.repeat(5_000),
     ],
-  ])("extracts a page full of %s in linear time", (_name, html) => {
-    expectLinearTime(() => extractReadableText(html, "https://example.test/"));
+  ])("extracts a page full of %s in linear time", async (_name, html) => {
+    await expectLinearTime(() => extractReadableText(html, "https://example.test/"));
   });
 
-  it("keeps the text of a page too large for article extraction", () => {
+  it("keeps the text of a page too large for article extraction", async () => {
     const html = `<html><head><title>Big</title></head><body><nav>Menu</nav>${"<div><span>row</span></div>".repeat(6_000)}<p>Closing paragraph</p></body></html>`;
-    const page = extractReadableText(html, "https://example.test/");
+    const page = await extractReadableText(html, "https://example.test/");
     expect(page.title).toBe("Big");
     expect(page.text).toContain("Menu");
     expect(page.text).toContain("Closing paragraph");
   });
 
-  it("parses HTML search results with a cap", () => {
+  it("parses HTML search results with a cap", async () => {
     const html = Array.from({ length: 12 }, (_, i) => {
       return `<div class="result"><a class="result__a" href="https://example.test/${i}">T${i}</a><div class="result__snippet">S${i}</div></div>`;
     }).join("");
-    expect(parseDuckDuckGoResults(html, 3)).toHaveLength(3);
+    expect(await parseDuckDuckGoResults(html, 3)).toHaveLength(3);
   });
 });
 

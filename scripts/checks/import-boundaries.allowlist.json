@@ -75,7 +75,8 @@
     "packages/testkit/src/runtime/pi-runtime-checkpoint.test.ts -> ../../../adapters/src/tools/builtin.tool-definition.js",
     "packages/testkit/src/screenshots/mobile-screenshots-env.test.ts -> ../../../db/prisma.config.js",
     "scripts/agent-import-defaults.mjs -> ../packages/core/src/agent-import/stock.ts",
-    "scripts/build-server.mjs -> ../packages/core/src/node/prompt-source-version.ts"
+    "scripts/build-server.mjs -> ../packages/core/src/node/prompt-source-version.ts",
+    "scripts/build-server.mjs -> ../packages/page-kit/src/runtime-build.ts"
   ],
   "server": [
     "apps/web/vite.config.ts -> ../../packages/adapters/src/providers/computer/wuying/wuying-screen-assets.ts",

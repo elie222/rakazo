@@ -6,7 +6,6 @@ import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { inferAttachmentMimeType, redactSecrets } from "@rakazo/core";
 import { PLOT_TOOL_GUIDE, searchChartCatalog } from "@rakazo/core/plot-catalog";
 import { getLogger } from "@rakazo/logging";
-import { JSDOM } from "jsdom";
 import {
   displayBotWorkspacePath,
   resolveBotWorkspacePath,
@@ -282,6 +281,7 @@ export async function renderPlotFromTool(
   // everything else (reading the data file, rasterizing, attaching) is ours.
   let checkingSpec = false;
   try {
+    const { JSDOM } = await import("jsdom");
     let rows = Array.isArray(args.data) ? (args.data as unknown[]) : undefined;
     const dataPath =
       typeof args.data_path === "string" && args.data_path ? args.data_path : undefined;
