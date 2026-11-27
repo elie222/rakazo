@@ -1,6 +1,7 @@
 import type { Message } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { restoreTurnCheckpoint, serializeTurnCheckpoint } from "../../runs/turn/turn-checkpoint.js";
+import { historyImageSeenNote } from "../context/history-replay.prompt.js";
 import { buildTurnCheckpoint, upgradeCheckpointHistory } from "./pi-runtime-checkpoint.js";
 import { HISTORY_FORMAT_VERSION } from "./pi-runtime-history.js";
 
@@ -41,12 +42,10 @@ describe("checkpoint history upgrade", () => {
   });
 
   it("does not duplicate existing notes and handles missing timestamps", () => {
+    const stamp = "2026-11-19 02:31";
     const marked = {
       ...history,
-      content: [
-        { type: "text" as const, text: "[image from an earlier message; already seen]\nEarlier" },
-        image,
-      ],
+      content: [{ type: "text" as const, text: `${historyImageSeenNote(stamp)}\nEarlier` }, image],
     };
     const undated = { ...history, timestamp: 0, content: [image] };
     const upgraded = upgradeCheckpointHistory({

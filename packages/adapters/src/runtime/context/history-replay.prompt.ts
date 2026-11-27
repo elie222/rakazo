@@ -23,11 +23,25 @@ export function historyImageSeenStamp(createdAt: string | undefined): string | u
   return utcMinuteStamp(new Date(created));
 }
 
+const HISTORY_IMAGE_SEEN = "image from an earlier message; already seen";
+
 /** Marks a user-message image that is being sent again from an earlier turn. */
 export function historyImageSeenNote(stamp?: string): string {
-  return stamp
-    ? `[${stamp}, image from an earlier message; already seen]`
-    : `[image from an earlier message; already seen]`;
+  return stamp ? `[${stamp}, ${HISTORY_IMAGE_SEEN}]` : `[${HISTORY_IMAGE_SEEN}]`;
+}
+
+/** True when text already starts with a history image seen-marker, with or without a stamp. */
+export function isHistoryImageSeenNote(text: string): boolean {
+  const first = text.split("\n", 1)[0] ?? "";
+  if (first === historyImageSeenNote()) return true;
+  const placeholder = "__STAMP__";
+  const sample = historyImageSeenNote(placeholder);
+  const start = sample.indexOf(placeholder);
+  const before = sample.slice(0, start);
+  const after = sample.slice(start + placeholder.length);
+  return (
+    first.startsWith(before) && first.endsWith(after) && first.length > before.length + after.length
+  );
 }
 
 /** Leads the most recent replayed screenshot, which is sent again. */

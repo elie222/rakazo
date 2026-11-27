@@ -4,6 +4,7 @@ import {
   historyImageSeenNote,
   historyImageSeenStamp,
   imageNotKeptNote,
+  isHistoryImageSeenNote,
   REPLAYED_SCREENSHOT_LEAD,
   replyTargetNote,
   toolNotAvailableNote,
@@ -39,6 +40,11 @@ describe("history replay notes", () => {
     expect(historyImageSeenNote()).toMatchInlineSnapshot(
       `"[image from an earlier message; already seen]"`,
     );
+    expect(isHistoryImageSeenNote(historyImageSeenNote())).toBe(true);
+    expect(isHistoryImageSeenNote(`${historyImageSeenNote("2026-11-19 02:31")}\nEarlier`)).toBe(
+      true,
+    );
+    expect(isHistoryImageSeenNote("[image: ticket.png]")).toBe(false);
     expect(REPLAYED_SCREENSHOT_LEAD).toMatchInlineSnapshot(`"[the screenshot you took:]"`);
     expect(toolNotAvailableNote("shell")).toMatchInlineSnapshot(`
       "

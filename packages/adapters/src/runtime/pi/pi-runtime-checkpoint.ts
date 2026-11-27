@@ -6,7 +6,11 @@ import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "../../runs/turn/turn-checkpoint.js";
-import { historyImageSeenNote, historyImageSeenStamp } from "../context/history-replay.prompt.js";
+import {
+  historyImageSeenNote,
+  historyImageSeenStamp,
+  isHistoryImageSeenNote,
+} from "../context/history-replay.prompt.js";
 import { HISTORY_FORMAT_VERSION } from "./pi-runtime-history.js";
 import { computerSelection } from "./tools/pi-runtime-computer-mode.js";
 
@@ -144,15 +148,7 @@ export function upgradeCheckpointHistory(checkpoint: TurnCheckpoint): TurnCheckp
     if (message.role !== "user" || !tagged.rakazoHistory || !Array.isArray(message.content))
       return message;
     if (!message.content.some((part) => part.type === "image")) return message;
-    if (
-      message.content.some(
-        (part) =>
-          part.type === "text" &&
-          /\[(?:\d{4}-\d{2}-\d{2} \d{2}:\d{2}, )?image from an earlier message; already seen\]/.test(
-            part.text,
-          ),
-      )
-    )
+    if (message.content.some((part) => part.type === "text" && isHistoryImageSeenNote(part.text)))
       return message;
     const timestamp = message.timestamp;
     const createdAt =
