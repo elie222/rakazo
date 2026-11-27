@@ -94,7 +94,17 @@ async function finishStatusChange(
       metadata: { by },
     });
   if (!active) await endDeactivatedAccess(deps, userId);
-  else if (changed) await deps.prisma.session.deleteMany({ where: { userId } });
+  else if (changed) {
+    await deps.prisma.session.deleteMany({ where: { userId } });
+    await revokeUserPageApps(deps.prisma, userId);
+  }
+}
+
+/** Page apps are system rows: their tokens are looked up before any member context exists. */
+function revokeUserPageApps(prisma: AccountStatusDeps["prisma"], userId: string) {
+  return runAsSystem("revoke a deactivated account's page apps", () =>
+    prisma.pageApp.deleteMany({ where: { userId } }),
+  );
 }
 
 /**
@@ -115,7 +125,7 @@ export async function endDeactivatedAccess(deps: AccountStatusDeps, userId: stri
     // A pending code would otherwise link a chat app to the account after this.
     () => prisma.messagingLinkCode.deleteMany({ where: { userId } }),
     // Installed page apps hold their own tokens, which a reactivation must not bring back.
-    () => prisma.pageApp.deleteMany({ where: { userId } }),
+    () => revokeUserPageApps(prisma, userId),
     // Screen links issued before now stop working; people still allowed get new ones.
     () =>
       prisma.bot.updateMany({ where: { userId }, data: { screenGeneration: { increment: 1 } } }),

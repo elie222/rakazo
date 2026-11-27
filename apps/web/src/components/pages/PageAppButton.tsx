@@ -62,7 +62,8 @@ export function PageAppButton({ page, className }: { page: InstallablePage; clas
     stale: [INSTALLED_KEY],
     onSaved: () => setConfirming(false),
   });
-  if (!bridge) return null;
+  // Until the desktop says which apps it has, Install could add a second app for the same page.
+  if (!bridge || !installed.isSuccess) return null;
   const app = installed.data?.find((each) => each.pageId === page.id);
   if (app)
     return (
