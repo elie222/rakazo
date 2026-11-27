@@ -542,6 +542,70 @@ it("still builds a decision-model checker when data retention is not restricted"
   ).resolves.toBeDefined();
 });
 
+it("renews the deployment checker credential on delayed reviews and on the verdict retry", async () => {
+  const resolveApiKey = vi
+    .fn<(signal?: AbortSignal) => Promise<string>>()
+    .mockResolvedValueOnce("fixture-first-renewed-key")
+    .mockResolvedValueOnce("fixture-retry-renewed-key")
+    .mockResolvedValueOnce("fixture-later-renewed-key");
+  const checkedKeys: string[] = [];
+  const run = vi.fn(async function* (request: AgentRunRequest) {
+    expect(request.model.apiKey).toBe("fixture-initial-key");
+    const key = await request.model.resolveApiKey?.();
+    if (!key) throw new Error("Fixture expected a renewable credential");
+    checkedKeys.push(key);
+    if (checkedKeys.length === 3) throw new Error(`Provider failed with ${key}`);
+    yield {
+      type: "done",
+      text:
+        checkedKeys.length === 1
+          ? "unreadable verdict"
+          : JSON.stringify({ decision: "ask", reason: `Needs review: ${key}` }),
+    };
+  });
+  vi.mocked(findConnectedModelCredential).mockResolvedValueOnce(null);
+  vi.mocked(resolveModelKey).mockResolvedValueOnce({
+    apiKey: "fixture-initial-key",
+    resolveApiKey,
+    billing: "deployment",
+    redact: [],
+    callObserver: undefined,
+    connectionId: undefined,
+  });
+  const provider = await autoReviewCheckerProvider(
+    {
+      ...checkerDeps,
+      runtime: { describe: () => ({ capabilities: { scripted: false } }), run },
+    } as unknown as ExecutorDeps,
+    reviewScope,
+    { memberChecker: false, registerSecrets: vi.fn() },
+    { provider: "openai", model: "gpt-6-luna" },
+  );
+  expect(resolveApiKey).not.toHaveBeenCalled();
+  await expect(provider.review(reviewRequest, reviewContext)).resolves.toMatchObject({
+    decision: "ask",
+    reason: "Needs review: [redacted]",
+  });
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    await expect(provider.review(reviewRequest, reviewContext)).resolves.toMatchObject({
+      decision: "error",
+      reason: "Checker failed.",
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("Provider failed with [redacted]"));
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("fixture-later-renewed-key");
+  } finally {
+    warn.mockRestore();
+  }
+  expect(checkedKeys).toEqual([
+    "fixture-first-renewed-key",
+    "fixture-retry-renewed-key",
+    "fixture-later-renewed-key",
+  ]);
+  expect(resolveApiKey).toHaveBeenCalledTimes(3);
+  for (const [signal] of resolveApiKey.mock.calls) expect(signal).toBeInstanceOf(AbortSignal);
+});
+
 it("passes the data retention choice and who pays to a language-model checker", async () => {
   const run = vi.fn(async function* (_request: AgentRunRequest) {
     yield { type: "done", text: '{"decision":"ask","reason":"Requires review."}' };

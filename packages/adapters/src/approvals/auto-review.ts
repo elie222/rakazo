@@ -412,21 +412,26 @@ const AutoReviewVerdict = z.object({
  * with no repeated keys. Anything else that still reads as a verdict becomes "ask", so prose, a
  * second object, or repaired syntax can never pass an action; an unreadable reply is "error".
  */
-export function parseAutoReviewJudgeText(text: string): {
+export function parseAutoReviewJudgeText(
+  text: string,
+  secrets: readonly string[] = [],
+): {
   decision: AutoReviewJudgeDecision;
   reason?: string;
 } {
+  const safeReason = (reason: string | undefined) =>
+    reason === undefined ? undefined : sanitizeAutoReviewReason(redactSecrets(reason, secrets));
   const verdict = readStrictVerdict(text);
   if (verdict) {
     return {
       decision: verdict.decision,
-      reason: verdict.reason === undefined ? undefined : sanitizeAutoReviewReason(verdict.reason),
+      reason: safeReason(verdict.reason),
     };
   }
   const loose = parseModelJson(text, AutoReviewVerdict);
   if (!loose) return { decision: "error" };
   if (loose.decision !== "ask" || loose.reason === undefined) return { decision: "ask" };
-  return { decision: "ask", reason: sanitizeAutoReviewReason(loose.reason) };
+  return { decision: "ask", reason: safeReason(loose.reason) };
 }
 
 function readStrictVerdict(text: string): z.infer<typeof AutoReviewVerdict> | undefined {
@@ -475,6 +480,20 @@ export async function runAutoReviewJudge(
   const timeoutMs = input.timeoutMs ?? autoReviewTimeoutMs();
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
+  const secrets = secretValuesToRedact({
+    kind: "openai_compatible",
+    baseUrl: input.baseUrl ?? "",
+    apiKey: input.apiKey,
+    headers: input.headers,
+  });
+  const renew = input.oauth ? undefined : input.resolveApiKey;
+  const resolveApiKey = renew
+    ? async (requestSignal?: AbortSignal) => {
+        const key = await renew(requestSignal ?? signal);
+        if (!secrets.includes(key)) secrets.push(key);
+        return key;
+      }
+    : undefined;
   for (let attempt = 0; ; attempt++) {
     let text = "";
     let failed = false;
@@ -496,6 +515,7 @@ export async function runAutoReviewJudge(
             provider: input.checker.provider,
             id: input.checker.model,
             apiKey: input.oauth ? undefined : input.apiKey,
+            resolveApiKey,
             accountId: input.accountId,
             gatewayId: input.gatewayId,
             projectId: input.projectId,
@@ -541,12 +561,6 @@ export async function runAutoReviewJudge(
         (input.signal?.aborted === true &&
           (input.signal.reason instanceof DOMException || input.signal.reason instanceof Error) &&
           input.signal.reason.name === "TimeoutError");
-      const secrets = secretValuesToRedact({
-        kind: "openai_compatible",
-        baseUrl: input.baseUrl ?? "",
-        apiKey: input.apiKey,
-        headers: input.headers,
-      });
       const detail = timedOut
         ? timeoutSignal.aborted
           ? `timed out after ${timeoutMs}ms`
@@ -570,7 +584,7 @@ export async function runAutoReviewJudge(
     if (failed || !text) {
       return { decision: "error", model: modelLabel, reason: "Checker returned no decision." };
     }
-    const parsed = parseAutoReviewJudgeText(text);
+    const parsed = parseAutoReviewJudgeText(text, secrets);
     // An unreadable verdict gets one more try before the owner is asked.
     if (parsed.decision === "error" && attempt === 0) continue;
     return {
@@ -586,6 +600,7 @@ export type LlmAutoReviewOptions = {
   runtime: AgentRuntime;
   checker: AutoReviewChecker;
   apiKey?: string;
+  resolveApiKey?: AgentRunModel["resolveApiKey"];
   accountId?: string;
   gatewayId?: string;
   projectId?: string;

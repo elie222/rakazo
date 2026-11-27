@@ -44,6 +44,7 @@ import {
   assistantText,
   failedAssistantMessage,
   messageHasToolCall,
+  renewableCredentialFailure,
   sanitizeProviderError,
 } from "./pi-runtime-errors.js";
 import {
@@ -560,11 +561,11 @@ export function fallbackAwareModelStream(
       let renewableKey: string | undefined;
       try {
         if (target.config.resolveApiKey) renewableKey = await target.config.resolveApiKey(signal);
-      } catch {
+      } catch (error) {
         paceSlot?.release();
         if (failIfAborted(target)) return;
         // Nothing has streamed yet. Keep raw credential errors out of progress.
-        const failure = new Error("Could not renew the model credential.");
+        const failure = renewableCredentialFailure(target.config.provider, error);
         recordFailure(target, failure.message);
         state.primaryFailure ??= failure.message;
         const switched = await switchToNext(target);
