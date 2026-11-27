@@ -6,7 +6,12 @@ import {
   PAGE_TITLE_MAX_LENGTH,
   PageTitleSchema,
 } from "@rakazo/contracts";
-import { CARD_TITLE_ESCAPED_CHARACTERS, containsSecret, redactSecrets } from "@rakazo/core";
+import {
+  CARD_TITLE_ESCAPED_CHARACTERS,
+  containsSecret,
+  escapeSearchWildcards,
+  redactSecrets,
+} from "@rakazo/core";
 import {
   isUniqueViolation,
   pageImageNames,
@@ -93,19 +98,25 @@ function reachablePage(ctx: RunContext, pageId: string) {
   return { id: pageId, ...reachablePages(ctx) };
 }
 
-async function listPages(ctx: RunContext) {
-  const pages = await ctx.deps.prisma.page.findMany({
-    where: reachablePages(ctx),
+async function listPages(ctx: RunContext, search: unknown) {
+  const query = typeof search === "string" ? search.trim().slice(0, PAGE_TITLE_MAX_LENGTH) : "";
+  const rows = await ctx.deps.prisma.page.findMany({
+    where: {
+      ...reachablePages(ctx),
+      ...(query ? { title: { contains: escapeSearchWildcards(query), mode: "insensitive" } } : {}),
+    },
     select: { id: true, title: true, visibility: true, updatedAt: true },
     orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    take: PAGE_LIST_MAX_LIMIT,
+    take: PAGE_LIST_MAX_LIMIT + 1,
   });
+  const pages = rows.slice(0, PAGE_LIST_MAX_LIMIT);
   if (pages.length)
     await markReadOutsideContent(
       ctx,
       pages.map((page) => page.title),
     );
   return {
+    ...(rows.length > PAGE_LIST_MAX_LIMIT ? { hasMore: true } : {}),
     pages: pages.map((page) => ({
       pageId: page.id,
       title: page.title,
@@ -268,7 +279,7 @@ async function savePage(ctx: RunContext, call: ToolCall) {
   const { deps, run, bot, thread } = ctx;
   const { args } = call;
   if (args.help === true) return { guide: PAGE_KIT_GUIDE };
-  if (args.list === true) return listPages(ctx);
+  if (args.list === true) return listPages(ctx, args.query);
   const pageId = argumentGiven(args.pageId) ? String(args.pageId) : undefined;
   const hasSource = argumentGiven(args.source);
   const hasEdits = editsGiven(args);

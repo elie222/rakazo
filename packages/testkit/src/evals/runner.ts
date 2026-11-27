@@ -1267,11 +1267,7 @@ export async function runTrial(
     const pages = await prisma.page.findMany({
       where: { botId },
       orderBy: { createdAt: "asc" },
-      select: {
-        title: true,
-        currentVersion: true,
-        versions: { orderBy: { version: "desc" }, take: 1, select: { source: true } },
-      },
+      select: { title: true, currentVersion: true },
     });
     const routines = await prisma.routine.findMany({
       where: { botId },
@@ -1328,7 +1324,7 @@ export async function runTrial(
       calls: services.calls,
       subjectBotId: botId,
       apps: Object.fromEntries(apps.map((service) => [service.kind, service])),
-      pages: pages.map(({ versions, ...page }) => ({ ...page, source: versions[0]?.source ?? "" })),
+      pages,
       routines,
       routinesCreated,
       memory: memories.map((m) => m.content).join("\n"),

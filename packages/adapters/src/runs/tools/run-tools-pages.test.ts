@@ -216,7 +216,7 @@ describe("listing pages", () => {
       expect.objectContaining({
         where: { spaceId: "space-1", userId: "user-1", OR: [{ botId: "bot-1" }] },
         orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-        take: PAGE_LIST_MAX_LIMIT,
+        take: PAGE_LIST_MAX_LIMIT + 1,
       }),
     );
     expect(result).toEqual({
@@ -239,6 +239,31 @@ describe("listing pages", () => {
     expect(findMany.mock.calls[0]?.[0]).toMatchObject({
       where: { OR: [{ botId: "bot-1" }, { groupId: "group-1" }] },
     });
+  });
+
+  it("filters reachable pages by a literal title fragment", async () => {
+    const { ctx, findMany } = listing([]);
+    await pageTools.save_page!(ctx, call({ list: true, query: "  50% off  " }));
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { title: { contains: "50\\% off", mode: "insensitive" } },
+    });
+  });
+
+  it("reports when the list leaves out older matches", async () => {
+    const { ctx } = listing(
+      Array.from({ length: PAGE_LIST_MAX_LIMIT + 1 }, (_, index) => ({
+        id: String(index),
+        title: "Plan",
+        visibility: "private",
+        updatedAt: new Date("2026-11-01"),
+      })),
+    );
+    const result = (await pageTools.save_page!(ctx, call({ list: true }))) as {
+      pages: unknown[];
+      hasMore?: boolean;
+    };
+    expect(result.pages).toHaveLength(PAGE_LIST_MAX_LIMIT);
+    expect(result.hasMore).toBe(true);
   });
 
   it("answers an empty list when the bot has no pages", async () => {
