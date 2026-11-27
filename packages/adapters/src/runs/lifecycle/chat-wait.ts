@@ -152,8 +152,10 @@ export async function startRunsWaitingOnChat(
         {
           trigger: { in: [...CHAT_WAITING_TRIGGERS] },
           OR: [{ routineId: null }, { routine: { is: { inChat: true } } }],
+          wakeAt: { gt: new Date() },
         },
         {
+          // The active turn can finish before the follow-up has recorded its wait.
           trigger: "follow_up",
           clientNonce: { startsWith: APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX },
         },
@@ -161,7 +163,6 @@ export async function startRunsWaitingOnChat(
       // A retry, or a run backing off after a failed attempt, keeps its own delay.
       retryOfRunId: null,
       attempts: { none: {} },
-      wakeAt: { gt: new Date() },
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true },

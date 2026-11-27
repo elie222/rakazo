@@ -207,6 +207,33 @@ describePostgres("queued turns share a chat one at a time (PostgreSQL)", () => {
     },
   );
 
+  it("wakes a due app follow-up when the chat frees before its wait is recorded", async () => {
+    const working = await createRun({
+      trigger: "user",
+      status: "running",
+      startedAt: new Date(),
+    });
+    const waiting = await createRun({
+      trigger: "follow_up",
+      status: "queued",
+      clientNonce: `${APP_CONNECTION_FOLLOW_UP_NONCE_PREFIX}due-card`,
+    });
+    await system.run.update({
+      where: { id: waiting.id },
+      data: { wakeAt: new Date(Date.now() - 1_000) },
+    });
+    expect(await claimRun(deps, waiting, "worker-2")).toBeUndefined();
+
+    await system.run.update({ where: { id: working.id }, data: { status: "completed" } });
+    await startRunsWaitingOnChat(deps, working);
+    await holdRunForChat(deps, waiting);
+
+    expect(jobs.map((job) => [job.payload, job.availableAt])).toEqual([
+      [expect.objectContaining({ runId: waiting.id }), undefined],
+    ]);
+    expect(await claimRun(deps, waiting, "worker-2")).toBeDefined();
+  });
+
   it("starts replies from other bots that arrived during a run one at a time, in arrival order", async () => {
     const working = await createRun({
       trigger: "user",
