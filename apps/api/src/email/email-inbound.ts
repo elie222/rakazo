@@ -272,17 +272,10 @@ async function saveToInbox(
   options: { capped: boolean; verified: boolean; keepFiles: boolean; standalone: boolean },
 ): Promise<{ id: string; files: InboxFile[] } | null> {
   const where = { botId_key: { botId: bot.id, key: email.key } };
-  const select = { id: true, attachments: true, text: true } as const;
+  const select = { id: true, attachments: true } as const;
   const found = await deps.prisma.botEmailMessage.findUnique({ where, select });
   // A copy that did not name the bot is saved without its files; one that has earned them adds them.
-  const saved = async (
-    row: { id: string; attachments: unknown; text: string },
-    stored?: InboxFile[],
-  ) => {
-    // A copy that has earned the whole body replaces the cut one an earlier copy saved.
-    if (options.keepFiles && row.text === email.text && email.wholeText !== email.text) {
-      await deps.prisma.botEmailMessage.update({ where, data: { text: email.wholeText } });
-    }
+  const saved = async (row: { id: string; attachments: unknown }, stored?: InboxFile[]) => {
     const files = storedEmailAttachments(row);
     // Inline-only mail can have a saved empty list. An unreadable list cannot be replaced.
     const emptyList = Array.isArray(row.attachments) && row.attachments.length === 0;
@@ -329,7 +322,7 @@ async function saveToInbox(
         to: email.to.slice(0, LIST_STORED_MAX),
         cc: email.cc.slice(0, LIST_STORED_MAX),
         subject: email.subject.slice(0, HEADER_MAX_CHARS),
-        // A long body costs the owner storage as files do, so the same senders get it kept whole.
+        // Storage the owner pays for, as files are: kept whole for the same senders.
         text: options.keepFiles ? email.wholeText : email.text,
         attachments: files,
       },

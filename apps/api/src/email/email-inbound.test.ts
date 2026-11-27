@@ -78,14 +78,9 @@ function setup(
   // Another instance already posted today's note, so these tests never write a message.
   const claimNotice = vi.fn(async (_args: unknown) => ({ count: 0 }));
   const readEmail = vi.fn(async () => options.message ?? email());
-  const inbox = new Map<string, { id: string; attachments: unknown; text: unknown }>();
+  const inbox = new Map<string, { id: string; attachments: unknown }>();
   const saveEmail = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
-    const row = {
-      id: `email-${inbox.size + 1}`,
-      attachments: data.attachments,
-      text: data.text,
-      data,
-    };
+    const row = { id: `email-${inbox.size + 1}`, attachments: data.attachments, data };
     inbox.set(String(data.key), row);
     return row;
   });
@@ -97,12 +92,9 @@ function setup(
       findUnique: vi.fn(findSaved),
       findUniqueOrThrow: vi.fn(findSaved),
       update: vi.fn(
-        async (args: {
-          where: { botId_key: { key: string } };
-          data: { attachments?: unknown; text?: unknown };
-        }) => {
+        async (args: { where: { botId_key: { key: string } }; data: { attachments: unknown } }) => {
           const row = inbox.get(args.where.botId_key.key);
-          if (row) Object.assign(row, args.data);
+          if (row) row.attachments = args.data.attachments;
           return row;
         },
       ),
@@ -458,22 +450,6 @@ describe("inbound email route", () => {
 
     expect(proven.saveEmail.mock.calls[0]?.[0].data.text).toBe("The start and all the rest");
     expect(stranger.saveEmail.mock.calls[0]?.[0].data.text).toBe("The start […]");
-  });
-
-  it("replaces a cut body once a later copy of the mail has earned the whole one", async () => {
-    const long = { text: "The start […]", wholeText: "The start and all the rest" };
-    const { post, readEmail, saveEmail } = setup({ message: email(long) });
-    readEmail.mockResolvedValueOnce(
-      email({ ...long, authenticated: false, from: { address: "news@shop.test", name: "" } }),
-    );
-
-    await post();
-    await post();
-
-    expect(saveEmail).toHaveBeenCalledOnce();
-    expect(await saveEmail.mock.results[0]?.value).toMatchObject({
-      text: "The start and all the rest",
-    });
   });
 
   it("drops mail for a deactivated owner's bot without saving it or its files", async () => {

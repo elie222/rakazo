@@ -46,7 +46,7 @@ export type InboundEmail = {
   subject: string;
   date: string | null;
   text: string;
-  /** The body as far as it was read, which the inbox keeps for a sender who proved their address. */
+  /** The body as far as it was read. */
   wholeText: string;
   /** Cleaned text for the delivery prompt. The inbox retains `text` or `wholeText`. */
   modelText: string;
