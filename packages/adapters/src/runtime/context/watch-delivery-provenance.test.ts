@@ -9,6 +9,7 @@ import { estimateModelContextTokens } from "../../models/model-context.js";
 import type { RunContext } from "../../runs/assembly/run-context.js";
 import { restoreTurnCheckpointEffects } from "../../runs/assembly/run-context.js";
 import { watchChecksFromToolResultMessage } from "../../runs/assembly/watch-outside-text.js";
+import { serializeTurnCheckpoint } from "../../runs/turn/turn-checkpoint.js";
 import {
   buildTurnCheckpoint,
   serializeCapturedTurnCheckpoint,
@@ -1718,4 +1719,138 @@ it("does not copy a clipped web_fetch sibling into checkpoint watch text", () =>
   const watchText = saved.watchOutsideText?.join("\n") ?? "";
   expect(watchText).not.toContain("fetched-sibling@outside.test");
   expect(watchText).toContain("sibling-watch@outside.test");
+});
+
+it("does not save meeting transcript speech in checkpoint outside text", () => {
+  const speech = "secret-meeting-speech@outside.test";
+  const transcript: Message = {
+    role: "toolResult",
+    toolCallId: "meeting-read",
+    toolName: "read_meeting_transcript",
+    content: [{ type: "text", text: `Recorded ${speech}` }],
+    details: { transcript: speech },
+    isError: false,
+    timestamp: 2,
+  };
+  const checkpoint = pauseCheckpoint(
+    [
+      routineRead("call-watch", "kept-watch@outside.test"),
+      transcript,
+      pageRead("page-kept", "Fetched kept-page@outside.test", 3),
+      assistantCall("pause-meeting", "ask_user", 4),
+    ],
+    "pause-meeting",
+  );
+  const serialized = serializeTurnCheckpoint(checkpoint);
+  const saved = JSON.parse(serialized) as { outsideText?: string; messages: Message[] };
+  expect(serialized).not.toContain(speech);
+  expect(saved.outsideText).toContain("kept-page@outside.test");
+  expect(saved.outsideText).toContain("kept-watch@outside.test");
+  expect(JSON.stringify(saved.messages)).toContain("Read it again");
+  expect(JSON.stringify(saved.messages)).not.toContain(speech);
+});
+
+it("keeps the newer identical watch when a full page sits between the two reads", () => {
+  const marker = "repeated-watch@outside.test";
+  const checkpoint = pauseCheckpoint(
+    [
+      routineRead("watch-first", marker),
+      pageRead(
+        "page-between",
+        `${"p".repeat(MAX_OUTSIDE_TEXT_CHARS)} page-between@outside.test`,
+        2,
+      ),
+      routineRead("watch-second", marker),
+      assistantCall("pause-repeated-watch", "ask_user", 4),
+    ],
+    "pause-repeated-watch",
+  );
+  const tail = restoredOutside(checkpoint);
+  expect(tail.length).toBeLessThanOrEqual(MAX_OUTSIDE_TEXT_CHARS);
+  expect(tail).toContain(marker);
+});
+
+it("keeps a repeated watch on the second pause when intervening pages fill the cap", () => {
+  const marker = "repeated-pause@outside.test";
+  const firstMessages = [
+    pageRead("page-small", "Fetched small-page@outside.test", 1),
+    routineRead("watch-first", marker),
+    assistantCall("pause-first", "ask_user", 3),
+  ];
+  const first = pauseCheckpoint(firstMessages, "pause-first");
+  expect(first.outsideText).toContain(marker);
+  const secondMessages = [
+    ...firstMessages,
+    pageRead("page-huge", "p".repeat(MAX_OUTSIDE_TEXT_CHARS), 4),
+    routineRead("watch-second", marker),
+    assistantCall("pause-second", "ask_user", 5),
+  ];
+  const second = buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages: secondMessages, tools: [] },
+      sourceLength: secondMessages.length,
+    },
+    stateMessages: secondMessages,
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "pause-second",
+    toolCallCount: 3,
+    mainModelConfig: { provider: "openai", id: "model-a" },
+    provider: "openai",
+    modelId: "model-a",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries: new Map(),
+    priorOutsideText: first.outsideText,
+    priorWatchOutsideText: first.watchOutsideText,
+    restoredMessages: first.messages,
+  });
+  const tail = restoredOutside(second);
+  expect(tail.length).toBeLessThanOrEqual(MAX_OUTSIDE_TEXT_CHARS);
+  expect(tail).toContain(marker);
+});
+
+it("builds outside text when a page sibling finishes a watch-only checkpoint", () => {
+  const watch = routineRead("call-watch-only", "watch-only@outside.test");
+  const assistant: Message = {
+    role: "assistant",
+    content: [
+      { type: "toolCall", id: "pause-watch-only", name: "ask_user", arguments: {} },
+      { type: "toolCall", id: "page-after-watch", name: "web_fetch", arguments: {} },
+    ],
+    api: "openai-responses",
+    provider: "openai",
+    model: "model-a",
+    usage: turnUsage,
+    stopReason: "toolUse",
+    timestamp: 3,
+  };
+  const checkpoint = pauseCheckpoint(
+    [assistantCall("call-watch-only", "schedule_list", 1), watch, assistant],
+    "pause-watch-only",
+  );
+  expect(checkpoint.outsideText).toBeUndefined();
+  expect(checkpoint.watchOutsideText?.join("\n") ?? "").toContain("watch-only@outside.test");
+  const pageSibling: Message = {
+    role: "toolResult",
+    toolCallId: "page-after-watch",
+    toolName: "web_fetch",
+    content: [{ type: "text", text: "Fetched page-after-watch@outside.test" }],
+    isError: false,
+    timestamp: 4,
+  };
+  const saved = JSON.parse(
+    serializeCapturedTurnCheckpoint(
+      checkpoint,
+      "pause-watch-only",
+      new Map([["page-after-watch", pageSibling]]),
+    ),
+  ) as { outsideText?: string; watchOutsideText?: string[] };
+  expect(saved.outsideText).toContain("watch-only@outside.test");
+  expect(saved.outsideText).toContain("page-after-watch@outside.test");
+  expect(saved.outsideText!.indexOf("page-after-watch@outside.test")).toBeGreaterThan(
+    saved.outsideText!.indexOf("watch-only@outside.test"),
+  );
+  expect(saved.watchOutsideText?.join("\n") ?? "").not.toContain("page-after-watch@outside.test");
+  expect(saved.watchOutsideText?.join("\n") ?? "").toContain("watch-only@outside.test");
 });

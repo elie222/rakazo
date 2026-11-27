@@ -51,7 +51,8 @@ export interface TurnCheckpoint {
   watchOutsideText?: string[];
   /**
    * Capped outside text in transcript order, oldest first. Present when a page read shares the
-   * turn with watch evidence. Restore uses this tail and does not append those results again.
+   * turn with watch evidence, including a page that finishes after a watch-only pause. Restore
+   * uses this tail and does not append those results again. Meeting transcript speech stays out.
    */
   outsideText?: string;
 }
@@ -63,9 +64,14 @@ export function serializeTurnCheckpoint(checkpoint: TurnCheckpoint): string {
   });
 }
 
+/** The serializer drops this result. Checkpoint outside text must not keep a second copy. */
+export function checkpointOmitsToolResult(toolName: string | undefined): boolean {
+  return toolName === READ_MEETING_TRANSCRIPT;
+}
+
 /** Keep the wire result paired with its call while leaving the transcript in its authorized store. */
 export function withoutSavedMeetingResult<T extends AgentMessage>(message: T): T {
-  if (message.role !== "toolResult" || message.toolName !== READ_MEETING_TRANSCRIPT) return message;
+  if (message.role !== "toolResult" || !checkpointOmitsToolResult(message.toolName)) return message;
   return {
     ...message,
     content: [{ type: "text", text: TRANSCRIPT_RESULT_OMITTED }],

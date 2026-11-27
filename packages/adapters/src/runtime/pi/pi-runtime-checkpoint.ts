@@ -10,6 +10,7 @@ import {
 import { watchChecksFromToolResultMessage } from "../../runs/assembly/watch-outside-text.js";
 import type { ComputerModeCheckpoint, TurnCheckpoint } from "../../runs/turn/turn-checkpoint.js";
 import {
+  checkpointOmitsToolResult,
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "../../runs/turn/turn-checkpoint.js";
@@ -143,6 +144,8 @@ function scanOutsideSources(
       if (counts.size > 0) routineTexts.set(index, counts);
       continue;
     }
+    // Match the serializer: it strips this result by toolName, not by an unwrapped use_tool name.
+    if (checkpointOmitsToolResult(message.toolName)) continue;
     if (!name || !toolResultTaintsRun(name)) continue;
     const text = outsideTextOf(message.content);
     if (text.trim()) pages.push({ index, text });
@@ -165,8 +168,9 @@ function pageInsertionIndex(anchors: readonly (number | undefined)[], pageIndex:
 }
 
 /**
- * Watch checks stay in acceptance order. Page reads land at their transcript position so an
- * older page cannot evict a newer watch, and an older watch cannot evict a newer page.
+ * Watch checks stay in acceptance order. Each check anchors to the latest remaining read of that
+ * text, so a repeated watch stays after the page between the two reads. Page reads land at their
+ * transcript position so an older page cannot evict a newer watch, and the reverse.
  */
 function chronologicalOutsideText(
   messages: readonly AgentMessage[],
@@ -174,16 +178,21 @@ function chronologicalOutsideText(
   contextStrategy?: AgentContextStrategy,
 ): string {
   const { routineTexts, pages } = scanOutsideSources(messages, contextStrategy);
-  const anchors = watchEntries.map((entry) => {
-    for (const [index, counts] of routineTexts) {
+  const anchors = new Array<number | undefined>(watchEntries.length);
+  const routineIndexes = [...routineTexts.keys()];
+  for (let entryIndex = watchEntries.length - 1; entryIndex >= 0; entryIndex -= 1) {
+    const entry = watchEntries[entryIndex]!;
+    for (let cursor = routineIndexes.length - 1; cursor >= 0; cursor -= 1) {
+      const index = routineIndexes[cursor]!;
+      const counts = routineTexts.get(index)!;
       const count = counts.get(entry) ?? 0;
       if (count <= 0) continue;
       if (count === 1) counts.delete(entry);
       else counts.set(entry, count - 1);
-      return index;
+      anchors[entryIndex] = index;
+      break;
     }
-    return undefined;
-  });
+  }
   const events: Array<{ pos: number; text: string }> = watchEntries.map((text, index) => ({
     pos: index,
     text,
@@ -472,7 +481,6 @@ export function buildTurnCheckpoint(input: {
     restoredMessages: input.restoredMessages,
     watchOutsideText,
     priorOutsideText: input.priorOutsideText,
-    priorWatchOutsideText: input.priorWatchOutsideText,
     freshWatch: [...acceptedWatch, ...unseenWatch],
     contextStrategy: input.contextStrategy,
   });
@@ -527,17 +535,14 @@ function checkpointOutsideText(input: {
   restoredMessages?: readonly Message[];
   watchOutsideText: readonly string[];
   priorOutsideText?: string;
-  priorWatchOutsideText?: readonly string[];
   freshWatch: readonly string[];
   contextStrategy?: AgentContextStrategy;
 }): string | undefined {
   const prior = input.priorOutsideText?.trim() ? input.priorOutsideText : undefined;
   if (prior) {
     const prefix = restoredStatePrefix(input.stateMessages, input.restoredMessages);
-    const priorWatch = new Set(
-      (input.priorWatchOutsideText ?? []).filter((entry) => entry.trim().length > 0),
-    );
-    const freshWatch = input.freshWatch.filter((entry) => entry.trim() && !priorWatch.has(entry));
+    // A new read after the restored prefix stays, even when its text matches an older check.
+    const freshWatch = input.freshWatch.filter((entry) => entry.trim());
     const addition = chronologicalOutsideText(
       input.stateMessages.slice(prefix),
       freshWatch,
@@ -582,12 +587,40 @@ export function serializeCapturedTurnCheckpoint(
   return serializeTurnCheckpoint(checkpointWithSiblingWatchResults(checkpoint, siblings));
 }
 
+function appendMessageOutside(
+  kept: string,
+  message: Message,
+  wrapped: ReadonlyMap<string, string>,
+): string {
+  if (message.role !== "toolResult" || checkpointOmitsToolResult(message.toolName)) return kept;
+  const name = resolvedToolName(message, wrapped);
+  if (isRoutineWatchName(name)) {
+    return routineWatchTexts(message, wrapped).reduce(
+      (text, entry) => appendOutsideText(text, entry),
+      kept,
+    );
+  }
+  if (!name || !toolResultTaintsRun(name)) return kept;
+  return appendOutsideText(kept, message.content);
+}
+
+/** A page or other persisted outside result. Routine checks and stripped speech do not count. */
+function persistsCheckpointOutside(
+  message: Message,
+  wrapped: ReadonlyMap<string, string>,
+): boolean {
+  if (message.role !== "toolResult" || checkpointOmitsToolResult(message.toolName)) return false;
+  const name = resolvedToolName(message, wrapped);
+  return Boolean(name && !isRoutineWatchName(name) && toolResultTaintsRun(name));
+}
+
 /**
  * A parallel sibling can finish after the last model delivery and never enter `watchDeliveries`.
  * When the checkpoint already lists watch checks, restore will not read routine results again,
  * so the sibling's checks have to be on that list. A checkpoint with no list keeps message
  * extraction, unless the sibling is the first watch evidence, in which case the list must also
- * hold the checks already stored on retained results.
+ * hold the checks already stored on retained results. A page sibling on a watch-only checkpoint
+ * starts the outside-text tail from the saved watch list, then appends the sibling in order.
  */
 function checkpointWithSiblingWatchResults(
   checkpoint: TurnCheckpoint,
@@ -596,35 +629,32 @@ function checkpointWithSiblingWatchResults(
   const messages = [...checkpoint.messages, ...siblings];
   const wrapped = wrappedToolNames(checkpoint.messages);
   const additions = siblings.flatMap((message) => routineWatchTexts(message, wrapped));
+  const retainedWatch =
+    checkpoint.watchOutsideText ??
+    (additions.length > 0
+      ? checkpoint.messages.flatMap((message) => routineWatchTexts(message, wrapped))
+      : []);
   let outsideText = checkpoint.outsideText;
-  if (outsideText) {
-    for (const message of siblings) {
-      if (message.role !== "toolResult") continue;
-      const name = resolvedToolName(message, wrapped);
-      if (isRoutineWatchName(name)) {
-        for (const text of routineWatchTexts(message, wrapped)) {
-          outsideText = appendOutsideText(outsideText, text);
-        }
-        continue;
-      }
-      if (name && toolResultTaintsRun(name)) {
-        outsideText = appendOutsideText(outsideText, message.content);
-      }
-    }
+  const outsideSibling = siblings.some((message) => persistsCheckpointOutside(message, wrapped));
+  if (!outsideText && outsideSibling && (retainedWatch.length > 0 || additions.length > 0)) {
+    outsideText = retainedWatch.reduce((kept, entry) => appendOutsideText(kept, entry), "");
+  }
+  if (outsideText !== undefined && (checkpoint.outsideText || outsideSibling)) {
+    for (const message of siblings)
+      outsideText = appendMessageOutside(outsideText, message, wrapped);
   }
   if (additions.length === 0) {
     return { ...checkpoint, messages, ...(outsideText ? { outsideText } : {}) };
   }
-  const base =
-    checkpoint.watchOutsideText ??
-    checkpoint.messages.flatMap((message) => routineWatchTexts(message, wrapped));
-  const seen = new Set(base);
+  const seen = new Set(retainedWatch);
   const extra = additions.filter((text) => {
     if (seen.has(text)) return false;
     seen.add(text);
     return true;
   });
-  const watchOutsideText = boundWatchOutsideText(extra.length > 0 ? [...base, ...extra] : base);
+  const watchOutsideText = boundWatchOutsideText(
+    extra.length > 0 ? [...retainedWatch, ...extra] : retainedWatch,
+  );
   return {
     ...checkpoint,
     messages,
