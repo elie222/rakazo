@@ -404,9 +404,11 @@ describe("ComposioConnector over the fake Composio client", () => {
   it("rejects an account the session did not pin", async () => {
     const { fake } = setup();
     const work = fake.connect(USER, "gmail");
+    const personal = fake.connect(USER, "gmail");
     const session = await fake.create(USER, {
       toolkits: ["GMAIL"],
-      connectedAccounts: { GMAIL: [work] },
+      connectedAccounts: { GMAIL: [work, personal] },
+      multiAccount: { enable: true },
     });
 
     await expect(

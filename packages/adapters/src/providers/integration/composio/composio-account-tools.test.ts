@@ -1,6 +1,8 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import { composioAccountTools } from "./composio-account-tools.js";
+import { ComposioConnector } from "./composio-connector.js";
+import { FakeComposioClient } from "./composio-fake.js";
 
 describe("shared account tools", () => {
   it("discovers slug-scoped tools during a directory outage without executing unpinned", async () => {
@@ -45,5 +47,41 @@ describe("shared account tools", () => {
       .next();
     expect(result.value).toMatchObject({ type: "error" });
     expect(sessionFor).not.toHaveBeenCalled();
+  });
+});
+
+it("executes a scoped Drive route using the selected personal account", async () => {
+  const client = new FakeComposioClient();
+  const userId = "user";
+  const selected = client.connect(userId, "googledrive");
+  const sibling = client.connect(userId, "googledrive");
+  const connector = new ComposioConnector({ client });
+  const context: AdapterContext = {
+    operationId: "scoped-drive",
+    traceId: "scoped-drive",
+    userId,
+    spaceId: "space",
+    signal: new AbortController().signal,
+    connectedConnections: [selected, sibling].map((ref) => ({
+      id: `connection-${ref}`,
+      connectorId: "composio",
+      externalId: "googledrive",
+      providerRef: ref,
+      displayName: "Drive",
+    })),
+  };
+  const tools = await connector.discoverTools(context);
+  const tool = tools.find(({ route }) => route?.connectionId === `connection-${selected}`)!;
+  const events = [];
+  for await (const event of connector.execute(
+    { tool: tool.name, route: tool.route, args: {}, executionId: "scoped-drive" },
+    context,
+  )) {
+    events.push(event);
+  }
+  expect(events).toEqual([expect.objectContaining({ type: "result" })]);
+  expect(client.created.at(-1)).toMatchObject({
+    userId,
+    config: { connectedAccounts: { GOOGLEDRIVE: [selected] } },
   });
 });
