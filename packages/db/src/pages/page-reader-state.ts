@@ -9,7 +9,11 @@ import {
 } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import * as z from "zod";
-import { readJsonColumn } from "../database/json-column.js";
+import {
+  JsonColumnMismatchError,
+  readJsonColumn,
+  reportJsonColumnOnce,
+} from "../database/json-column.js";
 import type { Prisma } from "../generated/prisma/client.js";
 
 type Db = Prisma.TransactionClient;
@@ -72,7 +76,20 @@ export async function savePageState(
     where: { pageId_userId: { pageId: page.id, userId } },
     select: { id: true, values: true },
   });
-  const saved = row ? storedEntries(row, "reject") : [];
+  // A stored row that no longer matches cannot be merged with new values, so it is replaced by them
+  // and reported for repair. Reading it as an empty default and merging would write that default
+  // back, which the JSON column rule forbids.
+  let saved: PageStateEntries = [];
+  if (row) {
+    try {
+      saved = storedEntries(row, "reject");
+    } catch (error) {
+      if (!(error instanceof JsonColumnMismatchError)) throw error;
+      reportJsonColumnOnce("page reader state no longer matches its schema", column(row.id), {
+        entries: Array.isArray(row.values) ? row.values.length : 0,
+      });
+    }
+  }
   const merged = fitPageState(saved, values);
   if (row && isDeepStrictEqual(Object.fromEntries(merged), Object.fromEntries(saved))) return;
   const checked = PageStateSchema.safeParse(Object.fromEntries(merged));

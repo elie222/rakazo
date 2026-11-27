@@ -1,5 +1,25 @@
-import { describe, expect, it } from "vitest";
-import { fitPageState } from "./page-reader-state.js";
+import { describe, expect, it, vi } from "vitest";
+import { fitPageState, savePageState } from "./page-reader-state.js";
+
+function fakeDb(row: { id: string; values: unknown } | null) {
+  const update = vi.fn(async () => undefined);
+  const create = vi.fn(async () => undefined);
+  const db = {
+    pageReaderState: { findUnique: vi.fn(async () => row), update, create },
+  };
+  return { db: db as never, update, create };
+}
+
+describe("savePageState", () => {
+  it("replaces a stored value the schema no longer accepts instead of failing every save", async () => {
+    const { db, update } = fakeDb({ id: "state-1", values: { nope: true } });
+    await savePageState(db, { id: "page-1", spaceId: "space-1" }, "user-1", { note: "fresh" });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "state-1" },
+      data: { values: [["note", "fresh"]] },
+    });
+  });
+});
 
 describe("fitPageState", () => {
   it("moves changed keys to the end and drops the oldest when the limit is reached", () => {
