@@ -1,5 +1,5 @@
 import type { DataTag, QueryKey } from "@tanstack/query-core";
-import { QueryClient } from "@tanstack/query-core";
+import { isCancelledError, QueryClient } from "@tanstack/query-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deferred } from "./async.test-support.js";
 import { fetchFresh, writeSaved } from "./query.js";
@@ -69,5 +69,32 @@ describe("saves", () => {
     resolvers[1]?.();
     await expect(saveRefresh).resolves.toBe("second");
     await expect(eventRefresh).resolves.toBe("second");
+  });
+
+  it("isolates in-flight refresh tracking per QueryClient", async () => {
+    const clientA = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const clientB = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queryKey = key("client-isolation-test");
+    const bResult = deferred<string>();
+    const fnA = vi.fn(
+      ({ signal }: { signal: AbortSignal }) =>
+        new Promise<string>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason));
+        }),
+    );
+    const fnB = vi.fn(() => bResult.promise);
+
+    const refreshA = fetchFresh(clientA, { queryKey, queryFn: fnA });
+    await vi.waitFor(() => expect(fnA).toHaveBeenCalledTimes(1));
+
+    const refreshB = fetchFresh(clientB, { queryKey, queryFn: fnB });
+    await vi.waitFor(() => expect(fnB).toHaveBeenCalledTimes(1));
+
+    await clientA.cancelQueries({ queryKey, exact: true });
+    bResult.resolve("from-client-b");
+
+    const errorA = await refreshA.catch((caught: unknown) => caught);
+    expect(isCancelledError(errorA)).toBe(true);
+    await expect(refreshB).resolves.toBe("from-client-b");
   });
 });
