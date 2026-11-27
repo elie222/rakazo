@@ -530,8 +530,12 @@ export function useComputerControls({
             resetScreenReconnect();
             setComputerError(null);
             setComputerErrorFromScreen(false);
-            await refreshComputerFor(computerBot.id);
-            await refreshComputerScreen(computerBot.id);
+            const screen = refreshComputerScreen(computerBot.id);
+            await bestEffort(
+              "refresh computer after screen restart",
+              refreshComputerFor(computerBot.id, false),
+            );
+            await bestEffort("reconnect computer screen after restart", screen);
           }}
         />
       ) : null}
