@@ -1,4 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import type { BillingPortalFlow } from "@rakazo/contracts";
+import { canCancelBilling } from "@rakazo/contracts";
 import { billingDateLabel, formatBillingPrice } from "@rakazo/i18n/billing";
 import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,7 +22,8 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
   const error = statusRead.isError && !status;
   // Desktop opens the URL in the system browser and this page stays, so the button comes back.
   const portal = useSave({
-    save: (_, rpc) => rpc.billing.portal(),
+    save: (flow: BillingPortalFlow | undefined, rpc) =>
+      rpc.billing.portal(flow ? { flow } : undefined),
     onSaved: ({ url }) => window.location.assign(url),
   });
 
@@ -40,12 +43,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
 
   const price = status?.price ? formatBillingPrice(status.price, locale) : null;
   const seats = status?.seats ?? 0;
-  const canCancel = Boolean(
-    status?.canManage &&
-      status.hasCustomer &&
-      !status.cancelAtPeriodEnd &&
-      (status.state === "trialing" || status.state === "active"),
-  );
+  const canCancel = status ? canCancelBilling(status) : false;
 
   if (status?.funding !== undefined)
     return (
@@ -90,7 +88,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
                 variant="ghost"
                 size="sm"
                 disabled={portal.pending}
-                onClick={() => portal.run()}
+                onClick={() => portal.run("cancel")}
               >
                 {status?.state === "trialing" ? (
                   <Trans>Cancel trial</Trans>
@@ -103,7 +101,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
               variant="secondary"
               size="sm"
               disabled={portal.pending}
-              onClick={() => portal.run()}
+              onClick={() => portal.run(undefined)}
             >
               <Trans>Manage</Trans>
             </Button>

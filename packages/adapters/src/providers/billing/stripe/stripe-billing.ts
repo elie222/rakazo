@@ -744,12 +744,39 @@ export class StripeBillingProvider implements BillingProvider {
     }
   }
 
-  async createPortal(input: { customerId: string; returnUrl: string }) {
+  async createPortal(input: { customerId: string; returnUrl: string; flow?: "cancel" }) {
+    const base = {
+      customer: input.customerId,
+      return_url: input.returnUrl,
+    };
+    if (input.flow === "cancel") {
+      const chosen = pickStripeSubscription(await this.listLiveSubscriptions(input.customerId));
+      const cancelable =
+        chosen &&
+        grantsAccess(chosen.status) &&
+        !chosen.subscription.cancel_at_period_end &&
+        chosen.subscription.cancel_at == null;
+      if (cancelable) {
+        try {
+          const session = urlSchema.parse(
+            await this.request("POST", "/v1/billing_portal/sessions", {
+              ...base,
+              flow_data: {
+                type: "subscription_cancel",
+                subscription_cancel: { subscription: chosen.subscription.id },
+              },
+            }),
+          );
+          return { url: session.url };
+        } catch (error) {
+          // Fall back to the general portal when the Stripe portal config omits cancel flows.
+          if (!(error instanceof StripeRequestError && error.type === "invalid_request_error"))
+            throw error;
+        }
+      }
+    }
     const session = urlSchema.parse(
-      await this.request("POST", "/v1/billing_portal/sessions", {
-        customer: input.customerId,
-        return_url: input.returnUrl,
-      }),
+      await this.request("POST", "/v1/billing_portal/sessions", base),
     );
     return { url: session.url };
   }

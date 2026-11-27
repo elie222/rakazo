@@ -5,6 +5,7 @@ import { Id } from "../ids.js";
 import { AccessGrantInputSchema, AccessGrantSchema } from "./access-grants.js";
 import {
   BillingClientSchema,
+  BillingPortalFlowSchema,
   BillingStatusSchema,
   ByokIntervalSchema,
   ByokTierSchema,
@@ -85,7 +86,11 @@ export const billingRpc = {
       )
       .output(z.object({ url: z.string().url() })),
     portal: oc
-      .input(z.object({ client: BillingClientSchema }).optional())
+      .input(
+        z
+          .object({ client: BillingClientSchema, flow: BillingPortalFlowSchema.optional() })
+          .optional(),
+      )
       .output(z.object({ url: z.string().url() })),
     /** Owners only: ends the running trial and bills the first period now. */
     endTrial: oc.output(BillingStatusSchema),

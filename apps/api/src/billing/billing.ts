@@ -28,6 +28,7 @@ import {
 } from "@rakazo/adapters";
 import type {
   Actor,
+  BillingPortalFlow,
   BillingStatus,
   ByokInterval,
   ByokTier,
@@ -126,7 +127,7 @@ export interface BillingService {
     interval?: ByokInterval,
     tier?: ByokTier,
   ): Promise<{ url: string }>;
-  portal(actor: Actor, client?: BillingClient): Promise<{ url: string }>;
+  portal(actor: Actor, client?: BillingClient, flow?: BillingPortalFlow): Promise<{ url: string }>;
   /** Ends the organization's trial and bills the first period now. */
   endTrial(actor: Actor): Promise<void>;
   switchToYearly(actor: Actor): Promise<void>;
@@ -892,7 +893,7 @@ export function createBillingService(deps: {
       }
     },
 
-    async portal(actor, client) {
+    async portal(actor, client, flow) {
       const { organizationId } = await managedOrganization(actor);
       const account = await billingAccountForOrganization(prisma, organizationId);
       if (!account) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
@@ -900,6 +901,7 @@ export function createBillingService(deps: {
         provider.createPortal({
           customerId,
           returnUrl: client === "mobile" ? mobileReturnUrl : appUrl,
+          ...(flow ? { flow } : {}),
         }),
       );
     },

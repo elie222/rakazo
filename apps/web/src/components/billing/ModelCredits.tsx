@@ -1,9 +1,16 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ORPCError } from "@orpc/client";
-import type { BillingStatus, ByokInterval, ByokTier, HeldCreditAmount } from "@rakazo/contracts";
+import type {
+  BillingPortalFlow,
+  BillingStatus,
+  ByokInterval,
+  ByokTier,
+  HeldCreditAmount,
+} from "@rakazo/contracts";
 import {
   byokTierChangeOffered,
   byokYearlySwitchSavings,
+  canCancelBilling,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
   isCancelledTrial,
@@ -223,16 +230,18 @@ export function ModelCreditsSettings({
   const checkoutAnnualPrice = checkoutAnnualCents
     ? formatBillingAmount(checkoutAnnualCents, "usd", i18n.locale)
     : null;
-  const canCancel =
-    status.canManage &&
-    status.hasCustomer &&
-    !status.cancelAtPeriodEnd &&
-    (status.state === "trialing" || status.state === "active");
+  const canCancel = canCancelBilling(status);
+  const showTrialHoursCancel =
+    canCancel &&
+    !ownKeyPlan &&
+    !recurring &&
+    status.computerHoursLeft != null &&
+    status.state === "trialing";
   const cancelLabel =
     status.state === "trialing" ? <Trans>Cancel trial</Trans> : <Trans>Cancel plan</Trans>;
-  const openPortal = () =>
+  const openPortal = (flow?: BillingPortalFlow) =>
     action(async (client) => {
-      const { url } = await client.billing.portal();
+      const { url } = await client.billing.portal(flow ? { flow } : undefined);
       window.location.assign(url);
     });
   return (
@@ -278,7 +287,7 @@ export function ModelCreditsSettings({
                 </Button>
               ) : null}
               {canCancel ? (
-                <Button variant="ghost" disabled={pending} onClick={openPortal}>
+                <Button variant="ghost" disabled={pending} onClick={() => openPortal("cancel")}>
                   {cancelLabel}
                 </Button>
               ) : null}
@@ -393,8 +402,8 @@ export function ModelCreditsSettings({
                 >
                   <Trans>Start plan now</Trans>
                 </Button>
-                {canCancel && !ownKeyPlan && !recurring ? (
-                  <Button variant="ghost" disabled={pending} onClick={openPortal}>
+                {showTrialHoursCancel ? (
+                  <Button variant="ghost" disabled={pending} onClick={() => openPortal("cancel")}>
                     {cancelLabel}
                   </Button>
                 ) : null}
@@ -410,7 +419,7 @@ export function ModelCreditsSettings({
                   className="mt-5"
                   variant="secondary"
                   disabled={pending}
-                  onClick={openPortal}
+                  onClick={() => openPortal()}
                 >
                   <Trans>Renew plan</Trans>
                 </Button>
@@ -560,11 +569,11 @@ export function ModelCreditsSettings({
           </div>
           {status.hasCustomer ? (
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              <Button variant="ghost" disabled={pending} onClick={openPortal}>
+              <Button variant="ghost" disabled={pending} onClick={() => openPortal()}>
                 <Trans>Manage billing</Trans>
               </Button>
-              {canCancel && !ownKeyPlan ? (
-                <Button variant="ghost" disabled={pending} onClick={openPortal}>
+              {canCancel && !ownKeyPlan && !showTrialHoursCancel ? (
+                <Button variant="ghost" disabled={pending} onClick={() => openPortal("cancel")}>
                   {cancelLabel}
                 </Button>
               ) : null}

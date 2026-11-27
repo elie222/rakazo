@@ -196,7 +196,7 @@ it("does not alert over another page when the status read fails after leaving", 
   expect(mocks.alert).not.toHaveBeenCalled();
 });
 
-it("offers cancel actions for owners and explains member and free-plan billing states", async () => {
+it("requests cancel flow when an owner presses Cancel trial", async () => {
   mocks.rpc.mockImplementation(async (method: string) => {
     if (method === "billing/status") {
       return { ...status, state: "trialing", cancelAtPeriodEnd: false, funding: "byok" };
@@ -208,21 +208,26 @@ it("offers cancel actions for owners and explains member and free-plan billing s
   await render();
   await vi.waitFor(() => expect(container.textContent).toContain("Cancel trial"));
   await act(async () => button("Cancel trial").click());
-  expect(sent("billing/portal")[0]?.[1]).toEqual({ client: "mobile" });
+  expect(sent("billing/portal")[0]?.[1]).toEqual({ client: "mobile", flow: "cancel" });
+});
 
-  await act(async () => root.unmount());
-  queryClient.clear();
-  mocks.rpc.mockReset();
-  mocks.rpc.mockResolvedValue({ ...status, state: "active", cancelAtPeriodEnd: false });
-  root = createRoot(container);
+it("requests cancel flow when an owner presses Cancel plan", async () => {
+  mocks.rpc.mockImplementation(async (method: string) => {
+    if (method === "billing/status") {
+      return { ...status, state: "active", cancelAtPeriodEnd: false };
+    }
+    if (method === "billing/portal") return { url: "https://billing.example.test/cancel" };
+    if (method === "billing/refresh") return status;
+    throw new Error(`Unexpected ${method}`);
+  });
   await render();
   await vi.waitFor(() => expect(container.textContent).toContain("Cancel plan"));
+  await act(async () => button("Cancel plan").click());
+  expect(sent("billing/portal")[0]?.[1]).toEqual({ client: "mobile", flow: "cancel" });
+});
 
-  await act(async () => root.unmount());
-  queryClient.clear();
-  mocks.rpc.mockReset();
+it("tells non-owner members that only the owner can change or cancel billing", async () => {
   mocks.rpc.mockResolvedValue({ ...status, canManage: false });
-  root = createRoot(container);
   await render();
   await vi.waitFor(() =>
     expect(container.textContent).toContain(
@@ -230,10 +235,9 @@ it("offers cancel actions for owners and explains member and free-plan billing s
     ),
   );
   expect(container.textContent).not.toContain("Cancel plan");
+});
 
-  await act(async () => root.unmount());
-  queryClient.clear();
-  mocks.rpc.mockReset();
+it("tells owners in a free period with no payment method that nothing will be charged", async () => {
   mocks.rpc.mockResolvedValue({
     ...status,
     state: "trialing",
@@ -241,7 +245,6 @@ it("offers cancel actions for owners and explains member and free-plan billing s
     hasCustomer: false,
     byokFreeUntil: "2027-01-01T00:00:00.000Z",
   });
-  root = createRoot(container);
   await render();
   await vi.waitFor(() =>
     expect(container.textContent).toContain("No payment method on file. Nothing will be charged."),
