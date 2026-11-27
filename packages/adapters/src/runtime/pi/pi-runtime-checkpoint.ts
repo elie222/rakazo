@@ -608,15 +608,6 @@ function persistsCheckpointOutside(
   return Boolean(name && !isRoutineWatchName(name) && toolResultTaintsRun(name));
 }
 
-/**
- * A parallel sibling can finish after the last model delivery and never enter `watchDeliveries`.
- * When the checkpoint already lists watch checks, restore will not read routine results again,
- * so the sibling's checks have to be on that list. A checkpoint with no list keeps message
- * extraction, unless the sibling is the first watch evidence, in which case the list must also
- * hold the checks already stored on retained results. A page or routine sibling on a checkpoint
- * with no tail starts one from the saved watch list and the pages already in the transcript,
- * then appends the sibling in order.
- */
 function alignedRestoredToolName(
   message: Message,
   restoredName: string | undefined,
@@ -628,6 +619,15 @@ function alignedRestoredToolName(
   return stateMessage === message ? stateName : undefined;
 }
 
+/**
+ * A parallel sibling can finish after the last model delivery and never enter `watchDeliveries`.
+ * When the checkpoint already lists watch checks, restore will not read routine results again,
+ * so the sibling's checks have to be on that list. A checkpoint with no list keeps message
+ * extraction, unless the sibling is the first watch evidence, in which case the list must also
+ * hold the checks already stored on retained results. A page or routine sibling on a checkpoint
+ * with no tail starts one from the saved watch list and the pages already in the transcript,
+ * then appends the sibling in order.
+ */
 function checkpointWithSiblingWatchResults(
   checkpoint: TurnCheckpoint,
   siblings: readonly Message[],

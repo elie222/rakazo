@@ -10,6 +10,7 @@ import {
 } from "@rakazo/core";
 import type { VerbatimMcpServers } from "../../mcp/verbatim-mcp-result.js";
 import { isVerbatimMcpResult, toolCallIdentity } from "../../mcp/verbatim-mcp-result.js";
+import { calledToolName, isRoutineWatchName } from "./routine-watch-tool.js";
 import {
   OMITTED_AFTER_USE,
   OMITTED_BEFORE_USE,
@@ -693,7 +694,12 @@ export function selectContext<T extends ContextMessage>(
           // A before-use cut changes what the model first sees on a routine-watch read, so record
           // that delivery on `details` without duplicating non-routine tool results in checkpoints.
           const currentDetails = nextMessage.details;
-          if (!afterUse && isRecord(currentDetails) && Array.isArray(currentDetails.routines)) {
+          if (
+            !afterUse &&
+            isRoutineWatchName(calledToolName(call)) &&
+            isRecord(currentDetails) &&
+            Array.isArray(currentDetails.routines)
+          ) {
             nextMessage.details = {
               ...currentDetails,
               contextBeforeUseText: text,

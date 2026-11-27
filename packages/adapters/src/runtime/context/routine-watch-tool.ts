@@ -49,6 +49,17 @@ export function isRoutineWatchName(
   return name === "schedule_list" || name === "task_catalog";
 }
 
+/** The tool a call runs: what `use_tool` names, or the call's own name. */
+export function calledToolName(
+  call: { name?: unknown; arguments?: unknown } | undefined,
+): string | undefined {
+  if (typeof call?.name !== "string") return undefined;
+  if (call.name !== "use_tool") return call.name;
+  return isRecord(call.arguments) && typeof call.arguments.name === "string"
+    ? call.arguments.name
+    : undefined;
+}
+
 /** Resolved tool name of each message, using the `use_tool` call that preceded that result. */
 export function toolNamesInOrder(messages: readonly NamedMessage[]): (string | undefined)[] {
   const wrapped = new Map<string, string>();

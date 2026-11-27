@@ -830,6 +830,50 @@ describe("bounded context selection", () => {
       | undefined;
     expect(result?.details).toEqual({ frameId: "frame-1" });
   });
+  it("stamps contextBeforeUseText only for schedule_list and task_catalog results, not routines-shaped results from other tools", () => {
+    const routinesDetails = { routines: [{ id: "r-1", lastCheck: { summary: "outside" } }] };
+    const largeText = "payload ".repeat(2000);
+    const run = (
+      call: { id: string; name: string; arguments: Record<string, unknown> },
+      toolName: string,
+    ) => {
+      const selected = selectContext(
+        [
+          user("check"),
+          { role: "assistant", content: [{ type: "toolCall", ...call }] },
+          {
+            role: "toolResult",
+            toolCallId: call.id,
+            toolName,
+            content: [{ type: "text", text: largeText }],
+            details: routinesDetails,
+          },
+        ],
+        { budget: { ...budget, contextWindow: 1500 }, strategy: "retrieval" },
+      );
+      return selected.messages.find((message) => message.role === "toolResult") as
+        | { details?: Record<string, unknown> }
+        | undefined;
+    };
+
+    expect(
+      run({ id: "mcp-1", name: "mcp_todo_list", arguments: {} }, "mcp_todo_list")?.details,
+    ).toEqual(routinesDetails);
+    expect(
+      run({ id: "wrap-1", name: "use_tool", arguments: { name: "web_fetch" } }, "use_tool")
+        ?.details,
+    ).toEqual(routinesDetails);
+    expect(
+      typeof run({ id: "sched-1", name: "schedule_list", arguments: {} }, "schedule_list")?.details
+        ?.contextBeforeUseText,
+    ).toBe("string");
+    expect(
+      typeof run(
+        { id: "wrap-2", name: "use_tool", arguments: { name: "task_catalog" } },
+        "use_tool",
+      )?.details?.contextBeforeUseText,
+    ).toBe("string");
+  });
   it("fails explicitly if mandatory content cannot fit rather than silently losing the request", () => {
     expect(() =>
       selectContext([user("large ".repeat(2000))], { budget, strategy: "retrieval" }),
