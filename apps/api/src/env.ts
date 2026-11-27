@@ -96,6 +96,8 @@ export interface AppEnv extends MessagingEnvironmentValues {
   deploymentLabs: LabFeature[];
   /** USER_DEVICES_ENABLED=false stops users connecting their own computers. Default on. */
   userDevicesEnabled: boolean;
+  /** RAKAZO_DISABLE_SUPPORT_PROMPT=true suppresses the mobile self-hosted support prompt. Default off. */
+  disableSupportPrompt: boolean;
   /** COMPUTER_SETTINGS_ENABLED=true lets Settings choose where computers run. Default off. */
   computerSettingsEnabled: boolean;
   /** Operator menu links that frame a same-origin page (RAKAZO_NAV_LINKS). */
@@ -312,6 +314,11 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
     deploymentLabs: deploymentLabsFromEnv(source),
     userDevicesEnabled: parseEnvFlag("USER_DEVICES_ENABLED", source.USER_DEVICES_ENABLED, true),
+    disableSupportPrompt: parseEnvFlag(
+      "RAKAZO_DISABLE_SUPPORT_PROMPT",
+      source.RAKAZO_DISABLE_SUPPORT_PROMPT,
+      false,
+    ),
     computerSettingsEnabled: source.COMPUTER_SETTINGS_ENABLED === "true",
     navLinks: parseNavLinks(source.RAKAZO_NAV_LINKS),
     adminEmails: list(source.RAKAZO_ADMIN_EMAILS).map((email) => email.toLowerCase()),

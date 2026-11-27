@@ -673,3 +673,18 @@ describe("SANDBOX_COMMAND_TIMEOUT_MS", () => {
     expect(sink.events).toEqual([]);
   });
 });
+
+describe("RAKAZO_DISABLE_SUPPORT_PROMPT", () => {
+  it("defaults to false and parses explicit booleans", () => {
+    expect(loadEnv(base).disableSupportPrompt).toBe(false);
+    expect(loadEnv({ ...base, RAKAZO_DISABLE_SUPPORT_PROMPT: "true" }).disableSupportPrompt).toBe(
+      true,
+    );
+    expect(loadEnv({ ...base, RAKAZO_DISABLE_SUPPORT_PROMPT: "false" }).disableSupportPrompt).toBe(
+      false,
+    );
+    expect(() => loadEnv({ ...base, RAKAZO_DISABLE_SUPPORT_PROMPT: "yes" })).toThrow(
+      "RAKAZO_DISABLE_SUPPORT_PROMPT",
+    );
+  });
+});

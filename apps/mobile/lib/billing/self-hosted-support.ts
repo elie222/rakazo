@@ -17,6 +17,10 @@ export function selfHosted(): boolean {
   return usesCustomApiBase(currentApiBase());
 }
 
+export function selfHostedSupportEnabled(supportPromptDisabled?: boolean): boolean {
+  return selfHosted() && !supportPromptDisabled;
+}
+
 export function showSelfHostedSupport(): void {
   Alert.alert(
     t`Support Rakazo`,
@@ -36,8 +40,11 @@ export function showSelfHostedSupport(): void {
  * Asks a self-hosted server's user once per device; Settings keeps the way back. Resolves true
  * when it asked. A failed read leaves the offer for a later inbox visit.
  */
-export async function offerSelfHostedSupportOnce(isActive: () => boolean): Promise<boolean> {
-  if (asked || !selfHosted()) return false;
+export async function offerSelfHostedSupportOnce(
+  isActive: () => boolean,
+  options: { disabled?: boolean } = {},
+): Promise<boolean> {
+  if (options.disabled || asked || !selfHosted()) return false;
   asked = true;
   const stored = await bestEffort(
     "self-hosted support read",

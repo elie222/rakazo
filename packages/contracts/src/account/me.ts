@@ -63,6 +63,8 @@ export const MeSchema = z.object({
    */
   locale: z.string().nullable().optional(),
   billingEnabled: z.boolean(),
+  /** True when a self-hosted operator disabled the mobile support prompt. Absent from older servers. */
+  supportPromptDisabled: z.boolean().optional(),
   /** True until a user of a billing deployment answers or skips the signup survey. Absent from older servers. */
   needsSignupSurvey: z.boolean().optional(),
   /** The wallet bots can spend from, when this deployment offers one. Absent from older servers. */

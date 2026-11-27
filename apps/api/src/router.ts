@@ -190,6 +190,7 @@ export interface RouterDeps {
     computerSettingsEnabled?: boolean;
     mcpStdioEnabled?: boolean;
     mcpStdioAllowedCommands?: string[];
+    disableSupportPrompt?: boolean;
   };
 }
 
@@ -260,5 +261,6 @@ export function routerEnv(env: AppEnv): RouterDeps["env"] {
     computerSettingsEnabled: env.computerSettingsEnabled,
     mcpStdioEnabled: env.mcpStdioEnabled,
     mcpStdioAllowedCommands: env.mcpStdioAllowedCommands,
+    disableSupportPrompt: env.disableSupportPrompt,
   };
 }

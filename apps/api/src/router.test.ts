@@ -678,6 +678,7 @@ describe("billing", () => {
     billing?: RouterDeps["billing"],
     signupSurvey: { userId: string } | null = null,
     analytics?: RouterDeps["analytics"],
+    envOverrides: Partial<RouterDeps["env"]> = {},
   ) {
     const prisma = {
       user: {
@@ -703,6 +704,7 @@ describe("billing", () => {
         webOrigin: "http://127.0.0.1:5173",
         screenProxySecret: "fake-test-secret",
         sandboxProvider: "fake",
+        ...envOverrides,
       },
       dataDir: "/tmp/rakazo-router-test",
     } as unknown as RouterDeps;
@@ -739,6 +741,13 @@ describe("billing", () => {
     await expect(billingDeps(true, billing).me()).resolves.toMatchObject({
       billingEnabled: true,
     });
+  });
+
+  it("reports supportPromptDisabled on me when configured", async () => {
+    await expect(billingDeps(false).me()).resolves.toMatchObject({ supportPromptDisabled: false });
+    await expect(
+      billingDeps(false, undefined, null, undefined, { disableSupportPrompt: true }).me(),
+    ).resolves.toMatchObject({ supportPromptDisabled: true });
   });
 
   it("asks hosted users the signup survey until they answer or skip it", async () => {
