@@ -660,6 +660,7 @@ export const openAiCompatibleVoice: VoiceProviderDefinition = {
     transcriptionVocabulary: true,
     freeformVoice: true,
   },
+  privateEndpoint: true,
   listed: ({ allowPrivateEndpoint }) =>
     allowPrivateEndpoint === true || openAiCompatAllowPublicHosts(),
   create: ({ allowPrivateEndpoint }) => new OpenAiCompatibleVoiceProvider({ allowPrivateEndpoint }),

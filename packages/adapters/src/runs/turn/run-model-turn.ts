@@ -246,6 +246,7 @@ function modelTurnRequest(
           : disabledBuiltinTools,
       offeredFleetTools: offeredFleetTools(strategicBuiltins),
       followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun, run.trigger),
+      voiceMessagesOffered: strategicBuiltins.some((tool) => tool.name === "voice_message"),
       backgroundHelpersAllowed: backgroundHelpersAllowed({
         trigger: run.trigger,
       }),

@@ -1,6 +1,7 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { PURCHASE_CARD_FIELDS } from "@rakazo/contracts";
 import { BROWSER_ACT_KINDS } from "../browser/browser-tools.js";
+import { MAX_SPEAK_CHARS } from "../voice/voice-http.js";
 
 export const READ_FILE_MAX_BYTES = 250_000;
 export const READ_FILE_MAX_KB = READ_FILE_MAX_BYTES / 1000;
@@ -40,6 +41,17 @@ export const computerTools: ConnectorTool[] = [
         prompt: { type: "string", minLength: 1, maxLength: 4000 },
         jobId: { type: "string", minLength: 1, maxLength: 200 },
       },
+    },
+    readOnly: false,
+  },
+  {
+    name: "voice_message",
+    description:
+      "Speak text aloud in the person's chosen voice and attach the recording to chat, for when they ask for a voice message or to hear something. Uses their own voice provider and may incur charges. Write the text as it should be said, in the language they speak.",
+    inputSchema: {
+      type: "object",
+      properties: { text: { type: "string", minLength: 1, maxLength: MAX_SPEAK_CHARS } },
+      required: ["text"],
     },
     readOnly: false,
   },

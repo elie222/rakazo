@@ -246,6 +246,7 @@ function fixture(runId = "run-1") {
       ),
     },
     spaceSettingOverride: { findUnique: async () => null },
+    userVoicePreference: { findFirst: async () => null },
     userActionApprovalRule: { findMany: vi.fn(async () => []) },
     userActionAutoReviewPreference: { findUnique: vi.fn(async () => ({ enabled: false })) },
     externalEffect,

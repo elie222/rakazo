@@ -176,6 +176,7 @@ async function runInSpace(space: Space, options: RunOptions = {}) {
     scratchpadItem: { findMany: vi.fn(async () => []), count: vi.fn(async () => 0) },
     externalEffect: { findMany: vi.fn(async () => []) },
     spaceSettingOverride: { findUnique: async () => null },
+    userVoicePreference: { findFirst: async () => null },
     userActionApprovalRule: { findMany: vi.fn(async () => []) },
     userActionAutoReviewPreference: { findUnique: vi.fn(async () => null) },
     artifact: { findMany: vi.fn(async () => []) },

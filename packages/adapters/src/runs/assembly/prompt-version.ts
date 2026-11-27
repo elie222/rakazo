@@ -116,6 +116,7 @@ export function promptVersionParts() {
             disabledBuiltinTools,
             offeredFleetTools: FLEET_WRITE_TOOL_NAMES,
             followUpsOffered: true,
+            voiceMessagesOffered: true,
             backgroundHelpersAllowed: true,
             userComputer,
           }),

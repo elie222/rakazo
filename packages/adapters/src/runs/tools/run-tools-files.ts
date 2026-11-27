@@ -1,4 +1,4 @@
-import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError, VoiceAccountError } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import {
@@ -26,6 +26,12 @@ import {
   readFileFromTool,
   renderPlotFromTool,
 } from "../../tools/workspace-file-tools.js";
+import { MAX_SPEAK_CHARS, VoiceProviderRefusedError } from "../../voice/voice-http.js";
+import {
+  speakVoiceMessage,
+  voiceMessageFileName,
+  voiceMessageRequestedByOwner,
+} from "../../voice/voice-message.js";
 import type { RunContext } from "../assembly/run-context.js";
 import { persistMessageInTransaction, runLeaseFor } from "../assembly/run-messages.js";
 import { textContentArg } from "../turn/tool-text.js";
@@ -209,7 +215,6 @@ export const fileTools: ToolHandlers = {
     return renderPlotFromTool(deps, run, args, executionId, workspace, call.finish);
   },
   async attach_file(ctx, call) {
-    const { deps, run, bot } = ctx;
     const filePath = String(call.args.path ?? "");
     const fail = async (error: string) => {
       await recordComputerAction(ctx, call, "attach_file", filePath, { error });
@@ -218,46 +223,83 @@ export const fileTools: ToolHandlers = {
     const read = await readWorkspaceFile(ctx, call, filePath);
     if ("error" in read) return fail(read.error);
     try {
-      // Background runs post no message (publishMessage drops attachment blocks).
-      const background = isBackgroundRunTrigger(run.trigger);
-      const lease = runLeaseFor(deps, run.id);
-      let committed: Awaited<ReturnType<typeof persistMessageInTransaction>> | undefined;
-      const saved = await saveWorkspaceFile(
-        ctx,
-        call,
-        filePath,
-        read.bytes,
-        { botId: bot.id, groupId: await artifactGroupId(ctx) },
-        {
-          name: typeof call.args.name === "string" ? call.args.name : undefined,
-          description:
-            typeof call.args.description === "string" ? call.args.description : undefined,
-        },
-        // The message commits with the artifact row, so a post that fails leaves no artifact
-        // the user was never shown.
-        background
-          ? undefined
-          : async (tx, artifact) => {
-              committed = await persistMessageInTransaction(
-                tx,
-                run,
-                "bot",
-                [messageBlockForArtifact(artifact)],
-                run.trigger === "bot_message" ? false : undefined,
-                undefined,
-                false,
-                lease,
-              );
-            },
-      );
-      if (committed)
-        await deps.events
-          .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
-          .catch((error) => getLogger().error("thread message realtime notification", error));
+      const saved = await postAttachment(ctx, call, filePath, read.bytes, {
+        name: typeof call.args.name === "string" ? call.args.name : undefined,
+        description: typeof call.args.description === "string" ? call.args.description : undefined,
+      });
       await recordComputerAction(ctx, call, "attach_file", filePath);
       return call.finish({ ok: true, artifactId: saved.artifactId, path: filePath });
     } catch (error) {
       return fail(error instanceof Error ? error.message : "could not attach file");
+    }
+  },
+  async voice_message(ctx, call) {
+    const { deps, run, bot, context } = ctx;
+    const text = typeof call.args.text === "string" ? call.args.text.trim() : "";
+    if (!text || text.length > MAX_SPEAK_CHARS)
+      return call.finish({ error: `Text of 1–${MAX_SPEAK_CHARS} characters is required.` });
+    // Selection offers it only on these runs, but dispatch runs any built-in name the model emits.
+    if (
+      isBackgroundRunTrigger(run.trigger) ||
+      !deps.artifacts ||
+      !voiceMessageRequestedByOwner(run.trigger, ctx.source)
+    )
+      return call.finish({ error: "Voice messages are unavailable." });
+    let spoken: Awaited<ReturnType<typeof speakVoiceMessage>>;
+    try {
+      spoken = await speakVoiceMessage(
+        deps,
+        { userId: run.userId, spaceId: run.spaceId },
+        { text, botVoiceId: bot.voiceId },
+        context,
+      );
+    } catch (error) {
+      context.signal.throwIfAborted();
+      // Never the text or the key: only what kind of failure it was.
+      getLogger().warn("voice message synthesis failed", {
+        reason: error instanceof Error ? error.name : "unknown",
+        code: error instanceof VoiceAccountError ? error.code : undefined,
+        ...(error instanceof VoiceProviderRefusedError
+          ? { "provider.status": error.status, "provider.reason": error.reason }
+          : {}),
+      });
+      return call.finish({
+        error:
+          error instanceof VoiceAccountError
+            ? error.message
+            : "The voice provider could not speak this. Do not retry automatically.",
+      });
+    }
+    if ("missing" in spoken)
+      return call.finish({
+        error:
+          spoken.missing === "voice"
+            ? "No voice is chosen. Settings → Voice sets one."
+            : "No voice provider is connected. Settings → Voice connects one.",
+      });
+    const { clip } = spoken;
+    const limit = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
+    if (clip.bytes.byteLength > limit)
+      return call.finish({
+        error: "That recording is too large to attach. Speak a shorter text, or split it in parts.",
+      });
+    const fileName = voiceMessageFileName(
+      call.applied?.effect.id ?? call.executionId,
+      clip.mimeType,
+    );
+    try {
+      const saved = await postAttachment(ctx, call, fileName, clip.bytes);
+      return call.finish({ ok: true, artifactId: saved.artifactId });
+    } catch (error) {
+      context.signal.throwIfAborted();
+      getLogger().warn("voice message attachment failed", {
+        provider: spoken.provider,
+        reason: error instanceof Error ? error.name : "unknown",
+      });
+      return call.finish({
+        error:
+          "The recording could not be attached. It was already made, so do not retry automatically.",
+      });
     }
   },
 };
@@ -283,6 +325,51 @@ export async function readWorkspaceFile(
   }
   if (!inferAttachmentMimeType(filePath)) return { error: "unsupported attachment type" };
   return { bytes };
+}
+
+/**
+ * Save bytes as an attachment and post it to the run's chat in the same transaction, so a post
+ * that fails leaves no artifact the user was never shown. Background runs post no message
+ * (publishMessage drops attachment blocks).
+ */
+async function postAttachment(
+  ctx: RunContext,
+  call: ToolCall,
+  filePath: string,
+  bytes: Uint8Array,
+  meta: { name?: string; description?: string } = {},
+) {
+  const { deps, run, bot } = ctx;
+  const background = isBackgroundRunTrigger(run.trigger);
+  const lease = runLeaseFor(deps, run.id);
+  let committed: Awaited<ReturnType<typeof persistMessageInTransaction>> | undefined;
+  const saved = await saveWorkspaceFile(
+    ctx,
+    call,
+    filePath,
+    bytes,
+    { botId: bot.id, groupId: await artifactGroupId(ctx) },
+    meta,
+    background
+      ? undefined
+      : async (tx, artifact) => {
+          committed = await persistMessageInTransaction(
+            tx,
+            run,
+            "bot",
+            [messageBlockForArtifact(artifact)],
+            run.trigger === "bot_message" ? false : undefined,
+            undefined,
+            false,
+            lease,
+          );
+        },
+  );
+  if (committed)
+    await deps.events
+      .notify(run.threadId, committed.eventSeq, committed.firstResponseRunId)
+      .catch((error) => getLogger().error("thread message realtime notification", error));
+  return saved;
 }
 
 /**

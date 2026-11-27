@@ -14,8 +14,14 @@ import {
   ScriptedVoiceProvider,
 } from "../providers/voice/scripted/scripted-voice.js";
 import { XaiVoiceProvider } from "../providers/voice/xai/xai-voice.js";
-import { createVoiceProvider, isVoiceProviderId, listVoiceCatalog } from "./voice-factory.js";
+import {
+  createVoiceProvider,
+  isVoiceProviderId,
+  listVoiceCatalog,
+  voiceProviderMayUsePrivateEndpoint,
+} from "./voice-factory.js";
 import { MAX_VOICE_JSON_BYTES, VoiceProviderUnavailableError } from "./voice-http.js";
+import { voiceProviders } from "./voice-providers.js";
 
 const ctx = {
   operationId: "voice",
@@ -85,6 +91,16 @@ describe("createVoiceProvider", () => {
     ).toBe(true);
     vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "");
     expect(listVoiceCatalog().some((entry) => entry.id === "openai-compatible")).toBe(true);
+  });
+
+  it("lets only a provider that declares it reach a private endpoint, when the instance allows", () => {
+    const declaring = Object.entries(voiceProviders)
+      .filter(([id]) => voiceProviderMayUsePrivateEndpoint(id, true))
+      .map(([id]) => id);
+    expect(declaring).toEqual(["openai-compatible"]);
+    for (const allowed of [false, undefined])
+      expect(voiceProviderMayUsePrivateEndpoint("openai-compatible", allowed)).toBe(false);
+    expect(voiceProviderMayUsePrivateEndpoint("retired", true)).toBe(false);
   });
 
   it("adds the scripted fixture only when the agent runtime is scripted", () => {
