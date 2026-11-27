@@ -166,17 +166,18 @@ function isListed(attempt: SendAttempt) {
   return !memoryOnly.has(attempt) || writtenFiles.has(attempt);
 }
 let running: Promise<void> | undefined;
-let rateLimitWait: AbortController | undefined;
+let rateLimitWait: { controller: AbortController; force: boolean } | undefined;
 
 function pauseForRateLimit(error: unknown) {
-  const wait = new AbortController();
+  const wait = { controller: new AbortController(), force: pendingForce === true };
   rateLimitWait = wait;
+  pendingForce = null;
   void bestEffort(
     "resume rate-limited outbox",
-    abortableDelay(retryDelayMs(error, 1_000), wait.signal).then(() => {
+    abortableDelay(retryDelayMs(error, 1_000), wait.controller.signal).then(() => {
       if (rateLimitWait !== wait) return;
       rateLimitWait = undefined;
-      return sendWaitingMessages();
+      return sendWaitingMessages(wait.force);
     }),
   );
 }
@@ -358,7 +359,7 @@ export function clearUnsentSends() {
   removed.clear();
   echoes.clear();
   pendingForce = null;
-  rateLimitWait?.abort();
+  rateLimitWait?.controller.abort();
   rateLimitWait = undefined;
   diskReadable = true;
   clearPending = !tryDisk(() => {
@@ -398,7 +399,10 @@ export function subscribeDelivered(listener: (attempt: SendAttempt) => void) {
   };
 }
 export function sendWaitingMessages(force = false): Promise<void> {
-  if (rateLimitWait) return Promise.resolve();
+  if (rateLimitWait) {
+    rateLimitWait.force ||= force;
+    return Promise.resolve();
+  }
   if (running) {
     pendingForce = pendingForce === true || force;
     return running;
@@ -481,7 +485,7 @@ export function sendWaitingMessages(force = false): Promise<void> {
             for (const attachment of attempt.payload.attachments) attachment.contentBase64 = "";
         }
       }
-      if (rateLimitWait || pendingForce === null) return;
+      if (pendingForce === null) return;
       nextForce = pendingForce;
       pendingForce = null;
     }

@@ -1201,6 +1201,25 @@ describe("scoped mobile outbox", () => {
     }
   });
 
+  it("preserves a forced retry during the rate-limit wait", async () => {
+    vi.useFakeTimers();
+    try {
+      request.mockRejectedValueOnce(
+        Object.assign(new Error("Slow down"), { status: 429, retryAfterMs: 2_000 }),
+      );
+      const attempt = feedback.sendAttempt({ ...payload("First"), attachments: [] });
+      await act(async () => void (await feedback.send(attempt)));
+      reachable = false;
+      await sendWaitingMessages(true);
+      expect(request).toHaveBeenCalledOnce();
+
+      await act(async () => void (await vi.advanceTimersByTimeAsync(2_000)));
+      expect(attempt.acceptedSeq).toBe(42);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   describe("a send in flight while a password change replaces the session", () => {
     let current: typeof scope | null;
     let refuse: (() => void) | undefined;
