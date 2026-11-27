@@ -9,7 +9,10 @@ import { estimateModelContextTokens } from "../../models/model-context.js";
 import type { RunContext } from "../../runs/assembly/run-context.js";
 import { restoreTurnCheckpointEffects } from "../../runs/assembly/run-context.js";
 import { watchChecksFromToolResultMessage } from "../../runs/assembly/watch-outside-text.js";
-import { buildTurnCheckpoint } from "../pi/pi-runtime-checkpoint.js";
+import {
+  buildTurnCheckpoint,
+  serializeCapturedTurnCheckpoint,
+} from "../pi/pi-runtime-checkpoint.js";
 import { shortenToolResultText } from "./context-selection.js";
 import type { WatchDeliveryState } from "./runtime-context.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
@@ -1462,7 +1465,7 @@ it("keeps watch evidence when a saved index is past the transcript or a trailing
   ]).toEqual([true, true, true, true, true, true]);
 });
 
-it("keeps a watch result that never reached a model delivery, without putting it ahead of a later page read", () => {
+it("keeps an undelivered watch after an earlier page read and leaves the page out of watch text", () => {
   const droppedDetails = watchPayload("call-a", "delivered-watch@outside.test");
   const unseenDetails = watchPayload("call-unseen", "unseen-watch@outside.test");
   const unseenMessage: Message = {
@@ -1526,8 +1529,193 @@ it("keeps a watch result that never reached a model delivery, without putting it
     "web-fetch-kept@outside.test",
   ]);
   expect(positions.every((position) => position >= 0)).toBe(true);
-  expect(positions[1]).toBeGreaterThan(positions[0]!);
-  expect(positions[2]).toBeGreaterThan(positions[1]!);
+  expect(positions[2]).toBeGreaterThan(positions[0]!);
+  expect(positions[1]).toBeGreaterThan(positions[2]!);
   expect(checkpoint).not.toHaveProperty("watchOutsideTextBefore");
   expect(checkpoint.watchOutsideText?.join("\n")).not.toContain("web-fetch-kept@outside.test");
+});
+
+function pauseCheckpoint(messages: Message[], pendingToolCallId: string) {
+  return buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages, tools: [] },
+      sourceLength: messages.length,
+    },
+    stateMessages: messages,
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId,
+    toolCallCount: 2,
+    mainModelConfig: { provider: "openai", id: "model-a" },
+    provider: "openai",
+    modelId: "model-a",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+  });
+}
+
+function restoredOutside(checkpoint: ReturnType<typeof buildTurnCheckpoint>): string {
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(ctx, JSON.stringify(checkpoint), {
+      provider: "openai",
+      id: "model-a",
+    }),
+  ).toBeDefined();
+  return ctx.state.outsideText;
+}
+
+function pageRead(id: string, text: string, timestamp: number): Message {
+  return {
+    role: "toolResult",
+    toolCallId: id,
+    toolName: "web_fetch",
+    content: [{ type: "text", text }],
+    isError: false,
+    timestamp,
+  };
+}
+
+function routineRead(id: string, marker: string, padding = ""): Message {
+  const details = watchPayload(id, marker, padding);
+  return {
+    role: "toolResult",
+    toolCallId: id,
+    toolName: "schedule_list",
+    content: [{ type: "text", text: JSON.stringify(details) }],
+    details,
+    isError: false,
+    timestamp: 2,
+  };
+}
+
+it("keeps the newer of a page read and a watch check when the older one fills the cap", () => {
+  const olderPage = pageRead(
+    "page-old",
+    `${"p".repeat(MAX_OUTSIDE_TEXT_CHARS)} older-page@outside.test`,
+    1,
+  );
+  const newerWatch = routineRead("call-watch", "newer-watch@outside.test");
+  const watchAfterPage = pauseCheckpoint(
+    [olderPage, newerWatch, assistantCall("pause-watch-after-page", "ask_user", 3)],
+    "pause-watch-after-page",
+  );
+  const watchTail = restoredOutside(watchAfterPage);
+  expect(watchTail.length).toBeLessThanOrEqual(MAX_OUTSIDE_TEXT_CHARS);
+  expect(watchTail).toContain("newer-watch@outside.test");
+  expect(watchAfterPage.watchOutsideText?.join("\n") ?? "").not.toContain(
+    "older-page@outside.test",
+  );
+
+  const olderWatch = routineRead(
+    "call-old-watch",
+    "older-watch@outside.test",
+    "w".repeat(MAX_OUTSIDE_TEXT_CHARS),
+  );
+  const newerPage = pageRead("page-new", "Fetched newer-page@outside.test", 2);
+  const pageAfterWatch = pauseCheckpoint(
+    [olderWatch, newerPage, assistantCall("pause-page-after-watch", "ask_user", 3)],
+    "pause-page-after-watch",
+  );
+  expect((pageAfterWatch.watchOutsideText ?? []).join("\n").length).toBeGreaterThan(
+    MAX_OUTSIDE_TEXT_CHARS / 2,
+  );
+  const pageTail = restoredOutside(pageAfterWatch);
+  expect(pageTail.length).toBeLessThanOrEqual(MAX_OUTSIDE_TEXT_CHARS);
+  expect(pageTail).toContain("newer-page@outside.test");
+  expect(pageAfterWatch.watchOutsideText?.join("\n") ?? "").not.toContain(
+    "newer-page@outside.test",
+  );
+});
+
+it("keeps A, B, A' when a second pause drops the retained watch", () => {
+  const kept = routineRead("call-b", "order-b@outside.test");
+  const restored = [
+    assistantCall("call-b", "schedule_list", 1),
+    kept,
+    assistantCall("pause-order", "ask_user", 3),
+  ];
+  const first = pauseCheckpoint(restored, "pause-order");
+  const keptText = first.watchOutsideText?.[0];
+  expect(keptText).toContain("order-b@outside.test");
+  const prior = [
+    keptText!.replaceAll("order-b@outside.test", "order-a@outside.test"),
+    keptText!,
+    keptText!.replaceAll("order-b@outside.test", "order-a-prime@outside.test"),
+  ];
+  const dropped = buildTurnCheckpoint({
+    sentContext: {
+      context: {
+        systemPrompt: "Fixture",
+        messages: [restored[0]!, restored[2]!],
+        tools: [],
+      },
+      sourceLength: 2,
+    },
+    stateMessages: [restored[0]!, restored[2]!],
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "pause-order",
+    toolCallCount: 3,
+    mainModelConfig: { provider: "openai", id: "model-a" },
+    provider: "openai",
+    modelId: "model-a",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries: new Map(),
+    priorWatchOutsideText: prior,
+    restoredMessages: restored,
+  });
+  expect(dropped).not.toHaveProperty("watchOutsideTextBefore");
+  expect(dropped.watchOutsideText).toEqual(prior);
+});
+
+it("does not copy a clipped web_fetch sibling into checkpoint watch text", () => {
+  const assistant: Message = {
+    role: "assistant",
+    content: [
+      { type: "toolCall", id: "pause-parallel", name: "ask_user", arguments: {} },
+      { type: "toolCall", id: "page-sib", name: "web_fetch", arguments: {} },
+      { type: "toolCall", id: "watch-sib", name: "schedule_list", arguments: {} },
+    ],
+    api: "openai-responses",
+    provider: "openai",
+    model: "model-a",
+    usage: turnUsage,
+    stopReason: "toolUse",
+    timestamp: 1,
+  };
+  const checkpoint = pauseCheckpoint([assistant], "pause-parallel");
+  const pageSibling: Message = {
+    role: "toolResult",
+    toolCallId: "page-sib",
+    toolName: "web_fetch",
+    content: [{ type: "text", text: "clipped fetch fetched-sibling@outside.test" }],
+    isError: false,
+    timestamp: 2,
+  };
+  const watchDetails = watchPayload("watch-sib", "sibling-watch@outside.test");
+  const watchSibling: Message = {
+    role: "toolResult",
+    toolCallId: "watch-sib",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: JSON.stringify(watchDetails) }],
+    details: watchDetails,
+    isError: false,
+    timestamp: 3,
+  };
+  const saved = JSON.parse(
+    serializeCapturedTurnCheckpoint(
+      checkpoint,
+      "pause-parallel",
+      new Map([
+        ["page-sib", pageSibling],
+        ["watch-sib", watchSibling],
+      ]),
+    ),
+  ) as { watchOutsideText?: string[] };
+  const watchText = saved.watchOutsideText?.join("\n") ?? "";
+  expect(watchText).not.toContain("fetched-sibling@outside.test");
+  expect(watchText).toContain("sibling-watch@outside.test");
 });

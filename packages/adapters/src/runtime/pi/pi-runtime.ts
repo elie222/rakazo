@@ -848,6 +848,7 @@ export class PiAgentRuntime implements AgentRuntime {
             foundConnectorTools: host.foundConnectorTools,
             watchDeliveries: runWatchDeliveries,
             priorWatchOutsideText: restored?.watchOutsideText,
+            priorOutsideText: restored?.outsideText,
             restoredMessages: initialRestoredMessages,
             contextStrategy: request.contextStrategy,
           });

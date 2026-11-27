@@ -46,8 +46,14 @@ export interface TurnCheckpoint {
   /**
    * Accepted watch checks, oldest first. Absent when the turn has none.
    * Restore uses this list as the watch evidence and does not read saved routine results again.
+   * Page reads stay out of this list.
    */
   watchOutsideText?: string[];
+  /**
+   * Capped outside text in transcript order, oldest first. Present when a page read shares the
+   * turn with watch evidence. Restore uses this tail and does not append those results again.
+   */
+  outsideText?: string;
 }
 
 export function serializeTurnCheckpoint(checkpoint: TurnCheckpoint): string {

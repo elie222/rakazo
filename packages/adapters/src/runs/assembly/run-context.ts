@@ -612,10 +612,21 @@ export function restoreTurnCheckpointEffects(
     const restoredWatch = (savedWatchList ?? []).filter(
       (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
     );
+    // A saved tail already interleaves page reads with watch checks. Replaying either side
+    // after the other lets the older text evict the newer one.
+    const savedOutside =
+      typeof saved.outsideText === "string" && saved.outsideText.trim()
+        ? saved.outsideText
+        : undefined;
     if (restoredWatch.length > 0) {
       ctx.state.tainted = true;
       ctx.state.taintedBeyondOwnComputer = true;
-      ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, restoredWatch);
+      if (!savedOutside) {
+        ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, restoredWatch);
+      }
+    }
+    if (savedOutside) {
+      ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, savedOutside);
     }
     // The saved turn's tool results are outside content this run already read.
     // Resolve deferred `use_tool` call IDs in transcript order so a later call reusing an ID
@@ -648,12 +659,12 @@ export function restoreTurnCheckpointEffects(
             ? message.toolName
             : undefined;
       if (routineReadTool) {
-        if (savedWatchList !== undefined) continue;
+        if (savedWatchList !== undefined || savedOutside) continue;
         const watchChecks = watchChecksFromToolResultMessage(message, ctx.deps?.contextStrategy);
         if (watchChecks.length > 0) {
           ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, watchChecks);
         }
-      } else if (toolResultTaintsRun(message.toolName)) {
+      } else if (!savedOutside && toolResultTaintsRun(message.toolName)) {
         ctx.state.outsideText = appendOutsideText(ctx.state.outsideText, message.content);
       }
     }

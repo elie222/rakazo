@@ -1,8 +1,12 @@
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Context, Message } from "@earendil-works/pi-ai";
 import type { AgentContextStrategy, AgentRunModel } from "@rakazo/adapter-kit";
-import { isRecord } from "@rakazo/core";
-import { MAX_OUTSIDE_TEXT_CHARS } from "../../approvals/review-target-sources.js";
+import { isRecord, toolResultTaintsRun } from "@rakazo/core";
+import {
+  appendOutsideText,
+  MAX_OUTSIDE_TEXT_CHARS,
+  outsideTextOf,
+} from "../../approvals/review-target-sources.js";
 import { watchChecksFromToolResultMessage } from "../../runs/assembly/watch-outside-text.js";
 import type { ComputerModeCheckpoint, TurnCheckpoint } from "../../runs/turn/turn-checkpoint.js";
 import {
@@ -72,6 +76,137 @@ function watchTextValues(
     .filter((value) => value.trim().length > 0);
 }
 
+function noteWrappedToolCalls(message: AgentMessage, wrapped: Map<string, string>) {
+  if (message.role !== "assistant") return;
+  for (const part of message.content) {
+    if (part.type !== "toolCall") continue;
+    if (
+      part.name === "use_tool" &&
+      isRecord(part.arguments) &&
+      typeof part.arguments.name === "string"
+    ) {
+      wrapped.set(part.id, part.arguments.name);
+    } else {
+      wrapped.delete(part.id);
+    }
+  }
+}
+
+function resolvedToolName(
+  message: { role: string; toolName?: string; toolCallId?: string },
+  wrapped: ReadonlyMap<string, string>,
+): string | undefined {
+  if (message.role !== "toolResult" || typeof message.toolName !== "string") return undefined;
+  return message.toolName === "use_tool" ? wrapped.get(message.toolCallId ?? "") : message.toolName;
+}
+
+function isRoutineWatchName(name: string | undefined): name is "schedule_list" | "task_catalog" {
+  return name === "schedule_list" || name === "task_catalog";
+}
+
+/** Watch checks only. A clipped page is outside text, not a routine watch. */
+function routineWatchTexts(
+  message: Message,
+  wrapped: ReadonlyMap<string, string>,
+  contextStrategy?: AgentContextStrategy,
+): string[] {
+  if (!isRoutineWatchName(resolvedToolName(message, wrapped))) return [];
+  return watchTextValues(message, contextStrategy);
+}
+
+function wrappedToolNames(messages: readonly Message[]): Map<string, string> {
+  const wrapped = new Map<string, string>();
+  for (const message of messages) noteWrappedToolCalls(message, wrapped);
+  return wrapped;
+}
+
+function scanOutsideSources(
+  messages: readonly AgentMessage[],
+  contextStrategy?: AgentContextStrategy,
+): {
+  routineTexts: Map<number, Map<string, number>>;
+  pages: Array<{ index: number; text: string }>;
+} {
+  const wrapped = new Map<string, string>();
+  const routineTexts = new Map<number, Map<string, number>>();
+  const pages: Array<{ index: number; text: string }> = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]!;
+    noteWrappedToolCalls(message, wrapped);
+    if (message.role !== "toolResult") continue;
+    const name = resolvedToolName(message, wrapped);
+    if (isRoutineWatchName(name)) {
+      const counts = new Map<string, number>();
+      for (const text of watchTextValues(message, contextStrategy)) {
+        counts.set(text, (counts.get(text) ?? 0) + 1);
+      }
+      if (counts.size > 0) routineTexts.set(index, counts);
+      continue;
+    }
+    if (!name || !toolResultTaintsRun(name)) continue;
+    const text = outsideTextOf(message.content);
+    if (text.trim()) pages.push({ index, text });
+  }
+  return { routineTexts, pages };
+}
+
+/** Where a page sits in the watch list: after earlier checks, before later ones. */
+function pageInsertionIndex(anchors: readonly (number | undefined)[], pageIndex: number): number {
+  let at = 0;
+  for (let index = 0; index < anchors.length; index += 1) {
+    const anchor = anchors[index];
+    if (anchor === undefined || anchor < pageIndex) {
+      at = index + 1;
+      continue;
+    }
+    if (anchor > pageIndex) return Math.min(at, index);
+  }
+  return at;
+}
+
+/**
+ * Watch checks stay in acceptance order. Page reads land at their transcript position so an
+ * older page cannot evict a newer watch, and an older watch cannot evict a newer page.
+ */
+function chronologicalOutsideText(
+  messages: readonly AgentMessage[],
+  watchEntries: readonly string[],
+  contextStrategy?: AgentContextStrategy,
+): string {
+  const { routineTexts, pages } = scanOutsideSources(messages, contextStrategy);
+  const anchors = watchEntries.map((entry) => {
+    for (const [index, counts] of routineTexts) {
+      const count = counts.get(entry) ?? 0;
+      if (count <= 0) continue;
+      if (count === 1) counts.delete(entry);
+      else counts.set(entry, count - 1);
+      return index;
+    }
+    return undefined;
+  });
+  const events: Array<{ pos: number; text: string }> = watchEntries.map((text, index) => ({
+    pos: index,
+    text,
+  }));
+  for (const page of pages) {
+    events.push({ pos: pageInsertionIndex(anchors, page.index) - 0.5, text: page.text });
+  }
+  events.sort((left, right) => left.pos - right.pos);
+  let kept = "";
+  for (const event of events) kept = appendOutsideText(kept, event.text);
+  return kept;
+}
+
+function restoredStatePrefix(
+  stateMessages: readonly AgentMessage[],
+  restoredMessages: readonly Message[] | undefined,
+): number {
+  if (!restoredMessages?.length) return 0;
+  const offset =
+    stateMessages[0]?.role === "system" && restoredMessages[0]?.role !== "system" ? 1 : 0;
+  return restoredMessages.length + offset;
+}
+
 /** Provenance fields belong to one delivery. A slice must not inherit another slice's texts. */
 function cleanWatchDetails(details: Record<string, unknown>): Record<string, unknown> {
   const { contextBeforeUseText: _beforeUse, contextDeliveredTexts: _delivered, ...clean } = details;
@@ -135,6 +270,8 @@ export function buildTurnCheckpoint(input: {
   foundConnectorTools?: ReadonlyMap<string, string>;
   watchDeliveries?: ReadonlyMap<string, WatchDeliveryState>;
   priorWatchOutsideText?: readonly string[];
+  /** Chronological outside tail from the checkpoint this run resumed. */
+  priorOutsideText?: string;
   restoredMessages?: readonly Message[];
   contextStrategy?: AgentContextStrategy;
 }): TurnCheckpoint {
@@ -194,6 +331,7 @@ export function buildTurnCheckpoint(input: {
   }
   const priorCount = orderedWatch.length;
   const restoredRetained = new Set<AgentMessage>();
+  const restoredRoutineCallIds = new Set<string>();
   if (input.restoredMessages) {
     // Only results before the paused assistant turn in the restored checkpoint were actually
     // delivered to an earlier model; trailing sibling results await their first delivery.
@@ -224,10 +362,16 @@ export function buildTurnCheckpoint(input: {
                 retained.details.routines === details.routines,
             );
       if (!retainedMatch) {
-        orderedWatch.push(...restoredItems);
+        // Already saved in acceptance order. Re-extracting a dropped result moves it to the end.
+        if (input.priorWatchOutsideText === undefined) orderedWatch.push(...restoredItems);
+        else restoredRoutineCallIds.add(message.toolCallId);
         continue;
       }
       restoredRetained.add(retainedMatch);
+      if (input.priorWatchOutsideText !== undefined) {
+        restoredRoutineCallIds.add(message.toolCallId);
+        continue;
+      }
       const retainedSet = new Set(watchTextValues(retainedMatch, input.contextStrategy));
       for (const value of restoredItems) {
         if (!retainedSet.has(value)) orderedWatch.push(value);
@@ -306,7 +450,8 @@ export function buildTurnCheckpoint(input: {
       !isRecord(message.details) ||
       !("routines" in message.details) ||
       coveredWatch.has(message) ||
-      restoredRetained.has(message)
+      restoredRetained.has(message) ||
+      (input.priorWatchOutsideText !== undefined && restoredRoutineCallIds.has(message.toolCallId))
     )
       continue;
     unseenWatch.push(...watchTextValues(message, input.contextStrategy));
@@ -322,6 +467,15 @@ export function buildTurnCheckpoint(input: {
       onlyRetainedBaseline ? [] : [...orderedWatch, ...acceptedWatch, ...unseenWatch],
     ),
   );
+  const outsideText = checkpointOutsideText({
+    stateMessages: input.stateMessages,
+    restoredMessages: input.restoredMessages,
+    watchOutsideText,
+    priorOutsideText: input.priorOutsideText,
+    priorWatchOutsideText: input.priorWatchOutsideText,
+    freshWatch: [...acceptedWatch, ...unseenWatch],
+    contextStrategy: input.contextStrategy,
+  });
   const assistant = messages.findLast((message) => message.role === "assistant");
   const sequential =
     input.restoringCalls ||
@@ -364,7 +518,44 @@ export function buildTurnCheckpoint(input: {
       ? { foundConnectorTools: [...input.foundConnectorTools] }
       : {}),
     ...(watchOutsideText.length > 0 ? { watchOutsideText } : {}),
+    ...(outsideText ? { outsideText } : {}),
   };
+}
+
+function checkpointOutsideText(input: {
+  stateMessages: readonly AgentMessage[];
+  restoredMessages?: readonly Message[];
+  watchOutsideText: readonly string[];
+  priorOutsideText?: string;
+  priorWatchOutsideText?: readonly string[];
+  freshWatch: readonly string[];
+  contextStrategy?: AgentContextStrategy;
+}): string | undefined {
+  const prior = input.priorOutsideText?.trim() ? input.priorOutsideText : undefined;
+  if (prior) {
+    const prefix = restoredStatePrefix(input.stateMessages, input.restoredMessages);
+    const priorWatch = new Set(
+      (input.priorWatchOutsideText ?? []).filter((entry) => entry.trim().length > 0),
+    );
+    const freshWatch = input.freshWatch.filter((entry) => entry.trim() && !priorWatch.has(entry));
+    const addition = chronologicalOutsideText(
+      input.stateMessages.slice(prefix),
+      freshWatch,
+      input.contextStrategy,
+    );
+    const text = addition ? appendOutsideText(prior, addition) : prior;
+    return text.trim() ? text : undefined;
+  }
+  if (input.watchOutsideText.length === 0) return undefined;
+  if (scanOutsideSources(input.stateMessages, input.contextStrategy).pages.length === 0) {
+    return undefined;
+  }
+  const text = chronologicalOutsideText(
+    input.stateMessages,
+    input.watchOutsideText,
+    input.contextStrategy,
+  );
+  return text.trim() ? text : undefined;
 }
 
 export function serializeCapturedTurnCheckpoint(
@@ -403,15 +594,30 @@ function checkpointWithSiblingWatchResults(
   siblings: readonly Message[],
 ): TurnCheckpoint {
   const messages = [...checkpoint.messages, ...siblings];
-  const additions = siblings.flatMap((message) =>
-    message.role === "toolResult" ? watchTextValues(message) : [],
-  );
-  if (additions.length === 0) return { ...checkpoint, messages };
+  const wrapped = wrappedToolNames(checkpoint.messages);
+  const additions = siblings.flatMap((message) => routineWatchTexts(message, wrapped));
+  let outsideText = checkpoint.outsideText;
+  if (outsideText) {
+    for (const message of siblings) {
+      if (message.role !== "toolResult") continue;
+      const name = resolvedToolName(message, wrapped);
+      if (isRoutineWatchName(name)) {
+        for (const text of routineWatchTexts(message, wrapped)) {
+          outsideText = appendOutsideText(outsideText, text);
+        }
+        continue;
+      }
+      if (name && toolResultTaintsRun(name)) {
+        outsideText = appendOutsideText(outsideText, message.content);
+      }
+    }
+  }
+  if (additions.length === 0) {
+    return { ...checkpoint, messages, ...(outsideText ? { outsideText } : {}) };
+  }
   const base =
     checkpoint.watchOutsideText ??
-    checkpoint.messages.flatMap((message) =>
-      message.role === "toolResult" ? watchTextValues(message) : [],
-    );
+    checkpoint.messages.flatMap((message) => routineWatchTexts(message, wrapped));
   const seen = new Set(base);
   const extra = additions.filter((text) => {
     if (seen.has(text)) return false;
@@ -423,5 +629,6 @@ function checkpointWithSiblingWatchResults(
     ...checkpoint,
     messages,
     ...(watchOutsideText.length > 0 ? { watchOutsideText } : {}),
+    ...(outsideText ? { outsideText } : {}),
   };
 }
