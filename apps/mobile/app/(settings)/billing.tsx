@@ -143,7 +143,9 @@ export default function BillingScreen() {
   const renewalChoices = byokTrialRenewalOffered(status)
     ? ByokIntervalSchema.options.flatMap((period) => {
         const subactions = tiers.flatMap((offer) => {
-          const cents = tierPriceCents(offer, period);
+          // The plan the trial already has keeps the price it was started at.
+          const kept = period === interval && offer.tier === currentTier?.tier;
+          const cents = kept ? ownKeyCents : tierPriceCents(offer, period);
           if (cents === null) return [];
           const price = usd(cents);
           return [
@@ -153,10 +155,7 @@ export default function BillingScreen() {
                 period === "year"
                   ? t`${ph({ name: offer.name })}, ${price} / year`
                   : t`${ph({ name: offer.name })}, ${price} / month`,
-              state:
-                period === interval && offer.tier === currentTier?.tier
-                  ? ("on" as const)
-                  : ("off" as const),
+              state: kept ? ("on" as const) : ("off" as const),
             },
           ];
         });

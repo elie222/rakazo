@@ -140,16 +140,20 @@ function RenewTrial({
 }) {
   const { i18n } = useLingui();
   const tiers = status.byokTiers ?? [];
-  const [tier, setTier] = useState<ByokTier>(subscribedTier(status)?.tier ?? "standard");
+  const current = subscribedTier(status)?.tier ?? "standard";
+  const [tier, setTier] = useState<ByokTier>(current);
   const [chosenInterval, setChosenInterval] = useState<ByokInterval>(
     status.byokInterval ?? "month",
   );
   const offer = tiers.find((candidate) => candidate.tier === tier);
   if (!offer) return null;
   const interval = offer.annualPriceCents ? chosenInterval : "month";
+  // The plan the trial already has keeps the price it was started at.
+  const kept = tier === current && interval === (status.byokInterval ?? "month");
   const price = formatBillingPrice(
     {
-      amount: tierPriceCents(offer, interval) ?? offer.monthlyPriceCents,
+      amount:
+        (kept ? status.byokPriceCents : tierPriceCents(offer, interval)) ?? offer.monthlyPriceCents,
       currency: "usd",
       interval,
       intervalCount: 1,
