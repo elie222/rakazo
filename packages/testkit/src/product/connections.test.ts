@@ -833,31 +833,33 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         },
       ],
     };
-    const tools = (await handles.connectors.discoverTools(context)).filter(
-      (candidate) => candidate.route?.connectorId === "composio",
-    );
-    expect(tools.map((tool) => tool.name)).toEqual([
-      "GMAIL_FETCH_EMAILS",
-      "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
-      "GMAIL_FETCH_MESSAGE_BY_THREAD_ID",
-      "GMAIL_SEND_EMAIL",
-      "GMAIL_CREATE_EMAIL_DRAFT",
-      "GMAIL_LIST_LABELS",
-    ]);
-    const fetchTool = tools.find((tool) => tool.name === "GMAIL_FETCH_EMAILS");
-    expect(fetchTool).toBeDefined();
-    const events = [];
-    for await (const event of handles.connectors.execute(
-      {
-        tool: fetchTool!.name,
-        args: { query: "from:teammate", max_results: 5 },
-        executionId: "composio-product-execution",
-        route: fetchTool!.route,
-      },
-      context,
-    )) {
-      events.push(event);
-    }
+    const events: unknown[] = [];
+    await runAsSystem("background job run.continue", async () => {
+      const tools = (await handles.connectors.discoverTools(context)).filter(
+        (candidate) => candidate.route?.connectorId === "composio",
+      );
+      expect(tools.map((tool) => tool.name)).toEqual([
+        "GMAIL_FETCH_EMAILS",
+        "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+        "GMAIL_FETCH_MESSAGE_BY_THREAD_ID",
+        "GMAIL_SEND_EMAIL",
+        "GMAIL_CREATE_EMAIL_DRAFT",
+        "GMAIL_LIST_LABELS",
+      ]);
+      const fetchTool = tools.find((tool) => tool.name === "GMAIL_FETCH_EMAILS");
+      expect(fetchTool).toBeDefined();
+      for await (const event of handles.connectors.execute(
+        {
+          tool: fetchTool!.name,
+          args: { query: "from:teammate", max_results: 5 },
+          executionId: "composio-product-execution",
+          route: fetchTool!.route,
+        },
+        context,
+      )) {
+        events.push(event);
+      }
+    });
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "result",
@@ -929,29 +931,31 @@ describeWithDatabase("Composio catalog reconciliation", () => {
         },
       ],
     };
-    const tool = (await handles.connectors.discoverTools(context)).find(
-      (candidate) => candidate.route?.connectorId === "pipedream",
-    );
-    expect(tool).toMatchObject({
-      name: expect.stringMatching(/^notes.write__/),
-      route: {
-        connectionId: started.connectionId,
-        resourceRevision: stored.providerRef,
-        toolName: "notes.write",
-      },
+    const events: unknown[] = [];
+    await runAsSystem("background job run.continue", async () => {
+      const tool = (await handles.connectors.discoverTools(context)).find(
+        (candidate) => candidate.route?.connectorId === "pipedream",
+      );
+      expect(tool).toMatchObject({
+        name: expect.stringMatching(/^notes.write__/),
+        route: {
+          connectionId: started.connectionId,
+          resourceRevision: stored.providerRef,
+          toolName: "notes.write",
+        },
+      });
+      for await (const event of handles.connectors.execute(
+        {
+          tool: tool!.name,
+          args: { text: "product-pipedream-ok" },
+          executionId: "pipedream-product-execution",
+          route: tool!.route,
+        },
+        context,
+      )) {
+        events.push(event);
+      }
     });
-    const events = [];
-    for await (const event of handles.connectors.execute(
-      {
-        tool: tool!.name,
-        args: { text: "product-pipedream-ok" },
-        executionId: "pipedream-product-execution",
-        route: tool!.route,
-      },
-      context,
-    )) {
-      events.push(event);
-    }
     expect(events).toContainEqual(expect.objectContaining({ type: "result" }));
 
     await rpc(app, cookie, "connections/revoke", { connectionId: started.connectionId });
