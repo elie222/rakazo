@@ -12,6 +12,7 @@ import {
   pageAppsDataDir,
   pageAppTokenFile,
   readPageAppToken,
+  readServerOverride,
   removePageAppData,
   writePageAppToken,
 } from "./page-app-files.js";
@@ -67,7 +68,9 @@ export async function launcherApps(
     );
     const config = text ? pageAppConfig(parsedJson(text)) : null;
     const bundlePath = config?.appId === appId ? await launcher.find(appId) : null;
-    if (config && bundlePath) found.push({ ...config, bundlePath });
+    // The server an app was moved to wins over the one it was made with.
+    const server = config ? (readServerOverride(appId, appData) ?? config.server) : null;
+    if (config && server && bundlePath) found.push({ ...config, server, bundlePath });
   }
   return found;
 }
