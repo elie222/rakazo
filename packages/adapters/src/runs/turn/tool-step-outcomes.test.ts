@@ -1559,6 +1559,7 @@ describe("tool step outcomes", () => {
     for (const input of [
       '{"Authorization": "Bearer\n"opaque-123"}',
       '{"Authorization": "Bearer\t"opaque-123"',
+      '{"Authorization": "prefix\nBearer\n\n"opaque-123"}',
     ]) {
       for (const read of [kept, replay, sanitizeError]) {
         const out = read(input) ?? "";
@@ -1591,6 +1592,18 @@ describe("tool step outcomes", () => {
       'COMPOSIO_API_KEY: "Bearer\u000B\nBearer opaque-123',
       "COMPOSIO_API_KEY=\u00A0Bearer\u00A0\nopaque-123",
       'COMPOSIO_API_KEY="Bearer\u00A0\nopaque-123"',
+      "Bearer Bearer xBearer opaque-123",
+      "Bearer Bearer my-Bearer opaque-123",
+      "Bearer Bearer\nsecret= opaque-123",
+      "Bearer Bearer secret= opaque-123",
+      "secret:\nsecret:\nclient_secret: opaque-123",
+      'password: \nclient_secret: opaque-123\n{"ok":true}',
+      "password:\npassword:\nx-api-key: opaque-123",
+      "Authorization:\nclient_secret: opaque-123",
+      'COMPOSIO_API_KEY="Bearer\u3000\r\nmsg="{\\"COMPOSIO_API_KEY\\":\\"opaque-123\\"}"',
+      'COMPOSIO_API_KEY="Bearer \r\nmsg="{\\"COMPOSIO_API_KEY\\":\\"opaque-123\\"}"',
+      "COMPOSIO_API_KEY=[redacted]opaque-123",
+      "password=[redacted]opaque-123",
     ];
     for (const input of cases) {
       for (const read of [kept, replay, failed, sanitizeError]) {
@@ -1599,6 +1612,16 @@ describe("tool step outcomes", () => {
         expect(out).toContain("[redacted]");
       }
     }
+    for (const read of [kept, replay, failed, sanitizeError]) {
+      expect(read('Bearer Bearer\n{"token":"opaque-123","x":1}')).toBe(
+        'Bearer [redacted]\n{"token":"[redacted]","x":1}',
+      );
+    }
+    expect(
+      sanitizeConnectorError(
+        new Error(JSON.stringify({ msg: "Bearer Bearer xBearer opaque-123" })),
+      ),
+    ).toBe('{"msg":"Bearer [redacted] xBearer [redacted]"}');
     expect(
       failed('Authorization: Bearer\u00A0\n  "token": "opaque-123",\n  "x": 1\n}'),
     ).not.toContain("opaque-123");

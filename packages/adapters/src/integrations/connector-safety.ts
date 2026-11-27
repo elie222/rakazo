@@ -39,7 +39,10 @@ export function sanitizeConnectorError(
   const message = connectorErrorMessage(error);
   const sanitizeDecoded = (value: string) =>
     redactSecrets(value, secrets)
-      .replace(/Bearer\s+(?!Bearer\s+\S)\S+/gi, "Bearer [redacted]")
+      .replace(
+        /Bearer\s+(?!Bearer[^\S\r\n]+(?!(?:\S*Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:]))\S)\S+/gi,
+        "Bearer [redacted]",
+      )
       .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
   const sanitizePlain = (value: string) =>
     redactPlainBearerTokens(redactSecrets(value, secrets)).replace(
