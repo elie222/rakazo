@@ -623,9 +623,9 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
     plan.getByText("Up to 4 vCPU and 8 GB, 100 Standard computer hours a month"),
   ).toBeVisible();
   await plan.getByRole("combobox", { name: "Plan" }).click();
-  await expect(page.getByRole("option", { name: /Max · \$99 \/ month/ })).toBeVisible();
+  await expect(page.getByRole("option", { name: /^Max\s*\$99 \/ month/ })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-own-key-tiers");
-  await page.getByRole("option", { name: /Ultra · \$199 \/ month/ }).click();
+  await page.getByRole("option", { name: /^Ultra\s*\$199 \/ month/ }).click();
   const confirm = page.getByRole("alertdialog", { name: "Switch to Ultra?" });
   await expect(
     confirm.getByText("Your card is charged the prorated difference today."),
@@ -643,7 +643,7 @@ test("move an own-key plan to a bigger tier", async ({ page }, testInfo) => {
   await yearly.getByRole("button", { name: "Switch", exact: true }).click();
   await expect(plan.getByText("$1,908 / year", { exact: true })).toBeVisible();
   await plan.getByRole("combobox", { name: "Plan" }).click();
-  const ultra = page.getByRole("option", { name: /Ultra · \$1,908 \/ year/ });
+  const ultra = page.getByRole("option", { name: /^Ultra\s*\$1,908 \/ year/ });
   await expect(
     ultra.getByText("2,400 bot computer hours/month at Standard size · Up to Extra large"),
   ).toBeVisible();
