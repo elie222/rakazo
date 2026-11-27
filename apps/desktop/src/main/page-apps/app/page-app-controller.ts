@@ -192,8 +192,11 @@ export function createPageAppController(api: PageAppApi, host: PageAppHost) {
     let delay = 1_000;
     while (!stopped.signal.aborted) {
       try {
+        let opened = false;
         for await (const _ of api.changes(stopped.signal)) {
-          delay = 1_000;
+          // Every stream opens with a signal, so only a later one shows the stream holds.
+          if (opened) delay = 1_000;
+          opened = true;
           refresh();
         }
       } catch (error) {

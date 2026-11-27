@@ -5,7 +5,11 @@ import type { IpcCaller } from "../ipc/ipc.js";
 import { handleIpc } from "../ipc/ipc.js";
 import { reportDesktopError } from "../system/monitoring.js";
 import { serverOrigin } from "./page-app-files.js";
-import { createPageAppInstaller, pageAppInstallRequest } from "./page-app-installer.js";
+import {
+  createPageAppInstaller,
+  installedBundles,
+  pageAppInstallRequest,
+} from "./page-app-installer.js";
 import { pageAppsSupported } from "./page-apps-support.js";
 import { createRegistry } from "./registry.js";
 
@@ -17,7 +21,7 @@ function callerServer(event: IpcCaller) {
 /** The `pageApps` bridge, where Rakazo can make page apps. */
 export function registerPageApps(userDataDir: string) {
   if (!pageAppsSupported()) return;
-  const registry = createRegistry(userDataDir);
+  const registry = createRegistry(userDataDir, () => installedBundles());
   const installer = createPageAppInstaller({
     registry,
     trash: (bundle) => shell.trashItem(bundle),

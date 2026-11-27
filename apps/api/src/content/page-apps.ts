@@ -145,15 +145,6 @@ export async function revokePageAppToken(prisma: PrismaClient, appId: string) {
   await runAsSystem("revoke a page app", () => prisma.pageApp.deleteMany({ where: { id: appId } }));
 }
 
-/** Whether the app's token still opens it, for long-lived streams to notice an uninstall. */
-export async function pageAppStillInstalled(prisma: PrismaClient, appId: string) {
-  return Boolean(
-    await runAsSystem("check a page app", () =>
-      prisma.pageApp.findUnique({ where: { id: appId }, select: { id: true } }),
-    ),
-  );
-}
-
 /** What an app shows of its page, as one value that differs whenever any of it changes. */
 export async function pageAppVersion(
   prisma: PrismaClient,

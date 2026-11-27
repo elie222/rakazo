@@ -132,6 +132,22 @@ async function stopApp(bundle: string) {
   });
 }
 
+/** The apps found in the apps folder by their own config, for a registry that has to be rebuilt. */
+export async function installedBundles(home?: string): Promise<InstalledPageApp[]> {
+  const folder = pageAppsFolder(home);
+  const found = await Promise.all(
+    [...(await bundleNames(folder))]
+      .filter((name) => name.endsWith(".app"))
+      .map(async (name) => {
+        const bundlePath = path.join(folder, name);
+        const built = await bestEffort("read a page app bundle", readBuiltApp(bundlePath));
+        const config = built ? pageAppConfig(built.config) : null;
+        return config ? [{ ...config, bundlePath }] : [];
+      }),
+  );
+  return found.flat();
+}
+
 export function createPageAppInstaller(options: {
   registry: Registry;
   /** Moves a bundle to the Trash. */

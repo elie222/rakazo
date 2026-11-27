@@ -15,8 +15,17 @@ function installedApp(value: unknown): InstalledPageApp | null {
     : null;
 }
 
-/** The apps this Rakazo installed, as recorded in its own data, whether or not their bundles remain. */
-export async function readRegistry(userDataDir: string): Promise<InstalledPageApp[]> {
+type Recover = () => Promise<InstalledPageApp[]>;
+
+/**
+ * The apps this Rakazo installed, as recorded in its own data, whether or not their bundles
+ * remain. A file that no longer parses is rebuilt from the bundles, never read as no apps, so
+ * the next write cannot drop the others.
+ */
+export async function readRegistry(
+  userDataDir: string,
+  recover: Recover,
+): Promise<InstalledPageApp[]> {
   let text: string;
   try {
     text = await readFile(path.join(userDataDir, REGISTRY_FILE), "utf8");
@@ -27,10 +36,11 @@ export async function readRegistry(userDataDir: string): Promise<InstalledPageAp
   let apps: unknown;
   try {
     apps = (JSON.parse(text) as { apps?: unknown }).apps;
-  } catch {
-    return [];
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return recover();
   }
-  if (!Array.isArray(apps)) return [];
+  if (!Array.isArray(apps)) return recover();
   return apps.flatMap((value) => {
     const app = installedApp(value);
     return app ? [app] : [];
@@ -45,11 +55,11 @@ export async function writeRegistry(userDataDir: string, apps: readonly Installe
 }
 
 /** One change at a time, so two installs finishing together both stay recorded. */
-export function createRegistry(userDataDir: string) {
+export function createRegistry(userDataDir: string, recover: Recover) {
   let queue: Promise<unknown> = Promise.resolve();
   const change = (edit: (apps: InstalledPageApp[]) => InstalledPageApp[]) => {
     const run = queue.then(async () =>
-      writeRegistry(userDataDir, edit(await readRegistry(userDataDir))),
+      writeRegistry(userDataDir, edit(await readRegistry(userDataDir, recover))),
     );
     queue = run.then(
       () => undefined,
@@ -58,7 +68,7 @@ export function createRegistry(userDataDir: string) {
     return run;
   };
   return {
-    list: () => queue.then(() => readRegistry(userDataDir)),
+    list: () => queue.then(() => readRegistry(userDataDir, recover)),
     put: (app: InstalledPageApp) =>
       change((apps) => [...apps.filter((entry) => entry.appId !== app.appId), app]),
     remove: (appId: string) => change((apps) => apps.filter((entry) => entry.appId !== appId)),
