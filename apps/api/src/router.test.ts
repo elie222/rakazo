@@ -493,6 +493,14 @@ describe("account preferences", () => {
     ).resolves.toMatchObject({
       chatPreferences: { starredModels: ["openai::gpt-5"] },
     });
+    await expect(
+      client.preferences.update({
+        chatPreferences: {
+          starredModels: ["openai::gpt-5"],
+          starredModelToggle: { key: "openai::gpt-5", starred: false },
+        },
+      }),
+    ).rejects.toThrow();
   });
 
   it("saves the timezone and the language preference in one write", async () => {

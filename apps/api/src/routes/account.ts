@@ -259,7 +259,15 @@ export function accountRoutes(ctx: RouterContext) {
           ...(labs === undefined ? {} : { labs }),
           ...chatPreferences,
         };
-        if (starredModelToggle !== undefined) {
+        if (input.timezone !== undefined) {
+          // The routines that took the account zone move in the same transaction as the other
+          // preference fields (including any starredModelToggle). The move's row lock still
+          // waits for any bot creation holding the user row, so no new bot is missed below.
+          await changeUserTimezone(deps, userId, input.timezone, {
+            ...data,
+            ...(starredModelToggle ? { starredModelToggle } : {}),
+          });
+        } else if (starredModelToggle !== undefined) {
           // Apply the toggle against the current row in a serializable transaction so concurrent
           // stars from different tabs or devices never overwrite each other.
           await withTransactionRetry(() =>
@@ -288,14 +296,6 @@ export function accountRoutes(ctx: RouterContext) {
               { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
             ),
           );
-          if (input.timezone !== undefined) {
-            await changeUserTimezone(deps, userId, input.timezone);
-          }
-        } else if (input.timezone !== undefined) {
-          // The routines that took the account zone keep their local schedule in the new
-          // one, and the other fields commit in the same save. The move's row lock still
-          // waits for any bot creation holding the user row, so no new bot is missed below.
-          await changeUserTimezone(deps, userId, input.timezone, data);
         } else {
           await deps.prisma.user.update({
             where: { id: userId },

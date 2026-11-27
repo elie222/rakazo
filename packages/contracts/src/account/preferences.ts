@@ -43,6 +43,8 @@ export const AccountChatPreferencesPatchSchema = ChatPreferencesPatchSchema.exte
   notificationSounds: z.boolean().optional(),
   starredModels: z.array(StarredModelKeySchema).max(MAX_STARRED_MODELS).optional(),
   starredModelToggle: StarredModelToggleSchema.optional(),
+}).refine((patch) => patch.starredModels === undefined || patch.starredModelToggle === undefined, {
+  message: "Specify either starredModels or starredModelToggle, not both",
 });
 export type AccountChatPreferencesPatch = z.infer<typeof AccountChatPreferencesPatchSchema>;
 

@@ -1,7 +1,8 @@
 import type { ConnectorProvider, JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
-import type { ChatPreferencesPatch, RoutineWatch } from "@rakazo/contracts";
+import type { ChatPreferencesPatch, RoutineWatch, StarredModelToggle } from "@rakazo/contracts";
 import {
+  MAX_STARRED_MODELS,
   ROUTINE_NAME_MAX_LENGTH,
   ROUTINE_WATCH_MIN_MINUTES,
   RoutineEmailSendersSchema,
@@ -9,6 +10,8 @@ import {
   TimeZoneSchema,
 } from "@rakazo/contracts";
 import {
+  applyStarredModelToggle,
+  ClientError,
   cronFromPreset,
   isOneShotRoutineCron,
   isOneShotRoutineCrons,
@@ -440,6 +443,8 @@ export async function changeUserTimezone(
     botAvatarSet?: string;
     labs?: string[];
     marketingEmailOptOutAt?: Date | null;
+    starredModels?: string[];
+    starredModelToggle?: StarredModelToggle;
   },
 ): Promise<void> {
   const woken: { id: string; nextRunAt: Date }[] = [];
@@ -451,9 +456,31 @@ export async function changeUserTimezone(
       // The lock serializes overlapping zone saves: each reads the previous zone only
       // after the last save committed, so no routine keeps an intermediate zone.
       await tx.$queryRaw`SELECT id FROM "user" WHERE id = ${userId} FOR UPDATE`;
-      const user = await tx.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { timezone: true, starredModels: true },
+      });
       if (!user || (user.timezone === timezone && !other)) return;
-      await tx.user.update({ where: { id: userId }, data: { timezone, ...other } });
+      const { starredModelToggle, ...restOther } = other ?? {};
+      let starredUpdate: { starredModels: string[] } | undefined;
+      if (starredModelToggle) {
+        const nextStarred = applyStarredModelToggle(
+          user.starredModels,
+          starredModelToggle.key,
+          starredModelToggle.starred,
+        );
+        if (nextStarred.length > MAX_STARRED_MODELS) {
+          throw new ClientError(
+            "BAD_REQUEST",
+            `You can favorite up to ${MAX_STARRED_MODELS} models.`,
+          );
+        }
+        starredUpdate = { starredModels: nextStarred };
+      }
+      await tx.user.update({
+        where: { id: userId },
+        data: { timezone, ...restOther, ...starredUpdate },
+      });
       if (user.timezone === timezone || !timezone || !user.timezone) return;
       // Lock the rows about to move, so a run firing meanwhile cannot advance one between
       // the read and the write: its claim lands after the commit and re-derives from the

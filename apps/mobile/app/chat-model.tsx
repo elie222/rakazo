@@ -12,7 +12,7 @@ import {
 import { localizeModelEntry } from "@rakazo/i18n/model-provider";
 import { thinkingLevelLabel } from "@rakazo/i18n/thinking-level";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 import { ModelPickerList } from "../components/models/model-picker-list";
 import { SettingsGroup, SettingsRow } from "../components/settings/settings-group";
@@ -45,50 +45,48 @@ export default function ChatModelScreen() {
     stale: [botRead.queryKey],
     onFailed: (error) => Alert.alert(errorText(error, t`Could not change the model`)),
   });
-  const starInFlightRef = useRef(false);
-  const starQueueRef = useRef<StarredModelToggle[]>([]);
-  const drainNextStar = () => {
-    const next = starQueueRef.current.shift();
-    if (next) saveStarred.run(next);
-    else starInFlightRef.current = false;
-  };
+  const [starQueue, setStarQueue] = useState<StarredModelToggle[]>([]);
+  const starQueueRef = useRef<StarredModelToggle[]>(starQueue);
+  starQueueRef.current = starQueue;
   const saveStarred = useSave({
     save: (starredModelToggle: StarredModelToggle, send) =>
       send("preferences/update", { chatPreferences: { starredModelToggle } }),
     stale: [meRead.queryKey],
-    onSaved: drainNextStar,
-    onFailed: (error) => {
-      Alert.alert(errorText(error, t`Could not update favorite models`));
-      drainNextStar();
-    },
+    onFailed: (error) => Alert.alert(errorText(error, t`Could not update favorite models`)),
   });
-  let starredKeys = normalizeStarredModelKeys(me.data?.chatPreferences?.starredModels);
-  if (saveStarred.pending && saveStarred.input) {
-    starredKeys = applyStarredModelToggle(
-      starredKeys,
-      saveStarred.input.key,
-      saveStarred.input.starred,
-    );
-  }
-  for (const queued of starQueueRef.current) {
-    starredKeys = applyStarredModelToggle(starredKeys, queued.key, queued.starred);
-  }
+  const savedStarred = normalizeStarredModelKeys(me.data?.chatPreferences?.starredModels);
+  const inFlightStar = saveStarred.pending ? saveStarred.input : undefined;
+  const applyStars = (queued: readonly StarredModelToggle[]) => {
+    let keys = [...savedStarred];
+    if (inFlightStar) keys = applyStarredModelToggle(keys, inFlightStar.key, inFlightStar.starred);
+    for (const item of queued) keys = applyStarredModelToggle(keys, item.key, item.starred);
+    return keys;
+  };
+  const starredKeys = applyStars(starQueue);
+  useEffect(() => {
+    if (saveStarred.pending || !starQueue.length) return;
+    const [next, ...rest] = starQueue;
+    if (!next) return;
+    starQueueRef.current = rest;
+    setStarQueue(rest);
+    saveStarred.run(next);
+  }, [saveStarred.pending, starQueue, saveStarred.run]);
   const toggleStar = (rawKey: string) => {
     const parsed = parseModelOptionKey(rawKey.trim());
     if (!parsed) return;
     const key = modelOptionKey(parsed.provider, parsed.modelId);
-    const nextStarred = !starredKeys.includes(key);
-    if (nextStarred && starredKeys.length >= MAX_STARRED_MODELS) {
+    const current = applyStars(starQueueRef.current);
+    const nextStarred = !current.includes(key);
+    if (nextStarred && current.length >= MAX_STARRED_MODELS) {
       Alert.alert(t`You can favorite up to ${MAX_STARRED_MODELS} models.`);
       return;
     }
-    const toggle: StarredModelToggle = { key, starred: nextStarred };
-    if (starInFlightRef.current) {
-      starQueueRef.current = [...starQueueRef.current.filter((entry) => entry.key !== key), toggle];
-      return;
-    }
-    starInFlightRef.current = true;
-    saveStarred.run(toggle);
+    const nextQueue = [
+      ...starQueueRef.current.filter((entry) => entry.key !== key),
+      { key, starred: nextStarred },
+    ];
+    starQueueRef.current = nextQueue;
+    setStarQueue(nextQueue);
   };
 
   const ready = bot.data && me.data && catalog.data && credentials.data;
