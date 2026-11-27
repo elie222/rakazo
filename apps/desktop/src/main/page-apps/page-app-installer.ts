@@ -137,7 +137,10 @@ async function stopApp(bundle: string) {
 }
 
 /** The apps found in the apps folder by their own config, for a registry that has to be rebuilt. */
-export async function installedBundles(home?: string): Promise<InstalledPageApp[]> {
+export async function installedBundles(
+  appData: string,
+  home?: string,
+): Promise<InstalledPageApp[]> {
   const folder = pageAppsFolder(home);
   const found = await Promise.all(
     [...(await bundleNames(folder))]
@@ -147,7 +150,7 @@ export async function installedBundles(home?: string): Promise<InstalledPageApp[
         const built = await bestEffort("read a page app bundle", readBuiltApp(bundlePath));
         const config = built ? pageAppConfig(built.config) : null;
         // The server an app was moved to wins over the one in its bundle.
-        const server = config ? (readServerOverride(config.appId, home) ?? config.server) : null;
+        const server = config ? (readServerOverride(config.appId, appData) ?? config.server) : null;
         return config && server ? [{ ...config, server, bundlePath }] : [];
       }),
   );
@@ -317,7 +320,7 @@ export function createPageAppInstaller(options: {
   /** Records an app whose install placed its bundle but ended before writing the registry. */
   async function adoptUntracked() {
     const known = new Set((await registry.list()).map((app) => app.appId));
-    for (const found of await installedBundles(home))
+    for (const found of await installedBundles(appData, home))
       if (!known.has(found.appId)) await registry.put(found);
   }
 

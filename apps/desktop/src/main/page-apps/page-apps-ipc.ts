@@ -29,7 +29,7 @@ export function registerPageApps(userDataDir: string) {
   // A broken registry is rebuilt from what each app keeps: a Mac app's bundle, or a launcher
   // app's data folder and the launcher that starts it.
   const registry = createRegistry(userDataDir, () =>
-    launcher ? launcherApps(appData, launcher) : installedBundles(),
+    launcher ? launcherApps(appData, launcher) : installedBundles(appData),
   );
   const installer =
     process.platform === "darwin"
