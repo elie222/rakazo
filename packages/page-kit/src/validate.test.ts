@@ -354,6 +354,10 @@ describe("checkPageSource", () => {
         "import { askBot as ask } from 'rakazo/page';\nconst App = () => <Button label='Ask' onClick={() => ask('x')} />;",
       ),
     ).toEqual(["ask"]);
+    // An escaped name still reaches the helper.
+    expect(
+      abilities("const App = () => <Button label='Ask' onClick={() => ask\\u0042ot('x')} />;"),
+    ).toEqual(["ask"]);
     expect(
       abilities(
         "import * as Kit from 'rakazo/page';\nconst App = () => <Kit.Text>askBot</Kit.Text>;",

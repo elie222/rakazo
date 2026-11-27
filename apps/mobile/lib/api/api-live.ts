@@ -109,7 +109,11 @@ export async function subscribeRosterSignals(
   );
 }
 /** A page's question to its bot: the text of the bot's reply, or null when there is none. */
-export async function askPage(pageId: string, text: string): Promise<string | null> {
+export async function askPage(
+  pageId: string,
+  text: string,
+  signal: AbortSignal,
+): Promise<string | null> {
   const context = await captureApiRequestContext();
   let answer: string | null = null;
   await subscribeRpcEvents<PageAskEvent>(
@@ -118,7 +122,7 @@ export async function askPage(pageId: string, text: string): Promise<string | nu
     (event) => {
       if (event.kind === "answer") answer = event.text;
     },
-    new AbortController().signal,
+    signal,
     context,
     undefined,
     (json) => PageAskEventSchema.safeParse(json).data ?? null,

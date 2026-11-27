@@ -229,6 +229,7 @@ export async function askPageBot(
   rpc: RpcClient,
   page: { id: string; botId: string | null; groupId: string | null },
   text: string,
+  signal?: AbortSignal,
 ): Promise<string | null> {
   const chat = pageAskChat(page);
   if (!chat) return null;
@@ -241,11 +242,10 @@ export async function askPageBot(
         prompt: promptDataConsent,
         allow: (input) => rpc.aiConsent.allow(input),
       });
-      const events = await rpc.pages.ask({
-        pageId: page.id,
-        text,
-        clientNonce: newClientId(),
-      });
+      const events = await rpc.pages.ask(
+        { pageId: page.id, text, clientNonce: newClientId() },
+        { signal },
+      );
       for await (const event of events) {
         if (event.kind === "answer") return event.text;
         if (event.kind === "failed") return null;

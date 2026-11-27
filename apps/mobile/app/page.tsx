@@ -93,6 +93,14 @@ export default function PageScreen() {
     };
   }, [pageId, theme, t, attempt]);
 
+  // Questions a page is still waiting on end when it reloads or closes.
+  const asking = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    asking.current = controller;
+    return () => controller.abort();
+  }, [pageId, attempt]);
+
   const openLink = useNativeLinkConfirm();
   // The app sees every touch on the WebView too (React Native's root handler, on iOS and Android),
   // and the page can't fake one.
@@ -120,7 +128,8 @@ export default function PageScreen() {
           return;
         }
         tappedAt.current = null;
-        void askPageBot(page, ask.text).then((text) => answer(pageAskAnswer(ask.id, text)));
+        const signal = asking.current?.signal ?? AbortSignal.abort();
+        void askPageBot(page, ask.text, signal).then((text) => answer(pageAskAnswer(ask.id, text)));
         return;
       }
       if (!allowed) return;

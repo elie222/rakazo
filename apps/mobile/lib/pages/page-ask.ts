@@ -14,6 +14,7 @@ const ASK_USES: AiDataUse[] = ["model", "memory"];
 export async function askPageBot(
   page: Pick<PageDetail, "id" | "botId" | "groupId">,
   text: string,
+  signal: AbortSignal,
 ): Promise<string | null> {
   const chat = page.groupId ? { groupId: page.groupId } : page.botId ? { botId: page.botId } : null;
   if (!chat) return null;
@@ -26,7 +27,7 @@ export async function askPageBot(
         prompt: promptAiConsent,
         allow: (input) => allowPromptedAiConsent(input),
       });
-      return askPage(page.id, text);
+      return askPage(page.id, text, signal);
     })(),
   );
   return answer ?? null;

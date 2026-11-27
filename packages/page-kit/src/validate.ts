@@ -249,6 +249,15 @@ export function checkPageSource(source: string): PageSourceCheck {
 
 type Tokens = ReturnType<typeof parse>["tokens"];
 
+/** An identifier as JavaScript reads it: `ask\u0042ot` names askBot. */
+function identifierName(text: string): string {
+  return text.includes("\\")
+    ? text.replace(/\\u(?:\{([0-9a-fA-F]+)\}|([0-9a-fA-F]{4}))/g, (_, braced, plain) =>
+        String.fromCodePoint(Number.parseInt(braced ?? plain, 16)),
+      )
+    : text;
+}
+
 /** The abilities a page's source uses, for a version saved without the full check. */
 export function pageAbilities(source: string): PageAbility[] {
   try {
@@ -273,7 +282,7 @@ function abilitiesIn(tokens: Tokens, source: string): PageAbility[] {
       return;
     }
     if (token.type !== TokenType.name) return;
-    const ability = ABILITY_HELPERS.get(source.slice(token.start, token.end));
+    const ability = ABILITY_HELPERS.get(identifierName(source.slice(token.start, token.end)));
     if (ability) found.add(ability);
   });
   return PAGE_ABILITIES.filter((ability) => found.has(ability));

@@ -4,7 +4,7 @@ import { pageReviewPath } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquare } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { usePageStateSaver } from "../../lib/pages/page-state";
 import type { PageSession } from "../../lib/pages/pages";
@@ -73,6 +73,13 @@ function OpenPage({
   const savedState = pageId === null ? undefined : page.data?.readerState;
   const content = useReviewedPageContent(shownId, page.data);
   const rpc = useSpaceRpc();
+  // Questions still waiting end when the page closes.
+  const asking = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    asking.current = controller;
+    return () => controller.abort();
+  }, []);
   const askChat = page.data ? pageAskChat(page.data) !== null : false;
   const viewer = usePageDocument(
     content,
@@ -194,7 +201,9 @@ function OpenPage({
       }
       composer={<div ref={setDockNode} />}
       onReply={session.offerReply}
-      onAsk={data && askChat ? (text) => askPageBot(rpc, data, text) : undefined}
+      onAsk={
+        data && askChat ? (text) => askPageBot(rpc, data, text, asking.current?.signal) : undefined
+      }
       onSaveState={savedState ? readerState.save : undefined}
       share={
         data ? (
