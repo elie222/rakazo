@@ -239,7 +239,8 @@ export async function askPageBot(
       await ensureAiDataConsent({
         uses: ASK_USES,
         status: () => rpc.aiConsent.status({ ...chat, uses: ASK_USES }),
-        prompt: promptDataConsent,
+        // A page that closes takes its unanswered prompt with it.
+        prompt: (recipient, privacyUrl) => promptDataConsent(recipient, privacyUrl, signal),
         allow: (input) => rpc.aiConsent.allow(input),
       });
       const events = await rpc.pages.ask(
