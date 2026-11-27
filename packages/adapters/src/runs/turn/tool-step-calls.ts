@@ -195,18 +195,112 @@ function scanJsonStringEnd(
   return { end: -1, fragmentEnd: text.length, nextIndex: text.length, omission: false };
 }
 
-/** Index of the unescaped `"` that closes a credential split by an omission marker, or -1. */
-function credentialSuffixClose(text: string, from: number): number {
-  for (let index = from; index < text.length; index += 1) {
+const REDACTED_PLACEHOLDER = "[redacted]";
+
+function skipJsonSpace(text: string, index: number): number {
+  while (index < text.length) {
     const ch = text[index]!;
+    if (ch !== " " && ch !== "\t" && ch !== "\n" && ch !== "\r") break;
+    index += 1;
+  }
+  return index;
+}
+
+/** True when `index` is the opening quote of a JSON key followed by `:`. */
+function keyColonAt(text: string, index: number): boolean {
+  if (text[index] !== '"') return false;
+  let end = index + 1;
+  while (end < text.length) {
+    const ch = text[end]!;
+    if (ch === "\\" || ch === "\n" || ch === "\r") return false;
+    if (ch === '"') break;
+    end += 1;
+  }
+  if (end >= text.length || text[end] !== '"') return false;
+  return text[skipJsonSpace(text, end + 1)] === ":";
+}
+
+/** A `"` ends a credential when JSON structure follows it, not more of the value. */
+function structuralAfterQuote(text: string, quote: number): boolean {
+  const next = skipJsonSpace(text, quote + 1);
+  if (next >= text.length) return true;
+  const ch = text[next]!;
+  return ch === "," || ch === "}" || ch === "]";
+}
+
+/** Value text between the opening quote and the marker, ignoring one trailing carriage return. */
+function credentialHeadValue(text: string, openQuote: number, markerAt: number): string {
+  let end = markerAt;
+  if (text[end - 1] === "\r" && end - 1 > openQuote) end -= 1;
+  return text.slice(openQuote + 1, end);
+}
+
+/**
+ * Index of the closing quote when the head and tail are the two halves of `[redacted]"`, or -1.
+ * Rewriting that placeholder would grow the saved text.
+ */
+function redactedSplitQuote(headValue: string, tail: string): number {
+  if (!REDACTED_PLACEHOLDER.startsWith(headValue)) return -1;
+  const rest = REDACTED_PLACEHOLDER.slice(headValue.length);
+  if (!tail.startsWith(rest) || tail[rest.length] !== '"') return -1;
+  return rest.length;
+}
+
+/**
+ * Index of a quote that really ends the credential. A `"` whose escaping backslash was cut off
+ * is followed by more of the value, so it does not count.
+ */
+function confirmedCredentialClose(tail: string): number {
+  for (let index = 0; index < tail.length; index += 1) {
+    const ch = tail[index]!;
     if (ch === "\\") {
-      if (index + 1 >= text.length) return -1;
+      if (index + 1 >= tail.length) return -1;
       index += 1;
       continue;
     }
-    if (ch === '"') return index;
+    if (ch === '"' && structuralAfterQuote(tail, index)) return index;
   }
   return -1;
+}
+
+/**
+ * The credential closed inside the omitted span. The tail is the next JSON field, a brace, or a
+ * short non-secret lead into that field. It is not the rest of the credential.
+ */
+function isStructuralContinuation(tail: string): boolean {
+  const start = skipJsonSpace(tail, 0);
+  if (start >= tail.length) return true;
+  const ch = tail[start]!;
+  if (ch === "}" || ch === "]") return true;
+  if (ch === ",") {
+    const after = skipJsonSpace(tail, start + 1);
+    if (after >= tail.length) return true;
+    const next = tail[after]!;
+    if (next === "}" || next === "]" || next === ",") return true;
+    if (next === '"') return keyColonAt(tail, after) || structuralAfterQuote(tail, after);
+    return false;
+  }
+  if (ch === '"') {
+    if (structuralAfterQuote(tail, start)) return true;
+    if (keyColonAt(tail, start)) return true;
+  }
+  let index = 0;
+  while (index < tail.length) {
+    const lead = tail[index]!;
+    if (lead === '"') return keyColonAt(tail, index);
+    if (
+      lead !== " " &&
+      lead !== "\t" &&
+      lead !== "\n" &&
+      lead !== "\r" &&
+      lead !== "…" &&
+      lead !== "."
+    ) {
+      return false;
+    }
+    index += 1;
+  }
+  return false;
 }
 
 /** Linear-time replacement for JSON fields whose key name indicates a credential string value. */
@@ -244,17 +338,45 @@ function redactCredentialJsonFields(text: string, honorOmissionMarker: boolean):
       continue;
     }
     const scanned = scanJsonStringEnd(text, pos, honorOmissionMarker);
-    // A saved cut can split one credential around a real omission marker. Redact the head and the
-    // unlabeled tail after the marker, and keep the marker plus everything from its closing quote.
+    // A saved cut can split one credential around a real omission marker. Keep the marker.
+    // An already-redacted placeholder stays as saved. A later JSON field stays too. An unclosed
+    // legacy value is redacted through its end, including a quote whose escape was cut off.
     if (scanned.omission) {
-      const suffixClose = credentialSuffixClose(text, scanned.nextIndex);
-      if (suffixClose >= 0) {
-        const marker = text.slice(scanned.fragmentEnd, scanned.nextIndex);
-        out += `${text.slice(cursor, pos)}"[redacted]"${marker}[redacted]`;
-        cursor = suffixClose;
-        index = suffixClose;
+      const headValue = credentialHeadValue(text, pos, scanned.fragmentEnd);
+      const tail = text.slice(scanned.nextIndex);
+      const splitQuote = redactedSplitQuote(headValue, tail);
+      // `[r` + `edacted]"` is the saved placeholder. Rewriting it would grow the text.
+      if (splitQuote >= 0) {
+        index = scanned.nextIndex + splitQuote + 1;
         continue;
       }
+      const placeholderHead = headValue.length > 0 && REDACTED_PLACEHOLDER.startsWith(headValue);
+      const rest = placeholderHead ? REDACTED_PLACEHOLDER.slice(headValue.length) : "";
+      // The placeholder suffix is in the tail, and raw bytes follow it. Keep the suffix only.
+      if (rest.length > 0 && tail.startsWith(rest) && rest.length < tail.length) {
+        const close = confirmedCredentialClose(tail.slice(rest.length));
+        out += `${text.slice(cursor, scanned.nextIndex)}${rest}[redacted]`;
+        cursor = close >= 0 ? scanned.nextIndex + rest.length + close : text.length;
+        index = cursor;
+        continue;
+      }
+      // A prefix whose tail is other saved text (not the rest of `[redacted]`) stays as saved.
+      if (rest.length > 0) {
+        index = scanned.nextIndex;
+        continue;
+      }
+      const marker = text.slice(scanned.fragmentEnd, scanned.nextIndex);
+      if (isStructuralContinuation(tail)) {
+        out += `${text.slice(cursor, pos)}"[redacted]"${marker}`;
+        cursor = scanned.nextIndex;
+        index = scanned.nextIndex;
+        continue;
+      }
+      const close = confirmedCredentialClose(tail);
+      out += `${text.slice(cursor, pos)}"[redacted]"${marker}[redacted]`;
+      cursor = close >= 0 ? scanned.nextIndex + close : text.length;
+      index = cursor;
+      continue;
     }
     out += `${text.slice(cursor, pos)}"[redacted]"`;
     cursor = scanned.fragmentEnd;
@@ -289,12 +411,60 @@ function sliceTailWellFormed(text: string, maxChars: number): string {
   return text.slice(start);
 }
 
-function truncateBounded(cleaned: string, max: number): string {
+/** Spans of omission markers. Each character is visited once and each check is bounded. */
+function omissionSpans(text: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== "\n") continue;
+    const end = omissionMarkerEnd(text, index);
+    if (end < 0) continue;
+    spans.push([index, end]);
+    index = end - 1;
+  }
+  return spans;
+}
+
+function truncateBounded(cleaned: string, max: number, preserveMarkers = false): string {
   if (cleaned.length <= max) return cleaned;
   const headLength = Math.floor(max * 0.7);
   const tailLength = max - headLength;
-  const head = sliceWellFormed(cleaned, headLength);
-  const tail = sliceTailWellFormed(cleaned, tailLength);
+  if (!preserveMarkers) {
+    const head = sliceWellFormed(cleaned, headLength);
+    const tail = sliceTailWellFormed(cleaned, tailLength);
+    const omitted = cleaned.length - head.length - tail.length;
+    if (omitted <= 0) return cleaned;
+    return `${head}${notKept(omitted)}${tail}`;
+  }
+  // A replay cap must not slice a marker that is already in the saved text. Move a cut that
+  // lands inside one to the marker's edge, and keep that marker on one side of the new cut.
+  const spans = omissionSpans(cleaned);
+  let headEnd = Math.min(headLength, cleaned.length);
+  let tailStart = Math.max(cleaned.length - tailLength, 0);
+  for (const [start, end] of spans) {
+    const headInside = headEnd > start && headEnd < end;
+    const tailInside = tailStart > start && tailStart < end;
+    if (headInside && tailInside) {
+      headEnd = end;
+      tailStart = end;
+    } else if (headInside) {
+      headEnd = end;
+    } else if (tailInside) {
+      tailStart = start;
+    }
+  }
+  if (tailStart < headEnd) tailStart = headEnd;
+  const head = sliceWellFormed(cleaned, headEnd);
+  let from = tailStart;
+  if (from > 0 && from < cleaned.length) {
+    const code = cleaned.charCodeAt(from);
+    const prev = cleaned.charCodeAt(from - 1);
+    if (code >= 0xdc00 && code <= 0xdfff && prev >= 0xd800 && prev <= 0xdbff) from += 1;
+  }
+  for (const [start, end] of spans) {
+    if (from > start && from < end) from = end;
+  }
+  if (from <= head.length) return cleaned;
+  const tail = cleaned.slice(from);
   const omitted = cleaned.length - head.length - tail.length;
   if (omitted <= 0) return cleaned;
   return `${head}${notKept(omitted)}${tail}`;
@@ -313,7 +483,11 @@ export function bounded(
   secrets: string[] = [],
   options?: { replaySaved?: boolean },
 ): string {
-  return truncateBounded(cleanToolText(text, secrets, options?.replaySaved === true), max);
+  return truncateBounded(
+    cleanToolText(text, secrets, options?.replaySaved === true),
+    max,
+    options?.replaySaved === true,
+  );
 }
 
 function keptArgument(value: unknown, depth: number, secrets: string[]): unknown {

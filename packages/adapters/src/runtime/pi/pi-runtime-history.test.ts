@@ -53,7 +53,7 @@ vi.mock("./models/pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
-import { keptToolResult } from "../../runs/turn/tool-step-calls.js";
+import { keptToolResult, TOOL_CALL_SAVED_TEXT_MAX_CHARS } from "../../runs/turn/tool-step-calls.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { isHistoryReply, toHistory } from "./pi-runtime-history.js";
 
@@ -540,7 +540,7 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(replayed).toContain("password=[redacted]");
   });
 
-  it("redacts both sides of an already-redacted credential split by a saved omission marker", () => {
+  it("keeps a split redacted placeholder without growing it on replay", () => {
     const marker = "\n… [100 characters not kept] …\n";
     const headSecret = "api_key=head-secret-value";
     const saved = `{"note":"${headSecret}","token": "[r${marker}edacted]", "after": "END_OF_TAIL"}`;
@@ -548,8 +548,10 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(replayed).toContain(marker);
     expect(replayed).toContain('"after": "END_OF_TAIL"');
     expect(replayed).not.toContain(headSecret);
-    expect(replayed.split(marker)[0]).toMatch(/"token": "\[redacted\]"$/);
-    expect(replayed.split(marker)[1]).toMatch(/^\[redacted\]", "after": "END_OF_TAIL"/);
+    // The placeholder stays split. Rewriting it into two copies grows the saved text.
+    expect(replayed.split(marker)[0]).toMatch(/"token": "\[r$/);
+    expect(replayed.split(marker)[1]).toMatch(/^edacted\]", "after": "END_OF_TAIL"/);
+    expect(replayed.split(marker)).toHaveLength(2);
   });
 
   it("redacts both sides of a raw credential split by a saved omission marker", () => {
@@ -593,6 +595,90 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(replayed).not.toContain(tailSecret);
     expect(replayed).toContain("api_key=[redacted]");
     expect(replayed).toContain("password=[redacted]");
+  });
+
+  it("redacts an unclosed legacy credential tail on replay", () => {
+    const marker = "\n… [40 characters not kept] …\n";
+    const open = replayedCallText(`{"token": "secret-head${marker}secret-tail-open`);
+    expect(open).toContain(marker);
+    expect(open).not.toContain("secret-head");
+    expect(open).not.toContain("secret-tail-open");
+
+    // The cut removed the backslash before an escaped quote, so the bare quote is not the end.
+    const escaped = replayedCallText(
+      `{"token": "secret-head${marker}"secret-tail-after-escape", "message": "Job completed"}`,
+    );
+    expect(escaped).toContain(marker);
+    expect(escaped).toContain("Job completed");
+    expect(escaped).not.toContain("secret-head");
+    expect(escaped).not.toContain("secret-tail-after-escape");
+  });
+
+  it("redacts a secret glued to a split redacted placeholder on replay", () => {
+    const marker = "\n… [20 characters not kept] …\n";
+    const glued = replayedCallText(
+      `{"token": "[r${marker}edacted]secret-tail-open", "after": "END_OF_TAIL"}`,
+    );
+    expect(glued).toContain(marker);
+    expect(glued).toContain('"after": "END_OF_TAIL"');
+    expect(glued).not.toContain("secret-tail-open");
+    expect(glued.split(marker)[0]).toMatch(/"token": "\[r$/);
+    expect(glued.split(marker)[1]).toMatch(/^edacted\]\[redacted\]", "after": "END_OF_TAIL"/);
+
+    const whole = replayedCallText(`{"token": "[redacted]${marker}secret-tail-open`);
+    expect(whole).toContain(marker);
+    expect(whole).not.toContain("secret-tail-open");
+    expect(whole.split(marker)[1]).toBe("[redacted]");
+
+    const field = replayedCallText(`{"token": "[redacted]${marker}, "message": "Job completed"}`);
+    expect(field).toContain(`${marker}, "message": "Job completed"}`);
+    expect(field.split(marker)[0]).toMatch(/"token": "\[redacted\]"$/);
+  });
+
+  it("keeps a later JSON field when a replayed credential closed inside the omission", () => {
+    const marker = "\n… [20 characters not kept] …\n";
+    const closed = replayedCallText(
+      `{"token": "secret-head${marker}", "message": "Job completed"}`,
+    );
+    expect(closed).toContain(marker);
+    expect(closed).toContain(`${marker}", "message": "Job completed"}`);
+    expect(closed).not.toContain("secret-head");
+
+    const comma = replayedCallText(`{"token": "secret-head${marker}, "message": "Job completed"}`);
+    expect(comma).toContain(`${marker}, "message": "Job completed"}`);
+    expect(comma).not.toContain("secret-head");
+
+    const ellipsis = replayedCallText(
+      `{"token": "secret-head${marker}… "message": "Job completed"}`,
+    );
+    expect(ellipsis).toContain(`${marker}… "message": "Job completed"}`);
+    expect(ellipsis).not.toContain("secret-head");
+  });
+
+  it("does not cut an existing omission marker when replaying a split redacted field", () => {
+    const marker = "\n… [8 characters not kept] …\n";
+    const head = '{"token": "[r';
+    const tail = 'edacted]", "message": "Job completed"}';
+    const pad = "a".repeat(698);
+    const endPad = "b".repeat(259);
+    const saved = `${pad}${head}${marker}${tail}${endPad}`;
+    expect(saved.length).toBeLessThanOrEqual(TOOL_CALL_SAVED_TEXT_MAX_CHARS);
+    const replayed = replayedCallText(saved);
+    expect(replayed).toContain(marker);
+    expect(replayed).toContain("Job completed");
+    expect(replayed).not.toContain("\n… [4 characters not kept] …\n");
+    expect(replayed.split(marker)).toHaveLength(2);
+  });
+
+  it("does not cut through an existing omission marker when replay text exceeds the saved cap", () => {
+    const marker = "\n… [8 characters not kept] …\n";
+    const headCut = Math.floor(TOOL_CALL_SAVED_TEXT_MAX_CHARS * 0.7);
+    const markerStart = headCut - 4;
+    const end = "d".repeat(TOOL_CALL_SAVED_TEXT_MAX_CHARS - markerStart - marker.length + 20);
+    const saved = `${"c".repeat(markerStart)}${marker}${end}`;
+    expect(saved.length).toBeGreaterThan(TOOL_CALL_SAVED_TEXT_MAX_CHARS);
+    const replayed = replayedCallText(saved);
+    expect(replayed).toContain(marker);
   });
 
   it("says in its result when a replayed call's tool is not offered now", () => {
@@ -685,6 +771,76 @@ describe("replaying an earlier reply's tool steps", () => {
       isError: true,
       content: [{ text: "No such bot" }],
     });
+  });
+
+  it("redacts credentials in a saved result that also kept an image", () => {
+    const saved = '{"token":"secret-token-value","note":"kept-note"}\n[image not kept]';
+    const observed = {
+      ...toolReply,
+      segments: [
+        {
+          steps: [
+            {
+              label: "Computer observe",
+              tool: "computer_observe",
+              count: 1,
+              calls: [{ arguments: "{}", result: saved }],
+              outcomes: { succeeded: 1 },
+            },
+          ],
+        },
+        { text: "Next words." },
+      ],
+    };
+    const [, result] = toHistory([observed], "", undefined, new Set(["computer_observe"]));
+    const text =
+      result && "content" in result && Array.isArray(result.content)
+        ? result.content.map((part) => (part.type === "text" ? part.text : "")).join("")
+        : "";
+    expect(text).not.toContain("secret-token-value");
+    expect(text).toContain('"token":"[redacted]"');
+    expect(text).toContain("kept-note");
+    expect(text).toContain("You looked at this image then");
+  });
+
+  it("redacts credentials when a saved image result is replayed with its screenshot", () => {
+    const saved = '{"token":"secret-token-value","note":"kept-note"}\n[image not kept]';
+    const observed = {
+      ...toolReply,
+      images: [
+        { name: "screenshot", mimeType: "image/png" as const, data: new Uint8Array([1, 2]) },
+      ],
+      segments: [
+        {
+          steps: [
+            {
+              label: "Computer observe",
+              tool: "computer_observe",
+              count: 1,
+              calls: [
+                {
+                  arguments: "{}",
+                  result: saved,
+                  image: { artifactId: "a1" },
+                },
+              ],
+              outcomes: { succeeded: 1 },
+            },
+          ],
+        },
+        { text: "Next words." },
+      ],
+    };
+    const [, result] = toHistory([observed], "", undefined, new Set(["computer_observe"]));
+    const text =
+      result && "content" in result && Array.isArray(result.content)
+        ? result.content.map((part) => (part.type === "text" ? part.text : "")).join("")
+        : "";
+    expect(text).not.toContain("secret-token-value");
+    expect(text).toContain('"token":"[redacted]"');
+    expect(text).toContain("kept-note");
+    expect(text).toContain("[the screenshot you took:]");
+    expect(result).toMatchObject({ content: [{ type: "text" }, { type: "image" }] });
   });
 
   it("replays an image result with how it ended and the bot's own next words, never its content", () => {

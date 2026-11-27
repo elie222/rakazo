@@ -125,6 +125,10 @@ function replayedArguments(json: string | undefined): ToolCall["arguments"] {
 /** How long a quote of the bot's own words after an image may be. */
 const WORDS_AFTER_IMAGE_MAX_CHARS = 300;
 
+function replayedToolText(text: string): string {
+  return bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+}
+
 function replayedResult(
   step: HistoryStep,
   call: NonNullable<HistoryStep["calls"]>[number],
@@ -137,18 +141,15 @@ function replayedResult(
   if (typeof call.result !== "string" || !call.result) return { text: ended, isError };
   // A saved result replays as saved; this only holds one saved any other way to the same size.
   // The replay pass may keep that result's omission marker, and it still redacts a credential
-  // the marker split. Fresh tool output does not use this pass.
-  if (!call.result.includes(IMAGE_NOT_KEPT))
-    return {
-      text: bounded(call.result, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true }),
-      isError,
-    };
+  // the marker split. Text saved beside an image takes the same pass. Fresh output does not.
+  const sanitized = replayedToolText(call.result);
+  if (!call.result.includes(IMAGE_NOT_KEPT)) return { text: sanitized, isError };
   // The image itself is gone; what the bot wrote right after seeing it is what it showed.
   const quote =
     wordsAfter.length > WORDS_AFTER_IMAGE_MAX_CHARS
       ? `${wordsAfter.slice(0, WORDS_AFTER_IMAGE_MAX_CHARS)}…`
       : wordsAfter;
-  return { text: call.result.replace(IMAGE_NOT_KEPT, imageNotKeptNote(ended, quote)), isError };
+  return { text: sanitized.replace(IMAGE_NOT_KEPT, imageNotKeptNote(ended, quote)), isError };
 }
 
 /** The bot's next words after a step: the following step's note, or the text after the steps. */
@@ -251,6 +252,9 @@ function replayedToolReply(
         const stored = kept[index]!;
         const result = replayedResult(step, stored, wordsAfter.get(step) ?? "");
         const seen = screenshot && stored === lastImageCall;
+        const seenText = seen
+          ? replayedToolText(stored.result ?? "").replace(IMAGE_NOT_KEPT, REPLAYED_SCREENSHOT_LEAD)
+          : result.text;
         messages.push({
           role: "toolResult",
           toolCallId: call.id,
@@ -258,11 +262,7 @@ function replayedToolReply(
           content: [
             {
               type: "text",
-              text: `${
-                seen
-                  ? (stored.result ?? "").replace(IMAGE_NOT_KEPT, REPLAYED_SCREENSHOT_LEAD)
-                  : result.text
-              }${offered.has(name) || viaUseTool ? "" : toolNotAvailableNote(name)}`,
+              text: `${seenText}${offered.has(name) || viaUseTool ? "" : toolNotAvailableNote(name)}`,
             },
             ...(seen ? [screenshot] : []),
           ],
