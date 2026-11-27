@@ -107,15 +107,15 @@ export function sanitizeSensitiveText(message: string, options?: { decoded?: boo
     .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
     .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
     .replace(
-      /COMPOSIO_API_KEY(?:\\+")?(?:\s*[=:]\s*|\s+)(?:\\+")?(?:\[redacted\](?=[\s{,;}\]"':]|$)|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?!\\*[^\s\w"']?["']?Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:])[^\s=:]+)/gi,
+      /COMPOSIO_API_KEY(?:\\+")?(?:\s*[=:]\s*|\s+)(?:\\+")?(?:\[redacted\](?=\{\\*"[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\\*"\s*:)|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?!\\*[^\s\w"']?["']?Bearer\s+\S|(?<=\s)[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:])[^\s=:]+)/gi,
       "COMPOSIO_API_KEY=[redacted]",
     )
     .replace(
-      /((?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*)(?!\[redacted\](?=[\s{,;}\]"':]|$)|\\*[^\s\w"']?["']?Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:])[^\s"',;&]+/gi,
+      /((?:api[_-]?key|access[_-]?token|password|secret)\s*[=:]\s*)(?!\\*[^\s\w"']?["']?Bearer\s+\S|(?<=\s)[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:](?:\s|["']))[^\s"',;&]+/gi,
       "$1[redacted]",
     )
     .replace(
-      /((?:auth|authorization)\s*[=:]\s*)(?!\[redacted\](?=[\s{,;}\]"':]|$)|\\*[^\s\w"']?["']?Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:])[^\s"',;&]+/gi,
+      /((?:auth|authorization)\s*[=:]\s*)(?!\\*[^\s\w"']?["']?Bearer\s+\S|(?<=\s)[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:](?:\s|["']))[^\s"',;&]+/gi,
       "$1[redacted]",
     );
   return redactJwts(assignmentsMasked);

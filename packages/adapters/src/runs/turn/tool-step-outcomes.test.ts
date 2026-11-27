@@ -1604,6 +1604,13 @@ describe("tool step outcomes", () => {
       'COMPOSIO_API_KEY="Bearer \r\nmsg="{\\"COMPOSIO_API_KEY\\":\\"opaque-123\\"}"',
       "COMPOSIO_API_KEY=[redacted]opaque-123",
       "password=[redacted]opaque-123",
+      "Bearer Bearer\nopaque-123",
+      JSON.stringify({ msg: "Bearer Bearer\nopaque-123" }),
+      "password=[redacted]:opaque-123",
+      "auth=[redacted]{opaque-123}",
+      "password=opaque-123-secret=tail",
+      "password:\nopaque-123-secret=tail",
+      "auth=opaque-123-secret=tail",
     ];
     for (const input of cases) {
       for (const read of [kept, replay, failed, sanitizeError]) {
@@ -1617,6 +1624,18 @@ describe("tool step outcomes", () => {
         'Bearer [redacted]\n{"token":"[redacted]","x":1}',
       );
     }
+    expect(sanitizeConnectorError(new Error("Bearer Bearer\nopaque-123"))).toBe(
+      "Bearer Bearer [redacted]",
+    );
+    expect(
+      sanitizeConnectorError(new Error(JSON.stringify({ msg: "Bearer Bearer\nopaque-123" }))),
+    ).toBe('{"msg":"Bearer Bearer [redacted]"}');
+    expect(sanitizeConnectorError(new Error("Bearer Bearer secret=opaque-123"))).toBe(
+      "Bearer Bearer [redacted]",
+    );
+    expect(
+      sanitizeConnectorError(new Error(JSON.stringify({ msg: "Bearer Bearer secret=opaque-123" }))),
+    ).toBe('{"msg":"Bearer Bearer [redacted]"}');
     expect(
       sanitizeConnectorError(
         new Error(JSON.stringify({ msg: "Bearer Bearer xBearer opaque-123" })),

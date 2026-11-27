@@ -29,7 +29,7 @@ const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
 const ADJACENT_CREDENTIAL_START =
   /(?:Bearer\s|(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:])/;
 const DEFERRED_BEARER_FOLLOWS =
-  /Bearer[^\S\r\n]+(?!(?:\S*Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:]))\S/;
+  /Bearer(?:[^\S\r\n]+(?!(?:\S*Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*(?::|=(?=\s|["',;&}\]]|$))))\S|\s+(?!(?:[{[]|\S*Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*(?::|=(?=\s|["',;&}\]]|$))))\S)/;
 const RAW_ATOM = /(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])/;
 const RAW_SUFFIX_ATOM = new RegExp(
   `(?:(?!${ADJACENT_CREDENTIAL_START.source})(?:\\\\(?![nrt"\\\\])|[^\\s"',;&}{[\\]:\\\\]))`,
