@@ -225,17 +225,14 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // Only while the inbox is in front, so the offer waits until signup setup is done.
   useFocusEffect(
     useCallback(() => {
-      if (!userId) return;
+      if (!userId || !liveMeLoaded) return;
       let active = true;
       // One prompt per visit: the passkey offer, then the support offer, then the store rating.
       void bestEffort(
         "inbox prompts",
         (async () => {
           if (await offerPasskeyOnce(userId, () => active)) return;
-          if (
-            liveMeLoaded &&
-            (await offerSelfHostedSupportOnce(() => active, { disabled: supportPromptDisabled }))
-          ) {
+          if (await offerSelfHostedSupportOnce(() => active, { disabled: supportPromptDisabled })) {
             return;
           }
           await askForReviewIfDue(() => active);

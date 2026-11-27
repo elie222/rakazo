@@ -23,7 +23,7 @@ import {
 } from "../../components/settings/settings-group";
 import { SpendingLimitRow, useSpendingStatus } from "../../components/settings/spending-limit-row";
 import { AppMark } from "../../components/ui/app-mark";
-import { rpc } from "../../lib/api/api";
+import { currentApiBase, rpc } from "../../lib/api/api";
 import type { MobileMe } from "../../lib/api/mobile-types";
 import { errorText } from "../../lib/api/user-error";
 import { signOut } from "../../lib/auth/api-auth";
@@ -59,7 +59,9 @@ export default function Account() {
   const router = useRouter();
   const tokens = useMobileTokens();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
-  const [me, setMe] = useState<MobileMe | null>(null);
+  const apiBase = currentApiBase();
+  const [loadedMe, setLoadedMe] = useState<{ apiBase: string; value: MobileMe } | null>(null);
+  const me = loadedMe?.apiBase === apiBase ? loadedMe.value : null;
   const account = accountDisplay(me ?? {}, t`Your account`);
   const [signingOut, setSigningOut] = useState(false);
   // Held from the tap, so a second tap while the unsent-message check runs starts nothing.
@@ -81,7 +83,7 @@ export default function Account() {
   const approvals = useApprovalSettings(ACCOUNT_SETTINGS);
   const spending = useSpendingStatus();
   const organizations = useOrganizations().data;
-  const showSupport = selfHostedSupportEnabled(me?.supportPromptDisabled);
+  const showSupport = me !== null && selfHostedSupportEnabled(me.supportPromptDisabled);
 
   const icon = ({ ios, android }: Icon) => (
     <NativeSymbol ios={ios} android={android} color={tokens.mutedForeground} />
@@ -110,9 +112,12 @@ export default function Account() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      const requestedApiBase = currentApiBase();
       void rpc("me")
         .then((next) => {
-          if (active) setMe(next);
+          if (active && requestedApiBase === currentApiBase()) {
+            setLoadedMe({ apiBase: requestedApiBase, value: next });
+          }
         })
         .catch(() => undefined);
       return () => {
