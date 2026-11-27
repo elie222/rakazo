@@ -3075,4 +3075,199 @@ describe("compatible gateway connection reuse", () => {
       if (existsSync(directory)) rmdirSync(directory);
     }
   });
+
+  it("keeps a NO_PROXY bypass when the proxy env changes before dispatch", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "gateway-no-proxy-"));
+    const keyPath = join(directory, "key.pem");
+    const certPath = join(directory, "cert.pem");
+    const previous = getCACertificates("default");
+    const previousEnv = {
+      http_proxy: process.env.http_proxy,
+      HTTP_PROXY: process.env.HTTP_PROXY,
+      https_proxy: process.env.https_proxy,
+      HTTPS_PROXY: process.env.HTTPS_PROXY,
+      no_proxy: process.env.no_proxy,
+      NO_PROXY: process.env.NO_PROXY,
+      MODEL_CONNECT_TIMEOUT_MS: process.env.MODEL_CONNECT_TIMEOUT_MS,
+    };
+    let target: Server | undefined;
+    let proxy: Server | undefined;
+    try {
+      execFileSync(
+        "openssl",
+        [
+          "req",
+          "-x509",
+          "-newkey",
+          "rsa:2048",
+          "-nodes",
+          "-keyout",
+          keyPath,
+          "-out",
+          certPath,
+          "-days",
+          "2",
+          "-subj",
+          "/CN=127.0.0.1",
+          "-addext",
+          "subjectAltName=IP:127.0.0.1",
+        ],
+        { stdio: "ignore" },
+      );
+      const certificate = readFileSync(certPath, "utf8");
+      let connections = 0;
+      target = createServer((request, response) => {
+        request.resume();
+        response.setHeader("content-type", "application/json");
+        response.end(MODEL_LIST);
+      });
+      proxy = createHttpsServer(
+        { cert: certificate, key: readFileSync(keyPath, "utf8") },
+        (_request, response) => {
+          response.writeHead(405).end();
+        },
+      );
+      proxy.on("connection", () => {
+        connections += 1;
+      });
+      proxy.on("tlsClientError", () => undefined);
+      let targetPort = 0;
+      proxy.on("connect", (_request, client) => {
+        const upstream = new Socket();
+        upstream.on("error", () => undefined);
+        client.on("error", () => undefined);
+        upstream.connect(targetPort, "127.0.0.1", () => {
+          client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+          upstream.pipe(client).pipe(upstream);
+        });
+      });
+      await Promise.all(
+        [target, proxy].map(
+          (server) => new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)),
+        ),
+      );
+      const listened = target.address();
+      if (!listened || typeof listened === "string") {
+        throw new Error("Missing proxy target address");
+      }
+      targetPort = listened.port;
+      const proxyUrl = `https://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+      setDefaultCACertificates([...previous, certificate]);
+      process.env.http_proxy = proxyUrl;
+      process.env.HTTP_PROXY = proxyUrl;
+      process.env.https_proxy = "";
+      process.env.HTTPS_PROXY = "";
+      process.env.no_proxy = "models.example.com";
+      process.env.NO_PROXY = "models.example.com";
+      process.env.MODEL_CONNECT_TIMEOUT_MS = "1000";
+      const safeFetch = createOpenAiCompatibleFetch(
+        undefined,
+        async () => [{ address: "203.0.113.10", family: 4 }],
+        { allowPublic: true },
+      );
+      // The pool key sees the bypass. Clear it before dispatch so a live read would tunnel.
+      const first = readModels(safeFetch, "http://models.example.com/v1/models");
+      process.env.no_proxy = "";
+      process.env.NO_PROXY = "";
+      await expect(first).rejects.toThrow();
+      expect(connections).toBe(0);
+      process.env.no_proxy = "models.example.com";
+      process.env.NO_PROXY = "models.example.com";
+      setDefaultCACertificates(previous);
+      const second = readModels(safeFetch, "http://models.example.com/v1/models");
+      process.env.no_proxy = "";
+      process.env.NO_PROXY = "";
+      await expect(second).rejects.toThrow();
+      expect(connections).toBe(0);
+    } finally {
+      setDefaultCACertificates(previous);
+      for (const [name, value] of Object.entries(previousEnv)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      for (const server of [proxy, target]) {
+        if (!server) continue;
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
+      }
+      if (existsSync(keyPath)) unlinkSync(keyPath);
+      if (existsSync(certPath)) unlinkSync(certPath);
+      if (existsSync(directory)) rmdirSync(directory);
+    }
+  });
+
+  it("keeps the captured verification flag for a hostname proxy tunnel", async () => {
+    const connects: string[] = [];
+    const target = createServer((_request, response) => response.writeHead(404).end());
+    const proxy = createServer((_request, response) => response.writeHead(405).end());
+    let targetPort = 0;
+    proxy.on("connect", (request, client) => {
+      connects.push(request.url ?? "");
+      const upstream = new Socket();
+      upstream.on("error", () => undefined);
+      client.on("error", () => undefined);
+      upstream.connect(targetPort, "127.0.0.1", () => {
+        client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        upstream.pipe(client).pipe(upstream);
+      });
+    });
+    await Promise.all(
+      [target, proxy].map(
+        (server) => new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)),
+      ),
+    );
+    const listened = target.address();
+    if (!listened || typeof listened === "string") throw new Error("Missing proxy target address");
+    targetPort = listened.port;
+    const previousEnv = {
+      http_proxy: process.env.http_proxy,
+      HTTP_PROXY: process.env.HTTP_PROXY,
+      https_proxy: process.env.https_proxy,
+      HTTPS_PROXY: process.env.HTTPS_PROXY,
+      no_proxy: process.env.no_proxy,
+      NO_PROXY: process.env.NO_PROXY,
+      RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS: process.env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS,
+      NODE_TLS_REJECT_UNAUTHORIZED: process.env.NODE_TLS_REJECT_UNAUTHORIZED,
+    };
+    const proxyUrl = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+    try {
+      process.env.http_proxy = proxyUrl;
+      process.env.HTTP_PROXY = proxyUrl;
+      process.env.https_proxy = "";
+      process.env.HTTPS_PROXY = "";
+      process.env.no_proxy = "";
+      process.env.NO_PROXY = "";
+      process.env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS = "models.example.com";
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+      const safeFetch = createOpenAiCompatibleFetch(
+        undefined,
+        async () => [{ address: "203.0.113.10", family: 4 }],
+        { allowPublic: true },
+      );
+      // Verification was off when the key was taken. Turning it on during lookup
+      // must not switch this tunnel from the checked address to the hostname.
+      const disabled = readModels(safeFetch, "https://models.example.com/v1/models");
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+      await expect(disabled).rejects.toThrow();
+      expect(connects).toEqual(["203.0.113.10:443"]);
+
+      const enabled = readModels(safeFetch, "https://models.example.com/v1/models");
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+      await expect(enabled).rejects.toThrow();
+      expect(connects).toEqual(["203.0.113.10:443", "models.example.com:443"]);
+    } finally {
+      for (const [name, value] of Object.entries(previousEnv)) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+      for (const server of [proxy, target]) {
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
+      }
+    }
+  });
 });

@@ -55,6 +55,7 @@ import { splitLeadingThinkBlock } from "../stream/pi-think-tags.js";
 import { guardToolCallNames } from "../tools/pi-tool-call-guard.js";
 import {
   borrowCompatibleTransport,
+  captureGatewayProxyRoute,
   captureGatewayTlsPolicy,
   closeOpenAiCompatibleTransports,
   compatibleTransportKey,
@@ -318,6 +319,7 @@ export function createOpenAiCompatibleFetch(
     // Trust is captured with the pool key. The dial happens after this function yields,
     // and it must not follow a trust-store or verification change made in that gap.
     const tls = captureGatewayTlsPolicy();
+    const proxies = captureGatewayProxyRoute();
     const borrowed = borrowCompatibleTransport(
       compatibleTransportKey({
         origin: url.origin,
@@ -327,6 +329,7 @@ export function createOpenAiCompatibleFetch(
         connectTimeout,
         resolve,
         tls,
+        proxy: proxies,
       }),
       () => {
         const pinned = {
@@ -354,8 +357,9 @@ export function createOpenAiCompatibleFetch(
               {
                 ...pinned,
                 secureRequest: url.protocol === "https:",
-                secureProxy: selectedHttpsProxy(url.origin, route),
+                secureProxy: selectedHttpsProxy(url.origin, route, proxies),
               },
+              proxies,
             );
       },
     );

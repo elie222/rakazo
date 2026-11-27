@@ -49,6 +49,16 @@ export type GatewayTlsPolicy = {
   rejectUnauthorized: boolean;
   /** Omitted when certificate checks are off, so the dial does not pin a trust store. */
   ca?: readonly string[];
+  /** `NODE_TLS_REJECT_UNAUTHORIZED` at capture. The pool key must not read it again. */
+  rejectUnauthorizedEnv: string;
+};
+
+/** Proxy env captured with a pool key. Empty strings mean unset. */
+export type GatewayProxyRoute = {
+  httpProxy: string;
+  httpsProxy: string;
+  noProxy: string;
+  connectByHostname: string;
 };
 
 /**
@@ -56,8 +66,20 @@ export type GatewayTlsPolicy = {
  * yield, and must keep this policy rather than whatever the process says then.
  */
 export function captureGatewayTlsPolicy(): GatewayTlsPolicy {
-  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0") return { rejectUnauthorized: false };
-  return { rejectUnauthorized: true, ca: getCACertificates("default") };
+  const rejectUnauthorizedEnv = process.env.NODE_TLS_REJECT_UNAUTHORIZED ?? "";
+  if (rejectUnauthorizedEnv === "0") return { rejectUnauthorized: false, rejectUnauthorizedEnv };
+  return { rejectUnauthorized: true, rejectUnauthorizedEnv, ca: getCACertificates("default") };
+}
+
+/** Read the proxy env once. A later change must not retarget a dispatcher already keyed. */
+export function captureGatewayProxyRoute(): GatewayProxyRoute {
+  const env = process.env;
+  return {
+    httpProxy: env.http_proxy ?? env.HTTP_PROXY ?? "",
+    httpsProxy: env.https_proxy ?? env.HTTPS_PROXY ?? "",
+    noProxy: env.no_proxy ?? env.NO_PROXY ?? "",
+    connectByHostname: env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS ?? "",
+  };
 }
 
 function fingerprintCertificates(certificates: readonly string[]): string {
@@ -70,11 +92,6 @@ function fingerprintCertificates(certificates: readonly string[]): string {
   caSnapshot = certificates;
   caFingerprint = hash.digest("hex");
   return caFingerprint;
-}
-
-function proxyEnv(name: "http_proxy" | "https_proxy"): string | undefined {
-  const value = process.env[name] ?? process.env[name.toUpperCase()];
-  return value ? value : undefined;
 }
 
 function requestTarget(
@@ -96,8 +113,7 @@ function requestTarget(
 }
 
 /** Same host and port rules undici uses for NO_PROXY. */
-function noProxyBypasses(hostname: string, port: number): boolean {
-  const raw = process.env.no_proxy ?? process.env.NO_PROXY ?? "";
+function noProxyBypasses(raw: string, hostname: string, port: number): boolean {
   if (raw === "") return false;
   for (const entry of raw.split(/[,\s]/)) {
     if (entry === "") continue;
@@ -136,12 +152,16 @@ function noProxyEntry(entry: string): { hostname: string; port: number; wildcard
  * True when the request dials an HTTPS proxy. A direct route, a NO_PROXY host,
  * and an unset proxy do not. An https origin with no HTTPS_PROXY uses HTTP_PROXY.
  */
-export function selectedHttpsProxy(origin: string, route: "direct" | "proxy"): boolean {
+export function selectedHttpsProxy(
+  origin: string,
+  route: "direct" | "proxy",
+  proxy: GatewayProxyRoute,
+): boolean {
   if (route !== "proxy") return false;
   const target = requestTarget(origin);
-  if (!target || noProxyBypasses(target.hostname, target.port)) return false;
-  const httpProxy = proxyEnv("http_proxy");
-  const httpsProxy = proxyEnv("https_proxy");
+  if (!target || noProxyBypasses(proxy.noProxy, target.hostname, target.port)) return false;
+  const httpProxy = proxy.httpProxy || undefined;
+  const httpsProxy = proxy.httpsProxy || undefined;
   const selected = target.protocol === "https:" ? (httpsProxy ?? httpProxy) : httpProxy;
   if (!selected) return false;
   try {
@@ -156,9 +176,10 @@ function verifiedCaFingerprint(
   origin: string,
   route: "direct" | "proxy",
   tls: GatewayTlsPolicy,
+  proxy: GatewayProxyRoute,
 ): string {
   if (!tls.rejectUnauthorized || tls.ca === undefined) return "";
-  if (!origin.startsWith("https:") && !selectedHttpsProxy(origin, route)) return "";
+  if (!origin.startsWith("https:") && !selectedHttpsProxy(origin, route, proxy)) return "";
   return fingerprintCertificates(tls.ca);
 }
 
@@ -204,9 +225,9 @@ export function compatibleTransportKey(input: {
   connectTimeout: number;
   resolve: ResolveHostname;
   tls: GatewayTlsPolicy;
+  proxy: GatewayProxyRoute;
 }): string {
-  const env = process.env;
-  const ca = verifiedCaFingerprint(input.origin, input.route, input.tls);
+  const ca = verifiedCaFingerprint(input.origin, input.route, input.tls, input.proxy);
   return [
     input.route,
     input.origin,
@@ -214,11 +235,11 @@ export function compatibleTransportKey(input: {
     input.modelStream ? "stream" : "probe",
     String(input.connectTimeout),
     String(resolverId(input.resolve)),
-    env.http_proxy ?? env.HTTP_PROXY ?? "",
-    env.https_proxy ?? env.HTTPS_PROXY ?? "",
-    env.no_proxy ?? env.NO_PROXY ?? "",
-    env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS ?? "",
-    env.NODE_TLS_REJECT_UNAUTHORIZED ?? "",
+    input.proxy.httpProxy,
+    input.proxy.httpsProxy,
+    input.proxy.noProxy,
+    input.proxy.connectByHostname,
+    input.tls.rejectUnauthorizedEnv,
     ca,
   ].join("\0");
 }

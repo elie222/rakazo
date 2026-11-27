@@ -43,15 +43,26 @@ export function createCheckedProxyDispatcher(
     /** Pin certificate checks on an https proxy. */
     secureProxy?: boolean;
   },
+  /**
+   * Proxy env from the pool key. Empty strings stay empty: undici treats `""` as unset and
+   * does not fall back to the live environment. Omitted, dispatch keeps reading that environment.
+   */
+  proxies?: {
+    httpProxy: string;
+    httpsProxy: string;
+    noProxy: string;
+    connectByHostname: string;
+  },
 ): Dispatcher {
   const { env } = process;
-  const proxies = [env.http_proxy ?? env.HTTP_PROXY, env.https_proxy ?? env.HTTPS_PROXY];
-  for (const proxy of proxies) {
+  const httpProxy = proxies ? proxies.httpProxy : (env.http_proxy ?? env.HTTP_PROXY ?? "");
+  const httpsProxy = proxies ? proxies.httpsProxy : (env.https_proxy ?? env.HTTPS_PROXY ?? "");
+  for (const proxy of [httpProxy, httpsProxy]) {
     if (proxy && !/^https?:\/\//i.test(proxy)) throw new Error("Only HTTP proxies are supported");
   }
   // Parsed before the direct-route return so a bad list is refused however the proxy is set.
   const connectByHostname = parseProxyConnectHostPatterns(
-    env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS,
+    proxies ? proxies.connectByHostname : env.RAKAZO_PROXY_CONNECT_BY_HOSTNAME_HOSTS,
   );
   // Present only when the caller captured a policy. Other callers keep Node's live defaults.
   const pinned =
@@ -66,11 +77,14 @@ export function createCheckedProxyDispatcher(
     ...pinned,
     lookup: createAddressCheckedLookup(resolve, validate),
   };
-  if (!proxies.some(Boolean)) return new Agent({ ...responseTimeouts, ...limits, connect });
+  if (!httpProxy && !httpsProxy) return new Agent({ ...responseTimeouts, ...limits, connect });
   const dispatcher = new EnvHttpProxyAgent({
     ...responseTimeouts,
     ...limits,
     connect,
+    ...(proxies
+      ? { httpProxy: proxies.httpProxy, httpsProxy: proxies.httpsProxy, noProxy: proxies.noProxy }
+      : {}),
     ...(pinned && tls?.secureRequest ? { requestTls: pinned } : {}),
     ...(pinned && tls?.secureProxy ? { proxyTls: pinned } : {}),
     ...(connectTimeout === undefined ? {} : { connectTimeout }),
@@ -88,6 +102,7 @@ export function createCheckedProxyDispatcher(
             resolve,
             validate,
             connectByHostname,
+            tls?.rejectUnauthorized,
           );
           return connect({
             ...options,
@@ -129,6 +144,7 @@ async function tunnelAuthority(
   resolve: ResolveHostname,
   validate: (addresses: ResolvedAddress[], hostname: string) => void,
   connectByHostname: readonly ProxyConnectHostPattern[],
+  rejectUnauthorized?: boolean,
 ): Promise<string> {
   const separator = authority.lastIndexOf(":");
   const hostname = authority.slice(0, separator).replace(/^\[|\]$/g, "");
@@ -139,7 +155,9 @@ async function tunnelAuthority(
   } catch (error) {
     throw egressRefused(hostname, error);
   }
-  if (connectsByHostname(request, hostname, connectByHostname)) return authority;
+  if (connectsByHostname(request, hostname, connectByHostname, rejectUnauthorized)) {
+    return authority;
+  }
   const address = addresses[0]?.address ?? "";
   const host = ipVersion(address) === 6 ? `[${address}]` : address;
   return `${host}${authority.slice(separator)}`;
@@ -155,9 +173,12 @@ function connectsByHostname(
   request: TunnelRequest | undefined,
   hostname: string,
   patterns: readonly ProxyConnectHostPattern[],
+  rejectUnauthorized?: boolean,
 ): boolean {
   if (!request || patterns.length === 0) return false;
-  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0") return false;
+  // A captured flag wins. Callers without one keep the live verification setting.
+  const verified = rejectUnauthorized ?? process.env.NODE_TLS_REJECT_UNAUTHORIZED !== "0";
+  if (!verified) return false;
   if (request.protocol !== "https:") return false;
   if (normalizeHost(request.hostname) !== normalizeHost(hostname)) return false;
   return hostMatchesProxyConnectPatterns(request.hostname, patterns);
