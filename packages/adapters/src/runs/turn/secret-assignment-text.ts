@@ -57,20 +57,23 @@ function isComposioLabel(text: string, start: number, end: number): boolean {
 }
 
 /**
- * True when `pos` opens a word ending in `Bearer` (bare, escaped, or preceded by opening
- * punctuation such as `“` or `[`) followed by whitespace and a non-whitespace token.
+ * End of a whitespace-delimited word starting at `pos` that ends in `Bearer` followed by
+ * whitespace and a non-whitespace token, or -1 otherwise.
  */
-function defersToBearerPass(text: string, pos: number): boolean {
+function deferringWordEnd(text: string, pos: number): number {
   let wordEnd = pos;
   while (wordEnd < text.length && !isWhitespace(text[wordEnd])) wordEnd += 1;
-  if (wordEnd - pos < 6) return false;
+  if (wordEnd - pos < 6) return -1;
   const bearerStart = wordEnd - 6;
-  if (!startsWithIgnoreCase(text, "bearer", bearerStart)) return false;
-  if (bearerStart > pos && isIdentifierCode(text.charCodeAt(bearerStart - 1))) return false;
+  if (!startsWithIgnoreCase(text, "bearer", bearerStart)) return -1;
   let next = wordEnd;
-  if (!isWhitespace(text[next])) return false;
+  if (!isWhitespace(text[next])) return -1;
   while (next < text.length && isWhitespace(text[next])) next += 1;
-  return next < text.length;
+  return next < text.length ? wordEnd : -1;
+}
+
+function defersToBearerPass(text: string, pos: number): boolean {
+  return deferringWordEnd(text, pos) >= 0;
 }
 
 /** A `"` preceded by an odd number of backslashes is an escape, not the start of a string. */
@@ -164,6 +167,7 @@ export function redactComposioApiKeyAssignments(text: string): string {
   let cursor = 0;
   let index = 0;
   let blockStringProbe = 0;
+  let deferredWordEnd = -1;
   while (index < text.length) {
     if (text[index] === '"' && index >= blockStringProbe && !quoteIsEscaped(text, index)) {
       const scanned = scanQuoted(text, index);
@@ -210,9 +214,12 @@ export function redactComposioApiKeyAssignments(text: string): string {
     }
     pos += 1;
     while (isWhitespace(text[pos])) pos += 1;
-    if (text[pos] !== '"' && text[pos] !== "'" && defersToBearerPass(text, pos)) {
-      index = pos;
-      continue;
+    if (text[pos] !== '"' && text[pos] !== "'") {
+      if (pos >= deferredWordEnd) deferredWordEnd = deferringWordEnd(text, pos);
+      if (pos < deferredWordEnd) {
+        index = pos;
+        continue;
+      }
     }
     const end = assignmentValueEnd(text, pos);
     if (end < 0) {

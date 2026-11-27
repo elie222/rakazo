@@ -524,13 +524,18 @@ function redactJsonSegment(
   return replaceTokens(segment);
 }
 
-function countLineBreaks(text: string): number {
-  let count = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    const code = text.charCodeAt(index);
-    if (code === 0x0a || code === 0x0d) count += 1;
+function plainRedactionMatchesByLine(
+  raw: string,
+  parts: readonly string[],
+  redactPlain: (text: string) => string,
+): boolean {
+  const whole = redactPlain(raw);
+  let joined = "";
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index]!;
+    joined += index % 2 === 0 && part.length > 0 ? redactPlain(part) : part;
   }
-  return count;
+  return joined === whole;
 }
 
 function anyRangeCrossesLineBreak(
@@ -554,7 +559,11 @@ function looksLikeJsonLine(line: string): boolean {
   return ch === "{" || ch === "[" || ch === '"';
 }
 
-function tryRedactJsonLines(raw: string, redactLine: (line: string) => string): string | undefined {
+function tryRedactJsonLines(
+  raw: string,
+  canSplitLines: (parts: readonly string[]) => boolean,
+  redactLine: (line: string) => string,
+): string | undefined {
   if (!raw.includes("\n")) return undefined;
   const parts = raw.split(/(\r?\n)/);
   let hasJsonLine = false;
@@ -565,7 +574,7 @@ function tryRedactJsonLines(raw: string, redactLine: (line: string) => string): 
       break;
     }
   }
-  if (!hasJsonLine) return undefined;
+  if (!hasJsonLine || !canSplitLines(parts)) return undefined;
   for (let index = 0; index < parts.length; index += 2) {
     const line = parts[index]!;
     if (line.length > 0) parts[index] = redactLine(line);
@@ -658,11 +667,13 @@ export function redactJsonStringsAndPlainText(
   if (
     raw.includes("\n") &&
     !BOUNDED_OMISSION_MARKER.test(raw) &&
-    !anyRangeCrossesLineBreak(raw, rawMatches) &&
-    countLineBreaks(redactPlain(raw)) === countLineBreaks(raw)
+    !anyRangeCrossesLineBreak(raw, rawMatches)
   ) {
-    const byLine = tryRedactJsonLines(raw, (line) =>
-      redactJsonStringsAndPlainTextSingle(line, redactString, redactPlain, wholeSecrets, true),
+    const byLine = tryRedactJsonLines(
+      raw,
+      (parts) => plainRedactionMatchesByLine(raw, parts, redactPlain),
+      (line) =>
+        redactJsonStringsAndPlainTextSingle(line, redactString, redactPlain, wholeSecrets, true),
     );
     if (byLine !== undefined) return byLine;
   }
@@ -711,12 +722,12 @@ export function redactJsonText(raw: string, redact: (text: string) => string): s
     });
     if (redactedJson !== undefined) return redactedJson;
   }
-  if (
-    raw.includes("\n") &&
-    !BOUNDED_OMISSION_MARKER.test(raw) &&
-    countLineBreaks(redact(raw)) === countLineBreaks(raw)
-  ) {
-    const byLine = tryRedactJsonLines(raw, (line) => redactJsonTextSingle(line, redact, true));
+  if (raw.includes("\n") && !BOUNDED_OMISSION_MARKER.test(raw)) {
+    const byLine = tryRedactJsonLines(
+      raw,
+      (parts) => plainRedactionMatchesByLine(raw, parts, redact),
+      (line) => redactJsonTextSingle(line, redact, true),
+    );
     if (byLine !== undefined) return byLine;
   }
   return redactJsonStringTokens(raw, redact);

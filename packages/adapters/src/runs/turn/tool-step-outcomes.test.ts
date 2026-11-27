@@ -9,6 +9,7 @@ import { sanitizeError, sanitizeSensitiveText } from "../../runtime/pi/pi-runtim
 import type { ReplyState, RunContext } from "../assembly/run-context.js";
 import { redactBlocks } from "../assembly/run-messages.js";
 import { withReplyToolOutcomes } from "../lifecycle/run-progress.js";
+import { redactComposioApiKeyAssignments } from "./secret-assignment-text.js";
 import { toolCompletionOutcome } from "./tool-completion-audit.js";
 import {
   bounded,
@@ -1420,11 +1421,74 @@ describe("tool step outcomes", () => {
   });
 
   it("redacts JSON-quoted and closed-quoted COMPOSIO_API_KEY values in sanitizeSensitiveText", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
     expect(sanitizeSensitiveText('{"COMPOSIO_API_KEY":"opaque-123"}')).toBe(
       '{"COMPOSIO_API_KEY":"[redacted]"}',
     );
     expect(sanitizeSensitiveText('COMPOSIO_API_KEY="Bearer secret with spaces"')).toBe(
       "COMPOSIO_API_KEY=[redacted]",
     );
+    for (const read of [kept, replay, sanitizeError]) {
+      expect(read('COMPOSIO_API_KEY: "Bearer secret with spaces"')).toBe(
+        "COMPOSIO_API_KEY=[redacted]",
+      );
+    }
+  });
+
+  it("keeps COMPOSIO_API_KEY Bearer deferral linear on chained assignments", () => {
+    const chained = `COMPOSIO_API_KEY=${"-COMPOSIO_API_KEY=".repeat(40_000)}Bearer fixtureTok`;
+    expectLinearTime(() => {
+      expect(redactComposioApiKeyAssignments(chained)).toBe(chained);
+      const redacted = sanitizeSensitiveText(chained);
+      expect(redacted).not.toContain("fixtureTok");
+      expect(redacted).toContain("[redacted]");
+    });
+  });
+
+  it("redacts literal backslash-n Bearer values after COMPOSIO_API_KEY", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    const input = String.raw`line 3: COMPOSIO_API_KEY=\nBearer opaque-123`;
+    for (const read of [kept, replay, sanitizeError, sanitizeSensitiveText]) {
+      const out = read(input) ?? "";
+      expect(out).not.toContain("opaque-123");
+      expect(out).toContain("[redacted]");
+    }
+  });
+
+  it("redacts escaped-quote JSON COMPOSIO_API_KEY fields inside non-JSON log lines", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    const failed = (text: string) => keptToolResult({ ...base, error: new Error(text) }, []);
+    const logLine = String.raw`level=error msg="{\"COMPOSIO_API_KEY\":\"opaque-123\"}"`;
+    for (const read of [kept, replay, failed, sanitizeError, sanitizeSensitiveText]) {
+      const out = read(logLine) ?? "";
+      expect(out).not.toContain("opaque-123");
+      expect(out).toContain("[redacted]");
+    }
+    const rawJson = String.raw`{"log":"{\"COMPOSIO_API_KEY\":\"opaque-123\"}"}`;
+    expect(sanitizeSensitiveText(rawJson)).not.toContain("opaque-123");
+  });
+
+  it("redacts multiline bare credential assignments alongside a JSON line", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    const failed = (text: string) => keptToolResult({ ...base, error: new Error(text) }, []);
+    const input = 'password:\n  opaque-123\n{"ok":true}';
+    for (const read of [kept, replay, failed, sanitizeError]) {
+      const out = read(input) ?? "";
+      expect(out).not.toContain("opaque-123");
+      expect(out).toContain("[redacted]");
+      expect(out).toContain('{"ok":true}');
+    }
   });
 });
