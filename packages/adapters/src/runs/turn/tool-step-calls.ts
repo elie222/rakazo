@@ -123,35 +123,64 @@ function isJsonPropertyLineStart(text: string, lineStart: number): boolean {
   return colonPos < text.length && text[colonPos] === ":";
 }
 
+type JsonStringEnd = {
+  end: number;
+  fragmentEnd: number;
+  nextIndex: number;
+  /** True when [fragmentEnd, nextIndex) is an omission marker kept out of the value. */
+  omission: boolean;
+};
+
+/**
+ * Index of the `\n` that may open an omission marker at this break. A `\r\n` break checks the
+ * marker at the line feed.
+ */
+function omissionMarkerBreak(text: string, index: number): number {
+  if (text[index] === "\n") return index;
+  if (text[index] === "\r" && text[index + 1] === "\n") return index + 1;
+  return -1;
+}
+
+function markerBoundary(text: string, index: number): JsonStringEnd | undefined {
+  const markerAt = omissionMarkerBreak(text, index);
+  if (markerAt < 0) return undefined;
+  const markerEnd = omissionMarkerEnd(text, markerAt);
+  if (markerEnd < 0) return undefined;
+  return { end: -1, fragmentEnd: markerAt, nextIndex: markerEnd, omission: true };
+}
+
 function scanJsonStringEnd(
   text: string,
   openQuote: number,
-): { end: number; fragmentEnd: number; nextIndex: number } {
+  honorOmissionMarker: boolean,
+): JsonStringEnd {
   for (let index = openQuote + 1; index < text.length; index += 1) {
     const ch = text[index]!;
     if (ch === "\n" || ch === "\r") {
-      if (ch === "\n") {
-        const markerEnd = omissionMarkerEnd(text, index);
-        if (markerEnd >= 0) return { end: -1, fragmentEnd: index, nextIndex: markerEnd };
+      if (honorOmissionMarker) {
+        const marker = markerBoundary(text, index);
+        if (marker) return marker;
       }
       const nextLineStart = ch === "\r" && text[index + 1] === "\n" ? index + 2 : index + 1;
       if (isJsonPropertyLineStart(text, nextLineStart)) {
-        return { end: -1, fragmentEnd: index, nextIndex: nextLineStart };
+        return { end: -1, fragmentEnd: index, nextIndex: nextLineStart, omission: false };
       }
       if (nextLineStart > index + 1) index += 1;
       continue;
     }
     if (ch === "\\") {
       const next = text[index + 1];
-      if (next === undefined) return { end: -1, fragmentEnd: text.length, nextIndex: text.length };
+      if (next === undefined) {
+        return { end: -1, fragmentEnd: text.length, nextIndex: text.length, omission: false };
+      }
       if (next === "\n" || next === "\r") {
-        if (next === "\n") {
-          const markerEnd = omissionMarkerEnd(text, index + 1);
-          if (markerEnd >= 0) return { end: -1, fragmentEnd: index + 1, nextIndex: markerEnd };
+        if (honorOmissionMarker) {
+          const marker = markerBoundary(text, index + 1);
+          if (marker) return marker;
         }
         const nextLineStart = next === "\r" && text[index + 2] === "\n" ? index + 3 : index + 2;
         if (isJsonPropertyLineStart(text, nextLineStart)) {
-          return { end: -1, fragmentEnd: index + 1, nextIndex: nextLineStart };
+          return { end: -1, fragmentEnd: index + 1, nextIndex: nextLineStart, omission: false };
         }
         index = nextLineStart - 1;
         continue;
@@ -159,13 +188,29 @@ function scanJsonStringEnd(
       index += 1;
       continue;
     }
-    if (ch === '"') return { end: index, fragmentEnd: index + 1, nextIndex: index + 1 };
+    if (ch === '"') {
+      return { end: index, fragmentEnd: index + 1, nextIndex: index + 1, omission: false };
+    }
   }
-  return { end: -1, fragmentEnd: text.length, nextIndex: text.length };
+  return { end: -1, fragmentEnd: text.length, nextIndex: text.length, omission: false };
+}
+
+/** Index of the unescaped `"` that closes a credential split by an omission marker, or -1. */
+function credentialSuffixClose(text: string, from: number): number {
+  for (let index = from; index < text.length; index += 1) {
+    const ch = text[index]!;
+    if (ch === "\\") {
+      if (index + 1 >= text.length) return -1;
+      index += 1;
+      continue;
+    }
+    if (ch === '"') return index;
+  }
+  return -1;
 }
 
 /** Linear-time replacement for JSON fields whose key name indicates a credential string value. */
-function redactCredentialJsonFields(text: string): string {
+function redactCredentialJsonFields(text: string, honorOmissionMarker: boolean): string {
   if (!text.includes('"')) return text;
   let cursor = 0;
   let out = "";
@@ -198,7 +243,19 @@ function redactCredentialJsonFields(text: string): string {
       index = pos;
       continue;
     }
-    const scanned = scanJsonStringEnd(text, pos);
+    const scanned = scanJsonStringEnd(text, pos, honorOmissionMarker);
+    // A saved cut can split one credential around a real omission marker. Redact the head and the
+    // unlabeled tail after the marker, and keep the marker plus everything from its closing quote.
+    if (scanned.omission) {
+      const suffixClose = credentialSuffixClose(text, scanned.nextIndex);
+      if (suffixClose >= 0) {
+        const marker = text.slice(scanned.fragmentEnd, scanned.nextIndex);
+        out += `${text.slice(cursor, pos)}"[redacted]"${marker}[redacted]`;
+        cursor = suffixClose;
+        index = suffixClose;
+        continue;
+      }
+    }
     out += `${text.slice(cursor, pos)}"[redacted]"`;
     cursor = scanned.fragmentEnd;
     index = scanned.nextIndex;
@@ -206,7 +263,7 @@ function redactCredentialJsonFields(text: string): string {
   return cursor === 0 ? text : out + text.slice(cursor);
 }
 
-function cleanToolText(text: string, secrets: string[]): string {
+function cleanToolText(text: string, secrets: string[], honorOmissionMarker = false): string {
   const secretForms = secrets.flatMap((value) => {
     if (!value) return [];
     const encoded = JSON.stringify(value).slice(1, -1);
@@ -215,7 +272,7 @@ function cleanToolText(text: string, secrets: string[]): string {
   const sanitizeDecoded = (value: string) => sanitizeSensitiveText(redactSecrets(value, secrets));
   const sanitizePlain = (value: string) => sanitizeSensitiveText(redactSecrets(value, secretForms));
   const cleaned = redactJsonStringsAndPlainText(text, sanitizeDecoded, sanitizePlain, secrets);
-  return redactCredentialJsonFields(cleaned);
+  return redactCredentialJsonFields(cleaned, honorOmissionMarker);
 }
 
 function sliceTailWellFormed(text: string, maxChars: number): string {
@@ -247,9 +304,16 @@ function truncateBounded(cleaned: string, max: number): string {
  * Text bounded to `max` characters, keeping its start and end (where a command's output usually
  * ends with what matters) and saying how much was left out, so it never reads as unfinished.
  * Secrets are redacted before slicing, so a value cut at the edge is still caught.
+ * `replaySaved` is only for text already saved: it may keep a real omission marker and still
+ * redact a credential that marker split. Fresh tool output never treats that line as a cut.
  */
-export function bounded(text: string, max: number, secrets: string[] = []): string {
-  return truncateBounded(cleanToolText(text, secrets), max);
+export function bounded(
+  text: string,
+  max: number,
+  secrets: string[] = [],
+  options?: { replaySaved?: boolean },
+): string {
+  return truncateBounded(cleanToolText(text, secrets, options?.replaySaved === true), max);
 }
 
 function keptArgument(value: unknown, depth: number, secrets: string[]): unknown {

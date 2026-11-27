@@ -392,6 +392,36 @@ describe("replaying an earlier reply's tool steps", () => {
           : message.content,
     );
   const text = (value: string) => [{ type: "text", text: value }];
+  const replayedCallText = (saved: string) => {
+    const messages = toHistory(
+      [
+        {
+          ...toolReply,
+          segments: [
+            {
+              steps: [
+                {
+                  label: "Shell",
+                  tool: "shell",
+                  count: 1,
+                  calls: [{ arguments: "{}", result: saved }],
+                  outcomes: { succeeded: 1 },
+                },
+              ],
+            },
+            { text: "Done." },
+          ],
+        },
+      ],
+      "",
+      undefined,
+      OFFERED,
+    );
+    const content = messages.find((message) => message.role === "toolResult")?.content;
+    return Array.isArray(content)
+      ? content.map((part) => (part.type === "text" ? part.text : "")).join("")
+      : "";
+  };
 
   it("replays stored calls with their arguments and the start of what they returned", () => {
     const messages = toHistory(history, "Next question.", undefined, OFFERED);
@@ -502,6 +532,61 @@ describe("replaying an earlier reply's tool steps", () => {
     const replayed = Array.isArray(content)
       ? content.map((part) => (part.type === "text" ? part.text : "")).join("")
       : "";
+    expect(replayed).toContain(marker);
+    expect(replayed).toContain("END_OF_TAIL");
+    expect(replayed).not.toContain(headSecret);
+    expect(replayed).not.toContain(tailSecret);
+    expect(replayed).toContain("api_key=[redacted]");
+    expect(replayed).toContain("password=[redacted]");
+  });
+
+  it("redacts both sides of an already-redacted credential split by a saved omission marker", () => {
+    const marker = "\n… [100 characters not kept] …\n";
+    const headSecret = "api_key=head-secret-value";
+    const saved = `{"note":"${headSecret}","token": "[r${marker}edacted]", "after": "END_OF_TAIL"}`;
+    const replayed = replayedCallText(saved);
+    expect(replayed).toContain(marker);
+    expect(replayed).toContain('"after": "END_OF_TAIL"');
+    expect(replayed).not.toContain(headSecret);
+    expect(replayed.split(marker)[0]).toMatch(/"token": "\[redacted\]"$/);
+    expect(replayed.split(marker)[1]).toMatch(/^\[redacted\]", "after": "END_OF_TAIL"/);
+  });
+
+  it("redacts both sides of a raw credential split by a saved omission marker", () => {
+    const marker = "\n… [100 characters not kept] …\n";
+    const saved = `{"token": "secret-head${marker}secret-tail", "after": "END_OF_TAIL"}`;
+    const replayed = replayedCallText(saved);
+    expect(replayed).toContain(marker);
+    expect(replayed).toContain('"after": "END_OF_TAIL"');
+    expect(replayed).not.toContain("secret-head");
+    expect(replayed).not.toContain("secret-tail");
+    expect(replayed.split(marker)[0]).toMatch(/"token": "\[redacted\]"$/);
+    expect(replayed.split(marker)[1]).toMatch(/^\[redacted\]", "after": "END_OF_TAIL"/);
+  });
+
+  it("keeps the omission marker when a replayed credential head ends in a carriage return", () => {
+    const marker = "\n… [100 characters not kept] …\n";
+    const quoted = `{"token": "secret-head\r${marker}secret-tail", "after": "END_OF_TAIL"}`;
+    const quotedReplay = replayedCallText(quoted);
+    expect(quotedReplay).toContain(marker);
+    expect(quotedReplay).toContain('"after": "END_OF_TAIL"');
+    expect(quotedReplay).not.toContain("secret-head");
+    expect(quotedReplay).not.toContain("secret-tail");
+    expect(quotedReplay.split(marker)[0]).toMatch(/"token": "\[redacted\]"$/);
+    expect(quotedReplay.split(marker)[1]).toMatch(/^\[redacted\]", "after": "END_OF_TAIL"/);
+
+    const headSecret = "api_key=head-secret-value";
+    const tailSecret = "password=tail-secret-value";
+    const headOpen = '{"note":"';
+    const headEnd = '","token": "[r\r';
+    const head = `${headOpen}${headSecret}${"a".repeat(
+      700 - headOpen.length - headSecret.length - headEnd.length,
+    )}${headEnd}`;
+    const tailBody = `${tailSecret} END_OF_TAIL`;
+    const tail = `${tailBody}${"z".repeat(300 - tailBody.length)}`;
+    expect(head).toHaveLength(700);
+    expect(tail).toHaveLength(300);
+    const replayed = replayedCallText(`${head}${marker}${tail}`);
     expect(replayed).toContain(marker);
     expect(replayed).toContain("END_OF_TAIL");
     expect(replayed).not.toContain(headSecret);

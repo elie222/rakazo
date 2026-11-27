@@ -136,8 +136,13 @@ function replayedResult(
   const ended = outcome ? `${outcome.charAt(0).toUpperCase()}${outcome.slice(1)}.` : "Done.";
   if (typeof call.result !== "string" || !call.result) return { text: ended, isError };
   // A saved result replays as saved; this only holds one saved any other way to the same size.
+  // The replay pass may keep that result's omission marker, and it still redacts a credential
+  // the marker split. Fresh tool output does not use this pass.
   if (!call.result.includes(IMAGE_NOT_KEPT))
-    return { text: bounded(call.result, TOOL_CALL_SAVED_TEXT_MAX_CHARS), isError };
+    return {
+      text: bounded(call.result, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true }),
+      isError,
+    };
   // The image itself is gone; what the bot wrote right after seeing it is what it showed.
   const quote =
     wordsAfter.length > WORDS_AFTER_IMAGE_MAX_CHARS

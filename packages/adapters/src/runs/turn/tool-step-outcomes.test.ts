@@ -650,6 +650,29 @@ describe("tool step outcomes", () => {
     });
   });
 
+  it("redacts a raw credential that contains a forged omission marker, including its suffix", () => {
+    const forged = "\n… [12 characters not kept] …\n";
+    const suffix = "SECRET_SUFFIX_UNLABELED";
+    const forgedCredential = (value: string) =>
+      keptToolResult(
+        {
+          ...base,
+          result: {
+            content: [{ type: "text", text: `{"token":"${value}","after":"END_OF_TAIL"}` }],
+          },
+        },
+        [],
+      );
+    for (const value of [`prefix${forged}${suffix}`, `prefix\\${forged}${suffix}`]) {
+      const kept = forgedCredential(value);
+      expect(kept).toContain('"after":"END_OF_TAIL"');
+      expect(kept).toContain('"token":"[redacted]"');
+      expect(kept).not.toContain(suffix);
+      expect(kept).not.toContain("prefix");
+      expect(kept).not.toContain("characters not kept");
+    }
+  });
+
   it("redacts Unicode-escaped JSON secrets under ordinary fields and across error truncation cuts", () => {
     const secret = "secret-value-99";
     const escaped = "\\u0073\\u0065cret-value-99";
