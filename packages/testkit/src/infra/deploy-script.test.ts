@@ -768,7 +768,9 @@ describe("production deploy script", () => {
     commit(deploy.upstream, "next");
     const result = deploy.run({ TWO_OLD: "1", DRAIN_NEVER_ENDS: "1" });
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain("::warning::Replaced container api-old is still draining");
+    expect(result.stderr).toContain(
+      "::warning::Could not see replaced container api-old exit in time",
+    );
     const commands = rollout(deploy.commands());
     const waited = commands.indexOf("docker wait api-old");
     expect(commands.slice(waited + 1, waited + 3)).toEqual(

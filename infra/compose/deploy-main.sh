@@ -144,16 +144,11 @@ start_one() {
 # Waits up to the given number of seconds for a retired container to exit. One still draining
 # past that finishes beside the next replacement.
 wait_for_exit() {
-  local limit status=124
+  local limit
   limit=$((REPLICA_WAITS_UNTIL - SECONDS))
   ((limit < $2)) || limit="$2"
-  if ((limit > 0)); then
-    status=0
-    # A container retired by stopping it is already gone, and docker wait fails at once.
-    timeout "${limit}" sudo docker wait "$1" >/dev/null 2>&1 || status=$?
-  fi
-  if ((status == 124)); then
-    echo "::warning::Replaced container $1 is still draining; starting the next one beside it." >&2
+  if ((limit <= 0)) || ! timeout "${limit}" sudo docker wait "$1" >/dev/null; then
+    echo "::warning::Could not see replaced container $1 exit in time; starting the next one beside it." >&2
   fi
 }
 
