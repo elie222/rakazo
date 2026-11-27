@@ -2859,6 +2859,7 @@ describe("compatible gateway connection reuse", () => {
       const address = server.address();
       if (!address || typeof address === "string") throw new Error("Missing test server address");
       const url = `https://127.0.0.1:${address.port}/v1/models`;
+      vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "1");
       setDefaultCACertificates([...previous, certificate]);
       const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, OWNER);
       await readModels(safeFetch, url);
@@ -2869,6 +2870,7 @@ describe("compatible gateway connection reuse", () => {
         cause: { code: "DEPTH_ZERO_SELF_SIGNED_CERT" },
       });
     } finally {
+      vi.unstubAllEnvs();
       setDefaultCACertificates(previous);
       if (server) {
         server.closeAllConnections();
@@ -2957,6 +2959,7 @@ describe("compatible gateway connection reuse", () => {
       }
       targetPort = listened.port;
       const proxyUrl = `https://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
+      vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "1");
       setDefaultCACertificates([...previous, certificate]);
       process.env.http_proxy = proxyUrl;
       process.env.HTTP_PROXY = proxyUrl;
@@ -2979,6 +2982,7 @@ describe("compatible gateway connection reuse", () => {
         cause: { code: "DEPTH_ZERO_SELF_SIGNED_CERT" },
       });
     } finally {
+      vi.unstubAllEnvs();
       setDefaultCACertificates(previous);
       for (const [name, value] of Object.entries(previousEnv)) {
         if (value === undefined) delete process.env[name];
@@ -3048,13 +3052,14 @@ describe("compatible gateway connection reuse", () => {
       // The pool key is taken before this fetch yields. The handshake reads the
       // process trust settings only once the socket opens, so change them in
       // that gap and leave them in place through the dial.
+      vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "1");
       const first = readModels(safeFetch, url);
       vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0");
       setDefaultCACertificates([...previous, certificate]);
       await expect(first).rejects.toMatchObject({
         cause: { code: "DEPTH_ZERO_SELF_SIGNED_CERT" },
       });
-      vi.unstubAllEnvs();
+      vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "1");
       setDefaultCACertificates(previous);
       await expect(readModels(safeFetch, url)).rejects.toMatchObject({
         cause: { code: "DEPTH_ZERO_SELF_SIGNED_CERT" },
