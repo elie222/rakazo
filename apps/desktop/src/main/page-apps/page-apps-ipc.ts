@@ -38,24 +38,23 @@ export function registerPageApps(userDataDir: string) {
   const registry = createRegistry(userDataDir, () =>
     launcher ? launcherApps(appData, launcher) : installedBundles(appData),
   );
-  const installer =
-    process.platform === "darwin"
-      ? createPageAppInstaller({
-          registry,
-          trash: (bundle) => shell.trashItem(bundle),
-          open: async (bundle) => {
-            const error = await shell.openPath(bundle);
-            if (error) throw new Error(error);
-          },
-          version: app.getVersion(),
-          appData,
-        })
-      : createLauncherInstaller({
-          registry,
-          launcher: launcher ?? platformLauncher(appData),
-          open: startPageApp,
-          appData,
-        });
+  const installer = !launcher
+    ? createPageAppInstaller({
+        registry,
+        trash: (bundle) => shell.trashItem(bundle),
+        open: async (bundle) => {
+          const error = await shell.openPath(bundle);
+          if (error) throw new Error(error);
+        },
+        version: app.getVersion(),
+        appData,
+      })
+    : createLauncherInstaller({
+        registry,
+        launcher,
+        open: startPageApp,
+        appData,
+      });
   const open = async (entry: InstalledPageApp) => {
     if (process.platform === "darwin") return (await shell.openPath(entry.bundlePath)) === "";
     try {
