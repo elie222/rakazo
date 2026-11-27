@@ -170,6 +170,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
   const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
     peerBotId: string;
     peerBotName: string;
+    botId?: string;
   } | null>("peerConversation", null);
   const {
     agentSkills,
@@ -558,7 +559,7 @@ function SpaceShell({ sidebarScrollRef }: { sidebarScrollRef: Ref<HTMLDivElement
     markGroupUnreadFrom: read.markGroupUnreadFrom,
   });
   const openPeerMessages = useCallback(
-    (peer: { peerBotId: string; peerBotName: string }) => {
+    (peer: { peerBotId: string; peerBotName: string; botId?: string }) => {
       setPeerConversation(peer);
     },
     [setPeerConversation],

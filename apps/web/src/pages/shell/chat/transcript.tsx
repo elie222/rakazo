@@ -316,6 +316,7 @@ export const Transcript = memo(function Transcript({
     shownItems,
     exchanges,
     showToolActivity,
+    { separatorIds, unreadDividerId },
   );
   const continuedSenderIds = continuedSenderMessageIds(shownItems, separatorIds, unreadDividerId);
   const workingLabel =
@@ -513,11 +514,15 @@ export const Transcript = memo(function Transcript({
   useLayoutEffect(() => {
     if (!scrollRequest || scrolledJump.current === scrollRequest.nonce) return;
     const element = scrollRef.current;
-    const targetId =
+    const directRow = element?.querySelector(
+      `[data-message-id="${CSS.escape(scrollRequest.messageId)}"]`,
+    );
+    const fallbackId =
       groupedAnchorOf.get(scrollRequest.messageId) ??
       exchanges.lineOf.get(scrollRequest.messageId) ??
       scrollRequest.messageId;
-    const row = element?.querySelector(`[data-message-id="${CSS.escape(targetId)}"]`);
+    const row =
+      directRow ?? element?.querySelector(`[data-message-id="${CSS.escape(fallbackId)}"]`);
     if (!element || !row) return;
     scrolledJump.current = scrollRequest.nonce;
     previewWheelTop.current = null;
@@ -746,7 +751,7 @@ export const Transcript = memo(function Transcript({
                   {separatorIds.has(first.id) ? (
                     <TimeSeparator createdAt={first.createdAt} locale={i18n.locale || "en"} />
                   ) : null}
-                  {item.messages.some((msg) => msg.id === unreadDividerId) ? (
+                  {first.id === unreadDividerId ? (
                     <UnreadDivider afterSeparator={separatorIds.has(first.id)} />
                   ) : null}
                   <div data-message-id={first.id} className="relative">
@@ -754,6 +759,10 @@ export const Transcript = memo(function Transcript({
                       messages={item.messages}
                       memberName={memberName}
                       peerBot={peerBot}
+                      revealMessageId={scrollRequest?.messageId}
+                      onReply={onReply}
+                      onMarkUnread={onMarkUnread}
+                      onJumpToMessage={jumpToMessage}
                     />
                   </div>
                 </Fragment>
@@ -766,7 +775,7 @@ export const Transcript = memo(function Transcript({
                   {separatorIds.has(first.id) ? (
                     <TimeSeparator createdAt={first.createdAt} locale={i18n.locale || "en"} />
                   ) : null}
-                  {item.entries.some((entry) => entry.message.id === unreadDividerId) ? (
+                  {first.id === unreadDividerId ? (
                     <UnreadDivider afterSeparator={separatorIds.has(first.id)} />
                   ) : null}
                   <div data-message-id={first.id} className="relative">

@@ -5,7 +5,8 @@ import type { BotAvatarSet, MessageBlock, ThreadMessage } from "@rakazo/contract
 import type { groupVoiceChats, PeerExchange } from "@rakazo/core";
 import { isPeerReceiptBlocks, isToolActivityBlock } from "@rakazo/core";
 import { BotAvatar } from "@rakazo/ui-web";
-import { useState } from "react";
+import { Mail, Reply } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { AvatarStackBot } from "../../../components/ai/CollaborationMarker";
 import { MultiBotCollaborationMarker } from "../../../components/ai/CollaborationMarker";
 
@@ -44,6 +45,22 @@ export function isHandoffOnlyMessage(
   );
 }
 
+/** True when a message's visible blocks are strictly peer receipts with no inline attachments. */
+export function isPeerReceiptOnlyMessage(
+  blocks: readonly MessageBlock[],
+  showToolActivity: boolean,
+): boolean {
+  return (
+    isPeerReceiptBlocks(blocks) &&
+    blocks.every(
+      (block) =>
+        block.kind === "bot_message_sent" ||
+        block.kind === "bot_message_received" ||
+        (!showToolActivity && isToolActivityBlock(block)),
+    )
+  );
+}
+
 /**
  * Collapses consecutive handoff messages and consecutive multi-bot peer receipts into compact
  * single-line rows (e.g. "Messaged [avatars] 3 Bots") while recording jump-target mapping.
@@ -52,9 +69,13 @@ export function groupTranscriptItems(
   items: readonly TranscriptRowItem[],
   exchanges: { lines: Map<string, PeerExchange>; lineOf: Map<string, string> },
   showToolActivity: boolean,
+  boundaries: { separatorIds?: ReadonlySet<string>; unreadDividerId?: string | null } = {},
 ): { items: GroupedTranscriptItem[]; anchorOf: Map<string, string> } {
   const grouped: GroupedTranscriptItem[] = [];
   const anchorOf = new Map<string, string>();
+  const { separatorIds, unreadDividerId } = boundaries;
+  const startsBoundary = (messageId: string) =>
+    Boolean(separatorIds?.has(messageId) || (unreadDividerId && messageId === unreadDividerId));
 
   let index = 0;
   while (index < items.length) {
@@ -72,6 +93,7 @@ export function groupTranscriptItems(
         const next = items[cursor]!;
         if (
           next.kind === "message" &&
+          !startsBoundary(next.message.id) &&
           isHandoffOnlyMessage(next.message.blocks, showToolActivity)
         ) {
           batch.push(next.message);
@@ -92,16 +114,27 @@ export function groupTranscriptItems(
       continue;
     }
 
-    if (isPeerReceiptBlocks(item.message.blocks)) {
+    if (isPeerReceiptOnlyMessage(item.message.blocks, showToolActivity)) {
       const entries: Array<{ message: ThreadMessage; exchange: PeerExchange }> = [];
       const seenIds: string[] = [];
+      const seenExchangeRoots = new Set<string>();
       let cursor = index;
       while (cursor < items.length) {
         const next = items[cursor]!;
-        if (next.kind !== "message" || !isPeerReceiptBlocks(next.message.blocks)) break;
+        if (
+          next.kind !== "message" ||
+          (cursor > index && startsBoundary(next.message.id)) ||
+          !isPeerReceiptOnlyMessage(next.message.blocks, showToolActivity)
+        ) {
+          break;
+        }
         seenIds.push(next.message.id);
-        const exchange = exchanges.lines.get(next.message.id);
-        if (exchange) entries.push({ message: next.message, exchange });
+        const rootId = exchanges.lineOf.get(next.message.id) ?? next.message.id;
+        const exchange = exchanges.lines.get(rootId);
+        if (exchange && !seenExchangeRoots.has(rootId)) {
+          seenExchangeRoots.add(rootId);
+          entries.push({ message: next.message, exchange });
+        }
         cursor += 1;
       }
       const distinctPeers = new Set(entries.map((entry) => entry.exchange.peerBotId));
@@ -150,13 +183,28 @@ export function HandoffGroupRow({
   messages,
   memberName,
   peerBot,
+  revealMessageId,
+  onReply,
+  onMarkUnread,
+  onJumpToMessage,
 }: {
   messages: readonly ThreadMessage[];
   memberName?: (botId: string | undefined) => string | undefined;
   peerBot: PeerBotLookup;
+  revealMessageId?: string;
+  onReply?: (message: ThreadMessage) => void;
+  onMarkUnread?: (message: ThreadMessage) => void;
+  onJumpToMessage?: (messageId: string) => void;
 }) {
   const { t } = useLingui();
   const [expanded, setExpanded] = useState(false);
+  const containsReveal = Boolean(
+    revealMessageId && messages.some((message) => message.id === revealMessageId),
+  );
+  useEffect(() => {
+    if (containsReveal) setExpanded(true);
+  }, [containsReveal]);
+  const isExpanded = expanded || containsReveal;
 
   const handoffs = messages.flatMap((message) =>
     message.blocks.flatMap((block, blockIndex) =>
@@ -164,6 +212,9 @@ export function HandoffGroupRow({
         ? [
             {
               key: `${message.id}-${blockIndex}`,
+              message,
+              isFirstInMessage:
+                blockIndex === message.blocks.findIndex((b) => b.kind === "handoff"),
               fromBotId: block.fromBotId,
               toBotId: block.toBotId,
               fromName: memberName?.(block.fromBotId) ?? peerBot(block.fromBotId)?.name ?? t`bot`,
@@ -211,7 +262,7 @@ export function HandoffGroupRow({
       prefix={prefix}
       suffix={suffix}
       bots={bots}
-      expanded={expanded}
+      expanded={isExpanded}
       onToggle={() => setExpanded((open) => !open)}
       testId="handoff-group-chip"
     >
@@ -222,17 +273,56 @@ export function HandoffGroupRow({
         {handoffs.map((item) => {
           const sender = resolveAvatarBot(item.fromBotId, item.fromName, peerBot);
           return (
-            <div key={item.key} className="py-2 first:pt-1 last:pb-1">
-              <div className="mb-1 flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
-                <BotAvatar
-                  avatarSet={sender.avatarSet}
-                  color={sender.color}
-                  identity={sender.botId}
-                  size={14}
-                />
-                <span>
-                  {item.fromName} → {item.toName}
-                </span>
+            <div
+              key={item.key}
+              data-message-id={item.isFirstInMessage ? item.message.id : undefined}
+              className="py-2 first:pt-1 last:pb-1"
+            >
+              {item.message.replyPreview && item.message.replyToMessageId ? (
+                <button
+                  type="button"
+                  onClick={() => onJumpToMessage?.(item.message.replyToMessageId!)}
+                  className="mb-1 block max-w-full truncate text-caption text-muted-foreground hover:text-foreground"
+                >
+                  {item.message.replyPreview.text}
+                </button>
+              ) : null}
+              <div className="mb-1 flex items-center justify-between gap-2 text-caption font-medium text-muted-foreground">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <BotAvatar
+                    avatarSet={sender.avatarSet}
+                    color={sender.color}
+                    identity={sender.botId}
+                    size={14}
+                  />
+                  <span className="truncate">
+                    {item.fromName} → {item.toName}
+                  </span>
+                </div>
+                {onReply || onMarkUnread ? (
+                  <div className="flex shrink-0 items-center gap-1">
+                    {onReply ? (
+                      <button
+                        type="button"
+                        aria-label={t`Reply`}
+                        onClick={() => onReply(item.message)}
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        <Reply className="size-3.5" />
+                      </button>
+                    ) : null}
+                    {onMarkUnread ? (
+                      <button
+                        type="button"
+                        aria-label={t`Mark unread`}
+                        onClick={() => onMarkUnread(item.message)}
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        <Mail className="size-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               <div className="text-body-sm text-foreground/90">
                 <ChatMarkdown>{item.text}</ChatMarkdown>
@@ -260,36 +350,55 @@ export function PeerReceiptGroupRow({
   const { t } = useLingui();
   const [expanded, setExpanded] = useState(false);
 
-  const byPeer = new Map<string, { bot: AvatarStackBot; count: number; botId?: string }>();
+  const byConversation = new Map<
+    string,
+    { bot: AvatarStackBot; count: number; botId?: string; sourceName?: string }
+  >();
+  const distinctPeers = new Map<string, AvatarStackBot>();
+  let hasSent = false;
+  let hasReceived = false;
   for (const { message, exchange } of entries) {
-    const existing = byPeer.get(exchange.peerBotId);
+    if (exchange.direction === "sent") hasSent = true;
+    else hasReceived = true;
+    const sourceBotId = groupContext ? message.botId : undefined;
+    const convKey = `${sourceBotId ?? ""}:${exchange.peerBotId}`;
+    const resolvedPeer = resolveAvatarBot(exchange.peerBotId, exchange.peerBotName, peerBot);
+    if (!distinctPeers.has(exchange.peerBotId)) {
+      distinctPeers.set(exchange.peerBotId, resolvedPeer);
+    }
+    const existing = byConversation.get(convKey);
     if (existing) {
       existing.count += exchange.count;
       existing.bot.name = exchange.peerBotName;
     } else {
-      byPeer.set(exchange.peerBotId, {
-        bot: resolveAvatarBot(exchange.peerBotId, exchange.peerBotName, peerBot),
+      byConversation.set(convKey, {
+        bot: resolvedPeer,
         count: exchange.count,
-        botId: groupContext ? message.botId : undefined,
+        botId: sourceBotId,
+        sourceName: sourceBotId ? peerBot(sourceBotId)?.name : undefined,
       });
     }
   }
-  const peers = [...byPeer.values()];
-  if (peers.length === 0) return null;
+  const conversations = [...byConversation.values()];
+  const summaryBots = [...distinctPeers.values()];
+  if (summaryBots.length === 0) return null;
+  const distinctSources = new Set(conversations.map((c) => c.botId).filter(Boolean));
+  const prefix =
+    hasSent && hasReceived ? t`Exchanged with` : hasReceived ? t`Messages from` : t`Messaged`;
 
   return (
     <MultiBotCollaborationMarker
-      prefix={t`Messaged`}
-      suffix={t`${plural(peers.length, { one: "# Bot", other: "# Bots" })}`}
-      bots={peers.map((entry) => entry.bot)}
+      prefix={prefix}
+      suffix={t`${plural(summaryBots.length, { one: "# Bot", other: "# Bots" })}`}
+      bots={summaryBots}
       expanded={expanded}
       onToggle={() => setExpanded((open) => !open)}
       testId="peer-group-chip"
     >
       <div data-testid="peer-group-links" className="mt-1 flex flex-wrap justify-center gap-1.5">
-        {peers.map(({ bot, count, botId }) => (
+        {conversations.map(({ bot, count, botId, sourceName }) => (
           <button
-            key={bot.botId}
+            key={`${botId ?? ""}:${bot.botId}`}
             type="button"
             onClick={() =>
               onOpenPeerMessages({
@@ -301,7 +410,9 @@ export function PeerReceiptGroupRow({
             className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-card/70 px-2.5 py-1 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
           >
             <BotAvatar avatarSet={bot.avatarSet} color={bot.color} identity={bot.botId} size={14} />
-            <span className="font-medium">{bot.name}</span>
+            <span className="font-medium">
+              {distinctSources.size > 1 && sourceName ? `${sourceName} → ${bot.name}` : bot.name}
+            </span>
             {count > 1 ? <span>({count})</span> : null}
           </button>
         ))}

@@ -159,4 +159,61 @@ describe("groupTranscriptItems & HandoffGroupRow", () => {
       peerBotName: "Reddit Manager",
     });
   });
+
+  it("keeps mixed attachment receipts ungrouped, respects boundaries, and labels incoming receipts truthfully", () => {
+    const messages = [
+      makeMessage("r1", [
+        {
+          kind: "bot_message_received",
+          fromBotId: "linkedin",
+          fromBotName: "LinkedIn Manager",
+          text: "Hi",
+        },
+      ]),
+      makeMessage("r2", [
+        {
+          kind: "bot_message_received",
+          fromBotId: "reddit",
+          fromBotName: "Reddit Manager",
+          text: "Hi",
+        },
+      ]),
+      makeMessage("r3", [
+        { kind: "bot_message_received", fromBotId: "x", fromBotName: "X Manager", text: "File" },
+        {
+          kind: "file",
+          artifactId: "a1",
+          name: "report.pdf",
+          mimeType: "application/pdf",
+          size: 10,
+        },
+      ]),
+    ];
+    const items = messages.map((message) => ({ kind: "message" as const, message }));
+    const exchanges = peerExchangeLines(foldPeerReplies(messages, { includePeerReceipts: true }));
+    const grouped = groupTranscriptItems(items, exchanges, false);
+    expect(grouped.items.map((entry) => entry.kind)).toEqual(["peerReceiptGroup", "message"]);
+
+    const splitByUnread = groupTranscriptItems(items, exchanges, false, { unreadDividerId: "r2" });
+    expect(splitByUnread.items.map((entry) => entry.kind)).toEqual([
+      "message",
+      "message",
+      "message",
+    ]);
+
+    const group = grouped.items[0];
+    if (group?.kind !== "peerReceiptGroup") throw new Error("expected peerReceiptGroup");
+    act(() =>
+      root.render(
+        <PeerReceiptGroupRow
+          entries={group.entries}
+          groupContext={false}
+          peerBot={peerBot}
+          onOpenPeerMessages={vi.fn()}
+        />,
+      ),
+    );
+    const chip = host.querySelector<HTMLButtonElement>('[data-testid="peer-group-chip"]')!;
+    expect(chip.getAttribute("aria-label")).toBe("Messages from 2 Bots");
+  });
 });

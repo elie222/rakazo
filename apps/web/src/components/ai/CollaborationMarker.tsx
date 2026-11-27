@@ -12,20 +12,14 @@ export interface AvatarStackBot {
 }
 
 /** Overlapping horizontal row of bot avatars for compact single-line peer activity rows. */
-export function BotAvatarStack({
-  bots,
-  size = 18,
-}: {
-  bots: readonly AvatarStackBot[];
-  size?: number;
-}) {
+export function BotAvatarStack({ bots }: { bots: readonly AvatarStackBot[] }) {
   const visible = bots.slice(0, 4);
   if (visible.length === 0) return null;
   return (
     <span className="inline-flex shrink-0 items-center -space-x-1.5" aria-hidden="true">
       {visible.map((bot) => (
         <span key={bot.botId} className="inline-flex rounded-full ring-2 ring-background">
-          <BotAvatar avatarSet={bot.avatarSet} color={bot.color} identity={bot.botId} size={size} />
+          <BotAvatar avatarSet={bot.avatarSet} color={bot.color} identity={bot.botId} size={18} />
         </span>
       ))}
     </span>
@@ -37,7 +31,6 @@ export function MultiBotCollaborationMarker({
   prefix,
   suffix,
   bots,
-  ariaLabel,
   expanded,
   onToggle,
   testId = "peer-group-chip",
@@ -46,19 +39,19 @@ export function MultiBotCollaborationMarker({
   prefix?: string;
   suffix: string;
   bots: readonly AvatarStackBot[];
-  ariaLabel?: string;
   expanded: boolean;
   onToggle: () => void;
   testId?: string;
   children?: ReactNode;
 }) {
+  const label = prefix ? `${prefix} ${suffix}` : suffix;
   return (
     <div className="flex min-w-0 max-w-full flex-col items-center">
       <button
         type="button"
         data-testid={testId}
         aria-expanded={expanded}
-        aria-label={ariaLabel ?? (prefix ? `${prefix} ${suffix}` : suffix)}
+        aria-label={label}
         onClick={onToggle}
         className="inline-flex max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-body-sm text-muted-foreground transition-colors hover:text-foreground/80 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
       >

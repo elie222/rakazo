@@ -155,10 +155,12 @@ export function SettingsOverlays({
   setBootstrapMe: (update: (prev: Me | null | undefined) => Me | null | undefined) => void;
   messagingEnabled: boolean;
   memoryConfig: SpaceMemoryConfig | null | undefined;
-  peerConversation: { peerBotId: string; peerBotName: string } | null;
+  peerConversation: { peerBotId: string; peerBotName: string; botId?: string } | null;
   setPeerConversation: (peer: null) => void;
   active: Bot | undefined;
-  peerBot: (botId: string) => { color: string; avatarSet?: BotAvatarSet } | undefined;
+  peerBot: (
+    botId: string,
+  ) => { name?: string; color: string; avatarSet?: BotAvatarSet } | undefined;
   openNewSpace: () => void;
 }) {
   const voiceStatusKey = queries.voice.status.queryKey();
@@ -248,19 +250,25 @@ export function SettingsOverlays({
           onClose={() => setOverlay(null)}
         />
       ) : null}
-      {peerConversation && active ? (
-        <PeerMessagesOverlay
-          botId={active.id}
-          botName={active.name}
-          botColor={active.color}
-          botAvatarSet={active.avatarSet}
-          peerBotId={peerConversation.peerBotId}
-          peerBotName={peerConversation.peerBotName}
-          peerBotColor={peerBot(peerConversation.peerBotId)?.color ?? FALLBACK_BOT_COLOR}
-          peerBotAvatarSet={peerBot(peerConversation.peerBotId)?.avatarSet}
-          onClose={() => setPeerConversation(null)}
-        />
-      ) : null}
+      {(() => {
+        if (!peerConversation) return null;
+        const sourceBotId = active?.id ?? peerConversation.botId;
+        if (!sourceBotId) return null;
+        const sourceInfo = active ?? peerBot(sourceBotId);
+        return (
+          <PeerMessagesOverlay
+            botId={sourceBotId}
+            botName={sourceInfo?.name ?? ""}
+            botColor={sourceInfo?.color ?? FALLBACK_BOT_COLOR}
+            botAvatarSet={sourceInfo?.avatarSet}
+            peerBotId={peerConversation.peerBotId}
+            peerBotName={peerConversation.peerBotName}
+            peerBotColor={peerBot(peerConversation.peerBotId)?.color ?? FALLBACK_BOT_COLOR}
+            peerBotAvatarSet={peerBot(peerConversation.peerBotId)?.avatarSet}
+            onClose={() => setPeerConversation(null)}
+          />
+        );
+      })()}
     </>
   );
 }
