@@ -9,11 +9,11 @@ const CONNECTOR_JSON_PRIMITIVE_START =
   "(?:-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?|true|false|null)";
 const CONNECTOR_JSON_OBJECT_START = '\\{\\s*(?:["}]|$)';
 const CONNECTOR_JSON_CONTAINER_START = new RegExp(
-  `(?:${CONNECTOR_JSON_OBJECT_START}|\\[\\s*(?:["\\]]|${CONNECTOR_JSON_OBJECT_START}|\\[\\s*(?:["\\]]|${CONNECTOR_JSON_OBJECT_START}|${CONNECTOR_JSON_PRIMITIVE_START}(?=[\\s,\\]]|$))|${CONNECTOR_JSON_PRIMITIVE_START}(?=[\\s,\\]]|$)))`,
+  `(?:${CONNECTOR_JSON_OBJECT_START}|\\[+\\s*(?:["\\]]|${CONNECTOR_JSON_OBJECT_START}|${CONNECTOR_JSON_PRIMITIVE_START}(?=[\\s,\\]])))`,
 );
 const CONNECTOR_RAW_JSON_OBJECT_START = '\\{(?:\\s|\\\\[nrt])*(?:\\\\*"|\\}|$)';
 const CONNECTOR_RAW_JSON_CONTAINER_START = new RegExp(
-  `(?:${CONNECTOR_RAW_JSON_OBJECT_START}|\\[(?:\\s|\\\\[nrt])*(?:\\\\*"|\\]|${CONNECTOR_RAW_JSON_OBJECT_START}|\\[(?:\\s|\\\\[nrt])*(?:\\\\*"|\\]|${CONNECTOR_RAW_JSON_OBJECT_START}|${CONNECTOR_JSON_PRIMITIVE_START}(?=\\s|\\\\[nrt]|[,\\]$]))|${CONNECTOR_JSON_PRIMITIVE_START}(?=\\s|\\\\[nrt]|[,\\]$])))`,
+  `(?:${CONNECTOR_RAW_JSON_OBJECT_START}|\\[+(?:\\s|\\\\[nrt])*(?:\\\\*"|\\]|${CONNECTOR_RAW_JSON_OBJECT_START}|${CONNECTOR_JSON_PRIMITIVE_START}(?=\\s|\\\\[nrt]|[,\\]])))`,
 );
 const CONNECTOR_DECODED_NEXT_BEARER = new RegExp(
   `${BEARER_CI}\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}))\\S`,
@@ -22,7 +22,7 @@ const CONNECTOR_DECODED_DEFERRED_BEARER_FOLLOWS = new RegExp(
   `${BEARER_CI}\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*${BEARER_CI}\\s+\\S))\\S`,
 );
 const CONNECTOR_DECODED_BEARER_RE = new RegExp(
-  `${BEARER_CI}\\s+(?!${CONNECTOR_DECODED_DEFERRED_BEARER_FOLLOWS.source})(?!:${CONNECTOR_DECODED_NEXT_BEARER.source})\\S(?:(?!:?${CONNECTOR_DECODED_NEXT_BEARER.source}|:?${CONNECTOR_JSON_CONTAINER_START.source})\\S)*`,
+  `${BEARER_CI}\\s+(?!${CONNECTOR_DECODED_DEFERRED_BEARER_FOLLOWS.source})(?!:${CONNECTOR_DECODED_NEXT_BEARER.source})\\S(?:(?!:?${CONNECTOR_DECODED_NEXT_BEARER.source}|:?${CONNECTOR_JSON_CONTAINER_START.source})(?:\\[+|[^\\s[]))*`,
   "g",
 );
 const CONNECTOR_PLAIN_NEXT_BEARER = new RegExp(
@@ -44,7 +44,7 @@ const CONNECTOR_NON_BOUNDARY_ESCAPED_WS = new RegExp(
   `(?:\\\\[nrt])+(?!(?:\\\\[nrt]|\\s|["',;&}\\]]|$|:?${BEARER_CI}(?:\\s|\\\\[nrt])|:?${CONNECTOR_RAW_JSON_CONTAINER_START.source}))`,
 );
 const CONNECTOR_RAW_UNIT = new RegExp(
-  `(?:[=:](?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\")?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+"?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+'?)|=|:(?!\\s|$|["']|\\\\")|\\[redacted\\]|\\[(?!redacted\\])|${CONNECTOR_NON_BOUNDARY_ESCAPED_WS.source}|\\\\(?![nrt"])|[^\\s"',;&}=:\\]\\\\[])`,
+  `(?:[=:](?:\\\\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\")?|"(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+"?|'(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+'?)|=|:(?!\\s|$|["']|\\\\")|\\[redacted\\]|\\[+(?!redacted\\])|${CONNECTOR_NON_BOUNDARY_ESCAPED_WS.source}|\\\\(?![nrt"])|[^\\s"',;&}=:\\]\\\\[])`,
 );
 const CONNECTOR_SUFFIX_STOP = new RegExp(
   `(?:${CONNECTOR_ADJACENT_CREDENTIAL_START.source}|${CONNECTOR_RAW_JSON_CONTAINER_START.source})`,
@@ -53,7 +53,7 @@ const CONNECTOR_SUFFIX_UNIT = new RegExp(
   `(?:(?!:?${CONNECTOR_SUFFIX_STOP.source})${CONNECTOR_RAW_UNIT.source})`,
 );
 const CONNECTOR_PLAIN_BEARER_RE = new RegExp(
-  `${BEARER_CI}\\s+(?!${CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${CONNECTOR_SUFFIX_UNIT.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${CONNECTOR_SUFFIX_UNIT.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${CONNECTOR_SUFFIX_UNIT.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${CONNECTOR_SUFFIX_UNIT.source}*)?|\\[redacted\\]${CONNECTOR_SUFFIX_UNIT.source}+|(?!:${CONNECTOR_PLAIN_NEXT_BEARER.source})${CONNECTOR_RAW_UNIT.source}(?:(?!:?${CONNECTOR_PLAIN_NEXT_BEARER.source}|:?${CONNECTOR_RAW_JSON_CONTAINER_START.source})${CONNECTOR_RAW_UNIT.source})*)`,
+  `${BEARER_CI}\\s+(?!${CONNECTOR_PLAIN_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${CONNECTOR_SUFFIX_UNIT.source}))(?:\\\\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${CONNECTOR_SUFFIX_UNIT.source}*)?|"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${CONNECTOR_SUFFIX_UNIT.source}*)?|'(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${CONNECTOR_SUFFIX_UNIT.source}*)?|\\[redacted\\]${CONNECTOR_SUFFIX_UNIT.source}+|(?!:${CONNECTOR_PLAIN_NEXT_BEARER.source})${CONNECTOR_RAW_UNIT.source}(?:(?!:?${CONNECTOR_PLAIN_NEXT_BEARER.source}|:?${CONNECTOR_RAW_JSON_CONTAINER_START.source})${CONNECTOR_RAW_UNIT.source})*)`,
   "g",
 );
 const CONNECTOR_ESCAPED_WS_BEARER_RE = new RegExp(

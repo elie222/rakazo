@@ -34,14 +34,14 @@ const CREDENTIAL_KEY_CI = `(?:${ci("api")}[_-]?${ci("key")}|${ci("access")}[_-]?
 const JSON_PRIMITIVE_START = "(?:-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?|true|false|null)";
 const JSON_OBJECT_START = '\\{\\s*(?:["}]|$)';
 const JSON_CONTAINER_LINE_START = new RegExp(
-  `(?:${JSON_OBJECT_START}|\\[\\s*(?:["\\]]|${JSON_OBJECT_START}|\\[\\s*(?:["\\]]|${JSON_OBJECT_START}|${JSON_PRIMITIVE_START}(?=[\\s,\\]]|$))|${JSON_PRIMITIVE_START}(?=[\\s,\\]]|$)))`,
+  `(?:${JSON_OBJECT_START}|\\[+\\s*(?:["\\]]|${JSON_OBJECT_START}|${JSON_PRIMITIVE_START}(?=[\\s,\\]])))`,
 );
 const RAW_JSON_OBJECT_START = '\\{(?:\\s|\\\\[nrt])*(?:\\\\*"|\\}|$)';
 const RAW_JSON_CONTAINER_START = new RegExp(
-  `(?:${RAW_JSON_OBJECT_START}|\\[(?:\\s|\\\\[nrt])*(?:\\\\*"|\\]|${RAW_JSON_OBJECT_START}|\\[(?:\\s|\\\\[nrt])*(?:\\\\*"|\\]|${RAW_JSON_OBJECT_START}|${JSON_PRIMITIVE_START}(?=\\s|\\\\[nrt]|[,\\]$]))|${JSON_PRIMITIVE_START}(?=\\s|\\\\[nrt]|[,\\]$])))`,
+  `(?:${RAW_JSON_OBJECT_START}|\\[+(?:\\s|\\\\[nrt])*(?:\\\\*"|\\]|${RAW_JSON_OBJECT_START}|${JSON_PRIMITIVE_START}(?=\\s|\\\\[nrt]|[,\\]])))`,
 );
 const RAW_ESCAPED_QUOTED_VALUE = /\\(?:\\\\)*"(?!\\(?:\\\\)*")[^\S\r\n]*(?!\\(?:\\\\)*")[^"\s\r\n]/;
-const RAW_QUOTED_VALUE = /"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"|'[^'"\r\n]+'/;
+const RAW_QUOTED_VALUE = /"(?!\s*(?:[:,}\]\r\n]|$))[^"\r\n]+"|'[^'"\r\n]+'/;
 const RAW_ASSIGNED_VALUE = new RegExp(
   `(?:${RAW_ESCAPED_QUOTED_VALUE.source}|${RAW_QUOTED_VALUE.source}|\\\\(?:\\\\|(?![nrt"]))|[^\\s"',;&\\\\])`,
 );
@@ -83,15 +83,17 @@ const RAW_DEFERRED_BEARER_FOLLOWS = new RegExp(
 const DECODED_DEFERRED_BEARER_FOLLOWS = new RegExp(
   `${BEARER_CI}\\s+(?!(?:\\s|${JSON_CONTAINER_LINE_START.source}|\\S*${BEARER_CI}\\s+\\S|${DECODED_SPLITTING_CREDENTIAL_KEY.source}))\\S`,
 );
-const RAW_ATOM = new RegExp(`(?:${RAW_BACKSLASH_ATOM.source}|[^\\s"',;&}:\\]\\\\])`);
+const RAW_ATOM = new RegExp(`(?:${RAW_BACKSLASH_ATOM.source}|\\[+|[^\\s"',;&}:\\]\\\\[])`);
 const RAW_UNQUOTED_STOP = new RegExp(
   `(?:${RAW_NEXT_BEARER.source}|${RAW_BARE_SPLITTING_CREDENTIAL_KEY.source}|${RAW_JSON_CONTAINER_START.source})`,
 );
+const RAW_QUOTED_SUFFIX_ASSIGNMENT =
+  '[=:](?:\\\\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\")?|"(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+"?|\'(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^\'\\\\\\r\\n])+\'?)';
 const RAW_SUFFIX_ATOM = new RegExp(
-  `(?:(?!${RAW_ADJACENT_CREDENTIAL_START.source})(?:=(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\")?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+"?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+'?)|=(?!["']|\\\\")|\\[redacted\\]|(?!\\[redacted\\]|${RAW_JSON_CONTAINER_START.source})[{[]|${RAW_BACKSLASH_ATOM.source}|[^\\s"',;&}{[\\]:=\\\\]))`,
+  `(?:(?!${RAW_ADJACENT_CREDENTIAL_START.source})(?:${RAW_QUOTED_SUFFIX_ASSIGNMENT}|=(?!["']|\\\\")|:(?!(?:\\s|$|["']|\\\\"|${RAW_ADJACENT_CREDENTIAL_START.source}|${RAW_JSON_CONTAINER_START.source}))|\\[redacted\\]|(?!\\[redacted\\]|${RAW_JSON_CONTAINER_START.source})(?:\\[+(?!redacted\\])|\\{)|${RAW_BACKSLASH_ATOM.source}|[^\\s"',;&}{[\\]:=\\\\]))`,
 );
 const RAW_BEARER = new RegExp(
-  `${BEARER_CI}\\s+(?!${RAW_DEFERRED_BEARER_FOLLOWS.source}|${RAW_SPLITTING_CREDENTIAL_KEY.source}|${RAW_JSON_CONTAINER_START.source}|\\[redacted\\](?!${RAW_SUFFIX_ATOM.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\]${RAW_SUFFIX_ATOM.source}+|${RAW_ATOM.source}(?:(?!${RAW_UNQUOTED_STOP.source})${RAW_ATOM.source})*)`,
+  `${BEARER_CI}\\s+(?!${RAW_DEFERRED_BEARER_FOLLOWS.source}|${RAW_SPLITTING_CREDENTIAL_KEY.source}|\\[redacted\\](?!${RAW_SUFFIX_ATOM.source}))(?:\\\\"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\]${RAW_SUFFIX_ATOM.source}+|${RAW_ATOM.source}(?:(?!${RAW_UNQUOTED_STOP.source})${RAW_ATOM.source})*)`,
   "g",
 );
 
@@ -105,13 +107,15 @@ const DECODED_UNQUOTED_STOP = new RegExp(
   `(?:${DECODED_NEXT_BEARER.source}|${DECODED_BARE_SPLITTING_CREDENTIAL_KEY.source}|${JSON_CONTAINER_LINE_START.source})`,
 );
 const DECODED_ATOM = new RegExp(
-  `(?:\\\\(?!(?:${DECODED_UNQUOTED_STOP.source}))[^\\s]|\\\\(?=\\s|$|${DECODED_UNQUOTED_STOP.source})|[^\\s"',;&}:\\]\\\\])`,
+  `(?:\\\\(?!(?:${DECODED_UNQUOTED_STOP.source}))[^\\s]|\\\\(?=\\s|$|${DECODED_UNQUOTED_STOP.source})|\\[+|[^\\s"',;&}:\\]\\\\[])`,
 );
+const DECODED_QUOTED_SUFFIX_ASSIGNMENT =
+  "[=:](?:\"(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^\"\\\\\\r\\n])+\"?|'(?!\\s|$|[:,}\\]\\r\\n])(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+'?)";
 const DECODED_SUFFIX_ATOM = new RegExp(
-  `(?:(?!${DECODED_ADJACENT_CREDENTIAL_START.source})(?:=(?:"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+"?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+'?)|=(?!["'])|\\[redacted\\]|(?!\\[redacted\\]|${JSON_CONTAINER_LINE_START.source})[{[]|\\\\(?!(?:${DECODED_ADJACENT_CREDENTIAL_START.source}|${JSON_CONTAINER_LINE_START.source}))[^\\s]|\\\\(?=\\s|$|${DECODED_ADJACENT_CREDENTIAL_START.source}|${JSON_CONTAINER_LINE_START.source})|[^\\s"',;&}{[\\]:=\\\\]))`,
+  `(?:(?!${DECODED_ADJACENT_CREDENTIAL_START.source})(?:${DECODED_QUOTED_SUFFIX_ASSIGNMENT}|=(?!["'])|:(?!(?:\\s|$|["']|${DECODED_ADJACENT_CREDENTIAL_START.source}|${JSON_CONTAINER_LINE_START.source}))|\\[redacted\\]|(?!\\[redacted\\]|${JSON_CONTAINER_LINE_START.source})(?:\\[+(?!redacted\\])|\\{)|\\\\(?!(?:${DECODED_ADJACENT_CREDENTIAL_START.source}|${JSON_CONTAINER_LINE_START.source}))[^\\s]|\\\\(?=\\s|$|${DECODED_ADJACENT_CREDENTIAL_START.source}|${JSON_CONTAINER_LINE_START.source})|[^\\s"',;&}{[\\]:=\\\\]))`,
 );
 const DECODED_BEARER = new RegExp(
-  `${BEARER_CI}\\s+(?!${DECODED_DEFERRED_BEARER_FOLLOWS.source}|${DECODED_SPLITTING_CREDENTIAL_KEY.source}|${JSON_CONTAINER_LINE_START.source}|\\[redacted\\](?!${DECODED_SUFFIX_ATOM.source}))(?:"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${DECODED_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+(?:'${DECODED_SUFFIX_ATOM.source}*)?|\\[redacted\\]${DECODED_SUFFIX_ATOM.source}+|${DECODED_ATOM.source}(?:(?!${DECODED_UNQUOTED_STOP.source})${DECODED_ATOM.source})*)`,
+  `${BEARER_CI}\\s+(?!${DECODED_DEFERRED_BEARER_FOLLOWS.source}|${DECODED_SPLITTING_CREDENTIAL_KEY.source}|\\[redacted\\](?!${DECODED_SUFFIX_ATOM.source}))(?:"(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${DECODED_SUFFIX_ATOM.source}*)?|'(?!\\s*(?:[:,}\\]\\r\\n]|$))(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+(?:'${DECODED_SUFFIX_ATOM.source}*)?|\\[redacted\\]${DECODED_SUFFIX_ATOM.source}+|${DECODED_ATOM.source}(?:(?!${DECODED_UNQUOTED_STOP.source})${DECODED_ATOM.source})*)`,
   "g",
 );
 
@@ -126,6 +130,16 @@ function isRawJsonEscapeBreak(text: string, pos: number): boolean {
   if (text[pos] !== "\\") return false;
   const next = text[pos + 1];
   return next === "n" || next === "r" || next === "t" || next === '"' || next === "\\";
+}
+
+function consumeRawSuffix(text: string, from: number): number {
+  let cur = from;
+  while (cur < text.length) {
+    RAW_SUFFIX_ATOM_STICKY.lastIndex = cur;
+    if (!RAW_SUFFIX_ATOM_STICKY.test(text)) break;
+    cur = RAW_SUFFIX_ATOM_STICKY.lastIndex;
+  }
+  return cur;
 }
 
 /**
@@ -154,14 +168,8 @@ function redactRawEscapedWhitespaceBearers(text: string): string {
     if (RAW_SPLITTING_CREDENTIAL_STICKY.test(text)) continue;
     let end = valueStart;
     if (text.startsWith("[redacted]", valueStart)) {
-      RAW_SUFFIX_ATOM_STICKY.lastIndex = valueStart + 10;
-      if (!RAW_SUFFIX_ATOM_STICKY.test(text)) continue;
-      end = valueStart + 10;
-      while (end < text.length) {
-        RAW_SUFFIX_ATOM_STICKY.lastIndex = end;
-        if (!RAW_SUFFIX_ATOM_STICKY.test(text)) break;
-        end = RAW_SUFFIX_ATOM_STICKY.lastIndex;
-      }
+      end = consumeRawSuffix(text, valueStart + 10);
+      if (end === valueStart + 10) continue;
     } else if (text[valueStart] === "\\" && text[valueStart + 1] === '"') {
       let cur = valueStart + 2;
       let closed = false;
@@ -181,14 +189,7 @@ function redactRawEscapedWhitespaceBearers(text: string): string {
         }
         cur += 1;
       }
-      if (closed) {
-        while (cur < text.length) {
-          RAW_SUFFIX_ATOM_STICKY.lastIndex = cur;
-          if (!RAW_SUFFIX_ATOM_STICKY.test(text)) break;
-          cur = RAW_SUFFIX_ATOM_STICKY.lastIndex;
-        }
-      }
-      end = cur;
+      end = closed ? consumeRawSuffix(text, cur) : cur;
     } else if (text[valueStart] === "'") {
       let cur = valueStart + 1;
       let closed = false;
@@ -207,14 +208,7 @@ function redactRawEscapedWhitespaceBearers(text: string): string {
           break;
         }
       }
-      if (closed) {
-        while (cur < text.length) {
-          RAW_SUFFIX_ATOM_STICKY.lastIndex = cur;
-          if (!RAW_SUFFIX_ATOM_STICKY.test(text)) break;
-          cur = RAW_SUFFIX_ATOM_STICKY.lastIndex;
-        }
-      }
-      end = cur;
+      end = closed ? consumeRawSuffix(text, cur) : cur;
     } else {
       while (end < text.length) {
         if (end > valueStart) {
@@ -222,6 +216,10 @@ function redactRawEscapedWhitespaceBearers(text: string): string {
           if (RAW_UNQUOTED_STOP_STICKY.test(text)) break;
         }
         const ch = text[end]!;
+        if (ch === "[") {
+          while (text[end] === "[") end += 1;
+          continue;
+        }
         if (ch === "\\" && text[end + 1] === "\\") {
           let runEnd = end;
           while (text[runEnd] === "\\" && text[runEnd + 1] === "\\") runEnd += 2;
