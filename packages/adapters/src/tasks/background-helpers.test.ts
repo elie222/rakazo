@@ -857,4 +857,57 @@ describe("listing and cancelling background helpers", () => {
     expect(h.tx.run.updateManyAndReturn).not.toHaveBeenCalled();
     expect(h.publishSpaceChange).not.toHaveBeenCalled();
   });
+
+  it("refuses to list or cancel private-chat helpers from a messaging channel run", async () => {
+    const active = [makeHelper({ id: "helper-1", name: "private", task: "secret private task" })];
+    for (const sourceOverride of [
+      { messagingChannelRun: true, channelId: undefined },
+      { messagingChannelRun: false, channelId: "wa-group-1" },
+    ]) {
+      const h = controlHarness({ active });
+      h.ctx.source = { ...h.ctx.source, ...sourceOverride };
+      await expect(listBackgroundHelpers(h.ctx)).resolves.toEqual({
+        error: "Subagent listing is unavailable in this run.",
+      });
+      await expect(cancelBackgroundHelper(h.ctx, { all: true })).resolves.toEqual({
+        error: "Subagents cannot be cancelled in this run.",
+      });
+      expect(h.prisma.run.findMany).not.toHaveBeenCalled();
+      expect(h.tx.run.updateManyAndReturn).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuses an ambiguous agentId without all: true and cancels all matches when all: true is set", async () => {
+    const rows = [
+      makeHelper({ id: "helper-1", agentId: "call_1", name: "first", status: "running" }),
+      makeHelper({ id: "helper-2", agentId: "call_1", name: "second", status: "queued" }),
+    ];
+    const h = controlHarness({ active: rows });
+    await expect(cancelBackgroundHelper(h.ctx, { id: "call_1" })).resolves.toEqual({
+      error:
+        "Multiple running subagents match that id. Pass the unique id from list_subagents or all: true.",
+      matches: [
+        { id: "helper-1", name: "first", status: "running" },
+        { id: "helper-2", name: "second", status: "queued" },
+      ],
+    });
+    expect(h.tx.run.updateManyAndReturn).not.toHaveBeenCalled();
+
+    const exact = controlHarness({ active: rows });
+    await expect(cancelBackgroundHelper(exact.ctx, { id: "helper-1" })).resolves.toEqual({
+      ok: true,
+      cancelled: [{ id: "helper-1", name: "first" }],
+    });
+
+    const explicitAll = controlHarness({ active: rows });
+    await expect(
+      cancelBackgroundHelper(explicitAll.ctx, { id: "call_1", all: true }),
+    ).resolves.toEqual({
+      ok: true,
+      cancelled: [
+        { id: "helper-1", name: "first" },
+        { id: "helper-2", name: "second" },
+      ],
+    });
+  });
 });

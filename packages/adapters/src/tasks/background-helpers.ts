@@ -266,10 +266,18 @@ function helperCardFromMessage(
   );
 }
 
+function subagentControlAllowed(ctx: RunContext): boolean {
+  return (
+    isConversationalRun(ctx.run.trigger) &&
+    !ctx.source?.messagingChannelRun &&
+    !ctx.source?.channelId
+  );
+}
+
 /** Active subagents this bot started for this user in this conversation thread, oldest first. */
 export async function listBackgroundHelpers(ctx: RunContext) {
   const { deps, run, bot } = ctx;
-  if (!isConversationalRun(run.trigger)) {
+  if (!subagentControlAllowed(ctx)) {
     return { error: "Subagent listing is unavailable in this run." };
   }
   const parentThreadId = ctx.source?.conversationThreadId ?? run.threadId;
@@ -311,7 +319,7 @@ export async function cancelBackgroundHelper(
   input: { id?: string; name?: string; all?: boolean },
 ) {
   const { deps, run, bot } = ctx;
-  if (!isConversationalRun(run.trigger)) {
+  if (!subagentControlAllowed(ctx)) {
     return { error: "Subagents cannot be cancelled in this run." };
   }
   const id = input.id?.trim() ?? "";
@@ -352,9 +360,20 @@ export async function cancelBackgroundHelper(
     });
     let matched: typeof candidates;
     if (id) {
-      matched = candidates.filter(
-        (helper) => helper.id === id || helper.sourceMessageId === id || helper.agentId === id,
+      const exact = candidates.filter(
+        (helper) => helper.id === id || helper.sourceMessageId === id,
       );
+      matched = exact.length > 0 ? exact : candidates.filter((helper) => helper.agentId === id);
+      if (matched.length > 1 && !all) {
+        return {
+          ambiguous: matched.map((helper) => ({
+            id: helper.id,
+            name: redactSecrets(helper.name, ctx.secrets),
+            status: helper.status,
+          })),
+          by: "id" as const,
+        } as const;
+      }
     } else if (name) {
       const wanted = name.toLowerCase();
       matched = candidates.filter((helper) => helper.name.trim().toLowerCase() === wanted);
@@ -365,6 +384,7 @@ export async function cancelBackgroundHelper(
             name: redactSecrets(helper.name, ctx.secrets),
             status: helper.status,
           })),
+          by: "name" as const,
         } as const;
       }
     } else {
@@ -420,7 +440,10 @@ export async function cancelBackgroundHelper(
   }
   if ("ambiguous" in committed) {
     return {
-      error: "Multiple running subagents match that name. Pass id or all: true.",
+      error:
+        committed.by === "id"
+          ? "Multiple running subagents match that id. Pass the unique id from list_subagents or all: true."
+          : "Multiple running subagents match that name. Pass id or all: true.",
       matches: committed.ambiguous,
     };
   }

@@ -184,5 +184,13 @@ describe("selectBuiltinToolsForRun", () => {
     }).map((t) => t.name);
     expect(disabledControls).not.toContain("list_subagents");
     expect(disabledControls).not.toContain("cancel_subagent");
+
+    const channelNames = selectBuiltinToolsForRun({
+      ...base,
+      trigger: "messaging",
+      messagingChannelRun: true,
+    }).map((t) => t.name);
+    expect(channelNames).not.toContain("list_subagents");
+    expect(channelNames).not.toContain("cancel_subagent");
   });
 });

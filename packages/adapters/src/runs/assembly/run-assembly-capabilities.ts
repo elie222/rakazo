@@ -767,7 +767,7 @@ export async function selectRunTools(
     }).filter((tool) => {
       if (tool.name === "run_subagent") return backgroundHelpersAllowed({ trigger: run.trigger });
       if (tool.name === "list_subagents" || tool.name === "cancel_subagent") {
-        return isConversationalRun(run.trigger);
+        return isConversationalRun(run.trigger) && !nonOwnerChatRun && !channelId;
       }
       return true;
     }),

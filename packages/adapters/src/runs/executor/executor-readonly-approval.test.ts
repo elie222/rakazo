@@ -5395,13 +5395,33 @@ describe("subagent permissions", () => {
     },
   );
 
-  it("offers list_subagents and cancel_subagent on helper_result turns without run_subagent, and hides them from routines", async () => {
+  it("offers list_subagents and cancel_subagent on verified helper_result turns without run_subagent, and hides them when provenance is missing or on routines", async () => {
     const wake = fixture({ builtin: true, trigger: "helper_result" });
+    Object.assign(wake.storedRun, { delegatedFromRunId: "original" });
+    wake.prisma.run.findFirst.mockResolvedValue({
+      id: "original",
+      trigger: "user",
+      threadId: "thread-1",
+      delegatedFromRunId: null,
+      thread: { id: "thread-1", groupId: null, externalConversationId: null },
+      sourceMessage: {
+        role: "user",
+        authorUserId: "user-1",
+        threadId: "thread-1",
+        blocks: [{ kind: "text", text: "Check the running helper." }],
+      },
+    } as never);
     wake.setCalls([]);
     await wake.run();
     expect(wake.offeredTools()).toContain("list_subagents");
     expect(wake.offeredTools()).toContain("cancel_subagent");
     expect(wake.offeredTools()).not.toContain("run_subagent");
+
+    const unverifiedWake = fixture({ builtin: true, trigger: "helper_result" });
+    unverifiedWake.setCalls([]);
+    await unverifiedWake.run();
+    expect(unverifiedWake.offeredTools()).not.toContain("list_subagents");
+    expect(unverifiedWake.offeredTools()).not.toContain("cancel_subagent");
 
     const routine = fixture({ builtin: true, trigger: "routine" });
     routine.setCalls([]);

@@ -309,6 +309,8 @@ const OWN_STATE_RESULT_TOOLS = new Set([
   "generate_secret",
   "list_fleet",
   "list_secrets",
+  "list_subagents",
+  "cancel_subagent",
   "message_user",
   "read_history",
   "recall_memory",

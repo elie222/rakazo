@@ -282,6 +282,8 @@ export function selectBuiltinToolsForRun(options: {
             "reflect_memory",
             "task_catalog",
             "board_tickets",
+            "list_subagents",
+            "cancel_subagent",
           ].includes(tool.name) &&
           !tool.name.startsWith("scratchpad_") &&
           !tool.name.startsWith("ticket_"))),

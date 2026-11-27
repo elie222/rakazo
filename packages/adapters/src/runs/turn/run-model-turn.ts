@@ -243,7 +243,9 @@ function modelTurnRequest(
                 .map((tool) => tool.name)
                 .filter((name) => !strategicBuiltins.some((tool) => tool.name === name)),
             )
-          : disabledBuiltinTools,
+          : ctx.source.messagingChannelRun || ctx.source.channelId
+            ? new Set([...disabledBuiltinTools, "list_subagents", "cancel_subagent"])
+            : disabledBuiltinTools,
       offeredFleetTools: offeredFleetTools(strategicBuiltins),
       followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun, run.trigger),
       backgroundHelpersAllowed: backgroundHelpersAllowed({
