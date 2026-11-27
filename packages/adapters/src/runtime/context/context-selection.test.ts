@@ -258,6 +258,40 @@ describe("bounded context selection", () => {
     // A protected summary at the start is not where the current request starts.
     expect(select(100_000, [0])).toEqual(history);
   });
+  it("does not count a note that rides along with an exchange as an exchange", () => {
+    const history = Array.from({ length: 10 }, (_, index) => [
+      user(`note ${index}`),
+      user(`exchange ${index}`),
+    ]).flat();
+    const kept = selectContext(history, {
+      budget,
+      strategy: "retrieval",
+      recentExchanges: 2,
+      notAnExchange: (message) => String(message.content).startsWith("note"),
+    }).messages;
+    expect(kept).toEqual(history.slice(-4));
+  });
+  it("starts kept history at an anchor, so it holds while the conversation grows", () => {
+    const starts: string[] = [];
+    for (let length = 30; length < 50; length += 1) {
+      const history = Array.from({ length }, (_, index) => user(`exchange ${index}`));
+      const kept = selectContext(history, {
+        budget,
+        strategy: "retrieval",
+        recentExchanges: 2,
+        earlier: {
+          before: length - 1,
+          tokens: 200,
+          anchor: (message) => /[05]$/.test(String(message.content)),
+        },
+      }).messages;
+      expect(kept).toEqual(history.slice(-kept.length));
+      starts.push(String(kept[0]!.content));
+    }
+    // Without anchors the start moves with each new exchange; with them, once every five.
+    expect(new Set(starts).size).toBeLessThanOrEqual(5);
+    expect(starts.every((start) => /[05]$/.test(start))).toBe(true);
+  });
   it("retains a warm useful prefix when budget allows, cold selection performs no summary work", () => {
     const history = Array.from({ length: 20 }, (_, index) => user(`exchange ${index}`));
     expect(

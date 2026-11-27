@@ -22,6 +22,7 @@ import {
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
 import { completeRun } from "../lifecycle/run-complete.js";
 import { failRun, handoffEndedTurn, requeueRunAfterDatabaseOutage } from "../lifecycle/run-fail.js";
+import { searchRunTools } from "../tools/run-tool-search.js";
 import { followUpsOffered, offeredFleetTools } from "../tools/run-tool-selection.js";
 import { applyTool } from "../tools/run-tools.js";
 import { loadPilotRuntime, pilotConversation } from "./primary-runtime-pilot.js";
@@ -359,10 +360,14 @@ function modelTurnRequest(
       ? undefined
       : (name, args, executionId, route, observer) =>
           applyTool(ctx, name, args, executionId, route, observer),
+    searchTools: scripted ? undefined : (request) => searchRunTools(ctx, request),
     resolveModel: scripted
       ? undefined
       : (provider, modelId) =>
           resolveConnectedModel(run, provider, modelId, (values) => runSecrets.push(...values)),
+    onTranscript: (transcript) => {
+      state.reply.transcript = transcript;
+    },
     onToolCompleted: (completion) => {
       if (effects.restoredPending?.executionId === completion.executionId)
         effects.restoredPending = undefined;

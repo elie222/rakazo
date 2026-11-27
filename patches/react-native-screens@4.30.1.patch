@@ -1,0 +1,26 @@
+diff --git a/ios/RNSScreen.mm b/ios/RNSScreen.mm
+index 049fd22427b2bde17fd7ca59b8de65d0ee07b4b5..30a1f6c75724d1ed87544fde61396b1c7eee1ab8 100644
+--- a/ios/RNSScreen.mm
++++ b/ios/RNSScreen.mm
+@@ -1469,6 +1469,21 @@ @implementation RNSScreen {
+ 
+ #pragma mark - Common
+ 
++#if TARGET_OS_IOS && RNS_IPHONE_OS_VERSION_AVAILABLE(27_1)
++- (UIVerticalBarBehavior)preferredVerticalBarBehavior API_AVAILABLE(ios(27.1))
++{
++  switch (self.screenView.stackPresentation) {
++    case RNSScreenStackPresentationFormSheet:
++    case RNSScreenStackPresentationPageSheet:
++    case RNSScreenStackPresentationModal:
++      // Let UIKit keep the sheet beside the camera on the iPhone Duo's outer display.
++      return UIVerticalBarBehaviorDisabled;
++    default:
++      return UIVerticalBarBehaviorAutomatic;
++  }
++}
++#endif
++
+ - (instancetype)initWithView:(UIView *)view
+ {
+   if (self = [super init]) {

@@ -27,14 +27,15 @@ export type SpaceAvailability = { allSpaces: boolean; spaceIds: string[] };
 
 /** The spaces an item is available in, starting with the one it was added in. */
 export function spaceAvailability(row: {
-  spaceId: string;
+  /** Null for an organization's item, which is in no one Space. */
+  spaceId: string | null;
   allSpaces: boolean;
   availableIn?: Array<{ spaceId: string }>;
 }): SpaceAvailability {
   return {
     allSpaces: row.allSpaces,
     spaceIds: [
-      row.spaceId,
+      ...(row.spaceId ? [row.spaceId] : []),
       ...(row.availableIn ?? []).map((entry) => entry.spaceId).filter((id) => id !== row.spaceId),
     ],
   };

@@ -66,11 +66,12 @@ export function toolCompletionAuditPayload(
     : 0;
   const error =
     completion.error === undefined ? toolResultError(completion.result) : completion.error;
+  const outcome = toolCompletionOutcome(completion);
   const payload: Record<string, unknown> = {
     name: redactSecrets(completion.name, secrets),
     executionId: redactSecrets(completion.executionId, secrets),
     durationMs,
-    outcome: completion.paused ? "paused" : error === undefined ? "succeeded" : "error",
+    outcome: outcome === "failed" ? "error" : (outcome ?? "paused"),
   };
   if (error !== undefined) {
     payload.error = sanitizeConnectorError(error, secrets);

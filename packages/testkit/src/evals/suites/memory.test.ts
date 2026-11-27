@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { Evidence } from "../cases.js";
 import { EMPTY_SETTINGS } from "../cases.js";
 import {
+  APPROVAL_HISTORY_SEED,
+  DENSE_MEMORY_SEED,
   FULL_MEMORY_SEED,
   MEMORY_EVAL_CASES,
   MEMORY_JUDGE_CALIBRATION,
@@ -131,6 +133,35 @@ describe("memory outcome grading", () => {
     expect(failed("full", evidence("# Assistant\n\nOffice door code: 5829\n"))).toEqual([]);
   });
 
+  it("seeds dense memory close enough to the cap that the new rule only fits by making room", () => {
+    const free = BOT_MEMORY_MAX_BYTES - Buffer.byteLength(DENSE_MEMORY_SEED);
+    expect(free).toBeGreaterThan(0);
+    expect(free).toBeLessThan(250);
+  });
+
+  it("seeds approval history close enough to the cap that the new offer only fits by making room", () => {
+    const free = BOT_MEMORY_MAX_BYTES - Buffer.byteLength(APPROVAL_HISTORY_SEED);
+    expect(free).toBeGreaterThan(0);
+    expect(free).toBeLessThan(120);
+  });
+
+  it("credits an open loop tracked as open work or with a date, never with an event end", () => {
+    const pad = { step: 1, name: "scratchpad_add", args: { title: "Marta's countersignature" } };
+    const dated = (until: string) => ({
+      step: 1,
+      name: "remember",
+      args: { operations: [{ action: "add", content: "Waiting for Marta.", until }] },
+    });
+    expect(failed("open-loop", evidence("", [pad]))).toEqual([]);
+    expect(failed("open-loop", evidence("", [dated("2026-12-02")]))).toEqual([]);
+    expect(failed("open-loop", evidence("", [remember(1, "Waiting for Marta.")]))).toEqual([
+      "loop-tracked",
+    ]);
+    expect(failed("open-loop", evidence("", [pad, dated("Marta signs")]))).toEqual([
+      "no-event-end",
+    ]);
+  });
+
   it("requires a full-memory correction in one save", () => {
     const memory = "# Assistant\n\nManager: Tomás Ortega.\nOffice door code: 5829.\n";
     const save = remember(1, "Office door code: 5829.");
@@ -155,6 +186,22 @@ describe("memory outcome grading", () => {
     expect(failed("proactive-secret", evidence("", [remember(1, "Has a guest Wi-Fi.")]))).toEqual(
       [],
     );
+  });
+
+  it("checks which memory each part of a Space-wide rule landed in", () => {
+    const own = "# Assistant\n\nDrafts the Monday client update from UPD-7.\n";
+    const rule = "Client emails only from hello@northpine.example, never on weekends.\n";
+    const shared = "# Team\n\nInvoices over 500 euros need dana@northpine.example.\n";
+    expect(failed("shared-rule", { ...evidence(own), sharedMemory: shared + rule })).toEqual([]);
+    expect(failed("shared-rule", { ...evidence(own + rule), sharedMemory: shared })).toEqual([
+      "rule-shared",
+      "rule-not-copied",
+    ]);
+    expect(failed("shared-rule", { ...evidence(""), sharedMemory: rule + own })).toEqual([
+      "role-own",
+      "role-not-shared",
+      "shared-kept",
+    ]);
   });
 
   it("leaves meaning to a versioned judge with labelled anchors for every rubric", () => {

@@ -1,6 +1,7 @@
 import type { ReactNode, RefObject } from "react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { CallReturnBar } from "../../../components/call/CallCard";
+import { FileDropZoneContext } from "../composer/use-composer-file-drop";
 import { ChatFindBar } from "./chat-find-bar";
 import "./chat-top-fade.css";
 
@@ -27,13 +28,15 @@ export function ChatColumn({
   composer: ReactNode;
 }) {
   const chatColumnRef = useRef<HTMLDivElement>(null);
+  const [dropZone, setDropZone] = useState<HTMLElement | null>(null);
   return (
     // Keep the composer's z-index inside the chat so phone overlays like the side panel cover it.
     <main
+      ref={setDropZone}
       data-space-switch="main"
       aria-hidden={drawerOpen || undefined}
       inert={drawerOpen || covered}
-      className="isolate flex min-w-0 flex-1 flex-col bg-background"
+      className="relative isolate flex min-w-0 flex-1 flex-col bg-background"
     >
       {/* Inside main so the composer and its menus stay above it. */}
       {!drawerOpen ? (
@@ -66,7 +69,7 @@ export function ChatColumn({
         {header}
         {children}
       </div>
-      {composer}
+      <FileDropZoneContext value={dropZone}>{composer}</FileDropZoneContext>
     </main>
   );
 }

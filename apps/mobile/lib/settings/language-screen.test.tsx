@@ -74,7 +74,6 @@ vi.mock("react-native", () => {
   };
 });
 
-/** What every write carries: the server, session and space its save was started in. */
 const pinned = {
   requestContext: {
     apiBase: "https://rakazo.test",

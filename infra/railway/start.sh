@@ -4,7 +4,7 @@ umask 077
 
 if [[ $(id -u) == 0 ]]; then
   install -d -m 750 -o node -g node /data
-  exec gosu node "$0"
+  exec gosu node "$0" "$@"
 fi
 
 # Set DATABASE_MIGRATION_URL to the owner and DATABASE_URL to a runtime login to
@@ -13,11 +13,14 @@ fi
 # shell's original environment, which any process running as node can read from /proc.
 if [[ "${1:-}" != serve ]]; then
   pnpm --filter @rakazo/api db:deploy
-  exec env -u DATABASE_MIGRATION_URL bash "$0" serve
+  exec env -u DATABASE_MIGRATION_URL bash "$0" serve "${2:-railway}"
 fi
 
-export RAILWAY_ENVIRONMENT_ID
-RAILWAY_ENVIRONMENT_ID=$(node infra/railway/sandbox-environment.mjs)
+# Railway computers run in their own environment; the Render template uses another provider.
+if [[ "${2:-railway}" == railway ]]; then
+  export RAILWAY_ENVIRONMENT_ID
+  RAILWAY_ENVIRONMENT_ID=$(node infra/railway/sandbox-environment.mjs)
+fi
 pnpm --filter @rakazo/api exec node dist/cli/bootstrap-owner.js
 unset OWNER_PASSWORD
 # Personal template: registration is operator configuration, never an app-account permission.
@@ -45,6 +48,7 @@ pnpm --filter @rakazo/worker start &
   throw new Error("API did not become ready");
 '
   exec env -u RAILWAY_API_TOKEN -u DATABASE_URL -u ENCRYPTION_KEY -u ENCRYPTION_MASTER_KEYS -u OBJECT_STORAGE_SECRET_ACCESS_KEY -u OBJECT_STORAGE_CERTIFICATE -u BETTER_AUTH_SECRET \
+    -u BOAT_API_KEY -u E2B_API_KEY -u DAYTONA_API_KEY \
     pnpm --filter @rakazo/web preview --host 0.0.0.0 --port 5173
 ) &
 wait -n

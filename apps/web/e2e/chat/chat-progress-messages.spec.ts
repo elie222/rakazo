@@ -29,7 +29,9 @@ test("chat shows mid-turn progress without Working…", async ({ page }, testInf
       ).toHaveCount(1);
       await expect(page.locator(".rk-chat-markdown-streaming")).toHaveCount(state.live ? 1 : 0);
       await expect(page.getByTestId("tool-activity")).toHaveCount(0);
-      await expect(page.getByRole("status")).toHaveCount(0);
+      // Each message's actions and the transcript keep an empty live region mounted
+      // ("Copied", reply announcements); none of them may announce work.
+      await expect(page.getByRole("status").filter({ hasText: /\S/ })).toHaveCount(0);
       await expect(page.getByText("Working…")).toHaveCount(0);
       await expect(page.getByText("Done")).toHaveCount(0);
       await expect(page.locator("body")).toHaveJSProperty("scrollWidth", viewport.width);

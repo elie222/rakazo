@@ -291,7 +291,7 @@ describe("ComposerModelPicker", () => {
 
   it("saves a thinking level from beside the model list", async () => {
     const onSaved = vi.fn();
-    const updated = { ...bot, thinkingLevel: "high" };
+    const updated = { ...bot, thinkingLevel: "low" };
     vi.mocked(rpc.bots.update).mockResolvedValue(updated as never);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     act(() =>
@@ -307,22 +307,21 @@ describe("ComposerModelPicker", () => {
       return button;
     });
     act(() => trigger.click());
-    const high = await vi.waitFor(() => {
-      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-        (row) => row.textContent === "High",
+    const level = (name: string) =>
+      [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (row) => row.textContent === name,
       );
+    const low = await vi.waitFor(() => {
+      const option = level("Low");
       if (!option) throw new Error("thinking levels not shown");
       return option;
     });
-    expect(
-      [...document.querySelectorAll('[role="option"]')].some(
-        (row) => row.textContent === "Default (High)",
-      ),
-    ).toBe(true);
-    act(() => high.click());
+    // The level in use is checked: the model's default, while none is saved.
+    expect(level("High")?.dataset.checked).toBe("true");
+    act(() => low.click());
 
-    await vi.waitFor(() => expect(onSaved).toHaveBeenCalledWith(updated, "high"));
-    expect(rpc.bots.update).toHaveBeenLastCalledWith({ botId: "bot-1", thinkingLevel: "high" });
+    await vi.waitFor(() => expect(onSaved).toHaveBeenCalledWith(updated, "low"));
+    expect(rpc.bots.update).toHaveBeenLastCalledWith({ botId: "bot-1", thinkingLevel: "low" });
   });
 
   it("still shows with nothing connected, and offers to connect a model", async () => {

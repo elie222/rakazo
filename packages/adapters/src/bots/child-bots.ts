@@ -26,6 +26,7 @@ import {
   draftRecordingsOfLeaseInTransaction,
   expireComputerExecutionLeases,
   legacyTeamHomeKey,
+  pageImageStorageKeys,
   recordComputerRunEnd,
   THREAD_LOCK_TRANSACTION_OPTIONS,
   teamComputerUserId,
@@ -476,6 +477,7 @@ export async function destroyBot(
       // Like its files, the bot's own pages and their links go with it; group pages stay.
       const botPages = { botId: bot.id, groupId: null, spaceId: bot.spaceId };
       const pageShareSecrets = await deletePageShareSecrets(tx, botPages);
+      const pageImageKeys = await pageImageStorageKeys(tx, botPages);
       await tx.page.deleteMany({ where: botPages });
       const groupCleanup = await detachBotFromGroups(tx, bot.id);
       // Membership can have ended earlier; recorded runs still name every surviving group
@@ -527,6 +529,7 @@ export async function destroyBot(
       return {
         artifactKeys: [
           ...botArtifacts.map((artifact) => artifact.storageKey),
+          ...pageImageKeys,
           ...groupCleanup.artifactKeys,
         ],
         removedGroupIds: groupCleanup.removedGroupIds,
@@ -748,13 +751,16 @@ async function detachBotFromGroups(tx: Prisma.TransactionClient, botId: string) 
   const pageShareSecrets = dissolvedGroupIds.length
     ? await deletePageShareSecrets(tx, { groupId: { in: dissolvedGroupIds } })
     : [];
+  const pageImageKeys = dissolvedGroupIds.length
+    ? await pageImageStorageKeys(tx, { groupId: { in: dissolvedGroupIds } })
+    : [];
   if (dissolvedGroupIds.length) {
     await tx.chatGroup.deleteMany({ where: { id: { in: dissolvedGroupIds } } });
   }
   return {
     removedGroupIds: dissolvedGroupIds,
     memory,
-    artifactKeys: groupArtifacts.map((artifact) => artifact.storageKey),
+    artifactKeys: [...groupArtifacts.map((artifact) => artifact.storageKey), ...pageImageKeys],
     pageShareSecrets,
     cancelledRuns: cancelledRuns.map((run) => ({
       id: run.id,

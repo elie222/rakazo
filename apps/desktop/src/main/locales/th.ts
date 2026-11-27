@@ -96,6 +96,7 @@ export const TH_MESSAGES: Record<string, string> = {
   "Almost ready…": "เกือบเสร็จแล้ว…",
   "Rakazo is ready.": "Rakazo พร้อมใช้งานแล้ว",
   "{size} downloaded": "ดาวน์โหลดแล้ว {size}",
+  "{done} of {total}": "{done} จาก {total}",
   "Connecting…": "กำลังเชื่อมต่อ…",
   "Checking…": "กำลังตรวจสอบ…",
   "Rakazo answered at {url}.": "Rakazo ตอบกลับที่ {url}",

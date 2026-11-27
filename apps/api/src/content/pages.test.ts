@@ -45,6 +45,7 @@ function fakeDeps(hooks: { onUpdate?: (attempt: number) => void } = {}) {
         return { shareSecretId: deleted.shareSecretId };
       },
     },
+    pageImage: { findMany: async () => [] },
     secret: {
       create: async ({ data }: { data: { id: string; ciphertext: string } }) => {
         secrets.set(data.id, { id: data.id, ciphertext: data.ciphertext });
@@ -59,6 +60,7 @@ function fakeDeps(hooks: { onUpdate?: (attempt: number) => void } = {}) {
     page: { findFirst: async () => (page ? summary(page) : null) },
     pageVersion: { findUnique: async () => ({ code: "compiled" }) },
     user: { findUnique: async () => ({ name: "Owner", image: null }) },
+    pageReaderState: { findUnique: async () => null },
     secret: tx.secret,
     $transaction: async (work: (client: typeof tx) => Promise<unknown>) => {
       const saved = { page, secrets: new Map(secrets) };
@@ -84,7 +86,8 @@ function fakeDeps(hooks: { onUpdate?: (attempt: number) => void } = {}) {
       tokens.delete(ref);
     }),
   };
-  const deps = { prisma, secrets: store, webOrigin: "https://rakazo.test" } as never;
+  const artifacts = { remove: vi.fn() };
+  const deps = { prisma, secrets: store, artifacts, webOrigin: "https://rakazo.test" } as never;
   return {
     deps,
     store,

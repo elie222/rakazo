@@ -40,6 +40,7 @@ import {
 } from "../components/inbox/inbox-render-item";
 import { CompactRowsContext, SelectedChatContext } from "../components/inbox/inbox-rows";
 import { createInboxStyles } from "../components/inbox/inbox-styles";
+import { INBOX_TOOLBAR_ROOM, InboxToolbar } from "../components/inbox/inbox-toolbar";
 import { NativeInboxList } from "../components/inbox/native-inbox-list";
 import { OrganizationTitleMenu } from "../components/inbox/organization-menu";
 import { PickChatPane } from "../components/inbox/pick-chat-pane";
@@ -389,7 +390,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
         undefined,
         snoozeNow,
       );
-    // Android pins sit above the list; iOS keeps rows with native swipe and context menus.
+    // Pins sit above the list as tiles, as on desktop.
     const otherSpaces = shownSpaces.filter((space) => space.id !== me?.spaceId);
     const pinned: PinnedChat[] = [
       ...[...visible, ...otherSpaces.flatMap((space) => space.bots)]
@@ -402,13 +403,11 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     // A snoozed pin waits under Snoozed rather than in the tiles.
     const sidebarSpaces = inboxSpaces.map((space) => ({
       ...space,
-      bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned || chatSnoozed(bot, snoozeNow)),
-      groups: space.groups.filter(
-        (group) => SWIPE_ROWS || !group.pinned || chatSnoozed(group, snoozeNow),
-      ),
+      bots: space.bots.filter((bot) => !bot.pinned || chatSnoozed(bot, snoozeNow)),
+      groups: space.groups.filter((group) => !group.pinned || chatSnoozed(group, snoozeNow)),
     }));
     const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId, snoozeNow);
-    return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
+    return pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
   }, [
     inboxSpaces,
     collapsed,
@@ -462,6 +461,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // Liquid Glass uses the native bar: glass bar items and a native menu.
   // The list beside a chat and the share picker have no navigation bar of their own.
   const nativeHeader = iosAtLeast(26) && !embedded && !onShareSelect;
+  const showToolbar = nativeHeader && ready && hasSession;
   const topBarInset = useTopBarInset();
   const listRef = useRef<FlatList<InboxItem>>(null);
   const jumpSignals = useSyncExternalStore(
@@ -675,7 +675,6 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
     nativeHeader,
     ready,
     hasSession,
-    initials,
     activityMode,
     toggleActivityMode,
     runCreateAction,
@@ -856,6 +855,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
 
   return (
     <View style={styles.screen}>
+      {showToolbar ? <InboxToolbar /> : null}
       {nativeHeader || onShareSelect ? null : (
         <InboxHeader
           embedded={embedded}
@@ -895,6 +895,7 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
                   onRefresh={refreshInbox}
                   signals={jumpSignals}
                   showJumpPills={!onShareSelect && !refreshing && !inboxHasNoChats(rows)}
+                  bottomBar={showToolbar ? INBOX_TOOLBAR_ROOM : 0}
                 />
               ) : (
                 <FlatList<InboxItem>
@@ -939,10 +940,8 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
           </View>
         </CompactRowsContext.Provider>
       </SelectedChatContext.Provider>
-      {/* Without a loaded account the footer still leads to Account, to sign out or switch server. */}
-      {embedded && !onShareSelect ? (
-        <InboxFooter initial={initials} columnInsets={columnInsets} />
-      ) : null}
+      {/* Keep Settings available even if the account details haven't loaded. */}
+      {embedded && !onShareSelect ? <InboxFooter columnInsets={columnInsets} /> : null}
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
           bot={organizeChat}

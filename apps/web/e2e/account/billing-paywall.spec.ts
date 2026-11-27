@@ -384,6 +384,34 @@ test("start the own-key plan billed yearly", async ({ page }, testInfo) => {
   expect(selected).toEqual({ funding: "byok", interval: "year" });
 });
 
+test("an early user whose free period ended can still self-host", async ({ page }, testInfo) => {
+  await signup(page, `free-ended-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
+  await completeOnboarding(page);
+  await page.route("**/api/auth/capabilities", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), billing: true } });
+  });
+  await page.route("**/rpc/me", (route) => enableBilling(route, "me"));
+  await page.route("**/rpc/bootstrap", (route) => enableBilling(route, "bootstrap"));
+  const status = billingStatus({
+    creditPurchasesEnabled: true,
+    byokPriceCents: 1500,
+    byokAnnualPriceCents: 14400,
+    funding: "byok",
+    balanceUsd: 0,
+    monthlyAmountCents: null,
+    trialAvailable: false,
+    freePeriodEnded: true,
+  });
+  await page.route("**/rpc/billing/status", (route) => route.fulfill({ json: { json: status } }));
+  await page.reload();
+  await expect(page.getByRole("link", { name: "self-host" })).toHaveAttribute(
+    "href",
+    "https://rakazo.com/docs/self-host",
+  );
+  await captureScreenshot(page, testInfo, "billing-free-period-ended");
+});
+
 test("end an own-key trial early to get full computer hours", async ({ page }, testInfo) => {
   await signup(page, `trial-end-${Date.now()}@rakazo.test`, "password12", "Demo Customer");
   await completeOnboarding(page);

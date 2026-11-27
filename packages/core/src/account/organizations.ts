@@ -20,6 +20,18 @@ export function organizationOfSpace(
     : undefined;
 }
 
+/** The selected Space takes priority over the server's last active organization. */
+export function activeOrganizationForSpace(
+  list: { organizations: readonly Organization[]; activeOrganizationId: string | null } | undefined,
+  spaceId?: string | null,
+): Organization | undefined {
+  if (!list) return undefined;
+  return (
+    organizationOfSpace(list.organizations, spaceId) ??
+    list.organizations.find((organization) => organization.id === list.activeOrganizationId)
+  );
+}
+
 /**
  * Its owner can delete it while nobody else belongs to it and they still own another
  * organization to land in.
@@ -38,6 +50,18 @@ export function canDeleteOrganization(
 /** The owner and admins invite people, change their roles and remove them. */
 export function canManageOrganizationMembers(organization: Organization): boolean {
   return organization.role !== "member";
+}
+
+export function canShareWithOrganization(organization: Organization | undefined): boolean {
+  return organization !== undefined && canManageOrganizationMembers(organization);
+}
+
+export function connectionSharingOrganization(
+  organization: Organization | undefined,
+): string | null {
+  return organization && organization.memberCount > 1 && canManageOrganizationMembers(organization)
+    ? organization.name
+    : null;
 }
 
 /**

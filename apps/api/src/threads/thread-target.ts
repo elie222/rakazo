@@ -39,6 +39,7 @@ import {
   answerWaitingRunWithTextInTransaction,
   appendEventInTransaction,
   clearEndedRunState,
+  connectionIn,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
@@ -147,8 +148,7 @@ async function resolveOwnedConnectorDisplayNames(
   const rows = await tx.connection.findMany({
     where: {
       id: { in: connectionIds },
-      spaceId: actor.spaceId,
-      userId: actor.userId,
+      ...connectionIn(actor),
       status: "connected",
     },
     select: { id: true, displayName: true },
@@ -495,6 +495,8 @@ export async function sendThreadMessage(
     prisma: PrismaClient;
     events: ThreadEvents;
     jobs: JobPublisher;
+    /** Set by the signed-in app route, never taken from client input. */
+    signedInApp?: boolean;
     imageAdmission?: Parameters<typeof assertThreadImageInput>[5];
     maxAttachmentsPerMessage?: number;
     analytics?: ProductAnalytics;
@@ -521,6 +523,9 @@ export async function sendThreadMessage(
   /** Runs saved with the message, after the thread lock and before the message is routed. */
   startRoutines?: (tx: Prisma.TransactionClient) => Promise<Array<{ id: string; status: string }>>,
 ) {
+  if (target.kind === "bot" && pilotRuntimeForBot(target.botId) && !deps.signedInApp) {
+    throw new ClientError("FORBIDDEN", "Use the signed-in app to message this pilot bot.");
+  }
   const existing = await replayExistingSend(
     deps,
     target.threadId,

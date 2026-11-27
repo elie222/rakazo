@@ -484,6 +484,7 @@ export function fallbackAwareModelStream(
     let firstRetryableError: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
     // Set once this call has been repeated after spending its output budget on nothing visible.
     let lengthRecovered = false;
+    let regeneratedToolCall = false;
     let emptyRetries = 0;
     let outputBudget = state.nextCallRecovery?.maxTokens;
     let thinkingOverride = state.nextCallRecovery?.thinkingLevel;
@@ -608,6 +609,25 @@ export function fallbackAwareModelStream(
               !sizingFailure &&
               state.isProviderFailure(event.error)
             ) {
+              if (
+                event.error.rawStopReason === "MALFORMED_FUNCTION_CALL" &&
+                !regeneratedToolCall &&
+                state.selfRecoveries < MAX_SELF_RECOVERIES_PER_RUN
+              ) {
+                // The provider rejected its own output. Regenerate only this model step;
+                // the context already contains the results of all previously executed tools.
+                regeneratedToolCall = true;
+                state.selfRecoveries += 1;
+                getLogger().info("model.malformed_tool_call.retry", {
+                  runId: state.request.runId,
+                  provider: target.config.provider,
+                  model: target.config.id,
+                });
+                lastPartial = undefined;
+                buffered = [];
+                restart = true;
+                break;
+              }
               const requestWindow = groqRequestContextWindow(
                 target.config.provider,
                 event.error.errorMessage,

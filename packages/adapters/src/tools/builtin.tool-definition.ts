@@ -37,7 +37,7 @@ export function bridgeToolDefinitions(nameIndex: string): ConnectorTool[] {
   return [
     {
       name: FIND_TOOL,
-      description: `Find deferred tool parameters by name or query before calling use_tool.\n${nameIndex}`,
+      description: `Find tools, apps and paid services by name or query. Each result's next is the tool to call.\n${nameIndex}`,
       inputSchema: {
         type: "object",
         properties: {
@@ -128,16 +128,3 @@ export const agentConnectionTools: ConnectorTool[] = [
     },
   },
 ];
-
-/** Shared documents are read by every bot, so a single save stays bounded. */
-export const MAX_SHARED_MEMORY_CHARS = 4_000;
-
-export function sharedMemorySaveError(args: Record<string, unknown>): string | undefined {
-  const path = String(args.path ?? "").trim();
-  if (!path) return "path is required";
-  const content = String(args.content ?? "");
-  if (content.length > MAX_SHARED_MEMORY_CHARS) {
-    return `content exceeds ${MAX_SHARED_MEMORY_CHARS} characters`;
-  }
-  return undefined;
-}

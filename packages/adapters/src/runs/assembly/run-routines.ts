@@ -13,19 +13,23 @@ import {
   expandSkillReferencesInPrompt,
   isOneShotRoutineCrons,
   nextRoutineRunDateAcross,
-  ONCE_ROUTINE_CRON,
 } from "@rakazo/core";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   accountDeactivated,
   isUniqueViolation,
   SpaceDeletionInProgressError,
   spaceTakesWork,
 } from "@rakazo/db";
-import { bestEffort, getLogger } from "@rakazo/logging";
+import { getLogger } from "@rakazo/logging";
 import { routineRunModelPin } from "../../models/model-selection.js";
 import { protectedComputerLifecycleRefusal } from "../../providers/computer/desktop/desktop-command-guard.js";
 import { findPendingRoutineTick, routineTimerNonce } from "../../routines/routine-coalescing.js";
+import {
+  deleteEndedRoutine,
+  deleteSpentRoutine,
+  endRoutinePastItsEnd,
+  runBeforeEnd,
+} from "../../routines/routine-end.js";
 import { routineGroupThreadId } from "../../routines/routine-thread.js";
 import {
   nextRoutineWatchAt,
@@ -103,35 +107,6 @@ export async function scheduleRoutineRetry(
   }
 }
 
-export async function deleteSpentOneShotRoutine(
-  deps: { prisma: PrismaClient; events?: Pick<ThreadEvents, "publishSpaceChange"> },
-  run: { spaceId: string; routineId: string; userId: string },
-): Promise<void> {
-  const deleted = await bestEffort(
-    "delete spent one-time routine",
-    deps.prisma.routine.deleteMany({
-      where: {
-        id: run.routineId,
-        userId: run.userId,
-        crons: { equals: [ONCE_ROUTINE_CRON] },
-        active: false,
-        nextRunAt: null,
-        lastRunAt: { not: null },
-        webhookEnabled: false,
-        githubEnabled: false,
-        messageProvider: null,
-        emailSenders: null,
-        runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } },
-      },
-    }),
-  );
-  if (!deleted?.count) return;
-  await bestEffort(
-    "publish deleted one-time routine",
-    deps.events?.publishSpaceChange?.(run.spaceId, "routines"),
-  );
-}
-
 async function notifyFailedRoutineRun(
   deps: ExecutorDeps,
   failed: Parameters<typeof notifyRun>[1] & { error: string | null },
@@ -180,6 +155,10 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   )
     return;
   if (await deferFutureRoutine(deps.jobs, routineId, scheduledAt)) return;
+  if (routine.endsAt && scheduledAt.getTime() > routine.endsAt.getTime()) {
+    await endRoutinePastItsEnd(deps, routine, scheduledAt);
+    return;
+  }
   if (await accountDeactivated(deps.prisma, routine.userId)) {
     // A deactivated owner's routine skips this occurrence without running. A recurring or
     // watching one keeps its schedule, so it runs again once the owner is back; a one-time
@@ -230,7 +209,12 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   // legacy row accepted before cron validation was added) fires the
   // already-due run once, then nextRunAt stays null and the routine
   // pauses rather than crash-looping the wakeup job.
-  const nextRunAt = watchTick?.run ? watchTick.nextRunAt : nextScheduledRunAt(routine, scheduledAt);
+  const nextRunAt = runBeforeEnd(
+    watchTick?.run ? watchTick.nextRunAt : nextScheduledRunAt(routine, scheduledAt),
+    routine.endsAt,
+  );
+  const lastRunBeforeEnd =
+    routine.endsAt !== null && nextRunAt === null && !isOneShotRoutineCrons(routine.crons);
   const skillRecords = await listAgentSkillRecords(deps.prisma, {
     spaceId: routine.spaceId,
     userId: routine.userId,
@@ -244,12 +228,13 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         userId: routine.userId,
         active: true,
         nextRunAt: scheduledAt,
+        endsAt: routine.endsAt,
         bot: { archivedAt: null },
       },
       data: {
         lastRunAt: new Date(),
         nextRunAt,
-        ...(nextRunAt ? {} : { active: false }),
+        ...(nextRunAt || lastRunBeforeEnd ? {} : { active: false }),
         ...(watchTick?.run ? { watchState: watchTick.state } : {}),
       },
     });
@@ -279,12 +264,25 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
         ...routineRunModelPin(current),
       });
       if (pending) return { ...pending, coalesced: true };
+      // Check after coalescing: a queued tick can be claimed while the lookup tries to reuse it.
+      // It still owns this timer's work until it finishes or its question is answered and resumed.
+      const activeTick = await tx.run.findFirst({
+        where: {
+          routineId: routine.id,
+          userId: routine.userId,
+          trigger: "routine",
+          status: { in: [...ACTIVE_RUN_STATUSES] },
+          clientNonce: { startsWith: routineTimerNonce(routine.id, "") },
+        },
+        select: { id: true },
+      });
+      if (activeTick) return "skipped" as const;
       // An edit racing an earlier tick can rewind the schedule onto an occurrence that already ran.
       const fired = await tx.run.findUnique({
         where: { spaceId_clientNonce: { spaceId: routine.spaceId, clientNonce: timerNonce } },
         select: { id: true },
       });
-      if (fired) return "fired" as const;
+      if (fired) return "skipped" as const;
     }
     const task = await tx.task.create({
       data: {
@@ -313,8 +311,15 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
     return { ...run, coalesced: false };
   });
   if (!claimed) return;
-  if (claimed === "fired") {
+  if (claimed === "skipped") {
     if (nextRunAt) await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
+    else if (routine.endsAt) {
+      await deleteSpentRoutine(deps, {
+        spaceId: routine.spaceId,
+        routineId: routine.id,
+        userId: routine.userId,
+      });
+    }
     return;
   }
   if ("cancelledEvents" in claimed && claimed.cancelledEvents) {
@@ -343,14 +348,14 @@ export async function wakeRoutine(deps: ExecutorDeps, routineId: string, schedul
   } catch {
     // Best effort: the run is already queued.
   }
-  if (isOneShotRoutineCrons(routine.crons)) {
+  if (nextRunAt) {
+    await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
+  } else {
     try {
       await deps.jobs.cancel(routineJobKey(routine.id));
     } catch {
       // Best effort: the run is already queued for continuation.
     }
-  } else if (nextRunAt) {
-    await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
   }
 }
 
@@ -375,6 +380,7 @@ export async function notifyRoutineRetryAttemptsExhausted(deps: ExecutorDeps, ru
   });
   if (supersedingRun) return;
   await notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
+  await deleteEndedRoutine(deps, failed);
 }
 
 export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
@@ -405,7 +411,10 @@ export async function retryRoutineRun(deps: ExecutorDeps, runId: string) {
     select: { id: true },
   });
   if (laterRun) return;
-  const notifyAbandonedRetry = () => notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
+  const notifyAbandonedRetry = async () => {
+    await notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
+    await deleteEndedRoutine(deps, failed);
+  };
   if (routine && routineNextRunIsNear(routine.nextRunAt, Date.now())) {
     await notifyAbandonedRetry();
     return;
