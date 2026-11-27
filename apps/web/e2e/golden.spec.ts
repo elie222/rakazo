@@ -288,6 +288,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     "GitHub",
     "Linear",
     "Notion",
+    "Postiz",
     "Executor",
     "Browse MCP servers",
     "Search by domain",
