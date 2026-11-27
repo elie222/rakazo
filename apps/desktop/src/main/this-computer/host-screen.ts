@@ -1,6 +1,15 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -63,20 +72,30 @@ export const SCREEN_DRIVER_RELEASES = {
     driver: "agent-desktop.exe",
     driverSha256: "409e58cbdd6aed47e29771ffa60bc122a9843505a227af488cded85215943988",
   },
+  // The desktop ships for x64 Linux only.
+  linux: {
+    url: "https://github.com/vercel-labs/agent-desktop/releases/download/v1.0.2/agent-desktop-v1.0.2-x86_64-unknown-linux-gnu.tar.gz",
+    sha256: "ad661b7a3fd8f990a769243f4889a240ca0e2c8dab3ef5bddd6019086c71e0b4",
+    driver: "agent-desktop",
+    driverSha256: "05427281a6746489bc0e15c16698a70a86322125c76c7a9e2f4c2d7a12bf7c5b",
+  },
 } satisfies Partial<Record<NodeJS.Platform, ScreenDriverRelease>>;
 
 /** The screen driver this platform runs, if it has one. */
 export function screenDriverRelease(platform: NodeJS.Platform): ScreenDriverRelease | undefined {
-  return platform === "darwin" || platform === "win32"
+  return platform === "darwin" || platform === "win32" || platform === "linux"
     ? SCREEN_DRIVER_RELEASES[platform]
     : undefined;
 }
 
-// Both ship bsdtar: macOS in /usr/bin, Windows 10 1803 and later in System32.
+// macOS and Windows 10 1803 and later ship bsdtar (macOS in /usr/bin, Windows in System32).
+// Linux distributions ship GNU tar, which takes the same arguments, but not always in /usr/bin.
 const TAR =
   process.platform === "win32"
     ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
-    : "/usr/bin/tar";
+    : process.platform === "linux"
+      ? "tar"
+      : "/usr/bin/tar";
 
 async function fileSha256(file: string) {
   try {
@@ -142,6 +161,70 @@ export function screenDriverInstaller(options: {
   };
 }
 
+async function processUid(dir: string): Promise<number | undefined> {
+  const status = await readFile(path.join(dir, "status"), "utf8");
+  const real = /^Uid:\s+(\d+)/m.exec(status)?.[1];
+  return real === undefined ? undefined : Number(real);
+}
+
+/** The login session a process was started in, unless the kernel didn't record one. */
+async function loginSession(dir: string): Promise<string | undefined> {
+  let id: string;
+  try {
+    id = (await readFile(path.join(dir, "sessionid"), "utf8")).trim();
+  } catch (error) {
+    // A kernel built without login sessions has no such file.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return undefined;
+  }
+  return id && id !== UNSET_LOGIN_SESSION ? id : undefined;
+}
+const UNSET_LOGIN_SESSION = "4294967295";
+/** The kernel keeps only this many characters of a process's command name. */
+const COMMAND_NAME_LENGTH = 15;
+
+/**
+ * Whether this user runs a process whose command or executable is `name` in this login session,
+ * read from `/proc`. A process's own environment can't place it in a session: Chromium
+ * overwrites it.
+ */
+export async function runningProcessNamed(name: string, proc = "/proc"): Promise<boolean> {
+  const wanted = name.trim().toLowerCase();
+  // A script's command name is its own, cut short; its executable is the interpreter.
+  const command = wanted.slice(0, COMMAND_NAME_LENGTH);
+  const uid = process.getuid?.();
+  const session = await loginSession(path.join(proc, "self"));
+  for (const entry of await readdir(proc)) {
+    if (!/^\d+$/.test(entry)) continue;
+    const dir = path.join(proc, entry);
+    try {
+      // A process that blocks debugging has a root-owned folder, so read its owner from status.
+      if (uid !== undefined && (await processUid(dir)) !== uid) continue;
+      // An app open in the user's other graphical session has no window in this one.
+      const theirs = session && (await loginSession(dir));
+      if (theirs && theirs !== session) continue;
+      const comm = (await readFile(path.join(dir, "comm"), "utf8")).trim().toLowerCase();
+      // A process that made itself non-dumpable hides its executable even from its own user.
+      const exe = await readlink(path.join(dir, "exe")).catch((error) => {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "EACCES" && code !== "EPERM") throw error;
+        return "";
+      });
+      if (path.basename(exe).toLowerCase() === wanted) return true;
+      if (comm !== command) continue;
+      if (command === wanted) return true;
+      // A cut name matches every script sharing its first characters, so check the script's own.
+      const args = (await readFile(path.join(dir, "cmdline"), "utf8")).split("\0").slice(0, 2);
+      if (args.some((arg) => path.basename(arg).toLowerCase() === wanted)) return true;
+    } catch (error) {
+      // The process exited while it was being read: Linux answers ENOENT or ESRCH.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ESRCH") throw error;
+    }
+  }
+  return false;
+}
+
 /**
  * Windows antivirus briefly holds a new executable open to scan it, which refuses a rename of
  * its folder until the scan ends.
@@ -158,13 +241,13 @@ async function renameSoon(from: string, to: string) {
   }
 }
 
-/** Screen control for this Mac or Windows PC, or undefined on other platforms. */
+/** Screen control for this Mac, Windows or Linux computer, or undefined on other platforms. */
 export function createDesktopHostScreen(options: {
   platform: NodeJS.Platform;
   /** Resolves to the driver executable, fetching it first if needed. */
   driver: () => Promise<string>;
   home: string;
-  /** macOS only: Windows asks no permission to read and drive apps at the user's own level. */
+  /** macOS only: Windows and Linux ask no permission to read and drive apps at the user's own level. */
   permissions: ScreenPermissionApi;
   /** A locked screen hides every window, so apps opened behind it show none. */
   locked: () => boolean;
@@ -178,13 +261,16 @@ export function createDesktopHostScreen(options: {
       permissions: () => ensureScreenPermissions(options.permissions),
       selfPid: process.pid,
     });
-  else if (options.platform === "win32")
+  else if (options.platform === "win32" || options.platform === "linux") {
+    const system = options.platform === "linux" ? "Linux" : "Windows";
     screen = createAgentDesktopHostScreen({
-      run: agentDesktopCli({ command: options.driver, home: options.home }),
+      run: agentDesktopCli({ command: options.driver, home: options.home, system }),
+      system,
+      ...(system === "Linux" ? { running: (app: string) => runningProcessNamed(app) } : {}),
       selfPid: process.pid,
       fitImage: options.fitImage,
     });
-  else return undefined;
+  } else return undefined;
   const unlocked = () => {
     if (options.locked()) throw new HostScreenError(SCREEN_LOCKED_MESSAGE);
   };

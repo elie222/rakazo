@@ -38,7 +38,11 @@ const refused = (code: string, retry = "safe", message?: string): AgentDesktopEn
 });
 
 /** A CLI that answers each command from `handlers` and records every call. */
-function cli(handlers: Record<string, Handler> = {}) {
+function cli(
+  handlers: Record<string, Handler> = {},
+  system: "Windows" | "Linux" = "Windows",
+  running?: (app: string) => Promise<boolean>,
+) {
   const calls: string[][] = [];
   const all: Record<string, Handler> = {
     "list-windows": () => ok(notepad),
@@ -50,7 +54,7 @@ function cli(handlers: Record<string, Handler> = {}) {
     calls.push([...args]);
     return all[args[0]!]?.(args) ?? ok({ disposition: { delivery: "delivered_unverified" } });
   });
-  const screen = createAgentDesktopHostScreen({ run, selfPid: 99 });
+  const screen = createAgentDesktopHostScreen({ run, system, running, selfPid: 99 });
   const acted = () =>
     calls.filter(([name]) => !["list-windows", "snapshot", "screenshot"].includes(name!));
   return { screen, calls, run, acted };
@@ -256,6 +260,52 @@ describe("agent-desktop host screen", () => {
     });
   });
 
+  it("leaves out unnamed wrappers so later panes fit under the row cap", async () => {
+    const wrapped = (node: object, levels: number): object =>
+      levels
+        ? { role: "group", states: ["offscreen"], children: [wrapped(node, levels - 1)] }
+        : node;
+    const files = Array.from({ length: HOST_SCREEN_MAX_ELEMENTS - 100 }, (_, index) =>
+      wrapped({ role: "statictext", name: `file ${index}` }, 3),
+    );
+    const sidebar = {
+      role: "list",
+      name: "Sidebar",
+      children: [{ ref_id: "@s0000000a:e9", role: "option" }],
+    };
+    const { screen } = cli({
+      snapshot: () =>
+        ok({
+          ...snapshot,
+          tree: { role: "window", children: [{ role: "group", children: files }, sidebar] },
+        }),
+    });
+    const { tree } = await screen.observe(scope, "notepad");
+    expect(tree).not.toMatch(/- group/);
+    expect(tree).toMatch(/^- window\n {2}- statictext "file 0"$/m);
+    expect(tree).toMatch(/^ {2}- list "Sidebar"\n {4}- \[9\] option$/m);
+    expect(tree).not.toMatch(/cut off/);
+  });
+
+  it("points the bot to another control when an element takes clicks only from the pointer", async () => {
+    const { screen } = cli({ click: () => refused("POLICY_DENIED") }, "Linux");
+    await screen.observe(scope, "notepad");
+    const result = await screen.act(scope, "notepad", [{ kind: "click", element: 2 }]);
+    expect(result.completed).toBe(0);
+    expect(result.error).toBe(
+      "notepad only takes a click on element 2 from the user's pointer. Look for another control that does the same thing, such as a button, a menu item, or a field to set.",
+    );
+  });
+
+  it("warns that a pointer-only click refused after delivery may have taken effect", async () => {
+    const { screen } = cli({ click: () => refused("POLICY_DENIED", "unsafe") }, "Linux");
+    await screen.observe(scope, "notepad");
+    const result = await screen.act(scope, "notepad", [{ kind: "click", element: 2 }]);
+    expect(result.error).toBe(
+      "notepad only takes a click on element 2 from the user's pointer. It may have taken effect; check before trying another control.",
+    );
+  });
+
   it("caps the rows and says the rest were cut off", async () => {
     const children = Array.from({ length: HOST_SCREEN_MAX_ELEMENTS + 5 }, (_, index) => ({
       ref_id: `@s0000000a:e${index}`,
@@ -278,7 +328,7 @@ describe("agent-desktop host screen", () => {
           ? ok(snapshot)
           : ok({ ...screenshot, width: 3200, height: 1600 }),
     );
-    const screen = createAgentDesktopHostScreen({ run, selfPid: 99, fitImage });
+    const screen = createAgentDesktopHostScreen({ run, system: "Windows", selfPid: 99, fitImage });
     await expect(screen.observe(scope, "notepad")).resolves.toMatchObject({
       image: { data: Buffer.from("small").toString("base64"), width: 1568, height: 784 },
     });
@@ -287,6 +337,63 @@ describe("agent-desktop host screen", () => {
     const observed = await refusing.observe(scope, "notepad");
     expect(observed.image).toBeUndefined();
     expect(observed.tree).toContain("[1]");
+  });
+
+  it("tells the bot when Linux's accessibility service can't be reached", async () => {
+    const { screen } = cli({ "list-windows": () => refused("PLATFORM_NOT_SUPPORTED") }, "Linux");
+    await expect(screen.observe(scope, "notepad")).rejects.toThrow(
+      "Screen control can't reach this computer's accessibility service.",
+    );
+  });
+
+  it("names Linux, not Windows, in what the bot reads on Linux", async () => {
+    const { screen } = cli({}, "Linux");
+    await screen.observe(scope, "notepad");
+    const result = await screen.act(scope, "notepad", [{ kind: "type", text: "Hi", element: 1 }]);
+    expect(result.error).toMatch(/^On Linux, type would take over/);
+  });
+
+  it("refuses an open Linux app that is off the accessibility bus instead of launching it again", async () => {
+    const { screen, calls } = cli(
+      { "list-windows": () => ok([]), snapshot: () => refused("APP_NOT_FOUND") },
+      "Linux",
+      async (app) => app === "brave",
+    );
+    await expect(screen.observe(scope, "brave")).rejects.toThrow(
+      "brave is open but doesn't share its window with screen control.",
+    );
+    expect(calls).toContainEqual(["snapshot", "--app", "brave", "--max-depth", "1"]);
+    expect(calls.filter(([name]) => name === "launch")).toEqual([]);
+  });
+
+  it("passes on any other refusal from the Linux bus check unchanged", async () => {
+    const { screen, calls } = cli(
+      { "list-windows": () => ok([]), snapshot: () => refused("APP_UNRESPONSIVE") },
+      "Linux",
+      async () => true,
+    );
+    await expect(screen.observe(scope, "brave")).rejects.toThrow("brave is not responding.");
+    expect(calls.filter(([name]) => name === "launch")).toEqual([]);
+  });
+
+  it("launches a Linux app that isn't running, or is on the bus with no window yet", async () => {
+    for (const running of [false, true]) {
+      let launched = false;
+      const { screen } = cli(
+        {
+          "list-windows": () => ok(launched ? notepad : []),
+          snapshot: (args) => (args.includes("--app") ? refused("WINDOW_NOT_FOUND") : ok(snapshot)),
+          launch: () => {
+            launched = true;
+            return ok({ app: "notepad", pid: 41 });
+          },
+        },
+        "Linux",
+        async () => running,
+      );
+      await expect(screen.observe(scope, "notepad")).resolves.toMatchObject({ app: "notepad" });
+      expect(launched).toBe(true);
+    }
   });
 
   it("says screen control stopped responding when the CLI prints no envelope", async () => {
@@ -303,6 +410,7 @@ describe("agent-desktop CLI", () => {
     const run = agentDesktopCli({
       command: async () => "/missing/agent-desktop.exe",
       home: "/missing",
+      system: "Windows",
     });
     const result = run(["version"], new AbortController().signal);
     await expect(result).rejects.toThrow(HostScreenError);
@@ -310,11 +418,50 @@ describe("agent-desktop CLI", () => {
   });
 
   it("reads the envelope printed with a refusal's exit code", async () => {
-    const run = agentDesktopCli({ command: async () => process.execPath, home: "/missing" });
+    const run = agentDesktopCli({
+      command: async () => process.execPath,
+      home: "/missing",
+      system: "Windows",
+    });
     const script = `console.log(JSON.stringify({ ok: false, error: { code: "STALE_REF", home: process.env.AGENT_DESKTOP_HOME } })); process.exit(1)`;
     await expect(run(["-e", script], new AbortController().signal)).resolves.toEqual({
       ok: false,
       error: { code: "STALE_REF", home: "/missing" },
     });
+  });
+
+  it("passes the desktop session to the CLI on Linux only", async () => {
+    vi.stubEnv("WAYLAND_DISPLAY", "wayland-fake");
+    vi.stubEnv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/fake/bus");
+    try {
+      const script = `console.log(JSON.stringify({ ok: true, data: [process.env.WAYLAND_DISPLAY ?? null, process.env.DBUS_SESSION_BUS_ADDRESS ?? null] }))`;
+      for (const [system, data] of [
+        ["Linux", ["wayland-fake", "unix:path=/fake/bus"]],
+        ["Windows", [null, null]],
+      ] as const) {
+        const run = agentDesktopCli({
+          command: async () => process.execPath,
+          home: "/missing",
+          system,
+        });
+        await expect(run(["-e", script], new AbortController().signal)).resolves.toEqual({
+          ok: true,
+          data,
+        });
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("says plainly that the driver couldn't start on Linux", async () => {
+    const run = agentDesktopCli({
+      command: async () => "/missing/agent-desktop",
+      home: "/missing",
+      system: "Linux",
+    });
+    await expect(run(["version"], new AbortController().signal)).rejects.toThrow(
+      "Screen control couldn't start on this computer.",
+    );
   });
 });

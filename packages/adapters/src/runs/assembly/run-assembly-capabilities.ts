@@ -575,11 +575,8 @@ export async function resolveRunCapabilities(
     if (device) {
       userComputer = "connected";
       userComputerShell = !device.screenOnly;
-      // The macOS and Windows desktops fetch a screen driver; Linux has none yet.
-      const computers = await deps.userDevices.list(userComputerOwnerId);
-      userComputerScreen = [device, ...computers.filter((computer) => computer.connected)].some(
-        (computer) => computer.platform === "darwin" || computer.platform === "win32",
-      );
+      // Every desktop fetches a screen driver; an older one without it says screen control is unavailable.
+      userComputerScreen = true;
     } else userComputer = "offline";
   }
   const cloudAgent = await cloudAgentPromise;
