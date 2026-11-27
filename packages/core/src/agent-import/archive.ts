@@ -145,7 +145,10 @@ function zipEntries(data: Uint8Array, limits: AgentImportArchiveLimits) {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   let end = -1;
   for (let at = data.length - 22; at >= Math.max(0, data.length - 22 - 0xffff); at -= 1) {
-    if (view.getUint32(at, true) === 0x06054b50) {
+    if (
+      view.getUint32(at, true) === 0x06054b50 &&
+      at + 22 + view.getUint16(at + 20, true) === data.length
+    ) {
       end = at;
       break;
     }
