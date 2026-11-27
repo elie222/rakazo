@@ -70,6 +70,7 @@ export function readServerOverride(appId: string, home?: string): string | null 
 }
 
 export async function writeServerOverride(appId: string, server: string, home?: string) {
+  await mkdir(pageAppDataDir(appId, home), { recursive: true, mode: 0o700 });
   await writeFile(path.join(pageAppDataDir(appId, home), SERVER_FILE), `${server}\n`, {
     mode: 0o600,
   });

@@ -209,12 +209,15 @@ export function createPageAppInstaller(options: {
       await bestEffort("open page app", options.open(placed));
       return true;
     } catch (error) {
-      if (placed !== null) await removeBundle(placed);
-      await removePageAppData(request.appId, home);
-      // Nothing will use the token now, so it ends here rather than waiting for the server.
+      // Nothing will use the token now, so it ends first, before any cleanup that could fail.
       await bestEffort(
         "revoke an unfinished page app",
         createPageAppApi(server, request.token).revoke(),
+      );
+      if (placed !== null) await bestEffort("remove an unfinished page app", removeBundle(placed));
+      await bestEffort(
+        "remove an unfinished page app's data",
+        removePageAppData(request.appId, home),
       );
       throw error;
     }
@@ -268,8 +271,10 @@ export function createPageAppInstaller(options: {
           config,
         }),
       async (next) => {
-        // Building takes a while; an app opened meanwhile is left for the next start.
+        // Building takes a while; an app opened meanwhile is left for the next start, and so is
+        // one whose earlier bundle still runs from where it was set aside.
         if ((await runningAppPids(app.bundlePath)).length > 0) return;
+        if ((await runningAppPids(old)).length > 0) return;
         await removeBundle(old);
         await rename(app.bundlePath, old);
         try {
