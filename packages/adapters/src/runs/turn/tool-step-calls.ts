@@ -38,6 +38,28 @@ const ARGUMENT_DEPTH_MAX = 8;
 export const IMAGE_NOT_KEPT = "[image not kept]";
 
 const notKept = (chars: number) => `\n… [${chars} characters not kept] …\n`;
+const OMISSION_MARKER_PREFIX = "\n… [";
+const OMISSION_MARKER_SUFFIX = " characters not kept] …\n";
+/** A saved count fits in this many digits; a longer run is not the omission marker. */
+const OMISSION_MARKER_MAX_DIGITS = 16;
+
+/**
+ * End index of an omission marker starting at `index`, or -1. The check is a fixed prefix, a
+ * bounded digit run, and a fixed suffix, so it stays linear.
+ */
+function omissionMarkerEnd(text: string, index: number): number {
+  if (!text.startsWith(OMISSION_MARKER_PREFIX, index)) return -1;
+  let pos = index + OMISSION_MARKER_PREFIX.length;
+  const digitStart = pos;
+  const digitLimit = Math.min(text.length, pos + OMISSION_MARKER_MAX_DIGITS);
+  while (pos < digitLimit) {
+    const code = text.charCodeAt(pos);
+    if (code < 48 || code > 57) break;
+    pos += 1;
+  }
+  if (pos === digitStart || !text.startsWith(OMISSION_MARKER_SUFFIX, pos)) return -1;
+  return pos + OMISSION_MARKER_SUFFIX.length;
+}
 
 /** The largest a saved result gets: its kept text and the note of what was left out. */
 export const TOOL_CALL_SAVED_TEXT_MAX_CHARS =
@@ -108,6 +130,10 @@ function scanJsonStringEnd(
   for (let index = openQuote + 1; index < text.length; index += 1) {
     const ch = text[index]!;
     if (ch === "\n" || ch === "\r") {
+      if (ch === "\n") {
+        const markerEnd = omissionMarkerEnd(text, index);
+        if (markerEnd >= 0) return { end: -1, fragmentEnd: index, nextIndex: markerEnd };
+      }
       const nextLineStart = ch === "\r" && text[index + 1] === "\n" ? index + 2 : index + 1;
       if (isJsonPropertyLineStart(text, nextLineStart)) {
         return { end: -1, fragmentEnd: index, nextIndex: nextLineStart };
@@ -119,6 +145,10 @@ function scanJsonStringEnd(
       const next = text[index + 1];
       if (next === undefined) return { end: -1, fragmentEnd: text.length, nextIndex: text.length };
       if (next === "\n" || next === "\r") {
+        if (next === "\n") {
+          const markerEnd = omissionMarkerEnd(text, index + 1);
+          if (markerEnd >= 0) return { end: -1, fragmentEnd: index + 1, nextIndex: markerEnd };
+        }
         const nextLineStart = next === "\r" && text[index + 2] === "\n" ? index + 3 : index + 2;
         if (isJsonPropertyLineStart(text, nextLineStart)) {
           return { end: -1, fragmentEnd: index + 1, nextIndex: nextLineStart };

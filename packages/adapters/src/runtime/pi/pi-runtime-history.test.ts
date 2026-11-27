@@ -458,6 +458,58 @@ describe("replaying an earlier reply's tool steps", () => {
     expect(messages.find((message) => message.role === "toolResult")?.content).toEqual(text(saved));
   });
 
+  it("keeps the omission marker and saved tail when a replayed head ends inside a redacted JSON field", () => {
+    const marker = "\n… [100 characters not kept] …\n";
+    const headSecret = "api_key=head-secret-value";
+    const tailSecret = "password=tail-secret-value";
+    const headOpen = '{"note":"';
+    const headEnd = '","token": "[r';
+    const head = `${headOpen}${headSecret}${"a".repeat(
+      700 - headOpen.length - headSecret.length - headEnd.length,
+    )}${headEnd}`;
+    const tailBody = `${tailSecret} END_OF_TAIL`;
+    const tail = `${tailBody}${"z".repeat(300 - tailBody.length)}`;
+    const saved = `${head}${marker}${tail}`;
+    expect(head).toHaveLength(700);
+    expect(tail).toHaveLength(300);
+    expect(saved).toHaveLength(1_031);
+
+    const messages = toHistory(
+      [
+        {
+          ...toolReply,
+          segments: [
+            {
+              steps: [
+                {
+                  label: "Shell",
+                  tool: "shell",
+                  count: 1,
+                  calls: [{ arguments: "{}", result: saved }],
+                  outcomes: { succeeded: 1 },
+                },
+              ],
+            },
+            { text: "Done." },
+          ],
+        },
+      ],
+      "",
+      undefined,
+      OFFERED,
+    );
+    const content = messages.find((message) => message.role === "toolResult")?.content;
+    const replayed = Array.isArray(content)
+      ? content.map((part) => (part.type === "text" ? part.text : "")).join("")
+      : "";
+    expect(replayed).toContain(marker);
+    expect(replayed).toContain("END_OF_TAIL");
+    expect(replayed).not.toContain(headSecret);
+    expect(replayed).not.toContain(tailSecret);
+    expect(replayed).toContain("api_key=[redacted]");
+    expect(replayed).toContain("password=[redacted]");
+  });
+
   it("says in its result when a replayed call's tool is not offered now", () => {
     const [, result] = toHistory([toolReply], "", undefined, new Set(["read_file"]));
     expect(result).toMatchObject({
