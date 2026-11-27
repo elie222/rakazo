@@ -48,13 +48,13 @@ export function resolvePersonaColorDef(
   return BOT_COLOR_LIST[index % BOT_COLOR_LIST.length] ?? BOT_COLOR_LIST[0]!;
 }
 
-/** Enough for white text while keeping the bubble close to the avatar's color. */
-const BUBBLE_TEXT_CONTRAST = 3;
+/** WCAG AA for normal-size text: the bubble carries body copy, unlike the avatar circle. */
+const BUBBLE_TEXT_CONTRAST = 4.5;
 const LIGHT_TEXT = "#FFFFFF";
 
 /**
  * Your messages in a bot's chat wear that bot's color under white text, deepened only as far as
- * 3:1 contrast so the bubble still matches the avatar. The color darkens in OKLCH so it keeps its
+ * 4.5:1 contrast so the bubble still matches the avatar. The color darkens in OKLCH so it keeps its
  * hue and saturation instead of turning muddy. Photo and white avatars keep the neutral bubble.
  */
 export function chatUserBubbleColors(
@@ -89,17 +89,38 @@ function hexToOklch(hex: string): [number, number, number] {
   return [lightness, Math.hypot(a, bb), Math.atan2(bb, a)];
 }
 
-function oklchToHex(lightness: number, chroma: number, hue: number): string {
+function oklchToLinearRgb(lightness: number, chroma: number, hue: number): number[] {
   const a = chroma * Math.cos(hue);
   const b = chroma * Math.sin(hue);
   const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3;
   const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3;
   const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  const linear = [
+  return [
     4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
     -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
     -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s,
   ];
+}
+
+const GAMUT_TOLERANCE = 0.001;
+
+function inSrgbGamut(linear: number[]): boolean {
+  return linear.every((value) => value >= -GAMUT_TOLERANCE && value <= 1 + GAMUT_TOLERANCE);
+}
+
+/** Converts to hex, lowering chroma (keeping lightness and hue) until the color fits sRGB. */
+function oklchToHex(lightness: number, chroma: number, hue: number): string {
+  let high = chroma;
+  let linear = oklchToLinearRgb(lightness, high, hue);
+  if (!inSrgbGamut(linear)) {
+    let low = 0;
+    for (let step = 0; step < 20; step += 1) {
+      const middle = (low + high) / 2;
+      if (inSrgbGamut(oklchToLinearRgb(lightness, middle, hue))) low = middle;
+      else high = middle;
+    }
+    linear = oklchToLinearRgb(lightness, low, hue);
+  }
   return `#${linear
     .map((value) => {
       const v = Math.min(1, Math.max(0, value));
