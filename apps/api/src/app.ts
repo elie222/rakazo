@@ -48,6 +48,7 @@ import {
   GraphileJobPublisher,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
+  loadDeploymentPolicy,
   machineCleanupRecords,
   messagingAddresses,
   ObjectAgentHomeStore,
@@ -539,6 +540,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     });
   const { runtime, executor, jobHandlers, messagingDelivery, teamChat, pageRevisions } =
     createRunRuntime(runtimeEnv, connectors, {
+      deploymentPolicy: await loadDeploymentPolicy(),
       billingEnabled: modelCreditsEnabled,
       mediaGeneration,
       meetingWork: meetingProvider && meetings.work.bind(meetings),

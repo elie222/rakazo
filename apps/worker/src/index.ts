@@ -38,6 +38,7 @@ import {
   GraphileJobPublisher,
   homeStorageSweeper,
   InMemoryJobQueue,
+  loadDeploymentPolicy,
   machineCleanupRecords,
   messagingEnvFromProcess,
   openAiCompatAllowPublicHosts,
@@ -218,6 +219,7 @@ async function main() {
     webOrigin: env.webOrigin,
   });
   const { executor, jobHandlers, messagingDelivery, teamChat } = createRunRuntime(env, connectors, {
+    deploymentPolicy: await loadDeploymentPolicy(),
     pageRevisionRuntime: new PiAgentRuntime(),
     mediaGeneration,
     meetingWork: meetingProvider && meetings.work.bind(meetings),

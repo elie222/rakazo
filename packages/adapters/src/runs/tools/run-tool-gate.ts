@@ -42,6 +42,7 @@ import {
   isAutoReviewCheckerConfigured,
   resolveAutoReviewChecker,
 } from "../../approvals/auto-review.js";
+import { deploymentPolicyRefusal } from "../../approvals/deployment-policy.js";
 import { pagePaymentPrecheck, paysWithWallet } from "../../billing/spending-gate.js";
 import { reportBotMessageWait } from "../../messaging/bot-messages.js";
 import { findConnectedModelCredential } from "../../models/model-selection.js";
@@ -183,6 +184,21 @@ export async function gateToolCall(
   if (fetchUrl) {
     args = httpWatch ? { ...args, watch: { ...watch, url: fetchUrl } } : { ...args, url: fetchUrl };
     effectRequest = name === "paid_request" ? paidRequestEffect(args) : args;
+  }
+  // The deployment's own rules refuse a call before the space's do and, like a rule that blocks
+  // the tool, they also refuse one resumed after a person approved it.
+  const policyRefusal = await deploymentPolicyRefusal(deps.deploymentPolicy, {
+    userId: run.userId,
+    spaceId: run.spaceId,
+    botId: ctx.bot.id,
+    runId,
+    tool: name,
+    actions: approvalToolNames,
+    args,
+  });
+  if (policyRefusal) {
+    await auditToolCall(ctx, name, "denied", { reason: "deployment_policy" });
+    return { result: refusal("deployment_policy", policyRefusal) };
   }
   const connectorTrusts = connectorTrustKeys(
     batch?.actions,

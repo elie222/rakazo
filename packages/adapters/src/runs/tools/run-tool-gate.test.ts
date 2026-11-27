@@ -1,5 +1,7 @@
+import type { DeploymentPolicy, DeploymentPolicyToolCall } from "@rakazo/adapter-kit";
 import type * as Core from "@rakazo/core";
 import type * as Db from "@rakazo/db";
+import { recordAuditEvent } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { gateToolCall } from "./run-tool-gate.js";
 import type { ToolRequest } from "./run-tool-request.js";
@@ -192,5 +194,90 @@ describe("gateToolCall: typing into a page after outside content, in Auto", () =
       { kind: "fill", ref: "e2", text: "12 Rua Nova" },
     ]);
     expect(reviewOnly).toEqual([false, true]);
+  });
+});
+
+describe("gateToolCall: a deployment policy", () => {
+  const policyGate = (
+    toolCall: NonNullable<DeploymentPolicy["toolCall"]>,
+    options: { name?: string; args?: Record<string, unknown>; approved?: boolean } = {},
+  ) => {
+    const name = options.name ?? "shell";
+    const args = options.args ?? { command: "ls" };
+    const executionId = JSON.stringify(["pi-tool", "main", "call-1"]);
+    const request = {
+      name,
+      args,
+      executionId,
+      connectorCall: { tool: name, args, executionId, route: undefined },
+      effectRequest: args,
+      replayEffectToolName: name,
+      nextApprovedTool: options.approved ? name : undefined,
+      approvedEffectKey: options.approved ? "approved-effect" : undefined,
+      heldForApproval: false,
+      settingsChange: false,
+      ignoresAllowRules: false,
+    } as unknown as ToolRequest;
+    const ctx = {
+      deps: { prisma: {}, deploymentPolicy: { toolCall } },
+      run: { id: "run-1", userId: "user-1", spaceId: "space-1", trigger: "user" },
+      runId: "run-1",
+      bot: { id: "bot-1", name: "Helper" },
+      thread: { id: "thread-1" },
+      context: { signal: new AbortController().signal },
+      source: { ownerStartedRun: true },
+      tools: {
+        connector: new Map([["crm_batch", { batch: { items: "calls", action: "tool" } }]]),
+        connectedPlugins: [],
+      },
+    };
+    return gateToolCall(ctx as never, request, undefined);
+  };
+
+  beforeEach(() => {
+    plans.length = 0;
+    vi.mocked(recordAuditEvent).mockClear();
+  });
+
+  it("refuses a call the policy refuses before any approval, and records it as denied", async () => {
+    const seen: DeploymentPolicyToolCall[] = [];
+    const outcome = await policyGate((call) => {
+      seen.push(call);
+      return { refuse: "Shell is off in this deployment." };
+    });
+    expect(outcome).toEqual({ result: { error: "Shell is off in this deployment." } });
+    expect(seen).toEqual([
+      {
+        userId: "user-1",
+        spaceId: "space-1",
+        botId: "bot-1",
+        runId: "run-1",
+        tool: "shell",
+        actions: ["shell"],
+        args: { command: "ls" },
+      },
+    ]);
+    expect(plans).toEqual([]);
+    expect(recordAuditEvent).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outcome: "denied", metadata: { reason: "deployment_policy" } }),
+    );
+  });
+
+  it("refuses a call resumed after a person approved it", async () => {
+    const outcome = await policyGate(() => ({ refuse: "Shell is off in this deployment." }), {
+      approved: true,
+    });
+    expect(outcome).toEqual({ result: { error: "Shell is off in this deployment." } });
+  });
+
+  it("names each action a batch tool was asked to run", async () => {
+    const outcome = await policyGate(
+      (call) => (call.actions.includes("delete_contact") ? { refuse: "No deletes." } : undefined),
+      {
+        name: "crm_batch",
+        args: { calls: [{ tool: "list_contacts" }, { tool: "delete_contact" }] },
+      },
+    );
+    expect(outcome).toEqual({ result: { error: "No deletes." } });
   });
 });

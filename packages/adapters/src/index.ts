@@ -11,6 +11,7 @@ export {
 } from "./approvals/auto-review.prompt.js";
 export * from "./approvals/auto-review-factory.js";
 export * from "./approvals/decision-models.js";
+export { loadDeploymentPolicy } from "./approvals/deployment-policy.js";
 export * from "./approvals/http-decisions.js";
 export * from "./approvals/scripted-auto-review.js";
 export * from "./billing/billing-emulator.js";
