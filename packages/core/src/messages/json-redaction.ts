@@ -31,8 +31,11 @@ const ci = (word: string) =>
 const BEARER_CI = ci("bearer");
 const CREDENTIAL_KEY_CI = `(?:${ci("api")}[_-]?${ci("key")}|${ci("access")}[_-]?${ci("token")}|${ci("password")}|${ci("secret")}|${ci("authorization")}|${ci("auth")})`;
 
-const ADJACENT_CREDENTIAL_START = new RegExp(
+const RAW_ADJACENT_CREDENTIAL_START = new RegExp(
   `(?:${BEARER_CI}(?:\\s|\\\\[nrt])|${CREDENTIAL_KEY_CI}\\s*[=:])`,
+);
+const DECODED_ADJACENT_CREDENTIAL_START = new RegExp(
+  `(?:${BEARER_CI}\\s|${CREDENTIAL_KEY_CI}\\s*[=:])`,
 );
 const JSON_CONTAINER_LINE_START =
   /(?:\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$)))/;
@@ -62,7 +65,7 @@ const DECODED_DEFERRED_BEARER_FOLLOWS = new RegExp(
 );
 const RAW_ATOM = /(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])/;
 const RAW_SUFFIX_ATOM = new RegExp(
-  `(?:(?!${ADJACENT_CREDENTIAL_START.source})(?:\\\\(?![nrt"\\\\])|[^\\s"',;&}{[\\]:\\\\]))`,
+  `(?:(?!${RAW_ADJACENT_CREDENTIAL_START.source})(?:\\\\(?![nrt"\\\\])|[^\\s"',;&}{[\\]:\\\\]))`,
 );
 const RAW_BEARER = new RegExp(
   `${BEARER_CI}\\s+(?!${RAW_DEFERRED_BEARER_FOLLOWS.source}|${RAW_SPLITTING_CREDENTIAL_KEY.source}|\\[redacted\\](?!${RAW_SUFFIX_ATOM.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${RAW_SUFFIX_ATOM.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${RAW_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${RAW_SUFFIX_ATOM.source}*)?|\\[redacted\\]${RAW_SUFFIX_ATOM.source}+|(?:${RAW_ATOM.source})+)`,
@@ -71,7 +74,7 @@ const RAW_BEARER = new RegExp(
 
 const DECODED_ATOM = /(?:\\[^\s]|\\(?=\s|$)|[^\s"',;&}:\]\\])/;
 const DECODED_SUFFIX_ATOM = new RegExp(
-  `(?:(?!${ADJACENT_CREDENTIAL_START.source})(?:\\\\[^\\s]|\\\\(?=\\s|$)|[^\\s"',;&}{[\\]:\\\\]))`,
+  `(?:(?!${DECODED_ADJACENT_CREDENTIAL_START.source})(?:\\\\[^\\s]|\\\\(?=\\s|$)|[^\\s"',;&}{[\\]:\\\\]))`,
 );
 const DECODED_BEARER = new RegExp(
   `${BEARER_CI}\\s+(?!${DECODED_DEFERRED_BEARER_FOLLOWS.source}|${DECODED_SPLITTING_CREDENTIAL_KEY.source}|\\[redacted\\](?!${DECODED_SUFFIX_ATOM.source}))(?:"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${DECODED_SUFFIX_ATOM.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'\\\\\\r\\n])+(?:'${DECODED_SUFFIX_ATOM.source}*)?|\\[redacted\\]${DECODED_SUFFIX_ATOM.source}+|(?:${DECODED_ATOM.source})+)`,

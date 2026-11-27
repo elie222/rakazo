@@ -1887,7 +1887,7 @@ describe("tool step outcomes", () => {
     );
     expect(
       sanitizeConnectorError(new Error(String.raw`Bearer [redacted]:Bearer\n:Bearer\nopaque-123`)),
-    ).toBe(String.raw`Bearer [redacted]:Bearer\n:Bearer [redacted]`);
+    ).toBe(String.raw`Bearer [redacted]\n:Bearer [redacted]`);
     expect(
       sanitizeConnectorError(new Error(String.raw`Bearer\n[redacted]:bearer\nopaque-123`)),
     ).toBe(String.raw`Bearer\n[redacted]:Bearer [redacted]`);
@@ -1899,6 +1899,26 @@ describe("tool step outcomes", () => {
       ),
     ).toEqual({
       msg: "Bearer [redacted]:Bearer [redacted]",
+      sibling: 7,
+    });
+    expect(
+      JSON.parse(
+        sanitizeConnectorError(
+          new Error(JSON.stringify({ msg: "Bearer\n[redacted]:bearer\n[12,34]", sibling: 7 })),
+        ),
+      ),
+    ).toEqual({
+      msg: "Bearer [redacted]\n[12,34]",
+      sibling: 7,
+    });
+    expect(
+      JSON.parse(
+        sanitizeError(
+          JSON.stringify({ msg: String.raw`Bearer [redacted]Bearer\nopaque-123`, sibling: 7 }),
+        ),
+      ),
+    ).toEqual({
+      msg: "Bearer [redacted]",
       sibling: 7,
     });
     expect(sanitizeConnectorError(new Error(String.raw`Bearer\n[redacted]\TokenTail`))).toBe(
