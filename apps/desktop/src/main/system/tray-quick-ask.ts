@@ -18,15 +18,24 @@ const FOCUS_COMPOSER_SCRIPT = `(() => {
 
 export type TrayQuickAskController = {
   setUnreadCount: (count: number) => void;
-  focusQuickAsk: () => void;
   dispose: () => void;
 };
+
+/** Focuses the chat message textarea in a desktop BrowserWindow once ready. */
+export function focusDesktopComposer(win: BrowserWindow | null): void {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
+  void bestEffort(
+    "focus desktop composer",
+    win.webContents.executeJavaScript(FOCUS_COMPOSER_SCRIPT),
+  );
+}
 
 export type TrayQuickAskDeps = {
   platform: NodeJS.Platform;
   iconPath: string;
   getWindow: () => BrowserWindow | null;
-  onShowSetup?: () => void;
+  getSetupWindow?: () => BrowserWindow | null;
+  onReopen?: (focusComposer: boolean) => void;
   onQuit: () => void;
   focusApp?: () => void;
   createTray?: (
@@ -48,7 +57,8 @@ export function createTrayQuickAsk(deps: TrayQuickAskDeps): TrayQuickAskControll
     platform,
     iconPath,
     getWindow,
-    onShowSetup,
+    getSetupWindow = () => null,
+    onReopen,
     onQuit,
     focusApp = () => app.focus({ steal: true }),
     createTray = (image) => new Tray(image),
@@ -63,23 +73,60 @@ export function createTrayQuickAsk(deps: TrayQuickAskDeps): TrayQuickAskControll
   let disposed = false;
   let shortcutRegistered = false;
   let tray: ReturnType<typeof createTray> | null = null;
+  let pendingFocusWindow: BrowserWindow | null = null;
 
-  function revealWindow(focusComposer: boolean) {
-    if (disposed) return;
-    const win = getWindow();
-    if (!win || win.isDestroyed()) {
-      onShowSetup?.();
+  function focusComposerIn(win: BrowserWindow) {
+    if (disposed || win.isDestroyed() || win.webContents.isDestroyed()) return;
+    const runFocus = () => {
+      if (disposed || win.isDestroyed() || win.webContents.isDestroyed()) return;
+      void bestEffort(
+        "focus desktop composer",
+        win.webContents.executeJavaScript(FOCUS_COMPOSER_SCRIPT).then((focused) => {
+          if (!focused && win.webContents.isLoading() && pendingFocusWindow !== win) {
+            pendingFocusWindow = win;
+            win.webContents.once("did-finish-load", () => {
+              if (pendingFocusWindow === win) pendingFocusWindow = null;
+              focusComposerIn(win);
+            });
+          }
+        }),
+      );
+    };
+    if (win.webContents.isLoading()) {
+      if (pendingFocusWindow !== win) {
+        pendingFocusWindow = win;
+        win.webContents.once("did-finish-load", () => {
+          if (pendingFocusWindow === win) pendingFocusWindow = null;
+          runFocus();
+        });
+      }
       return;
     }
+    runFocus();
+  }
+
+  function surfaceWindow(win: BrowserWindow) {
     if (win.isMinimized()) win.restore();
     win.show();
     if (platform === "darwin") focusApp();
     win.focus();
-    if (focusComposer && !win.webContents.isDestroyed()) {
-      void bestEffort(
-        "focus desktop composer",
-        win.webContents.executeJavaScript(FOCUS_COMPOSER_SCRIPT),
-      );
+  }
+
+  function revealWindow(focusComposer: boolean) {
+    if (disposed) return;
+    const setupWin = getSetupWindow();
+    if (setupWin && !setupWin.isDestroyed()) {
+      surfaceWindow(setupWin);
+      return;
+    }
+    const win = getWindow();
+    if (!win || win.isDestroyed()) {
+      onReopen?.(focusComposer);
+      return;
+    }
+    surfaceWindow(win);
+    if (focusComposer) {
+      focusComposerIn(win);
     }
   }
 
@@ -117,25 +164,25 @@ export function createTrayQuickAsk(deps: TrayQuickAskDeps): TrayQuickAskControll
   }
 
   if (fileExists(iconPath)) {
-    try {
-      let image = loadImage(iconPath);
-      if (!image.isEmpty()) {
+    void bestEffort(
+      "create desktop tray",
+      Promise.resolve().then(() => {
+        let image = loadImage(iconPath);
+        if (image.isEmpty()) return;
         image = image.resize({ width: 18, height: 18 });
-        if (platform === "darwin") image.setTemplateImage(true);
         tray = createTray(image);
         tray.on("click", () => revealWindow(true));
         refreshTray();
-      }
-    } catch {
-      tray = null;
-    }
+      }),
+    );
   }
 
-  try {
-    shortcutRegistered = registerShortcut(QUICK_ASK_SHORTCUT, () => revealWindow(true));
-  } catch {
-    shortcutRegistered = false;
-  }
+  void bestEffort(
+    "register quick-ask shortcut",
+    Promise.resolve().then(() => {
+      shortcutRegistered = registerShortcut(QUICK_ASK_SHORTCUT, () => revealWindow(true));
+    }),
+  );
 
   return {
     setUnreadCount(count: number) {
@@ -145,27 +192,24 @@ export function createTrayQuickAsk(deps: TrayQuickAskDeps): TrayQuickAskControll
       unreadCount = next;
       refreshTray();
     },
-    focusQuickAsk() {
-      revealWindow(true);
-    },
     dispose() {
       if (disposed) return;
       disposed = true;
+      pendingFocusWindow = null;
       if (shortcutRegistered) {
-        try {
-          unregisterShortcut(QUICK_ASK_SHORTCUT);
-        } catch {
-          /* App teardown may already have released shortcuts. */
-        }
         shortcutRegistered = false;
+        void bestEffort(
+          "unregister quick-ask shortcut",
+          Promise.resolve().then(() => unregisterShortcut(QUICK_ASK_SHORTCUT)),
+        );
       }
       if (tray) {
-        try {
-          tray.destroy();
-        } catch {
-          /* Tray may already be destroyed during shutdown. */
-        }
+        const activeTray = tray;
         tray = null;
+        void bestEffort(
+          "destroy desktop tray",
+          Promise.resolve().then(() => activeTray.destroy()),
+        );
       }
     },
   };
@@ -183,19 +227,19 @@ export function resolveTrayIconPath(appPath: string, resourcesPath: string, isPa
 }
 
 /** Wires the desktop tray and global quick-ask shortcut to the live app window and quits cleanly. */
-export function startDesktopTrayQuickAsk(
-  showSetup: () => void,
-): TrayQuickAskController & { setBadgeCount: (count: number) => boolean } {
+export function startDesktopTrayQuickAsk(reopenWindow: (focusComposer: boolean) => void): {
+  setBadgeCount: (count: number) => boolean;
+} {
   const controller = createTrayQuickAsk({
     platform: process.platform,
     iconPath: resolveTrayIconPath(app.getAppPath(), process.resourcesPath, app.isPackaged),
     getWindow: () => desktop.mainWindow,
-    onShowSetup: showSetup,
+    getSetupWindow: () => desktop.setupWindow,
+    onReopen: reopenWindow,
     onQuit: () => app.quit(),
   });
   app.on("will-quit", () => controller.dispose());
   return {
-    ...controller,
     setBadgeCount: (count: number) => {
       controller.setUnreadCount(count);
       return app.setBadgeCount(count);
