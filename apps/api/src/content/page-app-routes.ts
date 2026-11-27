@@ -1,18 +1,19 @@
-import type { ArtifactStore, SecretStore } from "@rakazo/adapter-kit";
-import type { Actor, PageAppView } from "@rakazo/contracts";
+import type { Actor, PageAppView, PageAskEvent } from "@rakazo/contracts";
 import {
   PAGE_APP_API_PATH,
   PAGE_STATE_MAX_BYTES,
   PageAppAbilitiesBodySchema,
   PageAppStateBodySchema,
+  PageAskInputSchema,
 } from "@rakazo/contracts";
-import { abortableDelay } from "@rakazo/core";
-import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { abortableDelay, ClientError } from "@rakazo/core";
 import { IsolationError, pageChangesScope, runAsTenant } from "@rakazo/db";
 import { bestEffort } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
+import { clientErrorStatus } from "../client-error-status.js";
 import { readBoundedBody } from "../http/http-body.js";
 import { throttleKey, windowCounter } from "../http/window-counter.js";
+import type { RouterDeps } from "../router.js";
 import type { PageAppAccess } from "./page-apps.js";
 import {
   pageAppFromToken,
@@ -20,6 +21,7 @@ import {
   revokePageAppToken,
   setPageAppAbilities,
 } from "./page-apps.js";
+import { askFromPage } from "./page-ask.js";
 import { getPageImage, savePageReaderState } from "./page-collaboration.js";
 import { mountPageWebApp } from "./page-web-app.js";
 import { getPage } from "./pages.js";
@@ -30,15 +32,11 @@ const REQUESTS_PER_APP_PER_MINUTE = 600;
 const REQUESTS_PER_IP_PER_MINUTE = 1_200;
 const HEARTBEAT_MS = 25_000;
 const SMALL_BODY_BYTES = 4 * 1024;
+const PAGE_ASK_BODY_BYTES = 16 * 1024;
 
 const HEADERS = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
 
-export type PageAppRouteDeps = {
-  prisma: PrismaClient;
-  secrets: SecretStore;
-  artifacts: ArtifactStore;
-  webOrigin: string;
-  events: ThreadEvents;
+export type PageAppRouteDeps = RouterDeps & {
   sessionActor: (request: Request, spaceId?: string | null) => Promise<Actor | null>;
 };
 
@@ -70,6 +68,12 @@ export function mountPageAppRoutes(
       return await runAsTenant(access.actor, () => handle(access));
     } catch (error) {
       if (error instanceof IsolationError) return c.json({ error: "Not found" }, 404, HEADERS);
+      if (error instanceof ClientError)
+        return c.json(
+          { error: error.message, code: error.code },
+          clientErrorStatus(error.kind),
+          HEADERS,
+        );
       throw error;
     }
   }
@@ -86,7 +90,9 @@ export function mountPageAppRoutes(
 
   app.get(PAGE_APP_API_PATH, (c) =>
     withApp(c, async (access) => {
-      const page = await getPage(deps, access.actor, { pageId: access.pageId });
+      const page = await getPage({ ...deps, webOrigin: deps.env.webOrigin }, access.actor, {
+        pageId: access.pageId,
+      });
       const view: PageAppView = { appId: access.appId, page, approved: access.abilities };
       return c.json(view, 200, HEADERS);
     }),
@@ -134,6 +140,43 @@ export function mountPageAppRoutes(
       if (!body.success) return c.json({ error: "Invalid abilities" }, 400, HEADERS);
       const approved = await setPageAppAbilities(deps.prisma, access.appId, body.data.abilities);
       return c.json({ approved }, 200, HEADERS);
+    }),
+  );
+
+  app.post(`${PAGE_APP_API_PATH}/ask`, (c) =>
+    withApp(c, async (access) => {
+      const body = PageAskInputSchema.safeParse(await jsonBody(c, PAGE_ASK_BODY_BYTES));
+      if (!body.success) return c.json({ error: "Invalid question" }, 400, HEADERS);
+      if (!access.abilities.includes("ask"))
+        return c.json({ error: "Asking is not allowed for this app" }, 403, HEADERS);
+      // Read before the response starts, so a refusal is still an HTTP error.
+      const events = askFromPage(
+        deps,
+        access.actor,
+        { ...body.data, pageId: access.pageId },
+        c.req.raw.signal,
+      );
+      const first = await events.next();
+      const encoder = new TextEncoder();
+      const line = (event: PageAskEvent) => encoder.encode(`${JSON.stringify(event)}\n`);
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (!first.done) controller.enqueue(line(first.value));
+          if (first.done) controller.close();
+        },
+        async pull(controller) {
+          // Each step of the question's stream reads as the app's owner, like the first.
+          const next = await runAsTenant(access.actor, () => events.next());
+          if (next.done) controller.close();
+          else controller.enqueue(line(next.value));
+        },
+        async cancel() {
+          await events.return(undefined);
+        },
+      });
+      return new Response(stream, {
+        headers: { ...HEADERS, "content-type": "application/x-ndjson; charset=utf-8" },
+      });
     }),
   );
 

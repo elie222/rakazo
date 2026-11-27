@@ -174,15 +174,19 @@ export const CLIENT_IP_HEADER = "x-rakazo-client-ip";
 const REVOCATION_PATHS = new Set(["/revoke-session", "/revoke-sessions", "/revoke-other-sessions"]);
 
 /**
- * Routes that end every other session at once, as someone does after losing a device. Installed
- * page apps hold their own tokens, so those end with them.
+ * Whether a successful request ends every other sign-in, as someone does after losing a device.
+ * Installed page apps hold their own tokens, so those end with it even when no session was left.
  */
-const SIGN_OUT_EVERYWHERE_PATHS = new Set([
-  "/revoke-sessions",
-  "/revoke-other-sessions",
-  "/reset-password",
-  "/change-password",
-]);
+function signsOutEverywhere(path: string, body: unknown): boolean {
+  if (path === "/revoke-sessions" || path === "/revoke-other-sessions") return true;
+  return path === "/change-password" && isRecord(body) && body.revokeOtherSessions === true;
+}
+
+function revokePageApps(prisma: PrismaClient, userId: string) {
+  return runAsSystem("revoke page apps with every sign-in", () =>
+    prisma.pageApp.deleteMany({ where: { userId } }),
+  );
+}
 
 /** Successful account changes worth an audit row. Sign-in, sign-up, sign-out and deletion use hooks. */
 const ACCOUNT_EVENT_PATHS: Record<string, SecurityEventType> = {
@@ -350,6 +354,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       maxPasswordLength: MAX_PASSWORD_LENGTH,
       revokeSessionsOnPasswordReset: true,
       onPasswordReset: async ({ user }) => {
+        await revokePageApps(prisma, user.id);
         await recordSecurityEvent({
           type: "auth.password.changed",
           userId: user.id,
@@ -744,6 +749,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             metadata: { via: ctx.path },
           });
         }
+        const signedIn = ctx.context.session?.user.id;
+        if (
+          signedIn &&
+          signsOutEverywhere(ctx.path, ctx.body) &&
+          !(ctx.context.returned instanceof APIError)
+        )
+          await revokePageApps(prisma, signedIn);
         const returned = ctx.context.returned;
         // These routes fall back to the stored ID token, which is sealed at rest.
         if (
@@ -878,10 +890,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 metadata: { via: ctx.path },
               });
             }
-            if (ctx?.path && SIGN_OUT_EVERYWHERE_PATHS.has(ctx.path))
-              await runAsSystem("revoke page apps with every session", () =>
-                prisma.pageApp.deleteMany({ where: { userId: session.userId } }),
-              );
             if (replacedSession(ctx)?.id !== session.id) await env.afterDeleteSession?.(session);
           },
         },

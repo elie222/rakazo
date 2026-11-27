@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { PageSectionAnchor, PageState } from "@rakazo/contracts";
+import type { ComponentProps } from "react";
 import { useCallback, useState } from "react";
 import { PageFrame } from "./PageFrame";
 import { PageLoading, PageNotice } from "./PageNotice";
@@ -40,6 +41,7 @@ export function PageDrawing({
   drawing,
   title,
   onReply,
+  onAsk,
   onSections,
   onSaveState,
   onClose,
@@ -47,6 +49,7 @@ export function PageDrawing({
   drawing: PageDrawingState;
   title: string;
   onReply?: (text: unknown) => void;
+  onAsk?: ComponentProps<typeof PageFrame>["onAsk"];
   onSections?: (sections: PageSectionAnchor[]) => void;
   onSaveState?: (values: PageState) => void;
   onClose?: () => void;
@@ -65,6 +68,7 @@ export function PageDrawing({
             title={title}
             interactive
             onReply={onReply}
+            onAsk={onAsk}
             onSections={onSections}
             onSaveState={onSaveState}
             onHeight={onDrawn}

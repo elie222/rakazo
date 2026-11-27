@@ -6,16 +6,21 @@ import {
 } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { PageDrawing, usePageDrawing } from "../components/pages/PageDrawing";
 import { PageNotice } from "../components/pages/PageNotice";
 import { usePageStateSaver } from "../lib/pages/page-state";
-import { usePageDocument, useReviewedPageContent } from "../lib/pages/pages";
+import {
+  askPageBot,
+  pageAskChat,
+  usePageDocument,
+  useReviewedPageContent,
+} from "../lib/pages/pages";
 import { followStream } from "../lib/query/follow-stream";
 import { useSpaceQueries } from "../lib/query/query";
 import { spaceChanged } from "../lib/query/space-changes";
-import { SpaceRpcProvider } from "../lib/query/space-rpc";
+import { SpaceRpcProvider, useSpaceRpc } from "../lib/query/space-rpc";
 import { errorCode } from "../lib/query/user-error";
 import { useEventListener } from "../lib/use-event-listener";
 
@@ -57,6 +62,15 @@ function PageApp({ pageId, spaceId }: { pageId: string; spaceId: string | null }
   const page = useQuery({ ...read, refetchOnWindowFocus: "always" });
   const data = page.data;
   const savedState = data?.readerState;
+  const rpc = useSpaceRpc();
+  // Questions still waiting end when the page closes.
+  const asking = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    asking.current = controller;
+    return () => controller.abort();
+  }, []);
+  const askChat = data?.abilities.includes("ask") === true && pageAskChat(data) !== null;
   const viewer = usePageDocument(
     useReviewedPageContent(pageId, data),
     "card",
@@ -65,6 +79,7 @@ function PageApp({ pageId, spaceId }: { pageId: string; spaceId: string | null }
     false,
     undefined,
     savedState,
+    askChat,
   );
   const readerState = usePageStateSaver(pageId, read.queryKey);
   const drawing = usePageDrawing(data ? viewer.document : null);
@@ -101,6 +116,11 @@ function PageApp({ pageId, spaceId }: { pageId: string; spaceId: string | null }
           drawing={drawing}
           title={data?.title ?? ""}
           onSaveState={savedState ? readerState.save : undefined}
+          onAsk={
+            data && askChat
+              ? (text) => askPageBot(rpc, data, text, asking.current?.signal)
+              : undefined
+          }
         />
       )}
       {readerState.failed ? (

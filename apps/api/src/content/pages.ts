@@ -10,6 +10,7 @@ import type {
   SharedPage,
 } from "@rakazo/contracts";
 import {
+  knownPageAbilities,
   PageIconColorSchema,
   pageReviewPath,
   pageShareTokenFromSlug,
@@ -215,7 +216,7 @@ export async function getPage(
   const [stored, owner, readerState] = await Promise.all([
     deps.prisma.pageVersion.findUnique({
       where: { pageId_version: { pageId: row.id, version } },
-      select: { id: true, code: true, images: true },
+      select: { id: true, code: true, images: true, abilities: true },
     }),
     deps.prisma.user.findUnique({
       where: { id: actor.userId },
@@ -233,6 +234,7 @@ export async function getPage(
     version,
     code: stored.code,
     images: pageVersionImages(stored),
+    abilities: knownPageAbilities(stored.abilities),
     owner: { name: owner?.name ?? "", image: owner?.image ?? null },
     // Cards skip the secret store; a token it cannot read hides only the link.
     shareUrl: input.link

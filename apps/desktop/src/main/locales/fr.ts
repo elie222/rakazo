@@ -240,4 +240,14 @@ export const FR_MESSAGES: Record<string, string> = {
   "Restart Rakazo": "Redémarrer Rakazo",
   "Not Now": "Pas maintenant",
   "Restart Rakazo to finish setup": "Redémarrez Rakazo pour terminer la configuration",
+  // Page apps
+  "Keep on Top": "Garder au premier plan",
+  "Open in Rakazo": "Ouvrir dans Rakazo",
+  "Uninstall…": "Désinstaller…",
+  "Uninstall {name}?": "Désinstaller {name} ?",
+  Uninstall: "Désinstaller",
+  "Allow {name} to ask its bot?": "Autoriser {name} à poser des questions à son bot ?",
+  "Allow {name} to show notifications?": "Autoriser {name} à afficher des notifications ?",
+  "{name} was removed.": "{name} a été supprimé.",
+  "Move to Trash": "Placer dans la corbeille",
 };

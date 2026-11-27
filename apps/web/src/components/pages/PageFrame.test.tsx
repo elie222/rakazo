@@ -162,3 +162,36 @@ it("acts for a page only in an interactive frame, right after the person used th
   expect(document.body.textContent).toContain("example.com/x");
   await act(async () => root.unmount());
 });
+
+it("asks the bot once per click and answers every question the page waits on", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const onAsk = vi.fn(async (text: string) => (text === "Next?" ? "Step two" : null));
+  const container = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(<PageFrame document="<p>x</p>" title="Plan" interactive onAsk={onAsk} />),
+  );
+  const frame = container.querySelector("iframe")!;
+  frame.focus();
+  const answers = vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => {});
+  const send = (data: object) =>
+    act(async () => {
+      window.dispatchEvent(new MessageEvent("message", { data, source: frame.contentWindow }));
+      await flush();
+    });
+
+  await send({ type: "rakazo-page:ask", id: "a", text: "Next?", gesture: "k:1" });
+  // The same click again, no click at all, or a question the bot has no answer for.
+  await send({ type: "rakazo-page:ask", id: "b", text: "Again?", gesture: "k:1" });
+  await send({ type: "rakazo-page:ask", id: "c", text: "On load?", gesture: null });
+  await send({ type: "rakazo-page:ask", id: "d", text: "Unknown?", gesture: "k:2" });
+
+  expect(onAsk.mock.calls).toEqual([["Next?"], ["Unknown?"]]);
+  expect(answers.mock.calls.map(([message]) => message)).toEqual([
+    { type: "rakazo-page:answer", id: "a", ok: true, text: "Step two" },
+    { type: "rakazo-page:answer", id: "b", ok: false },
+    { type: "rakazo-page:answer", id: "c", ok: false },
+    { type: "rakazo-page:answer", id: "d", ok: false },
+  ]);
+  await act(async () => root.unmount());
+});

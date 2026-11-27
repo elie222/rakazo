@@ -13,6 +13,8 @@ vi.mock("@lingui/react/macro", () => ({
   useLingui: () => ({ t: (strings: TemplateStringsArray) => strings.join("") }),
 }));
 vi.mock("../lib/pages/pages", () => ({
+  askPageBot: async () => null,
+  pageAskChat: () => null,
   useReviewedPageContent: () => undefined,
   usePageDocument: () => ({ document: "<p>page</p>", failed: false, retry: () => undefined }),
 }));
@@ -30,7 +32,7 @@ vi.mock("../lib/query/query", () => ({
           queryKey: ["page", input.pageId],
           queryFn: async () => {
             if (read.fails) throw Object.assign(new Error("gone"), { code: "NOT_FOUND" });
-            return { id: input.pageId, title: "Trip plan" };
+            return { id: input.pageId, title: "Trip plan", abilities: [] };
           },
         }),
       },
