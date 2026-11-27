@@ -1,9 +1,25 @@
-import {
-  redactJsonStringsAndPlainText,
-  redactPlainBearerTokens,
-  redactSecrets,
-  sliceWellFormed,
-} from "@rakazo/core";
+import { redactJsonStringsAndPlainText, redactSecrets, sliceWellFormed } from "@rakazo/core";
+
+const CONNECTOR_JSON_CONTAINER_START =
+  /(?:\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$)))/;
+const CONNECTOR_DEFERRED_BEARER_FOLLOWS = new RegExp(
+  `Bearer(?:[^\\S\\r\\n]+(?!(?:\\s|\\S*Bearer\\s+\\S))\\S|\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}|\\S*Bearer\\s+\\S))\\S)`,
+);
+const CONNECTOR_DECODED_BEARER_RE = new RegExp(
+  `Bearer\\s+(?!${CONNECTOR_DEFERRED_BEARER_FOLLOWS.source})\\S+`,
+  "gi",
+);
+const CONNECTOR_ADJACENT_CREDENTIAL_START =
+  /(?:Bearer\s|(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:])/;
+const CONNECTOR_RAW_UNIT =
+  /(?:[=:](?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)(?:\\[^\r\n]|[^"\\\r\n])+"?|'(?!\s*[:,}\]\r\n]|$)(?:\\[^\r\n]|[^'"\\\r\n])+'?)|=|:(?!\s|$|["']|\\")|\[redacted\]|\[(?!redacted\])|\\(?![nrt"\\])|[^\s"',;&}=:\]\\[])/;
+const CONNECTOR_SUFFIX_UNIT = new RegExp(
+  `(?:(?!${CONNECTOR_ADJACENT_CREDENTIAL_START.source})${CONNECTOR_RAW_UNIT.source})`,
+);
+const CONNECTOR_PLAIN_BEARER_RE = new RegExp(
+  `Bearer\\s+(?!${CONNECTOR_DEFERRED_BEARER_FOLLOWS.source}|\\[redacted\\](?!${CONNECTOR_SUFFIX_UNIT.source}))(?:\\\\"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^"\\r\\n]|[^"\\\\\\r\\n])+(?:\\\\"${CONNECTOR_SUFFIX_UNIT.source}*)?|"(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^"\\\\\\r\\n])+(?:"${CONNECTOR_SUFFIX_UNIT.source}*)?|'(?!\\s*[:,}\\]\\r\\n]|$)(?:\\\\[^\\r\\n]|[^'"\\\\\\r\\n])+(?:'${CONNECTOR_SUFFIX_UNIT.source}*)?|\\[redacted\\]${CONNECTOR_SUFFIX_UNIT.source}+|(?:${CONNECTOR_RAW_UNIT.source})+)`,
+  "gi",
+);
 
 export function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal {
   return AbortSignal.any(signals.filter((signal): signal is AbortSignal => Boolean(signal)));
@@ -39,16 +55,12 @@ export function sanitizeConnectorError(
   const message = connectorErrorMessage(error);
   const sanitizeDecoded = (value: string) =>
     redactSecrets(value, secrets)
-      .replace(
-        /Bearer\s+(?!Bearer(?:[^\S\r\n]+(?!(?:\s|\S*Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:]\s))\S|\s+(?!(?:\s|\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$))|\S*Bearer\s+\S|[\w-]*(?:api[_-]?key|access[_-]?token|password|secret|authorization|auth)\s*[=:]\s))\S))\S+/gi,
-        "Bearer [redacted]",
-      )
+      .replace(CONNECTOR_DECODED_BEARER_RE, "Bearer [redacted]")
       .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
   const sanitizePlain = (value: string) =>
-    redactPlainBearerTokens(redactSecrets(value, secrets)).replace(
-      /trg_(?:live|test)_[A-Za-z0-9_-]+/g,
-      "[redacted]",
-    );
+    redactSecrets(value, secrets)
+      .replace(CONNECTOR_PLAIN_BEARER_RE, "Bearer [redacted]")
+      .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
   const cleaned = redactJsonStringsAndPlainText(message, sanitizeDecoded, sanitizePlain, secrets);
   const maxChars = options?.maxChars ?? 2_000;
   return Number.isFinite(maxChars) ? sliceWellFormed(cleaned, maxChars) : cleaned;

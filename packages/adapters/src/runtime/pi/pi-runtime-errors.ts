@@ -216,7 +216,9 @@ function hasRedactableNextValue(
   const ch = text[pos]!;
   if (ch === "\n" || ch === "\r") return false;
   if (!decoded && ch === "\\" && text[pos + 1] === '"') {
-    return pos + 2 < text.length && text[pos + 2] !== '"';
+    const closeAt = scanEscapedDoubleQuotedEnd(text, pos);
+    if (closeAt >= 0) return closeAt > pos + 2;
+    return pos + 2 < text.length && !/[\s"',;&]/.test(text[pos + 2]!);
   }
   if (ch === '"' || ch === "'") {
     if (!requireSpaceAfterSep) {
@@ -438,9 +440,11 @@ function redactGenericAssignmentsByPattern(
     if (!decoded && text[valueStart] === "\\" && text[valueStart + 1] === '"') {
       const closeAt = scanEscapedDoubleQuotedEnd(text, valueStart);
       if (closeAt >= 0) {
-        out += `${text.slice(cursor, valueStart)}\\"[redacted]\\"`;
-        cursor = closeAt + 2;
-        pattern.lastIndex = cursor;
+        if (closeAt > valueStart + 2) {
+          out += `${text.slice(cursor, valueStart)}\\"[redacted]\\"`;
+          cursor = closeAt + 2;
+          pattern.lastIndex = cursor;
+        }
         continue;
       }
       let end = valueStart + 2;

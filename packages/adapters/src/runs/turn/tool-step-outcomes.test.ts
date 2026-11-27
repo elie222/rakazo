@@ -1712,6 +1712,8 @@ describe("tool step outcomes", () => {
       "Bearer Bearer auth=foo\\opaque-123",
       String.raw`Bearer auth:\opaque-123`,
       "secret:\nopaque-123secret=",
+      'secret:\nopaque-123secret=""',
+      'Bearer opaque-123secret=""',
     ];
     for (const msg of rawQuotedDeferredBearers) {
       const payload = JSON.stringify({ msg, sibling: 7 });
@@ -1846,6 +1848,15 @@ describe("tool step outcomes", () => {
     expect(
       sanitizeConnectorError(new Error(JSON.stringify({ msg: "Bearer Bearer secret=opaque-123" }))),
     ).toBe('{"msg":"Bearer Bearer [redacted]"}');
+    expect(sanitizeConnectorError(new Error('Bearer secret="opaque-123"'))).toBe(
+      "Bearer [redacted]",
+    );
+    expect(sanitizeConnectorError(new Error("Bearer auth=[redacted]opaque-123"))).toBe(
+      "Bearer [redacted]",
+    );
+    expect(sanitizeConnectorError(new Error("Bearer auth:opaque-123"))).toBe("Bearer [redacted]");
+    expect(sanitizeConnectorError(new Error('Bearer auth:"opaque-123"'))).toBe("Bearer [redacted]");
+    expect(sanitizeError('Bearer auth:"opaque-123"')).toBe('Bearer auth:"[redacted]"');
     expect(
       sanitizeConnectorError(
         new Error(JSON.stringify({ msg: "Bearer Bearer xBearer opaque-123" })),

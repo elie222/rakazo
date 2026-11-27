@@ -32,7 +32,7 @@ const JSON_CONTAINER_LINE_START =
   /(?:\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$)))/;
 const RAW_JSON_CONTAINER_START =
   /(?:\{(?:\s|\\[nrt])*(?:\\*"|\}|$)|\[(?:\s|\\[nrt])*(?:\\*"|[{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=\s|\\[nrt]|[,\]$])))/;
-const RAW_ESCAPED_QUOTED_VALUE = /\\(?:\\\\)*"[^\S\r\n]*[^"\s\r\n]/;
+const RAW_ESCAPED_QUOTED_VALUE = /\\(?:\\\\)*"(?!\\")[^\S\r\n]*(?!\\")[^"\s\r\n]/;
 const RAW_QUOTED_VALUE = /"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"|'[^'"\r\n]+'/;
 const RAW_ASSIGNED_VALUE = new RegExp(
   `(?:${RAW_ESCAPED_QUOTED_VALUE.source}|${RAW_QUOTED_VALUE.source}|\\\\(?:\\\\|(?![nrt"]))|[^\\s"',;&\\\\])`,
@@ -821,8 +821,10 @@ function redactJsonStringsAndPlainTextSingle(
     ) {
       continue;
     }
+    const replaced = redactSingleJsonStringToken(token, redactString, redactPlain, rawTokenRanges);
+    if (!isStrictJsonColon(raw, index, false) && replaced === token) continue;
     if (index > cursor) out += redactPlain(raw.slice(cursor, index));
-    out += redactSingleJsonStringToken(token, redactString, redactPlain, rawTokenRanges);
+    out += replaced;
     cursor = end;
   }
   if (cursor < raw.length) out += redactPlain(raw.slice(cursor));
