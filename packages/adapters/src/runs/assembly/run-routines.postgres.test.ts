@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { BackgroundJob } from "@rakazo/adapter-kit";
 import { deferred } from "@rakazo/core/test-async";
 import type { Prisma, PrismaClient } from "@rakazo/db";
@@ -12,10 +12,12 @@ import {
   SpaceDeletionInProgressError,
   sendUserMessage,
 } from "@rakazo/db";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { routineTimerNonce } from "../../routines/routine-coalescing.js";
 import { deleteSpentRoutine } from "../../routines/routine-end.js";
 import { routineGroupThreadId } from "../../routines/routine-thread.js";
 import { createRunExecutor } from "../executor/executor.js";
+import { pilotRoutineRequest } from "../turn/primary-routine-pilot.js";
 import { createJobReconciler } from "../wakeups/job-reconciler.js";
 
 const url = process.env.DATABASE_URL;
@@ -76,6 +78,99 @@ describePostgres("routine tick prompt and model consistency (PostgreSQL)", () =>
     await expect(routineGroupThreadId(system, routine, botId)).resolves.toBeNull();
     await system.chatGroup.delete({ where: { id: group.id } });
     await system.bot.delete({ where: { id: other.id } });
+  });
+
+  it("queues one native run per recurring occurrence and rechecks its authorization", async () => {
+    const dueAt = new Date(Math.floor((Date.now() - 60_000) / 1000) * 1000);
+    const prompt = "Read this local text fixture.";
+    const pin = {
+      modelProvider: "anthropic",
+      modelId: "fixture-model",
+      modelCredentialId: "fixture-named-key",
+    };
+    const savedBot = await system.bot.findUniqueOrThrow({ where: { id: identity.botId } });
+    await system.bot.update({ where: { id: identity.botId }, data: pin });
+    const routine = await system.routine.create({
+      data: {
+        ...identity,
+        name: "native timer fixture",
+        prompt,
+        crons: ["0 * * * *"],
+        active: true,
+        nextRunAt: dueAt,
+      },
+    });
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", identity.botId);
+    vi.stubEnv(
+      "PRIMARY_RUNTIME_PILOT_ROUTINES",
+      `${routine.id}:${createHash("sha256").update(prompt).digest("hex")}`,
+    );
+    try {
+      const executor = createRunExecutor({
+        prisma: system,
+        jobs: {
+          enqueue: async () => undefined,
+          cancel: async () => undefined,
+          close: async () => undefined,
+        },
+        events: {
+          append: (input: Parameters<typeof appendEvent>[1]) => appendEvent(system, input),
+          notify: async () => undefined,
+        },
+      } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+      await Promise.all([
+        executor.wakeRoutine(routine.id, dueAt.toISOString()),
+        executor.wakeRoutine(routine.id, dueAt.toUTCString()),
+      ]);
+      // A racing edit can restore the old due time, even after the scheduler advanced it.
+      await system.routine.update({ where: { id: routine.id }, data: { nextRunAt: dueAt } });
+      await executor.wakeRoutine(routine.id, dueAt.toISOString());
+      const runs = await system.run.findMany({ where: { routineId: routine.id } });
+      expect(runs).toHaveLength(1);
+      const [run] = runs;
+      expect(run).toMatchObject({
+        ...identity,
+        ...pin,
+        modelPinned: true,
+        primaryRuntime: "claude-agent",
+        clientNonce: routineTimerNonce(routine.id, dueAt.toISOString()),
+      });
+      const task = await system.task.findUniqueOrThrow({ where: { id: run!.taskId } });
+      const request = () =>
+        pilotRoutineRequest(
+          system,
+          { ...run!, primaryRuntime: run!.primaryRuntime! },
+          task.prompt,
+          { provider: pin.modelProvider, id: pin.modelId, connectionId: pin.modelCredentialId },
+          undefined,
+          [],
+        );
+      await expect(request()).resolves.toMatchObject({ prompt, history: [], tools: [] });
+      await system.routine.update({
+        where: { id: routine.id },
+        data: { endsAt: new Date(dueAt.getTime() - 1) },
+      });
+      await expect(request()).rejects.toThrow("no longer authorized");
+      await system.routine.update({
+        where: { id: routine.id },
+        data: { endsAt: null, active: false },
+      });
+      await expect(request()).rejects.toThrow("no longer authorized");
+    } finally {
+      vi.unstubAllEnvs();
+      await system.run.deleteMany({ where: { routineId: routine.id } });
+      // Teardown deletes the dedicated test Space and any remaining tasks.
+      await system.routine.deleteMany({ where: { id: routine.id } });
+      await system.bot.update({
+        where: { id: identity.botId },
+        data: {
+          modelProvider: savedBot.modelProvider,
+          modelId: savedBot.modelId,
+          modelCredentialId: savedBot.modelCredentialId,
+        },
+      });
+    }
   });
 
   it("runs the prompt that was saved with the model it claims", async () => {

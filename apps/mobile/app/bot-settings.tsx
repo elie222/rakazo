@@ -90,6 +90,7 @@ function BotSettings() {
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(focus === "model" || pickedModel !== undefined);
   const [modelKey, setModelKey] = useState("");
+  const [modelCredentialId, setModelCredentialId] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [autoSpeak, setAutoSpeak] = useState(false);
   // A setting this screen no longer offers still shows while the bot has it changed from the
@@ -170,6 +171,7 @@ function BotSettings() {
     follow(setModelKey, (from) =>
       from.modelProvider && from.modelId ? modelOptionKey(from.modelProvider, from.modelId) : "",
     );
+    follow(setModelCredentialId, (from) => from.modelCredentialId ?? "");
     follow<string>(setThinkingLevel, (from) => from.thinkingLevel ?? "");
     follow(setAutoSpeak, (from) => from.autoSpeak);
     setChanged(
@@ -190,6 +192,7 @@ function BotSettings() {
     catalog: catalog.map(localizeModelEntry),
     me,
     modelKey,
+    modelCredentialId,
   });
   const {
     selectedModel,
@@ -200,8 +203,17 @@ function BotSettings() {
     defaultThinkingLevel,
     savedModelKey,
     savedThinkingLevel,
+    connectionModelKey,
+    connections: eligibleConnections,
   } = modelState;
 
+  const connectionChoices: MenuPickerChoice[] = [
+    { key: "", label: t`Automatic` },
+    ...eligibleConnections.map(({ id, label }) => ({ key: id, label })),
+    ...(modelCredentialId && !eligibleConnections.some(({ id }) => id === modelCredentialId)
+      ? [{ key: modelCredentialId, label: t`Unavailable connection`, disabled: true }]
+      : []),
+  ];
   const thinkingChoices: MenuPickerChoice[] = thinkingOptions.map((level) => ({
     key: level,
     label: thinkingLevelLabel(level),
@@ -212,9 +224,11 @@ function BotSettings() {
   }, [focus]);
 
   function selectModel(key: string) {
+    if (modelCredentialId && key === shownKey) return;
     const saved = savedModelKey(key);
     if (saved === selectedModelKey) return;
     setModelKey(saved);
+    setModelCredentialId("");
     setThinkingLevel("");
   }
 
@@ -338,6 +352,7 @@ function BotSettings() {
         avatarSet?: BotAvatarSet;
         modelProvider?: string | null;
         modelId?: string | null;
+        modelCredentialId?: string | null;
         thinkingLevel?: ThinkingLevel | null;
         autoSpeak?: boolean;
       } = { botId };
@@ -355,6 +370,9 @@ function BotSettings() {
       if (modelChanged) {
         update.modelProvider = selected?.provider ?? null;
         update.modelId = selected?.modelId ?? null;
+      }
+      if (modelCredentialId !== (bot.modelCredentialId ?? "")) {
+        update.modelCredentialId = modelCredentialId || null;
       }
       if (modelMetaReady && (modelChanged || thinkingChanged)) {
         update.thinkingLevel = thinkingOptions.length
@@ -415,6 +433,7 @@ function BotSettings() {
       autoSpeak !== bot.autoSpeak ||
       (selectedModel?.provider ?? null) !== (bot.modelProvider ?? null) ||
       (selectedModel?.modelId ?? null) !== (bot.modelId ?? null) ||
+      modelCredentialId !== (bot.modelCredentialId ?? "") ||
       (thinkingLevel || null) !== (bot.thinkingLevel ?? null));
 
   const hasVoiceMenu = !voiceError && voices.length > 1;
@@ -571,6 +590,18 @@ function BotSettings() {
                 }
                 value={shownKey}
               />
+              {shownKey && (eligibleConnections.length > 0 || modelCredentialId) ? (
+                <MenuPicker
+                  choices={connectionChoices}
+                  label={t`Model connection`}
+                  onChange={(id) => {
+                    setModelKey(connectionModelKey(id));
+                    setModelCredentialId(id);
+                    setThinkingLevel("");
+                  }}
+                  value={modelCredentialId}
+                />
+              ) : null}
               {thinkingOptions.length ? (
                 <MenuPicker
                   choices={thinkingChoices}

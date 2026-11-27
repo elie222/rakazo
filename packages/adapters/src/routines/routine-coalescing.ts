@@ -48,6 +48,7 @@ export async function findPendingRoutineTick(
     userId: config.userId,
     threadId: config.threadId,
     trigger: "routine",
+    primaryRuntime: null,
     status: "queued",
     retryOfRunId: null,
     sourceMessageId: null,
