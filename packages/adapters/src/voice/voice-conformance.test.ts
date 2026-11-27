@@ -17,6 +17,7 @@ import {
   SCRIPTED_TRANSCRIPT,
   ScriptedVoiceProvider,
 } from "../providers/voice/scripted/scripted-voice.js";
+import { TypecastVoiceProvider } from "../providers/voice/typecast/typecast-voice.js";
 import { XaiVoiceProvider } from "../providers/voice/xai/xai-voice.js";
 import type { VoiceProviderId } from "./voice-providers.js";
 import { voiceProviders } from "./voice-providers.js";
@@ -162,6 +163,25 @@ const fixtures: Record<VoiceProviderId, VoiceConformanceFixture> = {
       "POST https://api.cartesia.ai/tts/bytes": {
         answer: audio,
         json: ["model_id", "transcript", "voice", "output_format"],
+      },
+    },
+  },
+  typecast: {
+    provider: () => new TypecastVoiceProvider(),
+    apiKey: TEST_KEY,
+    auth: { "x-api-key": TEST_KEY },
+    routes: {
+      "GET https://api.typecast.ai/v1/users/me/subscription": () => Response.json({ plan: "free" }),
+      "GET https://api.typecast.ai/v3/voices": {
+        answer: () =>
+          Response.json([
+            { voice_id: "tc_voice-1", voice_name: { eng: "Olivia", kor: "올리비아" } },
+          ]),
+        query: ["model"],
+      },
+      "POST https://api.typecast.ai/v1/text-to-speech": {
+        answer: audio,
+        json: ["voice_id", "text", "model"],
       },
     },
   },
