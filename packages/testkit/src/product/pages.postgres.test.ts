@@ -12,12 +12,18 @@ import {
 import type { createApp } from "@rakazo/api/app";
 import type {
   AiConsentStatus,
+  PageAppInstall,
+  PageAppView,
   PageDetail,
   PageReview,
   PageSummary,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { SHARED_PAGE_PATH_PREFIX } from "@rakazo/contracts";
+import {
+  PAGE_APP_API_PATH,
+  PAGE_APP_TOKEN_PREFIX,
+  SHARED_PAGE_PATH_PREFIX,
+} from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
 import { deletePageShareSecrets, pageRevisionPendingCutoff } from "@rakazo/db";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
@@ -1863,6 +1869,82 @@ describePages("pages", () => {
       last = (await app.request(`${SHARED_PAGE_PATH_PREFIX}${"y".repeat(43)}`)).status;
     }
     expect(last).toBe(429);
+  });
+
+  it("lets an installed page app read and save only its own page until it is removed", async () => {
+    const owner = await signup(app, `app-owner-${stamp}@example.test`, "Owner");
+    const outsider = await signup(app, `app-outsider-${stamp}@example.test`, "Outsider");
+    const bot = await createBot(app, owner, "App bot");
+    const save = async (args: Record<string, unknown>) => {
+      await sendAndWait(app, owner, bot.id, {
+        text: `call save_page with ${JSON.stringify(args)}`,
+      });
+      return (await lastResult(bot.id)) as { pageId: string };
+    };
+    const { pageId } = await save({
+      title: "Deals",
+      source: page("Deals"),
+      icon: "rocket",
+      iconColor: "green",
+    });
+    const other = await save({ title: "Other", source: page("Other") });
+    expect((await raw(app, outsider, "pageApps/install", { pageId, abilities: [] })).status).toBe(
+      404,
+    );
+    const installed = await rpc<PageAppInstall>(app, owner, "pageApps/install", {
+      pageId,
+      abilities: ["notify"],
+    });
+    expect(installed).toMatchObject({ title: "Deals", icon: "rocket", iconColor: "green" });
+    const call = (path = "", init: RequestInit = {}, token = installed.token) =>
+      app.request(`${PAGE_APP_API_PATH}${path}`, {
+        ...init,
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      });
+
+    const view = (await (await call()).json()) as PageAppView;
+    expect(view).toMatchObject({ appId: installed.appId, approved: ["notify"] });
+    expect(view.page).toMatchObject({ id: pageId, title: "Deals" });
+    const saved = await call("/state", {
+      method: "PUT",
+      body: JSON.stringify({ values: { done: true } }),
+    });
+    expect(saved.status).toBe(200);
+    expect((await rpc<PageDetail>(app, owner, "pages/get", { pageId })).readerState).toEqual({
+      done: true,
+    });
+    const approved = await call("/abilities", {
+      method: "PUT",
+      body: JSON.stringify({ abilities: ["ask", "notify"] }),
+    });
+    expect(await approved.json()).toEqual({ approved: ["ask", "notify"] });
+
+    // The token names one page: nothing in it reaches the owner's other pages or session routes.
+    const forged = `${PAGE_APP_TOKEN_PREFIX}${"x".repeat(43)}`;
+    expect((await call("", {}, forged)).status).toBe(401);
+    expect(
+      (
+        await app.request(`/rpc/pages/get`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${installed.token}`,
+            "content-type": "application/json",
+            origin: "http://127.0.0.1:5173",
+          },
+          body: JSON.stringify({ json: { pageId: other.pageId } }),
+        })
+      ).status,
+    ).toBe(401);
+
+    expect((await call("", { method: "DELETE" })).status).toBe(200);
+    expect((await call()).status).toBe(401);
+
+    const again = await rpc<PageAppInstall>(app, owner, "pageApps/install", {
+      pageId,
+      abilities: [],
+    });
+    await rpc(app, owner, "pages/remove", { pageId });
+    expect((await call("", {}, again.token)).status).toBe(401);
   });
 });
 

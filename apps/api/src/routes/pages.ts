@@ -1,6 +1,7 @@
 import { AI_CONSENT_REQUIRED } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { aiConsentStatus } from "../account/ai-consent.js";
+import { installPageApp, removePageApp } from "../content/page-apps.js";
 import {
   addPageComment,
   getPageGrants,
@@ -78,6 +79,14 @@ export function pagesRoutes(ctx: RouterContext) {
       ),
       image: authed.pageReviews.image.handler(({ context, input }) =>
         getPageImage(deps, context.actor, input),
+      ),
+    },
+    pageApps: {
+      install: authed.pageApps.install.handler(({ context, input }) =>
+        installPageApp(deps.prisma, context.actor, input),
+      ),
+      remove: authed.pageApps.remove.handler(({ context, input }) =>
+        removePageApp(deps.prisma, context.actor, input.appId),
       ),
     },
     pages: {

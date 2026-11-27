@@ -669,6 +669,9 @@ importers:
       '@rakazo/logging':
         specifier: workspace:*
         version: link:../../packages/logging
+      '@rakazo/page-kit':
+        specifier: workspace:*
+        version: link:../../packages/page-kit
       '@rakazo/ui-tokens':
         specifier: workspace:*
         version: link:../../packages/ui-tokens

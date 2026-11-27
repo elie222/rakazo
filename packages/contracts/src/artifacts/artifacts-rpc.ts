@@ -22,6 +22,7 @@ import {
   TicketSchema,
   UpdateTicketInput,
 } from "./board.js";
+import { PageAppInstallInputSchema, PageAppInstallSchema } from "./page-apps.js";
 import {
   PageAccessInput,
   PageCommentBody,
@@ -190,5 +191,11 @@ export const artifactsRpc = {
       ),
     pin: oc.input(z.strictObject({ pageId: Id, pinned: z.boolean() })).output(PageSummarySchema),
     remove: oc.input(z.strictObject({ pageId: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  /** The caller's own pages installed as apps on their devices. */
+  pageApps: {
+    /** Issues the app's token, which the response carries once. */
+    install: oc.input(PageAppInstallInputSchema).output(PageAppInstallSchema),
+    remove: oc.input(z.strictObject({ appId: Id })).output(z.object({ ok: z.literal(true) })),
   },
 };

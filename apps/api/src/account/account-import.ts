@@ -44,6 +44,7 @@ import {
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { markExpectedFailure } from "@rakazo/logging/hono";
 import { pageViewerCode } from "@rakazo/page-kit/compile";
+import { isPageIcon } from "@rakazo/page-kit/icon-names";
 import { checkPageSource } from "@rakazo/page-kit/validate";
 import type { Hono } from "hono";
 import { cancelBody } from "../http/http-body.js";
@@ -693,6 +694,8 @@ class AccountImporter implements ArchiveSink {
             botId: space.optional(record.botId),
             groupId: space.optional(record.groupId),
             title: record.title,
+            icon: isPageIcon(record.icon) ? record.icon : null,
+            iconColor: record.iconColor ?? null,
             pinnedAt: date(record.pinnedAt),
             currentVersion: record.currentVersion,
             createdAt: new Date(record.createdAt),

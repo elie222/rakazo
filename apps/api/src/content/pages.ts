@@ -9,7 +9,12 @@ import type {
   PageVisibility,
   SharedPage,
 } from "@rakazo/contracts";
-import { pageReviewPath, pageShareTokenFromSlug, pageShareUrl } from "@rakazo/contracts";
+import {
+  PageIconColorSchema,
+  pageReviewPath,
+  pageShareTokenFromSlug,
+  pageShareUrl,
+} from "@rakazo/contracts";
 import { ClientError, escapeSearchWildcards } from "@rakazo/core";
 import type {
   PageShareSecret,
@@ -53,6 +58,8 @@ const summarySelect = {
   visibility: true,
   currentVersion: true,
   pinnedAt: true,
+  icon: true,
+  iconColor: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.PageSelect;
@@ -69,6 +76,8 @@ function pageSummary(row: SummaryRow): PageSummary {
       row.visibility === "link" || row.visibility === "people" ? row.visibility : "private",
     currentVersion: row.currentVersion,
     pinned: row.pinnedAt !== null,
+    icon: row.icon,
+    iconColor: PageIconColorSchema.safeParse(row.iconColor).data ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

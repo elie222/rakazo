@@ -17,6 +17,7 @@ import {
 } from "../../lib/pages/pages";
 import { useSave, useSpaceQueries } from "../../lib/query/query";
 import { errorCode } from "../../lib/query/user-error";
+import { PageAppButton } from "./PageAppButton";
 import { PageNotice } from "./PageNotice";
 import { PagePeople } from "./PagePeople";
 import { PageView } from "./PageView";
@@ -192,6 +193,7 @@ function OpenPage({
       share={
         data ? (
           <>
+            <PageAppButton page={{ ...data, abilities: [] }} />
             <SharePopover
               compact={compact}
               title={data.title}

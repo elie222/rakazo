@@ -1,0 +1,149 @@
+import { createHash, randomBytes } from "node:crypto";
+import type { Actor, PageAbility, PageAppInstall } from "@rakazo/contracts";
+import {
+  PAGE_ABILITIES,
+  PAGE_APP_TOKEN,
+  PAGE_APP_TOKEN_PREFIX,
+  PageIconColorSchema,
+} from "@rakazo/contracts";
+import { ClientError } from "@rakazo/core";
+import type { PrismaClient } from "@rakazo/db";
+import { IsolationError, requireMembership, runAsSystem } from "@rakazo/db";
+import { actorFromMembership } from "../auth/request-session.js";
+
+/** Enough for every device someone keeps; a runaway client stops here. */
+const MAX_APPS_PER_USER = 50;
+const LAST_USED_RESOLUTION_MS = 60 * 60_000;
+
+export class TooManyPageAppsError extends ClientError {
+  constructor() {
+    super("CONFLICT", `You can install up to ${MAX_APPS_PER_USER} page apps`, "TOO_MANY_PAGE_APPS");
+  }
+}
+
+export function hashPageAppToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/** Only abilities the app knows, each once, in their canonical order. */
+export function approvedAbilities(values: readonly string[]): PageAbility[] {
+  return PAGE_ABILITIES.filter((ability) => values.includes(ability));
+}
+
+export async function installPageApp(
+  prisma: PrismaClient,
+  actor: Actor,
+  input: { pageId: string; abilities: PageAbility[] },
+): Promise<PageAppInstall> {
+  const page = await prisma.page.findFirst({
+    where: { id: input.pageId, spaceId: actor.spaceId, userId: actor.userId },
+    select: { id: true, title: true, icon: true, iconColor: true },
+  });
+  if (!page) throw new IsolationError();
+  const token = `${PAGE_APP_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
+  const app = await runAsSystem("install a page app", () =>
+    prisma.$transaction(async (tx) => {
+      // Serializes one person's installs so two at once cannot pass the cap together.
+      await tx.$queryRaw`SELECT "id" FROM "user" WHERE "id" = ${actor.userId} FOR UPDATE`;
+      if ((await tx.pageApp.count({ where: { userId: actor.userId } })) >= MAX_APPS_PER_USER)
+        throw new TooManyPageAppsError();
+      return tx.pageApp.create({
+        data: {
+          pageId: page.id,
+          userId: actor.userId,
+          spaceId: actor.spaceId,
+          tokenHash: hashPageAppToken(token),
+          abilities: approvedAbilities(input.abilities),
+        },
+        select: { id: true },
+      });
+    }),
+  );
+  const color = PageIconColorSchema.safeParse(page.iconColor);
+  return {
+    appId: app.id,
+    token,
+    title: page.title,
+    icon: page.icon,
+    iconColor: color.success ? color.data : null,
+  };
+}
+
+export async function removePageApp(prisma: PrismaClient, actor: Actor, appId: string) {
+  await runAsSystem("remove a page app", () =>
+    prisma.pageApp.deleteMany({ where: { id: appId, userId: actor.userId } }),
+  );
+  return { ok: true as const };
+}
+
+export type PageAppAccess = {
+  appId: string;
+  pageId: string;
+  abilities: PageAbility[];
+  actor: Actor;
+};
+
+/**
+ * The app a bearer token belongs to, acting as its owner in the Space it was installed from.
+ * Null for any token that is malformed, revoked, or whose owner can no longer act there.
+ */
+export async function pageAppFromToken(
+  prisma: PrismaClient,
+  authorization: string | undefined,
+  now = new Date(),
+): Promise<PageAppAccess | null> {
+  const token = authorization?.match(/^Bearer (\S+)$/)?.[1];
+  if (!token || !PAGE_APP_TOKEN.test(token)) return null;
+  const app = await runAsSystem("read a page app token", () =>
+    prisma.pageApp.findUnique({
+      where: { tokenHash: hashPageAppToken(token) },
+      select: {
+        id: true,
+        pageId: true,
+        spaceId: true,
+        abilities: true,
+        lastUsedAt: true,
+        user: { select: { id: true, email: true, deactivatedAt: true } },
+      },
+    }),
+  );
+  if (!app || app.user.deactivatedAt) return null;
+  const actor = await actorFromMembership(requireMembership(prisma, app.user, app.spaceId));
+  if (!actor) return null;
+  if (!app.lastUsedAt || now.getTime() - app.lastUsedAt.getTime() > LAST_USED_RESOLUTION_MS) {
+    await runAsSystem("mark a page app used", () =>
+      prisma.pageApp.updateMany({ where: { id: app.id }, data: { lastUsedAt: now } }),
+    );
+  }
+  return {
+    appId: app.id,
+    pageId: app.pageId,
+    abilities: approvedAbilities(app.abilities),
+    actor,
+  };
+}
+
+export async function setPageAppAbilities(
+  prisma: PrismaClient,
+  appId: string,
+  abilities: PageAbility[],
+): Promise<PageAbility[]> {
+  const approved = approvedAbilities(abilities);
+  await runAsSystem("approve page app abilities", () =>
+    prisma.pageApp.updateMany({ where: { id: appId }, data: { abilities: approved } }),
+  );
+  return approved;
+}
+
+export async function revokePageAppToken(prisma: PrismaClient, appId: string) {
+  await runAsSystem("revoke a page app", () => prisma.pageApp.deleteMany({ where: { id: appId } }));
+}
+
+/** Whether the app's token still opens it, for long-lived streams to notice an uninstall. */
+export async function pageAppStillInstalled(prisma: PrismaClient, appId: string) {
+  return Boolean(
+    await runAsSystem("check a page app", () =>
+      prisma.pageApp.findUnique({ where: { id: appId }, select: { id: true } }),
+    ),
+  );
+}
