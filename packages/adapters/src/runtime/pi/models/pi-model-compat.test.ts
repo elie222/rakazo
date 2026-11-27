@@ -111,4 +111,10 @@ it("copies Bedrock catalog pricing onto explicitly Bedrock-prefixed gateway mode
 
   const custom = openAiCompatibleModel("my-custom-local-model", "https://gateway.example.test/v1");
   expect(custom.cost).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+
+  const unprefixed = openAiCompatibleModel(
+    "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "https://custom-server.example.test/v1",
+  );
+  expect(unprefixed.cost).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 });

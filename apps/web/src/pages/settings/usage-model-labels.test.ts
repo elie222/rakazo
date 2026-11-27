@@ -74,3 +74,40 @@ it("resolves cross-region and versioned model IDs against catalog siblings witho
     providerLabel: undefined,
   });
 });
+
+it("preserves dots inside versioned model names so distinct models never collide", () => {
+  const catalog = [
+    {
+      provider: "anthropic",
+      id: "claude-opus-4.5",
+      label: "Claude Opus 4.5",
+      providerName: "Anthropic",
+    },
+    {
+      provider: "anthropic",
+      id: "claude-opus-5.5",
+      label: "Claude Opus 5.5",
+      providerName: "Anthropic",
+    },
+  ];
+  const labels = usageModelLabels(
+    [
+      { provider: "openai-compatible", model: "bedrock/global.anthropic.claude-opus-5.5-v1:0" },
+      { provider: "openai-compatible", model: "bedrock/global.anthropic.claude-opus-4.5-v1:0" },
+    ],
+    catalog,
+    "Unlisted model",
+  );
+  expect(
+    labels.labelsFor({
+      provider: "openai-compatible",
+      model: "bedrock/global.anthropic.claude-opus-5.5-v1:0",
+    }).modelLabel,
+  ).toBe("Claude Opus 5.5");
+  expect(
+    labels.labelsFor({
+      provider: "openai-compatible",
+      model: "bedrock/global.anthropic.claude-opus-4.5-v1:0",
+    }).modelLabel,
+  ).toBe("Claude Opus 4.5");
+});

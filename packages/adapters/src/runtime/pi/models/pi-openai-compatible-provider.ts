@@ -134,8 +134,7 @@ export function openAiCompatibleModel(
 let anthropicCatalog: ReturnType<typeof builtinModels> | undefined;
 let compatibleBedrockCatalog: ReturnType<typeof builtinModels> | undefined;
 
-const EXPLICIT_BEDROCK_GATEWAY_ID =
-  /^(?:bedrock\/|(?:global|us|eu|ap|au|in|jp|ca|sa)\.(?:anthropic|amazon|meta|mistral|cohere|deepseek|openai)\.)/i;
+const EXPLICIT_BEDROCK_GATEWAY_PREFIX = /^bedrock\//i;
 
 /**
  * Copies catalog pricing for explicitly Bedrock-prefixed gateway model IDs while leaving custom
@@ -143,8 +142,8 @@ const EXPLICIT_BEDROCK_GATEWAY_ID =
  */
 function gatewayBedrockCatalogCost(id: string): Model<Api>["cost"] | undefined {
   const trimmed = id.trim();
-  if (!EXPLICIT_BEDROCK_GATEWAY_ID.test(trimmed)) return undefined;
-  const bedrockId = trimmed.replace(/^bedrock\//i, "");
+  if (!EXPLICIT_BEDROCK_GATEWAY_PREFIX.test(trimmed)) return undefined;
+  const bedrockId = trimmed.replace(EXPLICIT_BEDROCK_GATEWAY_PREFIX, "");
   compatibleBedrockCatalog ??= applyPiModelCompatibility(builtinModels());
   const known = compatibleBedrockCatalog.getModel("amazon-bedrock", bedrockId);
   if (!known) return undefined;

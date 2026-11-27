@@ -7,16 +7,28 @@ type CatalogName = Pick<ModelCatalogEntry, "provider" | "id" | "label" | "provid
 export const usageModelKey = ({ provider, model }: ModelIdentity) =>
   JSON.stringify([provider, model]);
 
+const GATEWAY_MODEL_PREFIX = /^(?:bedrock|vertex|azure|openai|anthropic|google)\//;
 const REGIONAL_MODEL_PREFIX = /^(?:global|us|eu|ap|au|in|jp|ca|sa)\./;
+const BEDROCK_VENDOR_PREFIX =
+  /^(?:anthropic|amazon|meta|mistral|cohere|deepseek|openai|ai21|stability|writer|twelvelabs|qwen)\./;
 
 function normalizedModelSlug(id: string): string {
   return id
     .trim()
     .toLowerCase()
-    .replace(/^[a-z0-9-]+\//, "")
+    .replace(GATEWAY_MODEL_PREFIX, "")
     .replace(REGIONAL_MODEL_PREFIX, "")
-    .replace(/^[a-z0-9-]+[./]/, "")
+    .replace(BEDROCK_VENDOR_PREFIX, "")
     .replace(/(?:-v\d+)?(?::\d+)?$/, "");
+}
+
+function recordUniqueSlug(map: Map<string, CatalogName | null>, key: string, entry: CatalogName) {
+  const existing = map.get(key);
+  if (existing === undefined) {
+    map.set(key, entry);
+  } else if (existing !== null && existing.label !== entry.label) {
+    map.set(key, null);
+  }
 }
 
 export function usageModelLabels(
@@ -25,8 +37,8 @@ export function usageModelLabels(
   fallbackLabel: string,
 ) {
   const catalogModels = new Map<string, CatalogName>();
-  const providerSlugs = new Map<string, CatalogName>();
-  const globalSlugs = new Map<string, CatalogName>();
+  const providerSlugs = new Map<string, CatalogName | null>();
+  const globalSlugs = new Map<string, CatalogName | null>();
   const providerNames = new Map<string, string>();
   for (const entry of catalog) {
     const provider = canonicalPiProviderId(entry.provider);
@@ -35,8 +47,8 @@ export function usageModelLabels(
     const slug = normalizedModelSlug(entry.id);
     if (slug) {
       const providerSlugKey = `${provider}\0${slug}`;
-      if (!providerSlugs.has(providerSlugKey)) providerSlugs.set(providerSlugKey, entry);
-      if (!globalSlugs.has(slug)) globalSlugs.set(slug, entry);
+      recordUniqueSlug(providerSlugs, providerSlugKey, entry);
+      recordUniqueSlug(globalSlugs, slug, entry);
     }
     if (entry.providerName && !providerNames.has(provider)) {
       providerNames.set(provider, entry.providerName);
@@ -49,9 +61,9 @@ export function usageModelLabels(
     if (!entry) {
       const slug = normalizedModelSlug(model);
       if (slug && slug !== model.trim().toLowerCase()) {
-        entry = providerSlugs.get(`${canonical}\0${slug}`);
+        entry = providerSlugs.get(`${canonical}\0${slug}`) ?? undefined;
         if (!entry) {
-          entry = globalSlugs.get(slug);
+          entry = globalSlugs.get(slug) ?? undefined;
           matchedCrossProvider = Boolean(entry);
         }
       }
