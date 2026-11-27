@@ -1949,12 +1949,33 @@ describe("tool step outcomes", () => {
       "Bearer foo\\xBearer\nopaque-123",
       "Bearer\nfoo\\xBearer\nopaque-123",
       "Bearer foo\\xsecret: opaque-123",
+      'Bearer "fixture"\\Bearer opaque-123',
+      "Bearer [redacted]\\Bearer opaque-123",
     ]) {
       const payload = JSON.stringify({ msg, sibling: 7 });
       for (const read of [kept, replay, failed, sanitizeError, sanitizeSensitiveText]) {
         const parsed = JSON.parse(read(payload) ?? "");
         expect(parsed.sibling).toBe(7);
         expect(parsed.msg).not.toContain("opaque-123");
+      }
+    }
+    for (const [msg, container] of [
+      ['Bearer foo\\{"ok":true}', '{"ok":true}'],
+      ["Bearer foo\\[12,34]", "[12,34]"],
+      ['Bearer "fixture"\\{"ok":true}', '{"ok":true}'],
+      ["Bearer [redacted]\\[12,34]", "[12,34]"],
+      ['Bearer [redacted]:{"ok":true}', ':{"ok":true}'],
+      ["Bearer [redacted]:[12,34]", ":[12,34]"],
+      ["Bearer [redacted]:bearer\t[12,34]", "[12,34]"],
+      ["Bearer [redacted]:bearer [12,34]", "[12,34]"],
+      ["Bearer Bearer\t[12,34]", "[12,34]"],
+      ["Bearer Bearer [12,34]", "[12,34]"],
+    ] as const) {
+      const payload = JSON.stringify({ msg, sibling: 7 });
+      for (const read of [kept, replay, failed, sanitizeError, sanitizeSensitiveText]) {
+        const parsed = JSON.parse(read(payload) ?? "");
+        expect(parsed.sibling).toBe(7);
+        expect(parsed.msg).toContain(container);
       }
     }
     expect(sanitizeConnectorError(new Error(String.raw`Bearer\n[redacted]\TokenTail`))).toBe(
