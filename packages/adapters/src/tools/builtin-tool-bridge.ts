@@ -81,8 +81,14 @@ const AREAS: Array<[area: string, matches: (name: string) => boolean]> = [
   ["memory", (name) => name.includes("memory")],
   [
     "media",
-    (name) => name.startsWith("generate_") || name === "render_plot" || name === "save_page",
+    (name) =>
+      name.startsWith("generate_") ||
+      name === "render_plot" ||
+      name === "save_page" ||
+      name === "show_cards" ||
+      name === "show_status",
   ],
+  ["chat", (name) => name === "react"],
   ["cloud agents", (name) => name.startsWith("cloud_agent_")],
   ["purchases", (name) => name.includes("purchase") || name === "paid_request"],
   ["email", (name) => name.includes("email")],

@@ -53,6 +53,7 @@ import { ChangeUndo, isUndoableChange } from "../cards/change-undo";
 import { ImportSetupCard } from "../cards/ImportSetupCard";
 import { McpApprovalCard } from "../cards/McpApprovalCard";
 import { OutgoingDraftCard } from "../cards/OutgoingDraftCard";
+import { ResultCards, StatusCard } from "../cards/ResultCards";
 import { RoutineApprovalDetail } from "../cards/routine-approval-detail";
 import { ToolQuestionCard } from "../cards/ToolQuestionCard";
 import { AttachmentFile } from "../media/attachment-file";
@@ -155,6 +156,8 @@ function isOwnCardBlock(block: MessageBlock): boolean {
     isSpecialMessageBlock(block) ||
     block.kind === "page" ||
     block.kind === "app" ||
+    block.kind === "card" ||
+    block.kind === "result_cards" ||
     block.kind === "tool_question"
   );
 }
@@ -176,6 +179,18 @@ function MessageBubbleBody(props: ComponentProps<typeof MessageBubbleContent>) {
     const first = blocks[0]!;
     if (first.kind === "page")
       return <PageCard key={`page-${index}`} block={first} messageId={message.id} />;
+    if (first.kind === "result_cards")
+      return (
+        <View key={`result-cards-${index}`} {...props.actionProps}>
+          <ResultCards block={first} />
+        </View>
+      );
+    if (first.kind === "card")
+      return (
+        <View key={`card-${index}`} {...props.actionProps}>
+          <StatusCard block={first} />
+        </View>
+      );
     if (first.kind === "tool_question")
       return (
         <ToolQuestionCard

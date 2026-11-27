@@ -119,11 +119,28 @@ const RoutineUpdateApproval = z.object({
 });
 export type RoutineUpdateApproval = z.infer<typeof RoutineUpdateApproval>;
 
+export const ResultCardItem = z.object({
+  title: z.string().max(160),
+  subtitle: z.string().max(240).optional(),
+  imageUrl: z.string().max(2048).optional(),
+  price: z.string().max(60).optional(),
+  rating: z.string().max(40).optional(),
+  url: z.string().max(2048).optional(),
+  badges: z.array(z.string().max(40)).max(4).optional(),
+  meta: z.string().max(160).optional(),
+});
+export type ResultCardItem = z.infer<typeof ResultCardItem>;
+
 export const MessageBlock = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("text"), text: z.string() }),
   z.object({
     kind: z.literal("card"),
     lines: z.array(z.object({ k: z.string(), v: z.string() })),
+  }),
+  z.object({
+    kind: z.literal("result_cards"),
+    title: z.string().max(120).optional(),
+    items: z.array(ResultCardItem).min(1).max(12),
   }),
   z.object({
     kind: z.literal("ask"),

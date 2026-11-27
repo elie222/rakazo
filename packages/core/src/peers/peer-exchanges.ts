@@ -23,7 +23,22 @@ export function isPeerReplyBlock(block: MessageBlock) {
     block.kind === "file" ||
     block.kind === "image" ||
     block.kind === "chart" ||
-    block.kind === "page"
+    block.kind === "page" ||
+    block.kind === "card" ||
+    block.kind === "result_cards"
+  );
+}
+
+/** Single source of truth for block kinds visible in peer-triggered runs (history and realtime). */
+export function isPeerVisibleBlock(block: unknown): boolean {
+  if (!block || typeof block !== "object" || !("kind" in block)) return false;
+  const candidate = block as MessageBlock;
+  return (
+    candidate.kind === "bot_message_sent" ||
+    candidate.kind === "bot_message_received" ||
+    candidate.kind === "ask" ||
+    candidate.kind === "app" ||
+    isPeerReplyBlock(candidate)
   );
 }
 

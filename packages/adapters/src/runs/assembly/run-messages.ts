@@ -53,6 +53,27 @@ function redactedArguments(json: string, secrets: string[]): string {
   }
 }
 
+const MAX_CARD_URL_LENGTH = 2_048;
+
+/** True when a URL carries any run secret in raw or percent-decoded form. */
+export function urlContainsRunSecret(url: string, secrets: string[]): boolean {
+  if (secrets.length === 0) return false;
+  if (redactSecrets(url, secrets) !== url) return true;
+  try {
+    const decoded = decodeURIComponent(url);
+    if (decoded !== url && redactSecrets(decoded, secrets) !== decoded) return true;
+  } catch {
+    // Malformed percent-encoding: raw check above already ran.
+  }
+  return false;
+}
+
+/** Keeps a card URL only if it fits the contract length limit and leaks no run secrets. */
+export function sanitizeCardUrl(url: string | undefined, secrets: string[]): string | undefined {
+  if (!url || url.length > MAX_CARD_URL_LENGTH) return undefined;
+  return urlContainsRunSecret(url, secrets) ? undefined : url;
+}
+
 export function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[] {
   return blocks.map((block) => {
     if (block.kind === "text") {
@@ -63,6 +84,39 @@ export function redactBlocks(blocks: MessageBlock[], secrets: string[]): Message
     }
     if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
       return { ...block, text: redactSecrets(block.text, secrets) };
+    }
+    if (block.kind === "card") {
+      return {
+        ...block,
+        lines: block.lines.map((line) => ({
+          k: redactSecrets(line.k, secrets),
+          v: redactSecrets(line.v, secrets),
+        })),
+      };
+    }
+    if (block.kind === "result_cards") {
+      return {
+        ...block,
+        ...(block.title ? { title: redactSecrets(block.title, secrets) } : {}),
+        items: block.items.map((item) => {
+          const safeUrl = sanitizeCardUrl(item.url, secrets);
+          const safeImageUrl = sanitizeCardUrl(item.imageUrl, secrets);
+          const { url: _u, imageUrl: _i, ...rest } = item;
+          return {
+            ...rest,
+            title: redactSecrets(item.title, secrets),
+            ...(item.subtitle ? { subtitle: redactSecrets(item.subtitle, secrets) } : {}),
+            ...(item.price ? { price: redactSecrets(item.price, secrets) } : {}),
+            ...(item.rating ? { rating: redactSecrets(item.rating, secrets) } : {}),
+            ...(item.meta ? { meta: redactSecrets(item.meta, secrets) } : {}),
+            ...(safeUrl ? { url: safeUrl } : {}),
+            ...(safeImageUrl ? { imageUrl: safeImageUrl } : {}),
+            ...(item.badges
+              ? { badges: item.badges.map((badge) => redactSecrets(badge, secrets)) }
+              : {}),
+          };
+        }),
+      };
     }
     if (block.kind === "page") return { ...block, title: redactSecrets(block.title, secrets) };
     if (block.kind === "steps") {
@@ -104,6 +158,7 @@ export async function publishMessage(
     status: "failed";
     result: "stopped";
   },
+  replyToMessageId?: string,
 ) {
   if (isBackgroundRunTrigger(run.trigger)) {
     blocks = blocks.filter((block) => block.kind === "ask" || block.kind === "computer");
@@ -141,6 +196,7 @@ export async function publishMessage(
         clientNonce,
         Boolean(stoppedHelper),
         lease,
+        replyToMessageId,
       );
     }, THREAD_LOCK_TRANSACTION_OPTIONS),
   );
@@ -161,6 +217,7 @@ export async function persistMessageInTransaction(
   clientNonce?: string,
   allowCancelledRun = false,
   lease?: RunLease,
+  replyToMessageId?: string,
 ) {
   // Clients get the blocks without the kept calls, in the message and in its event alike.
   const { blocks: shown, toolHistory } = splitToolHistory(blocks);
@@ -174,6 +231,7 @@ export async function persistMessageInTransaction(
     runId: run.id,
     markUnread,
     clientNonce,
+    replyToMessageId,
     allowCancelledRun,
     lease,
   });
@@ -189,6 +247,7 @@ export async function persistMessageInTransaction(
       messageId: message.id,
       role,
       blocks,
+      ...(replyToMessageId ? { replyToMessageId } : {}),
       callId: callIdFromClientNonce(clientNonce),
     },
   });

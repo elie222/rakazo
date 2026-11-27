@@ -15,6 +15,17 @@ export function selectableMessageText(message: { blocks: readonly MessageBlock[]
       if (block.kind === "channel_message") return channelMessageLine(block);
       if (block.kind === "text" || block.kind === "progress" || block.kind === "ask")
         return block.text;
+      if (block.kind === "card") {
+        return block.lines.map((line) => `${line.k} → ${line.v}`).join("\n");
+      }
+      if (block.kind === "result_cards") {
+        const rows = block.items.map((item) =>
+          [item.title, item.subtitle, item.price, item.rating, item.url]
+            .filter(Boolean)
+            .join(" · "),
+        );
+        return [block.title, ...rows].filter(Boolean).join("\n");
+      }
       return "";
     })
     .filter(Boolean)
