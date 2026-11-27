@@ -51,11 +51,8 @@ export abstract class ImageComputerSandbox extends LinuxDesktopSandbox implement
         this.shell.run(computer, ["bash", "-c", command], context),
       // Stock vnc.html reads localStorage, which throws in the opaque origin of the sandboxed
       // screen frame and leaves a black screen; the image's embed.html works there.
-      screenUrl: async (computer, port, context) => {
-        const address = await this.screenAddress(computer, context);
-        const host = address.includes(":") ? `[${address}]` : address;
-        return `http://${host}:${port}/embed.html`;
-      },
+      screenUrl: async (computer, port, context) =>
+        `${await this.screenOrigin(computer, port, context)}/embed.html`,
     });
   }
 
@@ -69,6 +66,17 @@ export abstract class ImageComputerSandbox extends LinuxDesktopSandbox implement
   protected abstract screenAddress(computer: ComputerRef, context: AdapterContext): Promise<string>;
   /** The address the screen relay listens on: the family the web connects with. */
   protected abstract relayBindHost(computer: ComputerRef, context: AdapterContext): Promise<string>;
+
+  /** Where the API, worker and web reach one of the computer's screen ports. */
+  protected async screenOrigin(
+    computer: ComputerRef,
+    port: number,
+    context: AdapterContext,
+  ): Promise<string> {
+    const address = await this.screenAddress(computer, context);
+    const host = address.includes(":") ? `[${address}]` : address;
+    return `http://${host}:${port}`;
+  }
 
   /** Whether the computer keeps its home in place across stops. */
   protected persistentHome(): boolean {

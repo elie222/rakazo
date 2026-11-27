@@ -14,6 +14,7 @@ import { DesktopSandboxProvider } from "../../providers/computer/desktop/desktop
 import { DockerSandboxProvider } from "../../providers/computer/docker/docker-sandbox.js";
 import { emulatedDockerSupervisor } from "../../providers/computer/docker/docker-sandbox.test-support.js";
 import { E2BSandboxProvider } from "../../providers/computer/e2b/e2b-sandbox.js";
+import { emulatedExe } from "../../providers/computer/exe/exe-sandbox.test-support.js";
 import { FakeSandboxProvider } from "../../providers/computer/fake/fake-sandbox.js";
 import { emulatedIncus } from "../../providers/computer/incus/incus-sandbox.test-support.js";
 import { emulatedInstabox } from "../../providers/computer/instabox/instabox-sandbox.test-support.js";
@@ -100,6 +101,7 @@ const fixtures: Record<KnownSandboxKind, SandboxConformanceFixture> = {
     unsetEnv: true,
   },
   incus: { provider: () => emulatedIncus().provider, workspace: true, unsetEnv: true },
+  exe: { provider: () => emulatedExe().provider, workspace: true, unsetEnv: true },
   kubernetes: { provider: () => emulatedKubernetes().provider, workspace: true, unsetEnv: true },
   createos: { provider: () => emulatedCreateOS().provider, workspace: false, unsetEnv: true },
   docker: {

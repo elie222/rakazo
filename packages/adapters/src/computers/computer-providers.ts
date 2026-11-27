@@ -5,6 +5,7 @@ import { daytonaComputer } from "../providers/computer/daytona/daytona-computer.
 import { desktopComputer } from "../providers/computer/desktop/desktop-computer.js";
 import { dockerComputer } from "../providers/computer/docker/docker-computer.js";
 import { e2bComputer } from "../providers/computer/e2b/e2b-computer.js";
+import { exeComputer } from "../providers/computer/exe/exe-computer.js";
 import { fakeComputer } from "../providers/computer/fake/fake-computer.js";
 import { incusComputer } from "../providers/computer/incus/incus-computer.js";
 import { instaboxComputer } from "../providers/computer/instabox/instabox-computer.js";
@@ -34,6 +35,7 @@ export const computerProviders = {
   railway: railwayComputer,
   kubernetes: kubernetesComputer,
   incus: incusComputer,
+  exe: exeComputer,
   "local-vm": appleContainerComputer,
   desktop: desktopComputer,
   fake: fakeComputer,
