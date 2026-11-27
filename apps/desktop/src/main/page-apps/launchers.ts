@@ -48,6 +48,7 @@ function windowsLauncher(appData: string): PageAppLauncher {
         throw new Error("The shortcut could not be written.");
     },
     remove: (shortcut) => rm(shortcut, { force: true }),
+    find: (appId) => findOwnShortcut(folder, appId),
   };
 }
 
@@ -77,7 +78,23 @@ function linuxLauncher(): PageAppLauncher {
         await writeFile(installed.bundlePath, text);
     },
     remove: (entry) => rm(entry, { force: true }),
+    find: async (appId) => {
+      const entry = path.join(applicationsDir(process.env), desktopFileName(appId));
+      return existsSync(entry) ? entry : null;
+    },
   };
+}
+
+/** The shortcut in Rakazo's Start Menu folder that starts this app, if one does. */
+async function findOwnShortcut(folder: string, appId: string): Promise<string | null> {
+  if (!existsSync(folder)) return null;
+  const argument = pageAppArgument(appId);
+  for (const name of await readdir(folder)) {
+    if (!name.toLowerCase().endsWith(".lnk")) continue;
+    const shortcut = path.join(folder, name);
+    if (ownShortcut(shortcut, argument)) return shortcut;
+  }
+  return null;
 }
 
 /** The launcher kind of the running platform; macOS apps are bundles instead. */

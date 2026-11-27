@@ -42,6 +42,10 @@ function setup(write?: PageAppLauncher["write"]) {
       }),
     repoint: vi.fn(async () => undefined),
     remove: vi.fn(async () => undefined),
+    find: async (appId) => {
+      const shortcut = path.join(appData, `${appId}.lnk`);
+      return existsSync(shortcut) ? shortcut : null;
+    },
   };
   const open = vi.fn(async () => undefined);
   const fetch = vi.fn(async () => new Response(null, { status: 204 }));
@@ -120,6 +124,16 @@ describe("createLauncherInstaller", () => {
       expect.objectContaining({ method: "DELETE" }),
     );
     expect(apps).toEqual([]);
+  });
+
+  it("takes back an installed app whose record was lost", async () => {
+    const { installer } = setup();
+    await installer.install(request("app1"), SERVER);
+    apps = [];
+    await installer.refresh();
+    expect(apps).toEqual([
+      expect.objectContaining({ appId: "app1", bundlePath: path.join(appData, "app1.lnk") }),
+    ]);
   });
 
   it("forgets an app that uninstalled itself and clears what it left", async () => {

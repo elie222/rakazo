@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readdir, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { bestEffort } from "@rakazo/logging";
 import { PAGE_APP_ID } from "./bundle-name.js";
@@ -7,6 +7,7 @@ import { createPageAppApi, revokePageAppToken } from "./page-app-api.js";
 import type { PageAppConfig } from "./page-app-files.js";
 import {
   PAGE_APP_CONFIG_FILE,
+  pageAppConfig,
   pageAppDataDir,
   pageAppsDataDir,
   pageAppTokenFile,
@@ -29,7 +30,47 @@ export type PageAppLauncher = {
   /** Writes the launcher again when it no longer starts the running Rakazo, which moved. */
   repoint: (app: InstalledPageApp, dataDir: string) => Promise<void>;
   remove: (launcher: string) => Promise<void>;
+  /** The launcher that starts this app, wherever it is, for an app missing from the registry. */
+  find: (appId: string) => Promise<string | null>;
 };
+
+function parsedJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
+
+/**
+ * The apps found by their data folders: each one holding a token and a config, with the launcher
+ * that starts it. A registry that was lost or broken is rebuilt from these.
+ */
+export async function launcherApps(
+  appData: string,
+  launcher: Pick<PageAppLauncher, "find">,
+): Promise<InstalledPageApp[]> {
+  let folders: string[];
+  try {
+    folders = await readdir(pageAppsDataDir(appData));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  const found: InstalledPageApp[] = [];
+  for (const appId of folders) {
+    if (!PAGE_APP_ID.test(appId) || !existsSync(pageAppTokenFile(appId, appData))) continue;
+    const text = await bestEffort(
+      "read a page app's config",
+      readFile(path.join(pageAppDataDir(appId, appData), PAGE_APP_CONFIG_FILE), "utf8"),
+    );
+    const config = text ? pageAppConfig(parsedJson(text)) : null;
+    const bundlePath = config?.appId === appId ? await launcher.find(appId) : null;
+    if (config && bundlePath) found.push({ ...config, bundlePath });
+  }
+  return found;
+}
 
 type Registry = {
   list: () => Promise<InstalledPageApp[]>;
@@ -116,6 +157,10 @@ export function createLauncherInstaller(options: {
    * including an app that uninstalled itself: its launcher and token are gone.
    */
   async function refresh() {
+    // An app whose install was never recorded, or whose record was lost, is taken back.
+    const known = new Set((await registry.list()).map((app) => app.appId));
+    for (const found of await launcherApps(appData, launcher))
+      if (!known.has(found.appId)) await registry.put(found);
     const installed = new Set<string>();
     for (const app of await registry.list()) {
       if (existsSync(app.bundlePath)) {

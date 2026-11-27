@@ -4,7 +4,7 @@ import { app, shell } from "electron";
 import type { IpcCaller } from "../ipc/ipc.js";
 import { handleIpc } from "../ipc/ipc.js";
 import { reportDesktopError } from "../system/monitoring.js";
-import { createLauncherInstaller } from "./launcher-installer.js";
+import { createLauncherInstaller, launcherApps } from "./launcher-installer.js";
 import { platformLauncher, startPageApp } from "./launchers.js";
 import { isLoopbackOrigin, serverOrigin, writeServerOverride } from "./page-app-files.js";
 import {
@@ -24,14 +24,13 @@ function callerServer(event: IpcCaller) {
 /** The `pageApps` bridge, where Rakazo can make page apps. */
 export function registerPageApps(userDataDir: string) {
   if (!pageAppsSupported()) return;
-  // A Mac app carries its own config, so a broken registry is rebuilt from the bundles; a
-  // launcher does not, so there it is refused rather than read as no apps.
-  const registry = createRegistry(userDataDir, () =>
-    process.platform === "darwin"
-      ? installedBundles()
-      : Promise.reject(new Error("The page app registry cannot be read.")),
-  );
   const appData = app.getPath("appData");
+  const launcher = process.platform === "darwin" ? null : platformLauncher(appData);
+  // A broken registry is rebuilt from what each app keeps: a Mac app's bundle, or a launcher
+  // app's data folder and the launcher that starts it.
+  const registry = createRegistry(userDataDir, () =>
+    launcher ? launcherApps(appData, launcher) : installedBundles(),
+  );
   const installer =
     process.platform === "darwin"
       ? createPageAppInstaller({
@@ -46,7 +45,7 @@ export function registerPageApps(userDataDir: string) {
         })
       : createLauncherInstaller({
           registry,
-          launcher: platformLauncher(appData),
+          launcher: launcher ?? platformLauncher(appData),
           open: startPageApp,
           appData,
         });
