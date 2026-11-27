@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { PageAbility } from "@rakazo/contracts";
 import { bestEffort } from "@rakazo/logging";
@@ -31,17 +31,13 @@ import { systemWindowBackground } from "./windows/window-options.js";
 /** Set when a Windows or Linux launcher started Rakazo as this app; macOS apps are bundles. */
 const launchedId = launchedPageAppId(process.argv, process.platform);
 const appData = app.getPath("appData");
-const config = pageAppConfig(
-  JSON.parse(
-    readFileSync(
-      path.join(
-        launchedId === null ? process.resourcesPath : pageAppDataDir(launchedId, appData),
-        PAGE_APP_CONFIG_FILE,
-      ),
-      "utf8",
-    ),
-  ),
+const configFile = path.join(
+  launchedId === null ? process.resourcesPath : pageAppDataDir(launchedId, appData),
+  PAGE_APP_CONFIG_FILE,
 );
+// A launcher the system kept after uninstalling, such as a taskbar pin, starts nothing.
+if (launchedId !== null && !existsSync(configFile)) process.exit(0);
+const config = pageAppConfig(JSON.parse(readFileSync(configFile, "utf8")));
 if (!config || (process.platform !== "darwin" && config.appId !== launchedId))
   throw new Error("This page app's config is not usable.");
 const { appId, pageId, title, server } = config;
