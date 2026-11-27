@@ -9,7 +9,6 @@ import type {
   ConnectorTool,
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
-import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { batchActions, humanizeToolName, redactSecrets } from "@rakazo/core";
 import { MAX_APPROVAL_DETAIL_LENGTH } from "../../../approvals/approval-ask.js";
@@ -20,7 +19,6 @@ import {
 } from "../../../approvals/approval-effect.js";
 import type { FinishedShellCommand } from "../../../computers/sandbox/shell-command-stream.js";
 import { liftMcpResultImages } from "../../../mcp/mcp-result-images.js";
-import { isVerbatimMcpResult } from "../../../mcp/verbatim-mcp-result.js";
 import { NO_RESPONSE } from "../../../runs/assembly/silent-reply.js";
 import { providerToolCallId } from "../../../runs/turn/tool-call-ids.js";
 import { settleMsArg, textContentArg } from "../../../runs/turn/tool-text.js";
@@ -35,20 +33,22 @@ import { findTools, partitionTools } from "../../../tools/builtin-tool-bridge.js
 import { CATALOG_EXECUTE } from "../../../tools/lazy-tool-catalog.js";
 import { SCHEDULE_TOOL_NAMES } from "../../../tools/schedule-tools.js";
 import { positiveIntegerArg } from "../../../tools/workspace-file-tools.js";
-import { shortenToolResultText } from "../../context/context-selection.js";
-import { VERBATIM_TOOL_RESULTS } from "../../context/runtime-context.js";
 import type { PiAgentRuntimeOptions } from "../pi-runtime.js";
 import { sanitizeSensitiveText } from "../pi-runtime-errors.js";
-import {
-  clipToolResultContent,
-  clipToolResultText,
-  TOOL_RESULT_TEXT_LIMIT,
-} from "../pi-runtime-limits.js";
+import { clipToolResultText } from "../pi-runtime-limits.js";
 import type { RuntimeModelTarget } from "../pi-runtime-models.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "../usage/pi-telemetry.js";
 import { COMPUTER_MODE_TOOLS } from "./pi-runtime-computer-mode.js";
 import { parametersFor, prepareFleetArguments } from "./pi-runtime-tool-parameters.js";
+import {
+  boundAgentToolResult,
+  deliveredToolResultText,
+  keepToolResultWhole,
+  serializeToolResult,
+} from "./pi-runtime-tool-result.js";
 import { useToolAgentTool } from "./pi-runtime-use-tool.js";
+
+export { deliveredToolResultText, keepToolResultWhole, serializeToolResult };
 
 export interface ToolCallBudget {
   count: number;
@@ -739,58 +739,6 @@ function isAgentToolExecutionResult(result: unknown): result is AgentToolExecuti
           (item as { type?: unknown }).type === "image"),
     )
   );
-}
-
-export function keepToolResultWhole(
-  name: string,
-  args: Record<string, unknown>,
-  verbatimMcpServers?: AgentRunRequest["verbatimMcpServers"],
-): boolean {
-  return VERBATIM_TOOL_RESULTS.has(name) || isVerbatimMcpResult(name, args, verbatimMcpServers);
-}
-
-export function serializeToolResult(
-  result: unknown,
-  strategy: AgentRunRequest["contextStrategy"],
-  name: string,
-  args: Record<string, unknown>,
-  verbatimMcpServers?: AgentRunRequest["verbatimMcpServers"],
-) {
-  try {
-    const text = JSON.stringify(result);
-    if (!text) return "ok";
-    // skill-tools.ts already bounds skill content; the context budget selector may still shorten it.
-    if (
-      text.length <= TOOL_RESULT_TEXT_LIMIT ||
-      keepToolResultWhole(name, args, verbatimMcpServers)
-    )
-      return text;
-    return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
-      ? clipToolResultText(text)
-      : shortenToolResultText(text, TOOL_RESULT_TEXT_LIMIT, { name, arguments: args });
-  } catch {
-    return "ok";
-  }
-}
-
-/** Exact text Pi delivers to the model for a JSON tool result after result bounding. */
-export function deliveredToolResultText(
-  result: unknown,
-  strategy: AgentRunRequest["contextStrategy"],
-  name: string,
-  args: Record<string, unknown>,
-  verbatimMcpServers?: AgentRunRequest["verbatimMcpServers"],
-): string {
-  const text = serializeToolResult(result, strategy, name, args, verbatimMcpServers);
-  return keepToolResultWhole(name, args, verbatimMcpServers) ? text : clipToolResultText(text);
-}
-
-function boundAgentToolResult<T>(result: AgentToolResult<T>): AgentToolResult<T> {
-  if (!result || !Array.isArray(result.content)) return result;
-  return {
-    ...result,
-    content: clipToolResultContent(result.content),
-  };
 }
 
 /** Origin + path only for activity chips; drop userinfo, query, and fragment. */
