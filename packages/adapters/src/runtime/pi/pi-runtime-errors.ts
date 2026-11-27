@@ -105,7 +105,7 @@ export function sanitizeSensitiveText(message: string, options?: { decoded?: boo
     .replace(/sk-or-v1-[a-zA-Z0-9]+/g, "[redacted]")
     .replace(/sk-[a-zA-Z0-9-]+/g, "[redacted]")
     .replace(
-      /COMPOSIO_API_KEY(?:\s*[=:]\s*|\s+)(?!Bearer\s+\S)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s=:]+)/gi,
+      /COMPOSIO_API_KEY(?:\s*[=:]\s*|\s+)(?!Bearer\s+\S|["']Bearer\s+\S)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s=:]+)/gi,
       "COMPOSIO_API_KEY=[redacted]",
     )
     .replace(

@@ -1295,4 +1295,46 @@ describe("tool step outcomes", () => {
       logError.mockRestore();
     }
   });
+
+  it("defers unclosed quoted Bearer values on COMPOSIO_API_KEY to Bearer redaction", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+
+    const unclosedDouble = 'export COMPOSIO_API_KEY="Bearer tok_canary';
+    const unclosedSingle = "export COMPOSIO_API_KEY='Bearer tok_canary";
+    const unclosedQuotedKey = String.raw`{"log":"line 3: {\"COMPOSIO_API_KEY\": \"Bearer gh_fixtureTail"}`;
+
+    for (const read of [kept, replay, sanitizeError]) {
+      expect(read(unclosedDouble)).toBe('export COMPOSIO_API_KEY="Bearer [redacted]');
+      expect(read(unclosedSingle)).toBe("export COMPOSIO_API_KEY='Bearer [redacted]");
+      const quotedOut = read(unclosedQuotedKey) ?? "";
+      expect(quotedOut).not.toContain("gh_fixtureTail");
+      expect(quotedOut).toContain("Bearer [redacted]");
+    }
+  });
+
+  it("redacts bare JWTs in sanitized errors", () => {
+    expect(sanitizeError("token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.fixtureSig")).toBe(
+      "token [redacted]",
+    );
+  });
+
+  it("keeps JWT scanning linear on repeated eyJ runs", () => {
+    const repeated = "eyJ".repeat(96_000);
+    expectLinearTime(() => {
+      expect(sanitizeSensitiveText(repeated)).toHaveLength(repeated.length);
+    });
+  });
+
+  it("redacts non-whitespace Bearer prefixes after Authorization keys", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    for (const read of [kept, replay, sanitizeError]) {
+      expect(read("Authorization: Bearer-fixtureSecond")).toBe("Authorization: [redacted]");
+    }
+  });
 });

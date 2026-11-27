@@ -101,6 +101,7 @@ function quotedKeyValue(
   if (scanned.closed) {
     return { interiorStart: pos + 1, interiorEnd: scanned.end - 1, resume: scanned.end };
   }
+  if (startsWithBearerToken(text, pos + 1)) return undefined;
   let end = pos + 1;
   while (end < text.length && !isWhitespace(text[end])) end += 1;
   return { interiorStart: pos + 1, interiorEnd: end, resume: end };
@@ -131,6 +132,7 @@ function assignmentValueEnd(text: string, open: number): number {
       if (ch === "\n" || ch === "\r") break;
       index += 1;
     }
+    if (startsWithBearerToken(text, open + 1)) return -1;
     let end = open;
     while (end < text.length && !isWhitespace(text[end])) end += 1;
     return end > open ? end : -1;
