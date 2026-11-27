@@ -1,6 +1,7 @@
 import type { ModelCatalogEntry, ModelCredential, ThinkingLevel } from "@rakazo/contracts";
 import { modelMark } from "../models/model-marks.js";
 import {
+  botModelConnections,
   chatModelChoices,
   connectedModelChoices,
   credentialForModel,
@@ -22,11 +23,13 @@ export function botModelState({
   catalog,
   me,
   modelKey,
+  modelCredentialId,
 }: {
   credentials: readonly ModelCredential[];
   catalog: readonly ModelCatalogEntry[];
   me: SpaceDefault | null;
   modelKey: string;
+  modelCredentialId?: string;
 }) {
   const stored = modelKey ? parseModelOptionKey(modelKey) : null;
   const selectedModel = stored
@@ -88,7 +91,10 @@ export function botModelState({
             resolveSelectableModelId(catalog, item.provider, item.id) === modelId,
         )
       : undefined;
-  const credential = credentialForModel(credentials, provider, modelId);
+  const connections = botModelConnections(credentials, catalog, parseModelOptionKey(shownKey));
+  const credential = modelCredentialId
+    ? connections.find(({ id }) => id === modelCredentialId)
+    : credentialForModel(credentials, provider, modelId);
   const onLevels = modelThinkingLevels(credential, entry, modelId).filter(
     (level) => level !== "off",
   );
@@ -101,10 +107,14 @@ export function botModelState({
     selectedModel,
     selectedModelKey,
     shownKey,
+    connections,
     defaultEntry,
     choices,
     /** The model key to save for a pick: "" for the Space default's, so the bot keeps following it. */
     savedModelKey: (key: string) => (key === defaultModelKey ? "" : key),
+    // Selecting a named account makes the in-effect model explicit, even if it matches the default.
+    connectionModelKey: (connection: string) =>
+      connection ? shownKey : shownKey === defaultModelKey ? "" : selectedModelKey,
     /** No connected provider offers a model, so a picker should offer to connect one. */
     nothingConnected: connected.length === 0,
     selectedName,
