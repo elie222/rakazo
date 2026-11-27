@@ -1,5 +1,5 @@
 import type { Deferred } from "@rakazo/core/test-async";
-import { deferred } from "@rakazo/core/test-async";
+import { deferred, flush } from "@rakazo/core/test-async";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryProviderPrivateEndpointRequiredError } from "../providers/memory/serenity/serenity-memory-provider.js";
 import type { LocalServiceConnection } from "./local-service-endpoint.js";
@@ -52,6 +52,26 @@ describe("private memory DNS deadlines", () => {
     expect(await second).toBeNull();
     expect(await host.block()).toBeNull();
     expect(resolveHostname).toHaveBeenCalledOnce();
+    expect(host.withPin<LocalServiceConnection>({ baseUrl }).pinnedAddresses).toEqual([
+      { address: "10.0.0.2", family: 4 },
+    ]);
+  });
+
+  it("clears a failed pin attempt when the awaiting caller already aborted", async () => {
+    const firstAttempt = deferred<ResolvedAddress[]>();
+    const resolveHostname = vi
+      .fn<() => Promise<ResolvedAddress[]>>()
+      .mockReturnValueOnce(firstAttempt.promise)
+      .mockResolvedValueOnce([{ address: "10.0.0.2", family: 4 }]);
+    const host = new LocalServiceHost(baseUrl, "private", resolveHostname);
+    const cancelled = new AbortController();
+    const first = host.block(cancelled.signal);
+    cancelled.abort(new Error("caller stopped"));
+    expect(await first).toBe("caller stopped");
+    firstAttempt.reject(new Error("temporary DNS failure"));
+    await flush();
+    expect(await host.block()).toBeNull();
+    expect(resolveHostname).toHaveBeenCalledTimes(2);
     expect(host.withPin<LocalServiceConnection>({ baseUrl }).pinnedAddresses).toEqual([
       { address: "10.0.0.2", family: 4 },
     ]);

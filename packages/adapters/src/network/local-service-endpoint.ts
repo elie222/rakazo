@@ -322,14 +322,26 @@ export class LocalServiceHost {
     // One successful check per provider. Repeating it would let a DNS blip block
     // a host this provider already reached, and multi-request recall would redo it.
     if (this.hostReady) return null;
-    this.pinTask ??= this.resolvePin();
+    let task = this.pinTask;
+    if (!task) {
+      const next = this.resolvePin();
+      // Clear a failed pin even when every awaiting caller already aborted, so later checks retry.
+      void next.then(
+        () => undefined,
+        () => {
+          if (this.pinTask === next) this.pinTask = undefined;
+        },
+      );
+      this.pinTask = next;
+      task = next;
+    }
     try {
-      await withAbort(this.pinTask, signal);
+      await withAbort(task, signal);
       this.hostReady = true;
       return null;
     } catch (error) {
       // Caller cancellation must not discard a still-bounded pin shared by other requests.
-      if (!signal?.aborted) this.pinTask = undefined;
+      if (!signal?.aborted && this.pinTask === task) this.pinTask = undefined;
       return error instanceof Error ? error.message : BLOCKED_TARGET_ERROR;
     }
   }
