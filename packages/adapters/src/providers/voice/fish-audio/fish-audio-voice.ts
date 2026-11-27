@@ -79,14 +79,15 @@ export class FishAudioVoiceProvider implements VoiceProvider {
         fetchModels(apiKey, listContext, false, language),
         fetchModels(apiKey, listContext, true, undefined),
       ]);
-      const seen = new Set<string>();
-      return [...ownModels, ...publicModels]
-        .map(modelToVoice)
-        .filter((voice): voice is VoiceInfo => {
-          if (!voice || seen.has(voice.id)) return false;
-          seen.add(voice.id);
-          return true;
-        });
+      // A voice can be in both listings; keep the first record but not at the cost of its languages.
+      const byId = new Map<string, VoiceInfo>();
+      for (const voice of [...ownModels, ...publicModels].map(modelToVoice)) {
+        if (!voice) continue;
+        const first = byId.get(voice.id);
+        if (!first) byId.set(voice.id, voice);
+        else if (!first.languages && voice.languages) first.languages = voice.languages;
+      }
+      return [...byId.values()];
     } finally {
       // Stop sibling or speculative requests when the listing finishes or fails.
       controller.abort();

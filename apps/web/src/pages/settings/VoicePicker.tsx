@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useListSearch } from "@rakazo/chat-ui/hooks";
 import type { VoiceInfo } from "@rakazo/contracts";
+import { MODEL_SEARCH_THRESHOLD } from "@rakazo/core";
 import {
   Button,
   Command,
@@ -9,6 +10,7 @@ import {
   CommandItem,
   CommandList,
   ListSearchInput,
+  OptionSelect,
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -65,14 +67,15 @@ export function VoicePicker({
   const close = () => {
     setOpen(false);
     setQuery("");
+    setLanguage(null);
   };
 
   return (
     <Popover
       open={open}
       onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setQuery("");
+        if (next) setOpen(true);
+        else close();
       }}
     >
       <PopoverTrigger
@@ -97,7 +100,7 @@ export function VoicePicker({
             label={t`Search voices`}
             placeholder={t`Search`}
           />
-          {codes.length > 1 ? (
+          {codes.length > 0 ? (
             <fieldset
               className="m-0 flex max-h-20 min-w-0 flex-wrap gap-1 overflow-y-auto border-0 p-1"
               aria-label={t`Language`}
@@ -151,5 +154,35 @@ export function VoicePicker({
         </Command>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** The voice field: a plain select for a short list, the searchable picker for a long one. */
+export function VoiceSelect({
+  id,
+  voices,
+  value,
+  disabled,
+  onChange,
+}: {
+  id?: string;
+  voices: readonly VoiceInfo[];
+  value: string;
+  disabled?: boolean;
+  onChange: (voiceId: string) => void;
+}) {
+  if (voices.length > MODEL_SEARCH_THRESHOLD) {
+    return (
+      <VoicePicker id={id} voices={voices} value={value} disabled={disabled} onChange={onChange} />
+    );
+  }
+  return (
+    <OptionSelect
+      id={id}
+      value={value}
+      disabled={disabled}
+      options={voices.map((voice) => ({ value: voice.id, label: voiceText(voice) }))}
+      onValueChange={onChange}
+    />
   );
 }

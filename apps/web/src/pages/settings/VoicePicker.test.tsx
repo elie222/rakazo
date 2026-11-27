@@ -125,4 +125,28 @@ describe("VoicePicker", () => {
     expect(document.querySelector("fieldset")).toBeNull();
     expect(options()).toHaveLength(6);
   });
+
+  it("clears the language filter when it closes", () => {
+    render();
+    open();
+    act(() => chip("de").click());
+    expect(options()).toHaveLength(3);
+    act(() =>
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(options()).toEqual([]);
+    open();
+    expect(chip("de").getAttribute("aria-pressed")).toBe("false");
+    expect(options()).toHaveLength(6);
+  });
+
+  it("offers the language chip even when only one code is named", () => {
+    render([
+      { id: "a", label: "Anna", languages: ["de"] },
+      { id: "b", label: "Brian" },
+    ]);
+    open();
+    act(() => chip("de").click());
+    expect(options()).toEqual(["Anna"]);
+  });
 });

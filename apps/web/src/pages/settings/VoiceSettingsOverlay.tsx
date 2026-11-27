@@ -15,7 +15,6 @@ import {
   savedVoiceTranscriptionVocabulary,
   voiceConnectionForm,
 } from "@rakazo/contracts";
-import { MODEL_SEARCH_THRESHOLD } from "@rakazo/core";
 import { fetchFresh } from "@rakazo/core/query";
 import { bestEffort } from "@rakazo/logging/best-effort";
 import {
@@ -44,7 +43,7 @@ import { useModelOAuthSignIn } from "../../lib/models/use-model-oauth-signin";
 import { useSpaceQueries } from "../../lib/query/query";
 import { useBoundSpaceId, useSpaceRpc } from "../../lib/query/space-rpc";
 import { errorText } from "../../lib/query/user-error";
-import { VoicePicker } from "./VoicePicker";
+import { VoiceSelect } from "./VoicePicker";
 import { VoiceModelConnectionActions } from "./voice-model-connection-actions";
 
 export function VoiceSettingsOverlay({
@@ -838,26 +837,13 @@ export function VoiceSettingsOverlay({
                           ))}
                         </datalist>
                       </>
-                    ) : voiceOptions.length > MODEL_SEARCH_THRESHOLD ? (
-                      <VoicePicker
+                    ) : (
+                      <VoiceSelect
                         id={voiceSelectId}
                         voices={voiceOptions}
                         value={voiceId}
                         disabled={busy}
                         onChange={(next) => void chooseVoice(next)}
-                      />
-                    ) : (
-                      <OptionSelect
-                        id={voiceSelectId}
-                        value={voiceId}
-                        disabled={busy}
-                        options={voiceOptions.map((voice) => ({
-                          value: voice.id,
-                          label: voice.description
-                            ? `${voice.label} (${voice.description})`
-                            : voice.label,
-                        }))}
-                        onValueChange={(next) => void chooseVoice(next)}
                       />
                     )}
                   </div>
