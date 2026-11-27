@@ -127,8 +127,14 @@ it("retries a failed download while its original consumer stays mounted", async 
 const bot = { botId: "bot" };
 const pictures = ["a", "b", "c", "large"].map((artifactId) => ({ target: bot, artifactId }));
 
-function CachedImage({ selected }: { selected: string }) {
-  const keeper = useArtifactImageKeeper(pictures, 6);
+function CachedImage({
+  selected,
+  available = pictures,
+}: {
+  selected: string;
+  available?: typeof pictures;
+}) {
+  const keeper = useArtifactImageKeeper(available, 6);
   const src = useArtifactImage(bot, selected, true, keeper);
   return src ? <img src={src} alt={selected} /> : null;
 }
@@ -175,5 +181,17 @@ it("does not cache a slide that finishes after the user has moved on", async () 
   await show("a");
   await show("b");
   await act(async () => pending.resolve(artifact as never));
+  expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:image/png");
+});
+
+it("does not retain a pending download after the gallery removes its slide", async () => {
+  answerSizes();
+  const pending = deferred<never>();
+  vi.mocked(rpc.artifacts.get).mockReturnValueOnce(pending.promise);
+  await show("a");
+  const available = pictures.slice(1);
+  await act(async () => root.render(<CachedImage selected="a" available={available} />));
+  await act(async () => pending.resolve(artifact as never));
+  await act(async () => root.render(<CachedImage selected="b" available={available} />));
   expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith("blob:image/png");
 });

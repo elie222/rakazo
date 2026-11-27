@@ -78,6 +78,7 @@ export type ArtifactImageKeeper = ReturnType<typeof createArtifactImageKeeper>;
 
 function createArtifactImageKeeper(maxBytes: number) {
   const kept = new Map<string, { bytes: number; release: () => void }>();
+  let allowedKeys = new Set<string>();
   let totalBytes = 0;
   function drop(key: string) {
     const held = kept.get(key);
@@ -88,6 +89,7 @@ function createArtifactImageKeeper(maxBytes: number) {
   }
   return {
     keep(key: string, entry: ImageDownload) {
+      if (!allowedKeys.has(key)) return;
       const held = kept.get(key);
       if (held) {
         kept.delete(key);
@@ -103,13 +105,10 @@ function createArtifactImageKeeper(maxBytes: number) {
       }
     },
     retainOnly(pictures: readonly ArtifactPicture[]) {
-      const keys = new Set(pictures.map(downloadKey));
+      allowedKeys = new Set(pictures.map(downloadKey));
       for (const key of kept.keys()) {
-        if (!keys.has(key)) drop(key);
+        if (!allowedKeys.has(key)) drop(key);
       }
-    },
-    release() {
-      for (const key of kept.keys()) drop(key);
     },
   };
 }
@@ -121,7 +120,7 @@ export function useArtifactImageKeeper(
   const [keeper] = useState(() => createArtifactImageKeeper(maxBytes));
   // Prune during commit so a newly opened slide cannot evict a picture that still fits.
   useLayoutEffect(() => keeper.retainOnly(pictures), [keeper, pictures]);
-  useEffect(() => () => keeper.release(), [keeper]);
+  useLayoutEffect(() => () => keeper.retainOnly([]), [keeper]);
   return keeper;
 }
 
