@@ -1951,6 +1951,10 @@ describe("tool step outcomes", () => {
       "Bearer foo\\xsecret: opaque-123",
       'Bearer "fixture"\\Bearer opaque-123',
       "Bearer [redacted]\\Bearer opaque-123",
+      "Bearer x[[opaque-123",
+      "Bearer x[{opaque-123",
+      "Bearer x[[[opaque-123",
+      'Bearer [redacted]key="opaque-123"',
     ]) {
       const payload = JSON.stringify({ msg, sibling: 7 });
       for (const read of [kept, replay, failed, sanitizeError, sanitizeSensitiveText]) {
@@ -1959,9 +1963,22 @@ describe("tool step outcomes", () => {
         expect(parsed.msg).not.toContain("opaque-123");
       }
     }
+    expect(failed('Bearer [redacted]:key="opaque-123"')).toBe("Bearer [redacted]");
+    expect(failed('Bearer [redacted]key="opaque-123"')).toBe("Bearer [redacted]");
+    for (const plain of [
+      "Bearer x[[opaque-123",
+      "Bearer x[{opaque-123",
+      "Bearer x[[[opaque-123",
+      'Bearer [redacted]:key="opaque-123"',
+      'Bearer [redacted]key="opaque-123"',
+    ]) {
+      expect(sanitizeConnectorError(new Error(plain))).toBe("Bearer [redacted]");
+    }
     for (const [msg, container] of [
       ['Bearer foo\\{"ok":true}', '{"ok":true}'],
       ["Bearer foo\\[12,34]", "[12,34]"],
+      ["Bearer foo[[12,34]]", "[[12,34]]"],
+      ['Bearer foo[{"ok":true}]', '[{"ok":true}]'],
       ['Bearer "fixture"\\{"ok":true}', '{"ok":true}'],
       ["Bearer [redacted]\\[12,34]", "[12,34]"],
       ['Bearer [redacted]:{"ok":true}', ':{"ok":true}'],

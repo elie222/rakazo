@@ -5,10 +5,16 @@ const ci = (word: string) =>
 const BEARER_CI = ci("bearer");
 const CREDENTIAL_KEY_CI = `(?:${ci("api")}[_-]?${ci("key")}|${ci("access")}[_-]?${ci("token")}|${ci("password")}|${ci("secret")}|${ci("authorization")}|${ci("auth")})`;
 
-const CONNECTOR_JSON_CONTAINER_START =
-  /(?:\{\s*(?:["}]|$)|\[\s*(?:["{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=[\s,\]]|$)))/;
-const CONNECTOR_RAW_JSON_CONTAINER_START =
-  /(?:\{(?:\s|\\[nrt])*(?:\\*"|\}|$)|\[(?:\s|\\[nrt])*(?:\\*"|[{[\]]|(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(?=\s|\\[nrt]|[,\]$])))/;
+const CONNECTOR_JSON_PRIMITIVE_START =
+  "(?:-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?|true|false|null)";
+const CONNECTOR_JSON_OBJECT_START = '\\{\\s*(?:["}]|$)';
+const CONNECTOR_JSON_CONTAINER_START = new RegExp(
+  `(?:${CONNECTOR_JSON_OBJECT_START}|\\[\\s*(?:["\\]]|${CONNECTOR_JSON_OBJECT_START}|\\[\\s*(?:["\\]]|${CONNECTOR_JSON_OBJECT_START}|${CONNECTOR_JSON_PRIMITIVE_START}(?=[\\s,\\]]|$))|${CONNECTOR_JSON_PRIMITIVE_START}(?=[\\s,\\]]|$)))`,
+);
+const CONNECTOR_RAW_JSON_OBJECT_START = '\\{(?:\\s|\\\\[nrt])*(?:\\\\*"|\\}|$)';
+const CONNECTOR_RAW_JSON_CONTAINER_START = new RegExp(
+  `(?:${CONNECTOR_RAW_JSON_OBJECT_START}|\\[(?:\\s|\\\\[nrt])*(?:\\\\*"|\\]|${CONNECTOR_RAW_JSON_OBJECT_START}|\\[(?:\\s|\\\\[nrt])*(?:\\\\*"|\\]|${CONNECTOR_RAW_JSON_OBJECT_START}|${CONNECTOR_JSON_PRIMITIVE_START}(?=\\s|\\\\[nrt]|[,\\]$]))|${CONNECTOR_JSON_PRIMITIVE_START}(?=\\s|\\\\[nrt]|[,\\]$])))`,
+);
 const CONNECTOR_DECODED_NEXT_BEARER = new RegExp(
   `${BEARER_CI}\\s+(?!(?:\\s|${CONNECTOR_JSON_CONTAINER_START.source}))\\S`,
 );
