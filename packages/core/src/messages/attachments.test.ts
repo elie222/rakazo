@@ -1208,6 +1208,15 @@ describe("tool step history", () => {
     expect(redactPlainBearerTokens('Authorization: "Bearer secret"', { decoded: true })).toBe(
       'Authorization: "Bearer [redacted]"',
     );
+    expect(
+      redactPlainBearerTokens('Bearer \\"fixturePrefix\\"fixtureTail', { decoded: true }),
+    ).toBe("Bearer [redacted]");
+    expect(redactPlainBearerTokens('Bearer fixturePrefix\\\\\\"Tail', { decoded: true })).toBe(
+      "Bearer [redacted]",
+    );
+    expect(redactPlainBearerTokens("Bearer fixturePrefix\nNext line", { decoded: true })).toBe(
+      "Bearer [redacted]\nNext line",
+    );
     const bearerJson = JSON.stringify({ msg: "Bearer fixturePrefix\\fixtureTail" });
     const bearerRedacted = redactJsonStringsAndPlainText(
       bearerJson,

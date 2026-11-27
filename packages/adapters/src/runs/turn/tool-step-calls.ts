@@ -13,6 +13,7 @@ import { redactToolArgsForReview } from "../../approvals/auto-review.js";
 import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
 import { PICTURE_READING_TOOLS } from "../../media/tool-result-image.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
+import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
 import {
   mapTurnTranscript,
   turnTranscriptResults,
@@ -22,7 +23,6 @@ import type { ReplyState, RunContext } from "../assembly/run-context.js";
 import {
   redactComposioApiKeyAssignments,
   redactCredentialJsonFields,
-  redactDecodedToolText,
 } from "./secret-assignment-text.js";
 import { toolCompletionOutcome } from "./tool-completion-audit.js";
 
@@ -68,6 +68,11 @@ function omissionMarkerEnd(text: string, index: number): number {
 /** The largest a saved result gets: its kept text and the note of what was left out. */
 export const TOOL_CALL_SAVED_TEXT_MAX_CHARS =
   TOOL_CALL_TEXT_MAX_CHARS + notKept(Number.MAX_SAFE_INTEGER).length;
+
+/** Assignment scan, then the shared text sanitizer. Used on decoded JSON strings and plain gaps. */
+function redactDecodedToolText(value: string, options?: { decoded?: boolean }): string {
+  return sanitizeSensitiveText(redactComposioApiKeyAssignments(value), options);
+}
 
 function cleanToolText(text: string, secrets: string[], honorOmissionMarker = false): string {
   const secretForms = secrets.flatMap((value) => {

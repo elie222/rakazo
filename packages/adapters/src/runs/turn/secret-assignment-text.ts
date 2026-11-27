@@ -1,5 +1,3 @@
-import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
-
 const COMPOSIO_API_KEY_LABEL = "composio_api_key";
 const REDACTED_ASSIGNMENT = "COMPOSIO_API_KEY=[redacted]";
 const REDACTED_VALUE = "[redacted]";
@@ -203,11 +201,6 @@ export function redactComposioApiKeyAssignments(text: string): string {
     index = end;
   }
   return cursor === 0 ? text : out + text.slice(cursor);
-}
-
-/** Assignment scan, then the shared text sanitizer. Used on decoded JSON strings and plain gaps. */
-export function redactDecodedToolText(value: string, options?: { decoded?: boolean }): string {
-  return sanitizeSensitiveText(redactComposioApiKeyAssignments(value), options);
 }
 
 /** Same note a truncated tool result writes. A longer digit run is not this marker. */

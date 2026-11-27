@@ -12,6 +12,10 @@ import {
   redactJsonStringsAndPlainText,
   redactPlainBearerTokens,
 } from "@rakazo/core";
+import {
+  redactComposioApiKeyAssignments,
+  redactCredentialJsonFields,
+} from "../../runs/turn/secret-assignment-text.js";
 import { LOCAL_PROVIDER_ID } from "./models/pi-local-provider-id.js";
 import { terminalOAuthRefreshErrorMarker } from "./models/pi-oauth.js";
 import { isOpenCodeProvider } from "./stream/pi-runtime-stream.js";
@@ -87,13 +91,12 @@ export function sanitizeSensitiveText(message: string, options?: { decoded?: boo
 }
 
 export function sanitizeError(message: string) {
-  // Valid JSON is decoded first, so `\\`, `\n`, and `\"` inside a string are characters.
-  // Plain diagnostics use the same decoded match. Raw JSON escapes stay in the re-encoded text.
-  return redactJsonStringsAndPlainText(
-    message,
-    (value) => sanitizeSensitiveText(value, { decoded: true }),
-    (value) => sanitizeSensitiveText(value, { decoded: true }),
-  );
+  // Scan assignments before the JSON walker. The walker splits a label from its quoted value,
+  // and the value would otherwise stay visible. Decoded pieces use the same assignment scan.
+  const assigned = redactCredentialJsonFields(redactComposioApiKeyAssignments(message), false);
+  const redact = (value: string) =>
+    sanitizeSensitiveText(redactComposioApiKeyAssignments(value), { decoded: true });
+  return redactJsonStringsAndPlainText(assigned, redact, redact);
 }
 
 const OPENCODE_SESSION_ERROR = "OpenCode rejected this chat session. Send the message again.";

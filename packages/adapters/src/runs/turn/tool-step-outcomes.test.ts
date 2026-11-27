@@ -901,9 +901,22 @@ describe("tool step outcomes", () => {
     const truncated = '{"message":"Bearer secret\\nnext';
     const bare = 'INFO msg="ready" COMPOSIO_API_KEY: "fixtureValue123"';
     const quotedAfter = 'INFO msg="ready" "access_token": "fixtureValue123"';
+    const escapedOpen = 'Bearer \\"fixturePrefix\\"fixtureTail';
+    const escapedRun = 'Bearer fixturePrefix\\\\\\"Tail';
+    const escapedOpenJson = JSON.stringify({
+      message: 'Bearer \\"fixturePrefix\\"fixtureTail',
+      status: "ok",
+    });
     for (const read of [kept, replay]) {
       expect(read(plainTail)).toBe("Bearer [redacted]");
+      expect(read(escapedOpen)).toBe("Bearer [redacted]");
+      expect(read(escapedRun)).toBe("Bearer [redacted]");
+      expect(read("Bearer fixturePrefix\nNext line")).toBe("Bearer [redacted]\nNext line");
       expect(read('Authorization: "Bearer secret"')).toBe('Authorization: "Bearer [redacted]"');
+      expect(JSON.parse(read(escapedOpenJson) ?? "")).toEqual({
+        message: "Bearer [redacted]",
+        status: "ok",
+      });
       expect(JSON.parse(read(quoteTail) ?? "")).toEqual({
         message: "Bearer [redacted]",
         status: "ok",
@@ -936,6 +949,14 @@ describe("tool step outcomes", () => {
       }
     }
     expect(sanitizeError(plainTail)).toBe("Bearer [redacted]");
+    expect(sanitizeError(bare)).toBe('INFO msg="ready" COMPOSIO_API_KEY=[redacted]');
+    expect(sanitizeError(quotedAfter)).toBe('INFO msg="ready" "access_token": "[redacted]"');
+    expect(sanitizeError(escapedOpen)).toBe("Bearer [redacted]");
+    expect(sanitizeError(escapedRun)).toBe("Bearer [redacted]");
+    expect(JSON.parse(sanitizeError(escapedOpenJson))).toEqual({
+      message: "Bearer [redacted]",
+      status: "ok",
+    });
     expect(sanitizeError('Authorization: "Bearer secret"')).toBe(
       'Authorization: "Bearer [redacted]"',
     );

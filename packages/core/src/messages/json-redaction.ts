@@ -22,14 +22,18 @@ const BOUNDED_OMISSION_MARKER = /(\n… \[\d+ characters not kept\] …\n)/;
  * or `\fixtureTail` is still masked. A later pass does not grow another `]`.
  *
  * Raw text treats a JSON escape (`\\`, `\"`, `\n`, `\r`, `\t`) as the end of the token, so a
- * saved JSON string stays valid. `decoded` is for text JSON.parse already returned: a backslash
- * is one character, a `\"` pair stays inside the token, and a bare `"` still ends it.
+ * saved JSON string stays valid. `decoded` is for text JSON.parse already returned. A backslash
+ * and the next non-whitespace character are one token atom, including `\"` and `\\`. A bare `"`
+ * still ends the token. Each atom is disjoint, so the scan stays linear.
  */
 const RAW_BEARER =
   /Bearer\s+(?!\[redacted\](?!(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])))(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|\[redacted\](?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])+|(?:\\(?![nrt"\\])|[^\s"',;&}:\]\\])+)/gi;
 
-const DECODED_BEARER =
-  /Bearer\s+(?!\[redacted\](?!(?:\\"|[^\s"',;&}:\]])))(?:\\"(?!\s*[:,}\]\r\n]|$)(?:\\[^"\r\n]|[^"\\\r\n])+(?:\\")?|"(?!\s*[:,}\]\r\n]|$)[^"\r\n]+"?|'(?!\s*[:,}\]\r\n]|$)[^'\r\n]+'?|\[redacted\](?:\\"|[^\s"',;&}:\]])+|(?:\\"|[^\s"',;&}:\]])+)/gi;
+const DECODED_ATOM = /(?:\\[^\s]|\\(?=\s|$)|[^\s"',;&}:\]\\])/;
+const DECODED_BEARER = new RegExp(
+  `Bearer\\s+(?!\\[redacted\\](?!${DECODED_ATOM.source}))(?:"(?!\\s*[:,}\\]\\r\\n]|$)[^"\\r\\n]+"?|'(?!\\s*[:,}\\]\\r\\n]|$)[^'\\r\\n]+'?|\\[redacted\\](?:${DECODED_ATOM.source})+|(?:${DECODED_ATOM.source})+)`,
+  "gi",
+);
 
 export function redactPlainBearerTokens(text: string, options?: { decoded?: boolean }): string {
   const pattern = options?.decoded ? DECODED_BEARER : RAW_BEARER;
