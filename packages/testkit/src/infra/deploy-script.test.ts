@@ -200,6 +200,7 @@ if [[ "$1" == update ]]; then
   for name in "\${@:4}"; do sed -i.bak "s/^$name [^ ]*/$name no/" "$containers"; done
 fi
 if [[ "$1" == wait && -n "\${DRAIN_NEVER_ENDS:-}" ]]; then exit 124; fi
+if [[ "$1" == start && -n "\${FAIL_START:-}" ]]; then exit 1; fi
 if [[ "$1" == kill && -n "\${DRAIN_EXITS:-}" ]]; then
   for name in "\${@:4}"; do sed -i.bak "s/^$name \\([^ ]*\\) .*/$name \\1 exited/" "$containers"; done
 fi
@@ -809,6 +810,16 @@ describe("production deploy script", () => {
     commit(deploy.upstream, "next");
     expect(deploy.run({ CONTAINER_HEALTH: "running" }).status).toBe(0);
     expect(rollout(deploy.commands())).toContain("docker stop --time 30 web-old");
+  });
+
+  it("removes a replacement that fails to start", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run({ FAIL_START: "1" }).status).toBe(1);
+    const commands = rollout(deploy.commands());
+    const started = commands.indexOf("docker start api-new");
+    expect(commands[started + 1]).toBe("docker rm --force api-new");
+    expect(deploy.head()).toBe(deploy.first);
   });
 
   it("removes a replacement that exits before it is ready", () => {

@@ -137,7 +137,10 @@ start_one() {
   compose "${UP_TIMEOUT}" up -d --no-deps --no-recreate --no-start \
     --scale "${service}=$(($(wc -w <<<"${all}") + 1))" "${service}"
   new="$(compose 1m ps --all --quiet "${service}" | grep -vxF "${all}")"
-  timeout --kill-after=30s "${UP_TIMEOUT}" sudo docker start "${new}" >/dev/null
+  if ! timeout --kill-after=30s "${UP_TIMEOUT}" sudo docker start "${new}" >/dev/null; then
+    sudo docker rm --force "${new}" >/dev/null || true
+    return 1
+  fi
   container_healthy "${new}"
 }
 
