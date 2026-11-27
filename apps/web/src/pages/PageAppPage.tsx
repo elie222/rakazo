@@ -131,7 +131,7 @@ function PageApp({ pageId, spaceId }: { pageId: string; spaceId: string | null }
           {t`Your changes aren't saved. Check your connection.`}
         </p>
       ) : null}
-      {installPrompt ? (
+      {installPrompt && !notice ? (
         <Button
           size="sm"
           variant="outline"
