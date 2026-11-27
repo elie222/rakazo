@@ -1,6 +1,9 @@
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Socket } from "node:net";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import {
   createModels,
   fauxAssistantMessage,
@@ -14,7 +17,8 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { deferred } from "@rakazo/core/test-async";
-import { fetch as undiciFetch } from "undici";
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
+import { Agent, fetch as undiciFetch } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertAllowedOpenAiCompatibleUrl,
@@ -28,6 +32,7 @@ import {
 } from "../../../models/model-secret.js";
 import { listPiCatalog } from "./pi-models.js";
 import {
+  closeOpenAiCompatibleTransports,
   createOpenAiCompatibleFetch,
   createOpenAiCompatibleLookup,
   OPENAI_COMPATIBLE_CATALOG_MODEL_ID,
@@ -41,9 +46,10 @@ import {
 
 const savedPrivateHosts = process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS;
 
-afterEach(() => {
+afterEach(async () => {
   if (savedPrivateHosts === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS;
   else process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = savedPrivateHosts;
+  await closeOpenAiCompatibleTransports();
 });
 
 /** Fixtures connect as the deployment owner, who may use local model servers. */
@@ -1853,5 +1859,949 @@ describe("outbound proxy", () => {
       expect(connects).toEqual([]);
       expect(hosts).toEqual([`127.0.0.1:${targetPort}`]);
     });
+  });
+});
+
+describe("compatible gateway connection reuse", () => {
+  const MODEL_LIST = JSON.stringify({ data: [{ id: "local-model" }] });
+
+  async function listen(): Promise<{
+    url: string;
+    port: number;
+    connections: () => number;
+    close: () => Promise<void>;
+  }> {
+    let connections = 0;
+    const server = createServer((request, response) => {
+      request.resume();
+      if ((request.method !== "GET" && request.method !== "POST") || request.url !== "/v1/models") {
+        response.writeHead(404).end();
+        return;
+      }
+      response.setHeader("content-type", "application/json");
+      response.end(MODEL_LIST);
+    });
+    server.on("connection", () => {
+      connections += 1;
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Missing test server address");
+    return {
+      url: `http://127.0.0.1:${address.port}/v1/models`,
+      port: address.port,
+      connections: () => connections,
+      close: async () => {
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      },
+    };
+  }
+
+  async function readModels(fetchModels: typeof globalThis.fetch, url: string): Promise<void> {
+    const response = await fetchModels(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    await response.text();
+  }
+
+  it("opens one TCP connection for sequential requests to the same endpoint", async () => {
+    const server = await listen();
+    try {
+      for (let i = 0; i < 4; i += 1) {
+        // Each model call builds its own fetch. The pool still has to be shared.
+        await readModels(createOpenAiCompatibleFetch(undefined, undefined, OWNER), server.url);
+      }
+      expect(server.connections()).toBe(1);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("opens a separate connection for a different timeout configuration", async () => {
+    const server = await listen();
+    try {
+      await readModels(createOpenAiCompatibleFetch(undefined, undefined, OWNER), server.url);
+      await readModels(createOpenAiCompatibleFetch(undefined, undefined, OWNER), server.url);
+      await readModels(
+        createOpenAiCompatibleFetch(undefined, undefined, { ...OWNER, modelStream: true }),
+        server.url,
+      );
+      expect(server.connections()).toBe(2);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("opens a new connection after the pool is closed", async () => {
+    const server = await listen();
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, OWNER);
+      await readModels(safeFetch, server.url);
+      expect(server.connections()).toBe(1);
+      await closeOpenAiCompatibleTransports();
+      await readModels(safeFetch, server.url);
+      expect(server.connections()).toBe(2);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("aborts one request without dropping another on the same gateway", async () => {
+    let accepted = 0;
+    const bothAccepted = deferred<void>();
+    const release = deferred<void>();
+    const server = createServer((request, response) => {
+      request.on("error", () => undefined);
+      response.on("error", () => undefined);
+      if (request.method !== "GET" || request.url !== "/v1/models") {
+        request.resume();
+        response.writeHead(404).end();
+        return;
+      }
+      accepted += 1;
+      if (accepted === 2) bothAccepted.resolve();
+      void release.promise.then(() => {
+        if (response.writableEnded) return;
+        response.setHeader("content-type", "application/json");
+        response.end(MODEL_LIST);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Missing test server address");
+    const url = `http://127.0.0.1:${address.port}/v1/models`;
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, OWNER);
+      const controller = new AbortController();
+      const first = safeFetch(url, { signal: controller.signal }).then(
+        async (response) => {
+          await response.text();
+          return "completed";
+        },
+        (error: unknown) => error,
+      );
+      const second = safeFetch(url).then(async (response) => {
+        await response.text();
+        return "completed";
+      });
+      await bothAccepted.promise;
+      controller.abort();
+      release.resolve();
+      await expect(first).resolves.toMatchObject({ name: "AbortError" });
+      await expect(second).resolves.toBe("completed");
+    } finally {
+      release.resolve();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("checks DNS again for a new connection and does not reuse another resolver's socket", async () => {
+    process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = "models.example.test";
+    const server = await listen();
+    const url = `http://models.example.test:${server.port}/v1/models`;
+    const good = vi.fn(async () => [{ address: "127.0.0.1", family: 4 }]);
+    const blocked = vi.fn(async () => [{ address: "169.254.169.254", family: 4 }]);
+    try {
+      await readModels(createOpenAiCompatibleFetch(undefined, good, OWNER), url);
+      await readModels(createOpenAiCompatibleFetch(undefined, good, OWNER), url);
+      expect(server.connections()).toBe(1);
+      expect(good).toHaveBeenCalledTimes(1);
+      await expect(
+        createOpenAiCompatibleFetch(undefined, blocked, OWNER)(url),
+      ).rejects.toMatchObject({
+        cause: { message: "Model server hostname resolved to a blocked metadata address" },
+      });
+      expect(blocked).toHaveBeenCalledTimes(1);
+      expect(server.connections()).toBe(1);
+      await closeOpenAiCompatibleTransports();
+      good.mockResolvedValueOnce([{ address: "169.254.169.254", family: 4 }]);
+      await expect(createOpenAiCompatibleFetch(undefined, good, OWNER)(url)).rejects.toMatchObject({
+        cause: { message: "Model server hostname resolved to a blocked metadata address" },
+      });
+      expect(good).toHaveBeenCalledTimes(2);
+    } finally {
+      await server.close();
+    }
+  });
+
+  const CHAT_SSE = `data: ${JSON.stringify({
+    id: "chat",
+    choices: [{ index: 0, delta: { role: "assistant", content: "hello" }, finish_reason: null }],
+  })}\n\ndata: ${JSON.stringify({
+    id: "chat",
+    choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+  })}\n\ndata: [DONE]\n\n`;
+
+  function trackConnections(server: Server): {
+    connections: () => number;
+    open: () => number;
+  } {
+    let connections = 0;
+    const openSockets = new Set<Socket>();
+    server.on("connection", (socket) => {
+      connections += 1;
+      openSockets.add(socket);
+      socket.on("close", () => {
+        openSockets.delete(socket);
+      });
+    });
+    return {
+      connections: () => connections,
+      open: () => openSockets.size,
+    };
+  }
+
+  async function listenBound(
+    onRequest: (request: IncomingMessage, response: ServerResponse) => void,
+  ): Promise<{
+    port: number;
+    url: (path: string) => string;
+    connections: () => number;
+    open: () => number;
+    close: () => Promise<void>;
+  }> {
+    const server = createServer(onRequest);
+    const tracked = trackConnections(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Missing test server address");
+    return {
+      port: address.port,
+      url: (path) => `http://127.0.0.1:${address.port}${path}`,
+      connections: tracked.connections,
+      open: tracked.open,
+      close: async () => {
+        server.closeAllConnections();
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
+      },
+    };
+  }
+
+  async function listenHeld(): Promise<{
+    url: string;
+    accepted: Promise<void>;
+    respond: () => void;
+    open: () => number;
+    close: () => Promise<void>;
+  }> {
+    const accepted = deferred<void>();
+    const gate = deferred<void>();
+    const server = await listenBound((request, response) => {
+      request.resume();
+      request.on("end", () => {
+        accepted.resolve();
+        void gate.promise.then(() => {
+          if (response.writableEnded) return;
+          response.writeHead(200, {
+            "content-type": "application/json",
+            connection: "keep-alive",
+          });
+          response.end('{"ok":true}');
+        });
+      });
+    });
+    return {
+      url: server.url("/v1/models"),
+      accepted: accepted.promise,
+      respond: () => gate.resolve(),
+      open: server.open,
+      close: server.close,
+    };
+  }
+
+  it.each(["stream", "streamSimple"] as const)(
+    "reuses one connection across four %s completions",
+    async (method) => {
+      const server = await listenBound((request, response) => {
+        request.resume();
+        if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+          response.writeHead(404).end();
+          return;
+        }
+        response.writeHead(200, {
+          "content-type": "text/event-stream",
+          connection: "keep-alive",
+        });
+        response.end(CHAT_SSE);
+      });
+      try {
+        const models = registerOpenAiCompatibleRuntime(createModels(), {
+          modelId: "fixture-model",
+          baseUrl: `http://127.0.0.1:${server.port}/v1`,
+          allowPrivate: true,
+        });
+        const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID);
+        const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "fixture-model");
+        if (!provider || !model) throw new Error("Missing compatible provider");
+        for (let turn = 0; turn < 4; turn += 1) {
+          const message = await provider[method](
+            model,
+            normalizeContext({
+              messages: [{ role: "user", content: "Say hello", timestamp: turn + 1 }],
+            }),
+            { apiKey: "test-key" },
+          ).result();
+          expect(message.stopReason, message.errorMessage).toBe("stop");
+          expect(message.content).toEqual(
+            expect.arrayContaining([expect.objectContaining({ type: "text", text: "hello" })]),
+          );
+        }
+        expect(server.connections()).toBe(1);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  it.each(["stream", "streamSimple"] as const)(
+    "reuses one connection when the chunked terminator follows %s [DONE]",
+    async (method) => {
+      const server = await listenBound((request, response) => {
+        request.on("error", () => undefined);
+        response.on("error", () => undefined);
+        request.resume();
+        if (request.method !== "POST" || request.url !== "/v1/chat/completions") {
+          response.writeHead(404).end();
+          return;
+        }
+        response.writeHead(200, {
+          "content-type": "text/event-stream",
+          connection: "keep-alive",
+        });
+        response.write(CHAT_SSE);
+        // A gateway often flushes [DONE] and sends the chunked terminator later.
+        setTimeout(() => {
+          if (!response.writableEnded) response.end();
+        }, 20);
+      });
+      try {
+        const models = registerOpenAiCompatibleRuntime(createModels(), {
+          modelId: "fixture-model",
+          baseUrl: `http://127.0.0.1:${server.port}/v1`,
+          allowPrivate: true,
+        });
+        const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID);
+        const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "fixture-model");
+        if (!provider || !model) throw new Error("Missing compatible provider");
+        for (let turn = 0; turn < 4; turn += 1) {
+          const message = await provider[method](
+            model,
+            normalizeContext({
+              messages: [{ role: "user", content: "Say hello", timestamp: turn + 1 }],
+            }),
+            { apiKey: "test-key" },
+          ).result();
+          expect(message.stopReason, message.errorMessage).toBe("stop");
+          expect(message.content).toEqual(
+            expect.arrayContaining([expect.objectContaining({ type: "text", text: "hello" })]),
+          );
+        }
+        expect(server.connections()).toBe(1);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  it("cancels a stalled body instead of waiting for the server to finish", async () => {
+    const server = await listenBound((request, response) => {
+      request.on("error", () => undefined);
+      response.on("error", () => undefined);
+      request.resume();
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        connection: "keep-alive",
+      });
+      response.write("data: thinking\n\n");
+    });
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, {
+        ...OWNER,
+        modelStream: true,
+      });
+      const response = await safeFetch(server.url("/v1/chat/completions"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Missing response body");
+      await reader.read();
+      await reader.cancel();
+      await vi.waitFor(() => expect(server.open()).toBe(0));
+    } finally {
+      await server.close();
+    }
+  }, 2_000);
+
+  it("aborts a stalled completion instead of waiting for the server to finish", async () => {
+    const started = deferred<void>();
+    const server = await listenBound((request, response) => {
+      request.on("error", () => undefined);
+      response.on("error", () => undefined);
+      request.resume();
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        connection: "keep-alive",
+      });
+      response.write("data: thinking\n\n");
+      started.resolve();
+    });
+    try {
+      const models = registerOpenAiCompatibleRuntime(createModels(), {
+        modelId: "fixture-model",
+        baseUrl: `http://127.0.0.1:${server.port}/v1`,
+        allowPrivate: true,
+      });
+      const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID);
+      const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "fixture-model");
+      if (!provider || !model) throw new Error("Missing compatible provider");
+      const controller = new AbortController();
+      const pending = provider
+        .stream(
+          model,
+          normalizeContext({
+            messages: [{ role: "user", content: "Say hello", timestamp: 1 }],
+          }),
+          { apiKey: "test-key", signal: controller.signal },
+        )
+        .result();
+      await started.promise;
+      controller.abort();
+      const message = await pending;
+      expect(message.stopReason).toBe("aborted");
+      await vi.waitFor(() => expect(server.open()).toBe(0));
+    } finally {
+      await server.close();
+    }
+  }, 2_000);
+
+  it("keeps a reader alive after the Response is collected", async () => {
+    setFlagsFromString("--expose-gc");
+    const collect = runInNewContext("gc") as () => void;
+    setFlagsFromString("--no-expose-gc");
+    const released = deferred<void>();
+    const think = `data: ${JSON.stringify({
+      id: "chat",
+      choices: [{ index: 0, delta: { content: "think" }, finish_reason: null }],
+    })}\n\n`;
+    const hello = `data: ${JSON.stringify({
+      id: "chat",
+      choices: [{ index: 0, delta: { content: "hello" }, finish_reason: "stop" }],
+    })}\n\n`;
+    const server = await listenBound((request, response) => {
+      request.resume();
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        connection: "keep-alive",
+      });
+      response.write(think);
+      void released.promise.then(() => {
+        if (!response.writableEnded) response.end(hello);
+      });
+    });
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, {
+        ...OWNER,
+        modelStream: true,
+      });
+      const first = await (async () => {
+        const response = await safeFetch(server.url("/v1/chat/completions"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+        reader = response.body?.getReader();
+        if (!reader) throw new Error("Missing response body");
+        return reader.read();
+      })();
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        collect();
+      }
+      released.resolve();
+      const decoder = new TextDecoder();
+      let text = decoder.decode(first.value, { stream: true });
+      if (!reader) throw new Error("Missing response body");
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        text += decoder.decode(next.value, { stream: true });
+      }
+      text += decoder.decode();
+      expect(text).toContain("think");
+      expect(text).toContain("hello");
+      expect(server.connections()).toBe(1);
+    } finally {
+      released.resolve();
+      await reader?.cancel().catch(() => undefined);
+      await server.close();
+    }
+  });
+
+  it("keeps a live stream when idle transports pass the cap", async () => {
+    const released = deferred<void>();
+    const think = `data: ${JSON.stringify({
+      id: "chat",
+      choices: [{ index: 0, delta: { content: "think" }, finish_reason: null }],
+    })}\n\n`;
+    const hello = `data: ${JSON.stringify({
+      id: "chat",
+      choices: [{ index: 0, delta: { content: "hello" }, finish_reason: "stop" }],
+    })}\n\ndata: [DONE]\n\n`;
+    const server = await listenBound((request, response) => {
+      request.resume();
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        connection: "keep-alive",
+      });
+      response.write(think);
+      void released.promise.then(() => {
+        if (response.writableEnded) return;
+        response.end(hello);
+      });
+    });
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    const fillers: Array<{ close: () => Promise<void> }> = [];
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, {
+        ...OWNER,
+        modelStream: true,
+      });
+      const response = await safeFetch(server.url("/v1/chat/completions"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      reader = response.body?.getReader();
+      if (!reader) throw new Error("Missing response body");
+      const decoder = new TextDecoder();
+      const first = await reader.read();
+      let text = decoder.decode(first.value, { stream: true });
+      expect(text).toContain("think");
+      const extras = await Promise.all(Array.from({ length: 32 }, () => listenHeld()));
+      fillers.push(...extras);
+      for (const extra of extras) {
+        const pending = createOpenAiCompatibleFetch(
+          undefined,
+          undefined,
+          OWNER,
+        )(extra.url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+        await extra.accepted;
+        extra.respond();
+        await (await pending).text();
+      }
+      expect(server.open()).toBe(1);
+      expect(server.connections()).toBe(1);
+      released.resolve();
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        text += decoder.decode(next.value, { stream: true });
+      }
+      text += decoder.decode();
+      expect(text).toContain("hello");
+      expect(server.connections()).toBe(1);
+      expect(server.open()).toBe(1);
+    } finally {
+      released.resolve();
+      await reader?.cancel().catch(() => undefined);
+      await Promise.all([server.close(), ...fillers.map((filler) => filler.close())]);
+    }
+  });
+
+  it("releases the pool when a caller drops a response", async () => {
+    setFlagsFromString("--expose-gc");
+    const collect = runInNewContext("gc") as () => void;
+    setFlagsFromString("--no-expose-gc");
+    const think = `data: ${JSON.stringify({
+      id: "chat",
+      choices: [{ index: 0, delta: { content: "think" }, finish_reason: null }],
+    })}\n\n`;
+    const server = await listenBound((request, response) => {
+      request.resume();
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        connection: "keep-alive",
+      });
+      response.write(think);
+    });
+    const fillers: Array<{ open: () => number; close: () => Promise<void> }> = [];
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, {
+        ...OWNER,
+        modelStream: true,
+      });
+      await (async () => {
+        const response = await safeFetch(server.url("/v1/chat/completions"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("Missing response body");
+        await reader.read();
+      })();
+      await vi.waitFor(
+        () => {
+          collect();
+          expect(server.open()).toBe(0);
+        },
+        { timeout: 5_000, interval: 20 },
+      );
+      const extras = await Promise.all(Array.from({ length: 32 }, () => listenHeld()));
+      fillers.push(...extras);
+      for (const extra of extras) {
+        const pending = createOpenAiCompatibleFetch(
+          undefined,
+          undefined,
+          OWNER,
+        )(extra.url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+        await extra.accepted;
+        extra.respond();
+        await (await pending).text();
+      }
+      expect(extras.every((extra) => extra.open() === 1)).toBe(true);
+    } finally {
+      await Promise.all([server.close(), ...fillers.map((filler) => filler.close())]);
+    }
+  });
+
+  it("releases the pool when a caller drops an unread response", async () => {
+    setFlagsFromString("--expose-gc");
+    const collect = runInNewContext("gc") as () => void;
+    setFlagsFromString("--no-expose-gc");
+    const server = await listenBound((request, response) => {
+      request.resume();
+      response.writeHead(200, {
+        "content-type": "application/json",
+        connection: "keep-alive",
+      });
+      response.write('{"ok":true}');
+    });
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, OWNER);
+      await (async () => {
+        await safeFetch(server.url("/v1/models"));
+      })();
+      await vi.waitFor(
+        () => {
+          collect();
+          expect(server.open()).toBe(0);
+        },
+        { timeout: 5_000, interval: 20 },
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("reads a model list when GC runs between body chunks", async () => {
+    setFlagsFromString("--expose-gc");
+    const collect = runInNewContext("gc") as () => void;
+    setFlagsFromString("--no-expose-gc");
+    const payload = JSON.stringify({ data: [{ id: "fixture-model" }] });
+    const splitAt = Math.ceil(payload.length / 2);
+    const wrote = deferred<void>();
+    const rest = deferred<void>();
+    const server = await listenBound((request, response) => {
+      request.resume();
+      response.writeHead(200, {
+        "content-type": "application/json",
+        connection: "keep-alive",
+      });
+      response.write(payload.slice(0, splitAt));
+      wrote.resolve();
+      void rest.promise.then(() => {
+        if (!response.writableEnded) response.end(payload.slice(splitAt));
+      });
+    });
+    try {
+      const pending = probeOpenAiCompatibleModels(
+        { baseUrl: `http://127.0.0.1:${server.port}/v1` },
+        undefined,
+        undefined,
+        OWNER,
+      );
+      await wrote.promise;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        collect();
+      }
+      rest.resolve();
+      await expect(pending).resolves.toEqual(["fixture-model"]);
+    } finally {
+      rest.resolve();
+      await server.close();
+    }
+  }, 3_000);
+
+  it("reads response text when GC runs between body chunks", async () => {
+    setFlagsFromString("--expose-gc");
+    const collect = runInNewContext("gc") as () => void;
+    setFlagsFromString("--no-expose-gc");
+    const payload = '{"data":[{"id":"fixture-model"}]}';
+    const splitAt = Math.ceil(payload.length / 2);
+    const wrote = deferred<void>();
+    const rest = deferred<void>();
+    const server = await listenBound((request, response) => {
+      request.resume();
+      response.writeHead(200, {
+        "content-type": "application/json",
+        connection: "keep-alive",
+      });
+      response.write(payload.slice(0, splitAt));
+      wrote.resolve();
+      void rest.promise.then(() => {
+        if (!response.writableEnded) response.end(payload.slice(splitAt));
+      });
+    });
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, OWNER);
+      const pending = (async () => {
+        const response = await safeFetch(server.url("/v1/models"));
+        return response.text();
+      })();
+      await wrote.promise;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        collect();
+      }
+      rest.resolve();
+      await expect(pending).resolves.toBe(payload);
+    } finally {
+      rest.resolve();
+      await server.close();
+    }
+  }, 3_000);
+
+  it("logs an abandoned body cancel failure and releases the pool slot", async () => {
+    setFlagsFromString("--expose-gc");
+    const collect = runInNewContext("gc") as () => void;
+    setFlagsFromString("--no-expose-gc");
+    const previous = getLogger();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const fetchImpl: typeof fetch = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("data: hi\n\n"));
+          },
+          cancel() {
+            return Promise.reject(new Error("cancel failed"));
+          },
+        }),
+        { status: 200, headers: { "content-type": "text/event-stream" } },
+      );
+    const fillers: Array<{ open: () => number; close: () => Promise<void> }> = [];
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, {
+        ...OWNER,
+        modelStream: true,
+      });
+      await (async () => {
+        const response = await safeFetch("http://127.0.0.1:9/v1/chat/completions", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("Missing response body");
+        await reader.read();
+      })();
+      await vi.waitFor(
+        () => {
+          collect();
+          expect(sink.events.map((event) => event.message)).toContain(
+            "best effort failed: cancel abandoned compatible gateway body",
+          );
+        },
+        { timeout: 5_000, interval: 20 },
+      );
+      const extras = await Promise.all(Array.from({ length: 32 }, () => listenHeld()));
+      fillers.push(...extras);
+      for (const extra of extras) {
+        const pending = createOpenAiCompatibleFetch(
+          undefined,
+          undefined,
+          OWNER,
+        )(extra.url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        });
+        await extra.accepted;
+        extra.respond();
+        await (await pending).text();
+      }
+      expect(extras.every((extra) => extra.open() === 1)).toBe(true);
+    } finally {
+      installLogger(previous);
+      await Promise.all(fillers.map((filler) => filler.close()));
+    }
+  });
+
+  it("cancels a stalled pending read when the grace window elapses", async () => {
+    const server = await listenBound((request, response) => {
+      request.on("error", () => undefined);
+      response.on("error", () => undefined);
+      request.resume();
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        connection: "keep-alive",
+      });
+      response.write("data: thinking\n\n");
+    });
+    try {
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, {
+        ...OWNER,
+        modelStream: true,
+      });
+      const response = await safeFetch(server.url("/v1/chat/completions"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Missing response body");
+      await reader.read();
+      const pending = reader.read();
+      pending.catch(() => undefined);
+      // A cancelled read must wait out the grace window. A 50 ms marker that
+      // wins the race shows the cancel did not return immediately.
+      const marker = deferred<void>();
+      const timer = setTimeout(() => marker.resolve(), 50);
+      const cancelled = reader.cancel().then(() => "cancelled" as const);
+      const first = await Promise.race([cancelled, marker.promise.then(() => "waited" as const)]);
+      clearTimeout(timer);
+      expect(first).toBe("waited");
+      await cancelled;
+      await vi.waitFor(() => expect(server.open()).toBe(0));
+    } finally {
+      await server.close();
+    }
+  }, 2_000);
+
+  it("aborts a stalled pending read before the grace window elapses", async () => {
+    const server = await listenBound((request, response) => {
+      request.on("error", () => undefined);
+      response.on("error", () => undefined);
+      request.resume();
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        connection: "keep-alive",
+      });
+      response.write("data: thinking\n\n");
+    });
+    try {
+      const controller = new AbortController();
+      const safeFetch = createOpenAiCompatibleFetch(undefined, undefined, {
+        ...OWNER,
+        modelStream: true,
+      });
+      const response = await safeFetch(server.url("/v1/chat/completions"), {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Missing response body");
+      await reader.read();
+      const pending = reader.read();
+      pending.catch(() => undefined);
+      // Abort must settle the cancel before the grace window. If this 80 ms
+      // marker wins, the cancel waited out that window.
+      const marker = deferred<void>();
+      const timer = setTimeout(() => marker.resolve(), 80);
+      controller.abort();
+      const first = await Promise.race([
+        reader.cancel().then(
+          () => "cancelled" as const,
+          () => "cancelled" as const,
+        ),
+        marker.promise.then(() => "waited" as const),
+      ]);
+      clearTimeout(timer);
+      expect(first).toBe("cancelled");
+      await vi.waitFor(() => expect(server.open()).toBe(0));
+    } finally {
+      await server.close();
+    }
+  }, 2_000);
+
+  it("keeps at most 32 idle transports after a burst of 33", async () => {
+    const servers = await Promise.all(Array.from({ length: 33 }, () => listenHeld()));
+    try {
+      const pending = servers.map((server) =>
+        createOpenAiCompatibleFetch(
+          undefined,
+          undefined,
+          OWNER,
+        )(server.url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        }),
+      );
+      await Promise.all(servers.map((server) => server.accepted));
+      for (let index = 0; index < servers.length; index += 1) {
+        const server = servers[index];
+        const response = pending[index];
+        if (!server || !response) throw new Error("Missing burst request");
+        server.respond();
+        await (await response).text();
+      }
+      await vi.waitFor(() => {
+        expect(servers[0]?.open()).toBe(0);
+      });
+      expect(servers.map((server) => server.open())).toEqual([
+        0,
+        ...Array.from({ length: 32 }, () => 1),
+      ]);
+    } finally {
+      await Promise.all(servers.map((server) => server.close()));
+    }
+  });
+
+  it("logs a dispatcher close failure", async () => {
+    const previous = getLogger();
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const destroy = vi
+      .spyOn(Agent.prototype, "destroy")
+      .mockRejectedValueOnce(new Error("socket close failed"));
+    const server = await listen();
+    try {
+      await readModels(createOpenAiCompatibleFetch(undefined, undefined, OWNER), server.url);
+      await closeOpenAiCompatibleTransports();
+      expect(sink.events.map((event) => event.message)).toContain(
+        "best effort failed: close compatible gateway transport",
+      );
+    } finally {
+      destroy.mockRestore();
+      installLogger(previous);
+      await server.close();
+    }
   });
 });

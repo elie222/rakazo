@@ -34,6 +34,7 @@ export function createCheckedProxyDispatcher(
   validate: (addresses: ResolvedAddress[], hostname: string) => void,
   connectTimeout?: number,
   responseTimeouts?: Pick<Agent.Options, "headersTimeout" | "bodyTimeout">,
+  limits?: Pick<Agent.Options, "keepAliveTimeout" | "keepAliveMaxTimeout">,
 ): Dispatcher {
   const { env } = process;
   const proxies = [env.http_proxy ?? env.HTTP_PROXY, env.https_proxy ?? env.HTTPS_PROXY];
@@ -48,9 +49,10 @@ export function createCheckedProxyDispatcher(
     ...(connectTimeout === undefined ? {} : { timeout: connectTimeout }),
     lookup: createAddressCheckedLookup(resolve, validate),
   };
-  if (!proxies.some(Boolean)) return new Agent({ ...responseTimeouts, connect });
+  if (!proxies.some(Boolean)) return new Agent({ ...responseTimeouts, ...limits, connect });
   const dispatcher = new EnvHttpProxyAgent({
     ...responseTimeouts,
+    ...limits,
     connect,
     ...(connectTimeout === undefined ? {} : { connectTimeout }),
     proxyTunnel: true,

@@ -53,9 +53,16 @@ import {
 } from "../pi-runtime-limits.js";
 import { splitLeadingThinkBlock } from "../stream/pi-think-tags.js";
 import { guardToolCallNames } from "../tools/pi-tool-call-guard.js";
+import {
+  borrowCompatibleTransport,
+  closeOpenAiCompatibleTransports,
+  compatibleTransportKey,
+  compatibleTransportLimits,
+  releaseCompatibleResponse,
+} from "./pi-compatible-transport-pool.js";
 import { REASONING_THINKING_LEVELS } from "./pi-local-provider.js";
 
-export { OPENAI_COMPATIBLE_PROVIDER_ID };
+export { closeOpenAiCompatibleTransports, OPENAI_COMPATIBLE_PROVIDER_ID };
 
 /** Placeholder catalog model id; users enter the real id when connecting. */
 export const OPENAI_COMPATIBLE_CATALOG_MODEL_ID = "custom";
@@ -302,23 +309,39 @@ export function createOpenAiCompatibleFetch(
     }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
     const responseTimeouts = opts?.modelStream ? MODEL_STREAM_AGENT_TIMEOUTS : undefined;
+    const connectTimeout = modelConnectTimeoutMs();
+    const route = isPrivateOpenAiCompatibleHostname(hostname) ? "direct" : "proxy";
     // Local model servers stay on the direct route; public endpoints honor HTTP(S)_PROXY.
-    const dispatcher: Dispatcher = isPrivateOpenAiCompatibleHostname(hostname)
-      ? new Agent({
-          ...responseTimeouts,
-          connect: {
-            timeout: modelConnectTimeoutMs(),
-            ...(ipVersion(hostname) === 0
-              ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
-              : {}),
-          },
-        })
-      : createCheckedProxyDispatcher(
-          resolve,
-          openAiCompatibleAddressCheck(url, opts),
-          modelConnectTimeoutMs(),
-          responseTimeouts,
-        );
+    // The dispatcher is shared for this origin and policy. A new socket still runs lookup.
+    const borrowed = borrowCompatibleTransport(
+      compatibleTransportKey({
+        origin: url.origin,
+        route,
+        allowPrivate: opts?.allowPrivate === true,
+        modelStream: opts?.modelStream === true,
+        connectTimeout,
+        resolve,
+      }),
+      () =>
+        route === "direct"
+          ? new Agent({
+              ...responseTimeouts,
+              ...compatibleTransportLimits(),
+              connect: {
+                timeout: connectTimeout,
+                ...(ipVersion(hostname) === 0
+                  ? { lookup: createOpenAiCompatibleLookup(url, resolve, opts) }
+                  : {}),
+              },
+            })
+          : createCheckedProxyDispatcher(
+              resolve,
+              openAiCompatibleAddressCheck(url, opts),
+              connectTimeout,
+              responseTimeouts,
+              compatibleTransportLimits(),
+            ),
+    );
     // Node's fetch rejects this package Agent. Use its matching fetch;
     // a caller-supplied fetch stays in charge.
     const transport = fetchPairedWithDispatcher(baseFetch);
@@ -334,11 +357,15 @@ export function createOpenAiCompatibleFetch(
         ...requestInit,
         headers,
         redirect: "error",
-        dispatcher,
+        dispatcher: borrowed.dispatcher,
       } as RequestInit & { dispatcher: Dispatcher });
-      return await closeDispatcherWithResponse(response, dispatcher);
+      return await releaseCompatibleResponse(
+        response,
+        borrowed.release,
+        requestInit.signal ?? undefined,
+      );
     } catch (error) {
-      await dispatcher.destroy().catch(() => undefined);
+      await borrowed.release(true);
       throw error;
     }
   };
@@ -359,51 +386,6 @@ async function requestInitFor(input: RequestInfo | URL, init?: RequestInit): Pro
     body,
     signal: request.signal,
   };
-}
-
-async function closeDispatcherWithResponse(
-  response: Response,
-  dispatcher: Dispatcher,
-): Promise<Response> {
-  if (!response.body) {
-    await dispatcher.close();
-    return response;
-  }
-  const reader = response.body.getReader();
-  let closed = false;
-  const close = async () => {
-    if (closed) return;
-    closed = true;
-    await dispatcher.close().catch(() => undefined);
-  };
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const result = await reader.read();
-        if (result.done) {
-          controller.close();
-          await close();
-        } else {
-          controller.enqueue(result.value);
-        }
-      } catch (error) {
-        controller.error(error);
-        await close();
-      }
-    },
-    async cancel(reason) {
-      try {
-        await reader.cancel(reason);
-      } finally {
-        await close();
-      }
-    },
-  });
-  return new Response(body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-  });
 }
 
 /** Always-visible catalog provider with a placeholder model entry. */
