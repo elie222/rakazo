@@ -408,7 +408,8 @@ function isClosedJsonStringToken(token: string): boolean {
 }
 
 function followsJsonStringToken(raw: string, end: number, closed: boolean): boolean {
-  if (!closed || end >= raw.length) return true;
+  if (!closed) return end >= raw.length || !isPrecededByBearer(raw, end);
+  if (end >= raw.length) return true;
   const ch = raw[end]!;
   // Accept whitespace and structural or sentence punctuation (such as `. HTTP 400`, `;`, `)`,
   // `,`, `}`, `]`, `\n`), while keeping glued broken-quote diagnostics like `Error: "a"b"` intact.

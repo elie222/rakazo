@@ -1337,4 +1337,47 @@ describe("tool step outcomes", () => {
       expect(read("Authorization: Bearer-fixtureSecond")).toBe("Authorization: [redacted]");
     }
   });
+
+  it("redacts Bearer tokens separated by a line break inside an unclosed quote", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    const conn = (text: string) => sanitizeConnectorError(new Error(text));
+    const cases = [
+      'Authorization:"Bearer\nopaque-123',
+      'x-custom: "Bearer\nopaque-123"',
+      'COMPOSIO_API_KEY:"Bearer\nopaque-123',
+      '{"log":"COMPOSIO_API_KEY=Bearer\nopaque-123"}',
+    ];
+    for (const input of cases) {
+      for (const read of [kept, replay, sanitizeError, conn]) {
+        const out = read(input) ?? "";
+        expect(out).not.toContain("opaque-123");
+        expect(out).toContain("Bearer [redacted]");
+      }
+    }
+  });
+
+  it("redacts escaped-quote Bearer values after COMPOSIO_API_KEY without breaking closed quotes", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    const escapedCases = [
+      String.raw`export COMPOSIO_API_KEY=\"Bearer opaque-123\"`,
+      String.raw`msg="see COMPOSIO_API_KEY=\"Bearer opaque-123\""`,
+      String.raw`{"cmd":"COMPOSIO_API_KEY=\\"Bearer opaque-123\\""}`,
+    ];
+    for (const input of escapedCases) {
+      for (const read of [kept, replay, sanitizeError, sanitizeSensitiveText]) {
+        const out = read(input) ?? "";
+        expect(out).not.toContain("opaque-123");
+        expect(out).toContain("Bearer [redacted]");
+      }
+    }
+    expect(sanitizeSensitiveText('COMPOSIO_API_KEY="Bearer secret with spaces"')).toBe(
+      "COMPOSIO_API_KEY=[redacted]",
+    );
+  });
 });

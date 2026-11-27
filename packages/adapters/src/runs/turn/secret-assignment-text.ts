@@ -65,6 +65,17 @@ function startsWithBearerToken(text: string, pos: number): boolean {
   return next < text.length;
 }
 
+/** True when `pos` opens `Bearer <token>` or an escaped-quote form such as `\"Bearer <token>`. */
+function defersToBearerPass(text: string, pos: number): boolean {
+  if (startsWithBearerToken(text, pos)) return true;
+  let quote = pos;
+  while (quote < text.length && text[quote] === "\\") quote += 1;
+  if (quote > pos && (text[quote] === '"' || text[quote] === "'")) {
+    return startsWithBearerToken(text, quote + 1);
+  }
+  return false;
+}
+
 /** A `"` preceded by an odd number of backslashes is an escape, not the start of a string. */
 function quoteIsEscaped(text: string, index: number): boolean {
   let slashes = 0;
@@ -202,7 +213,7 @@ export function redactComposioApiKeyAssignments(text: string): string {
     }
     pos += 1;
     while (isWhitespace(text[pos])) pos += 1;
-    if (startsWithBearerToken(text, pos)) {
+    if (defersToBearerPass(text, pos)) {
       index = pos;
       continue;
     }
