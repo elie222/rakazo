@@ -17,6 +17,7 @@ import { runAsSystem, runAsTenant } from "@rakazo/db";
 import { clientErrorStatus } from "../client-error-status.js";
 import type { createRouter } from "../router.js";
 import { handleRpcError } from "../rpc-errors.js";
+import { ownSentTask, TASK_EVENTS } from "../threads/thread-send.js";
 
 /** Live task streams and waits one key may hold open in one process. */
 export const MAX_OPEN_FOLLOWS_PER_KEY = 20;
@@ -60,20 +61,6 @@ export function publicApiFailure(
     return { status: error.status, message: error.message };
   return null;
 }
-
-/** Thread events after which a task may read differently. Progress and activity change nothing. */
-const TASK_EVENTS = new Set([
-  "thread.message.created",
-  "thread.message.updated",
-  "thread.ask",
-  "thread.choice",
-  "run.started",
-  "run.waiting_input",
-  "computer.takeover.requested",
-  "run.completed",
-  "run.failed",
-  "run.cancelled",
-]);
 
 export type BotAccessDeps = {
   prisma: PrismaClient;
@@ -216,32 +203,11 @@ export function createBotAccess(deps: BotAccessDeps) {
     return task;
   }
 
-  /**
-   * The person's own task for a message they sent. A send names the run that holds the chat,
-   * which in a shared Space can be another member's; the message itself names its own run.
-   */
   async function ownTaskId(
     actor: Actor,
     sent: { threadId: string; clientNonce: string; taskId: string },
   ): Promise<{ taskId: string; seq: number | undefined }> {
-    const own = await runAsTenant(actor, async () => {
-      const message = await prisma.message.findFirst({
-        where: { threadId: sent.threadId, clientNonce: sent.clientNonce },
-        select: { runId: true, seq: true },
-      });
-      const run = message?.runId
-        ? await prisma.run.findFirst({
-            where: { id: message.runId, userId: actor.userId },
-            select: { taskId: true },
-          })
-        : null;
-      if (run) return { taskId: run.taskId, seq: message?.seq };
-      const task = await prisma.task.findFirst({
-        where: { id: sent.taskId, userId: actor.userId },
-        select: { id: true },
-      });
-      return task ? { taskId: task.id, seq: message?.seq } : null;
-    });
+    const own = await runAsTenant(actor, () => ownSentTask(prisma, actor, sent));
     if (!own)
       throw new ClientError(
         "CONFLICT",

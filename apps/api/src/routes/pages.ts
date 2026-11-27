@@ -1,6 +1,7 @@
 import { AI_CONSENT_REQUIRED } from "@rakazo/contracts";
 import { ClientError } from "@rakazo/core";
 import { aiConsentStatus } from "../account/ai-consent.js";
+import { askFromPage } from "../content/page-ask.js";
 import {
   addPageComment,
   getPageGrants,
@@ -25,7 +26,7 @@ import {
 import type { RouterContext } from "./context.js";
 
 export function pagesRoutes(ctx: RouterContext) {
-  const { deps, authed } = ctx;
+  const { deps, authed, codexCatalog } = ctx;
   const pageDeps = () => ({
     prisma: deps.prisma,
     secrets: deps.secrets,
@@ -104,6 +105,15 @@ export function pagesRoutes(ctx: RouterContext) {
       remove: authed.pages.remove.handler(({ context, input }) =>
         removePage(pageDeps(), context.actor, input.pageId),
       ),
+      ask: authed.pages.ask.handler(async function* ({ context, input }) {
+        yield* askFromPage(
+          { ...deps, codexCatalog },
+          context.actor,
+          input,
+          context.signal,
+          context.stillAuthorized,
+        );
+      }),
     },
   };
 }

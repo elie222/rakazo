@@ -1,5 +1,6 @@
 import * as z from "zod";
 import { Id, IsoDate } from "../ids.js";
+import { PageAbilitiesSchema } from "./page-abilities.js";
 import { PageStateSchema } from "./page-reader-state.js";
 
 export const PAGE_TITLE_MAX_LENGTH = 200;
@@ -65,6 +66,8 @@ export const PageDetailSchema = z.strictObject({
   /** The version's source compiled for the viewer, which carries no compiler. */
   code: z.string(),
   images: PageImagesSchema,
+  /** What the version shown may ask its host for. */
+  abilities: PageAbilitiesSchema,
   owner: z.strictObject({ name: z.string(), image: z.string().nullable() }),
   /** Set while anyone with the link can open the page. */
   shareUrl: z.string().nullable(),
