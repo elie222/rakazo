@@ -97,7 +97,9 @@ export function useReviewedPageContent(
 ): PageContent | undefined {
   const queries = useSpaceQueries();
   return usePageContent(pageId ? page : undefined, (imageId) => ({
-    queryKey: [...queries.pageReviews.image.key(), imageId],
+    // The key names the page, so the page review screen can find and drop every picture of a
+    // page whose reading was refused, whichever revision showed it.
+    queryKey: [...queries.pageReviews.image.key(), pageId!, imageId],
     queryFn: () =>
       queries.pageReviews.image.call({ pageId: pageId!, version: page!.version, imageId }),
   }));

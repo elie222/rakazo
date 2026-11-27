@@ -62,6 +62,15 @@ function isUnreadable(payload: unknown, floor: number): boolean {
   );
 }
 
+/** The pictures a cached revision names, by id. */
+function namedImages(payload: unknown): string[] {
+  const images =
+    payload && typeof payload === "object" && "images" in payload ? payload.images : undefined;
+  return images && typeof images === "object"
+    ? Object.values(images).filter((id): id is string => typeof id === "string")
+    : [];
+}
+
 /**
  * Stops these queries' reads in flight and restores nothing. A query whose last view unmounts while
  * it reads gets back the state from before that read, which would undo what is cleared next.
@@ -85,6 +94,13 @@ function isObjectList(value: unknown): value is object[] {
   );
 }
 
+/** Whether a cached list row holds text where its link and title read. */
+function isSharedPageRow(value: unknown): value is { id: string; title: string } {
+  if (typeof value !== "object" || value === null) return false;
+  const { id, title } = value as { id?: unknown; title?: unknown };
+  return typeof id === "string" && typeof title === "string";
+}
+
 /** Whether a cached payload is shaped as the list query stores it. Anything else is dropped whole. */
 function isSharedPageList(payload: unknown): payload is SharedPageList {
   return (
@@ -92,7 +108,9 @@ function isSharedPageList(payload: unknown): payload is SharedPageList {
     payload !== null &&
     "pages" in payload &&
     isObjectList(payload.pages) &&
-    payload.pages.every((page) => "items" in page && isObjectList(page.items))
+    payload.pages.every(
+      (page) => "items" in page && Array.isArray(page.items) && page.items.every(isSharedPageRow),
+    )
   );
 }
 
@@ -120,7 +138,8 @@ function newestCachedTitle(queries: Query[]): string | undefined {
   let title: string | undefined;
   for (const { state } of queries) {
     const cached = state.data as PageReview | undefined;
-    if (!cached) continue;
+    // A revision whose title is not text gives none, as a list row could show none.
+    if (typeof cached?.title !== "string") continue;
     if (
       cached.version > version ||
       (cached.version === version && state.dataUpdatedAt >= updatedAt)
@@ -137,7 +156,7 @@ function newestCachedTitle(queries: Query[]): string | undefined {
 function isReviewerPageQuery(
   queryKey: readonly unknown[],
   userSegment: unknown,
-  procedure: "get" | "comments" | "list",
+  procedure: "get" | "comments" | "image" | "list",
   pageId?: string,
 ): boolean {
   const path = queryKey[0];
@@ -154,6 +173,8 @@ function isReviewerPageQuery(
     return false;
   }
   if (pageId === undefined) return true;
+  // A picture's key names its page next to the path, and the picture after it.
+  if (procedure === "image") return queryKey[2] === pageId;
   const options = queryKey[1];
   if (!options || typeof options !== "object" || !("input" in options)) return false;
   const input = (options as { input?: unknown }).input;
@@ -293,6 +314,10 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
         queryClient.getQueryCache().findAll({
           predicate: (query) => isReviewerPageQuery(query.queryKey, userSegment, "list"),
         });
+      const pageImages = () =>
+        queryClient.getQueryCache().findAll({
+          predicate: (query) => isReviewerPageQuery(query.queryKey, userSegment, "image", pageId),
+        });
       const denialKey = pageDenialKey(userSegment, pageId);
       const revisionDenialKey =
         version !== undefined ? pageDenialKey(userSegment, pageId, version) : undefined;
@@ -309,10 +334,25 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
             const revisionOnly = revisionDenialKey !== undefined && floor !== undefined;
             const comments = matchingComments();
             const lists = sharedPageLists();
-            await stopReads(queryClient, [...comments, ...lists]);
+            // Under a floor, a revision stays cached when it is neither the refused one nor below
+            // the floor.
+            const stays = (query: Query, from: number) =>
+              !isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId, { version }) &&
+              !isUnreadable(query.state.data, from);
+            // A picture stays cached only when a revision that stays names it. Every other picture
+            // of the page goes with the revisions the refusal drops, whatever revision named it last.
+            const staying = revisionOnly
+              ? matchingQueries().filter((query) => stays(query, floor))
+              : [];
+            const named = new Set(staying.flatMap((query) => namedImages(query.state.data)));
+            const images = pageImages().filter((query) => {
+              const id = query.queryKey[3];
+              return !(typeof id === "string" && named.has(id));
+            });
+            await stopReads(queryClient, [...comments, ...lists, ...images]);
             // The cached comments can hold revisions the reviewer may no longer read, whatever the
             // refusal says about the page itself, so they never outlive a refusal.
-            for (const query of comments) {
+            for (const query of [...comments, ...images]) {
               query.setState({ data: undefined, dataUpdatedAt: 0, fetchStatus: "idle" });
             }
             if (revisionOnly) {
@@ -323,10 +363,7 @@ function ReviewPage({ pageId, onClose }: { pageId: string; onClose: () => void }
               // views revalidate against the server.
               recordPageDenial(queryClient, revisionDenialKey, spaceSegment, error);
               for (const query of matchingQueries()) {
-                const refused = isSameReviewerPageReviewQuery(query.queryKey, userSegment, pageId, {
-                  version,
-                });
-                if (refused || isUnreadable(query.state.data, floor)) {
+                if (!stays(query, floor)) {
                   query.setState({ data: undefined, dataUpdatedAt: 0 });
                 }
               }

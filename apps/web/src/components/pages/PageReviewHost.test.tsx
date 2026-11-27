@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import { i18n } from "@lingui/core";
-import type { PageComment, PageReview, PageSectionAnchor } from "@rakazo/contracts";
+import type {
+  PageComment,
+  PageImageSource,
+  PageImages,
+  PageReview,
+  PageSectionAnchor,
+} from "@rakazo/contracts";
 import { PAGE_REVISION_NOT_FOUND } from "@rakazo/contracts";
 import { deferred, flush } from "@rakazo/core/test-async";
 import type { Query } from "@tanstack/react-query";
@@ -42,6 +48,10 @@ const rpcState = vi.hoisted(() => ({
   list: vi.fn<
     () => Promise<{ items: { id: string; title: string }[]; nextCursor: string | null }>
   >(),
+  getImage:
+    vi.fn<
+      (input: { pageId: string; version: number; imageId: string }) => Promise<PageImageSource>
+    >(),
 }));
 
 const viewState = vi.hoisted(() => ({
@@ -76,7 +86,8 @@ vi.mock("../../lib/query/rpc", () => {
       resolve: vi.fn(),
       askRevision: vi.fn(),
       list: () => rpcState.list(),
-      image: vi.fn(),
+      image: (input: { pageId: string; version: number; imageId: string }) =>
+        rpcState.getImage(input),
       saveState: (input: Record<string, unknown>) => rpcState.saveState(input),
     },
     pages: {
@@ -158,6 +169,9 @@ function makeComment(overrides: Partial<PageComment> = {}): PageComment {
     ...overrides,
   } as PageComment;
 }
+
+/** What reading a picture answers: its bytes, as a data URL. */
+const picture: PageImageSource = { src: "data:image/png;base64,AAA" };
 
 function NavigatorCapture() {
   const navigate = useNavigate();
@@ -288,6 +302,21 @@ function listedPages(): Array<[string, string]> {
   return (list?.pages ?? []).flatMap((page) => page.items.map((item) => [item.id, item.title]));
 }
 
+/** The query that read one picture. Its key names the picture last. */
+function imageQuery(imageId: string): Query | undefined {
+  return queryClient.getQueryCache().findAll({
+    predicate: (query) => {
+      const path = query.queryKey[0];
+      return (
+        Array.isArray(path) &&
+        path[2] === "pageReviews" &&
+        path[3] === "image" &&
+        query.queryKey.at(-1) === imageId
+      );
+    },
+  })[0];
+}
+
 function refusedPage() {
   return Object.assign(new Error("Page not found"), { code: "NOT_FOUND", status: 404 });
 }
@@ -359,6 +388,7 @@ beforeEach(() => {
   rpcState.publish.mockReset();
   rpcState.saveState.mockReset();
   rpcState.list.mockReset();
+  rpcState.getImage.mockReset();
   rpcState.getReview.mockResolvedValue(makePage());
   rpcState.getComments.mockResolvedValue({ items: [], nextCursor: null });
   rpcState.getDraft.mockResolvedValue({ code: "<main>draft</main>", images: {}, version: 1 });
@@ -366,6 +396,7 @@ beforeEach(() => {
   rpcState.publish.mockResolvedValue(undefined);
   rpcState.saveState.mockResolvedValue(undefined);
   rpcState.list.mockResolvedValue({ items: [], nextCursor: null });
+  rpcState.getImage.mockResolvedValue(picture);
 });
 
 afterEach(async () => {
@@ -1464,6 +1495,135 @@ describe("PageReviewHost comment draft preservation", () => {
     expect(document.body.textContent).not.toContain("Old note");
   });
 
+  it("clears the picture of a refused page and lets no refresh in flight bring it back", async () => {
+    let outcome: "granted" | "revoked" = "granted";
+    let refreshing = false;
+    const pendingPicture = deferred<PageImageSource>();
+    rpcState.getReview.mockImplementation(async () => {
+      if (outcome === "revoked") throw refusedPage();
+      return makePage({ version: 2, currentVersion: 2, images: { hero: "image-1" } });
+    });
+    rpcState.getImage.mockImplementation(async () => {
+      // A refresh that never answers, as when the server is out of reach.
+      if (refreshing) return pendingPicture.promise;
+      return picture;
+    });
+
+    // The picture is cached while the reviewer may still read the page.
+    await mountReview("/review/page-1");
+    await vi.waitFor(() => {
+      expect(imageQuery("image-1")?.state.data).toEqual(picture);
+    });
+    // A refresh of the picture is still waiting for the server.
+    refreshing = true;
+    act(() => {
+      void queryClient.refetchQueries({ predicate: (query) => query === imageQuery("image-1") });
+    });
+    await act(flush);
+    expect(imageQuery("image-1")?.state.fetchStatus).toBe("fetching");
+
+    // The grant ends: the page's own refresh is refused and takes the picture with it.
+    outcome = "revoked";
+    await refreshLatestRead();
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    // The stopped refresh left no error behind.
+    expect(imageQuery("image-1")?.state).toMatchObject({
+      data: undefined,
+      fetchStatus: "idle",
+      error: null,
+    });
+
+    // The refresh answers late with the picture from before: it is not cached again.
+    pendingPicture.resolve(picture);
+    await act(flush);
+    expect(imageQuery("image-1")?.state.data).toBeUndefined();
+  });
+
+  it("clears a picture no cached revision names any more, and no picture of another page", async () => {
+    let outcome: "granted" | "revoked" = "granted";
+    let published = false;
+    rpcState.getReview.mockImplementation(async ({ pageId }) => {
+      if (outcome === "revoked") throw refusedPage();
+      // Revision 3 of page-1, once published, shows a new picture.
+      return makePage({
+        id: pageId,
+        version: published ? 3 : 2,
+        currentVersion: published ? 3 : 2,
+        images: { hero: published ? "image-3" : `image-${pageId}` },
+      });
+    });
+
+    // A picture of another page is cached, then revision 2's picture of page-1.
+    await mountReview("/review/page-2");
+    await vi.waitFor(() => {
+      expect(imageQuery("image-page-2")?.state.data).toEqual(picture);
+    });
+    await act(async () => {
+      viewState.navigateTo?.("/review/page-1");
+    });
+    await act(flush);
+    await vi.waitFor(() => {
+      expect(imageQuery("image-page-1")?.state.data).toEqual(picture);
+    });
+
+    // Revision 3 is published: no cached revision names the picture of revision 2 any more.
+    published = true;
+    await refreshLatestRead();
+    await vi.waitFor(() => {
+      expect(imageQuery("image-3")?.state.data).toEqual(picture);
+    });
+
+    // The grant ends: both pictures of page-1 go with it, and the other page keeps its own.
+    outcome = "revoked";
+    await refreshLatestRead();
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    expect(imageQuery("image-page-1")?.state.data).toBeUndefined();
+    expect(imageQuery("image-3")?.state.data).toBeUndefined();
+    expect(imageQuery("image-page-2")?.state.data).toEqual(picture);
+  });
+
+  it("keeps only the pictures that the revisions above the floor name after a floor refusal", async () => {
+    const grant = { floor: 1, current: 3 };
+    rpcState.getReview.mockImplementation(async (input) => {
+      const page = await grantedPage(grant)(input);
+      // Revision 1 shows another picture than the latest revision 3.
+      const images: PageImages = page.version === 1 ? { old: "image-1" } : { hero: "image-3" };
+      return { ...page, images };
+    });
+    rpcState.getComments.mockResolvedValue({
+      items: [
+        makeComment({ id: "comment-v1", version: 1, section: "Summary" }),
+        makeComment({ id: "comment-v3", version: 3, section: "Pricing" }),
+      ],
+      nextCursor: null,
+    });
+
+    // The latest revision 3 is cached, then revision 1, each with its picture.
+    await mountReview("/review/page-1");
+    await vi.waitFor(() => {
+      expect(imageQuery("image-3")?.state.data).toEqual(picture);
+    });
+    await openRevision(1);
+    await vi.waitFor(() => {
+      expect(imageQuery("image-1")?.state.data).toEqual(picture);
+    });
+    await clickButton((button) => button.textContent?.includes("Back to latest") ?? false);
+
+    // The grant is replaced to start at revision 3, and revision 1 is refused.
+    grant.floor = 3;
+    await openRevision(1);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    // Revision 1's picture goes with the revision. The latest revision stays cached and keeps its.
+    expect(imageQuery("image-1")?.state.data).toBeUndefined();
+    expect(imageQuery("image-3")?.state.data).toEqual(picture);
+  });
+
   it("does not list a refused page again while the shared-pages list refresh is still waiting", async () => {
     let outcome: "granted" | "revoked" = "granted";
     let refreshing = false;
@@ -1739,9 +1899,76 @@ describe("PageReviewHost comment draft preservation", () => {
     expect(listedPages()).toEqual([["page-1", "New title"]]);
   });
 
+  it("takes the list row's title from no cached revision whose title is not text", async () => {
+    const grant = { floor: 1, current: 2 };
+    rpcState.getReview.mockImplementation(grantedPage(grant));
+    rpcState.getComments.mockResolvedValue({
+      items: [
+        makeComment({ id: "comment-v1", version: 1, section: "Summary" }),
+        makeComment({ id: "comment-v3", version: 3, section: "Pricing" }),
+      ],
+      nextCursor: null,
+    });
+    rpcState.list.mockResolvedValue({
+      items: [{ id: "page-1", title: "Stale title" }],
+      nextCursor: null,
+    });
+
+    // The list names the page. Revision 3, published since, is read under its own number, then as
+    // the latest revision once the review is reopened.
+    await mountReview("/review");
+    await act(async () => {
+      viewState.navigateTo?.("/review/page-1");
+    });
+    await act(flush);
+    grant.floor = 2;
+    grant.current = 3;
+    await openRevision(3);
+    await reopenReview();
+    await vi.waitFor(() => {
+      expect(cachedPageReads().get(undefined)?.state.data).toMatchObject({ version: 3 });
+    });
+    const notText = { text: "Not a title" };
+    // Left alone in the cache, the read under the revision's own number has a title that is not
+    // text. Of the two reads of revision 3, it is the one updated last.
+    const read = cachedPageReads().get(3);
+    act(() => {
+      read?.setState({
+        data: { ...makePage({ version: 3, currentVersion: 3 }), title: notText },
+      });
+    });
+    pinReadTime(undefined, 1_000);
+    pinReadTime(3, 2_000);
+
+    // Revision 1 is refused: the row takes its title from the latest read of revision 3.
+    await openRevision(1);
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("This page isn't available");
+    });
+    expect(listedPages()).toEqual([["page-1", "Launch Plan"]]);
+  });
+
   it.each([
     ["pages that are not a list", { pages: "not a list" }],
     ["a page whose items are not a list", { pages: [{ items: "not a list" }] }],
+    [
+      "a row whose title is not text",
+      {
+        pages: [
+          { items: [{ id: "page-2", title: "Other Page" }] },
+          { items: [{ id: "page-1", title: { text: "Shared Page" } }] },
+        ],
+      },
+    ],
+    [
+      "a row whose id is not text",
+      {
+        pages: [
+          { items: [{ id: "page-2", title: "Other Page" }] },
+          { items: [{ id: 7, title: "Shared Page" }] },
+        ],
+      },
+    ],
   ])(
     "drops a cached shared-pages list with %s and still answers the refusal",
     async (_case, payload) => {
