@@ -1,4 +1,9 @@
-import type { ConnectorTool, ToolSearchHit, ToolSearchRequest } from "@rakazo/adapter-kit";
+import type {
+  ConnectorTool,
+  ToolSearchHit,
+  ToolSearchRequest,
+  ToolSearchResult,
+} from "@rakazo/adapter-kit";
 import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { READ_MEETING_TRANSCRIPT } from "../meetings/meeting-chat.tool-definition.js";
 import { BUILTIN_AGENT_TOOL_NAMES } from "../runs/tools/run-tool-selection.js";
@@ -101,7 +106,7 @@ export function partitionTools(tools: readonly ConnectorTool[]): {
   const canSearchPaid = listed.some((tool) => tool.name === "service_call");
   if (!deferred.length && !canSearchPaid) return { listed, deferred };
 
-  const bridge = bridgeTools(deferred);
+  const bridge = bridgeTools(deferred, canSearchPaid);
   const canUseFoundTool = deferred.length > 0 || listed.some((tool) => tool.route);
   return { listed: [...listed, ...(canUseFoundTool ? bridge : bridge.slice(0, 1))], deferred };
 }
@@ -123,8 +128,11 @@ function searchEntries(deferred: readonly ConnectorTool[]): CatalogEntry[] {
   );
 }
 
-function bridgeTools(deferred: readonly ConnectorTool[]): [ConnectorTool, ConnectorTool] {
-  return bridgeToolDefinitions(formatNameIndexText(groupedNames(searchEntries(deferred))));
+function bridgeTools(deferred: readonly ConnectorTool[], paidServices: boolean) {
+  return bridgeToolDefinitions(
+    formatNameIndexText(groupedNames(searchEntries(deferred))),
+    paidServices,
+  );
 }
 
 /** Prototype-safe lookup for why a built-in tool was not offered to the run. */
@@ -188,25 +196,29 @@ export async function findTools(
   tools: {
     deferred: readonly ConnectorTool[];
     listed?: readonly ConnectorTool[];
-    search?: (request: ToolSearchRequest) => Promise<ToolSearchHit[]>;
+    search?: (request: ToolSearchRequest) => Promise<ToolSearchResult>;
   },
   args: Record<string, unknown>,
   unavailableToolReasons?: Readonly<Record<string, string>>,
 ) {
   const { names, query } = findArguments(args);
-  const local = [
-    ...findBuiltinTools(tools.deferred, args),
-    ...findListedTools(tools.listed ?? [], args),
-  ];
+  const source = args.source === "paid_services" ? "paid_services" : undefined;
+  const local = source
+    ? []
+    : [...findBuiltinTools(tools.deferred, args), ...findListedTools(tools.listed ?? [], args)];
   const localIds = new Set(local.map((hit) => hit.id));
   const missing = names.filter((name) => !localIds.has(name));
+  const external = names.length
+    ? missing.length
+      ? await tools.search?.({ ids: missing, source })
+      : undefined
+    : query
+      ? await tools.search?.({ query, limit: FIND_TOOL_LIMIT, alongside: local, source })
+      : undefined;
   const hits = names.length
-    ? [...local, ...(missing.length ? ((await tools.search?.({ ids: missing })) ?? []) : [])]
-    : !query
-      ? []
-      : tools.search
-        ? await tools.search({ query, limit: FIND_TOOL_LIMIT, alongside: local })
-        : rankToolSearchHits(local, query, FIND_TOOL_LIMIT);
+    ? [...local, ...(external?.hits ?? [])]
+    : (external?.hits ?? rankToolSearchHits(local, query, FIND_TOOL_LIMIT));
+  const unavailableSources = external?.unavailableSources;
   const foundNames = new Set(
     hits.flatMap(({ id, name, matchedName }) =>
       (matchedName ? [id, name, matchedName] : [id, name]).map((value) => value.toLowerCase()),
@@ -224,7 +236,7 @@ export async function findTools(
           unavailableNames.add(name);
           unavailableEntries.push([name, reason]);
         }
-      } else {
+      } else if (!unavailableSources?.length) {
         unknown.push(name);
       }
     }
@@ -241,7 +253,8 @@ export async function findTools(
       tools: hits.map(shownToolSearchHit),
       ...(unavailable ? { unavailable } : {}),
       ...(unknown.length ? { unknown } : {}),
-      ...(hits.length || (unavailable && !unknown.length)
+      ...(unavailableSources?.length ? { unavailableSources } : {}),
+      ...(hits.length || unavailableSources?.length || (unavailable && !unknown.length)
         ? {}
         : { hint: "Pass names from this tool's list or other words." }),
     },

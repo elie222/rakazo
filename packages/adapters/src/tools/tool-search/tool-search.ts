@@ -1,4 +1,4 @@
-import type { ToolSearchHit, ToolSearchRequest } from "@rakazo/adapter-kit";
+import type { ToolSearchHit, ToolSearchRequest, ToolSearchResult } from "@rakazo/adapter-kit";
 import { bestEffort } from "@rakazo/logging";
 import { catalogEntryScore } from "../lazy-tool-catalog.js";
 
@@ -13,27 +13,29 @@ export interface ToolSearchSource {
 
 export const FIND_TOOL_LIMIT = 5;
 
-/** Every source's hits for one request, ranked together. One source failing hides only its hits. */
+/** Rank the available hits, while reporting which sources could not answer. */
 export async function searchToolSources(
   sources: readonly ToolSearchSource[],
   request: ToolSearchRequest,
-): Promise<ToolSearchHit[]> {
+): Promise<ToolSearchResult> {
   const found = await Promise.all(
-    sources.map(
-      async (source) =>
-        (await bestEffort(
-          `find_tool ${source.label}`,
-          "ids" in request ? source.find(request.ids) : source.search(request.query, request.limit),
-        )) ?? [],
-    ),
+    sources.map(async (source) => ({
+      label: source.label,
+      hits: await bestEffort(
+        `find_tool ${source.label}`,
+        "ids" in request ? source.find(request.ids) : source.search(request.query, request.limit),
+      ),
+    })),
   );
-  return "ids" in request
-    ? found.flat()
-    : rankToolSearchHits(
-        [...(request.alongside ?? []), ...found.flat()],
-        request.query,
-        request.limit,
-      );
+  const hits = found.flatMap((result) => result.hits ?? []);
+  const unavailableSources = found.filter((result) => !result.hits).map((result) => result.label);
+  return {
+    hits:
+      "ids" in request || request.source === "paid_services"
+        ? hits
+        : rankToolSearchHits([...(request.alongside ?? []), ...hits], request.query, request.limit),
+    ...(unavailableSources.length ? { unavailableSources } : {}),
+  };
 }
 
 /**

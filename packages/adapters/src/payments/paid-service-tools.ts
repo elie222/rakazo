@@ -24,7 +24,7 @@ export const MAX_PAID_SERVICE_CALL_USD = 2;
 const RESULT_MAX_CHARS = 50_000;
 const BODY_MAX_CHARS = 20_000;
 const QUERY_MAX_CHARS = 4_000;
-const SEARCH_RESULTS = 10;
+export const PAID_SERVICE_SEARCH_LIMIT = 10;
 
 const callArgs = z.object({
   service: z.string().trim().min(1).max(300),
@@ -60,7 +60,7 @@ export async function findPaidServices(
   billing: boolean,
 ) {
   return affordable(await provider.search(query, context), billing)
-    .slice(0, SEARCH_RESULTS)
+    .slice(0, PAID_SERVICE_SEARCH_LIMIT)
     .map((service) => shownService(service, billing));
 }
 

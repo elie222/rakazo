@@ -17,6 +17,7 @@ import {
 import { appCatalogSource } from "./app-catalog-source.js";
 import { connectorCatalogSource } from "./connector-catalog-source.js";
 import { paidServiceSource } from "./paid-service-source.js";
+import { searchToolSources } from "./tool-search.js";
 
 const context = { signal: new AbortController().signal } as AdapterContext;
 
@@ -55,8 +56,11 @@ describe("find_tool", () => {
     const { result } = await findTools(
       {
         deferred,
-        search: (request) =>
-          "ids" in request ? apps.find(request.ids) : apps.search(request.query, request.limit),
+        search: async (request) => ({
+          hits: await ("ids" in request
+            ? apps.find(request.ids)
+            : apps.search(request.query, request.limit)),
+        }),
       },
       { query: "pagesnap screenshot of a web page" },
     );
@@ -73,7 +77,10 @@ describe("find_tool by name", () => {
   it("finds an app by the slug written in any case, without calling it unknown", async () => {
     const apps = catalogOf([app("Google Sheets")]);
     const { result } = await findTools(
-      { deferred: [], search: (request) => apps.find("ids" in request ? request.ids : []) },
+      {
+        deferred: [],
+        search: async (request) => ({ hits: await apps.find("ids" in request ? request.ids : []) }),
+      },
       { names: ["google_sheets"] },
     );
     expect(result).toEqual({
@@ -137,6 +144,43 @@ describe("app catalog source with an app two catalogs list", () => {
 });
 
 describe("paid service search", () => {
+  it("exposes a failed source without hiding available tools", async () => {
+    const local = {
+      name: "local",
+      description: "",
+      inputSchema: {},
+      route: {
+        connectorId: "connected",
+        toolName: "local",
+      },
+    };
+    const failed = async () => {
+      throw new Error("Service unavailable");
+    };
+    const paid = { label: "paid services", search: failed, find: failed };
+    const { result } = await findTools(
+      { deferred: [], listed: [local], search: (request) => searchToolSources([paid], request) },
+      { query: "local" },
+    );
+    expect(result).toEqual({
+      tools: [{ name: "local", inputSchema: {}, next: "use_tool" }],
+      unavailableSources: ["paid services"],
+    });
+  });
+
+  it("keeps the paid provider's relevance order for a scoped search", async () => {
+    const services = [
+      { id: "map-1", name: "Street Atlas", description: "", next: "service_call" as const },
+      { id: "map-2", name: "Bookstores", description: "", next: "service_call" as const },
+    ];
+    const paid = { label: "paid services", search: async () => services, find: async () => [] };
+    const result = await findTools(
+      { deferred: [], search: (request) => searchToolSources([paid], request) },
+      { query: "bookstores", source: "paid_services" },
+    );
+    expect(result.hits).toEqual(services);
+  });
+
   it("returns the callable ID when the requested name is a paid service's title", async () => {
     const service: PaidService = {
       id: "route-17",

@@ -28,11 +28,13 @@ export function paidServiceSource(
         ids.map((name) =>
           bestEffort(
             `find_tool service ${name}`,
-            findServiceByName(provider, name, context, billed),
+            findServiceByName(provider, name, context, billed).then((service) => service ?? null),
           ),
         ),
       );
-      return services.filter((service) => service !== undefined).map(serviceHit);
+      if (ids.length && services.every((service) => service === undefined))
+        throw new Error("Paid-service lookups failed");
+      return services.flatMap((service) => (service ? [serviceHit(service)] : []));
     },
   };
 }

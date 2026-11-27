@@ -1422,7 +1422,7 @@ describe("Pi connector tool dispatch", () => {
 
   it("refuses a guessed connector name that was never returned by find_tool", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
-    const searchTools = vi.fn(async () => []);
+    const searchTools = vi.fn(async () => ({ hits: [] }));
     fakeAgentState.invoke = {
       name: "use_tool",
       args: { name: "get_calendar", arguments: { week: "next" } },
