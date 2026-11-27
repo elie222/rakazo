@@ -237,6 +237,11 @@ export * from "./runs/labs-env.js";
 export { notifyMemberMessage } from "./runs/lifecycle/run-notifications.js";
 export { loadRunOrigin } from "./runs/lifecycle/run-origin.js";
 export * from "./runs/lifecycle/work-activity.js";
+export {
+  pilotLauncher,
+  pilotRunModel,
+  pilotRuntimeForBot,
+} from "./runs/turn/primary-runtime-pilot.js";
 export * from "./runs/wakeups/background-job-handlers.js";
 export * from "./runs/wakeups/job-reconciler.js";
 export * from "./runs/wakeups/run-wakeup.js";

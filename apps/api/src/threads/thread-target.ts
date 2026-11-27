@@ -5,7 +5,13 @@ import type {
   ProductAnalytics,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
-import { notifyMemberMessage, wakeRun } from "@rakazo/adapters";
+import {
+  notifyMemberMessage,
+  pilotLauncher,
+  pilotRunModel,
+  pilotRuntimeForBot,
+  wakeRun,
+} from "@rakazo/adapters";
 import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import {
   GROUP_MEMBER_MIN,
@@ -15,6 +21,7 @@ import {
 import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_HELPER_TRIGGER,
+  ClientError,
   callIdFromClientNonce,
   isConversationalRun,
   isQuestionAskBlock,
@@ -488,6 +495,8 @@ export async function sendThreadMessage(
     prisma: PrismaClient;
     events: ThreadEvents;
     jobs: JobPublisher;
+    /** Set by the signed-in app route, never taken from client input. */
+    signedInApp?: boolean;
     imageAdmission?: Parameters<typeof assertThreadImageInput>[5];
     maxAttachmentsPerMessage?: number;
     analytics?: ProductAnalytics;
@@ -514,6 +523,9 @@ export async function sendThreadMessage(
   /** Runs saved with the message, after the thread lock and before the message is routed. */
   startRoutines?: (tx: Prisma.TransactionClient) => Promise<Array<{ id: string; status: string }>>,
 ) {
+  if (target.kind === "bot" && pilotRuntimeForBot(target.botId) && !deps.signedInApp) {
+    throw new ClientError("FORBIDDEN", "Use the signed-in app to message this pilot bot.");
+  }
   const existing = await replayExistingSend(
     deps,
     target.threadId,
@@ -659,6 +671,46 @@ export async function sendThreadMessage(
             routine: { select: { inChat: true } },
           },
         });
+        const pilotId = pilotRuntimeForBot(target.botId);
+        const stoppingInPilot =
+          pilotId && activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
+        let pilotPin: ReturnType<typeof pilotRunModel>;
+        if (pilotId && !stoppingInPilot) {
+          if (!pilotLauncher())
+            throw new ClientError(
+              "BAD_REQUEST",
+              "The primary runtime pilot is not available on this deployment.",
+            );
+          if (
+            !input.text?.trim() ||
+            attachmentBlocks.length ||
+            input.fromPage ||
+            callId ||
+            startRoutines ||
+            input.nativeCalendarSessionId ||
+            input.mentions?.length ||
+            activeRuns.length
+          )
+            throw new ClientError(
+              "BAD_REQUEST",
+              "The primary runtime pilot only supports one plain text chat turn at a time.",
+            );
+          const bot = await tx.bot.findFirst({
+            where: { id: target.botId, spaceId: actor.spaceId, userId: actor.userId },
+            select: { modelProvider: true, modelId: true, modelCredentialId: true },
+          });
+          if (!bot)
+            throw new ClientError(
+              "FORBIDDEN",
+              "Only the pilot bot owner can use its model connection.",
+            );
+          pilotPin = pilotRunModel(pilotId, bot);
+          if (!pilotPin)
+            throw new ClientError(
+              "BAD_REQUEST",
+              "Select an API-key connection on this pilot bot before sending.",
+            );
+        }
         if (input.imageHandling === "confirm") {
           await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
             botId: target.botId,
@@ -817,6 +869,7 @@ export async function sendThreadMessage(
             trigger: "user",
             clientNonce: sendRunClientNonce(input.clientNonce, message.id),
             sourceMessageId: message.id,
+            ...pilotPin,
           },
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });

@@ -25,6 +25,7 @@ import { failRun, handoffEndedTurn, requeueRunAfterDatabaseOutage } from "../lif
 import { searchRunTools } from "../tools/run-tool-search.js";
 import { followUpsOffered, offeredFleetTools } from "../tools/run-tool-selection.js";
 import { applyTool } from "../tools/run-tools.js";
+import { loadPilotRuntime, pilotConversation } from "./primary-runtime-pilot.js";
 import { consumeRunEvents } from "./run-turn.js";
 import { claimRunSteering } from "./run-turn-images.js";
 import { appendToolCompletionAudit, toolCompletionOutcome } from "./tool-completion-audit.js";
@@ -64,10 +65,29 @@ export async function runModelTurn(
         }),
       )
       .catch((error: unknown) => getLogger().warn("run.prompt_version_failed", { error }));
-    const runtimeEvents = deps.runtime.run(modelTurnRequest(services, hold, turn), {
+    const request = modelTurnRequest(services, hold, turn);
+    const run = hold.run;
+    const runtimeContext = {
       ...context,
       signal: AbortSignal.any([context.signal, ctx.runtimeAbortController.signal]),
-    });
+    };
+    const runtimeEvents = run.primaryRuntime
+      ? (await loadPilotRuntime({ ...run, primaryRuntime: run.primaryRuntime }, request.model)).run(
+          {
+            ...pilotConversation(run, turn.records.thread, turn.records.bot, turn.records.messages),
+            botId: request.botId,
+            threadId: request.threadId,
+            runId,
+            sourceMessageId: request.sourceMessageId,
+            instructions: runIdentityInstruction(turn.records.bot, run.trigger),
+            model: request.model,
+            tools: [],
+            onUsage: request.onUsage,
+            secrets: request.secrets,
+          },
+          runtimeContext,
+        )
+      : deps.runtime.run(request, runtimeContext);
     if (await consumeRunEvents(ctx, runtimeEvents)) return;
     if (await interruptedByShutdown()) return;
     await completeRun(ctx);

@@ -1675,6 +1675,32 @@ function groupTarget() {
 }
 
 describe("sendThreadMessage", () => {
+  it("rejects a same-owner send to an enrolled native DM without an app session", async () => {
+    vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", "bot-native");
+    try {
+      const transaction = vi.fn();
+      await expect(
+        sendThreadMessage(
+          {
+            prisma: { $transaction: transaction } as unknown as PrismaClient,
+            events: {} as never,
+            jobs: {} as never,
+            sandbox: {} as never,
+          },
+          { spaceId: "space-1", userId: "owner-1" } as Actor,
+          { kind: "bot", botId: "bot-native", threadId: "thread-native" } as ThreadTarget,
+          { text: "Start a native turn", clientNonce: "fixture-nonce" },
+        ),
+      ).rejects.toMatchObject({
+        code: "FORBIDDEN",
+        message: "Use the signed-in app to message this pilot bot.",
+      });
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it.each(["latest", "reply", "unrelated-reply"] as const)(
     "answers a waiting question through the composer (explicit older reply: %s)",
     async (scenario) => {
