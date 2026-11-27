@@ -278,6 +278,9 @@ function SessionApp() {
                       ) : (
                         <PageAppPage />
                       )
+                    ) : !signInNext(pageAppNext(pathname, search)) ? (
+                      // An address sign-in cannot return to is signed in to the ordinary way.
+                      <Navigate to="/sign-in" replace />
                     ) : next === pageAppNext(pathname, search) ? (
                       // Signed out, sign-in happens right here: an installed page app's window
                       // keeps only its own page in scope, and the sign-in page is outside it.
