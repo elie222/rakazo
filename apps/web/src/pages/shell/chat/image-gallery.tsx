@@ -5,7 +5,8 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../../../lib/pages/artifact-open";
-import { useArtifactImage } from "../../../lib/pages/use-artifact-image";
+import type { ArtifactImageKeeper } from "../../../lib/pages/use-artifact-image";
+import { useArtifactImage, useArtifactImageKeeper } from "../../../lib/pages/use-artifact-image";
 import { useEventListener } from "../../../lib/use-event-listener";
 import { useNearViewport } from "../../../lib/use-near-viewport";
 import { isEditableTarget } from "../shell-shortcuts";
@@ -126,17 +127,19 @@ export function ImageGalleryProvider({
 
 function GalleryThumb({
   image,
+  keeper,
   active,
   onSelect,
   tabIndex,
 }: {
   image: GalleryImage;
+  keeper: ArtifactImageKeeper;
   active: boolean;
   onSelect: () => void;
   tabIndex?: number;
 }) {
   const { t } = useLingui();
-  const src = useArtifactImage(image.target, image.artifactId);
+  const src = useArtifactImage(image.target, image.artifactId, true, keeper);
   return (
     <button
       type="button"
@@ -156,8 +159,8 @@ function GalleryThumb({
 }
 
 // Keyed by image, so switching never shows the previous picture under the new name.
-function LightboxPicture({ image }: { image: GalleryImage }) {
-  const src = useArtifactImage(image.target, image.artifactId);
+function LightboxPicture({ image, keeper }: { image: GalleryImage; keeper: ArtifactImageKeeper }) {
+  const src = useArtifactImage(image.target, image.artifactId, true, keeper);
   return src ? (
     <img
       src={src}
@@ -188,6 +191,9 @@ export function ImageLightbox({
   const index = images.findIndex((image) => galleryImageKey(image) === selectedKey);
   const current = images[index];
   const close = useRef<HTMLButtonElement>(null);
+  // Pictures the carousel moves past stay downloaded while the lightbox is open and they are
+  // still among the chat's pictures, so coming back to one does not download it again.
+  const keeper = useArtifactImageKeeper(images);
   const single = images.length < 2;
   const step = (delta: number) => {
     const next = images[(index + delta + images.length) % images.length];
@@ -224,7 +230,7 @@ export function ImageLightbox({
       >
         <DialogTitle className="sr-only">{current.name}</DialogTitle>
         <div className="relative flex min-h-0 flex-1 items-center justify-center">
-          <LightboxPicture key={selectedKey} image={current} />
+          <LightboxPicture key={selectedKey} image={current} keeper={keeper} />
           <DialogClose
             ref={close}
             render={
@@ -280,6 +286,7 @@ export function ImageLightbox({
                   >
                     <GalleryThumb
                       image={image}
+                      keeper={keeper}
                       active={distance === 0}
                       onSelect={() => onSelect(galleryImageKey(image))}
                       // Clipped neighbours stay out of the tab order; the arrows reach every image.

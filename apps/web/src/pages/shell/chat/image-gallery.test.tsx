@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, StrictMode } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useArtifactImage } from "../../../lib/pages/use-artifact-image";
 import { rpc } from "../../../lib/query/rpc";
 import type { GalleryImage } from "./image-gallery";
 import { ImageGalleryProvider, MessageImageRow, useOpenImage } from "./image-gallery";
@@ -193,6 +194,129 @@ it("fetches only thumbnails near the selected picture", async () => {
     ),
   ].sort();
   expect(fetched).toEqual(["lazy-2", "lazy-3", "lazy-4", "lazy-5", "lazy-6", "lazy-7", "lazy-8"]);
+});
+
+const kept: GalleryImage[] = Array.from({ length: 24 }, (_, index) => ({
+  artifactId: `kept-${index}`,
+  name: `kept-${index}`,
+  target: { botId: "bot" },
+}));
+
+/** Stands in for the transcript, which shows a picture outside the lightbox. */
+function Shown({ image }: { image: GalleryImage }) {
+  const src = useArtifactImage(image.target, image.artifactId);
+  return src ? <img src={src} alt="" /> : null;
+}
+
+async function renderGallery(images: GalleryImage[], shown?: GalleryImage) {
+  await act(async () => {
+    root.render(
+      // StrictMode, as the app runs in development: the effect replay at mount must leave the
+      // lightbox's downloads as a single mount would.
+      <StrictMode>
+        <ImageGalleryProvider images={images}>
+          {shown ? <Shown image={shown} /> : null}
+          {images.map((image) => (
+            <Opener key={image.name} image={image} />
+          ))}
+        </ImageGalleryProvider>
+      </StrictMode>,
+    );
+  });
+}
+
+async function openPicture(name: string) {
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === `open ${name}`)
+      ?.click();
+  });
+  await act(async () => {});
+}
+
+async function openKept(shown?: GalleryImage) {
+  await renderGallery(kept, shown);
+  await openPicture("kept-5");
+}
+
+/** Gives each download its own object URL, blob:1, blob:2 and so on, so a test can tell them apart. */
+function numberObjectUrls() {
+  let created = 0;
+  const revokeObjectURL = vi.fn();
+  vi.stubGlobal("URL", {
+    createObjectURL: () => `blob:${++created}`,
+    revokeObjectURL,
+  });
+  return revokeObjectURL;
+}
+
+// Only the kept gallery downloads in these tests, so every call is one of its pictures.
+const downloads = () => vi.mocked(rpc.artifacts.get).mock.calls.length;
+
+it("keeps the pictures it downloaded until the lightbox closes", async () => {
+  await openKept();
+  expect(downloads()).toBe(7);
+  for (let step = 0; step < 10; step += 1) await press("ArrowRight");
+  expect(previewName()).toBe("kept-15");
+  expect(downloads()).toBe(17);
+  for (let step = 0; step < 10; step += 1) await press("ArrowLeft");
+  expect(previewName()).toBe("kept-5");
+  expect(downloads()).toBe(17);
+});
+
+it("frees the kept pictures when the lightbox closes", async () => {
+  const revokeObjectURL = numberObjectUrls();
+  await openKept();
+  await press("ArrowRight");
+  // The window moved past the first picture, which only the lightbox still holds.
+  expect(downloads()).toBe(8);
+  expect(revokeObjectURL).not.toHaveBeenCalled();
+  await press("Escape");
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(revokeObjectURL).toHaveBeenCalledTimes(8);
+});
+
+it("does not free a picture the chat still shows when the lightbox closes", async () => {
+  const revokeObjectURL = numberObjectUrls();
+  await openKept(kept[3]!);
+  expect(downloads()).toBe(7);
+  await press("Escape");
+  expect(revokeObjectURL).toHaveBeenCalledTimes(6);
+  // The chat letting go of it is what frees it.
+  await renderGallery(kept);
+  expect(revokeObjectURL).toHaveBeenCalledTimes(7);
+});
+
+it("keeps one share in a picture however often the lightbox returns to it", async () => {
+  const revokeObjectURL = numberObjectUrls();
+  await renderGallery(kept.slice(0, 2));
+  await openPicture("kept-0");
+  for (let step = 0; step < 100; step += 1) {
+    await press(step % 2 === 0 ? "ArrowRight" : "ArrowLeft");
+  }
+  expect(previewName()).toBe("kept-0");
+  expect(downloads()).toBe(2);
+  // A share left behind by every return would keep the other picture past its removal.
+  await renderGallery([kept[0]!]);
+  expect(revokeObjectURL.mock.calls).toEqual([["blob:2"]]);
+  expect(previewName()).toBe("kept-0");
+  await press("Escape");
+  expect(revokeObjectURL.mock.calls).toEqual([["blob:2"], ["blob:1"]]);
+});
+
+it("releases pictures that leave the gallery while it stays open", async () => {
+  const revokeObjectURL = numberObjectUrls();
+  await openKept();
+  await press("ArrowRight");
+  await press("ArrowRight");
+  expect(downloads()).toBe(9);
+  await renderGallery(kept.filter((image) => image.name !== "kept-3" && image.name !== "kept-6"));
+  // The third and the fifth download.
+  expect(revokeObjectURL.mock.calls).toEqual([["blob:3"], ["blob:5"]]);
+  expect(previewName()).toBe("kept-7");
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("6 / 22");
+  await press("Escape");
+  expect(revokeObjectURL).toHaveBeenCalledTimes(9);
 });
 
 it("keeps the selected picture when earlier images arrive", async () => {
