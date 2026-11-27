@@ -18,6 +18,10 @@ const entry: ConnectionCatalogItem = {
   noAuth: false,
 };
 describe("inline app cards", () => {
+  it("uses the app's description when its catalog display name matches", () => {
+    const card = appConnectCard({ ...entry, slug: "SCREENSHOTONE_MCP", name: "ScreenshotOne" });
+    expect(card.description).toBe("Capture screenshots of webpages.");
+  });
   it("reads a card that names no connector as the default the caller gives", () => {
     const { connectorId: _omitted, ...unnamed } = appConnectCard(entry);
     expect(connectedAppBlock(unnamed, "catalog", "gcal", "catalog")).toEqual({

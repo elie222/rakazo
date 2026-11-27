@@ -11,6 +11,7 @@ const APP_DESCRIPTIONS: Record<string, string> = {
   notion: "Search and edit pages and databases.",
   googledocs: "Draft and edit documents.",
   hackernews: "Search stories and discussions.",
+  screenshotone: "Capture screenshots of webpages.",
 };
 
 export function matchAppCatalog(catalog: ConnectionCatalogItem[], app: string) {
@@ -36,7 +37,9 @@ export function appConnectCard(entry: ConnectionCatalogItem): AppConnectBlock {
   const description =
     Object.entries(APP_DESCRIPTIONS).find(
       ([slug]) =>
-        entry.slug.toLowerCase() === slug || featuredConnectorProvidersMatch(entry.slug, slug),
+        entry.slug.toLowerCase() === slug ||
+        entry.name.toLowerCase() === slug ||
+        featuredConnectorProvidersMatch(entry.slug, slug),
     )?.[1] ?? "";
   return {
     kind: "app_connect",
