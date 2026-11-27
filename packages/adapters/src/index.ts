@@ -244,6 +244,7 @@ export {
   pilotLauncher,
   pilotRunModel,
   pilotRuntimeForBot,
+  resolvePrimaryDmRuntime,
 } from "./runs/turn/primary-runtime-pilot.js";
 export * from "./runs/wakeups/background-job-handlers.js";
 export * from "./runs/wakeups/job-reconciler.js";

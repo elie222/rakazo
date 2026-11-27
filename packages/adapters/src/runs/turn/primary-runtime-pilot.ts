@@ -17,6 +17,42 @@ export function pilotRuntimeForBot(botId: string, environment = process.env): st
   return allowed?.includes(botId) ? nativeTextRuntime.id : undefined;
 }
 
+type DmRuntimePreference = {
+  primaryRuntimePreference: string | null;
+  primaryRuntimeRevision: number;
+};
+
+export function resolvePrimaryDmRuntime(
+  bot: { id: string; primaryRuntimePreference: string | null },
+  environment = process.env,
+) {
+  const preference = bot.primaryRuntimePreference;
+  if (preference === "pi") return { kind: "default" } as const;
+  const enrolled = pilotRuntimeForBot(bot.id, environment);
+  if (preference !== null && preference !== enrolled) return { kind: "unavailable" } as const;
+  return enrolled ? ({ kind: "native", id: enrolled } as const) : ({ kind: "default" } as const);
+}
+
+export class PrimaryDmRuntimeChangedError extends Error {
+  constructor() {
+    super("The bot's primary runtime selection has changed or is unavailable. Send a new message.");
+    this.name = "PrimaryDmRuntimeChangedError";
+  }
+}
+
+export function assertPrimaryDmRuntimePin(
+  run: { botId: string; primaryRuntime: string; primaryRuntimeRevision: number },
+  bot: DmRuntimePreference | null,
+) {
+  const selection = bot && resolvePrimaryDmRuntime({ ...bot, id: run.botId });
+  if (
+    selection?.kind !== "native" ||
+    selection.id !== run.primaryRuntime ||
+    bot?.primaryRuntimeRevision !== run.primaryRuntimeRevision
+  )
+    throw new PrimaryDmRuntimeChangedError();
+}
+
 /** Set only for a bot whose owner explicitly agreed to private native continuity. */
 export function pilotDmResumeGrant(botId: string, environment = process.env) {
   const entries = (environment.PRIMARY_RUNTIME_PILOT_DM_RESUME_GRANTS ?? "")

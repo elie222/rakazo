@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  assertPrimaryDmRuntimePin,
   groupPilotRuntimeForBot,
   loadPilotRuntime,
   pilotConversation,
@@ -28,6 +29,16 @@ afterEach(() => vi.unstubAllEnvs());
 it("keeps an unlisted bot on its unchanged path and refuses an unpinned pilot bot", () => {
   expect(pilotRuntimeForBot("other-bot", { PRIMARY_RUNTIME_PILOT_BOT_IDS: "bot" })).toBeUndefined();
   expect(pilotRunModel(id, { ...bot, modelCredentialId: null })).toBeUndefined();
+});
+
+it("rejects an old DM pin after switching away and back to the same native runtime", () => {
+  vi.stubEnv("PRIMARY_RUNTIME_PILOT_BOT_IDS", run.botId);
+  const pin = { ...run, primaryRuntimeRevision: 1 };
+  const current = { primaryRuntimePreference: id, primaryRuntimeRevision: 3 };
+  expect(() => assertPrimaryDmRuntimePin(pin, current)).toThrow("runtime selection has changed");
+  expect(() =>
+    assertPrimaryDmRuntimePin({ ...pin, primaryRuntimeRevision: 3 }, current),
+  ).not.toThrow();
 });
 
 it("rejects changed credentials rather than resolving another account", async () => {

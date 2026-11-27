@@ -12,7 +12,7 @@ import {
   pilotDmResumeGrant,
   pilotLauncher,
   pilotRunModel,
-  pilotRuntimeForBot,
+  resolvePrimaryDmRuntime,
   wakeRun,
 } from "@rakazo/adapters";
 import type { Actor, GroupMember, MessageBlock, ReplyPreview } from "@rakazo/contracts";
@@ -538,7 +538,14 @@ export async function sendThreadMessage(
   /** Runs saved with the message, after the thread lock and before the message is routed. */
   startRoutines?: (tx: Prisma.TransactionClient) => Promise<Array<{ id: string; status: string }>>,
 ) {
-  if (target.kind === "bot" && pilotRuntimeForBot(target.botId) && !deps.signedInApp) {
+  if (
+    target.kind === "bot" &&
+    !deps.signedInApp &&
+    resolvePrimaryDmRuntime({
+      id: target.botId,
+      primaryRuntimePreference: target.bot?.primaryRuntimePreference ?? null,
+    }).kind !== "default"
+  ) {
     throw new ClientError("FORBIDDEN", "Use the signed-in app to message this pilot bot.");
   }
   const existing = await replayExistingSend(
@@ -666,7 +673,26 @@ export async function sendThreadMessage(
         );
         // Match message counter locking before inspecting runs, without changing counters on rejection.
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
-        routineRuns = (await startRoutines?.(tx)) ?? [];
+        const bot = await tx.bot.findFirst({
+          where: { id: target.botId, spaceId: actor.spaceId, archivedAt: null },
+          select: {
+            userId: true,
+            modelProvider: true,
+            modelId: true,
+            modelCredentialId: true,
+            primaryRuntimePreference: true,
+            primaryRuntimeRevision: true,
+          },
+        });
+        if (!bot) throw new IsolationError();
+        const selection = resolvePrimaryDmRuntime({
+          id: target.botId,
+          primaryRuntimePreference: bot.primaryRuntimePreference,
+        });
+        if (selection.kind !== "default" && !deps.signedInApp)
+          throw new ClientError("FORBIDDEN", "Use the signed-in app to message this pilot bot.");
+        const pilotId = selection.kind === "native" ? selection.id : undefined;
+        if (selection.kind === "default") routineRuns = (await startRoutines?.(tx)) ?? [];
         const activeRuns = await tx.run.findMany({
           where: {
             threadId: target.threadId,
@@ -682,17 +708,20 @@ export async function sendThreadMessage(
             modelProvider: true,
             modelId: true,
             modelPinned: true,
+            primaryRuntime: true,
             thinkingLevel: true,
             routine: { select: { inChat: true } },
           },
         });
-        const pilotId = pilotRuntimeForBot(target.botId);
-        const stoppingInPilot =
-          pilotId && activeRuns.length > 0 && !routineRuns.length && isStopMessage(input);
+        const stopRequested = activeRuns.length > 0 && !startRoutines && isStopMessage(input);
         let pilotPin: ReturnType<typeof pilotRunModel>;
-        let primaryRuntimeRevision: number | undefined;
-        if (pilotId && !stoppingInPilot) {
-          if (!pilotLauncher())
+        if (selection.kind !== "default" && !stopRequested) {
+          if (bot.userId !== actor.userId)
+            throw new ClientError(
+              "FORBIDDEN",
+              "Only the pilot bot owner can use its model connection.",
+            );
+          if (!pilotId || !pilotLauncher())
             throw new ClientError(
               "BAD_REQUEST",
               "The primary runtime pilot is not available on this deployment.",
@@ -711,32 +740,18 @@ export async function sendThreadMessage(
               "BAD_REQUEST",
               "The primary runtime pilot only supports one plain text chat turn at a time.",
             );
-          const bot = await tx.bot.findFirst({
-            where: { id: target.botId, spaceId: actor.spaceId, userId: actor.userId },
-            select: {
-              modelProvider: true,
-              modelId: true,
-              modelCredentialId: true,
-              primaryRuntimeRevision: true,
-            },
-          });
-          if (!bot)
-            throw new ClientError(
-              "FORBIDDEN",
-              "Only the pilot bot owner can use its model connection.",
-            );
           pilotPin = pilotRunModel(pilotId, bot);
-          primaryRuntimeRevision = bot.primaryRuntimeRevision;
           if (!pilotPin)
             throw new ClientError(
               "BAD_REQUEST",
               "Select an API-key connection on this pilot bot before sending.",
             );
         }
+        const regularRuns = activeRuns.filter((run) => !run.primaryRuntime);
         if (input.imageHandling === "confirm") {
           await assertImageRecipients(tx, actor, target, input.text, attachmentBlocks, {
             botId: target.botId,
-            runs: activeRuns,
+            runs: regularRuns,
             imageAdmission: deps.imageAdmission,
           });
         }
@@ -761,9 +776,9 @@ export async function sendThreadMessage(
           throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
         }
         const answered: typeof activeRuns = [];
-        const targetedRunId = targetedQuestionRun(activeRuns);
+        const targetedRunId = targetedQuestionRun(regularRuns);
         // Someone else's question stays on its card; this message starts the sender's own run.
-        for (const run of activeRuns.filter(
+        for (const run of regularRuns.filter(
           (run) => !stopping && run.status === "waiting_input" && run.userId === actor.userId,
         )) {
           if (targetedRunId && run.id !== targetedRunId) continue;
@@ -821,7 +836,7 @@ export async function sendThreadMessage(
         }
         const holdingRuns = stopping
           ? activeRuns
-          : activeRuns.filter(
+          : regularRuns.filter(
               (run) =>
                 QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status) &&
                 !messageBypassesTakeoverWait(run) &&
@@ -892,7 +907,7 @@ export async function sendThreadMessage(
             clientNonce: sendRunClientNonce(input.clientNonce, message.id),
             sourceMessageId: message.id,
             ...pilotPin,
-            ...(pilotPin ? { primaryRuntimeRevision } : {}),
+            ...(pilotPin ? { primaryRuntimeRevision: bot.primaryRuntimeRevision } : {}),
             ...(pilotPin && deps.signedInApp && !replyToMessageId && !replyQuote
               ? { nativeDmResumeGrant: pilotDmResumeGrant(target.botId) }
               : {}),
