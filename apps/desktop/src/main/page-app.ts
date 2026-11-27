@@ -22,6 +22,7 @@ import {
   pageAppConfig,
   pageAppDataDir,
   readPageAppToken,
+  readServerOverride,
   removePageAppData,
 } from "./page-apps/page-app-files.js";
 import { systemWindowBackground } from "./windows/window-options.js";
@@ -30,7 +31,8 @@ const config = pageAppConfig(
   JSON.parse(readFileSync(path.join(process.resourcesPath, PAGE_APP_CONFIG_FILE), "utf8")),
 );
 if (!config) throw new Error("This page app's config is not usable.");
-const { appId, pageId, title, server } = config;
+const { appId, pageId, title } = config;
+const server = readServerOverride(appId) ?? config.server;
 
 app.setName(title);
 app.setPath("userData", pageAppDataDir(appId));
