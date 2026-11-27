@@ -1550,4 +1550,57 @@ describe("tool step outcomes", () => {
       expect(blankRedacted).toContain('{"ok":true}');
     });
   });
+
+  it("redacts wrapped quoted Bearer values inside JSON credential fields without breaking valid JSON", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    for (const input of [
+      '{"Authorization": "Bearer\n"opaque-123"}',
+      '{"Authorization": "Bearer\t"opaque-123"',
+    ]) {
+      for (const read of [kept, replay, sanitizeError]) {
+        const out = read(input) ?? "";
+        expect(out).not.toContain("opaque-123");
+        expect(out).toContain("[redacted]");
+      }
+    }
+    for (const validJson of [
+      '{"Authorization": "Bearer", "other": "safe"}',
+      '{"Authorization": "Bearer ", "other": "safe"}',
+    ]) {
+      for (const read of [kept, replay, sanitizeError]) {
+        expect(JSON.parse(read(validJson) ?? "")).toEqual({
+          Authorization: "[redacted]",
+          other: "safe",
+        });
+      }
+    }
+  });
+
+  it("defers repeated credential keys, repeated Bearer words, and Unicode whitespace across paths", () => {
+    const kept = (text: string) =>
+      keptToolResult({ ...base, result: { content: [{ type: "text", text }] } }, []);
+    const replay = (text: string) =>
+      bounded(text, TOOL_CALL_SAVED_TEXT_MAX_CHARS, [], { replaySaved: true });
+    const failed = (text: string) => keptToolResult({ ...base, error: new Error(text) }, []);
+    const cases = [
+      'Error: "password:\u000B\npassword:\uFEFFopaque-123',
+      'Error: "api_key=\u00A0\nopaque-123"',
+      'COMPOSIO_API_KEY: "Bearer\u000B\nBearer opaque-123',
+      "COMPOSIO_API_KEY=\u00A0Bearer\u00A0\nopaque-123",
+      'COMPOSIO_API_KEY="Bearer\u00A0\nopaque-123"',
+    ];
+    for (const input of cases) {
+      for (const read of [kept, replay, failed, sanitizeError]) {
+        const out = read(input) ?? "";
+        expect(out).not.toContain("opaque-123");
+        expect(out).toContain("[redacted]");
+      }
+    }
+    expect(
+      failed('Authorization: Bearer\u00A0\n  "token": "opaque-123",\n  "x": 1\n}'),
+    ).not.toContain("opaque-123");
+  });
 });

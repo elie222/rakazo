@@ -11,7 +11,10 @@ import {
 import { isForeignKeyViolation } from "@rakazo/db";
 import { bestEffort, getLogger } from "@rakazo/logging";
 import { redactToolArgsForReview } from "../../approvals/auto-review.js";
-import { sanitizeConnectorError } from "../../integrations/connector-safety.js";
+import {
+  connectorErrorMessage,
+  sanitizeConnectorError,
+} from "../../integrations/connector-safety.js";
 import { PICTURE_READING_TOOLS } from "../../media/tool-result-image.js";
 import { READ_MEETING_TRANSCRIPT } from "../../meetings/meeting-chat.tool-definition.js";
 import { sanitizeSensitiveText } from "../../runtime/pi/pi-runtime-errors.js";
@@ -75,19 +78,24 @@ function redactDecodedToolText(value: string, options?: { decoded?: boolean }): 
   return sanitizeSensitiveText(value, options);
 }
 
-function cleanToolText(text: string, secrets: string[], honorOmissionMarker = false): string {
+function redactToolSecrets(text: string, secrets: string[]): string {
+  if (secrets.length === 0) return text;
   const secretForms = secrets.flatMap((value) => {
     if (!value) return [];
     const encoded = JSON.stringify(value).slice(1, -1);
     return [value, encoded, encoded.replaceAll("<", "\\u003c").replaceAll(">", "\\u003e")];
   });
-  // Exact secrets first. A later pattern must not change the text a registered secret matches.
-  const withSecrets = redactJsonStringsAndPlainText(
+  return redactJsonStringsAndPlainText(
     text,
     (value) => redactSecrets(value, secrets),
     (value) => redactSecrets(value, secretForms),
     secrets,
   );
+}
+
+function cleanToolText(text: string, secrets: string[], honorOmissionMarker = false): string {
+  // Exact secrets first. A later pattern must not change the text a registered secret matches.
+  const withSecrets = redactToolSecrets(text, secrets);
   const assigned = redactCredentialJsonFields(
     redactComposioApiKeyAssignments(withSecrets),
     honorOmissionMarker,
@@ -255,7 +263,12 @@ export function keptToolResult(
     return undefined;
   let text: string;
   if (completion.error !== undefined) {
-    text = sanitizeConnectorError(completion.error, secrets, {
+    const withSecrets = redactToolSecrets(connectorErrorMessage(completion.error), secrets);
+    const preRedacted = redactCredentialJsonFields(
+      redactComposioApiKeyAssignments(withSecrets),
+      false,
+    );
+    text = sanitizeConnectorError(preRedacted, secrets, {
       maxChars: Number.POSITIVE_INFINITY,
     });
   } else {

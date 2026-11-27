@@ -3,7 +3,7 @@ const REDACTED_ASSIGNMENT = "COMPOSIO_API_KEY=[redacted]";
 const REDACTED_VALUE = "[redacted]";
 
 function isWhitespace(ch: string | undefined): boolean {
-  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === "\f" || ch === "\v";
+  return ch !== undefined && /\s/.test(ch);
 }
 
 function isIdentifierCode(code: number): boolean {
@@ -325,11 +325,47 @@ function markerBoundary(text: string, index: number): JsonStringEnd | undefined 
   return { end: -1, fragmentEnd: markerAt, nextIndex: markerEnd, omission: true };
 }
 
+/** True when text in `[floor, index)` ends with `Bearer` followed only by whitespace. */
+function followsBearer(text: string, floor: number, index: number): boolean {
+  let end = index;
+  while (end > floor && /\s/.test(text[end - 1]!)) end -= 1;
+  if (end - floor < 6) return false;
+  return (
+    startsWithIgnoreCase(text, "bearer", end - 6) &&
+    (end - 6 === floor || !isIdentifierCode(text.charCodeAt(end - 7)))
+  );
+}
+
+/**
+ * True when the `"` at `index` opens a wrapped token right after `Bearer` and whitespace
+ * (such as `"Bearer\n"opaque-123"` or `"Bearer\t"opaque-123"`), rather than closing the value.
+ */
+function opensQuotedBearerToken(
+  text: string,
+  openQuote: number,
+  lineStart: number,
+  index: number,
+): boolean {
+  const next = text[index + 1];
+  if (!next || /[\s:,}\]]/.test(next)) return false;
+  if (lineStart > openQuote) {
+    return (
+      text.slice(lineStart, index).trim() === "" && followsBearer(text, openQuote + 1, lineStart)
+    );
+  }
+  return (
+    startsWithIgnoreCase(text, "bearer", openQuote + 1) &&
+    index > openQuote + 7 &&
+    !/\S/.test(text.slice(openQuote + 7, index))
+  );
+}
+
 function scanJsonStringEnd(
   text: string,
   openQuote: number,
   honorOmissionMarker: boolean,
 ): JsonStringEnd {
+  let lineStart = openQuote;
   for (let index = openQuote + 1; index < text.length; index += 1) {
     const ch = text[index]!;
     if (ch === "\n" || ch === "\r") {
@@ -342,6 +378,7 @@ function scanJsonStringEnd(
         return { end: -1, fragmentEnd: index, nextIndex: nextLineStart, omission: false };
       }
       if (nextLineStart > index + 1) index += 1;
+      lineStart = nextLineStart;
       continue;
     }
     if (ch === "\\") {
@@ -359,12 +396,14 @@ function scanJsonStringEnd(
           return { end: -1, fragmentEnd: index + 1, nextIndex: nextLineStart, omission: false };
         }
         index = nextLineStart - 1;
+        lineStart = nextLineStart;
         continue;
       }
       index += 1;
       continue;
     }
     if (ch === '"') {
+      if (opensQuotedBearerToken(text, openQuote, lineStart, index)) continue;
       return { end: index, fragmentEnd: index + 1, nextIndex: index + 1, omission: false };
     }
   }

@@ -11,7 +11,7 @@ export function combineSignals(...signals: Array<AbortSignal | undefined>): Abor
 
 /** The error's message, or for one without (e.g. a happy-eyeballs AggregateError) what its
  * inner errors, cause, name or code say, so a failure never reads as an empty string. */
-function errorMessage(error: unknown, depth = 0): string {
+export function connectorErrorMessage(error: unknown, depth = 0): string {
   if (!(error instanceof Error)) {
     if (typeof error === "string") return error || "unknown error";
     try {
@@ -23,7 +23,7 @@ function errorMessage(error: unknown, depth = 0): string {
   if (error.message) return error.message;
   if (depth < 3) {
     const inner = error instanceof AggregateError ? error.errors[0] : error.cause;
-    if (inner !== undefined) return errorMessage(inner, depth + 1);
+    if (inner !== undefined) return connectorErrorMessage(inner, depth + 1);
   }
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" || typeof code === "number"
@@ -36,10 +36,10 @@ export function sanitizeConnectorError(
   secrets: string[] = [],
   options?: { maxChars?: number },
 ): string {
-  const message = errorMessage(error);
+  const message = connectorErrorMessage(error);
   const sanitizeDecoded = (value: string) =>
     redactSecrets(value, secrets)
-      .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+      .replace(/Bearer\s+(?!Bearer\s+\S)\S+/gi, "Bearer [redacted]")
       .replace(/trg_(?:live|test)_[A-Za-z0-9_-]+/g, "[redacted]");
   const sanitizePlain = (value: string) =>
     redactPlainBearerTokens(redactSecrets(value, secrets)).replace(
