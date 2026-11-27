@@ -24,7 +24,7 @@ import {
 import { messageBot, unresolvedBotError } from "../../messaging/bot-messages.js";
 import { startBackgroundHelper } from "../../tasks/background-helpers.js";
 import type { RunContext } from "../assembly/run-context.js";
-import { publishMessage } from "../assembly/run-messages.js";
+import { publishMessage, sanitizeCardUrl } from "../assembly/run-messages.js";
 import {
   canPostLongTaskHeadsUp,
   canPublishDurableProgress,
@@ -393,6 +393,7 @@ export const messagingTools: ToolHandlers = {
       true,
       `status-card:${call.effectKey}`,
     );
+    ctx.state.reply.publishedMidTurnUserMessage = true;
     return call.finish({ ok: true, count: lines.length });
   },
   async show_cards(ctx, call) {
@@ -421,10 +422,12 @@ export const messagingTools: ToolHandlers = {
           ? redactSecrets(row.meta.trim(), ctx.secrets).slice(0, 160)
           : undefined;
       const url =
-        typeof row.url === "string" ? (normalizedHttpUrl(row.url) ?? undefined) : undefined;
+        typeof row.url === "string"
+          ? sanitizeCardUrl(normalizedHttpUrl(row.url) ?? undefined, ctx.secrets)
+          : undefined;
       const imageUrl =
         typeof row.imageUrl === "string"
-          ? (normalizedHttpUrl(row.imageUrl) ?? undefined)
+          ? sanitizeCardUrl(normalizedHttpUrl(row.imageUrl) ?? undefined, ctx.secrets)
           : undefined;
       const badges = Array.isArray(row.badges)
         ? row.badges
@@ -458,6 +461,7 @@ export const messagingTools: ToolHandlers = {
       true,
       `result-cards:${call.effectKey}`,
     );
+    ctx.state.reply.publishedMidTurnUserMessage = true;
     return call.finish({ ok: true, count: items.length });
   },
   async message_bot(ctx, call) {

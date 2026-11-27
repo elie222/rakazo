@@ -1,7 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
+import {
+  markRemoteImageLoaded,
+  RemoteImagesContext,
+  remoteImageRenders,
+} from "@rakazo/chat-ui/web";
 import type { MessageBlock } from "@rakazo/contracts";
-import { ExternalLink } from "lucide-react";
-import { useState } from "react";
+import { ExternalLink, ImageIcon } from "lucide-react";
+import { useContext, useState } from "react";
 
 type ResultCardsBlock = Extract<MessageBlock, { kind: "result_cards" }>;
 
@@ -16,8 +21,30 @@ function safeExternalUrl(raw: string | undefined): string | undefined {
 }
 
 function CardThumbnail({ src, alt }: { src: string; alt: string }) {
+  const { t } = useLingui();
+  const loadRemote = useContext(RemoteImagesContext);
+  const [, setRevision] = useState(0);
   const [failed, setFailed] = useState(false);
   if (failed) return null;
+  if (!remoteImageRenders(src, loadRemote, false)) {
+    return (
+      <div className="flex aspect-[16/10] w-full items-center justify-center bg-muted/60">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            markRemoteImageLoaded(src);
+            setRevision((n) => n + 1);
+          }}
+          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <ImageIcon aria-hidden="true" className="size-3.5" />
+          <span>{t`Load image`}</span>
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="aspect-[16/10] w-full overflow-hidden bg-muted">
       <img

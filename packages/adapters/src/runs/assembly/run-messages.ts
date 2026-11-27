@@ -53,6 +53,27 @@ function redactedArguments(json: string, secrets: string[]): string {
   }
 }
 
+const MAX_CARD_URL_LENGTH = 2_048;
+
+/** True when a URL carries any run secret in raw or percent-decoded form. */
+export function urlContainsRunSecret(url: string, secrets: string[]): boolean {
+  if (secrets.length === 0) return false;
+  if (redactSecrets(url, secrets) !== url) return true;
+  try {
+    const decoded = decodeURIComponent(url);
+    if (decoded !== url && redactSecrets(decoded, secrets) !== decoded) return true;
+  } catch {
+    // Malformed percent-encoding: raw check above already ran.
+  }
+  return false;
+}
+
+/** Keeps a card URL only if it fits the contract length limit and leaks no run secrets. */
+export function sanitizeCardUrl(url: string | undefined, secrets: string[]): string | undefined {
+  if (!url || url.length > MAX_CARD_URL_LENGTH) return undefined;
+  return urlContainsRunSecret(url, secrets) ? undefined : url;
+}
+
 export function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[] {
   return blocks.map((block) => {
     if (block.kind === "text") {
@@ -77,17 +98,24 @@ export function redactBlocks(blocks: MessageBlock[], secrets: string[]): Message
       return {
         ...block,
         ...(block.title ? { title: redactSecrets(block.title, secrets) } : {}),
-        items: block.items.map((item) => ({
-          ...item,
-          title: redactSecrets(item.title, secrets),
-          ...(item.subtitle ? { subtitle: redactSecrets(item.subtitle, secrets) } : {}),
-          ...(item.price ? { price: redactSecrets(item.price, secrets) } : {}),
-          ...(item.rating ? { rating: redactSecrets(item.rating, secrets) } : {}),
-          ...(item.meta ? { meta: redactSecrets(item.meta, secrets) } : {}),
-          ...(item.badges
-            ? { badges: item.badges.map((badge) => redactSecrets(badge, secrets)) }
-            : {}),
-        })),
+        items: block.items.map((item) => {
+          const safeUrl = sanitizeCardUrl(item.url, secrets);
+          const safeImageUrl = sanitizeCardUrl(item.imageUrl, secrets);
+          const { url: _u, imageUrl: _i, ...rest } = item;
+          return {
+            ...rest,
+            title: redactSecrets(item.title, secrets),
+            ...(item.subtitle ? { subtitle: redactSecrets(item.subtitle, secrets) } : {}),
+            ...(item.price ? { price: redactSecrets(item.price, secrets) } : {}),
+            ...(item.rating ? { rating: redactSecrets(item.rating, secrets) } : {}),
+            ...(item.meta ? { meta: redactSecrets(item.meta, secrets) } : {}),
+            ...(safeUrl ? { url: safeUrl } : {}),
+            ...(safeImageUrl ? { imageUrl: safeImageUrl } : {}),
+            ...(item.badges
+              ? { badges: item.badges.map((badge) => redactSecrets(badge, secrets)) }
+              : {}),
+          };
+        }),
       };
     }
     if (block.kind === "page") return { ...block, title: redactSecrets(block.title, secrets) };

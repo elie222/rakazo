@@ -1,5 +1,11 @@
+import {
+  markRemoteImageLoaded,
+  RemoteImagesContext,
+  remoteImageRenders,
+} from "@rakazo/chat-ui/native";
 import type { MessageBlock } from "@rakazo/contracts";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
+import { useContext, useState } from "react";
 import { Image, Linking, Pressable, ScrollView, Text, View } from "react-native";
 import { mobileTokens } from "../../lib/appearance/appearance";
 
@@ -43,6 +49,8 @@ function safeExternalUrl(raw: string | undefined): string | undefined {
 
 export function ResultCards({ block }: { block: ResultCardsBlock }) {
   const tokens = mobileTokens();
+  const loadRemote = useContext(RemoteImagesContext);
+  const [, setRevision] = useState(0);
   return (
     <View style={{ width: "100%", gap: 8 }}>
       {block.title ? (
@@ -82,11 +90,37 @@ export function ResultCards({ block }: { block: ResultCardsBlock }) {
               }}
             >
               {imageSrc ? (
-                <Image
-                  source={{ uri: imageSrc }}
-                  style={{ width: "100%", height: 120, backgroundColor: tokens.muted }}
-                  resizeMode="cover"
-                />
+                remoteImageRenders(imageSrc, loadRemote, false) ? (
+                  <Image
+                    source={{ uri: imageSrc }}
+                    style={{ width: "100%", height: 120, backgroundColor: tokens.muted }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Pressable
+                    onPress={() => {
+                      markRemoteImageLoaded(imageSrc);
+                      setRevision((n) => n + 1);
+                    }}
+                    style={{
+                      width: "100%",
+                      height: 84,
+                      backgroundColor: tokens.muted,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: typeScale.caption.fontSize,
+                        color: tokens.mutedForeground,
+                        fontWeight: fontWeight.medium,
+                      }}
+                    >
+                      Load image
+                    </Text>
+                  </Pressable>
+                )
               ) : null}
               <View style={{ padding: 12, gap: 4 }}>
                 <Text
@@ -135,6 +169,30 @@ export function ResultCards({ block }: { block: ResultCardsBlock }) {
                         {item.rating}
                       </Text>
                     ) : null}
+                  </View>
+                ) : null}
+                {item.badges && item.badges.length > 0 ? (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, paddingTop: 2 }}>
+                    {item.badges.map((badge) => (
+                      <View
+                        key={badge}
+                        style={{
+                          borderRadius: 6,
+                          backgroundColor: tokens.muted,
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: typeScale.caption.fontSize,
+                            color: tokens.mutedForeground,
+                          }}
+                        >
+                          {badge}
+                        </Text>
+                      </View>
+                    ))}
                   </View>
                 ) : null}
                 {item.meta ? (

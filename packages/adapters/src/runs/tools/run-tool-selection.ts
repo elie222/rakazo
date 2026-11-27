@@ -277,6 +277,8 @@ export function selectBuiltinToolsForRun(options: {
           !SKILL_TOOL_NAMES.has(tool.name) &&
           ![
             "react",
+            "show_status",
+            "show_cards",
             "remember",
             "delete_shared_memory",
             "remove_mcp_server",

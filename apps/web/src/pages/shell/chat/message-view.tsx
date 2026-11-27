@@ -310,10 +310,14 @@ export const MessageView = memo(function MessageView({
   // A message with text and attachments anchors it on its first text bubble.
   const textAnchorIndex = message.blocks.findIndex((block) => block.kind === "text");
   const hasText = textAnchorIndex !== -1;
-  const hoverAnchorIndex =
+  const askAnchorIndex =
     textAnchorIndex === -1
       ? message.blocks.findIndex((block) => block.kind === "ask")
       : textAnchorIndex;
+  const hoverAnchorIndex =
+    askAnchorIndex === -1
+      ? message.blocks.findIndex((block) => block.kind === "card" || block.kind === "result_cards")
+      : askAnchorIndex;
   const peerReceipt = isPeerReceiptBlocks(message.blocks);
   const hoverActions = peerReceipt ? null : (
     <MessageHoverActions
@@ -698,7 +702,7 @@ export const MessageView = memo(function MessageView({
           }
           if (block.kind === "card") {
             return (
-              <div key={i} className="flex justify-start">
+              <div key={i} className="relative flex w-fit max-w-full justify-start">
                 <div className="flex flex-col gap-2 rounded-2xl bg-muted px-5 py-4">
                   {block.lines.map((line) => (
                     <div key={line.k} className="flex items-baseline gap-2.5 text-body-lg">
@@ -709,6 +713,7 @@ export const MessageView = memo(function MessageView({
                     </div>
                   ))}
                 </div>
+                {i === hoverAnchorIndex ? hoverActions : null}
               </div>
             );
           }

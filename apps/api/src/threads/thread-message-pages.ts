@@ -157,7 +157,9 @@ async function withoutPeerRunMessages<
         block.kind === "app" ||
         block.kind === "file" ||
         block.kind === "image" ||
-        block.kind === "page",
+        block.kind === "page" ||
+        block.kind === "card" ||
+        block.kind === "result_cards",
     );
   });
 }
@@ -227,7 +229,9 @@ export function shouldForwardPeerThreadEvent(event: {
           block.kind === "app" ||
           block.kind === "file" ||
           block.kind === "image" ||
-          block.kind === "page"),
+          block.kind === "page" ||
+          block.kind === "card" ||
+          block.kind === "result_cards"),
     )
   );
 }

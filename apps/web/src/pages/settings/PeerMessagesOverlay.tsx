@@ -20,6 +20,7 @@ import { useQuery } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { ArtifactFileCard } from "../../components/messages/ArtifactFileCard";
+import { ResultCards } from "../../components/messages/ResultCards";
 import { PageBlockCard } from "../../components/pages/PageBlockCard";
 import { WindowChrome } from "../../components/WindowChrome";
 import { TRANSCRIPT_CONTENT_PADDING } from "../../lib/chat/transcript-layout";
@@ -235,6 +236,23 @@ export function PeerMessagesOverlay({
                             onOpen={onClose}
                             updated={pageCardSuperseded(newestPages, peerMessage.messageId, block)}
                           />
+                        ) : block.kind === "card" ? (
+                          <div
+                            key={index}
+                            className="mt-2 flex flex-col gap-1.5 rounded-xl bg-muted px-4 py-3"
+                          >
+                            {block.lines.map((line) => (
+                              <div key={line.k} className="flex items-baseline gap-2 text-body-sm">
+                                <span className="font-semibold text-foreground">{line.k}</span>
+                                <span className="text-muted-foreground">→</span>
+                                <span>{line.v}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : block.kind === "result_cards" ? (
+                          <div key={index} className="mt-2">
+                            <ResultCards block={block} />
+                          </div>
                         ) : null,
                       )}
                     </div>

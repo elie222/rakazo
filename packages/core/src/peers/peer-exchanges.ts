@@ -23,7 +23,9 @@ export function isPeerReplyBlock(block: MessageBlock) {
     block.kind === "file" ||
     block.kind === "image" ||
     block.kind === "chart" ||
-    block.kind === "page"
+    block.kind === "page" ||
+    block.kind === "card" ||
+    block.kind === "result_cards"
   );
 }
 

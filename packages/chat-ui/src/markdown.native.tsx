@@ -67,8 +67,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 export type { ChatMarkdownProps, LinkFavicons } from "./markdown";
 export {
   LinkFaviconsContext,
+  markRemoteImageLoaded,
   plainTextLinkParts,
   RemoteImagesContext,
+  remoteImageRenders,
   useLinkFavicon,
   withBlockMentions,
 } from "./markdown";
