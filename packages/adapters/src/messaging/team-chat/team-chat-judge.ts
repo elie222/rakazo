@@ -10,8 +10,8 @@ import {
 } from "../../model-credits/offerings.js";
 import { approvedModelCreditMaterial } from "../../model-credits/routing.js";
 import { hostedModelCreditObserver } from "../../models/credits/model-credit-observer.js";
+import { resolveDeploymentHostAuth } from "../../models/deployment-host-auth.js";
 import {
-  deploymentHostCredentialKey,
   loadAdminDeploymentModelKey,
   matchingAdminDeploymentModel,
 } from "../../models/deployment-model.js";
@@ -328,13 +328,16 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         !pinned &&
         !mainModel &&
         matchingAdminDeploymentModel(settings, provider, modelId);
+      const host =
+        material?.apiKey == null && !admin && provider === this.deps.deploymentProvider
+          ? await resolveDeploymentHostAuth(provider, modelId, registerSecrets)
+          : undefined;
       const apiKey =
         material?.apiKey ??
         (admin
           ? await loadAdminDeploymentModelKey(this.deps.secrets, admin.cipher)
           : provider === this.deps.deploymentProvider
-            ? ((await deploymentHostCredentialKey(provider, modelId)) ??
-              this.deps.deploymentModelKey)
+            ? (host?.apiKey ?? this.deps.deploymentModelKey)
             : undefined);
       const callObserver = settings?.modelCreditsEnabled
         ? await hostedModelCreditObserver(this.deps.prisma, scope)
@@ -345,6 +348,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           id: modelId,
           ...material,
           ...(apiKey ? { apiKey } : {}),
+          ...(host?.resolveApiKey ? { resolveApiKey: host.resolveApiKey } : {}),
           callObserver,
           billing: modelBilling({ credits: Boolean(callObserver || material) }),
         },

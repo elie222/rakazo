@@ -9,10 +9,8 @@ import type {
   MemoryProviderResolver,
 } from "../../memory/memory-provider-factory.js";
 import { modelCreditOfferings } from "../../model-credits/offerings.js";
-import {
-  deploymentHostCredentialKey,
-  resolveDeploymentModel,
-} from "../../models/deployment-model.js";
+import { resolveDeploymentHostAuth } from "../../models/deployment-host-auth.js";
+import { resolveDeploymentModel } from "../../models/deployment-model.js";
 import { modelBilling } from "../../models/model-secret.js";
 import {
   historyCompactionInstructions,
@@ -391,7 +389,7 @@ export async function compactHistory(
   const resolveModel = deps.resolveModel;
   if (modelCreditOfferings() && !resolveModel)
     throw new Error("Approved model summaries require the metered model resolver");
-  const model = resolveModel
+  const model: AgentRunRequest["model"] = resolveModel
     ? // Their credentials are only readable as them.
       await runAsTenant({ spaceId, userId }, () => resolveModel({ userId, spaceId, botId }))
     : deps.deploymentModelConfigured
@@ -399,11 +397,10 @@ export async function compactHistory(
           // Provider must come from the same resolver as the key, not a hardcoded one.
           provider: deploymentFallback.provider,
           id: deploymentFallback.model,
-          apiKey:
-            (await deploymentHostCredentialKey(
-              deploymentFallback.provider,
-              deploymentFallback.model,
-            )) ?? deps.deploymentModelKey,
+          ...((await resolveDeploymentHostAuth(
+            deploymentFallback.provider,
+            deploymentFallback.model,
+          )) ?? { apiKey: deps.deploymentModelKey }),
           billing: modelBilling({}),
         }
       : await (async () => {
@@ -423,6 +420,17 @@ export async function compactHistory(
   }
 
   const secrets = model.apiKey ? [model.apiKey] : [];
+  const resolveApiKey = model.resolveApiKey;
+  const requestModel = resolveApiKey
+    ? {
+        ...model,
+        resolveApiKey: async (signal?: AbortSignal) => {
+          const key = await resolveApiKey(signal);
+          if (!secrets.includes(key)) secrets.push(key);
+          return key;
+        },
+      }
+    : model;
   let summary = "";
   let runtimeReportedFailure = false;
   for await (const event of deps.runtime.run(
@@ -444,7 +452,7 @@ export async function compactHistory(
       instructions: historyCompactionInstructions(),
       history: [],
       tools: [],
-      model,
+      model: requestModel,
       secrets,
       // An empty summarizer response must reach the retry guard below, not become Pi's
       // user-facing fallback text and advance the cursor without preserving any history.

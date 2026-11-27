@@ -24,9 +24,9 @@ import {
   HostedModelCreditsRequiredError,
   hostedModelCreditObserver,
 } from "../../models/credits/model-credit-observer.js";
+import { resolveDeploymentHostAuth } from "../../models/deployment-host-auth.js";
 import type { SavedDeploymentModel } from "../../models/deployment-model.js";
 import {
-  deploymentHostCredentialKey,
   loadAdminDeploymentModelKey,
   matchingAdminDeploymentModel,
   resolveDeploymentModel,
@@ -550,27 +550,8 @@ async function resolveModelKeyMaterial(
       redact: [],
     };
   try {
-    const initialHostKey = deploymentHostCredentialKey(provider, modelId);
-    if (!initialHostKey) return { apiKey: operatorModelKey(deps, provider), redact: [] };
-    const apiKey = await initialHostKey;
-    let registeredKey = apiKey;
-    return {
-      apiKey,
-      redact: [],
-      resolveApiKey: async (signal) => {
-        const key = await deploymentHostCredentialKey(provider, modelId, signal);
-        if (!key) {
-          throw new UnavailableModelForAuthError(
-            "The deployment model workload identity is no longer configured.",
-          );
-        }
-        if (key !== registeredKey) {
-          registerSecrets?.([key]);
-          registeredKey = key;
-        }
-        return key;
-      },
-    };
+    const host = await resolveDeploymentHostAuth(provider, modelId, registerSecrets);
+    return { ...(host ?? { apiKey: operatorModelKey(deps, provider) }), redact: [] };
   } catch (error) {
     // An exchange outage or deadline should reach the run setup retry, not mark auth terminal.
     if (!(error instanceof ClientError) || error.kind !== "BAD_REQUEST") throw error;
