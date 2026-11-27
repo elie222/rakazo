@@ -32,6 +32,7 @@ function service(getPrice: BillingProvider["getPrice"], role = "owner") {
   const provider = {
     describe: () => ({ capabilities: { trials: true, portal: true } }),
     getPrice: vi.fn(getPrice),
+    createPortal: vi.fn().mockResolvedValue({ url: "https://billing.example.com/portal" }),
     endTrial: vi.fn(),
   } as unknown as BillingProvider;
   return {
@@ -74,6 +75,22 @@ describe("billing status", () => {
     await expect(billing.endTrial(actor)).rejects.toMatchObject({
       code: "PAYMENT_REQUIRED",
       status: 402,
+    });
+  });
+
+  it("forwards the portal cancel flow to the billing provider", async () => {
+    const { billing, provider, prisma } = service(async () => price);
+    vi.mocked(prisma.billingAccount.findUnique).mockResolvedValue({
+      organizationId: "org-1",
+      customerId: "cus-1",
+    } as never);
+    await expect(billing.portal(actor, undefined, "cancel")).resolves.toEqual({
+      url: "https://billing.example.com/portal",
+    });
+    expect(provider.createPortal).toHaveBeenCalledWith({
+      customerId: "cus-1",
+      returnUrl: "https://app.example.com/app",
+      flow: "cancel",
     });
   });
 });

@@ -421,6 +421,103 @@ describe("Stripe billing HTTP boundary", () => {
     expect(new Set(keys).size).toBe(3);
   });
 
+  it("requests a subscription cancel flow in the portal when a live subscription exists", async () => {
+    const { wire, provider } = setup();
+    const { customerId } = await provider.createCustomer(owner);
+    await provider.createCheckout({ customerId, seats: 1, ...urls });
+    const subscriptionId = wire.completeCheckout(customerId);
+
+    const cancelPortal = await provider.createPortal({
+      customerId,
+      returnUrl: urls.successUrl,
+      flow: "cancel",
+    });
+    expect(cancelPortal.url).toContain(customerId);
+    const cancelRequest = wire.requests.at(-1)!;
+    expect(cancelRequest.path).toBe("/v1/billing_portal/sessions");
+    expect(cancelRequest.form["flow_data[type]"]).toBe("subscription_cancel");
+    expect(cancelRequest.form["flow_data[subscription_cancel][subscription]"]).toBe(subscriptionId);
+
+    await provider.createPortal({ customerId, returnUrl: urls.successUrl });
+    const generalRequest = wire.requests.at(-1)!;
+    expect(generalRequest.path).toBe("/v1/billing_portal/sessions");
+    expect(generalRequest.form["flow_data[type]"]).toBeUndefined();
+  });
+
+  it("falls back to the general portal when Stripe rejects cancel flow_data", async () => {
+    const { wire } = setup();
+    const provider = new StripeBillingProvider({
+      secretKey: wire.secretKey,
+      webhookSecret: "whsec_fake",
+      priceId: wire.priceId,
+      fetch: async (input, init) => {
+        const body = String(init?.body ?? "");
+        if (String(input).endsWith("/v1/billing_portal/sessions") && body.includes("flow_data")) {
+          return Response.json(
+            {
+              error: {
+                type: "invalid_request_error",
+                message: "Portal configuration does not support subscription_cancel",
+              },
+            },
+            { status: 400 },
+          );
+        }
+        return wire.fetch(input, init);
+      },
+    });
+    const { customerId } = await provider.createCustomer(owner);
+    await provider.createCheckout({ customerId, seats: 1, ...urls });
+    wire.completeCheckout(customerId);
+
+    const portal = await provider.createPortal({
+      customerId,
+      returnUrl: urls.successUrl,
+      flow: "cancel",
+    });
+    expect(portal.url).toContain(customerId);
+    const fallbackRequest = wire.requests.at(-1)!;
+    expect(fallbackRequest.path).toBe("/v1/billing_portal/sessions");
+    expect(fallbackRequest.form["flow_data[type]"]).toBeUndefined();
+  });
+
+  it("opens the general portal when cancel flow is requested without a live subscription", async () => {
+    const { wire, provider } = setup();
+    const { customerId } = await provider.createCustomer(owner);
+
+    const portal = await provider.createPortal({
+      customerId,
+      returnUrl: urls.successUrl,
+      flow: "cancel",
+    });
+    expect(portal.url).toContain(customerId);
+    const portalRequest = wire.requests.at(-1)!;
+    expect(portalRequest.path).toBe("/v1/billing_portal/sessions");
+    expect(portalRequest.form["flow_data[type]"]).toBeUndefined();
+  });
+
+  it("prefers an uncancelled live subscription over a newer canceling subscription", async () => {
+    const { wire, provider } = setup();
+    const { customerId } = await provider.createCustomer(owner);
+    await seedHistory(wire, provider, customerId, ["active", "active"]);
+    const [first, second] = wire.subscriptions;
+    second!.cancel_at_period_end = true;
+
+    await expect(provider.getCustomerSubscription(customerId)).resolves.toMatchObject({
+      subscriptionId: first!.id,
+      cancelAtPeriodEnd: false,
+    });
+    await provider.createPortal({
+      customerId,
+      returnUrl: urls.successUrl,
+      flow: "cancel",
+    });
+    const portalRequest = wire.requests.at(-1)!;
+    expect(portalRequest.path).toBe("/v1/billing_portal/sessions");
+    expect(portalRequest.form["flow_data[type]"]).toBe("subscription_cancel");
+    expect(portalRequest.form["flow_data[subscription_cancel][subscription]"]).toBe(first!.id);
+  });
+
   it("replays a saved 500 to retries of the same call, and a later call starts fresh", async () => {
     const { wire, provider } = setup();
     wire.failures.push({ status: 500, message: "boom" });

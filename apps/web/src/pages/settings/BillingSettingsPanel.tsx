@@ -1,4 +1,6 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import type { BillingPortalFlow } from "@rakazo/contracts";
+import { canCancelBilling } from "@rakazo/contracts";
 import { billingDateLabel, formatBillingPrice } from "@rakazo/i18n/billing";
 import { Button, SectionHeading, Skeleton } from "@rakazo/ui-web";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,7 +22,8 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
   const error = statusRead.isError && !status;
   // Desktop opens the URL in the system browser and this page stays, so the button comes back.
   const portal = useSave({
-    save: (_, rpc) => rpc.billing.portal(),
+    save: (flow: BillingPortalFlow | undefined, rpc) =>
+      rpc.billing.portal(flow ? { flow } : undefined),
     onSaved: ({ url }) => window.location.assign(url),
   });
 
@@ -40,6 +43,7 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
 
   const price = status?.price ? formatBillingPrice(status.price, locale) : null;
   const seats = status?.seats ?? 0;
+  const canCancel = status ? canCancelBilling(status) : false;
 
   if (status?.funding !== undefined)
     return (
@@ -78,16 +82,37 @@ export function BillingSettingsPanel({ client }: { client: RpcClient }) {
           ) : null}
         </div>
         {status?.canManage && status.hasCustomer ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={portal.pending}
-            onClick={() => portal.run()}
-          >
-            <Trans>Manage</Trans>
-          </Button>
+          <div className="flex items-center gap-2">
+            {canCancel ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={portal.pending}
+                onClick={() => portal.run("cancel")}
+              >
+                {status?.state === "trialing" ? (
+                  <Trans>Cancel trial</Trans>
+                ) : (
+                  <Trans>Cancel plan</Trans>
+                )}
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={portal.pending}
+              onClick={() => portal.run(undefined)}
+            >
+              <Trans>Manage</Trans>
+            </Button>
+          </div>
         ) : null}
       </div>
+      {status && !status.canManage ? (
+        <p className="mt-3 text-body text-muted-foreground">
+          <Trans>Only the organization owner can change or cancel billing.</Trans>
+        </p>
+      ) : null}
       {portal.error || error ? (
         <p role="alert" className="mt-3 text-body text-destructive">
           {portal.error ? t`Could not open billing` : t`Could not load billing`}

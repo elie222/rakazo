@@ -292,3 +292,151 @@ it("keeps showing loaded billing if a later refresh fails", async () => {
   act(() => root.unmount());
   container.remove();
 });
+
+const assign = vi.fn();
+
+async function renderPanelWithStatus(nextStatus: Record<string, unknown>, portalReject = false) {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const portalBodies: unknown[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request, init?: RequestInit) => {
+      requests.push({
+        url: request.url,
+        spaceId: new Headers(init?.headers ?? request.headers).get("x-rakazo-space-id"),
+      });
+      if (request.url.endsWith("/billing/portal")) {
+        const text = typeof init?.body === "string" ? init.body : await request.clone().text();
+        portalBodies.push(text ? JSON.parse(text) : undefined);
+        if (portalReject) return Response.json({ json: { message: "down" } }, { status: 500 });
+        return Response.json({ json: { url: "about:blank#portal" } });
+      }
+      return Response.json({ json: nextStatus });
+    }),
+  );
+  assign.mockReset();
+  vi.stubGlobal("location", { ...window.location, assign });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(panel(createSpaceRpc("space-a"), "space-a"));
+    await flush();
+  });
+  return {
+    container,
+    portalBodies,
+    cleanup: () => {
+      act(() => root.unmount());
+      container.remove();
+    },
+  };
+}
+
+it("renders a single Cancel trial button for non-own-key trials with computer hours and requests cancel flow", async () => {
+  const view = await renderPanelWithStatus({
+    ...status,
+    byokPriceCents: null,
+    hasCustomer: true,
+    computerHoursLeft: 4,
+  });
+  await vi.waitFor(() => expect(view.container.textContent).toContain("Cancel trial"));
+  const cancelButtons = [...view.container.querySelectorAll("button")].filter(
+    (candidate) => candidate.textContent === "Cancel trial",
+  );
+  expect(cancelButtons).toHaveLength(1);
+  await act(async () => {
+    cancelButtons[0]!.click();
+    await flush();
+  });
+  expect(assign).toHaveBeenCalledWith("about:blank#portal");
+  expect(view.portalBodies[0]).toEqual({ json: { flow: "cancel" } });
+  await act(async () => {
+    button(view.container, "Manage billing").click();
+    await flush();
+  });
+  expect(view.portalBodies[1]).toEqual({});
+  view.cleanup();
+});
+
+it("lets owners cancel an active recurring credits plan with cancel flow", async () => {
+  const view = await renderPanelWithStatus({
+    ...status,
+    funding: "credits",
+    state: "active",
+    hasCustomer: true,
+    monthlyAmountCents: 2000,
+    byokPriceCents: null,
+  });
+  await vi.waitFor(() => expect(view.container.textContent).toContain("Cancel plan"));
+  await act(async () => {
+    button(view.container, "Cancel plan").click();
+    await flush();
+  });
+  expect(view.portalBodies[0]).toEqual({ json: { flow: "cancel" } });
+  view.cleanup();
+});
+
+it("tells owners when a free own-key period has no payment method", async () => {
+  const view = await renderPanelWithStatus({
+    ...status,
+    state: "trialing",
+    hasCustomer: false,
+    byokFreeUntil: "2027-01-01T00:00:00.000Z",
+    byokPriceCents: 2000,
+  });
+  await vi.waitFor(() =>
+    expect(view.container.textContent).toContain(
+      "No payment method on file. Nothing will be charged.",
+    ),
+  );
+  expect(view.container.textContent).not.toContain("Cancel trial");
+  view.cleanup();
+});
+
+it("tells non-owners who can change or cancel credit billing", async () => {
+  const view = await renderPanelWithStatus({
+    ...status,
+    canManage: false,
+    hasCustomer: true,
+  });
+  await vi.waitFor(() =>
+    expect(view.container.textContent).toContain(
+      "Only the organization owner can change or cancel billing.",
+    ),
+  );
+  expect(view.container.textContent).not.toContain("Cancel trial");
+  view.cleanup();
+});
+
+it("requests cancel flow when an owner cancels a seat-based plan", async () => {
+  const ownerView = await renderPanelWithStatus({
+    state: "active",
+    canManage: true,
+    hasCustomer: true,
+    seats: 1,
+  });
+  await vi.waitFor(() => expect(ownerView.container.textContent).toContain("Cancel plan"));
+  await act(async () => {
+    button(ownerView.container, "Cancel plan").click();
+    await flush();
+  });
+  expect(ownerView.portalBodies[0]).toEqual({ json: { flow: "cancel" } });
+  ownerView.cleanup();
+});
+
+it("tells non-owners who can change or cancel seat-based billing", async () => {
+  const memberView = await renderPanelWithStatus({
+    state: "active",
+    canManage: false,
+    hasCustomer: true,
+    seats: 1,
+  });
+  await vi.waitFor(() =>
+    expect(memberView.container.textContent).toContain(
+      "Only the organization owner can change or cancel billing.",
+    ),
+  );
+  expect(memberView.container.textContent).not.toContain("Cancel plan");
+  memberView.cleanup();
+});

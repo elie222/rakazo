@@ -688,7 +688,11 @@ export interface BillingProvider {
   expireOpenCheckouts(customerId: string): Promise<void>;
   /** Expires checkout session `id` so it cannot be paid; a no-op once it is no longer open. */
   expireCheckout(id: string): Promise<void>;
-  createPortal(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>;
+  createPortal(input: {
+    customerId: string;
+    returnUrl: string;
+    flow?: "cancel";
+  }): Promise<{ url: string }>;
   /** Current subscription for the customer, preferring one that grants access. */
   getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null>;
   /** Sets seats on the customer's subscription; a no-op when none can still take updates. */

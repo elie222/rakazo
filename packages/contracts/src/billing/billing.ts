@@ -119,6 +119,8 @@ export function creditAmountChoices(current: HeldCreditAmount): HeldCreditAmount
 
 /** Where checkout returns: the mobile app's in-app browser instead of the web app. */
 export const BillingClientSchema = z.literal("mobile").optional();
+export const BillingPortalFlowSchema = z.enum(["cancel"]);
+export type BillingPortalFlow = z.infer<typeof BillingPortalFlowSchema>;
 /** The deep link the API sends a mobile checkout back to; it closes the in-app browser. */
 export const MOBILE_BILLING_CALLBACK_URL = "rakazo://billing";
 
@@ -239,6 +241,16 @@ export function paymentOverdue(status: BillingStatus): boolean {
 /** A trial set to cancel, which gets no computer hours until it is renewed. */
 export function isCancelledTrial(status: BillingStatus): boolean {
   return status.state === "trialing" && status.cancelAtPeriodEnd;
+}
+
+/** An owner's live trial or active subscription that has not already been set to cancel. */
+export function canCancelBilling(status: BillingStatus): boolean {
+  return (
+    status.canManage &&
+    status.hasCustomer &&
+    !status.cancelAtPeriodEnd &&
+    (status.state === "trialing" || status.state === "active")
+  );
 }
 
 /** Why computers ran out of hours: a trial's smaller allowance, a cancelled trial, or the plan's. */

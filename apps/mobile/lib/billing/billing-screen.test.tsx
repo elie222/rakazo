@@ -47,7 +47,12 @@ vi.mock("@expo/ui/community/menu", () => ({
 }));
 vi.mock("../../components/settings/settings-group", () => ({
   useStackedSettings: () => false,
-  SettingsGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  SettingsGroup: ({ children, footer }: { children?: ReactNode; footer?: string }) => (
+    <div>
+      {children}
+      {footer ? <p>{footer}</p> : null}
+    </div>
+  ),
   SettingsRow: ({
     title,
     value,
@@ -189,4 +194,60 @@ it("does not alert over another page when the status read fails after leaving", 
   await act(async () => read.reject(new Error("offline")));
   await act(async () => queryClient.cancelQueries());
   expect(mocks.alert).not.toHaveBeenCalled();
+});
+
+it("requests cancel flow when an owner presses Cancel trial", async () => {
+  mocks.rpc.mockImplementation(async (method: string) => {
+    if (method === "billing/status") {
+      return { ...status, state: "trialing", cancelAtPeriodEnd: false, funding: "byok" };
+    }
+    if (method === "billing/portal") return { url: "https://billing.example.test/cancel" };
+    if (method === "billing/refresh") return status;
+    throw new Error(`Unexpected ${method}`);
+  });
+  await render();
+  await vi.waitFor(() => expect(container.textContent).toContain("Cancel trial"));
+  await act(async () => button("Cancel trial").click());
+  expect(sent("billing/portal")[0]?.[1]).toEqual({ client: "mobile", flow: "cancel" });
+});
+
+it("requests cancel flow when an owner presses Cancel plan", async () => {
+  mocks.rpc.mockImplementation(async (method: string) => {
+    if (method === "billing/status") {
+      return { ...status, state: "active", cancelAtPeriodEnd: false };
+    }
+    if (method === "billing/portal") return { url: "https://billing.example.test/cancel" };
+    if (method === "billing/refresh") return status;
+    throw new Error(`Unexpected ${method}`);
+  });
+  await render();
+  await vi.waitFor(() => expect(container.textContent).toContain("Cancel plan"));
+  await act(async () => button("Cancel plan").click());
+  expect(sent("billing/portal")[0]?.[1]).toEqual({ client: "mobile", flow: "cancel" });
+});
+
+it("tells non-owner members that only the owner can change or cancel billing", async () => {
+  mocks.rpc.mockResolvedValue({ ...status, canManage: false });
+  await render();
+  await vi.waitFor(() =>
+    expect(container.textContent).toContain(
+      "Only the organization owner can change or cancel billing.",
+    ),
+  );
+  expect(container.textContent).not.toContain("Cancel plan");
+});
+
+it("tells owners in a free period with no payment method that nothing will be charged", async () => {
+  mocks.rpc.mockResolvedValue({
+    ...status,
+    state: "trialing",
+    funding: "byok",
+    hasCustomer: false,
+    byokFreeUntil: "2027-01-01T00:00:00.000Z",
+  });
+  await render();
+  await vi.waitFor(() =>
+    expect(container.textContent).toContain("No payment method on file. Nothing will be charged."),
+  );
+  expect(container.textContent).not.toContain("Cancel trial");
 });

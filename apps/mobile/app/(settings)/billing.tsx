@@ -1,10 +1,11 @@
 import { MenuView } from "@expo/ui/community/menu";
 import { ph } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import type { BillingStatus, HeldCreditAmount } from "@rakazo/contracts";
+import type { BillingPortalFlow, BillingStatus, HeldCreditAmount } from "@rakazo/contracts";
 import {
   byokTierChangeOffered,
   byokYearlySwitchSavings,
+  canCancelBilling,
   creditAmountChoices,
   DEFAULT_MONTHLY_CREDIT_AMOUNT,
   HeldCreditAmountSchema,
@@ -105,6 +106,20 @@ export default function BillingScreen() {
   const referral = status.referral;
   const endTrial = status.canManage && status.state === "trialing" && !status.cancelAtPeriodEnd;
   const cancelledTrial = isCancelledTrial(status);
+  const canCancel = canCancelBilling(status);
+  const openPortal = (flow?: BillingPortalFlow) =>
+    action(async (send) => {
+      const result = await send(
+        "billing/portal",
+        flow ? { client: "mobile", flow } : { client: "mobile" },
+      );
+      return openBillingPage(result.url, send);
+    });
+  const planFooter = !status.canManage
+    ? t`Only the organization owner can change or cancel billing.`
+    : status.byokFreeUntil && !status.hasCustomer
+      ? t`No payment method on file. Nothing will be charged.`
+      : undefined;
   const yearlySavings = byokYearlySwitchSavings(status);
   const annualCents = status.byokAnnualPriceCents;
   const tiers = status.byokTiers ?? [];
@@ -151,7 +166,7 @@ export default function BillingScreen() {
       contentContainerStyle={[styles.content, stacked && styles.compactContent]}
       contentInsetAdjustmentBehavior="automatic"
     >
-      <SettingsGroup>
+      <SettingsGroup footer={planFooter}>
         <SettingsRow
           title={t`Plan`}
           detail={
@@ -234,6 +249,14 @@ export default function BillingScreen() {
             onPress={() => openFromSettingsSheet(router, "/paywall?dismissible=1")}
           />
         ) : null}
+        {canCancel ? (
+          <SettingsRow
+            title={status.state === "trialing" ? t`Cancel trial` : t`Cancel plan`}
+            chevron="right"
+            disabled={pending}
+            onPress={() => openPortal("cancel")}
+          />
+        ) : null}
       </SettingsGroup>
       {status.computerHoursLeft != null ? (
         <SettingsGroup
@@ -285,16 +308,7 @@ export default function BillingScreen() {
             />
           ) : null}
           {cancelledTrial && status.canManage && status.hasCustomer ? (
-            <SettingsRow
-              title={t`Renew plan`}
-              disabled={pending}
-              onPress={() =>
-                action(async (send) => {
-                  const result = await send("billing/portal", { client: "mobile" });
-                  return openBillingPage(result.url, send);
-                })
-              }
-            />
+            <SettingsRow title={t`Renew plan`} disabled={pending} onPress={() => openPortal()} />
           ) : null}
         </SettingsGroup>
       ) : null}
@@ -415,12 +429,7 @@ export default function BillingScreen() {
             title={t`Manage billing`}
             chevron="right"
             disabled={pending}
-            onPress={() =>
-              action(async (send) => {
-                const result = await send("billing/portal", { client: "mobile" });
-                return openBillingPage(result.url, send);
-              })
-            }
+            onPress={() => openPortal()}
           />
         </SettingsGroup>
       ) : null}
