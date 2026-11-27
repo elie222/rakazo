@@ -5,7 +5,7 @@ import type { Deferred } from "@rakazo/core/test-async";
 import { deferred } from "@rakazo/core/test-async";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computerNetworkNameFor } from "./computer-spec.js";
-import { nextScreenIndex, SCREEN_IDLE_MS } from "./supervisor-logic.js";
+import { releaseAssignedScreen, SCREEN_IDLE_MS } from "./supervisor-logic.js";
 
 const mocks = vi.hoisted(() => ({ getContainer: vi.fn() }));
 vi.mock("dockerode", () => ({
@@ -161,8 +161,9 @@ describe("idle Team Computer screens", () => {
   });
 
   it("does not close a screen a run took back while the close waited for the lock", async () => {
-    const { computer, container, closes } = fixture();
+    const { computer, closes } = fixture();
     const { screenMode, releaseWarm } = await supervisor();
+    const { withComputerScreenLock } = await import("./screens.js");
     expect((await screenMode(preview, { leaseId: "run-1:1" })).status).toBe(200);
     expect((await releaseWarm("run-1:1")).status).toBe(200);
     await vi.advanceTimersByTimeAsync(29 * 60_000);
@@ -172,39 +173,37 @@ describe("idle Team Computer screens", () => {
     const taken = screenMode(preview, { leaseId: "run-2:2" });
     await vi.waitFor(() => expect(computer.gate).toBeUndefined());
     await vi.advanceTimersByTimeAsync(2 * 60_000);
-    // Past its command the request inspects once more; the inspection after that is the queued close's.
-    const inspects = container.inspect.mock.calls.length;
     gate.resolve();
     expect((await taken).status).toBe(200);
-    await vi.waitUntil(() => container.inspect.mock.calls.length > inspects + 1);
+    await withComputerScreenLock("computer", async () => {});
     expect(closes()).toHaveLength(0);
   });
 
-  it("leaves a run's screen alone when the close cannot inspect the computer", async () => {
-    const { computer, closes } = fixture();
+  it("preserves a failed cancellation when an idle close was waiting for the lock", async () => {
+    const { computer, container } = fixture();
     const { screenMode, releaseWarm, logError } = await supervisor();
     const { computerScreens, withComputerScreenLock } = await import("./screens.js");
     expect((await screenMode(preview, { leaseId: "run-1:1" })).status).toBe(200);
     expect((await releaseWarm("run-1:1")).status).toBe(200);
     await vi.advanceTimersByTimeAsync(29 * 60_000);
 
-    const tookBack = deferred<void>();
+    const started = deferred<void>();
     const gate = deferred<void>();
     const held = withComputerScreenLock("computer", async () => {
-      nextScreenIndex(computerScreens.get("computer")!, "writer", "run-2:2");
-      tookBack.resolve();
+      started.resolve();
       await gate.promise;
+      releaseAssignedScreen(computerScreens.get("computer")!, "writer");
     });
-    await tookBack.promise;
+    await started.promise;
     computer.failInspect = true;
     await vi.advanceTimersByTimeAsync(2 * 60_000);
+    container.inspect.mockClear();
     gate.resolve();
     await held;
-    await vi.waitUntil(() => logError.mock.calls.length === 1);
-
-    computer.failInspect = false;
-    await vi.advanceTimersByTimeAsync(SCREEN_IDLE_MS);
-    expect(closes()).toHaveLength(0);
+    await withComputerScreenLock("computer", async () => {});
+    expect(container.inspect).not.toHaveBeenCalled();
+    expect(logError).not.toHaveBeenCalled();
+    expect(computerScreens.get("computer")?.get("writer")?.releasing).toBe(true);
   });
 
   it("keeps a controlled screen, and closes it 30 minutes after control is released", async () => {

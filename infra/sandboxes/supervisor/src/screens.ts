@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { deadlineSignal } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import type Docker from "dockerode";
 import { screenPorts } from "./computer-spec.js";
@@ -31,7 +32,13 @@ export const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
 // Container start time each screen registry was built under; see currentComputerScreens.
 export const computerScreenBoots = new Map<string, string>();
 const computerScreenLocks = new Map<string, Promise<unknown>>();
-const idleScreenTimers = new Map<string, Map<string, ReturnType<typeof setTimeout>>>();
+type IdleScreenTimer = {
+  slot: ScreenAssignment;
+  idleAt: number;
+  timer: ReturnType<typeof setTimeout>;
+};
+const idleScreenTimers = new Map<string, Map<string, IdleScreenTimer>>();
+const IDLE_SCREEN_CLOSE_TIMEOUT_MS = 15_000;
 
 // Serialize screen claim/release/cancel for one computer so a restart-orphan
 // cancel cannot race a replacement claim and kill the newer Chromium session.
@@ -50,30 +57,54 @@ export async function withComputerScreenLock<T>(
 }
 
 function armIdleScreenTimers(computerId: string) {
-  for (const timer of idleScreenTimers.get(computerId)?.values() ?? []) clearTimeout(timer);
-  const timers = new Map<string, ReturnType<typeof setTimeout>>();
-  for (const [screenKey, slot] of computerScreens.get(computerId) ?? []) {
+  const assigned = computerScreens.get(computerId);
+  const timers = idleScreenTimers.get(computerId) ?? new Map<string, IdleScreenTimer>();
+  for (const [screenKey, scheduled] of timers) {
+    const slot = assigned?.get(screenKey);
+    if (screenIsIdle(slot) && slot === scheduled.slot && slot.idleAt === scheduled.idleAt) continue;
+    clearTimeout(scheduled.timer);
+    timers.delete(screenKey);
+  }
+  for (const [screenKey, slot] of assigned ?? []) {
     if (!screenIsIdle(slot)) continue;
+    if (timers.has(screenKey)) continue;
     const timer = setTimeout(
-      () => void closeIdleScreen(computerId, screenKey),
+      () => void closeIdleScreen(computerId, screenKey, timer),
       Math.max(0, slot.idleAt + SCREEN_IDLE_MS - Date.now()),
     );
     timer.unref();
-    timers.set(screenKey, timer);
+    timers.set(screenKey, { slot, idleAt: slot.idleAt, timer });
   }
   if (timers.size === 0) idleScreenTimers.delete(computerId);
   else idleScreenTimers.set(computerId, timers);
 }
 
-async function closeIdleScreen(computerId: string, screenKey: string) {
+async function closeIdleScreen(
+  computerId: string,
+  screenKey: string,
+  timer: ReturnType<typeof setTimeout>,
+) {
   await withComputerScreenLock(computerId, async () => {
+    const timers = idleScreenTimers.get(computerId);
+    const scheduled = timers?.get(screenKey);
+    if (scheduled?.timer !== timer) return;
+    timers?.delete(screenKey);
+    const slot = computerScreens.get(computerId)?.get(screenKey);
+    if (
+      !screenIsIdle(slot) ||
+      slot !== scheduled.slot ||
+      slot.idleAt !== scheduled.idleAt ||
+      Date.now() < slot.idleAt + SCREEN_IDLE_MS
+    )
+      return;
     const container = docker.getContainer(computerId);
     let info: Docker.ContainerInspectInfo | undefined;
     try {
-      info = await container.inspect();
+      info = await container.inspect({ abortSignal: deadlineSignal(IDLE_SCREEN_CLOSE_TIMEOUT_MS) });
     } catch (error) {
       if ((error as { statusCode?: number })?.statusCode !== 404) {
-        postponeIdleScreen(computerId, screenKey, error);
+        getLogger().error("computer idle screen inspection failed", error);
+        slot.idleAt = Date.now();
         return;
       }
     }
@@ -88,23 +119,23 @@ async function closeIdleScreen(computerId: string, screenKey: string) {
       computerId,
       info.State.StartedAt,
     );
-    const slot = assigned?.get(screenKey);
-    if (!assigned || !screenIsIdle(slot) || Date.now() < slot.idleAt + SCREEN_IDLE_MS) return;
+    if (assigned?.get(screenKey) !== slot) return;
     releaseAssignedScreen(assigned, screenKey);
-    await teardownReleasedScreen(assigned, screenKey, slot.index, () =>
-      runContainerCommand(container, ["bash", "-c", stopExtraScreenCommand(slot.index, screenKey)]),
-    ).catch((error) => postponeIdleScreen(computerId, screenKey, error));
+    try {
+      await teardownReleasedScreen(assigned, screenKey, slot.index, () =>
+        runContainerCommand(
+          container,
+          ["bash", "-c", stopExtraScreenCommand(slot.index, screenKey)],
+          {
+            timeoutMs: IDLE_SCREEN_CLOSE_TIMEOUT_MS,
+          },
+        ),
+      );
+    } catch (error) {
+      getLogger().error("computer idle screen failed to close", error);
+      completeWarmReleasedScreen(assigned, screenKey, slot.index, Date.now());
+    }
   });
-}
-
-/** A close that failed keeps the screen reserved for its bot and idle from now, to be tried again later. */
-function postponeIdleScreen(computerId: string, screenKey: string, error: unknown) {
-  getLogger().error("computer idle screen failed to close", error);
-  const assigned = computerScreens.get(computerId);
-  const slot = assigned?.get(screenKey);
-  if (!assigned || !slot) return;
-  if (slot.releasing) completeWarmReleasedScreen(assigned, screenKey, slot.index, Date.now());
-  else if (screenIsIdle(slot)) slot.idleAt = Date.now();
 }
 
 export async function managedScreen(
