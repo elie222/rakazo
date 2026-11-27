@@ -5,12 +5,15 @@ import net from "node:net";
 import path from "node:path";
 import type { Duplex } from "node:stream";
 import type { RakazoDesktopProxyState } from "@rakazo/contracts";
+import { isNonPublicAddress } from "@rakazo/contracts";
+import { deadlineSignal, withAbort } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import { app } from "electron";
 import { handleIpc } from "../ipc/ipc.js";
 
 const PREFS_FILE = "local-proxy.json";
 const MAX_CONNECT_TIMEOUT_MS = 15_000;
+const DNS_LOOKUP_TIMEOUT_MS = 5_000;
 
 export type LocalProxyLookup = (
   hostname: string,
@@ -30,48 +33,26 @@ export function isBlockedProxyAddress(address: string): boolean {
     .toLowerCase()
     .replace(/^\[|\]$/g, "");
   if (!lower || lower === "localhost" || lower.endsWith(".localhost")) return true;
-  if (lower.startsWith("::ffff:")) {
-    return isBlockedProxyAddress(lower.slice("::ffff:".length));
-  }
-  const ipVersion = net.isIP(lower);
-  if (ipVersion === 4) {
-    const parts = lower.split(".").map((part) => Number.parseInt(part, 10));
-    if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) return true;
-    const [a, b] = parts as [number, number, number, number];
-    if (a === 0 || a === 10 || a === 127) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 100 && b >= 64 && b <= 127) return true;
-    return false;
-  }
-  if (ipVersion === 6) {
-    if (lower === "::" || lower === "::1") return true;
-    if (lower.startsWith("fc") || lower.startsWith("fd")) return true;
-    if (
-      lower.startsWith("fe8") ||
-      lower.startsWith("fe9") ||
-      lower.startsWith("fea") ||
-      lower.startsWith("feb")
-    ) {
-      return true;
-    }
-    return false;
-  }
+  if (net.isIP(lower)) return isNonPublicAddress(lower);
   return false;
 }
 
 async function resolveSafeTarget(
   hostname: string,
   dnsLookup: LocalProxyLookup,
+  signal: AbortSignal,
+  dnsTimeoutMs: number,
 ): Promise<string | null> {
   const clean = hostname.trim().replace(/^\[|\]$/g, "");
   if (!clean || isBlockedProxyAddress(clean)) return null;
   if (net.isIP(clean)) return clean;
   try {
-    const records = await dnsLookup(clean, { all: true });
+    const records = await withAbort(
+      dnsLookup(clean, { all: true }),
+      deadlineSignal(dnsTimeoutMs, signal),
+    );
     if (records.length === 0) return null;
-    if (records.some((record) => isBlockedProxyAddress(record.address))) return null;
+    if (records.some((record) => isNonPublicAddress(record.address))) return null;
     return records[0]!.address;
   } catch {
     return null;
@@ -119,12 +100,29 @@ async function writeSavedEnabled(userDataDir: string, enabled: boolean): Promise
 export async function createLocalWebProxy(options: {
   userDataDir: string;
   dnsLookup?: LocalProxyLookup;
+  dnsTimeoutMs?: number;
+  connectTimeoutMs?: number;
 }): Promise<LocalWebProxyController> {
   const dnsLookup = options.dnsLookup ?? ((host, opts) => lookup(host, opts));
+  const dnsTimeoutMs = options.dnsTimeoutMs ?? DNS_LOOKUP_TIMEOUT_MS;
+  const connectTimeoutMs = options.connectTimeoutMs ?? MAX_CONNECT_TIMEOUT_MS;
   let enabled = false;
+  let closed = false;
   let url: string | null = null;
   let server: http.Server | null = null;
+  let serverAbort: AbortController | null = null;
   const sockets = new Set<Duplex>();
+  const activeRequests = new Set<http.ClientRequest>();
+  let transitionQueue: Promise<unknown> = Promise.resolve();
+
+  function serialize<T>(work: () => Promise<T>): Promise<T> {
+    const next = transitionQueue.then(work, work);
+    transitionQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
 
   function trackSocket(socket: Duplex) {
     sockets.add(socket);
@@ -133,8 +131,13 @@ export async function createLocalWebProxy(options: {
 
   async function stopServer(): Promise<void> {
     const active = server;
+    const activeAbort = serverAbort;
     server = null;
+    serverAbort = null;
     url = null;
+    activeAbort?.abort();
+    for (const req of activeRequests) req.destroy();
+    activeRequests.clear();
     if (!active) return;
     for (const socket of sockets) socket.destroy();
     sockets.clear();
@@ -143,6 +146,7 @@ export async function createLocalWebProxy(options: {
 
   async function startServer(): Promise<void> {
     if (server) return;
+    const currentAbort = new AbortController();
     const nextServer = http.createServer((req, res) => {
       void (async () => {
         let parsed: URL;
@@ -158,7 +162,16 @@ export async function createLocalWebProxy(options: {
           res.end("Only http requests or CONNECT tunnels are supported");
           return;
         }
-        const safeIp = await resolveSafeTarget(parsed.hostname, dnsLookup);
+        const safeIp = await resolveSafeTarget(
+          parsed.hostname,
+          dnsLookup,
+          currentAbort.signal,
+          dnsTimeoutMs,
+        );
+        if (currentAbort.signal.aborted || res.destroyed || req.destroyed) {
+          if (!res.destroyed) res.destroy();
+          return;
+        }
         if (!safeIp) {
           res.writeHead(403, { "Content-Type": "text/plain" });
           res.end("Destination address is not allowed");
@@ -174,16 +187,24 @@ export async function createLocalWebProxy(options: {
             method: req.method,
             path: `${parsed.pathname}${parsed.search}`,
             headers: { ...headers, host: parsed.host },
-            timeout: MAX_CONNECT_TIMEOUT_MS,
+            timeout: connectTimeoutMs,
           },
           (upstreamRes) => {
             res.writeHead(upstreamRes.statusCode ?? 502, upstreamRes.headers);
             upstreamRes.pipe(res);
           },
         );
+        activeRequests.add(upstream);
+        upstream.once("close", () => activeRequests.delete(upstream));
+        upstream.on("timeout", () => {
+          upstream.destroy(new Error("Upstream timed out"));
+        });
         upstream.on("error", () => {
           if (!res.headersSent) res.writeHead(502, { "Content-Type": "text/plain" });
-          res.end("Upstream connection failed");
+          if (!res.writableEnded) res.end("Upstream connection failed");
+        });
+        req.once("close", () => {
+          if (!res.writableEnded) upstream.destroy();
         });
         req.pipe(upstream);
       })();
@@ -199,19 +220,32 @@ export async function createLocalWebProxy(options: {
           clientSocket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
           return;
         }
-        const safeIp = await resolveSafeTarget(target.host, dnsLookup);
+        const safeIp = await resolveSafeTarget(
+          target.host,
+          dnsLookup,
+          currentAbort.signal,
+          dnsTimeoutMs,
+        );
+        if (currentAbort.signal.aborted || clientSocket.destroyed) {
+          if (!clientSocket.destroyed) clientSocket.destroy();
+          return;
+        }
         if (!safeIp) {
           clientSocket.end("HTTP/1.1 403 Forbidden\r\n\r\n");
           return;
         }
         const upstream = net.connect(target.port, safeIp, () => {
+          if (currentAbort.signal.aborted || clientSocket.destroyed) {
+            upstream.destroy();
+            return;
+          }
           clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
           if (head.length > 0) upstream.write(head);
           upstream.pipe(clientSocket);
           clientSocket.pipe(upstream);
         });
         trackSocket(upstream);
-        upstream.setTimeout(MAX_CONNECT_TIMEOUT_MS, () => upstream.destroy());
+        upstream.setTimeout(connectTimeoutMs, () => upstream.destroy());
         upstream.on("error", () => {
           if (!clientSocket.destroyed) clientSocket.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
         });
@@ -233,6 +267,7 @@ export async function createLocalWebProxy(options: {
       throw new Error("Could not bind loopback proxy port");
     }
     server = nextServer;
+    serverAbort = currentAbort;
     url = `http://127.0.0.1:${address.port}`;
   }
 
@@ -249,20 +284,26 @@ export async function createLocalWebProxy(options: {
 
   return {
     state: () => ({ enabled, url }),
-    async setEnabled(next: boolean): Promise<RakazoDesktopProxyState> {
-      if (next) {
-        await startServer();
-        enabled = true;
-      } else {
+    setEnabled(next: boolean): Promise<RakazoDesktopProxyState> {
+      return serialize(async () => {
+        if (closed) return { enabled: false, url: null };
+        if (next) {
+          await startServer();
+          enabled = true;
+        } else {
+          await stopServer();
+          enabled = false;
+        }
+        await writeSavedEnabled(options.userDataDir, enabled);
+        return { enabled, url };
+      });
+    },
+    close(): Promise<void> {
+      return serialize(async () => {
+        closed = true;
         await stopServer();
         enabled = false;
-      }
-      await writeSavedEnabled(options.userDataDir, enabled);
-      return { enabled, url };
-    },
-    async close(): Promise<void> {
-      await stopServer();
-      enabled = false;
+      });
     },
   };
 }

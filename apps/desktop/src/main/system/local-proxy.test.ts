@@ -35,7 +35,11 @@ describe("desktop local web proxy", () => {
       "192.168.1.1",
       "169.254.169.254",
       "::1",
+      "0:0:0:0:0:0:0:1",
       "::ffff:127.0.0.1",
+      "::ffff:7f00:1",
+      "::ffff:a00:1",
+      "0:0:0:0:0:ffff:7f00:0001",
       "fe80::1",
       "fd12:3456::1",
     ]) {
@@ -78,5 +82,43 @@ describe("desktop local web proxy", () => {
     const disabledState = await restored.setEnabled(false);
     expect(disabledState).toEqual({ enabled: false, url: null });
     await restored.close();
+  });
+
+  it("serializes concurrent toggles and ignores enables after close", async () => {
+    const proxy = await createLocalWebProxy({ userDataDir: tmpDir });
+    const [on1, off1, on2] = await Promise.all([
+      proxy.setEnabled(true),
+      proxy.setEnabled(false),
+      proxy.setEnabled(true),
+    ]);
+    expect(on1.enabled).toBe(true);
+    expect(off1.enabled).toBe(false);
+    expect(on2.enabled).toBe(true);
+    await proxy.close();
+    const afterClose = await proxy.setEnabled(true);
+    expect(afterClose).toEqual({ enabled: false, url: null });
+  });
+
+  it("times out stalled DNS lookups cleanly without hanging the client", async () => {
+    const proxy = await createLocalWebProxy({
+      userDataDir: tmpDir,
+      dnsTimeoutMs: 50,
+      dnsLookup: () => new Promise(() => {}),
+    });
+    const state = await proxy.setEnabled(true);
+    const port = Number(new URL(state.url!).port);
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = http.request(
+        { host: "127.0.0.1", port, method: "GET", path: "http://stalled.example.test/" },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    expect(status).toBe(403);
+    await proxy.close();
   });
 });
