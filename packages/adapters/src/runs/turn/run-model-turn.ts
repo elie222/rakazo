@@ -5,7 +5,10 @@ import { isDatabaseUnavailable, recordUsage } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { isStrategicInitiativeRun } from "../../routines/strategic-initiative.js";
 import { personSpeaker } from "../../runtime/context/history-speakers.js";
-import { backgroundHelpersAllowed } from "../../tasks/background-helpers.js";
+import {
+  backgroundHelpersAllowed,
+  subagentControlAllowed,
+} from "../../tasks/background-helpers.js";
 import { builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import { promptVersion } from "../assembly/prompt-version.js";
 import type { AssembledTurn } from "../assembly/run-assembly.js";
@@ -243,13 +246,16 @@ function modelTurnRequest(
                 .map((tool) => tool.name)
                 .filter((name) => !strategicBuiltins.some((tool) => tool.name === name)),
             )
-          : ctx.source.messagingChannelRun || ctx.source.channelId
-            ? new Set([...disabledBuiltinTools, "list_subagents", "cancel_subagent"])
-            : disabledBuiltinTools,
+          : disabledBuiltinTools,
       offeredFleetTools: offeredFleetTools(strategicBuiltins),
       followUpsOffered: followUpsOffered(strategicBuiltins, ownerStartedRun, run.trigger),
       backgroundHelpersAllowed: backgroundHelpersAllowed({
         trigger: run.trigger,
+      }),
+      subagentControlsAllowed: subagentControlAllowed({
+        trigger: run.trigger,
+        messagingChannelRun: ctx.source.messagingChannelRun,
+        channelId: ctx.source.channelId,
       }),
       userComputer,
     })

@@ -1857,10 +1857,14 @@ describe("userTurnInstructions", () => {
   });
 
   it("omits disabled list_subagents or cancel_subagent from subagent guidance", () => {
-    const lineFor = (disabled: string[]) =>
+    const lineFor = (
+      disabled: string[],
+      overrides: { backgroundHelpersAllowed?: boolean; subagentControlsAllowed?: boolean } = {},
+    ) =>
       userTurnInstructions({
         ...base,
-        backgroundHelpersAllowed: true,
+        backgroundHelpersAllowed: overrides.backgroundHelpersAllowed ?? true,
+        subagentControlsAllowed: overrides.subagentControlsAllowed,
         groupContext: undefined,
         messagingContext: undefined,
         redactedMemoryContext: undefined,
@@ -1872,13 +1876,27 @@ describe("userTurnInstructions", () => {
         agentSkillsLine: undefined,
         taughtSkillsLine: undefined,
         disabledBuiltinTools: new Set(disabled),
-      }).find((line) => line?.startsWith("run_subagent "));
+      }).find(
+        (line) =>
+          line?.startsWith("run_subagent ") ||
+          line?.startsWith("Starting new subagents ") ||
+          line?.startsWith("Use list_subagents ") ||
+          line?.startsWith("Use cancel_subagent "),
+      );
     expect(lineFor(["list_subagents"])).toContain("cancel_subagent");
     expect(lineFor(["list_subagents"])).not.toContain("list_subagents");
     expect(lineFor(["cancel_subagent"])).toContain("list_subagents");
     expect(lineFor(["cancel_subagent"])).not.toContain("cancel_subagent");
     expect(lineFor(["list_subagents", "cancel_subagent"])).not.toContain("list_subagents");
     expect(lineFor(["list_subagents", "cancel_subagent"])).not.toContain("cancel_subagent");
+    expect(lineFor([], { backgroundHelpersAllowed: false, subagentControlsAllowed: true })).toBe(
+      "Starting new subagents is unavailable in this turn. Complete new work yourself; do not claim to have delegated it. Use list_subagents to inspect running subagents and cancel_subagent to stop them.",
+    );
+    expect(lineFor(["run_subagent"], { subagentControlsAllowed: true })).toBe(
+      "Use list_subagents to inspect running subagents and cancel_subagent to stop them.",
+    );
+    expect(lineFor([], { subagentControlsAllowed: false })).not.toContain("list_subagents");
+    expect(lineFor([], { subagentControlsAllowed: false })).not.toContain("cancel_subagent");
   });
 
   it("keeps the reaction silence rule when message_user is off", () => {

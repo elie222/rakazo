@@ -6,7 +6,6 @@ import {
   chatAppConnectNote,
   HELPER_RESULT_TRIGGER,
   isCallClientNonce,
-  isConversationalRun,
   isOwnerStartedRun,
   messagingChannelPrivacyBlock,
   messagingDmSurfaceNote,
@@ -58,7 +57,10 @@ import {
   currentTurnFilesInstruction,
   recentThreadFilesInstruction,
 } from "../../storage/thread-artifacts.prompt.js";
-import { backgroundHelpersAllowed } from "../../tasks/background-helpers.js";
+import {
+  backgroundHelpersAllowed,
+  subagentControlAllowed,
+} from "../../tasks/background-helpers.js";
 import { TASK_CATALOG_GUIDANCE } from "../../tasks/task-catalog.prompt.js";
 import { agentConnectionTools, builtinAgentTools } from "../../tools/builtin.tool-definition.js";
 import type { RunExecutorServices, RunHold } from "../lifecycle/run-attempt.js";
@@ -767,7 +769,11 @@ export async function selectRunTools(
     }).filter((tool) => {
       if (tool.name === "run_subagent") return backgroundHelpersAllowed({ trigger: run.trigger });
       if (tool.name === "list_subagents" || tool.name === "cancel_subagent") {
-        return isConversationalRun(run.trigger) && !nonOwnerChatRun && !channelId;
+        return subagentControlAllowed({
+          trigger: run.trigger,
+          messagingChannelRun: nonOwnerChatRun,
+          channelId,
+        });
       }
       return true;
     }),

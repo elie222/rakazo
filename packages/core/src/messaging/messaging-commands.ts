@@ -5,7 +5,7 @@ import { trimEndChars, trimStartChars } from "@rakazo/contracts";
  */
 export type MessagingCommand = "approve" | "decline" | "leave" | "stop";
 
-/** Unambiguous stop or cancel imperatives across app languages. */
+/** Unambiguous stop, abort, or halt imperatives across app languages (bare or with `/`). */
 const STOP_WORDS = new Set([
   // English
   "STOP",
@@ -17,26 +17,18 @@ const STOP_WORDS = new Set([
   "STOP EVERYTHING",
   "PLEASE STOP",
   "STOP PLEASE",
-  "CANCEL",
-  "CANCEL IT",
-  "CANCEL THIS",
-  "CANCEL THAT",
-  "CANCEL ALL",
   "ABORT",
   "HALT",
   // German
   "STOPP",
   "STOPP JETZT",
   "STOPP ES",
-  "ABBRECHEN",
   // Spanish ("para" alone is too often just "for")
   "DETENTE",
   "DETENTE YA",
-  "CANCELAR",
   // Dutch
   "STOP NU",
   "STOP ERMEE",
-  "ANNULEER",
   // Polish (with and without diacritics)
   "ZATRZYMAJ",
   "ZATRZYMAJ TO",
@@ -45,57 +37,68 @@ const STOP_WORDS = new Set([
   "ZATRZYMAJ SIE",
   "PRZESTAŃ",
   "PRZESTAN",
-  "ANULUJ",
-  "ANULUJ TO",
   "PRZERWIJ",
   "PRZERWIJ TO",
   "STOP TERAZ",
   // Russian
   "СТОП",
   "ОСТАНОВИСЬ",
-  "ОТМЕНА",
-  "ОТМЕНИ",
   "ПРЕКРАТИ",
   // Japanese
   "停止",
   "ストップ",
   "止めて",
-  "キャンセル",
   "中止",
   "やめて",
   // Chinese
   "停下",
-  "取消",
   "别做了",
   // French
   "ARRÊTE",
   "ARRETE",
   "ARRÊTE ÇA",
   "ARRETE CA",
-  "ANNULE",
-  "ANNULER",
-  // Portuguese ("cancelar" is listed above)
+  // Portuguese
   "PARE",
   // Korean
   "멈춰",
   "중지",
-  "취소",
   "그만",
-  // Turkish (include dotted capital İ alongside ASCII I)
+  // Turkish
   "DUR",
   "DURDUR",
-  "IPTAL",
-  "İPTAL",
   // Hindi
   "रुको",
-  "रद्द करो",
   "बंद करो",
   // Hebrew
   "עצור",
   "תפסיק",
-  "בטל",
   // Thai
   "หยุด",
+]);
+
+/**
+ * Cancel commands recognized only with a leading `/` so ordinary replies like "cancel it"
+ * to a bot's question (for example "Should I cancel the meeting?") are never swallowed.
+ */
+const SLASH_STOP_WORDS = new Set([
+  "CANCEL",
+  "CANCEL ALL",
+  "ABBRECHEN",
+  "CANCELAR",
+  "ANNULEER",
+  "ANULUJ",
+  "ОТМЕНА",
+  "ОТМЕНИ",
+  "キャンセル",
+  "取消",
+  "ANNULE",
+  "ANNULER",
+  "취소",
+  "IPTAL",
+  "İPTAL",
+  "रद्द करो",
+  "בטל",
   "ยกเลิก",
 ]);
 
@@ -103,17 +106,19 @@ const STOP_WORDS = new Set([
 const MAX_STOP_PHRASE_LENGTH = 64;
 
 /**
- * Linear-time normalization for bare stop commands: strips leading ¡¿, one optional leading
+ * Linear-time normalization for stop commands: strips leading ¡¿, one optional leading
  * slash command prefix, and trailing sentence punctuation, and collapses internal whitespace
  * and at most one comma separator between words (e.g. "stop, now", "please, stop").
  */
-function normalizeStopPhrase(text: string): string {
+function normalizeStopPhrase(text: string): { phrase: string; slash: boolean } | null {
   const stripped = trimEndChars(trimStartChars(text.trim(), "¡¿"), ".!?…。！？।").trim();
-  if (!stripped) return "";
+  if (!stripped) return null;
   let source = stripped;
+  let slash = false;
   if (source.startsWith("/")) {
+    slash = true;
     source = source.slice(1);
-    if (!source || /\s/.test(source[0]!)) return "";
+    if (!source || /\s/.test(source[0]!)) return null;
   }
   let out = "";
   let inSpace = false;
@@ -122,7 +127,7 @@ function normalizeStopPhrase(text: string): string {
   for (let i = 0; i < source.length; i += 1) {
     const ch = source[i]!;
     if (ch === ",") {
-      if (out.length === 0 || commas > 0) return "";
+      if (out.length === 0 || commas > 0) return null;
       commas = 1;
       inSpace = true;
       afterComma = true;
@@ -135,11 +140,11 @@ function normalizeStopPhrase(text: string): string {
       }
       out += ch;
       afterComma = false;
-      if (out.length > MAX_STOP_PHRASE_LENGTH) return "";
+      if (out.length > MAX_STOP_PHRASE_LENGTH) return null;
     }
   }
-  if (!out || afterComma) return "";
-  return out.normalize("NFC").toUpperCase();
+  if (!out || afterComma) return null;
+  return { phrase: out.normalize("NFC").toUpperCase(), slash };
 }
 
 export function parseMessagingCommand(text: string): MessagingCommand | null {
@@ -147,6 +152,12 @@ export function parseMessagingCommand(text: string): MessagingCommand | null {
   if (normalized === "YES") return "approve";
   if (normalized === "NO") return "decline";
   if (normalized === "LEAVE") return "leave";
-  if (STOP_WORDS.has(normalizeStopPhrase(text))) return "stop";
+  const parsed = normalizeStopPhrase(text);
+  if (
+    parsed &&
+    (STOP_WORDS.has(parsed.phrase) || (parsed.slash && SLASH_STOP_WORDS.has(parsed.phrase)))
+  ) {
+    return "stop";
+  }
   return null;
 }

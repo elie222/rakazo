@@ -486,6 +486,10 @@ describe("passing a helper's result back in a shared space", () => {
 describe("listing and cancelling background helpers", () => {
   type ActiveHelperRow = {
     id: string;
+    taskId: string;
+    spaceId: string;
+    botId: string;
+    userId: string;
     status: string;
     startedAt: Date | null;
     createdAt: Date;
@@ -509,6 +513,10 @@ describe("listing and cancelling background helpers", () => {
     const sourceMessageId = overrides.sourceMessageId ?? `card-${id}`;
     return {
       id,
+      taskId: `task-${id}`,
+      spaceId: "space-1",
+      botId: "bot-1",
+      userId: "user-1",
       status: overrides.status ?? "running",
       startedAt:
         overrides.startedAt === undefined
@@ -552,6 +560,7 @@ describe("listing and cancelling background helpers", () => {
     const releaseScreen = vi.fn(async () => undefined);
     const publishSpaceChange = vi.fn(async () => undefined);
     const notify = vi.fn(async () => undefined);
+    const cancelJob = vi.fn(async () => undefined);
     const tx = {
       $queryRaw: vi.fn(async () => []),
       run: {
@@ -564,21 +573,13 @@ describe("listing and cancelling background helpers", () => {
         updateManyAndReturn: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
           where.id.in.flatMap((id) => {
             const row = activeById.get(id);
-            return row
-              ? [
-                  {
-                    id: row.id,
-                    spaceId: "space-1",
-                    botId: "bot-1",
-                    userId: "user-1",
-                    sourceMessageId: row.sourceMessageId,
-                  },
-                ]
-              : [];
+            return row ? [{ id: row.id }] : [];
           }),
         ),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
+      attempt: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      task: { updateMany: vi.fn(async () => ({ count: 1 })) },
       externalEffect: {
         deleteMany: vi.fn(async () => ({ count: 0 })),
         updateMany: vi.fn(async () => ({ count: 0 })),
@@ -625,6 +626,7 @@ describe("listing and cancelling background helpers", () => {
       deps: {
         prisma,
         events: { notify, publishSpaceChange },
+        jobs: { cancel: cancelJob },
         ...(options.withSandbox ? { sandbox: { execute, releaseScreen } } : {}),
       },
       run: {
@@ -642,7 +644,17 @@ describe("listing and cancelling background helpers", () => {
       },
       secrets: options.secrets ?? [],
     } as unknown as RunContext;
-    return { ctx, prisma, tx, execute, releaseScreen, publishSpaceChange, notify, updatedMessages };
+    return {
+      ctx,
+      prisma,
+      tx,
+      execute,
+      releaseScreen,
+      publishSpaceChange,
+      notify,
+      cancelJob,
+      updatedMessages,
+    };
   }
 
   it("lists active helpers scoped to this bot, user, space, and conversation thread with redaction", async () => {
@@ -766,15 +778,31 @@ describe("listing and cancelling background helpers", () => {
       expect(h.tx.run.updateManyAndReturn).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ id: { in: ["helper-1"] } }),
-          data: expect.objectContaining({ status: "cancelled", completedAt: expect.any(Date) }),
+          data: expect.objectContaining({
+            status: "cancelled",
+            completedAt: expect.any(Date),
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          }),
         }),
       );
+      expect(h.tx.attempt.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { runId: { in: ["helper-1"] }, status: "running" },
+          data: expect.objectContaining({ status: "cancelled", finishedAt: expect.any(Date) }),
+        }),
+      );
+      expect(h.tx.task.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["task-helper-1"] } },
+        data: { status: "cancelled" },
+      });
       expect(h.tx.event.deleteMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ runId: { in: ["helper-1"] } }),
         }),
       );
       expect(h.publishSpaceChange).toHaveBeenCalledWith("space-1", "runs");
+      expect(h.cancelJob).toHaveBeenCalledWith("run:helper-1");
       // Pending ask denied + subagent card settled to failed/stopped.
       expect(h.updatedMessages).toEqual(
         expect.arrayContaining([

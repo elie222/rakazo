@@ -1,3 +1,4 @@
+import { runJobKey } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { canonicalPiProviderId } from "@rakazo/contracts";
 import {
@@ -12,8 +13,8 @@ import {
 import {
   appendEventInTransaction,
   assertRunCanWriteHistory,
+  cancelRunsInTransaction,
   changeMessageBlocks,
-  clearEndedRunState,
   createThreadMessageInTransaction,
   expireComputerExecutionLeases,
   storedMessageBlocks,
@@ -266,18 +267,25 @@ function helperCardFromMessage(
   );
 }
 
-function subagentControlAllowed(ctx: RunContext): boolean {
-  return (
-    isConversationalRun(ctx.run.trigger) &&
-    !ctx.source?.messagingChannelRun &&
-    !ctx.source?.channelId
-  );
+/** Subagent listing and cancellation stay scoped to conversational, non-channel turns. */
+export function subagentControlAllowed(turn: {
+  trigger: string;
+  messagingChannelRun?: boolean;
+  channelId?: string | null;
+}): boolean {
+  return isConversationalRun(turn.trigger) && !turn.messagingChannelRun && !turn.channelId;
 }
 
 /** Active subagents this bot started for this user in this conversation thread, oldest first. */
 export async function listBackgroundHelpers(ctx: RunContext) {
   const { deps, run, bot } = ctx;
-  if (!subagentControlAllowed(ctx)) {
+  if (
+    !subagentControlAllowed({
+      trigger: run.trigger,
+      messagingChannelRun: ctx.source?.messagingChannelRun,
+      channelId: ctx.source?.channelId,
+    })
+  ) {
     return { error: "Subagent listing is unavailable in this run." };
   }
   const parentThreadId = ctx.source?.conversationThreadId ?? run.threadId;
@@ -319,7 +327,13 @@ export async function cancelBackgroundHelper(
   input: { id?: string; name?: string; all?: boolean },
 ) {
   const { deps, run, bot } = ctx;
-  if (!subagentControlAllowed(ctx)) {
+  if (
+    !subagentControlAllowed({
+      trigger: run.trigger,
+      messagingChannelRun: ctx.source?.messagingChannelRun,
+      channelId: ctx.source?.channelId,
+    })
+  ) {
     return { error: "Subagents cannot be cancelled in this run." };
   }
   const id = input.id?.trim() ?? "";
@@ -343,6 +357,10 @@ export async function cancelBackgroundHelper(
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: {
         id: true,
+        taskId: true,
+        spaceId: true,
+        botId: true,
+        userId: true,
         status: true,
         sourceMessageId: true,
         sourceMessage: { select: { id: true, blocks: true } },
@@ -352,6 +370,10 @@ export async function cancelBackgroundHelper(
       const card = helperCardFromMessage(helper.sourceMessage);
       return {
         id: helper.id,
+        taskId: helper.taskId,
+        spaceId: helper.spaceId,
+        botId: helper.botId,
+        userId: helper.userId,
         status: helper.status,
         sourceMessageId: helper.sourceMessageId,
         agentId: card?.agentId,
@@ -391,23 +413,9 @@ export async function cancelBackgroundHelper(
       matched = candidates;
     }
     if (matched.length === 0) return null;
-    const cancelled = await tx.run.updateManyAndReturn({
-      where: {
-        id: { in: matched.map((helper) => helper.id) },
-        status: { in: [...ACTIVE_RUN_STATUSES] },
-      },
-      data: { status: "cancelled", completedAt: new Date() },
-      select: {
-        id: true,
-        spaceId: true,
-        botId: true,
-        userId: true,
-        sourceMessageId: true,
-      },
-    });
+    const cancelled = await cancelRunsInTransaction(tx, matched, new Date());
     const ids = cancelled.map((helper) => helper.id);
     if (ids.length === 0) return null;
-    await clearEndedRunState(tx, ids);
     await tx.event.deleteMany({
       where: {
         ...transientRunEventsWhere(),
@@ -425,11 +433,14 @@ export async function cancelBackgroundHelper(
           select: { id: true, homeKey: true, kind: true, providerRef: true },
         })
       : [];
-    const nameById = new Map(matched.map((helper) => [helper.id, helper.name]));
     return {
       cancelled: cancelled.map((helper) => ({
-        ...helper,
-        name: redactSecrets(nameById.get(helper.id) ?? "helper", ctx.secrets),
+        id: helper.id,
+        spaceId: helper.spaceId,
+        botId: helper.botId,
+        userId: helper.userId,
+        sourceMessageId: helper.sourceMessageId,
+        name: redactSecrets(helper.name, ctx.secrets),
       })),
       leases,
       computers,
@@ -448,6 +459,13 @@ export async function cancelBackgroundHelper(
     };
   }
   await deps.events.publishSpaceChange?.(run.spaceId, "runs");
+  if (deps.jobs) {
+    await Promise.all(
+      committed.cancelled.map((helper) =>
+        bestEffort("cancel subagent wake job", deps.jobs.cancel(runJobKey(helper.id))),
+      ),
+    );
+  }
   for (const helper of committed.cancelled) {
     await bestEffort(
       "settle cancelled subagent card",

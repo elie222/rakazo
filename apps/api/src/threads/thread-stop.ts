@@ -24,7 +24,7 @@ import {
 import { getLogger } from "@rakazo/logging";
 import type { ThreadTarget } from "./thread-target.js";
 
-/** A bare stop or cancel command with nothing attached: the owner's Stop, sent as text. */
+/** A bare stop or /cancel command with nothing attached: the owner's Stop, sent as text. */
 export function isStopMessage(input: { text?: string; artifactIds?: string[] }) {
   return !input.artifactIds?.length && parseMessagingCommand(input.text ?? "") === "stop";
 }
