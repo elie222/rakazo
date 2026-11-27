@@ -149,4 +149,11 @@ describe("VoicePicker", () => {
     act(() => chip("de").click());
     expect(options()).toEqual(["Anna"]);
   });
+
+  it("shows a placeholder, never the raw id, when the saved voice is not in the list", () => {
+    render(voices, "missing-voice-id");
+    const trigger = container.querySelector<HTMLButtonElement>("button#voice")!;
+    expect(trigger.textContent).toBe("Select a voice");
+    expect(trigger.textContent).not.toContain("missing-voice-id");
+  });
 });

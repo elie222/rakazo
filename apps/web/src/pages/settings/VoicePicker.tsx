@@ -83,7 +83,9 @@ export function VoicePicker({
         disabled={disabled}
         render={<Button variant="outline" className="w-full justify-between font-normal" />}
       >
-        <span className="min-w-0 truncate">{selected ? voiceText(selected) : value}</span>
+        <span className="min-w-0 truncate">
+          {selected ? voiceText(selected) : t`Select a voice`}
+        </span>
         <ChevronDownIcon aria-hidden="true" className="size-4 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent
