@@ -13,6 +13,7 @@ function normalizedModelSlug(id: string): string {
   return id
     .trim()
     .toLowerCase()
+    .replace(/^[a-z0-9-]+\//, "")
     .replace(REGIONAL_MODEL_PREFIX, "")
     .replace(/^[a-z0-9-]+[./]/, "")
     .replace(/(?:-v\d+)?(?::\d+)?$/, "");

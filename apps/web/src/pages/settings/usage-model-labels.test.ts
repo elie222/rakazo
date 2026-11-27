@@ -64,4 +64,13 @@ it("resolves cross-region and versioned model IDs against catalog siblings witho
     modelLabel: "Unlisted model",
     providerLabel: undefined,
   });
+  expect(
+    labels.labelsFor({
+      provider: "openai-compatible",
+      model: "bedrock/global.anthropic.claude-sonnet-5-5-v1:0",
+    }),
+  ).toEqual({
+    modelLabel: "Claude Sonnet 5.5",
+    providerLabel: undefined,
+  });
 });

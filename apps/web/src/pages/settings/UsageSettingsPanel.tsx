@@ -327,7 +327,7 @@ export function UsageSettingsPanel({ panelRef }: { panelRef?: RefObject<HTMLDivE
         </p>
       )}
 
-      {botId === "all" && fresh && fresh.bots.length > 0 ? (
+      {botId === "all" && modelKey === "all" && fresh && fresh.bots.length > 0 ? (
         <div data-testid="usage-bots" className="rounded-xl border border-border px-4 py-3">
           <SectionHeading variant="label" className="mb-2">
             <Trans>By bot</Trans>

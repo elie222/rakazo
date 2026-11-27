@@ -54,6 +54,7 @@ import {
 import { splitLeadingThinkBlock } from "../stream/pi-think-tags.js";
 import { guardToolCallNames } from "../tools/pi-tool-call-guard.js";
 import { REASONING_THINKING_LEVELS } from "./pi-local-provider.js";
+import { applyPiModelCompatibility } from "./pi-model-compat.js";
 
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
 
@@ -124,13 +125,35 @@ export function openAiCompatibleModel(
           thinkingLevelMap: reasoning ? { ...REASONING_THINKING_LEVELS } : { off: "none" },
         }),
     input: inputModalities(acceptsImages),
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    cost: gatewayBedrockCatalogCost(id) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow,
     maxTokens,
   };
 }
 
 let anthropicCatalog: ReturnType<typeof builtinModels> | undefined;
+let compatibleBedrockCatalog: ReturnType<typeof builtinModels> | undefined;
+
+const EXPLICIT_BEDROCK_GATEWAY_ID =
+  /^(?:bedrock\/|(?:global|us|eu|ap|au|in|jp|ca|sa)\.(?:anthropic|amazon|meta|mistral|cohere|deepseek|openai)\.)/i;
+
+/**
+ * Copies catalog pricing for explicitly Bedrock-prefixed gateway model IDs while leaving custom
+ * or unrelated models unpriced.
+ */
+function gatewayBedrockCatalogCost(id: string): Model<Api>["cost"] | undefined {
+  const trimmed = id.trim();
+  if (!EXPLICIT_BEDROCK_GATEWAY_ID.test(trimmed)) return undefined;
+  const bedrockId = trimmed.replace(/^bedrock\//i, "");
+  compatibleBedrockCatalog ??= applyPiModelCompatibility(builtinModels());
+  const known = compatibleBedrockCatalog.getModel("amazon-bedrock", bedrockId);
+  if (!known) return undefined;
+  const { cost } = known;
+  if (cost.input <= 0 && cost.output <= 0 && cost.cacheRead <= 0 && cost.cacheWrite <= 0) {
+    return undefined;
+  }
+  return { ...cost };
+}
 
 /**
  * The built-in Anthropic catalog's thinking settings for the same model id, if any. Only the

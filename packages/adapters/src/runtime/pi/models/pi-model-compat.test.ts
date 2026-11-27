@@ -98,3 +98,17 @@ it.each([
   expect(result.errorMessage).toBeUndefined();
   expect(thinkingLevel).toBe("HIGH");
 });
+
+it("copies Bedrock catalog pricing onto explicitly Bedrock-prefixed gateway models only", async () => {
+  const { openAiCompatibleModel } = await import("./pi-openai-compatible-provider.js");
+  const gateway = openAiCompatibleModel(
+    "bedrock/global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "https://gateway.example.test/v1",
+  );
+  expect(gateway.provider).toBe("openai-compatible");
+  expect(gateway.id).toBe("bedrock/global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+  expect(gateway.cost.input).toBeGreaterThan(0);
+
+  const custom = openAiCompatibleModel("my-custom-local-model", "https://gateway.example.test/v1");
+  expect(custom.cost).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+});
