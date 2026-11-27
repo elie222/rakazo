@@ -13,6 +13,7 @@ import {
   SCRIPTED_VOICE_ID,
   ScriptedVoiceProvider,
 } from "../providers/voice/scripted/scripted-voice.js";
+import { TypecastVoiceProvider } from "../providers/voice/typecast/typecast-voice.js";
 import { XaiVoiceProvider } from "../providers/voice/xai/xai-voice.js";
 import { createVoiceProvider, isVoiceProviderId, listVoiceCatalog } from "./voice-factory.js";
 import { MAX_VOICE_JSON_BYTES, VoiceProviderUnavailableError } from "./voice-http.js";
@@ -50,6 +51,7 @@ describe("createVoiceProvider", () => {
       "elevenlabs",
       "openai",
       "cartesia",
+      "typecast",
       "fish-audio",
       "xai",
       "openrouter",
@@ -59,6 +61,7 @@ describe("createVoiceProvider", () => {
       "elevenlabs",
       "openai",
       "cartesia",
+      "typecast",
       "fish-audio",
       "xai",
       "openrouter",
@@ -829,6 +832,7 @@ describe("hosted voice response limits", () => {
     ["ElevenLabs", () => new ElevenLabsVoiceProvider(), "voice"],
     ["OpenAI", () => new OpenAIVoiceProvider(), "alloy"],
     ["Cartesia", () => new CartesiaVoiceProvider(), "sonic"],
+    ["Typecast", () => new TypecastVoiceProvider(), "tc_voice"],
     ["Fish Audio", () => new FishAudioVoiceProvider(), "voice"],
     ["xAI", () => new XaiVoiceProvider(), "eve"],
   ])(

@@ -102,6 +102,7 @@ const VENDORS = [
   "elevenlabs",
   "cartesia",
   "fish[-_ ]?audio",
+  "typecast",
   // Infrastructure: secrets, payments, partner programs, monitoring, web search, and the SDKs
   // computer providers are reached through
   "infisical",

@@ -15,7 +15,7 @@ pick a **Provider** and add its **API key**:
   suggests the models OpenRouter lists, and each model has its own voices. A model that returns
   only raw audio is converted to WAV, so it still plays. Speech is billed on your OpenRouter
   account; Rakazo does not track that spend.
-- **Cartesia** speaks only.
+- **Cartesia** and **Typecast** speak only.
 - **Self-hosted** uses your own OpenAI-compatible speech server, such as Kokoro or Whisper. Enter its
   **Server URL**. If another server transcribes, enter it as **Transcription server URL**, with its own
   **Transcription API key** if it needs one.

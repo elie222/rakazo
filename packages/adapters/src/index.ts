@@ -204,6 +204,7 @@ export * from "./providers/voice/macos/macos-voice.js";
 export * from "./providers/voice/openai/openai-voice.js";
 export * from "./providers/voice/openai-compatible/openai-compatible-voice.js";
 export * from "./providers/voice/scripted/scripted-voice.js";
+export * from "./providers/voice/typecast/typecast-voice.js";
 export * from "./providers/voice/xai/xai-voice.js";
 export * from "./providers/web/fake/fake-web.js";
 export * from "./providers/web/keenable/keenable-web.js";
