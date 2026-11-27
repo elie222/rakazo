@@ -2,41 +2,11 @@ import type { TextDirection } from "@rakazo/core/text-direction";
 import { textDirectionForLocale } from "@rakazo/core/text-direction";
 import { translate } from "@rakazo/core/translate";
 import { matchUiLocale } from "@rakazo/core/ui-locale";
-import { DE_MESSAGES } from "./locales/de.js";
-import { ES_MESSAGES } from "./locales/es.js";
-import { FR_MESSAGES } from "./locales/fr.js";
-import { HE_MESSAGES } from "./locales/he.js";
-import { HI_MESSAGES } from "./locales/hi.js";
-import { JA_MESSAGES } from "./locales/ja.js";
-import { KO_MESSAGES } from "./locales/ko.js";
-import { NL_MESSAGES } from "./locales/nl.js";
-import { PL_MESSAGES } from "./locales/pl.js";
-import { PT_BR_MESSAGES } from "./locales/pt-BR.js";
-import { RU_MESSAGES } from "./locales/ru.js";
-import { TH_MESSAGES } from "./locales/th.js";
-import { TR_MESSAGES } from "./locales/tr.js";
-import { ZH_CN_MESSAGES } from "./locales/zh-CN.js";
-import { ZH_TW_MESSAGES } from "./locales/zh-TW.js";
+import { CATALOGS } from "./locale-catalogs.js";
 
-/** Every language the app offers; English is the source text and needs no catalog. */
-export const CATALOGS = {
-  de: DE_MESSAGES,
-  es: ES_MESSAGES,
-  fr: FR_MESSAGES,
-  he: HE_MESSAGES,
-  hi: HI_MESSAGES,
-  ja: JA_MESSAGES,
-  ko: KO_MESSAGES,
-  nl: NL_MESSAGES,
-  pl: PL_MESSAGES,
-  "pt-BR": PT_BR_MESSAGES,
-  ru: RU_MESSAGES,
-  th: TH_MESSAGES,
-  tr: TR_MESSAGES,
-  "zh-CN": ZH_CN_MESSAGES,
-  "zh-TW": ZH_TW_MESSAGES,
-} as const satisfies Record<string, Readonly<Record<string, string>>>;
+export { CATALOGS };
 export type DesktopLocale = "en" | keyof typeof CATALOGS;
+/** English is the source text and needs no catalog. */
 const DESKTOP_LOCALES = ["en", ...Object.keys(CATALOGS)] as DesktopLocale[];
 const LANGUAGE_TAG = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/;
 
@@ -56,7 +26,24 @@ export function desktopLocale(): DesktopLocale {
 
 /** The active translations, keyed by the English text; empty for English. */
 export function desktopMessages(): Readonly<Record<string, string>> {
-  return activeLocale === "en" ? {} : CATALOGS[activeLocale];
+  return catalogMessages(activeLocale) ?? {};
+}
+
+/**
+ * English has no file. The bundled loader returns `undefined` when a language file
+ * is missing or corrupt. Vitest's map always has the catalog.
+ */
+function catalogMessages(locale: DesktopLocale): Readonly<Record<string, string>> | undefined {
+  if (locale === "en") return {};
+  const messages: unknown = CATALOGS[locale];
+  if (typeof messages !== "object" || messages === null || Array.isArray(messages))
+    return undefined;
+  return messages as Readonly<Record<string, string>>;
+}
+
+/** Shows English when that catalog cannot be read. Does not change the saved language tag. */
+function rememberLocale(locale: DesktopLocale): void {
+  activeLocale = catalogMessages(locale) === undefined ? "en" : locale;
 }
 
 export function desktopDirection(): TextDirection {
@@ -94,7 +81,7 @@ export function startDesktopLocale(
 ): DesktopLocale {
   reportedLocale = isLanguageTag(saved) ? saved : null;
   writtenLocale = reportedLocale;
-  activeLocale = resolveDesktopLocale(reportedLocale, systemLanguage);
+  rememberLocale(resolveDesktopLocale(reportedLocale, systemLanguage));
   return activeLocale;
 }
 
@@ -108,8 +95,10 @@ export function createLocaleHandler(save: (locale: string) => Promise<void>, onC
     reportedLocale = locale;
     const next = resolveDesktopLocale(locale, undefined);
     if (next !== activeLocale) {
-      activeLocale = next;
-      onChange();
+      const previous = activeLocale;
+      rememberLocale(next);
+      // A failed catalog displays English. Rebuild menus only when the display language changes.
+      if (activeLocale !== previous) onChange();
     }
     // One write at a time, and only of the latest report not on disk yet: a relaunch reads the
     // last language reported, and the next report retries a failed write.

@@ -1,13 +1,23 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { desktopLocaleCatalogFiles, emitDesktopLocaleCatalogs } from "./locale-catalogs.ts";
 
-await build({
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+const localeTags = await emitDesktopLocaleCatalogs(path.join(root, "dist", "locales"));
+
+const result = await build({
+  absWorkingDir: root,
   entryPoints: ["src/main/main.ts"],
-  outfile: "dist/main.js",
+  outfile: path.join(root, "dist", "main.js"),
   bundle: true,
   platform: "node",
   format: "esm",
   target: "node24",
   sourcemap: true,
+  metafile: true,
+  plugins: [desktopLocaleCatalogFiles(root, localeTags)],
   banner: {
     js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
   },
@@ -20,10 +30,18 @@ await build({
   },
 });
 
+const leakedCatalogs = Object.keys(result.metafile?.inputs ?? {}).filter(
+  (file) => file.includes("src/main/locales/") || file.endsWith("src/main/locale-catalogs.ts"),
+);
+if (leakedCatalogs.length > 0) {
+  throw new Error(`desktop main.js includes locale catalogs:\n${leakedCatalogs.join("\n")}`);
+}
+
 // The entry Electron starts: turns on the compile cache, then loads the bundle above.
 await build({
+  absWorkingDir: root,
   entryPoints: ["src/main/launch.ts"],
-  outfile: "dist/launch.js",
+  outfile: path.join(root, "dist", "launch.js"),
   platform: "node",
   format: "esm",
   target: "node24",

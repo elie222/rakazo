@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CATALOGS,
   createLocaleHandler,
+  desktopDirection,
   desktopLocale,
   desktopMessages,
   errorDetail,
@@ -16,6 +17,7 @@ import {
   withDetail,
 } from "./i18n.js";
 import { ES_MESSAGES } from "./locales/es.js";
+import { HE_MESSAGES } from "./locales/he.js";
 import { PL_MESSAGES } from "./locales/pl.js";
 import { TH_MESSAGES } from "./locales/th.js";
 import { readUiLocale, writeUiLocale } from "./setup/setup-store.js";
@@ -106,6 +108,13 @@ describe("desktop language", () => {
     expect(t("Rakazo {version} is ready to install.", { version: "1.2.0" })).toBe(
       "Rakazo 1.2.0 พร้อมติดตั้งแล้ว",
     );
+  });
+
+  it("uses Hebrew text and rtl when that catalog loads", () => {
+    expect(startDesktopLocale("he", "en-US")).toBe("he");
+    expect(desktopDirection()).toBe("rtl");
+    expect(desktopMessages()).toBe(HE_MESSAGES);
+    expect(t("Check for Updates…")).toBe("בדיקת עדכונים…");
   });
 
   it("saves a language the app window reports and rebuilds the menus when it changes", async () => {
