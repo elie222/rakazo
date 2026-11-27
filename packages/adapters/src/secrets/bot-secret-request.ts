@@ -10,6 +10,7 @@ import {
   createSafeRemoteFetch,
   RemoteRequestSentError,
 } from "../mcp/remote-mcp.js";
+import { isEgressRefused } from "../network/network-address.js";
 import { readBodyCapped, withAbort } from "../web/web-ssrf.js";
 import {
   allowPrivateHttpSecretOrigins,
@@ -208,6 +209,8 @@ export async function requestWithBotSecret(input: {
   request: unknown;
   signal: AbortSignal;
   remote?: RemoteTransportDependencies;
+  /** The deployment's private-endpoint setting, which other remote requests honor too. */
+  allowPrivateEndpoint?: boolean;
   registerRedactions?: (values: string[]) => void;
   recordUse?: (item: VaultItemUse, site: string) => Promise<void>;
 }): Promise<unknown> {
@@ -246,7 +249,8 @@ export async function requestWithBotSecret(input: {
       destination.origin,
     );
   };
-  // The safe fetch refuses plain-HTTP and private hosts outright. A credential
+  // The safe fetch refuses plain HTTP, and private hosts unless the deployment
+  // allows private endpoints, as it does for every other remote request. A credential
   // saved under the owner's private-HTTP opt-in was validated against exactly
   // those rules at save time, and the request URL is pinned to its origin, so
   // deliver it through the inverted transport instead — it re-checks that every
@@ -267,7 +271,7 @@ export async function requestWithBotSecret(input: {
     : createSafeRemoteFetch(
         input.remote?.fetch,
         input.remote?.resolveHostname,
-        undefined,
+        { allowPrivateEndpoint: input.allowPrivateEndpoint === true },
         beforeSend,
       );
   try {
@@ -312,6 +316,12 @@ export async function requestWithBotSecret(input: {
       (sent && signal.aborted)
     )
       await recordUse();
+    if (isEgressRefused(error)) {
+      return {
+        error:
+          "Nothing was sent: the destination resolves to an address this server blocks, such as a private network address. The server's operator decides whether private endpoints are allowed.",
+      };
+    }
     return { error: "Authenticated request failed. Check the destination and credential." };
   } finally {
     controller.abort();
