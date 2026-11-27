@@ -56,6 +56,7 @@ import { CATALOG_LOAD, CATALOG_SEARCH } from "../../tools/lazy-tool-catalog.js";
 import { watchFromTool } from "../../tools/schedule-tools.js";
 import type { RunContext } from "../assembly/run-context.js";
 import {
+  instructionRedactionSecrets,
   isRunTainted,
   nextMutatingEffectOccurrence,
   pauseForApproval,
@@ -807,7 +808,12 @@ async function showApprovalCard(ctx: RunContext, call: ToolCall, card: ApprovalC
         name,
         name === "update_bot" && "previousInstructions" in args ? { ...args, botId: bot.id } : args,
         ctx.secrets,
-        card,
+        {
+          ...card,
+          ...(name === "set_child_instructions" || name === "update_bot"
+            ? { instructionSecrets: instructionRedactionSecrets(ctx) }
+            : {}),
+        },
       ),
     ],
   });

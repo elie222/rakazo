@@ -6,6 +6,7 @@ import { relabelVaultItem, resolveLoginFill, storeBotSecret } from "../../secret
 import { fakeDatabase } from "../../secrets/bot-secrets.test-support.js";
 import { EncryptedSecretStore } from "../../secrets/secrets.js";
 import { LOGIN_CODE_FIELD, vaultLoginUseOf } from "../../secrets/vault/vault-card-use.js";
+import { instructionRedactionSecrets } from "../assembly/run-context.js";
 import type { ToolRequest } from "./run-tool-request.js";
 import { prepareScheduleUpdateApproval, prepareToolRequest } from "./run-tool-request.js";
 import { taskTools } from "./run-tools-tasks.js";
@@ -78,6 +79,117 @@ describe("prepareToolRequest: update_bot owner settings after outside content", 
     for (let index = 0; index < 3; index += 1) {
       await expect(prepareToolRequest(ctx as never, request())).resolves.toBeUndefined();
     }
+  });
+});
+
+describe("prepareToolRequest: instructions credential check", () => {
+  function instructionsCall(
+    instructions: string,
+    secrets: string[],
+    commandSecrets = secrets,
+    shortCommandSecrets = commandSecrets,
+  ) {
+    const { ctx, request } = ownBotUpdateCall();
+    Object.assign(ctx.state, { ownInstructionsBaseline: "" });
+    Object.assign(ctx, {
+      secrets: [...secrets],
+      commandVariableRedactions: new Set(commandSecrets),
+      shortCommandVariableRedactions: new Set(shortCommandSecrets),
+    });
+    const prepared = request();
+    prepared.args = { instructions };
+    return { ctx, prepared };
+  }
+
+  it("accepts a short command variable used as an ordinary word", async () => {
+    const { ctx, prepared } = instructionsCall("Include a release note in the reply.", ["release"]);
+
+    await expect(prepareToolRequest(ctx as never, prepared)).resolves.toBeUndefined();
+    expect(prepared.args.instructions).toBe("Include a release note in the reply.");
+    const block = buildApprovalAskBlock(
+      "effect-1",
+      "update_bot",
+      { ...prepared.args, botId: "bot-1" },
+      ctx.secrets,
+      { instructionSecrets: instructionRedactionSecrets(ctx as never) },
+    );
+    expect(block).toMatchObject({
+      instructionUpdate: { after: "Include a release note in the reply." },
+    });
+  });
+
+  it("still refuses a full command variable and names the kind of match", async () => {
+    const { ctx, prepared } = instructionsCall(
+      "Use releaseless-placeholder.",
+      ["releaseless-placeholder"],
+      ["releaseless-placeholder"],
+      [],
+    );
+
+    await expect(prepareToolRequest(ctx as never, prepared)).resolves.toEqual({
+      error: "Instructions cannot contain a command variable value.",
+    });
+  });
+
+  it("does not ignore a short command value that is also another credential", async () => {
+    const { ctx, prepared } = instructionsCall(
+      "Include a release note in the reply.",
+      ["release"],
+      [],
+      [],
+    );
+
+    await expect(prepareToolRequest(ctx as never, prepared)).resolves.toEqual({
+      error: "Instructions cannot contain credentials.",
+    });
+  });
+
+  it("allows a short command variable in set_child_instructions", async () => {
+    const { ctx, request } = ownBotUpdateCall();
+    Object.assign(ctx, {
+      secrets: ["release"],
+      commandVariableRedactions: new Set(["release"]),
+      shortCommandVariableRedactions: new Set(["release"]),
+      fleetRun: {
+        spaceId: "space-1",
+        userId: "user-1",
+        botId: "bot-1",
+        groupId: null,
+        threadId: "thread-1",
+        runId: "run-1",
+      },
+    });
+    Object.assign(ctx.deps, { billingEnabled: false });
+    Object.assign(ctx.deps.prisma, {
+      steeringMessage: { findFirst: async () => null },
+      bot: {
+        ...ctx.deps.prisma.bot,
+        findMany: async () => [
+          {
+            id: "bot-2",
+            name: "Child",
+            thread: { id: "thread-2" },
+          },
+        ],
+        findUniqueOrThrow: async () => ({ instructions: "", instructionHistory: [] }),
+      },
+    });
+    const prepared = request();
+    prepared.name = "set_child_instructions";
+    prepared.args = {
+      bot_id: "bot-2",
+      instructions: "Include a release note in the reply.",
+      expected_version: "initial",
+    };
+
+    await expect(prepareToolRequest(ctx as never, prepared)).resolves.toBeUndefined();
+    expect(prepared.args.instructions).toBe("Include a release note in the reply.");
+    expect(prepared.fleetSummary?.lines.join("\n")).toContain("release");
+    const block = buildApprovalAskBlock("effect-1", prepared.name, prepared.args, ctx.secrets, {
+      summary: prepared.fleetSummary,
+      instructionSecrets: instructionRedactionSecrets(ctx as never),
+    });
+    expect(block.kind === "ask" ? block.detail : "").toContain("release");
   });
 });
 

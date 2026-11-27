@@ -76,6 +76,8 @@ export async function createRunContext(
     settleHelpers,
     stopHeartbeatAfterCompletion,
     secrets: runSecrets,
+    commandVariableRedactions,
+    shortCommandVariableRedactions,
   } = hold;
   const { heldForTakeover, takeoverResume } = hold.takeover;
   const { introEffects, storedTurnCheckpoint } = parts.saved;
@@ -191,6 +193,8 @@ export async function createRunContext(
     runtimeAbortController: new AbortController(),
     fleetRun,
     secrets: runSecrets,
+    commandVariableRedactions,
+    shortCommandVariableRedactions,
     source: {
       ownerStartedRun,
       meetingChat: parts.meetingChat,

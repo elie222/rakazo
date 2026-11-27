@@ -29,6 +29,7 @@ import type {
   RunLeaseState,
   RunningHelper,
   RunProviders,
+  RunSecretState,
 } from "../assembly/run-context.js";
 import { settleRunningHelpers } from "../assembly/run-context.js";
 import { withRunLease } from "../assembly/run-messages.js";
@@ -284,7 +285,7 @@ type RunClaim = NonNullable<Awaited<ReturnType<typeof claimRunAttempt>>>;
  * What this process holds for one attempt, from the claim until its release: the run and
  * computer leases, the heartbeat that renews them, and what setup has done so far.
  */
-export interface RunHold extends RunClaim {
+export interface RunHold extends RunClaim, RunSecretState {
   /** Carries the attempt's lease, so a newer claim of the run rejects this attempt's history writes. */
   deps: ExecutorDeps;
   lease: RunLeaseState;
@@ -293,8 +294,6 @@ export interface RunHold extends RunClaim {
   settleHelpers: () => Promise<void>;
   heartbeat: ReturnType<typeof setInterval>;
   stopHeartbeatAfterCompletion: () => void;
-  /** Every value redacted from what the run shows or stores. Grows during setup and the turn. */
-  secrets: string[];
   /** Replaced when a takeover is released while the turn is being assembled. */
   takeover: TakeoverContinuePlan;
   /** Empty until assembly opens the run's abort signal; a lost lease aborts whatever is there. */
@@ -374,6 +373,8 @@ export function holdRun(baseDeps: ExecutorDeps, claim: RunClaim): RunHold {
     heartbeat,
     stopHeartbeatAfterCompletion,
     secrets: runSecrets,
+    commandVariableRedactions: new Set(),
+    shortCommandVariableRedactions: new Set(),
     abort,
     detachShutdown: undefined,
     dispatchHandedOff: false,

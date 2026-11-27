@@ -1,5 +1,5 @@
 import { BotSecretName, botSecretSubmissionSchema } from "@rakazo/contracts";
-import { createStreamingRedactor, displayName, redactSecrets } from "@rakazo/core";
+import { displayName, redactSecrets } from "@rakazo/core";
 import { runCodeKind, runLoginKind, runSecretKind, spaceIsShared } from "@rakazo/db";
 import {
   completeExternalEffect,
@@ -114,7 +114,6 @@ export const secretTools: ToolHandlers = {
   async request_secret(ctx, call) {
     const { deps, run, runId, bot, thread, context } = ctx;
     const { name, args, executionId, effectKey, applied } = call;
-    const { reply } = ctx.state;
     const resolvedSecret = resolveRequestSecretDestination(args);
     if (resolvedSecret.error) return call.finish({ error: resolvedSecret.error });
     let destination = resolvedSecret.destination;
@@ -247,10 +246,7 @@ export const secretTools: ToolHandlers = {
       const plaintext = heldCode
         ? heldCode.code
         : await deps.secretStore.load(storedSecret.ciphertext, storedSecret.id);
-      ctx.secrets.push(...(heldCode ? oneTimeCodeRedactions(plaintext) : [plaintext]));
-      // Keep the tail the old redactor still holds; a fresh instance drops it.
-      reply.pendingProgress += reply.redactor.finish();
-      reply.redactor = createStreamingRedactor(ctx.secrets);
+      addRunSecrets(ctx, heldCode ? oneTimeCodeRedactions(plaintext) : [plaintext]);
       const purpose = String(args.purpose ?? "otp");
       if (applied && !call.claimedEffect) {
         if (applied.effect.status === "intended") {

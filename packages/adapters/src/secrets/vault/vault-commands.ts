@@ -91,7 +91,12 @@ export async function loadCommandVariables(
   scope: BotSecretScope,
   unsetVariables?: Set<string>,
   keyOutage: "throw" | "unset" = "throw",
-): Promise<{ env: Record<string, string>; used: VaultItemUse[]; redactions: string[] }> {
+): Promise<{
+  env: Record<string, string>;
+  used: VaultItemUse[];
+  redactions: string[];
+  shortInstructionRedactions: string[];
+}> {
   const { botId: _, ...owner } = scope;
   const [usable, rows] = await Promise.all([
     prisma.vaultCredential.findMany({
@@ -113,20 +118,34 @@ export async function loadCommandVariables(
     rows.filter((row) => !read.has(`${row.id}\0${row.ciphertext}`)),
     keyOutage,
   );
+  const allRedactions = new Set<string>();
+  const shortInstructionRedactions = new Set<string>();
+  const sensitiveInstructionRedactions = new Set<string>();
+  for (const { value } of [...exported, ...others]) {
+    if (!value || value.includes("\0")) continue;
+    const short = value.length < MIN_COMMAND_INSTRUCTION_REDACTION_LENGTH;
+    for (const form of commandRedactionForms(value)) {
+      allRedactions.add(form);
+      (short ? shortInstructionRedactions : sensitiveInstructionRedactions).add(form);
+    }
+  }
+  // A form of a long value still protects instructions if a short value happens to look the same.
+  for (const form of sensitiveInstructionRedactions) shortInstructionRedactions.delete(form);
   return {
     ...commandEnvironment(exported, unsetVariables),
     // Encoded forms too, as secret_request does, so an accidental `base64` or URL-encoding of a
     // value is still redacted from command output.
     // Every value, not one per variable: an item's old and new value share its variable.
-    redactions: [
-      ...new Set(
-        [...exported, ...others].flatMap(({ value }) =>
-          value && !value.includes("\0") ? commandRedactionForms(value) : [],
-        ),
-      ),
-    ],
+    redactions: [...allRedactions],
+    shortInstructionRedactions: [...shortInstructionRedactions],
   };
 }
+
+/**
+ * Command variables can hold ordinary words, and redaction matches substrings anywhere in text.
+ * Short values still hide command output, but do not make unrelated instruction edits fail.
+ */
+export const MIN_COMMAND_INSTRUCTION_REDACTION_LENGTH = 16;
 
 /**
  * The environment for one shell command: the command variables of the vault this Space uses,
@@ -137,18 +156,18 @@ export async function shellCommandEnvironment(input: {
   prisma: PrismaClient;
   secretStore: Pick<SecretStore, "load">;
   scope: BotSecretScope;
-  registerRedactions: (values: string[]) => void;
+  registerRedactions: (values: string[], shortInstructionRedactions: string[]) => void;
   keyOutage?: "throw" | "unset";
 }): Promise<{ env: Record<string, string>; unsetEnv: string[]; used: VaultItemUse[] }> {
   const unsetVariables = new Set<string>();
-  const { env, used, redactions } = await loadCommandVariables(
+  const { env, used, redactions, shortInstructionRedactions } = await loadCommandVariables(
     input.prisma,
     input.secretStore,
     input.scope,
     unsetVariables,
     input.keyOutage,
   );
-  input.registerRedactions(redactions);
+  input.registerRedactions(redactions, shortInstructionRedactions);
   return { env, unsetEnv: [...unsetVariables], used };
 }
 

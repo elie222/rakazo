@@ -57,11 +57,12 @@ import {
 } from "../lifecycle/run-origin.js";
 import { runReplaysToolHistory } from "../turn/tool-step-calls.js";
 import { restoreTurnCheckpoint } from "../turn/turn-checkpoint.js";
+import { addCommandVariableValues, addRunSecretValues } from "./run-context.js";
 import type { HistoryReach } from "./run-instructions.prompt.js";
 
 export async function loadSavedTurn(services: RunExecutorServices, hold: RunHold) {
   const { resolveConnectedModel } = services;
-  const { deps, run, secrets: runSecrets } = hold;
+  const { deps, run } = hold;
   // A saved computer turn owns both identities. Resolve them before consulting
   // today's main selection, whose connection may have changed while paused.
   let saved: Awaited<ReturnType<typeof loadRunTurnState>> | undefined;
@@ -83,7 +84,7 @@ export async function loadSavedTurn(services: RunExecutorServices, hold: RunHold
       run,
       provider,
       id,
-      (values) => runSecrets.push(...values),
+      (values) => addRunSecretValues(hold, values),
       true,
       effort ?? null,
       connectionId,
@@ -158,7 +159,7 @@ export async function loadRunRecords(
   parts: { saved: SavedTurn },
 ) {
   const { contextStrategy } = services;
-  const { deps, run, secrets: runSecrets } = hold;
+  const { deps, run } = hold;
   const { pinnedComputerModels } = parts.saved;
   const origin = await loadRunOrigin(deps.prisma, run);
   if (isDelegatedRun(run.trigger) && run.delegatedFromRunId && !origin)
@@ -197,7 +198,11 @@ export async function loadRunRecords(
     configuredMemory,
     savedSkills,
     agentSkills,
-    { env: initialBotCommandEnvironment, redactions: commandRedactions },
+    {
+      env: initialBotCommandEnvironment,
+      redactions: commandRedactions,
+      shortInstructionRedactions: shortCommandInstructionRedactions,
+    },
     savedLoginPasswordRedactions,
     purchaseRedactions,
     runLoginRedactions,
@@ -314,15 +319,15 @@ export async function loadRunRecords(
   // Encoded forms too: read_file redacts with these values before any shell command runs.
   // Read here only to hide the values and to tell the model the variables' names: no
   // command has them yet, so nothing is recorded as used until the shell tool sends one.
-  runSecrets.push(...commandRedactions);
+  addCommandVariableValues(hold, commandRedactions, shortCommandInstructionRedactions);
   // A login filled in an earlier run may still be on its page, and anything this run reads
   // or is given may contain it, so every run hides its saved passwords before the model runs.
-  runSecrets.push(
+  addRunSecretValues(hold, [
     ...savedLoginPasswordRedactions,
     ...purchaseRedactions,
     ...runLoginRedactions,
     ...runCodeRedactions,
-  );
+  ]);
   const agentEnvironmentInstruction = formatAgentEnvironmentInstruction(
     initialBotCommandEnvironment,
   );

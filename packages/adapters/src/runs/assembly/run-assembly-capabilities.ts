@@ -84,6 +84,7 @@ import { historyReplaysOutsideContent, historyToolResults } from "../turn/tool-s
 import type { ThreadHistory, TurnContext } from "./run-assembly-history.js";
 import type { ConnectedRun, RunRecords, SavedTurn } from "./run-assembly-records.js";
 import { lazyRunComputer } from "./run-computer.js";
+import { addRunSecretValues } from "./run-context.js";
 import {
   BOT_DIRECTORY_LIMIT,
   COMPUTER_USE_INSTRUCTION,
@@ -100,7 +101,7 @@ export async function startTurnModel(
   hold: RunHold,
   parts: { saved: SavedTurn; records: RunRecords },
 ) {
-  const { deps, run, runId, workerId, fence, attempt, secrets: runSecrets } = hold;
+  const { deps, run, runId, workerId, fence, attempt } = hold;
   const { pinnedComputerFailure, pinnedComputerModels } = parts.saved;
   const { bot, main, modelChoice, overrideCredential, settings } = parts.records;
   const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
@@ -173,7 +174,7 @@ export async function startTurnModel(
     return;
   }
   const scripted = deps.runtime.describe().capabilities.scripted;
-  const registerRunSecrets = (values: string[]) => runSecrets.push(...values);
+  const registerRunSecrets = (values: string[]) => addRunSecretValues(hold, values);
   const backups = runModelBackups(
     deps,
     run,
@@ -210,7 +211,7 @@ export async function startTurnModel(
     thinkingLevel,
     resolved,
   } = started.start;
-  runSecrets.push(...resolved.redact);
+  addRunSecretValues(hold, resolved.redact);
   // A pin stays as it was created. Unpinned runs still record the model they
   // used; modelPinned is what keeps that record from becoming the next choice.
   if (!run.modelPinned) {
