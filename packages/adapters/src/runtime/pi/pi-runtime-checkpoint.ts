@@ -14,6 +14,13 @@ import {
   serializeTurnCheckpoint,
   unresolvedTurnCheckpointCalls,
 } from "../../runs/turn/turn-checkpoint.js";
+import {
+  isRoutineWatchName,
+  noteWrappedToolCalls,
+  resolvedToolName,
+  routineToolNameAt,
+  toolNamesInOrder,
+} from "../context/routine-watch-tool.js";
 import type { WatchDeliveryState } from "../context/runtime-context.js";
 import { computerSelection } from "./tools/pi-runtime-computer-mode.js";
 
@@ -77,34 +84,6 @@ function watchTextValues(
     .filter((value) => value.trim().length > 0);
 }
 
-function noteWrappedToolCalls(message: AgentMessage, wrapped: Map<string, string>) {
-  if (message.role !== "assistant") return;
-  for (const part of message.content) {
-    if (part.type !== "toolCall") continue;
-    if (
-      part.name === "use_tool" &&
-      isRecord(part.arguments) &&
-      typeof part.arguments.name === "string"
-    ) {
-      wrapped.set(part.id, part.arguments.name);
-    } else {
-      wrapped.delete(part.id);
-    }
-  }
-}
-
-function resolvedToolName(
-  message: { role: string; toolName?: string; toolCallId?: string },
-  wrapped: ReadonlyMap<string, string>,
-): string | undefined {
-  if (message.role !== "toolResult" || typeof message.toolName !== "string") return undefined;
-  return message.toolName === "use_tool" ? wrapped.get(message.toolCallId ?? "") : message.toolName;
-}
-
-function isRoutineWatchName(name: string | undefined): name is "schedule_list" | "task_catalog" {
-  return name === "schedule_list" || name === "task_catalog";
-}
-
 /** Watch checks only. A clipped page is outside text, not a routine watch. */
 function routineWatchTexts(
   message: Message,
@@ -113,12 +92,6 @@ function routineWatchTexts(
 ): string[] {
   if (!isRoutineWatchName(resolvedToolName(message, wrapped))) return [];
   return watchTextValues(message, contextStrategy);
-}
-
-function wrappedToolNames(messages: readonly Message[]): Map<string, string> {
-  const wrapped = new Map<string, string>();
-  for (const message of messages) noteWrappedToolCalls(message, wrapped);
-  return wrapped;
 }
 
 function scanOutsideSources(
@@ -305,14 +278,14 @@ export function buildTurnCheckpoint(input: {
     number,
     Extract<AgentMessage, { role: "toolResult" }>
   >();
+  const stateToolNames = toolNamesInOrder(input.stateMessages);
+  const listedToolNames = toolNamesInOrder(messages);
+  const routineNameAt = (index: number) =>
+    routineToolNameAt(index, listedToolNames, stateToolNames, messageSourceIndexes);
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;
-    if (
-      message.role !== "toolResult" ||
-      !isRecord(message.details) ||
-      !("routines" in message.details)
-    )
-      continue;
+    if (message.role !== "toolResult" || !isRoutineWatchName(routineNameAt(index))) continue;
+    if (!isRecord(message.details) || !("routines" in message.details)) continue;
     retainedWatch.push(message);
     const sourceIndex = messageSourceIndexes?.[index];
     if (sourceIndex !== undefined) retainedWatchBySourceIndex.set(sourceIndex, message);
@@ -354,9 +327,19 @@ export function buildTurnCheckpoint(input: {
     const lastRestoredAssistant = input.restoredMessages.findLastIndex(
       (message) => message.role === "assistant",
     );
+    const restoredNames = toolNamesInOrder(input.restoredMessages);
     for (let index = 0; index < lastRestoredAssistant; index += 1) {
       const message = input.restoredMessages[index]!;
       if (message.role !== "toolResult") continue;
+      const stateIndex = index + restoredOffset;
+      const stateMessage = input.stateMessages[stateIndex];
+      const restoredName = alignedRestoredToolName(
+        message,
+        restoredNames[index],
+        stateMessage,
+        stateToolNames[stateIndex],
+      );
+      if (!isRoutineWatchName(restoredName)) continue;
       const details = message.details;
       if (!isRecord(details) || !("routines" in details)) continue;
       const restoredItems = watchTextValues(message, input.contextStrategy);
@@ -461,9 +444,11 @@ export function buildTurnCheckpoint(input: {
     }
   }
   const unseenWatch: string[] = [];
-  for (const message of messages) {
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]!;
     if (
       message.role !== "toolResult" ||
+      !isRoutineWatchName(routineNameAt(index)) ||
       !isRecord(message.details) ||
       !("routines" in message.details) ||
       coveredWatch.has(message) ||
@@ -632,18 +617,31 @@ function persistsCheckpointOutside(
  * with no tail starts one from the saved watch list and the pages already in the transcript,
  * then appends the sibling in order.
  */
+function alignedRestoredToolName(
+  message: Message,
+  restoredName: string | undefined,
+  stateMessage: AgentMessage | undefined,
+  stateName: string | undefined,
+): string | undefined {
+  if (restoredName !== undefined) return restoredName;
+  // Same result object still in state. A reused call id is not enough when the indexes differ.
+  return stateMessage === message ? stateName : undefined;
+}
+
 function checkpointWithSiblingWatchResults(
   checkpoint: TurnCheckpoint,
   siblings: readonly Message[],
 ): TurnCheckpoint {
   const messages = [...checkpoint.messages, ...siblings];
-  const wrapped = wrappedToolNames(checkpoint.messages);
+  const wrapped = new Map<string, string>();
+  const retainedFromMessages: string[] = [];
+  for (const message of checkpoint.messages) {
+    noteWrappedToolCalls(message, wrapped);
+    retainedFromMessages.push(...routineWatchTexts(message, wrapped));
+  }
   const additions = siblings.flatMap((message) => routineWatchTexts(message, wrapped));
   const retainedWatch =
-    checkpoint.watchOutsideText ??
-    (additions.length > 0
-      ? checkpoint.messages.flatMap((message) => routineWatchTexts(message, wrapped))
-      : []);
+    checkpoint.watchOutsideText ?? (additions.length > 0 ? retainedFromMessages : []);
   let outsideText = checkpoint.outsideText;
   const outsideSibling = siblings.some((message) => persistsCheckpointOutside(message, wrapped));
   // A watch-only or page-only checkpoint has no tail yet. Start from the outside results already
@@ -651,12 +649,10 @@ function checkpointWithSiblingWatchResults(
   if (!outsideText && (additions.length > 0 || (outsideSibling && retainedWatch.length > 0))) {
     outsideText = chronologicalOutsideText(checkpoint.messages, retainedWatch);
   }
-  if (
-    outsideText !== undefined &&
-    (checkpoint.outsideText || outsideSibling || additions.length > 0)
-  ) {
-    for (const message of siblings)
+  if (outsideText !== undefined) {
+    for (const message of siblings) {
       outsideText = appendMessageOutside(outsideText, message, wrapped);
+    }
   }
   if (additions.length === 0) {
     return { ...checkpoint, messages, ...(outsideText ? { outsideText } : {}) };

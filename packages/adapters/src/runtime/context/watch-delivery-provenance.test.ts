@@ -1974,3 +1974,215 @@ it("keeps retained pages when a routine sibling finishes a page-only checkpoint"
   );
   expect(saved.watchOutsideText?.join("\n") ?? "").not.toContain("kept-page@outside.test");
 });
+
+it("does not save routines-shaped results from other tools as watch evidence", () => {
+  const payload = "external routine payload";
+  const foreignDetails = () => ({
+    routines: [{ name: "ext", lastCheck: { detail: payload } }],
+  });
+  const foreignResult = (id: string, toolName: string, timestamp: number): Message => {
+    const details = foreignDetails();
+    return {
+      role: "toolResult",
+      toolCallId: id,
+      toolName,
+      content: [{ type: "text", text: JSON.stringify(details) }],
+      details,
+      isError: false,
+      timestamp,
+    };
+  };
+  const useTool = (id: string, name: string, timestamp: number): Message => ({
+    role: "assistant",
+    content: [{ type: "toolCall", id, name: "use_tool", arguments: { name } }],
+    api: "openai-responses",
+    provider: "openai",
+    model: "model-a",
+    usage: turnUsage,
+    stopReason: "toolUse",
+    timestamp,
+  });
+  const catalogRead = (id: string, marker: string, timestamp: number): Message => {
+    const details = watchPayload(id, marker);
+    return {
+      role: "toolResult",
+      toolCallId: id,
+      toolName: "task_catalog",
+      content: [{ type: "text", text: JSON.stringify(details) }],
+      details,
+      isError: false,
+      timestamp,
+    };
+  };
+  const wrappedWatch = (id: string, marker: string, timestamp: number): Message => {
+    const details = watchPayload(id, marker);
+    return {
+      role: "toolResult",
+      toolCallId: id,
+      toolName: "use_tool",
+      content: [{ type: "text", text: JSON.stringify(details) }],
+      details,
+      isError: false,
+      timestamp,
+    };
+  };
+  const reused = "call-reused-wrap";
+  const messages: Message[] = [
+    assistantCall("call-direct-schedule", "schedule_list", 1),
+    routineRead("call-direct-schedule", "direct-schedule@outside.test"),
+    assistantCall("call-direct-catalog", "task_catalog", 3),
+    catalogRead("call-direct-catalog", "direct-catalog@outside.test", 4),
+    useTool("call-wrapped-schedule", "schedule_list", 5),
+    wrappedWatch("call-wrapped-schedule", "wrapped-schedule@outside.test", 6),
+    useTool("call-wrapped-catalog", "task_catalog", 7),
+    wrappedWatch("call-wrapped-catalog", "wrapped-catalog@outside.test", 8),
+    useTool(reused, "schedule_list", 9),
+    wrappedWatch(reused, "reused-schedule@outside.test", 10),
+    useTool(reused, "task_catalog", 11),
+    wrappedWatch(reused, "reused-catalog@outside.test", 12),
+    useTool(reused, "web_fetch", 13),
+    foreignResult(reused, "use_tool", 14),
+    assistantCall("call-foreign-page", "web_fetch", 15),
+    foreignResult("call-foreign-page", "web_fetch", 16),
+    useTool("call-foreign-wrapped", "mcp_external", 17),
+    foreignResult("call-foreign-wrapped", "use_tool", 18),
+    assistantCall("pause-foreign", "ask_user", 19),
+  ];
+  const deliveries = deliveredWatches(messages);
+  const deliveredIds = [...deliveries.values()].map((entry) => entry.toolCallId);
+  expect(deliveredIds.filter((id) => id === "call-direct-schedule")).toHaveLength(1);
+  expect(deliveredIds.filter((id) => id === "call-direct-catalog")).toHaveLength(1);
+  expect(deliveredIds.filter((id) => id === "call-wrapped-schedule")).toHaveLength(1);
+  expect(deliveredIds.filter((id) => id === "call-wrapped-catalog")).toHaveLength(1);
+  expect(deliveredIds.filter((id) => id === reused)).toHaveLength(2);
+  expect(deliveredIds).not.toContain("call-foreign-page");
+  expect(deliveredIds).not.toContain("call-foreign-wrapped");
+  expect(deliveries.size).toBe(6);
+
+  const checkpoint = pauseCheckpoint(messages, "pause-foreign");
+  const watchText = checkpoint.watchOutsideText?.join("\n") ?? "";
+  for (const marker of [
+    "direct-schedule@outside.test",
+    "direct-catalog@outside.test",
+    "wrapped-schedule@outside.test",
+    "wrapped-catalog@outside.test",
+    "reused-schedule@outside.test",
+    "reused-catalog@outside.test",
+  ]) {
+    expect(watchText).toContain(marker);
+  }
+  expect(watchText).not.toContain(payload);
+  const outside = checkpoint.outsideText ?? "";
+  expect(outside.split(payload).length - 1).toBe(3);
+  expect(outside).toContain("direct-schedule@outside.test");
+
+  // A dropped foreign result must not be re-extracted into a later checkpoint's watch list.
+  const droppedForeignCall = useTool("call-legacy-foreign", "web_fetch", 30);
+  const droppedForeign = foreignResult("call-legacy-foreign", "use_tool", 31);
+  const fresh = routineRead("call-fresh", "fresh-schedule@outside.test");
+  const legacyMessages = [fresh, assistantCall("pause-legacy", "ask_user", 33)];
+  const legacy = buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages: legacyMessages, tools: [] },
+      sourceLength: legacyMessages.length,
+    },
+    stateMessages: legacyMessages,
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "pause-legacy",
+    toolCallCount: 2,
+    mainModelConfig: { provider: "openai", id: "model-a" },
+    provider: "openai",
+    modelId: "model-a",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    restoredMessages: [
+      droppedForeignCall,
+      droppedForeign,
+      assistantCall("pause-old", "ask_user", 32),
+    ],
+    watchDeliveries: new Map(),
+  });
+  const legacyWatch = legacy.watchOutsideText?.join("\n") ?? "";
+  expect(legacyWatch).toContain("fresh-schedule@outside.test");
+  expect(legacyWatch).not.toContain(payload);
+});
+
+it("resolves a deferred routine from the source transcript when the assistant call was compacted away", () => {
+  const payload = "external routine payload";
+  const reused = "call-reused-source";
+  const schedule = watchPayload(reused, "source-schedule@outside.test");
+  const foreign = { routines: [{ name: "ext", lastCheck: { detail: payload } }] };
+  const call = (name: string, timestamp: number): Message => ({
+    role: "assistant",
+    content: [{ type: "toolCall", id: reused, name: "use_tool", arguments: { name } }],
+    api: "openai-responses",
+    provider: "openai",
+    model: "model-a",
+    usage: turnUsage,
+    stopReason: "toolUse",
+    timestamp,
+  });
+  const result = (
+    details: ReturnType<typeof watchPayload> | typeof foreign,
+    timestamp: number,
+  ): Message => ({
+    role: "toolResult",
+    toolCallId: reused,
+    toolName: "use_tool",
+    content: [{ type: "text", text: JSON.stringify(details) }],
+    details,
+    isError: false,
+    timestamp,
+  });
+  const scheduleResult = result(schedule, 2);
+  const foreignResult = result(foreign, 4);
+  const state: Message[] = [
+    call("schedule_list", 1),
+    scheduleResult,
+    call("web_fetch", 3),
+    foreignResult,
+  ];
+  const applied = applyWatchDeliveryProvenance(
+    { messages: state } as Context,
+    [scheduleResult, foreignResult],
+    [1, 3],
+    undefined,
+    (message) => JSON.stringify(message.content),
+  );
+  expect(applied.pending).toHaveLength(1);
+  expect(JSON.stringify(applied.pending[0]?.state.details)).toContain(
+    "source-schedule@outside.test",
+  );
+  expect(JSON.stringify(applied.pending[0]?.state.details)).not.toContain(payload);
+
+  const pause = assistantCall("pause-source", "ask_user", 5);
+  const checkpoint = buildTurnCheckpoint({
+    sentContext: {
+      context: {
+        systemPrompt: "Fixture",
+        messages: [scheduleResult, foreignResult],
+        tools: [],
+      },
+      sourceLength: state.length,
+      sourceIndexes: [1, 3],
+    },
+    stateMessages: [...state, pause],
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "pause-source",
+    toolCallCount: 3,
+    mainModelConfig: { provider: "openai", id: "model-a" },
+    provider: "openai",
+    modelId: "model-a",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries: new Map(),
+    restoredMessages: [scheduleResult, foreignResult, pause],
+  });
+  const watchText = checkpoint.watchOutsideText?.join("\n") ?? "";
+  expect(watchText).toContain("source-schedule@outside.test");
+  expect(watchText).not.toContain(payload);
+  expect((checkpoint.outsideText ?? "").split(payload).length - 1).toBe(1);
+  expect(checkpoint.outsideText).toContain("source-schedule@outside.test");
+});

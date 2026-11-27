@@ -1,5 +1,6 @@
 import type { Context, Message } from "@earendil-works/pi-ai";
 import { isRecord } from "@rakazo/core";
+import { isRoutineWatchName, routineToolNameAt, toolNamesInOrder } from "./routine-watch-tool.js";
 
 export type WatchDeliveryState =
   | {
@@ -48,11 +49,15 @@ export function applyWatchDeliveryProvenance(
 ): { messages: Message[]; pending: PendingWatchDelivery[] } {
   const pending: PendingWatchDelivery[] = [];
   let changed = false;
+  const stateNames = toolNamesInOrder(ctx.messages);
+  const preparedNames = toolNamesInOrder(messages);
   const annotated = messages.map((message, index) => {
     if (message.role !== "toolResult") return message;
+    const sourceIndex = sourceIndexes[index];
+    const name = routineToolNameAt(index, preparedNames, stateNames, sourceIndexes);
+    if (!isRoutineWatchName(name)) return message;
     const details = isRecord(message.details) ? message.details : undefined;
     if (!details || !("routines" in details)) return message;
-    const sourceIndex = sourceIndexes[index];
     const sourceMessage = sourceIndex !== undefined ? ctx.messages[sourceIndex] : undefined;
     const original = sourceMessage?.role === "toolResult" ? sourceMessage : undefined;
     const key =
