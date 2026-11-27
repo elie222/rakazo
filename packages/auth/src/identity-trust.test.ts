@@ -1445,6 +1445,13 @@ describe("ending sessions", () => {
     expect(ended(afterDeleteSession)).toEqual([...ids].sort());
   });
 
+  it("still reports an ended session when its page apps could not be removed", async () => {
+    const { f, first, ids, afterDeleteSession } = await signedInTwice();
+    vi.mocked(f.prisma.pageApp.deleteMany).mockRejectedValue(new Error("database unavailable"));
+    await f.request("/sign-out", {}, first);
+    expect(ended(afterDeleteSession)).toEqual([ids[0]]);
+  });
+
   it("reports every session that signing out everywhere ends", async () => {
     const { f, first, ids, afterDeleteSession } = await signedInTwice();
     expect((await f.request("/revoke-sessions", {}, first)).status).toBe(200);
