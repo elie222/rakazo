@@ -36,7 +36,9 @@ function windowsLauncher(appData: string): PageAppLauncher {
       const shortcut = path.join(folder, name);
       if (!shell.writeShortcutLink(shortcut, details(config, dataDir)))
         throw new Error("The shortcut could not be written.");
-      if (previous && previous !== shortcut) await rm(previous, { force: true });
+      // Start Menu file names ignore case, so a title that only changed case is the same file.
+      if (previous && previous.toLowerCase() !== shortcut.toLowerCase())
+        await rm(previous, { force: true });
       return shortcut;
     },
     repoint: async (installed, dataDir) => {
