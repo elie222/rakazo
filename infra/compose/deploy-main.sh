@@ -17,17 +17,23 @@ fi
 APP_DIR="${RAKAZO_DEPLOY_DIR:-/srv/rakazo}"
 [[ "${APP_DIR}" == /* ]] || { echo "RAKAZO_DEPLOY_DIR must be an absolute path" >&2; exit 1; }
 COMPOSE_FILE="infra/compose/docker-compose.prod.yml"
-# CI allows 140 minutes: 5m pull + 15m fallback build + a few minutes to start the new containers
-# one at a time + ~1m of health retries + 8m rollback, which only pulls or builds when the previous
-# image is gone, + up to 50m (the worker's stop_grace_period) twice: for a worker an earlier deploy
-# left draining, then for this one's, whose old workers drain side by side. The replaced APIs' few
-# minutes of draining run alongside the workers'.
+# CI allows 140 minutes: 5m pull + 15m fallback build + up to 50m (the worker's stop_grace_period)
+# for a worker an earlier deploy left draining + the waits between replicas, which end by
+# REPLICA_WAITS_UNTIL (70m) + about a minute to start each new container + ~1m of health retries +
+# 8m rollback, which only pulls or builds when the previous image is gone, + up to 50m for this
+# deploy's last replaced worker. The last replaced API's few minutes of draining run alongside it.
 PULL_TIMEOUT="${RAKAZO_DEPLOY_PULL_TIMEOUT:-5m}"
 BUILD_TIMEOUT="${RAKAZO_DEPLOY_BUILD_TIMEOUT:-15m}"
 UP_TIMEOUT="${RAKAZO_DEPLOY_UP_TIMEOUT:-5m}"
 ROLLBACK_TIMEOUT="${RAKAZO_DEPLOY_ROLLBACK_TIMEOUT:-8m}"
 # Longer than a replaced API takes to stop: its HTTP drain, RUN_DRAIN_MS, then handing back.
-API_DRAIN_TIMEOUT=6m
+API_DRAIN_TIMEOUT=360
+# Before it starts the next new API or worker, a deploy waits up to API_DRAIN_TIMEOUT or this many
+# seconds for the one it replaced to exit, so the host runs at most one extra of each.
+WORKER_EXIT_WAIT=900
+# Those waits end this many seconds into a deploy, however long the earlier steps took, which leaves
+# CI's 140 minutes room for the containers still to start, the last worker's drain and a rollback.
+REPLICA_WAITS_UNTIL=$((70 * 60))
 # Free disk a deploy needs before it pulls or builds.
 MIN_FREE_GB="${RAKAZO_DEPLOY_MIN_FREE_GB:-5}"
 BUILD_CACHE_GB="${RAKAZO_DEPLOY_BUILD_CACHE_GB:-8}"
@@ -135,16 +141,34 @@ start_one() {
   container_healthy "${new}"
 }
 
-# Replaces the given API or worker containers one at a time: each new one starts beside the rest
-# and the old one it replaces retires once it is healthy, so the host never runs more than one
-# container beyond the configured count that takes work. Retired ones may still be draining meanwhile.
+# Waits up to the given number of seconds for a retired container to exit. One still draining
+# past that finishes beside the next replacement.
+wait_for_exit() {
+  local limit status=124
+  limit=$((REPLICA_WAITS_UNTIL - SECONDS))
+  ((limit < $2)) || limit="$2"
+  if ((limit > 0)); then
+    status=0
+    # A container retired by stopping it is already gone, and docker wait fails at once.
+    timeout "${limit}" sudo docker wait "$1" >/dev/null 2>&1 || status=$?
+  fi
+  if ((status == 124)); then
+    echo "::warning::Replaced container $1 is still draining; starting the next one beside it." >&2
+  fi
+}
+
+# Replaces the given API or worker containers one at a time: each new one starts beside the rest,
+# the old one it replaces retires once it is healthy, and the next starts once that one has exited,
+# so the host runs at most one container beyond the configured count.
 replace_one_by_one() {
-  local service="$1" count="$2" old i
+  local service="$1" count="$2" exit_wait="$4" old i
   # shellcheck disable=SC2206 # one container ID per word
   old=($3)
   for ((i = 0; i < count; i++)); do
     start_one "${service}"
-    if ((i < ${#old[@]})); then "retire_${service}" "${old[i]}"; fi
+    ((i < ${#old[@]})) || continue
+    "retire_${service}" "${old[i]}"
+    if ((i + 1 < count)); then wait_for_exit "${old[i]}" "${exit_wait}"; fi
   done
   # Fewer replicas than before: the rest retire too.
   for ((; i < ${#old[@]}; i++)); do "retire_${service}" "${old[i]}"; done
@@ -244,7 +268,7 @@ replace_worker() {
   if [[ -z "${live}" ]]; then
     compose "${UP_TIMEOUT}" up -d --no-deps --wait worker
   else
-    replace_one_by_one worker "${WORKER_REPLICAS}" "${live}"
+    replace_one_by_one worker "${WORKER_REPLICAS}" "${live}" "${WORKER_EXIT_WAIT}"
   fi
 }
 
@@ -280,7 +304,7 @@ roll_out() {
       continue
     fi
     if [[ "${service}" == api ]]; then
-      replace_one_by_one api "${API_REPLICAS}" "${old}"
+      replace_one_by_one api "${API_REPLICAS}" "${old}" "${API_DRAIN_TIMEOUT}"
     else
       start_one "${service}"
       stop_containers "${old}"

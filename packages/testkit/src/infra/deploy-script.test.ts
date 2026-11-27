@@ -199,6 +199,7 @@ fi
 if [[ "$1" == update ]]; then
   for name in "\${@:4}"; do sed -i.bak "s/^$name [^ ]*/$name no/" "$containers"; done
 fi
+if [[ "$1" == wait && -n "\${DRAIN_NEVER_ENDS:-}" ]]; then exit 124; fi
 if [[ "$1" == kill && -n "\${DRAIN_EXITS:-}" ]]; then
   for name in "\${@:4}"; do sed -i.bak "s/^$name \\([^ ]*\\) .*/$name \\1 exited/" "$containers"; done
 fi
@@ -730,13 +731,14 @@ describe("production deploy script", () => {
       const first = commands.indexOf(expected[1]!) - 1;
       return commands.slice(first, first + expected.length);
     };
-    // Each old one retires once its replacement is healthy, and still counts toward the scale
-    // while it drains, so Compose adds exactly one container each time.
+    // Each old one retires once its replacement is healthy, and the next starts once it has
+    // exited. It still counts toward the scale until it is removed, so Compose adds exactly one.
     const api = [
       ...startOne("api", 3),
       `${DRAIN_SIGNAL} api-old`,
       "docker update --restart no api-old",
       "docker kill --signal SIGUSR2 api-old",
+      "docker wait api-old",
       ...startOne("api", 4, "api-newx"),
       `${DRAIN_SIGNAL} api-old2`,
       "docker update --restart no api-old2",
@@ -747,12 +749,31 @@ describe("production deploy script", () => {
       ...startOne("worker", 3),
       "docker update --restart no worker-old",
       "docker kill --signal SIGTERM worker-old",
+      "docker wait worker-old",
       ...startOne("worker", 4, "worker-newx"),
       "docker update --restart no worker-old2",
       "docker kill --signal SIGTERM worker-old2",
+      "docker wait worker-old2",
       ...startOne("worker", 5, "worker-newxx"),
     ];
     expect(steps(worker)).toEqual(worker);
+  });
+
+  it("starts the next replacement, with a warning, when a replaced one drains past its cap", () => {
+    const deploy = fixture();
+    write(
+      path.join(deploy.checkout, ".env"),
+      "RAKAZO_HOST=app.example.test\nRAKAZO_API_REPLICAS=2\n",
+    );
+    commit(deploy.upstream, "next");
+    const result = deploy.run({ TWO_OLD: "1", DRAIN_NEVER_ENDS: "1" });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("::warning::Replaced container api-old is still draining");
+    const commands = rollout(deploy.commands());
+    const waited = commands.indexOf("docker wait api-old");
+    expect(commands.slice(waited + 1, waited + 3)).toEqual(
+      startOne("api", 4, "api-newx").slice(0, 2),
+    );
   });
 
   it("refuses a replica count below one before deploying", () => {
