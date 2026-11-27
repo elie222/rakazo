@@ -4,7 +4,7 @@ import { mkdir, readdir, rename, rmdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PAGE_APP_TOKEN } from "@rakazo/contracts";
-import { pollUntil } from "@rakazo/core";
+import { deadlineSignal, pollUntil } from "@rakazo/core";
 import { bestEffort } from "@rakazo/logging";
 import {
   buildPageAppBundle,
@@ -41,6 +41,7 @@ const MAX_ICON_ENTRIES = 12;
 /** Where bundles are made before they appear in the apps folder, on the same volume. */
 const STAGING = ".staging";
 const SET_ASIDE = ".previous.app";
+const MARK_USED_DEADLINE_MS = 15_000;
 const RETIRED = ".retired.app";
 
 export type PageAppInstallRequest = {
@@ -208,7 +209,10 @@ export function createPageAppInstaller(options: {
       await registry.put({ ...config, bundlePath: placed });
       // One read marks the token used, so the server's cleanup of never-used apps leaves this one
       // even if its first launch does not get through.
-      await bestEffort("mark a page app installed", createPageAppApi(server, request.token).view());
+      await bestEffort(
+        "mark a page app installed",
+        createPageAppApi(server, request.token).view(deadlineSignal(MARK_USED_DEADLINE_MS)),
+      );
       await bestEffort("register page app", registerWithLaunchServices(placed));
       await bestEffort("open page app", options.open(placed));
       return true;
@@ -249,7 +253,10 @@ export function createPageAppInstaller(options: {
   async function refreshApp(app: InstalledPageApp) {
     // An app moved to the Trash from Finder ends with its token, as an uninstall does.
     if (!existsSync(app.bundlePath)) {
-      const moved = await findBundle(pageAppBundleId(app.appId), home ?? os.homedir());
+      // Renamed in its folder, it is found there; moved anywhere else, Spotlight may know.
+      const moved =
+        (await installedBundles(home)).find((found) => found.appId === app.appId)?.bundlePath ??
+        (await findBundle(pageAppBundleId(app.appId), home ?? os.homedir()));
       if (moved) await registry.put({ ...app, bundlePath: moved });
       else await forget(app);
       return;
