@@ -1167,3 +1167,367 @@ it("does not start capped watchOutsideText on a lone UTF-16 surrogate", () => {
   expect(multiEntries.some(loneLowSurrogate)).toBe(false);
   expect(multiText.indexOf(newestMarker)).toBeGreaterThan(multiText.indexOf(multiMarker));
 });
+
+const turnUsage = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+function assistantCall(id: string, name: string, timestamp: number): Message {
+  return {
+    role: "assistant",
+    content: [{ type: "toolCall", id, name, arguments: {} }],
+    api: "openai-responses",
+    provider: "openai",
+    model: "model-a",
+    usage: turnUsage,
+    stopReason: "toolUse",
+    timestamp,
+  };
+}
+function watchPayload(routineId: string, marker: string, padding = "") {
+  return {
+    routines: [
+      {
+        routineId,
+        prompt: "Owner prompt",
+        lastCheck: {
+          checkedAt: "2026-11-25T07:00:00.000Z",
+          detail: padding ? `${padding} ${marker}` : `Alert ${marker}`,
+        },
+      },
+    ],
+  };
+}
+function markerPositions(text: string, markers: readonly string[]): number[] {
+  return markers.map((marker) => text.indexOf(marker));
+}
+
+it("keeps a newer dropped watch slice on the second pause when a large retained watch sits between the slices", () => {
+  const dropped = (toolCallId: string, marker: string): WatchDeliveryState => {
+    const details = watchPayload(toolCallId, marker);
+    return {
+      full: false,
+      texts: [JSON.stringify(details)],
+      details,
+      toolCallId,
+    };
+  };
+  const retainedDetails = watchPayload(
+    "call-b",
+    "beta-retained@outside.test",
+    "b".repeat(MAX_OUTSIDE_TEXT_CHARS),
+  );
+  const retainedMessage: Message = {
+    role: "toolResult",
+    toolCallId: "call-b",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: JSON.stringify(retainedDetails) }],
+    details: retainedDetails,
+    isError: false,
+    timestamp: 2,
+  };
+  const pending = assistantCall("pause-second", "ask_user", 3);
+  const transcript: Message[] = [
+    assistantCall("call-b", "schedule_list", 1),
+    retainedMessage,
+    pending,
+  ];
+  const watchDeliveries = new Map<string, WatchDeliveryState>();
+  commitWatchDeliveries(watchDeliveries, [
+    { key: "watch-a", state: dropped("call-a", "alpha-old-target@outside.test") },
+  ]);
+  commitWatchDeliveries(watchDeliveries, [
+    {
+      key: "watch-b",
+      state: {
+        full: true,
+        fullText: JSON.stringify(retainedDetails),
+        details: retainedDetails,
+        toolCallId: "call-b",
+      },
+    },
+  ]);
+  commitWatchDeliveries(watchDeliveries, [
+    { key: "watch-a", state: dropped("call-a", "alpha-second-pause@outside.test") },
+  ]);
+  const first = buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages: transcript, tools: [] },
+      sourceLength: transcript.length,
+    },
+    stateMessages: transcript,
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "pause-second",
+    toolCallCount: 2,
+    mainModelConfig: { provider: "openai", id: "model-a" },
+    provider: "openai",
+    modelId: "model-a",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries,
+  });
+  const firstCtx = fixture([tool("ask_user")]);
+  firstCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(firstCtx, JSON.stringify(first), {
+      provider: "openai",
+      id: "model-a",
+    }),
+  ).toBeDefined();
+  expect(firstCtx.state.outsideText.length).toBeLessThanOrEqual(MAX_OUTSIDE_TEXT_CHARS);
+  expect(firstCtx.state.outsideText).toContain("alpha-second-pause@outside.test");
+
+  // A resumed run starts a fresh delivery map and only carries the saved watch text forward.
+  const second = buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages: first.messages, tools: [] },
+      sourceLength: first.messages.length,
+    },
+    stateMessages: [...first.messages, assistantCall("pause-third", "ask_user", 4)],
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "pause-third",
+    toolCallCount: 3,
+    mainModelConfig: { provider: "openai", id: "model-a" },
+    provider: "openai",
+    modelId: "model-a",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries: new Map(),
+    priorWatchOutsideText: first.watchOutsideText,
+    restoredMessages: first.messages,
+  });
+  expect(second).not.toHaveProperty("watchOutsideTextBefore");
+  expect((second.watchOutsideText ?? []).join("\n").length).toBeLessThanOrEqual(
+    MAX_OUTSIDE_TEXT_CHARS,
+  );
+  expect(second.watchOutsideText?.join("\n")).toContain("alpha-second-pause@outside.test");
+  const secondCtx = fixture([tool("ask_user")]);
+  secondCtx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(secondCtx, JSON.stringify(second), {
+      provider: "openai",
+      id: "model-a",
+    }),
+  ).toBeDefined();
+  expect(secondCtx.state.outsideText.length).toBeLessThanOrEqual(MAX_OUTSIDE_TEXT_CHARS);
+  expect(secondCtx.state.outsideText).toContain("alpha-second-pause@outside.test");
+});
+
+it("replays multiple accepted slices of one retained watch in acceptance order", () => {
+  const sliceJson = (routineId: string, marker: string) =>
+    JSON.stringify(watchPayload(routineId, marker));
+  const firstA = sliceJson("call-a", "slice-a@outside.test");
+  const firstB = sliceJson("call-b", "slice-b@outside.test");
+  const secondA = sliceJson("call-a", "slice-a-prime@outside.test");
+  const secondB = sliceJson("call-b", "slice-b-prime@outside.test");
+  const retainedDetails = {
+    ...watchPayload("call-b", "slice-b@outside.test"),
+    contextBeforeUseText: firstB,
+    contextDeliveredTexts: [firstB, secondB],
+  };
+  const retainedMessage: Message = {
+    role: "toolResult",
+    toolCallId: "call-b",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: firstB }],
+    details: retainedDetails,
+    isError: false,
+    timestamp: 2,
+  };
+  const detailsA = watchPayload("call-a", "slice-a@outside.test");
+  const watchDeliveries = new Map<string, WatchDeliveryState>([
+    [
+      "watch-a",
+      {
+        full: false,
+        texts: [firstA, secondA],
+        textOrders: [1, 3],
+        details: detailsA,
+        toolCallId: "call-a",
+      },
+    ],
+    [
+      "watch-b",
+      {
+        full: false,
+        texts: [firstB, secondB],
+        textOrders: [2, 4],
+        details: retainedDetails,
+        toolCallId: "call-b",
+      },
+    ],
+  ]);
+  const transcript: Message[] = [
+    assistantCall("call-b", "schedule_list", 1),
+    retainedMessage,
+    assistantCall("pause-slices", "ask_user", 3),
+  ];
+  const checkpoint = buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages: transcript, tools: [] },
+      sourceLength: transcript.length,
+    },
+    stateMessages: transcript,
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "pause-slices",
+    toolCallCount: 2,
+    mainModelConfig: { provider: "openai", id: "model-a" },
+    provider: "openai",
+    modelId: "model-a",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries,
+  });
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(ctx, JSON.stringify(checkpoint), {
+      provider: "openai",
+      id: "model-a",
+    }),
+  ).toBeDefined();
+  const markers = [
+    "slice-a@outside.test",
+    "slice-b@outside.test",
+    "slice-a-prime@outside.test",
+    "slice-b-prime@outside.test",
+  ];
+  const positions = markerPositions(ctx.state.outsideText, markers);
+  expect(positions.every((position) => position >= 0)).toBe(true);
+  expect(positions[1]).toBeGreaterThan(positions[0]!);
+  expect(positions[2]).toBeGreaterThan(positions[1]!);
+  expect(positions[3]).toBeGreaterThan(positions[2]!);
+  expect(ctx.state.outsideText).not.toContain("Owner prompt");
+});
+
+it("keeps watch evidence when a saved index is past the transcript or a trailing aborted message is trimmed", () => {
+  const pending = {
+    role: "assistant",
+    content: [{ type: "toolCall", id: "pending", name: "ask_user", arguments: {} }],
+    stopReason: "toolUse",
+    timestamp: 1,
+  };
+  const aborted = { ...pending, content: [], stopReason: "aborted", timestamp: 2 };
+  const model = { provider: "openai", id: "model-a" };
+  const restoreSaved = (
+    messages: unknown[],
+    watchOutsideText: string[],
+    watchOutsideTextBefore: number[],
+  ) => {
+    const ctx = fixture([tool("ask_user")]);
+    ctx.state.outsideText = "";
+    expect(
+      restoreTurnCheckpointEffects(
+        ctx,
+        JSON.stringify({
+          version: 1,
+          provider: model.provider,
+          model: model.id,
+          systemPrompt: "Fixture",
+          pendingToolCallId: "pending",
+          executionMode: "sequential",
+          messages,
+          watchOutsideText,
+          watchOutsideTextBefore,
+        }),
+        model,
+      ),
+    ).toBeDefined();
+    return ctx.state.outsideText;
+  };
+  const trimmed = restoreSaved(
+    [pending, aborted],
+    ["trim-kept@outside.test", "trim-dropped@outside.test", "trim-after-dropped@outside.test"],
+    [0, 2, 3],
+  );
+  const outOfRange = restoreSaved(
+    [pending],
+    ["range-kept@outside.test", "range-dropped@outside.test", "range-after-dropped@outside.test"],
+    [0, 8, 9],
+  );
+  expect([
+    trimmed.includes("trim-kept@outside.test"),
+    trimmed.includes("trim-dropped@outside.test"),
+    trimmed.includes("trim-after-dropped@outside.test"),
+    outOfRange.includes("range-kept@outside.test"),
+    outOfRange.includes("range-dropped@outside.test"),
+    outOfRange.includes("range-after-dropped@outside.test"),
+  ]).toEqual([true, true, true, true, true, true]);
+});
+
+it("keeps a watch result that never reached a model delivery, without putting it ahead of a later page read", () => {
+  const droppedDetails = watchPayload("call-a", "delivered-watch@outside.test");
+  const unseenDetails = watchPayload("call-unseen", "unseen-watch@outside.test");
+  const unseenMessage: Message = {
+    role: "toolResult",
+    toolCallId: "call-unseen",
+    toolName: "schedule_list",
+    content: [{ type: "text", text: JSON.stringify(unseenDetails) }],
+    details: unseenDetails,
+    isError: false,
+    timestamp: 2,
+  };
+  const page: Message = {
+    role: "toolResult",
+    toolCallId: "page-1",
+    toolName: "web_fetch",
+    content: [{ type: "text", text: "Fetched page web-fetch-kept@outside.test" }],
+    isError: false,
+    timestamp: 1,
+  };
+  const transcript: Message[] = [page, unseenMessage, assistantCall("pause-unseen", "ask_user", 3)];
+  const watchDeliveries = new Map<string, WatchDeliveryState>([
+    [
+      "watch-a",
+      {
+        full: true,
+        fullText: JSON.stringify(droppedDetails),
+        details: droppedDetails,
+        toolCallId: "call-a",
+        order: 1,
+      },
+    ],
+  ]);
+  const checkpoint = buildTurnCheckpoint({
+    sentContext: {
+      context: { systemPrompt: "Fixture", messages: transcript, tools: [] },
+      sourceLength: transcript.length,
+    },
+    stateMessages: transcript,
+    restoringCalls: false,
+    tools: [],
+    pendingToolCallId: "pause-unseen",
+    toolCallCount: 2,
+    mainModelConfig: { provider: "openai", id: "model-a" },
+    provider: "openai",
+    modelId: "model-a",
+    systemPrompt: "Fixture",
+    representedHistoryIds: new Set(),
+    watchDeliveries,
+  });
+  const ctx = fixture([tool("ask_user")]);
+  ctx.state.outsideText = "";
+  expect(
+    restoreTurnCheckpointEffects(ctx, JSON.stringify(checkpoint), {
+      provider: "openai",
+      id: "model-a",
+    }),
+  ).toBeDefined();
+  const positions = markerPositions(ctx.state.outsideText, [
+    "delivered-watch@outside.test",
+    "unseen-watch@outside.test",
+    "web-fetch-kept@outside.test",
+  ]);
+  expect(positions.every((position) => position >= 0)).toBe(true);
+  expect(positions[1]).toBeGreaterThan(positions[0]!);
+  expect(positions[2]).toBeGreaterThan(positions[1]!);
+  expect(checkpoint).not.toHaveProperty("watchOutsideTextBefore");
+  expect(checkpoint.watchOutsideText?.join("\n")).not.toContain("web-fetch-kept@outside.test");
+});

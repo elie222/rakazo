@@ -19,12 +19,6 @@ import { computerSelection } from "./tools/pi-runtime-computer-mode.js";
  */
 const EMPTY_WATCH_DELIVERY = '{"routines":[]}';
 
-interface WatchOutsidePiece {
-  text: string;
-  /** Checkpoint message index before which this dropped slice is replayed. */
-  before: number;
-}
-
 /** Tail of `value` that fits in `maxChars` and does not start on a lone low surrogate. */
 function sliceWellFormedTail(value: string, maxChars: number): string {
   if (maxChars <= 0) return "";
@@ -37,26 +31,51 @@ function sliceWellFormedTail(value: string, maxChars: number): string {
 }
 
 /** Keeps the newest tail of checkpoint watch text, including the `\n` between entries. */
-function boundWatchOutsideText(entries: readonly WatchOutsidePiece[]): WatchOutsidePiece[] {
-  const kept: WatchOutsidePiece[] = [];
+function boundWatchOutsideText(entries: readonly string[]): string[] {
+  const kept: string[] = [];
   let used = 0;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index]!;
     const separator = kept.length > 0 ? 1 : 0;
     const room = MAX_OUTSIDE_TEXT_CHARS - used - separator;
     if (room <= 0) break;
-    if (entry.text.length <= room) {
+    if (entry.length <= room) {
       kept.push(entry);
-      used += separator + entry.text.length;
+      used += separator + entry.length;
       continue;
     }
-    const text = sliceWellFormedTail(entry.text, room);
+    const text = sliceWellFormedTail(entry, room);
     if (!text) break;
-    kept.push({ text, before: entry.before });
+    kept.push(text);
     break;
   }
   kept.reverse();
   return kept;
+}
+
+/** Latest copy of a repeated watch check stays in its newest position. */
+function dedupeLatestWatchText(entries: readonly string[]): string[] {
+  const seen = new Map<string, true>();
+  for (const entry of entries) {
+    seen.delete(entry);
+    seen.set(entry, true);
+  }
+  return [...seen.keys()];
+}
+
+function watchTextValues(
+  message: { details?: unknown; content: unknown },
+  contextStrategy?: AgentContextStrategy,
+): string[] {
+  return watchChecksFromToolResultMessage(message, contextStrategy)
+    .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
+    .filter((value) => value.trim().length > 0);
+}
+
+/** Provenance fields belong to one delivery. A slice must not inherit another slice's texts. */
+function cleanWatchDetails(details: Record<string, unknown>): Record<string, unknown> {
+  const { contextBeforeUseText: _beforeUse, contextDeliveredTexts: _delivered, ...clean } = details;
+  return clean;
 }
 
 function acceptedTextOrder(entry: WatchDeliveryState, index: number, insertion: number): number {
@@ -166,11 +185,15 @@ export function buildTurnCheckpoint(input: {
     const index = messages.indexOf(match);
     return index === -1 ? undefined : index;
   };
-  const droppedWatchOutside: WatchOutsidePiece[] = (input.priorWatchOutsideText ?? [])
-    .filter((entry) => entry.trim().length > 0)
-    .map((text) => ({ text, before: 0 }));
-  // Collect in chronological delivery order (prior dropped -> earlier restored -> current attempt)
-  // so bounded outsideText retention (`MAX_OUTSIDE_TEXT_CHARS`) keeps the newest watch evidence.
+  // Acceptance order: earlier evidence, then this turn's slices, then a watch result the model
+  // has not been shown yet. The newest tail stays inside MAX_OUTSIDE_TEXT_CHARS.
+  const orderedWatch: string[] = [];
+  let retainedBaseline = 0;
+  for (const entry of input.priorWatchOutsideText ?? []) {
+    if (entry.trim()) orderedWatch.push(entry);
+  }
+  const priorCount = orderedWatch.length;
+  const restoredRetained = new Set<AgentMessage>();
   if (input.restoredMessages) {
     // Only results before the paused assistant turn in the restored checkpoint were actually
     // delivered to an earlier model; trailing sibling results await their first delivery.
@@ -189,9 +212,7 @@ export function buildTurnCheckpoint(input: {
       if (message.role !== "toolResult") continue;
       const details = message.details;
       if (!isRecord(details) || !("routines" in details)) continue;
-      const restoredItems = watchChecksFromToolResultMessage(message, input.contextStrategy)
-        .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
-        .filter((value) => value.trim().length > 0);
+      const restoredItems = watchTextValues(message, input.contextStrategy);
       if (restoredItems.length === 0) continue;
       const retainedMatch =
         messageSourceIndexes !== undefined
@@ -203,19 +224,24 @@ export function buildTurnCheckpoint(input: {
                 retained.details.routines === details.routines,
             );
       if (!retainedMatch) {
-        for (const text of restoredItems) droppedWatchOutside.push({ text, before: 0 });
+        orderedWatch.push(...restoredItems);
         continue;
       }
-      const retainedSet = new Set(
-        watchChecksFromToolResultMessage(retainedMatch, input.contextStrategy).map((item) =>
-          typeof item === "string" ? item : JSON.stringify(item),
-        ),
-      );
+      restoredRetained.add(retainedMatch);
+      const retainedSet = new Set(watchTextValues(retainedMatch, input.contextStrategy));
       for (const value of restoredItems) {
-        if (!retainedSet.has(value)) droppedWatchOutside.push({ text: value, before: 0 });
+        if (!retainedSet.has(value)) orderedWatch.push(value);
+        else if (input.priorWatchOutsideText === undefined) {
+          // A resumed checkpoint with no watch list still keeps this text on the message.
+          // Copy it only when this turn also records other watch evidence.
+          orderedWatch.push(value);
+          retainedBaseline += 1;
+        }
       }
     }
   }
+  const acceptedWatch: string[] = [];
+  const coveredWatch = new Set<AgentMessage>();
   if (input.watchDeliveries) {
     const slices: Array<{
       order: number;
@@ -248,56 +274,54 @@ export function buildTurnCheckpoint(input: {
         });
       });
     }
-    const retainedAnchors = new Map<number, number>();
-    for (const slice of slices) {
-      if (slice.retainedAt === undefined) continue;
-      const current = retainedAnchors.get(slice.retainedAt);
-      if (current === undefined || slice.order > current) {
-        retainedAnchors.set(slice.retainedAt, slice.order);
-      }
-    }
-    const anchors = [...retainedAnchors.entries()]
-      .map(([messageIndex, order]) => ({ messageIndex, order }))
-      .sort((left, right) => left.order - right.order || left.messageIndex - right.messageIndex);
     slices.sort((left, right) => left.order - right.order || left.index - right.index);
     for (const slice of slices) {
-      if (slice.retainedAt !== undefined || !slice.text.trim()) continue;
-      const nextAnchor = anchors.find((anchor) => anchor.order > slice.order);
-      const before = nextAnchor
-        ? nextAnchor.messageIndex
-        : anchors.length > 0
-          ? messages.length
-          : 0;
+      if (!slice.text.trim()) continue;
+      if (slice.retainedAt !== undefined) {
+        const retained = messages[slice.retainedAt];
+        if (retained) coveredWatch.add(retained);
+      }
       const firstSlice = slice.entry.full || slice.index === 0;
+      const details = cleanWatchDetails(slice.entry.details);
       const synthetic = firstSlice
         ? {
-            details: { ...slice.entry.details, contextBeforeUseText: slice.text },
+            details: { ...details, contextBeforeUseText: slice.text },
             content: [{ type: "text" as const, text: slice.text }],
           }
         : {
             details: {
-              ...slice.entry.details,
+              ...details,
               contextBeforeUseText: EMPTY_WATCH_DELIVERY,
               contextDeliveredTexts: [slice.text],
             },
             content: [{ type: "text" as const, text: EMPTY_WATCH_DELIVERY }],
           };
-      for (const item of watchChecksFromToolResultMessage(synthetic, input.contextStrategy)) {
-        const value = typeof item === "string" ? item : JSON.stringify(item);
-        if (value.trim()) droppedWatchOutside.push({ text: value, before });
-      }
+      acceptedWatch.push(...watchTextValues(synthetic, input.contextStrategy));
     }
   }
-  const seenWatchOutside = new Map<string, number>();
-  for (const entry of droppedWatchOutside) {
-    seenWatchOutside.delete(entry.text);
-    seenWatchOutside.set(entry.text, entry.before);
+  const unseenWatch: string[] = [];
+  for (const message of messages) {
+    if (
+      message.role !== "toolResult" ||
+      !isRecord(message.details) ||
+      !("routines" in message.details) ||
+      coveredWatch.has(message) ||
+      restoredRetained.has(message)
+    )
+      continue;
+    unseenWatch.push(...watchTextValues(message, input.contextStrategy));
   }
-  const boundedWatchOutside = boundWatchOutsideText(
-    [...seenWatchOutside.entries()].map(([text, before]) => ({ text, before })),
+  const onlyRetainedBaseline =
+    input.priorWatchOutsideText === undefined &&
+    acceptedWatch.length === 0 &&
+    unseenWatch.length === 0 &&
+    retainedBaseline > 0 &&
+    orderedWatch.length - priorCount === retainedBaseline;
+  const watchOutsideText = boundWatchOutsideText(
+    dedupeLatestWatchText(
+      onlyRetainedBaseline ? [] : [...orderedWatch, ...acceptedWatch, ...unseenWatch],
+    ),
   );
-  const watchOutsideText = boundedWatchOutside.map((entry) => entry.text);
-  const watchOutsideTextBefore = boundedWatchOutside.map((entry) => entry.before);
   const assistant = messages.findLast((message) => message.role === "assistant");
   const sequential =
     input.restoringCalls ||
@@ -339,7 +363,7 @@ export function buildTurnCheckpoint(input: {
     ...(input.foundConnectorTools?.size
       ? { foundConnectorTools: [...input.foundConnectorTools] }
       : {}),
-    ...(watchOutsideText.length > 0 ? { watchOutsideText, watchOutsideTextBefore } : {}),
+    ...(watchOutsideText.length > 0 ? { watchOutsideText } : {}),
   };
 }
 
@@ -364,8 +388,40 @@ export function serializeCapturedTurnCheckpoint(
         })
       : [],
   );
-  return serializeTurnCheckpoint({
-    ...checkpoint,
-    messages: [...checkpoint.messages, ...siblings],
+  return serializeTurnCheckpoint(checkpointWithSiblingWatchResults(checkpoint, siblings));
+}
+
+/**
+ * A parallel sibling can finish after the last model delivery and never enter `watchDeliveries`.
+ * When the checkpoint already lists watch checks, restore will not read routine results again,
+ * so the sibling's checks have to be on that list. A checkpoint with no list keeps message
+ * extraction, unless the sibling is the first watch evidence, in which case the list must also
+ * hold the checks already stored on retained results.
+ */
+function checkpointWithSiblingWatchResults(
+  checkpoint: TurnCheckpoint,
+  siblings: readonly Message[],
+): TurnCheckpoint {
+  const messages = [...checkpoint.messages, ...siblings];
+  const additions = siblings.flatMap((message) =>
+    message.role === "toolResult" ? watchTextValues(message) : [],
+  );
+  if (additions.length === 0) return { ...checkpoint, messages };
+  const base =
+    checkpoint.watchOutsideText ??
+    checkpoint.messages.flatMap((message) =>
+      message.role === "toolResult" ? watchTextValues(message) : [],
+    );
+  const seen = new Set(base);
+  const extra = additions.filter((text) => {
+    if (seen.has(text)) return false;
+    seen.add(text);
+    return true;
   });
+  const watchOutsideText = boundWatchOutsideText(extra.length > 0 ? [...base, ...extra] : base);
+  return {
+    ...checkpoint,
+    messages,
+    ...(watchOutsideText.length > 0 ? { watchOutsideText } : {}),
+  };
 }

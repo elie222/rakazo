@@ -43,13 +43,11 @@ export interface TurnCheckpoint {
   reply?: unknown;
   /** Only explicit sequential checkpoints guarantee an unstarted tail. */
   executionMode?: "parallel" | "sequential";
-  /** Watch-check outside text accepted in this turn whose toolResult was later dropped from context. */
-  watchOutsideText?: string[];
   /**
-   * Message index before which each `watchOutsideText` entry is replayed.
-   * Absent on older checkpoints, which replay the whole list before retained results.
+   * Accepted watch checks, oldest first. Absent when the turn has none.
+   * Restore uses this list as the watch evidence and does not read saved routine results again.
    */
-  watchOutsideTextBefore?: number[];
+  watchOutsideText?: string[];
 }
 
 export function serializeTurnCheckpoint(checkpoint: TurnCheckpoint): string {
